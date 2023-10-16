@@ -1,2 +1,2 @@
 [workspace]
-members = ["crates/python-runner"]
+members = ["crates/dies", "crates/workspace-utils"]
