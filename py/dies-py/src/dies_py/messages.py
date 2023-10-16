@@ -17,10 +17,14 @@ class Term(Struct, tag=True):
 class Hello(Struct, tag=True):
     message: str
 
-msg_dec = msgspec.json.Decoder(Term | Hello)
+
+Msg = Union[Term, Hello]
+msg_dec = msgspec.json.Decoder(Msg)
 
 
 # StratCmd - A message from the strategy process
 
 class Debug(Struct, tag=True):
     message: str
+
+Cmd = Debug
