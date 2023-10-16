@@ -1,5 +1,7 @@
 Dies Framework
 
+Yohan Branch
+
 ## Requirements
 
 - CLI: Main entrypoint for the framework, allows for running with or without a UI
