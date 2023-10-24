@@ -1,4 +1,11 @@
-# Dies Framework
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://delftmercurians.nl/images/logo_dark.svg">
+  <img src="https://delftmercurians.nl/images/logo.svg" style="max-width: 40%;">
+</picture>
+</p>
+
+<h1 align="center">🌩 Dies 🌩</h1>
 
 In Roman mythology [Dies](<https://en.wikipedia.org/wiki/Dies_(mythology)>) (_dai-ez_) was the personification of day and the mother of Mercury.
 
