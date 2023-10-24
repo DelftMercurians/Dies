@@ -1,5 +1,5 @@
 use anyhow::Result;
-use dies::{PyRunner, StratCmd, StratMsg};
+use dies::pystrat::{PyRunner, StratCmd, StratMsg};
 use env_logger::{Builder, Env};
 use workspace_utils::get_workspace_root;
 
