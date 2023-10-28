@@ -1,5 +1,8 @@
 extern crate nalgebra as na;
 use na::Vector2;
+extern crate float_cmp;
+use float_cmp::approx_eq;
+
 /// The number of points in the path
 const N_POINTS: usize = 5;
 
@@ -24,7 +27,7 @@ impl Obstacle {
 }
 
 pub fn compute_path(
-    mut start: &Vector2<f32>,
+    start: &mut Vector2<f32>,
     goal: &Vector2<f32>,
     obstacles: &[Obstacle],
     start_speed: Option<Vector2<f32>>,
@@ -41,26 +44,32 @@ pub fn compute_path(
     use algo_constants::*;
 
     for index in 0..N_POINTS {
-        let mut f = (goal - &start).normalize();
-        let dist = na::distance(goal, &start);
+        let mut f:Vector2<f32> = (*goal - *start).normalize();
+        let dist = (goal - *start).norm();
         let attractive_force = ALPHA * dist;
         f *= attractive_force;
 
         let (base_factor, speed_factor) = INFLUENCE_FACTOR;
         for obs in obstacles {
-            let d = na::distance(&obs.position, &start);
-            let relative_speed = (start - obs.position).normalize()
+            let d = (obs.position - *start).norm();
+            let relative_speed = (*start - obs.position).normalize()
                 .dot(&(start_speed - obs.velocity)).abs();
             let influence_radius = base_factor as f32 * obs.radius + relative_speed * speed_factor as f32;
             if d < influence_radius {
                 let repulsive_force = (1.0 / (d - 2.0 * obs.radius) - 1.0 / (influence_radius - 2.0 * obs.radius))
                     * (relative_speed * BETA + 1.0);
-                f += (start - obs.position).normalize() * repulsive_force;
+                f += (*start - obs.position).normalize() * repulsive_force;
             }
         }
 
-        start += f.normalize() * POINT_SPACING;
-        path[index] = start.clone();
+        *start += f.normalize() * POINT_SPACING;
+
+
+        if index == 0 || (goal - *start).norm() < (goal - path[index - 1]).norm() {
+            path[index] = start.clone();
+        } else {
+            path[index] = path[index - 1];
+        }
     }
     path
 }
@@ -71,15 +80,20 @@ mod tests {
 
     #[test]
     fn test_no_obstacles() {
-        let start = Vector2::new(0.0, 0.0);
+        let mut start = Vector2::new(0.0, 0.0);
         let goal = Vector2::new(10.0, 10.0);
+        let direction = (goal - start).normalize();
+        let expected_points: [Vector2<f32>; 5] = [
+            start + direction * 0.1,
+            start + direction * 0.2,
+            start + direction * 0.3,
+            start + direction * 0.4,
+            start + direction * 0.5
+        ];
 
-        let path = compute_path(&start, &goal, &[], None);
-        for i in 1..(N_POINTS + 1) {
-            assert_eq!(
-                path[0],
-                start + Vector2::new(1.0, 1.0).normalize() * POINT_SPACING * i as f32
-            );
+        let path = compute_path(&mut start, &goal, &[], None);
+        for i in 0..N_POINTS {
+            assert!(approx_eq!(f32, (path[i]- expected_points[i]).norm(), 0.0 , epsilon = 1e-6));
         }
     }
 
