@@ -33,9 +33,9 @@ pub fn compute_path(
     start_speed: Option<Vector2<f32>>,
 ) -> [Vector2<f32>; N_POINTS] {
     mod algo_constants {
-        pub const ALPHA: f32 = 0.00001;
-        pub const BETA: f32 = 0.01;
-        pub const INFLUENCE_FACTOR: (usize, usize) = (5, 1);
+        pub const ALPHA: f32 = 0.00000001;
+        pub const BETA: f32 = 0.00001;
+        pub const INFLUENCE_FACTOR: (f32, f32) = (0.005, 0.001);
     }
 
     let mut path: [Vector2<f32>; N_POINTS] = [Vector2::new(0.0, 0.0); N_POINTS];
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn test_no_obstacles() {
         let mut start = Vector2::new(0.0, 0.0);
-        let goal = Vector2::new(10.0, 10.0);
+        let goal = Vector2::new(9.0, 6.0);
         let direction = (goal - start).normalize();
         let expected_points: [Vector2<f32>; 5] = [
             start + direction * 0.1,
@@ -97,5 +97,25 @@ mod tests {
         }
     }
 
-    // TODO: add more tests, including tests with obstacles
+    #[test]
+    fn test_1_obstacle_middle() {
+        let mut start = Vector2::new(0.0, 0.0);
+        let goal = Vector2::new(3.0, 5.0);
+        let obstacles = [Obstacle::new(Vector2::new(1.5, 2.5), 0.08,
+                                       Vector2::new(1.0, 0.0))];
+
+        let path = compute_path(&mut start, &goal, &obstacles, None);
+
+        let mut last_distance_to_goal = (goal - Vector2::new(0.0, 0.0)).norm();
+
+        for point in &path {
+
+            let distance_to_goal = (goal - *point).norm();
+            assert!(distance_to_goal <= last_distance_to_goal + 1e-6);
+            last_distance_to_goal = distance_to_goal;
+            assert!((point - obstacles[0].position).norm() > obstacles[0].radius);
+        }
+    }
+
+
 }
