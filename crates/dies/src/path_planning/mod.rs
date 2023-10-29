@@ -1,18 +1,24 @@
-extern crate nalgebra as na;
-use std::error::Error;
-use na::Vector2;
-extern crate float_cmp;
-use float_cmp::approx_eq;
-extern crate plotters;
-use plotters::prelude::*;
+use nalgebra::Vector2;
+
+// TODO: Fine tune the constants on real robot
 
 /// The number of points in the path
 const N_POINTS: usize = 5;
 
-/// The spacing between points in the path in meters
-const POINT_SPACING: f32 = 0.1;
+/// The spacing between points in the path in mm
+const POINT_SPACING: f32 = 100.0;
+
+/// The attractive force constant
+const ALPHA: f32 = 0.00001;
+
+/// The repulsive force constant
+const BETA: f32 = 0.01;
+
+/// The influence factor constants
+const INFLUENCE_FACTOR: (f32, f32) = (5.0, 1.0);
 
 /// A circular obstacle
+#[derive(Debug, Clone)]
 pub struct Obstacle {
     pub position: Vector2<f32>,
     pub radius: f32,
@@ -20,57 +26,76 @@ pub struct Obstacle {
 }
 
 impl Obstacle {
+    /// Creates a new obstacle
     pub fn new(position: Vector2<f32>, radius: f32, velocity: Vector2<f32>) -> Self {
-        Self { position, radius, velocity }
+        Self {
+            position,
+            radius,
+            velocity,
+        }
     }
 
-    pub fn new_without_speed(position: Vector2<f32>, radius: f32) -> Self {
-        Self { position, radius, velocity: Vector2::new(0.0, 0.0) }
+    /// Creates a new obstacle with 0 velocity
+    pub fn new_without_vel(position: Vector2<f32>, radius: f32) -> Self {
+        Self {
+            position,
+            radius,
+            velocity: Vector2::new(0.0, 0.0),
+        }
     }
 }
 
-
+/// Computes a path from `start` to `goal` avoiding `obstacles`.
+///
+/// Returns a computed trajectory of [`N_POINTS`] points, spaced by [`POINT_SPACING`].
+///
+/// This implementation uses [potential fields](https://medium.com/nerd-for-tech/local-path-planning-using-virtual-potential-field-in-python-ec0998f490af)
+/// to compute the path. It does not take into account the robot's dimensions.
+///
+/// _TODO:_ Fine tune the constants
+///
+/// _TODO:_ Explore other path planning algorithms
 pub fn compute_path(
-    start: &mut Vector2<f32>,
+    start: &Vector2<f32>,
     goal: &Vector2<f32>,
     obstacles: &[Obstacle],
     start_speed: Option<Vector2<f32>>,
 ) -> [Vector2<f32>; N_POINTS] {
-    mod algo_constants {
-        pub const ALPHA: f32 = 0.00000001;
-        pub const BETA: f32 = 0.00001;
-        pub const INFLUENCE_FACTOR: (f32, f32) = (0.005, 0.001);
-    }
-
     let mut path: [Vector2<f32>; N_POINTS] = [Vector2::new(0.0, 0.0); N_POINTS];
+    let mut pos = start.clone();
     let start_speed = start_speed.unwrap_or(Vector2::new(0.0, 0.0));
 
-    use algo_constants::*;
-
     for index in 0..N_POINTS {
-        let mut f:Vector2<f32> = (*goal - *start).normalize();
-        let dist = (goal - *start).norm();
+        let mut f: Vector2<f32> = (goal - pos)
+            .try_normalize(f32::EPSILON)
+            .unwrap_or(Vector2::zeros());
+        let dist = (goal - pos).norm();
         let attractive_force = ALPHA * dist;
         f *= attractive_force;
 
         let (base_factor, speed_factor) = INFLUENCE_FACTOR;
         for obs in obstacles {
-            let d = (obs.position - *start).norm();
-            let relative_speed = (*start - obs.position).normalize()
-                .dot(&(start_speed - obs.velocity)).abs();
-            let influence_radius = base_factor as f32 * obs.radius + relative_speed * speed_factor as f32;
+            let d = (obs.position - pos).norm();
+            let relative_speed = (pos - obs.position)
+                .try_normalize(f32::EPSILON)
+                .unwrap_or(Vector2::zeros())
+                .dot(&(start_speed - obs.velocity))
+                .abs();
+            let influence_radius =
+                base_factor as f32 * obs.radius + relative_speed * speed_factor as f32;
             if d < influence_radius {
-                let repulsive_force = (1.0 / (d - 2.0 * obs.radius) - 1.0 / (influence_radius - 2.0 * obs.radius))
-                    * (relative_speed * BETA + 1.0);
-                f += (*start - obs.position).normalize() * repulsive_force;
+                let repulsive_force = (1.0 / ((d - 2.0 * obs.radius) + f32::EPSILON)
+                    - 1.0 / ((influence_radius - 2.0 * obs.radius) + f32::EPSILON))
+                    * (relative_speed * (BETA + 1.0));
+
+                f += (pos - obs.position) * repulsive_force;
             }
         }
 
-        *start += f.normalize() * POINT_SPACING;
+        pos += f.try_normalize(f32::EPSILON).unwrap_or(Vector2::zeros()) * POINT_SPACING;
 
-
-        if index == 0 || (goal - *start).norm() < (goal - path[index - 1]).norm() {
-            path[index] = start.clone();
+        if index == 0 || (goal - pos).norm() < (goal - path[index - 1]).norm() {
+            path[index] = pos.clone();
         } else {
             path[index] = path[index - 1];
         }
@@ -78,86 +103,70 @@ pub fn compute_path(
     path
 }
 
-pub fn plot_environment(start: &mut Vector2<f32>, goal: &Vector2<f32>, obstacles: &[Obstacle]) -> Result<(), Box<dyn Error>> {
-    let root_area = BitMapBackend::new("plot.png", (900, 600)).into_drawing_area();
-    root_area.fill(&WHITE)?;
-
-    let mut chart = ChartBuilder::on(&root_area)
-        .build_cartesian_2d(0.0..6.0, 0.0..9.0)?;
-
-    chart.draw_series(vec![
-        Circle::new((start.x as f64, start.y as f64), 3, &RED),
-        Circle::new((goal.x as f64, goal.y as f64), 3, &GREEN),
-    ])?;
-
-    for obstacle in obstacles {
-        println!("Obstacle: {:?}", obstacle.position);
-        chart.draw_series(vec![
-            Circle::new((obstacle.position.x as f64, obstacle.position.y as f64), (obstacle.radius*100.0) as f64, &BLACK)
-        ])?;
-    }
-
-    let path = compute_path(start, &goal, obstacles, None);
-    let path_f64: Vec<(f64, f64)> = path.iter().map(|point| (point.x as f64, point.y as f64)).collect();
-    chart.draw_series(LineSeries::new(path_f64, &BLUE))?;
-
-    Ok(())
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_no_obstacles() {
-        let mut start = Vector2::new(0.0, 0.0);
-        let goal = Vector2::new(9.0, 6.0);
+        let start = Vector2::new(0.0, 0.0);
+        let goal = Vector2::new(9000.0, 6000.0);
         let direction = (goal - start).normalize();
         let expected_points: [Vector2<f32>; 5] = [
-            start + direction * 0.1,
-            start + direction * 0.2,
-            start + direction * 0.3,
-            start + direction * 0.4,
-            start + direction * 0.5
+            start + direction * 100.0,
+            start + direction * 200.0,
+            start + direction * 300.0,
+            start + direction * 400.0,
+            start + direction * 500.0,
         ];
 
-        let path = compute_path(&mut start, &goal, &[], None);
+        let path = compute_path(&start, &goal, &[], None);
         for i in 0..N_POINTS {
-            assert!(approx_eq!(f32, (path[i]- expected_points[i]).norm(), 0.0 , epsilon = 1e-6));
+            assert!((path[i] - expected_points[i]).norm() <= 1e-4);
         }
     }
 
     #[test]
     fn test_1_obstacle_middle() {
-        let mut start = Vector2::new(0.0, 0.0);
-        let goal = Vector2::new(3.0, 5.0);
-        let obstacles = [Obstacle::new(Vector2::new(1.5, 2.5), 0.08,
-                                       Vector2::new(1.0, 0.0))];
+        let start = Vector2::new(0.0, 0.0);
+        let goal = Vector2::new(3000.0, 5000.0);
+        let obstacles = [Obstacle::new(
+            Vector2::new(1500.0, 2500.0),
+            80.0,
+            Vector2::new(1000.0, 0.0),
+        )];
 
-        let path = compute_path(&mut start, &goal, &obstacles, None);
+        let path = compute_path(&start, &goal, &obstacles, None);
 
         let mut last_distance_to_goal = (goal - Vector2::new(0.0, 0.0)).norm();
 
         for point in &path {
-
             let distance_to_goal = (goal - *point).norm();
-            assert!(distance_to_goal <= last_distance_to_goal + 1e-6);
+            assert!(distance_to_goal <= last_distance_to_goal + 1e-4);
             last_distance_to_goal = distance_to_goal;
             assert!((point - obstacles[0].position).norm() > obstacles[0].radius);
         }
     }
 
-    /*
     #[test]
-    fn test_with_plot()  -> Result<(), Box<dyn std::error::Error>>{
-        let mut start = Vector2::new(1.0, 1.0);
-        let goal = Vector2::new(3.0, 5.0);
-        let obstacles = [Obstacle::new(Vector2::new(2.0, 2.5), 0.08,
-                                       Vector2::new(1.0, 0.0))];
+    fn test_2_obstacles_close_to_start() {
+        let start = Vector2::new(0.0, 0.0);
+        let goal = Vector2::new(30000.0, 50000.0);
+        let obstacles = [
+            Obstacle::new_without_vel(Vector2::new(500.0, 0.0), 250.0),
+            Obstacle::new_without_vel(Vector2::new(0.0, 700.0), 250.0),
+        ];
 
-        plot_environment(&mut start, &goal, &obstacles)?;
-        Ok(())
-    }*/
+        let path = compute_path(&start, &goal, &obstacles, None);
 
+        let mut last_distance_to_goal = (goal - Vector2::new(0.0, 0.0)).norm();
+        for point in &path {
+            let distance_to_goal = (goal - *point).norm();
+            assert!(distance_to_goal <= last_distance_to_goal + 1e-4);
+            last_distance_to_goal = distance_to_goal;
+            for obs in &obstacles {
+                assert!((point - obs.position).norm() > obs.radius);
+            }
+        }
+    }
 }
