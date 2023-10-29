@@ -226,7 +226,6 @@ name = "dies"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bytes",
  "const_format",
  "dirs",
  "env_logger",
