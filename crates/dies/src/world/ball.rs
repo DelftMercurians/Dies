@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::protos::ssl_detection::SSL_DetectionFrame;
 
+/// A struct to store the ball state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BallData {
     // Position of the ball
@@ -11,6 +12,7 @@ pub struct BallData {
     pub velocity: Vector3<f32>,
 }
 
+/// Tracker for the ball.
 #[derive(Serialize, Clone, Debug)]
 pub struct BallTracker {
     last_update_time: Option<f32>,
@@ -18,6 +20,7 @@ pub struct BallTracker {
 }
 
 impl BallTracker {
+    /// Create a new BallTracker.
     pub fn new() -> BallTracker {
         BallTracker {
             last_update_time: None,
@@ -25,11 +28,12 @@ impl BallTracker {
         }
     }
 
+    /// Update the tracker with a new frame.
     pub fn update(&mut self, frame: &SSL_DetectionFrame) -> Option<BallData> {
         let ball_detection = frame.balls.get(0)?;
         let current_time = frame.t_capture() as f32;
         let current_position =
-            Vector3::new(ball_detection.x(), ball_detection.y(), ball_detection.z());
+            Vector3::new(ball_detection.x(), ball_detection.y(), ball_detection.z()) / 1000.0;
 
         // Compute the velocity of the ball.
         let velocity = if let (Some(last_position), Some(last_update_time)) =
