@@ -1,2 +1,2 @@
 [workspace]
-members = ["crates/dies", "crates/workspace-utils"]
+members = ["crates/dies", "crates/workspace-utils", "crates/dies-simulator"]
