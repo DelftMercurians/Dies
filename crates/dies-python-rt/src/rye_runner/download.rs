@@ -1,5 +1,6 @@
 use anyhow::Result;
 use const_format::formatcp;
+use dies_core::workspace_utils::get_workspace_root;
 use flate2::read::GzDecoder;
 use std::{
     env,
@@ -7,7 +8,6 @@ use std::{
     io::{self, BufWriter},
     path::PathBuf,
 };
-use workspace_utils::get_workspace_root;
 
 const VERSION: &str = "0.15.2";
 

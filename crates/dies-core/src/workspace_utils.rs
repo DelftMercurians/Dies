@@ -1,5 +1,5 @@
-use anyhow::{anyhow, bail, Result};
-use std::{env, fs, path::PathBuf};
+use anyhow::{bail, Result};
+use std::{env, path::PathBuf};
 
 lazy_static::lazy_static! {
     static ref WORKSPACE_ROOT: PathBuf = try_find_workspace_root().expect("Could not find workspace root");
@@ -39,4 +39,3 @@ pub fn get_py_dir() -> PathBuf {
     let workspace_root = get_workspace_root();
     workspace_root.join("py")
 }
-

@@ -7,11 +7,10 @@ edition = "2021"
 
 [dependencies]
 socket2 = "0.5.5"
-dies = { path = "../dies" }
+dies-core = { path = "../dies-core" }
 anyhow = "1.0.75"
 log = "0.4.20"
-protobuf = "3.3.0"
-dies-protos = { version = "0.1.0", path = "../dies-protos" }
+dies-protos = { path = "../dies-protos" }
 polling = "3.3.0"
 
 [dev-dependencies]

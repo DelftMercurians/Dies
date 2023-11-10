@@ -246,26 +246,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "dies"
+name = "dies-cli"
+version = "0.1.0"
+
+[[package]]
+name = "dies-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "const_format",
  "dies-protos",
- "dirs",
- "env_logger",
- "flate2",
- "float-cmp",
- "indoc",
- "log",
- "nalgebra",
- "protobuf",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "workspace-utils",
- "zmq",
+ "lazy_static",
 ]
 
 [[package]]
@@ -273,12 +263,11 @@ name = "dies-ersim-env"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dies",
+ "dies-core",
  "dies-protos",
  "env_logger",
  "log",
  "polling",
- "protobuf",
  "socket2 0.5.5",
  "test-log",
 ]
@@ -291,6 +280,39 @@ dependencies = [
  "protobuf",
  "protobuf-codegen",
 ]
+
+[[package]]
+name = "dies-python-rt"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "const_format",
+ "dies-core",
+ "dirs",
+ "flate2",
+ "indoc",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "zmq",
+]
+
+[[package]]
+name = "dies-trajectory"
+version = "0.1.0"
+dependencies = [
+ "nalgebra",
+]
+
+[[package]]
+name = "dies-webui"
+version = "0.1.0"
+
+[[package]]
+name = "dies-world"
+version = "0.1.0"
 
 [[package]]
 name = "dircpy"
@@ -382,15 +404,6 @@ checksum = "46303f565772937ffe1d394a4fac6f411c6013172fadde9dcdb1e147a086940e"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
-]
-
-[[package]]
-name = "float-cmp"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1267f4ac4f343772758f7b1bdcbe767c218bbab93bb432acbf5162bbf85a6c4"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
@@ -797,7 +810,6 @@ dependencies = [
  "num-complex",
  "num-rational",
  "num-traits",
- "serde",
  "simba",
  "typenum",
 ]
@@ -838,7 +850,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ba157ca0885411de85d6ca030ba7e2a83a28636056c7c699b07c8b6f7383214"
 dependencies = [
  "num-traits",
- "serde",
 ]
 
 [[package]]
@@ -1890,15 +1901,6 @@ checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
 dependencies = [
  "cfg-if",
  "windows-sys",
-]
-
-[[package]]
-name = "workspace-utils"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dirs",
- "lazy_static",
 ]
 
 [[package]]

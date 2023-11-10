@@ -1,9 +1,11 @@
 mod docker_wrapper;
 mod ersim;
 
+pub use ersim::{ErSimConfig, ErSimEnv};
+
 #[cfg(test)]
 mod tests {
-    use dies::{Env, EnvEvent};
+    use dies_core::{Env, EnvEvent};
 
     use crate::ersim::*;
 

@@ -1,8 +1,4 @@
-pub mod path_planning;
-pub mod pystrat;
-pub mod world;
-
-// Public interfaces
+pub mod workspace_utils;
 
 pub type VisionMsg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 pub type GcRefereeMsg = dies_protos::ssl_gc_referee_message::Referee;

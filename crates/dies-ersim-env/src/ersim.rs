@@ -2,7 +2,7 @@ use anyhow::Result;
 use polling::{Events, Poller};
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 
-use dies::Env;
+use dies_core::Env;
 use dies_protos::{
     ssl_simulation_robot_control::{
         MoveLocalVelocity, RobotCommand, RobotControl, RobotMoveCommand,
@@ -169,7 +169,7 @@ impl Drop for ErSimEnv {
 }
 
 impl Env for ErSimEnv {
-    fn recv(&mut self) -> Vec<dies::EnvEvent> {
+    fn recv(&mut self) -> Vec<dies_core::EnvEvent> {
         if self.events.is_empty() {
             match self.poller.wait(&mut self.events, None) {
                 Ok(_) => {}
@@ -197,8 +197,8 @@ impl Env for ErSimEnv {
                         }
                     };
                     log::debug!("Received {} bytes from vision", amt);
-                    match dies::VisionMsg::parse_from_bytes(&self.buf[..amt]) {
-                        Ok(msg) => return Some(dies::EnvEvent::VisionMsg(msg)),
+                    match dies_core::VisionMsg::parse_from_bytes(&self.buf[..amt]) {
+                        Ok(msg) => return Some(dies_core::EnvEvent::VisionMsg(msg)),
                         Err(err) => {
                             log::error!("Failed to parse vision message: {}", err);
                             return None;
@@ -218,8 +218,8 @@ impl Env for ErSimEnv {
                         }
                     };
                     log::debug!("Received {} bytes from GC", amt);
-                    match dies::GcRefereeMsg::parse_from_bytes(&self.buf[..amt]) {
-                        Ok(msg) => return Some(dies::EnvEvent::GcRefereeMsg(msg)),
+                    match dies_core::GcRefereeMsg::parse_from_bytes(&self.buf[..amt]) {
+                        Ok(msg) => return Some(dies_core::EnvEvent::GcRefereeMsg(msg)),
                         Err(err) => {
                             log::error!("Failed to parse GC message: {}", err);
                             return None;
@@ -235,7 +235,7 @@ impl Env for ErSimEnv {
         return result;
     }
 
-    fn send_player(&self, msg: dies::PlayerCmd) -> Result<()> {
+    fn send_player(&self, msg: dies_core::PlayerCmd) -> Result<()> {
         let mut move_local_vel = MoveLocalVelocity::new();
         move_local_vel.set_left(msg.sx);
         move_local_vel.set_forward(msg.sy);
