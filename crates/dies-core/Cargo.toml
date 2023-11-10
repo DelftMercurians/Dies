@@ -1,0 +1,11 @@
+[package]
+name = "dies-core"
+version = "0.1.0"
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+dies-protos = { version = "0.1.0", path = "../dies-protos" }
+lazy_static = "1.4.0"
