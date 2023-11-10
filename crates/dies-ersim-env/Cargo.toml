@@ -1,0 +1,19 @@
+[package]
+name = "dies-ersim-env"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+socket2 = "0.5.5"
+dies = { path = "../dies" }
+anyhow = "1.0.75"
+log = "0.4.20"
+protobuf = "3.3.0"
+dies-protos = { version = "0.1.0", path = "../dies-protos" }
+polling = "3.3.0"
+
+[dev-dependencies]
+env_logger = "0.10.0"
+test-log = "0.2.13"
