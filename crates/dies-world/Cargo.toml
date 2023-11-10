@@ -6,3 +6,6 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+dies-protos = { version = "0.1.0", path = "../dies-protos" }
+nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
+serde = { version = "1.0.192", features = ["derive"] }

@@ -1,7 +1,7 @@
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 
-use crate::protos::ssl_detection::SSL_DetectionFrame;
+use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -59,7 +59,7 @@ impl BallTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protos::ssl_detection::{SSL_DetectionBall, SSL_DetectionFrame};
+    use dies_protos::ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame};
 
     #[test]
     fn test_update_no_ball() {

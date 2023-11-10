@@ -28,6 +28,15 @@ pub struct PlayerTracker {
 }
 
 impl PlayerTracker {
+    pub fn new() -> PlayerTracker {
+        PlayerTracker {
+            position: Vector2::zeros(),
+            velocity: Vector2::zeros(),
+            orientation: 0.0,
+            angular_speed: 0.0,
+        }
+    }
+
     pub fn update(&mut self, player_data: &PlayerData) {
         // Update the player tracker with new data.
         // Update fields in the PlayerTracker based on player_data.
