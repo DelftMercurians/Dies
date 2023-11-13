@@ -315,6 +315,7 @@ name = "dies-world"
 version = "0.1.0"
 dependencies = [
  "dies-protos",
+ "log",
  "nalgebra",
  "serde",
 ]
