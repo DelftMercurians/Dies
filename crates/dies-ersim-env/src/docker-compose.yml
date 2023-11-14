@@ -5,6 +5,15 @@ volumes:
 
 
 services:
+  bridge:
+    build: ./bridge
+    depends_on:
+      - ssl-game-controller
+      - autoref-erforce
+      - simulator
+    ports:
+      - "10050:10050/udp"
+
   ssl-game-controller:
     image: robocupssl/ssl-game-controller:3.7.2
     command:
@@ -18,7 +27,6 @@ services:
       - ":8081"
     volumes:
       - "ssl-game-controller:/config:rw"
-    network_mode: host
     ports:
       - "8081:8081/tcp"
 
@@ -31,22 +39,13 @@ services:
       - "11010"
       - "--gc-port"
       - "11003"
-    network_mode: host
 
   simulator:
     image: "roboticserlangen/simulatorcli:commit-6a4e1c06533b"
     environment:
       GEOMETRY: "2020"
       REALISM: "RC2021"
-    network_mode: host
     ports:
       - "10300/udp"
       - "10301/udp"
       - "10302/udp"
-
-# networks:
-#   simulator_net:
-#     driver: bridge
-#     ipam:
-#       config:
-#         - subnet: 172.18.0.0/16
