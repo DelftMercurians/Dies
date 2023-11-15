@@ -1,5 +1,3 @@
-use std::{cell::Cell, rc::Rc};
-
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +22,7 @@ pub struct BallData {
 pub struct BallTracker {
     /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
     /// converting coordinates.
-    opp_goal_x_sign: Rc<Cell<f32>>,
+    play_dir_x: f32,
     /// Whether the tracker has been initialized (i.e. the ball has been detected at
     /// least twice)
     is_init: bool,
@@ -34,14 +32,28 @@ pub struct BallTracker {
 
 impl BallTracker {
     /// Create a new BallTracker.
-    pub fn new(opp_goal_x_sign: Rc<Cell<f32>>) -> BallTracker {
+    pub fn new(play_dir_x: f32) -> BallTracker {
         BallTracker {
-            opp_goal_x_sign,
+            play_dir_x,
             is_init: false,
             last_data: None,
         }
     }
 
+    /// Set the sign of the enemy goal's x coordinate in ssl-vision coordinates.
+    pub fn set_play_dir_x(&mut self, play_dir_x: f32) {
+        if play_dir_x != self.play_dir_x {
+            // Flip the x coordinate of the ball's position and velocity
+            if let Some(last_data) = &mut self.last_data {
+                last_data.position.x *= -1.0;
+                last_data.velocity.x *= -1.0;
+            }
+            self.play_dir_x = play_dir_x;
+        }
+    }
+
+    /// Whether the tracker has been initialized (i.e. the ball has been detected at
+    /// least twice)
     pub fn is_init(&self) -> bool {
         self.is_init
     }
@@ -55,7 +67,7 @@ impl BallTracker {
                 ball_detection.x(),
                 ball_detection.y(),
                 ball_detection.z(),
-                self.opp_goal_x_sign.get(),
+                self.play_dir_x,
             );
 
             if let Some(last_data) = &self.last_data {
@@ -97,7 +109,7 @@ mod tests {
 
     #[test]
     fn test_update_no_ball() {
-        let mut tracker = BallTracker::new(Rc::new(Cell::new(1.0)));
+        let mut tracker = BallTracker::new(1.0);
         let frame = SSL_DetectionFrame::new();
 
         tracker.update(&frame);
@@ -107,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_no_data_after_first_update() {
-        let mut tracker = BallTracker::new(Rc::new(Cell::new(1.0)));
+        let mut tracker = BallTracker::new(1.0);
 
         // 1st update
         let mut frame = SSL_DetectionFrame::new();
@@ -125,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_basic_update() {
-        let mut tracker = BallTracker::new(Rc::new(Cell::new(1.0)));
+        let mut tracker = BallTracker::new(1.0);
 
         // 1st update
         let mut frame = SSL_DetectionFrame::new();
@@ -155,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_x_flip() {
-        let mut tracker = BallTracker::new(Rc::new(Cell::new(-1.0)));
+        let mut tracker = BallTracker::new(-1.0);
 
         // 1st update
         let mut frame = SSL_DetectionFrame::new();
