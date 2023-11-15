@@ -2,6 +2,8 @@
 extern crate rocket;
 
 mod web_page;
+mod run_web_ui;
+pub use run_web_ui::run_web_ui;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right

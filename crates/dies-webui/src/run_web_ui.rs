@@ -1,36 +1,43 @@
-#[macro_use] extern crate rocket;
+use rocket::fs::{relative, FileServer};
 
-use dies_world::{WorldTracker, WorldConfig, WorldData};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
+use dies_world::{WorldConfig, WorldData, WorldTracker};
 
+pub fn run_web_ui() {
+    let handler = std::thread::spawn(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(lunch_1())
+    });
 
-#[get("/")]
-fn index() -> &'static str {
-    "Hello, world!"
-}
+    handler.join().unwrap();
 
-fn main() {
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(lunch_1());
 }
 
 async fn lunch_1() {
-    let rocket = rocket::build().mount("/", routes![index]);
+    let rocket = rocket::build()
+        // .mount("/", routes![index])
+        .mount("/", FileServer::from(relative!("static")));
+    // .mount("/static", StaticFiles::from("static"));
     let _ = rocket.launch().await;
 
     // todo get word data
-    set_word_data();
-    
+    let world_data = set_word_data();
+
+    // display terain (FieldGeometry)
+
+    // display players
+
+    // display ball
 }
 
-fn set_word_data() -> WorldData<'static> {
+fn set_word_data() -> WorldData {
     let mut tracker = WorldTracker::new(WorldConfig {
         is_blue: true,
         initial_opp_goal_x: 1.0,
@@ -72,4 +79,3 @@ fn set_word_data() -> WorldData<'static> {
 
     tracker.get().unwrap()
 }
-
