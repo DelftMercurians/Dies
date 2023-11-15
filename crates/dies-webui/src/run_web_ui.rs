@@ -17,24 +17,15 @@ pub fn run_web_ui() {
     });
 
     handler.join().unwrap();
-
 }
 
 async fn lunch_1() {
     let rocket = rocket::build()
         // .mount("/", routes![index])
         .mount("/", FileServer::from(relative!("static")));
-    // .mount("/static", StaticFiles::from("static"));
     let _ = rocket.launch().await;
 
-    // todo get word data
     let world_data = set_word_data();
-
-    // display terain (FieldGeometry)
-
-    // display players
-
-    // display ball
 }
 
 fn set_word_data() -> WorldData {
