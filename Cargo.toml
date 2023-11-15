@@ -2,3 +2,9 @@
 members = ["crates/*"]
 package.edition = "2021"
 resolver = "2"
+
+[profile.dev]
+opt-level = 1
+
+[profile.test]
+opt-level = 1

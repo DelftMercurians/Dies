@@ -1,14 +1,296 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+use serde::Serialize;
+
+use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
+
+mod ball;
+mod coord_utils;
+mod geom;
+mod player;
+
+use ball::BallTracker;
+use player::PlayerTracker;
+
+pub use ball::BallData;
+pub use geom::{FieldCircularArc, FieldGeometry, FieldLineSegment};
+pub use player::PlayerData;
+
+/// The number of players with unique ids in a single team.
+///
+/// Might be higher than the number of players on the field at a time so there should
+/// be a safe margin.
+const MAX_PLAYERS: usize = 15;
+
+/// A struct to store the world state from a single frame.
+#[derive(Serialize, Clone, Debug)]
+pub struct WorldData<'a> {
+    own_players: Vec<&'a PlayerData>,
+    opp_players: Vec<&'a PlayerData>,
+    ball: &'a BallData,
+    field_geom: &'a FieldGeometry,
+}
+
+/// A struct to configure the world tracker.
+pub struct WorldConfig {
+    /// Whether our team color is blue
+    pub is_blue: bool,
+    /// The initial sign of the enemy goal's x coordinate in ssl-vision coordinates.
+    pub initial_opp_goal_x: f32,
+}
+
+/// A struct to track the world state.
+pub struct WorldTracker {
+    /// Whether our team color is blue
+    is_blue: bool,
+    /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
+    /// converting coordinates.
+    play_dir_x: f32,
+    own_players_tracker: Vec<Option<PlayerTracker>>,
+    opp_players_tracker: Vec<Option<PlayerTracker>>,
+    ball_tracker: BallTracker,
+    field_geometry: Option<FieldGeometry>,
+}
+
+impl WorldTracker {
+    /// Create a new world tracker from a config.
+    pub fn new(config: WorldConfig) -> Self {
+        Self {
+            is_blue: config.is_blue,
+            play_dir_x: config.initial_opp_goal_x,
+            own_players_tracker: vec![None; MAX_PLAYERS],
+            opp_players_tracker: vec![None; MAX_PLAYERS],
+            ball_tracker: BallTracker::new(config.initial_opp_goal_x),
+            field_geometry: None,
+        }
+    }
+
+    /// Update the sign of the enemy goal's x coordinate (in ssl-vision coordinates).
+    pub fn set_play_dir_x(&mut self, sign: f32) {
+        self.play_dir_x = sign.signum();
+        self.ball_tracker.set_play_dir_x(self.play_dir_x);
+        for player_tracker in self.own_players_tracker.iter_mut() {
+            if let Some(player_tracker) = player_tracker.as_mut() {
+                player_tracker.set_play_dir_x(self.play_dir_x);
+            }
+        }
+        for player_tracker in self.opp_players_tracker.iter_mut() {
+            if let Some(player_tracker) = player_tracker.as_mut() {
+                player_tracker.set_play_dir_x(self.play_dir_x);
+            }
+        }
+    }
+
+    /// Update the world state from a protobuf message.
+    pub fn update_from_protobuf(&mut self, data: &SSL_WrapperPacket) {
+        if let Some(frame) = data.detection.as_ref() {
+            let t_capture = frame.t_capture();
+
+            // Update players
+            let (blue_trackers, yellow_tracker) = if self.is_blue {
+                (&mut self.own_players_tracker, &mut self.opp_players_tracker)
+            } else {
+                (&mut self.opp_players_tracker, &mut self.own_players_tracker)
+            };
+
+            // Blue players
+            for player in data.detection.robots_blue.iter() {
+                let id = player.robot_id();
+                if id as usize >= MAX_PLAYERS {
+                    log::error!("Player id {} is too high", id);
+                    continue;
+                }
+
+                if blue_trackers[id as usize].is_none() {
+                    blue_trackers[id as usize] = Some(PlayerTracker::new(id, self.play_dir_x));
+                }
+
+                if let Some(tracker) = blue_trackers[id as usize].as_mut() {
+                    tracker.update(t_capture, player);
+                }
+            }
+
+            // Yellow players
+            for player in data.detection.robots_yellow.iter() {
+                let id = player.robot_id();
+                if id as usize >= MAX_PLAYERS {
+                    log::error!("Player id {} is too high", id);
+                    continue;
+                }
+
+                if yellow_tracker[id as usize].is_none() {
+                    yellow_tracker[id as usize] = Some(PlayerTracker::new(id, self.play_dir_x));
+                }
+
+                if let Some(tracker) = yellow_tracker[id as usize].as_mut() {
+                    tracker.update(t_capture, player);
+                }
+            }
+
+            // Update ball
+            self.ball_tracker.update(frame);
+        }
+        if let Some(geometry) = data.geometry.as_ref() {
+            // We don't expect the field geometry to change, so only update it once.
+            if self.field_geometry.is_some() {
+                return;
+            }
+
+            self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
+            log::debug!("Received field geometry: {:?}", self.field_geometry);
+        }
+    }
+
+    /// Check if the world state is initialized.
+    ///
+    /// The world state is initialized if at least one player and the ball have been
+    /// seen at least twice (so that velocities can be calculated), and the field
+    /// geometry has been received.
+    pub fn is_init(&self) -> bool {
+        let any_player_init = self
+            .own_players_tracker
+            .iter()
+            .chain(self.opp_players_tracker.iter())
+            .any(|t| t.as_ref().map(|t| t.is_init()).unwrap_or(false));
+
+        let ball_init = self.ball_tracker.is_init();
+        let field_geom_init = self.field_geometry.is_some();
+
+        any_player_init && ball_init && field_geom_init
+    }
+
+    /// Get the current world state.
+    ///
+    /// Returns `None` if the world state is not initialized (see
+    /// [`WorldTracker::is_init`]).
+    pub fn get(&self) -> Option<WorldData> {
+        let field_geom = if let Some(v) = &self.field_geometry {
+            v
+        } else {
+            log::warn!("Tried to get world state before field geometry was initialized");
+            return None;
+        };
+
+        let mut own_players = Vec::new();
+        for player_tracker in self.own_players_tracker.iter() {
+            if let Some(player_data) = player_tracker.as_ref().and_then(|t| t.get()) {
+                own_players.push(player_data);
+            }
+        }
+
+        let mut opp_players = Vec::new();
+        for player_tracker in self.opp_players_tracker.iter() {
+            if let Some(player_data) = player_tracker.as_ref().and_then(|t| t.get()) {
+                opp_players.push(player_data);
+            }
+        }
+
+        let ball = if let Some(ball_data) = self.ball_tracker.get() {
+            ball_data
+        } else {
+            log::warn!("Tried to get world state before ball was initialized");
+            return None;
+        };
+
+        Some(WorldData {
+            own_players,
+            opp_players,
+            ball,
+            field_geom,
+        })
+    }
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
+    use std::f32::consts::PI;
+
+    use dies_protos::{
+        ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
+        ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},
+    };
+
     use super::*;
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn test_no_data() {
+        let tracker = WorldTracker::new(WorldConfig {
+            is_blue: true,
+            initial_opp_goal_x: 1.0,
+        });
+
+        assert!(!tracker.is_init());
+        assert!(tracker.get().is_none());
+    }
+
+    #[test]
+    fn test_init() {
+        let mut tracker = WorldTracker::new(WorldConfig {
+            is_blue: true,
+            initial_opp_goal_x: 1.0,
+        });
+
+        // First detection frame
+        let mut frame = SSL_DetectionFrame::new();
+        frame.set_t_capture(1.0);
+        // Add ball
+        let mut ball = SSL_DetectionBall::new();
+        ball.set_x(0.0);
+        ball.set_y(0.0);
+        ball.set_z(0.0);
+        frame.balls.push(ball.clone());
+        // Add player
+        let mut player = SSL_DetectionRobot::new();
+        player.set_robot_id(1);
+        player.set_x(100.0);
+        player.set_y(200.0);
+        player.set_orientation(0.0);
+        frame.robots_blue.push(player.clone());
+        let mut packet_detection = SSL_WrapperPacket::new();
+        packet_detection.detection = Some(frame.clone()).into();
+
+        // Add field geometry
+        let mut geom = SSL_GeometryData::new();
+        let mut field = SSL_GeometryFieldSize::new();
+        field.set_field_length(9000);
+        field.set_field_width(6000);
+        field.set_goal_width(1000);
+        field.set_goal_depth(200);
+        field.set_boundary_width(300);
+        geom.field = Some(field).into();
+        let mut packet_geom = SSL_WrapperPacket::new();
+        packet_geom.geometry = Some(geom).into();
+
+        tracker.update_from_protobuf(&packet_detection);
+        assert!(!tracker.is_init());
+
+        tracker.update_from_protobuf(&packet_geom);
+        assert!(!tracker.is_init());
+
+        // Second detection frame
+        frame.set_t_capture(2.0);
+        frame.robots_blue.get_mut(0).unwrap().set_x(200.0);
+        let mut packet_detection = SSL_WrapperPacket::new();
+        packet_detection.detection = Some(frame).into();
+
+        tracker.update_from_protobuf(&packet_detection);
+        assert!(tracker.is_init());
+
+        let data = tracker.get().unwrap();
+
+        // Check player
+        assert!(data.own_players.len() == 1);
+        assert!(data.opp_players.is_empty());
+        assert!(data.own_players[0].position.x == 200.0);
+        assert!(data.own_players[0].position.y == 200.0);
+
+        // Check ball
+        assert!(data.ball.position.x == 0.0);
+        assert!(data.ball.position.y == 0.0);
+
+        // Check field geometry
+        assert!(data.field_geom.field_length == 9000);
+        assert!(data.field_geom.field_width == 6000);
+        assert!(data.field_geom.goal_width == 1000);
+        assert!(data.field_geom.goal_depth == 200);
+        assert!(data.field_geom.boundary_width == 300);
     }
 }
