@@ -1,10 +1,16 @@
 use anyhow::{anyhow, Result};
 use std::{
-    io::{ErrorKind, Write},
+    io::ErrorKind,
     process::{Command, Stdio},
 };
 
-const DOCKER_COMPOSE_YML: &str = include_str!("docker-compose.yml");
+#[cfg(target_os = "linux")]
+const DOCKER_COMPOSE_YML: &str = include_str!("docker-compose-linux.yml");
+#[cfg(target_os = "windows")]
+const DOCKER_COMPOSE_YML: &str = include_str!("docker-compose-win.yml");
+
+const BRIDGE_DOCKERFILE: &str = include_str!("bridge/Dockerfile");
+const BRIDGE_RS: &str = include_str!("bridge/mod.rs");
 
 pub struct DockerWrapper {
     project_name: String,
@@ -14,31 +20,46 @@ impl DockerWrapper {
     pub fn new(project_name: String) -> Result<Self> {
         log::info!("Starting docker compose with project name {}", project_name);
 
+        let tmpdir = tempfile::tempdir()?;
+
+        // Create docker-compose.yml
+        let docker_compose_yml = tmpdir.path().join("docker-compose.yml");
+        std::fs::write(&docker_compose_yml, DOCKER_COMPOSE_YML)?;
+
+        // Create bridge image
+        let bridge_dir = tmpdir.path().join("bridge");
+        std::fs::create_dir(&bridge_dir)?;
+        let bridge_dockerfile = bridge_dir.join("Dockerfile");
+        std::fs::write(&bridge_dockerfile, BRIDGE_DOCKERFILE)?;
+        let bridge_rs = bridge_dir.join("bridge.rs");
+        std::fs::write(&bridge_rs, BRIDGE_RS)?;
+
         // Start docker compose
         let args = &[
             "-l",
             "warn",
             "compose",
-            "-f",
-            "-",
             "-p",
             &project_name,
             "up",
+            "--build",
             "-d",
             "--remove-orphans",
             "--quiet-pull",
             "--no-color",
         ];
-        log::info!("Running docker with arguments: {}", args.join(" "));
+        log::info!("Running docker {}", args.join(" "));
+        println!("Running docker compose up -- this may take a while");
 
         let child = Command::new("docker")
+            .current_dir(tmpdir.path())
             .args(args)
-            .stdin(Stdio::piped())
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn();
 
-        let mut child = match child {
+        let child = match child {
             Ok(child) => child,
             Err(err) => {
                 if let ErrorKind::NotFound = err.kind() {
@@ -50,12 +71,6 @@ impl DockerWrapper {
                 }
             }
         };
-
-        // Write docker compose file to stdin
-        let mut stdin = child.stdin.take().unwrap();
-        stdin.write_all(DOCKER_COMPOSE_YML.as_bytes())?;
-        // We need to drop stdin before we wait for the child to exit
-        drop(stdin);
 
         log::info!("Waiting for docker compose to finish starting");
 

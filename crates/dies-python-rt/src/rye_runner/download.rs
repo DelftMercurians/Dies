@@ -66,13 +66,7 @@ pub fn get_or_download_rye_bin() -> Result<PathBuf> {
     let mut writer = BufWriter::new(&file);
     io::copy(&mut decoder, &mut writer)?;
 
-    // Make file executable
-    if cfg!(unix) {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = file.metadata()?.permissions();
-        permissions.set_mode(0o755);
-        file.set_permissions(permissions)?;
-    }
+    set_permission(&file)?;
 
     log::info!("Downloaded rye binary to {}", path.display());
 
@@ -112,4 +106,20 @@ fn get_rye_dir() -> Result<PathBuf> {
         fs::create_dir_all(&path)?;
     }
     Ok(path)
+}
+
+#[cfg(unix)]
+fn set_permission(file: &File) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    use anyhow::Ok;
+    let mut permissions = file.metadata()?.permissions();
+    permissions.set_mode(0o755);
+    file.set_permissions(permissions)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_permission(_file: &File) -> Result<()> {
+    Ok(())
 }

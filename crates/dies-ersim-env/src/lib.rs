@@ -1,7 +1,10 @@
+mod bridge;
 mod docker_wrapper;
 mod ersim;
+mod recv_transport;
 
 pub use ersim::{ErSimConfig, ErSimEnv};
+pub(self) use recv_transport::RecvTransport;
 
 #[cfg(test)]
 mod tests {
