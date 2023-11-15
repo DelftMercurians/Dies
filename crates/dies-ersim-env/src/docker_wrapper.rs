@@ -4,10 +4,13 @@ use std::{
     process::{Command, Stdio},
 };
 
-const DOCKER_COMPOSE_YML: &str = include_str!("docker-compose.yml");
+#[cfg(target_os = "linux")]
+const DOCKER_COMPOSE_YML: &str = include_str!("docker-compose-linux.yml");
+#[cfg(target_os = "windows")]
+const DOCKER_COMPOSE_YML: &str = include_str!("docker-compose-win.yml");
 
-const BRIDGE_DOCKERFILE: &str = include_str!("../../dies-udp-bridge/src/Dockerfile");
-const BRIDGE_RS: &str = include_str!("../../dies-udp-bridge/src/main.rs");
+const BRIDGE_DOCKERFILE: &str = include_str!("bridge/Dockerfile");
+const BRIDGE_RS: &str = include_str!("bridge/mod.rs");
 
 pub struct DockerWrapper {
     project_name: String,
@@ -68,7 +71,6 @@ impl DockerWrapper {
                 }
             }
         };
-
 
         log::info!("Waiting for docker compose to finish starting");
 

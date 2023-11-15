@@ -12,6 +12,10 @@ log = "0.4.20"
 dies-protos = { path = "../dies-protos" }
 tempfile = "3.8.1"
 
+[target.'cfg(unix)'.dependencies]
+socket2 = "0.5.5"
+polling = "3.3.0"
+
 [dev-dependencies]
 env_logger = "0.10.0"
 test-log = "0.2.13"

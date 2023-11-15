@@ -111,9 +111,12 @@ fn get_rye_dir() -> Result<PathBuf> {
 #[cfg(unix)]
 fn set_permission(file: &File) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
+
+    use anyhow::Ok;
     let mut permissions = file.metadata()?.permissions();
     permissions.set_mode(0o755);
     file.set_permissions(permissions)?;
+    Ok(())
 }
 
 #[cfg(not(unix))]
