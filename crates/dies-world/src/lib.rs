@@ -22,11 +22,11 @@ const MAX_PLAYERS: usize = 15;
 
 /// A struct to store the world state from a single frame.
 #[derive(Serialize, Clone, Debug)]
-pub struct WorldData<'a> {
-    own_players: Vec<&'a PlayerData>,
-    opp_players: Vec<&'a PlayerData>,
-    ball: &'a BallData,
-    field_geom: &'a FieldGeometry,
+pub struct WorldData {
+    own_players: Vec<PlayerData>,
+    opp_players: Vec<PlayerData>,
+    ball: BallData,
+    field_geom: FieldGeometry,
 }
 
 /// A struct to configure the world tracker.
@@ -191,10 +191,10 @@ impl WorldTracker {
         };
 
         Some(WorldData {
-            own_players,
-            opp_players,
-            ball,
-            field_geom,
+            own_players: own_players.into_iter().cloned().collect(),
+            opp_players: opp_players.into_iter().cloned().collect(),
+            ball: ball.clone(),
+            field_geom: field_geom.clone(),
         })
     }
 }
