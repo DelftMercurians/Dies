@@ -1,18 +1,20 @@
 use serde::Serialize;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
-
+use dies_protos::ssl_gc_referee_message::Referee;
 mod ball;
 mod coord_utils;
 mod geom;
 mod player;
+mod game_state;
 
 use ball::BallTracker;
 use player::PlayerTracker;
-
+use game_state::GameState;
 pub use ball::BallData;
 pub use geom::{FieldCircularArc, FieldGeometry, FieldLineSegment};
 pub use player::PlayerData;
+use crate::game_state::GameStateTracker;
 
 /// The number of players with unique ids in a single team.
 ///
@@ -27,6 +29,7 @@ pub struct WorldData {
     opp_players: Vec<PlayerData>,
     ball: BallData,
     field_geom: FieldGeometry,
+    current_game_state: GameState,
 }
 
 /// A struct to configure the world tracker.
@@ -47,6 +50,7 @@ pub struct WorldTracker {
     own_players_tracker: Vec<Option<PlayerTracker>>,
     opp_players_tracker: Vec<Option<PlayerTracker>>,
     ball_tracker: BallTracker,
+    game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
 }
 
@@ -78,6 +82,12 @@ impl WorldTracker {
             }
         }
     }
+    /// Update the world state from a referee message.
+    pub fn update_from_referee(&mut self, data: &Referee) {
+        //not sure if it's the right to use &.. here
+        self.game_state_tracker.update(&data.command());
+    }
+
 
     /// Update the world state from a protobuf message.
     pub fn update_from_protobuf(&mut self, data: &SSL_WrapperPacket) {
@@ -157,6 +167,8 @@ impl WorldTracker {
         any_player_init && ball_init && field_geom_init
     }
 
+
+
     /// Get the current world state.
     ///
     /// Returns `None` if the world state is not initialized (see
@@ -195,6 +207,7 @@ impl WorldTracker {
             opp_players: opp_players.into_iter().cloned().collect(),
             ball: ball.clone(),
             field_geom: field_geom.clone(),
+            current_game_state: self.game_state_tracker.get_game_state(),
         })
     }
 }
