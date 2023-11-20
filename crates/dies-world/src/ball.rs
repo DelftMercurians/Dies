@@ -18,7 +18,7 @@ pub struct BallData {
 }
 
 /// Tracker for the ball.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BallTracker {
     /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
     /// converting coordinates.

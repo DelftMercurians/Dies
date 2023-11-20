@@ -1,11 +1,7 @@
 use dies_protos::ssl_gc_referee_message::referee::Command;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
-use crate::{IS_DIV_A, WorldData, WorldTracker};
 
-#[derive(Serialize, Deserialize,Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Copy)]
 pub enum GameState {
     Halt,
     UNKNOWN,
@@ -22,7 +18,7 @@ pub enum GameState {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
     game_state: GameState,
 }
@@ -34,7 +30,7 @@ impl GameStateTracker {
         }
     }
 
-    pub fn update(&mut self, command: &Command) {
+    pub fn update(&mut self, command: &Command) -> GameState {
         self.game_state = match command {
             Command::HALT => GameState::Halt,
             Command::STOP => GameState::Stop,
@@ -44,8 +40,7 @@ impl GameStateTracker {
                 } else if self.game_state == GameState::PreparePenalty {
                     GameState::Penalty
                 } else {
-                    // theoretically this should never happen
-                    GameState::UNKNOWN
+                    self.game_state.clone()
                 }
             }
             Command::FORCE_START => GameState::Run,
@@ -53,19 +48,28 @@ impl GameStateTracker {
             Command::PREPARE_KICKOFF_BLUE => GameState::PrepareKickoff,
             Command::PREPARE_PENALTY_YELLOW => GameState::PreparePenalty,
             Command::PREPARE_PENALTY_BLUE => GameState::PreparePenalty,
-            Command::DIRECT_FREE_YELLOW => GameState::FreeKick,
-            Command::DIRECT_FREE_BLUE => GameState::FreeKick,
+            Command::DIRECT_FREE_YELLOW | Command::DIRECT_FREE_BLUE => {
+                if(self.game_state == GameState::Stop) {
+                    GameState::FreeKick
+                } else {
+                    self.game_state.clone()
+                }
+            },
             Command::TIMEOUT_YELLOW => GameState::Timeout,
             Command::TIMEOUT_BLUE => GameState::Timeout,
             Command::BALL_PLACEMENT_YELLOW | Command::BALL_PLACEMENT_BLUE => GameState::BallReplacement,
             _ => {self.game_state.clone()}
         };
 
-        self.game_state.clone();
+        return self.game_state.clone();
 
     }
 
     pub fn get_game_state(&self) -> GameState {
         self.game_state.clone()
+    }
+
+    pub fn set_game_state(&mut self, game_state: GameState) {
+        self.game_state = game_state;
     }
 }

@@ -1,3 +1,7 @@
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::thread::{current, JoinHandle};
+use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
@@ -14,6 +18,7 @@ use game_state::GameState;
 pub use ball::BallData;
 pub use geom::{FieldCircularArc, FieldGeometry, FieldLineSegment};
 pub use player::PlayerData;
+use crate::game_state::GameState::{Kickoff, Penalty};
 use crate::game_state::GameStateTracker;
 
 /// The number of players with unique ids in a single team.
@@ -50,7 +55,7 @@ pub struct WorldTracker {
     own_players_tracker: Vec<Option<PlayerTracker>>,
     opp_players_tracker: Vec<Option<PlayerTracker>>,
     ball_tracker: BallTracker,
-    game_state_tracker: GameStateTracker,
+    game_state_tracker: Arc<Mutex<GameStateTracker>>,
     field_geometry: Option<FieldGeometry>,
 }
 
@@ -63,7 +68,7 @@ impl WorldTracker {
             own_players_tracker: vec![None; MAX_PLAYERS],
             opp_players_tracker: vec![None; MAX_PLAYERS],
             ball_tracker: BallTracker::new(config.initial_opp_goal_x),
-            game_state_tracker: GameStateTracker::new(),
+            game_state_tracker: Arc::new(Mutex::new(GameStateTracker::new())),
             field_geometry: None,
         }
     }
@@ -86,10 +91,49 @@ impl WorldTracker {
     /// Update the world state from a referee message.
     pub fn update_from_referee(&mut self, data: &Referee) {
         //not sure if it's the right to use &.. here
-        self.game_state_tracker.update(&data.command());
+        let cur = self.game_state_tracker.lock().unwrap().update(&data.command());
+        if cur == Kickoff || cur == GameState::Penalty {
+            let timeout = if IS_DIV_A { 10 } else { 5 };
+            self.set_game_state(cur, GameState::Run, GameState::Run, timeout);
+        }
+        if cur == Penalty {
+            self.set_game_state(cur, GameState::Penalty_Run, GameState::Stop, 10);
+        }
     }
 
+    /// Create a new thread that will set the gamestate to new_state if
+    /// one of the following conditions is met:
+    /// 1. timeout is reached
+    /// 2. ball movement is detected(speed > 0.1m/s && movement > 0.1m/s)
+    pub fn set_game_state(&mut self, prev_state: GameState, new_state_movement: GameState, new_state_timeout: GameState, timeout: u64) {
+        let ball_tracker = self.ball_tracker.clone();
+        let game_state_tracker = Arc::clone(&self.game_state_tracker);
 
+        thread::spawn(move || {
+            let start = Instant::now();
+            let last_ball_pos = ball_tracker.get().unwrap().position;
+
+            while start.elapsed().as_secs() < timeout {
+                let cur_ball_pos = ball_tracker.get().unwrap().position;
+                let cur_ball_speed = ball_tracker.get().unwrap().velocity.norm();
+                let cur_ball_movement = (cur_ball_pos - last_ball_pos).norm();
+
+                if cur_ball_speed > 100.0 && cur_ball_movement > 100.0 {
+                    let mut tracker = game_state_tracker.lock().unwrap();
+                    if tracker.get_game_state() == prev_state {
+                        tracker.set_game_state(new_state_movement);
+                        return;
+                    }
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+
+            let mut tracker = game_state_tracker.lock().unwrap();
+            if tracker.get_game_state() == prev_state {
+                tracker.set_game_state(new_state_timeout);
+            }
+        });
+    }
     /// Update the world state from a protobuf message.
     pub fn update_from_protobuf(&mut self, data: &SSL_WrapperPacket) {
         if let Some(frame) = data.detection.as_ref() {
@@ -208,7 +252,7 @@ impl WorldTracker {
             opp_players: opp_players.into_iter().cloned().collect(),
             ball: ball.clone(),
             field_geom: field_geom.clone(),
-            current_game_state: self.game_state_tracker.get_game_state(),
+            current_game_state: self.game_state_tracker.lock().unwrap().get_game_state(),
         })
     }
 }
