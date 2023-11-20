@@ -21,7 +21,7 @@ use crate::game_state::GameStateTracker;
 /// Might be higher than the number of players on the field at a time so there should
 /// be a safe margin.
 const MAX_PLAYERS: usize = 15;
-
+const IS_DIV_A: bool = false;
 /// A struct to store the world state from a single frame.
 #[derive(Serialize, Clone, Debug)]
 pub struct WorldData {
@@ -63,6 +63,7 @@ impl WorldTracker {
             own_players_tracker: vec![None; MAX_PLAYERS],
             opp_players_tracker: vec![None; MAX_PLAYERS],
             ball_tracker: BallTracker::new(config.initial_opp_goal_x),
+            game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
         }
     }
