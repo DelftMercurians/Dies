@@ -1,7 +1,11 @@
 use anyhow::Result;
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::{
+    net::{IpAddr, SocketAddr, UdpSocket},
+    str::FromStr,
+    sync::Arc,
+};
 
-use dies_core::Env;
+use dies_core::{EnvEvent, EnvReceiver, EnvSender};
 use dies_protos::{
     ssl_simulation_robot_control::{
         MoveLocalVelocity, RobotCommand, RobotControl, RobotMoveCommand,
@@ -35,40 +39,14 @@ impl Default for ErSimConfig {
         }
     }
 }
-
-pub struct ErSimEnv {
+pub struct ErSimEnvSender {
     #[allow(dead_code)]
-    docker: DockerWrapper,
-    rx: RecvTransport,
+    docker: Arc<DockerWrapper>,
     sim_control_socket: UdpSocket,
     sim_control_remote_addr: SocketAddr,
 }
 
-impl ErSimEnv {
-    pub fn new(config: ErSimConfig) -> Result<Self> {
-        let sim_control_socket = UdpSocket::bind("127.0.0.1:0")?;
-        log::debug!(
-            "Bound sim control socket to {:?}",
-            sim_control_socket.local_addr()
-        );
-
-        Ok(Self {
-            docker: DockerWrapper::new("dies-ersim-env".into())?,
-            rx: RecvTransport::new(&config)?,
-            sim_control_socket,
-            sim_control_remote_addr: SocketAddr::new(
-                config.sim_control_remote_host.parse::<Ipv4Addr>()?.into(),
-                config.sim_control_remote_port,
-            ),
-        })
-    }
-}
-
-impl Env for ErSimEnv {
-    fn recv(&mut self) -> Vec<dies_core::EnvEvent> {
-        self.rx.recv()
-    }
-
+impl EnvSender for ErSimEnvSender {
     fn send_player(&self, msg: dies_core::PlayerCmd) -> Result<()> {
         let mut move_local_vel = MoveLocalVelocity::new();
         move_local_vel.set_left(msg.sx);
@@ -103,4 +81,39 @@ impl Env for ErSimEnv {
             }
         }
     }
+}
+
+pub struct ErSimEnvReceiver {
+    #[allow(dead_code)]
+    docker: Arc<DockerWrapper>,
+    rx: RecvTransport,
+}
+
+impl EnvReceiver for ErSimEnvReceiver {
+    fn recv(&mut self) -> Result<EnvEvent> {
+        self.rx.recv()
+    }
+}
+
+pub fn create_ersim_env(config: ErSimConfig) -> Result<(Box<dyn EnvSender>, Box<dyn EnvReceiver>)> {
+    let docker = Arc::new(DockerWrapper::new("dies-ersim-env".into())?);
+
+    let sim_control_socket = UdpSocket::bind("127.0.0.1:0")?;
+    log::debug!(
+        "Bound sim control socket to {:?}",
+        sim_control_socket.local_addr()
+    );
+    let sender = Box::new(ErSimEnvSender {
+        docker: Arc::clone(&docker),
+        sim_control_socket,
+        sim_control_remote_addr: SocketAddr::new(
+            IpAddr::from_str(&config.sim_control_remote_host)?,
+            config.sim_control_remote_port,
+        ),
+    });
+
+    let rx = RecvTransport::new(&config)?;
+    let receiver = Box::new(ErSimEnvReceiver { docker, rx });
+
+    Ok((sender, receiver))
 }

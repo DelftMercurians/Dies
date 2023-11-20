@@ -3,20 +3,20 @@ mod docker_wrapper;
 mod ersim;
 mod recv_transport;
 
-pub use ersim::{ErSimConfig, ErSimEnv};
+pub use ersim::{create_ersim_env, ErSimConfig, ErSimEnvReceiver, ErSimEnvSender};
 pub(self) use recv_transport::RecvTransport;
 
 #[cfg(test)]
 mod tests {
-    use dies_core::{Env, EnvEvent};
+    use dies_core::EnvEvent;
 
     use crate::ersim::*;
 
     #[test_log::test]
     fn test_receive_vision() {
-        let mut env = ErSimEnv::new(ErSimConfig::default()).unwrap();
+        let (_, mut env_rx) = create_ersim_env(ErSimConfig::default()).unwrap();
         for _ in 0..3 {
-            for ev in env.recv() {
+            if let Ok(ev) = env_rx.recv() {
                 log::info!("Received event: {:?}", ev);
                 if let EnvEvent::VisionMsg(_) = ev {
                     return;
