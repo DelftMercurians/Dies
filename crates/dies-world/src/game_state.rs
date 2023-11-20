@@ -73,3 +73,54 @@ impl GameStateTracker {
         self.game_state = game_state;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use dies_protos::ssl_gc_referee_message::referee::Command::FORCE_START;
+    use crate::game_state::GameState::Stop;
+    use super::*;
+
+    #[test]
+    fn test_new_game_state_tracker() {
+        let tracker = GameStateTracker::new();
+        assert_eq!(tracker.get_game_state(), GameState::UNKNOWN);
+    }
+
+    #[test]
+    fn test_normal_update() {
+        let mut tracker = GameStateTracker::new();
+        tracker.update(&Command::HALT);
+        assert_eq!(tracker.get_game_state(), GameState::Halt);
+        tracker.update(&Command::STOP);
+        assert_eq!(tracker.get_game_state(), GameState::Stop);
+        tracker.update(&FORCE_START);
+        assert_eq!(tracker.get_game_state(), GameState::Run);
+        tracker.update(&Command::PREPARE_KICKOFF_BLUE);
+        assert_eq!(tracker.get_game_state(), GameState::PrepareKickoff);
+        tracker.update(&Command::PREPARE_PENALTY_BLUE);
+        assert_eq!(tracker.get_game_state(), GameState::PreparePenalty);
+        tracker.update(&Command::TIMEOUT_BLUE);
+        assert_eq!(tracker.get_game_state(), GameState::Timeout);
+        tracker.update(&Command::BALL_PLACEMENT_BLUE);
+        assert_eq!(tracker.get_game_state(), GameState::BallReplacement);
+    }
+
+    #[test]
+    fn test_only_once_update() {
+        let mut tracker = GameStateTracker::new();
+        tracker.update(&Command::PREPARE_KICKOFF_YELLOW);
+        assert_eq!(tracker.get_game_state(), GameState::PrepareKickoff);
+        tracker.update(&Command::NORMAL_START);
+        assert_eq!(tracker.get_game_state(), GameState::Kickoff);
+        tracker.update(&Command::NORMAL_START);
+        assert_eq!(tracker.get_game_state(), GameState::Kickoff);
+
+        tracker.update(&Command::STOP);
+        assert_eq!(tracker.get_game_state(), Stop);
+        tracker.update(&Command::DIRECT_FREE_BLUE);
+        assert_eq!(tracker.get_game_state(), GameState::FreeKick);
+        tracker.update(&Command::DIRECT_FREE_BLUE);
+        assert_eq!(tracker.get_game_state(), GameState::FreeKick);
+    }
+
+}
