@@ -1,10 +1,6 @@
-use serde::Serialize;
-use std::sync::{Arc};
-use std::thread;
-use std::time::{Duration, Instant};
-
 use dies_protos::ssl_gc_referee_message::Referee;
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
+use serde::Serialize;
 mod ball;
 mod coord_utils;
 mod game_state;
@@ -90,17 +86,19 @@ impl WorldTracker {
 
     /// Update the world state from a referee message.
     pub fn update_from_referee(&mut self, data: &Referee) -> GameState {
-        self.game_state_tracker.update_checker(self.ball_tracker.get());
+        self.game_state_tracker
+            .update_checker(self.ball_tracker.get());
         let cur = self.game_state_tracker.update(&data.command());
         if cur == Kickoff || cur == FreeKick {
             let timeout = if IS_DIV_A { 10 } else { 5 };
-            self.game_state_tracker.init_checker(self.ball_tracker.get().unwrap().position, timeout);
+            self.game_state_tracker
+                .init_checker(self.ball_tracker.get().unwrap().position, timeout);
         }
         if cur == Penalty {
-            self.game_state_tracker.init_checker(self.ball_tracker.get().unwrap().position, 10);
+            self.game_state_tracker
+                .init_checker(self.ball_tracker.get().unwrap().position, 10);
         }
         return self.game_state_tracker.get_game_state();
-
     }
 
     /// Update the world state from a protobuf message.
@@ -227,13 +225,13 @@ impl WorldTracker {
 #[cfg(test)]
 mod test {
 
+    use super::*;
     use dies_protos::{
         ssl_gc_referee_message::referee::Command,
         ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
         ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},
     };
-
-    use super::*;
+    use std::time::Duration;
 
     #[test]
     fn test_no_data() {
@@ -406,10 +404,7 @@ mod test {
         );
 
         std::thread::sleep(Duration::from_secs(6));
-        assert_eq!(
-            tracker.update_from_referee(&messages[2]),
-            GameState::Run
-        );
+        assert_eq!(tracker.update_from_referee(&messages[2]), GameState::Run);
         assert_eq!(tracker.update_from_referee(&messages[3]), GameState::Stop);
     }
 

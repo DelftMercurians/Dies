@@ -1,9 +1,9 @@
-use std::time::Instant;
-use dies_protos::ssl_gc_referee_message::referee::Command;
-use serde::{Deserialize, Serialize};
-use nalgebra::Vector3;
-use crate::BallData;
 use crate::game_state::GameState::FreeKick;
+use crate::BallData;
+use dies_protos::ssl_gc_referee_message::referee::Command;
+use nalgebra::Vector3;
+use serde::{Deserialize, Serialize};
+use std::time::Instant;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Copy)]
 pub enum GameState {
@@ -68,7 +68,7 @@ impl GameStateTracker {
             Command::PREPARE_PENALTY_BLUE => GameState::PreparePenalty,
             Command::DIRECT_FREE_YELLOW | Command::DIRECT_FREE_BLUE => {
                 if self.game_state == GameState::Stop {
-                    GameState::FreeKick
+                    FreeKick
                 } else {
                     self.game_state.clone()
                 }
@@ -85,7 +85,7 @@ impl GameStateTracker {
     }
 
     pub fn init_checker(&mut self, ball_pos: Vector3<f32>, timeout: u64) {
-        if(self.is_outdated == false) {
+        if self.is_outdated == false {
             return;
         }
         self.init_ball_pos = ball_pos.clone();
@@ -106,20 +106,17 @@ impl GameStateTracker {
     }
     pub fn update_checker(&mut self, ball_data: Option<&BallData>) -> GameState {
         let p = self.init_ball_pos.clone();
-        if (self.is_outdated == true || ball_data.is_none()) {
+        if self.is_outdated == true || ball_data.is_none() {
             return self.game_state.clone();
-        }
-        else if (self.prev_state != self.game_state) {
+        } else if self.prev_state != self.game_state {
             self.is_outdated = true;
-        }
-        else if (self.start.elapsed().as_secs() >= self.timeout) {
+        } else if self.start.elapsed().as_secs() >= self.timeout {
             self.game_state = self.new_state_timeout;
             self.is_outdated = true;
-        }
-        else {
+        } else {
             let distance = (ball_data.unwrap().position - p).norm();
             let velocity = ball_data.unwrap().velocity.norm();
-            if (distance > 100.0 && velocity > 100.0) {
+            if distance > 100.0 && velocity > 100.0 {
                 self.game_state = self.new_state_movement;
                 self.is_outdated = true;
             }
@@ -130,10 +127,6 @@ impl GameStateTracker {
 
     pub fn get_game_state(&self) -> GameState {
         self.game_state.clone()
-    }
-
-    pub fn set_game_state(&mut self, game_state: GameState) {
-        self.game_state = game_state;
     }
 }
 
@@ -155,7 +148,7 @@ mod tests {
         tracker.update(&Command::HALT);
         assert_eq!(tracker.get_game_state(), GameState::Halt);
         tracker.update(&Command::STOP);
-        assert_eq!(tracker.get_game_state(), GameState::Stop);
+        assert_eq!(tracker.get_game_state(), Stop);
         tracker.update(&FORCE_START);
         assert_eq!(tracker.get_game_state(), GameState::Run);
         tracker.update(&Command::PREPARE_KICKOFF_BLUE);
@@ -181,8 +174,8 @@ mod tests {
         tracker.update(&Command::STOP);
         assert_eq!(tracker.get_game_state(), Stop);
         tracker.update(&Command::DIRECT_FREE_BLUE);
-        assert_eq!(tracker.get_game_state(), GameState::FreeKick);
+        assert_eq!(tracker.get_game_state(), FreeKick);
         tracker.update(&Command::DIRECT_FREE_BLUE);
-        assert_eq!(tracker.get_game_state(), GameState::FreeKick);
+        assert_eq!(tracker.get_game_state(), FreeKick);
     }
 }
