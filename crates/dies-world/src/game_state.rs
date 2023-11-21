@@ -13,10 +13,9 @@ pub enum GameState {
     Kickoff,
     FreeKick,
     Penalty,
-    Penalty_Run,
+    PenaltyRun,
     Run,
 }
-
 
 #[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
@@ -49,20 +48,21 @@ impl GameStateTracker {
             Command::PREPARE_PENALTY_YELLOW => GameState::PreparePenalty,
             Command::PREPARE_PENALTY_BLUE => GameState::PreparePenalty,
             Command::DIRECT_FREE_YELLOW | Command::DIRECT_FREE_BLUE => {
-                if(self.game_state == GameState::Stop) {
+                if self.game_state == GameState::Stop {
                     GameState::FreeKick
                 } else {
                     self.game_state.clone()
                 }
-            },
+            }
             Command::TIMEOUT_YELLOW => GameState::Timeout,
             Command::TIMEOUT_BLUE => GameState::Timeout,
-            Command::BALL_PLACEMENT_YELLOW | Command::BALL_PLACEMENT_BLUE => GameState::BallReplacement,
-            _ => {self.game_state.clone()}
+            Command::BALL_PLACEMENT_YELLOW | Command::BALL_PLACEMENT_BLUE => {
+                GameState::BallReplacement
+            }
+            _ => self.game_state.clone(),
         };
 
         return self.game_state.clone();
-
     }
 
     pub fn get_game_state(&self) -> GameState {
@@ -76,9 +76,9 @@ impl GameStateTracker {
 
 #[cfg(test)]
 mod tests {
-    use dies_protos::ssl_gc_referee_message::referee::Command::FORCE_START;
-    use crate::game_state::GameState::Stop;
     use super::*;
+    use crate::game_state::GameState::Stop;
+    use dies_protos::ssl_gc_referee_message::referee::Command::FORCE_START;
 
     #[test]
     fn test_new_game_state_tracker() {
@@ -122,5 +122,4 @@ mod tests {
         tracker.update(&Command::DIRECT_FREE_BLUE);
         assert_eq!(tracker.get_game_state(), GameState::FreeKick);
     }
-
 }
