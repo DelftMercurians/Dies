@@ -61,10 +61,15 @@ pub fn get_or_download_rye_bin() -> Result<PathBuf> {
     log::info!("Downloading rye binary to {}", path.display());
     let response = reqwest::blocking::get(DOWNLOAD_URL)?;
     let bytes = response.bytes()?;
+
     let file = File::create(path.clone())?;
-    let mut decoder = GzDecoder::new(&bytes[..]);
     let mut writer = BufWriter::new(&file);
-    io::copy(&mut decoder, &mut writer)?;
+    if BINARY.ends_with(".gz") {
+        let mut decoder = GzDecoder::new(&bytes[..]);
+        io::copy(&mut decoder, &mut writer)?;
+    } else {
+        io::copy(&mut &bytes[..], &mut writer)?;
+    }
 
     set_permission(&file)?;
 
