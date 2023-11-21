@@ -9,9 +9,21 @@ use crate::ipc_codec::{IpcListener, IpcReceiver, IpcSender};
 
 use super::rye_runner::RyeRunner;
 use anyhow::{bail, Result};
-use dies_core::{RuntimeEvent, RuntimeMsg, RuntimeReceiver, RuntimeSender};
+use dies_core::{RuntimeConfig, RuntimeEvent, RuntimeMsg, RuntimeReceiver, RuntimeSender};
 
 /// Python runtime configuration
+///
+/// Runs the given python module of the given package in the virtual environment,
+/// making sure that the virtual environment is up to date.
+///
+/// If the module is `__main__`, the package is run as a script.
+///
+/// # Errors
+///
+/// Calling `build()` will fail if:
+/// - [`RyeRunner::sync`] fails
+/// - the given path is not a valid python module
+/// - the command cannot be run
 #[derive(Debug, Clone)]
 pub struct PyRuntimeConfig {
     /// Path to the workspace
@@ -47,67 +59,67 @@ pub struct PyRuntimeReceiver {
     receiver: IpcReceiver,
 }
 
-/// Runs the given python module of the given package in the virtual environment,
-/// making sure that the virtual environment is up to date.
-///
-/// If the module is `__main__`, the package is run as a script.
-///
-/// # Errors
-///
-/// Returns an error if
-/// - [`RyeRunner::sync`] fails
-/// - the given path is not a valid python module
-/// - the command cannot be run
-pub fn create_py_runtime(
-    config: PyRuntimeConfig,
-) -> Result<(Box<dyn RuntimeSender>, Box<dyn RuntimeReceiver>)> {
-    if config.package.contains("-") {
-        bail!("Package name cannot contain dashes");
+impl Default for PyRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            workspace: std::env::current_dir().expect("Failed to get current directory"),
+            package: String::from("dies"),
+            module: String::from("__main__"),
+            sync: true,
+        }
     }
-    let rye = RyeRunner::new(&config.workspace)?;
-    if config.sync {
-        rye.sync()?;
+}
+
+impl RuntimeConfig for PyRuntimeConfig {
+    fn build(self) -> Result<(Box<dyn RuntimeSender>, Box<dyn RuntimeReceiver>)> {
+        if self.package.contains("-") {
+            bail!("Package name cannot contain dashes");
+        }
+        let rye = RyeRunner::new(&self.workspace)?;
+        if self.sync {
+            rye.sync()?;
+        }
+
+        let target = if self.module == "__main__" {
+            self.package.to_owned()
+        } else {
+            format!("{}.{}", self.package, self.module)
+        };
+
+        log::debug!("Running python module {}", target);
+
+        let listener = IpcListener::new()?;
+        let host = listener.host().to_owned();
+        let port = listener.port();
+
+        let rye_bin = rye.get_rye_bin();
+        let child_proc = Command::new(rye_bin)
+            .args(["run", "python", "-m", &target])
+            .current_dir(&self.workspace)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .stdin(Stdio::null())
+            .env("DIES_IPC_HOST", host)
+            .env("DIES_IPC_PORT", port.to_string())
+            .spawn()?;
+
+        // Wait for the child process to connect to the socket
+        let (sender, receiver) = listener.wait_for_conn(Duration::from_secs(3))?;
+
+        log::debug!("Python process started");
+
+        let child_proc = Arc::new(Mutex::new(child_proc));
+        Ok((
+            Box::new(PyRuntimeSender {
+                child_proc: Arc::clone(&child_proc),
+                sender,
+            }),
+            Box::new(PyRuntimeReceiver {
+                child_proc,
+                receiver,
+            }),
+        ))
     }
-
-    let target = if config.module == "__main__" {
-        config.package.to_owned()
-    } else {
-        format!("{}.{}", config.package, config.module)
-    };
-
-    log::debug!("Running python module {}", target);
-
-    let listener = IpcListener::new()?;
-    let host = listener.host().to_owned();
-    let port = listener.port();
-
-    let rye_bin = rye.get_rye_bin();
-    let child_proc = Command::new(rye_bin)
-        .args(["run", "python", "-m", &target])
-        .current_dir(&config.workspace)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .stdin(Stdio::null())
-        .env("DIES_IPC_HOST", host)
-        .env("DIES_IPC_PORT", port.to_string())
-        .spawn()?;
-
-    // Wait for the child process to connect to the socket
-    let (sender, receiver) = listener.wait_for_conn(Duration::from_secs(3))?;
-
-    log::debug!("Python process started");
-
-    let child_proc = Arc::new(Mutex::new(child_proc));
-    Ok((
-        Box::new(PyRuntimeSender {
-            child_proc: Arc::clone(&child_proc),
-            sender,
-        }),
-        Box::new(PyRuntimeReceiver {
-            child_proc,
-            receiver,
-        }),
-    ))
 }
 
 impl RuntimeSender for PyRuntimeSender {

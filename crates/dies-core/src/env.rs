@@ -28,6 +28,12 @@ pub enum EnvEvent {
     GcRefereeMsg(GcRefereeMsg),
 }
 
+/// A trait for the configuration of an environment.
+pub trait EnvConfig {
+    /// Create a pair of sender and receiver for the environment.
+    fn build(self) -> Result<(Box<dyn EnvSender>, Box<dyn EnvReceiver>)>;
+}
+
 /// A trait for the sender side of an environment.
 pub trait EnvSender: Send {
     /// Send a command to a player

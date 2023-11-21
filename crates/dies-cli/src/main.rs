@@ -4,19 +4,23 @@ use std::sync::{
     Arc,
 };
 
-use dies_python_rt::{create_py_runtime, PyRuntimeConfig};
+use dies_core::{EnvConfig, RuntimeConfig};
+use dies_python_rt::PyRuntimeConfig;
 use executor::run;
 
-use dies_ersim_env::{create_ersim_env, ErSimConfig};
+use dies_ersim_env::ErSimConfig;
 
 fn main() {
-    let env = create_ersim_env(ErSimConfig::default()).expect("Failed to create ersim env");
-    let rt = create_py_runtime(PyRuntimeConfig {
+    let env = ErSimConfig::default()
+        .build()
+        .expect("Failed to create ersim env");
+    let rt = PyRuntimeConfig {
         workspace: std::env::current_dir().unwrap(),
         package: "dies".into(),
         module: "dies".into(),
         sync: true,
-    })
+    }
+    .build()
     .expect("Failed to create python runtime");
 
     let should_stop = Arc::new(AtomicBool::new(false));

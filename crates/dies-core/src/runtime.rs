@@ -52,6 +52,12 @@ pub enum RuntimeEvent {
     },
 }
 
+/// A trait for the configuration of a runtime.
+pub trait RuntimeConfig {
+    /// Create a pair of sender and receiver for the runtime.
+    fn build(self) -> Result<(Box<dyn RuntimeSender>, Box<dyn RuntimeReceiver>)>;
+}
+
 /// The sender side of the runtime
 pub trait RuntimeSender: Send {
     /// Send an update to the runtime
