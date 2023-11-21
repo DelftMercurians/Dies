@@ -1,5 +1,9 @@
+use std::time::Instant;
 use dies_protos::ssl_gc_referee_message::referee::Command;
 use serde::{Deserialize, Serialize};
+use nalgebra::Vector3;
+use crate::BallData;
+use crate::game_state::GameState::FreeKick;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Copy)]
 pub enum GameState {
@@ -20,12 +24,27 @@ pub enum GameState {
 #[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
     game_state: GameState,
+    //status for the checker
+    prev_state: GameState,
+    new_state_movement: GameState,
+    new_state_timeout: GameState,
+    init_ball_pos: Vector3<f32>,
+    start: Instant,
+    timeout: u64,
+    is_outdated: bool,
 }
 
 impl GameStateTracker {
     pub fn new() -> GameStateTracker {
         GameStateTracker {
             game_state: GameState::UNKNOWN,
+            prev_state: GameState::UNKNOWN,
+            new_state_movement: GameState::UNKNOWN,
+            new_state_timeout: GameState::UNKNOWN,
+            init_ball_pos: Vector3::new(0.0, 0.0, 0.0),
+            start: Instant::now(),
+            timeout: 0,
+            is_outdated: true,
         }
     }
 
@@ -62,6 +81,50 @@ impl GameStateTracker {
             _ => self.game_state.clone(),
         };
 
+        return self.game_state.clone();
+    }
+
+    pub fn init_checker(&mut self, ball_pos: Vector3<f32>, timeout: u64) {
+        if(self.is_outdated == false) {
+            return;
+        }
+        self.init_ball_pos = ball_pos.clone();
+        self.start = Instant::now();
+        self.timeout = timeout;
+        self.is_outdated = false;
+        self.prev_state = self.game_state.clone();
+        self.new_state_movement = match self.game_state {
+            GameState::Kickoff | FreeKick => GameState::Run,
+            GameState::Penalty => GameState::PenaltyRun,
+            _ => self.game_state.clone(),
+        };
+        self.new_state_timeout = match self.game_state {
+            GameState::Kickoff | FreeKick => GameState::Run,
+            GameState::Penalty => GameState::Stop,
+            _ => self.game_state.clone(),
+        };
+    }
+    pub fn update_checker(&mut self, ball_data: Option<&BallData>) -> GameState {
+        let p = self.init_ball_pos.clone();
+        if (self.is_outdated == true || ball_data.is_none()) {
+            return self.game_state.clone();
+        }
+        else if (self.prev_state != self.game_state) {
+            self.is_outdated = true;
+        }
+        else if (self.start.elapsed().as_secs() >= self.timeout) {
+            self.game_state = self.new_state_timeout;
+            self.is_outdated = true;
+        }
+        else {
+            let distance = (ball_data.unwrap().position - p).norm();
+            let velocity = ball_data.unwrap().velocity.norm();
+            if (distance > 100.0 && velocity > 100.0) {
+                self.game_state = self.new_state_movement;
+                self.is_outdated = true;
+            }
+            return self.game_state.clone();
+        }
         return self.game_state.clone();
     }
 

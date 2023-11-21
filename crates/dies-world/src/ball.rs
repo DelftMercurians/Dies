@@ -6,7 +6,7 @@ use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 use crate::coord_utils::to_dies_coords3;
 
 /// A struct to store the ball state from a single frame.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Copy)]
 pub struct BallData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
     /// seconds). This is the time that ssl-vision received the frame.
