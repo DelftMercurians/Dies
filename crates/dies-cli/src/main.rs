@@ -16,8 +16,8 @@ fn main() {
         .expect("Failed to create ersim env");
     let rt = PyRuntimeConfig {
         workspace: std::env::current_dir().unwrap(),
-        package: "dies".into(),
-        module: "dies".into(),
+        package: "dies_test_strat".into(),
+        module: "__main__".into(),
         sync: true,
     }
     .build()
@@ -28,6 +28,7 @@ fn main() {
     ctrlc::set_handler({
         let should_stop = should_stop.clone();
         move || {
+            println!("Stopping...");
             should_stop.store(true, Ordering::Relaxed);
         }
     })
