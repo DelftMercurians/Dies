@@ -1,6 +1,9 @@
 use anyhow::Result;
-use polling::{Events, Poller};
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use dies_core::{EnvEvent, GcRefereeMsg, VisionMsg};
+use std::{
+    net::{Ipv4Addr, SocketAddr, UdpSocket},
+    time::Duration,
+};
 
 use dies_protos::Message;
 
@@ -10,18 +13,17 @@ use crate::ErSimConfig;
 
 use super::BUF_SIZE;
 
-const VISION_SOCK_KEY: usize = 1;
-const GC_SOCK_KEY: usize = 2;
-
+/// A transport that receives messages from the simulator and the gc running on the
+/// local (host) network.
 pub struct RecvTransport {
     buf: [u8; BUF_SIZE],
     vision_socket: UdpSocket,
     gc_socket: UdpSocket,
-    poller: Poller,
-    events: Events,
+    check_vision_next: bool,
 }
 
 impl RecvTransport {
+    /// Create a new `RecvTransport`.
     pub fn new(config: &ErSimConfig) -> Result<Self> {
         let ErSimConfig {
             vision_host,
@@ -72,92 +74,34 @@ impl RecvTransport {
         };
 
         let vision_socket = UdpSocket::from(vision_sock);
-        vision_socket.set_nonblocking(true)?;
+        vision_socket.set_read_timeout(Some(Duration::from_millis(1)))?;
 
         let gc_socket = UdpSocket::from(gc_sock);
-        gc_socket.set_nonblocking(true)?;
-
-        let poller = Poller::new()?;
-        // Safety: We just created these sockets, so they are valid. We have to make
-        //         sure to remove them from the poller before they are dropped.
-        //         See the Drop impl for ErSimEnv.
-        unsafe {
-            poller.add(&vision_socket, polling::Event::readable(VISION_SOCK_KEY))?;
-            poller.add(&gc_socket, polling::Event::readable(GC_SOCK_KEY))?;
-        }
+        gc_socket.set_read_timeout(Some(Duration::from_millis(1)))?;
 
         Ok(Self {
             buf: [0; BUF_SIZE],
             vision_socket,
             gc_socket,
-            poller,
-            events: Events::new(),
+            check_vision_next: false,
         })
     }
 
-    pub fn recv(&mut self) -> Vec<dies_core::EnvEvent> {
-        if self.events.is_empty() {
-            match self.poller.wait(&mut self.events, None) {
-                Ok(_) => {}
-                Err(err) => {
-                    log::error!("Failed to poll sockets: {}", err);
-                    return vec![];
+    /// Receive a message from the simulator or the gc.
+    ///
+    /// This method blocks until a message is received.
+    pub fn recv(&mut self) -> Result<EnvEvent> {
+        loop {
+            self.check_vision_next = !self.check_vision_next;
+            if self.check_vision_next {
+                if let Ok(len) = self.vision_socket.recv(&mut self.buf) {
+                    let msg = VisionMsg::parse_from_bytes(&self.buf[..len])?;
+                    return Ok(EnvEvent::VisionMsg(msg));
                 }
+            } else if let Ok(len) = self.gc_socket.recv(&mut self.buf) {
+                let msg = GcRefereeMsg::parse_from_bytes(&self.buf[..len])?;
+                return Ok(EnvEvent::GcRefereeMsg(msg));
             }
         }
-
-        let result: Vec<_> = self
-            .events
-            .iter()
-            .filter_map(|ev| {
-                if ev.key == VISION_SOCK_KEY {
-                    let amt = match self.vision_socket.recv(&mut self.buf) {
-                        Ok(amt) => amt,
-                        Err(err) => {
-                            if err.kind() == std::io::ErrorKind::WouldBlock {
-                                return None;
-                            } else {
-                                log::error!("Failed to receive vision message: {}", err);
-                                return None;
-                            }
-                        }
-                    };
-
-                    match dies_core::VisionMsg::parse_from_bytes(&self.buf[..amt]) {
-                        Ok(msg) => return Some(dies_core::EnvEvent::VisionMsg(msg)),
-                        Err(err) => {
-                            log::error!("Failed to parse vision message: {}", err);
-                            return None;
-                        }
-                    };
-                }
-                if ev.key == GC_SOCK_KEY {
-                    let amt = match self.gc_socket.recv(&mut self.buf) {
-                        Ok(amt) => amt,
-                        Err(err) => {
-                            if err.kind() == std::io::ErrorKind::WouldBlock {
-                                return None;
-                            } else {
-                                log::error!("Failed to receive GC message: {}", err);
-                                return None;
-                            }
-                        }
-                    };
-
-                    match dies_core::GcRefereeMsg::parse_from_bytes(&self.buf[..amt]) {
-                        Ok(msg) => return Some(dies_core::EnvEvent::GcRefereeMsg(msg)),
-                        Err(err) => {
-                            log::error!("Failed to parse GC message: {}", err);
-                            return None;
-                        }
-                    };
-                }
-                None
-            })
-            .collect();
-
-        self.events.clear();
-
-        return result;
     }
 }
