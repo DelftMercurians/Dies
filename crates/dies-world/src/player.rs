@@ -59,8 +59,8 @@ impl PlayerTracker {
             let last_pos = last_data.position;
             let last_orientation = last_data.orientation;
             let dt = (t_capture - last_update_time) as f32;
-            let velocity = (current_position - last_pos) / dt;
-            let omega = (current_orientation - last_orientation) / dt;
+            let velocity = (current_position - last_pos) / (dt + f32::EPSILON);
+            let omega = (current_orientation - last_orientation) / (dt + f32::EPSILON);
 
             self.last_data = Some(PlayerData {
                 timestamp: t_capture,

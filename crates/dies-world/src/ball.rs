@@ -62,7 +62,7 @@ impl BallTracker {
                 let last_position = last_data.position;
                 let last_time = last_data.timestamp;
                 let dt = (current_time - last_time) as f32;
-                let velocity = (current_position - last_position) / dt;
+                let velocity = (current_position - last_position) / (dt + f32::EPSILON);
 
                 self.last_data = Some(BallData {
                     timestamp: current_time,
