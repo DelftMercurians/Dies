@@ -30,12 +30,10 @@ jobs:
           toolchain: stable
 
       # Cache cargo registry
-      - uses: actions/cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          path: ~/.cargo/registry
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          cache-all-crates: true
+          cache-on-failure: true
 
       - run: cargo install mdbook
       - run: cargo install mdbook-mermaid
