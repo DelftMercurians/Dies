@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-    paths: ["docs/**/*"]
+    paths: ["docs/**/*", "src/**/*.rs"]
   workflow_dispatch:
 
 jobs:
@@ -29,8 +29,22 @@ jobs:
         with:
           toolchain: stable
 
+      # Cache cargo registry
+      - uses: actions/cache@v2
+        with:
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          path: ~/.cargo/registry
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - run: cargo install mdbook
       - run: cargo install mdbook-mermaid
+
+      - name: Build API docs
+        run: cargo doc --no-deps --all-features --all --exclude dies-protos
+
+      - name: Copy API docs to docs
+        run: cp -r target/doc docs/src/api
 
       - run: mdbook build
         working-directory: ./docs
