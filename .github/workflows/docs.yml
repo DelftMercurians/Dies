@@ -47,6 +47,9 @@ jobs:
       - run: mdbook build
         working-directory: ./docs
 
+      - name: Fix permissions
+        run: chmod -c -R +rX "./docs/"
+
       - name: Archive artifact
         shell: sh
         working-directory: ./docs/book
