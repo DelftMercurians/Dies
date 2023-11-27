@@ -11,6 +11,8 @@ use executor::run;
 use dies_ersim_env::ErSimConfig;
 
 fn main() {
+    env_logger::init();
+
     let env = ErSimConfig::default()
         .build()
         .expect("Failed to create ersim env");
@@ -18,7 +20,7 @@ fn main() {
         workspace: std::env::current_dir().unwrap(),
         package: "dies_test_strat".into(),
         module: "__main__".into(),
-        sync: true,
+        sync: false,
     }
     .build()
     .expect("Failed to create python runtime");

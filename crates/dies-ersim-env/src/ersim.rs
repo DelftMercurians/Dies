@@ -45,8 +45,8 @@ pub struct ErSimEnvReceiver {
 impl EnvSender for ErSimEnvSender {
     fn send_player(&self, msg: dies_core::PlayerCmd) -> Result<()> {
         let mut move_local_vel = MoveLocalVelocity::new();
-        move_local_vel.set_left(msg.sx);
-        move_local_vel.set_forward(msg.sy);
+        move_local_vel.set_left(msg.sx / 1000.0);
+        move_local_vel.set_forward(msg.sy / 1000.0);
         move_local_vel.set_angular(msg.w);
 
         let mut robot_move_cmd = RobotMoveCommand::new();

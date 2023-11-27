@@ -10,5 +10,7 @@ ctrlc = { version = "3.4.1", features = ["termination"] }
 dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-ersim-env = { version = "0.1.0", path = "../dies-ersim-env" }
 dies-python-rt = { version = "0.1.0", path = "../dies-python-rt" }
+dies-webui = { version = "0.1.0", path = "../dies-webui" }
 dies-world = { version = "0.1.0", path = "../dies-world" }
+env_logger = "0.10.1"
 log = "0.4.20"
