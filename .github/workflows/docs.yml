@@ -1,0 +1,74 @@
+name: Build docs
+
+on:
+  push:
+    branches:
+      - main
+    paths: ["docs/**/*", "src/**/*.rs"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
+    permissions:
+      pages: write # to deploy to Pages
+      id-token: write # to verify the deployment originates from an appropriate source
+
+    # Deploy to the github-pages environment
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      # Cache cargo registry
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+          cache-on-failure: true
+
+      - run: cargo install mdbook
+      - run: cargo install mdbook-mermaid
+
+      - name: Build API docs
+        run: cargo doc --no-deps --all-features --all --exclude dies-protos
+
+      - name: Copy API docs to docs
+        run: cp -r target/doc docs/src/api
+
+      - run: mdbook build
+        working-directory: ./docs
+
+      - name: Fix permissions
+        run: chmod -c -R +rX "./docs/"
+
+      - name: Archive artifact
+        shell: sh
+        working-directory: ./docs/book
+        run: |
+          tar \
+            --dereference --hard-dereference \
+            -cvf "$RUNNER_TEMP/artifact.tar" \
+            --exclude=.git \
+            --exclude=.github \
+            .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: "github-pages"
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2

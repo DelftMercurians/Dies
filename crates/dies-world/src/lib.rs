@@ -1,18 +1,13 @@
-use serde::Serialize;
+use dies_core::{FieldGeometry, WorldData};
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 
 mod ball;
 mod coord_utils;
-mod geom;
 mod player;
 
 use ball::BallTracker;
 use player::PlayerTracker;
-
-pub use ball::BallData;
-pub use geom::{FieldCircularArc, FieldGeometry, FieldLineSegment};
-pub use player::PlayerData;
 
 /// The number of players with unique ids in a single team.
 ///
@@ -20,16 +15,8 @@ pub use player::PlayerData;
 /// be a safe margin.
 const MAX_PLAYERS: usize = 15;
 
-/// A struct to store the world state from a single frame.
-#[derive(Serialize, Clone, Debug)]
-pub struct WorldData {
-    own_players: Vec<PlayerData>,
-    opp_players: Vec<PlayerData>,
-    ball: BallData,
-    field_geom: FieldGeometry,
-}
-
 /// A struct to configure the world tracker.
+#[derive(Clone, Debug)]
 pub struct WorldConfig {
     /// Whether our team color is blue
     pub is_blue: bool,
@@ -201,8 +188,6 @@ impl WorldTracker {
 
 #[cfg(test)]
 mod test {
-    use std::f32::consts::PI;
-
     use dies_protos::{
         ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
         ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},

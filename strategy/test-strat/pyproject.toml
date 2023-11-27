@@ -1,7 +1,7 @@
 [project]
-name = "dies-py"
+name = "dies-test-strat"
 version = "0.1.0"
-dependencies = ["msgspec>=0.18.4"]
+dependencies = []
 
 [build-system]
 requires = ["hatchling"]
