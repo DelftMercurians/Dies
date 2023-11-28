@@ -420,6 +420,7 @@ dependencies = [
 name = "dies-webui"
 version = "0.1.0"
 dependencies = [
+ "dies-core",
  "dies-protos",
  "dies-world",
  "rocket",

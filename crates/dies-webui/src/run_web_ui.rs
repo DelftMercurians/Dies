@@ -1,5 +1,6 @@
 use rocket::fs::{relative, FileServer};
 
+use dies_core::WorldData;
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},
