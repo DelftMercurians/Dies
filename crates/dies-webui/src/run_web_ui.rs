@@ -5,7 +5,7 @@ use dies_protos::{
     ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
-use dies_world::{WorldConfig, WorldData, WorldTracker};
+use dies_world::{WorldConfig, WorldTracker};
 
 pub fn run_web_ui() {
     let handler = std::thread::spawn(|| {

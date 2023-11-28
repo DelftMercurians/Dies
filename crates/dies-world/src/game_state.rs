@@ -1,25 +1,8 @@
-use crate::game_state::GameState::FreeKick;
 use crate::BallData;
+use dies_core::GameState;
 use dies_protos::ssl_gc_referee_message::referee::Command;
 use nalgebra::Vector3;
-use serde::{Deserialize, Serialize};
 use std::time::Instant;
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Copy)]
-pub enum GameState {
-    Unknown,
-    Halt,
-    Timeout,
-    Stop,
-    PrepareKickoff,
-    BallReplacement,
-    PreparePenalty,
-    Kickoff,
-    FreeKick,
-    Penalty,
-    PenaltyRun,
-    Run,
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
@@ -67,7 +50,7 @@ impl GameStateTracker {
             Command::PREPARE_PENALTY_BLUE => GameState::PreparePenalty,
             Command::DIRECT_FREE_YELLOW | Command::DIRECT_FREE_BLUE => {
                 if self.game_state == GameState::Stop {
-                    FreeKick
+                    GameState::FreeKick
                 } else {
                     self.game_state
                 }
@@ -93,12 +76,12 @@ impl GameStateTracker {
         self.is_outdated = false;
         self.prev_state = self.game_state;
         self.new_state_movement = match self.game_state {
-            GameState::Kickoff | FreeKick => GameState::Run,
+            GameState::Kickoff | GameState::FreeKick => GameState::Run,
             GameState::Penalty => GameState::PenaltyRun,
             _ => self.game_state,
         };
         self.new_state_timeout = match self.game_state {
-            GameState::Kickoff | FreeKick => GameState::Run,
+            GameState::Kickoff | GameState::FreeKick => GameState::Run,
             GameState::Penalty => GameState::Stop,
             _ => self.game_state,
         };
@@ -174,8 +157,8 @@ mod tests {
         tracker.update(&Command::STOP);
         assert_eq!(tracker.get_game_state(), Stop);
         tracker.update(&Command::DIRECT_FREE_BLUE);
-        assert_eq!(tracker.get_game_state(), FreeKick);
+        assert_eq!(tracker.get_game_state(), GameState::FreeKick);
         tracker.update(&Command::DIRECT_FREE_BLUE);
-        assert_eq!(tracker.get_game_state(), FreeKick);
+        assert_eq!(tracker.get_game_state(), GameState::FreeKick);
     }
 }

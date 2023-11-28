@@ -3,15 +3,13 @@ use dies_protos::ssl_gc_referee_message::Referee;
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 mod ball;
 mod coord_utils;
+mod game_state;
 mod player;
 
-use crate::game_state::GameState::{FreeKick, Kickoff, Penalty};
 use crate::game_state::GameStateTracker;
-pub use ball::BallData;
 use ball::BallTracker;
-use game_state::GameState;
-pub use geom::{FieldCircularArc, FieldGeometry, FieldLineSegment};
-pub use player::PlayerData;
+pub use dies_core::{BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, PlayerData};
+use dies_core::{GameState, WorldData};
 use player::PlayerTracker;
 
 /// The number of players with unique ids in a single team.
@@ -79,12 +77,12 @@ impl WorldTracker {
         self.game_state_tracker
             .update_ball_movement_check(self.ball_tracker.get());
         let cur = self.game_state_tracker.update(&data.command());
-        if cur == Kickoff || cur == FreeKick {
+        if cur == GameState::Kickoff || cur == GameState::FreeKick {
             let timeout = if IS_DIV_A { 10 } else { 5 };
             self.game_state_tracker
                 .start_ball_movement_check(self.ball_tracker.get().unwrap().position, timeout);
         }
-        if cur == Penalty {
+        if cur == GameState::Penalty {
             self.game_state_tracker
                 .start_ball_movement_check(self.ball_tracker.get().unwrap().position, 10);
         }
