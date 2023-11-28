@@ -18,7 +18,7 @@ pub struct DockerWrapper {
 
 impl DockerWrapper {
     pub fn new(project_name: String) -> Result<Self> {
-        log::info!("Starting docker compose with project name {}", project_name);
+        log::debug!("Starting docker compose with project name {}", project_name);
 
         let tmpdir = tempfile::tempdir()?;
 
@@ -48,7 +48,7 @@ impl DockerWrapper {
             "--quiet-pull",
             "--no-color",
         ];
-        log::info!("Running docker {}", args.join(" "));
+        log::debug!("Running docker {}", args.join(" "));
         println!("Running docker compose up -- this may take a while");
 
         let child = Command::new("docker")
@@ -72,13 +72,13 @@ impl DockerWrapper {
             }
         };
 
-        log::info!("Waiting for docker compose to finish starting");
+        log::debug!("Waiting for docker compose to finish starting");
 
         // Wait for docker compose to start
         let output = child.wait_with_output()?;
 
         if output.status.success() {
-            log::info!("Docker compose started successfully");
+            log::debug!("Docker compose started successfully");
             Ok(Self {
                 project_name: project_name.to_owned(),
             })
@@ -97,7 +97,7 @@ impl DockerWrapper {
 
 impl Drop for DockerWrapper {
     fn drop(&mut self) {
-        log::info!(
+        log::debug!(
             "Stopping docker compose with project name {}",
             self.project_name
         );
@@ -117,7 +117,7 @@ impl Drop for DockerWrapper {
             .output()
             .expect("Failed to run docker compose down");
         if out.status.success() {
-            log::info!("Docker compose stopped successfully");
+            log::debug!("Docker compose stopped successfully");
         } else {
             log::error!(
                 "Failed to stop docker compose: {}",

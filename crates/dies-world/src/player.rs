@@ -1,28 +1,8 @@
+use dies_core::PlayerData;
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::Vector2;
-use serde::{Deserialize, Serialize};
 
 use crate::coord_utils::to_dies_coords2;
-
-/// A struct to store the player state from a single frame.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct PlayerData {
-    /// Unix timestamp of the recorded frame from which this data was extracted (in
-    /// seconds). This is the time that ssl-vision received the frame.
-    pub timestamp: f64,
-    /// The player's unique id
-    pub id: u32,
-    /// Position of the player in mm, in dies coordinates
-    pub position: Vector2<f32>,
-    /// Velocity of the player in mm/s, in dies coordinates
-    pub velocity: Vector2<f32>,
-    /// Orientation of the player, in radians, (`-pi`, `pi`), where `0` is the positive
-    /// y direction, and `pi/2` is the positive x direction (regardless of the goal
-    /// sign).
-    pub orientation: f32,
-    /// Angular speed of the player (in rad/s)
-    pub angular_speed: f32,
-}
 
 /// Tracker for a single player.
 #[derive(Clone, Debug)]
@@ -79,8 +59,8 @@ impl PlayerTracker {
             let last_pos = last_data.position;
             let last_orientation = last_data.orientation;
             let dt = (t_capture - last_update_time) as f32;
-            let velocity = (current_position - last_pos) / dt;
-            let omega = (current_orientation - last_orientation) / dt;
+            let velocity = (current_position - last_pos) / (dt + f32::EPSILON);
+            let omega = (current_orientation - last_orientation) / (dt + f32::EPSILON);
 
             self.last_data = Some(PlayerData {
                 timestamp: t_capture,

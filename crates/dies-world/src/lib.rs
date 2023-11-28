@@ -1,10 +1,8 @@
 use dies_protos::ssl_gc_referee_message::Referee;
+
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
-use serde::Serialize;
 mod ball;
 mod coord_utils;
-mod game_state;
-mod geom;
 mod player;
 
 use crate::game_state::GameState::{FreeKick, Kickoff, Penalty};
@@ -22,17 +20,9 @@ use player::PlayerTracker;
 /// be a safe margin.
 const MAX_PLAYERS: usize = 15;
 const IS_DIV_A: bool = false;
-/// A struct to store the world state from a single frame.
-#[derive(Serialize, Clone, Debug)]
-pub struct WorldData {
-    own_players: Vec<PlayerData>,
-    opp_players: Vec<PlayerData>,
-    ball: BallData,
-    field_geom: FieldGeometry,
-    current_game_state: GameState,
-}
 
 /// A struct to configure the world tracker.
+#[derive(Clone, Debug)]
 pub struct WorldConfig {
     /// Whether our team color is blue
     pub is_blue: bool,

@@ -2,6 +2,7 @@
 members = ["crates/*"]
 package.edition = "2021"
 resolver = "2"
+default-members = ["crates/dies-cli"]
 
 [profile.dev]
 opt-level = 1

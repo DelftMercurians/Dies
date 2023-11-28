@@ -33,9 +33,3 @@ pub fn try_find_workspace_root() -> Result<PathBuf> {
 pub fn get_workspace_root() -> &'static PathBuf {
     &WORKSPACE_ROOT
 }
-
-/// Returns the absolute path to the `py` directory
-pub fn get_py_dir() -> PathBuf {
-    let workspace_root = get_workspace_root();
-    workspace_root.join("py")
-}

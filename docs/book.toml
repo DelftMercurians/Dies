@@ -1,0 +1,16 @@
+[book]
+authors = ["mablin7"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Dies Framework"
+
+[preprocessor]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output]
+
+[output.html]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]

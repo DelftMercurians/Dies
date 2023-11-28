@@ -1,21 +1,9 @@
+use dies_core::BallData;
 use nalgebra::Vector3;
-use serde::{Deserialize, Serialize};
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
 use crate::coord_utils::to_dies_coords3;
-
-/// A struct to store the ball state from a single frame.
-#[derive(Serialize, Deserialize, Clone, Debug, Copy)]
-pub struct BallData {
-    /// Unix timestamp of the recorded frame from which this data was extracted (in
-    /// seconds). This is the time that ssl-vision received the frame.
-    pub timestamp: f64,
-    /// Position of the ball in mm, in dies coordinates
-    pub position: Vector3<f32>,
-    /// Velocity of the ball in mm/s, in dies coordinates
-    pub velocity: Vector3<f32>,
-}
 
 /// Tracker for the ball.
 #[derive(Debug, Clone)]
@@ -74,7 +62,7 @@ impl BallTracker {
                 let last_position = last_data.position;
                 let last_time = last_data.timestamp;
                 let dt = (current_time - last_time) as f32;
-                let velocity = (current_position - last_position) / dt;
+                let velocity = (current_position - last_position) / (dt + f32::EPSILON);
 
                 self.last_data = Some(BallData {
                     timestamp: current_time,

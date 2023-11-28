@@ -8,5 +8,5 @@
 
 -e file:.
 -e file:py/dies-py
+-e file:strategy/test-strat
 msgspec==0.18.4
-pyzmq==25.1.1

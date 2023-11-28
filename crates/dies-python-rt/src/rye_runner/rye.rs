@@ -9,6 +9,7 @@ use super::download::get_or_download_rye_bin;
 
 /// Determines how to handle the output of rye commands.
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub enum RyeOutput {
     None,
     Stdout,
@@ -65,6 +66,7 @@ impl RyeRunner {
     }
 
     /// Set how to handle the output of rye commands.
+    #[allow(dead_code)]
     pub fn output(&mut self, output: RyeOutput) -> &mut Self {
         self.output = output;
         self
