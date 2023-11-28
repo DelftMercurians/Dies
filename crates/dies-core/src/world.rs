@@ -3,6 +3,23 @@ use serde::Serialize;
 
 use crate::FieldGeometry;
 
+/// The game state, as reported by the referee.
+#[derive(Serialize, Clone, Debug, PartialEq, Copy)]
+pub enum GameState {
+    Unknown,
+    Halt,
+    Timeout,
+    Stop,
+    PrepareKickoff,
+    BallReplacement,
+    PreparePenalty,
+    Kickoff,
+    FreeKick,
+    Penalty,
+    PenaltyRun,
+    Run,
+}
+
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Clone, Debug)]
 pub struct BallData {
@@ -42,4 +59,5 @@ pub struct WorldData {
     pub opp_players: Vec<PlayerData>,
     pub ball: BallData,
     pub field_geom: FieldGeometry,
+    pub current_game_state: GameState,
 }

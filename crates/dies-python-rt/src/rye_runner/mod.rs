@@ -15,7 +15,9 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(temp_dir.path().join("py")).unwrap();
         let pyproject_toml = temp_dir.path().join("pyproject.toml");
-        std::fs::write(&pyproject_toml, indoc! {"
+        std::fs::write(
+            &pyproject_toml,
+            indoc! {"
             [project]
             name = \"test-workspace\"
             version = \"0.1.0\"
@@ -25,7 +27,9 @@ mod tests {
             managed = true
 
             [tool.rye.workspace]
-        "}).unwrap();
+        "},
+        )
+        .unwrap();
 
         // Set `DIES_RYE_DIR` to temporary dir
         std::env::set_var("DIES_RYE_DIR", temp_dir.path().join(".rye"));

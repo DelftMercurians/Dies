@@ -6,7 +6,7 @@ use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 use crate::coord_utils::to_dies_coords3;
 
 /// Tracker for the ball.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BallTracker {
     /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
     /// converting coordinates.

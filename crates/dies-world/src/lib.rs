@@ -1,12 +1,15 @@
-use dies_core::{FieldGeometry, WorldData};
+use dies_protos::ssl_gc_referee_message::Referee;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
-
 mod ball;
 mod coord_utils;
+mod game_state;
 mod player;
 
+use crate::game_state::GameStateTracker;
 use ball::BallTracker;
+pub use dies_core::{BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, PlayerData};
+use dies_core::{GameState, WorldData};
 use player::PlayerTracker;
 
 /// The number of players with unique ids in a single team.
@@ -14,6 +17,7 @@ use player::PlayerTracker;
 /// Might be higher than the number of players on the field at a time so there should
 /// be a safe margin.
 const MAX_PLAYERS: usize = 15;
+const IS_DIV_A: bool = false;
 
 /// A struct to configure the world tracker.
 #[derive(Clone, Debug)]
@@ -34,6 +38,7 @@ pub struct WorldTracker {
     own_players_tracker: Vec<Option<PlayerTracker>>,
     opp_players_tracker: Vec<Option<PlayerTracker>>,
     ball_tracker: BallTracker,
+    game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
 }
 
@@ -46,6 +51,7 @@ impl WorldTracker {
             own_players_tracker: vec![None; MAX_PLAYERS],
             opp_players_tracker: vec![None; MAX_PLAYERS],
             ball_tracker: BallTracker::new(config.initial_opp_goal_x),
+            game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
         }
     }
@@ -63,6 +69,22 @@ impl WorldTracker {
             if let Some(player_tracker) = player_tracker.as_mut() {
                 player_tracker.set_play_dir_x(self.play_dir_x);
             }
+        }
+    }
+
+    /// Update the world state from a referee message.
+    pub fn update_from_referee(&mut self, data: &Referee) {
+        self.game_state_tracker
+            .update_ball_movement_check(self.ball_tracker.get());
+        let cur = self.game_state_tracker.update(&data.command());
+        if cur == GameState::Kickoff || cur == GameState::FreeKick {
+            let timeout = if IS_DIV_A { 10 } else { 5 };
+            self.game_state_tracker
+                .start_ball_movement_check(self.ball_tracker.get().unwrap().position, timeout);
+        }
+        if cur == GameState::Penalty {
+            self.game_state_tracker
+                .start_ball_movement_check(self.ball_tracker.get().unwrap().position, 10);
         }
     }
 
@@ -182,18 +204,21 @@ impl WorldTracker {
             opp_players: opp_players.into_iter().cloned().collect(),
             ball: ball.clone(),
             field_geom: field_geom.clone(),
+            current_game_state: self.game_state_tracker.get_game_state(),
         })
     }
 }
 
 #[cfg(test)]
 mod test {
+
+    use super::*;
     use dies_protos::{
+        ssl_gc_referee_message::referee::Command,
         ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
         ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},
     };
-
-    use super::*;
+    use std::time::Duration;
 
     #[test]
     fn test_no_data() {
@@ -277,5 +302,159 @@ mod test {
         assert!(data.field_geom.goal_width == 1000);
         assert!(data.field_geom.goal_depth == 200);
         assert!(data.field_geom.boundary_width == 300);
+    }
+
+    pub struct RefereeBuilder {
+        /// for simplicity, this can be enhanced later
+        pub command: Command,
+    }
+
+    impl RefereeBuilder {
+        pub fn new(command: Command) -> RefereeBuilder {
+            RefereeBuilder { command }
+        }
+
+        #[allow(dead_code)]
+        pub fn command(mut self, command: Command) -> Self {
+            self.command = command;
+            self
+        }
+
+        pub fn build(self) -> Referee {
+            let mut referee = Referee::new();
+            referee.set_command(self.command);
+            referee
+        }
+    }
+
+    pub struct Director;
+    impl Director {
+        pub fn process_commands(commands: Vec<Command>) -> Vec<Referee> {
+            commands
+                .into_iter()
+                .map(|command| RefereeBuilder::new(command).build())
+                .collect()
+        }
+    }
+
+    #[test]
+    fn test_game_state_tracker_simple() {
+        let mut tracker = WorldTracker::new(WorldConfig {
+            is_blue: true,
+            initial_opp_goal_x: 1.0,
+        });
+        let messages = Director::process_commands(vec![
+            Command::HALT,
+            Command::STOP,
+            Command::STOP,
+            Command::FORCE_START,
+        ]);
+        tracker.update_from_referee(&messages[0]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Halt);
+        tracker.update_from_referee(&messages[1]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
+        tracker.update_from_referee(&messages[2]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
+        tracker.update_from_referee(&messages[3]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Run);
+    }
+
+    #[test]
+    fn test_game_state_tracker_freekick() {
+        let mut tracker = WorldTracker::new(WorldConfig {
+            is_blue: true,
+            initial_opp_goal_x: 1.0,
+        });
+        let mut frame = SSL_DetectionFrame::new();
+        frame.set_t_capture(0.0);
+        let mut ball = SSL_DetectionBall::new();
+        ball.set_x(1.0);
+        ball.set_y(2.0);
+        ball.set_z(3.0);
+        frame.balls.push(ball.clone());
+        tracker.ball_tracker.update(&frame);
+        let mut frame = SSL_DetectionFrame::new();
+        frame.set_t_capture(1.0);
+        let mut ball = SSL_DetectionBall::new();
+        ball.set_x(2.0);
+        ball.set_y(4.0);
+        ball.set_z(6.0);
+        frame.balls.push(ball.clone());
+        tracker.ball_tracker.update(&frame);
+        let messages = Director::process_commands(vec![
+            Command::STOP,
+            Command::DIRECT_FREE_YELLOW,
+            Command::DIRECT_FREE_YELLOW,
+            Command::STOP,
+        ]);
+
+        tracker.update_from_referee(&messages[0]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
+        tracker.update_from_referee(&messages[1]);
+        assert_eq!(
+            tracker.game_state_tracker.get_game_state(),
+            GameState::FreeKick
+        );
+
+        std::thread::sleep(Duration::from_secs(6));
+        tracker.update_from_referee(&messages[2]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Run);
+        tracker.update_from_referee(&messages[3]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
+    }
+
+    #[test]
+    fn test_game_penalty_stop_early() {
+        let mut tracker = WorldTracker::new(WorldConfig {
+            is_blue: true,
+            initial_opp_goal_x: 1.0,
+        });
+        let mut frame = SSL_DetectionFrame::new();
+        frame.set_t_capture(0.0);
+        let mut ball = SSL_DetectionBall::new();
+        ball.set_x(1.0);
+        ball.set_y(2.0);
+        ball.set_z(3.0);
+        frame.balls.push(ball.clone());
+        tracker.ball_tracker.update(&frame);
+        let mut frame = SSL_DetectionFrame::new();
+        frame.set_t_capture(1.0);
+        let mut ball = SSL_DetectionBall::new();
+        ball.set_x(2.0);
+        ball.set_y(4.0);
+        ball.set_z(6.0);
+        frame.balls.push(ball.clone());
+        tracker.ball_tracker.update(&frame);
+        let messages = Director::process_commands(vec![
+            Command::PREPARE_PENALTY_YELLOW,
+            Command::NORMAL_START,
+            Command::STOP,
+        ]);
+
+        tracker.update_from_referee(&messages[0]);
+        assert_eq!(
+            tracker.game_state_tracker.get_game_state(),
+            GameState::PreparePenalty
+        );
+        tracker.update_from_referee(&messages[1]);
+        assert_eq!(
+            tracker.game_state_tracker.get_game_state(),
+            GameState::Penalty
+        );
+
+        std::thread::sleep(Duration::from_secs(5));
+
+        assert_eq!(
+            tracker.game_state_tracker.get_game_state(),
+            GameState::Penalty
+        );
+
+        tracker.update_from_referee(&messages[2]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
+
+        std::thread::sleep(Duration::from_secs(6));
+
+        tracker.update_from_referee(&messages[2]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
     }
 }
