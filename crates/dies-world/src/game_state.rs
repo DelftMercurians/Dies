@@ -7,8 +7,8 @@ use std::time::Instant;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Copy)]
 pub enum GameState {
+    Unknown,
     Halt,
-    UNKNOWN,
     Timeout,
     Stop,
     PrepareKickoff,
@@ -24,7 +24,6 @@ pub enum GameState {
 #[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
     game_state: GameState,
-    //status for the checker
     prev_state: GameState,
     new_state_movement: GameState,
     new_state_timeout: GameState,
@@ -37,10 +36,10 @@ pub struct GameStateTracker {
 impl GameStateTracker {
     pub fn new() -> GameStateTracker {
         GameStateTracker {
-            game_state: GameState::UNKNOWN,
-            prev_state: GameState::UNKNOWN,
-            new_state_movement: GameState::UNKNOWN,
-            new_state_timeout: GameState::UNKNOWN,
+            game_state: GameState::Unknown,
+            prev_state: GameState::Unknown,
+            new_state_movement: GameState::Unknown,
+            new_state_timeout: GameState::Unknown,
             init_ball_pos: Vector3::new(0.0, 0.0, 0.0),
             start: Instant::now(),
             timeout: 0,
@@ -58,7 +57,7 @@ impl GameStateTracker {
                 } else if self.game_state == GameState::PreparePenalty {
                     GameState::Penalty
                 } else {
-                    self.game_state.clone()
+                    self.game_state
                 }
             }
             Command::FORCE_START => GameState::Run,
@@ -70,7 +69,7 @@ impl GameStateTracker {
                 if self.game_state == GameState::Stop {
                     FreeKick
                 } else {
-                    self.game_state.clone()
+                    self.game_state
                 }
             }
             Command::TIMEOUT_YELLOW => GameState::Timeout,
@@ -78,13 +77,13 @@ impl GameStateTracker {
             Command::BALL_PLACEMENT_YELLOW | Command::BALL_PLACEMENT_BLUE => {
                 GameState::BallReplacement
             }
-            _ => self.game_state.clone(),
+            _ => self.game_state,
         };
 
-        return self.game_state.clone();
+        return self.game_state;
     }
 
-    pub fn init_checker(&mut self, ball_pos: Vector3<f32>, timeout: u64) {
+    pub fn start_ball_movement_check(&mut self, ball_pos: Vector3<f32>, timeout: u64) {
         if self.is_outdated == false {
             return;
         }
@@ -92,22 +91,23 @@ impl GameStateTracker {
         self.start = Instant::now();
         self.timeout = timeout;
         self.is_outdated = false;
-        self.prev_state = self.game_state.clone();
+        self.prev_state = self.game_state;
         self.new_state_movement = match self.game_state {
             GameState::Kickoff | FreeKick => GameState::Run,
             GameState::Penalty => GameState::PenaltyRun,
-            _ => self.game_state.clone(),
+            _ => self.game_state,
         };
         self.new_state_timeout = match self.game_state {
             GameState::Kickoff | FreeKick => GameState::Run,
             GameState::Penalty => GameState::Stop,
-            _ => self.game_state.clone(),
+            _ => self.game_state,
         };
     }
-    pub fn update_checker(&mut self, ball_data: Option<&BallData>) -> GameState {
+
+    pub fn update_ball_movement_check(&mut self, ball_data: Option<&BallData>) -> GameState {
         let p = self.init_ball_pos.clone();
         if self.is_outdated == true || ball_data.is_none() {
-            return self.game_state.clone();
+            return self.game_state;
         } else if self.prev_state != self.game_state {
             self.is_outdated = true;
         } else if self.start.elapsed().as_secs() >= self.timeout {
@@ -120,13 +120,13 @@ impl GameStateTracker {
                 self.game_state = self.new_state_movement;
                 self.is_outdated = true;
             }
-            return self.game_state.clone();
+            return self.game_state;
         }
-        return self.game_state.clone();
+        return self.game_state;
     }
 
     pub fn get_game_state(&self) -> GameState {
-        self.game_state.clone()
+        self.game_state
     }
 }
 
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn test_new_game_state_tracker() {
         let tracker = GameStateTracker::new();
-        assert_eq!(tracker.get_game_state(), GameState::UNKNOWN);
+        assert_eq!(tracker.get_game_state(), GameState::Unknown);
     }
 
     #[test]

@@ -85,20 +85,19 @@ impl WorldTracker {
     }
 
     /// Update the world state from a referee message.
-    pub fn update_from_referee(&mut self, data: &Referee) -> GameState {
+    pub fn update_from_referee(&mut self, data: &Referee) {
         self.game_state_tracker
-            .update_checker(self.ball_tracker.get());
+            .update_ball_movement_check(self.ball_tracker.get());
         let cur = self.game_state_tracker.update(&data.command());
         if cur == Kickoff || cur == FreeKick {
             let timeout = if IS_DIV_A { 10 } else { 5 };
             self.game_state_tracker
-                .init_checker(self.ball_tracker.get().unwrap().position, timeout);
+                .start_ball_movement_check(self.ball_tracker.get().unwrap().position, timeout);
         }
         if cur == Penalty {
             self.game_state_tracker
-                .init_checker(self.ball_tracker.get().unwrap().position, 10);
+                .start_ball_movement_check(self.ball_tracker.get().unwrap().position, 10);
         }
-        return self.game_state_tracker.get_game_state();
     }
 
     /// Update the world state from a protobuf message.
@@ -362,10 +361,14 @@ mod test {
             Command::STOP,
             Command::FORCE_START,
         ]);
-        assert_eq!(tracker.update_from_referee(&messages[0]), GameState::Halt);
-        assert_eq!(tracker.update_from_referee(&messages[1]), GameState::Stop);
-        assert_eq!(tracker.update_from_referee(&messages[2]), GameState::Stop);
-        assert_eq!(tracker.update_from_referee(&messages[3]), GameState::Run);
+        tracker.update_from_referee(&messages[0]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Halt);
+        tracker.update_from_referee(&messages[1]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
+        tracker.update_from_referee(&messages[2]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
+        tracker.update_from_referee(&messages[3]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Run);
     }
 
     #[test]
@@ -397,15 +400,19 @@ mod test {
             Command::STOP,
         ]);
 
-        assert_eq!(tracker.update_from_referee(&messages[0]), GameState::Stop);
+        tracker.update_from_referee(&messages[0]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
+        tracker.update_from_referee(&messages[1]);
         assert_eq!(
-            tracker.update_from_referee(&messages[1]),
+            tracker.game_state_tracker.get_game_state(),
             GameState::FreeKick
         );
 
         std::thread::sleep(Duration::from_secs(6));
-        assert_eq!(tracker.update_from_referee(&messages[2]), GameState::Run);
-        assert_eq!(tracker.update_from_referee(&messages[3]), GameState::Stop);
+        tracker.update_from_referee(&messages[2]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Run);
+        tracker.update_from_referee(&messages[3]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
     }
 
     #[test]
@@ -436,21 +443,30 @@ mod test {
             Command::STOP,
         ]);
 
+        tracker.update_from_referee(&messages[0]);
         assert_eq!(
-            tracker.update_from_referee(&messages[0]),
+            tracker.game_state_tracker.get_game_state(),
             GameState::PreparePenalty
         );
-        assert_eq!(
-            tracker.update_from_referee(&messages[1]),
-            GameState::Penalty
-        );
-        std::thread::sleep(Duration::from_secs(5));
+        tracker.update_from_referee(&messages[1]);
         assert_eq!(
             tracker.game_state_tracker.get_game_state(),
             GameState::Penalty
         );
-        assert_eq!(tracker.update_from_referee(&messages[2]), GameState::Stop);
+
+        std::thread::sleep(Duration::from_secs(5));
+
+        assert_eq!(
+            tracker.game_state_tracker.get_game_state(),
+            GameState::Penalty
+        );
+
+        tracker.update_from_referee(&messages[2]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
+
         std::thread::sleep(Duration::from_secs(6));
-        assert_eq!(tracker.update_from_referee(&messages[2]), GameState::Stop);
+
+        tracker.update_from_referee(&messages[2]);
+        assert_eq!(tracker.game_state_tracker.get_game_state(), GameState::Stop);
     }
 }
