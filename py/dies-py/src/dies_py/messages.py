@@ -53,7 +53,7 @@ class FieldGeometry(Struct):
 class World(Struct, tag=True):
     own_players: list[PlayerData]
     opp_players: list[PlayerData]
-    ball: BallData
+    ball: BallData | None
     field_geom: FieldGeometry
 
 

@@ -1,0 +1,20 @@
+[package]
+name = "dies-robot-test-env"
+version = "0.1.0"
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dies-core = { path = "../dies-core" }
+anyhow = "1.0.75"
+log = "0.4.20"
+dies-protos = { path = "../dies-protos" }
+tempfile = "3.8.1"
+serialport = "4.2.2"
+socket2 = "0.5.5"
+
+
+[dev-dependencies]
+env_logger = "0.10.0"
+test-log = "0.2.13"
