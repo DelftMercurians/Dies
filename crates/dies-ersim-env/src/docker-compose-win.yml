@@ -29,6 +29,7 @@ services:
       - "ssl-game-controller:/config:rw"
     ports:
       - "8081:8081/tcp"
+      - "10008:10008/tcp"
 
   autoref-erforce:
     image: "roboticserlangen/autoref:commit-6f15f574ea80"

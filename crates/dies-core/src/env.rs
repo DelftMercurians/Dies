@@ -16,8 +16,12 @@
 //! }
 //! ```
 
+// use std::net::TcpStream;
+
 use crate::{GcRefereeMsg, PlayerCmd, VisionMsg};
 use anyhow::Result;
+
+use dies_protos::ssl_gc_rcon_team::TeamToController;
 
 /// An event from the environment.
 #[derive(Debug, Clone)]
@@ -38,6 +42,9 @@ pub trait EnvConfig {
 pub trait EnvSender: Send {
     /// Send a command to a player
     fn send_player(&self, cmd: PlayerCmd) -> anyhow::Result<()>;
+
+    /// Send a command to the game controller
+    fn send_gc(&mut self, team: TeamToController) -> anyhow::Result<()>;
 }
 
 /// A trait for the receiver side of an environment.

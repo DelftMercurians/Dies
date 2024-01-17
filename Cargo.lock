@@ -244,6 +244,7 @@ dependencies = [
  "ctrlc",
  "dies-core",
  "dies-ersim-env",
+ "dies-protos",
  "dies-python-rt",
  "dies-world",
  "log",
@@ -270,6 +271,7 @@ dependencies = [
  "dies-protos",
  "env_logger",
  "log",
+ "protobuf",
  "socket2 0.5.5",
  "tempfile",
  "test-log",
@@ -475,6 +477,10 @@ dependencies = [
  "pin-utils",
  "slab",
 ]
+
+[[package]]
+name = "gc-controller"
+version = "0.1.0"
 
 [[package]]
 name = "getrandom"

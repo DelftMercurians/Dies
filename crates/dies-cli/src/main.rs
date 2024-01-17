@@ -18,7 +18,7 @@ fn main() {
         workspace: std::env::current_dir().unwrap(),
         package: "dies_test_strat".into(),
         module: "__main__".into(),
-        sync: true,
+        sync: false,
     }
     .build()
     .expect("Failed to create python runtime");

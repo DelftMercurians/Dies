@@ -11,6 +11,7 @@ anyhow = "1.0.75"
 log = "0.4.20"
 dies-protos = { path = "../dies-protos" }
 tempfile = "3.8.1"
+protobuf = "3.3.0"
 
 [target.'cfg(unix)'.dependencies]
 socket2 = "0.5.5"
