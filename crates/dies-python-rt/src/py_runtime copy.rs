@@ -7,8 +7,7 @@ use std::{
 
 use crate::ipc_codec::{IpcListener, IpcReceiver, IpcSender};
 
-// use super::rye_runner::RyeRunner;
-use super::custom_rye_runner::CustomRyeRunner;
+use super::rye_runner::RyeRunner;
 use anyhow::{bail, Result};
 use dies_core::{RuntimeConfig, RuntimeEvent, RuntimeMsg, RuntimeReceiver, RuntimeSender};
 
@@ -76,10 +75,9 @@ impl RuntimeConfig for PyRuntimeConfig {
         if self.package.contains("-") {
             bail!("Package name cannot contain dashes");
         }
-        // let rye = RyeRunner::new(&self.workspace)?;
-        let custom_rye = CustomRyeRunner::new(&self.workspace)?;
+        let rye = RyeRunner::new(&self.workspace)?;
         if self.sync {
-            custom_rye.sync()?;
+            rye.sync()?;
         }
 
         let target = if self.module == "__main__" {
@@ -94,9 +92,8 @@ impl RuntimeConfig for PyRuntimeConfig {
         let host = listener.host().to_owned();
         let port = listener.port();
 
-
-        let custom_rye_bin = custom_rye.get_custom_rye_bin();
-        let child_proc = Command::new(custom_rye_bin)
+        let rye_bin = rye.get_rye_bin();
+        let child_proc = Command::new(rye_bin)
             .args(["run", "python", "-m", &target])
             .current_dir(&self.workspace)
             .stdout(Stdio::inherit())
