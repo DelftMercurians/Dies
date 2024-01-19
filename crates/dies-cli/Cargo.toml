@@ -9,6 +9,11 @@ crossbeam = { version = "0.8.2", features = ["crossbeam-channel"] }
 ctrlc = { version = "3.4.1", features = ["termination"] }
 dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-ersim-env = { version = "0.1.0", path = "../dies-ersim-env" }
+dies-protos = { version = "0.1.0", path = "../dies-protos" }
 dies-python-rt = { version = "0.1.0", path = "../dies-python-rt" }
+dies-robot-test-env = { version = "0.1.0", path = "../dies-robot-test-env" }
+dies-webui = { version = "0.1.0", path = "../dies-webui" }
 dies-world = { version = "0.1.0", path = "../dies-world" }
+env_logger = "0.10.1"
 log = "0.4.20"
+serialport = "4.2.2"

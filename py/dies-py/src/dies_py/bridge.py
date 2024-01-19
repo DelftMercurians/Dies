@@ -38,7 +38,7 @@ class Bridge:
 
     def send(self, message: Cmd):
         """Send a message to the dies server."""
-        self.sock.send(msgspec.json.encode(message))
+        self.sock.send(msgspec.json.encode(message) + b"\n")
 
     def recv(self) -> Msg | None:
         """Receive a message from the dies server.

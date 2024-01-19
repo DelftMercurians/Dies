@@ -3,6 +3,7 @@ use crossbeam::{channel::unbounded, select};
 use dies_core::{
     EnvEvent, EnvReceiver, EnvSender, RuntimeEvent, RuntimeMsg, RuntimeReceiver, RuntimeSender,
 };
+use dies_webui::spawn_webui;
 use dies_world::{WorldConfig, WorldTracker};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -45,10 +46,12 @@ pub fn run(
                 Ok(ev) => {
                     if let Err(err) = rt_ev_tx.send(ev) {
                         log::error!("Failed to send rt event: {}", err);
+                        panic!("Failed to send rt event: {}", err);
                     }
                 }
                 Err(err) => {
                     log::error!("Failed to receive rt event: {}", err);
+                    panic!("Failed to receive rt event: {}", err)
                 }
             }
         }
@@ -60,6 +63,9 @@ pub fn run(
         is_blue: true,
         initial_opp_goal_x: 1.0,
     });
+
+    // Launch webui
+    let (webui_sender, webui_handle) = spawn_webui();
 
     // Main loop
     // 1. Receive events from the environment
@@ -79,6 +85,10 @@ pub fn run(
 
                 // Send world data to runtime
                 if let Some(world_data) = tracker.get() {
+                    if let Err(err) = webui_sender.send(world_data.clone()) {
+                        log::error!("Failed to send world data to webui: {}", err);
+                    }
+
                     if let Err(err) = rt_tx.send(&RuntimeMsg::World(world_data)) {
                         log::error!("Failed to send world data to runtime: {}", err);
                     }
@@ -107,6 +117,7 @@ pub fn run(
     should_stop.store(true, Ordering::Relaxed);
     env_rx_thread.join().unwrap();
     rt_rx_thread.join().unwrap();
+    webui_handle.join().unwrap();
 
     Ok(())
 }

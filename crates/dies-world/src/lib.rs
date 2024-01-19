@@ -192,17 +192,10 @@ impl WorldTracker {
             }
         }
 
-        let ball = if let Some(ball_data) = self.ball_tracker.get() {
-            ball_data
-        } else {
-            log::warn!("Tried to get world state before ball was initialized");
-            return None;
-        };
-
         Some(WorldData {
             own_players: own_players.into_iter().cloned().collect(),
             opp_players: opp_players.into_iter().cloned().collect(),
-            ball: ball.clone(),
+            ball: self.ball_tracker.get().cloned(),
             field_geom: field_geom.clone(),
             current_game_state: self.game_state_tracker.get_game_state(),
         })
@@ -293,8 +286,10 @@ mod test {
         assert!(data.own_players[0].position.y == 200.0);
 
         // Check ball
-        assert!(data.ball.position.x == 0.0);
-        assert!(data.ball.position.y == 0.0);
+        assert!(data.ball.is_some());
+        let ball = data.ball.unwrap();
+        assert!(ball.position.x == 0.0);
+        assert!(ball.position.y == 0.0);
 
         // Check field geometry
         assert!(data.field_geom.field_length == 9000);
