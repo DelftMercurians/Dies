@@ -45,8 +45,7 @@ pub struct PlayerData {
     /// Velocity of the player in mm/s, in dies coordinates
     pub velocity: Vector2<f32>,
     /// Orientation of the player, in radians, (`-pi`, `pi`), where `0` is the positive
-    /// y direction, and `pi/2` is the positive x direction (regardless of the goal
-    /// sign).
+    /// x direction, and `pi/2` is the positive y direction.
     pub orientation: f32,
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f32,
