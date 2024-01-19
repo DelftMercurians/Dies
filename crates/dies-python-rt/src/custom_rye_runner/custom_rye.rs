@@ -1,8 +1,9 @@
 use anyhow::Result;
 use std::{
+    fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    process::Command, fs,
+    process::Command,
 };
 
 #[derive(Debug, PartialEq)]
@@ -39,13 +40,13 @@ impl CustomRyeRunner {
                 fs::create_dir_all(&cache_dir)?;
             }
             cache_dir
-        }
+        };
 
         Ok(CustomRyeRunner {
             custom_rye_bin: cache_dir,
             workspace,
             output: CustomRyeOutput::None,
-        });
+        })
     }
 
     pub fn get_custom_rye_bin(&self) -> PathBuf {
