@@ -74,24 +74,43 @@
     });
 
     // Draw ball
-    const ballPos = convertCoords(ball.position);
-    const ballCanvasRadius = convertLength(BALL_RADIUS);
-    ctx.fillStyle = "red";
-    ctx.beginPath();
-    ctx.arc(ballPos[0], ballPos[1], ballCanvasRadius, 0, 2 * Math.PI);
-    ctx.fill();
+    if (ball) {
+      const ballPos = convertCoords(ball.position);
+      const ballCanvasRadius = convertLength(BALL_RADIUS);
+      ctx.fillStyle = "red";
+      ctx.beginPath();
+      ctx.arc(ballPos[0], ballPos[1], ballCanvasRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
 
     // Draw players
-    const drawPlayer = (serverPos: XY, color: string) => {
+    const drawPlayer = (serverPos: XY, orientation: number, color: string) => {
       const [x, y] = convertCoords(serverPos);
       const robotCanvasRadius = convertLength(ROBOT_RADIUS);
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(x, y, robotCanvasRadius, 0, 2 * Math.PI);
       ctx.fill();
+
+      // Draw arrow for orientation
+      console.log(orientation);
+      const angle = -orientation;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(robotCanvasRadius, 0);
+      ctx.closePath();
+      ctx.restore();
+      ctx.stroke();
     };
-    own_players.forEach(({ position }) => drawPlayer(position, "blue"));
-    opp_players.forEach(({ position }) => drawPlayer(position, "yellow"));
+    own_players.forEach(({ position, orientation }) =>
+      drawPlayer(position, orientation, "blue")
+    );
+    opp_players.forEach(({ position, orientation }) =>
+      drawPlayer(position, orientation, "yellow")
+    );
 
     // // Render vector field on top
     // if (state.vector_field) {

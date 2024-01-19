@@ -17,7 +17,7 @@ pub struct RobotTestConfig {
 
 /// Sender half of the environment.
 pub struct RobotTestEnvSender {
-    // port: Mutex<Box<dyn SerialPort>>,
+    port: Mutex<Box<dyn SerialPort>>,
 }
 
 /// Receiver half of the environment.
@@ -28,12 +28,12 @@ pub struct RobotTestEnvReceiver {
 
 impl EnvSender for RobotTestEnvSender {
     fn send_player(&self, msg: dies_core::PlayerCmd) -> Result<()> {
-        // let cmd = format!("Sy{};Sx{};Sz{};S.\n", msg.sy, msg.sx, msg.w);
-        // self.port
-        //     .lock()
-        //     .unwrap()
-        //     .write_all(cmd.as_bytes())
-        //     .context("Failed to write to port")?;
+        println!("{}", cmd);
+        self.port
+            .lock()
+            .unwrap()
+            .write_all(cmd.as_bytes())
+            .context("Failed to write to port")?;
         Ok(())
     }
 }
@@ -41,9 +41,17 @@ impl EnvSender for RobotTestEnvSender {
 impl EnvReceiver for RobotTestEnvReceiver {
     fn recv(&mut self) -> Result<EnvEvent> {
         let data = self.socket.read(&mut self.buf)?;
-        let msg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket::parse_from_bytes(
+        let mut msg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket::parse_from_bytes(
             &self.buf[..data],
         )?;
+
+        if let Some(detection) = msg.detection.as_mut() {
+            detection.robots_blue.retain(|robot| {
+                robot.confidence.is_some_and(|c| c > 0.8)
+                    && robot.robot_id.is_some_and(|id| id == 12)
+            });
+        }
+
         Ok(EnvEvent::VisionMsg(msg))
         // Err(anyhow::anyhow!("Not implemented"))
     }
@@ -51,12 +59,12 @@ impl EnvReceiver for RobotTestEnvReceiver {
 
 impl EnvConfig for RobotTestConfig {
     fn build(self) -> Result<(Box<dyn EnvSender>, Box<dyn EnvReceiver>)> {
-        // let port = serialport::new(self.port_name.clone(), 115200)
-        //     .timeout(Duration::from_millis(10))
-        //     .open()
-        //     .context("Failed to open port")?;
+        let port = serialport::new(self.port_name.clone(), 115200)
+            .timeout(Duration::from_millis(10))
+            .open()
+            .context("Failed to open port")?;
         let sender = Box::new(RobotTestEnvSender {
-            // port: Mutex::new(port),
+            port: Mutex::new(port),
         });
 
         let socket = TcpStream::connect(format!("{}:{}", self.vision_host, self.vision_port))

@@ -49,6 +49,6 @@ export interface FieldGeometry {
 export interface World {
   own_players: PlayerData[];
   opp_players: PlayerData[];
-  ball: BallData;
+  ball: BallData | null;
   field_geom: FieldGeometry;
 }
