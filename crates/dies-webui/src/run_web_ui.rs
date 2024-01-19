@@ -1,19 +1,18 @@
-use rocket::fs::{relative, FileServer};
+use rocket::{
+    fairing::AdHoc,
+    fs::{relative, FileServer},
+    get, routes,
+    serde::json::Json,
+    Config, State,
+};
 
 use dies_core::WorldData;
-use dies_protos::{
-    ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
-    ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},
-    ssl_vision_wrapper::SSL_WrapperPacket,
-};
-use dies_world::{WorldConfig, WorldTracker};
+use tokio::sync::mpsc;
 
 use std::{
     sync::{Arc, Mutex},
     thread::JoinHandle,
 };
-
-use dies_core::WorldData;
 
 struct ServerState {
     world_data: Mutex<Option<WorldData>>,
