@@ -179,22 +179,6 @@ onMounted(async () => {
 
 <template>
   <canvas ref="canvas" class="football-field">
-    <Bot
-      v-for="bot in state?.own_players"
-      :key="bot.id"
-      :width="14"
-      :height="14"
-      color="blue"
-      :offset="
-        convertCoords(
-          bot.position,
-          canvasWidth - PADDING * 2,
-          state.field_geom.field_width,
-          canvasHeight - PADDING * 2,
-          state.field_geom.field_length
-        )
-      "
-    />
   </canvas>
 </template>
 
