@@ -1,57 +1,85 @@
-mod executor;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use anyhow::Result;
+use dies_ssl_client::SslVisionClientConfig;
+use dies_world::WorldConfig;
+use tokio::sync::oneshot;
 
-use dies_core::{EnvConfig, EnvEvent, PlayerCmd, RuntimeConfig};
-use dies_ersim_env::ErSimConfig;
-use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 use dies_python_rt::PyRuntimeConfig;
-use dies_robot_test_env::RobotTestConfig;
+use dies_serial_client::list_serial_ports;
 
-use crate::executor::run;
+mod executor;
 
-fn list_ports() -> Vec<String> {
-    let ports = serialport::available_ports().expect("No ports found!");
-    ports.into_iter().map(|p| p.port_name).collect()
-}
+use crate::executor::{run, ExecutorConfig};
 
-fn main() {
-    env_logger::init();
+#[tokio::main]
+async fn main() -> Result<()> {
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .init();
 
-    // Print ports
-    println!("Available ports:");
-    for port in list_ports() {
-        println!("  {}", port);
-    }
-
-    let env = RobotTestConfig {
-        port_name: "/dev/ttyACM0".into(),
-        vision_host: String::from("localhost"),
-        vision_port: 6078,
-    }
-    .build()
-    .expect("Failed to create ersim env");
-    let rt = PyRuntimeConfig {
-        workspace: std::env::current_dir().unwrap(),
-        package: "dies_test_strat".into(),
-        module: "__main__".into(),
-        sync: false,
-    }
-    .build()
-    .expect("Failed to create python runtime");
-
-    let should_stop = Arc::new(AtomicBool::new(false));
-
-    ctrlc::set_handler({
-        let should_stop = should_stop.clone();
-        move || {
-            println!("Stopping...");
-            should_stop.store(true, Ordering::Relaxed);
+    let ports = list_serial_ports()?;
+    let port = if !ports.is_empty() {
+        println!("Available ports:");
+        for (idx, port) in ports.iter().enumerate() {
+            println!("{}: {}", idx, port);
         }
-    })
-    .expect("Failed to set ctrl-c handler");
 
-    run(env, rt, should_stop).expect("Failed to run executor");
+        // Let user choose port
+        loop {
+            println!("Enter port number:");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            let port_idx = input.trim().parse::<usize>()?;
+            if port_idx < ports.len() {
+                break Some(ports[port_idx].clone());
+            } else {
+                println!("Invalid port number");
+            }
+        }
+    } else {
+        println!("No serial ports available, not connecting to basestation");
+        None
+    };
+
+    let config = ExecutorConfig {
+        py_config: PyRuntimeConfig {
+            workspace: std::env::current_dir().unwrap(),
+            package: "dies_test_strat".into(),
+            module: "__main__".into(),
+            sync: false,
+        },
+        world_config: WorldConfig {
+            is_blue: true,
+            initial_opp_goal_x: 1.0,
+        },
+        vision_config: Some(SslVisionClientConfig {
+            host: "localhost".to_string(),
+            port: 6078,
+            socket_type: dies_ssl_client::SocketType::Tcp,
+        }),
+        serial_config: match port {
+            Some(port) => Some(dies_serial_client::SerialClientConfig {
+                port_name: port.clone(),
+                ..Default::default()
+            }),
+            None => None,
+        },
+    };
+
+    let (stop_tx, stop_rx) = oneshot::channel();
+    tokio::spawn(async {
+        run(config, stop_rx).await.expect("Failed to run executor");
+    });
+
+    match tokio::signal::ctrl_c().await {
+        Ok(()) => {}
+        Err(err) => {
+            eprintln!("Unable to listen for shutdown signal: {}", err);
+            // we also shut down in case of error
+        }
+    }
+
+    // Send stop command
+    stop_tx.send(()).expect("Failed to send stop command");
+
+    Ok(())
 }

@@ -7,12 +7,9 @@ use rocket::{
 };
 
 use dies_core::WorldData;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinHandle};
 
-use std::{
-    sync::{Arc, Mutex},
-    thread::JoinHandle,
-};
+use std::sync::{Arc, Mutex};
 
 struct ServerState {
     world_data: Mutex<Option<WorldData>>,
@@ -21,12 +18,8 @@ struct ServerState {
 pub fn spawn_webui() -> (mpsc::UnboundedSender<WorldData>, JoinHandle<()>) {
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let handle = std::thread::spawn(|| {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(start_rocket(rx));
+    let handle = tokio::spawn(async {
+        start_rocket(rx).await;
     });
 
     (tx, handle)

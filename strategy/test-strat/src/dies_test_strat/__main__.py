@@ -52,6 +52,7 @@ if __name__ == "__main__":
             continue
         player = msg.own_players[0]
         rid = player.id
+        print(player.position)
 
         bridge.send(PlayerCmd(rid, 0, 0, 0))
         time.sleep(1 / 60)  # Small delay for the control loop

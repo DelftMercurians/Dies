@@ -1,8 +1,8 @@
 use anyhow::{bail, Result};
-use std::{
-    io::{BufRead, BufReader, ErrorKind, LineWriter, Write},
+use std::time::Duration;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf},
     net::{TcpListener, TcpStream},
-    time::{Duration, Instant},
 };
 
 /// A listener that opens a TCP socket and waits for a connection from a child process.
@@ -12,14 +12,10 @@ pub struct IpcListener {
     listener: TcpListener,
 }
 
-/// A sender that sends messages to a child process.
-pub struct IpcSender {
-    writer: LineWriter<TcpStream>,
-}
-
-/// A receiver that receives messages from a child process.
-pub struct IpcReceiver {
-    reader: BufReader<TcpStream>,
+/// An IPC connection to a child process.
+pub struct IpcConnection {
+    reader: BufReader<ReadHalf<TcpStream>>,
+    writer: WriteHalf<TcpStream>,
 }
 
 impl IpcListener {
@@ -30,9 +26,8 @@ impl IpcListener {
     /// # Errors
     ///
     /// Returns an error if the listener cannot be created.
-    pub fn new() -> Result<IpcListener> {
-        let listener = TcpListener::bind("0.0.0.0:0")?;
-        listener.set_nonblocking(true)?;
+    pub async fn new() -> Result<IpcListener> {
+        let listener = TcpListener::bind("0.0.0.0:0").await?;
         let host = listener.local_addr()?.ip().to_string();
         let port = listener.local_addr()?.port();
         Ok(IpcListener {
@@ -60,42 +55,36 @@ impl IpcListener {
     /// # Errors
     ///
     /// Returns an error if the connection cannot be accepted or the timeout expires.
-    pub fn wait_for_conn(self, timeout: Duration) -> Result<(IpcSender, IpcReceiver)> {
-        let start = Instant::now();
-        loop {
-            match self.listener.accept() {
-                Ok((stream, _)) => {
-                    let reader = BufReader::new(stream.try_clone()?);
-                    let writer = LineWriter::new(stream);
-                    break Ok((IpcSender { writer }, IpcReceiver { reader }));
-                }
-                Err(err) => {
-                    if err.kind() != ErrorKind::WouldBlock {
-                        bail!("Failed to accept connection: {}", err);
-                    }
-                    if start.elapsed() > timeout {
-                        bail!("Timeout waiting for connection");
-                    }
-                }
+    pub async fn wait_for_conn(self, timeout: Duration) -> Result<IpcConnection> {
+        tokio::select! {
+            res = self.listener.accept() => {
+                let (stream, _) = res?;
+                let (reader, writer) = tokio::io::split(stream);
+                let reader = BufReader::new(reader);
+                Ok(IpcConnection { reader, writer })
+            }
+            _ = tokio::time::sleep(timeout) => {
+                bail!("Timeout waiting for connection from child process");
             }
         }
     }
 }
 
-impl IpcSender {
+impl IpcConnection {
     /// Send a message to the child process.
     ///
     /// # Errors
     ///
     /// Returns an error if the message cannot be sent.
-    pub fn send(&mut self, data: &str) -> Result<()> {
-        self.writer.write(&data.as_bytes())?;
-        self.writer.write(&[b'\n'])?;
+    pub async fn send(&mut self, data: &str) -> Result<()> {
+        self.writer.write_all(&data.as_bytes()).await?;
+        if !data.ends_with("\n") {
+            self.writer.write_all(b"\n").await?;
+        }
+        self.writer.flush().await?;
         Ok(())
     }
-}
 
-impl IpcReceiver {
     /// Receive a message from the child process.
     ///
     /// This method blocks until a message is received.
@@ -104,9 +93,9 @@ impl IpcReceiver {
     ///
     /// Returns an error if the message cannot be
     /// received.
-    pub fn recv(&mut self) -> Result<String> {
+    pub async fn recv(&mut self) -> Result<String> {
         let mut line = String::new();
-        self.reader.read_line(&mut line)?;
+        self.reader.read_line(&mut line).await?;
         Ok(line)
     }
 }

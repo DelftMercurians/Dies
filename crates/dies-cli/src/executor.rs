@@ -1,123 +1,93 @@
 use anyhow::Result;
-use crossbeam::{channel::unbounded, select};
-use dies_core::{
-    EnvEvent, EnvReceiver, EnvSender, RuntimeEvent, RuntimeMsg, RuntimeReceiver, RuntimeSender,
-};
+
+use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent};
+use dies_serial_client::{SerialClient, SerialClientConfig};
+use dies_ssl_client::{SslVisionClient, SslVisionClientConfig};
 use dies_webui::spawn_webui;
 use dies_world::{WorldConfig, WorldTracker};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+use std::{
+    pin::pin,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
+use tokio::sync::oneshot;
 
-enum Update {
-    EnvEvent(EnvEvent),
-    RuntimeEvent(RuntimeEvent),
+pub struct ExecutorConfig {
+    pub py_config: PyRuntimeConfig,
+    pub world_config: WorldConfig,
+    pub vision_config: Option<SslVisionClientConfig>,
+    pub serial_config: Option<SerialClientConfig>,
 }
 
-pub fn run(
-    (env_tx, mut env_rx): (Box<dyn EnvSender>, Box<dyn EnvReceiver>),
-    (mut rt_tx, mut rt_rx): (Box<dyn RuntimeSender>, Box<dyn RuntimeReceiver>),
-    should_stop: Arc<AtomicBool>,
-) -> Result<()> {
-    let (env_ev_tx, env_ev_rx) = unbounded::<EnvEvent>();
-    let (rt_ev_tx, rt_ev_rx) = unbounded::<RuntimeEvent>();
-
-    // Launch the receiver threads
-    let should_stop_env_rx = Arc::clone(&should_stop);
-    let env_rx_thread = std::thread::spawn(move || {
-        while !should_stop_env_rx.load(Ordering::Relaxed) {
-            match env_rx.recv() {
-                Ok(ev) => {
-                    if let Err(err) = env_ev_tx.send(ev) {
-                        log::error!("Failed to send env event: {}", err);
-                    }
-                }
-                Err(err) => {
-                    log::error!("Failed to receive env event: {}", err);
-                }
-            }
-        }
-    });
-    let should_stop_rt_rx = Arc::clone(&should_stop);
-    let rt_rx_thread = std::thread::spawn(move || {
-        while !should_stop_rt_rx.load(Ordering::Relaxed) {
-            match rt_rx.recv() {
-                Ok(ev) => {
-                    if let Err(err) = rt_ev_tx.send(ev) {
-                        log::error!("Failed to send rt event: {}", err);
-                        panic!("Failed to send rt event: {}", err);
-                    }
-                }
-                Err(err) => {
-                    log::error!("Failed to receive rt event: {}", err);
-                    panic!("Failed to receive rt event: {}", err)
-                }
-            }
-        }
-    });
-
-    // Create world tracker
-    // TODO: Make this configurable
-    let mut tracker = WorldTracker::new(WorldConfig {
-        is_blue: true,
-        initial_opp_goal_x: 1.0,
-    });
+pub async fn run(config: ExecutorConfig, mut should_stop: oneshot::Receiver<()>) -> Result<()> {
+    let mut runtime = PyRuntime::new(config.py_config).await?;
+    let mut tracker = WorldTracker::new(config.world_config);
+    let mut vision = match config.vision_config {
+        Some(vision_config) => Some(SslVisionClient::new(vision_config).await?),
+        None => None,
+    };
+    let mut serial = match config.serial_config {
+        Some(serial_config) => Some(SerialClient::new(serial_config)?),
+        None => None,
+    };
 
     // Launch webui
     let (webui_sender, webui_handle) = spawn_webui();
 
-    // Main loop
-    // 1. Receive events from the environment
-    // 2. Process events with the world tracker
-    // 3. Send updates to the runtime
-    // 4. Send commands to the environment
-    while !should_stop.load(Ordering::Relaxed) {
-        let update = select! {
-            recv(env_ev_rx) -> msg => Update::EnvEvent(msg?),
-            recv(rt_ev_rx) -> msg => Update::RuntimeEvent(msg?),
-        };
+    loop {
+        tokio::select! {
+            _ = &mut should_stop => {
+                break;
+            }
+            vision_msg = vision.as_mut().unwrap().recv(), if vision.is_some() => {
+                match vision_msg {
+                    Ok(vision_msg) => {
+                        tracker.update_from_protobuf(&vision_msg);
 
-        match update {
-            Update::EnvEvent(EnvEvent::VisionMsg(vision_msg)) => {
-                // Process event with world tracker
-                tracker.update_from_protobuf(&vision_msg);
+                        if let Some(world_data) = tracker.get() {
+                            // Send update to runtime
+                            if let Err(err) = runtime.send(&dies_python_rt::RuntimeMsg::World(world_data.clone())).await {
+                                log::error!("Failed to send world data to runtime: {}", err);
+                            }
 
-                // Send world data to runtime
-                if let Some(world_data) = tracker.get() {
-                    if let Err(err) = webui_sender.send(world_data.clone()) {
-                        log::error!("Failed to send world data to webui: {}", err);
+                            // Send update to webui
+                            if let Err(err) = webui_sender.send(world_data) {
+                                log::error!("Failed to send world data to webui: {}", err);
+                            }
+                        }
                     }
-
-                    if let Err(err) = rt_tx.send(&RuntimeMsg::World(world_data)) {
-                        log::error!("Failed to send world data to runtime: {}", err);
+                    Err(err) => {
+                        log::error!("Failed to receive vision msg: {}", err);
                     }
                 }
             }
-            Update::EnvEvent(EnvEvent::GcRefereeMsg(_)) => {}
-            Update::RuntimeEvent(ev) => match ev {
-                RuntimeEvent::PlayerCmd(cmd) => {
-                    // Send command to environment
-                    if let Err(err) = env_tx.send_player(cmd) {
-                        log::error!("Failed to send player cmd to env: {}", err);
+            runtime_msg = runtime.recv() => {
+                match runtime_msg {
+                    Ok(RuntimeEvent::PlayerCmd(cmd)) => {
+                        if let Some(serial) = &mut serial {
+                            serial.send(cmd).await?;
+                        } else {
+                            log::error!("Received player cmd but serial is not configured");
+                        }
+                    }
+                    Ok(RuntimeEvent::Debug { msg }) => {
+                        log::debug!("Runtime debug: {}", msg);
+                    }
+                    Ok(RuntimeEvent::Crash { msg }) => {
+                        log::error!("Runtime crash: {}", msg);
+                        break;
+                    }
+                    Err(err) => {
+                        log::error!("Failed to receive runtime msg: {}", err);
+                        break;
                     }
                 }
-                RuntimeEvent::Debug { msg } => {
-                    log::debug!("Runtime debug: {}", msg);
-                }
-                RuntimeEvent::Crash { msg } => {
-                    log::error!("Runtime crash: {}", msg);
-                    break;
-                }
-            },
+            }
         }
     }
 
-    // Stop threads
-    should_stop.store(true, Ordering::Relaxed);
-    env_rx_thread.join().unwrap();
-    rt_rx_thread.join().unwrap();
-    webui_handle.join().unwrap();
-
+    webui_handle.await?;
     Ok(())
 }
