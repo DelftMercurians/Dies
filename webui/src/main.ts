@@ -1,13 +1,36 @@
-import "./app.css";
-import App from "./App.svelte";
+/**
+ * main.ts
+ *
+ * Bootstraps Vuetify and other plugins then mounts the App`
+ */
 
-if (import.meta.env.VITE_MSW) {
-  const { worker } = await import("./mocks/browser");
-  worker.start();
+// Plugins
+import { registerPlugins } from "@/plugins";
+
+// Components
+import App from "./App.vue";
+
+// Composables
+import { createApp } from "vue";
+
+const app = createApp(App);
+
+async function enableMocking() {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+  console.log("YO");
+
+  const { worker } = await import("./mocks/browser.js");
+  console.log("Yo");
+
+  // `worker.start()` returns a Promise that resolves
+  // once the Service Worker is up and ready to intercept requests.
+  return worker.start();
 }
 
-const app = new App({
-  target: document.getElementById("app"),
-});
+registerPlugins(app);
 
-export default app;
+enableMocking().then(() => {
+  app.mount("#app");
+});

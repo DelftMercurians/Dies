@@ -35,9 +35,9 @@ export interface FieldCircularArc {
 
 export interface FieldGeometry {
   /** The length of the field in mm. */
-  field_length: number;
+  field_length: number; // 10 000
   /** The width of the field in mm. */
-  field_width: number;
+  field_width: number; // 4 000
   goal_width: number;
   goal_depth: number;
   boundary_width: number;
@@ -49,6 +49,12 @@ export interface FieldGeometry {
 export interface World {
   own_players: PlayerData[];
   opp_players: PlayerData[];
-  ball: BallData | null;
+  ball: BallData;
   field_geom: FieldGeometry;
+}
+
+export interface RenderData {
+  context: CanvasRenderingContext2D;
+  width: number;
+  height: number;
 }

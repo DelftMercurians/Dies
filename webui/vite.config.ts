@@ -1,55 +1,41 @@
-import { defineConfig, ViteDevServer } from "vite";
-import open from "open";
-import { svelte } from "@sveltejs/vite-plugin-svelte";
+// Plugins
+import vue from '@vitejs/plugin-vue'
+import vuetify, { transformAssetUrls } from 'vite-plugin-vuetify'
+import ViteFonts from 'unplugin-fonts/vite'
 
-/**
- * A vite plugin that only open the UI in a browser if it's not already open.
- */
-const openBrowserPlugin = (enabled: boolean = true) => ({
-  name: "open-browser",
-  configureServer(server: ViteDevServer) {
-    // return a post hook that is called after internal middlewares are
-    // installed
-    return () => {
-      if (!enabled) return;
-
-      // wait a bit then check if we have incoming websocket connections
-      setTimeout(() => {
-        if (server.ws.clients.size === 0) {
-          // if not, open the browser
-          server.config.logger.info("Opening browser...");
-          const adr = server.httpServer.address();
-          const url =
-            typeof adr === "string" ? adr : `http://localhost:${adr.port}`;
-          open(url);
-        }
-      }, 2000);
-    };
-  },
-});
+// Utilities
+import { defineConfig } from 'vite'
+import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  server: {
-    // host: process.env.HOST || undefined,
-    // port: parseInt(process.env.PORT) || undefined,
-    // strictPort: !!parseInt(process.env.PORT),
-    proxy: {
-      "/api": `http://127.0.0.1:5555`,
-    },
-  },
-  // logLevel: "error",
-  clearScreen: false,
-  optimizeDeps: {
-    esbuildOptions: {
-      target: "esnext",
-    },
-  },
-  build: {
-    target: "es2020",
-  },
   plugins: [
-    svelte(),
-    // openBrowserPlugin(process.env.OPEN_BROWSER !== undefined),
+    vue({
+      template: { transformAssetUrls },
+    }),
+    // https://github.com/vuetifyjs/vuetify-loader/tree/master/packages/vite-plugin#readme
+    vuetify({
+      autoImport: true,
+    }),
+    ViteFonts({
+      google: {
+        families: [
+          {
+            name: 'Roboto',
+            styles: 'wght@100;300;400;500;700;900',
+          },
+        ],
+      },
+    }),
   ],
-});
+  define: { 'process.env': {} },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+    extensions: ['.js', '.json', '.jsx', '.mjs', '.ts', '.tsx', '.vue'],
+  },
+  server: {
+    port: 3000,
+  },
+})
