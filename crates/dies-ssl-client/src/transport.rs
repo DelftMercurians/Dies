@@ -76,6 +76,8 @@ impl<I: Message, O> Transport<I, O> {
 }
 
 impl<I: Message, O: Message> Transport<I, O> {
+    // TODO: Remove when not needed
+    #[allow(dead_code)]
     pub async fn send(&mut self, msg: O) -> Result<()> {
         let buf = msg.write_to_bytes()?;
         match &mut self.transport_type {

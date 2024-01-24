@@ -5,13 +5,6 @@ use dies_serial_client::{SerialClient, SerialClientConfig};
 use dies_ssl_client::{SslVisionClient, SslVisionClientConfig};
 use dies_webui::spawn_webui;
 use dies_world::{WorldConfig, WorldTracker};
-use std::{
-    pin::pin,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
 use tokio::sync::oneshot;
 
 pub struct ExecutorConfig {
