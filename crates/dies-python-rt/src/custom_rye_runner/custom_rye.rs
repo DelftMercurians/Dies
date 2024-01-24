@@ -1,10 +1,11 @@
 use anyhow::Result;
 use std::{
-    fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::Command,
 };
+
+use super::{get_custom_rye_dir, get_or_download_python};
 
 #[derive(Debug, PartialEq)]
 #[allow(dead_code)]
@@ -33,17 +34,9 @@ impl CustomRyeRunner {
             );
         }
 
-        let cache_dir = if let Some(mut cache_dir) = dirs::cache_dir() {
-            cache_dir.push("dies");
-            cache_dir.push("custom-rye");
-            if !cache_dir.exists() {
-                fs::create_dir_all(&cache_dir)?;
-            }
-            cache_dir
-        };
-
+        let custom_rye_bin = get_custom_rye_dir()?;
         Ok(CustomRyeRunner {
-            custom_rye_bin: cache_dir,
+            custom_rye_bin: custom_rye_bin,
             workspace,
             output: CustomRyeOutput::None,
         })
@@ -54,10 +47,14 @@ impl CustomRyeRunner {
     }
 
     pub fn sync(&self) -> Result<()> {
-        todo!("custom rye runner sync");
         // 1. Download python (fixed version: 3.9)
         // https://github.com/indygreg/python-build-standalone
+        // get_or_download_python()?;
+        
+        todo!("custom rye runner sync");
         // 2. extract to the cache folder (code from rye)
+            // dirs
+
         // 3. no virtual env in the workspace folder → create one (python -m venv)
         // 4. install dependencies from requirements.txt
     }
