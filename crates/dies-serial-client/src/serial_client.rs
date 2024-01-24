@@ -68,9 +68,6 @@ impl SerialClient {
     pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
         let cmd = format!("Sy{};Sx{};Sz{};S.\n", msg.sy, msg.sx, msg.w);
         self.writer.write_all(cmd.as_bytes()).await?;
-        if !cmd.ends_with("\n") {
-            self.writer.write_all(b"\n").await?;
-        }
         Ok(())
     }
 }
