@@ -18,6 +18,8 @@ dies-core = { version = "0.1.0", path = "../dies-core" }
 rand = "0.8.5"
 tokio = "1.35.1"
 serde = "1.0.195"
+zstd = "0.13.0"
+tar = "0.4.40"
 
 [dev-dependencies]
 indoc = "2.0.4"

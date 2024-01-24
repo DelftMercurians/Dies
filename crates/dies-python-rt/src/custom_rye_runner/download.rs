@@ -1,16 +1,19 @@
 use anyhow::Result;
-use const_format::formatcp;
 use dies_core::workspace_utils::get_workspace_root;
-use flate2::read::GzDecoder;
 use serde::Deserialize;
+use tar::Archive;
+use zstd::stream::read::Decoder;
+
 use std::{
     env,
     fs::{self, File},
     io::{self, BufWriter},
     path::PathBuf,
+    // process::Command,
 };
 
 #[derive(Deserialize, Debug)]
+
 struct Release {
     assets: Vec<Asset>,
 }
@@ -20,34 +23,102 @@ struct Asset {
     browser_download_url: String,
 }
 
-// const VERSION: &str = "0.15.2";
-// const VERSION: &str = "3.12.1"; // latest python version?
-
-#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-const BINARY: &str = "rye-x86_64-macos.gz";
-
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-const BINARY: &str = "rye-x86_64-linux.gz";
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-const BINARY: &str = "rye-aarch64-macos.gz";
-
-#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-const BINARY: &str = "rye-aarch64-linux.gz";
-
-#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-const BINARY: &str = "rye-x86_64-windows.exe";
-
-#[cfg(all(target_os = "windows", target_arch = "aarch64"))]
-const BINARY: &str = "rye-aarch64-windows.exe";
-
-const TAG: &str = "20240107";
-// const DOWNLOAD_URL: &str = formatcp!(
-//     "https://api.github.com/repos/indygreg/python-build-standalone/releases/tags/{}",
-//     TAG
-// );
 const DOWNLOAD_URL: &str =
-    "https://api.github.com/repos/indygreg/python-build-standalone/releases/latest";
+    "https://api.github.com/repos/indygreg/python-build-standalone/releases/tags/20240107";
+
+pub fn get_or_download_python() -> Result<PathBuf> {
+    let custom_rye_dir = get_custom_rye_dir()?;
+    let path = if cfg!(windows) {
+        custom_rye_dir.join("python.exe")
+    } else {
+        custom_rye_dir.join("python")
+    };
+
+    if path.exists() {
+        log::info!("Found python binary at {}", path.display());
+        return Ok(path);
+    }
+
+    log::info!("Downloading python binary to {}", path.display());
+
+    let release_response = reqwest::blocking::Client::new()
+        .get(DOWNLOAD_URL)
+        .header("User-Agent", "Delft-Mercurians/dies")
+        .send()?;
+
+    // Check if the request was successful (status code 200)
+    if !release_response.status().is_success() {
+        panic!(
+            "GitHub API request failed with status code: {}",
+            release_response.status()
+        );
+    }
+
+    // Parse the JSON response
+    let release: Release = serde_json::from_str(&release_response.text()?)?;
+
+    // Get the first asset
+    let asset = release
+        .assets
+        .first()
+        .ok_or(anyhow::anyhow!("No assets found for the release"))?;
+
+    // Download the asset
+    let asset_url = &asset.browser_download_url;
+    println!("asset_url: {}", asset_url);
+
+    let asset_response = reqwest::blocking::get(asset_url)?;
+    let bytes = asset_response.bytes()?;
+
+    let zstd_path = if cfg!(windows) {
+        custom_rye_dir.join("python.tar.zstd")
+    } else {
+        custom_rye_dir.join("python")
+    };
+
+    let file = File::create(zstd_path.clone())?;
+    let mut writer = BufWriter::new(&file);
+    io::copy(&mut &bytes[..], &mut writer)?;
+
+    println!("zstd_path: {}", zstd_path.display());
+    // tar -axvf C:\Users\teodo\AppData\Local\dies\custom_rye\python.tar.zstd
+    // tar xvf C:\Users\teodo\AppData\Local\dies\custom_rye\python.tar.zstd
+    // tar xvf C:\Users\teodo\Downloads\cpython-3.10.13+20240107-aarch64-apple-darwin-debug-full.tar.zst
+    // tar xvf C:\Users\teodo\Downloads\cpython-3.10.13+20240107-aarch64-apple-darwin-debug-full.tar.zst
+
+
+
+    // todo!("extract the tar.zstd file");
+
+    let input_file = fs::File::open(zstd_path)?;
+    let decoder = Decoder::new(input_file)?;
+
+    // Create a tar archive from the zstd decoder
+    let mut archive = Archive::new(decoder);
+
+    let output_folder_path = custom_rye_dir.clone();
+
+    // Extract the contents of the archive to the output folder
+    archive.unpack(output_folder_path)?;
+
+    // // Use the tar command to extract the file
+    // let output = Command::new("tar")
+    //     .arg("-axvf")
+    //     .arg(zstd_path.clone())
+    //     .output()
+    //     .expect("Failed to execute command");
+
+    // // Check if the command was successful
+    // if output.status.success() {
+    //     println!("Extraction successful!");
+    // } else {
+    //     // Print the error message if the command failed
+    //     eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
+    // }
+
+    log::info!("Downloaded python binary to {}", path.display());
+    Ok(path)
+}
 
 pub fn remove_python() -> Result<()> {
     let rye_dir = get_custom_rye_dir()?;
@@ -63,73 +134,6 @@ pub fn remove_python() -> Result<()> {
     }
 
     Ok(())
-}
-
-pub fn get_or_download_python() -> Result<PathBuf> {
-    // GitHub releases API
-    let rye_dir = get_custom_rye_dir()?;
-    let path = if cfg!(windows) {
-        rye_dir.join("python.exe")
-    } else {
-        rye_dir.join("python")
-    };
-
-    if path.exists() {
-        log::info!("Found python binary at {}", path.display());
-        return Ok(path);
-    }
-
-    log::info!("Downloading python binary to {}", path.display());
-    println!(
-        "Downloading python binary to {}, from: {}",
-        path.display(),
-        DOWNLOAD_URL
-    );
-
-    let release_response = reqwest::blocking::Client::new()
-        .get(DOWNLOAD_URL)
-        .header("User-Agent", "Delft-Mercurians/dies")
-        .send()?;
-
-    // Check if the request was successful (status code 200)
-    if !release_response.status().is_success() {
-        panic!(
-            "GitHub API request failed with status code: {}",
-            release_response.status()
-        );
-    }
-
-    println!("release_response: {:?}", release_response);
-
-    // Parse the JSON response
-    let release: Release = serde_json::from_str(&release_response.text()?)?;
-
-    //? Get the first asset - we may need more
-    let asset = release
-        .assets
-        .first()
-        .ok_or(anyhow::anyhow!("No assets found for the release"))?;
-
-    println!("asset: {:?}", asset);
-
-    // Download the asset
-    let asset_url = &asset.browser_download_url;
-    let asset_response = reqwest::blocking::get(asset_url)?;
-    let bytes = asset_response.bytes()?;
-
-    let file = File::create(path.clone())?;
-    let mut writer = BufWriter::new(&file);
-    // if BINARY.ends_with(".gz") {
-    //     let mut decoder = GzDecoder::new(&bytes[..]);
-    //     io::copy(&mut decoder, &mut writer)?;
-    // } else {
-    io::copy(&mut &bytes[..], &mut writer)?;
-    // }
-
-    // set_permission(&file)?;
-
-    log::info!("Downloaded python binary to {}", path.display());
-    Ok(path)
 }
 
 pub fn get_custom_rye_dir() -> Result<PathBuf> {
