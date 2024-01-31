@@ -11,3 +11,6 @@ build-backend = "hatchling.build"
 managed = true
 
 [tool.rye.workspace]
+
+[tool.hatch.build.targets.wheel]
+packages = ["strategy"]

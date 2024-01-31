@@ -1,7 +1,10 @@
 [project]
 name = "dies-test-strat"
 version = "0.1.0"
-dependencies = []
+dependencies = [
+    "numpy>=1.26.3",
+    "casadi>=3.6.4",
+]
 
 [build-system]
 requires = ["hatchling"]

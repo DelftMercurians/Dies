@@ -5,8 +5,11 @@
 #   pre: false
 #   features: []
 #   all-features: false
+#   with-sources: false
 
 -e file:.
 -e file:py/dies-py
 -e file:strategy/test-strat
+casadi==3.6.4
 msgspec==0.18.4
+numpy==1.26.3

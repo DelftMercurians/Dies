@@ -56,6 +56,7 @@ async fn start_rocket(mut rx: mpsc::UnboundedReceiver<WorldData>) {
         }))
         .configure(Config {
             port: 5555,
+            log_level: rocket::config::LogLevel::Off,
             ..Default::default()
         });
 

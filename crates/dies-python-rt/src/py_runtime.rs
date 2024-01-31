@@ -92,7 +92,7 @@ impl PyRuntime {
             .spawn()?;
 
         // Wait for the child process to connect to the socket
-        let ipc = listener.wait_for_conn(Duration::from_secs(10)).await?;
+        let ipc = listener.wait_for_conn(Duration::from_secs(15)).await?;
 
         log::debug!("Python process started");
 

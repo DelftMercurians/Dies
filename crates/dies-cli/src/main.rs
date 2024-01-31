@@ -13,26 +13,31 @@ use crate::executor::{run, ExecutorConfig};
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Warn)
         .init();
 
     let ports = list_serial_ports()?;
     let port = if !ports.is_empty() {
-        println!("Available ports:");
-        for (idx, port) in ports.iter().enumerate() {
-            println!("{}: {}", idx, port);
-        }
+        if ports.len() == 1 {
+            println!("Connecting to serial port {}", ports[0]);
+            Some(ports[0].clone())
+        } else {
+            println!("Available ports:");
+            for (idx, port) in ports.iter().enumerate() {
+                println!("{}: {}", idx, port);
+            }
 
-        // Let user choose port
-        loop {
-            println!("Enter port number:");
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
-            let port_idx = input.trim().parse::<usize>()?;
-            if port_idx < ports.len() {
-                break Some(ports[port_idx].clone());
-            } else {
-                println!("Invalid port number");
+            // Let user choose port
+            loop {
+                println!("Enter port number:");
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                let port_idx = input.trim().parse::<usize>()?;
+                if port_idx < ports.len() {
+                    break Some(ports[port_idx].clone());
+                } else {
+                    println!("Invalid port number");
+                }
             }
         }
     } else {
