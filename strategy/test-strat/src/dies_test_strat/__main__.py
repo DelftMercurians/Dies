@@ -1,18 +1,21 @@
 from math import sqrt, cos, sin, pi
 import time
+from glob import glob
+import numpy as np
 from dies_py import Bridge
 from dies_py.messages import PlayerCmd
 
+from dies_test_strat.vehicle import vehicle_SS
+from dies_test_strat.mpc import mpc_control
+
 print("Starting test-strat")
 
-# PID coefficients
-Kp = 0.2  # Proportional gain
-Ki = 0.005  # Integral gain
-Kd = 0.0  # Derivative gain
-
-# PID variables
-integral = [0, 0]
-prev_error = [0, 0]
+pos_constraints = [
+    -2,
+    2,
+    -2.5,
+    2.5,
+]  # Position Constraints [m]:    [x_min, x_max, y_min, y_max]
 
 
 def global_to_local_vel(velx, vely, theta):
@@ -22,62 +25,77 @@ def global_to_local_vel(velx, vely, theta):
     return new_x, new_y
 
 
-def traj(t):
-    speed = 1
-    radius = 250
-    t_scaled = speed * t
-
-    x = radius * cos(t_scaled)
-    y = radius * sin(t_scaled)
-
-    # x += 500
-
-    return x, y
-
-
 if __name__ == "__main__":
     bridge = Bridge()
-    tolerance = 30
-    start_time = time.time()
-    target_pos = (0, 0)
-    # is_going_to_center = True
+    x_target = [0, -800]
+    u = [0.2, 0]
+    tolerance = 0.01
 
-    while True:
-        msg = bridge.recv()
-        if not msg:
+    to_save = []
+    start_time = None
+    last_time = time.time()
+    try:
+        while True:
+            msg = bridge.recv()
+            if not msg:
+                continue
+
+            print([*msg.own_players, *msg.opp_players])
+            continue
+            player_id = 12
+            if len(msg.own_players) == 0:
+                print("No own players not found")
+                continue
+            player = next((p for p in msg.own_players if p.id == player_id), None)
+            if player is None:
+                print("Player not found")
+                continue
+            print(f"Player position: {player.position}")
             continue
 
-        if len(msg.own_players) == 0:
-            print("No players not found")
-            continue
-        player = next((p for p in msg.own_players if p.id == 12), None)
-        rid = player.id
+            bridge.send(PlayerCmd(player_id, *u))
+            to_save.append(
+                {
+                    "time": time.time(),
+                    "position": np.array(player.position),
+                    "velocity": np.array(player.velocity),
+                    "orientation": player.orientation,
+                    "u_target": u,
+                }
+            )
+            last_time = time.time()
 
-        current_time = time.time() - start_time
+            if start_time is None:
+                start_time = time.time()
+            elif time.time() - start_time > 20:
+                print("Time limit reached")
+                bridge.send(PlayerCmd(player_id, 0, 0))
+                break
 
-        error = (
-            target_pos[0] - player.position[0],
-            target_pos[1] - player.position[1],
-        )
-        integral[0] += error[0]
-        integral[1] += error[1]
-        derivative = (error[0] - prev_error[0], error[1] - prev_error[1])
+            if (
+                player.position[0] < pos_constraints[0] * 1000
+                or player.position[0] > pos_constraints[1] * 1000
+                or player.position[1] < pos_constraints[2] * 1000
+                or player.position[1] > pos_constraints[3] * 1000
+            ):
+                print("Out of bounds")
+                bridge.send(PlayerCmd(player_id, 0, 0))
+                continue
 
-        output_x = Kp * error[0] + Ki * integral[0] + Kd * derivative[0]
-        output_y = Kp * error[1] + Ki * integral[1] + Kd * derivative[1]
-
-        prev_error = error
-
-        dist = sqrt(error[0] ** 2 + error[1] ** 2)
-        print(f"Distance: {dist}")
-        if dist > tolerance:
-            x, y = global_to_local_vel(output_x, output_y, player.orientation)
-            # print(f"x: {x}, y: {y}")
-            bridge.send(PlayerCmd(rid, x, y, 0))
-            # bridge.send(PlayerCmd(rid, 0, 0, 100))
-        time.sleep(1 / 60)  # Small delay for the control loop
-        # elif is_going_to_center:
-        #     # is_going_to_center = False
-        #     bridge.send(PlayerCmd(rid, 0, 0, 0))
-        #     time.sleep(2)
-        #     start_time = time.time()
+            print(f"velocity: {player.velocity}")
+            if (
+                sqrt(player.velocity[0] ** 2 + player.velocity[1] ** 2)
+                > sqrt(u[0] ** 2 + u[1] ** 2) + 0.03
+            ):
+                print("Too fast")
+                bridge.send(PlayerCmd(player_id, 0, 0))
+                continue
+    except (KeyboardInterrupt, SystemExit, Exception) as e:
+        print(e)
+    finally:
+        print("Exiting")
+        # Find all file saved as traj##.npy
+        idxs = [int(fn[4:-4]) for fn in glob("traj[0-9][0-9].npy")]
+        last_idx = max(idxs) if len(idxs) > 0 else 0
+        np.save(f"traj{last_idx + 1:02d}.npy", np.array(to_save))
+        print("Saved trajectory")
