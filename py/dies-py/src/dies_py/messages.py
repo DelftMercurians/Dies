@@ -72,7 +72,7 @@ class PlayerCmd(Struct, tag=True):
     id: int
     sx: float
     sy: float
-    w: float
+    w: float = 0.0
 
 
 class Debug(Struct, tag=True):

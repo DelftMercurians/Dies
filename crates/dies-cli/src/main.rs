@@ -5,6 +5,7 @@ use tokio::sync::oneshot;
 
 use dies_python_rt::PyRuntimeConfig;
 use dies_serial_client::list_serial_ports;
+use tokio_util::sync::CancellationToken;
 
 mod executor;
 
@@ -70,9 +71,12 @@ async fn main() -> Result<()> {
         },
     };
 
-    let (stop_tx, stop_rx) = oneshot::channel();
-    tokio::spawn(async {
-        run(config, stop_rx).await.expect("Failed to run executor");
+    let cancel = CancellationToken::new();
+    let cancel_clone = cancel.clone();
+    let handle = tokio::spawn(async {
+        run(config, cancel_clone)
+            .await
+            .expect("Failed to run executor");
     });
 
     match tokio::signal::ctrl_c().await {
@@ -84,7 +88,8 @@ async fn main() -> Result<()> {
     }
 
     // Send stop command
-    stop_tx.send(()).expect("Failed to send stop command");
+    cancel.cancel();
+    handle.await?;
 
     Ok(())
 }

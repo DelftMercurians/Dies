@@ -1,6 +1,7 @@
 use dies_protos::ssl_gc_referee_message::Referee;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
+use nalgebra::ComplexField;
 mod ball;
 mod coord_utils;
 mod game_state;
@@ -40,6 +41,7 @@ pub struct WorldTracker {
     ball_tracker: BallTracker,
     game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
+    last_timestamp: Option<f64>,
 }
 
 impl WorldTracker {
@@ -53,6 +55,7 @@ impl WorldTracker {
             ball_tracker: BallTracker::new(config.initial_opp_goal_x),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
+            last_timestamp: None,
         }
     }
 
@@ -92,6 +95,9 @@ impl WorldTracker {
     pub fn update_from_protobuf(&mut self, data: &SSL_WrapperPacket) {
         if let Some(frame) = data.detection.as_ref() {
             let t_capture = frame.t_capture();
+            if (t_capture - self.last_timestamp.unwrap_or(0.0)).abs() <= (1.0 / 60.0) {
+                return;
+            }
 
             // Update players
             let (blue_trackers, yellow_tracker) = if self.is_blue {
@@ -136,6 +142,8 @@ impl WorldTracker {
 
             // Update ball
             self.ball_tracker.update(frame);
+
+            self.last_timestamp = Some(t_capture);
         }
         if let Some(geometry) = data.geometry.as_ref() {
             // We don't expect the field geometry to change, so only update it once.
