@@ -15,11 +15,10 @@ print("Starting test-strat")
 
 f = KalmanFilter(dim_x=4, dim_z=2)
 f.H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]])
-f.P *= 1000.0
+f.P *= 10.0
 f.R = np.array([[5, 0], [0, 5]])
-dt = 1 / 30
-f.F = np.array([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]])
-f.Q = Q_discrete_white_noise(dim=4, dt=1 / 30, var=0.13)
+# dt = 1 / 30
+
 
 pos_constraints = [
     -2,
@@ -42,6 +41,9 @@ if __name__ == "__main__":
     u = [1, 0]
     tolerance = 0.01
 
+    player_id = 14
+    rid = 2
+
     to_save = []
     start_time = None
     last_time = time.time()
@@ -52,8 +54,6 @@ if __name__ == "__main__":
             if not msg:
                 continue
 
-            player_id = 14
-            rid = 2
             if len(msg.own_players) == 0:
                 print("No own players not found")
                 continue
@@ -69,10 +69,15 @@ if __name__ == "__main__":
             phi = player.orientation
 
             dt = time.time() - last_time
+            f.F = np.array([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]])
+            f.Q = Q_discrete_white_noise(dim=4, dt=dt, var=0.13)
 
+            print(dt)
+            prev_x = f.x
             f.predict()
             f.update(pos)
-            vel = f.x[2:4]
+            vel = (f.x[0:2] - prev_x[0:2]) / dt
+            print(f.x[0:2])
             print(f"Velocity: {vel}")
 
             bridge.send(PlayerCmd(rid, u[0], u[1], 0))
@@ -80,6 +85,7 @@ if __name__ == "__main__":
                 {
                     "time": time.time(),
                     "position": pos,
+                    "f_position": f.x[0:2],
                     "velocity": vel,
                     "orientation": phi,
                     "u_target": u,
@@ -89,7 +95,7 @@ if __name__ == "__main__":
 
             if start_time is None:
                 start_time = time.time()
-            elif time.time() - start_time > 20:
+            elif time.time() - start_time > 5:
                 print("Time limit reached")
                 bridge.send(PlayerCmd(rid, 0, 0))
                 break
@@ -109,12 +115,12 @@ if __name__ == "__main__":
                 bridge.send(PlayerCmd(rid, 0, 0))
                 continue
     except (KeyboardInterrupt, SystemExit, Exception) as e:
-        print(e)
-    finally:
-        print("Exiting")
-        if len(to_save) > 2:
-            # Find all file saved as traj##.npy
-            idxs = [int(fn[4:-4]) for fn in glob("traj[0-9][0-9].npy")]
-            last_idx = max(idxs) if len(idxs) > 0 else 0
-            np.save(f"traj{last_idx + 1:02d}.npy", np.array(to_save))
-            print("Saved trajectory")
+        print("Stopping")
+
+    bridge.send(PlayerCmd(rid, 0, 0))
+    print("Exiting")
+    # Find all file saved as traj##.npy
+    idxs = [int(fn[4:-4]) for fn in glob("traj[0-9][0-9].npy")]
+    last_idx = max(idxs) if len(idxs) > 0 else 0
+    np.save(f"traj{last_idx + 1:02d}.npy", np.array(to_save))
+    print("Saved trajectory")

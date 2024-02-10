@@ -73,7 +73,6 @@ impl SerialClient {
             "p{};Sx{};Sy{};Sz{};Sd0;S.;\n",
             msg.id, msg.sx, msg.sy, msg.w
         );
-        println!("Sending: {}", cmd);
         self.writer.write_all(cmd.as_bytes()).await?;
         Ok(())
     }

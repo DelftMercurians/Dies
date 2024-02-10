@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dies_ssl_client::SslVisionClientConfig;
 use dies_world::WorldConfig;
-use tokio::sync::oneshot;
+use tokio::{sync::oneshot, time};
 
 use dies_python_rt::PyRuntimeConfig;
 use dies_serial_client::list_serial_ports;
@@ -86,6 +86,7 @@ async fn main() -> Result<()> {
             // we also shut down in case of error
         }
     }
+    time::sleep(time::Duration::from_secs(2)).await;
 
     // Send stop command
     cancel.cancel();
