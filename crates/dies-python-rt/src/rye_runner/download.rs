@@ -45,7 +45,7 @@ const DOWNLOAD_URL: &str = formatcp!(
 ///
 /// Returns an error if the rye binary cannot be downloaded or if the .rye directory
 /// cannot be created.
-pub fn get_or_download_rye_bin() -> Result<PathBuf> {
+pub async fn get_or_download_rye_bin() -> Result<PathBuf> {
     let rye_dir = get_rye_dir()?;
     let path = if cfg!(windows) {
         rye_dir.join("rye.exe")
@@ -59,8 +59,8 @@ pub fn get_or_download_rye_bin() -> Result<PathBuf> {
     }
 
     log::info!("Downloading rye binary to {}", path.display());
-    let response = reqwest::blocking::get(DOWNLOAD_URL)?;
-    let bytes = response.bytes()?;
+    let response = reqwest::get(DOWNLOAD_URL).await?;
+    let bytes = response.bytes().await?;
 
     let file = File::create(path.clone())?;
     let mut writer = BufWriter::new(&file);

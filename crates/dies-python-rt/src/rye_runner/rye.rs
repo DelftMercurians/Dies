@@ -46,7 +46,7 @@ impl RyeRunner {
     ///  - the given directory does not exist or does not contain a pyproject.toml file
     ///  - the rye directory cannot be created
     ///  - the rye binary cannot be downloaded
-    pub fn new(workspace: impl AsRef<Path>) -> Result<RyeRunner> {
+    pub async fn new(workspace: impl AsRef<Path>) -> Result<RyeRunner> {
         let workspace = workspace.as_ref().to_owned();
         if !workspace.is_dir() {
             anyhow::bail!("{} is not a directory", workspace.display());
@@ -57,7 +57,7 @@ impl RyeRunner {
                 workspace.display()
             );
         }
-        let rye_bin = get_or_download_rye_bin()?;
+        let rye_bin = get_or_download_rye_bin().await?;
         Ok(RyeRunner {
             rye_bin,
             workspace,

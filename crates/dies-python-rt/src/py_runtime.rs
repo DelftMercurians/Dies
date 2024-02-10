@@ -63,7 +63,7 @@ impl PyRuntime {
         if config.package.contains("-") {
             bail!("Package name cannot contain dashes");
         }
-        let rye = RyeRunner::new(&config.workspace)?;
+        let rye = RyeRunner::new(&config.workspace).await?;
         if config.sync {
             rye.sync()?;
         }
