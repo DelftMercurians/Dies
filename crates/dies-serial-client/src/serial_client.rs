@@ -66,7 +66,14 @@ impl SerialClient {
 
     /// Send a message to the serial port.
     pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
-        let cmd = format!("Sy{};Sx{};Sz{};S.\n", msg.sy, msg.sx, msg.w);
+        // let x = msg.sx.to_string().replace(".", ",");
+        // let y = msg.sy.to_string().replace(".", ",");
+        // let w = msg.w.to_string().replace(".", ",");
+        let cmd = format!(
+            "p{};Sx{};Sy{};Sz{};Sd0;S.;\n",
+            msg.id, msg.sx, msg.sy, msg.w
+        );
+        println!("Sending: {}", cmd);
         self.writer.write_all(cmd.as_bytes()).await?;
         Ok(())
     }

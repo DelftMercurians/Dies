@@ -8,7 +8,18 @@ from dies_py.messages import PlayerCmd
 from dies_test_strat.vehicle import vehicle_SS
 from dies_test_strat.mpc import mpc_control
 
+from filterpy.kalman import KalmanFilter
+from filterpy.common import Q_discrete_white_noise
+
 print("Starting test-strat")
+
+f = KalmanFilter(dim_x=4, dim_z=2)
+f.H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]])
+f.P *= 1000.0
+f.R = np.array([[5, 0], [0, 5]])
+dt = 1 / 30
+f.F = np.array([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]])
+f.Q = Q_discrete_white_noise(dim=4, dt=1 / 30, var=0.13)
 
 pos_constraints = [
     -2,
@@ -28,38 +39,49 @@ def global_to_local_vel(velx, vely, theta):
 if __name__ == "__main__":
     bridge = Bridge()
     x_target = [0, -800]
-    u = [0.2, 0]
+    u = [1, 0]
     tolerance = 0.01
 
     to_save = []
     start_time = None
     last_time = time.time()
+    f_init = False
     try:
         while True:
             msg = bridge.recv()
             if not msg:
                 continue
 
-            print([*msg.own_players, *msg.opp_players])
-            continue
-            player_id = 12
+            player_id = 14
+            rid = 2
             if len(msg.own_players) == 0:
                 print("No own players not found")
                 continue
+            # print(f"Own players: {msg.own_players}")
             player = next((p for p in msg.own_players if p.id == player_id), None)
             if player is None:
                 print("Player not found")
                 continue
-            print(f"Player position: {player.position}")
-            continue
+            # print(f"Player position: {player.position}")
+            if not f_init:
+                f.x = np.array([player.position[0], player.position[1], 0, 0])
+            pos = np.array([player.position[0], player.position[1]])
+            phi = player.orientation
 
-            bridge.send(PlayerCmd(player_id, *u))
+            dt = time.time() - last_time
+
+            f.predict()
+            f.update(pos)
+            vel = f.x[2:4]
+            print(f"Velocity: {vel}")
+
+            bridge.send(PlayerCmd(rid, u[0], u[1], 0))
             to_save.append(
                 {
                     "time": time.time(),
-                    "position": np.array(player.position),
-                    "velocity": np.array(player.velocity),
-                    "orientation": player.orientation,
+                    "position": pos,
+                    "velocity": vel,
+                    "orientation": phi,
                     "u_target": u,
                 }
             )
@@ -69,33 +91,30 @@ if __name__ == "__main__":
                 start_time = time.time()
             elif time.time() - start_time > 20:
                 print("Time limit reached")
-                bridge.send(PlayerCmd(player_id, 0, 0))
+                bridge.send(PlayerCmd(rid, 0, 0))
                 break
 
-            if (
-                player.position[0] < pos_constraints[0] * 1000
-                or player.position[0] > pos_constraints[1] * 1000
-                or player.position[1] < pos_constraints[2] * 1000
-                or player.position[1] > pos_constraints[3] * 1000
-            ):
-                print("Out of bounds")
-                bridge.send(PlayerCmd(player_id, 0, 0))
-                continue
+            # if (
+            #     pos[0] < pos_constraints[0] * 1000
+            #     or pos[0] > pos_constraints[1] * 1000
+            #     or pos[1] < pos_constraints[2] * 1000
+            #     or pos[1] > pos_constraints[3] * 1000
+            # ):
+            #     print("Out of bounds, position: ", pos)
+            #     bridge.send(PlayerCmd(rid, 0, 0))
+            #     continue
 
-            print(f"velocity: {player.velocity}")
-            if (
-                sqrt(player.velocity[0] ** 2 + player.velocity[1] ** 2)
-                > sqrt(u[0] ** 2 + u[1] ** 2) + 0.03
-            ):
-                print("Too fast")
-                bridge.send(PlayerCmd(player_id, 0, 0))
+            if np.linalg.norm(vel) > 1:
+                print("Too fast, velocity: ", player.velocity)
+                bridge.send(PlayerCmd(rid, 0, 0))
                 continue
     except (KeyboardInterrupt, SystemExit, Exception) as e:
         print(e)
     finally:
         print("Exiting")
-        # Find all file saved as traj##.npy
-        idxs = [int(fn[4:-4]) for fn in glob("traj[0-9][0-9].npy")]
-        last_idx = max(idxs) if len(idxs) > 0 else 0
-        np.save(f"traj{last_idx + 1:02d}.npy", np.array(to_save))
-        print("Saved trajectory")
+        if len(to_save) > 2:
+            # Find all file saved as traj##.npy
+            idxs = [int(fn[4:-4]) for fn in glob("traj[0-9][0-9].npy")]
+            last_idx = max(idxs) if len(idxs) > 0 else 0
+            np.save(f"traj{last_idx + 1:02d}.npy", np.array(to_save))
+            print("Saved trajectory")
