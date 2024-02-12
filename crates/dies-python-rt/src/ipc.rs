@@ -28,10 +28,9 @@ impl IpcListener {
     /// Returns an error if the listener cannot be created.
     pub async fn new() -> Result<IpcListener> {
         let listener = TcpListener::bind("0.0.0.0:0").await?;
-        let host = listener.local_addr()?.ip().to_string();
         let port = listener.local_addr()?.port();
         Ok(IpcListener {
-            host,
+            host: "127.0.0.1".into(),
             port,
             listener,
         })
