@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
 };
 
-const VERSION: &str = "0.15.2";
+const VERSION: &str = "0.19.0";
 
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 const BINARY: &str = "rye-x86_64-macos.gz";

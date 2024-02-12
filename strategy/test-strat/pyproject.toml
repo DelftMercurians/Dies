@@ -5,6 +5,7 @@ dependencies = [
     "numpy>=1.26.3",
     "casadi>=3.6.4",
     "filterpy>=1.4.5",
+    "snoop>=0.4.3",
 ]
 
 [build-system]

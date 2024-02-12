@@ -121,17 +121,24 @@ impl PyRuntime {
         let data = self.ipc.recv().await?;
         Ok(serde_json::from_str(&data)?)
     }
-}
 
-impl Drop for PyRuntime {
-    fn drop(&mut self) {
-        // Kill child process
+    pub fn kill(&mut self) {
         let mut child_proc = self.child_proc.lock().unwrap();
         if let Err(e) = child_proc.kill() {
             log::error!("Failed to kill python process: {}", e);
         }
     }
 }
+
+// impl Drop for PyRuntime {
+//     fn drop(&mut self) {
+//         // Kill child process
+//         let mut child_proc = self.child_proc.lock().unwrap();
+//         if let Err(e) = child_proc.kill() {
+//             log::error!("Failed to kill python process: {}", e);
+//         }
+//     }
+// }
 
 fn is_proc_alive(proc: &mut Child) -> bool {
     match proc.try_wait() {

@@ -47,6 +47,7 @@ async fn main() -> Result<()> {
     };
 
     let config = ExecutorConfig {
+        webui: false,
         py_config: PyRuntimeConfig {
             workspace: std::env::current_dir().unwrap(),
             package: "dies_test_strat".into(),
@@ -73,24 +74,34 @@ async fn main() -> Result<()> {
 
     let cancel = CancellationToken::new();
     let cancel_clone = cancel.clone();
-    let handle = tokio::spawn(async {
-        run(config, cancel_clone)
-            .await
-            .expect("Failed to run executor");
-    });
+    run(config, cancel_clone.clone())
+        .await
+        .expect("Failed to run executor");
 
-    match tokio::signal::ctrl_c().await {
-        Ok(()) => {}
-        Err(err) => {
-            eprintln!("Unable to listen for shutdown signal: {}", err);
-            // we also shut down in case of error
-        }
-    }
-    time::sleep(time::Duration::from_secs(2)).await;
+    // let ctrc = match tokio::signal::ctrl_c().await {
+    //     Ok(fut) => fut,
+    //     Err(err) => {
+    //         eprintln!("Unable to listen for shutdown signal: {}", err);
+    //         // Send stop command
+    //         cancel.cancel();
+    //         handle.await?;
+    //         return Ok(());
+    //     }
+    // };
+    // tokio::select! {
+    //     // _ = tokio::signal::ctrl_c() => {}
+    //     _ = &mut handle => {}
+    // };
+
+    println!("Shutting down");
 
     // Send stop command
-    cancel.cancel();
-    handle.await?;
+    // cancel.cancel();
+
+    // if !handle.is_finished() {
+    //     handle.abort();
+    //     handle.await.ok();
+    // }
 
     Ok(())
 }

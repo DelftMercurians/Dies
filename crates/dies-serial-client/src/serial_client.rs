@@ -74,6 +74,7 @@ impl SerialClient {
             msg.id, msg.sx, msg.sy, msg.w
         );
         self.writer.write_all(cmd.as_bytes()).await?;
+        self.writer.flush().await?;
         Ok(())
     }
 }

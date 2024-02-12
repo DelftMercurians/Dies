@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Result;
@@ -18,6 +18,7 @@ pub struct ExecutorConfig {
     pub world_config: WorldConfig,
     pub vision_config: Option<SslVisionClientConfig>,
     pub serial_config: Option<SerialClientConfig>,
+    pub webui: bool,
 }
 
 pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()> {
@@ -33,19 +34,31 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
     };
 
     // Launch webui
-    let (webui_sender, webui_handle) = spawn_webui();
+    let (webui_sender, webui_handle) = if config.webui {
+        let (webui_sender, webui_handle) = spawn_webui();
+        (Some(webui_sender), Some(webui_handle))
+    } else {
+        (None, None)
+    };
 
     let mut fail: HashMap<u32, bool> = HashMap::new();
     loop {
         tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                break;
+            }
             _ = cancel.cancelled() => {
                 break;
             }
-            vision_msg = vision.as_mut().unwrap().recv(), if vision.is_some() => {
+            vision_msg = vision.as_mut().unwrap().recv() => {
                 match vision_msg {
                     Ok(vision_msg) => {
-                        tracker.update_from_protobuf(&vision_msg);
+                        // Print balls
+                        // if let Some(frame) = vision_msg.detection.as_ref() {
+                        //     println!("Balls: {:?}", frame.balls.len());
+                        // }
 
+                        tracker.update_from_protobuf(&vision_msg);
                         if let Some(world_data) = tracker.get() {
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
                             for player in world_data.own_players.iter() {
@@ -68,8 +81,10 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             }
 
                             // Send update to webui
-                            if let Err(err) = webui_sender.send(world_data) {
-                                log::error!("Failed to send world data to webui: {}", err);
+                            if let Some(ref webui_sender) = webui_sender {
+                                if let Err(err) = webui_sender.send(world_data) {
+                                    log::error!("Failed to send world data to webui: {}", err);
+                                }
                             }
                         }
                     }
@@ -85,7 +100,15 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             if fail.get(&cmd.id) == Some(&true) {
                                 log::error!("Failsafe: not sending player cmd");
                             } else {
-                                serial.send(cmd).await?;
+                                match tokio::time::timeout(Duration::from_secs(1), serial.send(cmd)).await {
+                                    Ok(Ok(())) => {}
+                                    Ok(Err(err)) => {
+                                        log::error!("Failed to send player cmd to serial: {}", err);
+                                    }
+                                    Err(_) => {
+                                        log::error!("Timeout sending player cmd to serial");
+                                    }
+                                }
                             }
                         } else {
                             log::error!("Received player cmd but serial is not configured");
@@ -117,6 +140,13 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
         }
     }
 
-    webui_handle.await?;
+    println!("Exiting executor");
+    // runtime.kill();
+
+    if let (Some(webui_sender), Some(webui_handle)) = (webui_sender, webui_handle) {
+        drop(webui_sender);
+        webui_handle.await?;
+    }
+
     Ok(())
 }
