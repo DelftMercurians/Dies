@@ -140,7 +140,7 @@ class PID:
 if __name__ == "__main__":
     bridge = Bridge()
 
-    player_id = 5
+    player_id = 14
 
     dest = np.array([800, 800])
     path = None
@@ -150,17 +150,17 @@ if __name__ == "__main__":
     v_filter = VelFilter(dim=2, window=30)
     w_filter = AngVelFilter()
 
-    heading_pid = PID(dim=1, Kp=1.7, Ki=0.0002, Kd=0.6, diff_func=angle_diff)
+    heading_pid = PID(dim=1, Kp=2, Ki=0.0, Kd=0.0, diff_func=angle_diff)
     # heading_pid.set_target(pi)
 
-    pos_pid = PID(dim=2, Kp=0.4, Ki=0.0, Kd=0.0)
-    traj_pid = PID(dim=2, Kp=1.5, Ki=0.0, Kd=0.0)
-    ball_pid = PID(dim=2, Kp=0.2, Ki=0.0, Kd=0.0)
+    pos_pid = PID(dim=2, Kp=1.8, Ki=0.0, Kd=0.0)
+    # traj_pid = PID(dim=2, Kp=1.5, Ki=0.0, Kd=0.0)
+    # ball_pid = PID(dim=2, Kp=0.2, Ki=0.0, Kd=0.0)
     # pos_pid.set_target([0, 0])
 
-    dribble = 300
+    dribble = 0
 
-    ball = None
+    facing_target = False
     to_save = []
     last_time = time.time()
     try:
@@ -183,8 +183,7 @@ if __name__ == "__main__":
                 continue
             if msg.ball is None:
                 print("Ball not found")
-            else:
-                ball = msg.ball
+                continue
             pos = np.array([player.position[0], player.position[1]])
 
             other_players = [
@@ -194,44 +193,22 @@ if __name__ == "__main__":
                 [p.position[0], p.position[1], ROBOT_RADIUS] for p in other_players
             ]
 
-            if path is None:
-                print(f"Creating PRM, detected obstacles: {len(obstacles)}")
-                # prm = PRMController(
-                #     numOfRandomCoordinates=500,
-                #     allObs=obstacles,
-                #     current=pos,
-                #     destination=dest,
-                #     fieldHalfSize=900,
-                #     margin=3.5,
-                # )
-                # path = np.array(prm.runPRM(12))
-                path = plan_path(
-                    start=pos, goal=dest, obstacles=obstacles, width=3000, height=3000
-                )
-                path = path[:, 1, :]
-                print(f"Start {pos}, Destination {dest}")
-                print(f"Path created: {path}")
-
-                # plt.scatter(pos[0], pos[1], c="g")
-                # plt.scatter(dest[0], dest[1], c="r")
-                # for obs in obstacles:
-                #     circle = plt.Circle((obs[0], obs[1]), obs[2], color="b", fill=False)
-                #     plt.gcf().gca().add_artist(circle)
-                # plot_path = np.concatenate((pos, *path), axis=0).reshape(-1, 2)
-                # plt.plot(plot_path[:, 0], plot_path[:, 1], "r-")
-                # plt.show()
-
-                # last_time = time.time()
-                # break
-                continue
+            # if path is None:
+            #     print(f"Creating PRM, detected obstacles: {len(obstacles)}")
+            #     path = plan_path(
+            #         start=pos, goal=dest, obstacles=obstacles, width=3000, height=3000
+            #     )
+            #     path = path[:, 1, :]
+            #     print(f"Start {pos}, Destination {dest}")
+            #     print(f"Path created: {path}")
+            #     continue
 
             dt = max(time.time() - last_time, 1e-6)
             last_time = time.time()
 
-            if ball:
-                ball_pos = np.array([msg.ball.position[0], msg.ball.position[1]])
-                ball_v = ball_v_filter.update(ball_pos, dt)
-                ball_pred = ball_pos + ball_v * 0.2
+            ball_pos = np.array([msg.ball.position[0], msg.ball.position[1]])
+            ball_v = ball_v_filter.update(ball_pos, dt)
+            ball_pred = ball_pos  # + ball_v * 0.2
 
             vel = v_filter.update(pos)
             pos_pred = pos + vel * (1 / 20)
@@ -245,51 +222,31 @@ if __name__ == "__main__":
             elif phi_pred < -pi:
                 phi_pred += 2 * pi
 
-            target = path[path_idx]
-            dist = np.linalg.norm(target - pos)
-            if dist < 150:
-                print(f"Reached target {path_idx}")
-                path_idx += 1
-                if path_idx >= len(path):
-                    print("Reached destination")
-                    break
-                target = path[path_idx]
+            # dist = np.linalg.norm(target - pos)
+            # if dist < 150:
+            #     print(f"Reached target {path_idx}")
+            #     path_idx += 1
+            #     if path_idx >= len(path):
+            #         print("Reached destination")
+            #         break
+            #     target = path[path_idx]
 
+            target = np.array([ball_pos[0], 900])
+            target[0] = np.clip(target[0], -900, 900)
             pos_pid.set_target(target)
             u = pos_pid.step(pos)
 
-            line_vec = target - path[path_idx - 1]
-            point_vec = pos - path[path_idx - 1]
-            scalar_proj = np.dot(point_vec, line_vec) / np.dot(line_vec, line_vec)
-            proj = path[path_idx - 1] + scalar_proj * line_vec
-            traj_pid.set_target(proj)
-            u += traj_pid.step(pos)
+            # line_vec = target - path[path_idx - 1]
+            # point_vec = pos - path[path_idx - 1]
+            # scalar_proj = np.dot(point_vec, line_vec) / np.dot(line_vec, line_vec)
+            # proj = path[path_idx - 1] + scalar_proj * line_vec
+            # traj_pid.set_target(proj)
+            # u += traj_pid.step(pos)
 
-            if ball:
-                target_ball_pos = ball_pred + np.array([-100, 0])
-                ball_pid.set_target(target_ball_pos)
-                u += ball_pid.step(ball_pos)
-
-            # Add a repulsive force for each obstacle
-            # for obs in obstacles:
-            #     dist = np.linalg.norm(obs[:2] - pos)
-            #     if dist < obs[2] + 150:
-            #         v = pos - obs[:2]
-            #         v /= np.linalg.norm(v) + 1e-6
-            #         f = v * 0.4 * (1 / (dist - (obs[2] + 100)))
-            #         print("f", f)
-            #         u += f
-
-            # If near the border, slow down
-            # tresh = 70
-            # if (
-            #     abs(pos[0] - pos_bounds[0]) < tresh
-            #     or abs(pos[0] - pos_bounds[1]) < tresh
-            #     or abs(pos[1] - pos_bounds[2]) < tresh
-            #     or abs(pos[1] - pos_bounds[3]) < tresh
-            # ):
-            #     print("Near border")
-            #     u /= 20.0
+            # if ball:
+            #     target_ball_pos = ball_pred + np.array([-100, 0])
+            #     ball_pid.set_target(target_ball_pos)
+            #     u += ball_pid.step(ball_pos)
 
             u /= 1000.0
             vx, vy = global_to_local_vel(float(u[0]), float(u[1]), phi_pred)
@@ -305,8 +262,8 @@ if __name__ == "__main__":
                 vy = max_v if vy > 0 else -max_v
 
             # Face the target
-            heading_trg = np.arctan2(target[1] - pos[1], target[0] - pos[0])
-            heading_pid.set_target(0)
+            # heading_trg = np.arctan2(target[1] - pos[1], target[0] - pos[0])
+            heading_pid.set_target(-pi / 2)
             phi_err = angle_diff(heading_pid.target, phi)
             w = float(heading_pid.step(phi, phi_err)[0])
             if w > 6.0:
@@ -316,7 +273,8 @@ if __name__ == "__main__":
             elif abs(w) < 0.3:
                 w = 0.0
 
-            if abs(phi_err) > 0.5:
+            if abs(phi_err) > 0.05 and not facing_target:
+                facing_target = True
                 heading_pid.Ki = 0.05
                 bridge.send(PlayerCmd(player_id, 0, 0, w, dribble))
             else:
