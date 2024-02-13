@@ -4,32 +4,8 @@ from glob import glob
 import numpy as np
 from dies_py import Bridge
 from dies_py.messages import PlayerCmd, Term
-import pygame
-import matplotlib.pyplot as plt
-
-from dies_test_strat.vehicle import vehicle_SS
-from dies_test_strat.mpc import mpc_control
-from dies_test_strat.pathfinder import find_path
-
-from filterpy.kalman import KalmanFilter
-from filterpy.common import Q_discrete_white_noise
-
-# Use qtagg for matplotlib
-# import matplotlib
-
-# matplotlib.use("Qt5Agg")
-
-pygame.init()
-screen = pygame.display.set_mode((200, 200))
 
 print("Starting test-strat")
-
-f = KalmanFilter(dim_x=4, dim_z=2)
-f.H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]])
-
-R1 = 1000
-# f.P *= R1
-f.R = np.array([[R1, 0], [0, R1]])
 
 
 pos_bounds = [
@@ -47,6 +23,23 @@ def global_to_local_vel(velx, vely, theta):
     return new_x, new_y
 
 
+class SavGolFilter:
+    """Uses a savitky-golay filter to compute velocity from position"""
+
+    def __init__(self, dim, window=7) -> None:
+        self.window = window
+        self.state = np.zeros((self.window, dim))
+
+    def update(self, x):
+        from scipy.signal import savgol_filter
+
+        self.state = np.roll(self.state, -1, axis=0)
+        self.state[-1] = np.array(x)
+        dx = savgol_filter(self.state, self.window, 2, deriv=1, axis=0)
+
+        return dx[-1]
+
+
 class PID:
     def __init__(self, dim, Kp, Kd=0.0, Ki=0.0, diff_func=None):
         self.Kp = Kp
@@ -59,17 +52,19 @@ class PID:
         self.diff_func = diff_func if diff_func is not None else lambda a, b: a - b
 
     def set_target(self, target):
-        # self.integral = np.zeros(self.dim)
         self.target = np.array(target)
 
-    def step(self, current, error=None):
+    def step(self, current, error=None, derivative=None):
         assert self.target is not None, "No target!"
         if error is None:
             error = self.diff_func(np.array(self.target), np.array(current))
         else:
             error = np.array(error)
         self.integral += error
-        derivative = self.diff_func(current, self.prev_inp)
+        if derivative is None:
+            derivative = self.diff_func(current, self.prev_inp)
+        else:
+            derivative = np.array(derivative)
         self.prev_inp = current
         return self.Kp * error + self.Ki * self.integral + self.Kd * derivative
 
@@ -84,28 +79,23 @@ def angle_diff(target, phi):
 if __name__ == "__main__":
     bridge = Bridge()
 
-    player_id = 5
-    rid = 3
+    player_id = 14
+    rid = 2
 
-    # heading_pid = PID(dim=1, Kp=0.25, Ki=0.015, Kd=2.6)
-    # heading_Kp_base = 1.5
-    # heading_pid = PID(dim=1, Kp=heading_Kp_base, Ki=0.03, Kd=2.4)
-    # heading_pid.set_target(0)
+    v_filter = SavGolFilter(dim=2)
+    w_filter = SavGolFilter(dim=1)
 
-    # pos_pid = PID(dim=2, Kp=0.1, Ki=0.03, Kd=0.1)
-    heading_Kp_base = 1.3
-    heading_pid = PID(dim=1, Kp=heading_Kp_base, Ki=0.05, Kd=-0.0, diff_func=angle_diff)
+    heading_Kp_base = 1.2
+    heading_pid = PID(dim=1, Kp=heading_Kp_base, Ki=0.01, Kd=2.4, diff_func=angle_diff)
     heading_pid.set_target(pi)
 
-    # vel_pid = PID(dim=2, Kp=1.1, Ki=0.005, Kd=0.0)
-    # vel_pid.set_target([0, 0])
-    pos_pid = PID(dim=2, Kp=1.1, Ki=0.005, Kd=0.0)
+    pos_pid = PID(dim=2, Kp=2, Ki=0.00, Kd=0.0)
     pos_pid.set_target([0, 0])
 
     targets = np.array(
         [
-            [-1000, 0],
-            [700, 700],
+            [-500, -700],
+            [-500, 700],
         ]
     )
     target_idx = 0
@@ -113,25 +103,14 @@ if __name__ == "__main__":
     to_save = []
     start_time = None
     last_time = time.time()
-    f_init = False
     w = 0
     done_facing = False
     ball_n = 4
     ball_pos_avg = np.zeros((ball_n, 2))
     idx = 0
     u = None
-    target_dir = np.array([0, 0], dtype=np.float64)
     try:
         while True:
-            pygame.event.pump()  # process event queue
-            # Check for quit events
-            quit = next(
-                (True for e in pygame.event.get() if e.type == pygame.QUIT), False
-            )
-            if quit:
-                break
-
-            # print("Running")
             msg = bridge.recv()
             if not msg:
                 continue
@@ -145,16 +124,12 @@ if __name__ == "__main__":
             if player is None:
                 print("Player not found")
                 continue
-            # if msg.ball is None:
-            #     print("Ball not found")
-            #     continue
+            if msg.ball is None:
+                print("Ball not found")
+                continue
 
             if start_time is None:
                 start_time = time.time()
-
-            if not f_init:
-                f.x = np.array([player.position[0], player.position[1], 0, 0])
-                f_init = True
 
             # other_players = [
             #     p for p in [*msg.own_players, *msg.opp_players] if p.id != player_id
@@ -163,93 +138,30 @@ if __name__ == "__main__":
             #     print("No other players found")
             #     continue
 
-            # ball_pos = np.array([msg.ball.position[0], msg.ball.position[1]])
-            # ball_pos_avg[idx] = ball_pos
-            # ball_pos = ball_pos_avg.mean(axis=0)
+            ball_pos = np.array([msg.ball.position[0], msg.ball.position[1]])
             idx = (idx + 1) % ball_n
+            ball_pos_avg[idx] = ball_pos
+            ball_pos = ball_pos_avg.mean(axis=0)
             pos = np.array([player.position[0], player.position[1]])
-            vel = np.array([player.velocity[0], player.velocity[1]])
+            vel = v_filter.update(pos)
             phi = player.orientation
+            ang_vel = w_filter.update(phi)
             dt = time.time() - last_time
             last_time = time.time()
-
-            # f.F = np.array([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]])
-            # f.Q = Q_discrete_white_noise(dim=4, dt=dt, var=0.05)
-            # # f.Q = np.eye(4)
-            # f.predict()
-            # f.update(pos)
-
-            # vel = f.x[2:4]
-            # print("vel", vel)
-            # continue
-
-            # Get pressed keys
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_LEFT]:
-                target_dir[1] = 1
-            if keys[pygame.K_RIGHT]:
-                target_dir[1] = -1
-            if keys[pygame.K_UP]:
-                target_dir[0] = -1
-            if keys[pygame.K_DOWN]:
-                target_dir[0] = 1
-            if (
-                not keys[pygame.K_LEFT]
-                and not keys[pygame.K_RIGHT]
-                and not keys[pygame.K_UP]
-                and not keys[pygame.K_DOWN]
-            ):
-                target_dir *= 0
-            target_dir /= np.linalg.norm(target_dir) + 1e-6
-            u = target_dir * 1300
+            print("Vel", vel)
 
             target = targets[target_idx]
             dist = np.linalg.norm(pos - target)
             pos_pid.set_target(target)
             u = pos_pid.step(pos)
-            # target = ball_pos + np.array([0, +40])
-            # target_dir = find_path(
-            #     pos,
-            #     vel,
-            #     target,
-            #     static_obstacles=[
-            #         np.array([p.position[0], p.position[1]]) for p in other_players
-            #     ],
-            # )
-            plan = None
-            # target_dir, _, plan = mpc_control(
-            #     N=10,
-            #     dt=1 / 5,
-            #     tw=0,
-            #     obstacles=[[p.position[0], p.position[1], 100] for p in other_players],
-            #     move_obstacles=[],
-            #     last_plan=None,
-            #     x_init=pos,
-            #     u_init=vel,
-            #     x_target=target,
-            #     pos_constraints=pos_bounds,
-            #     vel_constraints=[-1000, 1000, -1000, 1000],
-            # )
-            # target_dir /= np.linalg.norm(target_dir)
-            # u = target_dir * dist * pos_pid.Kp
-            # pos_pid.set_target(target)
-            # u_pid = pos_pid.step(pos)
-            # if dist < 200:
-            #     u = u_pid
-
             if dist < 50:
                 target_idx = (target_idx + 1) % len(targets)
                 done_facing = False
-                # start_time = None
                 print("Reached target")
                 continue
 
-            # Face the ball
-            # heading = np.arctan2(ball_pos[1] - pos[1], ball_pos[0] - pos[0])
-            # Face forward
-            # heading = np.arctan2(target_dir[1] - pos[1], target_dir[0] - pos[0])
-            # heading += pi / 2
-            # heading_pid.set_target(pi)
+            # Face forward (+x axis)
+            heading_pid.set_target(0)
             # The error in angle between phi and the target heading (-pi, pi)
             err = angle_diff(heading_pid.target, phi)
             if abs(err) < 0.1:
@@ -263,28 +175,24 @@ if __name__ == "__main__":
                 v = np.linalg.norm(u)
                 u /= 1000.0
                 vx, vy = global_to_local_vel(float(u[0]), float(u[1]), phi + (w * dt))
-                heading_pid.Kp = 1.5 if v > 0.0 else 1.3
-                #     (3 * v) + heading_Kp_base if v > 0.1 else heading_Kp_base
-                # )
-                heading_pid.Kd = 2.4 if v > 0 else 0
-                heading_pid.Ki = 0.01 if v > 0 else 0
-                w = float(heading_pid.step(phi, err)[0])
-                bridge.send(PlayerCmd(rid, vx, -vy, w))
+                # heading_pid.Kp = 1.5 if v > 0.0 else 1.3
+                # #     (3 * v) + heading_Kp_base if v > 0.1 else heading_Kp_base
+                # # )
+                # heading_pid.Kd = 2.4 if v > 0 else 0
+                # heading_pid.Ki = 0.01 if v > 0 else 0
+                w = float(heading_pid.step(phi, err, derivative=ang_vel)[0])
+                bridge.send(PlayerCmd(rid, vx, -vy, 0))
             else:
                 heading_pid.Kd = 0.0
                 heading_pid.Ki = 0.0
-                w = float(heading_pid.step(phi, err)[0])
+                w = float(heading_pid.step(phi, err, derivative=ang_vel)[0])
                 bridge.send(PlayerCmd(rid, 0, 0, w))
-
-            # Live plot w
-            # plt.plot(time.time(), w, "ro")
-            # mypause(0.05)
 
             to_save.append(
                 {
                     "time": time.time(),
                     "position": pos,
-                    "f_position": f.x[0:2],
+                    # "f_position": f.x[0:2],
                     "velocity": vel,
                     "orientation": phi,
                     "w": w,
@@ -292,34 +200,15 @@ if __name__ == "__main__":
                     "heading_pid": heading_pid.get_params(),
                     "pos_pid": pos_pid.get_params(),
                     "phi_err": err,
-                    # "ball_pos": ball_pos,
+                    "ball_pos": ball_pos,
                     # "plan": plan,
                 }
             )
-
-            # if time.time() - start_time > 5:
-            #     print("Time limit reached")
-            #     bridge.send(PlayerCmd(rid, 0, 0))
-            #     break
 
             to_sleep = (1 / 20) - dt
             if to_sleep > 0:
                 time.sleep(to_sleep)
 
-            # if (
-            #     pos[0] < pos_bounds[0] * 1000
-            #     or pos[0] > pos_bounds[1] * 1000
-            #     or pos[1] < pos_bounds[2] * 1000
-            #     or pos[1] > pos_bounds[3] * 1000
-            # ):
-            #     print("Out of bounds, position: ", pos)
-            #     bridge.send(PlayerCmd(rid, 0, 0))
-            #     continue
-
-            # if np.linalg.norm(vel) > 10:
-            #     print("Too fast, velocity: ", vel)
-            #     bridge.send(PlayerCmd(rid, 0, 0))
-            #     continue
     except (KeyboardInterrupt, SystemExit) as e:
         print(e)
         print("Stopping")
@@ -331,5 +220,4 @@ if __name__ == "__main__":
         np.save(f"traj{last_idx + 1:02d}.npy", np.array(to_save))
         print("Saved trajectory")
 
-        pygame.quit()
         bridge.send(PlayerCmd(rid, 0, 0))
