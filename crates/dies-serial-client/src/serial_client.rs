@@ -1,6 +1,6 @@
 use anyhow::Result;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
-use tokio_serial::{available_ports, SerialPortBuilderExt, SerialStream};
+use serialport::available_ports;
+use tokio::sync::{mpsc, oneshot};
 
 use dies_core::PlayerCmd;
 
@@ -36,45 +36,49 @@ impl Default for SerialClientConfig {
 
 /// Async client for the serial port.
 pub struct SerialClient {
-    reader: BufReader<ReadHalf<SerialStream>>,
-    writer: WriteHalf<SerialStream>,
+    writer_tx: mpsc::UnboundedSender<(PlayerCmd, oneshot::Sender<Result<()>>)>,
 }
 
 impl SerialClient {
     /// Create a new `SerialClient`.
     pub fn new(config: SerialClientConfig) -> Result<Self> {
-        let mut port = tokio_serial::new(config.port_name, config.baud_rate)
+        let mut port = serialport::new(config.port_name, config.baud_rate)
             .timeout(std::time::Duration::from_millis(10))
-            .open_native_async()?;
+            .open()?;
 
-        #[cfg(unix)]
-        port.set_exclusive(false)?;
+        // Launch a blocking thread for writing to the serial port
+        let (tx, mut rx) = mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
+        tokio::task::spawn_blocking(move || {
+            loop {
+                match rx.blocking_recv() {
+                    Some((msg, sender)) => {
+                        let cmd = format!(
+                            "p{};Sx{};Sy{};Sz{};Sd0;S.;\n",
+                            msg.id, msg.sx, msg.sy, msg.w
+                        );
+                        if let Err(err) = port.write_all(cmd.as_bytes()) {
+                            sender.send(Err(err.into())).unwrap();
+                        } else if let Err(err) = port.flush() {
+                            sender.send(Err(err.into())).unwrap();
+                        } else {
+                            sender.send(Ok(())).unwrap();
+                        }
+                    }
+                    None => break,
+                }
+            }
+            port.clear(serialport::ClearBuffer::All).unwrap();
+            drop(port);
+            println!("Closing serial port");
+        });
 
-        let (reader, writer) = tokio::io::split(port);
-        Ok(Self {
-            reader: BufReader::new(reader),
-            writer,
-        })
-    }
-
-    /// Receive a message from the serial port.
-    pub async fn recv(&mut self) -> Result<String> {
-        let mut buf = String::new();
-        self.reader.read_line(&mut buf).await?;
-        Ok(buf)
+        Ok(Self { writer_tx: tx })
     }
 
     /// Send a message to the serial port.
     pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
-        // let x = msg.sx.to_string().replace(".", ",");
-        // let y = msg.sy.to_string().replace(".", ",");
-        // let w = msg.w.to_string().replace(".", ",");
-        let cmd = format!(
-            "p{};Sx{};Sy{};Sz{};Sd0;S.;\n",
-            msg.id, msg.sx, msg.sy, msg.w
-        );
-        self.writer.write_all(cmd.as_bytes()).await?;
-        self.writer.flush().await?;
-        Ok(())
+        let (tx, rx) = oneshot::channel();
+        self.writer_tx.send((msg, tx))?;
+        rx.await?
     }
 }

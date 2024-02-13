@@ -66,7 +66,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                                     fail.insert(player.id, true);
                                     if let Some(serial) = &mut serial {
                                         log::warn!("Failsafe: sending stop to runtime");
-                                        serial.send(PlayerCmd {id:player.id, sx: 0.0, sy: 0.0, w: 0.0 }).await?;
+                                        serial.send(PlayerCmd {id:player.id, sx: 0.0, sy: 0.0, w: 0.0 }).await.ok();
                                     } else {
                                         log::error!("Received player cmd but serial is not configured");
                                     }
@@ -100,13 +100,10 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             if fail.get(&cmd.id) == Some(&true) {
                                 log::error!("Failsafe: not sending player cmd");
                             } else {
-                                match tokio::time::timeout(Duration::from_secs(1), serial.send(cmd)).await {
-                                    Ok(Ok(())) => {}
-                                    Ok(Err(err)) => {
+                                match serial.send(cmd).await {
+                                    Ok(_) => {}
+                                    Err(err) => {
                                         log::error!("Failed to send player cmd to serial: {}", err);
-                                    }
-                                    Err(_) => {
-                                        log::error!("Timeout sending player cmd to serial");
                                     }
                                 }
                             }
