@@ -65,7 +65,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                                         fail.insert(player.id, true);
                                         if let Some(serial) = &mut serial {
                                             log::warn!("Failsafe: sending stop to runtime");
-                                            serial.send_no_wait(PlayerCmd {id: *robot_ids.get(&player.id).unwrap_or(&0), sx: 0.0, sy: 0.0, w: 0.0 });
+                                            serial.send_no_wait(PlayerCmd::zero(*robot_ids.get(&player.id).unwrap_or(&0)));
                                         }
                                     }
                                 } else {
@@ -102,7 +102,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             cmd.id = rid;
                             if fail.get(&cmd.id) == Some(&true) {
                                 log::error!("Failsafe: not sending player cmd");
-                                serial.send_no_wait(PlayerCmd {id:rid, sx: 0.0, sy: 0.0, w: 0.0 });
+                                serial.send_no_wait(PlayerCmd::zero(rid));
                             } else {
                                 match serial.send(cmd).await {
                                     Ok(_) => {}
@@ -156,6 +156,16 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
         Err(err) => {
             log::error!("Failed to wait for python process: {}", err);
             runtime.kill();
+        }
+    }
+
+    // Send stop to all players
+    log::info!("Sending stop to all players");
+    if let Some(serial) = &mut serial {
+        for id in robot_ids.values() {
+            if let Err(err) = serial.send(PlayerCmd::zero(*id)).await {
+                log::error!("Failed to send stop to player #{}: {}", id, err);
+            }
         }
     }
 

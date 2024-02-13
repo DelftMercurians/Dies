@@ -131,7 +131,13 @@ class Obstacle:
 
 class PRMController:
     def __init__(
-        self, numOfRandomCoordinates, allObs, current, destination, fieldHalfSize
+        self,
+        numOfRandomCoordinates,
+        allObs,
+        current,
+        destination,
+        fieldHalfSize,
+        margin,
     ):
         self.numOfCoords = numOfRandomCoordinates
         self.coordsList = np.array([])
@@ -144,6 +150,7 @@ class PRMController:
         self.solutionFound = False
         # Set to true to visualize the PRM
         self.visualize = True
+        self.margin = margin
 
     def runPRM(self, initialRandomSeed):
         seed = initialRandomSeed
@@ -253,7 +260,7 @@ class PRMController:
                     line = shapely.geometry.LineString([node, next_node])
                     for obs in self.allObs:
                         obstacleShape = shapely.geometry.Point(obs.x, obs.y).buffer(
-                            obs.r * 2
+                            obs.r * self.margin
                         )
                         if line.intersects(obstacleShape):
                             collision = True
@@ -295,14 +302,16 @@ class PRMController:
                 )
             )
 
-    def checkLineCollision(self, start_line, end_line, margin=4):
+    def checkLineCollision(self, start_line, end_line):
         collision = False
         line = shapely.geometry.LineString([start_line, end_line])
         for obs in self.allObs:
-            obstacleShape = shapely.geometry.Point(obs.x, obs.y).buffer(obs.r * margin)
+            obstacleShape = shapely.geometry.Point(obs.x, obs.y).buffer(
+                obs.r * self.margin
+            )
             collision = line.intersects(obstacleShape)
-        if collision:
-            return True
+            if collision:
+                return True
         return False
 
     def findNodeIndex(self, p):

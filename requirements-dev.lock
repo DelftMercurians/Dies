@@ -20,11 +20,15 @@ filterpy==1.4.5
 fonttools==4.48.1
 joblib==1.3.2
 kiwisolver==1.4.5
+llvmlite==0.42.0
 matplotlib==3.8.2
 msgspec==0.18.4
+networkx==3.2.1
+numba==0.59.0
 numpy==1.26.3
 packaging==23.2
 pillow==10.2.0
+pyfastnoisesimd==0.4.2
 pygame==2.5.2
 pygments==2.17.2
 pyparsing==3.1.1
@@ -32,9 +36,13 @@ pyqt5==5.15.10
 pyqt5-qt5==5.15.2
 pyqt5-sip==12.13.0
 python-dateutil==2.8.2
+rrtplanner==0.1.2
 scikit-learn==1.4.0
 scipy==1.12.0
 shapely==2.0.2
 six==1.16.0
 snoop==0.4.3
 threadpoolctl==3.2.0
+tqdm==4.66.2
+# The following packages are considered to be unsafe in a requirements file:
+setuptools==69.1.0

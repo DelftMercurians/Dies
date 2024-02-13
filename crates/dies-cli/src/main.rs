@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
     };
 
     let config = ExecutorConfig {
-        webui: false,
+        webui: true,
         robot_ids: std::collections::HashMap::from([(14, 2), (5, 3)]),
         py_config: PyRuntimeConfig {
             workspace: std::env::current_dir().unwrap(),

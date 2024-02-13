@@ -73,6 +73,7 @@ class PlayerCmd(Struct, tag=True):
     sx: float
     sy: float
     w: float = 0.0
+    dribble_speed: float = 0.0
 
 
 class Debug(Struct, tag=True):

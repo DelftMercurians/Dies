@@ -63,8 +63,8 @@ impl SerialClient {
                             ));
                         }
                         let cmd = format!(
-                            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd0;S.;\n",
-                            msg.id, msg.sx, msg.sy, msg.w
+                            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};S.;\n",
+                            msg.id, msg.sx, msg.sy, msg.w, msg.dribble_speed
                         );
                         // println!("Sending: {}", cmd);
                         if let Err(err) = port.write_all(cmd.as_bytes()) {

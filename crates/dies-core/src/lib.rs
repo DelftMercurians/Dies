@@ -24,4 +24,18 @@ pub struct PlayerCmd {
     pub sy: f32,
     /// The player's angular velocity (with `+` counter-clockwise, `-` clockwise) \[rad/s]
     pub w: f32,
+    /// The player's dribble speed
+    pub dribble_speed: f32,
+}
+
+impl PlayerCmd {
+    pub fn zero(id: u32) -> PlayerCmd {
+        PlayerCmd {
+            id,
+            sx: 0.0,
+            sy: 0.0,
+            w: 0.0,
+            dribble_speed: 0.0,
+        }
+    }
 }

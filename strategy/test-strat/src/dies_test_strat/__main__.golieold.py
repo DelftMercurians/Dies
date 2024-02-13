@@ -103,6 +103,7 @@ if __name__ == "__main__":
     try:
         while True:
             msg = bridge.recv()
+            print(msg)
             if not msg:
                 continue
 

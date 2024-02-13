@@ -2,8 +2,6 @@ from io import StringIO
 import os
 import socket
 import msgspec
-import threading
-import queue
 
 from .messages import msg_dec, Cmd, Msg
 
@@ -29,12 +27,12 @@ class Bridge:
         self.sock.connect((host, cmd_port))
         self.sock.settimeout(1)
 
-        self.msg_queue = queue.Queue()
-
-        self.listen_thread = threading.Thread(
-            target=self._listen_for_messages, daemon=True
-        )
-        self.listen_thread.start()
+        self.buffer = StringIO()
+        # self.msg_queue = queue.Queue()
+        # self.listen_thread = threading.Thread(
+        #     target=self._listen_for_messages, daemon=True
+        # )
+        # self.listen_thread.start()
 
     def send(self, message: Cmd):
         """Send a message to the dies server."""
@@ -43,43 +41,41 @@ class Bridge:
     def recv(self) -> Msg | None:
         """Receive a message from the dies server.
 
-        Returns None if no message is available."""
-        try:
-            return self.msg_queue.get_nowait()
-        except queue.Empty:
-            return None
+        Blocks until a message is available."""
+        msg_line = None
 
-    def _listen_for_messages(self):
-        buffer = StringIO()
         while True:
             try:
                 data = self.sock.recv(1024).decode("utf-8")
                 if data:
-                    buffer.write(data)
-                    buffer.seek(0)
-                    line = buffer.readline()
+                    self.buffer.write(data)
+                    self.buffer.seek(0)
+                    line = self.buffer.readline()
                     while line:
                         if line.endswith("\n"):
-                            decoded_msg = msg_dec.decode(line.rstrip("\n"))
-                            self.msg_queue.put(decoded_msg)
-
+                            msg_line = line
                             # Read the next line
-                            line = buffer.readline()
+                            line = self.buffer.readline()
                         else:
                             # Incomplete line, move the cursor back to its beginning
-                            buffer.seek(buffer.tell() - len(line))
+                            self.buffer.seek(self.buffer.tell() - len(line))
                             break
+                        line = self.buffer.readline()
 
-                    # Clear the buffer and write any incomplete line back to it
-                    remainder = buffer.read()
-                    buffer.seek(0)
-                    buffer.truncate(0)
-                    buffer.write(remainder)
+                    # Clear the self.buffer and write any incomplete line back to it
+                    remainder = self.buffer.read()
+                    self.buffer.seek(0)
+                    self.buffer.truncate(0)
+                    self.buffer.write(remainder)
+
+                    if msg_line is not None:
+                        try:
+                            decoded_msg = msg_dec.decode(msg_line.rstrip("\n"))
+                            return decoded_msg
+                        except msgspec.DecodeError:
+                            continue
                 else:
                     # No data, break the loop
                     break
             except socket.timeout:
                 continue
-            except Exception as e:
-                print(f"Error in listen_for_messages: {e}")
-                break
