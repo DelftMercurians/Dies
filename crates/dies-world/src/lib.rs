@@ -180,10 +180,9 @@ impl WorldTracker {
     /// [`WorldTracker::is_init`]).
     pub fn get(&self) -> Option<WorldData> {
         let field_geom = if let Some(v) = &self.field_geometry {
-            v
+            Some(v)
         } else {
-            log::warn!("Tried to get world state before field geometry was initialized");
-            return None;
+            None
         };
 
         let mut own_players = Vec::new();
@@ -204,7 +203,7 @@ impl WorldTracker {
             own_players: own_players.into_iter().cloned().collect(),
             opp_players: opp_players.into_iter().cloned().collect(),
             ball: self.ball_tracker.get().cloned(),
-            field_geom: field_geom.clone(),
+            field_geom: field_geom.cloned(),
             current_game_state: self.game_state_tracker.get_game_state(),
         })
     }
@@ -300,11 +299,12 @@ mod test {
         assert!(ball.position.y == 0.0);
 
         // Check field geometry
-        assert!(data.field_geom.field_length == 9000);
-        assert!(data.field_geom.field_width == 6000);
-        assert!(data.field_geom.goal_width == 1000);
-        assert!(data.field_geom.goal_depth == 200);
-        assert!(data.field_geom.boundary_width == 300);
+        let field_geom = data.field_geom.unwrap();
+        assert!(field_geom.field_length == 9000);
+        assert!(field_geom.field_width == 6000);
+        assert!(field_geom.goal_width == 1000);
+        assert!(field_geom.goal_depth == 200);
+        assert!(field_geom.boundary_width == 300);
     }
 
     pub struct RefereeBuilder {

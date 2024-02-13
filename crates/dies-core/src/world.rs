@@ -57,6 +57,6 @@ pub struct WorldData {
     pub own_players: Vec<PlayerData>,
     pub opp_players: Vec<PlayerData>,
     pub ball: Option<BallData>,
-    pub field_geom: FieldGeometry,
+    pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameState,
 }

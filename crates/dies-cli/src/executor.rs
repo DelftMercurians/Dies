@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 
 use dies_core::PlayerCmd;
-use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent};
+use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent, RuntimeMsg};
 use dies_serial_client::{SerialClient, SerialClientConfig};
 use dies_ssl_client::{SslVisionClient, SslVisionClientConfig};
 use dies_webui::spawn_webui;
@@ -42,7 +42,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
     };
 
     let mut fail: HashMap<u32, bool> = HashMap::new();
-    loop {
+    'main: loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 break;
@@ -50,25 +50,21 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
             _ = cancel.cancelled() => {
                 break;
             }
-            vision_msg = vision.as_mut().unwrap().recv() => {
+            vision_msg = tokio::time::timeout(Duration::from_millis(100), vision.as_mut().unwrap().recv()) => {
                 match vision_msg {
-                    Ok(vision_msg) => {
-                        // Print balls
-                        // if let Some(frame) = vision_msg.detection.as_ref() {
-                        //     println!("Balls: {:?}", frame.balls.len());
-                        // }
-
+                    Ok(Ok(vision_msg)) => {
                         tracker.update_from_protobuf(&vision_msg);
                         if let Some(world_data) = tracker.get() {
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
                             for player in world_data.own_players.iter() {
                                 if  SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64 - player.timestamp > 0.5 {
-                                    fail.insert(player.id, true);
-                                    if let Some(serial) = &mut serial {
-                                        log::warn!("Failsafe: sending stop to runtime");
-                                        serial.send(PlayerCmd {id:player.id, sx: 0.0, sy: 0.0, w: 0.0 }).await.ok();
-                                    } else {
-                                        log::error!("Received player cmd but serial is not configured");
+                                    if fail.get(&player.id) == Some(&false) {
+                                        fail.insert(player.id, true);
+                                        if let Some(serial) = &mut serial {
+                                            log::warn!("Failsafe: sending stop to runtime");
+                                            serial.send_no_wait(PlayerCmd {id:player.id, sx: 0.0, sy: 0.0, w: 0.0 });
+                                            // break 'main;
+                                        }
                                     }
                                 } else {
                                     fail.insert(player.id, false);
@@ -88,17 +84,21 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             }
                         }
                     }
-                    Err(err) => {
+                    Ok(Err(err)) => {
                         log::error!("Failed to receive vision msg: {}", err);
+                    }
+                    Err(_) => {
+                        log::error!("Vision timeout");
                     }
                 }
             }
-            runtime_msg = runtime.recv() => {
+            runtime_msg = tokio::time::timeout(Duration::from_millis(100), runtime.recv()) => {
                 match runtime_msg {
-                    Ok(RuntimeEvent::PlayerCmd(cmd)) => {
+                    Ok(Ok(RuntimeEvent::PlayerCmd(cmd))) => {
                         if let Some(serial) = &mut serial {
                             if fail.get(&cmd.id) == Some(&true) {
                                 log::error!("Failsafe: not sending player cmd");
+                                serial.send_no_wait(PlayerCmd {id:cmd.id, sx: 0.0, sy: 0.0, w: 0.0 });
                             } else {
                                 match serial.send(cmd).await {
                                     Ok(_) => {}
@@ -111,15 +111,19 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             log::error!("Received player cmd but serial is not configured");
                         }
                     }
-                    Ok(RuntimeEvent::Debug { msg }) => {
+                    Ok(Ok(RuntimeEvent::Debug { msg })) => {
                         log::debug!("Runtime debug: {}", msg);
                     }
-                    Ok(RuntimeEvent::Crash { msg }) => {
+                    Ok(Ok(RuntimeEvent::Crash { msg })) => {
                         log::error!("Runtime crash: {}", msg);
                         break;
                     }
-                    Err(err) => {
+                    Ok(Err(err)) => {
                         log::error!("Failed to receive runtime msg: {}", err);
+                        break;
+                    }
+                    Err(_) => {
+                        log::error!("Runtime timeout");
                         break;
                     }
                 }
@@ -138,7 +142,18 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
     }
 
     println!("Exiting executor");
-    // runtime.kill();
+    runtime.send(&RuntimeMsg::Term).await?;
+    match runtime.wait_with_timeout(Duration::from_secs(2)).await {
+        Ok(true) => {}
+        Ok(false) => {
+            log::error!("Python process did not exit in time, killing");
+            runtime.kill();
+        }
+        Err(err) => {
+            log::error!("Failed to wait for python process: {}", err);
+            runtime.kill();
+        }
+    }
 
     if let (Some(webui_sender), Some(webui_handle)) = (webui_sender, webui_handle) {
         drop(webui_sender);

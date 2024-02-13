@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -120,6 +120,28 @@ impl PyRuntime {
 
         let data = self.ipc.recv().await?;
         Ok(serde_json::from_str(&data)?)
+    }
+
+    pub async fn wait_with_timeout(&self, timeout: Duration) -> Result<bool> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let child_proc = Arc::clone(&self.child_proc);
+        tokio::task::spawn_blocking(move || {
+            let mut child_proc = child_proc.lock().unwrap();
+            let start = Instant::now();
+            let res = loop {
+                match child_proc.try_wait() {
+                    Ok(Some(_)) => break Ok(true),
+                    Ok(None) => {
+                        if start.elapsed() > timeout {
+                            break Ok(false);
+                        }
+                    }
+                    Err(e) => break Err(e),
+                }
+            };
+            tx.send(res).ok();
+        });
+        rx.await?.map_err(|e| e.into())
     }
 
     pub fn kill(&mut self) {

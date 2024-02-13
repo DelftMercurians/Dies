@@ -49,20 +49,33 @@ impl SerialClient {
         // Launch a blocking thread for writing to the serial port
         let (tx, mut rx) = mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
         tokio::task::spawn_blocking(move || {
+            let mut last_time = std::time::Instant::now();
+            const TARGET_FREQ: f64 = 30.0;
             loop {
                 match rx.blocking_recv() {
                     Some((msg, sender)) => {
+                        port.clear(serialport::ClearBuffer::Input).unwrap();
+                        // Limit the frequency of messages to the serial port
+                        let elapsed = last_time.elapsed().as_secs_f64();
+                        if elapsed < 1.0 / TARGET_FREQ {
+                            std::thread::sleep(std::time::Duration::from_secs_f64(
+                                1.0 / TARGET_FREQ - elapsed,
+                            ));
+                        }
                         let cmd = format!(
-                            "p{};Sx{};Sy{};Sz{};Sd0;S.;\n",
+                            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd0;S.;\n",
                             msg.id, msg.sx, msg.sy, msg.w
                         );
+                        // println!("Sending: {}", cmd);
                         if let Err(err) = port.write_all(cmd.as_bytes()) {
-                            sender.send(Err(err.into())).unwrap();
+                            sender.send(Err(err.into())).ok();
                         } else if let Err(err) = port.flush() {
-                            sender.send(Err(err.into())).unwrap();
+                            sender.send(Err(err.into())).ok();
                         } else {
-                            sender.send(Ok(())).unwrap();
+                            sender.send(Ok(())).ok();
                         }
+                        // println!("Sent, dt: {}ms", last_time.elapsed().as_millis());
+                        last_time = std::time::Instant::now();
                     }
                     None => break,
                 }
@@ -80,5 +93,10 @@ impl SerialClient {
         let (tx, rx) = oneshot::channel();
         self.writer_tx.send((msg, tx))?;
         rx.await?
+    }
+
+    pub fn send_no_wait(&mut self, msg: PlayerCmd) {
+        let (tx, _) = oneshot::channel();
+        self.writer_tx.send((msg, tx)).ok();
     }
 }
