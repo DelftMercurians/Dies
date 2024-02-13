@@ -18,6 +18,7 @@ cycler==0.12.1
 executing==2.0.1
 filterpy==1.4.5
 fonttools==4.48.1
+joblib==1.3.2
 kiwisolver==1.4.5
 matplotlib==3.8.2
 msgspec==0.18.4
@@ -31,6 +32,9 @@ pyqt5==5.15.10
 pyqt5-qt5==5.15.2
 pyqt5-sip==12.13.0
 python-dateutil==2.8.2
+scikit-learn==1.4.0
 scipy==1.12.0
+shapely==2.0.2
 six==1.16.0
 snoop==0.4.3
+threadpoolctl==3.2.0

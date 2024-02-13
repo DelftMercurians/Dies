@@ -19,6 +19,8 @@ pub struct ExecutorConfig {
     pub vision_config: Option<SslVisionClientConfig>,
     pub serial_config: Option<SerialClientConfig>,
     pub webui: bool,
+    /// Maps vision IDs to robot IDs
+    pub robot_ids: HashMap<u32, u32>,
 }
 
 pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()> {
@@ -32,6 +34,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
         Some(serial_config) => Some(SerialClient::new(serial_config)?),
         None => None,
     };
+    let robot_ids = config.robot_ids;
 
     // Launch webui
     let (webui_sender, webui_handle) = if config.webui {
@@ -42,7 +45,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
     };
 
     let mut fail: HashMap<u32, bool> = HashMap::new();
-    'main: loop {
+    loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 break;
@@ -62,8 +65,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                                         fail.insert(player.id, true);
                                         if let Some(serial) = &mut serial {
                                             log::warn!("Failsafe: sending stop to runtime");
-                                            serial.send_no_wait(PlayerCmd {id:player.id, sx: 0.0, sy: 0.0, w: 0.0 });
-                                            // break 'main;
+                                            serial.send_no_wait(PlayerCmd {id: *robot_ids.get(&player.id).unwrap_or(&0), sx: 0.0, sy: 0.0, w: 0.0 });
                                         }
                                     }
                                 } else {
@@ -92,13 +94,15 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                     }
                 }
             }
-            runtime_msg = tokio::time::timeout(Duration::from_millis(100), runtime.recv()) => {
+            runtime_msg = runtime.recv() => {
                 match runtime_msg {
-                    Ok(Ok(RuntimeEvent::PlayerCmd(cmd))) => {
+                    Ok(RuntimeEvent::PlayerCmd(mut cmd)) => {
                         if let Some(serial) = &mut serial {
+                            let rid = *robot_ids.get(&cmd.id).unwrap_or(&0);
+                            cmd.id = rid;
                             if fail.get(&cmd.id) == Some(&true) {
                                 log::error!("Failsafe: not sending player cmd");
-                                serial.send_no_wait(PlayerCmd {id:cmd.id, sx: 0.0, sy: 0.0, w: 0.0 });
+                                serial.send_no_wait(PlayerCmd {id:rid, sx: 0.0, sy: 0.0, w: 0.0 });
                             } else {
                                 match serial.send(cmd).await {
                                     Ok(_) => {}
@@ -111,21 +115,21 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             log::error!("Received player cmd but serial is not configured");
                         }
                     }
-                    Ok(Ok(RuntimeEvent::Debug { msg })) => {
+                    Ok(RuntimeEvent::Debug { msg }) => {
                         log::debug!("Runtime debug: {}", msg);
                     }
-                    Ok(Ok(RuntimeEvent::Crash { msg })) => {
+                    Ok(RuntimeEvent::Crash { msg }) => {
                         log::error!("Runtime crash: {}", msg);
                         break;
                     }
-                    Ok(Err(err)) => {
+                    Err(err) => {
                         log::error!("Failed to receive runtime msg: {}", err);
                         break;
                     }
-                    Err(_) => {
-                        log::error!("Runtime timeout");
-                        break;
-                    }
+                    // Err(_) => {
+                    //     log::error!("Runtime timeout");
+                    //     break;
+                    // }
                 }
             }
             // serial_msg = serial.as_mut().unwrap().recv(), if serial.is_some() => {
