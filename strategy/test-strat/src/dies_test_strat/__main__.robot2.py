@@ -27,8 +27,8 @@ print("Starting test-strat")
 f = KalmanFilter(dim_x=4, dim_z=2)
 f.H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]])
 
-R1 = 1000
-# f.P *= R1
+R1 = 10
+f.P *= np.array([[R1, 0, 0, 0], [0, R1, 0, 0], [0, 0, R1, 0], [0, 0, 0, R1]])
 f.R = np.array([[R1, 0], [0, R1]])
 
 
@@ -81,6 +81,18 @@ def angle_diff(target, phi):
     return (target - phi + np.pi) % (2 * np.pi) - np.pi
 
 
+def mypause(interval):
+    backend = plt.rcParams["backend"]
+    if backend in matplotlib.rcsetup.interactive_bk:
+        figManager = matplotlib._pylab_helpers.Gcf.get_active()
+        if figManager is not None:
+            canvas = figManager.canvas
+            if canvas.figure.stale:
+                canvas.draw()
+            canvas.start_event_loop(interval)
+            return
+
+
 if __name__ == "__main__":
     bridge = Bridge()
 
@@ -97,15 +109,13 @@ if __name__ == "__main__":
     heading_pid = PID(dim=1, Kp=heading_Kp_base, Ki=0.05, Kd=-0.0, diff_func=angle_diff)
     heading_pid.set_target(pi)
 
-    # vel_pid = PID(dim=2, Kp=1.1, Ki=0.005, Kd=0.0)
-    # vel_pid.set_target([0, 0])
-    pos_pid = PID(dim=2, Kp=1.1, Ki=0.005, Kd=0.0)
+    pos_pid = PID(dim=2, Kp=0.4, Ki=0.05, Kd=0.0)
     pos_pid.set_target([0, 0])
 
     targets = np.array(
         [
             [-1000, 0],
-            [700, 700],
+            # [700, 700],
         ]
     )
     target_idx = 0
@@ -163,26 +173,6 @@ if __name__ == "__main__":
             #     print("No other players found")
             #     continue
 
-            # ball_pos = np.array([msg.ball.position[0], msg.ball.position[1]])
-            # ball_pos_avg[idx] = ball_pos
-            # ball_pos = ball_pos_avg.mean(axis=0)
-            idx = (idx + 1) % ball_n
-            pos = np.array([player.position[0], player.position[1]])
-            vel = np.array([player.velocity[0], player.velocity[1]])
-            phi = player.orientation
-            dt = time.time() - last_time
-            last_time = time.time()
-
-            # f.F = np.array([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]])
-            # f.Q = Q_discrete_white_noise(dim=4, dt=dt, var=0.05)
-            # # f.Q = np.eye(4)
-            # f.predict()
-            # f.update(pos)
-
-            # vel = f.x[2:4]
-            # print("vel", vel)
-            # continue
-
             # Get pressed keys
             keys = pygame.key.get_pressed()
             if keys[pygame.K_LEFT]:
@@ -199,15 +189,21 @@ if __name__ == "__main__":
                 and not keys[pygame.K_UP]
                 and not keys[pygame.K_DOWN]
             ):
-                target_dir *= 0
+                target_dir = np.array([0, 0], dtype=np.float64)
             target_dir /= np.linalg.norm(target_dir) + 1e-6
             u = target_dir * 1300
 
-            target = targets[target_idx]
-            dist = np.linalg.norm(pos - target)
-            pos_pid.set_target(target)
-            u = pos_pid.step(pos)
+            # ball_pos = np.array([msg.ball.position[0], msg.ball.position[1]])
+            # ball_pos_avg[idx] = ball_pos
+            # ball_pos = ball_pos_avg.mean(axis=0)
+            idx = (idx + 1) % ball_n
+            pos = np.array([player.position[0], player.position[1]])
+            vel = np.array([player.velocity[0], player.velocity[1]])
+            phi = player.orientation
+
+            # target = targets[target_idx]
             # target = ball_pos + np.array([0, +40])
+            # dist = np.linalg.norm(pos - target)
             # target_dir = find_path(
             #     pos,
             #     vel,
@@ -237,12 +233,18 @@ if __name__ == "__main__":
             # if dist < 200:
             #     u = u_pid
 
-            if dist < 50:
-                target_idx = (target_idx + 1) % len(targets)
-                done_facing = False
-                # start_time = None
-                print("Reached target")
-                continue
+            dt = time.time() - last_time
+            # f.F = np.array([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]])
+            # f.Q = Q_discrete_white_noise(dim=4, dt=dt, var=0.013)
+            # f.predict()
+            # f.update(pos)
+
+            # if dist < 50:
+            #     # target_idx = (target_idx + 1) % len(targets)
+            #     done_facing = False
+            #     # start_time = None
+            #     print("Reached target")
+            #     continue
 
             # Face the ball
             # heading = np.arctan2(ball_pos[1] - pos[1], ball_pos[0] - pos[0])
@@ -260,14 +262,18 @@ if __name__ == "__main__":
             #     start_time = None
 
             if done_facing:
-                v = np.linalg.norm(u)
+                vel_err = u - vel
+                u = u + vel_err * 0.2
                 u /= 1000.0
-                vx, vy = global_to_local_vel(float(u[0]), float(u[1]), phi + (w * dt))
-                heading_pid.Kp = 1.5 if v > 0.0 else 1.3
-                #     (3 * v) + heading_Kp_base if v > 0.1 else heading_Kp_base
-                # )
-                heading_pid.Kd = 2.4 if v > 0 else 0
-                heading_pid.Ki = 0.01 if v > 0 else 0
+                vx, vy = global_to_local_vel(
+                    float(u[0]), float(u[1]), phi + (w * dt / 2)
+                )
+                v = np.linalg.norm(u)
+                heading_pid.Kp = (
+                    (0.5 * v) + heading_Kp_base if v > 0.1 else heading_Kp_base
+                )
+                heading_pid.Kd = -(2 * v) if v > 0.1 else 0
+                heading_pid.Ki = 0.04 if v > 0.1 else 0
                 w = float(heading_pid.step(phi, err)[0])
                 bridge.send(PlayerCmd(rid, vx, -vy, w))
             else:
@@ -296,6 +302,7 @@ if __name__ == "__main__":
                     # "plan": plan,
                 }
             )
+            last_time = time.time()
 
             # if time.time() - start_time > 5:
             #     print("Time limit reached")

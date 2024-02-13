@@ -6,6 +6,7 @@ dependencies = [
     "casadi>=3.6.4",
     "filterpy>=1.4.5",
     "snoop>=0.4.3",
+    "pygame>=2.5.2",
 ]
 
 [build-system]

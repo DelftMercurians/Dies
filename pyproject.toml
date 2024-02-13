@@ -1,7 +1,9 @@
 [project]
 name = "dies-framework-workspace"
 version = "0.1.0"
-dependencies = []
+dependencies = [
+    "PyQt5>=5.15.10",
+]
 
 [build-system]
 requires = ["hatchling"]

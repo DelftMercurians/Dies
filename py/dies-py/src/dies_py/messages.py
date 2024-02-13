@@ -54,7 +54,7 @@ class World(Struct, tag=True):
     own_players: list[PlayerData]
     opp_players: list[PlayerData]
     ball: BallData | None
-    field_geom: FieldGeometry
+    field_geom: FieldGeometry | None
 
 
 class Term(Struct, tag=True):
