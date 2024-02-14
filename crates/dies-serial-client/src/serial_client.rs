@@ -62,11 +62,24 @@ impl SerialClient {
                                 1.0 / TARGET_FREQ - elapsed,
                             ));
                         }
+                        let extra = if msg.disarm {
+                            "D".to_string()
+                        } else if msg.arm {
+                            "A".to_string()
+                        } else if msg.kick {
+                            "K".to_string()
+                        } else {
+                            "".to_string()
+                        };
+
                         let cmd = format!(
-                            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};S.;\n",
-                            msg.id, msg.sx, msg.sy, msg.w, msg.dribble_speed
+                            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};S.{};\n",
+                            msg.id, msg.sx, msg.sy, msg.w, msg.dribble_speed, extra
                         );
-                        // println!("Sending: {}", cmd);
+                        if !extra.is_empty() {
+                            println!("Sending {}", cmd);
+                        }
+
                         if let Err(err) = port.write_all(cmd.as_bytes()) {
                             sender.send(Err(err.into())).ok();
                         } else if let Err(err) = port.flush() {

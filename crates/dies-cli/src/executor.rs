@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -45,6 +45,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
     };
 
     let mut fail: HashMap<u32, bool> = HashMap::new();
+    let mut robots: HashSet<u32> = HashSet::new();
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
@@ -99,6 +100,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                     Ok(RuntimeEvent::PlayerCmd(mut cmd)) => {
                         if let Some(serial) = &mut serial {
                             let rid = *robot_ids.get(&cmd.id).unwrap_or(&0);
+                            robots.insert(rid);
                             cmd.id = rid;
                             if fail.get(&cmd.id) == Some(&true) {
                                 log::error!("Failsafe: not sending player cmd");
@@ -162,8 +164,10 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
     // Send stop to all players
     log::info!("Sending stop to all players");
     if let Some(serial) = &mut serial {
-        for id in robot_ids.values() {
-            if let Err(err) = serial.send(PlayerCmd::zero(*id)).await {
+        for id in robots.iter() {
+            let mut cmd = PlayerCmd::zero(*id);
+            // cmd.disarm = true;
+            if let Err(err) = serial.send(cmd).await {
                 log::error!("Failed to send stop to player #{}: {}", id, err);
             }
         }

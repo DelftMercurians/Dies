@@ -74,6 +74,9 @@ class PlayerCmd(Struct, tag=True):
     sy: float
     w: float = 0.0
     dribble_speed: float = 0.0
+    arm: bool = False
+    disarm: bool = False
+    kick: bool = False
 
 
 class Debug(Struct, tag=True):

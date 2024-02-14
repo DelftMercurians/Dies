@@ -26,6 +26,10 @@ pub struct PlayerCmd {
     pub w: f32,
     /// The player's dribble speed
     pub dribble_speed: f32,
+
+    pub arm: bool,
+    pub disarm: bool,
+    pub kick: bool,
 }
 
 impl PlayerCmd {
@@ -36,6 +40,9 @@ impl PlayerCmd {
             sy: 0.0,
             w: 0.0,
             dribble_speed: 0.0,
+            arm: false,
+            disarm: false,
+            kick: false,
         }
     }
 }

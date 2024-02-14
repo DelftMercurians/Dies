@@ -144,6 +144,11 @@ impl PyRuntime {
         rx.await?.map_err(|e| e.into())
     }
 
+    pub fn is_alive(&self) -> bool {
+        let mut child_proc = self.child_proc.lock().unwrap();
+        is_proc_alive(&mut child_proc)
+    }
+
     pub fn kill(&mut self) {
         let mut child_proc = self.child_proc.lock().unwrap();
         if let Err(e) = child_proc.kill() {
