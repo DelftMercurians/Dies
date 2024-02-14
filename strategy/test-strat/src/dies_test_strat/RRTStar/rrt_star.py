@@ -60,8 +60,11 @@ class RRTStar(RRT):
             goal_sample_rate,
             max_iter,
             robot_radius=robot_radius,
-            play_area=play_area,
         )
+        if play_area is not None:
+            self.play_area = self.AreaBounds(play_area)
+        else:
+            self.play_area = None
         self.connect_circle_dist = connect_circle_dist
         self.goal_node = self.Node(goal[0], goal[1])
         self.search_until_max_iter = search_until_max_iter
@@ -85,7 +88,9 @@ class RRTStar(RRT):
                 new_node.x - near_node.x, new_node.y - near_node.y
             )
 
-            if self.check_collision(new_node, self.obstacle_list, self.robot_radius):
+            if self.check_if_outside_play_area(
+                new_node, self.play_area
+            ) and self.check_collision(new_node, self.obstacle_list, self.robot_radius):
                 near_inds = self.find_near_nodes(new_node)
                 node_with_updated_parent = self.choose_parent(new_node, near_inds)
                 if node_with_updated_parent:

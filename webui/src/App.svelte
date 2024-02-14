@@ -73,16 +73,6 @@
       ctx.stroke();
     });
 
-    // Draw ball
-    if (ball) {
-      const ballPos = convertCoords(ball.position);
-      const ballCanvasRadius = convertLength(BALL_RADIUS);
-      ctx.fillStyle = "red";
-      ctx.beginPath();
-      ctx.arc(ballPos[0], ballPos[1], ballCanvasRadius, 0, 2 * Math.PI);
-      ctx.fill();
-    }
-
     // Draw players
     const drawPlayer = (serverPos: XY, orientation: number, color: string) => {
       const [x, y] = convertCoords(serverPos);
@@ -111,6 +101,16 @@
     opp_players.forEach(({ position, orientation }) =>
       drawPlayer(position, orientation, "yellow")
     );
+
+    // Draw ball
+    if (ball) {
+      const ballPos = convertCoords(ball.position);
+      const ballCanvasRadius = convertLength(BALL_RADIUS);
+      ctx.fillStyle = "red";
+      ctx.beginPath();
+      ctx.arc(ballPos[0], ballPos[1], ballCanvasRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
 
     // // Render vector field on top
     // if (state.vector_field) {

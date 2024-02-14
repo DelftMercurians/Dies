@@ -54,9 +54,9 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
             _ = cancel.cancelled() => {
                 break;
             }
-            vision_msg = tokio::time::timeout(Duration::from_millis(100), vision.as_mut().unwrap().recv()) => {
+            vision_msg = vision.as_mut().unwrap().recv() => {
                 match vision_msg {
-                    Ok(Ok(vision_msg)) => {
+                    Ok(vision_msg) => {
                         tracker.update_from_protobuf(&vision_msg);
                         if let Some(world_data) = tracker.get() {
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
@@ -87,11 +87,8 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             }
                         }
                     }
-                    Ok(Err(err)) => {
+                    Err(err) => {
                         log::error!("Failed to receive vision msg: {}", err);
-                    }
-                    Err(_) => {
-                        log::error!("Vision timeout");
                     }
                 }
             }
