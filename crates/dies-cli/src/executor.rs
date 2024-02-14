@@ -59,19 +59,19 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                         tracker.update_from_protobuf(&vision_msg);
                         if let Some(world_data) = tracker.get() {
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
-                            for player in world_data.own_players.iter() {
-                                if  SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64 - player.timestamp > 0.5 {
-                                    if fail.get(&player.id) == Some(&false) {
-                                        fail.insert(player.id, true);
-                                        if let Some(serial) = &mut serial {
-                                            log::warn!("Failsafe: sending stop to runtime");
-                                            serial.send_no_wait(PlayerCmd::zero(*robot_ids.get(&player.id).unwrap_or(&0)));
-                                        }
-                                    }
-                                } else {
-                                    fail.insert(player.id, false);
-                                }
-                            }
+                            // for player in world_data.own_players.iter() {
+                            //     if  SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64 - player.timestamp > 0.5 {
+                            //         if fail.get(&player.id) == Some(&false) {
+                            //             fail.insert(player.id, true);
+                            //             if let Some(serial) = &mut serial {
+                            //                 log::warn!("Failsafe: sending stop to runtime");
+                            //                 serial.send_no_wait(PlayerCmd::zero(*robot_ids.get(&player.id).unwrap_or(&0)));
+                            //             }
+                            //         }
+                            //     } else {
+                            //         fail.insert(player.id, false);
+                            //     }
+                            // }
 
                             // Send update to runtime
                             if let Err(err) = runtime.send(&dies_python_rt::RuntimeMsg::World(world_data.clone())).await {

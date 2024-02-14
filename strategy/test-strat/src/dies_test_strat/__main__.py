@@ -7,7 +7,7 @@ from dies_py import Bridge
 from dies_py.messages import PlayerCmd, Term
 import matplotlib.pyplot as plt
 
-from rrtplanner import perlin_occupancygrid, RRTStar, random_point_og
+# from rrtplanner import perlin_occupancygrid, RRTStar, random_point_og
 
 
 print("Starting test-strat")
@@ -146,11 +146,11 @@ if __name__ == "__main__":
     path = None
     path_idx = 0
 
-    ball_v_filter = VelFilter(dim=2)
+    ball_v_filter = VelFilter(dim=2, alpha=0.9)
     v_filter = VelFilter(dim=2, window=30)
     w_filter = AngVelFilter()
 
-    heading_pid = PID(dim=1, Kp=2, Ki=0.0, Kd=0.0, diff_func=angle_diff)
+    heading_pid = PID(dim=1, Kp=1.5, Ki=0.0, Kd=0.0, diff_func=angle_diff)
     # heading_pid.set_target(pi)
 
     pos_pid = PID(dim=2, Kp=1.8, Ki=0.0, Kd=0.0)
@@ -178,9 +178,9 @@ if __name__ == "__main__":
             if player is None:
                 print("Player not found")
                 continue
-            if abs(player.timestamp - time.time()) > 0.1:
-                print("Player timestamp too old")
-                continue
+            # if abs(player.timestamp - time.time()) > 0.1:
+            #     print(f"Player timestamp too old {player.timestamp - time.time()}")
+            #     continue
             if msg.ball is None:
                 print("Ball not found")
                 continue
@@ -207,8 +207,8 @@ if __name__ == "__main__":
             last_time = time.time()
 
             ball_pos = np.array([msg.ball.position[0], msg.ball.position[1]])
-            ball_v = ball_v_filter.update(ball_pos, dt)
-            ball_pred = ball_pos  # + ball_v * 0.2
+            ball_v = ball_v_filter.update(ball_pos)
+            ball_pred = ball_pos  + ball_v * 1.8
 
             vel = v_filter.update(pos)
             pos_pred = pos + vel * (1 / 20)
@@ -230,9 +230,22 @@ if __name__ == "__main__":
             #         print("Reached destination")
             #         break
             #     target = path[path_idx]
+            
+            if ball_v[1] > 500:
+                t_intersect = (1200 - ball_pred[1]) / ball_v[1]
+        
+                # Calculate intersection point
+                intersection_x = ball_pred[0] + ball_v[0] * t_intersect * 1.2
+                # dist_x = intersection_x - pos
+                print(f"AAAAAAAAAAAA {t_intersect} {ball_v[1]}")
+            elif ball_pred[1] < 500:
+                a = (1400 - 1200) / (1400 - ball_pred[1])
+                intersection_x = ball_pred[0] * a
+            else:
+                intersection_x = ball_pred[0]
 
-            target = np.array([ball_pos[0], 900])
-            target[0] = np.clip(target[0], -900, 900)
+            target = np.array([intersection_x, 1200])
+            target[0] = np.clip(target[0], -700, 700)
             pos_pid.set_target(target)
             u = pos_pid.step(pos)
 
@@ -262,8 +275,8 @@ if __name__ == "__main__":
                 vy = max_v if vy > 0 else -max_v
 
             # Face the target
-            # heading_trg = np.arctan2(target[1] - pos[1], target[0] - pos[0])
-            heading_pid.set_target(-pi / 2)
+            heading_trg = np.arctan2(ball_pred[1] - pos[1], ball_pred[0] - pos[0])
+            heading_pid.set_target(-pi/2)
             phi_err = angle_diff(heading_pid.target, phi)
             w = float(heading_pid.step(phi, phi_err)[0])
             if w > 6.0:
