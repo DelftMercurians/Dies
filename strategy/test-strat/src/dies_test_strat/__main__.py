@@ -7,6 +7,7 @@ from dies_py.messages import PlayerCmd, Term, World
 import matplotlib.pyplot as plt
 
 from dies_test_strat.RRTStar import RRTStar
+from dies_test_strat.keeper import Keeper
 
 
 print("Starting test-strat")
@@ -29,7 +30,7 @@ def plan_path(start, goal, obstacles, width, height, margin=3):
         obstacle_list=[(x, y, r * margin) for x, y, r in obstacles],
         expand_dis=500,
         robot_radius=90,
-        max_iter=3000,
+        max_iter=5000,
         search_until_max_iter=True,
         play_area=[-int(width / 2), int(width / 2), -int(height / 2), int(height / 2)],
     )
@@ -160,6 +161,8 @@ class Player:
         self.path = None
         self.path_idx = 0
 
+        self.kick_timer = None
+
         self.bridge.send(PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, arm=True))
 
     def update(self, msg: World):
@@ -188,10 +191,9 @@ class Player:
             self.get_ball()
         elif self.state == "face_goal":
             self.face_goal()
-        elif self.state == "got_ball":
+        elif self.state == "done":
             self.u *= 0
             self.w = 0
-            return
 
     def move_to_ball(self, obstacles):
         pos = np.array(self.player.position)
@@ -199,7 +201,8 @@ class Player:
         ball_pos = np.array([self.ball.position[0], self.ball.position[1]])
 
         if self.path is None:
-            self.dest = find_best_pos(ball_pos, obstacles, 200)
+            # self.dest = find_best_pos(ball_pos, obstacles, 200)
+            self.dest = ball_pos + np.array([0, 200])
             # obstacles += [[ball_pos[0], ball_pos[1], 30]]
             print(f"Creating path, detected obstacles: {len(obstacles)}")
             self.path = np.array(
@@ -207,7 +210,7 @@ class Player:
                     start=pos,
                     goal=self.dest,
                     obstacles=obstacles,
-                    width=2500,
+                    width=2200,
                     height=2500,
                     margin=1.3,
                 )
@@ -252,14 +255,16 @@ class Player:
             print(f"Reached target {self.path_idx}")
             self.path_idx += 1
             if self.path_idx >= len(self.path):
+                self.path = None
                 self.state = "face_ball"
                 return
             target = self.path[self.path_idx]
 
-        # Face ball
+        self.heading_pid.Kp = 2.3
+        self.heading_pid.Ki = 0.0
         self.heading_pid.set_target(0)
         phi_err = angle_diff(self.heading_pid.target, phi)
-        if abs(phi_err) > 0.4:
+        if abs(phi_err) > 0.5:
             self.u *= 0
         self.w = float(self.heading_pid.step(phi)[0])
 
@@ -271,10 +276,10 @@ class Player:
             np.arctan2(ball_pos[1] - pos[1], ball_pos[0] - pos[0])
         )
         phi_err = angle_diff(self.heading_pid.target, phi)
-        if abs(phi_err) > 0.1:
+        if abs(phi_err) > 0.07:
             print(f"Phi error: {phi_err}")
-            # self.heading_pid.Kp = 3
-            self.heading_pid.Ki = 0.2
+            self.heading_pid.Kp = 1.0
+            self.heading_pid.Ki = 0.06
             self.u *= 0
             self.w = float(self.heading_pid.step(phi)[0])
         else:
@@ -286,46 +291,79 @@ class Player:
         phi = self.player.orientation
         ball_pos = np.array([self.ball.position[0], self.ball.position[1]])
         self.dribble = 300
-        self.heading_pid.Ki = 0.0
-        self.heading_pid.Kp = 2
-        self.w = float(self.heading_pid.step(phi)[0])
+        ball_disappeared = (self.player.timestamp - self.ball.timestamp) > 0.3
+        if not ball_disappeared:
+            self.heading_pid.set_target(
+                np.arctan2(ball_pos[1] - pos[1], ball_pos[0] - pos[0])
+            )
 
-        # ball_dir = ball_pos - pos
-        # ball_dir /= np.linalg.norm(ball_dir) + 1e-6
+        self.heading_pid.Ki = 0.0
+        self.heading_pid.Kp = 0.8
+        self.w = float(self.heading_pid.step(phi)[0])
+        phi_err = angle_diff(
+            np.arctan2(ball_pos[1] - pos[1], ball_pos[0] - pos[0]), phi
+        )
+
         forward_v = np.array([cos(phi), sin(phi)])
         forward_v /= np.linalg.norm(forward_v) + 1e-6
-        self.u = 140 * forward_v
+        self.u = 120 * forward_v
 
+        if not hasattr(self, "get_ball_timer") or self.get_ball_timer is None:
+            self.get_ball_timer = time.time()
         ball_dist = np.linalg.norm(pos - ball_pos)
-        ball_disappeared = (self.player.timestamp - self.ball.timestamp) > 0.5
+
         print("ball_dist", ball_dist)
         print("ball_disappeared", (self.player.timestamp - self.ball.timestamp))
-        if ball_dist < 100 or ball_disappeared:
+        if (
+            (ball_dist < 90 and abs(phi_err) < 0.4)
+            or ball_disappeared
+            or (time.time() - self.get_ball_timer) > 5
+        ):
             print("Got ball!")
+            self.get_ball_timer = None
+            time.sleep(0.7)
             self.state = "face_goal"
             self.u *= 0
             self.w = 0
 
     def face_goal(self):
         pos = np.array(self.player.position)
+        goal_pos = np.array([0, 1300])
         phi = self.player.orientation
-        self.heading_pid.Kp = 2
+        self.heading_pid.Kp = 1
         self.heading_pid.Ki = 0
-        self.heading_pid.set_target(pi / 2)
-        self.pos_pid.set_target(self.dest)
+        self.heading_pid.set_target(
+            np.arctan2(goal_pos[1] - pos[1], goal_pos[0] - pos[0])
+        )
+        if hasattr(self, "dest"):
+            self.pos_pid.set_target(self.dest)
+            dist = np.linalg.norm(self.dest - pos)
+        else:
+            self.pos_pid.set_target(pos)
+            dist = 0
         phi_err = angle_diff(self.heading_pid.target, phi)
-        dist = np.linalg.norm(self.dest - pos)
-        if abs(phi_err) > 0.06:
+        if abs(phi_err) > 0.15:
             print(f"Phi error: {phi_err}")
             self.w = float(self.heading_pid.step(phi)[0])
-        if dist > 50:
+        if dist > 100:
             self.u = self.pos_pid.step(pos)
 
-        if abs(phi_err) < 0.06 and dist < 50:
+        if abs(phi_err) < 0.2 and dist < 150:
+            self.u *= 0
+            self.w = 0
             print("Facing goal")
-            self.state = "got_ball"
-            time.sleep(2)
+            time.sleep(1)
             self.kick()
+            print("waiting")
+            time.sleep(15)
+            print("done waiting")
+            self.dribble = 0
+            self.heading_pid = PID(dim=1, Kp=2, Ki=0.02, Kd=0.0, diff_func=angle_diff)
+            self.pos_pid = PID(dim=2, Kp=1.2, Ki=0.0, Kd=0.0)
+            self.traj_pid = PID(dim=2, Kp=1.2, Ki=0.0, Kd=0.0)
+            self.ball_pid = PID(dim=2, Kp=3, Ki=0.001, Kd=0.0)
+            self.state = "move_to_ball"
+            return
 
     def step(self):
         if self.player is None:
@@ -356,6 +394,7 @@ class Player:
 
     def kick(self):
         print("Kicking!")
+        # for _ in range(1):
         self.bridge.send(
             PlayerCmd(
                 self.id,
@@ -366,43 +405,13 @@ class Player:
                 kick=True,
             )
         )
-        time.sleep(0.05)
-        self.bridge.send(
-            PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, disarm=True)
-        )
-        time.sleep(0.05)
-        self.bridge.send(PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, arm=True))
-        time.sleep(0.4)
-        self.bridge.send(
-            PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, kick=True)
-        )
-        time.sleep(0.1)
-        self.bridge.send(
-            PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, kick=True)
-        )
-        time.sleep(0.1)
-        self.bridge.send(
-            PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, kick=True)
-        )
-        time.sleep(0.1)
-        self.bridge.send(PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, arm=True))
-        time.sleep(0.1)
-        self.bridge.send(
-            PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, kick=True)
-        )
-        time.sleep(0.1)
-        self.bridge.send(
-            PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, kick=True)
-        )
-        time.sleep(0.1)
-        self.bridge.send(
-            PlayerCmd(self.id, 0, 0, dribble_speed=self.dribble, kick=True)
-        )
+        time.sleep(0.02)
 
 
 if __name__ == "__main__":
     bridge = Bridge()
     player = Player(id=5, bridge=bridge)
+    # keeper = Keeper(player_id=14, bridge=bridge)
 
     last_time = time.time()
     try:
@@ -416,7 +425,10 @@ if __name__ == "__main__":
             player.update(msg)
             player.step()
 
+            # keeper.update(msg, last_time)
+
             dt = max(time.time() - last_time, 1e-6)
+            print(f"dt: {dt}")
             last_time = time.time()
             to_sleep = (1 / 20) - dt
             if to_sleep > 0:
