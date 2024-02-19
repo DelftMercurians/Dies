@@ -73,7 +73,7 @@ impl SerialClient {
                         };
 
                         let cmd = format!(
-                            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};S.{};\n",
+                            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};Kt7000;S.{};\n",
                             msg.id, msg.sx, msg.sy, msg.w, msg.dribble_speed, extra
                         );
                         if !extra.is_empty() {
@@ -81,8 +81,10 @@ impl SerialClient {
                         }
 
                         if let Err(err) = port.write_all(cmd.as_bytes()) {
+                            log::error!("Error writing to serial port: {}", err);
                             sender.send(Err(err.into())).ok();
                         } else if let Err(err) = port.flush() {
+                            log::error!("Error flushing serial port: {}", err);
                             sender.send(Err(err.into())).ok();
                         } else {
                             sender.send(Ok(())).ok();
