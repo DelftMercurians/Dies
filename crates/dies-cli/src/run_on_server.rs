@@ -104,7 +104,7 @@ pub(crate) fn run_on_server() {
     let mut channel = session.channel_session().unwrap();
     channel.request_pty("xterm", None, None).unwrap();
     channel
-        .exec("cd ~/Code/dies && /home/mercury/.cargo/bin/cargo run")
+        .exec("cd ~/Code/dies && /home/mercury/.cargo/bin/cargo run -- --vision-socket-type udp --vision-host 224.5.23.2 --vision-port 10006")
         .unwrap();
 
     // Create buffered reader

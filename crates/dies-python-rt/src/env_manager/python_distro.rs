@@ -9,7 +9,7 @@ use std::{
 };
 use tokio::process::Command;
 
-use crate::env_manager::archive::{self, extract_tar, extract_zip};
+use crate::env_manager::archive::{extract_tar, extract_zip};
 
 use super::venv::Venv;
 
@@ -24,7 +24,6 @@ struct Asset {
 
 #[derive(Deserialize, Debug)]
 struct Release {
-    name: String,
     assets: Vec<Asset>,
 }
 
@@ -112,7 +111,6 @@ impl PythonDistroConfig {
 /// A handle for dealing with an installed Python distribution. Typically, you would use
 /// this to obtain a [`Venv`] which can manage packages.
 pub struct PythonDistro {
-    conifg: PythonDistroConfig,
     path: PathBuf,
 }
 
@@ -128,14 +126,11 @@ impl PythonDistro {
                 config.version, config.build
             ))?;
 
-        Ok(Self {
-            conifg: config,
-            path,
-        })
+        Ok(Self { path })
     }
 
     /// Get the path to the python binary
-    pub fn python_bin(&self) -> PathBuf {
+    fn python_bin(&self) -> PathBuf {
         self.path.join("bin").join("python3")
     }
 

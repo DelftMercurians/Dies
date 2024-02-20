@@ -19,20 +19,15 @@ impl Venv {
         Ok(Self {
             venv_dir: venv_dir.clone(),
             installed_deps: get_installed_deps(
-                venv_dir.join("bin").join("pip").as_path(),
+                venv_dir.join("bin").join("python").as_path(),
                 &venv_dir,
             )
             .await?,
         })
     }
 
-    /// Get the Python binary path
     pub fn python_bin(&self) -> PathBuf {
         self.venv_dir.join("bin").join("python")
-    }
-
-    fn pip_bin(&self) -> PathBuf {
-        self.venv_dir.join("bin").join("pip")
     }
 
     /// Install a local package in editable mode
@@ -56,15 +51,16 @@ impl Venv {
         log::debug!("New dependencies to install: {:?}", diff);
 
         log::info!("Installing editable package: {}", relative_path.display());
-        pip_install(&self.pip_bin(), path, &["-e", "."]).await?;
+        pip_install(&self.python_bin(), path, &["-e", "."]).await?;
         log::info!("Done installing editable package");
 
         // Update installed_deps
-        self.installed_deps = get_installed_deps(&self.pip_bin(), &self.venv_dir).await?;
+        self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir).await?;
         Ok(())
     }
 
     /// Install a package from PyPI
+    #[allow(dead_code)]
     pub async fn install(&mut self, package_name: &str, version: &str) -> Result<()> {
         let spec = format!("{}=={}", package_name, version);
         if self.installed_deps.contains(package_name) {
@@ -73,15 +69,16 @@ impl Venv {
         }
 
         log::info!("Installing package: {}", spec);
-        pip_install(&self.pip_bin(), self.venv_dir.as_path(), &[&spec]).await?;
+        pip_install(&self.python_bin(), self.venv_dir.as_path(), &[&spec]).await?;
         log::info!("Done installing package");
 
         // Update installed_deps
-        self.installed_deps = get_installed_deps(&self.pip_bin(), &self.venv_dir).await?;
+        self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir).await?;
         Ok(())
     }
 
     /// Install a list of packages from a requirements.txt format
+    #[allow(dead_code)]
     pub async fn install_from_requirements_list(
         &mut self,
         requirements: Vec<String>,
@@ -103,16 +100,17 @@ impl Venv {
 
         for req in requirements {
             log::info!("Installing package: {}", req);
-            pip_install(&self.pip_bin(), self.venv_dir.as_path(), &[req]).await?;
+            pip_install(&self.python_bin(), self.venv_dir.as_path(), &[req]).await?;
             log::info!("Done installing package");
         }
 
         // Update installed_deps
-        self.installed_deps = get_installed_deps(&self.pip_bin(), &self.venv_dir).await?;
+        self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir).await?;
         Ok(())
     }
 
     /// Install a list of packages from a requirements.txt file
+    #[allow(dead_code)]
     pub async fn install_from_requirements_file(&mut self, path: &Path) -> Result<()> {
         let requirements = read_to_string(path)?
             .lines()
@@ -123,8 +121,10 @@ impl Venv {
 }
 
 /// List the installed dependencies in the venv
-async fn get_installed_deps(pip_bin: &Path, venv_dir: &Path) -> Result<HashSet<String>> {
-    let cmd = Command::new(pip_bin)
+async fn get_installed_deps(python_bin: &Path, venv_dir: &Path) -> Result<HashSet<String>> {
+    let cmd = Command::new(python_bin)
+        .arg("-m")
+        .arg("pip")
         .arg("freeze")
         .arg("--local")
         .output()
@@ -192,9 +192,11 @@ fn get_deps_from_pyproject_toml(path: &Path) -> Result<Vec<String>> {
 }
 
 /// Run pip install
-async fn pip_install(pip_bin: &Path, cwd: &Path, args: &[&str]) -> Result<()> {
-    let cmd = Command::new(pip_bin)
+async fn pip_install(python_bin: &Path, cwd: &Path, args: &[&str]) -> Result<()> {
+    let cmd = Command::new(python_bin)
         .current_dir(cwd)
+        .arg("-m")
+        .arg("pip")
         .arg("install")
         .args(args)
         .output()

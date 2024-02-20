@@ -162,7 +162,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
     log::info!("Sending stop to all players");
     if let Some(serial) = &mut serial {
         for id in robots.iter() {
-            let mut cmd = PlayerCmd::zero(*id);
+            let cmd = PlayerCmd::zero(*id);
             // cmd.disarm = true;
             if let Err(err) = serial.send(cmd).await {
                 log::error!("Failed to send stop to player #{}: {}", id, err);

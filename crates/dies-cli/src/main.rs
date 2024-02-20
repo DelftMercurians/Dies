@@ -1,11 +1,10 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use dies_core::workspace_utils;
 use dies_ssl_client::SslVisionClientConfig;
 use dies_world::WorldConfig;
-use tokio::{sync::oneshot, time};
 
-use dies_python_rt::PyRuntimeConfig;
+use dies_python_rt::{PyExecute, PyRuntimeConfig};
 use dies_serial_client::list_serial_ports;
 use tokio_util::sync::CancellationToken;
 
@@ -23,7 +22,7 @@ struct Args {
     #[clap(long, default_value = "false")]
     sync: bool,
 
-    #[clap(long, default_value = "None")]
+    #[clap(long, default_value = None)]
     serial_port: Option<String>,
 
     #[clap(long, default_value = "false")]
@@ -32,7 +31,7 @@ struct Args {
     #[clap(long, default_value = "14:3,5:2")]
     robot_ids: String,
 
-    #[clap(long, default_value = "dies_test_strat")]
+    #[clap(long, default_value = "dies-test-strat")]
     package: String,
 
     #[clap(long, default_value = "localhost")]
@@ -49,13 +48,13 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
     if args.run_on_server {
-        println!("Running on server");
+        println!("Executing on server");
         run_on_server::run_on_server();
         return Ok(());
     }
 
     env_logger::builder()
-        .filter_level(log::LevelFilter::Warn)
+        .filter_level(log::LevelFilter::Info)
         .init();
 
     let ports = list_serial_ports()?;
@@ -67,7 +66,7 @@ async fn main() -> Result<()> {
             }
             Some(port.clone())
         } else if ports.len() == 1 {
-            println!("Connecting to serial port {}", ports[0]);
+            log::info!("Connecting to serial port {}", ports[0]);
             Some(ports[0].clone())
         } else {
             println!("Available ports:");
@@ -83,13 +82,12 @@ async fn main() -> Result<()> {
                 let port_idx = input.trim().parse::<usize>()?;
                 if port_idx < ports.len() {
                     break Some(ports[port_idx].clone());
-                } else {
-                    println!("Invalid port number");
                 }
+                println!("Invalid port number");
             }
         }
     } else {
-        println!("No serial ports available, not connecting to basestation");
+        log::warn!("No serial ports available, not connecting to basestation");
         None
     };
 
@@ -103,14 +101,30 @@ async fn main() -> Result<()> {
         port: args.vision_port,
     };
 
+    let robot_ids = args
+        .robot_ids
+        .split(',')
+        .filter_map(|s| {
+            let mut parts = s.split(':');
+            let id = parts.next()?.parse().ok()?;
+            let team = parts.next()?.parse().ok()?;
+            Some((id, team))
+        })
+        .collect();
+
+    let workspace_root = workspace_utils::get_workspace_root();
     let config = ExecutorConfig {
         webui: false,
-        robot_ids: std::collections::HashMap::from([(14, 3), (5, 2)]),
+        robot_ids,
         py_config: PyRuntimeConfig {
-            workspace: workspace_utils::get_workspace_root().clone(),
-            package: args.package,
-            module: "__main__".into(),
-            sync: args.sync,
+            install: true,
+            workspace: workspace_root.clone(),
+            python_build: 20240107,
+            python_version: "3.11.7".into(),
+            execute: PyExecute::Package {
+                path: workspace_root.join("strategy").join(&args.package),
+                name: args.package,
+            },
         },
         world_config: WorldConfig {
             is_blue: true,
@@ -132,30 +146,7 @@ async fn main() -> Result<()> {
         .await
         .expect("Failed to run executor");
 
-    // let ctrc = match tokio::signal::ctrl_c().await {
-    //     Ok(fut) => fut,
-    //     Err(err) => {
-    //         eprintln!("Unable to listen for shutdown signal: {}", err);
-    //         // Send stop command
-    //         cancel.cancel();
-    //         handle.await?;
-    //         return Ok(());
-    //     }
-    // };
-    // tokio::select! {
-    //     // _ = tokio::signal::ctrl_c() => {}
-    //     _ = &mut handle => {}
-    // };
-
-    println!("Shutting down");
-
-    // Send stop command
-    // cancel.cancel();
-
-    // if !handle.is_finished() {
-    //     handle.abort();
-    //     handle.await.ok();
-    // }
+    log::info!("Shutting down");
 
     Ok(())
 }

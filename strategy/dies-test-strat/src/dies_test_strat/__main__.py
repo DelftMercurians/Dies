@@ -4,7 +4,6 @@ from glob import glob
 import numpy as np
 from dies_py import Bridge
 from dies_py.messages import PlayerCmd, Term, World
-import matplotlib.pyplot as plt
 
 
 print("Starting test-strat")
