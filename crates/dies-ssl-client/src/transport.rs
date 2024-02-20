@@ -39,16 +39,15 @@ impl<I: Message, O> Transport<I, O> {
     }
 
     pub async fn udp(host: &str, port: u16) -> Result<Self> {
-        let addr = format!("{}:{}", host, port);
+        let addr = format!("{}:{}", host, port).parse::<SocketAddr>()?;
         let raw_socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
         raw_socket.set_nonblocking(true)?;
         raw_socket.set_reuse_address(true)?;
-        raw_socket.bind(&format!("0.0.0.0:0").parse::<SocketAddr>()?.into())?;
 
         let multiaddr = host.parse::<Ipv4Addr>()?;
-        let interface = "127.0.0.1".parse::<Ipv4Addr>()?;
-        raw_socket.set_multicast_if_v4(&interface)?;
+        let interface = "0.0.0.0".parse::<Ipv4Addr>()?;
         raw_socket.join_multicast_v4(&multiaddr, &interface)?;
+        raw_socket.bind(&addr.into())?;
 
         let socket = UdpSocket::from_std(raw_socket.into())?;
         Ok(Self {
