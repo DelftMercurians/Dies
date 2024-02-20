@@ -6,9 +6,7 @@ edition.workspace = true
 [dependencies]
 anyhow = "1.0.75"
 clap = { version = "4.5.1", features = ["derive"] }
-crossbeam = "0.8.4"
 dies-core = { version = "0.1.0", path = "../dies-core" }
-dies-protos = { version = "0.1.0", path = "../dies-protos" }
 dies-python-rt = { version = "0.1.0", path = "../dies-python-rt" }
 dies-serial-client = { version = "0.1.0", path = "../dies-serial-client" }
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
@@ -18,8 +16,6 @@ env_logger = "0.10.1"
 git2 = "0.18.2"
 hex = "0.4.3"
 log = "0.4.20"
-mio = { version = "0.8.10", features = ["net"] }
-serialport = "4.2.2"
 sha2 = "0.10.8"
 ssh2 = "0.9.4"
 tokio = { version = "1.35.1", features = ["rt", "macros", "signal"] }
