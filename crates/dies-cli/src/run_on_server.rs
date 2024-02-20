@@ -62,36 +62,87 @@ pub(crate) fn run_on_server() {
 
     println!("Copying files...");
 
+    // First list all the directories and create them on the remote
+    let dirs = WalkDir::new(repo_path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter(|e| !repo.status_should_ignore(e.path()).unwrap())
+        .map(|entry| {
+            let path = entry.path();
+            let relative_path = path.strip_prefix(repo_path).unwrap();
+            let relative_path = relative_path
+                .iter()
+                .map(|s| s.to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+                .join("/");
+            let remote_dir_path = if !remote_path.ends_with('/') && !relative_path.starts_with('/')
+            {
+                format!("{}/{}", remote_path, relative_path)
+            } else {
+                format!("{}{}", remote_path, relative_path)
+            };
+            remote_dir_path
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut channel = session.channel_session().unwrap();
+    channel.exec(&format!("mkdir -p {}", dirs)).unwrap();
+    channel.wait_eof().unwrap();
+    channel.wait_close().unwrap();
+
     // List files and copy them respecting .gitignore
     for entry in WalkDir::new(repo_path) {
         let entry = entry.unwrap();
         let path = entry.path();
-        if path.is_dir() || repo.status_should_ignore(path).unwrap() {
+        if repo.status_should_ignore(path).unwrap() || !path.is_file() {
             continue;
         }
 
-        let relative_path = path.strip_prefix(repo_path).unwrap().to_str().unwrap();
-        let remote_file_path = format!("{}/{}", remote_path, relative_path.replace("\\", "/"));
+        let relative_path = path.strip_prefix(repo_path).unwrap();
+        // Convert to unix style path
+        let relative_path = relative_path
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join("/");
+        let remote_file_path = if !remote_path.ends_with('/') && !relative_path.starts_with('/') {
+            format!("{}/{}", remote_path, relative_path)
+        } else {
+            format!("{}{}", remote_path, relative_path)
+        };
 
         // Hash the file to check if it has changed
         let local_hash = hash_file(path).unwrap();
 
         // Check if the file has changed
-        if let Some(remote_hash) = remote_file_hashes.get(relative_path) {
+        if let Some(remote_hash) = remote_file_hashes.get(&relative_path) {
             if local_hash == *remote_hash {
                 continue;
             }
         }
         println!("Copying {}", relative_path);
 
-        let mut remote_file = session
-            .scp_send(
+        let mut retry = 0;
+        let mut remote_file = loop {
+            let res = session.scp_send(
                 Path::new(&remote_file_path),
                 0o644,
                 entry.metadata().unwrap().len(),
                 None,
-            )
-            .unwrap();
+            );
+            match res {
+                Ok(remote_file) => break remote_file,
+                Err(err) => {
+                    if retry < 3 {
+                        retry += 1;
+                        println!("Failed to open remote file {}: {}", remote_file_path, err);
+                        continue;
+                    }
+                    panic!("Failed to open remote file: {}", err);
+                }
+            }
+        };
 
         let mut local_file = fs::File::open(path).unwrap();
         let mut contents = Vec::new();
