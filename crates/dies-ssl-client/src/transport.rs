@@ -43,7 +43,7 @@ impl<I: Message, O> Transport<I, O> {
         let raw_socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
         raw_socket.set_nonblocking(true)?;
         raw_socket.set_reuse_address(true)?;
-        raw_socket.bind(&addr.parse::<SocketAddr>()?.into())?;
+        raw_socket.bind(&format!("0.0.0.0:0").parse::<SocketAddr>()?.into())?;
 
         let multiaddr = host.parse::<Ipv4Addr>()?;
         let interface = "127.0.0.1".parse::<Ipv4Addr>()?;
