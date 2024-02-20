@@ -22,8 +22,8 @@ struct Args {
     #[clap(long, default_value = "false")]
     sync: bool,
 
-    #[clap(long, default_value = None)]
-    serial_port: Option<String>,
+    #[clap(long, default_value = "auto")]
+    serial_port: String,
 
     #[clap(long, default_value = "false")]
     webui: bool,
@@ -54,17 +54,20 @@ async fn main() -> Result<()> {
     }
 
     env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Debug)
         .init();
 
     let ports = list_serial_ports()?;
 
-    let port = if !ports.is_empty() {
-        if let Some(port) = &args.serial_port {
-            if !ports.contains(port) {
-                return Err(anyhow::anyhow!("Port {} not found", port));
+    let port = if args.serial_port != "false" {
+        if args.serial_port != "auto" {
+            if !ports.contains(&args.serial_port) {
+                return Err(anyhow::anyhow!("Port {} not found", args.serial_port));
             }
-            Some(port.clone())
+            Some(args.serial_port.clone())
+        } else if ports.is_empty() {
+            log::warn!("No serial ports found, disabling serial");
+            None
         } else if ports.len() == 1 {
             log::info!("Connecting to serial port {}", ports[0]);
             Some(ports[0].clone())
@@ -87,9 +90,10 @@ async fn main() -> Result<()> {
             }
         }
     } else {
-        log::warn!("No serial ports available, not connecting to basestation");
+        log::warn!("Serial disabled");
         None
     };
+    log::debug!("Serial port: {:?}", port);
 
     let vision_config = SslVisionClientConfig {
         socket_type: if args.vision_socket_type == "udp" {

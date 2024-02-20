@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serialport::available_ports;
 use tokio::sync::{mpsc, oneshot};
 
@@ -44,7 +44,22 @@ impl SerialClient {
     pub fn new(config: SerialClientConfig) -> Result<Self> {
         let mut port = serialport::new(config.port_name, config.baud_rate)
             .timeout(std::time::Duration::from_millis(10))
-            .open()?;
+            .open()
+            .map_err(|err| {
+                if let serialport::ErrorKind::Io(kind) = &err.kind {
+                    if kind == &std::io::ErrorKind::PermissionDenied {
+                        anyhow::anyhow!(r#"
+Permission denied. If you are on Linux, you may need to add your user to the dialout group.
+For Debian based systems, see (https://askubuntu.com/questions/210177/serial-port-terminal-cannot-open-dev-ttys0-permission-denied). 
+For Arch based systems, see (https://github.com/esp8266/source-code-examples/issues/26#issuecomment-320999460)."#)
+                    } else {
+                        err.into()
+                    }
+                } else {
+                    err.into()
+                }
+            })
+            .context("Failed to open serial port")?;
 
         // Launch a blocking thread for writing to the serial port
         let (tx, mut rx) = mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
@@ -106,7 +121,9 @@ impl SerialClient {
     /// Send a message to the serial port.
     pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.writer_tx.send((msg, tx))?;
+        self.writer_tx
+            .send((msg, tx))
+            .context("Failed to send message to serial port")?;
         rx.await?
     }
 

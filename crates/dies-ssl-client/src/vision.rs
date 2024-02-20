@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 
 use crate::transport::Transport;
@@ -41,8 +41,12 @@ impl SslVisionClient {
     /// Create a new `SslVisionClient`.
     pub async fn new(config: SslVisionClientConfig) -> Result<Self> {
         let transport = match config.socket_type {
-            SocketType::Tcp => Transport::tcp(&config.host, config.port).await?,
-            SocketType::Udp => Transport::udp(&config.host, config.port).await?,
+            SocketType::Tcp => Transport::tcp(&config.host, config.port)
+                .await
+                .context("Failed to create TCP transport")?,
+            SocketType::Udp => Transport::udp(&config.host, config.port)
+                .await
+                .context("Failed to create UDP transport")?,
         };
         Ok(Self { transport })
     }
