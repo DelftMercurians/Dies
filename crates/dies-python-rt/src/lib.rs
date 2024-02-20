@@ -1,3 +1,4 @@
+mod env_manager;
 mod ipc;
 mod messages;
 mod py_runtime;
