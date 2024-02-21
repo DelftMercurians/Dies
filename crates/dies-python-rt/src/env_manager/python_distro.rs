@@ -131,7 +131,12 @@ impl PythonDistro {
 
     /// Get the path to the python binary
     fn python_bin(&self) -> PathBuf {
-        self.path.join("bin").join("python3")
+        if cfg!(target_os = "windows") {
+            self.path.join("python.exe")
+        } else {
+            self.path.join("bin").join("python3")
+        }
+        // self.path.join("bin").join("python3")
     }
 
     /// Create a virtual environment in the given directory. The virtual environment
@@ -148,6 +153,7 @@ impl PythonDistro {
         }
 
         log::info!("Creating new venv...");
+        print!("This is the python bin: {:?}", self.python_bin());
         let cmd = Command::new(self.python_bin())
             .current_dir(&target_dir)
             .arg("-m")
