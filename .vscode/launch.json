@@ -15,7 +15,7 @@
           "kind": "bin"
         }
       },
-      "args": [],
+      "args": ["--serial-port=false"],
       "cwd": "${workspaceFolder}"
     },
     {

@@ -8,6 +8,8 @@ use toml::Table;
 
 use tokio::process::Command;
 
+use super::python_distro;
+
 pub struct Venv {
     venv_dir: PathBuf,
     installed_deps: HashSet<String>,
@@ -19,16 +21,16 @@ impl Venv {
         Ok(Self {
             venv_dir: venv_dir.clone(),
             installed_deps: get_installed_deps(
-                venv_dir.join("bin").join("python").as_path(),
+                &python_bin(&venv_dir),
                 &venv_dir,
             )
             .await?,
         })
     }
 
-    pub fn python_bin(&self) -> PathBuf {
-        self.venv_dir.join("bin").join("python")
-    }
+    pub fn python_bin (&self) -> PathBuf {
+        python_bin(&self.venv_dir)
+    } 
 
     /// Install a local package in editable mode
     pub async fn install_editable(&mut self, path: &Path) -> Result<()> {
@@ -118,6 +120,15 @@ impl Venv {
             .collect();
         self.install_from_requirements_list(requirements).await
     }
+}
+
+fn python_bin(venv_dir: &Path) -> PathBuf {
+    if cfg!(target_os = "windows") {
+        venv_dir.join("Scripts").join("python.exe")
+    } else {
+        venv_dir.join("bin").join("python3")
+    }
+    // self.venv_dir.join("bin").join("python")
 }
 
 /// List the installed dependencies in the venv
