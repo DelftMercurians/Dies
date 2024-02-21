@@ -9,16 +9,12 @@ use dies_serial_client::list_serial_ports;
 use tokio_util::sync::CancellationToken;
 
 mod executor;
-mod run_on_server;
 
 use crate::executor::{run, ExecutorConfig};
 
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
 struct Args {
-    #[clap(long, default_value = "false")]
-    run_on_server: bool,
-
     #[clap(long, default_value = "false")]
     sync: bool,
 
@@ -47,11 +43,6 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    if args.run_on_server {
-        println!("Executing on server");
-        run_on_server::run_on_server();
-        return Ok(());
-    }
 
     env_logger::builder()
         .filter_level(log::LevelFilter::Debug)
