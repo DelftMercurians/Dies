@@ -48,21 +48,28 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
     let mut robots: HashSet<u32> = HashSet::new();
     loop {
         tokio::select! {
+            // Check for Ctrl+C signal to break the loop
             _ = tokio::signal::ctrl_c() => {
                 break;
             }
+            // Check if cancellation token is cancelled to break the loop
             _ = cancel.cancelled() => {
                 break;
             }
+            // Receive vision message from SSL Vision client
             vision_msg = vision.as_mut().unwrap().recv() => {
                 match vision_msg {
                     Ok(vision_msg) => {
+                        // Update world tracker with received vision message
                         tracker.update_from_protobuf(&vision_msg);
                         if let Some(world_data) = tracker.get() {
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
                             for player in world_data.own_players.iter() {
-                                if  SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64 - player.timestamp > 0.5 {
+                                // Check if the timestamp of the player is older than 0.5 seconds
+                                if SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64 - player.timestamp > 0.5 {
+                                    // Check if the player is already marked as failed
                                     if fail.get(&player.id) == Some(&false) {
+                                        // Mark the player as failed and send stop command to runtime
                                         fail.insert(player.id, true);
                                         if let Some(serial) = &mut serial {
                                             log::warn!("Failsafe: sending stop to runtime");
@@ -70,16 +77,17 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                                         }
                                     }
                                 } else {
+                                    // Mark the player as not failed
                                     fail.insert(player.id, false);
                                 }
                             }
 
-                            // Send update to runtime
+                            // Send updated world data to runtime
                             if let Err(err) = runtime.send(&dies_python_rt::RuntimeMsg::World(world_data.clone())).await {
                                 log::error!("Failed to send world data to runtime: {}", err);
                             }
 
-                            // Send update to webui
+                            // Send updated world data to webui
                             if let Some(ref webui_sender) = webui_sender {
                                 if let Err(err) = webui_sender.send(world_data) {
                                     log::error!("Failed to send world data to webui: {}", err);
@@ -92,6 +100,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                     }
                 }
             }
+            // Receive runtime message from Python runtime
             runtime_msg = runtime.recv() => {
                 match runtime_msg {
                     Ok(RuntimeEvent::PlayerCmd(mut cmd)) => {
@@ -125,22 +134,8 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                         log::error!("Failed to receive runtime msg: {}", err);
                         break;
                     }
-                    // Err(_) => {
-                    //     log::error!("Runtime timeout");
-                    //     break;
-                    // }
                 }
             }
-            // serial_msg = serial.as_mut().unwrap().recv(), if serial.is_some() => {
-            //     match serial_msg {
-            //         Ok(serial_msg) => {
-            //             log::info!("Received serial msg: {}", serial_msg);
-            //         }
-            //         Err(err) => {
-            //             log::error!("Failed to receive serial msg: {}", err);
-            //         }
-            //     }
-            // }
         }
     }
 
