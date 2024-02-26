@@ -1,3 +1,4 @@
+use anyhow::Context;
 use anyhow::Result;
 use clap::Parser;
 use dies_core::workspace_utils;
@@ -100,7 +101,7 @@ async fn main() -> Result<()> {
 
     tracing::info!("Saving logs to {}", log_file_path.display());
 
-    let ports = list_serial_ports()?;
+    let ports = list_serial_ports().context("Failed to list serial ports")?;
     let port = if args.serial_port != "false" {
         if args.serial_port != "auto" {
             if !ports.contains(&args.serial_port) {
@@ -132,8 +133,8 @@ async fn main() -> Result<()> {
             loop {
                 println!("Enter port number:");
                 let mut input = String::new();
-                std::io::stdin().read_line(&mut input)?;
-                let port_idx = input.trim().parse::<usize>()?;
+                std::io::stdin().read_line(&mut input).context("Failed to read line")?;
+                let port_idx = input.trim().parse::<usize>().context("Failed to parse the input into a number (usize)")?;
                 if port_idx < ports.len() {
                     break Some(ports[port_idx].clone());
                 }

@@ -44,6 +44,12 @@ impl SslVisionClient {
             SocketType::Tcp => Transport::tcp(&config.host, config.port)
                 .await
                 .context("Failed to create TCP transport")?,
+
+            // Some(vision_config) => Some(SslVisionClient::new(vision_config).await?),
+
+            // you could add a .context("....") like so:
+            // Some(vision_config) => Some(SslVisionClient::new(vision_config).await.context("Failed to create vision client")?),
+            
             SocketType::Udp => Transport::udp(&config.host, config.port)
                 .await
                 .context("Failed to create UDP transport")?,
