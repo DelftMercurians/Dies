@@ -8,8 +8,6 @@ use toml::Table;
 
 use tokio::process::Command;
 
-use super::python_distro;
-
 pub struct Venv {
     venv_dir: PathBuf,
     installed_deps: HashSet<String>,
@@ -20,17 +18,13 @@ impl Venv {
     pub(super) async fn from_venv_path(venv_dir: PathBuf) -> Result<Self> {
         Ok(Self {
             venv_dir: venv_dir.clone(),
-            installed_deps: get_installed_deps(
-                &python_bin(&venv_dir),
-                &venv_dir,
-            )
-            .await?,
+            installed_deps: get_installed_deps(&python_bin(&venv_dir), &venv_dir).await?,
         })
     }
 
-    pub fn python_bin (&self) -> PathBuf {
+    pub fn python_bin(&self) -> PathBuf {
         python_bin(&self.venv_dir)
-    } 
+    }
 
     /// Install a local package in editable mode
     pub async fn install_editable(&mut self, path: &Path) -> Result<()> {
@@ -47,14 +41,14 @@ impl Venv {
         let diff = deps.difference(&self.installed_deps).collect::<Vec<_>>();
 
         if diff.is_empty() {
-            log::debug!("No new dependencies to install");
+            tracing::debug!("No new dependencies to install");
             return Ok(());
         }
-        log::debug!("New dependencies to install: {:?}", diff);
+        tracing::debug!("New dependencies to install: {:?}", diff);
 
-        log::info!("Installing editable package: {}", relative_path.display());
+        tracing::info!("Installing editable package: {}", relative_path.display());
         pip_install(&self.python_bin(), path, &["-e", "."]).await?;
-        log::info!("Done installing editable package");
+        tracing::info!("Done installing editable package");
 
         // Update installed_deps
         self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir).await?;
@@ -66,13 +60,13 @@ impl Venv {
     pub async fn install(&mut self, package_name: &str, version: &str) -> Result<()> {
         let spec = format!("{}=={}", package_name, version);
         if self.installed_deps.contains(package_name) {
-            log::debug!("{} is already installed", spec);
+            tracing::debug!("{} is already installed", spec);
             return Ok(());
         }
 
-        log::info!("Installing package: {}", spec);
+        tracing::info!("Installing package: {}", spec);
         pip_install(&self.python_bin(), self.venv_dir.as_path(), &[&spec]).await?;
-        log::info!("Done installing package");
+        tracing::info!("Done installing package");
 
         // Update installed_deps
         self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir).await?;
@@ -101,9 +95,9 @@ impl Venv {
         });
 
         for req in requirements {
-            log::info!("Installing package: {}", req);
+            tracing::info!("Installing package: {}", req);
             pip_install(&self.python_bin(), self.venv_dir.as_path(), &[req]).await?;
-            log::info!("Done installing package");
+            tracing::info!("Done installing package");
         }
 
         // Update installed_deps
@@ -142,9 +136,9 @@ async fn get_installed_deps(python_bin: &Path, venv_dir: &Path) -> Result<HashSe
         .await?;
 
     if !cmd.status.success() {
-        log::error!("Failed to run pip freeze");
-        log::error!("stdout: {}", String::from_utf8_lossy(&cmd.stdout));
-        log::error!("stderr: {}", String::from_utf8_lossy(&cmd.stderr));
+        tracing::error!("Failed to run pip freeze");
+        tracing::error!("stdout: {}", String::from_utf8_lossy(&cmd.stdout));
+        tracing::error!("stderr: {}", String::from_utf8_lossy(&cmd.stderr));
         anyhow::bail!("Failed to run pip freeze");
     }
 
@@ -214,9 +208,9 @@ async fn pip_install(python_bin: &Path, cwd: &Path, args: &[&str]) -> Result<()>
         .await?;
 
     if !cmd.status.success() {
-        log::error!("Failed to run pip install `pip install {}`", args.join(" "));
-        log::error!("stdout: {}", String::from_utf8_lossy(&cmd.stdout));
-        log::error!("stderr: {}", String::from_utf8_lossy(&cmd.stderr));
+        tracing::error!("Failed to run pip install `pip install {}`", args.join(" "));
+        tracing::error!("stdout: {}", String::from_utf8_lossy(&cmd.stdout));
+        tracing::error!("stderr: {}", String::from_utf8_lossy(&cmd.stderr));
         anyhow::bail!("Failed to run pip install");
     }
 

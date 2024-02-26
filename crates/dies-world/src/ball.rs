@@ -71,7 +71,7 @@ impl BallTracker {
                 });
                 self.is_init = true;
             } else {
-                log::debug!("Ball tracker received first data");
+                tracing::debug!("Ball tracker received first data");
                 self.last_data = Some(BallData {
                     timestamp: current_time,
                     position: current_position,

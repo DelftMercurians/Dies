@@ -73,7 +73,7 @@ impl PyRuntime {
 
         if config.install {
             // First, install dies-py
-            log::debug!("Installing dies-py");
+            tracing::debug!("Installing dies-py");
             venv.install_editable(&config.workspace.join("py").join("dies-py"))
                 .await?;
 
@@ -88,7 +88,7 @@ impl PyRuntime {
                     bail!("Package not found at {}", path.display());
                 }
                 let path = path.canonicalize()?;
-                log::debug!("Installing package from {}", path.display());
+                tracing::debug!("Installing package from {}", path.display());
                 venv.install_editable(&path).await?;
             }
         }
@@ -108,7 +108,7 @@ impl PyRuntime {
             }
         };
 
-        log::info!("Running python {}", target.join(" "));
+        tracing::info!("Running python {}", target.join(" "));
 
         let listener = IpcListener::new().await?;
         let host = listener.host().to_owned();
@@ -127,7 +127,7 @@ impl PyRuntime {
         // Wait for the child process to connect to the socket
         let ipc = listener.wait_for_conn(Duration::from_secs(5)).await?;
 
-        log::debug!("Python process started");
+        tracing::debug!("Python process started");
 
         let child_proc = Arc::new(Mutex::new(child_proc));
         Ok(PyRuntime {
@@ -185,7 +185,7 @@ impl PyRuntime {
     pub fn kill(&mut self) {
         let mut child_proc = self.child_proc.lock().unwrap();
         if let Err(e) = child_proc.kill() {
-            log::error!("Failed to kill python process: {}", e);
+            tracing::error!("Failed to kill python process: {}", e);
         }
     }
 }
@@ -195,7 +195,7 @@ impl PyRuntime {
 //         // Kill child process
 //         let mut child_proc = self.child_proc.lock().unwrap();
 //         if let Err(e) = child_proc.kill() {
-//             log::error!("Failed to kill python process: {}", e);
+//             tracing::error!("Failed to kill python process: {}", e);
 //         }
 //     }
 // }

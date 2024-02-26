@@ -96,10 +96,10 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
                         }
 
                         if let Err(err) = port.write_all(cmd.as_bytes()) {
-                            log::error!("Error writing to serial port: {}", err);
+                            tracing::error!("Error writing to serial port: {}", err);
                             sender.send(Err(err.into())).ok();
                         } else if let Err(err) = port.flush() {
-                            log::error!("Error flushing serial port: {}", err);
+                            tracing::error!("Error flushing serial port: {}", err);
                             sender.send(Err(err.into())).ok();
                         } else {
                             sender.send(Ok(())).ok();

@@ -65,7 +65,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                                     if fail.get(&player.id) == Some(&false) {
                                         fail.insert(player.id, true);
                                         if let Some(serial) = &mut serial {
-                                            log::warn!("Failsafe: sending stop to runtime");
+                                            tracing::warn!("Failsafe: sending stop to runtime");
                                             serial.send_no_wait(PlayerCmd::zero(*robot_ids.get(&player.id).unwrap_or(&0)));
                                         }
                                     }
@@ -76,19 +76,19 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
 
                             // Send update to runtime
                             if let Err(err) = runtime.send(&dies_python_rt::RuntimeMsg::World(world_data.clone())).await {
-                                log::error!("Failed to send world data to runtime: {}", err);
+                                tracing::error!("Failed to send world data to runtime: {}", err);
                             }
 
                             // Send update to webui
                             if let Some(ref webui_sender) = webui_sender {
                                 if let Err(err) = webui_sender.send(world_data) {
-                                    log::error!("Failed to send world data to webui: {}", err);
+                                    tracing::error!("Failed to send world data to webui: {}", err);
                                 }
                             }
                         }
                     }
                     Err(err) => {
-                        log::error!("Failed to receive vision msg: {}", err);
+                        tracing::error!("Failed to receive vision msg: {}", err);
                     }
                 }
             }
@@ -100,33 +100,33 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             robots.insert(rid);
                             cmd.id = rid;
                             if fail.get(&cmd.id) == Some(&true) {
-                                log::error!("Failsafe: not sending player cmd");
+                                tracing::error!("Failsafe: not sending player cmd");
                                 serial.send_no_wait(PlayerCmd::zero(rid));
                             } else {
                                 match serial.send(cmd).await {
                                     Ok(_) => {}
                                     Err(err) => {
-                                        log::error!("Failed to send player cmd to serial: {}", err);
+                                        tracing::error!("Failed to send player cmd to serial: {}", err);
                                     }
                                 }
                             }
                         } else {
-                            log::error!("Received player cmd but serial is not configured");
+                            tracing::error!("Received player cmd but serial is not configured");
                         }
                     }
                     Ok(RuntimeEvent::Debug { msg }) => {
-                        log::debug!("Runtime debug: {}", msg);
+                        tracing::debug!("Runtime debug: {}", msg);
                     }
                     Ok(RuntimeEvent::Crash { msg }) => {
-                        log::error!("Runtime crash: {}", msg);
+                        tracing::error!("Runtime crash: {}", msg);
                         break;
                     }
                     Err(err) => {
-                        log::error!("Failed to receive runtime msg: {}", err);
+                        tracing::error!("Failed to receive runtime msg: {}", err);
                         break;
                     }
                     // Err(_) => {
-                    //     log::error!("Runtime timeout");
+                    //     tracing::error!("Runtime timeout");
                     //     break;
                     // }
                 }
@@ -134,10 +134,10 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
             // serial_msg = serial.as_mut().unwrap().recv(), if serial.is_some() => {
             //     match serial_msg {
             //         Ok(serial_msg) => {
-            //             log::info!("Received serial msg: {}", serial_msg);
+            //             tracing::info!("Received serial msg: {}", serial_msg);
             //         }
             //         Err(err) => {
-            //             log::error!("Failed to receive serial msg: {}", err);
+            //             tracing::error!("Failed to receive serial msg: {}", err);
             //         }
             //     }
             // }
@@ -149,23 +149,23 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
     match runtime.wait_with_timeout(Duration::from_secs(2)).await {
         Ok(true) => {}
         Ok(false) => {
-            log::error!("Python process did not exit in time, killing");
+            tracing::error!("Python process did not exit in time, killing");
             runtime.kill();
         }
         Err(err) => {
-            log::error!("Failed to wait for python process: {}", err);
+            tracing::error!("Failed to wait for python process: {}", err);
             runtime.kill();
         }
     }
 
     // Send stop to all players
-    log::info!("Sending stop to all players");
+    tracing::info!("Sending stop to all players");
     if let Some(serial) = &mut serial {
         for id in robots.iter() {
             let cmd = PlayerCmd::zero(*id);
             // cmd.disarm = true;
             if let Err(err) = serial.send(cmd).await {
-                log::error!("Failed to send stop to player #{}: {}", id, err);
+                tracing::error!("Failed to send stop to player #{}: {}", id, err);
             }
         }
     }

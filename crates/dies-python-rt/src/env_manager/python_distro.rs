@@ -148,11 +148,11 @@ impl PythonDistro {
     pub async fn create_venv(&self, target_dir: &Path) -> Result<Venv> {
         let venv_dir = target_dir.join(".venv");
         if venv_dir.exists() {
-            log::debug!("Venv already exists, skipping");
+            tracing::debug!("Venv already exists, skipping");
             return Ok(Venv::from_venv_path(venv_dir).await?);
         }
 
-        log::info!("Creating new venv...");
+        tracing::info!("Creating new venv...");
         print!("This is the python bin: {:?}", self.python_bin());
         let cmd = Command::new(self.python_bin())
             .current_dir(&target_dir)
@@ -164,9 +164,9 @@ impl PythonDistro {
             .context("Failed to create venv")?;
 
         if !cmd.status.success() {
-            log::error!("Failed to create venv");
-            log::error!("stdout: {}", String::from_utf8_lossy(&cmd.stdout));
-            log::error!("stderr: {}", String::from_utf8_lossy(&cmd.stderr));
+            tracing::error!("Failed to create venv");
+            tracing::error!("stdout: {}", String::from_utf8_lossy(&cmd.stdout));
+            tracing::error!("stderr: {}", String::from_utf8_lossy(&cmd.stderr));
             anyhow::bail!("Failed to create venv");
         }
 
@@ -181,7 +181,7 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
         let existing_config: PythonDistroConfig =
             serde_json::from_reader(&fs::File::open(distro_file.clone())?)?;
         if existing_config == config {
-            log::debug!("Python distro already installed");
+            tracing::debug!("Python distro already installed");
             return Ok(());
         }
 
@@ -189,7 +189,7 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
         fs::create_dir(&py_dir)?; // Recreate the directory
     }
 
-    log::info!(
+    tracing::info!(
         "Python ({}-{}) not found, downloading",
         config.version,
         config.build
@@ -228,7 +228,7 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
     let archive_name = asset.name.clone();
     let download_url = asset.browser_download_url.clone();
 
-    log::debug!("Downloading Python distro from {}", download_url);
+    tracing::debug!("Downloading Python distro from {}", download_url);
     let archive_resp = client.get(download_url).send().await?;
     let total_size = archive_resp.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
@@ -243,13 +243,13 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
             downloaded += chunk.len() as u64;
             let progress = ((downloaded as f64 / total_size as f64) * 100.0).round();
             if progress % 10.0 == 0.0 && prev_progress % 10.0 != 0.0 {
-                log::info!("Progress: {:.0}%", progress);
+                tracing::info!("Progress: {:.0}%", progress);
             }
         }
     }
     let archive = Bytes::from(archive);
 
-    log::info!("Finsihed downloading Python distro, extracting...");
+    tracing::info!("Finsihed downloading Python distro, extracting...");
     let (extract_tx, extract_rx) = tokio::sync::oneshot::channel();
     let bin_dir_clone = py_dir.clone();
     let task = tokio::task::spawn_blocking(move || {
@@ -272,7 +272,7 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
 
     // Write a marker file to indicate the distro
     serde_json::to_writer(&fs::File::create(distro_file)?, &config)?;
-    log::info!("Python distro installed");
+    tracing::info!("Python distro installed");
 
     Ok(())
 }
@@ -320,7 +320,7 @@ mod test {
     #[test_log::test]
     fn test_get_bin_dir() {
         let path = get_python_dir();
-        log::debug!("Python bin dir: {}", path.display());
+        tracing::debug!("Python bin dir: {}", path.display());
         assert!(path.exists());
     }
 

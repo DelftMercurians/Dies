@@ -109,7 +109,7 @@ impl WorldTracker {
             for player in data.detection.robots_blue.iter() {
                 let id = player.robot_id();
                 if id as usize >= MAX_PLAYERS {
-                    log::error!("Player id {} is too high", id);
+                    tracing::error!("Player id {} is too high", id);
                     continue;
                 }
 
@@ -126,7 +126,7 @@ impl WorldTracker {
             for player in data.detection.robots_yellow.iter() {
                 let id = player.robot_id();
                 if id as usize >= MAX_PLAYERS {
-                    log::error!("Player id {} is too high", id);
+                    tracing::error!("Player id {} is too high", id);
                     continue;
                 }
 
@@ -151,7 +151,7 @@ impl WorldTracker {
             }
 
             self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
-            log::debug!("Received field geometry: {:?}", self.field_geometry);
+            tracing::debug!("Received field geometry: {:?}", self.field_geometry);
         }
     }
 
