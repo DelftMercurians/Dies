@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-    paths: ["docs/**/*", "src/**/*.rs"]
+    paths: ["docs/**/*", "src/**/*.rs", ".github/workflows/docs.yml"]
   workflow_dispatch:
 
 jobs:
@@ -43,6 +43,22 @@ jobs:
 
       - name: Copy API docs to docs
         run: cp -r target/doc docs/src/api
+
+      - name: Generate index for all crates
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // List all directories in ./crates
+            const crates = fs.readdirSync('./crates', { withFileTypes: true })
+              .filter(dirent => dirent.isDirectory())
+              .map(dirent => dirent.name.replace(/-/g, '_'));
+
+            // Generate index.md
+            const index = crates.map(crate => `* [${crate}](/api/${crate})`).join('\n');
+            fs.writeFileSync('./docs/src/api/index.md', index);
 
       - run: mdbook build
         working-directory: ./docs
