@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     env_manager::{PythonDistro, PythonDistroConfig},
-    ipc::{IpcConnection, IpcListener},
+    ipc::IpcSocket,
     RuntimeEvent, RuntimeMsg,
 };
 
@@ -49,7 +49,7 @@ pub struct PyRuntimeConfig {
 /// This struct is created with [`create_py_runtime`].
 pub struct PyRuntime {
     child_proc: Arc<Mutex<Child>>,
-    ipc: IpcConnection,
+    ipc: IpcSocket,
 }
 
 impl PyRuntime {
@@ -110,9 +110,9 @@ impl PyRuntime {
 
         tracing::info!("Running python {}", target.join(" "));
 
-        let listener = IpcListener::new().await?;
-        let host = listener.host().to_owned();
-        let port = listener.port();
+        let mut ipc = IpcSocket::new().await?;
+        let host = ipc.host().to_owned();
+        let port = ipc.port();
 
         let child_proc = Command::new(venv.python_bin())
             .args(target)
@@ -125,7 +125,7 @@ impl PyRuntime {
             .spawn()?;
 
         // Wait for the child process to connect to the socket
-        let ipc = listener.wait_for_conn(Duration::from_secs(5)).await?;
+        ipc.wait(Duration::from_secs(5)).await?;
 
         tracing::debug!("Python process started");
 
@@ -137,9 +137,7 @@ impl PyRuntime {
     }
 
     pub async fn send(&mut self, data: &RuntimeMsg) -> Result<()> {
-        let data = serde_json::to_string(&data)?;
-        self.ipc.send(&data).await?;
-        Ok(())
+        self.ipc.send(&data).await
     }
 
     pub async fn recv(&mut self) -> Result<RuntimeEvent> {
@@ -151,8 +149,7 @@ impl PyRuntime {
             }
         };
 
-        let data = self.ipc.recv().await?;
-        Ok(serde_json::from_str(&data)?)
+        self.ipc.recv().await
     }
 
     pub async fn wait_with_timeout(&self, timeout: Duration) -> Result<bool> {

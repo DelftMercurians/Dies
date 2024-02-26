@@ -1,9 +1,11 @@
 use std::{
     collections::{HashMap, HashSet},
+    pin::pin,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Result;
+use futures::{future, FutureExt};
 
 use dies_core::PlayerCmd;
 use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent, RuntimeMsg};
@@ -11,7 +13,6 @@ use dies_serial_client::{SerialClient, SerialClientConfig};
 use dies_ssl_client::{SslVisionClient, SslVisionClientConfig};
 use dies_webui::spawn_webui;
 use dies_world::{WorldConfig, WorldTracker};
-use tokio_util::sync::CancellationToken;
 
 pub struct ExecutorConfig {
     pub py_config: PyRuntimeConfig,
@@ -23,7 +24,7 @@ pub struct ExecutorConfig {
     pub robot_ids: HashMap<u32, u32>,
 }
 
-pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()> {
+pub async fn run(config: ExecutorConfig) -> Result<()> {
     let mut tracker = WorldTracker::new(config.world_config);
     let mut runtime = PyRuntime::new(config.py_config).await?;
     let mut vision = match config.vision_config {
@@ -44,20 +45,26 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
         (None, None)
     };
 
+    let mut ctrlc = pin!(tokio::signal::ctrl_c());
+
     let mut fail: HashMap<u32, bool> = HashMap::new();
     let mut robots: HashSet<u32> = HashSet::new();
     loop {
+        let vision_msg_fut = if let Some(vision) = &mut vision {
+            vision.recv().map(Some).boxed()
+        } else {
+            future::ready(None).boxed()
+        };
+
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
+            _ = &mut ctrlc => {
+                println!("Received Ctrl-C");
                 break;
             }
-            _ = cancel.cancelled() => {
-                break;
-            }
-            vision_msg = vision.as_mut().unwrap().recv() => {
+            vision_msg = vision_msg_fut => {
                 match vision_msg {
-                    Ok(vision_msg) => {
-                        tracker.update_from_protobuf(&vision_msg);
+                    Some(Ok(vision_msg)) => {
+                        tracker.update_from_vision(&vision_msg);
                         if let Some(world_data) = tracker.get() {
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
                             for player in world_data.own_players.iter() {
@@ -87,9 +94,10 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             }
                         }
                     }
-                    Err(err) => {
+                    Some(Err(err)) => {
                         tracing::error!("Failed to receive vision msg: {}", err);
                     }
+                    _ => {}
                 }
             }
             runtime_msg = runtime.recv() => {
@@ -121,26 +129,15 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                         tracing::error!("Runtime crash: {}", msg);
                         break;
                     }
+                    Ok(RuntimeEvent::Ping) => {
+                        tracing::debug!("Runtime ping");
+                    }
                     Err(err) => {
                         tracing::error!("Failed to receive runtime msg: {}", err);
                         break;
                     }
-                    // Err(_) => {
-                    //     tracing::error!("Runtime timeout");
-                    //     break;
-                    // }
                 }
             }
-            // serial_msg = serial.as_mut().unwrap().recv(), if serial.is_some() => {
-            //     match serial_msg {
-            //         Ok(serial_msg) => {
-            //             tracing::info!("Received serial msg: {}", serial_msg);
-            //         }
-            //         Err(err) => {
-            //             tracing::error!("Failed to receive serial msg: {}", err);
-            //         }
-            //     }
-            // }
         }
     }
 

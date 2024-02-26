@@ -90,8 +90,8 @@ impl WorldTracker {
         }
     }
 
-    /// Update the world state from a protobuf message.
-    pub fn update_from_protobuf(&mut self, data: &SSL_WrapperPacket) {
+    /// Update the world state from a vision message.
+    pub fn update_from_vision(&mut self, data: &SSL_WrapperPacket) {
         if let Some(frame) = data.detection.as_ref() {
             let t_capture = frame.t_capture();
             if (t_capture - self.last_timestamp.unwrap_or(0.0)).abs() <= (1.0 / 60.0) {
@@ -268,10 +268,10 @@ mod test {
         let mut packet_geom = SSL_WrapperPacket::new();
         packet_geom.geometry = Some(geom).into();
 
-        tracker.update_from_protobuf(&packet_detection);
+        tracker.update_from_vision(&packet_detection);
         assert!(!tracker.is_init());
 
-        tracker.update_from_protobuf(&packet_geom);
+        tracker.update_from_vision(&packet_geom);
         assert!(!tracker.is_init());
 
         // Second detection frame
@@ -280,7 +280,7 @@ mod test {
         let mut packet_detection = SSL_WrapperPacket::new();
         packet_detection.detection = Some(frame).into();
 
-        tracker.update_from_protobuf(&packet_detection);
+        tracker.update_from_vision(&packet_detection);
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();

@@ -185,7 +185,7 @@ async fn main() -> Result<()> {
             is_blue: true,
             initial_opp_goal_x: 1.0,
         },
-        vision_config: Some(vision_config),
+        vision_config: None,
         serial_config: match port {
             Some(port) => Some(dies_serial_client::SerialClientConfig {
                 port_name: port.clone(),
@@ -195,11 +195,7 @@ async fn main() -> Result<()> {
         },
     };
 
-    let cancel = CancellationToken::new();
-    let cancel_clone = cancel.clone();
-    run(config, cancel_clone.clone())
-        .await
-        .expect("Failed to run executor");
+    run(config).await.expect("Failed to run executor");
 
     tracing::info!("Shutting down");
 
