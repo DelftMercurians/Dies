@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -68,14 +68,25 @@ impl PyRuntime {
             &config.python_version,
             config.python_build,
         ))
-        .await?;
-        let mut venv = python.create_venv(&config.workspace).await?;
+        .await
+        .context(format!(
+            "Failed to create the python distro from version {:?} and build {:?}",
+            &config.python_version, config.python_build
+        ))?;
+        let mut venv = python
+            .create_venv(&config.workspace)
+            .await
+            .context("Failed to create python venv")?;
 
         if config.install {
             // First, install dies-py
             tracing::debug!("Installing dies-py");
             venv.install_editable(&config.workspace.join("py").join("dies-py"))
-                .await?;
+                .await
+                .context(format!(
+                    "Failed to install editable with venv with the path {:?}",
+                    &config.workspace.join("py").join("dies-py")
+                ))?;
 
             // Then, install the target package
             if let PyExecute::Package { path, .. } = &config.execute {
@@ -87,9 +98,14 @@ impl PyRuntime {
                 if !path.exists() {
                     bail!("Package not found at {}", path.display());
                 }
-                let path = path.canonicalize()?;
+                let path = path
+                    .canonicalize()
+                    .context(format!("Failed to canonicalize the path {:?}", path))?;
                 tracing::debug!("Installing package from {}", path.display());
-                venv.install_editable(&path).await?;
+                venv.install_editable(&path).await.context(format!(
+                    "Failed to instal editable with venv with the path {:?}",
+                    path
+                ))?;
             }
         }
 
@@ -100,7 +116,11 @@ impl PyRuntime {
                 } else {
                     path.to_owned()
                 };
-                vec![path.canonicalize()?.to_string_lossy().to_string()]
+                vec![path
+                    .canonicalize()
+                    .context(format!("Failed to canonicalize the path {:?}", path))?
+                    .to_string_lossy()
+                    .to_string()]
             }
             PyExecute::Package { name, .. } => {
                 let name = name.replace("-", "_");
@@ -110,7 +130,9 @@ impl PyRuntime {
 
         tracing::info!("Running python {}", target.join(" "));
 
-        let listener = IpcListener::new().await?;
+        let listener = IpcListener::new()
+            .await
+            .context("Failed to create the ipc listener")?;
         let host = listener.host().to_owned();
         let port = listener.port();
 
@@ -120,12 +142,19 @@ impl PyRuntime {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .stdin(Stdio::null())
-            .env("DIES_IPC_HOST", host)
+            .env("DIES_IPC_HOST", host.clone())
             .env("DIES_IPC_PORT", port.to_string())
-            .spawn()?;
+            .spawn()
+            .context(format!(
+                "Failed to run python command with DIES_IPC_HOST {:?} and DIES_IPC_PORT {:?}",
+                host, port
+            ))?;
 
         // Wait for the child process to connect to the socket
-        let ipc = listener.wait_for_conn(Duration::from_secs(5)).await?;
+        let ipc = listener
+            .wait_for_conn(Duration::from_secs(5))
+            .await
+            .context("Failed to wait 5s from the listener")?;
 
         tracing::debug!("Python process started");
 
@@ -137,8 +166,12 @@ impl PyRuntime {
     }
 
     pub async fn send(&mut self, data: &RuntimeMsg) -> Result<()> {
-        let data = serde_json::to_string(&data)?;
-        self.ipc.send(&data).await?;
+        let data = serde_json::to_string(&data)
+            .context("Failed to get string from data using serde_json")?;
+        self.ipc
+            .send(&data)
+            .await
+            .context("Failed to send data to ipc")?;
         Ok(())
     }
 
@@ -151,8 +184,15 @@ impl PyRuntime {
             }
         };
 
-        let data = self.ipc.recv().await?;
-        Ok(serde_json::from_str(&data)?)
+        let data = self
+            .ipc
+            .recv()
+            .await
+            .context("Failed to receive data from the ipc")?;
+        Ok(
+            serde_json::from_str(&data)
+                .context("Failed to convert data string with serede_json")?,
+        )
     }
 
     pub async fn wait_with_timeout(&self, timeout: Duration) -> Result<bool> {

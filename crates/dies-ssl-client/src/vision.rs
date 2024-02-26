@@ -28,8 +28,8 @@ pub struct SslVisionClientConfig {
 ///         port: 10020,
 ///         socket_type: SocketType::Udp,
 ///     };
-///     let mut client = SslVisionClient::new(config).await?;
-///     let msg = client.recv().await?;
+///     let mut client = SslVisionClient::new(config).await.context("Failed to create ssl vision client")?;
+///     let msg = client.recv().await.context("Failed to receive message from client")?;
 ///     println!("{:?}", msg);
 /// }
 /// ```
@@ -49,7 +49,6 @@ impl SslVisionClient {
 
             // you could add a .context("....") like so:
             // Some(vision_config) => Some(SslVisionClient::new(vision_config).await.context("Failed to create vision client")?),
-            
             SocketType::Udp => Transport::udp(&config.host, config.port)
                 .await
                 .context("Failed to create UDP transport")?,

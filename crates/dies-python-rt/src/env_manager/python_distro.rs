@@ -149,7 +149,9 @@ impl PythonDistro {
         let venv_dir = target_dir.join(".venv");
         if venv_dir.exists() {
             tracing::debug!("Venv already exists, skipping");
-            return Ok(Venv::from_venv_path(venv_dir).await?);
+            return Ok(Venv::from_venv_path(venv_dir)
+                .await
+                .context("Failed to create venv from venv path")?);
         }
 
         tracing::info!("Creating new venv...");
@@ -170,7 +172,9 @@ impl PythonDistro {
             anyhow::bail!("Failed to create venv");
         }
 
-        Ok(Venv::from_venv_path(venv_dir).await?)
+        Ok(Venv::from_venv_path(venv_dir)
+            .await
+            .context("Failed to create venv from venv path")?)
     }
 }
 
@@ -178,15 +182,18 @@ impl PythonDistro {
 async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> Result<()> {
     let distro_file = py_dir.join(".python_distro");
     if distro_file.exists() {
-        let existing_config: PythonDistroConfig =
-            serde_json::from_reader(&fs::File::open(distro_file.clone())?)?;
+        let existing_config: PythonDistroConfig = serde_json::from_reader(
+            &fs::File::open(distro_file.clone()).context("Failed to open the file")?,
+        )
+        .context("Failed to get the python distro config")?;
         if existing_config == config {
             tracing::debug!("Python distro already installed");
             return Ok(());
         }
 
-        fs::remove_dir_all(&py_dir)?;
-        fs::create_dir(&py_dir)?; // Recreate the directory
+        fs::remove_dir_all(&py_dir).context("Failed to remove all the dirs")?;
+        fs::create_dir(&py_dir).context("Failed to create the dir with the py_dir")?;
+        // Recreate the directory
     }
 
     tracing::info!(
@@ -198,7 +205,8 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
     let url = PYTHON_RELEASES_URL.to_owned() + config.build.to_string().as_str();
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 Gecko/20100101 Firefox/122.0")
-        .build()?;
+        .build()
+        .context("Failed to build using the ClientBuilder with Firefox")?;
 
     let release: Release = client
         .get(url)
@@ -206,7 +214,8 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
         .await
         .context(format!("Failed to get release {}", config.build))?
         .json()
-        .await?;
+        .await
+        .context("Failed to get the json")?;
 
     let build_name = format!(
         "cpython-{}+{}-{}-{}-install_only",
@@ -229,7 +238,11 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
     let download_url = asset.browser_download_url.clone();
 
     tracing::debug!("Downloading Python distro from {}", download_url);
-    let archive_resp = client.get(download_url).send().await?;
+    let archive_resp = client
+        .get(download_url)
+        .send()
+        .await
+        .context("Failed to get the archive")?;
     let total_size = archive_resp.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
     let mut stream = archive_resp.bytes_stream();
@@ -271,7 +284,13 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
     task.await.unwrap();
 
     // Write a marker file to indicate the distro
-    serde_json::to_writer(&fs::File::create(distro_file)?, &config)?;
+    serde_json::to_writer(
+        &fs::File::create(distro_file.clone()).context(format!(
+            "Failed to create the file with the path {:?}",
+            distro_file
+        ))?,
+        &config,
+    )?;
     tracing::info!("Python distro installed");
 
     Ok(())

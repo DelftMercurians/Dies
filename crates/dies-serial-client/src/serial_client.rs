@@ -7,7 +7,8 @@ use dies_core::PlayerCmd;
 /// List available serial ports. The port names can be used to create a
 /// [`SerialClient`].
 pub fn list_serial_ports() -> Result<Vec<String>> {
-    available_ports()?
+    available_ports()
+        .context("Failed to get available ports")?
         .iter()
         .map(|p| Ok(p.port_name.to_string()))
         .collect()
@@ -124,7 +125,7 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
         self.writer_tx
             .send((msg, tx))
             .context("Failed to send message to serial port")?;
-        rx.await?
+        rx.await.context("Failed to wait for rx")?
     }
 
     pub fn send_no_wait(&mut self, msg: PlayerCmd) {
