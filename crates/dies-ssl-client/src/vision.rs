@@ -1,52 +1,38 @@
 use anyhow::{Context, Result};
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
+use tokio::sync::mpsc;
 
 use crate::transport::Transport;
 
-pub enum SocketType {
-    Tcp,
-    Udp,
+/// Configuration for [`VisionClient`].
+pub enum VisionClientConfig {
+    /// Receive messages from a TCP socket.
+    Tcp { host: String, port: u16 },
+    /// Receive messages from a UDP socket.
+    Udp { host: String, port: u16 },
+    /// In-memory transport for testing.
+    InMemory(
+        /// Receiver for incoming messages.
+        mpsc::UnboundedReceiver<SSL_WrapperPacket>,
+    ),
 }
 
-pub struct SslVisionClientConfig {
-    pub host: String,
-    pub port: u16,
-    pub socket_type: SocketType,
-}
-
-/// Async client for the SSL Vision server.
-///
-/// # Example
-///
-/// ```no_run
-/// use dies_ssl_client::{SslVisionClient, SslVisionClientConfig, SocketType};
-///
-/// #[tokio::main]
-/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let config = SslVisionClientConfig {
-///         host: "localhost".to_string(),
-///         port: 10020,
-///         socket_type: SocketType::Udp,
-///     };
-///     let mut client = SslVisionClient::new(config).await?;
-///     let msg = client.recv().await?;
-///     println!("{:?}", msg);
-/// }
-/// ```
-pub struct SslVisionClient {
+/// Async client for SSL Vision.
+pub struct VisionClient {
     transport: Transport<SSL_WrapperPacket>,
 }
 
-impl SslVisionClient {
-    /// Create a new `SslVisionClient`.
-    pub async fn new(config: SslVisionClientConfig) -> Result<Self> {
-        let transport = match config.socket_type {
-            SocketType::Tcp => Transport::tcp(&config.host, config.port)
+impl VisionClient {
+    /// Create a new `SslVisionClient` from the given configuration.
+    pub async fn new(config: VisionClientConfig) -> Result<Self> {
+        let transport = match config {
+            VisionClientConfig::Tcp { host, port } => Transport::tcp(&host, port)
                 .await
                 .context("Failed to create TCP transport")?,
-            SocketType::Udp => Transport::udp(&config.host, config.port)
+            VisionClientConfig::Udp { host, port } => Transport::udp(&host, port)
                 .await
                 .context("Failed to create UDP transport")?,
+            VisionClientConfig::InMemory(rx) => Transport::in_memory(rx),
         };
         Ok(Self { transport })
     }

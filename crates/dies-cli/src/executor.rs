@@ -5,19 +5,18 @@ use std::{
 };
 
 use anyhow::Result;
-use futures::{future, FutureExt};
 
 use dies_core::PlayerCmd;
 use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent, RuntimeMsg};
 use dies_serial_client::{SerialClient, SerialClientConfig};
-use dies_ssl_client::{SslVisionClient, SslVisionClientConfig};
+use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_webui::spawn_webui;
 use dies_world::{WorldConfig, WorldTracker};
 
 pub struct ExecutorConfig {
     pub py_config: PyRuntimeConfig,
     pub world_config: WorldConfig,
-    pub vision_config: Option<SslVisionClientConfig>,
+    pub vision_config: VisionClientConfig,
     pub serial_config: Option<SerialClientConfig>,
     pub webui: bool,
     /// Maps vision IDs to robot IDs
@@ -27,10 +26,7 @@ pub struct ExecutorConfig {
 pub async fn run(config: ExecutorConfig) -> Result<()> {
     let mut tracker = WorldTracker::new(config.world_config);
     let mut runtime = PyRuntime::new(config.py_config).await?;
-    let mut vision = match config.vision_config {
-        Some(vision_config) => Some(SslVisionClient::new(vision_config).await?),
-        None => None,
-    };
+    let mut vision = VisionClient::new(config.vision_config).await?;
     let mut serial = match config.serial_config {
         Some(serial_config) => Some(SerialClient::new(serial_config)?),
         None => None,
@@ -50,20 +46,14 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
     let mut fail: HashMap<u32, bool> = HashMap::new();
     let mut robots: HashSet<u32> = HashSet::new();
     loop {
-        let vision_msg_fut = if let Some(vision) = &mut vision {
-            vision.recv().map(Some).boxed()
-        } else {
-            future::ready(None).boxed()
-        };
-
         tokio::select! {
             _ = &mut ctrlc => {
                 println!("Received Ctrl-C");
                 break;
             }
-            vision_msg = vision_msg_fut => {
+            vision_msg = vision.recv() => {
                 match vision_msg {
-                    Some(Ok(vision_msg)) => {
+                    Ok(vision_msg) => {
                         tracker.update_from_vision(&vision_msg);
                         if let Some(world_data) = tracker.get() {
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
@@ -94,10 +84,9 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
                             }
                         }
                     }
-                    Some(Err(err)) => {
+                    Err(err) => {
                         tracing::error!("Failed to receive vision msg: {}", err);
                     }
-                    _ => {}
                 }
             }
             runtime_msg = runtime.recv() => {
