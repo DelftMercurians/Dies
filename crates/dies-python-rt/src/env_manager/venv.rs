@@ -126,7 +126,10 @@ impl Venv {
     #[allow(dead_code)]
     pub async fn install_from_requirements_file(&mut self, path: &Path) -> Result<()> {
         let requirements = read_to_string(path)
-            .context("Failed to convert path to string")?
+            .context(format!(
+                "Failed to read requirements file {}",
+                path.display()
+            ))?
             .lines()
             .map(|line| line.to_string())
             .collect();
@@ -197,9 +200,9 @@ async fn get_installed_deps(python_bin: &Path, venv_dir: &Path) -> Result<HashSe
 /// Get the dependencies from the pyproject.toml file
 fn get_deps_from_pyproject_toml(path: &Path) -> Result<Vec<String>> {
     let toml: Table = std::fs::read_to_string(path)
-        .context(format!("Failed to read to string from the path {:?}", path))?
+        .context(format!("Failed to read {}", path.display()))?
         .parse()
-        .context(format!("Failed to parse the file from the path {:?}", path))?;
+        .context(format!("Failed to parse {}", path.display()))?;
 
     // Get project.dependencies
     let deps = toml

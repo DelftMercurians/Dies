@@ -125,7 +125,7 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
         self.writer_tx
             .send((msg, tx))
             .context("Failed to send message to serial port")?;
-        rx.await.context("Failed to wait for rx")?
+        rx.await?
     }
 
     pub fn send_no_wait(&mut self, msg: PlayerCmd) {

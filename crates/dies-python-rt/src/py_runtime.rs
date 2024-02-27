@@ -189,10 +189,7 @@ impl PyRuntime {
             .recv()
             .await
             .context("Failed to receive data from the ipc")?;
-        Ok(
-            serde_json::from_str(&data)
-                .context("Failed to convert data string with serede_json")?,
-        )
+        Ok(serde_json::from_str(&data).context("Failed to convert data string with serde_json")?)
     }
 
     pub async fn wait_with_timeout(&self, timeout: Duration) -> Result<bool> {

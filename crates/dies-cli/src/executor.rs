@@ -32,12 +32,14 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
         Some(vision_config) => Some(
             SslVisionClient::new(vision_config)
                 .await
-                .context("Failed to create new Ssl Vision Client")?,
+                .context("Failed to create vision client")?,
         ),
         None => None,
     };
     let mut serial = match config.serial_config {
-        Some(serial_config) => Some(SerialClient::new(serial_config).context("Failed to create the serial client")?),
+        Some(serial_config) => {
+            Some(SerialClient::new(serial_config).context("Failed to create the serial client")?)
+        }
         None => None,
     };
     let robot_ids = config.robot_ids;
@@ -183,7 +185,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
         drop(webui_sender);
         webui_handle
             .await
-            .context("Failed dropping the webui sender")?;
+            .context("Failed joining the webui task")?;
     }
 
     Ok(())

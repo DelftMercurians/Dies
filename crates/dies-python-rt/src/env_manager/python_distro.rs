@@ -182,17 +182,18 @@ impl PythonDistro {
 async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> Result<()> {
     let distro_file = py_dir.join(".python_distro");
     if distro_file.exists() {
-        let existing_config: PythonDistroConfig = serde_json::from_reader(
-            &fs::File::open(distro_file.clone()).context("Failed to open the file")?,
-        )
-        .context("Failed to get the python distro config")?;
+        let existing_config: PythonDistroConfig =
+            serde_json::from_reader(&fs::File::open(distro_file.clone())?).context(format!(
+                "Failed parse python distro config {}",
+                distro_file.display()
+            ))?;
         if existing_config == config {
             tracing::debug!("Python distro already installed");
             return Ok(());
         }
 
-        fs::remove_dir_all(&py_dir).context("Failed to remove all the dirs")?;
-        fs::create_dir(&py_dir).context("Failed to create the dir with the py_dir")?;
+        fs::remove_dir_all(&py_dir)?;
+        fs::create_dir(&py_dir)?;
         // Recreate the directory
     }
 
@@ -205,8 +206,7 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
     let url = PYTHON_RELEASES_URL.to_owned() + config.build.to_string().as_str();
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 Gecko/20100101 Firefox/122.0")
-        .build()
-        .context("Failed to build using the ClientBuilder with Firefox")?;
+        .build()?;
 
     let release: Release = client
         .get(url)
@@ -215,7 +215,7 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
         .context(format!("Failed to get release {}", config.build))?
         .json()
         .await
-        .context("Failed to get the json")?;
+        .context("Failed parse json response from GitHub")?;
 
     let build_name = format!(
         "cpython-{}+{}-{}-{}-install_only",
@@ -238,11 +238,7 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
     let download_url = asset.browser_download_url.clone();
 
     tracing::debug!("Downloading Python distro from {}", download_url);
-    let archive_resp = client
-        .get(download_url)
-        .send()
-        .await
-        .context("Failed to get the archive")?;
+    let archive_resp = client.get(download_url).send().await?;
     let total_size = archive_resp.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
     let mut stream = archive_resp.bytes_stream();

@@ -133,8 +133,11 @@ async fn main() -> Result<()> {
             loop {
                 println!("Enter port number:");
                 let mut input = String::new();
-                std::io::stdin().read_line(&mut input).context("Failed to read line")?;
-                let port_idx = input.trim().parse::<usize>().context("Failed to parse the input into a number (usize)")?;
+                std::io::stdin().read_line(&mut input)?;
+                let port_idx = input
+                    .trim()
+                    .parse::<usize>()
+                    .context("Failed to parse the input into a number (usize)")?;
                 if port_idx < ports.len() {
                     break Some(ports[port_idx].clone());
                 }
