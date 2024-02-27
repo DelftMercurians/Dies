@@ -4,7 +4,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use dies_core::PlayerCmd;
 use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent, RuntimeMsg};
@@ -26,9 +26,13 @@ pub struct ExecutorConfig {
 pub async fn run(config: ExecutorConfig) -> Result<()> {
     let mut tracker = WorldTracker::new(config.world_config);
     let mut runtime = PyRuntime::new(config.py_config).await?;
-    let mut vision = VisionClient::new(config.vision_config).await?;
+    let mut vision = VisionClient::new(config.vision_config)
+        .await
+        .context("Failed to create vision client")?;
     let mut serial = match config.serial_config {
-        Some(serial_config) => Some(SerialClient::new(serial_config)?),
+        Some(serial_config) => {
+            Some(SerialClient::new(serial_config).context("Failed to create the serial client")?)
+        }
         None => None,
     };
     let robot_ids = config.robot_ids;
@@ -131,7 +135,10 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
     }
 
     println!("Exiting executor");
-    runtime.send(&RuntimeMsg::Term).await?;
+    runtime
+        .send(&RuntimeMsg::Term)
+        .await
+        .context("Failed to send the termination message to the runtime")?;
     match runtime.wait_with_timeout(Duration::from_secs(2)).await {
         Ok(true) => {}
         Ok(false) => {
@@ -158,7 +165,9 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
 
     if let (Some(webui_sender), Some(webui_handle)) = (webui_sender, webui_handle) {
         drop(webui_sender);
-        webui_handle.await?;
+        webui_handle
+            .await
+            .context("Failed joining the webui task")?;
     }
 
     Ok(())

@@ -7,7 +7,8 @@ use dies_core::PlayerCmd;
 /// List available serial ports. The port names can be used to create a
 /// [`SerialClient`].
 pub fn list_serial_ports() -> Result<Vec<String>> {
-    available_ports()?
+    available_ports()
+        .context("Failed to get available ports")?
         .iter()
         .map(|p| Ok(p.port_name.to_string()))
         .collect()

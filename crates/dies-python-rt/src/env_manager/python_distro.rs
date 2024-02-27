@@ -149,7 +149,9 @@ impl PythonDistro {
         let venv_dir = target_dir.join(".venv");
         if venv_dir.exists() {
             tracing::debug!("Venv already exists, skipping");
-            return Ok(Venv::from_venv_path(venv_dir).await?);
+            return Ok(Venv::from_venv_path(venv_dir)
+                .await
+                .context("Failed to create venv from venv path")?);
         }
 
         tracing::info!("Creating new venv...");
@@ -170,7 +172,9 @@ impl PythonDistro {
             anyhow::bail!("Failed to create venv");
         }
 
-        Ok(Venv::from_venv_path(venv_dir).await?)
+        Ok(Venv::from_venv_path(venv_dir)
+            .await
+            .context("Failed to create venv from venv path")?)
     }
 }
 
@@ -179,14 +183,18 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
     let distro_file = py_dir.join(".python_distro");
     if distro_file.exists() {
         let existing_config: PythonDistroConfig =
-            serde_json::from_reader(&fs::File::open(distro_file.clone())?)?;
+            serde_json::from_reader(&fs::File::open(distro_file.clone())?).context(format!(
+                "Failed parse python distro config {}",
+                distro_file.display()
+            ))?;
         if existing_config == config {
             tracing::debug!("Python distro already installed");
             return Ok(());
         }
 
         fs::remove_dir_all(&py_dir)?;
-        fs::create_dir(&py_dir)?; // Recreate the directory
+        fs::create_dir(&py_dir)?;
+        // Recreate the directory
     }
 
     tracing::info!(
@@ -206,7 +214,8 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
         .await
         .context(format!("Failed to get release {}", config.build))?
         .json()
-        .await?;
+        .await
+        .context("Failed parse json response from GitHub")?;
 
     let build_name = format!(
         "cpython-{}+{}-{}-{}-install_only",
@@ -271,7 +280,13 @@ async fn download_python_distro(config: PythonDistroConfig, py_dir: PathBuf) -> 
     task.await.unwrap();
 
     // Write a marker file to indicate the distro
-    serde_json::to_writer(&fs::File::create(distro_file)?, &config)?;
+    serde_json::to_writer(
+        &fs::File::create(distro_file.clone()).context(format!(
+            "Failed to create the file with the path {:?}",
+            distro_file
+        ))?,
+        &config,
+    )?;
     tracing::info!("Python distro installed");
 
     Ok(())

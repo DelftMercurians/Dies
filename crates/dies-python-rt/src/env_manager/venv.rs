@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::{
     collections::HashSet,
     fs::read_to_string,
@@ -18,7 +18,9 @@ impl Venv {
     pub(super) async fn from_venv_path(venv_dir: PathBuf) -> Result<Self> {
         Ok(Self {
             venv_dir: venv_dir.clone(),
-            installed_deps: get_installed_deps(&python_bin(&venv_dir), &venv_dir).await?,
+            installed_deps: get_installed_deps(&python_bin(&venv_dir), &venv_dir)
+                .await
+                .context("Failed to get instealled deps")?,
         })
     }
 
@@ -36,7 +38,10 @@ impl Venv {
             bail!("pyproject.toml not found in {}", path.display());
         }
 
-        let mut deps = HashSet::from_iter(get_deps_from_pyproject_toml(&pyproject_toml)?);
+        let mut deps = HashSet::from_iter(
+            get_deps_from_pyproject_toml(&pyproject_toml)
+                .context("Failed to get deps from pyproject toml")?,
+        );
         deps.insert(package_name);
         let diff = deps.difference(&self.installed_deps).collect::<Vec<_>>();
 
@@ -47,11 +52,15 @@ impl Venv {
         tracing::debug!("New dependencies to install: {:?}", diff);
 
         tracing::info!("Installing editable package: {}", relative_path.display());
-        pip_install(&self.python_bin(), path, &["-e", "."]).await?;
+        pip_install(&self.python_bin(), path, &["-e", "."])
+            .await
+            .context("Failed to run pip install")?;
         tracing::info!("Done installing editable package");
 
         // Update installed_deps
-        self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir).await?;
+        self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir)
+            .await
+            .context("Failed to get installed deps")?;
         Ok(())
     }
 
@@ -65,11 +74,15 @@ impl Venv {
         }
 
         tracing::info!("Installing package: {}", spec);
-        pip_install(&self.python_bin(), self.venv_dir.as_path(), &[&spec]).await?;
+        pip_install(&self.python_bin(), self.venv_dir.as_path(), &[&spec])
+            .await
+            .context("Failed to run pip install")?;
         tracing::info!("Done installing package");
 
         // Update installed_deps
-        self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir).await?;
+        self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir)
+            .await
+            .context("Failed to get installed deps")?;
         Ok(())
     }
 
@@ -96,19 +109,27 @@ impl Venv {
 
         for req in requirements {
             tracing::info!("Installing package: {}", req);
-            pip_install(&self.python_bin(), self.venv_dir.as_path(), &[req]).await?;
+            pip_install(&self.python_bin(), self.venv_dir.as_path(), &[req])
+                .await
+                .context("Failed to run pip install")?;
             tracing::info!("Done installing package");
         }
 
         // Update installed_deps
-        self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir).await?;
+        self.installed_deps = get_installed_deps(&self.python_bin(), &self.venv_dir)
+            .await
+            .context("Failed to get installed deps")?;
         Ok(())
     }
 
     /// Install a list of packages from a requirements.txt file
     #[allow(dead_code)]
     pub async fn install_from_requirements_file(&mut self, path: &Path) -> Result<()> {
-        let requirements = read_to_string(path)?
+        let requirements = read_to_string(path)
+            .context(format!(
+                "Failed to read requirements file {}",
+                path.display()
+            ))?
             .lines()
             .map(|line| line.to_string())
             .collect();
@@ -133,7 +154,8 @@ async fn get_installed_deps(python_bin: &Path, venv_dir: &Path) -> Result<HashSe
         .arg("freeze")
         .arg("--local")
         .output()
-        .await?;
+        .await
+        .context("Failed to run python -m pip freeze --local")?;
 
     if !cmd.status.success() {
         tracing::error!("Failed to run pip freeze");
@@ -177,7 +199,10 @@ async fn get_installed_deps(python_bin: &Path, venv_dir: &Path) -> Result<HashSe
 
 /// Get the dependencies from the pyproject.toml file
 fn get_deps_from_pyproject_toml(path: &Path) -> Result<Vec<String>> {
-    let toml: Table = std::fs::read_to_string(path)?.parse()?;
+    let toml: Table = std::fs::read_to_string(path)
+        .context(format!("Failed to read {}", path.display()))?
+        .parse()
+        .context(format!("Failed to parse {}", path.display()))?;
 
     // Get project.dependencies
     let deps = toml
@@ -205,7 +230,8 @@ async fn pip_install(python_bin: &Path, cwd: &Path, args: &[&str]) -> Result<()>
         .arg("install")
         .args(args)
         .output()
-        .await?;
+        .await
+        .context(format!("Failed to run python -m pip install {:?}", args))?;
 
     if !cmd.status.success() {
         tracing::error!("Failed to run pip install `pip install {}`", args.join(" "));
