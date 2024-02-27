@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     env_manager::{PythonDistro, PythonDistroConfig},
-    ipc::{IpcConnection, IpcListener},
+    ipc::IpcSocket,
     RuntimeEvent, RuntimeMsg,
 };
 
@@ -49,7 +49,7 @@ pub struct PyRuntimeConfig {
 /// This struct is created with [`create_py_runtime`].
 pub struct PyRuntime {
     child_proc: Arc<Mutex<Child>>,
-    ipc: IpcConnection,
+    ipc: IpcSocket,
 }
 
 impl PyRuntime {
@@ -130,11 +130,11 @@ impl PyRuntime {
 
         tracing::info!("Running python {}", target.join(" "));
 
-        let listener = IpcListener::new()
+        let mut ipc = IpcSocket::new()
             .await
-            .context("Failed to create the ipc listener")?;
-        let host = listener.host().to_owned();
-        let port = listener.port();
+            .context("Failed to create IPC socket")?;
+        let host = ipc.host().to_owned();
+        let port = ipc.port();
 
         let child_proc = Command::new(venv.python_bin())
             .args(target)
@@ -151,10 +151,7 @@ impl PyRuntime {
             ))?;
 
         // Wait for the child process to connect to the socket
-        let ipc = listener
-            .wait_for_conn(Duration::from_secs(5))
-            .await
-            .context("Failed to wait 5s from the listener")?;
+        ipc.wait(Duration::from_secs(5)).await?;
 
         tracing::debug!("Python process started");
 
@@ -166,13 +163,7 @@ impl PyRuntime {
     }
 
     pub async fn send(&mut self, data: &RuntimeMsg) -> Result<()> {
-        let data = serde_json::to_string(&data)
-            .context("Failed to get string from data using serde_json")?;
-        self.ipc
-            .send(&data)
-            .await
-            .context("Failed to send data to ipc")?;
-        Ok(())
+        self.ipc.send(&data).await
     }
 
     pub async fn recv(&mut self) -> Result<RuntimeEvent> {
@@ -184,12 +175,7 @@ impl PyRuntime {
             }
         };
 
-        let data = self
-            .ipc
-            .recv()
-            .await
-            .context("Failed to receive data from the ipc")?;
-        Ok(serde_json::from_str(&data).context("Failed to convert data string with serde_json")?)
+        self.ipc.recv().await
     }
 
     pub async fn wait_with_timeout(&self, timeout: Duration) -> Result<bool> {

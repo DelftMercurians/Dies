@@ -511,14 +511,15 @@ dependencies = [
  "chrono",
  "clap",
  "dies-core",
+ "dies-protos",
  "dies-python-rt",
  "dies-serial-client",
  "dies-ssl-client",
  "dies-webui",
  "dies-world",
  "dirs",
+ "nalgebra",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -590,6 +591,7 @@ dependencies = [
  "dies-protos",
  "socket2",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

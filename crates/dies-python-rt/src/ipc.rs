@@ -1,86 +1,70 @@
-use anyhow::{bail, Result};
-use std::time::Duration;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf},
-    net::{TcpListener, TcpStream},
-};
+use anyhow::Result;
+use std::{collections::HashSet, net::SocketAddr, time::Duration};
+use tokio::net::UdpSocket;
 
-/// A listener that opens a TCP socket and waits for a connection from a child process.
-pub struct IpcListener {
-    host: String,
-    port: u16,
-    listener: TcpListener,
-}
+use crate::{RuntimeEvent, RuntimeMsg};
 
 /// An IPC connection to a child process.
-pub struct IpcConnection {
-    reader: BufReader<ReadHalf<TcpStream>>,
-    writer: WriteHalf<TcpStream>,
+pub struct IpcSocket {
+    socket: UdpSocket,
+    host: String,
+    port: u16,
+    peers: HashSet<SocketAddr>,
+    read_buf: Vec<u8>,
 }
 
-impl IpcListener {
-    /// Create a new `IpcCodec`.
-    ///
-    /// Creates a new TCP listener on a random port on the local host.
+impl IpcSocket {
+    /// Create a new IPC socket to which a child process can connect.
     ///
     /// # Errors
     ///
-    /// Returns an error if the listener cannot be created.
-    pub async fn new() -> Result<IpcListener> {
-        let listener = TcpListener::bind("0.0.0.0:0").await?;
-        let port = listener.local_addr()?.port();
-        Ok(IpcListener {
-            host: "127.0.0.1".into(),
+    /// Returns an error if the connection cannot be created.
+    pub async fn new() -> Result<IpcSocket> {
+        let host = "127.0.0.1".to_string();
+        let socket = UdpSocket::bind(format!("{host}:0")).await?;
+        let port = socket.local_addr()?.port();
+        Ok(IpcSocket {
+            socket,
+            host,
             port,
-            listener,
+            read_buf: vec![0; 2 * 1024],
+            peers: HashSet::new(),
         })
     }
 
-    /// Get the hostname where the codec is listening.
-    pub fn host(&self) -> &str {
-        &self.host
-    }
-
-    /// Get the port where the codec is listening.
+    /// Get the port
     pub fn port(&self) -> u16 {
         self.port
     }
 
-    /// Wait for a connection from a child process or timeout.
-    ///
-    /// If successful, returns a pair of [`IpcSender`] and [`IpcReceiver`] that can be
-    /// used to communicate with the child process.
+    /// Get the host
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
+    /// Wait for a message from the child process with a timeout.
     ///
     /// # Errors
     ///
-    /// Returns an error if the connection cannot be accepted or the timeout expires.
-    pub async fn wait_for_conn(self, timeout: Duration) -> Result<IpcConnection> {
-        tokio::select! {
-            res = self.listener.accept() => {
-                let (stream, _) = res?;
-                let (reader, writer) = tokio::io::split(stream);
-                let reader = BufReader::new(reader);
-                Ok(IpcConnection { reader, writer })
-            }
-            _ = tokio::time::sleep(timeout) => {
-                bail!("Timeout waiting for connection from child process");
-            }
-        }
+    /// Returns an error if the message cannot be received or the timeout expires.
+    pub async fn wait(&mut self, timeout: Duration) -> Result<()> {
+        let mut buf = [0; 2 * 1024];
+        let (_, peer) = tokio::time::timeout(timeout, self.socket.recv_from(&mut buf)).await??;
+        self.peers.insert(peer);
+        Ok(())
     }
-}
 
-impl IpcConnection {
     /// Send a message to the child process.
     ///
     /// # Errors
     ///
     /// Returns an error if the message cannot be sent.
-    pub async fn send(&mut self, data: &str) -> Result<()> {
-        self.writer.write_all(&data.as_bytes()).await?;
-        if !data.ends_with("\n") {
-            self.writer.write_all(b"\n").await?;
+    pub async fn send(&mut self, data: &RuntimeMsg) -> Result<()> {
+        let data = serde_json::to_string(data)?;
+        let bytes = data.as_bytes();
+        for peer in &self.peers {
+            self.socket.send_to(bytes, peer).await?;
         }
-        self.writer.flush().await?;
         Ok(())
     }
 
@@ -92,9 +76,9 @@ impl IpcConnection {
     ///
     /// Returns an error if the message cannot be
     /// received.
-    pub async fn recv(&mut self) -> Result<String> {
-        let mut line = String::new();
-        self.reader.read_line(&mut line).await?;
-        Ok(line)
+    pub async fn recv(&mut self) -> Result<RuntimeEvent> {
+        let (n, peer) = self.socket.recv_from(&mut self.read_buf).await?;
+        self.peers.insert(peer);
+        serde_json::from_slice(&self.read_buf[..n]).map_err(Into::into)
     }
 }

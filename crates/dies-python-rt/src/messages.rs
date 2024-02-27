@@ -27,4 +27,6 @@ pub enum RuntimeEvent {
         /// The error message
         msg: String,
     },
+    /// A ping message
+    Ping,
 }

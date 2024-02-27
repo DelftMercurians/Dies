@@ -1,20 +1,29 @@
 use anyhow::Context;
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use dies_core::workspace_utils;
-use dies_ssl_client::SslVisionClientConfig;
+use dies_ssl_client::VisionClientConfig;
 use dies_world::WorldConfig;
+use mock_vision::MockVision;
+use std::net::SocketAddr;
 use std::{path::PathBuf, str::FromStr};
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 
 use dies_python_rt::{PyExecute, PyRuntimeConfig};
 use dies_serial_client::list_serial_ports;
-use tokio_util::sync::CancellationToken;
 
 mod executor;
+mod mock_vision;
 
 use crate::executor::{run, ExecutorConfig};
+
+#[derive(Debug, Clone, ValueEnum)]
+enum VisionType {
+    Tcp,
+    Udp,
+    Mock,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
@@ -31,14 +40,11 @@ struct Args {
     #[clap(long, default_value = "dies-test-strat")]
     package: String,
 
-    #[clap(long, default_value = "localhost")]
-    vision_host: String,
+    #[clap(long, default_value = "udp")]
+    vision: VisionType,
 
-    #[clap(long, default_value = "6078")]
-    vision_port: u16,
-
-    #[clap(long, default_value = "tcp")]
-    vision_socket_type: String,
+    #[clap(long, default_value = "224.5.23.2:10006")]
+    vision_addr: SocketAddr,
 
     #[clap(long, default_value = "info")]
     log_level: String,
@@ -150,14 +156,16 @@ async fn main() -> Result<()> {
     };
     tracing::debug!("Serial port: {:?}", port);
 
-    let vision_config = SslVisionClientConfig {
-        socket_type: if args.vision_socket_type == "udp" {
-            dies_ssl_client::SocketType::Udp
-        } else {
-            dies_ssl_client::SocketType::Tcp
+    let vision_config = match args.vision {
+        VisionType::Tcp => VisionClientConfig::Tcp {
+            host: args.vision_addr.ip().to_string(),
+            port: args.vision_addr.port(),
         },
-        host: args.vision_host,
-        port: args.vision_port,
+        VisionType::Udp => VisionClientConfig::Udp {
+            host: args.vision_addr.ip().to_string(),
+            port: args.vision_addr.port(),
+        },
+        VisionType::Mock => MockVision::spawn(),
     };
 
     let robot_ids = args
@@ -189,7 +197,7 @@ async fn main() -> Result<()> {
             is_blue: true,
             initial_opp_goal_x: 1.0,
         },
-        vision_config: Some(vision_config),
+        vision_config,
         serial_config: match port {
             Some(port) => Some(dies_serial_client::SerialClientConfig {
                 port_name: port.clone(),
@@ -199,11 +207,7 @@ async fn main() -> Result<()> {
         },
     };
 
-    let cancel = CancellationToken::new();
-    let cancel_clone = cancel.clone();
-    run(config, cancel_clone.clone())
-        .await
-        .expect("Failed to run executor");
+    run(config).await.expect("Failed to run executor");
 
     tracing::info!("Shutting down");
 

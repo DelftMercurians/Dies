@@ -1,81 +1,101 @@
-from io import StringIO
+import signal
 import os
 import socket
+import sys
+from threading import Event, Thread
 import msgspec
 
-from .messages import msg_dec, Cmd, Msg
+from .messages import Ping, Term, World, msg_dec, Cmd, Msg
 
-__BRIDGE__ = None
+_sock = None
+_world_state = None
+_world_update_ev = Event()
+_stop = False
 
 
-class Bridge:
-    """Singleton class for communicating with the dies server."""
+def init():
+    """Initialize the bridge. This must be called before any other function."""
+    global _sock
+    if _sock is not None:
+        raise RuntimeError("Bridge already initialized")
+    host = os.environ.get("DIES_IPC_HOST", "localhost")
+    cmd_port = int(os.environ.get("DIES_IPC_PORT", 0))
+    if cmd_port == 0:
+        raise RuntimeError("DIES_IPC_PORT not set")
 
-    def __new__(cls):
-        global __BRIDGE__
-        if __BRIDGE__ is None:
-            __BRIDGE__ = object.__new__(cls)
-        return __BRIDGE__
+    _sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    _sock.settimeout(1)
+    _sock.connect((host, cmd_port))
+    # Send a ping
+    send(Ping())
 
-    def __init__(self):
-        host = os.environ.get("DIES_IPC_HOST", "localhost")
-        cmd_port = int(os.environ.get("DIES_IPC_PORT", 0))
-        if cmd_port == 0:
-            raise RuntimeError("DIES_IPC_PORT not set")
+    # Start the receive loop
+    recv_thread = Thread(target=_recv_loop, daemon=True)
+    recv_thread.start()
 
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.connect((host, cmd_port))
-        self.sock.settimeout(1)
+    # Set signal handler for SIGTERM, SIGINT, and SIGHUP
+    signal.signal(signal.SIGTERM, _sig_handler)
+    signal.signal(signal.SIGINT, _sig_handler)
+    signal.signal(signal.SIGHUP, _sig_handler)
 
-        self.buffer = StringIO()
-        # self.msg_queue = queue.Queue()
-        # self.listen_thread = threading.Thread(
-        #     target=self._listen_for_messages, daemon=True
-        # )
-        # self.listen_thread.start()
 
-    def send(self, message: Cmd):
-        """Send a message to the dies server."""
-        self.sock.send(msgspec.json.encode(message) + b"\n")
+def next() -> bool:
+    """Receive the next update from Dies and return `True` if the program should
+    continue running, or `False` if it should stop.
 
-    def recv(self) -> Msg | None:
-        """Receive a message from the dies server.
+    This function will block until a new update is available or the program is
+    stopping.
+    """
+    global _world_update_ev, _stop, _sock
+    if _sock is None:
+        raise RuntimeError("Bridge not initialized, call dies_py.init() first")
+    _world_update_ev.wait()
+    _world_update_ev.clear()
+    return not _stop
 
-        Blocks until a message is available."""
-        msg_line = None
 
-        while True:
-            try:
-                data = self.sock.recv(1024).decode("utf-8")
-                if data:
-                    self.buffer.write(data)
-                    self.buffer.seek(0)
-                    line = self.buffer.readline()
-                    while line:
-                        if line.endswith("\n"):
-                            msg_line = line
-                            # Read the next line
-                            line = self.buffer.readline()
-                        else:
-                            # Incomplete line, move the cursor back to its beginning
-                            self.buffer.seek(self.buffer.tell() - len(line))
-                            break
-                        line = self.buffer.readline()
+def world() -> World:
+    """Return the current world state."""
+    global _world_state
+    if _world_state is None:
+        raise RuntimeError("No world state available. Call dies_py.next() first")
+    return _world_state
 
-                    # Clear the self.buffer and write any incomplete line back to it
-                    remainder = self.buffer.read()
-                    self.buffer.seek(0)
-                    self.buffer.truncate(0)
-                    self.buffer.write(remainder)
 
-                    if msg_line is not None:
-                        try:
-                            decoded_msg = msg_dec.decode(msg_line.rstrip("\n"))
-                            return decoded_msg
-                        except msgspec.DecodeError:
-                            continue
-                else:
-                    # No data, break the loop
-                    break
-            except socket.timeout:
-                continue
+def send(message: Cmd):
+    """Send a message to the dies server."""
+    global _sock
+    if _sock is None:
+        raise RuntimeError("Bridge not initialized, call dies_py.init() first")
+    _sock.send(msgspec.json.encode(message))
+
+
+def should_stop():
+    """Check if the bridge should stop."""
+    global _stop
+    return _stop
+
+
+def _recv_loop():
+    global _world_state, _world_update_ev, _stop, _sock
+    while not _stop:
+        try:
+            data = _sock.recv(4096)
+            msg: Msg = msg_dec.decode(data)
+            if isinstance(msg, Term):
+                _world_update_ev.set()
+                _stop = True
+                break
+            elif isinstance(msg, World):
+                _world_state = msg
+                _world_update_ev.set()
+        except socket.timeout:
+            pass
+        except msgspec.DecodeError:
+            sys.stderr.write("Error decoding message\n")
+            sys.stderr.flush()
+
+
+def _sig_handler(signum, frame):
+    global _stop
+    _stop = True

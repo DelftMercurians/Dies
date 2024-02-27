@@ -83,4 +83,8 @@ class Debug(Struct, tag=True):
     message: str
 
 
-Cmd = Union[Debug, PlayerCmd]
+class Ping(Struct, tag=True):
+    pass
+
+
+Cmd = Union[Debug, PlayerCmd, Ping]

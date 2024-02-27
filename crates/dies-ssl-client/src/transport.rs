@@ -9,18 +9,20 @@ use dies_protos::Message;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, UdpSocket},
+    sync::mpsc,
 };
 
-enum TransportType {
+enum TransportType<I: Message> {
     Tcp { stream: TcpStream },
     Udp { socket: UdpSocket },
+    InMemory { rx: mpsc::UnboundedReceiver<I> },
 }
 
 /// A transport for receiving and sending protobuf messages over the network.
 ///
 /// It supports both TCP and UDP.
 pub struct Transport<I: Message, O = ()> {
-    transport_type: TransportType,
+    transport_type: TransportType<I>,
     buf: Vec<u8>,
     incoming_msg_type: PhantomData<I>,
     outgoing_msg_type: PhantomData<O>,
@@ -66,6 +68,15 @@ impl<I: Message, O> Transport<I, O> {
         })
     }
 
+    pub fn in_memory(rx: mpsc::UnboundedReceiver<I>) -> Self {
+        Self {
+            transport_type: TransportType::InMemory { rx },
+            buf: vec![0u8; 2 * 1024],
+            incoming_msg_type: PhantomData,
+            outgoing_msg_type: PhantomData,
+        }
+    }
+
     pub async fn recv(&mut self) -> Result<I> {
         match &mut self.transport_type {
             TransportType::Tcp { stream } => {
@@ -82,6 +93,12 @@ impl<I: Message, O> Transport<I, O> {
                     .await
                     .context("Failed to receive data from UDP socket")?;
                 let msg = I::parse_from_bytes(&self.buf[..len])?;
+                Ok(msg)
+            }
+            TransportType::InMemory { rx, .. } => {
+                let msg = rx.recv().await.ok_or_else(|| {
+                    anyhow::anyhow!("Failed to receive message from in-memory transport")
+                })?;
                 Ok(msg)
             }
         }
@@ -106,6 +123,10 @@ impl<I: Message, O: Message> Transport<I, O> {
                     .send(&buf)
                     .await
                     .context("Failed to send on UDP socket")?;
+                Ok(())
+            }
+            TransportType::InMemory { .. } => {
+                tracing::error!("Sending messages not supported for in-memory transport");
                 Ok(())
             }
         }
