@@ -1,13 +1,9 @@
-mod env;
 mod geom;
-mod runtime;
 mod world;
 
 pub mod workspace_utils;
 
-pub use env::*;
 pub use geom::*;
-pub use runtime::*;
 pub use world::*;
 
 pub type VisionMsg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
@@ -28,4 +24,25 @@ pub struct PlayerCmd {
     pub sy: f32,
     /// The player's angular velocity (with `+` counter-clockwise, `-` clockwise) \[rad/s]
     pub w: f32,
+    /// The player's dribble speed
+    pub dribble_speed: f32,
+
+    pub arm: bool,
+    pub disarm: bool,
+    pub kick: bool,
+}
+
+impl PlayerCmd {
+    pub fn zero(id: u32) -> PlayerCmd {
+        PlayerCmd {
+            id,
+            sx: 0.0,
+            sy: 0.0,
+            w: 0.0,
+            dribble_speed: 0.0,
+            arm: false,
+            disarm: false,
+            kick: false,
+        }
+    }
 }

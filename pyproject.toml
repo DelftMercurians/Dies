@@ -1,7 +1,7 @@
 [project]
 name = "dies-framework-workspace"
 version = "0.1.0"
-dependencies = []
+dependencies = ["rrtplanner>=0.1.2"]
 
 [build-system]
 requires = ["hatchling"]
@@ -11,3 +11,6 @@ build-backend = "hatchling.build"
 managed = true
 
 [tool.rye.workspace]
+
+[tool.hatch.build.targets.wheel]
+packages = ["strategy"]

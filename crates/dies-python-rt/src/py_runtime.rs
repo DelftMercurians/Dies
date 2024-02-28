@@ -1,177 +1,227 @@
+use anyhow::{bail, Context, Result};
 use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
-use crate::ipc_codec::{IpcListener, IpcReceiver, IpcSender};
+use crate::{
+    env_manager::{PythonDistro, PythonDistroConfig},
+    ipc::IpcSocket,
+    RuntimeEvent, RuntimeMsg,
+};
 
-use super::rye_runner::RyeRunner;
-use anyhow::{bail, Result};
-use dies_core::{RuntimeConfig, RuntimeEvent, RuntimeMsg, RuntimeReceiver, RuntimeSender};
+#[derive(Debug, Clone)]
+pub enum PyExecute {
+    /// Execute a python script with `python <script>`.
+    /// The path can be relative to the workspace.
+    Script(PathBuf),
+    /// Execute a python package as a module with `python -m <package>`. The package
+    /// is first installed in the virtual environment.
+    Package { path: PathBuf, name: String },
+}
 
 /// Python runtime configuration
-///
-/// Runs the given python module of the given package in the virtual environment,
-/// making sure that the virtual environment is up to date.
-///
-/// If the module is `__main__`, the package is run as a script.
-///
-/// # Errors
-///
-/// Calling `build()` will fail if:
-/// - [`RyeRunner::sync`] fails
-/// - the given path is not a valid python module
-/// - the command cannot be run
 #[derive(Debug, Clone)]
 pub struct PyRuntimeConfig {
-    /// Path to the workspace
+    /// Path to the workspace -- this is where the virtual environment will be created
     pub workspace: PathBuf,
-    /// Name of the package
-    pub package: String,
-    /// Name of the module
-    pub module: String,
-    /// Whether to run `rye sync` before starting the runtime
-    pub sync: bool,
+    /// The specific Python version to use eg. "3.8.5"
+    pub python_version: String,
+    /// The Python build number to use eg. `20240107`.
+    /// See [https://github.com/indygreg/python-build-standalone/tags] for the list
+    /// of available builds.
+    pub python_build: u32,
+    /// The target to run
+    pub execute: PyExecute,
+    /// Whether to install any packages before running the target. Recommended to keep
+    /// this as `true`.
+    pub install: bool,
 }
 
-/// Sender side of the python runtime.
+/// Python runtime.
 ///
-/// When the sender is dropped, it sends a termination message to the child process
+/// When the runtime is dropped, it sends a termination message to the child process
 /// and waits for it to exit. Attempting to receive from the child process after
-/// the sender has been dropped will result in an error.
+/// the runtime has been dropped will result in an error.
 ///
-/// This struct is created by [`create_py_runtime`].
-pub struct PyRuntimeSender {
+/// This struct is created with [`create_py_runtime`].
+pub struct PyRuntime {
     child_proc: Arc<Mutex<Child>>,
-    sender: IpcSender,
+    ipc: IpcSocket,
 }
 
-/// Receiver side of the python runtime.
-///
-/// Trying to call `recv` after the child process has exited will result in an error.
-/// This can also happen if the corresponding [`PyRuntimeSender`] is dropped.
-///
-/// This struct is created by [`create_py_runtime`].
-pub struct PyRuntimeReceiver {
-    child_proc: Arc<Mutex<Child>>,
-    receiver: IpcReceiver,
-}
-
-impl Default for PyRuntimeConfig {
-    fn default() -> Self {
-        Self {
-            workspace: std::env::current_dir().expect("Failed to get current directory"),
-            package: String::from("dies"),
-            module: String::from("__main__"),
-            sync: true,
-        }
-    }
-}
-
-impl RuntimeConfig for PyRuntimeConfig {
-    fn build(self) -> Result<(Box<dyn RuntimeSender>, Box<dyn RuntimeReceiver>)> {
-        if self.package.contains("-") {
-            bail!("Package name cannot contain dashes");
-        }
-        let rye = RyeRunner::new(&self.workspace)?;
-        if self.sync {
-            rye.sync()?;
-        }
-
-        let target = if self.module == "__main__" {
-            self.package.to_owned()
-        } else {
-            format!("{}.{}", self.package, self.module)
-        };
-
-        log::debug!("Running python module {}", target);
-
-        let listener = IpcListener::new()?;
-        let host = listener.host().to_owned();
-        let port = listener.port();
-
-        let rye_bin = rye.get_rye_bin();
-        let child_proc = Command::new(rye_bin)
-            .args(["run", "python", "-m", &target])
-            .current_dir(&self.workspace)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .stdin(Stdio::null())
-            .env("DIES_IPC_HOST", host)
-            .env("DIES_IPC_PORT", port.to_string())
-            .spawn()?;
-
-        // Wait for the child process to connect to the socket
-        let (sender, receiver) = listener.wait_for_conn(Duration::from_secs(3))?;
-
-        log::debug!("Python process started");
-
-        let child_proc = Arc::new(Mutex::new(child_proc));
-        Ok((
-            Box::new(PyRuntimeSender {
-                child_proc: Arc::clone(&child_proc),
-                sender,
-            }),
-            Box::new(PyRuntimeReceiver {
-                child_proc,
-                receiver,
-            }),
+impl PyRuntime {
+    /// Run the given python module of the given package in the virtual environment,
+    /// making sure that the virtual environment is up to date.
+    ///
+    /// If the module is `__main__`, the package is run as a script.
+    ///
+    /// # Errors
+    ///
+    /// - [`RyeRunner::sync`] fails
+    /// - the given path is not a valid python module
+    /// - the command cannot be run
+    pub async fn new(config: PyRuntimeConfig) -> Result<PyRuntime> {
+        let python = PythonDistro::new(PythonDistroConfig::from_version_and_build(
+            &config.python_version,
+            config.python_build,
         ))
-    }
-}
+        .await
+        .context(format!(
+            "Failed to create the python distro from version {:?} and build {:?}",
+            &config.python_version, config.python_build
+        ))?;
+        let mut venv = python
+            .create_venv(&config.workspace)
+            .await
+            .context("Failed to create python venv")?;
 
-impl RuntimeSender for PyRuntimeSender {
-    fn send(&mut self, data: &RuntimeMsg) -> Result<()> {
-        let data = serde_json::to_string(&data)?;
-        self.sender.send(&data)?;
-        Ok(())
-    }
-}
+        if config.install {
+            // First, install dies-py
+            tracing::debug!("Installing dies-py");
+            venv.install_editable(&config.workspace.join("py").join("dies-py"))
+                .await
+                .context(format!(
+                    "Failed to install editable with venv with the path {:?}",
+                    &config.workspace.join("py").join("dies-py")
+                ))?;
 
-impl Drop for PyRuntimeSender {
-    fn drop(&mut self) {
-        // TODO: Is there a better way to handle this?
-        // 1. Check if child process is still alive
-        {
-            // Only hold the lock for a short time
-            let mut child_proc = self.child_proc.lock().unwrap();
-            if !is_proc_alive(&mut child_proc) {
-                return;
+            // Then, install the target package
+            if let PyExecute::Package { path, .. } = &config.execute {
+                let path = if path.is_relative() {
+                    config.workspace.join(path)
+                } else {
+                    path.to_owned()
+                };
+                if !path.exists() {
+                    bail!("Package not found at {}", path.display());
+                }
+                let path = path
+                    .canonicalize()
+                    .context(format!("Failed to canonicalize the path {:?}", path))?;
+                tracing::debug!("Installing package from {}", path.display());
+                venv.install_editable(&path).await.context(format!(
+                    "Failed to instal editable with venv with the path {:?}",
+                    path
+                ))?;
             }
         }
 
-        // 2. Send termination message
-        if let Err(e) = self.send(&RuntimeMsg::Term) {
-            log::error!("Failed to send termination message: {}", e);
-        }
+        let target = match &config.execute {
+            PyExecute::Script(path) => {
+                let path = if path.is_relative() {
+                    config.workspace.join(path)
+                } else {
+                    path.to_owned()
+                };
+                vec![path
+                    .canonicalize()
+                    .context(format!("Failed to canonicalize the path {:?}", path))?
+                    .to_string_lossy()
+                    .to_string()]
+            }
+            PyExecute::Package { name, .. } => {
+                let name = name.replace("-", "_");
+                vec!["-m".to_string(), name]
+            }
+        };
 
-        // 3. Wait for child process to exit
-        std::thread::sleep(Duration::from_secs(1));
+        tracing::info!("Running python {}", target.join(" "));
 
-        // 4. Kill child process
+        let mut ipc = IpcSocket::new()
+            .await
+            .context("Failed to create IPC socket")?;
+        let host = ipc.host().to_owned();
+        let port = ipc.port();
+
+        let child_proc = Command::new(venv.python_bin())
+            .args(target)
+            .current_dir(&config.workspace)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .stdin(Stdio::null())
+            .env("DIES_IPC_HOST", host.clone())
+            .env("DIES_IPC_PORT", port.to_string())
+            .spawn()
+            .context(format!(
+                "Failed to run python command with DIES_IPC_HOST {:?} and DIES_IPC_PORT {:?}",
+                host, port
+            ))?;
+
+        // Wait for the child process to connect to the socket
+        ipc.wait(Duration::from_secs(5)).await?;
+
+        tracing::debug!("Python process started");
+
+        let child_proc = Arc::new(Mutex::new(child_proc));
+        Ok(PyRuntime {
+            child_proc: Arc::clone(&child_proc),
+            ipc,
+        })
+    }
+
+    pub async fn send(&mut self, data: &RuntimeMsg) -> Result<()> {
+        self.ipc.send(&data).await
+    }
+
+    pub async fn recv(&mut self) -> Result<RuntimeEvent> {
+        // Return error if child process has exited
+        {
+            let mut child_proc = self.child_proc.lock().unwrap();
+            if !is_proc_alive(&mut child_proc) {
+                bail!("Python process exited unexpectedly");
+            }
+        };
+
+        self.ipc.recv().await
+    }
+
+    pub async fn wait_with_timeout(&self, timeout: Duration) -> Result<bool> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let child_proc = Arc::clone(&self.child_proc);
+        tokio::task::spawn_blocking(move || {
+            let mut child_proc = child_proc.lock().unwrap();
+            let start = Instant::now();
+            let res = loop {
+                match child_proc.try_wait() {
+                    Ok(Some(_)) => break Ok(true),
+                    Ok(None) => {
+                        if start.elapsed() > timeout {
+                            break Ok(false);
+                        }
+                    }
+                    Err(e) => break Err(e),
+                }
+            };
+            tx.send(res).ok();
+        });
+        rx.await?.map_err(|e| e.into())
+    }
+
+    pub fn is_alive(&self) -> bool {
+        let mut child_proc = self.child_proc.lock().unwrap();
+        is_proc_alive(&mut child_proc)
+    }
+
+    pub fn kill(&mut self) {
         let mut child_proc = self.child_proc.lock().unwrap();
         if let Err(e) = child_proc.kill() {
-            log::error!("Failed to kill python process: {}", e);
+            tracing::error!("Failed to kill python process: {}", e);
         }
     }
 }
 
-impl RuntimeReceiver for PyRuntimeReceiver {
-    fn recv(&mut self) -> Result<RuntimeEvent> {
-        // Return error if child process has exited
-        let is_alive = {
-            let mut child_proc = self.child_proc.lock().unwrap();
-            is_proc_alive(&mut child_proc)
-        };
-        if !is_alive {
-            bail!("Python process exited unexpectedly");
-        }
-        let data = self.receiver.recv()?;
-        Ok(serde_json::from_str(&data)?)
-    }
-}
+// impl Drop for PyRuntime {
+//     fn drop(&mut self) {
+//         // Kill child process
+//         let mut child_proc = self.child_proc.lock().unwrap();
+//         if let Err(e) = child_proc.kill() {
+//             tracing::error!("Failed to kill python process: {}", e);
+//         }
+//     }
+// }
 
 fn is_proc_alive(proc: &mut Child) -> bool {
     match proc.try_wait() {

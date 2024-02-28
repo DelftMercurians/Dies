@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { XY } from "@/types";
+import { XY } from "../types";
 
 interface Props {
   width: number;

@@ -8,7 +8,7 @@ import { storeToRefs } from "pinia";
 import { useAppStore } from "../store/app";
 
 // types
-import type { World, XY, XYZ, RenderData } from "../types";
+import type { World, XY, XYZ } from "../types";
 
 // components
 import Bot from "./Bot.vue";

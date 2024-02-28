@@ -53,8 +53,8 @@ class FieldGeometry(Struct):
 class World(Struct, tag=True):
     own_players: list[PlayerData]
     opp_players: list[PlayerData]
-    ball: BallData
-    field_geom: FieldGeometry
+    ball: BallData | None
+    field_geom: FieldGeometry | None
 
 
 class Term(Struct, tag=True):
@@ -72,11 +72,19 @@ class PlayerCmd(Struct, tag=True):
     id: int
     sx: float
     sy: float
-    w: float
+    w: float = 0.0
+    dribble_speed: float = 0.0
+    arm: bool = False
+    disarm: bool = False
+    kick: bool = False
 
 
 class Debug(Struct, tag=True):
     message: str
 
 
-Cmd = Union[Debug, PlayerCmd]
+class Ping(Struct, tag=True):
+    pass
+
+
+Cmd = Union[Debug, PlayerCmd, Ping]

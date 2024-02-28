@@ -1,5 +1,5 @@
-use dies_webui::run_web_ui;
+use dies_webui::spawn_webui;
 
 fn main() {
-    run_web_ui();
+    spawn_webui();
 }

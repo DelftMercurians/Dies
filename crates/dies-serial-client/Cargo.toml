@@ -1,0 +1,13 @@
+[package]
+name = "dies-serial-client"
+version = "0.1.0"
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.79"
+dies-core = { version = "0.1.0", path = "../dies-core" }
+tracing = "0.1.40"
+serialport = "4.3.0"
+tokio = { version = "1.35.1", features = ["rt", "sync"] }

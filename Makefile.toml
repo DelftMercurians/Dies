@@ -1,0 +1,4 @@
+[tasks.run-on-server]
+workspace = false
+script_runner = "@rust"
+script = { file = "scripts/run_on_server.rs" }

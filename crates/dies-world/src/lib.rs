@@ -40,6 +40,7 @@ pub struct WorldTracker {
     ball_tracker: BallTracker,
     game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
+    last_timestamp: Option<f64>,
 }
 
 impl WorldTracker {
@@ -53,6 +54,7 @@ impl WorldTracker {
             ball_tracker: BallTracker::new(config.initial_opp_goal_x),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
+            last_timestamp: None,
         }
     }
 
@@ -88,10 +90,13 @@ impl WorldTracker {
         }
     }
 
-    /// Update the world state from a protobuf message.
-    pub fn update_from_protobuf(&mut self, data: &SSL_WrapperPacket) {
+    /// Update the world state from a vision message.
+    pub fn update_from_vision(&mut self, data: &SSL_WrapperPacket) {
         if let Some(frame) = data.detection.as_ref() {
             let t_capture = frame.t_capture();
+            if (t_capture - self.last_timestamp.unwrap_or(0.0)).abs() <= (1.0 / 60.0) {
+                return;
+            }
 
             // Update players
             let (blue_trackers, yellow_tracker) = if self.is_blue {
@@ -104,7 +109,7 @@ impl WorldTracker {
             for player in data.detection.robots_blue.iter() {
                 let id = player.robot_id();
                 if id as usize >= MAX_PLAYERS {
-                    log::error!("Player id {} is too high", id);
+                    tracing::error!("Player id {} is too high", id);
                     continue;
                 }
 
@@ -121,7 +126,7 @@ impl WorldTracker {
             for player in data.detection.robots_yellow.iter() {
                 let id = player.robot_id();
                 if id as usize >= MAX_PLAYERS {
-                    log::error!("Player id {} is too high", id);
+                    tracing::error!("Player id {} is too high", id);
                     continue;
                 }
 
@@ -136,6 +141,8 @@ impl WorldTracker {
 
             // Update ball
             self.ball_tracker.update(frame);
+
+            self.last_timestamp = Some(t_capture);
         }
         if let Some(geometry) = data.geometry.as_ref() {
             // We don't expect the field geometry to change, so only update it once.
@@ -144,7 +151,7 @@ impl WorldTracker {
             }
 
             self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
-            log::debug!("Received field geometry: {:?}", self.field_geometry);
+            tracing::debug!("Received field geometry: {:?}", self.field_geometry);
         }
     }
 
@@ -172,10 +179,9 @@ impl WorldTracker {
     /// [`WorldTracker::is_init`]).
     pub fn get(&self) -> Option<WorldData> {
         let field_geom = if let Some(v) = &self.field_geometry {
-            v
+            Some(v)
         } else {
-            log::warn!("Tried to get world state before field geometry was initialized");
-            return None;
+            None
         };
 
         let mut own_players = Vec::new();
@@ -192,18 +198,11 @@ impl WorldTracker {
             }
         }
 
-        let ball = if let Some(ball_data) = self.ball_tracker.get() {
-            ball_data
-        } else {
-            log::warn!("Tried to get world state before ball was initialized");
-            return None;
-        };
-
         Some(WorldData {
             own_players: own_players.into_iter().cloned().collect(),
             opp_players: opp_players.into_iter().cloned().collect(),
-            ball: ball.clone(),
-            field_geom: field_geom.clone(),
+            ball: self.ball_tracker.get().cloned(),
+            field_geom: field_geom.cloned(),
             current_game_state: self.game_state_tracker.get_game_state(),
         })
     }
@@ -269,10 +268,10 @@ mod test {
         let mut packet_geom = SSL_WrapperPacket::new();
         packet_geom.geometry = Some(geom).into();
 
-        tracker.update_from_protobuf(&packet_detection);
+        tracker.update_from_vision(&packet_detection);
         assert!(!tracker.is_init());
 
-        tracker.update_from_protobuf(&packet_geom);
+        tracker.update_from_vision(&packet_geom);
         assert!(!tracker.is_init());
 
         // Second detection frame
@@ -281,7 +280,7 @@ mod test {
         let mut packet_detection = SSL_WrapperPacket::new();
         packet_detection.detection = Some(frame).into();
 
-        tracker.update_from_protobuf(&packet_detection);
+        tracker.update_from_vision(&packet_detection);
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
@@ -293,15 +292,18 @@ mod test {
         assert!(data.own_players[0].position.y == 200.0);
 
         // Check ball
-        assert!(data.ball.position.x == 0.0);
-        assert!(data.ball.position.y == 0.0);
+        assert!(data.ball.is_some());
+        let ball = data.ball.unwrap();
+        assert!(ball.position.x == 0.0);
+        assert!(ball.position.y == 0.0);
 
         // Check field geometry
-        assert!(data.field_geom.field_length == 9000);
-        assert!(data.field_geom.field_width == 6000);
-        assert!(data.field_geom.goal_width == 1000);
-        assert!(data.field_geom.goal_depth == 200);
-        assert!(data.field_geom.boundary_width == 300);
+        let field_geom = data.field_geom.unwrap();
+        assert!(field_geom.field_length == 9000);
+        assert!(field_geom.field_width == 6000);
+        assert!(field_geom.goal_width == 1000);
+        assert!(field_geom.goal_depth == 200);
+        assert!(field_geom.boundary_width == 300);
     }
 
     pub struct RefereeBuilder {
