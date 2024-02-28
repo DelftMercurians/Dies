@@ -24,7 +24,7 @@ const showDetails = (): void => {
       width: props.width + 'px',
       backgroundColor: props.color,
       top: props.offset[0] + 'px',
-      left: $props.offset[1] + 'px',
+      left: props.offset[1] + 'px',
     }"
   ></div>
 </template>
