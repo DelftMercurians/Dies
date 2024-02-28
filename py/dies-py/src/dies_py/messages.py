@@ -79,6 +79,13 @@ class PlayerCmd(Struct, tag=True):
     kick: bool = False
 
 
+class PlayerPosCmd(Struct, tag=True):
+    id: int
+    x: float
+    y: float
+    orientation: float = 0.0
+
+
 class Debug(Struct, tag=True):
     message: str
 
@@ -87,4 +94,4 @@ class Ping(Struct, tag=True):
     pass
 
 
-Cmd = Union[Debug, PlayerCmd, Ping]
+Cmd = Union[Debug, PlayerCmd, Ping, PlayerPosCmd]

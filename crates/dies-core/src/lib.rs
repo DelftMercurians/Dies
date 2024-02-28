@@ -46,3 +46,12 @@ impl PlayerCmd {
         }
     }
 }
+
+/// A position command to one of our players
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct PlayerPosCmd {
+    pub id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub orientation: f32,
+}

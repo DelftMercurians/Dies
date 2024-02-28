@@ -1,4 +1,4 @@
-use dies_core::{PlayerCmd, WorldData};
+use dies_core::{PlayerCmd, PlayerPosCmd, WorldData};
 use serde::{Deserialize, Serialize};
 
 /// A message to the runtime
@@ -15,6 +15,8 @@ pub enum RuntimeMsg {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum RuntimeEvent {
+    /// A position command to one of our players
+    PlayerPosCmd(PlayerPosCmd),
     /// A command to one of our players
     PlayerCmd(PlayerCmd),
     /// A debug message

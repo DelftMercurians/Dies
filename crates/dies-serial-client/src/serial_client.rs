@@ -92,9 +92,7 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
                             "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};Kt7000;S.{};\n",
                             msg.id, msg.sx, msg.sy, msg.w, msg.dribble_speed, extra
                         );
-                        if !extra.is_empty() {
-                            println!("Sending {}", cmd);
-                        }
+                        tracing::debug!("Sending to serial port: {}", cmd);
 
                         if let Err(err) = port.write_all(cmd.as_bytes()) {
                             tracing::error!("Error writing to serial port: {}", err);
@@ -105,7 +103,6 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
                         } else {
                             sender.send(Ok(())).ok();
                         }
-                        // println!("Sent, dt: {}ms", last_time.elapsed().as_millis());
                         last_time = std::time::Instant::now();
                     }
                     None => break,
@@ -113,7 +110,7 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
             }
             port.clear(serialport::ClearBuffer::All).unwrap();
             drop(port);
-            println!("Closing serial port");
+            tracing::info!("Closing serial port");
         });
 
         Ok(Self { writer_tx: tx })
