@@ -9,6 +9,17 @@ use std::{
 };
 use walkdir::WalkDir;
 
+// pb 1. line 204: deletes files on the remote, but no dirs => should delete dirs too (if no coresponding dir in local remove it from remote)
+// pb 2. It's slow
+    // - minimize nr of ssh commands
+        // combine creates dirs + computing hashes
+    // later - upload all files with a single command
+        // parallelize
+        // while computes hashes on the remote, compute them locally as well
+// when testing change remote_path to Code/test
+
+
+
 fn main() {
     let repo_path = std::env::current_dir().expect("Failed to get current directory");
     let remote_host = "merucryvision";
