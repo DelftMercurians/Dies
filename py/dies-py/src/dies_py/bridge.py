@@ -33,10 +33,8 @@ def init():
     recv_thread = Thread(target=_recv_loop, daemon=True)
     recv_thread.start()
 
-    # Set signal handler for SIGTERM, SIGINT, and SIGHUP
-    signal.signal(signal.SIGTERM, _sig_handler)
+    # Set signal handler for SIGINT
     signal.signal(signal.SIGINT, _sig_handler)
-    signal.signal(signal.SIGHUP, _sig_handler)
 
 
 def next_world() -> bool:
@@ -78,22 +76,17 @@ def should_stop():
 
 def _recv_loop():
     global _world_state, _world_update_ev, _stop, _sock
+    buf = bytearray(4096)
     while not _stop:
-        try:
-            data = _sock.recv(4096)
-            msg: Msg = msg_dec.decode(data)
-            if isinstance(msg, Term):
-                _world_update_ev.set()
-                _stop = True
-                break
-            elif isinstance(msg, World):
-                _world_state = msg
-                _world_update_ev.set()
-        except socket.timeout:
-            pass
-        except msgspec.DecodeError:
-            sys.stderr.write("Error decoding message\n")
-            sys.stderr.flush()
+        n = _sock.recv_into(buf)
+        msg: Msg = msg_dec.decode(buf[:n])
+        if isinstance(msg, Term):
+            _world_update_ev.set()
+            _stop = True
+            break
+        elif isinstance(msg, World):
+            _world_state = msg
+            _world_update_ev.set()
 
 
 def _sig_handler(signum, frame):

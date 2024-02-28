@@ -1,18 +1,19 @@
 use std::{
     collections::{HashMap, HashSet},
-    pin::pin,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result};
 use npy::to_file;
 
-use dies_core::PlayerCmd;
+use dies_control::TeamController;
+use dies_core::{PlayerCmd, WorldData};
 use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent, RuntimeMsg};
 use dies_serial_client::{SerialClient, SerialClientConfig};
 use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_webui::spawn_webui;
 use dies_world::{WorldConfig, WorldTracker};
+use nalgebra::Vector2;
 
 pub struct ExecutorConfig {
     pub py_config: PyRuntimeConfig,
@@ -38,6 +39,8 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
     };
     let robot_ids = config.robot_ids;
 
+    let mut team_controller = TeamController::new();
+
     // Launch webui
     let (webui_sender, webui_handle) = if config.webui {
         let (webui_sender, webui_handle) = spawn_webui();
@@ -46,24 +49,37 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
         (None, None)
     };
 
-    let mut ctrlc = pin!(tokio::signal::ctrl_c());
-
     let mut fail: HashMap<u32, bool> = HashMap::new();
     let mut robots: HashSet<u32> = HashSet::new();
-    let mut to_save = Vec::new();
+    let mut update_interval = tokio::time::interval(Duration::from_millis(50));
+    let mut world_data: Option<WorldData> = None;
     loop {
         tokio::select! {
-            _ = &mut ctrlc => {
-                println!("Received Ctrl-C");
-                break;
+            _ = update_interval.tick() => {
+                if let Some(world_data) = &world_data {
+                    let cmds = team_controller.update(&world_data.own_players);
+                    if let Some(serial) = &mut serial {
+                        for mut cmd in cmds {
+                            let rid = *robot_ids.get(&cmd.id).unwrap_or(&0);
+                            cmd.id = rid;
+                            match serial.send(cmd).await {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    tracing::error!("Failed to send player cmd to serial: {}", err);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             vision_msg = vision.recv() => {
                 match vision_msg {
                     Ok(vision_msg) => {
                         tracker.update_from_vision(&vision_msg);
-                        if let Some(world_data) = tracker.get() {
+                        if let Some(new_world_data) = tracker.get() {
+                            world_data = Some(new_world_data.clone());
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
-                            for player in world_data.own_players.iter() {
+                            for player in new_world_data.own_players.iter() {
                                 if  SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64 - player.timestamp > 0.5 {
                                     if fail.get(&player.id) == Some(&false) {
                                         fail.insert(player.id, true);
@@ -99,13 +115,13 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
                             }
 
                             // Send update to runtime
-                            if let Err(err) = runtime.send(&dies_python_rt::RuntimeMsg::World(world_data.clone())).await {
+                            if let Err(err) = runtime.send(&dies_python_rt::RuntimeMsg::World(new_world_data.clone())).await {
                                 tracing::error!("Failed to send world data to runtime: {}", err);
                             }
 
                             // Send update to webui
                             if let Some(ref webui_sender) = webui_sender {
-                                if let Err(err) = webui_sender.send(world_data) {
+                                if let Err(err) = webui_sender.send(new_world_data) {
                                     tracing::error!("Failed to send world data to webui: {}", err);
                                 }
                             }
@@ -138,6 +154,11 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
                             tracing::error!("Received player cmd but serial is not configured");
                         }
                     }
+                    Ok(RuntimeEvent::PlayerPosCmd(cmd)) => {
+                        let rid = *robot_ids.get(&cmd.id).unwrap_or(&0);
+                        robots.insert(rid);
+                        team_controller.set_target_pos(cmd.id, Vector2::new(cmd.x, cmd.y));
+                    }
                     Ok(RuntimeEvent::Debug { msg }) => {
                         tracing::debug!("Runtime debug: {}", msg);
                     }
@@ -157,17 +178,10 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
         }
     }
 
-    println!("Exiting executor");
-
-    // Save player 5 data
-    if !to_save.is_empty() {
-        to_file("log01.npy", to_save).context("Failed to save player 5 data")?;
-    }
-
-    runtime
+    let _ = runtime
         .send(&RuntimeMsg::Term)
         .await
-        .context("Failed to send the termination message to the runtime")?;
+        .map_err(|e| tracing::error!("Failed to send term to runtime: {}", e));
     match runtime.wait_with_timeout(Duration::from_secs(2)).await {
         Ok(true) => {}
         Ok(false) => {
@@ -175,7 +189,7 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
             runtime.kill();
         }
         Err(err) => {
-            tracing::error!("Failed to wait for python process: {}", err);
+            tracing::error!("Failed to wait for python process, killing: {}", err);
             runtime.kill();
         }
     }

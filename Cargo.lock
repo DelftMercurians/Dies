@@ -510,6 +510,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "dies-control",
  "dies-core",
  "dies-protos",
  "dies-python-rt",
@@ -524,6 +525,16 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "dies-control"
+version = "0.1.0"
+dependencies = [
+ "dies-core",
+ "log",
+ "nalgebra",
+ "num-traits",
 ]
 
 [[package]]
