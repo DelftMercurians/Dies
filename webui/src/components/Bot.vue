@@ -23,8 +23,8 @@ const showDetails = (): void => {
       height: props.height + 'px',
       width: props.width + 'px',
       backgroundColor: props.color,
-      top: props.top + 'px',
-      left: props.left + 'px',
+      top: props.offset[0] + 'px',
+      left: $props.offset[1] + 'px',
     }"
   ></div>
 </template>

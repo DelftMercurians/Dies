@@ -8,7 +8,11 @@
         </v-col>
 
         <!-- Field -->
-        <v-col cols="6" class="d-flex align-center" style="background-color: rgb(31, 31, 31);">
+        <v-col
+          cols="6"
+          class="d-flex align-center"
+          style="background-color: rgb(31, 31, 31)"
+        >
           <Field></Field>
         </v-col>
 
