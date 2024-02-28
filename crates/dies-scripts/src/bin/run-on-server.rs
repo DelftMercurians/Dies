@@ -1,15 +1,11 @@
-//! ```cargo
-//! [dependencies]
-//! git2 = "0.18.2"
-//! sha2 = "0.10.8"
-//! walkdir = "2.4.0"
-//! hex = "0.4.3"
-//! ```
-
 use git2::Repository;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{HashMap, HashSet}, fs, io::{self, prelude::*}, path::Path, process::{exit, Command}
+    collections::{HashMap, HashSet},
+    fs,
+    io::{self, prelude::*},
+    path::Path,
+    process::{exit, Command},
 };
 use walkdir::WalkDir;
 
@@ -20,10 +16,6 @@ fn main() {
     let remote_path = "/home/mercury/Code/dies/";
     let repo = Repository::open(repo_path.clone()).expect("Failed to open repository");
 
-    // Create remote directory
-    println!("Creating remote directory...");
-    ssh_command(remote_host, remote_user, "mkdir -p ~/Code/dies");
-
     // Create remote directories
     println!("Creating remote directories...");
     create_dirs(&repo, &repo_path, remote_host, remote_user, remote_path);
@@ -33,24 +25,27 @@ fn main() {
     let remote_file_hashes = get_remote_file_hashes(remote_host, remote_user, remote_path);
 
     println!("Copying files...");
-    copy_files(&repo, &repo_path, remote_host, remote_user, remote_path, &remote_file_hashes);
+    copy_files(
+        &repo,
+        &repo_path,
+        remote_host,
+        remote_user,
+        remote_path,
+        &remote_file_hashes,
+    );
 
     println!("Removing unmatched remote files...");
-    remove_unmatched_remote_files(&repo, &repo_path, remote_host, remote_user, remote_path, &remote_file_hashes);
+    remove_unmatched_remote_files(
+        &repo_path,
+        remote_host,
+        remote_user,
+        remote_path,
+        &remote_file_hashes,
+    );
 
     // Compile and run
     println!("Compiling and running...");
-    ssh_command_with_pty(remote_host, remote_user, "cd ~/Code/dies && /home/mercury/.cargo/bin/cargo run -- --vision-socket-type udp --vision-host 224.5.23.2 --vision-port 10006");
-}
-
-fn ssh_command(remote_host: &str, remote_user: &str, command: &str) {
-    let status = Command::new("ssh")
-        .arg(format!("{}@{}", remote_user, remote_host))
-        .arg(command)
-        .status()
-        .expect("failed to execute command");
-
-    assert!(status.success());
+    ssh_command_with_pty(remote_host, remote_user, "cd ~/Code/dies && /home/mercury/.cargo/bin/cargo run -- --vision udp --vision-addr 224.5.23.2:10006");
 }
 
 fn ssh_command_with_pty(remote_host: &str, remote_user: &str, command: &str) -> ! {
@@ -77,7 +72,11 @@ fn ssh_command_with_pty(remote_host: &str, remote_user: &str, command: &str) -> 
     }
 }
 
-fn get_remote_file_hashes(remote_host: &str, remote_user: &str, remote_path: &str) -> HashMap<String, String> {
+fn get_remote_file_hashes(
+    remote_host: &str,
+    remote_user: &str,
+    remote_path: &str,
+) -> HashMap<String, String> {
     let output = Command::new("ssh")
         .arg(format!("{}@{}", remote_user, remote_host))
         .arg(format!(
@@ -98,7 +97,13 @@ fn get_remote_file_hashes(remote_host: &str, remote_user: &str, remote_path: &st
     })
 }
 
-fn create_dirs(repo: &Repository, repo_path: &Path, remote_host: &str, remote_user: &str, remote_path: &str) {
+fn create_dirs(
+    repo: &Repository,
+    repo_path: &Path,
+    remote_host: &str,
+    remote_user: &str,
+    remote_path: &str,
+) {
     let dirs = WalkDir::new(repo_path)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -136,7 +141,14 @@ fn create_dirs(repo: &Repository, repo_path: &Path, remote_host: &str, remote_us
     }
 }
 
-fn copy_files(repo: &Repository, repo_path: &Path, remote_host: &str, remote_user: &str, remote_path: &str, remote_file_hashes: &HashMap<String, String>) {
+fn copy_files(
+    repo: &Repository,
+    repo_path: &Path,
+    remote_host: &str,
+    remote_user: &str,
+    remote_path: &str,
+    remote_file_hashes: &HashMap<String, String>,
+) {
     for entry in WalkDir::new(repo_path) {
         let entry = entry.unwrap();
         let path = entry.path();
@@ -170,7 +182,10 @@ fn copy_files(repo: &Repository, repo_path: &Path, remote_host: &str, remote_use
         println!("Copying {}", relative_path);
         let scp_res = Command::new("scp")
             .arg(path.to_str().unwrap())
-            .arg(format!("{}@{}:{}", remote_user, remote_host, remote_file_path))
+            .arg(format!(
+                "{}@{}:{}",
+                remote_user, remote_host, remote_file_path
+            ))
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -178,17 +193,26 @@ fn copy_files(repo: &Repository, repo_path: &Path, remote_host: &str, remote_use
             .expect("Failed to copy file");
 
         if !scp_res.status.success() {
-            panic!("Failed to copy file: {}", String::from_utf8_lossy(&scp_res.stderr));
+            panic!(
+                "Failed to copy file: {}",
+                String::from_utf8_lossy(&scp_res.stderr)
+            );
         }
     }
 }
 
-fn remove_unmatched_remote_files(repo: &Repository, repo_path: &Path, remote_host: &str, remote_user: &str, remote_path: &str, remote_file_hashes: &HashMap<String, String>) {
+fn remove_unmatched_remote_files(
+    repo_path: &Path,
+    remote_host: &str,
+    remote_user: &str,
+    remote_path: &str,
+    remote_file_hashes: &HashMap<String, String>,
+) {
     // Collect all local files as relative paths
     let local_files = WalkDir::new(repo_path)
         .into_iter()
         .filter_map(Result::ok)
-        .filter(|e| e.path().is_file() && !repo.status_should_ignore(e.path()).unwrap())
+        .filter(|e| e.path().is_file())
         .map(|entry| {
             let path = entry.path().strip_prefix(repo_path).unwrap();
             path.to_str().unwrap().replace("\\", "/") // Convert to unix style path
@@ -196,7 +220,8 @@ fn remove_unmatched_remote_files(repo: &Repository, repo_path: &Path, remote_hos
         .collect::<HashSet<String>>();
 
     // Determine which remote files are not present locally
-    let files_to_remove = remote_file_hashes.keys()
+    let files_to_remove = remote_file_hashes
+        .keys()
         .filter(|remote_file| !local_files.contains(*remote_file))
         .cloned()
         .collect::<Vec<String>>();
@@ -212,7 +237,8 @@ fn remove_unmatched_remote_files(repo: &Repository, repo_path: &Path, remote_hos
     }
 
     // Construct a single ssh command to remove all unmatched files
-    let remove_commands = files_to_remove.iter()
+    let remove_commands = files_to_remove
+        .iter()
         .map(|file| format!("rm -f '{}/{}'", remote_path, file))
         .collect::<Vec<_>>()
         .join(" && ");
