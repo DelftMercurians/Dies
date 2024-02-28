@@ -11,14 +11,12 @@ use walkdir::WalkDir;
 
 // pb 1. line 204: deletes files on the remote, but no dirs => should delete dirs too (if no coresponding dir in local remove it from remote)
 // pb 2. It's slow
-    // - minimize nr of ssh commands
-        // combine creates dirs + computing hashes
-    // later - upload all files with a single command
-        // parallelize
-        // while computes hashes on the remote, compute them locally as well
+// - minimize nr of ssh commands
+// combine creates dirs + computing hashes
+// later - upload all files with a single command
+// parallelize
+// while computes hashes on the remote, compute them locally as well
 // when testing change remote_path to Code/test
-
-
 
 fn main() {
     let repo_path = std::env::current_dir().expect("Failed to get current directory");
@@ -32,8 +30,10 @@ fn main() {
     create_dirs(&repo, &repo_path, remote_host, remote_user, remote_path);
 
     // Get remote file hashes
-    println!("Getting remote file hashes...");
-    let remote_file_hashes = get_remote_file_hashes(remote_host, remote_user, remote_path);
+    println!("Getting remote file hashes and dirs...");
+    // let remote_file_hashes = get_remote_file_hashes(remote_host, remote_user, remote_path);
+    let (remote_file_hashes, remote_dirs) =
+        get_remote_file_hashes_and_dirs(remote_host, remote_user, remote_path);
 
     println!("Copying files...");
     copy_files(
@@ -46,13 +46,17 @@ fn main() {
     );
 
     println!("Removing unmatched remote files...");
-    remove_unmatched_remote_files(
+    remove_unmatched_remote_files_and_dirs(
         &repo_path,
         remote_host,
         remote_user,
         remote_path,
         &remote_file_hashes,
+        &remote_dirs,
     );
+
+    // check for empty folders on remote not present locally and delete them
+    // get all empty folders on remote
 
     // Compile and run
     println!("Compiling and running...");
@@ -83,30 +87,66 @@ fn ssh_command_with_pty(remote_host: &str, remote_user: &str, command: &str) -> 
     }
 }
 
-fn get_remote_file_hashes(
+fn get_remote_file_hashes_and_dirs(
     remote_host: &str,
     remote_user: &str,
     remote_path: &str,
-) -> HashMap<String, String> {
+) -> (HashMap<String, String>, HashSet<String>) {
     let output = Command::new("ssh")
         .arg(format!("{}@{}", remote_user, remote_host))
         .arg(format!(
-            "cd {} && find . -type d \\( -path ./target -o -path ./.venv \\) -prune -o -type f -exec sha256sum {{}} +",
+            // original "cd {} && find . -type d \\( -path ./target -o -path ./.venv \\) -prune -o -type f -exec sha256sum {{}} +",
+            "cd {} && find . -type d \\( -path ./target -o -path ./.venv \\) -prune -o \\( -type f -exec sha256sum {{}} + \\) -o \\( -type d -print \\)",
             remote_path
         ))
         .output()
         .expect("Failed to execute command");
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    output_str.lines().fold(HashMap::new(), |mut acc, line| {
+
+    let mut file_hashes = HashMap::new();
+    let mut dirs = HashSet::new();
+
+    for line in output_str.lines() {
         let mut parts = line.split_whitespace();
         if let (Some(hash), Some(path)) = (parts.next(), parts.next()) {
-            let path = path.strip_prefix("./").unwrap_or(path);
-            acc.insert(path.to_string(), hash.to_string());
+            if path.ends_with('/') {
+                dirs.insert(path.strip_prefix("./").unwrap_or(path).to_string());
+            } else {
+                let path = path.strip_prefix("./").unwrap_or(path);
+                file_hashes.insert(path.to_string(), hash.to_string());
+            }
         }
-        acc
-    })
+    }
+
+    (file_hashes, dirs)
 }
+
+// fn get_remote_file_hashes(
+//     remote_host: &str,
+//     remote_user: &str,
+//     remote_path: &str,
+// ) -> HashMap<String, String> {
+//     let output = Command::new("ssh")
+//         .arg(format!("{}@{}", remote_user, remote_host))
+//         .arg(format!(
+//             "cd {} && find . -type d \\( -path ./target -o -path ./.venv \\) -prune -o -type f -exec sha256sum {{}} +",
+//             remote_path
+//         ))
+//         // add command to get list of directories
+//         .output()
+//         .expect("Failed to execute command");
+
+//     let output_str = String::from_utf8_lossy(&output.stdout);
+//     output_str.lines().fold(HashMap::new(), |mut acc, line| {
+//         let mut parts = line.split_whitespace();
+//         if let (Some(hash), Some(path)) = (parts.next(), parts.next()) {
+//             let path = path.strip_prefix("./").unwrap_or(path);
+//             acc.insert(path.to_string(), hash.to_string());
+//         }
+//         acc
+//     })
+// }
 
 fn create_dirs(
     repo: &Repository,
@@ -212,12 +252,13 @@ fn copy_files(
     }
 }
 
-fn remove_unmatched_remote_files(
+fn remove_unmatched_remote_files_and_dirs(
     repo_path: &Path,
     remote_host: &str,
     remote_user: &str,
     remote_path: &str,
     remote_file_hashes: &HashMap<String, String>,
+    remote_dirs: &HashSet<String>,
 ) {
     // Collect all local files as relative paths
     let local_files = WalkDir::new(repo_path)
@@ -247,12 +288,33 @@ fn remove_unmatched_remote_files(
         println!("{}", file);
     }
 
-    // Construct a single ssh command to remove all unmatched files
-    let remove_commands = files_to_remove
+    // collect all remote dirs that are not present locally
+    let dirs_to_remove = remote_dirs
+        .iter()
+        .filter(|remote_dir| !local_files.contains(*remote_dir))
+        .cloned()
+        .collect::<Vec<String>>();
+
+    // Construct a single ssh command to remove all unmatched files and dirs
+    let mut remove_commands = files_to_remove
         .iter()
         .map(|file| format!("rm -f '{}/{}'", remote_path, file))
         .collect::<Vec<_>>()
         .join(" && ");
+
+    let remove_dirs_commands = dirs_to_remove
+        .iter()
+        .map(|dir| format!("rm -rf '{}/{}'", remote_path, dir))
+        .collect::<Vec<_>>()
+        .join(" && ");
+
+    if (!remove_commands.is_empty()) && (!remove_dirs_commands.is_empty()) {
+        remove_commands = format!("{} && {}", remove_commands, remove_dirs_commands);
+    } else if remove_dirs_commands.is_empty() {
+        remove_commands = remove_commands;
+    } else {
+        remove_commands = remove_dirs_commands;
+    }
 
     // Execute the command via ssh
     let status = Command::new("ssh")
