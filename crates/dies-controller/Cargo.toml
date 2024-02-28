@@ -8,3 +8,4 @@ edition.workspace = true
 [dependencies]
 
 optimization_engine = "0.8.1"
+nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
