@@ -1,0 +1,41 @@
+use nalgebra as na;
+use na::{ OMatrix, U2,};
+use na::OVector;
+use na::U4;
+use crate::filter::kalman::Kalman;
+use crate::filter::matrix_gen::{MatrixCreator, ULMotionModel, WhiteNoise1stOrder};
+
+struct KalmanBuilder {
+    init_std: f64,
+    measurement_std: f64,
+    unit_transition_std: f64
+}
+
+impl KalmanBuilder {
+    pub fn new(init_std: f64, measurement_std: f64, unit_transition_std: f64) -> Self {
+        KalmanBuilder {
+            init_std,
+            measurement_std,
+            unit_transition_std
+        }
+    }
+
+    pub fn build2D(&self, init_pos:OVector<f64, U4>, int_time: f64) -> Kalman<U2,U4> {
+        let std = self.unit_transition_std;
+        let t = int_time;
+        let A: dyn MatrixCreator<U4> = ULMotionModel;
+        let H: OMatrix<f64, U2, U4> = OMatrix::<f64, U2, U4>::new(
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+        );
+        let Q: dyn MatrixCreator<U4> = WhiteNoise1stOrder;
+        let R: OMatrix<f64, U2, U2> = OMatrix::<f64, U2, U2>::new(
+            self.measurement_std, 0.0,
+            0.0, self.measurement_std,
+        );
+        let P: OMatrix<f64, U4, U4> = OMatrix::<f64, U4, U4>::identity() * self.init_std;
+        let x: OVector<f64, U4> = init_pos;
+
+        Kalman::new(std, t, Box::new(A), H, Box::new(Q), R, P, x)
+    }
+}

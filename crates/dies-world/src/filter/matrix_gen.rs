@@ -1,10 +1,9 @@
 use std::ops::Mul;
 use nalgebra as na;
-use na::{DimName, OMatrix, U2,};
+use na::{DimName, OMatrix, U2, U4};
 use na::{Const, DefaultAllocator, SMatrix};
 use na::allocator::Allocator;
 
-type U4 = Const<4>;
 fn block_diag(
     a: &OMatrix<f64, U2, U2>,
 ) -> OMatrix<f64, U4, U4>
@@ -23,7 +22,7 @@ pub trait MatrixCreator<D>
     fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, D, D>;
 }
 
-struct Piecewise1stOrder;
+pub struct Piecewise1stOrder;
 
 // 2x2 measurement noise matrix assuming acceleration is different in
 // different duration
@@ -47,7 +46,7 @@ impl MatrixCreator<U4> for Piecewise1stOrder {
     }
 }
 
-struct WhiteNoise1stOrder;
+pub struct WhiteNoise1stOrder;
 
 // 2x2 measurement noise matrix assuming acceleration does not change
 impl MatrixCreator<U2> for WhiteNoise1stOrder {
@@ -70,7 +69,7 @@ impl MatrixCreator<U4> for WhiteNoise1stOrder {
     }
 }
 
-struct ULMotionModel;
+pub struct ULMotionModel;
 
 // 2x2 transition matrix assuming constant speed
 impl MatrixCreator<U2> for ULMotionModel {
