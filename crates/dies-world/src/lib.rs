@@ -5,6 +5,7 @@ mod ball;
 mod coord_utils;
 mod game_state;
 mod player;
+mod filter;
 
 use crate::game_state::GameStateTracker;
 use ball::BallTracker;
