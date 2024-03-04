@@ -1,7 +1,6 @@
-use std::ops::Mul;
 use nalgebra as na;
 use na::{DimName, OMatrix, U2, U4};
-use na::{Const, DefaultAllocator, SMatrix};
+use na::{DefaultAllocator};
 use na::allocator::Allocator;
 
 fn block_diag(
@@ -9,8 +8,9 @@ fn block_diag(
 ) -> OMatrix<f64, U4, U4>
 {
     let mut result = OMatrix::<f64, U4, U4>::zeros();
-    result.fixed_slice_mut::<2, 2>(0, 0).copy_from(a);
-    result.fixed_slice_mut::<2, 2>(2, 2).copy_from(a);
+
+    result.fixed_view_mut::<2, 2>(0, 0).copy_from(a);
+    result.fixed_view_mut::<2, 2>(2, 2).copy_from(a);
     result
 }
 
@@ -94,10 +94,6 @@ impl MatrixCreator<U4> for ULMotionModel {
 
 
 
-// observation transformation matrix 1d [x, vx] -> [x]
-fn state_to_measurement() -> SMatrix<f64, 1, 2> {
-    SMatrix::<f64, 1, 2>::new(1.0, 0.0)
-}
 
 #[cfg(test)]
 mod tests {

@@ -1,11 +1,12 @@
 use nalgebra as na;
-use na::{DimName, OMatrix, U2,};
-use na::{Const, DefaultAllocator, SMatrix};
+use na::{DimName, OMatrix};
+use na::{DefaultAllocator};
 use na::allocator::Allocator;
 use na::OVector;
 use crate::filter::matrix_gen::MatrixCreator;
 
 // OS: Observation Space, SS: State Space
+#[allow(non_snake_case)]
 pub struct Kalman<OS,SS>
 where
     OS: DimName,
@@ -45,11 +46,17 @@ where
     pub fn new(
         std: f64,
         t: f64,
+        #[allow(non_snake_case)]
         A: Box<dyn MatrixCreator<SS>>,
+        #[allow(non_snake_case)]
         H: OMatrix<f64, OS, SS>,
+        #[allow(non_snake_case)]
         Q: Box<dyn MatrixCreator<SS>>,
+        #[allow(non_snake_case)]
         R: OMatrix<f64, OS, OS>,
+        #[allow(non_snake_case)]
         P: OMatrix<f64, SS, SS>,
+        #[allow(non_snake_case)]
         x: OVector<f64, SS>,
     ) -> Self {
         Kalman {
@@ -65,6 +72,7 @@ where
     }
 
     //predict a future state(prior), this doesn't change the internal state of the filter
+    #[allow(dead_code)]
     pub fn predict(&mut self, newt: f64) -> OVector<f64, SS> {
         &self.A.create_matrix(newt - self.t) * &self.x
     }
@@ -76,12 +84,17 @@ where
         if dt < 0.0 {
             return None;
         }
+        #[allow(non_snake_case)]
         let A = self.A.create_matrix(dt);
+        #[allow(non_snake_case)]
         let Q = self.Q.create_matrix(dt);
         let x = &A * &self.x;
+        #[allow(non_snake_case)]
         let P = &A * &self.P * &A.transpose() + &Q*self.std.powi(2);
         let r = z - &self.H * &x;
+        #[allow(non_snake_case)]
         let S = &self.H * &P * &self.H.transpose() + &self.R;
+        #[allow(non_snake_case)]
         let K = &P * &self.H.transpose() * S.try_inverse().unwrap();
         self.x = x + &K * r;
         self.P = &P - &K * &self.H * &P;
@@ -93,7 +106,7 @@ where
 //test
 #[cfg(test)]
 mod tests {
-    use nalgebra::U4;
+    use nalgebra::{U2, U4};
     use super::*;
 
     use crate::filter::filter_builder::KalmanBuilder;
@@ -138,7 +151,7 @@ mod tests {
         }
 
 
-        //calulate the error
+        //calculate the error
         let mut smoothed_error = 0.0;
         let mut original_error = 0.0;
         for i in 1..num_steps {
