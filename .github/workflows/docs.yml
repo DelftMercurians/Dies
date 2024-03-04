@@ -29,6 +29,12 @@ jobs:
         with:
           toolchain: stable
 
+      # Install deps
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libudev-dev
+
       # Cache cargo registry
       - uses: Swatinem/rust-cache@v2
         with:
