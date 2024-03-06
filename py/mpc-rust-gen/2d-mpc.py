@@ -31,8 +31,8 @@ import numpy as np
 # cost += qN*((pos_t-posref)**2)
 
 # ux, uy are velocities
-(nu, nx, N, L, ts) = (2, 2, 20, 0.5, 0.1)
-(q, qtheta, r, qN, qthetaN) = (10, 0.1, 1, 200, 2)
+(nu, nx, N, L, ts) = (2, 2, 200, 0.5, 0.1)
+(q, qu, r, qN, qthetaN) = (10, 1, 1, 200, 2)
 
 u = cs.SX.sym('u', nu*N)
 p = cs.SX.sym('p', 2*nx)
@@ -41,27 +41,26 @@ p = cs.SX.sym('p', 2*nx)
 (xref, yref) = (p[2], p[3])
 
 cost = 0
-# c = 0
+c = 0
 for t in range(0, nu*N, nu):
 
     ux_t = u[t]
     uy_t = u[t+1]
 
-    cost += q*((x-xref)**2 + (y-yref)**2 + (ux_t)**2 + (uy_t)**2)
+    cost += q*((x-xref)**2 + (y-yref)**2) + qu * ((ux_t)**2 + (uy_t)**2)
   
     x += ts * ux_t
     y += ts * uy_t
-
-    # avoid obs at origin
-    # c += cs.fmax(0, 1 - x**2 - y**2)
+    c += cs.fmax(0, 1 - x**2 - y**2)
 
 cost += qN*((x-xref)**2 + (y-yref)**2)
 
-umin = [-5.0] * (nu*N)
-umax = [5.0] * (nu*N)
+umin = [-3.0] * (nu*N)
+umax = [3.0] * (nu*N)
 bounds = og.constraints.Rectangle(umin, umax)
 
-problem = og.builder.Problem(u, p, cost).with_constraints(bounds)
+# .with_constraints(circle_constraints)
+problem = og.builder.Problem(u, p, cost).with_penalty_constraints(c).with_constraints(bounds)
 build_config = og.config.BuildConfiguration()\
     .with_build_directory("my_optimizers")\
     .with_build_mode("debug")\
@@ -69,7 +68,12 @@ build_config = og.config.BuildConfiguration()\
 meta = og.config.OptimizerMeta()\
     .with_optimizer_name("navigation")
 solver_config = og.config.SolverConfiguration()\
-    .with_tolerance(1e-7)
+    .with_tolerance(1e-4)\
+    .with_initial_tolerance(1e-4)\
+    .with_max_outer_iterations(5)\
+    .with_delta_tolerance(1e-2)\
+    .with_penalty_weight_update_factor(10.0)\
+    .with_initial_penalty(100.0)
 builder = og.builder.OpEnOptimizerBuilder(problem,
                                           meta,
                                           build_config,
@@ -114,8 +118,8 @@ sys.path.insert(1, './my_optimizers/navigation')
 import navigation
 
 solver = navigation.solver()
-x_init = [-1., -1.]
-x_ref = [2., 2.]
+x_init = [-2., -2.]
+x_ref = [2, 1.8]
 result = solver.run(p=x_init + x_ref,
                     initial_guess=[1.0] * (nu*N))
 u_star = result.solution
@@ -136,9 +140,6 @@ plt.ylabel('u_y')
 plt.xlabel('Time')
 plt.show()
 
-
-
-
 x_states = [0.0] * (nx*(N+2))
 x_states[0:nx+1] = x_init
 for t in range(0, N):
@@ -146,7 +147,6 @@ for t in range(0, N):
 
     x = x_states[t * nx]
     y = x_states[t * nx + 1]
-   
 
     x_states[(t+1)*nx] = x + ts * (u_t[0])
     x_states[(t+1)*nx+1] = y + ts * (u_t[1])
@@ -158,5 +158,8 @@ xy = x_states[1:nx*N:nx]
 
 print(f"{x_states = }")
 print(xx)
-plt.plot(xx, xy, '-o')
+fig, ax = plt.subplots()
+ax.plot(xx, xy, '-o')
+circle = plt.Circle((0, 0), 1, color='blue', fill=False)
+ax.add_patch(circle)
 plt.show()
