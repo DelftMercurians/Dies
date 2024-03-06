@@ -16,5 +16,5 @@ if __name__ == "__main__":
         w = world()
         dt = time.time() - last_time
         last_time = time.time()
-        print(f"[{dt:.0f}] World: {w}")
+        # print(f"[{dt:.0f}] World: {w}")
     print("Stopping test-strat")

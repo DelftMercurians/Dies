@@ -22,7 +22,8 @@ fn main() {
     let repo_path = std::env::current_dir().expect("Failed to get current directory");
     let remote_host = "merucryvision";
     let remote_user = "mercury";
-    let remote_path = "/home/mercury/Code/dies/";
+    // let remote_path = "/home/mercury/Code/dies/";
+    let remote_path = "/home/mercury/Code/test-dies/";
     let repo = Repository::open(repo_path.clone()).expect("Failed to open repository");
 
     // Create remote directories
@@ -59,8 +60,8 @@ fn main() {
     // get all empty folders on remote
 
     // Compile and run
-    println!("Compiling and running...");
-    ssh_command_with_pty(remote_host, remote_user, "cd ~/Code/dies && /home/mercury/.cargo/bin/cargo run -- --vision udp --vision-addr 224.5.23.2:10006");
+    // println!("Compiling and running...");
+    // ssh_command_with_pty(remote_host, remote_user, "cd ~/Code/dies && /home/mercury/.cargo/bin/cargo run -- --vision udp --vision-addr 224.5.23.2:10006");
 }
 
 fn ssh_command_with_pty(remote_host: &str, remote_user: &str, command: &str) -> ! {
@@ -109,13 +110,12 @@ fn get_remote_file_hashes_and_dirs(
 
     for line in output_str.lines() {
         let mut parts = line.split_whitespace();
-        if let (Some(hash), Some(path)) = (parts.next(), parts.next()) {
-            if path.ends_with('/') {
-                dirs.insert(path.strip_prefix("./").unwrap_or(path).to_string());
-            } else {
-                let path = path.strip_prefix("./").unwrap_or(path);
-                file_hashes.insert(path.to_string(), hash.to_string());
-            }
+        let pair = (parts.next(), parts.next());
+        if let (Some(hash), Some(path)) = pair {
+            let path = path.strip_prefix("./").unwrap_or(path);
+            file_hashes.insert(path.to_string(), hash.to_string());
+        } else if let (Some(path), _) = pair {
+            dirs.insert(path.strip_prefix("./").unwrap_or(path).to_string());
         }
     }
 
@@ -155,6 +155,7 @@ fn create_dirs(
     remote_user: &str,
     remote_path: &str,
 ) {
+    println!("Getting dirs");
     let dirs = WalkDir::new(repo_path)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -178,6 +179,8 @@ fn create_dirs(
         })
         .collect::<Vec<_>>()
         .join(" ");
+
+    println!("Creating dirs: {}", dirs);
 
     let mkdir_command = format!("mkdir -p {}", dirs);
 
@@ -295,6 +298,11 @@ fn remove_unmatched_remote_files_and_dirs(
         .cloned()
         .collect::<Vec<String>>();
 
+    println!(
+        "Removing the following dirs on the remote: {}",
+        dirs_to_remove.join(", ")
+    );
+
     // Construct a single ssh command to remove all unmatched files and dirs
     let mut remove_commands = files_to_remove
         .iter()
@@ -335,4 +343,102 @@ fn hash_file<P: AsRef<Path>>(path: P) -> Result<String, io::Error> {
     file.read_to_end(&mut buffer)?;
     hasher.update(&buffer);
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_delte_empty_folder() {
+        // create folder tests on this repository
+        let repo_path = std::env::current_dir()
+            .expect("Failed to get current directory")
+            .join("..") // Move up one directory
+            .join("..") // Move up another directory
+            .canonicalize() // Resolve the path to its absolute form, removing any '..' components.
+            .expect("Failed to resolve path");
+
+        let test_path = repo_path.join("test");
+        if !test_path.exists() {
+            fs::create_dir(&test_path);
+        }
+
+        // add test.txt file to test folder with some content
+        let test_file_path = test_path.join("test.txt");
+        fs::write(&test_file_path, "test content").expect("Failed to write file");
+
+        // run run-on-server to create the same folder on remote
+        let output = Command::new("powershell")
+            .arg(format!(
+                "cd {} ; cargo make run-on-server",
+                repo_path.to_str().unwrap()
+            ))
+            .output()
+            .expect("Failed to execute command");
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("Command output: {}", stdout);
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Error executing command: {}", stderr);
+        }
+
+        // check if test folder was created on remote
+        let output = Command::new("powershell")
+            .arg(format!(
+                "cd {} ; ssh mercury@merucryvision 'ls ~/Code/test-dies'",
+                repo_path.to_str().unwrap()
+            ))
+            .output()
+            .expect("Failed to execute command");
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("Command output: {}", stdout);
+            assert!(stdout.contains("test"));
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Error executing command: {}", stderr);
+        }
+
+        // delete test.txt file from local
+        fs::remove_file(test_file_path).expect("Failed to remove file");
+
+        // run run-on-server to delete the file from remote
+        let output = Command::new("powershell")
+            .arg(format!(
+                "cd {} ; cargo make run-on-server",
+                repo_path.to_str().unwrap()
+            ))
+            .output()
+            .expect("Failed to execute command");
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("Command output: {}", stdout);
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Error executing command: {}", stderr);
+        }
+
+        // check if test folder was deleted from remote
+        let output = Command::new("powershell")
+            .arg(format!(
+                "cd {} ; ssh mercury@merucryvision 'ls ~/Code/test-dies'",
+                repo_path.to_str().unwrap()
+            ))
+            .output()
+            .expect("Failed to execute command");
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("Command output: {}", stdout);
+            assert!(!stdout.contains("test"));
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Error executing command: {}", stderr);
+        }
+    }
 }
