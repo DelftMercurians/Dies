@@ -51,7 +51,7 @@ for t in range(0, nu*N, nu):
   
     x += ts * ux_t
     y += ts * uy_t
-    c += cs.fmax(0, 1 - x**2 - y**2)
+    c += cs.fmax(0, 1.5 - x**2 - y**2)
 
 cost += qN*((x-xref)**2 + (y-yref)**2)
 
@@ -123,7 +123,6 @@ x_ref = [2, 1.8]
 result = solver.run(p=x_init + x_ref,
                     initial_guess=[1.0] * (nu*N))
 u_star = result.solution
-
 
 # Plot solution
 # ------------------------------------

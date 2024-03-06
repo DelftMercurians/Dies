@@ -3,6 +3,9 @@ members = ["crates/*"]
 package.edition = "2021"
 resolver = "2"
 default-members = ["crates/dies-cli"]
+exclude = [
+    "py/mpc-rust-gen/my_optimizers/navigation", 
+]
 
 [profile.dev]
 opt-level = 1
