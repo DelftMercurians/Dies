@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import Chart from "chart.js/auto";
   import { Canvas, Layer, t, type Render } from "svelte-canvas";
   import type { World, XY, XYZ } from "./types";
 
@@ -24,6 +25,38 @@
     return () => clearInterval(interval);
   });
 
+  let velocityChart: Chart;
+  onMount(() => {
+    const ctx = (
+      document.getElementById("velocityChart") as HTMLCanvasElement
+    ).getContext("2d")!;
+    velocityChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [], // Time labels
+        datasets: [
+          {
+            label: "Velocity Magnitude",
+            data: [],
+            fill: false,
+            borderColor: "rgb(75, 192, 192)",
+            tension: 0.1,
+          },
+        ],
+      },
+      options: {
+        animation: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+  });
+
+  let selectedPlayerId: number | null = null;
+  let firstTs: number | null = null;
   let render: Render;
   $: render = ({ context: ctx, width: canvasWidth, height: canvasHeight }) => {
     if (!state) return;
@@ -112,17 +145,46 @@
       ctx.fill();
     }
 
-    // // Render vector field on top
-    // if (state.vector_field) {
-    //   const img = new Image();
-    //   img.src = state.vector_field;
-    //   ctx.drawImage(img, PADDING, PADDING, width, height);
-    // }
+    if (state?.own_players.length > 0) {
+      let selectedPlayer = state.own_players[0];
+      if (selectedPlayerId === null) {
+        selectedPlayerId = state.own_players[0].id;
+      } else {
+        const _selectedPlayer = state.own_players.find(
+          (player) => player.id === selectedPlayerId
+        );
+        if (_selectedPlayer) {
+          selectedPlayer = _selectedPlayer;
+        } else {
+          selectedPlayerId = selectedPlayer.id;
+        }
+      }
+
+      const velocityMagnitude = Math.sqrt(
+        selectedPlayer.velocity[0] ** 2 + selectedPlayer.velocity[1] ** 2
+      );
+      if (firstTs === null) {
+        firstTs = selectedPlayer.timestamp;
+      }
+      const ts = selectedPlayer.timestamp - firstTs;
+
+      const labels = velocityChart.data.labels!;
+      const data = velocityChart.data.datasets[0].data;
+      if (data.length > 100) {
+        labels.shift();
+        data.shift();
+      }
+      labels.push(ts);
+      data.push(velocityMagnitude);
+      velocityChart.update();
+    }
   };
 </script>
 
 <main class="cont">
-  <div class="sidebar"></div>
+  <div class="sidebar">
+    <canvas id="velocityChart" width="400" height="400"></canvas>
+  </div>
 
   <Canvas width={840} height={600} class="canvas">
     <Layer {render} />
