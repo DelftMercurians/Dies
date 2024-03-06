@@ -31,7 +31,7 @@ struct Args {
     #[clap(long, default_value = "auto")]
     serial_port: String,
 
-    #[clap(long, default_value = "false")]
+    #[clap(long, default_value = "true")]
     webui: bool,
 
     #[clap(long, default_value = "14:3,5:2")]
@@ -46,7 +46,7 @@ struct Args {
     #[clap(long, default_value = "224.5.23.2:10006")]
     vision_addr: SocketAddr,
 
-    #[clap(long, default_value = "info")]
+    #[clap(long, default_value = "debug")]
     log_level: String,
 
     #[clap(long, default_value = "auto")]
@@ -181,7 +181,7 @@ async fn main() -> Result<()> {
 
     let workspace_root = workspace_utils::get_workspace_root();
     let config = ExecutorConfig {
-        webui: false,
+        webui: args.webui,
         robot_ids,
         py_config: PyRuntimeConfig {
             install: true,

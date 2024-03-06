@@ -1,12 +1,10 @@
-use nalgebra as na;
-use na::{DimName, OMatrix, U2, U4};
-use na::{DefaultAllocator};
 use na::allocator::Allocator;
+use na::{Const, DefaultAllocator, SMatrix};
+use na::{DimName, OMatrix, U2, U4};
+use nalgebra as na;
+use std::ops::Mul;
 
-fn block_diag(
-    a: &OMatrix<f64, U2, U2>,
-) -> OMatrix<f64, U4, U4>
-{
+fn block_diag(a: &OMatrix<f64, U2, U2>) -> OMatrix<f64, U4, U4> {
     let mut result = OMatrix::<f64, U4, U4>::zeros();
 
     result.fixed_view_mut::<2, 2>(0, 0).copy_from(a);
@@ -15,9 +13,9 @@ fn block_diag(
 }
 
 pub trait MatrixCreator<D>
-    where
-        D: DimName,
-        DefaultAllocator: Allocator<f64, D, D>,
+where
+    D: DimName,
+    DefaultAllocator: Allocator<f64, D, D>,
 {
     fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, D, D>;
 }
@@ -29,18 +27,22 @@ pub struct Piecewise1stOrder;
 impl MatrixCreator<U2> for Piecewise1stOrder {
     fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, U2, U2> {
         OMatrix::<f64, U2, U2>::new(
-            delta_t.powi(4)/4.0, delta_t.powi(3)/2.0,
-            delta_t.powi(3)/2.0, delta_t.powi(2),
+            delta_t.powi(4) / 4.0,
+            delta_t.powi(3) / 2.0,
+            delta_t.powi(3) / 2.0,
+            delta_t.powi(2),
         )
     }
 }
 
 //Piecewise1stOrder but 2D
 impl MatrixCreator<U4> for Piecewise1stOrder {
-    fn create_matrix(&self, delta_t: f64) -> OMatrix<f64,U4,U4> {
+    fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, U4, U4> {
         let m = OMatrix::<f64, U2, U2>::new(
-            delta_t.powi(4)/4.0, delta_t.powi(3)/2.0,
-            delta_t.powi(3)/2.0, delta_t.powi(2),
+            delta_t.powi(4) / 4.0,
+            delta_t.powi(3) / 2.0,
+            delta_t.powi(3) / 2.0,
+            delta_t.powi(2),
         );
         block_diag(&m)
     }
@@ -52,18 +54,22 @@ pub struct WhiteNoise1stOrder;
 impl MatrixCreator<U2> for WhiteNoise1stOrder {
     fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, U2, U2> {
         OMatrix::<f64, U2, U2>::new(
-            delta_t.powi(3)/3.0,  delta_t.powi(2)/2.0,
-            delta_t.powi(2)/2.0, delta_t,
+            delta_t.powi(3) / 3.0,
+            delta_t.powi(2) / 2.0,
+            delta_t.powi(2) / 2.0,
+            delta_t,
         )
     }
 }
 
 //WhiteNoise1stOrder but 2D
 impl MatrixCreator<U4> for WhiteNoise1stOrder {
-    fn create_matrix(&self, delta_t: f64) -> OMatrix<f64,U4,U4> {
+    fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, U4, U4> {
         let m = OMatrix::<f64, U2, U2>::new(
-            delta_t.powi(3)/3.0,  delta_t.powi(2)/2.0,
-            delta_t.powi(2)/2.0, delta_t,
+            delta_t.powi(3) / 3.0,
+            delta_t.powi(2) / 2.0,
+            delta_t.powi(2) / 2.0,
+            delta_t,
         );
         block_diag(&m)
     }
@@ -74,26 +80,22 @@ pub struct ULMotionModel;
 // 2x2 transition matrix assuming constant speed
 impl MatrixCreator<U2> for ULMotionModel {
     fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, U2, U2> {
-        OMatrix::<f64, U2, U2>::new(
-            1.0, delta_t,
-            0.0, 1.0,
-        )
+        OMatrix::<f64, U2, U2>::new(1.0, delta_t, 0.0, 1.0)
     }
 }
 
 //ULMotionModel but 2D
 impl MatrixCreator<U4> for ULMotionModel {
-    fn create_matrix(&self, delta_t: f64) -> OMatrix<f64,U4,U4> {
-        let m = OMatrix::<f64, U2, U2>::new(
-            1.0, delta_t,
-            0.0, 1.0,
-        );
+    fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, U4, U4> {
+        let m = OMatrix::<f64, U2, U2>::new(1.0, delta_t, 0.0, 1.0);
         block_diag(&m)
     }
 }
 
-
-
+// observation transformation matrix 1d [x, vx] -> [x]
+fn state_to_measurement() -> SMatrix<f64, 1, 2> {
+    SMatrix::<f64, 1, 2>::new(1.0, 0.0)
+}
 
 #[cfg(test)]
 mod tests {
@@ -102,11 +104,8 @@ mod tests {
     fn test_white_noise_1st_order_u2() {
         let wn = WhiteNoise1stOrder;
         let delta_t = 2.0_f64;
-        let result_matrix:OMatrix<f64,U2,U2> = wn.create_matrix(delta_t);
-        let expected_matrix = OMatrix::<f64, U2, U2>::new(
-            8.0/3.0, 4.0/2.0,
-            4.0/2.0, 2.0,
-        );
+        let result_matrix: OMatrix<f64, U2, U2> = wn.create_matrix(delta_t);
+        let expected_matrix = OMatrix::<f64, U2, U2>::new(8.0 / 3.0, 4.0 / 2.0, 4.0 / 2.0, 2.0);
 
         assert!((result_matrix - expected_matrix).norm() < 1e-6);
     }
@@ -115,15 +114,26 @@ mod tests {
     fn test_white_noise_1st_order_u4() {
         let wn = WhiteNoise1stOrder;
         let delta_t = 1.0_f64;
-        let result_matrix:OMatrix<f64,U4,U4> = wn.create_matrix(delta_t);
+        let result_matrix: OMatrix<f64, U4, U4> = wn.create_matrix(delta_t);
         let expected_matrix = OMatrix::<f64, U4, U4>::new(
-            1.0/3.0, 1.0/2.0, 0.0, 0.0,
-            1.0/2.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0/3.0, 1.0/2.0,
-            0.0, 0.0, 1.0/2.0, 1.0,
+            1.0 / 3.0,
+            1.0 / 2.0,
+            0.0,
+            0.0,
+            1.0 / 2.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0 / 3.0,
+            1.0 / 2.0,
+            0.0,
+            0.0,
+            1.0 / 2.0,
+            1.0,
         );
 
         assert_eq!(result_matrix, expected_matrix);
     }
 }
-
