@@ -1,18 +1,21 @@
-use nalgebra as na;
-use na::{DimName, OMatrix, U2,};
-use na::{Const, DefaultAllocator, SMatrix};
+use crate::filter::matrix_gen::MatrixCreator;
 use na::allocator::Allocator;
 use na::OVector;
-use crate::filter::matrix_gen::MatrixCreator;
+use na::{Const, DefaultAllocator, SMatrix};
+use na::{DimName, OMatrix, U2};
+use nalgebra as na;
 
 // OS: Observation Space, SS: State Space
-pub struct Kalman<OS,SS>
+pub struct Kalman<OS, SS>
 where
     OS: DimName,
     SS: DimName,
-    DefaultAllocator: Allocator<f64, SS, SS> + Allocator<f64, OS, SS>
-    + Allocator<f64, SS, OS> + Allocator<f64, OS, OS>
-    + Allocator<f64, SS> + Allocator<f64, OS>,
+    DefaultAllocator: Allocator<f64, SS, SS>
+        + Allocator<f64, OS, SS>
+        + Allocator<f64, SS, OS>
+        + Allocator<f64, OS, OS>
+        + Allocator<f64, SS>
+        + Allocator<f64, OS>,
 {
     // unit standard deviation of transition noise
     std: f64,
@@ -32,16 +35,17 @@ where
     x: OVector<f64, SS>,
 }
 
-impl <OS,SS> Kalman<OS,SS>
+impl<OS, SS> Kalman<OS, SS>
 where
     OS: DimName,
     SS: DimName,
-    DefaultAllocator: Allocator<f64, SS, SS> + Allocator<f64, OS, SS>
-    + Allocator<f64, SS, OS> + Allocator<f64, OS, OS>
-    + Allocator<f64, SS> + Allocator<f64, OS>,
+    DefaultAllocator: Allocator<f64, SS, SS>
+        + Allocator<f64, OS, SS>
+        + Allocator<f64, SS, OS>
+        + Allocator<f64, OS, OS>
+        + Allocator<f64, SS>
+        + Allocator<f64, OS>,
 {
-
-
     pub fn new(
         std: f64,
         t: f64,
@@ -71,7 +75,7 @@ where
 
     //update the state of the filter based on a new observation and a new time
     //returns None if the packet is dropped, otherwise return the posterior state
-    pub fn update(&mut self, z: OVector<f64, OS>, newt: f64) -> Option<OVector<f64, SS>>{
+    pub fn update(&mut self, z: OVector<f64, OS>, newt: f64) -> Option<OVector<f64, SS>> {
         let dt = newt - self.t;
         if dt < 0.0 {
             return None;
@@ -79,7 +83,7 @@ where
         let A = self.A.create_matrix(dt);
         let Q = self.Q.create_matrix(dt);
         let x = &A * &self.x;
-        let P = &A * &self.P * &A.transpose() + &Q*self.std.powi(2);
+        let P = &A * &self.P * &A.transpose() + &Q * self.std.powi(2);
         let r = z - &self.H * &x;
         let S = &self.H * &P * &self.H.transpose() + &self.R;
         let K = &P * &self.H.transpose() * S.try_inverse().unwrap();
@@ -93,14 +97,14 @@ where
 //test
 #[cfg(test)]
 mod tests {
-    use nalgebra::U4;
     use super::*;
+    use nalgebra::U4;
 
     use crate::filter::filter_builder::KalmanBuilder;
 
     #[test]
     fn test_kalman() {
-        let dt = 1.0/40.0; //40fps
+        let dt = 1.0 / 40.0; //40fps
         let init_pos = OVector::<f64, U4>::new(0.0, 0.0, 0.0, 0.0);
         let init_time = 0.0;
         let init_std = 0.1;
@@ -116,11 +120,11 @@ mod tests {
         let velocity = (0.5, 0.5);
         let mut measurements = Vec::new();
         measurements.push(OVector::<f64, U2>::new(0.0, 0.0));
-        let mut true_position =  Vec::new();
+        let mut true_position = Vec::new();
         true_position.push(OVector::<f64, U2>::new(0.0, 0.0));
         for i in 1..num_steps {
-            let x = velocity.0 * dt + measurements[i-1][0];
-            let y = velocity.1 * dt + measurements[i-1][1];
+            let x = velocity.0 * dt + measurements[i - 1][0];
+            let y = velocity.1 * dt + measurements[i - 1][1];
             let x_measured = x + measurement_std * rand::random::<f64>();
             let y_measured = y + measurement_std * rand::random::<f64>();
             measurements.push(OVector::<f64, U2>::new(x_measured, y_measured));
@@ -137,7 +141,6 @@ mod tests {
             }
         }
 
-
         //calulate the error
         let mut smoothed_error = 0.0;
         let mut original_error = 0.0;
@@ -147,8 +150,7 @@ mod tests {
             smoothed_error += e;
             original_error += e2;
         }
-       // println!("Smoothed error: {:.2}, Original error: {:.2}", smoothed_error, original_error);
+        // println!("Smoothed error: {:.2}, Original error: {:.2}", smoothed_error, original_error);
         assert!(smoothed_error < original_error);
-
     }
 }

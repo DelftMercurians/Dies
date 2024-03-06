@@ -1,11 +1,13 @@
 use dies_core::PlayerData;
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
-use nalgebra::Vector2;
+use nalgebra::{self as na, Vector2, Vector4, U2, U4};
 
-use crate::coord_utils::to_dies_coords2;
+use crate::{
+    coord_utils::to_dies_coords2,
+    filter::{Kalman, KalmanBuilder},
+};
 
 /// Tracker for a single player.
-#[derive(Clone, Debug)]
 pub struct PlayerTracker {
     /// Player's unique id
     id: u32,
@@ -17,6 +19,8 @@ pub struct PlayerTracker {
     is_init: bool,
     /// Last recorded data (for caching)
     last_data: Option<PlayerData>,
+    /// Kalman filter for the player's position and velocity
+    filter: Option<Kalman<U2, U4>>,
 }
 
 impl PlayerTracker {
@@ -27,6 +31,7 @@ impl PlayerTracker {
             play_dir_x: initial_play_dir_x,
             last_data: None,
             is_init: false,
+            filter: None,
         }
     }
 
@@ -54,34 +59,40 @@ impl PlayerTracker {
         let current_position = to_dies_coords2(player.x(), player.y(), self.play_dir_x);
         let current_orientation = player.orientation() * self.play_dir_x;
 
-        if let Some(last_data) = &self.last_data {
-            let last_update_time = last_data.timestamp;
-            let last_pos = last_data.position;
-            let last_orientation = last_data.orientation;
-            let dt = (t_capture - last_update_time) as f32;
-            if dt > f32::EPSILON {
-                let velocity = (current_position - last_pos) / (dt + f32::EPSILON);
-                let omega = (current_orientation - last_orientation) / (dt + f32::EPSILON);
-
-                self.last_data = Some(PlayerData {
-                    timestamp: t_capture,
-                    id: self.id,
-                    position: current_position,
-                    velocity,
-                    orientation: current_orientation,
-                    angular_speed: omega,
-                });
-                self.is_init = true;
+        if let Some(filter) = &mut self.filter {
+            let z = na::convert(Vector2::new(current_position.x, current_position.y));
+            if let Some(x) = filter.update(z, t_capture) {
+                let last_data = if let Some(last_data) = &mut self.last_data {
+                    last_data
+                } else {
+                    self.last_data = Some(PlayerData {
+                        timestamp: t_capture,
+                        id: self.id,
+                        position: na::convert(Vector2::new(x[0], x[2])),
+                        velocity: na::convert(Vector2::new(x[1], x[3])),
+                        orientation: current_orientation,
+                        angular_speed: 0.0,
+                    });
+                    self.is_init = true;
+                    self.last_data.as_mut().unwrap()
+                };
+                last_data.position = na::convert(Vector2::new(x[0], x[2]));
+                last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
+                last_data.orientation = current_orientation;
+                last_data.angular_speed = (current_orientation - last_data.orientation)
+                    / ((t_capture - last_data.timestamp + std::f64::EPSILON) as f32);
+                last_data.timestamp = t_capture;
             }
         } else {
-            self.last_data = Some(PlayerData {
-                timestamp: t_capture,
-                id: self.id,
-                position: current_position,
-                velocity: Vector2::zeros(),
-                orientation: current_orientation,
-                angular_speed: 0.0,
-            });
+            self.filter = Some(KalmanBuilder::new(0.1, 0.1, 2.0).build2D(
+                Vector4::new(
+                    current_position.x as f64,
+                    0.0,
+                    current_position.y as f64,
+                    0.0,
+                ),
+                t_capture,
+            ));
         }
     }
 
