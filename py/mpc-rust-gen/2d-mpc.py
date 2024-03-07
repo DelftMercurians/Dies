@@ -2,37 +2,11 @@ import opengen as og
 import casadi.casadi as cs
 import matplotlib.pyplot as plt
 import numpy as np
+import sys
 
-# Build parametric optimizer
-# ------------------------------------
-
-
-# (nu, nx, N, L, ts) = (1, 2, 20, 0.5, 0.1)
-# (posref, velref) = (1, 0)
-# (q, qtheta, r, qN, qthetaN) = (10, 0.1, 1, 200, 2)
-
-# u = cs.SX.sym('u', nu*N)
-# x = cs.SX.sym('x', nx*(N+1))
-
-# posref = 1.0
-
-# # (pos, vel) = (z0[0], z0[1])
-
-# cost = 0
-# for t in range(0, nu*N, nu):
-#     pos_t = x[2*t]
-#     vel_t = x[2*t +1]
-#     u_t = u[t]
-#     cost += q*((pos_t-posref)**2 + (u_t)**2)
-  
-#     pos_t = x[2*(t+1)]
-#     vel_t = x[2*(t+1) +1]
-
-# cost += qN*((pos_t-posref)**2)
-
-# ux, uy are velocities
-(nu, nx, N, L, ts) = (2, 2, 200, 0.5, 0.1)
+(nu, nx, N, L, ts) = (2, 2, 30, 0.5, 0.1)
 (q, qu, r, qN, qthetaN) = (10, 1, 1, 200, 2)
+(alpha, Hw) = (0.1, 4)
 
 u = cs.SX.sym('u', nu*N)
 p = cs.SX.sym('p', 2*nx)
@@ -42,16 +16,23 @@ p = cs.SX.sym('p', 2*nx)
 
 cost = 0
 c = 0
+# Jumping from 0 to 2, 4, 6, 8
 for t in range(0, nu*N, nu):
 
-    ux_t = u[t]
-    uy_t = u[t+1]
+    #This is done to make sure that the last value of u is not used when t < Hw
+    if t < Hw:
+        ux_t = u[t]
+        uy_t = u[t+1]
+    else:
+        ux_t = u[t - Hw]
+        uy_t = u[t+1 - Hw] 
+
 
     cost += q*((x-xref)**2 + (y-yref)**2) + qu * ((ux_t)**2 + (uy_t)**2)
   
-    x += ts * ux_t
+    x += ts * ux_t 
     y += ts * uy_t
-    c += cs.fmax(0, 1.5 - x**2 - y**2)
+    c += cs.fmax(0, 3 - x**2 - y**2)
 
 cost += qN*((x-xref)**2 + (y-yref)**2)
 
@@ -79,38 +60,6 @@ builder = og.builder.OpEnOptimizerBuilder(problem,
                                           build_config,
                                           solver_config)
 builder.build()
-
-
-
-# # Use TCP server
-# # ------------------------------------
-# mng = og.tcp.OptimizerTcpManager('my_optimizers/navigation')
-# mng.start()
-
-# mng.ping()
-# solution = mng.call([-1.0, 2.0, 0.0], initial_guess=[1.0] * (nu*N))
-# mng.kill()
-
-
-# # Plot solution
-# # ------------------------------------
-# time = np.arange(0, ts*N, ts)
-# u_star = solution['solution']
-# ux = u_star[0:nu*N:2]
-# uy = u_star[1:nu*N:2]
-
-# plt.subplot(211)
-# plt.plot(time, ux, '-o')
-# plt.ylabel('u_x')
-# plt.subplot(212)
-# plt.plot(time, uy, '-o')
-# plt.ylabel('u_y')
-# plt.xlabel('Time')
-# plt.show()
-
-# Note: to use the direct interface you need to build using
-#       .with_build_python_bindings()
-import sys
 
 # Use Direct Interface
 # ------------------------------------
