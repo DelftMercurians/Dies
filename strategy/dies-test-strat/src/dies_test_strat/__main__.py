@@ -4,7 +4,11 @@ from glob import glob
 from dies_py.messages import PlayerCmd
 import numpy as np
 from dies_py import init, next_world, send, should_stop, world
-from mpc-rust-gen import make_solver, mpc_control
+
+#from mpc_rust_gen.mpc import make_solver, mpc_control
+from dies_test_strat.mpc import make_solver, mpc_control 
+
+# import mpc
 print("Starting test-strat")
 
 if __name__ == "__main__":
@@ -25,10 +29,10 @@ if __name__ == "__main__":
         x_init = []
         x_ref = [-750, -750]
         obstacles = []
-        u_constraints = [-3.0, 3.0]
+        u_constraints = [-0.5, 0.5]
         ts = 0.02
         prev_u = [1.0] * (2*N)
-        solver = make_solver(N, x_init, x_ref, obstacles, u_constraints, ts)
+        solver = make_solver(N, [], u_constraints, obstacles, obstacles, ts)
 
         rid = 14
         while next_world():
@@ -43,19 +47,23 @@ if __name__ == "__main__":
             #     break
 
             w = world()
-            x_init = w.own_players[0].position
-            x_ref = [-750, -750] # in mm
-            
-            # if the distnace between the player and the target is less than 50mm, then stop
-            if sqrt((x_init[0] - x_ref[0])**2 + (x_init[1] - x_ref[1])**2) < 50:
-                send(PlayerCmd(rid, 0, 0))
-                break
+            if len(w.own_players) != 0: 
+                x_init = w.own_players[0].position 
+                x_init = [x_init[0] / 1000, x_init[1] / 1000]
+                x_ref = [-750 / 1000, -750 / 1000] 
+                
+                # if the distnace between the player and the target is less than 50mm, then stop
+                if sqrt((x_init[0] - x_ref[0])**2 + (x_init[1] - x_ref[1])**2) < 0.2:
+                    send(PlayerCmd(rid, 0, 0))
+                    break
 
-            u_mpc, prev_u = mpc_control(solver, x_init, x_ref, obstacles, prev_u)
-            send(PlayerCmd(rid, u_mpc[0], u_mpc[1]))
-            
-            print(f"Position: {x_init}| Delay: {time.time() - prev_time}")
-            prev_time = time.time()
+                u_mpc, prev_u = mpc_control(solver, x_init, x_ref, obstacles, prev_u)
+                send(PlayerCmd(rid, u_mpc[0], u_mpc[1]))
+
+                print(f"Position: {x_init}| Delay: {time.time() - prev_time}")
+                prev_time = time.time()
+            else:
+                print("No player found")
 
 
     except KeyboardInterrupt:
