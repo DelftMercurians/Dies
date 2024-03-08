@@ -1,3 +1,1 @@
-from .bridge import Bridge
-
-__all__ = ["Bridge"]
+from .bridge import init, next_world, send, should_stop, world

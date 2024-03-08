@@ -8,5 +8,5 @@ edition.workspace = true
 [dependencies]
 dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
-log = "0.4.20"
+tracing = "0.1.40"
 nalgebra = { version = "0.32.3", features = ["serde-serialize"] }

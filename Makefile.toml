@@ -1,0 +1,3 @@
+[tasks.run-on-server]
+workspace = false
+script = "cargo run -p dies-scripts --bin run-on-server"

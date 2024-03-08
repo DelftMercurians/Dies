@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -7,33 +7,37 @@ use std::{
 };
 
 use crate::{
-    ipc::{IpcConnection, IpcListener},
-    rye_runner::RyeRunner,
+    env_manager::{PythonDistro, PythonDistroConfig},
+    ipc::IpcSocket,
     RuntimeEvent, RuntimeMsg,
 };
+
+#[derive(Debug, Clone)]
+pub enum PyExecute {
+    /// Execute a python script with `python <script>`.
+    /// The path can be relative to the workspace.
+    Script(PathBuf),
+    /// Execute a python package as a module with `python -m <package>`. The package
+    /// is first installed in the virtual environment.
+    Package { path: PathBuf, name: String },
+}
 
 /// Python runtime configuration
 #[derive(Debug, Clone)]
 pub struct PyRuntimeConfig {
-    /// Path to the workspace
+    /// Path to the workspace -- this is where the virtual environment will be created
     pub workspace: PathBuf,
-    /// Name of the package
-    pub package: String,
-    /// Name of the module
-    pub module: String,
-    /// Whether to run `rye sync` before starting the runtime
-    pub sync: bool,
-}
-
-impl Default for PyRuntimeConfig {
-    fn default() -> Self {
-        Self {
-            workspace: std::env::current_dir().expect("Failed to get current directory"),
-            package: String::from("dies"),
-            module: String::from("__main__"),
-            sync: true,
-        }
-    }
+    /// The specific Python version to use eg. "3.8.5"
+    pub python_version: String,
+    /// The Python build number to use eg. `20240107`.
+    /// See [https://github.com/indygreg/python-build-standalone/tags] for the list
+    /// of available builds.
+    pub python_build: u32,
+    /// The target to run
+    pub execute: PyExecute,
+    /// Whether to install any packages before running the target. Recommended to keep
+    /// this as `true`.
+    pub install: bool,
 }
 
 /// Python runtime.
@@ -45,7 +49,7 @@ impl Default for PyRuntimeConfig {
 /// This struct is created with [`create_py_runtime`].
 pub struct PyRuntime {
     child_proc: Arc<Mutex<Child>>,
-    ipc: IpcConnection,
+    ipc: IpcSocket,
 }
 
 impl PyRuntime {
@@ -60,41 +64,96 @@ impl PyRuntime {
     /// - the given path is not a valid python module
     /// - the command cannot be run
     pub async fn new(config: PyRuntimeConfig) -> Result<PyRuntime> {
-        if config.package.contains("-") {
-            bail!("Package name cannot contain dashes");
-        }
-        let rye = RyeRunner::new(&config.workspace).await?;
-        if config.sync {
-            rye.sync()?;
+        let python = PythonDistro::new(PythonDistroConfig::from_version_and_build(
+            &config.python_version,
+            config.python_build,
+        ))
+        .await
+        .context(format!(
+            "Failed to create the python distro from version {:?} and build {:?}",
+            &config.python_version, config.python_build
+        ))?;
+        let mut venv = python
+            .create_venv(&config.workspace)
+            .await
+            .context("Failed to create python venv")?;
+
+        if config.install {
+            // First, install dies-py
+            tracing::debug!("Installing dies-py");
+            venv.install_editable(&config.workspace.join("py").join("dies-py"))
+                .await
+                .context(format!(
+                    "Failed to install editable with venv with the path {:?}",
+                    &config.workspace.join("py").join("dies-py")
+                ))?;
+
+            // Then, install the target package
+            if let PyExecute::Package { path, .. } = &config.execute {
+                let path = if path.is_relative() {
+                    config.workspace.join(path)
+                } else {
+                    path.to_owned()
+                };
+                if !path.exists() {
+                    bail!("Package not found at {}", path.display());
+                }
+                let path = path
+                    .canonicalize()
+                    .context(format!("Failed to canonicalize the path {:?}", path))?;
+                tracing::debug!("Installing package from {}", path.display());
+                venv.install_editable(&path).await.context(format!(
+                    "Failed to instal editable with venv with the path {:?}",
+                    path
+                ))?;
+            }
         }
 
-        let target = if config.module == "__main__" {
-            config.package.to_owned()
-        } else {
-            format!("{}.{}", config.package, config.module)
+        let target = match &config.execute {
+            PyExecute::Script(path) => {
+                let path = if path.is_relative() {
+                    config.workspace.join(path)
+                } else {
+                    path.to_owned()
+                };
+                vec![path
+                    .canonicalize()
+                    .context(format!("Failed to canonicalize the path {:?}", path))?
+                    .to_string_lossy()
+                    .to_string()]
+            }
+            PyExecute::Package { name, .. } => {
+                let name = name.replace("-", "_");
+                vec!["-m".to_string(), name]
+            }
         };
 
-        log::debug!("Running python module {}", target);
+        tracing::info!("Running python {}", target.join(" "));
 
-        let listener = IpcListener::new().await?;
-        let host = listener.host().to_owned();
-        let port = listener.port();
+        let mut ipc = IpcSocket::new()
+            .await
+            .context("Failed to create IPC socket")?;
+        let host = ipc.host().to_owned();
+        let port = ipc.port();
 
-        let rye_bin = rye.get_rye_bin();
-        let child_proc = Command::new(rye_bin)
-            .args(["run", "python", "-m", &target])
+        let child_proc = Command::new(venv.python_bin())
+            .args(target)
             .current_dir(&config.workspace)
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .stdin(Stdio::null())
-            .env("DIES_IPC_HOST", host)
+            .env("DIES_IPC_HOST", host.clone())
             .env("DIES_IPC_PORT", port.to_string())
-            .spawn()?;
+            .spawn()
+            .context(format!(
+                "Failed to run python command with DIES_IPC_HOST {:?} and DIES_IPC_PORT {:?}",
+                host, port
+            ))?;
 
         // Wait for the child process to connect to the socket
-        let ipc = listener.wait_for_conn(Duration::from_secs(15)).await?;
+        ipc.wait(Duration::from_secs(5)).await?;
 
-        log::debug!("Python process started");
+        tracing::debug!("Python process started");
 
         let child_proc = Arc::new(Mutex::new(child_proc));
         Ok(PyRuntime {
@@ -104,9 +163,7 @@ impl PyRuntime {
     }
 
     pub async fn send(&mut self, data: &RuntimeMsg) -> Result<()> {
-        let data = serde_json::to_string(&data)?;
-        self.ipc.send(&data).await?;
-        Ok(())
+        self.ipc.send(&data).await
     }
 
     pub async fn recv(&mut self) -> Result<RuntimeEvent> {
@@ -118,8 +175,7 @@ impl PyRuntime {
             }
         };
 
-        let data = self.ipc.recv().await?;
-        Ok(serde_json::from_str(&data)?)
+        self.ipc.recv().await
     }
 
     pub async fn wait_with_timeout(&self, timeout: Duration) -> Result<bool> {
@@ -152,7 +208,7 @@ impl PyRuntime {
     pub fn kill(&mut self) {
         let mut child_proc = self.child_proc.lock().unwrap();
         if let Err(e) = child_proc.kill() {
-            log::error!("Failed to kill python process: {}", e);
+            tracing::error!("Failed to kill python process: {}", e);
         }
     }
 }
@@ -162,7 +218,7 @@ impl PyRuntime {
 //         // Kill child process
 //         let mut child_proc = self.child_proc.lock().unwrap();
 //         if let Err(e) = child_proc.kill() {
-//             log::error!("Failed to kill python process: {}", e);
+//             tracing::error!("Failed to kill python process: {}", e);
 //         }
 //     }
 // }

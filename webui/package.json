@@ -26,6 +26,7 @@
     "workerDirectory": "public"
   },
   "dependencies": {
+    "chart.js": "^4.4.2",
     "svelte-canvas": "^0.9.3"
   }
 }

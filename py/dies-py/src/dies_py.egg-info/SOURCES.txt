@@ -1,0 +1,9 @@
+pyproject.toml
+src/dies_py/__init__.py
+src/dies_py/bridge.py
+src/dies_py/messages.py
+src/dies_py.egg-info/PKG-INFO
+src/dies_py.egg-info/SOURCES.txt
+src/dies_py.egg-info/dependency_links.txt
+src/dies_py.egg-info/requires.txt
+src/dies_py.egg-info/top_level.txt

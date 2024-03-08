@@ -1,37 +1,38 @@
 use std::{
     collections::{HashMap, HashSet},
+    pin::pin,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use dies_core::PlayerCmd;
 use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent, RuntimeMsg};
 use dies_serial_client::{SerialClient, SerialClientConfig};
-use dies_ssl_client::{SslVisionClient, SslVisionClientConfig};
+use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_webui::spawn_webui;
 use dies_world::{WorldConfig, WorldTracker};
-use tokio_util::sync::CancellationToken;
 
 pub struct ExecutorConfig {
     pub py_config: PyRuntimeConfig,
     pub world_config: WorldConfig,
-    pub vision_config: Option<SslVisionClientConfig>,
+    pub vision_config: VisionClientConfig,
     pub serial_config: Option<SerialClientConfig>,
     pub webui: bool,
     /// Maps vision IDs to robot IDs
     pub robot_ids: HashMap<u32, u32>,
 }
 
-pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()> {
+pub async fn run(config: ExecutorConfig) -> Result<()> {
     let mut tracker = WorldTracker::new(config.world_config);
     let mut runtime = PyRuntime::new(config.py_config).await?;
-    let mut vision = match config.vision_config {
-        Some(vision_config) => Some(SslVisionClient::new(vision_config).await?),
-        None => None,
-    };
+    let mut vision = VisionClient::new(config.vision_config)
+        .await
+        .context("Failed to create vision client")?;
     let mut serial = match config.serial_config {
-        Some(serial_config) => Some(SerialClient::new(serial_config)?),
+        Some(serial_config) => {
+            Some(SerialClient::new(serial_config).context("Failed to create the serial client")?)
+        }
         None => None,
     };
     let robot_ids = config.robot_ids;
@@ -44,20 +45,20 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
         (None, None)
     };
 
+    let mut ctrlc = pin!(tokio::signal::ctrl_c());
+
     let mut fail: HashMap<u32, bool> = HashMap::new();
     let mut robots: HashSet<u32> = HashSet::new();
     loop {
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
+            _ = &mut ctrlc => {
+                println!("Received Ctrl-C");
                 break;
             }
-            _ = cancel.cancelled() => {
-                break;
-            }
-            vision_msg = vision.as_mut().unwrap().recv() => {
+            vision_msg = vision.recv() => {
                 match vision_msg {
                     Ok(vision_msg) => {
-                        tracker.update_from_protobuf(&vision_msg);
+                        tracker.update_from_vision(&vision_msg);
                         if let Some(world_data) = tracker.get() {
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
                             for player in world_data.own_players.iter() {
@@ -65,7 +66,7 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                                     if fail.get(&player.id) == Some(&false) {
                                         fail.insert(player.id, true);
                                         if let Some(serial) = &mut serial {
-                                            log::warn!("Failsafe: sending stop to runtime");
+                                            tracing::warn!("Failsafe: sending stop to runtime");
                                             serial.send_no_wait(PlayerCmd::zero(*robot_ids.get(&player.id).unwrap_or(&0)));
                                         }
                                     }
@@ -76,19 +77,19 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
 
                             // Send update to runtime
                             if let Err(err) = runtime.send(&dies_python_rt::RuntimeMsg::World(world_data.clone())).await {
-                                log::error!("Failed to send world data to runtime: {}", err);
+                                tracing::error!("Failed to send world data to runtime: {}", err);
                             }
 
                             // Send update to webui
                             if let Some(ref webui_sender) = webui_sender {
                                 if let Err(err) = webui_sender.send(world_data) {
-                                    log::error!("Failed to send world data to webui: {}", err);
+                                    tracing::error!("Failed to send world data to webui: {}", err);
                                 }
                             }
                         }
                     }
                     Err(err) => {
-                        log::error!("Failed to receive vision msg: {}", err);
+                        tracing::error!("Failed to receive vision msg: {}", err);
                     }
                 }
             }
@@ -100,79 +101,73 @@ pub async fn run(config: ExecutorConfig, cancel: CancellationToken) -> Result<()
                             robots.insert(rid);
                             cmd.id = rid;
                             if fail.get(&cmd.id) == Some(&true) {
-                                log::error!("Failsafe: not sending player cmd");
+                                tracing::error!("Failsafe: not sending player cmd");
                                 serial.send_no_wait(PlayerCmd::zero(rid));
                             } else {
                                 match serial.send(cmd).await {
                                     Ok(_) => {}
                                     Err(err) => {
-                                        log::error!("Failed to send player cmd to serial: {}", err);
+                                        tracing::error!("Failed to send player cmd to serial: {}", err);
                                     }
                                 }
                             }
                         } else {
-                            log::error!("Received player cmd but serial is not configured");
+                            tracing::error!("Received player cmd but serial is not configured");
                         }
                     }
                     Ok(RuntimeEvent::Debug { msg }) => {
-                        log::debug!("Runtime debug: {}", msg);
+                        tracing::debug!("Runtime debug: {}", msg);
                     }
                     Ok(RuntimeEvent::Crash { msg }) => {
-                        log::error!("Runtime crash: {}", msg);
+                        tracing::error!("Runtime crash: {}", msg);
                         break;
+                    }
+                    Ok(RuntimeEvent::Ping) => {
+                        tracing::debug!("Runtime ping");
                     }
                     Err(err) => {
-                        log::error!("Failed to receive runtime msg: {}", err);
+                        tracing::error!("Failed to receive runtime msg: {}", err);
                         break;
                     }
-                    // Err(_) => {
-                    //     log::error!("Runtime timeout");
-                    //     break;
-                    // }
                 }
             }
-            // serial_msg = serial.as_mut().unwrap().recv(), if serial.is_some() => {
-            //     match serial_msg {
-            //         Ok(serial_msg) => {
-            //             log::info!("Received serial msg: {}", serial_msg);
-            //         }
-            //         Err(err) => {
-            //             log::error!("Failed to receive serial msg: {}", err);
-            //         }
-            //     }
-            // }
         }
     }
 
     println!("Exiting executor");
-    runtime.send(&RuntimeMsg::Term).await?;
+    runtime
+        .send(&RuntimeMsg::Term)
+        .await
+        .context("Failed to send the termination message to the runtime")?;
     match runtime.wait_with_timeout(Duration::from_secs(2)).await {
         Ok(true) => {}
         Ok(false) => {
-            log::error!("Python process did not exit in time, killing");
+            tracing::error!("Python process did not exit in time, killing");
             runtime.kill();
         }
         Err(err) => {
-            log::error!("Failed to wait for python process: {}", err);
+            tracing::error!("Failed to wait for python process: {}", err);
             runtime.kill();
         }
     }
 
     // Send stop to all players
-    log::info!("Sending stop to all players");
+    tracing::info!("Sending stop to all players");
     if let Some(serial) = &mut serial {
         for id in robots.iter() {
-            let mut cmd = PlayerCmd::zero(*id);
+            let cmd = PlayerCmd::zero(*id);
             // cmd.disarm = true;
             if let Err(err) = serial.send(cmd).await {
-                log::error!("Failed to send stop to player #{}: {}", id, err);
+                tracing::error!("Failed to send stop to player #{}: {}", id, err);
             }
         }
     }
 
     if let (Some(webui_sender), Some(webui_handle)) = (webui_sender, webui_handle) {
         drop(webui_sender);
-        webui_handle.await?;
+        webui_handle
+            .await
+            .context("Failed joining the webui task")?;
     }
 
     Ok(())

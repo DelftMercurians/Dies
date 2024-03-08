@@ -61,9 +61,9 @@ async fn start_rocket(mut rx: mpsc::UnboundedReceiver<WorldData>) {
         });
 
     match rocket.launch().await {
-        Ok(_) => log::debug!("Rocket has shut down"),
+        Ok(_) => tracing::debug!("Rocket has shut down"),
         Err(err) => {
-            log::error!("Failed to start rocket: {}", err);
+            tracing::error!("Failed to start rocket: {}", err);
             panic!();
         }
     }
