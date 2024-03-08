@@ -81,17 +81,19 @@ def mpc_control(solver, x_init, x_ref, obstacles, prev_u):
     result = solver.run(p=x_init + x_ref + obstacles, initial_guess=prev_u)
     return result.solution.u[0], result.solution.u
 
-Nsim = 100
 
-N = 60
-x_init = []
-x_ref = [-750, -750]
-obstacles = []
-u_constraints = [-3.0, 3.0]
-ts = 0.02
-prev_u = [1.0] * (2*N)
-solver = make_solver(N, x_init, x_ref, obstacles, u_constraints, ts)
+if __name__ == "__main__":
+    Nsim = 100
 
-for t in range(Nsim):
-    u_mpc, prev_u = mpc_control(solver, x_init, x_ref, obstacles, prev_u)
+    N = 60
+    x_init = []
+    x_ref = [-750, -750]
+    obstacles = []
+    u_constraints = [-3.0, 3.0]
+    ts = 0.02
+    prev_u = [1.0] * (2*N)
+    solver = make_solver(N, x_init, x_ref, obstacles, u_constraints, ts)
+
+    for t in range(Nsim):
+        u_mpc, prev_u = mpc_control(solver, x_init, x_ref, obstacles, prev_u)
     
