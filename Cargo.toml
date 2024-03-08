@@ -4,7 +4,9 @@ package.edition = "2021"
 resolver = "2"
 default-members = ["crates/dies-cli"]
 exclude = [
-    "py/mpc-rust-gen/my_optimizers/navigation", 
+    "py/mpc-rust-gen/my_optimizers/navigation",
+    "strategy/dies-test-strat/src/dies_test_strat/my_optimizers/navigation",
+    "my_optimizers/navigation"
 ]
 
 [profile.dev]
