@@ -56,7 +56,7 @@ if __name__ == "__main__":
                 if sqrt((x_init[0] - x_ref[0])**2 + (x_init[1] - x_ref[1])**2) < 0.2:
                     send(PlayerCmd(rid, 0, 0))
                     break
-
+                print(f"X_init: {x_init} | x_ref: {x_ref} | obstacles: {obstacles} | prev_u: {prev_u} | ts: {ts}")
                 u_mpc, prev_u = mpc_control(solver, x_init, x_ref, obstacles, prev_u)
                 send(PlayerCmd(rid, u_mpc[0], u_mpc[1]))
 

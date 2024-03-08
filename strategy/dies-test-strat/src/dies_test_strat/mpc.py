@@ -92,7 +92,7 @@ def mpc_control(solver, x_init, x_ref, obstacles, prev_u):
     print(len(prev_u))
     result = solver.run(p=x_init + x_ref + obstacles, initial_guess=prev_u)
     print(result.solution)
-    return result.solution[0], result.solution
+    return (result.solution[0], result.solution[1]), result.solution
 
 
 if __name__ == "__main__":
