@@ -1,6 +1,6 @@
 use na::allocator::Allocator;
-use na::{Const, DefaultAllocator, SMatrix};
-use na::{DimName, OMatrix, U2, U4};
+use na::{DefaultAllocator, SMatrix};
+use na::{DimName, OMatrix, U2, U4, U6};
 use nalgebra as na;
 use std::ops::Mul;
 
@@ -9,6 +9,15 @@ fn block_diag(a: &OMatrix<f64, U2, U2>) -> OMatrix<f64, U4, U4> {
 
     result.fixed_view_mut::<2, 2>(0, 0).copy_from(a);
     result.fixed_view_mut::<2, 2>(2, 2).copy_from(a);
+    result
+}
+
+fn block_diag_3(a: &OMatrix<f64, U2, U2>) -> OMatrix<f64, U6, U6> {
+    let mut result = OMatrix::<f64, U6, U6>::zeros();
+
+    result.fixed_view_mut::<2, 2>(0, 0).copy_from(a);
+    result.fixed_view_mut::<2, 2>(2, 2).copy_from(a);
+    result.fixed_view_mut::<2, 2>(4, 4).copy_from(a);
     result
 }
 
@@ -92,6 +101,17 @@ impl MatrixCreator<U4> for ULMotionModel {
     }
 }
 
+/// ULMotionModel in xy, parabola z
+impl MatrixCreator<U6> for ULMotionModel {
+    fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, U6, U6> {
+        let m = OMatrix::<f64, U2, U2>::new(1.0, delta_t,
+                                                0.0, 1.0);
+        block_diag_3(&m)
+    }
+}
+
+
+
 // observation transformation matrix 1d [x, vx] -> [x]
 fn state_to_measurement() -> SMatrix<f64, 1, 2> {
     SMatrix::<f64, 1, 2>::new(1.0, 0.0)
@@ -136,4 +156,5 @@ mod tests {
 
         assert_eq!(result_matrix, expected_matrix);
     }
+
 }

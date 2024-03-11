@@ -17,8 +17,8 @@ where
         + Allocator<f64, SS>
         + Allocator<f64, OS>,
 {
-    // unit standard deviation of transition noise
-    std: f64,
+    // variance of transition noise
+    var: f64,
     // the time for the current state in ms
     t: f64,
     // Transition matrix
@@ -47,7 +47,7 @@ where
         + Allocator<f64, OS>,
 {
     pub fn new(
-        std: f64,
+        var: f64,
         t: f64,
         A: Box<dyn MatrixCreator<SS>>,
         H: OMatrix<f64, OS, SS>,
@@ -57,7 +57,7 @@ where
         x: OVector<f64, SS>,
     ) -> Self {
         Kalman {
-            std,
+            var,
             t,
             A,
             H,
@@ -86,7 +86,7 @@ where
         #[allow(non_snake_case)]
         let Q = self.Q.create_matrix(dt);
         let x = &A * &self.x;
-        let P = &A * &self.P * &A.transpose() + &Q * self.std.powi(2);
+        let P = &A * &self.P * &A.transpose() + &Q * self.var;
         let r = z - &self.H * &x;
         #[allow(non_snake_case)]
         let S = &self.H * &P * &self.H.transpose() + &self.R;
