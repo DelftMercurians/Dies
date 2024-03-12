@@ -1,9 +1,10 @@
 use crate::filter::kalman::Kalman;
-use crate::filter::matrix_gen::{ULMotionModel, WhiteNoise1stOrder};
+use crate::filter::matrix_gen::{GravityControl, Piecewise1stOrder, ULMotionModel, WhiteNoise1stOrder};
 use na::OVector;
 use na::U4;
-use na::{OMatrix, U2};
+use na::{OMatrix, U2, U3, U6};
 use nalgebra as na;
+use nalgebra::U1;
 
 pub struct KalmanBuilder {
     init_var: f64,
@@ -39,6 +40,37 @@ impl KalmanBuilder {
         let P: OMatrix<f64, U4, U4> = OMatrix::<f64, U4, U4>::identity() * self.init_var;
         let x: OVector<f64, U4> = init_pos;
 
-        Kalman::new(var, t, Box::new(A), H, Box::new(Q), R, P, x)
+        Kalman::new(var, t, Box::new(A), H, Box::new(Q), R, P, x, None)
+    }
+
+    pub fn build_3d(&self, init_state: OVector<f64, U6>, int_time: f64) -> Kalman<U3, U6> {
+        let var = self.unit_transition_var;
+        let t = int_time;
+        #[allow(non_snake_case)]
+        let A = ULMotionModel;
+        let H: OMatrix<f64, U3, U6> =
+            OMatrix::<f64, U3, U6>::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                        0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+                                    0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+
+        let Q = Piecewise1stOrder;
+        #[allow(non_snake_case)]
+            let R: OMatrix<f64, U3, U3> = OMatrix::<f64, U3, U3>::new(
+            self.measurement_var,
+            0.0,
+            0.0,
+            0.0,
+            self.measurement_var,
+            0.0,
+            0.0,
+            0.0,
+            self.measurement_var,
+        );
+        #[allow(non_snake_case)]
+        let P: OMatrix<f64, U6, U6> = OMatrix::<f64, U6, U6>::identity() * self.init_var;
+        let x: OVector<f64, U6> = init_state;
+        let B = GravityControl;
+
+        Kalman::new(var, t, Box::new(A), H, Box::new(Q), R, P, x, Option::Some(Box::new(B)))
     }
 }

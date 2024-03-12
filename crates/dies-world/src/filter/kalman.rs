@@ -2,7 +2,7 @@ use crate::filter::matrix_gen::MatrixCreator;
 use na::allocator::Allocator;
 use na::DefaultAllocator;
 use na::OVector;
-use na::{DimName, OMatrix};
+use na::{DimName, OMatrix, U1};
 use nalgebra as na;
 
 // OS: Observation Space, SS: State Space
@@ -22,17 +22,19 @@ where
     // the time for the current state in ms
     t: f64,
     // Transition matrix
-    A: Box<dyn MatrixCreator<SS>>,
+    A: Box<dyn MatrixCreator<SS,SS>>,
     // Transformation (observation) matrix
     H: OMatrix<f64, OS, SS>,
     // Process noise covariance matrix
-    Q: Box<dyn MatrixCreator<SS>>,
+    Q: Box<dyn MatrixCreator<SS, SS>>,
     // Measurement noise covariance matrix
     R: OMatrix<f64, OS, OS>,
     // Error covariance matrix
     P: OMatrix<f64, SS, SS>,
     // State vector
     x: OVector<f64, SS>,
+    // Control input
+    B: Option<Box<dyn MatrixCreator<SS, U1>>>
 }
 
 impl<OS, SS> Kalman<OS, SS>
@@ -49,12 +51,13 @@ where
     pub fn new(
         var: f64,
         t: f64,
-        A: Box<dyn MatrixCreator<SS>>,
+        A: Box<dyn MatrixCreator<SS, SS>>,
         H: OMatrix<f64, OS, SS>,
-        Q: Box<dyn MatrixCreator<SS>>,
+        Q: Box<dyn MatrixCreator<SS,SS>>,
         R: OMatrix<f64, OS, OS>,
         P: OMatrix<f64, SS, SS>,
         x: OVector<f64, SS>,
+        B: Option<Box<dyn MatrixCreator<SS, U1>>>,
     ) -> Self {
         Kalman {
             var,
@@ -65,13 +68,19 @@ where
             R,
             P,
             x,
+            B,
         }
     }
 
     //predict a future state(prior), this doesn't change the internal state of the filter
     #[allow(dead_code)]
     pub fn predict(&mut self, newt: f64) -> OVector<f64, SS> {
-        &self.A.create_matrix(newt - self.t) * &self.x
+        let r = &self.A.create_matrix(newt - self.t) * &self.x;
+        if let Some(B) = &self.B {
+            r + B.create_matrix(newt - self.t)
+        } else {
+            r
+        }
     }
 
     //update the state of the filter based on a new observation and a new time
@@ -85,7 +94,10 @@ where
         let A = self.A.create_matrix(dt);
         #[allow(non_snake_case)]
         let Q = self.Q.create_matrix(dt);
-        let x = &A * &self.x;
+        let mut x = &A * &self.x;
+        if let Some(B) = &self.B {
+            x += B.create_matrix(dt);
+        }
         let P = &A * &self.P * &A.transpose() + &Q * self.var;
         let r = z - &self.H * &x;
         #[allow(non_snake_case)]
