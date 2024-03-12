@@ -1,6 +1,5 @@
-use crate::filter::matrix_gen::MatrixCreator;
-use na::allocator::Allocator;
-use na::{DimName, SMatrix, SVector};
+use crate::filter::matrix_gen::{GravityControl, MatrixCreator, Piecewise1stOrder, ULMotionModel, WhiteNoise1stOrder};
+use na::{SMatrix, SVector};
 use nalgebra as na;
 
 // OS: Observation Space, SS: State Space
@@ -96,12 +95,74 @@ impl<const OS: usize,const SS: usize> Kalman<OS,SS>
         Some(self.x.clone())
     }
 }
+
+impl Kalman<2, 4> {
+    pub fn new_player_filter(
+        init_var: f64,
+        unit_transition_var: f64,
+        measurement_var: f64,
+        init_pos: SVector<f64, 4>,
+        int_time: f64
+    ) -> Self {
+        Kalman {
+            var: unit_transition_var,
+            t: int_time,
+            A: Box::new(ULMotionModel),
+            H: SMatrix::<f64, 2, 4>::new(1.0, 0.0, 0.0, 0.0,
+                                         0.0, 0.0, 1.0, 0.0),
+            Q: Box::new(WhiteNoise1stOrder),
+            R: SMatrix::<f64, 2, 2>::new(
+                measurement_var,
+                0.0,
+                0.0,
+                measurement_var,
+            ),
+            P: SMatrix::<f64, 4, 4>::identity() * init_var,
+            x: init_pos,
+            B: None,
+        }
+    }
+}
+
+impl Kalman<3, 6> {
+    pub fn new_ball_filter(
+        init_var: f64,
+        unit_transition_var: f64,
+        measurement_var: f64,
+        init_pos: SVector<f64, 6>,
+        int_time: f64
+    ) -> Self {
+        Kalman {
+            var: unit_transition_var,
+            t: int_time,
+            A: Box::new(ULMotionModel),
+            H: SMatrix::<f64, 3, 6>::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                         0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+                                         0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+            Q: Box::new(Piecewise1stOrder),
+            R: SMatrix::<f64, 3, 3>::new(
+                measurement_var,
+                0.0,
+                0.0,
+                0.0,
+                measurement_var,
+                0.0,
+                0.0,
+                0.0,
+                measurement_var,
+            ),
+            P: SMatrix::<f64, 6, 6>::identity() * init_var,
+            x: init_pos,
+            B: Some(Box::new(GravityControl))
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nalgebra::{U2, U3, U4, U6};
 
-    use crate::filter::filter_builder::KalmanBuilder;
 
     #[test]
     fn test_kalman() {
@@ -111,8 +172,9 @@ mod tests {
         let init_std:f64 = 100.0;
         let measurement_std:f64 = 5.0;
         let unit_transition_std:f64 = 200.0;
-        let builder = KalmanBuilder::new(init_std.powi(2), measurement_std.powi(2), unit_transition_std.powi(2));
-        let mut filter = builder.build2D(init_pos, init_time);
+        let mut filter = Kalman::<2, 4>::new_player_filter(init_std.powi(2),
+                                                           unit_transition_std.powi(2),
+                                                           measurement_std.powi(2), init_pos, init_time);
 
         // generate some fake measurements trajectory
         // with constant speed movement
@@ -163,9 +225,10 @@ mod tests {
         let init_std: f64 = 100.0;
         let measurement_std: f64 = 5.0;
         let unit_transition_std: f64 = 200.0;
-        let builder = KalmanBuilder::new(init_std.powi(2), measurement_std.powi(2), unit_transition_std.powi(2));
-        let mut filter = builder.build_3d(init_pos, init_time);
-
+        let mut filter = Kalman::<3, 6>::new_ball_filter(init_std.powi(2),
+                                                         unit_transition_std.powi(2),
+                                                         measurement_std.powi(2),
+                                                         init_pos, init_time);
         // generate some fake measurements trajectory
         let simulation_time = 1.5;
         let num_steps = (simulation_time / dt) as usize;

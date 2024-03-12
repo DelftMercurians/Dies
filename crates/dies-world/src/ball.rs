@@ -4,7 +4,7 @@ use nalgebra::{SVector, Vector3, Vector6};
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
 use crate::coord_utils::to_dies_coords3;
-use crate::filter::{Kalman, KalmanBuilder};
+use crate::filter::{Kalman};
 
 /// Tracker for the ball.
 #[derive(Debug)]
@@ -75,10 +75,10 @@ impl BallTracker {
                 velocity: Vector3::zeros(),
             });
             self.is_init = true;
-            self.filter = Some(KalmanBuilder::new (
+            self.filter = Some(Kalman::<3,6>::new_ball_filter (
                                            50.0,
                                            5.0,
-                                           200.0).build_3d(
+                                           200.0,
                                             Vector6::new(
                                                 ball_measurements[0].0.x as f64,
                                                 0.0,
