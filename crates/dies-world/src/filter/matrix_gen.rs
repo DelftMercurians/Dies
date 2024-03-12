@@ -136,12 +136,6 @@ impl MatrixCreator<6, 1> for GravityControl {
     }
 }
 
-
-// observation transformation matrix 1d [x, vx] -> [x]
-fn state_to_measurement() -> SMatrix<f64, 1, 2> {
-    SMatrix::<f64, 1, 2>::new(1.0, 0.0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

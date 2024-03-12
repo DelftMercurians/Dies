@@ -8,50 +8,17 @@ pub struct Kalman<const OS: usize, const SS: usize>
 {
     var: f64,
     t: f64,
-    A: Box<dyn MatrixCreator<SS,SS>>,
-    H: SMatrix<f64, OS, SS>,
-    Q: Box<dyn MatrixCreator<SS, SS>>,
-    R: SMatrix<f64, OS, OS>,
-    P: SMatrix<f64, SS, SS>,
+    transition_matrix: Box<dyn MatrixCreator<SS,SS>>,
+    transformation_matrix: SMatrix<f64, OS, SS>,
+    process_noise: Box<dyn MatrixCreator<SS, SS>>,
+    measurement_noise: SMatrix<f64, OS, OS>,
+    posteriori_covariance: SMatrix<f64, SS, SS>,
     x: SVector<f64, SS>,
-    B: Option<Box<dyn MatrixCreator<SS, 1>>>
+    control: Option<Box<dyn MatrixCreator<SS, 1>>>
 }
 
 impl<const OS: usize,const SS: usize> Kalman<OS,SS>
 {
-    pub fn new(
-        var: f64,
-        t: f64,
-        A: Box<dyn MatrixCreator<SS, SS>>,
-        H: SMatrix<f64, OS, SS>,
-        Q: Box<dyn MatrixCreator<SS,SS>>,
-        R: SMatrix<f64, OS, OS>,
-        P: SMatrix<f64, SS, SS>,
-        x: SVector<f64, SS>,
-        B: Option<Box<dyn MatrixCreator<SS, 1>>>,
-    ) -> Self {
-        Kalman {
-            var,
-            t,
-            A,
-            H,
-            Q,
-            R,
-            P,
-            x,
-            B,
-        }
-    }
-
-    pub fn predict(&mut self, newt: f64) -> SVector<f64, SS> {
-        let r = &self.A.create_matrix(newt - self.t) * &self.x;
-        if let Some(B) = &self.B {
-            r + B.create_matrix(newt - self.t)
-        } else {
-            r
-        }
-    }
-
     pub fn set_x(&mut self, x: SVector<f64, SS>) {
         self.x = x;
     }
@@ -59,7 +26,7 @@ impl<const OS: usize,const SS: usize> Kalman<OS,SS>
     pub fn gating(&self, r: SVector<f64, OS>) -> bool {
         const GATE_LIMIT: f64 = 16.0;
         for i in 0..r.len() {
-            if r[i] * r[i] > GATE_LIMIT * self.P[(i, i)]{
+            if r[i] * r[i] > GATE_LIMIT * self.posteriori_covariance[(i, i)]{
                 return false;
             }
         }
@@ -71,26 +38,26 @@ impl<const OS: usize,const SS: usize> Kalman<OS,SS>
         if dt < 0.0 {
             return None;
         }
-        #[allow(non_snake_case)]
-        let A = self.A.create_matrix(dt);
-        #[allow(non_snake_case)]
-        let Q = self.Q.create_matrix(dt);
-        let mut x = &A * &self.x;
-        if let Some(B) = &self.B {
-            x += B.create_matrix(dt);
+        let transition_matrix = self.transition_matrix.create_matrix(dt);
+        let process_noise = self.process_noise.create_matrix(dt);
+        let mut x = &transition_matrix * &self.x;
+        if let Some(control) = &self.control {
+            x += control.create_matrix(dt);
         }
-        let r = z - &self.H * &x;
+        let r = z - &self.transformation_matrix * &x;
         if use_gate && !self.gating(r.clone_owned()) {
             return Option::from(x.clone());
         }
 
-        let P = &A * &self.P * &A.transpose() + &Q * self.var;
-        #[allow(non_snake_case)]
-        let S = &self.H * &P * &self.H.transpose() + &self.R;
-        #[allow(non_snake_case)]
-        let K = &P * &self.H.transpose() * S.try_inverse().unwrap();
-        self.x = x + &K * r;
-        self.P = &P - &K * &self.H * &P;
+        let posteriori_covariance = &transition_matrix * &self.posteriori_covariance
+            * &transition_matrix.transpose() + &process_noise * self.var;
+        let innovation_covariance = &self.transformation_matrix * &posteriori_covariance
+            * &self.transformation_matrix.transpose() + &self.measurement_noise;
+        let kalman_gain = &posteriori_covariance * &self.transformation_matrix.transpose()
+            * innovation_covariance.try_inverse().unwrap();
+        self.x = x + &kalman_gain * r;
+        self.posteriori_covariance = &posteriori_covariance - &kalman_gain * &self.transformation_matrix
+            * &posteriori_covariance;
         self.t = newt;
         Some(self.x.clone())
     }
@@ -107,20 +74,21 @@ impl Kalman<2, 4> {
         Kalman {
             var: unit_transition_var,
             t: int_time,
-            A: Box::new(ULMotionModel),
-            H: SMatrix::<f64, 2, 4>::new(1.0, 0.0, 0.0, 0.0,
-                                         0.0, 0.0, 1.0, 0.0),
-            Q: Box::new(WhiteNoise1stOrder),
-            R: SMatrix::<f64, 2, 2>::new(
+            transition_matrix: Box::new(ULMotionModel),
+            transformation_matrix: SMatrix::<f64, 2, 4>::new(1.0, 0.0, 0.0, 0.0,
+                                                             0.0, 0.0, 1.0, 0.0),
+            process_noise: Box::new(WhiteNoise1stOrder),
+            measurement_noise: SMatrix::<f64, 2, 2>::new(
                 measurement_var,
                 0.0,
                 0.0,
                 measurement_var,
             ),
-            P: SMatrix::<f64, 4, 4>::identity() * init_var,
+            posteriori_covariance: SMatrix::<f64, 4, 4>::identity() * init_var,
             x: init_pos,
-            B: None,
+            control: None,
         }
+
     }
 }
 
@@ -135,12 +103,12 @@ impl Kalman<3, 6> {
         Kalman {
             var: unit_transition_var,
             t: int_time,
-            A: Box::new(ULMotionModel),
-            H: SMatrix::<f64, 3, 6>::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                         0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
-                                         0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
-            Q: Box::new(Piecewise1stOrder),
-            R: SMatrix::<f64, 3, 3>::new(
+            transition_matrix: Box::new(ULMotionModel),
+            transformation_matrix: SMatrix::<f64, 3, 6>::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                             0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+                                                             0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+            process_noise: Box::new(Piecewise1stOrder),
+            measurement_noise: SMatrix::<f64, 3, 3>::new(
                 measurement_var,
                 0.0,
                 0.0,
@@ -151,9 +119,9 @@ impl Kalman<3, 6> {
                 0.0,
                 measurement_var,
             ),
-            P: SMatrix::<f64, 6, 6>::identity() * init_var,
+            posteriori_covariance: SMatrix::<f64, 6, 6>::identity() * init_var,
             x: init_pos,
-            B: Some(Box::new(GravityControl))
+            control: Some(Box::new(GravityControl))
         }
     }
 }
@@ -222,7 +190,7 @@ mod tests {
         let dt:f64 = 1.0 / 40.0;
         let init_pos = SVector::<f64, 6>::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         let init_time: f64 = 0.0;
-        let init_std: f64 = 100.0;
+        let init_std: f64 = 50.0;
         let measurement_std: f64 = 5.0;
         let unit_transition_std: f64 = 200.0;
         let mut filter = Kalman::<3, 6>::new_ball_filter(init_std.powi(2),
