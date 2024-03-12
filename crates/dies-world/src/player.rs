@@ -61,7 +61,7 @@ impl PlayerTracker {
 
         if let Some(filter) = &mut self.filter {
             let z = na::convert(Vector2::new(current_position.x, current_position.y));
-            if let Some(x) = filter.update(z, t_capture) {
+            if let Some(x) = filter.update(z, t_capture, false) {
                 let last_data = if let Some(last_data) = &mut self.last_data {
                     last_data
                 } else {

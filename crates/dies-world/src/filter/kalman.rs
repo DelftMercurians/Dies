@@ -83,9 +83,21 @@ where
         }
     }
 
+
+    pub fn gating(&self, r: OVector<f64, OS>) -> bool {
+        const GATE_LIMIT: f64 = 16.0;
+        // for all elements in the vector
+        for i in 0..r.len() {
+            if r[i] * r[i] > GATE_LIMIT * self.P[(i, i)]{
+                return false;
+            }
+        }
+        return true;
+    }
+
     //update the state of the filter based on a new observation and a new time
     //returns None if the packet is dropped, otherwise return the posterior state
-    pub fn update(&mut self, z: OVector<f64, OS>, newt: f64) -> Option<OVector<f64, SS>> {
+    pub fn update(&mut self, z: OVector<f64, OS>, newt: f64, use_gate:bool) -> Option<OVector<f64, SS>> {
         let dt = newt - self.t;
         if dt < 0.0 {
             return None;
@@ -95,13 +107,19 @@ where
         #[allow(non_snake_case)]
         let Q = self.Q.create_matrix(dt);
         let mut x = &A * &self.x;
-
-        println!("x: {:?}", x);
+        //control unit
         if let Some(B) = &self.B {
             x += B.create_matrix(dt);
         }
-        let P = &A * &self.P * &A.transpose() + &Q * self.var;
         let r = z - &self.H * &x;
+
+        // if the measurement is bad, don't update the state, we give the prediction
+        // only based on the model
+        if use_gate && !self.gating(r.clone_owned()) {
+            return Option::from(x.clone());
+        }
+
+        let P = &A * &self.P * &A.transpose() + &Q * self.var;
         #[allow(non_snake_case)]
         let S = &self.H * &P * &self.H.transpose() + &self.R;
         #[allow(non_snake_case)]
@@ -154,7 +172,7 @@ mod tests {
         for i in 1..num_steps {
             let newt = i as f64 * dt;
             let z = measurements[i];
-            let state = filter.update(z, newt);
+            let state = filter.update(z, newt, false);
             if let Some(s) = state {
                 filtered.push(OVector::<f64, U2>::new(s[0], s[2]));
             }
@@ -207,7 +225,7 @@ mod tests {
         for i in 1..num_steps {
             let newt = i as f64 * dt;
             let z = measurements[i];
-            let state = filter.update(z, newt);
+            let state = filter.update(z, newt, false);
             if let Some(s) = state {
                 filtered.push(OVector::<f64, U3>::new(s[0], s[2], s[4]));
             }
