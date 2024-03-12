@@ -127,8 +127,9 @@ pub struct GravityControl;
 /// control input matrix for vel z adjustment
 impl MatrixCreator<U6, U1> for GravityControl {
     fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, U6, U1> {
-        let g = 9.81;
-        OMatrix::<f64, U6, U1>::new(0.0, 0.0, 0.0, 0.0, 0.0, -g * delta_t)
+        //in mm/s^2
+        let g:f64 = 9810.0;
+        OMatrix::<f64, U6, U1>::new(0.0, 0.0, 0.0, 0.0, - g*delta_t.powi(2)/2.0, -g * delta_t)
     }
 }
 

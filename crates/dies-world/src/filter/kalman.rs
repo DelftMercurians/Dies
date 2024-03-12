@@ -95,6 +95,8 @@ where
         #[allow(non_snake_case)]
         let Q = self.Q.create_matrix(dt);
         let mut x = &A * &self.x;
+
+        println!("x: {:?}", x);
         if let Some(B) = &self.B {
             x += B.create_matrix(dt);
         }
@@ -115,33 +117,33 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nalgebra::{U2, U4};
+    use nalgebra::{U2, U3, U4, U6};
 
     use crate::filter::filter_builder::KalmanBuilder;
 
     #[test]
     fn test_kalman() {
-        let dt = 1.0 / 40.0; //40fps
+        let dt = 1.0/40.0; //40fps
         let init_pos = OVector::<f64, U4>::new(0.0, 0.0, 0.0, 0.0);
-        let init_time = 0.0;
-        let init_std = 0.1;
-        let measurement_std = 0.1;
-        let unit_transition_std = 2.0;
-        let builder = KalmanBuilder::new(init_std, measurement_std, unit_transition_std);
+        let init_time:f64 = 0.0;
+        let init_std:f64 = 100.0;
+        let measurement_std:f64 = 5.0;
+        let unit_transition_std:f64 = 200.0;
+        let builder = KalmanBuilder::new(init_std.powi(2), measurement_std.powi(2), unit_transition_std.powi(2));
         let mut filter = builder.build2D(init_pos, init_time);
 
         // generate some fake measurements trajectory
         // with constant speed movement
-        let simulation_time = 0.5;
+        let simulation_time:f64 = 10.0;
         let num_steps = (simulation_time / dt) as usize;
-        let velocity = (0.5, 0.5);
+        let velocity = (500.0, 500.0);
         let mut measurements = Vec::new();
         measurements.push(OVector::<f64, U2>::new(0.0, 0.0));
         let mut true_position = Vec::new();
         true_position.push(OVector::<f64, U2>::new(0.0, 0.0));
         for i in 1..num_steps {
-            let x = velocity.0 * dt + measurements[i - 1][0];
-            let y = velocity.1 * dt + measurements[i - 1][1];
+            let x = velocity.0 * dt + true_position[i - 1][0];
+            let y = velocity.1 * dt + true_position[i - 1][1];
             let x_measured = x + measurement_std * rand::random::<f64>();
             let y_measured = y + measurement_std * rand::random::<f64>();
             measurements.push(OVector::<f64, U2>::new(x_measured, y_measured));
@@ -170,4 +172,57 @@ mod tests {
         // println!("Smoothed error: {:.2}, Original error: {:.2}", smoothed_error, original_error);
         assert!(smoothed_error < original_error);
     }
+
+    #[test]
+    fn test_kalman_3d() {
+        let dt:f64 = 1.0 / 40.0;
+        let init_pos = OVector::<f64, U6>::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let init_time: f64 = 0.0;
+        let init_std: f64 = 100.0;
+        let measurement_std: f64 = 5.0;
+        let unit_transition_std: f64 = 200.0;
+        let builder = KalmanBuilder::new(init_std.powi(2), measurement_std.powi(2), unit_transition_std.powi(2));
+        let mut filter = builder.build_3d(init_pos, init_time);
+
+        // generate some fake measurements trajectory
+        let simulation_time = 1.5;
+        let num_steps = (simulation_time / dt) as usize;
+        let mut velocity = (1000.0, 1000.0, 5000.0);
+        let mut measurements = Vec::new();
+        measurements.push(OVector::<f64, U3>::new(0.0, 0.0, 0.0));
+        let mut true_position = Vec::new();
+        true_position.push(OVector::<f64, U3>::new(0.0, 0.0, 0.0));
+        for i in 1..num_steps {
+            let x = velocity.0 * dt + true_position[i - 1][0];
+            let y = velocity.1 * dt + true_position[i - 1][1];
+            let z = velocity.2 * dt + true_position[i - 1][2] - 9810.0 * dt.powi(2) / 2.0;
+            let x_measured = x + measurement_std * rand::random::<f64>();
+            let y_measured = y + measurement_std * rand::random::<f64>();
+            let z_measured = z + measurement_std * rand::random::<f64>();
+            measurements.push(OVector::<f64, U3>::new(x_measured, y_measured, z_measured));
+            true_position.push(OVector::<f64, U3>::new(x, y, z));
+        }
+        let mut filtered:Vec<OVector<f64, U3>> = Vec::new();
+        filtered.push(OVector::<f64, U3>::new(0.0, 0.0, 0.0));
+        for i in 1..num_steps {
+            let newt = i as f64 * dt;
+            let z = measurements[i];
+            let state = filter.update(z, newt);
+            if let Some(s) = state {
+                filtered.push(OVector::<f64, U3>::new(s[0], s[2], s[4]));
+            }
+        }
+
+        //calulate the error
+        let mut smoothed_error = 0.0;
+        let mut original_error = 0.0;
+        for i in 1..num_steps {
+            let e = (filtered[i] - true_position[i]).norm();
+            let e2 = (measurements[i] - true_position[i]).norm();
+            smoothed_error += e;
+            original_error += e2;
+        }
+        assert!(smoothed_error < original_error);
+    }
+
 }
