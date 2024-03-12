@@ -1,64 +1,35 @@
 use crate::filter::matrix_gen::MatrixCreator;
 use na::allocator::Allocator;
-use na::DefaultAllocator;
-use na::OVector;
-use na::{DimName, OMatrix, U1};
+use na::{DimName, SMatrix, SVector};
 use nalgebra as na;
 
 // OS: Observation Space, SS: State Space
 #[derive(Debug)]
-pub struct Kalman<OS, SS>
-where
-    OS: DimName,
-    SS: DimName,
-    DefaultAllocator: Allocator<f64, SS, SS>
-        + Allocator<f64, OS, SS>
-        + Allocator<f64, SS, OS>
-        + Allocator<f64, OS, OS>
-        + Allocator<f64, SS>
-        + Allocator<f64, OS>,
+pub struct Kalman<const OS: usize, const SS: usize>
 {
-    // variance of transition noise
     var: f64,
-    // the time for the current state in ms
     t: f64,
-    // Transition matrix
     A: Box<dyn MatrixCreator<SS,SS>>,
-    // Transformation (observation) matrix
-    H: OMatrix<f64, OS, SS>,
-    // Process noise covariance matrix
+    H: SMatrix<f64, OS, SS>,
     Q: Box<dyn MatrixCreator<SS, SS>>,
-    // Measurement noise covariance matrix
-    R: OMatrix<f64, OS, OS>,
-    // Error covariance matrix
-    P: OMatrix<f64, SS, SS>,
-    // State vector
-    x: OVector<f64, SS>,
-    // Control input
-    B: Option<Box<dyn MatrixCreator<SS, U1>>>
+    R: SMatrix<f64, OS, OS>,
+    P: SMatrix<f64, SS, SS>,
+    x: SVector<f64, SS>,
+    B: Option<Box<dyn MatrixCreator<SS, 1>>>
 }
 
-impl<OS, SS> Kalman<OS, SS>
-where
-    OS: DimName,
-    SS: DimName,
-    DefaultAllocator: Allocator<f64, SS, SS>
-        + Allocator<f64, OS, SS>
-        + Allocator<f64, SS, OS>
-        + Allocator<f64, OS, OS>
-        + Allocator<f64, SS>
-        + Allocator<f64, OS>,
+impl<const OS: usize,const SS: usize> Kalman<OS,SS>
 {
     pub fn new(
         var: f64,
         t: f64,
         A: Box<dyn MatrixCreator<SS, SS>>,
-        H: OMatrix<f64, OS, SS>,
+        H: SMatrix<f64, OS, SS>,
         Q: Box<dyn MatrixCreator<SS,SS>>,
-        R: OMatrix<f64, OS, OS>,
-        P: OMatrix<f64, SS, SS>,
-        x: OVector<f64, SS>,
-        B: Option<Box<dyn MatrixCreator<SS, U1>>>,
+        R: SMatrix<f64, OS, OS>,
+        P: SMatrix<f64, SS, SS>,
+        x: SVector<f64, SS>,
+        B: Option<Box<dyn MatrixCreator<SS, 1>>>,
     ) -> Self {
         Kalman {
             var,
@@ -73,8 +44,7 @@ where
         }
     }
 
-    //predict a future state(prior), this doesn't change the internal state of the filter
-    pub fn predict(&mut self, newt: f64) -> OVector<f64, SS> {
+    pub fn predict(&mut self, newt: f64) -> SVector<f64, SS> {
         let r = &self.A.create_matrix(newt - self.t) * &self.x;
         if let Some(B) = &self.B {
             r + B.create_matrix(newt - self.t)
@@ -83,13 +53,12 @@ where
         }
     }
 
-    pub fn set_x(&mut self, x: OVector<f64, SS>) {
+    pub fn set_x(&mut self, x: SVector<f64, SS>) {
         self.x = x;
     }
 
-    pub fn gating(&self, r: OVector<f64, OS>) -> bool {
+    pub fn gating(&self, r: SVector<f64, OS>) -> bool {
         const GATE_LIMIT: f64 = 16.0;
-        // for all elements in the vector
         for i in 0..r.len() {
             if r[i] * r[i] > GATE_LIMIT * self.P[(i, i)]{
                 return false;
@@ -98,9 +67,7 @@ where
         return true;
     }
 
-    //update the state of the filter based on a new observation and a new time
-    //returns None if the packet is dropped, otherwise return the posterior state
-    pub fn update(&mut self, z: OVector<f64, OS>, newt: f64, use_gate: bool) -> Option<OVector<f64, SS>> {
+    pub fn update(&mut self, z: SVector<f64, OS>, newt: f64, use_gate: bool) -> Option<SVector<f64, SS>> {
         let dt = newt - self.t;
         if dt < 0.0 {
             return None;
@@ -110,14 +77,10 @@ where
         #[allow(non_snake_case)]
         let Q = self.Q.create_matrix(dt);
         let mut x = &A * &self.x;
-        //control unit
         if let Some(B) = &self.B {
             x += B.create_matrix(dt);
         }
         let r = z - &self.H * &x;
-
-        // if the measurement is bad, don't update the state, we give the prediction
-        // only based on the model
         if use_gate && !self.gating(r.clone_owned()) {
             return Option::from(x.clone());
         }
@@ -133,8 +96,6 @@ where
         Some(self.x.clone())
     }
 }
-
-//test
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,7 +106,7 @@ mod tests {
     #[test]
     fn test_kalman() {
         let dt = 1.0/40.0; //40fps
-        let init_pos = OVector::<f64, U4>::new(0.0, 0.0, 0.0, 0.0);
+        let init_pos = SVector::<f64, 4>::new(0.0, 0.0, 0.0, 0.0);
         let init_time:f64 = 0.0;
         let init_std:f64 = 100.0;
         let measurement_std:f64 = 5.0;
@@ -159,25 +120,25 @@ mod tests {
         let num_steps = (simulation_time / dt) as usize;
         let velocity = (500.0, 500.0);
         let mut measurements = Vec::new();
-        measurements.push(OVector::<f64, U2>::new(0.0, 0.0));
+        measurements.push(SVector::<f64, 2>::new(0.0, 0.0));
         let mut true_position = Vec::new();
-        true_position.push(OVector::<f64, U2>::new(0.0, 0.0));
+        true_position.push(SVector::<f64, 2>::new(0.0, 0.0));
         for i in 1..num_steps {
             let x = velocity.0 * dt + true_position[i - 1][0];
             let y = velocity.1 * dt + true_position[i - 1][1];
             let x_measured = x + measurement_std * rand::random::<f64>();
             let y_measured = y + measurement_std * rand::random::<f64>();
-            measurements.push(OVector::<f64, U2>::new(x_measured, y_measured));
-            true_position.push(OVector::<f64, U2>::new(x, y));
+            measurements.push(SVector::<f64, 2>::new(x_measured, y_measured));
+            true_position.push(SVector::<f64, 2>::new(x, y));
         }
         let mut filtered = Vec::new();
-        filtered.push(OVector::<f64, U2>::new(0.0, 0.0));
+        filtered.push(SVector::<f64, 2>::new(0.0, 0.0));
         for i in 1..num_steps {
             let newt = i as f64 * dt;
             let z = measurements[i];
             let state = filter.update(z, newt, false);
             if let Some(s) = state {
-                filtered.push(OVector::<f64, U2>::new(s[0], s[2]));
+                filtered.push(SVector::<f64, 2>::new(s[0], s[2]));
             }
         }
 
@@ -197,7 +158,7 @@ mod tests {
     #[test]
     fn test_kalman_3d() {
         let dt:f64 = 1.0 / 40.0;
-        let init_pos = OVector::<f64, U6>::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let init_pos = SVector::<f64, 6>::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         let init_time: f64 = 0.0;
         let init_std: f64 = 100.0;
         let measurement_std: f64 = 5.0;
@@ -210,9 +171,9 @@ mod tests {
         let num_steps = (simulation_time / dt) as usize;
         let mut velocity = (1000.0, 1000.0, 5000.0);
         let mut measurements = Vec::new();
-        measurements.push(OVector::<f64, U3>::new(0.0, 0.0, 0.0));
+        measurements.push(SVector::<f64, 3>::new(0.0, 0.0, 0.0));
         let mut true_position = Vec::new();
-        true_position.push(OVector::<f64, U3>::new(0.0, 0.0, 0.0));
+        true_position.push(SVector::<f64, 3>::new(0.0, 0.0, 0.0));
         for i in 1..num_steps {
             let x = velocity.0 * dt + true_position[i - 1][0];
             let y = velocity.1 * dt + true_position[i - 1][1];
@@ -220,17 +181,17 @@ mod tests {
             let x_measured = x + measurement_std * rand::random::<f64>();
             let y_measured = y + measurement_std * rand::random::<f64>();
             let z_measured = z + measurement_std * rand::random::<f64>();
-            measurements.push(OVector::<f64, U3>::new(x_measured, y_measured, z_measured));
-            true_position.push(OVector::<f64, U3>::new(x, y, z));
+            measurements.push(SVector::<f64, 3>::new(x_measured, y_measured, z_measured));
+            true_position.push(SVector::<f64, 3>::new(x, y, z));
         }
-        let mut filtered:Vec<OVector<f64, U3>> = Vec::new();
-        filtered.push(OVector::<f64, U3>::new(0.0, 0.0, 0.0));
+        let mut filtered:Vec<SVector<f64, 3>> = Vec::new();
+        filtered.push(SVector::<f64, 3>::new(0.0, 0.0, 0.0));
         for i in 1..num_steps {
             let newt = i as f64 * dt;
             let z = measurements[i];
             let state = filter.update(z, newt, false);
             if let Some(s) = state {
-                filtered.push(OVector::<f64, U3>::new(s[0], s[2], s[4]));
+                filtered.push(SVector::<f64, 3>::new(s[0], s[2], s[4]));
             }
         }
 

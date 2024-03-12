@@ -1,6 +1,6 @@
 use dies_core::PlayerData;
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
-use nalgebra::{self as na, Vector2, Vector4, U2, U4};
+use nalgebra::{self as na, Vector2, Vector4};
 
 use crate::{
     coord_utils::to_dies_coords2,
@@ -20,7 +20,7 @@ pub struct PlayerTracker {
     /// Last recorded data (for caching)
     last_data: Option<PlayerData>,
     /// Kalman filter for the player's position and velocity
-    filter: Option<Kalman<U2, U4>>,
+    filter: Option<Kalman<2, 4>>,
 }
 
 impl PlayerTracker {

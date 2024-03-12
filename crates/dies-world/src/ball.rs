@@ -1,5 +1,5 @@
 use dies_core::BallData;
-use nalgebra::{OVector, U3, U6, Vector3, Vector6};
+use nalgebra::{SVector, Vector3, Vector6};
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
@@ -18,7 +18,7 @@ pub struct BallTracker {
     /// Last recorded data (for caching)
     last_data: Option<BallData>,
     /// Kalman filter for the ball's position and velocity
-    filter: Option<Kalman<U3, U6>>
+    filter: Option<Kalman<3, 6>>
 }
 
 impl BallTracker {
@@ -93,7 +93,7 @@ impl BallTracker {
         }
 
         ball_measurements.iter().for_each(|(pos, is_noisy)| {
-            let pos_ov = OVector::<f64, U3>::new(pos.x as f64, pos.y as f64, pos.z as f64);
+            let pos_ov = SVector::<f64, 3>::new(pos.x as f64, pos.y as f64, pos.z as f64);
             let z= self.filter.as_mut().unwrap().update(pos_ov, current_time, is_noisy.clone());
             if z.is_some() {
                 let mut pos_v3 = Vector3::new(z.unwrap()[0] as f32, z.unwrap()[2] as f32, z.unwrap()[4] as f32);
@@ -101,7 +101,7 @@ impl BallTracker {
                 if pos_v3.z < 0.0{
                     pos_v3.z = 0.0;
                     self.filter.as_mut().unwrap().set_x(
-                        OVector::<f64, U6>:: new(
+                        SVector::<f64, 6>:: new(
                             pos_v3.x as f64,
                             vel_v3.x as f64,
                             pos_v3.y as f64,
