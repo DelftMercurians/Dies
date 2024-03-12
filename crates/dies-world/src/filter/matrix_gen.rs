@@ -1,4 +1,4 @@
-use std::ptr::addr_eq;
+use std::fmt::{Debug, Formatter};
 use na::allocator::Allocator;
 use na::{DefaultAllocator, SMatrix};
 use na::{DimName, OMatrix, U1, U2, U4, U6};
@@ -20,16 +20,23 @@ fn block_diag_3(a: &OMatrix<f64, U2, U2>) -> OMatrix<f64, U6, U6> {
     result
 }
 
-pub trait MatrixCreator<D1, D2>
+pub trait MatrixCreator<D1, D2>: Debug
 where
     D1: DimName,
     D2: DimName,
     DefaultAllocator: Allocator<f64, D1, D2>,
 {
     fn create_matrix(&self, delta_t: f64) -> OMatrix<f64, D1, D2>;
+
+    fn print(&self) {
+        println!("{:?}", self.create_matrix(1.0));
+    }
+
 }
 
+#[derive(Debug)]
 pub struct Piecewise1stOrder;
+
 
 // 2x2 measurement noise matrix assuming acceleration is different in
 // different duration
@@ -69,6 +76,7 @@ impl MatrixCreator<U6, U6> for Piecewise1stOrder {
     }
 }
 
+#[derive(Debug)]
 pub struct WhiteNoise1stOrder;
 
 // 2x2 measurement noise matrix assuming acceleration does not change
@@ -96,6 +104,7 @@ impl MatrixCreator<U4,U4> for WhiteNoise1stOrder {
     }
 }
 
+#[derive(Debug)]
 pub struct ULMotionModel;
 
 // 2x2 transition matrix assuming constant speed
@@ -122,6 +131,7 @@ impl MatrixCreator<U6, U6> for ULMotionModel {
     }
 }
 
+#[derive(Debug)]
 pub struct GravityControl;
 
 /// control input matrix for vel z adjustment

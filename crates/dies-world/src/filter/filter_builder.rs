@@ -5,7 +5,7 @@ use na::U4;
 use na::{OMatrix, U2, U3, U6};
 use nalgebra as na;
 use nalgebra::U1;
-
+#[derive(Debug)]
 pub struct KalmanBuilder {
     init_var: f64,
     measurement_var: f64,

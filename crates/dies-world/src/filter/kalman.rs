@@ -6,6 +6,7 @@ use na::{DimName, OMatrix, U1};
 use nalgebra as na;
 
 // OS: Observation Space, SS: State Space
+#[derive(Debug)]
 pub struct Kalman<OS, SS>
 where
     OS: DimName,
@@ -73,7 +74,6 @@ where
     }
 
     //predict a future state(prior), this doesn't change the internal state of the filter
-    #[allow(dead_code)]
     pub fn predict(&mut self, newt: f64) -> OVector<f64, SS> {
         let r = &self.A.create_matrix(newt - self.t) * &self.x;
         if let Some(B) = &self.B {
@@ -83,6 +83,9 @@ where
         }
     }
 
+    pub fn set_x(&mut self, x: OVector<f64, SS>) {
+        self.x = x;
+    }
 
     pub fn gating(&self, r: OVector<f64, OS>) -> bool {
         const GATE_LIMIT: f64 = 16.0;
@@ -97,7 +100,7 @@ where
 
     //update the state of the filter based on a new observation and a new time
     //returns None if the packet is dropped, otherwise return the posterior state
-    pub fn update(&mut self, z: OVector<f64, OS>, newt: f64, use_gate:bool) -> Option<OVector<f64, SS>> {
+    pub fn update(&mut self, z: OVector<f64, OS>, newt: f64, use_gate: bool) -> Option<OVector<f64, SS>> {
         let dt = newt - self.t;
         if dt < 0.0 {
             return None;
