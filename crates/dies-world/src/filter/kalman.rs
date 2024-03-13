@@ -2,7 +2,7 @@ use crate::filter::matrix_gen::{GravityControl, MatrixCreator, Piecewise1stOrder
 use na::{SMatrix, SVector};
 use nalgebra as na;
 
-// OS: Observation Space, SS: State Space
+/// OS: Observation Space, SS: State Space
 #[derive(Debug)]
 pub struct Kalman<const OS: usize, const SS: usize>
 {
@@ -223,7 +223,7 @@ mod tests {
                                                          measurement_std.powi(2),
                                                          init_pos, init_time);
         // generate some fake measurements trajectory
-        let simulation_time = 10.0;
+        let simulation_time = 50.0;
         let num_steps = (simulation_time / dt) as usize;
         let mut velocity = (1000.0, 1000.0, 5000.0);
         let mut measurements = Vec::new();
