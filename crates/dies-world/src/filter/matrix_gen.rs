@@ -2,13 +2,15 @@ use std::fmt::{Debug};
 use nalgebra as na;
 use na::{SMatrix};
 
-
+/// Create a block diagonal matrix from two 2x2 matrix
 fn block_diag(a: &SMatrix<f64, 2, 2>) -> SMatrix<f64, 4, 4> {
     let mut result = SMatrix::<f64,4, 4>::zeros();
     result.fixed_view_mut::<2, 2>(0, 0).copy_from(a);
     result.fixed_view_mut::<2, 2>(2, 2).copy_from(a);
     result
 }
+
+/// Create a block diagonal matrix from three 2x2 matrix
 fn block_diag_3(a: &SMatrix<f64, 2, 2>) -> SMatrix<f64, 6, 6> {
     let mut result = SMatrix::<f64, 6, 6>::zeros();
     result.fixed_view_mut::<2, 2>(0, 0).copy_from(a);
@@ -31,8 +33,8 @@ pub trait MatrixCreator<const D1: usize, const D2: usize>: Debug
 pub struct Piecewise1stOrder;
 
 
-// 2x2 measurement noise matrix assuming acceleration is different in
-// different duration
+/// 2x2 measurement noise matrix assuming acceleration is different in
+/// different duration
 impl MatrixCreator<2, 2> for Piecewise1stOrder {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 2, 2> {
         SMatrix::<f64, 2, 2>::new(
@@ -44,7 +46,7 @@ impl MatrixCreator<2, 2> for Piecewise1stOrder {
     }
 }
 
-//Piecewise1stOrder but 2D
+///Piecewise1stOrder but 2D
 impl MatrixCreator<4, 4> for Piecewise1stOrder {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 4, 4> {
         let m = SMatrix::<f64, 2, 2>::new(
@@ -72,7 +74,7 @@ impl MatrixCreator<6, 6> for Piecewise1stOrder {
 #[derive(Debug)]
 pub struct WhiteNoise1stOrder;
 
-// 2x2 measurement noise matrix assuming acceleration does not change
+/// 2x2 measurement noise matrix assuming acceleration does not change
 impl MatrixCreator<2, 2> for WhiteNoise1stOrder {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 2, 2> {
         SMatrix::<f64, 2, 2>::new(
@@ -84,7 +86,7 @@ impl MatrixCreator<2, 2> for WhiteNoise1stOrder {
     }
 }
 
-//WhiteNoise1stOrder but 2D
+///WhiteNoise1stOrder but 2D
 impl MatrixCreator<4,4> for WhiteNoise1stOrder {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 4, 4> {
         let m = SMatrix::<f64, 2, 2>::new(
@@ -107,7 +109,7 @@ impl MatrixCreator<2, 2> for ULMotionModel {
     }
 }
 
-//ULMotionModel but 2D
+///ULMotionModel but 2D
 impl MatrixCreator<4, 4> for ULMotionModel {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 4, 4> {
         let m = SMatrix::<f64, 2, 2>::new(1.0, delta_t, 0.0, 1.0);

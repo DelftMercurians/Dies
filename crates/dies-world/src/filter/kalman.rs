@@ -6,23 +6,36 @@ use nalgebra as na;
 #[derive(Debug)]
 pub struct Kalman<const OS: usize, const SS: usize>
 {
+    /// unit variance of the transition model
     var: f64,
+    /// the time from the last update, /second
     t: f64,
+    /// A
     transition_matrix: Box<dyn MatrixCreator<SS,SS>>,
+    /// H
     transformation_matrix: SMatrix<f64, OS, SS>,
+    /// Q
     process_noise: Box<dyn MatrixCreator<SS, SS>>,
+    /// R
     measurement_noise: SMatrix<f64, OS, OS>,
+    /// P
     posteriori_covariance: SMatrix<f64, SS, SS>,
+    /// the state we track, we use (distance1,velocity1,distance2,velocity2....)
+    /// as convention
     x: SVector<f64, SS>,
+    /// control matrix
     control: Option<Box<dyn MatrixCreator<SS, 1>>>
 }
 
 impl<const OS: usize,const SS: usize> Kalman<OS,SS>
 {
+    /// reset the state of the filter
     pub fn set_x(&mut self, x: SVector<f64, SS>) {
         self.x = x;
     }
 
+    /// gating function, checks the quality of measurement
+    /// false iff the measurement is bad, i.e. too far from the predicted state
     pub fn gating(&self, r: SVector<f64, OS>) -> bool {
         const GATE_LIMIT: f64 = 16.0;
         for i in 0..r.len() {
@@ -33,6 +46,10 @@ impl<const OS: usize,const SS: usize> Kalman<OS,SS>
         return true;
     }
 
+    /// update the filter with a new measurement
+    /// return None if the measurement is old
+    /// return the priori state if the measurement is bad
+    /// return the posteriori state if the measurement is used.
     pub fn update(&mut self, z: SVector<f64, OS>, newt: f64, use_gate: bool) -> Option<SVector<f64, SS>> {
         let dt = newt - self.t;
         if dt < 0.0 {
@@ -64,6 +81,10 @@ impl<const OS: usize,const SS: usize> Kalman<OS,SS>
 }
 
 impl Kalman<2, 4> {
+    /// create a new Kalman filter for the player
+    /// assuming constant speed movement model
+    /// the state is (x, vx, y, vy)
+    /// white noise as process noise.
     pub fn new_player_filter(
         init_var: f64,
         unit_transition_var: f64,
@@ -93,6 +114,10 @@ impl Kalman<2, 4> {
 }
 
 impl Kalman<3, 6> {
+    /// create a new Kalman filter for the ball
+    /// assuming constant speed movement in xy plane and parabola in z(move in vacuum)
+    /// the state is (x, vx, y, vy, z, vz)
+    /// piecewise noise as process noise.
     pub fn new_ball_filter(
         init_var: f64,
         unit_transition_var: f64,
@@ -190,7 +215,7 @@ mod tests {
         let dt:f64 = 1.0 / 40.0;
         let init_pos = SVector::<f64, 6>::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         let init_time: f64 = 0.0;
-        let init_std: f64 = 50.0;
+        let init_std: f64 = 100.0;
         let measurement_std: f64 = 5.0;
         let unit_transition_std: f64 = 200.0;
         let mut filter = Kalman::<3, 6>::new_ball_filter(init_std.powi(2),
@@ -198,7 +223,7 @@ mod tests {
                                                          measurement_std.powi(2),
                                                          init_pos, init_time);
         // generate some fake measurements trajectory
-        let simulation_time = 1.5;
+        let simulation_time = 10.0;
         let num_steps = (simulation_time / dt) as usize;
         let mut velocity = (1000.0, 1000.0, 5000.0);
         let mut measurements = Vec::new();
@@ -209,6 +234,7 @@ mod tests {
             let x = velocity.0 * dt + true_position[i - 1][0];
             let y = velocity.1 * dt + true_position[i - 1][1];
             let z = velocity.2 * dt + true_position[i - 1][2] - 9810.0 * dt.powi(2) / 2.0;
+            velocity.2 -= 9810.0 * dt;
             let x_measured = x + measurement_std * rand::random::<f64>();
             let y_measured = y + measurement_std * rand::random::<f64>();
             let z_measured = z + measurement_std * rand::random::<f64>();
