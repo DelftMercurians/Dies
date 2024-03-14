@@ -1,3 +1,4 @@
+
 import opengen as og
 import casadi.casadi as cs
 import matplotlib.pyplot as plt

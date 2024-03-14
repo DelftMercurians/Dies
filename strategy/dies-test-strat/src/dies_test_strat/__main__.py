@@ -25,7 +25,7 @@ if __name__ == "__main__":
         prev_time = time.time()
         
 
-        N = 100
+        N = 40
         x_init = []
         x_ref = [-750, -750]
         obstacles = []
@@ -33,6 +33,12 @@ if __name__ == "__main__":
         ts = 0.02
         prev_u = [1.0] * (2*N)
         solver = make_solver(N, [], u_constraints, obstacles, obstacles, ts)
+
+        def global_to_local_vel(velx, vely, theta):
+            # theta = theta + pi / 2
+            new_x = vely * sin(theta) + velx * cos(theta)
+            new_y = -vely * cos(theta) + velx * sin(theta)
+            return new_x, new_y
 
         rid = 14
         while next_world():
@@ -58,6 +64,7 @@ if __name__ == "__main__":
                     break
                 print(f"X_init: {x_init} | x_ref: {x_ref} | obstacles: {obstacles} | prev_u: {prev_u} | ts: {ts}")
                 u_mpc, prev_u = mpc_control(solver, x_init, x_ref, obstacles, prev_u)
+                u_x, u_y = global_to_local_vel(u_x, u_y, w.own_players[0].orientation)
                 send(PlayerCmd(rid, u_mpc[0], u_mpc[1]))
 
                 print(f"Position: {x_init}| Delay: {time.time() - prev_time}")
