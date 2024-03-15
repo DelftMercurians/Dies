@@ -4,5 +4,6 @@ __pycache__
 node_modules/
 *.npy
 Cargo.lock
-.venv
+.venv/*
 *.egg-info
+my_optimizers/navigation/*
