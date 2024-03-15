@@ -8,6 +8,8 @@ from dies_py import init, next_world, send, should_stop, world
 #from mpc_rust_gen.mpc import make_solver, mpc_control
 from dies_test_strat.mpc import make_solver, mpc_control 
 
+FROM_GLOBAL_TO_LOCAL_ANGLE = 3.14/2
+
 # import mpc
 print("Starting test-strat")
 
@@ -64,7 +66,7 @@ if __name__ == "__main__":
                     break
                 print(f"X_init: {x_init} | x_ref: {x_ref} | obstacles: {obstacles} | prev_u: {prev_u} | ts: {ts}")
                 u_mpc, prev_u = mpc_control(solver, x_init, x_ref, obstacles, prev_u)
-                u_x, u_y = global_to_local_vel(u_x, u_y, w.own_players[0].orientation)
+                u_x, u_y = global_to_local_vel(u_x, u_y, ANGLE)
                 send(PlayerCmd(rid, u_mpc[0], u_mpc[1]))
 
                 print(f"Position: {x_init}| Delay: {time.time() - prev_time}")
