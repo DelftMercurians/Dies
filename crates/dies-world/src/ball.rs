@@ -1,5 +1,6 @@
 use dies_core::BallData;
 use nalgebra::{SVector, Vector3, Vector6};
+use tracing::debug;
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
@@ -61,6 +62,7 @@ impl BallTracker {
                 self.play_dir_x,
             ), !ball.has_confidence() || ball.confidence.unwrap() < 0.9))
             .collect::<Vec<(Vector3<f32>,bool)>>();
+        debug_assert!(ball_measurements.len() >= 1, "No ball measurements in frame.");
         if ball_measurements.is_empty() {
             return;
         }
@@ -76,9 +78,9 @@ impl BallTracker {
             });
             self.is_init = true;
             self.filter = Some(Kalman::<3,6>::new_ball_filter (
-                                           50.0,
-                                           5.0,
+                                           10000.0,
                                            200.0,
+                                           5.0,
                                             Vector6::new(
                                                 ball_measurements[0].0.x as f64,
                                                 0.0,
@@ -95,6 +97,8 @@ impl BallTracker {
         ball_measurements.iter().for_each(|(pos, is_noisy)| {
             let pos_ov = SVector::<f64, 3>::new(pos.x as f64, pos.y as f64, pos.z as f64);
             let z= self.filter.as_mut().unwrap().update(pos_ov, current_time, is_noisy.clone());
+            debug!("Ball pos: {:?}", pos);
+            debug!("Ball filter update: {:?}", z);
             if z.is_some() {
                 let mut pos_v3 = Vector3::new(z.unwrap()[0] as f32, z.unwrap()[2] as f32, z.unwrap()[4] as f32);
                 let vel_v3 = Vector3::new(z.unwrap()[1] as f32, z.unwrap()[3] as f32, z.unwrap()[5] as f32);
@@ -220,5 +224,62 @@ mod tests {
         let ball_data = tracker.get().unwrap();
         assert_eq!(ball_data.position, Vector3::new(-2.0, 4.0, 6.0));
         assert_eq!(ball_data.velocity, Vector3::new(-1.0, 2.0, 3.0));
+    }
+    use serde_json::Value;
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    fn generate_SSL_Wrapper(t: f64, xs: Vec<f64>, ys: Vec<f64>, zs: Vec<f64>) -> SSL_DetectionFrame {
+        let mut frame = SSL_DetectionFrame::new();
+        frame.set_t_capture(t);
+        for i in 0..xs.len() {
+            let mut ball = SSL_DetectionBall::new();
+            ball.set_x((xs[i] * 1000.0) as f32);
+            ball.set_y((ys[i] * 1000.0) as f32);
+            ball.set_z((zs[i] * 1000.0) as f32);
+            ball.confidence = Some(1.0);
+            frame.balls.push(ball);
+        }
+        frame
+    }
+
+    fn load_json_data(path: &str) -> Value {
+        let data = std::fs::read_to_string(path).expect("Unable to read file");
+        let v: Value = serde_json::from_str(&data).expect("JSON was not well-formatted");
+        v
+    }
+
+    #[test]
+    fn test_noisy_data() {
+        let mut tracker = BallTracker::new(1.0);
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("ball_data_filtered.json")
+            .unwrap();
+
+        //get data from json
+        let data = load_json_data("ball_track_intval.json");
+
+        // enumerate through the data
+        for (i, item) in data.as_array().unwrap().iter().enumerate() {
+            let t = item["t"].as_f64().unwrap();
+            let xs = item["position_x"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect::<Vec<f64>>();
+            let ys = item["position_y"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect::<Vec<f64>>();
+            let zs = item["postion_z"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect::<Vec<f64>>();
+            let frame = generate_SSL_Wrapper(t, xs, ys, zs);
+            tracker.update(&frame);
+            let ball_data = tracker.get().unwrap();
+            let ball_data_json = serde_json::json!({
+                "t": ball_data.timestamp,
+                "x": ball_data.position.x,
+                "y": ball_data.position.y,
+                "z": ball_data.position.z,
+                "vx": ball_data.velocity.x,
+                "vy": ball_data.velocity.y,
+                "vz": ball_data.velocity.z,
+            });
+            writeln!(file, "{}", ball_data_json).unwrap();
+        }
+
     }
 }
