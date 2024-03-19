@@ -225,9 +225,8 @@ mod tests {
         assert_eq!(ball_data.position, Vector3::new(-2.0, 4.0, 6.0));
         assert_eq!(ball_data.velocity, Vector3::new(-1.0, 2.0, 3.0));
     }
-    use serde_json::Value;
-    use std::fs::OpenOptions;
-    use std::io::Write;
+
+    
     fn generate_SSL_Wrapper(t: f64, xs: Vec<f64>, ys: Vec<f64>, zs: Vec<f64>) -> SSL_DetectionFrame {
         let mut frame = SSL_DetectionFrame::new();
         frame.set_t_capture(t);
@@ -242,44 +241,5 @@ mod tests {
         frame
     }
 
-    fn load_json_data(path: &str) -> Value {
-        let data = std::fs::read_to_string(path).expect("Unable to read file");
-        let v: Value = serde_json::from_str(&data).expect("JSON was not well-formatted");
-        v
-    }
 
-    #[test]
-    fn test_noisy_data() {
-        let mut tracker = BallTracker::new(1.0);
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("ball_data_filtered.json")
-            .unwrap();
-
-        //get data from json
-        let data = load_json_data("ball_track_intval.json");
-
-        // enumerate through the data
-        for (i, item) in data.as_array().unwrap().iter().enumerate() {
-            let t = item["t"].as_f64().unwrap();
-            let xs = item["position_x"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect::<Vec<f64>>();
-            let ys = item["position_y"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect::<Vec<f64>>();
-            let zs = item["postion_z"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect::<Vec<f64>>();
-            let frame = generate_SSL_Wrapper(t, xs, ys, zs);
-            tracker.update(&frame);
-            let ball_data = tracker.get().unwrap();
-            let ball_data_json = serde_json::json!({
-                "t": ball_data.timestamp,
-                "x": ball_data.position.x,
-                "y": ball_data.position.y,
-                "z": ball_data.position.z,
-                "vx": ball_data.velocity.x,
-                "vy": ball_data.velocity.y,
-                "vz": ball_data.velocity.z,
-            });
-            writeln!(file, "{}", ball_data_json).unwrap();
-        }
-
-    }
 }
