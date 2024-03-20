@@ -2,10 +2,7 @@ use dies_core::PlayerData;
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector2, Vector4};
 
-use crate::{
-    coord_utils::to_dies_coords2,
-    filter::{Kalman},
-};
+use crate::{coord_utils::to_dies_coords2, filter::Kalman};
 
 /// Tracker for a single player.
 pub struct PlayerTracker {
@@ -84,7 +81,10 @@ impl PlayerTracker {
                 last_data.timestamp = t_capture;
             }
         } else {
-            self.filter = Some(Kalman::<2,4>::new_player_filter(0.1, 0.1, 2.0,
+            self.filter = Some(Kalman::<2, 4>::new_player_filter(
+                0.1,
+                0.1,
+                2.0,
                 Vector4::new(
                     current_position.x as f64,
                     0.0,

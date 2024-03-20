@@ -1,10 +1,10 @@
-use std::fmt::{Debug};
+use na::SMatrix;
 use nalgebra as na;
-use na::{SMatrix};
+use std::fmt::Debug;
 
 /// Create a block diagonal matrix from two 2x2 matrix
 fn block_diag(a: &SMatrix<f64, 2, 2>) -> SMatrix<f64, 4, 4> {
-    let mut result = SMatrix::<f64,4, 4>::zeros();
+    let mut result = SMatrix::<f64, 4, 4>::zeros();
     result.fixed_view_mut::<2, 2>(0, 0).copy_from(a);
     result.fixed_view_mut::<2, 2>(2, 2).copy_from(a);
     result
@@ -19,19 +19,16 @@ fn block_diag_3(a: &SMatrix<f64, 2, 2>) -> SMatrix<f64, 6, 6> {
     result
 }
 
-pub trait MatrixCreator<const D1: usize, const D2: usize>: Debug
-{
+pub trait MatrixCreator<const D1: usize, const D2: usize>: Debug {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, D1, D2>;
 
     fn print(&self) {
         println!("{:?}", self.create_matrix(1.0));
     }
-
 }
 
 #[derive(Debug)]
 pub struct Piecewise1stOrder;
-
 
 /// 2x2 measurement noise matrix assuming acceleration is different in
 /// different duration
@@ -87,7 +84,7 @@ impl MatrixCreator<2, 2> for WhiteNoise1stOrder {
 }
 
 ///WhiteNoise1stOrder but 2D
-impl MatrixCreator<4,4> for WhiteNoise1stOrder {
+impl MatrixCreator<4, 4> for WhiteNoise1stOrder {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 4, 4> {
         let m = SMatrix::<f64, 2, 2>::new(
             delta_t.powi(3) / 3.0,
@@ -120,8 +117,7 @@ impl MatrixCreator<4, 4> for ULMotionModel {
 /// ULMotionModel in xy, parabola z
 impl MatrixCreator<6, 6> for ULMotionModel {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 6, 6> {
-        let m = SMatrix::<f64, 2, 2>::new(1.0, delta_t,
-                                                0.0, 1.0);
+        let m = SMatrix::<f64, 2, 2>::new(1.0, delta_t, 0.0, 1.0);
         block_diag_3(&m)
     }
 }
@@ -133,8 +129,8 @@ pub struct GravityControl;
 impl MatrixCreator<6, 1> for GravityControl {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 6, 1> {
         //in mm/s^2
-        let g:f64 = 9810.0;
-        SMatrix::<f64, 6, 1>::new(0.0, 0.0, 0.0, 0.0, - g*delta_t.powi(2)/2.0, -g * delta_t)
+        let g: f64 = 9810.0;
+        SMatrix::<f64, 6, 1>::new(0.0, 0.0, 0.0, 0.0, -g * delta_t.powi(2) / 2.0, -g * delta_t)
     }
 }
 
@@ -177,5 +173,4 @@ mod tests {
 
         assert_eq!(result_matrix, expected_matrix);
     }
-
 }

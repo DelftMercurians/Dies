@@ -1,17 +1,18 @@
-use crate::filter::matrix_gen::{GravityControl, MatrixCreator, Piecewise1stOrder, ULMotionModel, WhiteNoise1stOrder};
+use crate::filter::matrix_gen::{
+    GravityControl, MatrixCreator, Piecewise1stOrder, ULMotionModel, WhiteNoise1stOrder,
+};
 use na::{SMatrix, SVector};
 use nalgebra as na;
 
 /// OS: Observation Space, SS: State Space
 #[derive(Debug)]
-pub struct Kalman<const OS: usize, const SS: usize>
-{
+pub struct Kalman<const OS: usize, const SS: usize> {
     /// unit variance of the transition model
     var: f64,
     /// the time from the last update, /second
     t: f64,
     /// A
-    transition_matrix: Box<dyn MatrixCreator<SS,SS>>,
+    transition_matrix: Box<dyn MatrixCreator<SS, SS>>,
     /// H
     transformation_matrix: SMatrix<f64, OS, SS>,
     /// Q
@@ -24,11 +25,10 @@ pub struct Kalman<const OS: usize, const SS: usize>
     /// as convention
     x: SVector<f64, SS>,
     /// control matrix
-    control: Option<Box<dyn MatrixCreator<SS, 1>>>
+    control: Option<Box<dyn MatrixCreator<SS, 1>>>,
 }
 
-impl<const OS: usize,const SS: usize> Kalman<OS,SS>
-{
+impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
     /// reset the state of the filter
     pub fn set_x(&mut self, x: SVector<f64, SS>) {
         self.x = x;
@@ -39,7 +39,7 @@ impl<const OS: usize,const SS: usize> Kalman<OS,SS>
     pub fn gating(&self, r: SVector<f64, OS>) -> bool {
         const GATE_LIMIT: f64 = 16.0;
         for i in 0..r.len() {
-            if r[i] * r[i] > GATE_LIMIT * self.posteriori_covariance[(i, i)]{
+            if r[i] * r[i] > GATE_LIMIT * self.posteriori_covariance[(i, i)] {
                 return false;
             }
         }
@@ -50,7 +50,12 @@ impl<const OS: usize,const SS: usize> Kalman<OS,SS>
     /// return None if the measurement is old
     /// return the priori state if the measurement is bad
     /// return the posteriori state if the measurement is used.
-    pub fn update(&mut self, z: SVector<f64, OS>, newt: f64, use_gate: bool) -> Option<SVector<f64, SS>> {
+    pub fn update(
+        &mut self,
+        z: SVector<f64, OS>,
+        newt: f64,
+        use_gate: bool,
+    ) -> Option<SVector<f64, SS>> {
         let dt = newt - self.t;
         if dt < 0.0 {
             return None;
@@ -66,15 +71,19 @@ impl<const OS: usize,const SS: usize> Kalman<OS,SS>
             return Option::from(x.clone());
         }
 
-        let posteriori_covariance = &transition_matrix * &self.posteriori_covariance
-            * &transition_matrix.transpose() + &process_noise * self.var;
-        let innovation_covariance = &self.transformation_matrix * &posteriori_covariance
-            * &self.transformation_matrix.transpose() + &self.measurement_noise;
-        let kalman_gain = &posteriori_covariance * &self.transformation_matrix.transpose()
+        let posteriori_covariance =
+            &transition_matrix * &self.posteriori_covariance * &transition_matrix.transpose()
+                + &process_noise * self.var;
+        let innovation_covariance = &self.transformation_matrix
+            * &posteriori_covariance
+            * &self.transformation_matrix.transpose()
+            + &self.measurement_noise;
+        let kalman_gain = &posteriori_covariance
+            * &self.transformation_matrix.transpose()
             * innovation_covariance.try_inverse().unwrap();
         self.x = x + &kalman_gain * r;
-        self.posteriori_covariance = &posteriori_covariance - &kalman_gain * &self.transformation_matrix
-            * &posteriori_covariance;
+        self.posteriori_covariance = &posteriori_covariance
+            - &kalman_gain * &self.transformation_matrix * &posteriori_covariance;
         self.t = newt;
         Some(self.x.clone())
     }
@@ -90,14 +99,15 @@ impl Kalman<2, 4> {
         unit_transition_var: f64,
         measurement_var: f64,
         init_pos: SVector<f64, 4>,
-        int_time: f64
+        int_time: f64,
     ) -> Self {
         Kalman {
             var: unit_transition_var,
             t: int_time,
             transition_matrix: Box::new(ULMotionModel),
-            transformation_matrix: SMatrix::<f64, 2, 4>::new(1.0, 0.0, 0.0, 0.0,
-                                                             0.0, 0.0, 1.0, 0.0),
+            transformation_matrix: SMatrix::<f64, 2, 4>::new(
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            ),
             process_noise: Box::new(WhiteNoise1stOrder),
             measurement_noise: SMatrix::<f64, 2, 2>::new(
                 measurement_var,
@@ -109,7 +119,6 @@ impl Kalman<2, 4> {
             x: init_pos,
             control: None,
         }
-
     }
 }
 
@@ -123,15 +132,16 @@ impl Kalman<3, 6> {
         unit_transition_var: f64,
         measurement_var: f64,
         init_pos: SVector<f64, 6>,
-        int_time: f64
+        int_time: f64,
     ) -> Self {
         Kalman {
             var: unit_transition_var,
             t: int_time,
             transition_matrix: Box::new(ULMotionModel),
-            transformation_matrix: SMatrix::<f64, 3, 6>::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                                             0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
-                                                             0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+            transformation_matrix: SMatrix::<f64, 3, 6>::new(
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                1.0, 0.0,
+            ),
             process_noise: Box::new(Piecewise1stOrder),
             measurement_noise: SMatrix::<f64, 3, 3>::new(
                 measurement_var,
@@ -146,32 +156,34 @@ impl Kalman<3, 6> {
             ),
             posteriori_covariance: SMatrix::<f64, 6, 6>::identity() * init_var,
             x: init_pos,
-            control: Some(Box::new(GravityControl))
+            control: Some(Box::new(GravityControl)),
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_kalman() {
-        let dt = 1.0/40.0; //40fps
+        let dt = 1.0 / 40.0; //40fps
         let init_pos = SVector::<f64, 4>::new(0.0, 0.0, 0.0, 0.0);
-        let init_time:f64 = 0.0;
-        let init_std:f64 = 100.0;
-        let measurement_std:f64 = 5.0;
-        let unit_transition_std:f64 = 200.0;
-        let mut filter = Kalman::<2, 4>::new_player_filter(init_std.powi(2),
-                                                           unit_transition_std.powi(2),
-                                                           measurement_std.powi(2), init_pos, init_time);
+        let init_time: f64 = 0.0;
+        let init_std: f64 = 100.0;
+        let measurement_std: f64 = 5.0;
+        let unit_transition_std: f64 = 200.0;
+        let mut filter = Kalman::<2, 4>::new_player_filter(
+            init_std.powi(2),
+            unit_transition_std.powi(2),
+            measurement_std.powi(2),
+            init_pos,
+            init_time,
+        );
 
         // generate some fake measurements trajectory
         // with constant speed movement
-        let simulation_time:f64 = 10.0;
+        let simulation_time: f64 = 10.0;
         let num_steps = (simulation_time / dt) as usize;
         let velocity = (500.0, 500.0);
         let mut measurements = Vec::new();
@@ -212,16 +224,19 @@ mod tests {
 
     #[test]
     fn test_kalman_3d() {
-        let dt:f64 = 1.0 / 40.0;
+        let dt: f64 = 1.0 / 40.0;
         let init_pos = SVector::<f64, 6>::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         let init_time: f64 = 0.0;
         let init_std: f64 = 100.0;
         let measurement_std: f64 = 5.0;
         let unit_transition_std: f64 = 200.0;
-        let mut filter = Kalman::<3, 6>::new_ball_filter(init_std.powi(2),
-                                                         unit_transition_std.powi(2),
-                                                         measurement_std.powi(2),
-                                                         init_pos, init_time);
+        let mut filter = Kalman::<3, 6>::new_ball_filter(
+            init_std.powi(2),
+            unit_transition_std.powi(2),
+            measurement_std.powi(2),
+            init_pos,
+            init_time,
+        );
         // generate some fake measurements trajectory
         let simulation_time = 50.0;
         let num_steps = (simulation_time / dt) as usize;
@@ -241,7 +256,7 @@ mod tests {
             measurements.push(SVector::<f64, 3>::new(x_measured, y_measured, z_measured));
             true_position.push(SVector::<f64, 3>::new(x, y, z));
         }
-        let mut filtered:Vec<SVector<f64, 3>> = Vec::new();
+        let mut filtered: Vec<SVector<f64, 3>> = Vec::new();
         filtered.push(SVector::<f64, 3>::new(0.0, 0.0, 0.0));
         for i in 1..num_steps {
             let newt = i as f64 * dt;
@@ -263,5 +278,4 @@ mod tests {
         }
         assert!(smoothed_error < original_error);
     }
-
 }
