@@ -5,9 +5,9 @@ import { ref, onMounted } from "vue";
 
 // store
 import { storeToRefs } from "pinia";
-import { useAppStore } from "../store/app";
+import { useFieldStore } from "../store/field";
 
-// types
+// typesa
 import type { World, XY, XYZ } from "../types";
 
 // components
@@ -15,8 +15,8 @@ import Bot from "./Bot.vue";
 
 // ---------------- CODE ----------------
 // Store setup
-const appStore = useAppStore();
-const { PADDING, ROBOT_RADIUS, BALL_RADIUS } = storeToRefs(appStore);
+const fieldStore = useFieldStore();
+const { PADDING, ROBOT_RADIUS, BALL_RADIUS } = storeToRefs(fieldStore);
 
 // Canvas variables
 const canvas = ref<HTMLCanvasElement | null>(null);
@@ -53,7 +53,8 @@ function render(ctx: CanvasRenderingContext2D) {
     const fieldH = state.field_geom.field_width;
     const fieldW = state.field_geom.field_length;
 
-    console.log(canvasWidth.value, canvasHeight.value);
+    // console.log(canvasWidth.value, canvasHeight.value);
+    console.log(state.field_geom);
 
     // ---------------- FILL FIELD WITH COLOR ----------------
     ctx.fillStyle = "#3bad59";
@@ -84,12 +85,20 @@ function render(ctx: CanvasRenderingContext2D) {
     });
 
     // ---------------- DRAW BALL ----------------
-    const ballPos = convertCoords(ball.position, width, fieldW, height, fieldH);
-    const ballCanvasRadius = convertLength(BALL_RADIUS.value, width, fieldW);
-    ctx.fillStyle = "red";
-    ctx.beginPath();
-    ctx.arc(ballPos[0], ballPos[1], ballCanvasRadius, 0, 2 * Math.PI);
-    ctx.fill();
+    if (ball) {
+      const ballPos = convertCoords(
+        ball.position,
+        width,
+        fieldW,
+        height,
+        fieldH
+      );
+      const ballCanvasRadius = convertLength(BALL_RADIUS.value, width, fieldW);
+      ctx.fillStyle = "red";
+      ctx.beginPath();
+      ctx.arc(ballPos[0], ballPos[1], ballCanvasRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
 
     // ---------------- DRAW PLAYERS ----------------
     const drawPlayer = (serverPos: XY, color: string) => {
@@ -112,12 +121,14 @@ function render(ctx: CanvasRenderingContext2D) {
       ctx.fill();
     };
 
-    own_players.forEach(({ position }: { position: XY }) =>
-      drawPlayer(position, "blue")
-    );
-    opp_players.forEach(({ position }: { position: XY }) =>
-      drawPlayer(position, "yellow")
-    );
+    own_players.forEach(({ position }: { position: XY }) => {
+      drawPlayer(position, "blue");
+    });
+    opp_players.forEach(({ position }: { position: XY }) => {
+      //BEFORECOMMIT: Get position back to normal
+      position[0] = 6000;
+      drawPlayer(position, "yellow");
+    });
   } else {
     console.log("state is not working");
   }
@@ -158,48 +169,36 @@ const convertCoords = (
 onMounted(async () => {
   const context = ref(canvas.value?.getContext("2d"));
   if (context.value) {
-    // Retrieve state (from the mock server)
+    // Retrieve state
     const res = await fetch("/api/state");
     state = await res.json();
+
     render(context.value);
   }
-
-  // const interval = setInterval(async () => {
-  //   // Getting the context of the canvas
-  //   const context = ref(canvas.value?.getContext("2d"));
-  //   if (context.value) {
-  //     // Retrieve state (from the mock server)
-  //     const res = await fetch("/api/state");
-  //     state = await res.json();
-  //     render(context.value);
-  //   }
-  // }, 100);
 });
 </script>
 
 <template>
-  <canvas ref="canvas" class="football-field"> </canvas>
-  <Bot
-    v-if="state"
-    v-for="bot in state?.own_players"
-    :key="bot.id"
-    :width="50"
-    :height="50"
-    color="blue"
-    :offset="
-      convertCoords(
-        bot.position,
-        canvasWidth - PADDING * 2,
-        state.field_geom.field_width,
-        canvasHeight - PADDING * 2,
-        state.field_geom.field_length
-      )
-    "
-  />
+  <div class="field-container">
+    <canvas ref="canvas" class="football-field"> </canvas>
+    <Bot
+      v-if="state?.own_players"
+      :height="50"
+      :width="50"
+      color="red"
+      :offset="[0, 0]"
+    />
+  </div>
 </template>
 
 <style scoped>
 .football-field {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 5/2;
+}
+
+.field-container {
   width: 100%;
   aspect-ratio: 5/2;
 }

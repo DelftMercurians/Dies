@@ -3,8 +3,8 @@
     <v-main>
       <v-row no-gutters class="fill-height">
         <!-- Player sidebar -->
-        <v-col cols="3">
-          <BotDetails></BotDetails>
+        <v-col cols="3" class="bot-details-container">
+          <BotDetails />
         </v-col>
 
         <!-- Field -->
@@ -28,3 +28,12 @@
 import Field from "./components/Field.vue";
 import BotDetails from "./components/BotDetails.vue";
 </script>
+
+<style scoped>
+.bot-details-container {
+  display: flex;
+  flex-flow: column nowrap;
+  align-items: center;
+  justify-content: center;
+}
+</style>

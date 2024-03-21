@@ -1,13 +1,20 @@
-import "./app.css";
-import App from "./App.svelte";
+/**
+ * main.ts
+ *
+ * Bootstraps Vuetify and other plugins then mounts the App`
+ */
 
-if (import.meta.env.VITE_MSW) {
-  const { worker } = await import("./mocks/browser");
-  worker.start();
-}
+// Plugins
+import { registerPlugins } from "@/plugins";
 
-const app = new App({
-  target: document.getElementById("app"),
-});
+// Components
+import App from "./App.vue";
 
-export default app;
+// Composables
+import { createApp } from "vue";
+
+const app = createApp(App);
+
+registerPlugins(app);
+
+app.mount("#app");
