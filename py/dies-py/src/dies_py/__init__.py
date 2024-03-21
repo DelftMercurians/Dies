@@ -1,1 +1,1 @@
-from .bridge import init, next, send, should_stop, world
+from .bridge import init, next_world, send, should_stop, world

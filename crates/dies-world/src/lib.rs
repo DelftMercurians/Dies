@@ -3,6 +3,7 @@ use dies_protos::ssl_gc_referee_message::Referee;
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 mod ball;
 mod coord_utils;
+mod filter;
 mod game_state;
 mod player;
 
@@ -46,11 +47,17 @@ pub struct WorldTracker {
 impl WorldTracker {
     /// Create a new world tracker from a config.
     pub fn new(config: WorldConfig) -> Self {
+        let mut own_players_tracker = Vec::with_capacity(MAX_PLAYERS);
+        let mut opp_players_tracker = Vec::with_capacity(MAX_PLAYERS);
+        for _ in 0..MAX_PLAYERS {
+            opp_players_tracker.push(None);
+            own_players_tracker.push(None);
+        }
         Self {
             is_blue: config.is_blue,
             play_dir_x: config.initial_opp_goal_x,
-            own_players_tracker: vec![None; MAX_PLAYERS],
-            opp_players_tracker: vec![None; MAX_PLAYERS],
+            own_players_tracker,
+            opp_players_tracker,
             ball_tracker: BallTracker::new(config.initial_opp_goal_x),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
