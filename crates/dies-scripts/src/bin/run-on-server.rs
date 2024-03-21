@@ -22,8 +22,7 @@ fn main() {
     let repo_path = std::env::current_dir().expect("Failed to get current directory");
     let remote_host = "merucryvision";
     let remote_user = "mercury";
-    // let remote_path = "/home/mercury/Code/dies/";
-    let remote_path = "/home/mercury/Code/test-dies/";
+    let remote_path = "/home/mercury/Code/dies/";
     let repo = Repository::open(repo_path.clone()).expect("Failed to open repository");
 
     // Create remote directories
@@ -60,8 +59,8 @@ fn main() {
     // get all empty folders on remote
 
     // Compile and run
-    // println!("Compiling and running...");
-    // ssh_command_with_pty(remote_host, remote_user, "cd ~/Code/dies && /home/mercury/.cargo/bin/cargo run -- --vision udp --vision-addr 224.5.23.2:10006");
+    println!("Compiling and running...");
+    ssh_command_with_pty(remote_host, remote_user, "cd ~/Code/dies && /home/mercury/.cargo/bin/cargo run -- --vision udp --vision-addr 224.5.23.2:10006");
 }
 
 fn ssh_command_with_pty(remote_host: &str, remote_user: &str, command: &str) -> ! {
@@ -96,7 +95,6 @@ fn get_remote_file_hashes_and_dirs(
     let output = Command::new("ssh")
         .arg(format!("{}@{}", remote_user, remote_host))
         .arg(format!(
-            // original "cd {} && find . -type d \\( -path ./target -o -path ./.venv \\) -prune -o -type f -exec sha256sum {{}} +",
             "cd {} && find . -type d \\( -path ./target -o -path ./.venv \\) -prune -o \\( -type f -exec sha256sum {{}} + \\) -o \\( -type d -print \\)",
             remote_path
         ))
@@ -121,32 +119,6 @@ fn get_remote_file_hashes_and_dirs(
 
     (file_hashes, dirs)
 }
-
-// fn get_remote_file_hashes(
-//     remote_host: &str,
-//     remote_user: &str,
-//     remote_path: &str,
-// ) -> HashMap<String, String> {
-//     let output = Command::new("ssh")
-//         .arg(format!("{}@{}", remote_user, remote_host))
-//         .arg(format!(
-//             "cd {} && find . -type d \\( -path ./target -o -path ./.venv \\) -prune -o -type f -exec sha256sum {{}} +",
-//             remote_path
-//         ))
-//         // add command to get list of directories
-//         .output()
-//         .expect("Failed to execute command");
-
-//     let output_str = String::from_utf8_lossy(&output.stdout);
-//     output_str.lines().fold(HashMap::new(), |mut acc, line| {
-//         let mut parts = line.split_whitespace();
-//         if let (Some(hash), Some(path)) = (parts.next(), parts.next()) {
-//             let path = path.strip_prefix("./").unwrap_or(path);
-//             acc.insert(path.to_string(), hash.to_string());
-//         }
-//         acc
-//     })
-// }
 
 fn create_dirs(
     repo: &Repository,
@@ -350,7 +322,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_delte_empty_folder() {
+    fn test_delete_empty_folder() {
         // create folder tests on this repository
         let repo_path = std::env::current_dir()
             .expect("Failed to get current directory")
@@ -361,7 +333,7 @@ mod tests {
 
         let test_path = repo_path.join("test");
         if !test_path.exists() {
-            fs::create_dir(&test_path);
+            let _ = fs::create_dir(&test_path);
         }
 
         // add test.txt file to test folder with some content
