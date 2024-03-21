@@ -9,6 +9,15 @@ use std::{
 };
 use walkdir::WalkDir;
 
+// pb 1. line 204: deletes files on the remote, but no dirs => should delete dirs too (if no coresponding dir in local remove it from remote)
+// pb 2. It's slow
+// - minimize nr of ssh commands
+// combine creates dirs + computing hashes
+// later - upload all files with a single command
+// parallelize
+// while computes hashes on the remote, compute them locally as well
+// when testing change remote_path to Code/test
+
 fn main() {
     let repo_path = std::env::current_dir().expect("Failed to get current directory");
     let remote_host = "merucryvision";
@@ -21,8 +30,10 @@ fn main() {
     create_dirs(&repo, &repo_path, remote_host, remote_user, remote_path);
 
     // Get remote file hashes
-    println!("Getting remote file hashes...");
-    let remote_file_hashes = get_remote_file_hashes(remote_host, remote_user, remote_path);
+    println!("Getting remote file hashes and dirs...");
+    // let remote_file_hashes = get_remote_file_hashes(remote_host, remote_user, remote_path);
+    let (remote_file_hashes, remote_dirs) =
+        get_remote_file_hashes_and_dirs(remote_host, remote_user, remote_path);
 
     println!("Copying files...");
     copy_files(
@@ -35,13 +46,17 @@ fn main() {
     );
 
     println!("Removing unmatched remote files...");
-    remove_unmatched_remote_files(
+    remove_unmatched_remote_files_and_dirs(
         &repo_path,
         remote_host,
         remote_user,
         remote_path,
         &remote_file_hashes,
+        &remote_dirs,
     );
+
+    // check for empty folders on remote not present locally and delete them
+    // get all empty folders on remote
 
     // Compile and run
     println!("Compiling and running...");
@@ -72,29 +87,37 @@ fn ssh_command_with_pty(remote_host: &str, remote_user: &str, command: &str) -> 
     }
 }
 
-fn get_remote_file_hashes(
+fn get_remote_file_hashes_and_dirs(
     remote_host: &str,
     remote_user: &str,
     remote_path: &str,
-) -> HashMap<String, String> {
+) -> (HashMap<String, String>, HashSet<String>) {
     let output = Command::new("ssh")
         .arg(format!("{}@{}", remote_user, remote_host))
         .arg(format!(
-            "cd {} && find . -type d \\( -path ./target -o -path ./.venv \\) -prune -o -type f -exec sha256sum {{}} +",
+            "cd {} && find . -type d \\( -path ./target -o -path ./.venv \\) -prune -o \\( -type f -exec sha256sum {{}} + \\) -o \\( -type d -print \\)",
             remote_path
         ))
         .output()
         .expect("Failed to execute command");
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    output_str.lines().fold(HashMap::new(), |mut acc, line| {
+
+    let mut file_hashes = HashMap::new();
+    let mut dirs = HashSet::new();
+
+    for line in output_str.lines() {
         let mut parts = line.split_whitespace();
-        if let (Some(hash), Some(path)) = (parts.next(), parts.next()) {
+        let pair = (parts.next(), parts.next());
+        if let (Some(hash), Some(path)) = pair {
             let path = path.strip_prefix("./").unwrap_or(path);
-            acc.insert(path.to_string(), hash.to_string());
+            file_hashes.insert(path.to_string(), hash.to_string());
+        } else if let (Some(path), _) = pair {
+            dirs.insert(path.strip_prefix("./").unwrap_or(path).to_string());
         }
-        acc
-    })
+    }
+
+    (file_hashes, dirs)
 }
 
 fn create_dirs(
@@ -104,6 +127,7 @@ fn create_dirs(
     remote_user: &str,
     remote_path: &str,
 ) {
+    println!("Getting dirs");
     let dirs = WalkDir::new(repo_path)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -127,6 +151,8 @@ fn create_dirs(
         })
         .collect::<Vec<_>>()
         .join(" ");
+
+    println!("Creating dirs: {}", dirs);
 
     let mkdir_command = format!("mkdir -p {}", dirs);
 
@@ -201,12 +227,13 @@ fn copy_files(
     }
 }
 
-fn remove_unmatched_remote_files(
+fn remove_unmatched_remote_files_and_dirs(
     repo_path: &Path,
     remote_host: &str,
     remote_user: &str,
     remote_path: &str,
     remote_file_hashes: &HashMap<String, String>,
+    remote_dirs: &HashSet<String>,
 ) {
     // Collect all local files as relative paths
     let local_files = WalkDir::new(repo_path)
@@ -236,12 +263,38 @@ fn remove_unmatched_remote_files(
         println!("{}", file);
     }
 
-    // Construct a single ssh command to remove all unmatched files
-    let remove_commands = files_to_remove
+    // collect all remote dirs that are not present locally
+    let dirs_to_remove = remote_dirs
+        .iter()
+        .filter(|remote_dir| !local_files.contains(*remote_dir))
+        .cloned()
+        .collect::<Vec<String>>();
+
+    println!(
+        "Removing the following dirs on the remote: {}",
+        dirs_to_remove.join(", ")
+    );
+
+    // Construct a single ssh command to remove all unmatched files and dirs
+    let mut remove_commands = files_to_remove
         .iter()
         .map(|file| format!("rm -f '{}/{}'", remote_path, file))
         .collect::<Vec<_>>()
         .join(" && ");
+
+    let remove_dirs_commands = dirs_to_remove
+        .iter()
+        .map(|dir| format!("rm -rf '{}/{}'", remote_path, dir))
+        .collect::<Vec<_>>()
+        .join(" && ");
+
+    if (!remove_commands.is_empty()) && (!remove_dirs_commands.is_empty()) {
+        remove_commands = format!("{} && {}", remove_commands, remove_dirs_commands);
+    } else if remove_dirs_commands.is_empty() {
+        remove_commands = remove_commands;
+    } else {
+        remove_commands = remove_dirs_commands;
+    }
 
     // Execute the command via ssh
     let status = Command::new("ssh")
@@ -262,4 +315,102 @@ fn hash_file<P: AsRef<Path>>(path: P) -> Result<String, io::Error> {
     file.read_to_end(&mut buffer)?;
     hasher.update(&buffer);
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_delete_empty_folder() {
+        // create folder tests on this repository
+        let repo_path = std::env::current_dir()
+            .expect("Failed to get current directory")
+            .join("..") // Move up one directory
+            .join("..") // Move up another directory
+            .canonicalize() // Resolve the path to its absolute form, removing any '..' components.
+            .expect("Failed to resolve path");
+
+        let test_path = repo_path.join("test");
+        if !test_path.exists() {
+            let _ = fs::create_dir(&test_path);
+        }
+
+        // add test.txt file to test folder with some content
+        let test_file_path = test_path.join("test.txt");
+        fs::write(&test_file_path, "test content").expect("Failed to write file");
+
+        // run run-on-server to create the same folder on remote
+        let output = Command::new("powershell")
+            .arg(format!(
+                "cd {} ; cargo make run-on-server",
+                repo_path.to_str().unwrap()
+            ))
+            .output()
+            .expect("Failed to execute command");
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("Command output: {}", stdout);
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Error executing command: {}", stderr);
+        }
+
+        // check if test folder was created on remote
+        let output = Command::new("powershell")
+            .arg(format!(
+                "cd {} ; ssh mercury@merucryvision 'ls ~/Code/test-dies'",
+                repo_path.to_str().unwrap()
+            ))
+            .output()
+            .expect("Failed to execute command");
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("Command output: {}", stdout);
+            assert!(stdout.contains("test"));
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Error executing command: {}", stderr);
+        }
+
+        // delete test.txt file from local
+        fs::remove_file(test_file_path).expect("Failed to remove file");
+
+        // run run-on-server to delete the file from remote
+        let output = Command::new("powershell")
+            .arg(format!(
+                "cd {} ; cargo make run-on-server",
+                repo_path.to_str().unwrap()
+            ))
+            .output()
+            .expect("Failed to execute command");
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("Command output: {}", stdout);
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Error executing command: {}", stderr);
+        }
+
+        // check if test folder was deleted from remote
+        let output = Command::new("powershell")
+            .arg(format!(
+                "cd {} ; ssh mercury@merucryvision 'ls ~/Code/test-dies'",
+                repo_path.to_str().unwrap()
+            ))
+            .output()
+            .expect("Failed to execute command");
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("Command output: {}", stdout);
+            assert!(!stdout.contains("test"));
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Error executing command: {}", stderr);
+        }
+    }
 }
