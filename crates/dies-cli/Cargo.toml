@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+tokio = { version = "1.35.1", features = ["rt", "macros", "signal"] }
 anyhow = "1.0.75"
 chrono = "0.4.34"
 clap = { version = "4.5.1", features = ["derive"] }
@@ -16,7 +17,6 @@ dies-world = { version = "0.1.0", path = "../dies-world" }
 dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 dirs = "5.0.1"
 tracing = "0.1.40"
-tokio = { version = "1.35.1", features = ["rt", "macros", "signal"] }
 tracing-subscriber = { version = "0.3.18", features = ["json"] }
 tracing-appender = "0.2.3"
 nalgebra = "0.32.4"

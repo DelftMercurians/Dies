@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import Chart from "chart.js/auto";
   import { Canvas, Layer, t, type Render } from "svelte-canvas";
-  import type { World, XY, XYZ } from "./types";
+  import type { PlayerCmd, World, XY, XYZ } from "./types";
 
   /**
    * The radius of the robots and ball, in mm
@@ -56,6 +56,58 @@
   });
 
   let selectedPlayerId: number | null = null;
+  onMount(() => {
+    const arrowKeyHandler = (ev: KeyboardEvent) => {
+      const player = state?.own_players.find(
+        (player) => player.id === selectedPlayerId
+      );
+      if (!player) return;
+
+      const cmd: PlayerCmd = {
+        id: player.id,
+        sx: 0,
+        sy: 0,
+        w: 0,
+        dribble_speed: 0,
+        arm: false,
+        disarm: false,
+        kick: false,
+      };
+
+      let handled = false;
+      switch (ev.key) {
+        case "ArrowUp":
+          cmd.sx = 1;
+          handled = true;
+          break;
+        case "ArrowDown":
+          cmd.sx = -1;
+          handled = true;
+          break;
+        case "ArrowLeft":
+          cmd.sy = 1;
+          handled = true;
+          break;
+        case "ArrowRight":
+          cmd.sy = -1;
+          handled = true;
+          break;
+      }
+      if (handled) {
+        fetch("/api/command", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(cmd),
+        });
+      }
+    };
+
+    window.addEventListener("keydown", arrowKeyHandler);
+    return () => window.removeEventListener("keydown", arrowKeyHandler);
+  });
+
   let firstTs: number | null = null;
   let render: Render;
   $: render = ({ context: ctx, width: canvasWidth, height: canvasHeight }) => {

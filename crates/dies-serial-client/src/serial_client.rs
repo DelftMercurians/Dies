@@ -1,5 +1,6 @@
+use std::io::Write;
+
 use anyhow::{Context, Result};
-use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 use serialport::available_ports;
 use tokio::sync::{mpsc, oneshot};
 
@@ -27,6 +28,15 @@ pub enum SerialClientConfig {
     },
 }
 
+impl SerialClientConfig {
+    pub fn serial(port: String) -> SerialClientConfig {
+        SerialClientConfig::Serial {
+            port_name: port,
+            baud_rate: 115200,
+        }
+    }
+}
+
 impl Default for SerialClientConfig {
     fn default() -> Self {
         Self::Serial {
@@ -48,16 +58,16 @@ impl SerialClient {
     /// Create a new `SerialClient`.
     pub fn new(config: SerialClientConfig) -> Result<Self> {
         match config {
-            SerialClientConfig::Memory(rx) => {
-                // TODO
-                let (tx, mut rx) =
+            SerialClientConfig::Memory(tx) => {
+                let (writer_tx, mut inner_rx) =
                     mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
                 tokio::spawn(async move {
-                    while let Some(msg) = rx.recv().await {
+                    while let Some(msg) = inner_rx.recv().await {
+                        tx.send(msg.0).ok();
                         msg.1.send(Ok(())).ok();
                     }
                 });
-                Ok(Self { writer_tx: tx })
+                Ok(Self { writer_tx })
             }
             SerialClientConfig::Serial {
                 port_name,
@@ -145,6 +155,7 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
 
     /// Send a message to the serial port.
     pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
+        std::io::stdout().flush().unwrap();
         let (tx, rx) = oneshot::channel();
         self.writer_tx
             .send((msg, tx))

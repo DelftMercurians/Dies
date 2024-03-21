@@ -2,10 +2,12 @@ use anyhow::Context;
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use dies_core::workspace_utils;
+use dies_serial_client::SerialClientConfig;
+use dies_simulator::Simulation;
+use dies_simulator::SimulationConfig;
 use dies_ssl_client::VisionClientConfig;
 use dies_world::WorldConfig;
 use mock_vision::MockVision;
-use dies_simulator::Simulation;
 use std::net::SocketAddr;
 use std::{path::PathBuf, str::FromStr};
 use tracing_subscriber::fmt;
@@ -33,8 +35,11 @@ struct Args {
     #[clap(long, default_value = "auto")]
     serial_port: String,
 
-    #[clap(long, default_value = "false")]
+    #[clap(long, default_value = "true")]
     webui: bool,
+
+    #[clap(long, default_value = "false")]
+    disable_python: bool,
 
     #[clap(long, default_value = "14:3,5:2")]
     robot_ids: String,
@@ -44,9 +49,7 @@ struct Args {
 
     #[clap(long, default_value = "udp")]
     vision: VisionType,
-    // TODO command line argument for simulator /
-    // if visionType = simulator
-    // use mock
+
     #[clap(long, default_value = "224.5.23.2:10006")]
     vision_addr: SocketAddr,
 
@@ -111,68 +114,83 @@ async fn main() -> Result<()> {
 
     tracing::info!("Saving logs to {}", log_file_path.display());
 
-    let ports = list_serial_ports().context("Failed to list serial ports")?;
-    let port = if args.serial_port != "false" {
-        if args.serial_port != "auto" {
-            if !ports.contains(&args.serial_port) {
-                eprintln!("Port {} not found", args.serial_port);
-                eprintln!(
-                    "Available ports:\n{}",
-                    ports
-                        .iter()
-                        .map(|p| format!("  - {}", p))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                );
-                std::process::exit(1);
-            }
-            Some(args.serial_port.clone())
-        } else if ports.is_empty() {
-            tracing::warn!("No serial ports found, disabling serial");
-            None
-        } else if ports.len() == 1 {
-            tracing::info!("Connecting to serial port {}", ports[0]);
-            Some(ports[0].clone())
-        } else {
-            println!("Available ports:");
-            for (idx, port) in ports.iter().enumerate() {
-                println!("{}: {}", idx, port);
-            }
-
-            // Let user choose port
-            loop {
-                println!("Enter port number:");
-                let mut input = String::new();
-                std::io::stdin().read_line(&mut input)?;
-                let port_idx = input
-                    .trim()
-                    .parse::<usize>()
-                    .context("Failed to parse the input into a number (usize)")?;
-                if port_idx < ports.len() {
-                    break Some(ports[port_idx].clone());
-                }
-                println!("Invalid port number");
-            }
+    let (vision_config, mut serial_config) = match args.vision {
+        VisionType::Tcp => (
+            VisionClientConfig::Tcp {
+                host: args.vision_addr.ip().to_string(),
+                port: args.vision_addr.port(),
+            },
+            None,
+        ),
+        VisionType::Udp => (
+            VisionClientConfig::Udp {
+                host: args.vision_addr.ip().to_string(),
+                port: args.vision_addr.port(),
+            },
+            None,
+        ),
+        VisionType::Mock => (MockVision::spawn(), None),
+        VisionType::Simulator => {
+            tracing::info!("Using simulator");
+            let (vision_config, serial) = Simulation::spawn(SimulationConfig::default());
+            (vision_config, Some(serial))
         }
-    } else {
-        tracing::warn!("Serial disabled");
-        None
     };
-    tracing::debug!("Serial port: {:?}", port);
 
-    let vision_config = match args.vision {
-        VisionType::Tcp => VisionClientConfig::Tcp {
-            host: args.vision_addr.ip().to_string(),
-            port: args.vision_addr.port(),
-        },
-        VisionType::Udp => VisionClientConfig::Udp {
-            host: args.vision_addr.ip().to_string(),
-            port: args.vision_addr.port(),
-        },
-        VisionType::Mock => MockVision::spawn(),
+    if serial_config.is_none() {
+        let ports = list_serial_ports().context("Failed to list serial ports")?;
+        let port = if args.serial_port != "false" {
+            if args.serial_port != "auto" {
+                if !ports.contains(&args.serial_port) {
+                    eprintln!("Port {} not found", args.serial_port);
+                    eprintln!(
+                        "Available ports:\n{}",
+                        ports
+                            .iter()
+                            .map(|p| format!("  - {}", p))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
+                    std::process::exit(1);
+                }
+                Some(args.serial_port.clone())
+            } else if ports.is_empty() {
+                tracing::warn!("No serial ports found, disabling serial");
+                None
+            } else if ports.len() == 1 {
+                tracing::info!("Connecting to serial port {}", ports[0]);
+                Some(ports[0].clone())
+            } else {
+                println!("Available ports:");
+                for (idx, port) in ports.iter().enumerate() {
+                    println!("{}: {}", idx, port);
+                }
 
-        VisionType::Simulator => Simulation::spawn().0, // TODO implement MockVision::Simulator similar to mock_vision::MockVision
-    };
+                // Let user choose port
+                loop {
+                    println!("Enter port number:");
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input)?;
+                    let port_idx = input
+                        .trim()
+                        .parse::<usize>()
+                        .context("Failed to parse the input into a number (usize)")?;
+                    if port_idx < ports.len() {
+                        break Some(ports[port_idx].clone());
+                    }
+                    println!("Invalid port number");
+                }
+            }
+        } else {
+            tracing::warn!("Serial disabled");
+            None
+        };
+        tracing::debug!("Serial port: {:?}", port);
+
+        if let Some(port) = &port {
+            serial_config = Some(SerialClientConfig::serial(port.clone()));
+        }
+    }
 
     let robot_ids = args
         .robot_ids
@@ -187,31 +205,28 @@ async fn main() -> Result<()> {
 
     let workspace_root = workspace_utils::get_workspace_root();
     let config = ExecutorConfig {
-        webui: false,
+        webui: args.webui,
         robot_ids,
-        py_config: PyRuntimeConfig {
-            install: true,
-            workspace: workspace_root.clone(),
-            python_build: 20240107,
-            python_version: "3.11.7".into(),
-            execute: PyExecute::Package {
-                path: workspace_root.join("strategy").join(&args.package),
-                name: args.package,
-            },
+        py_config: if !args.disable_python {
+            Some(PyRuntimeConfig {
+                install: true,
+                workspace: workspace_root.clone(),
+                python_build: 20240107,
+                python_version: "3.11.7".into(),
+                execute: PyExecute::Package {
+                    path: workspace_root.join("strategy").join(&args.package),
+                    name: args.package,
+                },
+            })
+        } else {
+            None
         },
         world_config: WorldConfig {
             is_blue: true,
             initial_opp_goal_x: 1.0,
         },
         vision_config,
-        serial_config: match port {
-            Some(port) => Some(dies_serial_client::SerialClientConfig::Serial {
-                port_name: port.clone(),
-                
-                ..Default::default()
-            }),
-            None => None,
-        },
+        serial_config,
     };
 
     run(config).await.expect("Failed to run executor");

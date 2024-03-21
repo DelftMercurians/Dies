@@ -14,7 +14,7 @@ use dies_webui::spawn_webui;
 use dies_world::{WorldConfig, WorldTracker};
 
 pub struct ExecutorConfig {
-    pub py_config: PyRuntimeConfig,
+    pub py_config: Option<PyRuntimeConfig>,
     pub world_config: WorldConfig,
     pub vision_config: VisionClientConfig,
     pub serial_config: Option<SerialClientConfig>,
@@ -25,7 +25,16 @@ pub struct ExecutorConfig {
 
 pub async fn run(config: ExecutorConfig) -> Result<()> {
     let mut tracker = WorldTracker::new(config.world_config);
-    let mut runtime = PyRuntime::new(config.py_config).await?;
+    let mut runtime = if let Some(c) = &config.py_config {
+        Some(
+            PyRuntime::new(c.clone())
+                .await
+                .context("Failed to create python runtime")?,
+        )
+    } else {
+        None
+    };
+    let has_runtime = runtime.is_some();
     let mut vision = VisionClient::new(config.vision_config)
         .await
         .context("Failed to create vision client")?;
@@ -33,27 +42,55 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
         Some(serial_config) => {
             Some(SerialClient::new(serial_config).context("Failed to create the serial client")?)
         }
-        None => None,
+        None => {
+            println!("Serial is not configured");
+            None
+        }
     };
     let robot_ids = config.robot_ids;
 
     // Launch webui
-    let (webui_sender, webui_handle) = if config.webui {
-        let (webui_sender, webui_handle) = spawn_webui();
-        (Some(webui_sender), Some(webui_handle))
+    let (webui_sender, mut webui_cmd_rx, webui_handle) = if config.webui {
+        let (webui_sender, webui_cmd_rx, webui_handle) = spawn_webui();
+        (Some(webui_sender), Some(webui_cmd_rx), Some(webui_handle))
     } else {
-        (None, None)
+        (None, None, None)
     };
+    let has_webui = webui_sender.is_some();
 
     let mut ctrlc = pin!(tokio::signal::ctrl_c());
 
     let mut fail: HashMap<u32, bool> = HashMap::new();
     let mut robots: HashSet<u32> = HashSet::new();
     loop {
+        let runtime_msg_fut = async {
+            if let Some(runtime) = &mut runtime {
+                runtime.recv().await
+            } else {
+                Err(anyhow::anyhow!("Runtime is not configured"))
+            }
+        };
+        let webui_cmd_rx_fut = async {
+            if let Some(webui_cmd_rx) = &mut webui_cmd_rx {
+                webui_cmd_rx.recv().await
+            } else {
+                unreachable!();
+            }
+        };
+
         tokio::select! {
             _ = &mut ctrlc => {
                 println!("Received Ctrl-C");
                 break;
+            }
+            cmd = webui_cmd_rx_fut, if has_webui => {
+                if let Some(cmd) = cmd {
+                    if let Some(serial) = &mut serial {
+                        let _ = serial.send(cmd).await;
+                    } else {
+                        tracing::error!("Received player cmd but serial is not configured");
+                    }
+                }
             }
             vision_msg = vision.recv() => {
                 match vision_msg {
@@ -61,23 +98,26 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
                         tracker.update_from_vision(&vision_msg);
                         if let Some(world_data) = tracker.get() {
                             // Failsafe: if one of our robots is not detected, we send stop to runtime
-                            for player in world_data.own_players.iter() {
-                                if  SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64 - player.timestamp > 0.5 {
-                                    if fail.get(&player.id) == Some(&false) {
-                                        fail.insert(player.id, true);
-                                        if let Some(serial) = &mut serial {
-                                            tracing::warn!("Failsafe: sending stop to runtime");
-                                            serial.send_no_wait(PlayerCmd::zero(*robot_ids.get(&player.id).unwrap_or(&0)));
-                                        }
-                                    }
-                                } else {
-                                    fail.insert(player.id, false);
-                                }
-                            }
+                            // for player in world_data.own_players.iter() {
+                            //     if  SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as f64 - player.timestamp > 0.5 {
+                            //         if fail.get(&player.id) == Some(&false) {
+                            //             fail.insert(player.id, true);
+                            //             tracing::warn!("Failsafe: sending stop to robot");
+                            //             if let Some(serial) = &mut serial {
+                            //                 let cmd = PlayerCmd::zero(*robot_ids.get(&player.id).unwrap_or(&0));
+                            //                 serial.send_no_wait(cmd);
+                            //             } else {
+                            //                 tracing::warn!("Received player cmd but serial is not configured");
+                            //             }
+                            //         }
+                            //     } else {
+                            //         fail.insert(player.id, false);
+                            //     }
+                            // }
 
                             // Send update to runtime
-                            if let Err(err) = runtime.send(&dies_python_rt::RuntimeMsg::World(world_data.clone())).await {
-                                tracing::error!("Failed to send world data to runtime: {}", err);
+                            if let Some(runtime) = &mut runtime {
+                                let _ = runtime.send(&RuntimeMsg::World(world_data.clone())).await;
                             }
 
                             // Send update to webui
@@ -93,7 +133,7 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
                     }
                 }
             }
-            runtime_msg = runtime.recv() => {
+            runtime_msg = runtime_msg_fut, if has_runtime => {
                 match runtime_msg {
                     Ok(RuntimeEvent::PlayerCmd(mut cmd)) => {
                         if let Some(serial) = &mut serial {
@@ -104,12 +144,7 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
                                 tracing::error!("Failsafe: not sending player cmd");
                                 serial.send_no_wait(PlayerCmd::zero(rid));
                             } else {
-                                match serial.send(cmd).await {
-                                    Ok(_) => {}
-                                    Err(err) => {
-                                        tracing::error!("Failed to send player cmd to serial: {}", err);
-                                    }
-                                }
+                                let _ = serial.send(cmd);
                             }
                         } else {
                             tracing::error!("Received player cmd but serial is not configured");
@@ -135,19 +170,21 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
     }
 
     println!("Exiting executor");
-    runtime
-        .send(&RuntimeMsg::Term)
-        .await
-        .context("Failed to send the termination message to the runtime")?;
-    match runtime.wait_with_timeout(Duration::from_secs(2)).await {
-        Ok(true) => {}
-        Ok(false) => {
-            tracing::error!("Python process did not exit in time, killing");
-            runtime.kill();
-        }
-        Err(err) => {
-            tracing::error!("Failed to wait for python process: {}", err);
-            runtime.kill();
+    if let Some(runtime) = runtime.as_mut() {
+        runtime
+            .send(&RuntimeMsg::Term)
+            .await
+            .context("Failed to send the termination message to the runtime")?;
+        match runtime.wait_with_timeout(Duration::from_secs(2)).await {
+            Ok(true) => {}
+            Ok(false) => {
+                tracing::error!("Python process did not exit in time, killing");
+                runtime.kill();
+            }
+            Err(err) => {
+                tracing::error!("Failed to wait for python process: {}", err);
+                runtime.kill();
+            }
         }
     }
 

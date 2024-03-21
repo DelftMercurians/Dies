@@ -1,28 +1,34 @@
 use rocket::{
     fairing::AdHoc,
     fs::{relative, FileServer},
-    get, routes,
+    get, post, routes,
     serde::json::Json,
     Config, State,
 };
 
-use dies_core::WorldData;
+use dies_core::{PlayerCmd, WorldData};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 use std::sync::{Arc, Mutex};
 
 struct ServerState {
     world_data: Mutex<Option<WorldData>>,
+    cmd_sender: mpsc::UnboundedSender<PlayerCmd>,
 }
 
-pub fn spawn_webui() -> (mpsc::UnboundedSender<WorldData>, JoinHandle<()>) {
+pub fn spawn_webui() -> (
+    mpsc::UnboundedSender<WorldData>,
+    mpsc::UnboundedReceiver<PlayerCmd>,
+    JoinHandle<()>,
+) {
     let (tx, rx) = mpsc::unbounded_channel();
+    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
     let handle = tokio::spawn(async {
-        start_rocket(rx).await;
+        start_rocket(rx, cmd_tx).await;
     });
 
-    (tx, handle)
+    (tx, cmd_rx, handle)
 }
 
 #[get("/state")]
@@ -31,13 +37,23 @@ fn api(state: &State<Arc<ServerState>>) -> Json<Option<WorldData>> {
     Json(world_data.clone())
 }
 
-async fn start_rocket(mut rx: mpsc::UnboundedReceiver<WorldData>) {
+#[post("/command", data = "<cmd>")]
+fn command(state: &State<Arc<ServerState>>, cmd: Json<PlayerCmd>) {
+    let cmd = cmd.into_inner();
+    let _ = state.cmd_sender.send(cmd);
+}
+
+async fn start_rocket(
+    mut rx: mpsc::UnboundedReceiver<WorldData>,
+    cmd_tx: mpsc::UnboundedSender<PlayerCmd>,
+) {
     let state = Arc::new(ServerState {
         world_data: Mutex::new(None),
+        cmd_sender: cmd_tx,
     });
     let rocket = rocket::build()
         .manage(Arc::clone(&state))
-        .mount("/api", routes![api])
+        .mount("/api", routes![api, command])
         .mount("/", FileServer::from(relative!("static")))
         .attach(AdHoc::on_liftoff("on_start", |rocket| {
             Box::pin(async move {
