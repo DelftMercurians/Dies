@@ -5,6 +5,7 @@ use dies_core::workspace_utils;
 use dies_ssl_client::VisionClientConfig;
 use dies_world::WorldConfig;
 use mock_vision::MockVision;
+use dies_simulator::Simulation;
 use std::net::SocketAddr;
 use std::{path::PathBuf, str::FromStr};
 use tracing_subscriber::fmt;
@@ -23,6 +24,7 @@ enum VisionType {
     Tcp,
     Udp,
     Mock,
+    Simulator,
 }
 
 #[derive(Debug, Parser)]
@@ -42,7 +44,9 @@ struct Args {
 
     #[clap(long, default_value = "udp")]
     vision: VisionType,
-
+    // TODO command line argument for simulator /
+    // if visionType = simulator
+    // use mock
     #[clap(long, default_value = "224.5.23.2:10006")]
     vision_addr: SocketAddr,
 
@@ -166,6 +170,8 @@ async fn main() -> Result<()> {
             port: args.vision_addr.port(),
         },
         VisionType::Mock => MockVision::spawn(),
+
+        VisionType::Simulator => Simulation::spawn().0, // TODO implement MockVision::Simulator similar to mock_vision::MockVision
     };
 
     let robot_ids = args
@@ -199,8 +205,9 @@ async fn main() -> Result<()> {
         },
         vision_config,
         serial_config: match port {
-            Some(port) => Some(dies_serial_client::SerialClientConfig {
+            Some(port) => Some(dies_serial_client::SerialClientConfig::Serial {
                 port_name: port.clone(),
+                
                 ..Default::default()
             }),
             None => None,

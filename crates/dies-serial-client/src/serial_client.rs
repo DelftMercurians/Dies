@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 use serialport::available_ports;
 use tokio::sync::{mpsc, oneshot};
 
@@ -15,17 +16,20 @@ pub fn list_serial_ports() -> Result<Vec<String>> {
 }
 
 /// Configuration for the serial client.
-pub struct SerialClientConfig {
-    /// The name of the serial port. Use [`list_serial_ports`] to get a list of
-    /// available ports.
-    pub port_name: String,
-    /// The baud rate of the serial port. The default is 115200.
-    pub baud_rate: u32,
+pub enum SerialClientConfig {
+    Memory(mpsc::UnboundedSender<PlayerCmd>),
+    Serial {
+        /// The name of the serial port. Use [`list_serial_ports`] to get a list of
+        /// available ports.
+        port_name: String,
+        /// The baud rate of the serial port. The default is 115200.
+        baud_rate: u32,
+    },
 }
 
 impl Default for SerialClientConfig {
     fn default() -> Self {
-        Self {
+        Self::Serial {
             #[cfg(target_os = "windows")]
             port_name: "COM3".to_string(),
             #[cfg(not(target_os = "windows"))]
@@ -43,80 +47,100 @@ pub struct SerialClient {
 impl SerialClient {
     /// Create a new `SerialClient`.
     pub fn new(config: SerialClientConfig) -> Result<Self> {
-        let mut port = serialport::new(config.port_name, config.baud_rate)
-            .timeout(std::time::Duration::from_millis(10))
-            .open()
-            .map_err(|err| {
-                if let serialport::ErrorKind::Io(kind) = &err.kind {
-                    if kind == &std::io::ErrorKind::PermissionDenied {
-                        anyhow::anyhow!(r#"
+        match config {
+            SerialClientConfig::Memory(rx) => {
+                // TODO
+                let (tx, mut rx) =
+                    mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
+                tokio::spawn(async move {
+                    while let Some(msg) = rx.recv().await {
+                        msg.1.send(Ok(())).ok();
+                    }
+                });
+                Ok(Self { writer_tx: tx })
+            }
+            SerialClientConfig::Serial {
+                port_name,
+                baud_rate,
+            } => {
+                //
+                let mut port = serialport::new(port_name, baud_rate)
+        .timeout(std::time::Duration::from_millis(10))
+        .open()
+        .map_err(|err| {
+            if let serialport::ErrorKind::Io(kind) = &err.kind {
+                if kind == &std::io::ErrorKind::PermissionDenied {
+                    anyhow::anyhow!(r#"
 Permission denied. If you are on Linux, you may need to add your user to the dialout group.
 For Debian based systems, see (https://askubuntu.com/questions/210177/serial-port-terminal-cannot-open-dev-ttys0-permission-denied). 
 For Arch based systems, see (https://github.com/esp8266/source-code-examples/issues/26#issuecomment-320999460)."#)
-                    } else {
-                        err.into()
-                    }
                 } else {
                     err.into()
                 }
-            })
-            .context("Failed to open serial port")?;
-
-        // Launch a blocking thread for writing to the serial port
-        let (tx, mut rx) = mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
-        tokio::task::spawn_blocking(move || {
-            let mut last_time = std::time::Instant::now();
-            const TARGET_FREQ: f64 = 30.0;
-            loop {
-                match rx.blocking_recv() {
-                    Some((msg, sender)) => {
-                        port.clear(serialport::ClearBuffer::Input).unwrap();
-                        // Limit the frequency of messages to the serial port
-                        let elapsed = last_time.elapsed().as_secs_f64();
-                        if elapsed < 1.0 / TARGET_FREQ {
-                            std::thread::sleep(std::time::Duration::from_secs_f64(
-                                1.0 / TARGET_FREQ - elapsed,
-                            ));
-                        }
-                        let extra = if msg.disarm {
-                            "D".to_string()
-                        } else if msg.arm {
-                            "A".to_string()
-                        } else if msg.kick {
-                            "K".to_string()
-                        } else {
-                            "".to_string()
-                        };
-
-                        let cmd = format!(
-                            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};Kt7000;S.{};\n",
-                            msg.id, msg.sx, msg.sy, msg.w, msg.dribble_speed, extra
-                        );
-                        if !extra.is_empty() {
-                            println!("Sending {}", cmd);
-                        }
-
-                        if let Err(err) = port.write_all(cmd.as_bytes()) {
-                            tracing::error!("Error writing to serial port: {}", err);
-                            sender.send(Err(err.into())).ok();
-                        } else if let Err(err) = port.flush() {
-                            tracing::error!("Error flushing serial port: {}", err);
-                            sender.send(Err(err.into())).ok();
-                        } else {
-                            sender.send(Ok(())).ok();
-                        }
-                        // println!("Sent, dt: {}ms", last_time.elapsed().as_millis());
-                        last_time = std::time::Instant::now();
-                    }
-                    None => break,
-                }
+            } else {
+                err.into()
             }
-            port.clear(serialport::ClearBuffer::All).unwrap();
-            drop(port);
-            println!("Closing serial port");
-        });
+        })
+        .context("Failed to open serial port")?;
 
-        Ok(Self { writer_tx: tx })
+                // Launch a blocking thread for writing to the serial port
+                let (tx, mut rx) =
+                    mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
+                tokio::task::spawn_blocking(move || {
+                    let mut last_time = std::time::Instant::now();
+                    const TARGET_FREQ: f64 = 30.0;
+                    loop {
+                        match rx.blocking_recv() {
+                            Some((msg, sender)) => {
+                                port.clear(serialport::ClearBuffer::Input).unwrap();
+                                // Limit the frequency of messages to the serial port
+                                let elapsed = last_time.elapsed().as_secs_f64();
+                                if elapsed < 1.0 / TARGET_FREQ {
+                                    std::thread::sleep(std::time::Duration::from_secs_f64(
+                                        1.0 / TARGET_FREQ - elapsed,
+                                    ));
+                                }
+                                let extra = if msg.disarm {
+                                    "D".to_string()
+                                } else if msg.arm {
+                                    "A".to_string()
+                                } else if msg.kick {
+                                    "K".to_string()
+                                } else {
+                                    "".to_string()
+                                };
+
+                                let cmd = format!(
+                                    "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};Kt7000;S.{};\n",
+                                    msg.id, msg.sx, msg.sy, msg.w, msg.dribble_speed, extra
+                                );
+                                if !extra.is_empty() {
+                                    println!("Sending {}", cmd);
+                                }
+
+                                if let Err(err) = port.write_all(cmd.as_bytes()) {
+                                    tracing::error!("Error writing to serial port: {}", err);
+                                    sender.send(Err(err.into())).ok();
+                                } else if let Err(err) = port.flush() {
+                                    tracing::error!("Error flushing serial port: {}", err);
+                                    sender.send(Err(err.into())).ok();
+                                } else {
+                                    sender.send(Ok(())).ok();
+                                }
+                                // println!("Sent, dt: {}ms", last_time.elapsed().as_millis());
+                                last_time = std::time::Instant::now();
+                            }
+                            None => break,
+                        }
+                    }
+                    port.clear(serialport::ClearBuffer::All).unwrap();
+                    drop(port);
+                    println!("Closing serial port");
+                });
+
+                Ok(Self { writer_tx: tx })
+            }
+        }
     }
 
     /// Send a message to the serial port.

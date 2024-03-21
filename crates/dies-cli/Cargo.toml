@@ -13,6 +13,7 @@ dies-serial-client = { version = "0.1.0", path = "../dies-serial-client" }
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
 dies-webui = { version = "0.1.0", path = "../dies-webui" }
 dies-world = { version = "0.1.0", path = "../dies-world" }
+dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 dirs = "5.0.1"
 tracing = "0.1.40"
 tokio = { version = "1.35.1", features = ["rt", "macros", "signal"] }
