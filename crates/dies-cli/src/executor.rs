@@ -63,7 +63,6 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
 
     let mut fail: HashMap<u32, bool> = HashMap::new();
     let mut robots: HashSet<u32> = HashSet::new();
-    let mut to_save = Vec::new();
     loop {
         let runtime_msg_fut = async {
             if let Some(runtime) = &mut runtime {
