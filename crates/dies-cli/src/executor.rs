@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use npy::to_file;
 
 use dies_core::PlayerCmd;
 use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent, RuntimeMsg};
@@ -62,6 +63,7 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
 
     let mut fail: HashMap<u32, bool> = HashMap::new();
     let mut robots: HashSet<u32> = HashSet::new();
+    let mut to_save = Vec::new();
     loop {
         let runtime_msg_fut = async {
             if let Some(runtime) = &mut runtime {
@@ -112,6 +114,27 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
                             //         }
                             //     } else {
                             //         fail.insert(player.id, false);
+                            //     }
+                            // }
+
+
+                            // // Get player 5 data
+                            // if let Some(frame) = vision_msg.detection.as_ref() {
+                            //     for player in world_data.own_players.iter() {
+                            //         if player.id == 5 {
+                            //             if let Some(vision_data) = frame.robots_blue.iter().find(|r| r.robot_id == Some(5)) {
+                            //                 to_save.extend(vec![
+                            //                     player.timestamp,
+                            //                     player.position.x as f64,
+                            //                     player.position.y as f64,
+                            //                     player.velocity.x as f64,
+                            //                     player.velocity.y as f64,
+                            //                     vision_data.x.unwrap() as f64,
+                            //                     vision_data.y.unwrap() as f64,
+                            //                     vision_data.orientation.unwrap() as f64,
+                            //                 ]);
+                            //             }
+                            //         }
                             //     }
                             // }
 
