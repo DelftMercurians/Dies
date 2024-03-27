@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use std::{io::Read, path::Path};
 use tokio::{
     fs::File,
-    io::{AsyncWrite, AsyncWriteExt},
+    io::AsyncWriteExt,
 };
 
 use dies_protos::{
@@ -69,6 +69,27 @@ impl LogFileWriter {
         self.file.write_all(header).await?;
         self.file.write_all(&version).await?;
         Ok(())
+    }
+
+    pub async fn write_log_message(&mut self, message: &LogMessage) -> Result<()> {
+        match message {
+            LogMessage::DiesLog(log_line) => self.write_log_line(&log_line).await,
+            LogMessage::Vision(vision) => self.write_vision(&vision).await,
+            LogMessage::Referee(referee) => self.write_referee(&referee).await,
+        }
+    }
+
+    pub async fn write_vision(&mut self, vision: &SSL_WrapperPacket) -> Result<()> {
+        self.buf.clear();
+        vision.write_to_vec(&mut self.buf)?;
+        self.write_message(LogFileMessageType::SSLVision2014).await
+    }
+
+    /// Write a referee message to the log file.
+    pub async fn write_referee(&mut self, referee: &Referee) -> Result<()> {
+        self.buf.clear();
+        referee.write_to_vec(&mut self.buf)?;
+        self.write_message(LogFileMessageType::SSLRefbox2013).await
     }
 
     /// Write a Dies log line to the log file.
@@ -173,5 +194,85 @@ impl LogFile {
         }
 
         Ok(LogFile { version, messages })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs::File, future::Future};
+    use dies_protos::dies_log_line::LogLevel;
+
+    use super::*;
+
+    const INPUT_FILE: &str = "./test_input.log";
+    
+    // #[test]
+    // fn test_write_log_file() {
+    //     run_async_test(async {
+    //         if Path::new("./test_output.log").exists() {
+    //             std::fs::remove_file("./test_output.log").unwrap();
+    //         }
+
+    //         let file = File::open(INPUT_FILE).unwrap();
+    //         let log_file = LogFile::read(file).unwrap();
+    //         let mut writer = LogFileWriter::open("./test_output.log").await.unwrap();
+
+    //         for message in &log_file.messages {
+    //             writer.write_log_message(message).await.unwrap();
+    //         }
+
+    //         drop(writer); // to close file
+    //         
+    //         let written_file = File::open("./test_output.log").unwrap();
+    //         let written_log_file = LogFile::read(written_file).unwrap();
+
+    //         assert_eq!(log_file.version, written_log_file.version);
+    //         assert_eq!(log_file.messages.len(), written_log_file.messages.len());
+
+    //         std::fs::remove_file("./test_output.log").unwrap();
+    //     });
+    // }
+    
+    #[test]
+    fn write_dummy_message() {
+        run_async_test(async {
+            if Path::new("./test_output.log").exists() {
+                std::fs::remove_file("./test_output.log").unwrap();
+            }
+
+            let mut writer = LogFileWriter::open("./test_output.log").await.unwrap();
+            
+            let log_line = LogLine {
+                level: Some(LogLevel::DEBUG.into()),
+                target: Some("test".to_string()),
+                message: Some("test".to_string()),
+                source: Some("unknown:0".to_string()),
+                ..Default::default()
+            };
+            writer.write_log_line(&log_line).await.unwrap();
+            
+            let log_reader = LogFile::read(File::open("./test_output.log").unwrap()).unwrap();
+            std::fs::remove_file("./test_output.log").unwrap();
+            
+            assert_eq!(log_reader.messages.len(), 1);
+            match &log_reader.messages[0] {
+                LogMessage::DiesLog(log_line) => {
+                    assert_eq!(log_line.level, Some(LogLevel::DEBUG.into()));
+                    assert_eq!(log_line.target, Some("test".to_string()));
+                    assert_eq!(log_line.message, Some("test".to_string()));
+                    assert_eq!(log_line.source, Some("unknown:0".to_string()));
+                }
+                _ => { panic!("Expected LogMessage::DiesLog"); }
+            };
+        });
+    
+    }
+
+    fn run_async_test<F: Future>(f: F) {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(f);
     }
 }
