@@ -76,20 +76,28 @@
 
       let handled = false;
       switch (ev.key) {
-        case "ArrowUp":
+        case "w":
           cmd.sx = 1;
           handled = true;
           break;
-        case "ArrowDown":
+        case "s":
           cmd.sx = -1;
           handled = true;
           break;
-        case "ArrowLeft":
+        case "a":
           cmd.sy = 1;
           handled = true;
           break;
-        case "ArrowRight":
+        case "d":
           cmd.sy = -1;
+          handled = true;
+          break;
+        case "q":
+          cmd.w = 1;
+          handled = true;
+          break;
+        case "e":
+          cmd.w = -1;
           handled = true;
           break;
       }

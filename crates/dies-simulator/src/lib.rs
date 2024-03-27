@@ -1,3 +1,4 @@
+use atomic_float::AtomicF64;
 use dies_core::{FieldGeometry, PlayerCmd};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionFrame, SSL_DetectionRobot},
@@ -8,30 +9,40 @@ use dies_protos::{
 };
 use dies_serial_client::SerialClientConfig;
 use dies_ssl_client::VisionClientConfig;
-use rapier3d::{na::Rotation, prelude::*};
+use rapier3d::prelude::*;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex},
     time::{Duration, SystemTime},
 };
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error::TryRecvError};
+use utils::IntervalTrigger;
 
+mod utils;
+
+const BALL_RADIUS: f32 = 43.0;
+const BALL_USER_DATA: u128 = 8;
+const DRIBBLER_USER_DATA: u128 = 4;
 const PLAYER_RADIUS: f32 = 200.0;
 const PLAYER_HEIGHT: f32 = 140.0;
-// const PLAYER_MASS: f32 = 1.0;
-const PLAYER_CMD_TIMEOUT: f32 = 1.0 / 20.0;
+const DRIBLER_WIDTH: f32 = 50.0;
+const DRIBLER_HEIGHT: f32 = 10.0;
+const DRIBLER_LENGTH: f32 = 10.0;
+const BALL_COLLISION_GROUP: u32 = 0b1;
+const PLAYER_COLLISION_GROUP: u32 = 0b10;
+const DRIBLER_COLLISION_GROUP: u32 = 0b100;
+const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
+const GEOM_INTERVAL: f64 = 3.0;
 
 pub struct SimulationConfig {
     pub gravity: Vector<f32>,
     pub bias: f32,
-    pub delay: Duration,         // delay in the emited packets
-    pub command_delay: Duration, // delay for the execution of the command
-    // TODO addition: run simulator faster than real time => keep my own time stamps
+    pub simulation_step: f64,           // time between simulation steps
+    pub vision_update_step: f64,        // time between vision updates
+    pub command_delay: f64,             // delay for the execution of the command
     pub max_accel: Vector<f32>,         // max lateral acceleration
     pub max_ang_accel: f32,             // max angular acceleration
     pub velocity_treshold: f32,         // max difference between target and current velocity
     pub angular_velocity_treshold: f32, // max difference between target and current angular velocity
-    pub simulation_step: f32,           // time between simulation steps
-    pub vision_update_step: f32,        // time between vision updates
 }
 
 impl Default for SimulationConfig {
@@ -39,8 +50,7 @@ impl Default for SimulationConfig {
         SimulationConfig {
             gravity: Vector::z() * -9.81 * 1000.0,
             bias: 0.0,
-            delay: Duration::from_millis(100),       // 0.1 second
-            command_delay: Duration::from_millis(6), // 6 ms
+            command_delay: 110.0 / 1000.0, // 6 ms
             max_accel: Vector::new(70.0, 70.0, 0.0),
             max_ang_accel: 0.1,
             velocity_treshold: 1.0,
@@ -51,65 +61,65 @@ impl Default for SimulationConfig {
     }
 }
 
+#[derive(Debug, Default)]
+struct Ball {
+    _rigid_body_handle: RigidBodyHandle,
+    _collider_handle: ColliderHandle,
+    // collision groups: 0
+}
+
+impl Ball {
+    fn default() -> Self {
+        Ball {
+            _rigid_body_handle: RigidBodyHandle::default(),
+            _collider_handle: ColliderHandle::default(),
+        }
+    }
+}
+
 struct Player {
     id: u32,
     is_own: bool,
     rigid_body_handle: RigidBodyHandle,
     _collider_handle: ColliderHandle,
-    last_cmd_time: SystemTime,
+    _dribbler_collider_handle: ColliderHandle,
+    last_cmd_time: f64,
     target_velocity: Vector<f32>,
     target_ang_velocity: f32,
 }
 
 struct TimedPlayerCmd {
-    execute_time: SystemTime,
+    execute_time: f64,
     player_cmd: PlayerCmd,
 }
 
 pub struct Simulation {
-    config: SimulationConfig,
-    rigid_body_set: RigidBodySet,
-    collider_set: ColliderSet,
-    integration_parameters: IntegrationParameters,
-    physics_pipeline: PhysicsPipeline,
-    island_manager: IslandManager,
-    broad_phase: BroadPhase,
-    narrow_phase: NarrowPhase,
-    impulse_joint_set: ImpulseJointSet,
-    multibody_joint_set: MultibodyJointSet,
-    ccd_solver: CCDSolver,
-    query_pipeline: QueryPipeline,
-    players: Vec<Player>,
+    pub(crate) config: SimulationConfig,
+    pub(crate) rigid_body_set: RigidBodySet,
+    pub(crate) collider_set: ColliderSet,
+    pub(crate) integration_parameters: IntegrationParameters,
+    pub(crate) physics_pipeline: PhysicsPipeline,
+    pub(crate) island_manager: IslandManager,
+    pub(crate) broad_phase: BroadPhase,
+    pub(crate) narrow_phase: NarrowPhase,
+    pub(crate) impulse_joint_set: ImpulseJointSet,
+    pub(crate) multibody_joint_set: MultibodyJointSet,
+    pub(crate) ccd_solver: CCDSolver,
+    pub(crate) query_pipeline: QueryPipeline,
+    pub(crate) ball: Ball,
+    pub(crate) players: Vec<Player>,
 }
 
 impl Simulation {
     pub fn spawn(config: SimulationConfig) -> (VisionClientConfig, SerialClientConfig) {
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel();
         let (vision_tx, vision_rx) = mpsc::unbounded_channel();
-        let queue = Arc::new(Mutex::new(Vec::new())); // can be optimized
+        let cmd_queue = Arc::new(Mutex::new(Vec::new()));
+        let time = Arc::new(AtomicF64::new(0.0));
+
         let simulation_step = config.simulation_step;
-        let vision_delay = config.delay;
         let vision_update_step = config.vision_update_step;
-        let simulation = Arc::new(Mutex::new(Simulation::new(config)));
-
-        let _receiver_task = {
-            let queue = queue.clone();
-            let simulation = simulation.clone();
-            tokio::spawn(async move {
-                while let Some(cmd) = cmd_rx.recv().await {
-                    let simulation = simulation.lock().unwrap();
-                    let timed_cmd = TimedPlayerCmd {
-                        execute_time: SystemTime::now()
-                            .checked_add(simulation.config.command_delay)
-                            .unwrap(),
-                        player_cmd: cmd,
-                    };
-                    let mut q = queue.lock().unwrap();
-                    q.push(timed_cmd);
-                }
-            })
-        };
-
+        let cmd_delay = config.command_delay;
         let geom_config = FieldGeometry {
             field_length: 11000,
             field_width: 9000,
@@ -119,56 +129,64 @@ impl Simulation {
             line_segments: Vec::new(),
             circular_arcs: Vec::new(),
         };
-        let _geom_task = {
-            let vision_tx = vision_tx.clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(3));
-                loop {
-                    interval.tick().await;
-                    let geometry = geometry(&geom_config);
-                    let _ = vision_tx.send(geometry);
-                }
-            });
-        };
 
-        let _vision_task = {
-            let simulation = simulation.clone();
+        let _receiver_task = {
+            let time = Arc::clone(&time);
+            let cmd_queue = Arc::clone(&cmd_queue);
             tokio::spawn(async move {
-                let mut interval =
-                    tokio::time::interval(Duration::from_secs_f32(vision_update_step));
-                loop {
-                    interval.tick().await;
-                    let vision = {
-                        let sim = simulation.lock().unwrap();
-                        sim.get_vision()
+                while let Some(cmd) = cmd_rx.recv().await {
+                    let timed_cmd = TimedPlayerCmd {
+                        execute_time: time.load(Ordering::Relaxed) + cmd_delay,
+                        player_cmd: cmd,
                     };
-                    tokio::time::sleep(vision_delay).await;
-                    let _ = vision_tx.send(vision);
+                    cmd_queue.lock().unwrap().push(timed_cmd);
                 }
-            });
+            })
         };
 
         let _step_physics = {
+            let time = Arc::clone(&time);
+            let cmd_queue = Arc::clone(&cmd_queue);
             tokio::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs_f32(simulation_step));
-                loop {
+                let mut simulation = Simulation::new(config);
+                let mut interval = tokio::time::interval(Duration::from_secs_f64(simulation_step));
+                let mut geom_interval = IntervalTrigger::new(GEOM_INTERVAL);
+                let mut det_interval = IntervalTrigger::new(vision_update_step);
+
+                'main_loop: loop {
                     interval.tick().await;
 
-                    let mut commands_to_exec = Vec::new();
-                    queue.lock().unwrap().retain(|cmd| {
-                        if cmd.execute_time <= SystemTime::now() {
-                            commands_to_exec.push(cmd.player_cmd.clone());
-                            false
-                        } else {
-                            true
-                        }
-                    });
+                    let dt = simulation_step;
+                    let current_time = time.fetch_add(dt, Ordering::Relaxed) + dt;
+                    let commands_to_exec = {
+                        let mut to_exec = Vec::new();
+                        cmd_queue.lock().unwrap().retain(|cmd| {
+                            if cmd.execute_time <= current_time {
+                                to_exec.push(cmd.player_cmd.clone());
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                        to_exec
+                    };
 
-                    let mut simulation = simulation.lock().unwrap();
-                    for cmd in commands_to_exec {
-                        simulation.exec_cmd(cmd);
+                    // Send out geometry/detection updates
+                    if geom_interval.trigger(current_time) {
+                        if let Err(_) = vision_tx.send(geometry(&geom_config)) {
+                            break 'main_loop;
+                        }
                     }
-                    simulation.step(simulation_step);
+                    if det_interval.trigger(current_time) {
+                        if let Err(_) = vision_tx.send(simulation.get_vision()) {
+                            break 'main_loop;
+                        }
+                    }
+
+                    for cmd in commands_to_exec {
+                        simulation.exec_cmd(cmd, current_time);
+                    }
+                    simulation.step(dt as f32, current_time);
                 }
             })
         };
@@ -193,46 +211,52 @@ impl Simulation {
             multibody_joint_set: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
             query_pipeline: QueryPipeline::new(),
+            ball: Ball::default(),
             players: Vec::new(),
         };
 
-        // Add players
-        for i in 0..3 {
+        {
+            // Add the ball
             let rigid_body = RigidBodyBuilder::dynamic()
-                .translation(Vector::new(i as f32 * 3.0 * PLAYER_RADIUS, 0.0, 0.0))
+                // .translation(Vector::new(0.0, 0.0, 0.0))
                 .build();
-            let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS).build();
+            let collider = ColliderBuilder::ball(BALL_RADIUS)
+                .user_data(BALL_USER_DATA) // only in group 0, interact with group 2
+                .collision_groups(InteractionGroups::new(
+                    BALL_COLLISION_GROUP.into(),
+                    (DRIBLER_COLLISION_GROUP | PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP)
+                        .into(),
+                ))
+                .build();
             let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
             let collider_handle = simulation.collider_set.insert_with_parent(
                 collider,
                 rigid_body_handle,
                 &mut simulation.rigid_body_set,
             );
-            simulation.players.push(Player {
-                id: i,
-                is_own: true,
-                rigid_body_handle,
+            simulation.ball = Ball {
+                _rigid_body_handle: rigid_body_handle,
                 _collider_handle: collider_handle,
-                last_cmd_time: SystemTime::now(),
-                target_velocity: Vector::zeros(),
-                target_ang_velocity: 0.0,
-            })
+            };
+        }
+
+        // Add players
+        for i in 0..3 {
+            let pos = Vector::new(i as f32 * 3.0 * PLAYER_RADIUS, 0.0, 0.0);
+            simulation.add_player(i, true, pos, 0.0);
         }
 
         simulation
     }
 
-    // driver: get state, add new commands, return wrapper packet
-    // keep queue with player commmands with timestapms
-
-    pub fn exec_cmd(&mut self, cmd: PlayerCmd) {
+    fn exec_cmd(&mut self, cmd: PlayerCmd, time: f64) {
         let player = self.players.iter_mut().find(|p| p.id == cmd.id).unwrap();
         player.target_velocity = Vector::new(cmd.sx, cmd.sy, 0.0) * 1000.0; // m/s to mm/s
         player.target_ang_velocity = cmd.w;
-        player.last_cmd_time = SystemTime::now();
+        player.last_cmd_time = time;
     }
 
-    pub fn get_vision(&self) -> SSL_WrapperPacket {
+    fn get_vision(&self) -> SSL_WrapperPacket {
         let mut detection = SSL_DetectionFrame::new();
         let t = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -261,7 +285,7 @@ impl Simulation {
         packet
     }
 
-    pub fn step(&mut self, dt: f32) {
+    fn step(&mut self, dt: f32, current_time: f64) {
         // Update players
         for player in self.players.iter_mut() {
             let rigid_body = self
@@ -269,7 +293,7 @@ impl Simulation {
                 .get_mut(player.rigid_body_handle)
                 .unwrap();
 
-            if player.last_cmd_time.elapsed().unwrap().as_secs_f32() > PLAYER_CMD_TIMEOUT {
+            if (current_time - player.last_cmd_time).abs() > PLAYER_CMD_TIMEOUT {
                 player.target_velocity = Vector::zeros();
                 player.target_ang_velocity = 0.0;
             }
@@ -277,8 +301,9 @@ impl Simulation {
             // Convert to global frame
             let velocity = rigid_body.linvel();
             let target_velocity =
-                Rotation::<f32, 3>::new(Vector::z() * rigid_body.position().rotation.angle())
+                Rotation::<f32>::new(Vector::z() * rigid_body.position().rotation.angle())
                     * player.target_velocity;
+            // println!("target: {}", target_velocity);
             let delta = (target_velocity - velocity).norm();
             if delta > self.config.velocity_treshold {
                 let dir = (target_velocity - velocity).normalize();
@@ -300,9 +325,14 @@ impl Simulation {
                 if new_ang_vel.z.abs() < self.config.angular_velocity_treshold {
                     new_ang_vel = Vector::zeros();
                 }
+                println!("new_ang_vel: {}", new_ang_vel);
                 rigid_body.set_angvel(new_ang_vel, true);
             }
         }
+
+        let (collision_send, collision_recv) = crossbeam::channel::unbounded();
+        let (contact_force_send, _) = crossbeam::channel::unbounded();
+        let event_handler = ChannelEventCollector::new(collision_send, contact_force_send);
 
         self.integration_parameters.dt = dt;
         self.physics_pipeline.step(
@@ -318,8 +348,105 @@ impl Simulation {
             &mut self.ccd_solver,
             Some(&mut self.query_pipeline),
             &(),
-            &(),
+            &event_handler,
         );
+
+        while let Ok(collision_event) = collision_recv.try_recv() {
+            // Handle the collision event.
+            println!("Received collision event: {:?}", collision_event);
+
+            // if the ball colides with a dribbler of a robot, the ball should e given a force in the direction of the dribbler
+            // go through all the  _dribler_collider_handle of all the players and check if it's equal to the collision_event.collider1 or collision_event.collider2
+
+            let collider_1 = self.collider_set.get(collision_event.collider1()).unwrap(); // safe, we know it exists
+            let collider_2 = self.collider_set.get(collision_event.collider2()).unwrap(); // safe, we know it exists
+
+            let dribbler_collider = if collider_1.user_data == DRIBBLER_USER_DATA {
+                collider_1
+            } else if collider_2.user_data == DRIBBLER_USER_DATA {
+                collider_2
+            } else {
+                continue;
+            };
+
+            let ball_collider = if collider_1.user_data == BALL_USER_DATA {
+                collider_1
+            } else if collider_2.user_data == BALL_USER_DATA {
+                collider_2
+            } else {
+                continue;
+            };
+
+            let player_body = self
+                .rigid_body_set
+                .get(dribbler_collider.parent().unwrap())
+                .unwrap();
+            let player_position = player_body.position().translation.vector;
+            let ball_body = self
+                .rigid_body_set
+                .get_mut(ball_collider.parent().unwrap())
+                .unwrap();
+            let ball_position = ball_body.position().translation.vector;
+
+            if collision_event.clone().started() && ball_body.user_force().norm() < 1e-9 {
+                let force_direction = player_position - ball_position;
+
+                let force = force_direction.normalize() * 1000.0;
+
+                ball_body.add_force(force, true);
+            } else if collision_event.stopped() {
+                ball_body.reset_forces(true);
+            }
+        }
+    }
+
+    fn add_player(&mut self, id: u32, is_own: bool, position: Vector<f32>, orientation: f32) {
+        let rigid_body = RigidBodyBuilder::dynamic()
+            .translation(position)
+            .rotation(Vector::z() * orientation)
+            .build();
+        let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS)
+            .collision_groups(InteractionGroups::new(
+                PLAYER_COLLISION_GROUP.into(),
+                (PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP).into(),
+            ))
+            .build(); // only in group 1, interacts with nobody
+        let rigid_body_handle = self.rigid_body_set.insert(rigid_body);
+        let collider_handle = self.collider_set.insert_with_parent(
+            collider,
+            rigid_body_handle,
+            &mut self.rigid_body_set,
+        );
+
+        let dribler = ColliderBuilder::cuboid(DRIBLER_LENGTH, DRIBLER_WIDTH, DRIBLER_HEIGHT)
+            .collision_groups(InteractionGroups::new(
+                DRIBLER_COLLISION_GROUP.into(),
+                BALL_COLLISION_GROUP.into(),
+            ))
+            .user_data(DRIBBLER_USER_DATA)
+            .translation(Vector::new(PLAYER_RADIUS + DRIBLER_LENGTH / 2.0, 0.0, 0.0))
+            .sensor(true)
+            .active_events(ActiveEvents::COLLISION_EVENTS)
+            .build();
+
+        let dribler_colider_handle = self.collider_set.insert_with_parent(
+            dribler,
+            rigid_body_handle,
+            &mut self.rigid_body_set,
+        );
+
+        self.players.push(Player {
+            id,
+            is_own,
+            rigid_body_handle,
+            _collider_handle: collider_handle,
+            // colision group 1
+            _dribbler_collider_handle: dribler_colider_handle,
+            // colision group 2
+            last_cmd_time: 0.0,
+            target_velocity: Vector::zeros(),
+            target_ang_velocity: 0.0,
+        })
     }
 }
 
