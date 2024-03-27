@@ -90,3 +90,27 @@ impl Log for AsyncProtobufLogger {
         self.sender.send(WorkerMsg::Flush).unwrap();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+
+    #[test]
+    fn one_message() {
+        run_async_test(async {
+            let logger = super::AsyncProtobufLogger::init("./test.log".into());
+            log::set_boxed_logger(Box::new(logger)).unwrap();
+            log::set_max_level(log::LevelFilter::Trace);
+            
+            log::info!("testing!");
+        });
+    }
+    
+    fn run_async_test<F: Future>(f: F) {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(f);
+    }
+}
