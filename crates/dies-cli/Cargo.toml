@@ -17,7 +17,7 @@ dies-world = { version = "0.1.0", path = "../dies-world" }
 dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 dirs = "5.0.1"
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["json"] }
+tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }
 tracing-appender = "0.2.3"
 nalgebra = "0.32.4"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }

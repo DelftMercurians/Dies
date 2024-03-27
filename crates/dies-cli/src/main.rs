@@ -10,8 +10,10 @@ use dies_world::WorldConfig;
 use mock_vision::MockVision;
 use std::net::SocketAddr;
 use std::{path::PathBuf, str::FromStr};
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
+use tracing_subscriber::Registry;
 
 use dies_python_rt::{PyExecute, PyRuntimeConfig};
 use dies_serial_client::list_serial_ports;
@@ -94,22 +96,27 @@ async fn main() -> Result<()> {
     let (non_blocking_appender, _guard) = tracing_appender::non_blocking(appender);
 
     // Set up tracing
-    let log_level = match tracing::Level::from_str(&args.log_level) {
+    let stdout_log_level = match tracing::Level::from_str(&args.log_level) {
         Ok(level) => level,
         Err(_) => {
             eprintln!("Invalid log level: {}", args.log_level);
             std::process::exit(1);
         }
     };
-    let stdout_layer = fmt::Subscriber::builder()
-        .with_max_level(log_level)
-        .without_time()
-        .finish();
-    let logfile_layer = fmt::Layer::default()
-        .json()
-        .with_ansi(false)
-        .with_writer(non_blocking_appender);
-    tracing::subscriber::set_global_default(stdout_layer.with(logfile_layer))
+    let log_subscriber = Registry::default()
+        .with(
+            fmt::layer()
+                .json()
+                .with_ansi(false)
+                .with_writer(non_blocking_appender),
+        )
+        .with(
+            fmt::layer()
+                .pretty()
+                .without_time()
+                .with_filter(LevelFilter::from_level(stdout_log_level)),
+        );
+    tracing::subscriber::set_global_default(log_subscriber)
         .expect("Unable to set global tracing subscriber");
 
     tracing::info!("Saving logs to {}", log_file_path.display());

@@ -64,10 +64,7 @@ impl BallTracker {
                 )
             })
             .collect::<Vec<(Vector3<f32>, bool)>>();
-        debug_assert!(
-            ball_measurements.len() >= 1,
-            "No ball measurements in frame."
-        );
+
         if ball_measurements.is_empty() {
             return;
         }
