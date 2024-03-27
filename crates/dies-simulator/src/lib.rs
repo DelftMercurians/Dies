@@ -14,7 +14,7 @@ use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     time::{Duration, SystemTime},
 };
-use tokio::sync::mpsc::{self, error::TryRecvError};
+use tokio::sync::mpsc;
 use utils::IntervalTrigger;
 
 mod utils;
@@ -43,6 +43,7 @@ pub struct SimulationConfig {
     pub max_ang_accel: f32,             // max angular acceleration
     pub velocity_treshold: f32,         // max difference between target and current velocity
     pub angular_velocity_treshold: f32, // max difference between target and current angular velocity
+    pub robot_friction: f32,            // friction coefficient
 }
 
 impl Default for SimulationConfig {
@@ -51,12 +52,13 @@ impl Default for SimulationConfig {
             gravity: Vector::z() * -9.81 * 1000.0,
             bias: 0.0,
             command_delay: 110.0 / 1000.0, // 6 ms
-            max_accel: Vector::new(70.0, 70.0, 0.0),
-            max_ang_accel: 0.1,
+            max_accel: Vector::new(400.0, 400.0, 0.0),
+            max_ang_accel: 0.5,
             velocity_treshold: 1.0,
-            angular_velocity_treshold: 0.001,
+            angular_velocity_treshold: 0.1,
             simulation_step: 1.0 / 60.0,
             vision_update_step: 1.0 / 40.0,
+            robot_friction: 0.7,
         }
     }
 }
@@ -216,16 +218,14 @@ impl Simulation {
         };
 
         {
-            // Add the ball
-            let rigid_body = RigidBodyBuilder::dynamic()
-                // .translation(Vector::new(0.0, 0.0, 0.0))
+            // add the terain
+            let rigid_body = RigidBodyBuilder::kinematic_position_based()
+                .translation(Vector::new(0.0, 0.0, 0.0))
                 .build();
-            let collider = ColliderBuilder::ball(BALL_RADIUS)
-                .user_data(BALL_USER_DATA) // only in group 0, interact with group 2
+            let collider = ColliderBuilder::cuboid(5500.0, 4500.0, 10.0)
                 .collision_groups(InteractionGroups::new(
-                    BALL_COLLISION_GROUP.into(),
-                    (DRIBLER_COLLISION_GROUP | PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP)
-                        .into(),
+                    0b1000.into(),
+                    (PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP).into(),
                 ))
                 .build();
             let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
@@ -234,15 +234,38 @@ impl Simulation {
                 rigid_body_handle,
                 &mut simulation.rigid_body_set,
             );
-            simulation.ball = Ball {
-                _rigid_body_handle: rigid_body_handle,
-                _collider_handle: collider_handle,
-            };
+            
+        }
+
+        {
+            // Add the ball
+            // let rigid_body = RigidBodyBuilder::dynamic()
+            //     // .translation(Vector::new(0.0, 0.0, 0.0))
+            //     .build();
+            // let collider = ColliderBuilder::ball(BALL_RADIUS)
+            //     .user_data(BALL_USER_DATA)
+            //      // only in group 0, interact with group 2
+            //     .collision_groups(InteractionGroups::new(
+            //         BALL_COLLISION_GROUP.into(),
+            //         (DRIBLER_COLLISION_GROUP | PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP)
+            //             .into(),
+            //     ))
+            //     .build();
+            // let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
+            // let collider_handle = simulation.collider_set.insert_with_parent(
+            //     collider,
+            //     rigid_body_handle,
+            //     &mut simulation.rigid_body_set,
+            // );
+            // simulation.ball = Ball {
+            //     _rigid_body_handle: rigid_body_handle,
+            //     _collider_handle: collider_handle,
+            // };
         }
 
         // Add players
         for i in 0..3 {
-            let pos = Vector::new(i as f32 * 3.0 * PLAYER_RADIUS, 0.0, 0.0);
+            let pos = Vector::new(i as f32 * 3.0 * PLAYER_RADIUS, 0.0, 10.0);
             simulation.add_player(i, true, pos, 0.0);
         }
 
@@ -250,6 +273,7 @@ impl Simulation {
     }
 
     fn exec_cmd(&mut self, cmd: PlayerCmd, time: f64) {
+        println!("executing cmd: {:?}", cmd);
         let player = self.players.iter_mut().find(|p| p.id == cmd.id).unwrap();
         player.target_velocity = Vector::new(cmd.sx, cmd.sy, 0.0) * 1000.0; // m/s to mm/s
         player.target_ang_velocity = cmd.w;
@@ -306,6 +330,8 @@ impl Simulation {
             // println!("target: {}", target_velocity);
             let delta = (target_velocity - velocity).norm();
             if delta > self.config.velocity_treshold {
+                // println!("move with delta: {}, actual: {}", delta, velocity);
+                println!("height: {}", rigid_body.position().translation.vector.z);
                 let dir = (target_velocity - velocity).normalize();
                 let mut new_vel = velocity + dir.component_mul(&self.config.max_accel) * dt;
                 new_vel.z = 0.0;
@@ -314,18 +340,20 @@ impl Simulation {
                 }
                 rigid_body.set_linvel(new_vel, true);
             }
-
+            
             let target_ang_vel = player.target_ang_velocity;
+            // println!("target_ang_vel: {}", target_ang_vel);
             let ang_velocity = rigid_body.angvel().z;
             let delta = (target_ang_vel - ang_velocity).abs();
             if delta > self.config.angular_velocity_treshold {
+                println!("spin");
                 let dir = (target_ang_vel - ang_velocity).signum();
                 let mut new_ang_vel = Vector::zeros();
                 new_ang_vel.z = ang_velocity + (dir * self.config.max_ang_accel * dt);
                 if new_ang_vel.z.abs() < self.config.angular_velocity_treshold {
                     new_ang_vel = Vector::zeros();
                 }
-                println!("new_ang_vel: {}", new_ang_vel);
+                // println!("new_ang_vel: {}", new_ang_vel);
                 rigid_body.set_angvel(new_ang_vel, true);
             }
         }
@@ -406,6 +434,7 @@ impl Simulation {
             .rotation(Vector::z() * orientation)
             .build();
         let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS)
+        .friction(self.config.robot_friction)
             .collision_groups(InteractionGroups::new(
                 PLAYER_COLLISION_GROUP.into(),
                 (PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP).into(),
@@ -418,22 +447,22 @@ impl Simulation {
             &mut self.rigid_body_set,
         );
 
-        let dribler = ColliderBuilder::cuboid(DRIBLER_LENGTH, DRIBLER_WIDTH, DRIBLER_HEIGHT)
-            .collision_groups(InteractionGroups::new(
-                DRIBLER_COLLISION_GROUP.into(),
-                BALL_COLLISION_GROUP.into(),
-            ))
-            .user_data(DRIBBLER_USER_DATA)
-            .translation(Vector::new(PLAYER_RADIUS + DRIBLER_LENGTH / 2.0, 0.0, 0.0))
-            .sensor(true)
-            .active_events(ActiveEvents::COLLISION_EVENTS)
-            .build();
+        // let dribler = ColliderBuilder::cuboid(DRIBLER_LENGTH, DRIBLER_WIDTH, DRIBLER_HEIGHT)
+        //     .collision_groups(InteractionGroups::new(
+        //         DRIBLER_COLLISION_GROUP.into(),
+        //         BALL_COLLISION_GROUP.into(),
+        //     ))
+        //     .user_data(DRIBBLER_USER_DATA)
+        //     .translation(Vector::new(PLAYER_RADIUS + DRIBLER_LENGTH / 2.0, 0.0, 0.0))
+        //     .sensor(true)
+        //     .active_events(ActiveEvents::COLLISION_EVENTS)
+        //     .build();
 
-        let dribler_colider_handle = self.collider_set.insert_with_parent(
-            dribler,
-            rigid_body_handle,
-            &mut self.rigid_body_set,
-        );
+        // let dribler_colider_handle = self.collider_set.insert_with_parent(
+        //     dribler,
+        //     rigid_body_handle,
+        //     &mut self.rigid_body_set,
+        // );
 
         self.players.push(Player {
             id,
@@ -441,7 +470,7 @@ impl Simulation {
             rigid_body_handle,
             _collider_handle: collider_handle,
             // colision group 1
-            _dribbler_collider_handle: dribler_colider_handle,
+            _dribbler_collider_handle: collider_handle, // TODO modify, now only for testing
             // colision group 2
             last_cmd_time: 0.0,
             target_velocity: Vector::zeros(),
