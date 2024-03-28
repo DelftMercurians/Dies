@@ -2,6 +2,30 @@ export type XY = [number, number];
 
 export type XYZ = [number, number, number];
 
+export interface PlayerCmd {
+  id: number;
+  /**
+   * The player's x (left-right, with `+` left) velocity \[mm/s]
+   */
+  sx: number;
+  /**
+   * The player's y (forward-backward, with `+` forward) velocity \[mm/s]
+   */
+  sy: number;
+  /**
+   * The player's angular velocity (with `+` counter-clockwise, `-` clockwise) \[rad/s]
+   */
+  w: number;
+  /**
+   * The player's dribble speed
+   */
+  dribble_speed: number;
+
+  arm: boolean;
+  disarm: boolean;
+  kick: boolean;
+}
+
 export interface BallData {
   timestamp: number;
   position: XYZ;

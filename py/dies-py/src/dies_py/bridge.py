@@ -37,7 +37,7 @@ def init():
     signal.signal(signal.SIGINT, _sig_handler)
 
 
-def next() -> bool:
+def next_world() -> bool:
     """Receive the next update from Dies and return `True` if the program should
     continue running, or `False` if it should stop.
 
