@@ -1,7 +1,7 @@
 use atomic_float::AtomicF64;
 use dies_core::{FieldGeometry, PlayerCmd};
 use dies_protos::{
-    ssl_vision_detection::{SSL_DetectionFrame, SSL_DetectionRobot},
+    ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
         SSL_FieldCircularArc, SSL_FieldLineSegment, SSL_GeometryData, SSL_GeometryFieldSize,
     },
@@ -12,7 +12,7 @@ use dies_ssl_client::VisionClientConfig;
 use rapier3d::prelude::*;
 use std::{
     sync::{atomic::Ordering, Arc, Mutex},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 use tokio::sync::mpsc;
 use utils::IntervalTrigger;
@@ -24,12 +24,9 @@ const BALL_USER_DATA: u128 = 8;
 const DRIBBLER_USER_DATA: u128 = 4;
 const PLAYER_RADIUS: f32 = 200.0;
 const PLAYER_HEIGHT: f32 = 140.0;
-const DRIBLER_WIDTH: f32 = 50.0;
-const DRIBLER_HEIGHT: f32 = 10.0;
-const DRIBLER_LENGTH: f32 = 10.0;
-const BALL_COLLISION_GROUP: u32 = 0b1;
-const PLAYER_COLLISION_GROUP: u32 = 0b10;
-const DRIBLER_COLLISION_GROUP: u32 = 0b100;
+const DRIBBLER_WIDTH: f32 = 50.0;
+const DRIBBLER_HEIGHT: f32 = 10.0;
+const DRIBBLER_LENGTH: f32 = 10.0;
 const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
 const GEOM_INTERVAL: f64 = 3.0;
 
@@ -150,8 +147,8 @@ impl Simulation {
             let time = Arc::clone(&time);
             let cmd_queue = Arc::clone(&cmd_queue);
             tokio::spawn(async move {
-                let mut simulation = Simulation::new(config);
                 let mut interval = tokio::time::interval(Duration::from_secs_f64(simulation_step));
+                let mut simulation = Simulation::new(config);
                 let mut geom_interval = IntervalTrigger::new(GEOM_INTERVAL);
                 let mut det_interval = IntervalTrigger::new(vision_update_step);
 
@@ -159,7 +156,7 @@ impl Simulation {
                     interval.tick().await;
 
                     let dt = simulation_step;
-                    let current_time = time.fetch_add(dt, Ordering::Relaxed) + dt;
+                    let current_time = time.load(Ordering::Relaxed);
                     let commands_to_exec = {
                         let mut to_exec = Vec::new();
                         cmd_queue.lock().unwrap().retain(|cmd| {
@@ -180,7 +177,7 @@ impl Simulation {
                         }
                     }
                     if det_interval.trigger(current_time) {
-                        if let Err(_) = vision_tx.send(simulation.get_vision()) {
+                        if let Err(_) = vision_tx.send(simulation.get_vision(current_time)) {
                             break 'main_loop;
                         }
                     }
@@ -189,6 +186,8 @@ impl Simulation {
                         simulation.exec_cmd(cmd, current_time);
                     }
                     simulation.step(dt as f32, current_time);
+
+                    time.store(current_time + dt, Ordering::Relaxed);
                 }
             })
         };
@@ -218,15 +217,40 @@ impl Simulation {
         };
 
         {
-            // add the terain
+            // add the terrain
             let rigid_body = RigidBodyBuilder::kinematic_position_based()
-                .translation(Vector::new(0.0, 0.0, 0.0))
+                .translation(Vector::new(0.0, 0.0, -(PLAYER_HEIGHT / 2.0) * 1.05))
+                .gravity_scale(0.0)
+                .lock_rotations()
+                .lock_translations()
                 .build();
             let collider = ColliderBuilder::cuboid(5500.0, 4500.0, 10.0)
-                .collision_groups(InteractionGroups::new(
-                    0b1000.into(),
-                    (PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP).into(),
-                ))
+                // .collision_groups(InteractionGroups::new(
+                //     0b1000.into(),
+                //     (PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP).into(),
+                // ))
+                .build();
+            let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
+            let _collider_handle = simulation.collider_set.insert_with_parent(
+                collider,
+                rigid_body_handle,
+                &mut simulation.rigid_body_set,
+            );
+        }
+
+        {
+            // Add the ball
+            let rigid_body = RigidBodyBuilder::dynamic()
+                // .translation(Vector::new(0.0, 0.0, 0.0))
+                .build();
+            let collider = ColliderBuilder::ball(BALL_RADIUS)
+                .user_data(BALL_USER_DATA)
+                // only in group 0, interact with group 2
+                // .collision_groups(InteractionGroups::new(
+                //     BALL_COLLISION_GROUP.into(),
+                //     (DRIBBLER_COLLISION_GROUP | PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP)
+                //         .into(),
+                // ))
                 .build();
             let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
             let collider_handle = simulation.collider_set.insert_with_parent(
@@ -234,60 +258,35 @@ impl Simulation {
                 rigid_body_handle,
                 &mut simulation.rigid_body_set,
             );
-            
-        }
-
-        {
-            // Add the ball
-            // let rigid_body = RigidBodyBuilder::dynamic()
-            //     // .translation(Vector::new(0.0, 0.0, 0.0))
-            //     .build();
-            // let collider = ColliderBuilder::ball(BALL_RADIUS)
-            //     .user_data(BALL_USER_DATA)
-            //      // only in group 0, interact with group 2
-            //     .collision_groups(InteractionGroups::new(
-            //         BALL_COLLISION_GROUP.into(),
-            //         (DRIBLER_COLLISION_GROUP | PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP)
-            //             .into(),
-            //     ))
-            //     .build();
-            // let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
-            // let collider_handle = simulation.collider_set.insert_with_parent(
-            //     collider,
-            //     rigid_body_handle,
-            //     &mut simulation.rigid_body_set,
-            // );
-            // simulation.ball = Ball {
-            //     _rigid_body_handle: rigid_body_handle,
-            //     _collider_handle: collider_handle,
-            // };
+            simulation.ball = Ball {
+                _rigid_body_handle: rigid_body_handle,
+                _collider_handle: collider_handle,
+            };
         }
 
         // Add players
-        for i in 0..3 {
-            let pos = Vector::new(i as f32 * 3.0 * PLAYER_RADIUS, 0.0, 10.0);
-            simulation.add_player(i, true, pos, 0.0);
-        }
+        // for i in 0..3 {
+        let i = 0;
+        let pos = Vector::new(i as f32 * 3.0 * PLAYER_RADIUS, -1000.0, 0.0);
+        simulation.add_player(i, true, pos, 0.0);
+        // }
 
         simulation
     }
 
     fn exec_cmd(&mut self, cmd: PlayerCmd, time: f64) {
-        println!("executing cmd: {:?}", cmd);
         let player = self.players.iter_mut().find(|p| p.id == cmd.id).unwrap();
         player.target_velocity = Vector::new(cmd.sx, cmd.sy, 0.0) * 1000.0; // m/s to mm/s
         player.target_ang_velocity = cmd.w;
         player.last_cmd_time = time;
     }
 
-    fn get_vision(&self) -> SSL_WrapperPacket {
+    fn get_vision(&self, time: f64) -> SSL_WrapperPacket {
         let mut detection = SSL_DetectionFrame::new();
-        let t = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
-        detection.set_t_capture(t);
-        detection.set_t_sent(t);
+        detection.set_t_capture(time);
+        detection.set_t_sent(time);
+
+        // Players
         for player in self.players.iter() {
             let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
             let position = rigid_body.position().translation.vector;
@@ -304,6 +303,20 @@ impl Simulation {
                 detection.robots_yellow.push(robot);
             }
         }
+
+        // Ball
+        let mut ball = SSL_DetectionBall::new();
+        let ball_body = self
+            .rigid_body_set
+            .get(self.ball._rigid_body_handle)
+            .unwrap();
+        let ball_position = ball_body.position().translation.vector;
+        ball.set_x(ball_position.x);
+        ball.set_y(ball_position.y);
+        ball.set_z(ball_position.z);
+        ball.set_confidence(1.0);
+        detection.balls.push(ball);
+
         let mut packet = SSL_WrapperPacket::new();
         packet.detection = Some(detection).into();
         packet
@@ -322,39 +335,32 @@ impl Simulation {
                 player.target_ang_velocity = 0.0;
             }
 
-            // Convert to global frame
             let velocity = rigid_body.linvel();
+
+            // Convert to global frame
             let target_velocity =
                 Rotation::<f32>::new(Vector::z() * rigid_body.position().rotation.angle())
                     * player.target_velocity;
-            // println!("target: {}", target_velocity);
-            let delta = (target_velocity - velocity).norm();
+
+            let delta = with_zero_z(target_velocity - velocity).norm();
             if delta > self.config.velocity_treshold {
-                // println!("move with delta: {}, actual: {}", delta, velocity);
-                println!("height: {}", rigid_body.position().translation.vector.z);
                 let dir = (target_velocity - velocity).normalize();
-                let mut new_vel = velocity + dir.component_mul(&self.config.max_accel) * dt;
-                new_vel.z = 0.0;
-                if new_vel.norm() < self.config.velocity_treshold {
-                    new_vel = Vector::zeros();
-                }
-                rigid_body.set_linvel(new_vel, true);
+                let new_vel = velocity + dir.component_mul(&self.config.max_accel) * dt;
+                rigid_body.set_linvel(with_zero_z(new_vel), true);
+            } else {
+                rigid_body.set_linvel(target_velocity, true);
             }
-            
+
             let target_ang_vel = player.target_ang_velocity;
-            // println!("target_ang_vel: {}", target_ang_vel);
             let ang_velocity = rigid_body.angvel().z;
             let delta = (target_ang_vel - ang_velocity).abs();
             if delta > self.config.angular_velocity_treshold {
-                println!("spin");
                 let dir = (target_ang_vel - ang_velocity).signum();
-                let mut new_ang_vel = Vector::zeros();
-                new_ang_vel.z = ang_velocity + (dir * self.config.max_ang_accel * dt);
-                if new_ang_vel.z.abs() < self.config.angular_velocity_treshold {
-                    new_ang_vel = Vector::zeros();
-                }
-                // println!("new_ang_vel: {}", new_ang_vel);
+                let new_ang_vel =
+                    Vector::z() * (ang_velocity + (dir * self.config.max_ang_accel * dt));
                 rigid_body.set_angvel(new_ang_vel, true);
+            } else {
+                rigid_body.set_angvel(target_ang_vel * Vector::z(), true);
             }
         }
 
@@ -381,10 +387,9 @@ impl Simulation {
 
         while let Ok(collision_event) = collision_recv.try_recv() {
             // Handle the collision event.
-            println!("Received collision event: {:?}", collision_event);
 
             // if the ball colides with a dribbler of a robot, the ball should e given a force in the direction of the dribbler
-            // go through all the  _dribler_collider_handle of all the players and check if it's equal to the collision_event.collider1 or collision_event.collider2
+            // go through all the  _dribbler_collider_handle of all the players and check if it's equal to the collision_event.collider1 or collision_event.collider2
 
             let collider_1 = self.collider_set.get(collision_event.collider1()).unwrap(); // safe, we know it exists
             let collider_2 = self.collider_set.get(collision_event.collider2()).unwrap(); // safe, we know it exists
@@ -408,14 +413,15 @@ impl Simulation {
             let player_body = self
                 .rigid_body_set
                 .get(dribbler_collider.parent().unwrap())
-                .unwrap();
+                .unwrap(); // safe, we know it exists
             let player_position = player_body.position().translation.vector;
             let ball_body = self
                 .rigid_body_set
                 .get_mut(ball_collider.parent().unwrap())
-                .unwrap();
+                .unwrap(); // safe, we know it exists
             let ball_position = ball_body.position().translation.vector;
 
+            // We only apply a new force if there isn't already a force applied to the ball
             if collision_event.clone().started() && ball_body.user_force().norm() < 1e-9 {
                 let force_direction = player_position - ball_position;
 
@@ -430,15 +436,20 @@ impl Simulation {
 
     fn add_player(&mut self, id: u32, is_own: bool, position: Vector<f32>, orientation: f32) {
         let rigid_body = RigidBodyBuilder::dynamic()
-            .translation(position)
+            .translation(with_zero_z(position))
             .rotation(Vector::z() * orientation)
+            .locked_axes(
+                LockedAxes::TRANSLATION_LOCKED_Z
+                    | LockedAxes::ROTATION_LOCKED_X
+                    | LockedAxes::ROTATION_LOCKED_Y,
+            )
             .build();
         let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS)
-        .friction(self.config.robot_friction)
-            .collision_groups(InteractionGroups::new(
-                PLAYER_COLLISION_GROUP.into(),
-                (PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP).into(),
-            ))
+            .friction(self.config.robot_friction)
+            // .collision_groups(InteractionGroups::new(
+            //     PLAYER_COLLISION_GROUP.into(),
+            //     (PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP).into(),
+            // ))
             .build(); // only in group 1, interacts with nobody
         let rigid_body_handle = self.rigid_body_set.insert(rigid_body);
         let collider_handle = self.collider_set.insert_with_parent(
@@ -447,31 +458,29 @@ impl Simulation {
             &mut self.rigid_body_set,
         );
 
-        // let dribler = ColliderBuilder::cuboid(DRIBLER_LENGTH, DRIBLER_WIDTH, DRIBLER_HEIGHT)
-        //     .collision_groups(InteractionGroups::new(
-        //         DRIBLER_COLLISION_GROUP.into(),
-        //         BALL_COLLISION_GROUP.into(),
-        //     ))
-        //     .user_data(DRIBBLER_USER_DATA)
-        //     .translation(Vector::new(PLAYER_RADIUS + DRIBLER_LENGTH / 2.0, 0.0, 0.0))
-        //     .sensor(true)
-        //     .active_events(ActiveEvents::COLLISION_EVENTS)
-        //     .build();
+        let dribbler = ColliderBuilder::cuboid(DRIBBLER_LENGTH, DRIBBLER_WIDTH, DRIBBLER_HEIGHT)
+            // .collision_groups(InteractionGroups::new(
+            //     DRIBBLER_COLLISION_GROUP.into(),
+            //     BALL_COLLISION_GROUP.into(),
+            // ))
+            .user_data(DRIBBLER_USER_DATA)
+            .translation(Vector::new(PLAYER_RADIUS + DRIBBLER_LENGTH / 2.0, 0.0, 0.0))
+            .sensor(true)
+            .active_events(ActiveEvents::COLLISION_EVENTS)
+            .build();
 
-        // let dribler_colider_handle = self.collider_set.insert_with_parent(
-        //     dribler,
-        //     rigid_body_handle,
-        //     &mut self.rigid_body_set,
-        // );
+        let dribbler_colider_handle = self.collider_set.insert_with_parent(
+            dribbler,
+            rigid_body_handle,
+            &mut self.rigid_body_set,
+        );
 
         self.players.push(Player {
             id,
             is_own,
             rigid_body_handle,
             _collider_handle: collider_handle,
-            // colision group 1
-            _dribbler_collider_handle: collider_handle, // TODO modify, now only for testing
-            // colision group 2
+            _dribbler_collider_handle: dribbler_colider_handle,
             last_cmd_time: 0.0,
             target_velocity: Vector::zeros(),
             target_ang_velocity: 0.0,
@@ -521,4 +530,9 @@ fn geometry(config: &FieldGeometry) -> SSL_WrapperPacket {
     let mut packet = SSL_WrapperPacket::new();
     packet.geometry = Some(geometry).into();
     packet
+}
+
+fn with_zero_z(mut vec: Vector<f32>) -> Vector<f32> {
+    vec.z = 0.0;
+    vec
 }

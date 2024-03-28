@@ -126,8 +126,8 @@
     const height = canvasHeight - PADDING * 2;
 
     const { own_players, opp_players, ball } = state;
-    const fieldH = state.field_geom.field_width;
-    const fieldW = state.field_geom.field_length;
+    const fieldH = state.field_geom?.field_width ?? 0;
+    const fieldW = state.field_geom?.field_length ?? 0;
 
     /**
      * Convert from server length to canvas length.
@@ -156,7 +156,7 @@
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     // Draw field lines
-    state.field_geom.line_segments.forEach(({ p1, p2 }) => {
+    state.field_geom?.line_segments?.forEach?.(({ p1, p2 }) => {
       const [x1, y1] = convertCoords(p1);
       const [x2, y2] = convertCoords(p2);
       ctx.strokeStyle = "white";
@@ -224,6 +224,7 @@
         selectedPlayer.velocity[0] ** 2 + selectedPlayer.velocity[1] ** 2
       );
       if (firstTs === null) {
+        console.log("firstTs", firstTs);
         firstTs = selectedPlayer.timestamp;
       }
       const ts = selectedPlayer.timestamp - firstTs;
