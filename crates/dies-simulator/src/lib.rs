@@ -27,6 +27,7 @@ const PLAYER_HEIGHT: f32 = 140.0;
 const DRIBBLER_WIDTH: f32 = 50.0;
 const DRIBBLER_HEIGHT: f32 = 10.0;
 const DRIBBLER_LENGTH: f32 = 10.0;
+const GROUND_THICKNESS: f32 = 10.0;
 const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
 const GEOM_INTERVAL: f64 = 3.0;
 
@@ -40,7 +41,6 @@ pub struct SimulationConfig {
     pub max_ang_accel: f32,             // max angular acceleration
     pub velocity_treshold: f32,         // max difference between target and current velocity
     pub angular_velocity_treshold: f32, // max difference between target and current angular velocity
-    pub robot_friction: f32,            // friction coefficient
 }
 
 impl Default for SimulationConfig {
@@ -55,7 +55,6 @@ impl Default for SimulationConfig {
             angular_velocity_treshold: 0.1,
             simulation_step: 1.0 / 60.0,
             vision_update_step: 1.0 / 40.0,
-            robot_friction: 0.7,
         }
     }
 }
@@ -216,62 +215,88 @@ impl Simulation {
             players: Vec::new(),
         };
 
-        {
-            // add the terrain
-            let rigid_body = RigidBodyBuilder::kinematic_position_based()
-                .translation(Vector::new(0.0, 0.0, -(PLAYER_HEIGHT / 2.0) * 1.05))
-                .gravity_scale(0.0)
-                .lock_rotations()
-                .lock_translations()
-                .build();
-            let collider = ColliderBuilder::cuboid(5500.0, 4500.0, 10.0)
-                // .collision_groups(InteractionGroups::new(
-                //     0b1000.into(),
-                //     (PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP).into(),
-                // ))
-                .build();
-            let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
-            let _collider_handle = simulation.collider_set.insert_with_parent(
-                collider,
-                rigid_body_handle,
-                &mut simulation.rigid_body_set,
-            );
-        }
+        // Create the ground
+        let ground_body = RigidBodyBuilder::fixed()
+            // z=0.0 is the ground surface
+            .translation(Vector::new(0.0, 0.0, -GROUND_THICKNESS / 2.0))
+            .build();
+        let ground_collider = ColliderBuilder::cuboid(5500.0, 4500.0, GROUND_THICKNESS).build();
+        let ground_body_handle = simulation.rigid_body_set.insert(ground_body);
+        simulation.collider_set.insert_with_parent(
+            ground_collider,
+            ground_body_handle,
+            &mut simulation.rigid_body_set,
+        );
 
-        {
-            // Add the ball
-            let rigid_body = RigidBodyBuilder::dynamic()
-                // .translation(Vector::new(0.0, 0.0, 0.0))
-                .build();
-            let collider = ColliderBuilder::ball(BALL_RADIUS)
-                .user_data(BALL_USER_DATA)
-                // only in group 0, interact with group 2
-                // .collision_groups(InteractionGroups::new(
-                //     BALL_COLLISION_GROUP.into(),
-                //     (DRIBBLER_COLLISION_GROUP | PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP)
-                //         .into(),
-                // ))
-                .build();
-            let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
-            let collider_handle = simulation.collider_set.insert_with_parent(
-                collider,
-                rigid_body_handle,
-                &mut simulation.rigid_body_set,
-            );
-            simulation.ball = Ball {
-                _rigid_body_handle: rigid_body_handle,
-                _collider_handle: collider_handle,
-            };
-        }
+        // Add the ball
+        let ball_body = RigidBodyBuilder::dynamic()
+            .translation(Vector::new(0.0, 0.0, 0.0))
+            .build();
+        let ball_collider = ColliderBuilder::ball(BALL_RADIUS)
+            .user_data(BALL_USER_DATA)
+            .build();
+        let ball_body_handle = simulation.rigid_body_set.insert(ball_body);
+        let ball_collider_handle = simulation.collider_set.insert_with_parent(
+            ball_collider,
+            ball_body_handle,
+            &mut simulation.rigid_body_set,
+        );
+        simulation.ball = Ball {
+            _rigid_body_handle: ball_body_handle,
+            _collider_handle: ball_collider_handle,
+        };
 
         // Add players
-        // for i in 0..3 {
         let i = 0;
         let pos = Vector::new(i as f32 * 3.0 * PLAYER_RADIUS, -1000.0, 0.0);
         simulation.add_player(i, true, pos, 0.0);
-        // }
 
         simulation
+    }
+
+    fn add_player(&mut self, id: u32, is_own: bool, position: Vector<f32>, orientation: f32) {
+        // Players have fixed z position - their bottom surface 1mm above the ground
+        let position = with_zero_z(position) + Vector::z() * ((PLAYER_HEIGHT / 2.0) + 1.0);
+        let rigid_body = RigidBodyBuilder::kinematic_velocity_based()
+            .translation(position)
+            .rotation(Vector::z() * orientation)
+            .locked_axes(
+                LockedAxes::TRANSLATION_LOCKED_Z
+                    | LockedAxes::ROTATION_LOCKED_X
+                    | LockedAxes::ROTATION_LOCKED_Y,
+            )
+            .build();
+        let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS).build();
+        let rigid_body_handle = self.rigid_body_set.insert(rigid_body);
+        let collider_handle = self.collider_set.insert_with_parent(
+            collider,
+            rigid_body_handle,
+            &mut self.rigid_body_set,
+        );
+
+        let dribbler = ColliderBuilder::cuboid(DRIBBLER_LENGTH, DRIBBLER_WIDTH, DRIBBLER_HEIGHT)
+            .user_data(DRIBBLER_USER_DATA)
+            .translation(Vector::new(PLAYER_RADIUS + DRIBBLER_LENGTH / 2.0, 0.0, 0.0))
+            .sensor(true)
+            .active_events(ActiveEvents::COLLISION_EVENTS)
+            .build();
+
+        let dribbler_colider_handle = self.collider_set.insert_with_parent(
+            dribbler,
+            rigid_body_handle,
+            &mut self.rigid_body_set,
+        );
+
+        self.players.push(Player {
+            id,
+            is_own,
+            rigid_body_handle,
+            _collider_handle: collider_handle,
+            _dribbler_collider_handle: dribbler_colider_handle,
+            last_cmd_time: 0.0,
+            target_velocity: Vector::zeros(),
+            target_ang_velocity: 0.0,
+        })
     }
 
     fn exec_cmd(&mut self, cmd: PlayerCmd, time: f64) {
@@ -424,67 +449,12 @@ impl Simulation {
             // We only apply a new force if there isn't already a force applied to the ball
             if collision_event.clone().started() && ball_body.user_force().norm() < 1e-9 {
                 let force_direction = player_position - ball_position;
-
                 let force = force_direction.normalize() * 1000.0;
-
                 ball_body.add_force(force, true);
             } else if collision_event.stopped() {
                 ball_body.reset_forces(true);
             }
         }
-    }
-
-    fn add_player(&mut self, id: u32, is_own: bool, position: Vector<f32>, orientation: f32) {
-        let rigid_body = RigidBodyBuilder::dynamic()
-            .translation(with_zero_z(position))
-            .rotation(Vector::z() * orientation)
-            .locked_axes(
-                LockedAxes::TRANSLATION_LOCKED_Z
-                    | LockedAxes::ROTATION_LOCKED_X
-                    | LockedAxes::ROTATION_LOCKED_Y,
-            )
-            .build();
-        let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS)
-            .friction(self.config.robot_friction)
-            // .collision_groups(InteractionGroups::new(
-            //     PLAYER_COLLISION_GROUP.into(),
-            //     (PLAYER_COLLISION_GROUP | BALL_COLLISION_GROUP).into(),
-            // ))
-            .build(); // only in group 1, interacts with nobody
-        let rigid_body_handle = self.rigid_body_set.insert(rigid_body);
-        let collider_handle = self.collider_set.insert_with_parent(
-            collider,
-            rigid_body_handle,
-            &mut self.rigid_body_set,
-        );
-
-        let dribbler = ColliderBuilder::cuboid(DRIBBLER_LENGTH, DRIBBLER_WIDTH, DRIBBLER_HEIGHT)
-            // .collision_groups(InteractionGroups::new(
-            //     DRIBBLER_COLLISION_GROUP.into(),
-            //     BALL_COLLISION_GROUP.into(),
-            // ))
-            .user_data(DRIBBLER_USER_DATA)
-            .translation(Vector::new(PLAYER_RADIUS + DRIBBLER_LENGTH / 2.0, 0.0, 0.0))
-            .sensor(true)
-            .active_events(ActiveEvents::COLLISION_EVENTS)
-            .build();
-
-        let dribbler_colider_handle = self.collider_set.insert_with_parent(
-            dribbler,
-            rigid_body_handle,
-            &mut self.rigid_body_set,
-        );
-
-        self.players.push(Player {
-            id,
-            is_own,
-            rigid_body_handle,
-            _collider_handle: collider_handle,
-            _dribbler_collider_handle: dribbler_colider_handle,
-            last_cmd_time: 0.0,
-            target_velocity: Vector::zeros(),
-            target_ang_velocity: 0.0,
-        })
     }
 }
 
