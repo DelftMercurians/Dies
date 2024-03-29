@@ -42,11 +42,15 @@ impl PlayerController {
         self.position_pid.set_setpoint(setpoint);
     }
 
-    /// Update the controller with the current state of the player.
-    pub fn update(&mut self, state: &PlayerData, is_dribbling: bool, is_kicking: bool) -> PlayerCmd {
+    ///keep track of current position from the frame
+    pub fn update_current_pos(&mut self, state: &PlayerData) {
         self.frame_missings = 0;
         self.last_pos = state.position;
         self.last_orientation = state.orientation;
+    }
+
+    /// Update the controller with the current state of the player.
+    pub fn update(&mut self, state: &PlayerData, is_dribbling: bool, is_kicking: bool) -> PlayerCmd {
         let mut cmd: PlayerCmd = PlayerCmd {
             id: self.id,
             ..Default::default()
