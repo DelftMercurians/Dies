@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
-use dies_core::{PlayerCmd, PlayerData};
+use dies_core::{PlayerCmd, PlayerData, WorldData};
 use nalgebra::Vector2;
 
 use crate::player_controller::PlayerController;
 
 pub struct TeamController {
     players: HashMap<u32, PlayerController>,
+    
 }
 
 impl TeamController {
@@ -25,15 +26,15 @@ impl TeamController {
     }
 
     /// Update the controllers with the current state of the players.
-    pub fn update(&mut self, state: &Vec<PlayerData>) -> Vec<PlayerCmd> {
-        state
-            .iter()
-            .map(|s| {
-                self.players
-                    .entry(s.id)
-                    .or_insert_with(|| PlayerController::new(s.id))
-                    .update(s)
-            })
-            .collect()
+    pub fn update(&mut self, world_data: WorldData) -> Vec<PlayerCmd> {
+   //     state
+   //         .iter()
+   //         .map(|s| {
+   //             self.players
+   //                 .entry(s.id)
+   //                 .or_insert_with(|| PlayerController::new(s.id))
+   //                 .update(s)
+   //         })
+   //         .collect()
     }
 }
