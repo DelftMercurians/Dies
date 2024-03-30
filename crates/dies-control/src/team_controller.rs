@@ -74,6 +74,7 @@ impl StopController {
 pub struct TeamController {
     players: Rc<RefCell<HashMap<u32, PlayerController>>>,
     halt_controller: HaltController,
+    stop_controller: StopController,
 }
 
 impl TeamController {
@@ -82,6 +83,7 @@ impl TeamController {
         let players = Rc::new(RefCell::new(HashMap::new()));
         Self {
             halt_controller: HaltController::new(Rc::clone(&players)),
+            stop_controller: StopController::new(Rc::clone(&players)),
             players,
         }
     }
@@ -110,7 +112,8 @@ impl TeamController {
             }
         }
         match world_data.current_game_state {
-            GameState::Halt => self.halt_controller.update(),
+            GameState::Halt | GameState::Timeout => self.halt_controller.update(),
+            GameState::Stop => self.stop_controller.update(world_data),
             _ => Vec::new(),
         }
 
