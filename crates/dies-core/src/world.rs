@@ -26,7 +26,7 @@ pub struct BallData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
     /// seconds). This is the time that ssl-vision received the frame.
     pub timestamp: f64,
-    /// Position of the ball in mm, in dies coordinates
+    /// Position of the ball filtered by us, in mm, in dies coordinates
     pub position: Vector3<f32>,
     /// Velocity of the ball in mm/s, in dies coordinates
     pub velocity: Vector3<f32>,
@@ -40,7 +40,9 @@ pub struct PlayerData {
     pub timestamp: f64,
     /// The player's unique id
     pub id: u32,
-    /// Position of the player in mm, in dies coordinates
+    /// Unfiltered position as reported by vision
+    pub raw_position: Vector2<f32>,
+    /// Position of the player filtered by us in mm, in dies coordinates
     pub position: Vector2<f32>,
     /// Velocity of the player in mm/s, in dies coordinates
     pub velocity: Vector2<f32>,

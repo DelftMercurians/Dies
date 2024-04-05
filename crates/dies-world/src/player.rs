@@ -65,6 +65,7 @@ impl PlayerTracker {
                     self.last_data = Some(PlayerData {
                         timestamp: t_capture,
                         id: self.id,
+                        raw_position: current_position,
                         position: na::convert(Vector2::new(x[0], x[2])),
                         velocity: na::convert(Vector2::new(x[1], x[3])),
                         orientation: current_orientation,
@@ -73,6 +74,7 @@ impl PlayerTracker {
                     self.is_init = true;
                     self.last_data.as_mut().unwrap()
                 };
+                last_data.raw_position = current_position;
                 last_data.position = na::convert(Vector2::new(x[0], x[2]));
                 last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
                 last_data.orientation = current_orientation;

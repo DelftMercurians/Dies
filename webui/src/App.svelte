@@ -57,7 +57,16 @@
 
   let selectedPlayerId: number | null = null;
   onMount(() => {
-    const arrowKeyHandler = (ev: KeyboardEvent) => {
+    let pressedKeys = new Set<string>();
+    const keydownHandler = (ev: KeyboardEvent) => {
+      pressedKeys.add(ev.key);
+    };
+    const keyupHandler = (ev: KeyboardEvent) => {
+      pressedKeys.delete(ev.key);
+    };
+
+    let interval = setInterval(() => {
+      if (pressedKeys.size === 0) return;
       const player = state?.own_players.find(
         (player) => player.id === selectedPlayerId
       );
@@ -74,34 +83,25 @@
         kick: false,
       };
 
-      let handled = false;
-      switch (ev.key) {
-        case "w":
-          cmd.sx = 1;
-          handled = true;
-          break;
-        case "s":
-          cmd.sx = -1;
-          handled = true;
-          break;
-        case "a":
-          cmd.sy = 1;
-          handled = true;
-          break;
-        case "d":
-          cmd.sy = -1;
-          handled = true;
-          break;
-        case "q":
-          cmd.w = 1;
-          handled = true;
-          break;
-        case "e":
-          cmd.w = -1;
-          handled = true;
-          break;
+      if (pressedKeys.has("w")) {
+        cmd.sx = 1;
       }
-      if (handled) {
+      if (pressedKeys.has("s")) {
+        cmd.sx = -1;
+      }
+      if (pressedKeys.has("a")) {
+        cmd.sy = 1;
+      }
+      if (pressedKeys.has("d")) {
+        cmd.sy = -1;
+      }
+      if (pressedKeys.has("q")) {
+        cmd.w = 1;
+      }
+      if (pressedKeys.has("e")) {
+        cmd.w = -1;
+      }
+      if (cmd.sx !== 0 || cmd.sy !== 0 || cmd.w !== 0) {
         fetch("/api/command", {
           method: "POST",
           headers: {
@@ -110,10 +110,15 @@
           body: JSON.stringify(cmd),
         });
       }
-    };
+    }, 1 / 10);
 
-    window.addEventListener("keydown", arrowKeyHandler);
-    return () => window.removeEventListener("keydown", arrowKeyHandler);
+    window.addEventListener("keydown", keydownHandler);
+    window.addEventListener("keyup", keyupHandler);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("keydown", keydownHandler);
+      window.removeEventListener("keyup", keyupHandler);
+    };
   });
 
   let firstTs: number | null = null;
@@ -188,11 +193,11 @@
       ctx.restore();
       ctx.stroke();
     };
-    own_players.forEach(({ position, orientation }) =>
-      drawPlayer(position, orientation, "blue")
+    own_players.forEach(({ raw_position, orientation }) =>
+      drawPlayer(raw_position, orientation, "blue")
     );
-    opp_players.forEach(({ position, orientation }) =>
-      drawPlayer(position, orientation, "yellow")
+    opp_players.forEach(({ raw_position, orientation }) =>
+      drawPlayer(raw_position, orientation, "yellow")
     );
 
     // Draw ball
@@ -224,7 +229,6 @@
         selectedPlayer.velocity[0] ** 2 + selectedPlayer.velocity[1] ** 2
       );
       if (firstTs === null) {
-        console.log("firstTs", firstTs);
         firstTs = selectedPlayer.timestamp;
       }
       const ts = selectedPlayer.timestamp - firstTs;
