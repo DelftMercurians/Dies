@@ -8,8 +8,10 @@ use anyhow::{Context, Result};
 
 use dies_control::TeamController;
 use dies_core::{PlayerCmd, WorldData};
+use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent, RuntimeMsg};
 use dies_serial_client::{SerialClient, SerialClientConfig};
+use dies_simulator::Simulation;
 use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_webui::spawn_webui;
 use dies_world::{WorldConfig, WorldTracker};
@@ -23,6 +25,157 @@ pub struct ExecutorConfig {
     pub webui: bool,
     /// Maps vision IDs to robot IDs
     pub robot_ids: HashMap<u32, u32>,
+}
+
+/// The central component of the framework. It contains all state and logic needed to
+/// run a match -- processing vision and referee messages, executing the strategy, and
+/// sending commands to the robots.
+///
+/// The executor can be used in 3 different regimes: externally driven, automatic, and
+/// simulation.
+///
+/// ## Externally driven
+///
+/// In this regime, the executor is fed with vision and referee messages using the
+/// `update_from_vision_msg` and `update_from_gc_msg` methods and the player commands
+/// are retrieved using the `get_player_cmds` method. Messages to the game controller
+/// are sent using the handle passed with `set_gc_msg_handler`. Update listeners will
+/// not be fired in this mode.
+///
+/// This regime is useful for unit tests and for playing back logs.
+///
+/// ```no_run
+/// let mut executor = Executor::new();
+///
+/// loop {
+///    // Get the vision and referee messages...
+///
+///    // Update the executor
+///    executor.update_from_vision_msg(vision_msg);
+///    executor.update_from_gc_msg(gc_msg);
+///
+///    // Get the player commands
+///    let player_cmds = executor.get_player_cmds();
+///    // Do something witht the commands...
+/// }
+/// ```
+///
+/// ## Automatic
+///
+/// In this regime, the executor runs its own event loop, receiving vision and referee
+/// messages from the network and sending player commands to the robots.
+///
+/// This regime is useful for running matches and real-life tests in real time.
+///
+/// ```no_run
+/// let mut executor = Executor::new()
+///   .with_ssl_client(ssl_client)
+///   .with_bs_client(bs_client);
+///
+/// let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+/// tokio::spawn(async { executor.run_real_time(stop_rx).await; });
+///
+/// // Can use stop_tx to stop the event loop from the outside...
+/// ```
+///
+/// It is possible to listen to updates from outside the executor, for example to update
+/// the UI:
+///
+/// ```no_run
+/// executor.set_world_update_listener(|update| println!("{:?}", update))
+/// ```
+///
+/// ## Simulation
+///
+/// In this regime, the executor receives vision and referee messages from the simulation
+/// and sends player commands to the simulation. It can either be run in real time with
+/// artifical delays in an internal event loop, or it can be driven externally at a
+/// faster-than-real-time rate.
+///
+/// This regime is useful for testing strategies in a simulated environment.
+///
+/// ```no_run
+/// let mut executor = Executor::new()
+///    .with_simulator(simulator);
+///
+/// // Run in real time
+/// executor.run_real_time().await;
+///
+/// // Run at maximum speed
+/// loop {
+///     executor.step_simulation();
+/// }
+/// ```
+pub struct Executor {
+    tracker: WorldTracker,
+    // team_controller: TeamController,
+    // gc_client: GcClient,
+    ssl_client: Option<VisionClient>,
+    bs_client: Option<SerialClient>,
+    simulator: Option<Simulation>,
+    update_listener: Option<Box<dyn Fn(WorldUpdate) -> Result<()> + Send>>,
+}
+
+impl Executor {
+    /// Create a new instance of [`Executor`].
+    pub fn new() -> Executor {
+        Executor {
+            tracker: WorldTracker::new(WorldConfig {
+                initial_opp_goal_x: 1.0,
+                is_blue: true,
+            }),
+            ssl_client: None,
+            bs_client: None,
+            simulator: None,
+        }
+    }
+
+    pub fn with_ssl_client(&mut self, ssl_client: VisionClient) -> &mut Self {
+        self.ssl_client = Some(ssl_client);
+        self
+    }
+
+    pub fn with_bs_client(&mut self, bs_client: SerialClient) -> &mut Self {
+        self.bs_client = Some(bs_client);
+        self
+    }
+
+    pub fn with_simulator(&mut self, simulator: Simulation) -> &mut Self {
+        self.simulator = Some(simulator);
+        self
+    }
+
+    pub fn set_play_dir_x(&mut self, opp_x_sign: f32) {
+        self.tracker.set_play_dir_x(opp_x_sign);
+    }
+
+    // pub fn set_gc_msg_handler(&mut self, handler: impl Fn(Referee) -> Result<()>) {
+    //     todo!()
+    // }
+
+    pub fn update_from_vision_msg(&mut self, message: SSL_WrapperPacket) {
+        todo!()
+    }
+
+    pub fn update_from_gc_msg(&mut self, message: Referee) {
+        todo!()
+    }
+
+    // pub fn update_from_bs_msg(&mut self, message: RobotMessage) {
+    //     todo!()
+    // }
+
+    pub fn get_player_cmds(&self) -> Vec<PlayerCmd> {
+        todo!()
+    }
+
+    pub async fn step(&mut self) {
+        todo!()
+    }
+
+    pub async fn run(self) {
+        todo!()
+    }
 }
 
 pub async fn run(config: ExecutorConfig) -> Result<()> {
