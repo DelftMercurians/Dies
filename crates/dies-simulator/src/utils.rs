@@ -1,5 +1,3 @@
-const TRESHOLD: f64 = 1e-6;
-
 /// A struct that triggers an event periodically at a given interval.
 pub struct IntervalTrigger {
     interval: f64,

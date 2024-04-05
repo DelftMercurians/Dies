@@ -9,8 +9,9 @@ use dies_protos::{
 };
 use dies_serial_client::SerialClientConfig;
 use dies_ssl_client::VisionClientConfig;
-use rapier3d::prelude::*;
+use rapier3d::{na::SimdPartialOrd, prelude::*};
 use std::{
+    f32::consts::PI,
     sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
@@ -38,7 +39,9 @@ pub struct SimulationConfig {
     pub vision_update_step: f64,        // time between vision updates
     pub command_delay: f64,             // delay for the execution of the command
     pub max_accel: Vector<f32>,         // max lateral acceleration
+    pub max_vel: Vector<f32>,           // max lateral velocity
     pub max_ang_accel: f32,             // max angular acceleration
+    pub max_ang_vel: f32,               // max angular velocity
     pub velocity_treshold: f32,         // max difference between target and current velocity
     pub angular_velocity_treshold: f32, // max difference between target and current angular velocity
 }
@@ -49,8 +52,10 @@ impl Default for SimulationConfig {
             gravity: Vector::z() * -9.81 * 1000.0,
             bias: 0.0,
             command_delay: 110.0 / 1000.0, // 6 ms
-            max_accel: Vector::new(400.0, 400.0, 0.0),
-            max_ang_accel: 0.5,
+            max_accel: Vector::new(1200.0, 1200.0, 0.0),
+            max_vel: Vector::new(2000.0, 2000.0, 0.0),
+            max_ang_accel: 2.0,
+            max_ang_vel: 2.0,
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
             simulation_step: 1.0 / 60.0,
@@ -230,9 +235,11 @@ impl Simulation {
 
         // Add the ball
         let ball_body = RigidBodyBuilder::dynamic()
+            .can_sleep(false)
             .translation(Vector::new(0.0, 0.0, 0.0))
             .build();
         let ball_collider = ColliderBuilder::ball(BALL_RADIUS)
+            .mass(1.0)
             .user_data(BALL_USER_DATA)
             .build();
         let ball_body_handle = simulation.rigid_body_set.insert(ball_body);
@@ -249,7 +256,7 @@ impl Simulation {
         // Add players
         let i = 0;
         let pos = Vector::new(i as f32 * 3.0 * PLAYER_RADIUS, -1000.0, 0.0);
-        simulation.add_player(i, true, pos, 0.0);
+        simulation.add_player(i, true, pos, PI / 2.0);
 
         simulation
     }
@@ -367,26 +374,27 @@ impl Simulation {
                 Rotation::<f32>::new(Vector::z() * rigid_body.position().rotation.angle())
                     * player.target_velocity;
 
-            let delta = with_zero_z(target_velocity - velocity).norm();
-            if delta > self.config.velocity_treshold {
-                let dir = (target_velocity - velocity).normalize();
-                let new_vel = velocity + dir.component_mul(&self.config.max_accel) * dt;
-                rigid_body.set_linvel(with_zero_z(new_vel), true);
+            let vel_err = target_velocity - velocity;
+            let new_vel = if vel_err.norm() > 10.0 {
+                let acc = (2.0 * vel_err).simd_clamp(-self.config.max_accel, self.config.max_accel);
+                velocity + acc * dt
             } else {
-                rigid_body.set_linvel(target_velocity, true);
-            }
+                target_velocity
+            };
+            let new_vel = new_vel.simd_clamp(-self.config.max_vel, self.config.max_vel);
+            rigid_body.set_linvel(new_vel, true);
 
             let target_ang_vel = player.target_ang_velocity;
             let ang_velocity = rigid_body.angvel().z;
             let delta = (target_ang_vel - ang_velocity).abs();
-            if delta > self.config.angular_velocity_treshold {
+            let new_ang_vel = if delta > self.config.angular_velocity_treshold {
                 let dir = (target_ang_vel - ang_velocity).signum();
-                let new_ang_vel =
-                    Vector::z() * (ang_velocity + (dir * self.config.max_ang_accel * dt));
-                rigid_body.set_angvel(new_ang_vel, true);
+                ang_velocity + (dir * self.config.max_ang_accel * dt)
             } else {
-                rigid_body.set_angvel(target_ang_vel * Vector::z(), true);
-            }
+                target_ang_vel
+            };
+            let new_ang_vel = new_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);
+            rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
         }
 
         let (collision_send, collision_recv) = crossbeam::channel::unbounded();
@@ -449,7 +457,7 @@ impl Simulation {
             // We only apply a new force if there isn't already a force applied to the ball
             if collision_event.clone().started() && ball_body.user_force().norm() < 1e-9 {
                 let force_direction = player_position - ball_position;
-                let force = force_direction.normalize() * 1000.0;
+                let force = force_direction.normalize() * 50000.0;
                 ball_body.add_force(force, true);
             } else if collision_event.stopped() {
                 ball_body.reset_forces(true);
