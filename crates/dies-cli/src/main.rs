@@ -56,7 +56,7 @@ struct Args {
     #[clap(long, default_value = "224.5.23.2:10006")]
     vision_addr: SocketAddr,
 
-    #[clap(long, default_value = "info")]
+    #[clap(long, default_value = "debug")]
     log_level: String,
 
     #[clap(long, default_value = "auto")]

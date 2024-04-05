@@ -243,10 +243,46 @@
       data.push(velocityMagnitude);
       velocityChart.update();
     }
+    if (state?.own_players.length > 0) {
+      let selectedPlayer = state.own_players[0];
+      if (selectedPlayerId === null) {
+        selectedPlayerId = state.own_players[0].id;
+      } else {
+        const _selectedPlayer = state.own_players.find(
+          (player) => player.id === selectedPlayerId
+        );
+        if (_selectedPlayer) {
+          selectedPlayer = _selectedPlayer;
+        } else {
+          selectedPlayerId = selectedPlayer.id;
+        }
+      }
+
+      const velocityMagnitude = Math.sqrt(
+        selectedPlayer.velocity[0] ** 2 + selectedPlayer.velocity[1] ** 2
+      );
+      if (firstTs === null) {
+        firstTs = selectedPlayer.timestamp;
+      }
+      const ts = selectedPlayer.timestamp - firstTs;
+
+      const labels = velocityChart.data.labels!;
+      const data = velocityChart.data.datasets[0].data;
+      if (data.length > 100) {
+        labels.shift();
+        data.shift();
+      }
+      labels.push(ts);
+      data.push(velocityMagnitude);
+      velocityChart.update();
+    }
   };
 </script>
 
 <main class="cont">
+  <div class="sidebar">
+    <canvas id="velocityChart" width="400" height="400"></canvas>
+  </div>
   <div class="sidebar">
     <canvas id="velocityChart" width="400" height="400"></canvas>
   </div>
