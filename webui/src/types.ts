@@ -35,6 +35,7 @@ export interface BallData {
 export interface PlayerData {
   timestamp: number;
   id: number;
+  raw_position: XY;
   position: XY;
   velocity: XY;
   orientation: number;

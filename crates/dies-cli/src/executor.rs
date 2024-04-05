@@ -1,11 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
     pin::pin,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
-use npy::to_file;
 
 use dies_core::PlayerCmd;
 use dies_python_rt::{PyRuntime, PyRuntimeConfig, RuntimeEvent, RuntimeMsg};
@@ -61,7 +60,7 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
 
     let mut ctrlc = pin!(tokio::signal::ctrl_c());
 
-    let mut fail: HashMap<u32, bool> = HashMap::new();
+    let fail: HashMap<u32, bool> = HashMap::new();
     let mut robots: HashSet<u32> = HashSet::new();
     loop {
         let runtime_msg_fut = async {

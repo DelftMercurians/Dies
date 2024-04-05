@@ -14,3 +14,6 @@ dies-serial-client = { version = "0.1.0", path = "../dies-serial-client" }
 log = "0.4.20"
 rapier3d = { version = "0.18.0", features = ["enhanced-determinism"] }
 tokio = "1.36.0"
+atomic_float = "0.1.0"
+crossbeam = "0.8.4"
+intbits = "0.2.0"

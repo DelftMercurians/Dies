@@ -39,6 +39,9 @@ struct Args {
     webui: bool,
 
     #[clap(long, default_value = "false")]
+    webui_devserver: bool,
+
+    #[clap(long, default_value = "false")]
     disable_python: bool,
 
     #[clap(long, default_value = "14:3,5:2")]
@@ -53,7 +56,7 @@ struct Args {
     #[clap(long, default_value = "224.5.23.2:10006")]
     vision_addr: SocketAddr,
 
-    #[clap(long, default_value = "debug")]
+    #[clap(long, default_value = "info")]
     log_level: String,
 
     #[clap(long, default_value = "auto")]
@@ -229,7 +232,34 @@ async fn main() -> Result<()> {
         serial_config,
     };
 
+    let devserver = if args.webui_devserver {
+        let child = tokio::process::Command::new("npm")
+            .args(&[
+                "run",
+                "--silent",
+                "dev",
+                "--",
+                "--clearScreen",
+                "false",
+                "--logLevel",
+                "error",
+                "--port",
+                "5173",
+            ])
+            .current_dir(workspace_root.join("webui"))
+            .spawn()
+            .context("Failed to start webui dev server")?;
+        println!("Started webui dev server at {}", "http://localhost:5173");
+        Some(child)
+    } else {
+        None
+    };
+
     run(config).await.expect("Failed to run executor");
+
+    if let Some(mut child) = devserver {
+        child.kill().await.expect("Failed to kill dev server");
+    }
 
     tracing::info!("Shutting down");
 
