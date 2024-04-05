@@ -1,7 +1,7 @@
+use crate::pid::PID;
 use dies_core::{FieldGeometry, GameState, PlayerCmd, PlayerData};
 use nalgebra::Vector2;
 use std::time::{Duration, Instant};
-use crate::pid::PID;
 
 pub struct PlayerController {
     id: u32,
@@ -30,7 +30,7 @@ impl PlayerController {
         }
     }
 
-    /// increment the missing frame count, return whether it's missing for too long
+    /// Increment the missing frame count, return whether it's missing for too long
     pub fn increment_frame_missings(&mut self) -> bool {
         let threshold: u32 = 100; // for example 1.5s
         self.frame_missings += 1;
@@ -42,7 +42,7 @@ impl PlayerController {
         self.position_pid.set_setpoint(setpoint);
     }
 
-    ///keep track of current position from the frame
+    /// Keep track of current position from the frame
     pub fn update_current_pos(&mut self, state: &PlayerData) {
         self.frame_missings = 0;
         self.last_pos = state.position;
@@ -50,7 +50,12 @@ impl PlayerController {
     }
 
     /// Update the controller with the current state of the player.
-    pub fn update(&mut self, state: &PlayerData, is_dribbling: bool, is_kicking: bool) -> PlayerCmd {
+    pub fn update(
+        &mut self,
+        state: &PlayerData,
+        is_dribbling: bool,
+        is_kicking: bool,
+    ) -> PlayerCmd {
         let mut cmd: PlayerCmd = PlayerCmd {
             id: self.id,
             ..Default::default()
@@ -89,8 +94,7 @@ impl PlayerController {
         if self.kick_timer.is_none() {
             self.kick_timer = Some(Instant::now());
             cmd.arm = true;
-        }
-        else {
+        } else {
             let elapsed = self.kick_timer.unwrap().elapsed();
             if elapsed >= Duration::from_millis(1000) {
                 cmd.kick = true;
@@ -112,16 +116,17 @@ impl PlayerController {
     }
 
     /// out of bound detection
-    pub fn out_of_bound_detection(&self, cmd: &mut PlayerCmd, game_state: GameState ,
-                                  field_geometry: FieldGeometry) {
+    pub fn out_of_bound_detection(
+        &self,
+        cmd: &mut PlayerCmd,
+        game_state: GameState,
+        field_geometry: FieldGeometry,
+    ) {
         // TODO:
         // what is the excepted behavior of this?? I think pid will drag it back when
         // it is out of bound, and since pid is the only way to control the robot, it may be unnecessary
         // to do this check.
     }
-
-
-
 }
 
 fn rotate_vector(v: Vector2<f32>, angle: f32) -> Vector2<f32> {

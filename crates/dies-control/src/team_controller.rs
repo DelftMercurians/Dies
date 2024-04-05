@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
+use crate::player_controller::PlayerController;
+use dies_core::GameState;
 use dies_core::{PlayerCmd, WorldData};
 use nalgebra::{Vector2, Vector3};
 use std::cell::RefCell;
 use std::rc::Rc;
-use dies_core::GameState;
-use crate::player_controller::PlayerController;
 
 pub struct HaltController {
     players: Rc<RefCell<HashMap<u32, PlayerController>>>,
@@ -18,7 +18,11 @@ impl HaltController {
     }
 
     pub fn update(&mut self) -> Vec<PlayerCmd> {
-        self.players.borrow().iter().map(|(id, _)|PlayerCmd::zero(*id)).collect()
+        self.players
+            .borrow()
+            .iter()
+            .map(|(id, _)| PlayerCmd::zero(*id))
+            .collect()
     }
 }
 
@@ -50,11 +54,10 @@ impl StopController {
             let player_controller = players_borrow_mut.get_mut(&id).unwrap();
 
             if ball_speed_norm > 0.1 {
-                let ball_speed_dir:Vector2<f32> = ball_speed_v2 / ball_speed_norm;
+                let ball_speed_dir: Vector2<f32> = ball_speed_v2 / ball_speed_norm;
                 let target_pos: Vector2<f32> = ball_pos_v2 - ball_speed_dir * 500.0;
                 player_controller.set_target_pos(target_pos);
-            }
-            else {
+            } else {
                 let target_pos_dir: Vector2<f32> = (playerData.position - ball_pos_v2).normalize();
                 let target_pos: Vector2<f32> = ball_pos_v2 + target_pos_dir * 500.0;
                 player_controller.set_target_pos(target_pos);
@@ -98,12 +101,13 @@ impl TeamController {
 
     /// Update the controllers with the current state of the players.
     pub fn update(&mut self, world_data: WorldData) -> Vec<PlayerCmd> {
-
         let mut players = self.players.borrow_mut();
         let tracked_ids: Vec<u32> = world_data.own_players.iter().map(|p| p.id).collect();
         for player in &world_data.own_players {
             let id = player.id;
-            let player_controller = players.entry(id).or_insert_with(|| PlayerController::new(id));
+            let player_controller = players
+                .entry(id)
+                .or_insert_with(|| PlayerController::new(id));
             player_controller.update_current_pos(&player);
         }
         for (id, player_controller) in players.iter_mut() {
@@ -116,6 +120,5 @@ impl TeamController {
             GameState::Stop => self.stop_controller.update(world_data),
             _ => Vec::new(),
         }
-
     }
 }
