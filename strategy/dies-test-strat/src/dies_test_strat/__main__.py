@@ -1,7 +1,6 @@
-from math import sqrt, cos, sin, pi
+from math import sqrt, cos, sin, pi, atan2
 import time
 from glob import glob
-from dies_test_strat.PRMController import PRMController
 import numpy as np
 from dies_py import Bridge
 from dies_py.messages import PlayerCmd, Term
@@ -31,6 +30,11 @@ def global_to_local_vel(velx, vely, theta):
 def angle_diff(target, phi):
     return (target - phi + np.pi) % (2 * np.pi) - np.pi
 
+
+def angle_to_point_to(pos1, pos2) -> float:
+    # Given the the pos1 of the first robot and the pos2 of the second robot
+    # find the desired angle from pos1 that points to pos2
+    return atan2(pos2[1] - pos1[1], pos2[0] - pos1[0])
 
 class VelFilter:
     def __init__(self, dim, window=7, alpha=0.6) -> None:
