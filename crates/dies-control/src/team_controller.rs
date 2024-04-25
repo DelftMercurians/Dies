@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::player_controller::PlayerController;
 use dies_core::GameState;
 use dies_core::{PlayerCmd, WorldData};
-use nalgebra::{Vector2, Vector3};
+use nalgebra::{Vector2};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -52,17 +52,19 @@ impl StopController {
         for playerData in world_data.own_players {
             let id = playerData.id;
             let player_controller = players_borrow_mut.get_mut(&id).unwrap();
-
-            if ball_speed_norm > 0.1 {
-                let ball_speed_dir: Vector2<f32> = ball_speed_v2 / ball_speed_norm;
-                let target_pos: Vector2<f32> = ball_pos_v2 - ball_speed_dir * 500.0;
-                player_controller.set_target_pos(target_pos);
-            } else {
-                let target_pos_dir: Vector2<f32> = (playerData.position - ball_pos_v2).normalize();
-                let target_pos: Vector2<f32> = ball_pos_v2 + target_pos_dir * 500.0;
-                player_controller.set_target_pos(target_pos);
+            if (playerData.position - ball_pos_v2).norm() < 500.0 {
+                // if the ball has a speed, i.e >0.1mm/s
+                if ball_speed_norm > 0.1 {
+                    let ball_speed_dir: Vector2<f32> = ball_speed_v2 / ball_speed_norm;
+                    let target_pos: Vector2<f32> = ball_pos_v2 - ball_speed_dir * 500.0;
+                    player_controller.set_target_pos(target_pos);
+                } else {
+                    let target_pos_dir: Vector2<f32> = (playerData.position - ball_pos_v2).normalize();
+                    let target_pos: Vector2<f32> = ball_pos_v2 + target_pos_dir * 500.0;
+                    player_controller.set_target_pos(target_pos);
+                }
             }
-            let mut cmd = player_controller.update(&playerData, false, false);
+            let mut cmd = player_controller.update(false, false);
             let player_speed = (cmd.sx * cmd.sx + cmd.sy * cmd.sy).sqrt();
             if player_speed > 1500.0 {
                 cmd.sx = cmd.sx * 1500.0 / player_speed;
@@ -103,6 +105,7 @@ impl TeamController {
     pub fn update(&mut self, world_data: WorldData) -> Vec<PlayerCmd> {
         let mut players = self.players.borrow_mut();
         let tracked_ids: Vec<u32> = world_data.own_players.iter().map(|p| p.id).collect();
+        
         for player in &world_data.own_players {
             let id = player.id;
             let player_controller = players
@@ -115,7 +118,8 @@ impl TeamController {
                 player_controller.increment_frame_missings();
             }
         }
-        match world_data.current_game_state {
+        
+        match world_data.current_game_state.game_state {
             GameState::Halt | GameState::Timeout => self.halt_controller.update(),
             GameState::Stop => self.stop_controller.update(world_data),
             _ => Vec::new(),

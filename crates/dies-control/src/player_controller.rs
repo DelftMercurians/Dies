@@ -52,7 +52,6 @@ impl PlayerController {
     /// Update the controller with the current state of the player.
     pub fn update(
         &mut self,
-        state: &PlayerData,
         is_dribbling: bool,
         is_kicking: bool,
     ) -> PlayerCmd {

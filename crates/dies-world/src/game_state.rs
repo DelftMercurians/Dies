@@ -14,6 +14,7 @@ pub struct GameStateTracker {
     start: Instant,
     timeout: u64,
     is_outdated: bool,
+    operator_is_blue: Option<bool>,
 }
 
 impl GameStateTracker {
@@ -27,6 +28,7 @@ impl GameStateTracker {
             start: Instant::now(),
             timeout: 0,
             is_outdated: true,
+            operator_is_blue: None,
         }
     }
 
@@ -63,9 +65,34 @@ impl GameStateTracker {
             _ => self.game_state,
         };
 
+        self.operator_is_blue = match command {
+            Command::PREPARE_KICKOFF_BLUE
+            | Command::PREPARE_PENALTY_BLUE
+            | Command::DIRECT_FREE_BLUE
+            | Command::BALL_PLACEMENT_BLUE => Some(true),
+            Command::PREPARE_KICKOFF_YELLOW
+            | Command::PREPARE_PENALTY_YELLOW
+            | Command::DIRECT_FREE_YELLOW
+            | Command::BALL_PLACEMENT_YELLOW => Some(false),
+            _ => self.operator_is_blue,
+        };
+
+        //reset
+        match self.game_state {
+            GameState::Halt | GameState::Stop | GameState::Timeout 
+            | GameState::Run => self.operator_is_blue = None, 
+            _ => (),
+        }
+        
         return self.game_state;
     }
 
+    
+    pub fn get_operator_is_blue(&self) -> Option<bool> {
+        self.operator_is_blue
+    }
+    
+    
     pub fn start_ball_movement_check(&mut self, ball_pos: Vector3<f32>, timeout: u64) {
         if self.is_outdated == false {
             return;

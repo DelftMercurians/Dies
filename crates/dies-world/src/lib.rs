@@ -9,7 +9,8 @@ mod player;
 
 use crate::game_state::GameStateTracker;
 use ball::BallTracker;
-pub use dies_core::{BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, PlayerData};
+pub use dies_core::{GameStateData, BallData, FieldCircularArc, FieldGeometry, 
+                    FieldLineSegment, PlayerData};
 use dies_core::{GameState, WorldData};
 use player::PlayerTracker;
 
@@ -204,13 +205,22 @@ impl WorldTracker {
                 opp_players.push(player_data);
             }
         }
-
+        
+        let game_state = GameStateData {
+            game_state: self.game_state_tracker.get_game_state(),
+            us_operating: match self.game_state_tracker.get_operator_is_blue() { 
+                Some(true) => self.is_blue,
+                Some(false) => !self.is_blue,
+                None => true
+            }
+        };
+        
         Some(WorldData {
             own_players: own_players.into_iter().cloned().collect(),
             opp_players: opp_players.into_iter().cloned().collect(),
             ball: self.ball_tracker.get().cloned(),
             field_geom: field_geom.cloned(),
-            current_game_state: self.game_state_tracker.get_game_state(),
+            current_game_state: game_state
         })
     }
 }

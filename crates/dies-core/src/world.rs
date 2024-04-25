@@ -32,6 +32,15 @@ pub struct BallData {
     pub velocity: Vector3<f32>,
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct GameStateData {
+    /// The state of current game
+    pub game_state: GameState,
+    /// If we are the main party currently performing tasks in the state.
+    /// true for symmetric states(halt stop run timout)
+    pub us_operating: bool,
+}
+
 /// A struct to store the player state from a single frame.
 #[derive(Serialize, Clone, Debug)]
 pub struct PlayerData {
@@ -60,5 +69,5 @@ pub struct WorldData {
     pub opp_players: Vec<PlayerData>,
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
-    pub current_game_state: GameState,
+    pub current_game_state: GameStateData
 }
