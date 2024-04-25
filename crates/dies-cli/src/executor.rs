@@ -51,7 +51,7 @@ pub async fn run(config: ExecutorConfig) -> Result<()> {
     };
     let robot_ids = config.robot_ids;
 
-    let mut team_controller = TeamController::new();
+    let mut team_controller = TeamController::new(tracker.get_play_dir_x());
 
     // Launch webui
     let (webui_sender, mut webui_cmd_rx, webui_handle) = if config.webui {

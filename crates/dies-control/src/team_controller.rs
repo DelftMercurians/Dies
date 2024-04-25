@@ -197,14 +197,16 @@ pub struct BallReplacementController {
     players: Rc<RefCell<HashMap<u32, PlayerController>>>,
     assigned_player: Option<(u32, BallReplacementStatus)>,
     assigned_pos: Option<Vector2<f32>>,
+    play_dir_x: f32,
 }
 
 impl BallReplacementController {
-    pub fn new(players: Rc<RefCell<HashMap<u32, PlayerController>>>) -> Self {
+    pub fn new(players: Rc<RefCell<HashMap<u32, PlayerController>>>, play_dir_x: f32) -> Self {
         Self {
             players,
             assigned_player: None,
             assigned_pos: None,
+            play_dir_x
         }
     }
     /// assign the nearest player to the ball to replace the ball
@@ -233,20 +235,67 @@ impl BallReplacementController {
             }
         }
 
-        // if the ball is within 85mm of the robot, and the abs relative angle is less than PI/4,
-        // assume robot is manipulating the ball
+
         let (aid, status) = self.assigned_player.as_ref().unwrap();
-        
-        // if aid is not in the current playerdata
-        if world_data.own_players.iter().find(|p| p.id == *aid).is_none() {
-            return commands;
+
+        if let Some(player) = world_data.own_players.iter().find(|p| p.id == *aid) {
+            let player_pos = player.position;
+            let controller = players_borrow_mut.get_mut(aid).unwrap();
+            // if the ball is within 80mm of the robot ans within PI/4 angle
+            // assume robot is manipulating the ball
+            let ball_angle = (ball_pos.xy() - player_pos).angle(&Vector2::new(self.play_dir_x, 0.0));
+            let is_manipulating = (player_pos - ball_pos.xy()).norm() < 80.0
+                && (ball_angle - player.orientation).abs() < PI / 4.0;
+
+            let target_angle = (designated_pos - player_pos).angle(&Vector2::new(self.play_dir_x, 0.0));
+            let mut is_dribbling = false;
+            let new_status = match status {
+                BallReplacementStatus::NoGoal => {
+                    controller.set_target_pos(ball_pos.xy());
+                    controller.set_target_heading(ball_angle);
+                    BallReplacementStatus::BeforeManipulation
+                },
+                BallReplacementStatus::BeforeManipulation => {
+                    if is_manipulating {
+                        controller.set_target_pos(designated_pos);
+                        controller.set_target_heading(target_angle);
+                        is_dribbling = true;
+                        BallReplacementStatus::AfterManipulation
+                    } else {
+                        BallReplacementStatus::BeforeManipulation
+                    }
+                },
+                BallReplacementStatus::AfterManipulation => {
+                    if (player_pos - designated_pos).norm() < 50.0 {
+                        //step back 50mm
+                        let opposite_dir = if (player.orientation + PI) > PI {
+                            player.orientation + PI - 2.0 * PI
+                        } else {
+                            player.orientation + PI
+                        };
+                        
+                        controller.set_target_heading((opposite_dir));
+                        controller.set_target_pos(designated_pos - (player_pos - designated_pos).normalize() * 50.0);
+                        BallReplacementStatus::Accomplished
+                    } else if !is_manipulating {
+                        controller.set_target_pos(ball_pos.xy());
+                        controller.set_target_heading(ball_angle);
+                        BallReplacementStatus::BeforeManipulation
+                    }
+                    else {
+                        is_dribbling = true;
+                        BallReplacementStatus::AfterManipulation
+                    }
+                },
+                BallReplacementStatus::Accomplished => {
+                    BallReplacementStatus::Accomplished
+                }
+            };
+            
+            let cmd = controller.update(is_dribbling, false);
+            commands.push(cmd);
+            self.assigned_player = Some((*aid, new_status));
         }
-        
-        let controller = players_borrow_mut.get_mut(aid).unwrap();
-        
-        
-        
-        
         commands
     }
 
@@ -262,22 +311,22 @@ pub struct TeamController {
     halt_controller: HaltController,
     stop_controller: StopController,
     kick_off_controller: KickOffController,
+    ball_replacement_controller: BallReplacementController,
+    play_dir_x: f32,
 }
 
-impl Default for TeamController {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+
 
 impl TeamController {
     /// Create a new team controller.
-    pub fn new() -> Self {
+    pub fn new(play_dir_x: f32) -> Self {
         let players = Rc::new(RefCell::new(HashMap::new()));
         Self {
             halt_controller: HaltController::new(Rc::clone(&players)),
             stop_controller: StopController::new(Rc::clone(&players)),
             kick_off_controller: KickOffController::new(Rc::clone(&players)),
+            ball_replacement_controller: BallReplacementController::new(Rc::clone(&players), play_dir_x),
+            play_dir_x,
             players,
         }
     }
@@ -318,7 +367,7 @@ impl TeamController {
                 if world_data.current_game_state.us_operating {
                     self.stop_controller.update(world_data)
                 } else {
-                    self.stop_controller.update(world_data)
+                    self.ball_replacement_controller.update(world_data, pos)
                 }
             }
             _ => Vec::new(),

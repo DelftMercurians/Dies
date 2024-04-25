@@ -83,6 +83,10 @@ impl WorldTracker {
             }
         }
     }
+    
+    pub fn get_play_dir_x(&self) -> f32 {
+        self.play_dir_x
+    }
 
     /// Update the world state from a referee message.
     pub fn update_from_referee(&mut self, data: &Referee) {
