@@ -42,6 +42,13 @@ impl PlayerController {
         self.position_pid.set_setpoint(setpoint);
     }
 
+
+
+    /// Set the target orientation for the player.
+    pub fn set_target_heading(&mut self, setpoint: f32) {
+        self.heading_pid.set_setpoint(setpoint);
+    }
+
     /// Keep track of current position from the frame
     pub fn update_current_pos(&mut self, state: &PlayerData) {
         self.frame_missings = 0;
