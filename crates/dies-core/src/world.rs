@@ -11,7 +11,7 @@ pub enum GameState {
     Timeout,
     Stop,
     PrepareKickoff,
-    BallReplacement,
+    BallReplacement(Vector2<f32>),
     PreparePenalty,
     Kickoff,
     FreeKick,

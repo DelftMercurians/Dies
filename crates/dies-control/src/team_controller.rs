@@ -95,12 +95,12 @@ pub struct KickOffController {
 
 impl KickOffController {
     pub fn new (players: Rc<RefCell<HashMap<u32, PlayerController>>>) -> Self {
-        Self { players, assigned_player: None, 
+        Self { players, assigned_player: None,
             pos_assigned: HashMap::new(),
             step: 500.0
         }
     }
-    
+
     /// our prekick-off -> move to our half of the field assign 1 robot in the circle
     /// opponent's prekick-off ->  move to our half of the field
     /// our kick-off -> the assigned player kick the ball
@@ -108,8 +108,8 @@ impl KickOffController {
         let mut commands = Vec::new();
         let ball_pos = world_data.ball.clone().unwrap().position;
         let mut players_borrow_mut = self.players.borrow_mut();
-        
-        
+
+
         if world_data.current_game_state.game_state == GameState::PrepareKickoff {
 
             // if us attacking, assign a player to the ball
@@ -118,10 +118,10 @@ impl KickOffController {
                 self.assigned_player = Some((aid, PlayerStatus::NoGoal));
                 let controller = players_borrow_mut.get_mut(&aid).unwrap();
                 // we go to a fixed position inside the circle
-                controller.set_target_pos(Vector2::new(400.0, 0.0));
-                self.pos_assigned.insert(aid, Vector2::new(400.0, 0.0));
+                controller.set_target_pos(Vector2::new(100.0, 0.0));
+                self.pos_assigned.insert(aid, Vector2::new(100.0, 0.0));
             }
-            
+
             // move our robot to our half of the field
             let x_coord = (world_data.field_geom.clone().unwrap().field_length as f32) / 4.0;
             for player in world_data.own_players {
@@ -132,7 +132,7 @@ impl KickOffController {
                         0 => ((self.pos_assigned.len()/2) as f32) * self.step,
                         1 => {
                             let offset: i32 = (self.pos_assigned.len() as i32 + 1) / 2;
-                            - (offset as f32) * self.step                            
+                            - (offset as f32) * self.step
                         },
                         _ => 0.0
                     };
@@ -147,10 +147,10 @@ impl KickOffController {
         else if let Some((aid, status)) = self.assigned_player.as_ref() {
             //find the balldata of the assigned player, in the optional variable
             let playerdata = world_data.own_players.iter().find(|p| p.id == *aid);
-            
+
             let controller = players_borrow_mut.get_mut(aid).unwrap();
             let mut kick = false;
-            let new_status = match status { 
+            let new_status = match status {
                 PlayerStatus::NoGoal => {
                     controller.set_target_pos(ball_pos.xy());
                     controller.set_target_heading(-PI);
@@ -159,7 +159,7 @@ impl KickOffController {
                 PlayerStatus::Ongoing => {
                     if playerdata.is_some() {
                         let player = playerdata.unwrap();
-                        if (player.position - ball_pos.xy()).norm() < 100.0 && 
+                        if (player.position - ball_pos.xy()).norm() < 100.0 &&
                             player.orientation + PI < 0.1 {
                             PlayerStatus::Accomplished
                         } else {
@@ -174,7 +174,7 @@ impl KickOffController {
                     PlayerStatus::Accomplished
                 }
             };
-            
+
             let cmd = controller.update(false, kick);
             commands.push(cmd);
             self.assigned_player = Some((*aid, new_status));
@@ -184,7 +184,73 @@ impl KickOffController {
 }
 
 
+#[derive(Clone, Debug, PartialEq, Copy)]
+pub enum BallReplacementStatus {
+    NoGoal,
+    BeforeManipulation,
+    AfterManipulation,
+    Accomplished,
+}
 
+
+pub struct BallReplacementController {
+    players: Rc<RefCell<HashMap<u32, PlayerController>>>,
+    assigned_player: Option<(u32, BallReplacementStatus)>,
+    assigned_pos: Option<Vector2<f32>>,
+}
+
+impl BallReplacementController {
+    pub fn new(players: Rc<RefCell<HashMap<u32, PlayerController>>>) -> Self {
+        Self {
+            players,
+            assigned_player: None,
+            assigned_pos: None,
+        }
+    }
+    /// assign the nearest player to the ball to replace the ball
+    /// it will move to the ball and heading to it(before manipulation)
+    /// then it starts dribbling and move to the designated position(after manipulation)
+    /// then it stops the dribbler and the task is accomplished, afterwards the robot step back 0.05m
+    pub fn update(&mut self, world_data: WorldData, designated_pos: Vector2<f32>) -> Vec<PlayerCmd>{
+        self.assigned_pos = Some(designated_pos);
+        let mut commands = Vec::new();
+        let ball_pos = world_data.ball.clone().unwrap().position;
+        let mut players_borrow_mut = self.players.borrow_mut();
+
+        if self.assigned_player.is_none() {
+            //assign the nearest player to the ball
+            let mut min_distance = f32::MAX;
+            let mut nearest_player = None;
+            for player in &world_data.own_players {
+                let distance = (player.position - ball_pos.xy()).norm();
+                if distance < min_distance {
+                    min_distance = distance;
+                    nearest_player = Some(player.id);
+                }
+            }
+            if let Some(np) = nearest_player {
+                self.assigned_player = Some((np, BallReplacementStatus::NoGoal));
+            }
+        }
+
+        // if the ball is within 85mm of the robot, and the abs relative angle is less than PI/4,
+        // assume robot is manipulating the ball
+        let (aid, status) = self.assigned_player.as_ref().unwrap();
+        
+        // if aid is not in the current playerdata
+        if world_data.own_players.iter().find(|p| p.id == *aid).is_none() {
+            return commands;
+        }
+        
+        let controller = players_borrow_mut.get_mut(aid).unwrap();
+        
+        
+        
+        
+        commands
+    }
+
+}
 
 
 
@@ -247,6 +313,13 @@ impl TeamController {
             GameState::Stop => self.stop_controller.update(world_data),
             GameState::PrepareKickoff | GameState::Kickoff => {
                 self.kick_off_controller.update(world_data)
+            }
+            GameState::BallReplacement(pos) => {
+                if world_data.current_game_state.us_operating {
+                    self.stop_controller.update(world_data)
+                } else {
+                    self.stop_controller.update(world_data)
+                }
             }
             _ => Vec::new(),
         }
