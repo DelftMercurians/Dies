@@ -150,6 +150,7 @@ impl KickOffController {
 
             let controller = players_borrow_mut.get_mut(aid).unwrap();
             let mut kick = false;
+            let mut dribble = false;
             let new_status = match status {
                 PlayerStatus::NoGoal => {
                     controller.set_target_pos(ball_pos.xy());
@@ -159,7 +160,7 @@ impl KickOffController {
                 PlayerStatus::Ongoing => {
                     if playerdata.is_some() {
                         let player = playerdata.unwrap();
-                        if (player.position - ball_pos.xy()).norm() < 100.0 &&
+                        if (player.position - ball_pos.xy()).norm() < 10.0 &&
                             player.orientation + PI < 0.1 {
                             PlayerStatus::Accomplished
                         } else {
@@ -171,11 +172,16 @@ impl KickOffController {
                 },
                 PlayerStatus::Accomplished => {
                     kick = true;
+                    dribble = true;
                     PlayerStatus::Accomplished
                 }
             };
 
-            let cmd = controller.update(false, kick);
+            let mut cmd = controller.update(dribble, kick);
+            if(new_status == PlayerStatus::Accomplished) {
+                cmd.sx = 0.0;
+                cmd.sy = 0.0;
+            }
             commands.push(cmd);
             self.assigned_player = Some((*aid, new_status));
         }
@@ -266,14 +272,14 @@ impl BallReplacementController {
                     }
                 },
                 BallReplacementStatus::AfterManipulation => {
-                    if (player_pos - designated_pos).norm() < 50.0 {
+                    if (player_pos - designated_pos).norm() < 10.0 {
                         //step back 50mm
                         let opposite_dir = if (player.orientation + PI) > PI {
                             player.orientation + PI - 2.0 * PI
                         } else {
                             player.orientation + PI
                         };
-                        
+
                         controller.set_target_heading((opposite_dir));
                         controller.set_target_pos(designated_pos - (player_pos - designated_pos).normalize() * 50.0);
                         BallReplacementStatus::Accomplished
@@ -291,7 +297,7 @@ impl BallReplacementController {
                     BallReplacementStatus::Accomplished
                 }
             };
-            
+
             let cmd = controller.update(is_dribbling, false);
             commands.push(cmd);
             self.assigned_player = Some((*aid, new_status));
@@ -302,7 +308,175 @@ impl BallReplacementController {
 }
 
 
+#[derive(Clone, Debug, PartialEq, Copy)]
+pub enum PenaltyKickStatus {
+    NoGoal,
+    Ongoing,
+    AdjustingDirections,
+    Accomplished,
+}
 
+
+pub struct PenaltyKickController {
+    players: Rc<RefCell<HashMap<u32, PlayerController>>>,
+    assigned_player: Option<(u32, PenaltyKickStatus)>,
+    pos_assigned: HashMap<u32, Vector2<f32>>,
+    kick_angle: Option<f32>
+}
+
+
+impl PenaltyKickController {
+    pub fn new (players: Rc<RefCell<HashMap<u32, PlayerController>>>) -> Self {
+        Self { players, 
+            assigned_player: None,
+            pos_assigned: HashMap::new(),
+            kick_angle: None
+        }
+    }
+
+    /// generate a location to go based on an existing assigned locations
+    /// TODO: collision avoidance
+    pub fn generate_position(&self, x_range: Vector2<f32>) -> Vector2<f32> {
+        // get all the assigned xs and all the assigned ys
+        let mut xs: Vec<f32> = [x_range.x, x_range.y].to_vec();
+        let mut ys: Vec<f32> = [-3000.0, 3000.0].to_vec();
+        for (_, pos) in &self.pos_assigned {
+            xs.push(pos.x);
+            ys.push(pos.y);
+        }
+
+        // sort xs and ys
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        // new x/y is the middle of the biggest interval
+        let mut new_x = x_range.x;
+        let mut new_y = -3000.0;
+        let mut max_interval = 0.0;
+        for i in 0..xs.len() - 1 {
+            let interval = xs[i + 1] - xs[i];
+            if interval > max_interval {
+                max_interval = interval;
+                new_x = xs[i] + interval / 2.0;
+            }
+        }
+        max_interval = 0.0;
+        for i in 0..ys.len() - 1 {
+            let interval = ys[i + 1] - ys[i];
+            if interval > max_interval {
+                max_interval = interval;
+                new_y = ys[i] + interval / 2.0;
+            }
+        }
+        Vector2::new(new_x, new_y)
+    }
+
+    /// our prepenalty kick -> assign 1 robot as the attacker and the others move 1m behind the ball
+    /// opponent's prepenalty kick-> goalkeeper on the touch line, others 1m behind the ball
+    /// our penalty -> the assigned player kick the ball toward the middle of the goal.
+    /// opponent's penalty -> the goalkeeper move onto the intersection point of the ball trajectory 
+    /// and the touch line.
+    /// TODO: add the goalkeeper behaviour if we are defenders.
+    pub fn update(&mut self, world_data: WorldData) -> Vec<PlayerCmd> {
+        let mut commands = Vec::new();
+        let ball_pos = world_data.ball.clone().unwrap().position;
+        let mut players_borrow_mut = self.players.borrow_mut();
+        let x_range = if world_data.current_game_state.us_operating {
+            Vector2::new(ball_pos.x + 1000.0, 4500.0)
+        } else {
+            Vector2::new(-4500.0, ball_pos.x - 1000.0)
+        };
+
+        if world_data.current_game_state.game_state == GameState::PreparePenalty {
+
+            // if us attacking, assign a player to the ball
+            if world_data.current_game_state.us_operating && self.assigned_player.is_none() && 
+                !world_data.own_players.is_empty() {
+                let aid = world_data.own_players[0].id;
+                let player_pos = world_data.own_players[0].position;
+                self.assigned_player = Some((aid, PenaltyKickStatus::NoGoal));
+                let controller = players_borrow_mut.get_mut(&aid).unwrap();
+                // heading to the nearest 100m place toward the penalty kick mark,with correct heading
+                let dir = (ball_pos.xy() - player_pos).angle(&Vector2::new(1.0, 0.0));
+                let target_pos = ball_pos.xy() - 100.0 * (ball_pos.xy() - player_pos).normalize();
+                controller.set_target_pos(target_pos);
+                controller.set_target_heading(dir);
+                self.pos_assigned.insert(aid, target_pos);
+            }
+
+            for player in &world_data.own_players {
+                let id = player.id;
+                let controller = players_borrow_mut.get_mut(&id).unwrap();
+                if !self.pos_assigned.contains_key(&id) {
+                    let target_pos = self.generate_position(x_range);
+                    controller.set_target_pos(target_pos);
+                    self.pos_assigned.insert(id, target_pos);
+                }
+                let cmd = controller.update(false, false);
+                commands.push(cmd);
+            }
+        }
+        else if world_data.current_game_state.game_state == GameState::Penalty {
+            if let Some((aid, status)) = self.assigned_player.as_ref() {
+                //find the balldata of the assigned player, in the optional variable
+                let playerdata = world_data.own_players.iter().find(|p| p.id == *aid);
+                if let Some(player) = playerdata {
+                    let player_pos = player.position;
+                    let controller = players_borrow_mut.get_mut(aid).unwrap();
+                    let mut kick = false;
+                    let mut dribble = false;
+                    let new_status: PenaltyKickStatus = match status {
+                        PenaltyKickStatus::NoGoal => {
+                            controller.set_target_pos(ball_pos.xy());
+                            controller.set_target_heading((ball_pos.xy() - player_pos).angle(&Vector2::new(1.0, 0.0)));
+                            PenaltyKickStatus::Ongoing
+                        },
+                        PenaltyKickStatus::Ongoing => {
+                            if (player_pos - ball_pos.xy()).norm() < 10.0 &&
+                                (player_pos - ball_pos.xy()).angle(&Vector2::new(1.0, 0.0)).abs() < 0.1 {
+                                // calculate the direction of the kick
+                                let goal_pos = Vector2::new(-3500.0, 0.0);
+                                let dir = (goal_pos - ball_pos.xy()).angle(&Vector2::new(1.0, 0.0));
+                                self.kick_angle = Some(dir);
+                                controller.set_target_heading(dir);
+                                PenaltyKickStatus::AdjustingDirections
+                            } else {
+                                PenaltyKickStatus::Ongoing
+                            }
+                        },
+                        PenaltyKickStatus::AdjustingDirections => {
+                            dribble = true;
+                            if let Some(kick_angle) = self.kick_angle {
+                                if (player_pos - ball_pos.xy()).norm() < 10.0 &&
+                                    (player_pos - ball_pos.xy()).angle(&Vector2::new(1.0, 0.0)).abs() < 0.05 {
+                                    PenaltyKickStatus::Accomplished
+                                } else {
+                                    PenaltyKickStatus::AdjustingDirections
+                                }
+                            } else {
+                                PenaltyKickStatus::AdjustingDirections
+                            }
+                        }
+                        PenaltyKickStatus::Accomplished => {
+                            kick = true;
+                            dribble = true;
+                            PenaltyKickStatus::Accomplished
+                        }
+                    };
+                    let mut cmd = controller.update(dribble, kick);
+                    // if accomplished/adjusting, set the speed to zero
+                    if new_status == PenaltyKickStatus::Accomplished
+                        || new_status == PenaltyKickStatus::AdjustingDirections {
+                        cmd.sx = 0.0;
+                        cmd.sy = 0.0;
+                    }
+                    commands.push(cmd);
+                    self.assigned_player = Some((*aid, new_status));
+                }
+            }
+        }
+        commands
+    }
+}
 
 
 
@@ -312,6 +486,7 @@ pub struct TeamController {
     stop_controller: StopController,
     kick_off_controller: KickOffController,
     ball_replacement_controller: BallReplacementController,
+    penalty_kick_controller: PenaltyKickController,
     play_dir_x: f32,
 }
 
@@ -326,6 +501,7 @@ impl TeamController {
             stop_controller: StopController::new(Rc::clone(&players)),
             kick_off_controller: KickOffController::new(Rc::clone(&players)),
             ball_replacement_controller: BallReplacementController::new(Rc::clone(&players), play_dir_x),
+            penalty_kick_controller: PenaltyKickController::new(Rc::clone(&players)),
             play_dir_x,
             players,
         }
@@ -369,6 +545,9 @@ impl TeamController {
                 } else {
                     self.ball_replacement_controller.update(world_data, pos)
                 }
+            }
+            GameState::PreparePenalty | GameState::Penalty | GameState::PenaltyRun=> {
+                self.penalty_kick_controller.update(world_data)
             }
             _ => Vec::new(),
         }
