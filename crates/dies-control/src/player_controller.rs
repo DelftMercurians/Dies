@@ -1,5 +1,5 @@
 use crate::pid::PID;
-use dies_core::{FieldGeometry, GameState, PlayerCmd, PlayerData};
+use dies_core::{PlayerCmd, PlayerData};
 use nalgebra::Vector2;
 use std::time::{Duration, Instant};
 
@@ -123,10 +123,7 @@ impl PlayerController {
 
     /// out of bound detection
     pub fn out_of_bound_detection(
-        &self,
-        cmd: &mut PlayerCmd,
-        game_state: GameState,
-        field_geometry: FieldGeometry,
+        &self
     ) {
         // TODO:
         // what is the excepted behavior of this?? I think pid will drag it back when

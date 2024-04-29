@@ -178,7 +178,7 @@ impl KickOffController {
             };
 
             let mut cmd = controller.update(dribble, kick);
-            if(new_status == PlayerStatus::Accomplished) {
+            if new_status == PlayerStatus::Accomplished {
                 cmd.sx = 0.0;
                 cmd.sy = 0.0;
             }
@@ -280,7 +280,7 @@ impl BallReplacementController {
                             player.orientation + PI
                         };
 
-                        controller.set_target_heading((opposite_dir));
+                        controller.set_target_heading(opposite_dir);
                         controller.set_target_pos(designated_pos - (player_pos - designated_pos).normalize() * 50.0);
                         BallReplacementStatus::Accomplished
                     } else if !is_manipulating {
@@ -445,7 +445,7 @@ impl PenaltyKickController {
                         },
                         PenaltyKickStatus::AdjustingDirections => {
                             dribble = true;
-                            if let Some(kick_angle) = self.kick_angle {
+                            if let Some(_) = self.kick_angle {
                                 if (player_pos - ball_pos.xy()).norm() < 10.0 &&
                                     (player_pos - ball_pos.xy()).angle(&Vector2::new(1.0, 0.0)).abs() < 0.05 {
                                     PenaltyKickStatus::Accomplished

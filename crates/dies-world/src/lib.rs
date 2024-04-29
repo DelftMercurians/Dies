@@ -12,7 +12,6 @@ use ball::BallTracker;
 pub use dies_core::{GameStateData, BallData, FieldCircularArc, FieldGeometry, 
                     FieldLineSegment, PlayerData};
 use dies_core::{GameState, WorldData};
-use dies_protos::ssl_gc_geometry::Vector2;
 use player::PlayerTracker;
 use crate::coord_utils::to_dies_coords2;
 
