@@ -1,124 +1,134 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::player_controller::PlayerController;
+use crate::player_controller::{self, KickerControlInput, PlayerControlInput, PlayerController};
 use dies_core::GameState;
 use dies_core::{PlayerCmd, WorldData};
-use nalgebra::{Vector2, Vector3};
+use nalgebra::Vector2;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub struct HaltController {
-    players: Rc<RefCell<HashMap<u32, PlayerController>>>,
-}
+/// Everyone stops, notice that this only interrupts the players, so if the game
+/// recovers the players will head to their original goal.
+pub struct HaltController;
+
 impl HaltController {
-    /// everyone stops, notice that this only interrupts the players, so if the game
-    ///recovers the players will head to their original goal.
-    pub fn new(players: Rc<RefCell<HashMap<u32, PlayerController>>>) -> Self {
-        Self { players }
+    pub fn new() -> Self {
+        Self
     }
 
-    pub fn update(&mut self) -> Vec<PlayerCmd> {
-        self.players
-            .borrow()
+    pub fn update(&mut self, world: &WorldData) -> Vec<PlayerControlInput> {
+        world
+            .own_players
             .iter()
-            .map(|(id, _)| PlayerCmd::zero(*id))
+            .map(|p| PlayerControlInput::new(p.id))
             .collect()
     }
 }
 
-pub struct StopController {
-    players: Rc<RefCell<HashMap<u32, PlayerController>>>,
-}
-impl StopController {
-    /// After generating the commands, everyone's speed is capped at 1.5m/s.
-    /// and if the player is less than 500mm from the ball, the goal is set to the point 500mm away from the ball.
-    /// and in the opposite of the ball's speed direction.
-    /// dribbler is also stopped.
-    /// we only issue commands for players in the current frame,
-    /// and we assume the world covers every player's state in a long enough time.
-    pub fn new(players: Rc<RefCell<HashMap<u32, PlayerController>>>) -> Self {
-        Self { players }
-    }
-
-    pub fn update(&mut self, world_data: WorldData) -> Vec<PlayerCmd> {
-        let mut commands = Vec::new();
-        let ball_pos = world_data.ball.clone().unwrap().position;
-        let ball_speed = world_data.ball.clone().unwrap().velocity;
-        let ball_pos_v2 = Vector2::new(ball_pos.x, ball_pos.y);
-        let ball_speed_v2 = Vector2::new(ball_speed.x, ball_speed.y);
-        let ball_speed_norm = ball_speed_v2.norm();
-        let mut players_borrow_mut = self.players.borrow_mut();
-
-        for playerData in world_data.own_players {
-            let id = playerData.id;
-            let player_controller = players_borrow_mut.get_mut(&id).unwrap();
-
-            if ball_speed_norm > 0.1 {
-                let ball_speed_dir: Vector2<f32> = ball_speed_v2 / ball_speed_norm;
-                let target_pos: Vector2<f32> = ball_pos_v2 - ball_speed_dir * 500.0;
-                player_controller.set_target_pos(target_pos);
-            } else {
-                let target_pos_dir: Vector2<f32> = (playerData.position - ball_pos_v2).normalize();
-                let target_pos: Vector2<f32> = ball_pos_v2 + target_pos_dir * 500.0;
-                player_controller.set_target_pos(target_pos);
-            }
-            let mut cmd = player_controller.update(&playerData, false, false);
-            let player_speed = (cmd.sx * cmd.sx + cmd.sy * cmd.sy).sqrt();
-            if player_speed > 1500.0 {
-                cmd.sx = cmd.sx * 1500.0 / player_speed;
-                cmd.sy = cmd.sy * 1500.0 / player_speed;
-            }
-            commands.push(cmd);
-        }
-        commands
-    }
-}
-
 pub struct TeamController {
-    players: Rc<RefCell<HashMap<u32, PlayerController>>>,
+    player_controllers: HashMap<u32, PlayerController>,
     halt_controller: HaltController,
-    stop_controller: StopController,
 }
 
 impl TeamController {
     /// Create a new team controller.
     pub fn new() -> Self {
-        let players = Rc::new(RefCell::new(HashMap::new()));
+        let players = HashMap::new();
         Self {
-            halt_controller: HaltController::new(Rc::clone(&players)),
-            stop_controller: StopController::new(Rc::clone(&players)),
-            players,
-        }
-    }
-
-    /// Set the target position for the player with the given ID.
-    pub fn set_target_pos(&mut self, id: u32, setpoint: Vector2<f32>) {
-        let mut players = self.players.borrow_mut();
-        if let Some(player) = players.get_mut(&id) {
-            player.set_target_pos(setpoint);
+            halt_controller: HaltController::new(),
+            player_controllers: players,
         }
     }
 
     /// Update the controllers with the current state of the players.
-    pub fn update(&mut self, world_data: WorldData) -> Vec<PlayerCmd> {
-        let mut players = self.players.borrow_mut();
-        let tracked_ids: Vec<u32> = world_data.own_players.iter().map(|p| p.id).collect();
-        for player in &world_data.own_players {
-            let id = player.id;
-            let player_controller = players
-                .entry(id)
-                .or_insert_with(|| PlayerController::new(id));
-            player_controller.update_current_pos(&player);
-        }
-        for (id, player_controller) in players.iter_mut() {
-            if !tracked_ids.contains(id) {
-                player_controller.increment_frame_missings();
+    pub fn update(&mut self, world_data: WorldData) {
+        // Ensure there is a player controller for every ID
+        let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
+        for id in detected_ids.iter() {
+            if !self.player_controllers.contains_key(id) {
+                self.player_controllers
+                    .insert(*id, PlayerController::new(*id));
             }
         }
-        match world_data.current_game_state {
-            GameState::Halt | GameState::Timeout => self.halt_controller.update(),
-            GameState::Stop => self.stop_controller.update(world_data),
+
+        let mut inputs = match world_data.current_game_state {
+            GameState::Halt | GameState::Timeout => self.halt_controller.update(&world_data),
             _ => Vec::new(),
+        };
+
+        // If in a stop state, override the inputs
+        if world_data.current_game_state == GameState::Stop {
+            inputs = stop_override(world_data.clone(), inputs);
+        }
+
+        // Update the player controllers
+        for controller in self.player_controllers.values_mut() {
+            let player_data = world_data
+                .own_players
+                .iter()
+                .find(|p| p.id == controller.id());
+
+            if let Some(player_data) = player_data {
+                let input = inputs
+                    .iter()
+                    .find(|i| i.id == controller.id())
+                    .cloned()
+                    .unwrap_or_else(|| PlayerControlInput::new(controller.id()));
+
+                controller.update(player_data, input);
+            } else {
+                controller.increment_frames_missings();
+            }
         }
     }
+
+    /// Get the currently active commands for the players.
+    pub fn commands(&self) -> Vec<PlayerCmd> {
+        self.player_controllers
+            .values()
+            .map(|c| c.command())
+            .collect()
+    }
+}
+
+/// Override the inputs to comply with the stop state.
+fn stop_override(
+    world_data: WorldData,
+    inputs: Vec<PlayerControlInput>,
+) -> Vec<PlayerControlInput> {
+    let ball_pos = world_data.ball.as_ref().map(|b| b.position.xy());
+    let ball_vel = world_data.ball.as_ref().map(|b| b.velocity.xy());
+    inputs
+        .iter()
+        .map(|input| {
+            let player_data = world_data
+                .own_players
+                .iter()
+                .find(|p| p.id == input.id)
+                .expect("Player not found in world data");
+
+            let mut new_input = input.clone();
+
+            // Cap speed at 1.5m/s
+            new_input.velocity = input.velocity.cap_magnitude(1.5);
+
+            // If the player is less than 500mm from the ball, set the goal to the point 500mm away
+            // from the ball, in the opposite direction of the ball's speed.
+            if let (Some(ball_pos), Some(ball_vel)) = (ball_pos, ball_vel) {
+                let dist = (player_data.position - ball_pos).norm();
+                if dist < 500.0 {
+                    let goal = ball_pos - ball_vel.normalize() * 500.0;
+                    new_input.position = Some(goal);
+                }
+            }
+
+            // Stop dribbler
+            new_input.dribbling_speed = 0.0;
+
+            // Disable kick
+            new_input.kicker = KickerControlInput::Disarm;
+
+            new_input
+        })
+        .collect()
 }

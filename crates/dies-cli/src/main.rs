@@ -16,10 +16,7 @@ use tracing_subscriber::prelude::*;
 use dies_python_rt::{PyExecute, PyRuntimeConfig};
 use dies_serial_client::list_serial_ports;
 
-mod executor;
 mod mock_vision;
-
-use crate::executor::{run, ExecutorConfig};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum VisionType {
@@ -254,8 +251,6 @@ async fn main() -> Result<()> {
     } else {
         None
     };
-
-    run(config).await.expect("Failed to run executor");
 
     if let Some(mut child) = devserver {
         child.kill().await.expect("Failed to kill dev server");

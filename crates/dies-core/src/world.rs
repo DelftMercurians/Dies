@@ -4,8 +4,9 @@ use serde::Serialize;
 use crate::FieldGeometry;
 
 /// The game state, as reported by the referee.
-#[derive(Serialize, Clone, Debug, PartialEq, Copy)]
+#[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
 pub enum GameState {
+    #[default]
     Unknown,
     Halt,
     Timeout,
@@ -54,7 +55,7 @@ pub struct PlayerData {
 }
 
 /// A struct to store the world state from a single frame.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct WorldData {
     pub own_players: Vec<PlayerData>,
     pub opp_players: Vec<PlayerData>,
