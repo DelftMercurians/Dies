@@ -49,10 +49,10 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
 
 
     /// predict a future state(prior), this doesn't change the internal state of the filter
-    pub fn predict(&mut self, newt: f64) -> OVector<f64, SS> {
+    pub fn predict(&mut self, newt: f64) -> SVector<f64, SS> {
         let r = &self.transition_matrix.create_matrix(newt - self.t) * &self.x;
-        if let Some(B) = &self.B {
-            r + B.create_matrix(newt - self.t)
+        if let Some(control) = &self.control {
+            r + control.create_matrix(newt - self.t)
         } else {
             r
         }

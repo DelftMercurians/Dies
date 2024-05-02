@@ -97,41 +97,40 @@ impl BallTracker {
 
         ball_measurements.iter().for_each(|(pos, is_noisy)| {
             let pos_ov = SVector::<f64, 3>::new(pos.x as f64, pos.y as f64, pos.z as f64);
+            self.filter.as_mut().unwrap().update(pos_ov, current_time, is_noisy.clone());
             let z = self
                 .filter
                 .as_mut()
                 .unwrap()
-                .update(pos_ov, current_time, is_noisy.clone());
+                .predict(frame.t_sent());
             debug!("Ball pos: {:?}", pos);
             debug!("Ball filter update: {:?}", z);
-            if z.is_some() {
-                let mut pos_v3 = Vector3::new(
-                    z.unwrap()[0] as f32,
-                    z.unwrap()[2] as f32,
-                    z.unwrap()[4] as f32,
-                );
-                let vel_v3 = Vector3::new(
-                    z.unwrap()[1] as f32,
-                    z.unwrap()[3] as f32,
-                    z.unwrap()[5] as f32,
-                );
-                if pos_v3.z < 0.0 {
-                    pos_v3.z = 0.0;
-                    self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
-                        pos_v3.x as f64,
-                        vel_v3.x as f64,
-                        pos_v3.y as f64,
-                        vel_v3.y as f64,
-                        pos_v3.z as f64,
-                        -vel_v3.z as f64,
-                    ));
-                }
-                self.last_data = Some(BallData {
-                    timestamp: current_time,
-                    position: pos_v3,
-                    velocity: vel_v3,
-                });
+            let mut pos_v3 = Vector3::new(
+                z[0] as f32,
+                z[2] as f32,
+                z[4] as f32,
+            );
+            let vel_v3 = Vector3::new(
+                z[1] as f32,
+                z[3] as f32,
+                z[5] as f32,
+            );
+            if pos_v3.z < 0.0 {
+                pos_v3.z = 0.0;
+                self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
+                    pos_v3.x as f64,
+                    vel_v3.x as f64,
+                    pos_v3.y as f64,
+                    vel_v3.y as f64,
+                    pos_v3.z as f64,
+                    -vel_v3.z as f64,
+                ));
             }
+            self.last_data = Some(BallData {
+                timestamp: current_time,
+                position: pos_v3,
+                velocity: vel_v3,
+            });
         });
     }
 

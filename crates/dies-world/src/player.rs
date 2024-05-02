@@ -52,36 +52,37 @@ impl PlayerTracker {
     }
 
     /// Update the tracker with a new frame.
-    pub fn update(&mut self, t_capture: f64, player: &SSL_DetectionRobot) {
+    pub fn update(&mut self, t_capture: f64, player: &SSL_DetectionRobot, t_sent: f64) {
         let current_position = to_dies_coords2(player.x(), player.y(), self.play_dir_x);
         let current_orientation = player.orientation() * self.play_dir_x;
 
         if let Some(filter) = &mut self.filter {
             let z = na::convert(Vector2::new(current_position.x, current_position.y));
-            if let Some(x) = filter.update(z, t_capture, false) {
-                let last_data = if let Some(last_data) = &mut self.last_data {
-                    last_data
-                } else {
-                    self.last_data = Some(PlayerData {
-                        timestamp: t_capture,
-                        id: self.id,
-                        raw_position: current_position,
-                        position: na::convert(Vector2::new(x[0], x[2])),
-                        velocity: na::convert(Vector2::new(x[1], x[3])),
-                        orientation: current_orientation,
-                        angular_speed: 0.0,
-                    });
-                    self.is_init = true;
-                    self.last_data.as_mut().unwrap()
-                };
-                last_data.raw_position = current_position;
-                last_data.position = na::convert(Vector2::new(x[0], x[2]));
-                last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
-                last_data.orientation = current_orientation;
-                last_data.angular_speed = (current_orientation - last_data.orientation)
-                    / ((t_capture - last_data.timestamp + std::f64::EPSILON) as f32);
-                last_data.timestamp = t_capture;
-            }
+            filter.update(z, t_capture, false);
+            let x = filter.predict(t_sent);
+            let last_data = if let Some(last_data) = &mut self.last_data {
+                last_data
+            } else {
+                self.last_data = Some(PlayerData {
+                    timestamp: t_capture,
+                    id: self.id,
+                    raw_position: current_position,
+                    position: na::convert(Vector2::new(x[0], x[2])),
+                    velocity: na::convert(Vector2::new(x[1], x[3])),
+                    orientation: current_orientation,
+                    angular_speed: 0.0,
+                });
+                self.is_init = true;
+                self.last_data.as_mut().unwrap()
+            };
+            last_data.raw_position = current_position;
+            last_data.position = na::convert(Vector2::new(x[0], x[2]));
+            last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
+            last_data.orientation = current_orientation;
+            last_data.angular_speed = (current_orientation - last_data.orientation)
+                / ((t_capture - last_data.timestamp + std::f64::EPSILON) as f32);
+            last_data.timestamp = t_capture;
+            
         } else {
             self.filter = Some(Kalman::<2, 4>::new_player_filter(
                 0.1,
