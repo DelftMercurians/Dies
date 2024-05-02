@@ -3,6 +3,7 @@ use crate::filter::matrix_gen::{
 };
 use na::{SMatrix, SVector};
 use nalgebra as na;
+use nalgebra::OVector;
 
 /// OS: Observation Space, SS: State Space
 #[derive(Debug)]
@@ -46,6 +47,17 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         return true;
     }
 
+
+    /// predict a future state(prior), this doesn't change the internal state of the filter
+    pub fn predict(&mut self, newt: f64) -> OVector<f64, SS> {
+        let r = &self.transition_matrix.create_matrix(newt - self.t) * &self.x;
+        if let Some(B) = &self.B {
+            r + B.create_matrix(newt - self.t)
+        } else {
+            r
+        }
+    }
+    
     /// update the filter with a new measurement
     /// return None if the measurement is old
     /// return the priori state if the measurement is bad
