@@ -19,7 +19,7 @@ fn block_diag_3(a: &SMatrix<f64, 2, 2>) -> SMatrix<f64, 6, 6> {
     result
 }
 
-pub trait MatrixCreator<const D1: usize, const D2: usize>: Debug {
+pub trait MatrixCreator<const D1: usize, const D2: usize>: Debug + Send {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, D1, D2>;
 
     fn print(&self) {
