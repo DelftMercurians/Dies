@@ -11,7 +11,7 @@ use rapier3d::{
     prelude::*,
 };
 use serde::Serialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, thread::JoinHandle};
 use utils::IntervalTrigger;
 
 mod utils;
@@ -21,9 +21,11 @@ const BALL_USER_DATA: u128 = 8;
 const DRIBBLER_USER_DATA: u128 = 4;
 const PLAYER_RADIUS: f32 = 200.0;
 const PLAYER_HEIGHT: f32 = 140.0;
-const DRIBBLER_WIDTH: f32 = 50.0;
-const DRIBBLER_HEIGHT: f32 = 10.0;
-const DRIBBLER_LENGTH: f32 = 10.0;
+// const DRIBBLER_WIDTH: f32 = 50.0;
+// const DRIBBLER_HEIGHT: f32 = 10.0;
+// const DRIBBLER_LENGTH: f32 = 10.0;
+// const DRIBBLER_TRESHOLD: f32 = 5.0;
+const DRIBBLER_STRENGHT: f32 = 1.0;
 const GROUND_THICKNESS: f32 = 10.0;
 const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
 const GEOM_INTERVAL: f64 = 3.0;
@@ -85,11 +87,15 @@ struct Player {
     is_own: bool,
     rigid_body_handle: RigidBodyHandle,
     _collider_handle: ColliderHandle,
-    _dribbler_collider_handle: ColliderHandle,
+    // joint_handle_player_connector: Option<ImpulseJointHandle>,
+    // joint_handle_connector_ball: Option<ImpulseJointHandle>,
+    dribbler_spring_joint: Option<ImpulseJointHandle>,
     last_cmd_time: f64,
     target_velocity: Vector<f32>,
     target_ang_velocity: f32,
+    current_dribble_speed: f32,
 }
+// _dribbler_collider_handle: ColliderHandle,
 
 #[derive(Debug)]
 struct TimedPlayerCmd {
@@ -245,6 +251,35 @@ impl Simulation {
                 player.target_velocity = Vector::new(command.sx, command.sy, 0.0) * 1000.0; // m/s to mm/s
                 player.target_ang_velocity = command.w;
                 player.last_cmd_time = self.current_time;
+
+                if command.dribble_speed != player.current_dribble_speed {
+                    player.current_dribble_speed = command.dribble_speed;
+
+                    // Remove the old joint
+                    if let Some(joint_handle) = player.dribbler_spring_joint {
+                        self.impulse_joint_set.remove(joint_handle, true);
+                        player.dribbler_spring_joint = None;
+                    }
+
+                    // Add a new joint
+                    if command.dribble_speed > 0.0 {
+                        let joint = SpringJoint::new(
+                            BALL_RADIUS,
+                            player.current_dribble_speed * DRIBBLER_STRENGHT,
+                            0.0,
+                        );
+
+                        let player_handle = player.rigid_body_handle;
+                        let ball_handle = self.ball.as_ref().unwrap()._rigid_body_handle;
+
+                        player.dribbler_spring_joint = Some(self.impulse_joint_set.insert(
+                            player_handle,
+                            ball_handle,
+                            joint,
+                            true,
+                        ));
+                    }
+                }
             }
 
             let rigid_body = self
@@ -542,28 +577,33 @@ impl SimulationBuilder {
             &mut sim.rigid_body_set,
         );
 
-        let dribbler = ColliderBuilder::cuboid(DRIBBLER_LENGTH, DRIBBLER_WIDTH, DRIBBLER_HEIGHT)
-            .user_data(DRIBBLER_USER_DATA)
-            .translation(Vector::new(PLAYER_RADIUS + DRIBBLER_LENGTH / 2.0, 0.0, 0.0))
-            .sensor(true)
-            .active_events(ActiveEvents::COLLISION_EVENTS)
-            .build();
+        // ToDo make it work by adding a joint: prismatic joint
+        // let dribbler = ColliderBuilder::cuboid(DRIBBLER_LENGTH, DRIBBLER_WIDTH, DRIBBLER_HEIGHT)
+        //     .user_data(DRIBBLER_USER_DATA)
+        //     .translation(Vector::new(PLAYER_RADIUS + DRIBBLER_LENGTH / 2.0, 0.0, 0.0))
+        //     .sensor(true)
+        //     .active_events(ActiveEvents::COLLISION_EVENTS)
+        //     .build();
 
-        let dribbler_colider_handle = sim.collider_set.insert_with_parent(
-            dribbler,
-            rigid_body_handle,
-            &mut sim.rigid_body_set,
-        );
+        // let dribbler_colider_handle = sim.collider_set.insert_with_parent(
+        //     dribbler,
+        //     rigid_body_handle,
+        //     &mut sim.rigid_body_set,
+        // );
 
         sim.players.push(Player {
             id,
             is_own,
             rigid_body_handle,
             _collider_handle: collider_handle,
-            _dribbler_collider_handle: dribbler_colider_handle,
+            // joint_handle_player_connector: None,
+            // joint_handle_connector_ball: None,
+            // _dribbler_collider_handle: dribbler_colider_handle,
+            dribbler_spring_joint: None,
             last_cmd_time: 0.0,
             target_velocity: Vector::zeros(),
             target_ang_velocity: 0.0,
+            current_dribble_speed: 0.0,
         });
     }
 }
