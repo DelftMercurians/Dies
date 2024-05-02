@@ -9,5 +9,4 @@ crate-type = ["cdylib", "rlib"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 wasm-bindgen = "0.2.92"

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import Chart from "chart.js/auto";
+  // import Chart from "chart.js/auto";
   import { Canvas, Layer, t, type Render } from "svelte-canvas";
   import type { PlayerCmd, World, XY, XYZ } from "./types";
+  import { connectWs } from "./client";
 
   /**
    * The radius of the robots and ball, in mm
@@ -15,45 +16,7 @@
 
   const PADDING = 20;
 
-  let state: World | null = null;
-  onMount(() => {
-    const interval = setInterval(async () => {
-      const res = await fetch("/api/state");
-      state = await res.json();
-    }, 100);
-
-    return () => clearInterval(interval);
-  });
-
-  let velocityChart: Chart;
-  onMount(() => {
-    const ctx = (
-      document.getElementById("velocityChart") as HTMLCanvasElement
-    ).getContext("2d")!;
-    velocityChart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: [], // Time labels
-        datasets: [
-          {
-            label: "Velocity Magnitude",
-            data: [],
-            fill: false,
-            borderColor: "rgb(75, 192, 192)",
-            tension: 0.1,
-          },
-        ],
-      },
-      options: {
-        animation: false,
-        scales: {
-          y: {
-            beginAtZero: true,
-          },
-        },
-      },
-    });
-  });
+  const { sendCommand, worldState } = connectWs();
 
   let selectedPlayerId: number | null = null;
   onMount(() => {
@@ -67,7 +30,7 @@
 
     let interval = setInterval(() => {
       if (pressedKeys.size === 0) return;
-      const player = state?.own_players.find(
+      const player = $worldState?.own_players.find(
         (player) => player.id === selectedPlayerId
       );
       if (!player) return;
@@ -124,15 +87,15 @@
   let firstTs: number | null = null;
   let render: Render;
   $: render = ({ context: ctx, width: canvasWidth, height: canvasHeight }) => {
-    if (!state) return;
+    if (!$worldState) return;
 
     // Add some padding to the canvas
     const width = canvasWidth - PADDING * 2;
     const height = canvasHeight - PADDING * 2;
 
-    const { own_players, opp_players, ball } = state;
-    const fieldH = state.field_geom?.field_width ?? 0;
-    const fieldW = state.field_geom?.field_length ?? 0;
+    const { own_players, opp_players, ball } = $worldState;
+    const fieldH = $worldState.field_geom?.field_width ?? 0;
+    const fieldW = $worldState.field_geom?.field_length ?? 0;
 
     /**
      * Convert from server length to canvas length.
@@ -161,7 +124,7 @@
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     // Draw field lines
-    state.field_geom?.line_segments?.forEach?.(({ p1, p2 }) => {
+    $worldState.field_geom?.line_segments?.forEach?.(({ p1, p2 }) => {
       const [x1, y1] = convertCoords(p1);
       const [x2, y2] = convertCoords(p2);
       ctx.strokeStyle = "white";
@@ -181,7 +144,6 @@
       ctx.fill();
 
       // Draw arrow for orientation
-      console.log(orientation);
       const angle = -orientation;
       ctx.save();
       ctx.translate(x, y);
@@ -210,12 +172,12 @@
       ctx.fill();
     }
 
-    if (state?.own_players.length > 0) {
-      let selectedPlayer = state.own_players[0];
+    if ($worldState?.own_players.length > 0) {
+      let selectedPlayer = $worldState.own_players[0];
       if (selectedPlayerId === null) {
-        selectedPlayerId = state.own_players[0].id;
+        selectedPlayerId = $worldState.own_players[0].id;
       } else {
-        const _selectedPlayer = state.own_players.find(
+        const _selectedPlayer = $worldState.own_players.find(
           (player) => player.id === selectedPlayerId
         );
         if (_selectedPlayer) {
@@ -233,22 +195,22 @@
       }
       const ts = selectedPlayer.timestamp - firstTs;
 
-      const labels = velocityChart.data.labels!;
-      const data = velocityChart.data.datasets[0].data;
-      if (data.length > 100) {
-        labels.shift();
-        data.shift();
-      }
-      labels.push(ts);
-      data.push(velocityMagnitude);
-      velocityChart.update();
+      // const labels = velocityChart.data.labels!;
+      // const data = velocityChart.data.datasets[0].data;
+      // if (data.length > 100) {
+      //   labels.shift();
+      //   data.shift();
+      // }
+      // labels.push(ts);
+      // data.push(velocityMagnitude);
+      // velocityChart.update();
     }
-    if (state?.own_players.length > 0) {
-      let selectedPlayer = state.own_players[0];
+    if ($worldState?.own_players.length > 0) {
+      let selectedPlayer = $worldState.own_players[0];
       if (selectedPlayerId === null) {
-        selectedPlayerId = state.own_players[0].id;
+        selectedPlayerId = $worldState.own_players[0].id;
       } else {
-        const _selectedPlayer = state.own_players.find(
+        const _selectedPlayer = $worldState.own_players.find(
           (player) => player.id === selectedPlayerId
         );
         if (_selectedPlayer) {
@@ -266,15 +228,15 @@
       }
       const ts = selectedPlayer.timestamp - firstTs;
 
-      const labels = velocityChart.data.labels!;
-      const data = velocityChart.data.datasets[0].data;
-      if (data.length > 100) {
-        labels.shift();
-        data.shift();
-      }
-      labels.push(ts);
-      data.push(velocityMagnitude);
-      velocityChart.update();
+      // const labels = velocityChart.data.labels!;
+      // const data = velocityChart.data.datasets[0].data;
+      // if (data.length > 100) {
+      //   labels.shift();
+      //   data.shift();
+      // }
+      // labels.push(ts);
+      // data.push(velocityMagnitude);
+      // velocityChart.update();
     }
   };
 </script>

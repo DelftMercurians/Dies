@@ -10,10 +10,11 @@ use dies_simulator::Simulation;
 use dies_ssl_client::VisionClient;
 use dies_world::{WorldConfig, WorldTracker};
 use gc_client::GcClient;
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 
 mod gc_client;
 
+#[derive(Debug, Clone)]
 pub struct WorldUpdate {
     pub world_data: WorldData,
 }
@@ -80,10 +81,7 @@ impl Executor {
 
     /// Run the executor in real time, either with real clients or with a simulator,
     /// depending on the configuration.
-    pub async fn run_real_time(
-        mut self,
-        stop_rx: tokio::sync::oneshot::Receiver<()>,
-    ) -> Result<()> {
+    pub async fn run_real_time(mut self, stop_rx: broadcast::Receiver<()>) -> Result<()> {
         if self.ssl_client.is_some() && self.bs_client.is_some() {
             self.run_rt_irl(stop_rx).await?;
         } else if self.simulator.is_some() {
@@ -104,7 +102,7 @@ impl Executor {
     }
 
     /// Run the executor in real time on the simulator
-    async fn run_rt_sim(&mut self, stop_rx: tokio::sync::oneshot::Receiver<()>) -> Result<()> {
+    async fn run_rt_sim(&mut self, stop_rx: broadcast::Receiver<()>) -> Result<()> {
         // Check that we have a simulator
         if self.simulator.is_none() {
             bail!("Simulator not set");
@@ -114,7 +112,7 @@ impl Executor {
         tokio::pin!(stop_rx);
         loop {
             tokio::select! {
-                _ = &mut stop_rx => {
+                _ = stop_rx.recv() => {
                     break;
                 }
                 _ = interval.tick() => {
@@ -127,7 +125,7 @@ impl Executor {
 
     /// Run the executor in real time, processing vision and referee messages and sending
     /// commands to the robots.
-    async fn run_rt_irl(&mut self, stop_rx: tokio::sync::oneshot::Receiver<()>) -> Result<()> {
+    async fn run_rt_irl(&mut self, stop_rx: broadcast::Receiver<()>) -> Result<()> {
         // Check that we have ssl and bs clients
         let mut ssl_client = self
             .ssl_client
@@ -141,7 +139,7 @@ impl Executor {
         tokio::pin!(stop_rx);
         loop {
             tokio::select! {
-                _ = &mut stop_rx => {
+                _ = stop_rx.recv() => {
                     break;
                 }
                 vision_msg = ssl_client.recv() => {

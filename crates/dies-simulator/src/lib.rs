@@ -1,4 +1,4 @@
-use dies_core::{FieldGeometry, PlayerCmd};
+use dies_core::{BallData, FieldGeometry, PlayerCmd, PlayerData, WorldData};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -206,9 +206,19 @@ impl Simulation {
         simulation
     }
 
+    /// Pushes a PlayerCmd onto the execution queue with the time delay specified in
+    /// the config
     pub fn push_cmd(&mut self, cmd: PlayerCmd) {
         self.cmd_queue.push(TimedPlayerCmd {
             execute_time: self.current_time + self.config.command_delay,
+            player_cmd: cmd,
+        });
+    }
+
+    /// Executes a PlayerCmd immediately.
+    pub fn execute_cmd(&mut self, cmd: PlayerCmd) {
+        self.cmd_queue.push(TimedPlayerCmd {
+            execute_time: self.current_time,
             player_cmd: cmd,
         });
     }
@@ -392,45 +402,6 @@ impl Simulation {
         self.current_time += dt as f64;
     }
 
-    pub fn get_state(&self) -> SimulationState {
-        let players = self
-            .players
-            .iter()
-            .map(|player| SimulationPlayerState {
-                position: self
-                    .rigid_body_set
-                    .get(player.rigid_body_handle)
-                    .unwrap()
-                    .position()
-                    .translation
-                    .vector
-                    .xy(),
-                orientation: self
-                    .rigid_body_set
-                    .get(player.rigid_body_handle)
-                    .unwrap()
-                    .position()
-                    .rotation
-                    .angle(),
-            })
-            .collect();
-
-        let ball = if let Some(ball) = self.ball.as_ref() {
-            Some(
-                self.rigid_body_set
-                    .get(ball._rigid_body_handle)
-                    .unwrap()
-                    .position()
-                    .translation
-                    .vector,
-            )
-        } else {
-            None
-        };
-
-        SimulationState { players, ball }
-    }
-
     fn new_detection_packet(&mut self) {
         let mut detection = SSL_DetectionFrame::new();
         detection.set_t_capture(self.current_time);
@@ -471,6 +442,62 @@ impl Simulation {
 
         self.last_detection_packet = Some(packet);
     }
+
+    pub fn world_data(&self) -> WorldData {
+        let mut own_players = Vec::new();
+        let mut opp_players = Vec::new();
+        self.players.iter().for_each(|player| {
+            let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
+            let position = rigid_body.position().translation.vector;
+            let orientation = rigid_body.position().rotation.angle();
+            let data = PlayerData {
+                id: player.id,
+                timestamp: self.current_time,
+                position: Vector2::new(position.x, position.y),
+                velocity: Vector2::new(rigid_body.linvel().x, rigid_body.linvel().y),
+                orientation,
+                angular_speed: rigid_body.angvel().z,
+                raw_position: Vector2::new(position.x, position.y),
+            };
+
+            if player.is_own {
+                own_players.push(data);
+            } else {
+                opp_players.push(data);
+            }
+        });
+
+        let ball = if let Some(ball) = self.ball.as_ref() {
+            let ball_body = self.rigid_body_set.get(ball._rigid_body_handle).unwrap();
+            let position = ball_body.position().translation.vector;
+            Some(BallData {
+                position: Vector::new(position.x, position.y, position.z),
+                timestamp: self.current_time,
+                velocity: Vector::new(
+                    ball_body.linvel().x,
+                    ball_body.linvel().y,
+                    ball_body.linvel().z,
+                ),
+            })
+        } else {
+            None
+        };
+
+        WorldData {
+            own_players,
+            opp_players,
+            ball,
+            field_geom: Some(FieldGeometry::from_protobuf(
+                &self
+                    .geometry_packet
+                    .geometry
+                    .as_ref()
+                    .unwrap_or_default()
+                    .field,
+            )),
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for Simulation {
@@ -495,38 +522,38 @@ impl SimulationBuilder {
     }
 
     pub fn add_own_player_with_id(
-        &mut self,
+        mut self,
         id: u32,
         position: Vector2<f32>,
         orientation: f32,
-    ) -> &mut Self {
+    ) -> Self {
         self.add_player(id, true, position, orientation);
         self
     }
 
     pub fn add_opp_player_with_id(
-        &mut self,
+        mut self,
         id: u32,
         position: Vector2<f32>,
         orientation: f32,
-    ) -> &mut Self {
+    ) -> Self {
         self.add_player(id, false, position, orientation);
         self
     }
 
-    pub fn add_own_player(&mut self, position: Vector2<f32>, orientation: f32) -> &mut Self {
-        self.add_own_player_with_id(self.last_own_id, position, orientation);
+    pub fn add_own_player(mut self, position: Vector2<f32>, orientation: f32) -> Self {
+        self.add_player(self.last_own_id, true, position, orientation);
         self.last_own_id += 1;
         self
     }
 
-    pub fn add_opp_player(&mut self, position: Vector2<f32>, orientation: f32) -> &mut Self {
-        self.add_opp_player_with_id(self.last_opp_id, position, orientation);
+    pub fn add_opp_player(mut self, position: Vector2<f32>, orientation: f32) -> Self {
+        self.add_player(self.last_opp_id, false, position, orientation);
         self.last_opp_id += 1;
         self
     }
 
-    pub fn add_ball(&mut self, position: Vector<f32>) -> &mut Self {
+    pub fn add_ball(mut self, position: Vector<f32>) -> Self {
         let sim = &mut self.sim;
 
         let ball_body = RigidBodyBuilder::dynamic()

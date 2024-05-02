@@ -1,2 +1,4 @@
-mod run_web_ui;
-pub use run_web_ui::spawn_webui;
+mod routes;
+mod server;
+
+pub use server::{start, UiCommand};

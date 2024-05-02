@@ -26,6 +26,11 @@ export interface PlayerCmd {
   kick: boolean;
 }
 
+export type UiCommand = {
+  type: "directPlayerCmd";
+  cmd: PlayerCmd;
+};
+
 export interface BallData {
   timestamp: number;
   position: XYZ;

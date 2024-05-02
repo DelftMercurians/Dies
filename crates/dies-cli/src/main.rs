@@ -2,21 +2,11 @@ use anyhow::Context;
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use dies_core::workspace_utils;
-use dies_executor::Executor;
-use dies_serial_client::SerialClient;
-use dies_serial_client::SerialClientConfig;
-use dies_simulator::Simulation;
-use dies_simulator::SimulationConfig;
-use dies_ssl_client::VisionClient;
-use dies_ssl_client::VisionClientConfig;
-use mock_vision::MockVision;
 use std::net::SocketAddr;
-use std::time::Duration;
 use std::{path::PathBuf, str::FromStr};
+use tokio::sync::broadcast;
 use tracing_subscriber::fmt;
-use tracing_subscriber::prelude::*;
-
-use dies_serial_client::list_serial_ports;
+use tracing_subscriber::layer::SubscriberExt;
 
 mod mock_vision;
 mod modes;
@@ -31,6 +21,9 @@ pub(crate) enum VisionType {
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
 pub(crate) struct Args {
+    #[clap(long, short)]
+    mode: modes::Mode,
+
     #[clap(long, default_value = "auto")]
     serial_port: String,
 
@@ -48,9 +41,6 @@ pub(crate) struct Args {
 
     #[clap(long, default_value = "dies-test-strat")]
     package: String,
-
-    #[clap(long)]
-    simulator: bool,
 
     #[clap(long, default_value = "udp")]
     vision: VisionType,
@@ -71,7 +61,7 @@ async fn main() -> Result<()> {
 
     // Set up log file
     let log_file_path = if args.log_file != "auto" {
-        let path = PathBuf::from(args.log_file);
+        let path = PathBuf::from(args.log_file.clone());
         if path.exists() {
             eprintln!("Log file already exists: {}", path.display());
             std::process::exit(1);
@@ -119,90 +109,8 @@ async fn main() -> Result<()> {
 
     tracing::info!("Saving logs to {}", log_file_path.display());
 
-    let vision_config = match args.vision {
-        VisionType::Tcp => VisionClientConfig::Tcp {
-            host: args.vision_addr.ip().to_string(),
-            port: args.vision_addr.port(),
-        },
-        VisionType::Udp => VisionClientConfig::Udp {
-            host: args.vision_addr.ip().to_string(),
-            port: args.vision_addr.port(),
-        },
-        VisionType::Mock => MockVision::spawn(),
-    };
-
-    let serial_client = if !args.simulator {
-        let ports = list_serial_ports().context("Failed to list serial ports")?;
-        let port = if args.serial_port != "false" {
-            if args.serial_port != "auto" {
-                if !ports.contains(&args.serial_port) {
-                    eprintln!("Port {} not found", args.serial_port);
-                    eprintln!(
-                        "Available ports:\n{}",
-                        ports
-                            .iter()
-                            .map(|p| format!("  - {}", p))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    );
-                    std::process::exit(1);
-                }
-                Some(args.serial_port.clone())
-            } else if ports.is_empty() {
-                tracing::warn!("No serial ports found, disabling serial");
-                None
-            } else if ports.len() == 1 {
-                tracing::info!("Connecting to serial port {}", ports[0]);
-                Some(ports[0].clone())
-            } else {
-                println!("Available ports:");
-                for (idx, port) in ports.iter().enumerate() {
-                    println!("{}: {}", idx, port);
-                }
-
-                // Let user choose port
-                loop {
-                    println!("Enter port number:");
-                    let mut input = String::new();
-                    std::io::stdin().read_line(&mut input)?;
-                    let port_idx = input
-                        .trim()
-                        .parse::<usize>()
-                        .context("Failed to parse the input into a number (usize)")?;
-                    if port_idx < ports.len() {
-                        break Some(ports[port_idx].clone());
-                    }
-                    println!("Invalid port number");
-                }
-            }
-        } else {
-            tracing::warn!("Serial disabled");
-            None
-        };
-        tracing::debug!("Serial port: {:?}", port);
-
-        if let Some(port) = &port {
-            Some(SerialClient::new(SerialClientConfig::serial(port.clone()))?)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let workspace_root = workspace_utils::get_workspace_root();
-    let mut builder = Executor::builder();
-    if args.simulator {
-        builder.with_simulator(
-            Simulation::new(SimulationConfig::default()),
-            Duration::from_millis(10),
-        );
-    } else {
-        builder.with_bs_client(serial_client.unwrap());
-        builder.with_ssl_client(VisionClient::new(vision_config).await?);
-    }
-
     let devserver = if args.webui_devserver {
+        let workspace_root = workspace_utils::get_workspace_root();
         let child = tokio::process::Command::new("npm")
             .args(&[
                 "run",
@@ -225,15 +133,14 @@ async fn main() -> Result<()> {
         None
     };
 
-    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
-    let executor_task = tokio::spawn(async move {
-        match builder.build() {
-            Ok(executor) => {
-                if let Err(err) = executor.run_real_time(stop_rx).await {
-                    tracing::error!("Executor error: {:?}", err);
-                }
-            }
-            Err(err) => tracing::error!("Failed to build executor: {:?}", err),
+    let (stop_tx, stop_rx) = broadcast::channel(1);
+    let main_task = tokio::spawn(async move {
+        let result = match args.mode {
+            modes::Mode::Irl => modes::irl::run(args, stop_rx).await,
+            modes::Mode::SimTest => modes::sim_test::run(stop_rx).await,
+        };
+        if let Err(err) = result {
+            tracing::error!("Mode failed: {}", err);
         }
     });
 
@@ -243,7 +150,7 @@ async fn main() -> Result<()> {
 
     tracing::info!("Shutting down");
     stop_tx.send(()).expect("Failed to send stop signal");
-    executor_task.await.expect("Executor task failed");
+    main_task.await.expect("Executor task failed");
 
     if let Some(mut child) = devserver {
         child.kill().await.expect("Failed to kill dev server");
