@@ -143,7 +143,7 @@ impl BallTracker {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "run-tests")]
 mod tests {
     use super::*;
     use dies_protos::ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame};

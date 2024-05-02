@@ -3,7 +3,6 @@ use crate::filter::matrix_gen::{
 };
 use na::{SMatrix, SVector};
 use nalgebra as na;
-use nalgebra::OVector;
 
 /// OS: Observation Space, SS: State Space
 #[derive(Debug)]
@@ -212,9 +211,13 @@ mod tests {
         }
         let mut filtered = Vec::new();
         filtered.push(SVector::<f64, 2>::new(0.0, 0.0));
+        let mut predict = Vec::new();
+        predict.push(SVector::<f64, 2>::new(0.0, 0.0));
         for i in 1..num_steps {
             let newt = i as f64 * dt;
             let z = measurements[i];
+            let predict_state = filter.predict(newt);
+            predict.push(SVector::<f64, 2>::new(predict_state[0], predict_state[2]));
             let state = filter.update(z, newt, false);
             if let Some(s) = state {
                 filtered.push(SVector::<f64, 2>::new(s[0], s[2]));
@@ -224,14 +227,18 @@ mod tests {
         //calulate the error
         let mut smoothed_error = 0.0;
         let mut original_error = 0.0;
-        for i in 1..num_steps {
+        let mut predict_error = 0.0;
+        for i in 100..num_steps {
             let e = (filtered[i] - true_position[i]).norm();
             let e2 = (measurements[i] - true_position[i]).norm();
+            let e3 = (predict[i] - true_position[i]).norm();
+            predict_error += e3;
             smoothed_error += e;
             original_error += e2;
         }
-        // println!("Smoothed error: {:.2}, Original error: {:.2}", smoothed_error, original_error);
+  //      println!("Smoothed error: {:.2}, Original error: {:.2},  Predict error: {:.2}", smoothed_error, original_error, predict_error);
         assert!(smoothed_error < original_error);
+        assert!(predict_error < original_error);
     }
 
     #[test]

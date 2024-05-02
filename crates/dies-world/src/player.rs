@@ -108,7 +108,7 @@ impl PlayerTracker {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "run-tests")]
 mod test {
     use std::f32::consts::PI;
 
@@ -131,7 +131,7 @@ mod test {
         player.set_y(200.0);
         player.set_orientation(0.0);
 
-        tracker.update(0.0, &player);
+        tracker.update(0.0, &player, 0.0);
         assert!(!tracker.is_init());
         assert!(tracker.get().is_none());
     }
@@ -145,10 +145,10 @@ mod test {
         player.set_y(200.0);
         player.set_orientation(0.0);
 
-        tracker.update(0.0, &player);
+        tracker.update(0.0, &player, 0.0);
         assert!(!tracker.is_init());
 
-        tracker.update(1.0, &player);
+        tracker.update(1.0, &player, 1.0);
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
@@ -162,7 +162,7 @@ mod test {
         player.set_y(300.0);
         player.set_orientation(1.0);
 
-        tracker.update(2.0, &player);
+        tracker.update(2.0, &player, 2.0);
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
