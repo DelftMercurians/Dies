@@ -233,7 +233,7 @@ impl ExecutorBuilder {
                 self.world_config
                     .ok_or(anyhow::anyhow!("World config not set"))?,
             ),
-            team_controller: TeamController::new(),
+            team_controller: TeamController::new(1.0),
             gc_client: GcClient::new(),
             ssl_client: self.ssl_client,
             bs_client: self.bs_client,

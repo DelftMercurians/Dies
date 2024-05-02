@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::player_controller::{KickerControlInput, PlayerControlInput, PlayerController};
+use crate::{
+    player_controller::PlayerController,
+    player_input::{KickerControlInput, PlayerControlInput, PlayerInputs},
+};
 use dies_core::GameState;
 use dies_core::{PlayerCmd, WorldData};
 use nalgebra::Vector2;
@@ -16,11 +19,11 @@ impl HaltController {
         Self
     }
 
-    pub fn update(&mut self, world: &WorldData) -> Vec<PlayerControlInput> {
+    pub fn update(&mut self, world: &WorldData) -> PlayerInputs {
         world
             .own_players
             .iter()
-            .map(|p| PlayerControlInput::new(p.id))
+            .map(|p| (p.id, PlayerControlInput::new()))
             .collect()
     }
 }
@@ -50,8 +53,8 @@ impl KickOffController {
     /// our prekick-off -> move to our half of the field assign 1 robot in the circle
     /// opponent's prekick-off ->  move to our half of the field
     /// our kick-off -> the assigned player kick the ball
-    pub fn update(&mut self, world_data: &WorldData) -> Vec<PlayerControlInput> {
-        let mut commands = Vec::new();
+    pub fn update(&mut self, world_data: &WorldData) -> PlayerInputs {
+        let mut inputs = PlayerInputs::new();
         let ball_pos = world_data.ball.clone().unwrap().position;
 
         if world_data.current_game_state.game_state == GameState::PrepareKickoff {
@@ -64,7 +67,7 @@ impl KickOffController {
                 self.assigned_player = Some((aid, PlayerStatus::NoGoal));
                 // we go to a fixed position inside the circle
                 let pos = Vector2::new(100.0, 0.0);
-                commands.push(PlayerControlInput::new(aid).with_position(pos));
+                inputs.player_mut(aid).with_position(pos);
                 self.pos_assigned.insert(aid, pos);
             }
 
@@ -82,7 +85,7 @@ impl KickOffController {
                         _ => 0.0,
                     };
                     let target_pos = Vector2::new(x_coord, y_pos);
-                    commands.push(PlayerControlInput::new(id).with_position(target_pos));
+                    inputs.player_mut(id).with_position(target_pos);
                     self.pos_assigned.insert(id, target_pos);
                 }
             }
@@ -92,11 +95,10 @@ impl KickOffController {
 
             let new_status = match status {
                 PlayerStatus::NoGoal => {
-                    commands.push(
-                        PlayerControlInput::new(*aid)
-                            .with_position(ball_pos.xy())
-                            .with_orientation(-PI),
-                    );
+                    inputs
+                        .player_mut(*aid)
+                        .with_position(ball_pos.xy())
+                        .with_orientation(-PI);
                     PlayerStatus::Ongoing
                 }
                 PlayerStatus::Ongoing => {
@@ -114,18 +116,17 @@ impl KickOffController {
                     }
                 }
                 PlayerStatus::Accomplished => {
-                    commands.push(
-                        PlayerControlInput::new(*aid)
-                            .with_dribbling(1.0)
-                            .with_kicker(KickerControlInput::Kick),
-                    );
+                    inputs
+                        .player_mut(*aid)
+                        .with_dribbling(1.0)
+                        .with_kicker(KickerControlInput::Kick);
                     PlayerStatus::Accomplished
                 }
             };
 
             self.assigned_player = Some((*aid, new_status));
         }
-        commands
+        inputs
     }
 }
 
@@ -155,13 +156,9 @@ impl BallReplacementController {
     /// it will move to the ball and heading to it(before manipulation)
     /// then it starts dribbling and move to the designated position(after manipulation)
     /// then it stops the dribbler and the task is accomplished, afterwards the robot step back 0.05m
-    pub fn update(
-        &mut self,
-        world_data: &WorldData,
-        designated_pos: Vector2<f32>,
-    ) -> Vec<PlayerControlInput> {
+    pub fn update(&mut self, world_data: &WorldData, designated_pos: Vector2<f32>) -> PlayerInputs {
         self.assigned_pos = Some(designated_pos);
-        let mut commands = Vec::new();
+        let mut inputs = PlayerInputs::new();
         let ball_pos = world_data.ball.clone().unwrap().position;
 
         if self.assigned_player.is_none() {
@@ -195,21 +192,19 @@ impl BallReplacementController {
                 (designated_pos - player_pos).angle(&Vector2::new(self.play_dir_x, 0.0));
             let new_status = match status {
                 BallReplacementStatus::NoGoal => {
-                    commands.push(
-                        PlayerControlInput::new(*aid)
-                            .with_position(ball_pos.xy())
-                            .with_orientation(ball_angle),
-                    );
+                    inputs
+                        .player_mut(*aid)
+                        .with_position(ball_pos.xy())
+                        .with_orientation(ball_angle);
                     BallReplacementStatus::BeforeManipulation
                 }
                 BallReplacementStatus::BeforeManipulation => {
                     if is_manipulating {
-                        commands.push(
-                            PlayerControlInput::new(*aid)
-                                .with_position(designated_pos)
-                                .with_orientation(target_angle)
-                                .with_dribbling(1.0),
-                        );
+                        inputs
+                            .player_mut(*aid)
+                            .with_position(designated_pos)
+                            .with_orientation(target_angle)
+                            .with_dribbling(1.0);
                         BallReplacementStatus::AfterManipulation
                     } else {
                         BallReplacementStatus::BeforeManipulation
@@ -224,30 +219,24 @@ impl BallReplacementController {
                             player.orientation + PI
                         };
 
-                        commands.push(
-                            PlayerControlInput::new(*aid)
-                                .with_position(
-                                    designated_pos
-                                        - (player_pos - designated_pos).normalize() * 50.0,
-                                )
-                                .with_orientation(opposite_dir),
-                        );
+                        inputs
+                            .player_mut(*aid)
+                            .with_position(
+                                designated_pos - (player_pos - designated_pos).normalize() * 50.0,
+                            )
+                            .with_orientation(opposite_dir);
 
                         BallReplacementStatus::Accomplished
-                    } else if !is_manipulating {
-                        commands.push(
-                            PlayerControlInput::new(*aid)
-                                .with_position(designated_pos)
-                                .with_orientation(target_angle),
-                        );
-                        BallReplacementStatus::BeforeManipulation
                     } else {
-                        commands.push(
-                            PlayerControlInput::new(*aid)
-                                .with_position(designated_pos)
-                                .with_orientation(target_angle),
-                        );
-                        BallReplacementStatus::AfterManipulation
+                        inputs
+                            .player_mut(*aid)
+                            .with_position(designated_pos)
+                            .with_orientation(target_angle);
+                        if !is_manipulating {
+                            BallReplacementStatus::BeforeManipulation
+                        } else {
+                            BallReplacementStatus::AfterManipulation
+                        }
                     }
                 }
                 BallReplacementStatus::Accomplished => BallReplacementStatus::Accomplished,
@@ -255,7 +244,7 @@ impl BallReplacementController {
 
             self.assigned_player = Some((*aid, new_status));
         }
-        commands
+        inputs
     }
 }
 
@@ -324,8 +313,8 @@ impl PenaltyKickController {
     /// opponent's penalty -> the goalkeeper move onto the intersection point of the ball trajectory
     /// and the touch line.
     /// TODO: add the goalkeeper behaviour if we are defenders.
-    pub fn update(&mut self, world_data: &WorldData) -> Vec<PlayerControlInput> {
-        let mut commands = Vec::new();
+    pub fn update(&mut self, world_data: &WorldData) -> PlayerInputs {
+        let mut inputs = PlayerInputs::new();
         let ball_pos = world_data.ball.clone().unwrap().position;
         let x_range = if world_data.current_game_state.us_operating {
             Vector2::new(ball_pos.x + 1000.0, 4500.0)
@@ -346,11 +335,10 @@ impl PenaltyKickController {
                 // heading to the nearest 100m place toward the penalty kick mark,with correct heading
                 let dir = (ball_pos.xy() - player_pos).angle(&Vector2::new(1.0, 0.0));
                 let target_pos = ball_pos.xy() - 100.0 * (ball_pos.xy() - player_pos).normalize();
-                commands.push(
-                    PlayerControlInput::new(aid)
-                        .with_position(target_pos)
-                        .with_orientation(dir),
-                );
+                inputs
+                    .player_mut(aid)
+                    .with_position(target_pos)
+                    .with_orientation(dir);
                 self.pos_assigned.insert(aid, target_pos);
             }
 
@@ -358,7 +346,7 @@ impl PenaltyKickController {
                 let id = player.id;
                 if !self.pos_assigned.contains_key(&id) {
                     let target_pos = self.generate_position(x_range);
-                    commands.push(PlayerControlInput::new(id).with_position(target_pos));
+                    inputs.player_mut(id).with_position(target_pos);
                     self.pos_assigned.insert(id, target_pos);
                 }
             }
@@ -370,13 +358,12 @@ impl PenaltyKickController {
                     let player_pos = player.position;
                     let new_status: PenaltyKickStatus = match status {
                         PenaltyKickStatus::NoGoal => {
-                            commands.push(
-                                PlayerControlInput::new(*aid)
-                                    .with_position(ball_pos.xy())
-                                    .with_orientation(
-                                        (ball_pos.xy() - player_pos).angle(&Vector2::new(1.0, 0.0)),
-                                    ),
-                            );
+                            inputs
+                                .player_mut(*aid)
+                                .with_position(ball_pos.xy())
+                                .with_orientation(
+                                    (ball_pos.xy() - player_pos).angle(&Vector2::new(1.0, 0.0)),
+                                );
                             PenaltyKickStatus::Ongoing
                         }
                         PenaltyKickStatus::Ongoing => {
@@ -390,18 +377,17 @@ impl PenaltyKickController {
                                 let goal_pos = Vector2::new(-3500.0, 0.0);
                                 let dir = (goal_pos - ball_pos.xy()).angle(&Vector2::new(1.0, 0.0));
                                 self.kick_angle = Some(dir);
-                                commands.push(
-                                    PlayerControlInput::new(*aid)
-                                        .with_position(ball_pos.xy())
-                                        .with_orientation(dir),
-                                );
+                                inputs
+                                    .player_mut(*aid)
+                                    .with_position(ball_pos.xy())
+                                    .with_orientation(dir);
                                 PenaltyKickStatus::AdjustingDirections
                             } else {
                                 PenaltyKickStatus::Ongoing
                             }
                         }
                         PenaltyKickStatus::AdjustingDirections => {
-                            commands.push(PlayerControlInput::new(*aid).with_dribbling(1.0));
+                            inputs.player_mut(*aid).with_dribbling(1.0);
                             if let Some(_) = self.kick_angle {
                                 if (player_pos - ball_pos.xy()).norm() < 10.0
                                     && (player_pos - ball_pos.xy())
@@ -418,11 +404,10 @@ impl PenaltyKickController {
                             }
                         }
                         PenaltyKickStatus::Accomplished => {
-                            commands.push(
-                                PlayerControlInput::new(*aid)
-                                    .with_dribbling(1.0)
-                                    .with_kicker(KickerControlInput::Kick),
-                            );
+                            inputs
+                                .player_mut(*aid)
+                                .with_dribbling(1.0)
+                                .with_kicker(KickerControlInput::Kick);
                             PenaltyKickStatus::Accomplished
                         }
                     };
@@ -430,7 +415,7 @@ impl PenaltyKickController {
                 }
             }
         }
-        commands
+        inputs
     }
 }
 
@@ -476,7 +461,7 @@ impl TeamController {
             GameState::PreparePenalty | GameState::Penalty => {
                 self.penalty_kick_controller.update(&world_data)
             }
-            _ => Vec::new(),
+            _ => PlayerInputs::new(),
         };
 
         // If in a stop state, override the inputs
@@ -492,12 +477,7 @@ impl TeamController {
                 .find(|p| p.id == controller.id());
 
             if let Some(player_data) = player_data {
-                let input = inputs
-                    .iter()
-                    .find(|i| i.id == controller.id())
-                    .cloned()
-                    .unwrap_or_else(|| PlayerControlInput::new(controller.id()));
-
+                let input = inputs.player(controller.id());
                 controller.update(player_data, input);
             } else {
                 controller.increment_frames_missings();
@@ -515,19 +495,16 @@ impl TeamController {
 }
 
 /// Override the inputs to comply with the stop state.
-fn stop_override(
-    world_data: WorldData,
-    inputs: Vec<PlayerControlInput>,
-) -> Vec<PlayerControlInput> {
+fn stop_override(world_data: WorldData, inputs: PlayerInputs) -> PlayerInputs {
     let ball_pos = world_data.ball.as_ref().map(|b| b.position.xy());
     let ball_vel = world_data.ball.as_ref().map(|b| b.velocity.xy());
     inputs
         .iter()
-        .map(|input| {
+        .map(|(id, input)| {
             let player_data = world_data
                 .own_players
                 .iter()
-                .find(|p| p.id == input.id)
+                .find(|p| p.id == *id)
                 .expect("Player not found in world data");
 
             let mut new_input = input.clone();
@@ -551,7 +528,7 @@ fn stop_override(
             // Disable kick
             new_input.kicker = KickerControlInput::Disarm;
 
-            new_input
+            (*id, new_input)
         })
         .collect()
 }

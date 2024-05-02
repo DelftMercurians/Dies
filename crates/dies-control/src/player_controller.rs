@@ -1,78 +1,12 @@
-use crate::pid::PID;
+use crate::{
+    pid::PID,
+    player_input::{KickerControlInput, PlayerControlInput},
+};
 use dies_core::{PlayerCmd, PlayerData};
 use nalgebra::Vector2;
 use std::time::{Duration, Instant};
 
 const MISSING_FRAMES_THRESHOLD: u32 = 50;
-
-/// Input to the player controller.
-#[derive(Debug, Clone, Default)]
-pub struct PlayerControlInput {
-    /// Player ID
-    pub id: u32,
-    /// Target position. If `None`, the player will just follow the given velocity
-    pub position: Option<Vector2<f32>>,
-    /// Target velocity (in global frame). This is added to the output of the position
-    /// controller.
-    pub velocity: Vector2<f32>,
-    /// Target orientation. If `None` the player will just follow the given angula
-    /// velocity
-    pub orientation: Option<f32>,
-    /// Target angular velocity. This is added to the output of the controller.
-    pub angular_velocity: f32,
-    /// Dribbler speed normalised to [0, 1]
-    pub dribbling_speed: f32,
-    /// Kicker control input
-    pub kicker: KickerControlInput,
-}
-
-impl PlayerControlInput {
-    /// Create a new instance of `PlayerControlInput` with the given ID
-    pub fn new(id: u32) -> Self {
-        Self {
-            id,
-            ..Default::default()
-        }
-    }
-
-    /// Set the target position of the player.
-    pub fn with_position(mut self, pos: Vector2<f32>) -> Self {
-        self.position = Some(pos);
-        self
-    }
-
-    /// Set the target heading of the player.
-    pub fn with_orientation(mut self, orientation: f32) -> Self {
-        self.orientation = Some(orientation);
-        self
-    }
-
-    /// Set the dribbling speed of the player.
-    pub fn with_dribbling(mut self, speed: f32) -> Self {
-        self.dribbling_speed = speed;
-        self
-    }
-
-    /// Set the kicker control input.
-    pub fn with_kicker(mut self, kicker: KickerControlInput) -> Self {
-        self.kicker = kicker;
-        self
-    }
-}
-
-/// Kicker state in the current update.
-#[derive(Debug, Clone, Default)]
-pub enum KickerControlInput {
-    /// Kicker is not used
-    #[default]
-    Idle,
-    /// Charge the kicker capacitor
-    Arm,
-    /// Engage the kicker. Should be sent after ~10s of charging and only once.
-    Kick,
-    /// Discharge the kicker capacitor without kicking
-    Disarm,
-}
 
 pub struct PlayerController {
     id: u32,
