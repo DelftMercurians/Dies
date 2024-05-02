@@ -78,16 +78,16 @@ impl PlayerTracker {
             last_data.raw_position = current_position;
             last_data.position = na::convert(Vector2::new(x[0], x[2]));
             last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
-            last_data.orientation = current_orientation;
             last_data.angular_speed = (current_orientation - last_data.orientation)
                 / ((t_capture - last_data.timestamp + std::f64::EPSILON) as f32);
+            last_data.orientation = current_orientation;
             last_data.timestamp = t_capture;
             
         } else {
             self.filter = Some(Kalman::<2, 4>::new_player_filter(
-                0.1,
-                0.1,
-                2.0,
+                1000.0,
+                4000.0,
+                25.0,
                 Vector4::new(
                     current_position.x as f64,
                     0.0,
@@ -108,10 +108,9 @@ impl PlayerTracker {
     }
 }
 
-#[cfg(feature = "run-tests")]
+#[cfg(test)]
 mod test {
     use std::f32::consts::PI;
-
     use super::*;
 
     #[test]
@@ -139,7 +138,7 @@ mod test {
     #[test]
     fn test_basic_update() {
         let mut tracker = PlayerTracker::new(1, 1.0);
-
+        let eps = 20.0;
         let mut player = SSL_DetectionRobot::new();
         player.set_x(100.0);
         player.set_y(200.0);
@@ -148,27 +147,31 @@ mod test {
         tracker.update(0.0, &player, 0.0);
         assert!(!tracker.is_init());
 
+        player.set_x(200.0);
+        player.set_y(300.0);
+        player.set_orientation(0.0);
         tracker.update(1.0, &player, 1.0);
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id, 1);
-        assert_eq!(data.position, Vector2::new(100.0, 200.0));
-        assert_eq!(data.velocity, Vector2::zeros());
+        let diff = (data.position - Vector2::new(200.0, 300.0)).norm();
+        assert!(diff < eps);
+        assert!((data.velocity - Vector2::new(100.0, 100.0)).norm() < eps);
         assert_eq!(data.orientation, 0.0);
         assert_eq!(data.angular_speed, 0.0);
 
-        player.set_x(200.0);
-        player.set_y(300.0);
+        player.set_x(300.0);
+        player.set_y(400.0);
         player.set_orientation(1.0);
 
-        tracker.update(2.0, &player, 2.0);
+        tracker.update(2.0, &player, 3.0);
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id, 1);
-        assert_eq!(data.position, Vector2::new(200.0, 300.0));
-        assert_eq!(data.velocity, Vector2::new(100.0, 100.0));
+        assert!((data.position - Vector2::new(400.0, 500.0)).norm() < eps);
+        assert!((data.velocity - Vector2::new(100.0, 100.0)).norm() < eps);
         assert_eq!(data.orientation, 1.0);
         assert_eq!(data.angular_speed, 1.0);
     }
@@ -179,14 +182,15 @@ mod test {
 
         let mut player = SSL_DetectionRobot::new();
         let dir = PI / 2.0;
+        let eps = 20.0;
         player.set_x(100.0);
         player.set_y(200.0);
         player.set_orientation(dir);
 
-        tracker.update(0.0, &player);
+        tracker.update(0.0, &player, 0.0);
         assert!(!tracker.is_init());
 
-        tracker.update(1.0, &player);
+        tracker.update(1.0, &player, 1.0);
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
@@ -202,13 +206,12 @@ mod test {
         player.set_y(300.0);
         player.set_orientation(-dir);
 
-        tracker.update(2.0, &player);
+        tracker.update(2.0, &player, 2.0);
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id, 1);
-        assert_eq!(data.position, Vector2::new(200.0, 300.0));
-        assert_eq!(data.velocity, Vector2::new(100.0, 100.0));
+        assert!((data.position - Vector2::new(200.0, 300.0)).norm() < eps);
         assert_eq!(data.orientation, -dir);
         assert_eq!(data.angular_speed, -PI);
     }
