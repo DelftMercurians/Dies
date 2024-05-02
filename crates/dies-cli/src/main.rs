@@ -2,31 +2,29 @@ use anyhow::Context;
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use dies_core::workspace_utils;
+use dies_executor::Executor;
+use dies_serial_client::SerialClient;
 use dies_serial_client::SerialClientConfig;
 use dies_simulator::Simulation;
 use dies_simulator::SimulationConfig;
+use dies_ssl_client::VisionClient;
 use dies_ssl_client::VisionClientConfig;
-use dies_world::WorldConfig;
 use mock_vision::MockVision;
 use std::net::SocketAddr;
+use std::time::Duration;
 use std::{path::PathBuf, str::FromStr};
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 
-use dies_python_rt::{PyExecute, PyRuntimeConfig};
 use dies_serial_client::list_serial_ports;
 
-mod executor;
 mod mock_vision;
-
-use crate::executor::{run, ExecutorConfig};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum VisionType {
     Tcp,
     Udp,
     Mock,
-    Simulator,
 }
 
 #[derive(Debug, Parser)]
@@ -49,6 +47,9 @@ struct Args {
 
     #[clap(long, default_value = "dies-test-strat")]
     package: String,
+
+    #[clap(long)]
+    simulator: bool,
 
     #[clap(long, default_value = "udp")]
     vision: VisionType,
@@ -117,30 +118,19 @@ async fn main() -> Result<()> {
 
     tracing::info!("Saving logs to {}", log_file_path.display());
 
-    let (vision_config, mut serial_config) = match args.vision {
-        VisionType::Tcp => (
-            VisionClientConfig::Tcp {
-                host: args.vision_addr.ip().to_string(),
-                port: args.vision_addr.port(),
-            },
-            None,
-        ),
-        VisionType::Udp => (
-            VisionClientConfig::Udp {
-                host: args.vision_addr.ip().to_string(),
-                port: args.vision_addr.port(),
-            },
-            None,
-        ),
-        VisionType::Mock => (MockVision::spawn(), None),
-        VisionType::Simulator => {
-            tracing::info!("Using simulator");
-            let (vision_config, serial) = Simulation::spawn(SimulationConfig::default());
-            (vision_config, Some(serial))
-        }
+    let vision_config = match args.vision {
+        VisionType::Tcp => VisionClientConfig::Tcp {
+            host: args.vision_addr.ip().to_string(),
+            port: args.vision_addr.port(),
+        },
+        VisionType::Udp => VisionClientConfig::Udp {
+            host: args.vision_addr.ip().to_string(),
+            port: args.vision_addr.port(),
+        },
+        VisionType::Mock => MockVision::spawn(),
     };
 
-    if serial_config.is_none() {
+    let serial_client = if !args.simulator {
         let ports = list_serial_ports().context("Failed to list serial ports")?;
         let port = if args.serial_port != "false" {
             if args.serial_port != "auto" {
@@ -191,46 +181,25 @@ async fn main() -> Result<()> {
         tracing::debug!("Serial port: {:?}", port);
 
         if let Some(port) = &port {
-            serial_config = Some(SerialClientConfig::serial(port.clone()));
-        }
-    }
-
-    let robot_ids = args
-        .robot_ids
-        .split(',')
-        .filter_map(|s| {
-            let mut parts = s.split(':');
-            let id = parts.next()?.parse().ok()?;
-            let team = parts.next()?.parse().ok()?;
-            Some((id, team))
-        })
-        .collect();
-
-    let workspace_root = workspace_utils::get_workspace_root();
-    let config = ExecutorConfig {
-        webui: args.webui,
-        robot_ids,
-        py_config: if !args.disable_python {
-            Some(PyRuntimeConfig {
-                install: true,
-                workspace: workspace_root.clone(),
-                python_build: 20240107,
-                python_version: "3.11.7".into(),
-                execute: PyExecute::Package {
-                    path: workspace_root.join("strategy").join(&args.package),
-                    name: args.package,
-                },
-            })
+            Some(SerialClient::new(SerialClientConfig::serial(port.clone()))?)
         } else {
             None
-        },
-        world_config: WorldConfig {
-            is_blue: true,
-            initial_opp_goal_x: 1.0,
-        },
-        vision_config,
-        serial_config,
+        }
+    } else {
+        None
     };
+
+    let workspace_root = workspace_utils::get_workspace_root();
+    let mut builder = Executor::builder();
+    if args.simulator {
+        builder.with_simulator(
+            Simulation::new(SimulationConfig::default()),
+            Duration::from_millis(10),
+        );
+    } else {
+        builder.with_bs_client(serial_client.unwrap());
+        builder.with_ssl_client(VisionClient::new(vision_config).await?);
+    }
 
     let devserver = if args.webui_devserver {
         let child = tokio::process::Command::new("npm")
@@ -255,13 +224,29 @@ async fn main() -> Result<()> {
         None
     };
 
-    run(config).await.expect("Failed to run executor");
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let executor_task = tokio::spawn(async move {
+        match builder.build() {
+            Ok(executor) => {
+                if let Err(err) = executor.run_real_time(stop_rx).await {
+                    tracing::error!("Executor error: {:?}", err);
+                }
+            }
+            Err(err) => tracing::error!("Failed to build executor: {:?}", err),
+        }
+    });
+
+    tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to listen for ctrl-c");
+
+    tracing::info!("Shutting down");
+    stop_tx.send(()).expect("Failed to send stop signal");
+    executor_task.await.expect("Executor task failed");
 
     if let Some(mut child) = devserver {
         child.kill().await.expect("Failed to kill dev server");
     }
-
-    tracing::info!("Shutting down");
 
     Ok(())
 }

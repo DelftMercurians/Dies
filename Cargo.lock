@@ -188,12 +188,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atomic_float"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62af46d040ba9df09edc6528dae9d8e49f5f3e82f55b7d2ec31a733c38dbc49d"
-
-[[package]]
 name = "autocfg"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -569,14 +563,13 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "dies-control",
  "dies-core",
+ "dies-executor",
  "dies-protos",
  "dies-python-rt",
  "dies-serial-client",
  "dies-simulator",
  "dies-ssl-client",
- "dies-webui",
  "dies-world",
  "dirs",
  "nalgebra",
@@ -591,9 +584,7 @@ name = "dies-control"
 version = "0.1.0"
 dependencies = [
  "dies-core",
- "log",
  "nalgebra",
- "num-traits",
 ]
 
 [[package]]
@@ -605,6 +596,25 @@ dependencies = [
  "lazy_static",
  "nalgebra",
  "serde",
+ "tracing",
+]
+
+[[package]]
+name = "dies-executor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dies-control",
+ "dies-core",
+ "dies-protos",
+ "dies-python-rt",
+ "dies-serial-client",
+ "dies-simulator",
+ "dies-ssl-client",
+ "dies-webui",
+ "dies-world",
+ "nalgebra",
+ "tokio",
  "tracing",
 ]
 
@@ -659,7 +669,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dies-core",
- "dies-protos",
  "serialport",
  "tokio",
  "tracing",
@@ -669,17 +678,19 @@ dependencies = [
 name = "dies-simulator"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "atomic_float",
  "crossbeam",
  "dies-core",
  "dies-protos",
- "dies-serial-client",
- "dies-ssl-client",
- "intbits",
- "log",
  "rapier3d",
- "tokio",
+ "serde",
+]
+
+[[package]]
+name = "dies-simulator-wasm"
+version = "0.1.0"
+dependencies = [
+ "dies-simulator",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1237,12 +1248,6 @@ checksum = "a0c10553d664a4d0bcff9f4215d0aac67a639cc68ef660840afe309b807bc9f5"
 dependencies = [
  "generic-array",
 ]
-
-[[package]]
-name = "intbits"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5170c2c8ecda29c1bccb9d95ccbe107bc75fa084dc0c9c6087e719f9d46330e5"
 
 [[package]]
 name = "io-kit-sys"

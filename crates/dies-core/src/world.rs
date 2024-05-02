@@ -4,14 +4,15 @@ use serde::Serialize;
 use crate::FieldGeometry;
 
 /// The game state, as reported by the referee.
-#[derive(Serialize, Clone, Debug, PartialEq, Copy)]
+#[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
 pub enum GameState {
+    #[default]
     Unknown,
     Halt,
     Timeout,
     Stop,
     PrepareKickoff,
-    BallReplacement,
+    BallReplacement(Vector2<f32>),
     PreparePenalty,
     Kickoff,
     FreeKick,
@@ -30,6 +31,15 @@ pub struct BallData {
     pub position: Vector3<f32>,
     /// Velocity of the ball in mm/s, in dies coordinates
     pub velocity: Vector3<f32>,
+}
+
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct GameStateData {
+    /// The state of current game
+    pub game_state: GameState,
+    /// If we are the main party currently performing tasks in the state.
+    /// true for symmetric states(halt stop run timout)
+    pub us_operating: bool,
 }
 
 /// A struct to store the player state from a single frame.
@@ -54,11 +64,11 @@ pub struct PlayerData {
 }
 
 /// A struct to store the world state from a single frame.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct WorldData {
     pub own_players: Vec<PlayerData>,
     pub opp_players: Vec<PlayerData>,
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
-    pub current_game_state: GameState,
+    pub current_game_state: GameStateData,
 }

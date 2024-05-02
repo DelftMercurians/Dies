@@ -1,7 +1,8 @@
 use crate::BallData;
 use dies_core::GameState;
-use dies_protos::ssl_gc_referee_message::referee::Command;
+use dies_protos::ssl_gc_referee_message::referee::{Command};
 use nalgebra::Vector3;
+use nalgebra::Vector2;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
@@ -14,6 +15,7 @@ pub struct GameStateTracker {
     start: Instant,
     timeout: u64,
     is_outdated: bool,
+    operator_is_blue: Option<bool>,
 }
 
 impl GameStateTracker {
@@ -27,10 +29,11 @@ impl GameStateTracker {
             start: Instant::now(),
             timeout: 0,
             is_outdated: true,
+            operator_is_blue: None,
         }
     }
-
-    pub fn update(&mut self, command: &Command) -> GameState {
+    
+    pub fn update(&mut self, command: &Command, pos: Option<Vector2<f32>>) -> GameState {
         self.game_state = match command {
             Command::HALT => GameState::Halt,
             Command::STOP => GameState::Stop,
@@ -58,14 +61,39 @@ impl GameStateTracker {
             Command::TIMEOUT_YELLOW => GameState::Timeout,
             Command::TIMEOUT_BLUE => GameState::Timeout,
             Command::BALL_PLACEMENT_YELLOW | Command::BALL_PLACEMENT_BLUE => {
-                GameState::BallReplacement
+                GameState::BallReplacement(pos.unwrap())
             }
             _ => self.game_state,
         };
 
+        self.operator_is_blue = match command {
+            Command::PREPARE_KICKOFF_BLUE
+            | Command::PREPARE_PENALTY_BLUE
+            | Command::DIRECT_FREE_BLUE
+            | Command::BALL_PLACEMENT_BLUE => Some(true),
+            Command::PREPARE_KICKOFF_YELLOW
+            | Command::PREPARE_PENALTY_YELLOW
+            | Command::DIRECT_FREE_YELLOW
+            | Command::BALL_PLACEMENT_YELLOW => Some(false),
+            _ => self.operator_is_blue,
+        };
+
+        //reset
+        match self.game_state {
+            GameState::Halt | GameState::Stop | GameState::Timeout 
+            | GameState::Run => self.operator_is_blue = None, 
+            _ => (),
+        }
+        
         return self.game_state;
     }
 
+    
+    pub fn get_operator_is_blue(&self) -> Option<bool> {
+        self.operator_is_blue
+    }
+    
+    
     pub fn start_ball_movement_check(&mut self, ball_pos: Vector3<f32>, timeout: u64) {
         if self.is_outdated == false {
             return;
@@ -128,37 +156,37 @@ mod tests {
     #[test]
     fn test_normal_update() {
         let mut tracker = GameStateTracker::new();
-        tracker.update(&Command::HALT);
+        tracker.update(&Command::HALT, None);
         assert_eq!(tracker.get_game_state(), GameState::Halt);
-        tracker.update(&Command::STOP);
+        tracker.update(&Command::STOP, None);
         assert_eq!(tracker.get_game_state(), Stop);
-        tracker.update(&FORCE_START);
+        tracker.update(&FORCE_START, None);
         assert_eq!(tracker.get_game_state(), GameState::Run);
-        tracker.update(&Command::PREPARE_KICKOFF_BLUE);
+        tracker.update(&Command::PREPARE_KICKOFF_BLUE, None);
         assert_eq!(tracker.get_game_state(), GameState::PrepareKickoff);
-        tracker.update(&Command::PREPARE_PENALTY_BLUE);
+        tracker.update(&Command::PREPARE_PENALTY_BLUE, None);
         assert_eq!(tracker.get_game_state(), GameState::PreparePenalty);
-        tracker.update(&Command::TIMEOUT_BLUE);
+        tracker.update(&Command::TIMEOUT_BLUE, None);
         assert_eq!(tracker.get_game_state(), GameState::Timeout);
-        tracker.update(&Command::BALL_PLACEMENT_BLUE);
-        assert_eq!(tracker.get_game_state(), GameState::BallReplacement);
+        tracker.update(&Command::BALL_PLACEMENT_BLUE, Some(Vector2::new(0.0, 0.0)));
+        assert_eq!(tracker.get_game_state(), GameState::BallReplacement(Vector2::new(0.0, 0.0)));
     }
 
     #[test]
     fn test_only_once_update() {
         let mut tracker = GameStateTracker::new();
-        tracker.update(&Command::PREPARE_KICKOFF_YELLOW);
+        tracker.update(&Command::PREPARE_KICKOFF_YELLOW, None);
         assert_eq!(tracker.get_game_state(), GameState::PrepareKickoff);
-        tracker.update(&Command::NORMAL_START);
+        tracker.update(&Command::NORMAL_START, None);
         assert_eq!(tracker.get_game_state(), GameState::Kickoff);
-        tracker.update(&Command::NORMAL_START);
+        tracker.update(&Command::NORMAL_START, None);
         assert_eq!(tracker.get_game_state(), GameState::Kickoff);
 
-        tracker.update(&Command::STOP);
+        tracker.update(&Command::STOP, None);
         assert_eq!(tracker.get_game_state(), Stop);
-        tracker.update(&Command::DIRECT_FREE_BLUE);
+        tracker.update(&Command::DIRECT_FREE_BLUE, None);
         assert_eq!(tracker.get_game_state(), GameState::FreeKick);
-        tracker.update(&Command::DIRECT_FREE_BLUE);
+        tracker.update(&Command::DIRECT_FREE_BLUE, None);
         assert_eq!(tracker.get_game_state(), GameState::FreeKick);
     }
 }
