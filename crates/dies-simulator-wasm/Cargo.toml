@@ -1,10 +1,13 @@
 [package]
-name = "dies-control"
+name = "dies-simulator-wasm"
 version = "0.1.0"
 edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dies-core = { version = "0.1.0", path = "../dies-core" }
-nalgebra = "0.32.4"
+dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
+wasm-bindgen = "0.2.92"

@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use serialport::available_ports;
 use tokio::sync::{mpsc, oneshot};
 
-use dies_core::PlayerCmd;
+use dies_core::{PlayerCmd, PlayerFeedbackMsg};
 
 /// List available serial ports. The port names can be used to create a
 /// [`SerialClient`].
@@ -166,5 +166,10 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
     pub fn send_no_wait(&mut self, msg: PlayerCmd) {
         let (tx, _) = oneshot::channel();
         self.writer_tx.send((msg, tx)).ok();
+    }
+
+    /// Receive a message from the serial port.
+    pub async fn recv(&mut self) -> Result<PlayerFeedbackMsg> {
+        Err(anyhow::anyhow!("Not implemented"))
     }
 }

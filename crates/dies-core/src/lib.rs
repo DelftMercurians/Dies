@@ -55,3 +55,11 @@ pub struct PlayerPosCmd {
     pub y: f32,
     pub orientation: f32,
 }
+
+/// A message from one of our robots to the AI
+pub struct PlayerFeedbackMsg {
+    /// The robot's ID
+    pub id: u32,
+    /// Capacitor voltage
+    pub cap_v: f32,
+}
