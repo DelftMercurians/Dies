@@ -19,9 +19,10 @@ use tracing_subscriber::prelude::*;
 use dies_serial_client::list_serial_ports;
 
 mod mock_vision;
+mod modes;
 
 #[derive(Debug, Clone, ValueEnum)]
-enum VisionType {
+pub(crate) enum VisionType {
     Tcp,
     Udp,
     Mock,
@@ -29,7 +30,7 @@ enum VisionType {
 
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
-struct Args {
+pub(crate) struct Args {
     #[clap(long, default_value = "auto")]
     serial_port: String,
 

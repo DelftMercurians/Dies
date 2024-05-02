@@ -1,15 +1,14 @@
-use rocket::{
-    fairing::AdHoc,
-    fs::{relative, FileServer},
-    get, post, routes,
-    serde::json::Json,
-    Config, State,
+use axum::{
+    extract::{Json, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Router,
 };
-
 use dies_core::{PlayerCmd, WorldData};
-use tokio::{sync::mpsc, task::JoinHandle};
-
 use std::sync::{Arc, Mutex};
+use tokio::{sync::mpsc, task::JoinHandle};
+use tower_http::services::ServeDir;
 
 struct ServerState {
     world_data: Mutex<Option<WorldData>>,
@@ -25,25 +24,23 @@ pub fn spawn_webui() -> (
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
     let handle = tokio::spawn(async {
-        start_rocket(rx, cmd_tx).await;
+        start_axum(rx, cmd_tx).await;
     });
 
     (tx, cmd_rx, handle)
 }
 
-#[get("/state")]
-fn api(state: &State<Arc<ServerState>>) -> Json<Option<WorldData>> {
+async fn api(state: State<Arc<ServerState>>) -> impl IntoResponse {
     let world_data = state.world_data.lock().unwrap();
     Json(world_data.clone())
 }
 
-#[post("/command", data = "<cmd>")]
-fn command(state: &State<Arc<ServerState>>, cmd: Json<PlayerCmd>) {
-    let cmd = cmd.into_inner();
+async fn command(state: State<Arc<ServerState>>, Json(cmd): Json<PlayerCmd>) -> impl IntoResponse {
     let _ = state.cmd_sender.send(cmd);
+    StatusCode::OK
 }
 
-async fn start_rocket(
+async fn start_axum(
     mut rx: mpsc::UnboundedReceiver<WorldData>,
     cmd_tx: mpsc::UnboundedSender<PlayerCmd>,
 ) {
@@ -51,36 +48,28 @@ async fn start_rocket(
         world_data: Mutex::new(None),
         cmd_sender: cmd_tx,
     });
-    let rocket = rocket::build()
-        .manage(Arc::clone(&state))
-        .mount("/api", routes![api, command])
-        .mount("/", FileServer::from(relative!("static")))
-        .attach(AdHoc::on_liftoff("on_start", |rocket| {
-            Box::pin(async move {
-                let shutdown = rocket.shutdown();
-                tokio::spawn(async move {
-                    // Receive world updates
-                    while let Some(world_data) = rx.recv().await {
-                        let mut state = state.world_data.lock().unwrap();
-                        *state = Some(world_data);
-                    }
 
-                    // Sender dropped, we should stop
-                    shutdown.notify();
-                });
-            })
-        }))
-        .configure(Config {
-            port: 5555,
-            log_level: rocket::config::LogLevel::Off,
-            ..Default::default()
-        });
+    let app = Router::new()
+        .route("/api/state", get(api))
+        .route("/api/command", post(command))
+        .nest_service("/", ServeDir::new("static"))
+        .with_state(Arc::clone(&state));
 
-    match rocket.launch().await {
-        Ok(_) => tracing::debug!("Rocket has shut down"),
-        Err(err) => {
-            tracing::error!("Failed to start rocket: {}", err);
-            panic!();
+    let server =
+        axum::Server::bind(&"0.0.0.0:5555".parse().unwrap()).serve(app.into_make_service());
+
+    tokio::select! {
+        _ = server => {
+            tracing::debug!("Axum server has shut down");
+        }
+        _ = async {
+            // Receive world updates
+            while let Some(world_data) = rx.recv().await {
+                let mut state = state.world_data.lock().unwrap();
+                *state = Some(world_data);
+            }
+        } => {
+            tracing::debug!("World data sender dropped");
         }
     }
 }
