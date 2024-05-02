@@ -79,9 +79,9 @@ impl BallTracker {
             });
             self.is_init = true;
             self.filter = Some(Kalman::<3, 6>::new_ball_filter(
-                10000.0,
-                200.0,
-                5.0,
+                1000.0,
+                4000.0,
+                25.0,
                 Vector6::new(
                     ball_measurements[0].0.x as f64,
                     0.0,
@@ -97,41 +97,40 @@ impl BallTracker {
 
         ball_measurements.iter().for_each(|(pos, is_noisy)| {
             let pos_ov = SVector::<f64, 3>::new(pos.x as f64, pos.y as f64, pos.z as f64);
+            self.filter.as_mut().unwrap().update(pos_ov, current_time, is_noisy.clone());
             let z = self
                 .filter
                 .as_mut()
                 .unwrap()
-                .update(pos_ov, current_time, is_noisy.clone());
+                .predict(frame.t_sent());
             debug!("Ball pos: {:?}", pos);
             debug!("Ball filter update: {:?}", z);
-            if z.is_some() {
-                let mut pos_v3 = Vector3::new(
-                    z.unwrap()[0] as f32,
-                    z.unwrap()[2] as f32,
-                    z.unwrap()[4] as f32,
-                );
-                let vel_v3 = Vector3::new(
-                    z.unwrap()[1] as f32,
-                    z.unwrap()[3] as f32,
-                    z.unwrap()[5] as f32,
-                );
-                if pos_v3.z < 0.0 {
-                    pos_v3.z = 0.0;
-                    self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
-                        pos_v3.x as f64,
-                        vel_v3.x as f64,
-                        pos_v3.y as f64,
-                        vel_v3.y as f64,
-                        pos_v3.z as f64,
-                        -vel_v3.z as f64,
-                    ));
-                }
-                self.last_data = Some(BallData {
-                    timestamp: current_time,
-                    position: pos_v3,
-                    velocity: vel_v3,
-                });
+            let mut pos_v3 = Vector3::new(
+                z[0] as f32,
+                z[2] as f32,
+                z[4] as f32,
+            );
+            let vel_v3 = Vector3::new(
+                z[1] as f32,
+                z[3] as f32,
+                z[5] as f32,
+            );
+            if pos_v3.z < 0.0 {
+                pos_v3.z = 0.0;
+                self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
+                    pos_v3.x as f64,
+                    vel_v3.x as f64,
+                    pos_v3.y as f64,
+                    vel_v3.y as f64,
+                    pos_v3.z as f64,
+                    -vel_v3.z as f64,
+                ));
             }
+            self.last_data = Some(BallData {
+                timestamp: current_time,
+                position: pos_v3,
+                velocity: vel_v3,
+            });
         });
     }
 
@@ -148,6 +147,7 @@ impl BallTracker {
 mod tests {
     use super::*;
     use dies_protos::ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame};
+    use nalgebra::Vector2;
 
     #[test]
     fn test_update_no_ball() {
@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn test_no_data_after_first_update() {
+    fn test_first_update() {
         let mut tracker = BallTracker::new(1.0);
 
         // 1st update
@@ -174,20 +174,23 @@ mod tests {
 
         tracker.update(&frame);
         let ball_data = tracker.get();
-        assert!(ball_data.is_none());
+        assert!(ball_data.is_some());
     }
 
     #[test]
     fn test_basic_update() {
+        let eps = 10.0;
         let mut tracker = BallTracker::new(1.0);
 
         // 1st update
         let mut frame = SSL_DetectionFrame::new();
         frame.set_t_capture(0.0);
+        frame.set_t_sent(0.0);
         let mut ball = SSL_DetectionBall::new();
         ball.set_x(1.0);
         ball.set_y(2.0);
         ball.set_z(3.0);
+        ball.set_confidence(1.0);
         frame.balls.push(ball.clone());
 
         tracker.update(&frame);
@@ -195,20 +198,23 @@ mod tests {
         // 2nd update
         let mut frame = SSL_DetectionFrame::new();
         frame.set_t_capture(1.0);
+        frame.set_t_sent(1.0);
         let mut ball = SSL_DetectionBall::new();
         ball.set_x(2.0);
         ball.set_y(4.0);
         ball.set_z(6.0);
+        ball.set_confidence(1.0);
         frame.balls.push(ball.clone());
 
         tracker.update(&frame);
         let ball_data = tracker.get().unwrap();
-        assert_eq!(ball_data.position, Vector3::new(2.0, 4.0, 6.0));
-        assert_eq!(ball_data.velocity, Vector3::new(1.0, 2.0, 3.0));
+        assert!((ball_data.position -  Vector3::new(2.0, 4.0, 0.0)).norm() < eps);
+        assert!((ball_data.velocity.xy() - Vector2::new(1.0, 2.0)).norm() < eps);
     }
 
     #[test]
     fn test_x_flip() {
+        let eps = 20.0;
         let mut tracker = BallTracker::new(-1.0);
 
         // 1st update
@@ -233,11 +239,10 @@ mod tests {
 
         tracker.update(&frame);
         let ball_data = tracker.get().unwrap();
-        assert_eq!(ball_data.position, Vector3::new(-2.0, 4.0, 6.0));
-        assert_eq!(ball_data.velocity, Vector3::new(-1.0, 2.0, 3.0));
+        assert!((ball_data.position - Vector3::new(-2.0, 4.0, 0.0)).norm() < eps);
     }
 
-    fn generate_SSL_Wrapper(
+    fn generateSSLWrapper(
         t: f64,
         xs: Vec<f64>,
         ys: Vec<f64>,

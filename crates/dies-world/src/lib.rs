@@ -110,6 +110,7 @@ impl WorldTracker {
     pub fn update_from_vision(&mut self, data: &SSL_WrapperPacket) {
         if let Some(frame) = data.detection.as_ref() {
             let t_capture = frame.t_capture();
+            let t_sent = frame.t_sent();
             if (t_capture - self.last_timestamp.unwrap_or(0.0)).abs() <= (1.0 / 60.0) {
                 return;
             }
@@ -134,7 +135,7 @@ impl WorldTracker {
                 }
 
                 if let Some(tracker) = blue_trackers[id as usize].as_mut() {
-                    tracker.update(t_capture, player);
+                    tracker.update(t_capture, player, t_sent);
                 }
             }
 
@@ -151,7 +152,7 @@ impl WorldTracker {
                 }
 
                 if let Some(tracker) = yellow_tracker[id as usize].as_mut() {
-                    tracker.update(t_capture, player);
+                    tracker.update(t_capture, player, t_sent);
                 }
             }
 
