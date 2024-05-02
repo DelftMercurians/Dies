@@ -587,7 +587,6 @@ dependencies = [
  "dies-simulator",
  "dies-ssl-client",
  "dies-world",
- "serde",
  "tokio",
  "tracing",
 ]

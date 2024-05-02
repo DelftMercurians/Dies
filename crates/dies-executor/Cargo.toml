@@ -14,4 +14,3 @@ dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 tracing = "0.1.40"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 dies-control = { version = "0.1.0", path = "../dies-control" }
-serde = { version = "1.0.200", features = ["derive"] }
