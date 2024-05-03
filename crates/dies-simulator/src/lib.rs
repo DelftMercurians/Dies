@@ -11,7 +11,7 @@ use rapier3d::{
     prelude::*,
 };
 use serde::Serialize;
-use std::{collections::HashMap, thread::JoinHandle};
+use std::collections::HashMap;
 use utils::IntervalTrigger;
 
 mod utils;
@@ -34,14 +34,15 @@ const GEOM_INTERVAL: f64 = 3.0;
 pub struct SimulationConfig {
     pub gravity: Vector<f32>,
     pub bias: f32,
-    pub simulation_step: f64,           // time between simulation steps
-    pub vision_update_step: f64,        // time between vision updates
-    pub command_delay: f64,             // delay for the execution of the command
-    pub max_accel: Vector<f32>,         // max lateral acceleration
-    pub max_vel: Vector<f32>,           // max lateral velocity
-    pub max_ang_accel: f32,             // max angular acceleration
-    pub max_ang_vel: f32,               // max angular velocity
-    pub velocity_treshold: f32,         // max difference between target and current velocity
+    pub ball_angular_damping: f32, // angular damping (rolling friction) on the ball
+    pub simulation_step: f64,      // time between simulation steps
+    pub vision_update_step: f64,   // time between vision updates
+    pub command_delay: f64,        // delay for the execution of the command
+    pub max_accel: Vector<f32>,    // max lateral acceleration
+    pub max_vel: Vector<f32>,      // max lateral velocity
+    pub max_ang_accel: f32,        // max angular acceleration
+    pub max_ang_vel: f32,          // max angular velocity
+    pub velocity_treshold: f32,    // max difference between target and current velocity
     pub angular_velocity_treshold: f32, // max difference between target and current angular velocity
 }
 
@@ -50,6 +51,7 @@ impl Default for SimulationConfig {
         SimulationConfig {
             gravity: Vector::z() * -9.81 * 1000.0,
             bias: 0.0,
+            ball_angular_damping: 1.0,
             command_delay: 110.0 / 1000.0, // 6 ms
             max_accel: Vector::new(1200.0, 1200.0, 0.0),
             max_vel: Vector::new(2000.0, 2000.0, 0.0),
@@ -276,7 +278,7 @@ impl Simulation {
                         let joint = SpringJoint::new(
                             BALL_RADIUS,
                             player.current_dribble_speed * DRIBBLER_STRENGHT,
-                            0.0,
+                            1.0,
                         );
 
                         let player_handle = player.rigid_body_handle;
@@ -559,6 +561,7 @@ impl SimulationBuilder {
         let ball_body = RigidBodyBuilder::dynamic()
             .can_sleep(false)
             .translation(position)
+            .angular_damping(sim.config.ball_angular_damping)
             .build();
         let ball_collider = ColliderBuilder::ball(BALL_RADIUS)
             .mass(1.0)

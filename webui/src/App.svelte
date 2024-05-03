@@ -64,14 +64,11 @@
       if (pressedKeys.has("e")) {
         cmd.w = -1;
       }
+      if (pressedKeys.has("Space")) {
+        cmd.dribble_speed = 200;
+      }
       if (cmd.sx !== 0 || cmd.sy !== 0 || cmd.w !== 0) {
-        fetch("/api/command", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(cmd),
-        });
+        sendCommand({ type: "directPlayerCmd", cmd });
       }
     }, 1 / 10);
 
