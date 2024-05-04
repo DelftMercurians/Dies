@@ -64,7 +64,7 @@
       if (pressedKeys.has("e")) {
         cmd.w = -1;
       }
-      if (pressedKeys.has("Space")) {
+      if (pressedKeys.has(" ")) {
         cmd.dribble_speed = 200;
       }
       if (cmd.sx !== 0 || cmd.sy !== 0 || cmd.w !== 0) {
@@ -141,6 +141,7 @@
       ctx.fill();
 
       // Draw arrow for orientation
+      console.log(orientation);
       const angle = -orientation;
       ctx.save();
       ctx.translate(x, y);

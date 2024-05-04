@@ -7,7 +7,7 @@ use dies_protos::{
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
 use rapier3d::{
-    na::{SimdPartialOrd, Vector2},
+    na::{OPoint, SimdPartialOrd, Vector2},
     prelude::*,
 };
 use serde::Serialize;
@@ -21,11 +21,9 @@ const BALL_USER_DATA: u128 = 8;
 const DRIBBLER_USER_DATA: u128 = 4;
 const PLAYER_RADIUS: f32 = 200.0;
 const PLAYER_HEIGHT: f32 = 140.0;
-// const DRIBBLER_WIDTH: f32 = 50.0;
-// const DRIBBLER_HEIGHT: f32 = 10.0;
-// const DRIBBLER_LENGTH: f32 = 10.0;
-// const DRIBBLER_TRESHOLD: f32 = 5.0;
-const DRIBBLER_STRENGHT: f32 = 1.0;
+const DRIBBLER_RADIUS: f32 = BALL_RADIUS + 30.0;
+const DRIBBLER_ANGLE: f32 = std::f32::consts::PI / 6.0;
+const DRIBBLER_STRENGHT: f32 = 0.5;
 const GROUND_THICKNESS: f32 = 10.0;
 const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
 const GEOM_INTERVAL: f64 = 3.0;
@@ -89,15 +87,12 @@ struct Player {
     is_own: bool,
     rigid_body_handle: RigidBodyHandle,
     _collider_handle: ColliderHandle,
-    // joint_handle_player_connector: Option<ImpulseJointHandle>,
-    // joint_handle_connector_ball: Option<ImpulseJointHandle>,
     dribbler_spring_joint: Option<ImpulseJointHandle>,
     last_cmd_time: f64,
     target_velocity: Vector<f32>,
     target_ang_velocity: f32,
     current_dribble_speed: f32,
 }
-// _dribbler_collider_handle: ColliderHandle,
 
 #[derive(Debug)]
 struct TimedPlayerCmd {
@@ -257,41 +252,26 @@ impl Simulation {
             to_exec
         };
 
+        // Update query pipeline
+        self.query_pipeline
+            .update(&self.rigid_body_set, &self.collider_set);
+
+        // Reset ball forces
+        if let Some(ball) = self.ball.as_ref() {
+            let ball_body = self
+                .rigid_body_set
+                .get_mut(ball._rigid_body_handle)
+                .unwrap();
+            ball_body.reset_forces(true);
+        }
+
         // Update players
         for player in self.players.iter_mut() {
             if let Some(command) = commands_to_exec.get(&player.id) {
                 player.target_velocity = Vector::new(command.sx, command.sy, 0.0) * 1000.0; // m/s to mm/s
                 player.target_ang_velocity = command.w;
+                player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
-
-                if command.dribble_speed != player.current_dribble_speed {
-                    player.current_dribble_speed = command.dribble_speed;
-
-                    // Remove the old joint
-                    if let Some(joint_handle) = player.dribbler_spring_joint {
-                        self.impulse_joint_set.remove(joint_handle, true);
-                        player.dribbler_spring_joint = None;
-                    }
-
-                    // Add a new joint
-                    if command.dribble_speed > 0.0 {
-                        let joint = SpringJoint::new(
-                            BALL_RADIUS,
-                            player.current_dribble_speed * DRIBBLER_STRENGHT,
-                            1.0,
-                        );
-
-                        let player_handle = player.rigid_body_handle;
-                        let ball_handle = self.ball.as_ref().unwrap()._rigid_body_handle;
-
-                        player.dribbler_spring_joint = Some(self.impulse_joint_set.insert(
-                            player_handle,
-                            ball_handle,
-                            joint,
-                            true,
-                        ));
-                    }
-                }
             }
 
             let rigid_body = self
@@ -308,7 +288,7 @@ impl Simulation {
 
             // Convert to global frame
             let target_velocity =
-                Rotation::<f32>::new(Vector::z() * rigid_body.position().rotation.angle())
+                Rotation::<f32>::new(Vector::z() * rigid_body.rotation().euler_angles().2)
                     * player.target_velocity;
 
             let vel_err = target_velocity - velocity;
@@ -332,11 +312,30 @@ impl Simulation {
             };
             let new_ang_vel = new_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);
             rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
-        }
 
-        let (collision_send, collision_recv) = crossbeam::channel::unbounded();
-        let (contact_force_send, _) = crossbeam::channel::unbounded();
-        let event_handler = ChannelEventCollector::new(collision_send, contact_force_send);
+            // Check if the ball is in the dribbler
+            if player.current_dribble_speed > 0.0 {
+                let heading = rigid_body.position().rotation * Vector::x();
+                let player_position = rigid_body.position().translation.vector;
+                let dribbler_position = player_position + heading * PLAYER_RADIUS;
+                let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
+
+                if let Some(ball_handle) = ball_handle {
+                    let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
+                    let ball_position = ball_body.position().translation.vector;
+                    let distance = (ball_position - player_position).norm();
+
+                    // Compute angle between player heading and ball
+                    let ball_dir = ball_position - player_position;
+                    let angle = heading.angle(&ball_dir);
+                    if distance < PLAYER_RADIUS + DRIBBLER_RADIUS && angle < DRIBBLER_ANGLE {
+                        let force = (player.current_dribble_speed * DRIBBLER_STRENGHT)
+                            * (dribbler_position - ball_position);
+                        ball_body.add_force(force, true);
+                    }
+                }
+            }
+        }
 
         self.integration_parameters.dt = dt as f32;
         self.physics_pipeline.step(
@@ -352,54 +351,8 @@ impl Simulation {
             &mut self.ccd_solver,
             Some(&mut self.query_pipeline),
             &(),
-            &event_handler,
+            &(),
         );
-
-        while let Ok(collision_event) = collision_recv.try_recv() {
-            // Handle the collision event.
-
-            // if the ball colides with a dribbler of a robot, the ball should e given a force in the direction of the dribbler
-            // go through all the  _dribbler_collider_handle of all the players and check if it's equal to the collision_event.collider1 or collision_event.collider2
-
-            let collider_1 = self.collider_set.get(collision_event.collider1()).unwrap(); // safe, we know it exists
-            let collider_2 = self.collider_set.get(collision_event.collider2()).unwrap(); // safe, we know it exists
-
-            let dribbler_collider = if collider_1.user_data == DRIBBLER_USER_DATA {
-                collider_1
-            } else if collider_2.user_data == DRIBBLER_USER_DATA {
-                collider_2
-            } else {
-                continue;
-            };
-
-            let ball_collider = if collider_1.user_data == BALL_USER_DATA {
-                collider_1
-            } else if collider_2.user_data == BALL_USER_DATA {
-                collider_2
-            } else {
-                continue;
-            };
-
-            let player_body = self
-                .rigid_body_set
-                .get(dribbler_collider.parent().unwrap())
-                .unwrap(); // safe, we know it exists
-            let player_position = player_body.position().translation.vector;
-            let ball_body = self
-                .rigid_body_set
-                .get_mut(ball_collider.parent().unwrap())
-                .unwrap(); // safe, we know it exists
-            let ball_position = ball_body.position().translation.vector;
-
-            // We only apply a new force if there isn't already a force applied to the ball
-            if collision_event.clone().started() && ball_body.user_force().norm() < 1e-9 {
-                let force_direction = player_position - ball_position;
-                let force = force_direction.normalize() * 50000.0;
-                ball_body.add_force(force, true);
-            } else if collision_event.stopped() {
-                ball_body.reset_forces(true);
-            }
-        }
 
         self.current_time += dt as f64;
     }
@@ -413,7 +366,7 @@ impl Simulation {
         for player in self.players.iter() {
             let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
             let position = rigid_body.position().translation.vector;
-            let orientation = rigid_body.position().rotation.angle();
+            let orientation = rigid_body.rotation().euler_angles().2;
             let mut robot = SSL_DetectionRobot::new();
             robot.set_robot_id(player.id as u32);
             robot.set_x(position.x);
@@ -451,7 +404,7 @@ impl Simulation {
         self.players.iter().for_each(|player| {
             let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
             let position = rigid_body.position().translation.vector;
-            let orientation = rigid_body.position().rotation.angle();
+            let orientation = rigid_body.rotation().euler_angles().2;
             let data = PlayerData {
                 id: player.id,
                 timestamp: self.current_time,
@@ -606,14 +559,6 @@ impl SimulationBuilder {
             rigid_body_handle,
             &mut sim.rigid_body_set,
         );
-
-        // ToDo make it work by adding a joint: prismatic joint
-        // let dribbler = ColliderBuilder::cuboid(DRIBBLER_LENGTH, DRIBBLER_WIDTH, DRIBBLER_HEIGHT)
-        //     .user_data(DRIBBLER_USER_DATA)
-        //     .translation(Vector::new(PLAYER_RADIUS + DRIBBLER_LENGTH / 2.0, 0.0, 0.0))
-        //     .sensor(true)
-        //     .active_events(ActiveEvents::COLLISION_EVENTS)
-        //     .build();
 
         // let dribbler_colider_handle = sim.collider_set.insert_with_parent(
         //     dribbler,
