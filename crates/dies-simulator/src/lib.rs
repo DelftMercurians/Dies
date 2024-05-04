@@ -7,7 +7,7 @@ use dies_protos::{
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
 use rapier3d::{
-    na::{OPoint, SimdPartialOrd, Vector2},
+    na::{SimdPartialOrd, Vector2},
     prelude::*,
 };
 use serde::Serialize;
@@ -17,13 +17,11 @@ use utils::IntervalTrigger;
 mod utils;
 
 const BALL_RADIUS: f32 = 43.0;
-const BALL_USER_DATA: u128 = 8;
-const DRIBBLER_USER_DATA: u128 = 4;
 const PLAYER_RADIUS: f32 = 200.0;
 const PLAYER_HEIGHT: f32 = 140.0;
-const DRIBBLER_RADIUS: f32 = BALL_RADIUS + 30.0;
+const DRIBBLER_RADIUS: f32 = BALL_RADIUS + 60.0;
 const DRIBBLER_ANGLE: f32 = std::f32::consts::PI / 6.0;
-const DRIBBLER_STRENGHT: f32 = 0.5;
+const DRIBBLER_STRENGHT: f32 = 0.6;
 const GROUND_THICKNESS: f32 = 10.0;
 const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
 const GEOM_INTERVAL: f64 = 3.0;
@@ -32,15 +30,15 @@ const GEOM_INTERVAL: f64 = 3.0;
 pub struct SimulationConfig {
     pub gravity: Vector<f32>,
     pub bias: f32,
-    pub ball_angular_damping: f32, // angular damping (rolling friction) on the ball
-    pub simulation_step: f64,      // time between simulation steps
-    pub vision_update_step: f64,   // time between vision updates
-    pub command_delay: f64,        // delay for the execution of the command
-    pub max_accel: Vector<f32>,    // max lateral acceleration
-    pub max_vel: Vector<f32>,      // max lateral velocity
-    pub max_ang_accel: f32,        // max angular acceleration
-    pub max_ang_vel: f32,          // max angular velocity
-    pub velocity_treshold: f32,    // max difference between target and current velocity
+    pub ball_damping: f32,    // angular damping (rolling friction) on the ball
+    pub simulation_step: f64, // time between simulation steps
+    pub vision_update_step: f64, // time between vision updates
+    pub command_delay: f64,   // delay for the execution of the command
+    pub max_accel: Vector<f32>, // max lateral acceleration
+    pub max_vel: Vector<f32>, // max lateral velocity
+    pub max_ang_accel: f32,   // max angular acceleration
+    pub max_ang_vel: f32,     // max angular velocity
+    pub velocity_treshold: f32, // max difference between target and current velocity
     pub angular_velocity_treshold: f32, // max difference between target and current angular velocity
 }
 
@@ -49,7 +47,7 @@ impl Default for SimulationConfig {
         SimulationConfig {
             gravity: Vector::z() * -9.81 * 1000.0,
             bias: 0.0,
-            ball_angular_damping: 1.0,
+            ball_damping: 1.4,
             command_delay: 110.0 / 1000.0, // 6 ms
             max_accel: Vector::new(1200.0, 1200.0, 0.0),
             max_vel: Vector::new(2000.0, 2000.0, 0.0),
@@ -87,7 +85,6 @@ struct Player {
     is_own: bool,
     rigid_body_handle: RigidBodyHandle,
     _collider_handle: ColliderHandle,
-    dribbler_spring_joint: Option<ImpulseJointHandle>,
     last_cmd_time: f64,
     target_velocity: Vector<f32>,
     target_ang_velocity: f32,
@@ -263,6 +260,7 @@ impl Simulation {
                 .get_mut(ball._rigid_body_handle)
                 .unwrap();
             ball_body.reset_forces(true);
+            ball_body.set_linear_damping(self.config.ball_damping);
         }
 
         // Update players
@@ -317,21 +315,24 @@ impl Simulation {
             if player.current_dribble_speed > 0.0 {
                 let heading = rigid_body.position().rotation * Vector::x();
                 let player_position = rigid_body.position().translation.vector;
-                let dribbler_position = player_position + heading * PLAYER_RADIUS;
+                let dribbler_position =
+                    player_position + heading * (PLAYER_RADIUS + BALL_RADIUS + 20.0);
                 let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
 
                 if let Some(ball_handle) = ball_handle {
                     let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
                     let ball_position = ball_body.position().translation.vector;
-                    let distance = (ball_position - player_position).norm();
-
-                    // Compute angle between player heading and ball
                     let ball_dir = ball_position - player_position;
+                    let distance = ball_dir.norm();
                     let angle = heading.angle(&ball_dir);
                     if distance < PLAYER_RADIUS + DRIBBLER_RADIUS && angle < DRIBBLER_ANGLE {
                         let force = (player.current_dribble_speed * DRIBBLER_STRENGHT)
                             * (dribbler_position - ball_position);
+                        // clamp the force to the max force
+                        // let force = force.cap_magnitude(200.0);
                         ball_body.add_force(force, true);
+                        // dampen the ball's velocity
+                        ball_body.set_linear_damping(self.config.ball_damping * 2.0);
                     }
                 }
             }
@@ -514,11 +515,12 @@ impl SimulationBuilder {
         let ball_body = RigidBodyBuilder::dynamic()
             .can_sleep(false)
             .translation(position)
-            .angular_damping(sim.config.ball_angular_damping)
+            .linear_damping(sim.config.ball_damping)
             .build();
         let ball_collider = ColliderBuilder::ball(BALL_RADIUS)
             .mass(1.0)
-            .user_data(BALL_USER_DATA)
+            .restitution(0.0)
+            .restitution_combine_rule(CoefficientCombineRule::Min)
             .build();
         let ball_body_handle = sim.rigid_body_set.insert(ball_body);
         let ball_collider_handle = sim.collider_set.insert_with_parent(
@@ -552,7 +554,10 @@ impl SimulationBuilder {
                     | LockedAxes::ROTATION_LOCKED_Y,
             )
             .build();
-        let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS).build();
+        let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS)
+            .restitution(0.0)
+            .restitution_combine_rule(CoefficientCombineRule::Min)
+            .build();
         let rigid_body_handle = sim.rigid_body_set.insert(rigid_body);
         let collider_handle = sim.collider_set.insert_with_parent(
             collider,
@@ -560,21 +565,11 @@ impl SimulationBuilder {
             &mut sim.rigid_body_set,
         );
 
-        // let dribbler_colider_handle = sim.collider_set.insert_with_parent(
-        //     dribbler,
-        //     rigid_body_handle,
-        //     &mut sim.rigid_body_set,
-        // );
-
         sim.players.push(Player {
             id,
             is_own,
             rigid_body_handle,
             _collider_handle: collider_handle,
-            // joint_handle_player_connector: None,
-            // joint_handle_connector_ball: None,
-            // _dribbler_collider_handle: dribbler_colider_handle,
-            dribbler_spring_joint: None,
             last_cmd_time: 0.0,
             target_velocity: Vector::zeros(),
             target_ang_velocity: 0.0,

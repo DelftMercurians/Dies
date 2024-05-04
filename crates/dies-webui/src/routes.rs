@@ -12,7 +12,7 @@ use crate::server::ServerState;
 use crate::server::UiCommand;
 use dies_core::PlayerCmd;
 
-pub(crate) async fn api(state: State<Arc<ServerState>>) -> impl IntoResponse {
+pub(crate) async fn state(state: State<Arc<ServerState>>) -> impl IntoResponse {
     let update = state.world_state.borrow();
     if let Some(update) = update.as_ref() {
         Json(update.world_data.clone()).into_response()
@@ -33,9 +33,9 @@ pub(crate) async fn websocket(
     ws: WebSocketUpgrade,
     state: State<Arc<ServerState>>,
 ) -> impl IntoResponse {
+    let rx = state.world_state.clone();
+    let tx = state.cmd_sender.clone();
     ws.on_upgrade(|socket| async move {
-        let rx = state.world_state.clone();
-        let tx = state.cmd_sender.clone();
         handle_ws_conn(tx, rx, socket).await;
     })
 }
@@ -60,6 +60,10 @@ async fn handle_ws_conn(
                 break;
             }
         }
+    }
+
+    if let Err(err) = socket.close().await {
+        tracing::error!("Failed to close websocket: {}", err);
     }
 }
 

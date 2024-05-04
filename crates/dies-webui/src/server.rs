@@ -34,7 +34,7 @@ pub async fn start(
     });
 
     let app = Router::new()
-        .route("/api/state", get(routes::api))
+        .route("/api/state", get(routes::state))
         .route("/api/command", post(routes::command))
         .route("/api/ws", get(routes::websocket))
         .nest_service("/", ServeDir::new("static"))
