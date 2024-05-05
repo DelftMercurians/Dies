@@ -16,23 +16,19 @@ Dies is the framework powering the [Delft Mercurian](https://delftmercurians.nl/
 You'll need the following dependencies on your system:
 
 - Stable [Rust](https://www.rust-lang.org/tools/install) toolchain. Use rustup if you can.
-- On Linux, you'll need to install the  `pkg-config`, `libudev-dev` and `libssl-dev` packages: `sudo apt install libudev-dev libssl-dev pkg-config`.
-- To run scripts, you should install cargo-make: `cargo install cargo-make`.
+- On Linux, you'll need to install the `pkg-config`, `libudev-dev` and `libssl-dev` packages: `sudo apt install libudev-dev libssl-dev pkg-config`.
 
-To run Dies locally, simply use `cargo run`.
+To run Dies locally, simply use `cargo run -- <option>`.
 
-If you are connected to the team VPN, you can run your local copy of Dies on the server. First, you'll need an ssh client:
- - Windows: [OpenSSH](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=guide)
- - Ubuntu: `sudo apt install openssh-client`
- - Arch: `sudo pacman -S openssh`
-
-You'll also need to make sure that your ssh key is added to the server's `~/.ssh/authorized_keys` file.
-
-Then, you can run the following command to copy your local Dies to the server and run it there:
+If you are connected to the team VPN, you can run your local copy of Dies on the server. For now, this will only work on Linux. First of all make sure you have `ssh` and `rsync` and that your public key is added to the server. Then, you can run the following command:
 
 ```sh
-cargo make run-on-server
+./run.sh <options>
 ```
+
+The following options are required:
+
+- `-m`: Mode: `sim` for simulation, `irl` for real robot. `irl-test` allows manual control of the robot over the web interface.
 
 ## Documentation
 
