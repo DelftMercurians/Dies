@@ -26,3 +26,4 @@ nalgebra = "0.32.4"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 dies-executor = { version = "0.1.0", path = "../dies-executor" }
 dies-webui = { version = "0.1.0", path = "../dies-webui" }
+dies-world = { version = "0.1.0", path = "../dies-world" }

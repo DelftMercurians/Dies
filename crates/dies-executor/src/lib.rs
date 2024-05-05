@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 
-use dies_control::TeamController;
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, WorldData};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_serial_client::SerialClient;
@@ -10,9 +9,17 @@ use dies_simulator::Simulation;
 use dies_ssl_client::VisionClient;
 use dies_world::{WorldConfig, WorldTracker};
 use gc_client::GcClient;
-use tokio::sync::{broadcast, watch};
+use strategy::Strategy;
+use tokio::sync::broadcast;
 
+mod control;
 mod gc_client;
+pub mod strategy;
+
+use control::TeamController;
+pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
+
+const CMD_INTERVAL: Duration = Duration::from_millis(1000 / 60);
 
 #[derive(Debug, Clone)]
 pub struct WorldUpdate {
@@ -35,7 +42,7 @@ pub struct Executor {
     bs_client: Option<SerialClient>,
     simulator: Option<Simulation>,
     simulator_dt: Duration,
-    update_broadcast: watch::Sender<WorldUpdate>,
+    update_broadcast: broadcast::Sender<WorldUpdate>,
 }
 
 impl Executor {
@@ -69,7 +76,7 @@ impl Executor {
     }
 
     /// Get the currently active player commands.
-    pub fn player_commands(&self) -> Vec<PlayerCmd> {
+    pub fn player_commands(&mut self) -> Vec<PlayerCmd> {
         self.team_controller.commands()
     }
 
@@ -94,11 +101,16 @@ impl Executor {
     }
 
     pub fn step_simulation(&mut self) -> Result<()> {
-        if let Some(_simulator) = &mut self.simulator {
-            todo!()
+        let packet = if let Some(simulator) = &mut self.simulator {
+            simulator.step(self.simulator_dt.as_secs_f64());
+            simulator.detection().or(simulator.geometry())
         } else {
             bail!("Simulator not set");
-        }
+        };
+
+        packet.map(|p| self.update_from_vision_msg(p));
+
+        Ok(())
     }
 
     /// Run the executor in real time on the simulator
@@ -108,15 +120,21 @@ impl Executor {
             bail!("Simulator not set");
         }
 
-        let mut interval = tokio::time::interval(self.simulator_dt);
+        let mut update_interval = tokio::time::interval(self.simulator_dt);
+        let mut cmd_interval = tokio::time::interval(CMD_INTERVAL);
         tokio::pin!(stop_rx);
         loop {
             tokio::select! {
                 _ = stop_rx.recv() => {
                     break;
                 }
-                _ = interval.tick() => {
+                _ = update_interval.tick() => {
                     self.step_simulation()?;
+                }
+                _ = cmd_interval.tick() => {
+                    for cmd in self.player_commands() {
+                        self.simulator.as_mut().unwrap().push_cmd(cmd);
+                    }
                 }
             }
         }
@@ -135,6 +153,7 @@ impl Executor {
             .bs_client
             .take()
             .ok_or(anyhow::anyhow!("BS client not set"))?;
+        let mut cmd_interval = tokio::time::interval(CMD_INTERVAL);
 
         tokio::pin!(stop_rx);
         loop {
@@ -162,17 +181,29 @@ impl Executor {
                         }
                     }
                 }
+                _ = cmd_interval.tick() => {
+                    for cmd in self.player_commands() {
+                        bs_client.send(cmd).await?;
+                    }
+                }
             }
         }
         Ok(())
     }
 
-    pub fn subscribe(&self) -> watch::Receiver<WorldUpdate> {
+    pub fn subscribe(&self) -> broadcast::Receiver<WorldUpdate> {
         self.update_broadcast.subscribe()
     }
 
     fn update_team_controller(&mut self) {
         let world_data = self.tracker.get().unwrap();
+        let update = WorldUpdate {
+            world_data: world_data.clone(),
+        };
+        if let Err(err) = self.update_broadcast.send(update) {
+            tracing::error!("Failed to broadcast world update: {}", err);
+        }
+
         self.team_controller.update(world_data);
     }
 }
@@ -185,6 +216,7 @@ impl Executor {
 /// The `world_config` field is required in all cases.
 #[derive(Default)]
 pub struct ExecutorBuilder {
+    strategy: Option<Box<dyn Strategy>>,
     ssl_client: Option<VisionClient>,
     bs_client: Option<SerialClient>,
     simulator: Option<Simulation>,
@@ -193,6 +225,11 @@ pub struct ExecutorBuilder {
 }
 
 impl ExecutorBuilder {
+    pub fn with_strategy(&mut self, strategy: Box<dyn Strategy>) -> &mut Self {
+        self.strategy = Some(strategy);
+        self
+    }
+
     pub fn with_ssl_client(&mut self, ssl_client: VisionClient) -> &mut Self {
         self.ssl_client = Some(ssl_client);
         self
@@ -231,15 +268,14 @@ impl ExecutorBuilder {
                 self.world_config
                     .ok_or(anyhow::anyhow!("World config not set"))?,
             ),
-            team_controller: TeamController::new(1.0),
+            team_controller: TeamController::new(
+                self.strategy.ok_or(anyhow::anyhow!("Strategy not set"))?,
+            ),
             gc_client: GcClient::new(),
             ssl_client: self.ssl_client,
             bs_client: self.bs_client,
             simulator: self.simulator,
-            update_broadcast: watch::channel(WorldUpdate {
-                world_data: WorldData::default(),
-            })
-            .0,
+            update_broadcast: broadcast::channel(16).0,
             simulator_dt: self.simulator_dt,
         })
     }

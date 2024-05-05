@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::variable::Variable;
+use super::variable::Variable;
 
 pub struct PID<T> {
     kp: f32,

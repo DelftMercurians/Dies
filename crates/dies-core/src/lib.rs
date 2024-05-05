@@ -11,16 +11,16 @@ pub type GcRefereeMsg = dies_protos::ssl_gc_referee_message::Referee;
 
 use serde::{Deserialize, Serialize};
 
-/// A command to one of our players (placeholder)
+/// A command to one of our players as it will be sent to the robot.
 ///
 /// All values are relative to the robots local frame and are in meters.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct PlayerCmd {
     /// The robot's ID
     pub id: u32,
-    /// The player's x (left-right, with `+` left) velocity \[mm/s]
+    /// The player's x (left-right, with `+` left) velocity \[m/s]
     pub sx: f32,
-    /// The player's y (forward-backward, with `+` forward) velocity \[mm/s]
+    /// The player's y (forward-backward, with `+` forward) velocity \[m/s]
     pub sy: f32,
     /// The player's angular velocity (with `+` counter-clockwise, `-` clockwise) \[rad/s]
     pub w: f32,
@@ -44,6 +44,23 @@ impl PlayerCmd {
             disarm: false,
             kick: false,
         }
+    }
+
+    pub fn to_string(&self) -> String {
+        let extra = if self.disarm {
+            "D".to_string()
+        } else if self.arm {
+            "A".to_string()
+        } else if self.kick {
+            "K".to_string()
+        } else {
+            "".to_string()
+        };
+
+        format!(
+            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};Kt7000;S.{};\n",
+            self.id, self.sx, self.sy, self.w, self.dribble_speed, extra
+        )
     }
 }
 

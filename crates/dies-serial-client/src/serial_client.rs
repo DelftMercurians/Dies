@@ -6,6 +6,8 @@ use tokio::sync::{mpsc, oneshot};
 
 use dies_core::{PlayerCmd, PlayerFeedbackMsg};
 
+const MAX_MSG_FREQ: f64 = 100.0;
+
 /// List available serial ports. The port names can be used to create a
 /// [`SerialClient`].
 pub fn list_serial_ports() -> Result<Vec<String>> {
@@ -98,36 +100,18 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
                     mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
                 tokio::task::spawn_blocking(move || {
                     let mut last_time = std::time::Instant::now();
-                    const TARGET_FREQ: f64 = 30.0;
+
                     loop {
                         match rx.blocking_recv() {
                             Some((msg, sender)) => {
                                 port.clear(serialport::ClearBuffer::Input).unwrap();
-                                // Limit the frequency of messages to the serial port
                                 let elapsed = last_time.elapsed().as_secs_f64();
-                                if elapsed < 1.0 / TARGET_FREQ {
-                                    std::thread::sleep(std::time::Duration::from_secs_f64(
-                                        1.0 / TARGET_FREQ - elapsed,
-                                    ));
-                                }
-                                let extra = if msg.disarm {
-                                    "D".to_string()
-                                } else if msg.arm {
-                                    "A".to_string()
-                                } else if msg.kick {
-                                    "K".to_string()
-                                } else {
-                                    "".to_string()
-                                };
-
-                                let cmd = format!(
-                                    "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};Kt7000;S.{};\n",
-                                    msg.id, msg.sx, msg.sy, msg.w, msg.dribble_speed, extra
-                                );
-                                if !extra.is_empty() {
-                                    println!("Sending {}", cmd);
+                                if elapsed < 1.0 / MAX_MSG_FREQ {
+                                    tracing::warn!("Message frequency too high, skipping message");
+                                    continue;
                                 }
 
+                                let cmd = msg.to_string();
                                 if let Err(err) = port.write_all(cmd.as_bytes()) {
                                     tracing::error!("Error writing to serial port: {}", err);
                                     sender.send(Err(err.into())).ok();
@@ -137,7 +121,6 @@ For Arch based systems, see (https://github.com/esp8266/source-code-examples/iss
                                 } else {
                                     sender.send(Ok(())).ok();
                                 }
-                                // println!("Sent, dt: {}ms", last_time.elapsed().as_millis());
                                 last_time = std::time::Instant::now();
                             }
                             None => break,

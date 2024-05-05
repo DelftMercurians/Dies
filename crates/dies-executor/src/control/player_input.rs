@@ -32,6 +32,11 @@ impl PlayerInputs {
             .cloned()
             .unwrap_or(PlayerControlInput::new())
     }
+
+    /// Set the input for a player
+    pub fn insert(&mut self, id: u32, input: PlayerControlInput) {
+        self.inputs.insert(id, input);
+    }
 }
 
 impl IntoIterator for PlayerInputs {

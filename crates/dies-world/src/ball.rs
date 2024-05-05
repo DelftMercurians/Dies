@@ -102,8 +102,6 @@ impl BallTracker {
                 .as_mut()
                 .unwrap()
                 .update(pos_ov, current_time, is_noisy.clone());
-            debug!("Ball pos: {:?}", pos);
-            debug!("Ball filter update: {:?}", z);
             if z.is_some() {
                 let mut pos_v3 = Vector3::new(
                     z.unwrap()[0] as f32,

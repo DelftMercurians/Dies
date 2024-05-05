@@ -547,20 +547,13 @@ dependencies = [
  "dies-simulator",
  "dies-ssl-client",
  "dies-webui",
+ "dies-world",
  "dirs",
  "nalgebra",
  "tokio",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "dies-control"
-version = "0.1.0"
-dependencies = [
- "dies-core",
- "nalgebra",
 ]
 
 [[package]]
@@ -580,13 +573,13 @@ name = "dies-executor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dies-control",
  "dies-core",
  "dies-protos",
  "dies-serial-client",
  "dies-simulator",
  "dies-ssl-client",
  "dies-world",
+ "nalgebra",
  "tokio",
  "tracing",
 ]

@@ -8,14 +8,12 @@ use tokio::sync::broadcast;
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::SubscriberExt;
 
-mod mock_vision;
 mod modes;
 
 #[derive(Debug, Clone, ValueEnum)]
 pub(crate) enum VisionType {
     Tcp,
     Udp,
-    Mock,
 }
 
 #[derive(Debug, Parser)]
@@ -138,6 +136,7 @@ async fn main() -> Result<()> {
         let result = match args.mode {
             modes::Mode::Irl => modes::irl::run(args, stop_rx).await,
             modes::Mode::SimTest => modes::sim_test::run(stop_rx).await,
+            modes::Mode::Sim => modes::sim::run(args, stop_rx).await,
         };
         if let Err(err) = result {
             tracing::error!("Mode failed: {}", err);

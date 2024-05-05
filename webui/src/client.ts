@@ -10,6 +10,13 @@ export function connectWs() {
   function connect() {
     console.log("Connecting to WebSocket...");
     socket = new WebSocket(`ws://localhost:5555/api/ws`);
+    socket.onerror = (error) => {
+      console.error("WebSocket error:", error);
+      if (socket.readyState === WebSocket.CLOSED) {
+        console.log("WebSocket connection closed. Reconnecting...");
+        setTimeout(connect, 1000);
+      }
+    };
 
     socket.onopen = () => {
       console.log("WebSocket connection established.");
@@ -20,6 +27,7 @@ export function connectWs() {
     };
 
     socket.onmessage = (event) => {
+      console.log("Received message:", event.data);
       const data = JSON.parse(event.data) as World;
       worldState.set(data);
     };

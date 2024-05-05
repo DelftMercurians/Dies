@@ -1,14 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::{collections::HashMap, f32::consts::PI};
 
-use crate::{
-    player_controller::PlayerController,
-    player_input::{KickerControlInput, PlayerControlInput, PlayerInputs},
-};
-use dies_core::GameState;
-use dies_core::{PlayerCmd, WorldData};
+use dies_core::{GameState, WorldData};
 use nalgebra::Vector2;
-use std::cmp::PartialEq;
-use std::f32::consts::PI;
+
+use crate::control::{KickerControlInput, PlayerControlInput};
+
+use super::super::player_input::PlayerInputs;
 
 /// Everyone stops, notice that this only interrupts the players, so if the game
 /// recovers the players will head to their original goal.
@@ -36,9 +33,9 @@ pub enum PlayerStatus {
 }
 
 pub struct KickOffController {
-    assigned_player: Option<(u32, PlayerStatus)>,
-    pos_assigned: HashMap<u32, Vector2<f32>>,
-    step: f32,
+    pub(crate) assigned_player: Option<(u32, PlayerStatus)>,
+    pub(crate) pos_assigned: HashMap<u32, Vector2<f32>>,
+    pub(crate) step: f32,
 }
 
 impl KickOffController {
@@ -139,9 +136,9 @@ pub enum BallReplacementStatus {
 }
 
 pub struct BallReplacementController {
-    assigned_player: Option<(u32, BallReplacementStatus)>,
-    assigned_pos: Option<Vector2<f32>>,
-    play_dir_x: f32,
+    pub(crate) assigned_player: Option<(u32, BallReplacementStatus)>,
+    pub(crate) assigned_pos: Option<Vector2<f32>>,
+    pub(crate) play_dir_x: f32,
 }
 
 impl BallReplacementController {
@@ -257,9 +254,9 @@ pub enum PenaltyKickStatus {
 }
 
 pub struct PenaltyKickController {
-    assigned_player: Option<(u32, PenaltyKickStatus)>,
-    pos_assigned: HashMap<u32, Vector2<f32>>,
-    kick_angle: Option<f32>,
+    pub(crate) assigned_player: Option<(u32, PenaltyKickStatus)>,
+    pub(crate) pos_assigned: HashMap<u32, Vector2<f32>>,
+    pub(crate) kick_angle: Option<f32>,
 }
 
 impl PenaltyKickController {
@@ -417,118 +414,4 @@ impl PenaltyKickController {
         }
         inputs
     }
-}
-
-pub struct TeamController {
-    player_controllers: HashMap<u32, PlayerController>,
-    kick_off_controller: KickOffController,
-    ball_replacement_controller: BallReplacementController,
-    penalty_kick_controller: PenaltyKickController,
-    halt_controller: HaltController,
-}
-
-impl TeamController {
-    /// Create a new team controller.
-    pub fn new(play_dir_x: f32) -> Self {
-        Self {
-            halt_controller: HaltController::new(),
-            kick_off_controller: KickOffController::new(),
-            ball_replacement_controller: BallReplacementController::new(play_dir_x),
-            penalty_kick_controller: PenaltyKickController::new(),
-            player_controllers: HashMap::new(),
-        }
-    }
-
-    /// Update the controllers with the current state of the players.
-    pub fn update(&mut self, world_data: WorldData) {
-        // Ensure there is a player controller for every ID
-        let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
-        for id in detected_ids.iter() {
-            if !self.player_controllers.contains_key(id) {
-                self.player_controllers
-                    .insert(*id, PlayerController::new(*id));
-            }
-        }
-
-        let mut inputs = match world_data.current_game_state.game_state {
-            GameState::Halt | GameState::Timeout => self.halt_controller.update(&world_data),
-            GameState::PrepareKickoff | GameState::Kickoff => {
-                self.kick_off_controller.update(&world_data)
-            }
-            GameState::BallReplacement(_) => self
-                .ball_replacement_controller
-                .update(&world_data, Vector2::new(0.0, 0.0)),
-            GameState::PreparePenalty | GameState::Penalty => {
-                self.penalty_kick_controller.update(&world_data)
-            }
-            _ => PlayerInputs::new(),
-        };
-
-        // If in a stop state, override the inputs
-        if world_data.current_game_state.game_state == GameState::Stop {
-            inputs = stop_override(world_data.clone(), inputs);
-        }
-
-        // Update the player controllers
-        for controller in self.player_controllers.values_mut() {
-            let player_data = world_data
-                .own_players
-                .iter()
-                .find(|p| p.id == controller.id());
-
-            if let Some(player_data) = player_data {
-                let input = inputs.player(controller.id());
-                controller.update(player_data, input);
-            } else {
-                controller.increment_frames_missings();
-            }
-        }
-    }
-
-    /// Get the currently active commands for the players.
-    pub fn commands(&self) -> Vec<PlayerCmd> {
-        self.player_controllers
-            .values()
-            .map(|c| c.command())
-            .collect()
-    }
-}
-
-/// Override the inputs to comply with the stop state.
-fn stop_override(world_data: WorldData, inputs: PlayerInputs) -> PlayerInputs {
-    let ball_pos = world_data.ball.as_ref().map(|b| b.position.xy());
-    let ball_vel = world_data.ball.as_ref().map(|b| b.velocity.xy());
-    inputs
-        .iter()
-        .map(|(id, input)| {
-            let player_data = world_data
-                .own_players
-                .iter()
-                .find(|p| p.id == *id)
-                .expect("Player not found in world data");
-
-            let mut new_input = input.clone();
-
-            // Cap speed at 1.5m/s
-            new_input.velocity = input.velocity.cap_magnitude(1.5);
-
-            // If the player is less than 500mm from the ball, set the goal to the point 500mm away
-            // from the ball, in the opposite direction of the ball's speed.
-            if let (Some(ball_pos), Some(ball_vel)) = (ball_pos, ball_vel) {
-                let dist = (player_data.position - ball_pos).norm();
-                if dist < 500.0 {
-                    let goal = ball_pos - ball_vel.normalize() * 500.0;
-                    new_input.position = Some(goal);
-                }
-            }
-
-            // Stop dribbler
-            new_input.dribbling_speed = 0.0;
-
-            // Disable kick
-            new_input.kicker = KickerControlInput::Disarm;
-
-            (*id, new_input)
-        })
-        .collect()
 }
