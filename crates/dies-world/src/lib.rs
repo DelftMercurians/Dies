@@ -7,13 +7,14 @@ mod filter;
 mod game_state;
 mod player;
 
+use crate::coord_utils::to_dies_coords2;
 use crate::game_state::GameStateTracker;
 use ball::BallTracker;
-pub use dies_core::{GameStateData, BallData, FieldCircularArc, FieldGeometry, 
-                    FieldLineSegment, PlayerData};
+pub use dies_core::{
+    BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
+};
 use dies_core::{GameState, WorldData};
 use player::PlayerTracker;
-use crate::coord_utils::to_dies_coords2;
 
 /// The number of players with unique ids in a single team.
 ///
@@ -82,7 +83,7 @@ impl WorldTracker {
             }
         }
     }
-    
+
     pub fn get_play_dir_x(&self) -> f32 {
         self.play_dir_x
     }
@@ -91,10 +92,15 @@ impl WorldTracker {
     pub fn update_from_referee(&mut self, data: &Referee) {
         self.game_state_tracker
             .update_ball_movement_check(self.ball_tracker.get());
-        
-        let designated_pos = data.designated_position.as_ref().take()
+
+        let designated_pos = data
+            .designated_position
+            .as_ref()
+            .take()
             .map(|pos| to_dies_coords2(pos.x(), pos.y(), self.play_dir_x));
-        let cur = self.game_state_tracker.update(&data.command(), designated_pos);
+        let cur = self
+            .game_state_tracker
+            .update(&data.command(), designated_pos);
         if cur == GameState::Kickoff || cur == GameState::FreeKick {
             let timeout = if IS_DIV_A { 10 } else { 5 };
             self.game_state_tracker
@@ -193,7 +199,7 @@ impl WorldTracker {
     ///
     /// Returns `None` if the world state is not initialized (see
     /// [`WorldTracker::is_init`]).
-    pub fn get(&self) -> Option<WorldData> {
+    pub fn get(&self) -> WorldData {
         let field_geom = if let Some(v) = &self.field_geometry {
             Some(v)
         } else {
@@ -213,23 +219,23 @@ impl WorldTracker {
                 opp_players.push(player_data);
             }
         }
-        
+
         let game_state = GameStateData {
             game_state: self.game_state_tracker.get_game_state(),
-            us_operating: match self.game_state_tracker.get_operator_is_blue() { 
+            us_operating: match self.game_state_tracker.get_operator_is_blue() {
                 Some(true) => self.is_blue,
                 Some(false) => !self.is_blue,
-                None => true
-            }
+                None => true,
+            },
         };
-        
-        Some(WorldData {
+
+        WorldData {
             own_players: own_players.into_iter().cloned().collect(),
             opp_players: opp_players.into_iter().cloned().collect(),
             ball: self.ball_tracker.get().cloned(),
             field_geom: field_geom.cloned(),
-            current_game_state: game_state
-        })
+            current_game_state: game_state,
+        }
     }
 }
 
@@ -243,17 +249,6 @@ mod test {
         ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},
     };
     use std::time::Duration;
-
-    #[test]
-    fn test_no_data() {
-        let tracker = WorldTracker::new(WorldConfig {
-            is_blue: true,
-            initial_opp_goal_x: 1.0,
-        });
-
-        assert!(!tracker.is_init());
-        assert!(tracker.get().is_none());
-    }
 
     #[test]
     fn test_init() {
@@ -308,7 +303,7 @@ mod test {
         tracker.update_from_vision(&packet_detection);
         assert!(tracker.is_init());
 
-        let data = tracker.get().unwrap();
+        let data = tracker.get();
 
         // Check player
         assert!(data.own_players.len() == 1);

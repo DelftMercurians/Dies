@@ -196,7 +196,8 @@ impl Executor {
     }
 
     fn update_team_controller(&mut self) {
-        let world_data = self.tracker.get().unwrap();
+        let world_data = self.tracker.get();
+
         let update = WorldUpdate {
             world_data: world_data.clone(),
         };
