@@ -301,7 +301,6 @@ impl Simulation {
                 target_velocity
             };
             let new_vel = new_vel.simd_clamp(-self.config.max_vel, self.config.max_vel);
-            println!("Vel: {:?}", new_vel);
             rigid_body.set_linvel(new_vel, true);
 
             let target_ang_vel = player.target_ang_velocity;
