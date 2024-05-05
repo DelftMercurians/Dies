@@ -33,11 +33,18 @@ pub async fn start(
         cmd_sender: ui_command_tx,
     });
 
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("crates")
+        .join("dies-webui")
+        .join("static");
+    let serve_dir = ServeDir::new(path);
     let app = Router::new()
         .route("/api/state", get(routes::state))
         .route("/api/command", post(routes::command))
         .route("/api/ws", get(routes::websocket))
-        .nest_service("/", ServeDir::new("static"))
+        .nest_service("/", serve_dir.clone())
+        .fallback_service(serve_dir)
         .with_state(Arc::clone(&state));
 
     // Start the web server
