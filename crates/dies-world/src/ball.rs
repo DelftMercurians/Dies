@@ -1,6 +1,5 @@
 use dies_core::BallData;
 use nalgebra::{SVector, Vector3, Vector6};
-use tracing::debug;
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 

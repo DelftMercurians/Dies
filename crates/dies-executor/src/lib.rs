@@ -26,6 +26,11 @@ pub struct WorldUpdate {
     pub world_data: WorldData,
 }
 
+enum Controller {
+    TeamController(TeamController),
+    DirectControl(broadcast::Receiver<PlayerCmd>),
+}
+
 /// The central component of the framework. It contains all state and logic needed to
 /// run a match -- processing vision and referee messages, executing the strategy, and
 /// sending commands to the robots.
@@ -36,7 +41,7 @@ pub struct WorldUpdate {
 /// To construct an executor, use the [`Executor::builder`] method.
 pub struct Executor {
     tracker: WorldTracker,
-    team_controller: TeamController,
+    controller: Controller,
     gc_client: GcClient,
     ssl_client: Option<VisionClient>,
     bs_client: Option<SerialClient>,
@@ -77,7 +82,31 @@ impl Executor {
 
     /// Get the currently active player commands.
     pub fn player_commands(&mut self) -> Vec<PlayerCmd> {
-        self.team_controller.commands()
+        match self.controller {
+            Controller::TeamController(ref mut controller) => controller.commands(),
+            Controller::DirectControl(ref mut rx) => {
+                let queue = {
+                    let mut queue = Vec::new();
+                    while let Ok(cmd) = rx.try_recv() {
+                        queue.push(cmd);
+                    }
+                    queue
+                };
+                // Merge commands with the same ID
+                let mut cmd_map = std::collections::HashMap::new();
+                for cmd in queue {
+                    let entry = cmd_map.entry(cmd.id).or_insert(PlayerCmd::zero(cmd.id));
+                    entry.sx = cmd.sx;
+                    entry.sy = cmd.sy;
+                    entry.w = cmd.w;
+                    entry.dribble_speed = cmd.dribble_speed;
+                    entry.arm = cmd.arm;
+                    entry.disarm = cmd.disarm;
+                    entry.kick = cmd.kick;
+                }
+                cmd_map.values().cloned().collect()
+            }
+        }
     }
 
     /// Get the GC messages that need to be sent. This will remove the messages from the
@@ -171,16 +200,16 @@ impl Executor {
                         }
                     }
                 }
-                bs_msg = bs_client.recv() => {
-                    match bs_msg {
-                        Ok(bs_msg) => {
-                            self.update_from_bs_msg(bs_msg);
-                        }
-                        Err(err) => {
-                            tracing::error!("Failed to receive BS msg: {}", err);
-                        }
-                    }
-                }
+                // bs_msg = bs_client.recv() => {
+                //     match bs_msg {
+                //         Ok(bs_msg) => {
+                //             self.update_from_bs_msg(bs_msg);
+                //         }
+                //         Err(err) => {
+                //             tracing::error!("Failed to receive BS msg: {}", err);
+                //         }
+                //     }
+                // }
                 _ = cmd_interval.tick() => {
                     for cmd in self.player_commands() {
                         bs_client.send(cmd).await?;
@@ -205,7 +234,9 @@ impl Executor {
             tracing::error!("Failed to broadcast world update: {}", err);
         }
 
-        self.team_controller.update(world_data);
+        if let Controller::TeamController(ref mut controller) = self.controller {
+            controller.update(world_data);
+        }
     }
 }
 
@@ -217,6 +248,7 @@ impl Executor {
 /// The `world_config` field is required in all cases.
 #[derive(Default)]
 pub struct ExecutorBuilder {
+    direct_control_rx: Option<broadcast::Receiver<PlayerCmd>>,
     strategy: Option<Box<dyn Strategy>>,
     ssl_client: Option<VisionClient>,
     bs_client: Option<SerialClient>,
@@ -226,6 +258,11 @@ pub struct ExecutorBuilder {
 }
 
 impl ExecutorBuilder {
+    pub fn with_direct_control(&mut self, rx: broadcast::Receiver<PlayerCmd>) -> &mut Self {
+        self.direct_control_rx = Some(rx);
+        self
+    }
+
     pub fn with_strategy(&mut self, strategy: Box<dyn Strategy>) -> &mut Self {
         self.strategy = Some(strategy);
         self
@@ -269,9 +306,13 @@ impl ExecutorBuilder {
                 self.world_config
                     .ok_or(anyhow::anyhow!("World config not set"))?,
             ),
-            team_controller: TeamController::new(
-                self.strategy.ok_or(anyhow::anyhow!("Strategy not set"))?,
-            ),
+            controller: if let Some(strategy) = self.strategy {
+                Controller::TeamController(TeamController::new(strategy))
+            } else if let Some(rx) = self.direct_control_rx {
+                Controller::DirectControl(rx)
+            } else {
+                bail!("No strategy or direct control set");
+            },
             gc_client: GcClient::new(),
             ssl_client: self.ssl_client,
             bs_client: self.bs_client,

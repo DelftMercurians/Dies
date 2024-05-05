@@ -135,6 +135,7 @@ async fn main() -> Result<()> {
     let main_task = tokio::spawn(async move {
         let result = match args.mode {
             modes::Mode::Irl => modes::irl::run(args, stop_rx).await,
+            modes::Mode::IrlTest => modes::irl_test::run(args, stop_rx).await,
             modes::Mode::SimTest => modes::sim_test::run(stop_rx).await,
             modes::Mode::Sim => modes::sim::run(args, stop_rx).await,
         };

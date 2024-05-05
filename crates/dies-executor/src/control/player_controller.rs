@@ -4,7 +4,6 @@ use super::{
 };
 use dies_core::{PlayerCmd, PlayerData};
 use nalgebra::Vector2;
-use std::time::{Duration, Instant};
 
 const MISSING_FRAMES_THRESHOLD: u32 = 50;
 const MAX_DRIBBLE_SPEED: f32 = 100.0;
@@ -19,7 +18,6 @@ pub struct PlayerController {
     id: u32,
     position_pid: PID<Vector2<f32>>,
     heading_pid: PID<f32>,
-    kick_timer: Option<Instant>,
     last_pos: Vector2<f32>,
     last_orientation: f32,
     frame_missings: u32,
@@ -42,7 +40,6 @@ impl PlayerController {
             id,
             position_pid: PID::new(0.7, 0.0, 0.0),
             heading_pid,
-            kick_timer: None,
             last_pos: Vector2::new(0.0, 0.0),
             last_orientation: 0.0,
             frame_missings: 0,

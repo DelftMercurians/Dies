@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::{collections::HashMap, f32::consts::PI};
 
 use dies_core::{GameState, WorldData};
