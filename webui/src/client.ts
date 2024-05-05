@@ -28,7 +28,6 @@ export function connectWs() {
     };
 
     socket.onmessage = (event) => {
-      console.log("Received message:", event.data);
       const data = JSON.parse(event.data) as World;
       worldState.set(data);
     };
@@ -45,9 +44,9 @@ export function connectWs() {
 
   function sendCommand(command: UiCommand) {
     if (socket.readyState === WebSocket.OPEN) {
-      console.log("Sending command:", command);
       socket.send(JSON.stringify(command));
     } else if (socket.readyState === WebSocket.CLOSED) {
+      console.log("WebSocket connection closed. Reconnecting...");
       if (queue.length === 0) {
         connect();
       }

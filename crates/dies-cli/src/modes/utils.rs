@@ -68,7 +68,7 @@ pub async fn setup_vision_and_serial(args: &Args) -> Result<(VisionClient, Optio
         tracing::debug!("Serial port: {:?}", port);
 
         if let Some(port) = &port {
-            Some(SerialClient::new(SerialClientConfig::serial(port.clone()))?)
+            Some(SerialClient::new(SerialClientConfig::new(port.clone()))?)
         } else {
             None
         }

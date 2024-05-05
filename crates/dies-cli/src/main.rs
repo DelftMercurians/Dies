@@ -57,6 +57,8 @@ pub(crate) struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    // console_subscriber::init();
+
     // Set up log file
     let log_file_path = if args.log_file != "auto" {
         let path = PathBuf::from(args.log_file.clone());

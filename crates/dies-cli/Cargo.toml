@@ -10,6 +10,7 @@ tokio = { version = "1.35.1", features = [
     "signal",
     "rt-multi-thread",
     "process",
+    "tracing",
 ] }
 anyhow = "1.0.75"
 chrono = "0.4.34"
@@ -27,3 +28,4 @@ dies-protos = { version = "0.1.0", path = "../dies-protos" }
 dies-executor = { version = "0.1.0", path = "../dies-executor" }
 dies-webui = { version = "0.1.0", path = "../dies-webui" }
 dies-world = { version = "0.1.0", path = "../dies-world" }
+console-subscriber = "0.2.0"
