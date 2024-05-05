@@ -513,14 +513,15 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn add_ball(mut self, position: Vector<f32>) -> Self {
+    pub fn add_ball_with_velocity(mut self, position: Vector<f32>, velocity: Vector<f32>) -> Self {
         let sim = &mut self.sim;
 
-        let ball_body = RigidBodyBuilder::dynamic()
+        let mut ball_body = RigidBodyBuilder::dynamic()
             .can_sleep(false)
             .translation(position)
             .linear_damping(sim.config.ball_damping)
             .build();
+        ball_body.set_linvel(velocity, true);
         let ball_collider = ColliderBuilder::ball(BALL_RADIUS)
             .mass(1.0)
             .restitution(0.0)

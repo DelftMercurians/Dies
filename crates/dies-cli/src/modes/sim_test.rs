@@ -11,7 +11,7 @@ const DT: f64 = 1.0 / FREQ;
 pub async fn run(mut shutdown_rx: broadcast::Receiver<()>) -> Result<()> {
     let mut simulator = SimulationBuilder::new(SimulationConfig::default())
         .add_own_player(Vector2::new(0.0, -500.0), 0.0)
-        .add_ball(Vector3::zeros())
+        .add_ball_with_velocity(Vector3::zeros(), Vector3::zeros())
         .build();
 
     let (update_tx, update_rx) = broadcast::channel(16);
