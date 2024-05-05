@@ -29,6 +29,11 @@ pub(crate) async fn command(
     StatusCode::OK
 }
 
+pub(crate) async fn settings(state: State<Arc<ServerState>>) -> impl IntoResponse {
+    let settings = state.settings.clone();
+    Json(settings)
+}
+
 pub(crate) async fn websocket(
     ws: WebSocketUpgrade,
     state: State<Arc<ServerState>>,

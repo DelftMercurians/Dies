@@ -92,6 +92,10 @@ impl Executor {
                     }
                     queue
                 };
+                tracing::debug!(
+                    "Direct commands: {:?}",
+                    queue.iter().map(|cmd| cmd.id).collect::<Vec<_>>()
+                );
                 // Merge commands with the same ID
                 let mut cmd_map = std::collections::HashMap::new();
                 for cmd in queue {

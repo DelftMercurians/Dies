@@ -7,6 +7,7 @@ use dies_executor::{
     Executor, PlayerControlInput,
 };
 use dies_simulator::{SimulationBuilder, SimulationConfig};
+use dies_webui::UiSettings;
 use dies_world::WorldConfig;
 use nalgebra::{Vector2, Vector3};
 use tokio::sync::broadcast;
@@ -43,9 +44,11 @@ pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result
     let executor_rx = executor.subscribe();
     let (ui_command_tx, _) = broadcast::channel(16);
     let webui_shutdown_rx = stop_rx.resubscribe();
-    tokio::spawn(
-        async move { dies_webui::start(executor_rx, ui_command_tx, webui_shutdown_rx).await },
-    );
+    let settings = UiSettings { can_control: true };
+    tokio::spawn(async move {
+        println!("Webui running at http://localhost:5555");
+        dies_webui::start(settings, executor_rx, ui_command_tx, webui_shutdown_rx).await
+    });
 
     executor.run_real_time(stop_rx).await
 }

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use dies_executor::WorldUpdate;
 use dies_simulator::{SimulationBuilder, SimulationConfig};
+use dies_webui::UiSettings;
 use nalgebra::{Vector2, Vector3};
 use tokio::{sync::broadcast, time::Duration};
 
@@ -19,9 +20,10 @@ pub async fn run(mut shutdown_rx: broadcast::Receiver<()>) -> Result<()> {
 
     // Spawn webui
     let webui_shutdown_rx = shutdown_rx.resubscribe();
-    tokio::spawn(
-        async move { dies_webui::start(update_rx, ui_command_tx, webui_shutdown_rx).await },
-    );
+    let settings = UiSettings { can_control: true };
+    tokio::spawn(async move {
+        dies_webui::start(settings, update_rx, ui_command_tx, webui_shutdown_rx).await
+    });
 
     // Run simulation
     let mut interval = tokio::time::interval(Duration::from_secs_f64(DT));

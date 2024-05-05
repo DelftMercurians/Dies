@@ -4,6 +4,7 @@ import { onDestroy, onMount } from "svelte";
 
 export function connectWs() {
   const worldState = writable<World | null>(null);
+
   let socket: WebSocket;
   let queue: UiCommand[] = [];
 
@@ -44,6 +45,7 @@ export function connectWs() {
 
   function sendCommand(command: UiCommand) {
     if (socket.readyState === WebSocket.OPEN) {
+      console.log("Sending command:", command);
       socket.send(JSON.stringify(command));
     } else if (socket.readyState === WebSocket.CLOSED) {
       if (queue.length === 0) {

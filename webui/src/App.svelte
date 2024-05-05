@@ -33,7 +33,10 @@
       const player = $worldState?.own_players.find(
         (player) => player.id === selectedPlayerId
       );
-      if (!player) return;
+      if (!player) {
+        console.error("Player not found");
+        return;
+      }
 
       const cmd: PlayerCmd = {
         id: player.id,
@@ -132,7 +135,12 @@
     });
 
     // Draw players
-    const drawPlayer = (serverPos: XY, orientation: number, color: string) => {
+    const drawPlayer = (
+      serverPos: XY,
+      orientation: number,
+      color: string,
+      selected: boolean
+    ) => {
       const [x, y] = convertCoords(serverPos);
       const robotCanvasRadius = convertLength(ROBOT_RADIUS);
       ctx.fillStyle = color;
@@ -141,7 +149,6 @@
       ctx.fill();
 
       // Draw arrow for orientation
-      console.log(orientation);
       const angle = -orientation;
       ctx.save();
       ctx.translate(x, y);
@@ -152,12 +159,21 @@
       ctx.closePath();
       ctx.restore();
       ctx.stroke();
+
+      // Draw outline around selected player
+      if (selected) {
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, robotCanvasRadius + 2, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
     };
-    own_players.forEach(({ raw_position, orientation }) =>
-      drawPlayer(raw_position, orientation, "blue")
+    own_players.forEach(({ id, raw_position, orientation }) =>
+      drawPlayer(raw_position, orientation, "blue", id === selectedPlayerId)
     );
     opp_players.forEach(({ raw_position, orientation }) =>
-      drawPlayer(raw_position, orientation, "yellow")
+      drawPlayer(raw_position, orientation, "yellow", false)
     );
 
     // Draw ball
