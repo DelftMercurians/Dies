@@ -86,6 +86,7 @@ impl PlayerController {
     pub fn increment_frames_missings(&mut self) {
         self.frame_missings += 1;
         if self.frame_missings > MISSING_FRAMES_THRESHOLD {
+            tracing::warn!("Player {} has missing frames, stopping", self.id);
             self.target_velocity = Vector2::new(0.0, 0.0);
             self.target_angular_velocity = 0.0;
         }
