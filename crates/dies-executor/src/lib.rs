@@ -19,7 +19,7 @@ pub mod strategy;
 use control::TeamController;
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 
-const CMD_INTERVAL: Duration = Duration::from_millis(1000 / 60);
+const CMD_INTERVAL: Duration = Duration::from_millis(1000 / 30);
 
 #[derive(Debug, Clone)]
 pub struct WorldUpdate {
@@ -107,11 +107,6 @@ impl Executor {
                     return queue;
                 }
 
-                tracing::debug!(
-                    "Direct commands: {:?}",
-                    queue.iter().map(|cmd| cmd.id).collect::<Vec<_>>()
-                );
-
                 // Merge commands with the same ID
                 let mut cmd_map = std::collections::HashMap::new();
                 for cmd in queue {
@@ -124,11 +119,6 @@ impl Executor {
                     entry.disarm = cmd.disarm;
                     entry.kick = cmd.kick;
                 }
-
-                tracing::debug!(
-                    "Merged commands: {:?}",
-                    cmd_map.values().map(|cmd| cmd.id).collect::<Vec<_>>()
-                );
 
                 cmd_map.values().cloned().collect()
             }

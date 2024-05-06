@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use dies_core::{PlayerCmd, PlayerFeedbackMsg};
 
-const MAX_MSG_FREQ: f64 = 100.0;
+const MAX_MSG_FREQ: f64 = 60.0;
 const TIMEOUT: Duration = Duration::from_millis(20);
 
 /// List available serial ports. The port names can be used to create a
@@ -108,7 +108,6 @@ impl SerialClient {
                                     break Err(anyhow::anyhow!("Timeout writing to serial port"));
                                 }
 
-                                println!("Writing to serial port");
                                 match port.write(buf) {
                                     Ok(0) => {
                                         break Err(anyhow::anyhow!(
@@ -121,7 +120,6 @@ impl SerialClient {
                                         break Err(e.into());
                                     }
                                 }
-                                println!("Wrote to serial port");
                             }
                         };
 
@@ -133,7 +131,6 @@ impl SerialClient {
                             sender.send(Ok(())).ok();
                         }
                         last_time = std::time::Instant::now();
-                        tracing::debug!("Command sent");
                     }
                     None => break,
                 }
