@@ -38,7 +38,7 @@ impl PlayerController {
         let heading_pid = PID::new(2.0, 0.002, 0.0);
         Self {
             id,
-            position_pid: PID::new(0.7, 0.0, 0.0),
+            position_pid: PID::new(0.2, 0.0, 0.0),
             heading_pid,
             last_pos: Vector2::new(0.0, 0.0),
             last_orientation: 0.0,

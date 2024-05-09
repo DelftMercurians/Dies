@@ -38,8 +38,8 @@ impl Receiver {
         let ball_vel = _world.ball.as_ref().unwrap().velocity;
         let second_point = ball_pos - ball_vel;
         let fourth_point = receiver_pos + normalized_perpendicular;
-        let x1 = _world.ball.as_ref().unwrap().position.x;
-        let y1 = _world.ball.as_ref().unwrap().position.y;
+        let x1 = ball_pos.x;
+        let y1 = ball_pos.y;
         let x2 = second_point.x;
         let y2 = second_point.y;
 
@@ -55,6 +55,11 @@ impl Receiver {
             return receiver_pos;
         }
 
+        if ball_vel.norm() == 0.0 {
+            // println!("ball velocity is 0");
+            return Vector2::new(x1, x2);
+        }
+
         let t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denominator;
         let px = x1 + t * (x2 - x1);
         let py = y1 + t * (y2 - y1);
@@ -68,7 +73,9 @@ impl Receiver {
         let ball_pos = _world.ball.as_ref().unwrap().position;
         let dx = ball_pos.x - receiver_pos.x;
         let dy = ball_pos.y - receiver_pos.y;
-        
+        let angle = dy.atan2(dx);
+        println!("angle: {}", angle);
+
         dy.atan2(dx)
     }
     
@@ -96,8 +103,9 @@ impl Role for Receiver {
 
     fn update(&mut self, _player_data: &PlayerData, _world: &WorldData) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
-        let target_pos = self.find_intersection(_player_data, _world);
+        let target_pos: nalgebra::Matrix<f32, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f32, 2, 1>> = self.find_intersection(_player_data, _world);
         let target_angle = self.angle_to_ball(_player_data, _world);
+        // print!("target_pos: {}", target_pos);
         input.with_position(target_pos);
         input.with_orientation(target_angle);
 
@@ -119,7 +127,7 @@ pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result
     let simulator = SimulationBuilder::new(SimulationConfig::default())
         .add_own_player_with_id(RECEIVER_ID, Vector2::new(2600.0, -1000.0), 0.0)
         .add_own_player_with_id(PASSER_ID, Vector2::new(-2500.0, 0.0), 0.0)
-        .add_ball_with_velocity(Vector3::new(-2400.0, 0.0, 0.0), Vector3::new(5000.0, 3500.0, 0.0))
+        .add_ball_with_velocity(Vector3::new(3000.0, 0.0, 0.0), Vector3::new(-3000.0, 3000.0, 0.0))
         .build();
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Receiver));
@@ -143,5 +151,6 @@ pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result
         async move { dies_webui::start(executor_rx, ui_command_tx, webui_shutdown_rx).await },
     );
 
+    tokio::time::sleep(Duration::from_secs(30)).await;
     executor.run_real_time(stop_rx).await
 }
