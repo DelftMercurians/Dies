@@ -22,7 +22,11 @@ const PLAYER_HEIGHT: f32 = 140.0;
 const DRIBBLER_RADIUS: f32 = BALL_RADIUS + 60.0;
 const DRIBBLER_ANGLE: f32 = std::f32::consts::PI / 6.0;
 const DRIBBLER_STRENGHT: f32 = 0.6;
+const TERRAIN_X: f32 = 5500.0;
+const TERRAIN_Y: f32 = 4500.0;
 const GROUND_THICKNESS: f32 = 10.0;
+const WALL_HEIGHT: f32 = 1000.0;
+const WALL_THICKNESS: f32 = 100.0;
 const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
 const GEOM_INTERVAL: f64 = 3.0;
 
@@ -34,8 +38,8 @@ pub struct SimulationConfig {
     pub simulation_step: f64, // time between simulation steps
     pub vision_update_step: f64, // time between vision updates
     pub command_delay: f64,   // delay for the execution of the command
-    pub max_accel: Vector<f32>, // max lateral acceleration
-    pub max_vel: Vector<f32>, // max lateral velocity
+    pub max_accel: Vector<f32>, // max acceleration
+    pub max_vel: Vector<f32>, // max velocity
     pub max_ang_accel: f32,   // max angular acceleration
     pub max_ang_vel: f32,     // max angular velocity
     pub velocity_treshold: f32, // max difference between target and current velocity
@@ -50,9 +54,9 @@ impl Default for SimulationConfig {
             ball_damping: 1.4,
             command_delay: 110.0 / 1000.0, // 6 ms
             max_accel: Vector::new(1200.0, 1200.0, 0.0),
-            max_vel: Vector::new(2000.0, 2000.0, 0.0),
+            max_vel: Vector::new(10000.0, 10000.0, 0.0),
             max_ang_accel: 2.0,
-            max_ang_vel: 2.0,
+            max_ang_vel: 10.0,
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
             simulation_step: 1.0 / 60.0,
@@ -189,7 +193,7 @@ impl Simulation {
             // z=0.0 is the ground surface
             .translation(Vector::new(0.0, 0.0, -GROUND_THICKNESS / 2.0))
             .build();
-        let ground_collider = ColliderBuilder::cuboid(5500.0, 4500.0, GROUND_THICKNESS).build();
+        let ground_collider = ColliderBuilder::cuboid(TERRAIN_X,TERRAIN_Y, GROUND_THICKNESS).build();
         let ground_body_handle = simulation.rigid_body_set.insert(ground_body);
         simulation.collider_set.insert_with_parent(
             ground_collider,
@@ -197,7 +201,25 @@ impl Simulation {
             &mut simulation.rigid_body_set,
         );
 
+        Simulation::add_wall(&mut simulation, 0.0, TERRAIN_Y / 2.0 + WALL_THICKNESS, TERRAIN_X, WALL_THICKNESS);
+        Simulation::add_wall(&mut simulation, 0.0, -TERRAIN_Y / 2.0 - WALL_THICKNESS, TERRAIN_X, WALL_THICKNESS);
+        Simulation::add_wall(&mut simulation, TERRAIN_X / 2.0 + WALL_THICKNESS, 0.0, WALL_THICKNESS, TERRAIN_Y);
+        Simulation::add_wall(&mut simulation, -TERRAIN_X / 2.0 - WALL_THICKNESS, 0.0, WALL_THICKNESS, TERRAIN_Y);
+
         simulation
+    }
+
+    fn add_wall(simulation: &mut Simulation, x: f32, y: f32, width: f32, height: f32) {
+        let wall_body = RigidBodyBuilder::fixed()
+            .translation(Vector::new(x, y, 0.0))
+            .build();
+        let wall_collider = ColliderBuilder::cuboid(width, height, WALL_HEIGHT).build();
+        let wall_body_handle = simulation.rigid_body_set.insert(wall_body);
+        simulation.collider_set.insert_with_parent(
+            wall_collider,
+            wall_body_handle,
+            &mut simulation.rigid_body_set,
+        );
     }
 
     /// Pushes a PlayerCmd onto the execution queue with the time delay specified in
@@ -549,7 +571,7 @@ impl SimulationBuilder {
 
         // Players have fixed z position - their bottom surface 1mm above the ground
         let position = Vector::new(position.x, position.y, (PLAYER_HEIGHT / 2.0) + 1.0);
-        let rigid_body = RigidBodyBuilder::kinematic_velocity_based()
+        let rigid_body = RigidBodyBuilder::dynamic()
             .translation(position)
             .rotation(Vector::z() * orientation)
             .locked_axes(
