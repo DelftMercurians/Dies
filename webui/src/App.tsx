@@ -176,7 +176,16 @@ const App: React.FC = () => {
 
   return (
     <main className="cont">
-      <div className="sidebar"></div>
+      <div className="sidebar" style={{ color: 'white'}}>
+        <h3>Controls</h3>
+        <ul>
+          <li>Use <strong>W,A,S,D</strong> to move the robot</li>
+          <li>Use <strong>Q,E</strong> to rotate the robot</li>
+          <li>Hold <strong>Shift</strong> to use the dribbler</li>
+          <li>Press <strong>Space</strong> to kick (not implemented yet, should also allow charging the kick + showing this)</li>
+        </ul>
+      </div>
+
       <div className="sidebar"></div>
 
       <canvas ref={canvasRef} width={840} height={600} className="canvas" />

@@ -30,6 +30,7 @@ body {
   height: 100%;
   flex: 1;
   background-color: #1c1c1c;
+  margin: 50px;
 }
 
 .canvas {
