@@ -22,6 +22,7 @@ const PLAYER_HEIGHT: f32 = 140.0;
 const DRIBBLER_RADIUS: f32 = BALL_RADIUS + 60.0;
 const DRIBBLER_ANGLE: f32 = std::f32::consts::PI / 6.0;
 const DRIBBLER_STRENGHT: f32 = 0.6;
+const KICKER_STRENGHT: f32 = 300000.0;
 const TERRAIN_X: f32 = 5500.0;
 const TERRAIN_Y: f32 = 4500.0;
 const GROUND_THICKNESS: f32 = 10.0;
@@ -193,7 +194,8 @@ impl Simulation {
             // z=0.0 is the ground surface
             .translation(Vector::new(0.0, 0.0, -GROUND_THICKNESS / 2.0))
             .build();
-        let ground_collider = ColliderBuilder::cuboid(TERRAIN_X,TERRAIN_Y, GROUND_THICKNESS).build();
+        let ground_collider =
+            ColliderBuilder::cuboid(TERRAIN_X, TERRAIN_Y, GROUND_THICKNESS).build();
         let ground_body_handle = simulation.rigid_body_set.insert(ground_body);
         simulation.collider_set.insert_with_parent(
             ground_collider,
@@ -201,10 +203,34 @@ impl Simulation {
             &mut simulation.rigid_body_set,
         );
 
-        Simulation::add_wall(&mut simulation, 0.0, TERRAIN_Y / 2.0 + WALL_THICKNESS, TERRAIN_X, WALL_THICKNESS);
-        Simulation::add_wall(&mut simulation, 0.0, -TERRAIN_Y / 2.0 - WALL_THICKNESS, TERRAIN_X, WALL_THICKNESS);
-        Simulation::add_wall(&mut simulation, TERRAIN_X / 2.0 + WALL_THICKNESS, 0.0, WALL_THICKNESS, TERRAIN_Y);
-        Simulation::add_wall(&mut simulation, -TERRAIN_X / 2.0 - WALL_THICKNESS, 0.0, WALL_THICKNESS, TERRAIN_Y);
+        Simulation::add_wall(
+            &mut simulation,
+            0.0,
+            TERRAIN_Y / 2.0 + WALL_THICKNESS,
+            TERRAIN_X,
+            WALL_THICKNESS,
+        );
+        Simulation::add_wall(
+            &mut simulation,
+            0.0,
+            -TERRAIN_Y / 2.0 - WALL_THICKNESS,
+            TERRAIN_X,
+            WALL_THICKNESS,
+        );
+        Simulation::add_wall(
+            &mut simulation,
+            TERRAIN_X / 2.0 + WALL_THICKNESS,
+            0.0,
+            WALL_THICKNESS,
+            TERRAIN_Y,
+        );
+        Simulation::add_wall(
+            &mut simulation,
+            -TERRAIN_X / 2.0 - WALL_THICKNESS,
+            0.0,
+            WALL_THICKNESS,
+            TERRAIN_Y,
+        );
 
         simulation
     }
@@ -287,6 +313,7 @@ impl Simulation {
 
         // Update players
         for player in self.players.iter_mut() {
+            let mut to_kick = false;
             if let Some(command) = commands_to_exec.get(&player.id) {
                 // In the robot's local frame, +sy means forward, +sx means left and both are in m/s
                 // Angular velocity is in rad/s and +w means counter-clockwise
@@ -296,6 +323,7 @@ impl Simulation {
                 player.target_ang_velocity = command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
+                to_kick = command.kick;
             }
 
             let rigid_body = self
@@ -338,7 +366,7 @@ impl Simulation {
             rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
 
             // Check if the ball is in the dribbler
-            if player.current_dribble_speed > 0.0 {
+            if player.current_dribble_speed > 0.0 || to_kick {
                 let heading = rigid_body.position().rotation * Vector::x();
                 let player_position = rigid_body.position().translation.vector;
                 let dribbler_position =
@@ -352,13 +380,19 @@ impl Simulation {
                     let distance = ball_dir.norm();
                     let angle = heading.angle(&ball_dir);
                     if distance < PLAYER_RADIUS + DRIBBLER_RADIUS && angle < DRIBBLER_ANGLE {
-                        let force = (player.current_dribble_speed * DRIBBLER_STRENGHT)
-                            * (dribbler_position - ball_position);
-                        // clamp the force to the max force
-                        // let force = force.cap_magnitude(200.0);
-                        ball_body.add_force(force, true);
-                        // dampen the ball's velocity
-                        ball_body.set_linear_damping(self.config.ball_damping * 2.0);
+                        if to_kick {
+                            let force = heading * KICKER_STRENGHT;
+                            ball_body.add_force(force, true);
+                            ball_body.set_linear_damping(self.config.ball_damping * 2.0);
+                        } else {
+                            let force = (player.current_dribble_speed * DRIBBLER_STRENGHT)
+                                * (dribbler_position - ball_position);
+                            // clamp the force to the max force
+                            // let force = force.cap_magnitude(200.0);
+                            ball_body.add_force(force, true);
+                            // dampen the ball's velocity
+                            ball_body.set_linear_damping(self.config.ball_damping * 2.0);
+                        }
                     }
                 }
             }

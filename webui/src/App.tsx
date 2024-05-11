@@ -181,8 +181,8 @@ const App: React.FC = () => {
         <ul>
           <li>Use <strong>W,A,S,D</strong> to move the robot</li>
           <li>Use <strong>Q,E</strong> to rotate the robot</li>
-          <li>Hold <strong>Shift</strong> to use the dribbler</li>
-          <li>Press <strong>Space</strong> to kick (not implemented yet, should also allow charging the kick + showing this)</li>
+          <li>Hold <strong>Space</strong> to use the dribbler</li>
+          <li>Press <strong>V</strong> to kick (not implemented yet, should also allow charging the kick + showing this)</li>
         </ul>
       </div>
 
@@ -229,6 +229,11 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
   }
   if (pressedKeys.has(" ")) {
     cmd.dribble_speed = 200;
+  }
+  if (pressedKeys.has("v")) {
+    cmd.kick = true;
+  } else {
+    cmd.kick = false;
   }
 
   return cmd;
