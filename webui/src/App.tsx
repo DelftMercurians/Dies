@@ -10,8 +10,8 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const worldStateRef = useRef<World | null>(null);
-  const [crossX, setCrossX] = useState(50); // State for the X position of the cross
-  const [crossY, setCrossY] = useState(50); // State for the Y position of the cross
+  const [crossX, setCrossX] = useState(0); // State for the X position of the cross
+  const [crossY, setCrossY] = useState(0); // State for the Y position of the cross
   const fieldW = worldStateRef.current?.field_geom?.field_width! ?? 0;
   const fieldH = worldStateRef.current?.field_geom?.field_length! ?? 0;
 
@@ -217,9 +217,17 @@ const App: React.FC = () => {
           <li>Hold <strong>Space</strong> to use the dribbler</li>
           <li>Press <strong>V</strong> to kick (not implemented yet, should also allow charging the kick + showing this)</li>
         </ul>
-        <label>X-Axis: <input type="range" min={-fieldH / 2} max={fieldH / 2} value={crossX} onChange={handleXChange} /></label>
+        <label>
+          X-Axis:
+          <input type="range" min={-fieldH / 2} max={fieldH / 2} value={crossX} onChange={handleXChange} />
+          {crossX}
+        </label>
         <br />
-        <label>Y-Axis: <input type="range" min={-fieldW / 2} max={fieldW / 2} value={crossY} onChange={handleYChange} /></label>
+        <label>
+          Y-Axis:
+          <input type="range" min={-fieldW / 2} max={fieldW / 2} value={crossY} onChange={handleYChange} />
+          {crossY}
+        </label>
       </div>
 
       <div className="sidebar"></div>
