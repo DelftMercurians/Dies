@@ -3,5 +3,7 @@ __pycache__
 .idea/
 node_modules/
 *.npy
-.venv
+Cargo.lock
+.venv/*
 *.egg-info
+my_optimizers/navigation/*
