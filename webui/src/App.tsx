@@ -210,22 +210,22 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
   };
 
   if (pressedKeys.has("w")) {
-    cmd.sx = 1;
+    cmd.sy = 3;
   }
   if (pressedKeys.has("s")) {
-    cmd.sx = -1;
+    cmd.sy = -3;
   }
   if (pressedKeys.has("a")) {
-    cmd.sy = 1;
+    cmd.sx = 3;
   }
   if (pressedKeys.has("d")) {
-    cmd.sy = -1;
+    cmd.sx = -3;
   }
   if (pressedKeys.has("q")) {
-    cmd.w = 1;
+    cmd.w = 3;
   }
   if (pressedKeys.has("e")) {
-    cmd.w = -1;
+    cmd.w = -3;
   }
   if (pressedKeys.has(" ")) {
     cmd.dribble_speed = 200;

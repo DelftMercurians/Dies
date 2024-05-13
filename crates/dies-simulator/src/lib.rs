@@ -23,8 +23,8 @@ const DRIBBLER_RADIUS: f32 = BALL_RADIUS + 60.0;
 const DRIBBLER_ANGLE: f32 = std::f32::consts::PI / 6.0;
 const DRIBBLER_STRENGHT: f32 = 0.6;
 const KICKER_STRENGHT: f32 = 300000.0;
-const TERRAIN_X: f32 = 5500.0;
-const TERRAIN_Y: f32 = 4500.0;
+const TERRAIN_LENGTH: f32 = 11000.0;
+const TERRAIN_WIDTH: f32 = 9000.0;
 const GROUND_THICKNESS: f32 = 10.0;
 const WALL_HEIGHT: f32 = 1000.0;
 const WALL_THICKNESS: f32 = 100.0;
@@ -56,7 +56,7 @@ impl Default for SimulationConfig {
             command_delay: 110.0 / 1000.0, // 6 ms
             max_accel: Vector::new(1200.0, 1200.0, 0.0),
             max_vel: Vector::new(10000.0, 10000.0, 0.0),
-            max_ang_accel: 2.0,
+            max_ang_accel: 4.0,
             max_ang_vel: 10.0,
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
@@ -195,7 +195,7 @@ impl Simulation {
             .translation(Vector::new(0.0, 0.0, -GROUND_THICKNESS / 2.0))
             .build();
         let ground_collider =
-            ColliderBuilder::cuboid(TERRAIN_X, TERRAIN_Y, GROUND_THICKNESS).build();
+            ColliderBuilder::cuboid(TERRAIN_WIDTH / 2.0, TERRAIN_LENGTH / 2.0, GROUND_THICKNESS).build();
         let ground_body_handle = simulation.rigid_body_set.insert(ground_body);
         simulation.collider_set.insert_with_parent(
             ground_collider,
@@ -206,30 +206,30 @@ impl Simulation {
         Simulation::add_wall(
             &mut simulation,
             0.0,
-            TERRAIN_Y / 2.0 + WALL_THICKNESS,
-            TERRAIN_X,
+            TERRAIN_WIDTH / 2.0 + WALL_THICKNESS,
+            TERRAIN_LENGTH,
             WALL_THICKNESS,
         );
         Simulation::add_wall(
             &mut simulation,
             0.0,
-            -TERRAIN_Y / 2.0 - WALL_THICKNESS,
-            TERRAIN_X,
+            -TERRAIN_WIDTH / 2.0 - WALL_THICKNESS,
+            TERRAIN_LENGTH,
             WALL_THICKNESS,
         );
         Simulation::add_wall(
             &mut simulation,
-            TERRAIN_X / 2.0 + WALL_THICKNESS,
+            TERRAIN_LENGTH / 2.0 + WALL_THICKNESS,
             0.0,
             WALL_THICKNESS,
-            TERRAIN_Y,
+            TERRAIN_WIDTH,
         );
         Simulation::add_wall(
             &mut simulation,
-            -TERRAIN_X / 2.0 - WALL_THICKNESS,
+            -TERRAIN_LENGTH / 2.0 - WALL_THICKNESS,
             0.0,
             WALL_THICKNESS,
-            TERRAIN_Y,
+            TERRAIN_WIDTH,
         );
 
         simulation
@@ -239,7 +239,10 @@ impl Simulation {
         let wall_body = RigidBodyBuilder::fixed()
             .translation(Vector::new(x, y, 0.0))
             .build();
-        let wall_collider = ColliderBuilder::cuboid(width, height, WALL_HEIGHT).build();
+        let wall_collider = ColliderBuilder::cuboid(width, height, WALL_HEIGHT)
+        .restitution(0.0)
+        .restitution_combine_rule(CoefficientCombineRule::Min)
+        .build();
         let wall_body_handle = simulation.rigid_body_set.insert(wall_body);
         simulation.collider_set.insert_with_parent(
             wall_collider,
@@ -319,7 +322,7 @@ impl Simulation {
                 // Angular velocity is in rad/s and +w means counter-clockwise
                 // To make things easier, we swap the x and y velocities so that they
                 // correspond to the simulator's frame
-                player.target_velocity = Vector::new(command.sx, command.sy, 0.0) * 1000.0; // m/s to mm/s
+                player.target_velocity = Vector::new(command.sy, command.sx, 0.0) * 1000.0; // m/s to mm/s
                 player.target_ang_velocity = command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
@@ -615,6 +618,7 @@ impl SimulationBuilder {
             )
             .build();
         let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS)
+            .rotation(Vector::x() * std::f32::consts::FRAC_PI_2)
             .restitution(0.0)
             .restitution_combine_rule(CoefficientCombineRule::Min)
             .build();
