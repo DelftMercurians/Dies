@@ -23,8 +23,8 @@ const DRIBBLER_RADIUS: f32 = BALL_RADIUS + 60.0;
 const DRIBBLER_ANGLE: f32 = std::f32::consts::PI / 6.0;
 const DRIBBLER_STRENGHT: f32 = 0.6;
 const KICKER_STRENGHT: f32 = 300000.0;
-const TERRAIN_LENGTH: f32 = 11000.0;
-const TERRAIN_WIDTH: f32 = 9000.0;
+const FIELD_LENGTH: f32 = 11000.0;
+const FIELD_WIDTH: f32 = 9000.0;
 const GROUND_THICKNESS: f32 = 10.0;
 const WALL_HEIGHT: f32 = 1000.0;
 const WALL_THICKNESS: f32 = 100.0;
@@ -39,8 +39,8 @@ pub struct SimulationConfig {
     pub simulation_step: f64, // time between simulation steps
     pub vision_update_step: f64, // time between vision updates
     pub command_delay: f64,   // delay for the execution of the command
-    pub max_accel: Vector<f32>, // max acceleration
-    pub max_vel: Vector<f32>, // max velocity
+    pub max_accel: Vector<f32>, // max lateral acceleration
+    pub max_vel: Vector<f32>, // max lateral velocity
     pub max_ang_accel: f32,   // max angular acceleration
     pub max_ang_vel: f32,     // max angular velocity
     pub velocity_treshold: f32, // max difference between target and current velocity
@@ -55,7 +55,7 @@ impl Default for SimulationConfig {
             ball_damping: 1.4,
             command_delay: 110.0 / 1000.0, // 6 ms
             max_accel: Vector::new(1200.0, 1200.0, 0.0),
-            max_vel: Vector::new(10000.0, 10000.0, 0.0),
+            max_vel: Vector::new(5000.0, 5000.0, 0.0),
             max_ang_accel: 4.0,
             max_ang_vel: 10.0,
             velocity_treshold: 1.0,
@@ -195,7 +195,8 @@ impl Simulation {
             .translation(Vector::new(0.0, 0.0, -GROUND_THICKNESS / 2.0))
             .build();
         let ground_collider =
-            ColliderBuilder::cuboid(TERRAIN_WIDTH / 2.0, TERRAIN_LENGTH / 2.0, GROUND_THICKNESS).build();
+            ColliderBuilder::cuboid(FIELD_WIDTH / 2.0, FIELD_LENGTH / 2.0, GROUND_THICKNESS)
+                .build();
         let ground_body_handle = simulation.rigid_body_set.insert(ground_body);
         simulation.collider_set.insert_with_parent(
             ground_collider,
@@ -203,51 +204,47 @@ impl Simulation {
             &mut simulation.rigid_body_set,
         );
 
-        Simulation::add_wall(
-            &mut simulation,
+        simulation.add_wall(
             0.0,
-            TERRAIN_WIDTH / 2.0 + WALL_THICKNESS,
-            TERRAIN_LENGTH,
+            FIELD_WIDTH / 2.0 + WALL_THICKNESS,
+            FIELD_LENGTH,
             WALL_THICKNESS,
         );
-        Simulation::add_wall(
-            &mut simulation,
+        simulation.add_wall(
             0.0,
-            -TERRAIN_WIDTH / 2.0 - WALL_THICKNESS,
-            TERRAIN_LENGTH,
+            -FIELD_WIDTH / 2.0 - WALL_THICKNESS,
+            FIELD_LENGTH,
             WALL_THICKNESS,
         );
-        Simulation::add_wall(
-            &mut simulation,
-            TERRAIN_LENGTH / 2.0 + WALL_THICKNESS,
+        simulation.add_wall(
+            FIELD_LENGTH / 2.0 + WALL_THICKNESS,
             0.0,
             WALL_THICKNESS,
-            TERRAIN_WIDTH,
+            FIELD_WIDTH,
         );
-        Simulation::add_wall(
-            &mut simulation,
-            -TERRAIN_LENGTH / 2.0 - WALL_THICKNESS,
+        simulation.add_wall(
+            -FIELD_LENGTH / 2.0 - WALL_THICKNESS,
             0.0,
             WALL_THICKNESS,
-            TERRAIN_WIDTH,
+            FIELD_WIDTH,
         );
 
         simulation
     }
 
-    fn add_wall(simulation: &mut Simulation, x: f32, y: f32, width: f32, height: f32) {
+    fn add_wall(&mut self, x: f32, y: f32, width: f32, height: f32) {
         let wall_body = RigidBodyBuilder::fixed()
             .translation(Vector::new(x, y, 0.0))
             .build();
         let wall_collider = ColliderBuilder::cuboid(width, height, WALL_HEIGHT)
-        .restitution(0.0)
-        .restitution_combine_rule(CoefficientCombineRule::Min)
-        .build();
-        let wall_body_handle = simulation.rigid_body_set.insert(wall_body);
-        simulation.collider_set.insert_with_parent(
+            .restitution(0.0)
+            .restitution_combine_rule(CoefficientCombineRule::Min)
+            .build();
+        let wall_body_handle = self.rigid_body_set.insert(wall_body);
+        self.collider_set.insert_with_parent(
             wall_collider,
             wall_body_handle,
-            &mut simulation.rigid_body_set,
+            &mut self.rigid_body_set,
         );
     }
 
@@ -316,7 +313,7 @@ impl Simulation {
 
         // Update players
         for player in self.players.iter_mut() {
-            let mut to_kick = false;
+            let mut is_kicking = false;
             if let Some(command) = commands_to_exec.get(&player.id) {
                 // In the robot's local frame, +sy means forward, +sx means left and both are in m/s
                 // Angular velocity is in rad/s and +w means counter-clockwise
@@ -326,7 +323,7 @@ impl Simulation {
                 player.target_ang_velocity = command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
-                to_kick = command.kick;
+                is_kicking = command.kick;
             }
 
             let rigid_body = self
@@ -369,7 +366,7 @@ impl Simulation {
             rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
 
             // Check if the ball is in the dribbler
-            if player.current_dribble_speed > 0.0 || to_kick {
+            if player.current_dribble_speed > 0.0 || is_kicking {
                 let heading = rigid_body.position().rotation * Vector::x();
                 let player_position = rigid_body.position().translation.vector;
                 let dribbler_position =
@@ -383,7 +380,7 @@ impl Simulation {
                     let distance = ball_dir.norm();
                     let angle = heading.angle(&ball_dir);
                     if distance < PLAYER_RADIUS + DRIBBLER_RADIUS && angle < DRIBBLER_ANGLE {
-                        if to_kick {
+                        if is_kicking {
                             let force = heading * KICKER_STRENGHT;
                             ball_body.add_force(force, true);
                             ball_body.set_linear_damping(self.config.ball_damping * 2.0);
