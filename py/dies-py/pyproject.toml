@@ -1,8 +1,0 @@
-[project]
-name = "dies-py"
-version = "0.1.0"
-dependencies = ["msgspec>=0.18.4"]
-
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
