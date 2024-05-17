@@ -24,8 +24,6 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["json"] }
 tracing-appender = "0.2.3"
 nalgebra = "0.32.4"
-dies-protos = { version = "0.1.0", path = "../dies-protos" }
 dies-executor = { version = "0.1.0", path = "../dies-executor" }
 dies-webui = { version = "0.1.0", path = "../dies-webui" }
 dies-world = { version = "0.1.0", path = "../dies-world" }
-console-subscriber = "0.2.0"
