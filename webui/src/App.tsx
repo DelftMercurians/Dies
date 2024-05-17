@@ -10,6 +10,10 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const worldStateRef = useRef<World | null>(null);
+  const [crossX, setCrossX] = useState(0); // State for the X position of the cross
+  const [crossY, setCrossY] = useState(0); // State for the Y position of the cross
+  const fieldW = worldStateRef.current?.field_geom?.field_width! ?? 0;
+  const fieldH = worldStateRef.current?.field_geom?.field_length! ?? 0;
 
   const onUpdate = useCallback((world: World) => {
     worldStateRef.current = world;
@@ -66,8 +70,6 @@ const App: React.FC = () => {
       }
 
       const { own_players, opp_players, ball } = worldState;
-      const fieldH = worldState.field_geom?.field_width ?? 0;
-      const fieldW = worldState.field_geom?.field_length ?? 0;
       const width = canvas.width - PADDING * 2;
       const height = canvas.height - PADDING * 2;
 
@@ -162,6 +164,8 @@ const App: React.FC = () => {
         }
       }
 
+      drawCross(ctx, crossX, crossY);
+
       frame = requestAnimationFrame(render);
     };
 
@@ -172,11 +176,60 @@ const App: React.FC = () => {
         cancelAnimationFrame(frame);
       }
     };
-  }, [selectedPlayerId]);
+  }, [selectedPlayerId, crossX, crossY]);
+
+  function handleXChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    const newX = parseInt(e.target.value);
+    setCrossX(newX);
+  }
+
+  function handleYChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    const newY = parseInt(e.target.value);
+    setCrossY(newY);
+  }
+
+  function drawCross(ctx: CanvasRenderingContext2D, x: number, y: number) {
+    const canvas = canvasRef.current;
+    const width = canvas!.width - PADDING * 2;
+    const height = canvas!.height - PADDING * 2;
+    const fieldH = worldStateRef.current?.field_geom?.field_width ?? 0;
+    const fieldW = worldStateRef.current?.field_geom?.field_length ?? 0;
+    const crossCanvasX = ((crossX + fieldW / 2) / fieldW) * width + PADDING;
+    const crossCanvasY = ((-crossY + fieldH / 2) / fieldH) * height + PADDING;
+
+    const crossSize = 10; // Length of each arm of the cross
+    ctx.strokeStyle = "red";
+    ctx.beginPath();
+    ctx.moveTo(crossCanvasX - crossSize, crossCanvasY); // Horizontal line
+    ctx.lineTo(crossCanvasX + crossSize, crossCanvasY);
+    ctx.moveTo(crossCanvasX, crossCanvasY - crossSize); // Vertical line
+    ctx.lineTo(crossCanvasX, crossCanvasY + crossSize);
+    ctx.stroke();
+  }
 
   return (
     <main className="cont">
-      <div className="sidebar"></div>
+      <div className="sidebar" style={{ color: 'white' }}>
+        <h3>Controls</h3>
+        <ul>
+          <li>Use <strong>W,A,S,D</strong> to move the robot</li>
+          <li>Use <strong>Q,E</strong> to rotate the robot</li>
+          <li>Hold <strong>Space</strong> to use the dribbler</li>
+          <li>Press <strong>V</strong> to kick (not implemented yet, should also allow charging the kick + showing this)</li>
+        </ul>
+        <label>
+          X-Axis:
+          <input type="range" min={-fieldH / 2} max={fieldH / 2} value={crossX} onChange={handleXChange} />
+          {crossX}
+        </label>
+        <br />
+        <label>
+          Y-Axis:
+          <input type="range" min={-fieldW / 2} max={fieldW / 2} value={crossY} onChange={handleYChange} />
+          {crossY}
+        </label>
+      </div>
+
       <div className="sidebar"></div>
 
       <canvas ref={canvasRef} width={840} height={600} className="canvas" />
@@ -201,25 +254,30 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
   };
 
   if (pressedKeys.has("w")) {
-    cmd.sx = 1;
+    cmd.sy = 3;
   }
   if (pressedKeys.has("s")) {
-    cmd.sx = -1;
+    cmd.sy = -3;
   }
   if (pressedKeys.has("a")) {
-    cmd.sy = 1;
+    cmd.sx = 3;
   }
   if (pressedKeys.has("d")) {
-    cmd.sy = -1;
+    cmd.sx = -3;
   }
   if (pressedKeys.has("q")) {
-    cmd.w = 1;
+    cmd.w = 3;
   }
   if (pressedKeys.has("e")) {
-    cmd.w = -1;
+    cmd.w = -3;
   }
   if (pressedKeys.has(" ")) {
     cmd.dribble_speed = 200;
+  }
+  if (pressedKeys.has("v")) {
+    cmd.kick = true;
+  } else {
+    cmd.kick = false;
   }
 
   return cmd;
