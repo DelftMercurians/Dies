@@ -1,4 +1,4 @@
-use dies_core::{BallData, FieldGeometry, PlayerCmd, PlayerData, PlayerId, WorldData};
+use dies_core::{BallData, FieldGeometry, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -6,10 +6,7 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
-use rapier3d_f64::{
-    na::{SimdPartialOrd, Vector2},
-    prelude::*,
-};
+use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
 use std::collections::HashMap;
 use utils::IntervalTrigger;
@@ -74,7 +71,7 @@ pub struct SimulationState {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SimulationPlayerState {
-    position: Vector2<f64>,
+    position: Vector2,
     orientation: f64,
 }
 
@@ -537,33 +534,23 @@ impl SimulationBuilder {
         }
     }
 
-    pub fn add_own_player_with_id(
-        mut self,
-        id: u32,
-        position: Vector2<f64>,
-        orientation: f64,
-    ) -> Self {
+    pub fn add_own_player_with_id(mut self, id: u32, position: Vector2, orientation: f64) -> Self {
         self.add_player(id, true, position, orientation);
         self
     }
 
-    pub fn add_opp_player_with_id(
-        mut self,
-        id: u32,
-        position: Vector2<f64>,
-        orientation: f64,
-    ) -> Self {
+    pub fn add_opp_player_with_id(mut self, id: u32, position: Vector2, orientation: f64) -> Self {
         self.add_player(id, false, position, orientation);
         self
     }
 
-    pub fn add_own_player(mut self, position: Vector2<f64>, orientation: f64) -> Self {
+    pub fn add_own_player(mut self, position: Vector2, orientation: f64) -> Self {
         self.add_player(self.last_own_id, true, position, orientation);
         self.last_own_id += 1;
         self
     }
 
-    pub fn add_opp_player(mut self, position: Vector2<f64>, orientation: f64) -> Self {
+    pub fn add_opp_player(mut self, position: Vector2, orientation: f64) -> Self {
         self.add_player(self.last_opp_id, false, position, orientation);
         self.last_opp_id += 1;
         self
@@ -600,7 +587,7 @@ impl SimulationBuilder {
         self.sim
     }
 
-    fn add_player(&mut self, id: u32, is_own: bool, position: Vector2<f64>, orientation: f64) {
+    fn add_player(&mut self, id: u32, is_own: bool, position: Vector2, orientation: f64) {
         let sim = &mut self.sim;
 
         // Players have fixed z position - their bottom surface 1mm above the ground

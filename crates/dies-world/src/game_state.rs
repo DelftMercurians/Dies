@@ -1,8 +1,8 @@
 use crate::BallData;
 use dies_core::GameState;
+use dies_core::Vector2;
+use dies_core::Vector3;
 use dies_protos::ssl_gc_referee_message::referee::Command;
-use nalgebra::Vector2;
-use nalgebra::Vector3;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
@@ -11,7 +11,7 @@ pub struct GameStateTracker {
     prev_state: GameState,
     new_state_movement: GameState,
     new_state_timeout: GameState,
-    init_ball_pos: Vector3<f64>,
+    init_ball_pos: Vector3,
     start: Instant,
     timeout: u64,
     is_outdated: bool,
@@ -33,7 +33,7 @@ impl GameStateTracker {
         }
     }
 
-    pub fn update(&mut self, command: &Command, pos: Option<Vector2<f64>>) -> GameState {
+    pub fn update(&mut self, command: &Command, pos: Option<Vector2>) -> GameState {
         self.game_state = match command {
             Command::HALT => GameState::Halt,
             Command::STOP => GameState::Stop,
@@ -93,7 +93,7 @@ impl GameStateTracker {
         self.operator_is_blue
     }
 
-    pub fn start_ball_movement_check(&mut self, ball_pos: Vector3<f64>, timeout: u64) {
+    pub fn start_ball_movement_check(&mut self, ball_pos: Vector3, timeout: u64) {
         if self.is_outdated == false {
             return;
         }

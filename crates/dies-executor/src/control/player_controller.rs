@@ -2,8 +2,7 @@ use super::{
     pid::PID,
     player_input::{KickerControlInput, PlayerControlInput},
 };
-use dies_core::{PlayerCmd, PlayerData, PlayerId};
-use nalgebra::Vector2;
+use dies_core::{PlayerCmd, PlayerData, PlayerId, Vector2};
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 100.0;
@@ -16,14 +15,14 @@ enum KickerState {
 
 pub struct PlayerController {
     id: PlayerId,
-    position_pid: PID<Vector2<f64>>,
+    position_pid: PID<Vector2>,
     heading_pid: PID<f64>,
-    last_pos: Vector2<f64>,
+    last_pos: Vector2,
     last_orientation: f64,
     frame_missings: usize,
 
     /// Output velocity \[mm/s\]
-    target_velocity: Vector2<f64>,
+    target_velocity: Vector2,
     /// Output angular velocity \[rad/s\]
     target_angular_velocity: f64,
     /// Kicker control
@@ -134,7 +133,7 @@ impl PlayerController {
     }
 }
 
-fn rotate_vector(v: Vector2<f64>, angle: f64) -> Vector2<f64> {
+fn rotate_vector(v: Vector2, angle: f64) -> Vector2 {
     let rot = nalgebra::Rotation2::new(angle);
     rot * v
 }

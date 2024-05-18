@@ -1,6 +1,7 @@
 use dies_protos::ssl_vision_geometry::SSL_GeometryFieldSize;
-use nalgebra::Vector2;
 use serde::{Deserialize, Serialize};
+
+use crate::Vector2;
 
 /// A single field arc -- eg. the center circle
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -8,7 +9,7 @@ pub struct FieldCircularArc {
     /// Readable name of the arc
     pub name: String,
     /// Center of the arc, in dies coordinates
-    pub center: Vector2<f64>,
+    pub center: Vector2,
     // Radius of the arc, in mm
     pub radius: f64,
     // Start angle in counter-clockwise order, in radians
@@ -25,9 +26,9 @@ pub struct FieldLineSegment {
     /// Readable name of the line segment
     pub name: String,
     /// Start point of the line segment, in dies coordinates
-    pub p1: Vector2<f64>,
+    pub p1: Vector2,
     /// End point of the line segment, in dies coordinates
-    pub p2: Vector2<f64>,
+    pub p2: Vector2,
     /// Thickness of the line segment, in mm
     pub thickness: f64,
 }

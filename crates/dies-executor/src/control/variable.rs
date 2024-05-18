@@ -1,6 +1,6 @@
 use std::ops::{Add, AddAssign, Div, Mul, Sub};
 
-use nalgebra::{Vector2, Vector3};
+use dies_core::{Vector2, Vector3};
 
 /// A trait for types that can be used as variables in a PID controller.
 pub trait Variable:
@@ -21,13 +21,13 @@ impl Variable for f64 {
     }
 }
 
-impl Variable for Vector2<f64> {
+impl Variable for Vector2 {
     fn zero() -> Self {
         Vector2::zeros()
     }
 }
 
-impl Variable for Vector3<f64> {
+impl Variable for Vector3 {
     fn zero() -> Self {
         Vector3::zeros()
     }

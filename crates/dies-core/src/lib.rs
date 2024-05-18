@@ -14,8 +14,6 @@ use serde::{Deserialize, Serialize};
 pub type Scalar = f64;
 pub type Vector2 = nalgebra::Vector2<Scalar>;
 pub type Vector3 = nalgebra::Vector3<Scalar>;
-pub type Point2 = nalgebra::Point2<Scalar>;
-pub type Point3 = nalgebra::Point3<Scalar>;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct PlayerId(u32);

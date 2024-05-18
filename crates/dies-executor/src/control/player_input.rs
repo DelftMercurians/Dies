@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use dies_core::PlayerId;
-use nalgebra::Vector2;
+use dies_core::{PlayerId, Vector2};
 
 /// A collection of player inputs.
 pub struct PlayerInputs {
@@ -61,10 +60,10 @@ impl FromIterator<(PlayerId, PlayerControlInput)> for PlayerInputs {
 #[derive(Debug, Clone, Default)]
 pub struct PlayerControlInput {
     /// Target position. If `None`, the player will just follow the given velocity
-    pub position: Option<Vector2<f64>>,
+    pub position: Option<Vector2>,
     /// Target velocity (in global frame). This is added to the output of the position
     /// controller.
-    pub velocity: Vector2<f64>,
+    pub velocity: Vector2,
     /// Target orientation. If `None` the player will just follow the given angula
     /// velocity
     pub orientation: Option<f64>,
@@ -83,7 +82,7 @@ impl PlayerControlInput {
     }
 
     /// Set the target position of the player.
-    pub fn with_position(&mut self, pos: Vector2<f64>) -> &mut Self {
+    pub fn with_position(&mut self, pos: Vector2) -> &mut Self {
         self.position = Some(pos);
         self
     }

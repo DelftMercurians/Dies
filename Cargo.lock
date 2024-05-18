@@ -545,13 +545,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dies-trajectory"
-version = "0.1.0"
-dependencies = [
- "nalgebra",
-]
-
-[[package]]
 name = "dies-webui"
 version = "0.1.0"
 dependencies = [
