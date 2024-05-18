@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
+use dies_core::PlayerId;
 use nalgebra::Vector2;
 
 /// A collection of player inputs.
 pub struct PlayerInputs {
-    inputs: HashMap<u32, PlayerControlInput>,
+    inputs: HashMap<PlayerId, PlayerControlInput>,
 }
 
 impl PlayerInputs {
@@ -16,17 +17,17 @@ impl PlayerInputs {
     }
 
     /// Get an iterator over the player inputs.
-    pub fn iter(&self) -> impl Iterator<Item = (&u32, &PlayerControlInput)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&PlayerId, &PlayerControlInput)> {
         self.inputs.iter()
     }
 
     /// Get the mutable input for a player, creating a new one if it doesn't exist.
-    pub fn player_mut(&mut self, id: u32) -> &mut PlayerControlInput {
+    pub fn player_mut(&mut self, id: PlayerId) -> &mut PlayerControlInput {
         self.inputs.entry(id).or_insert(PlayerControlInput::new())
     }
 
     /// Get the input for a player, or an empty one if it doesn't exist.
-    pub fn player(&self, id: u32) -> PlayerControlInput {
+    pub fn player(&self, id: PlayerId) -> PlayerControlInput {
         self.inputs
             .get(&id)
             .cloned()
@@ -34,22 +35,22 @@ impl PlayerInputs {
     }
 
     /// Set the input for a player
-    pub fn insert(&mut self, id: u32, input: PlayerControlInput) {
+    pub fn insert(&mut self, id: PlayerId, input: PlayerControlInput) {
         self.inputs.insert(id, input);
     }
 }
 
 impl IntoIterator for PlayerInputs {
-    type Item = (u32, PlayerControlInput);
-    type IntoIter = std::collections::hash_map::IntoIter<u32, PlayerControlInput>;
+    type Item = (PlayerId, PlayerControlInput);
+    type IntoIter = std::collections::hash_map::IntoIter<PlayerId, PlayerControlInput>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inputs.into_iter()
     }
 }
 
-impl FromIterator<(u32, PlayerControlInput)> for PlayerInputs {
-    fn from_iter<T: IntoIterator<Item = (u32, PlayerControlInput)>>(iter: T) -> Self {
+impl FromIterator<(PlayerId, PlayerControlInput)> for PlayerInputs {
+    fn from_iter<T: IntoIterator<Item = (PlayerId, PlayerControlInput)>>(iter: T) -> Self {
         Self {
             inputs: iter.into_iter().collect(),
         }

@@ -1,4 +1,4 @@
-use dies_core::{BallData, FieldGeometry, PlayerCmd, PlayerData, WorldData};
+use dies_core::{BallData, FieldGeometry, PlayerCmd, PlayerData, PlayerId, WorldData};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -86,7 +86,7 @@ struct Ball {
 
 #[derive(Debug)]
 struct Player {
-    id: u32,
+    id: PlayerId,
     is_own: bool,
     rigid_body_handle: RigidBodyHandle,
     _collider_handle: ColliderHandle,
@@ -429,7 +429,7 @@ impl Simulation {
             let position = rigid_body.position().translation.vector;
             let orientation = rigid_body.rotation().euler_angles().2;
             let mut robot = SSL_DetectionRobot::new();
-            robot.set_robot_id(player.id as u32);
+            robot.set_robot_id(player.id.as_u32());
             robot.set_x(position.x as f32);
             robot.set_y(position.y as f32);
             robot.set_orientation(orientation as f32);
@@ -627,7 +627,7 @@ impl SimulationBuilder {
         );
 
         sim.players.push(Player {
-            id,
+            id: PlayerId::new(id),
             is_own,
             rigid_body_handle,
             _collider_handle: collider_handle,

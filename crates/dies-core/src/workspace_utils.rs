@@ -7,14 +7,12 @@ lazy_static::lazy_static! {
 
 /// Try to find the workspace root.
 ///
-/// The worksapce root is the directory that contains a `py` directory and a `pyproject.toml` file.
+/// The worksapce root is the directory that contains the Cargo.lock file.
 pub fn try_find_workspace_root() -> Result<PathBuf> {
     let mut current_dir = env::current_dir()?;
     loop {
-        let py_dir = current_dir.join("py");
-        let pyproject_toml = current_dir.join("pyproject.toml");
-        if py_dir.is_dir() && pyproject_toml.is_file() {
-            return Ok(current_dir.canonicalize()?);
+        if current_dir.join("Cargo.lock").exists() {
+            return Ok(current_dir);
         }
         if !current_dir.pop() {
             break;
@@ -25,7 +23,7 @@ pub fn try_find_workspace_root() -> Result<PathBuf> {
 
 /// Returns the absolute path to the workspace root. The value is cached.
 ///
-/// The worksapce root is the directory that contains a `py` directory and a `pyproject.toml` file.
+/// The worksapce root is the directory that contains the Cargo.lock file.
 ///
 /// # Panics
 ///

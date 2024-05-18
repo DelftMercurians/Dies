@@ -2,10 +2,10 @@ use super::{
     pid::PID,
     player_input::{KickerControlInput, PlayerControlInput},
 };
-use dies_core::{PlayerCmd, PlayerData};
+use dies_core::{PlayerCmd, PlayerData, PlayerId};
 use nalgebra::Vector2;
 
-const MISSING_FRAMES_THRESHOLD: u32 = 50;
+const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 100.0;
 
 enum KickerState {
@@ -15,12 +15,12 @@ enum KickerState {
 }
 
 pub struct PlayerController {
-    id: u32,
+    id: PlayerId,
     position_pid: PID<Vector2<f64>>,
     heading_pid: PID<f64>,
     last_pos: Vector2<f64>,
     last_orientation: f64,
-    frame_missings: u32,
+    frame_missings: usize,
 
     /// Output velocity \[mm/s\]
     target_velocity: Vector2<f64>,
@@ -34,7 +34,7 @@ pub struct PlayerController {
 
 impl PlayerController {
     /// Create a new player controller with the given ID.
-    pub fn new(id: u32) -> Self {
+    pub fn new(id: PlayerId) -> Self {
         let heading_pid = PID::new(2.0, 0.002, 0.0);
         Self {
             id,
@@ -51,7 +51,7 @@ impl PlayerController {
     }
 
     /// Get the ID of the player.
-    pub fn id(&self) -> u32 {
+    pub fn id(&self) -> PlayerId {
         self.id
     }
 
@@ -65,7 +65,9 @@ impl PlayerController {
             sx: self.target_velocity.y / 1000.0, // Convert to m/s
             w: self.target_angular_velocity,
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
-            ..Default::default()
+            arm: false,
+            disarm: false,
+            kick: false,
         };
 
         match self.kicker {

@@ -1,4 +1,4 @@
-use dies_core::PlayerData;
+use dies_core::{PlayerData, PlayerId};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector2, Vector4};
 
@@ -7,7 +7,7 @@ use crate::{coord_utils::to_dies_coords2, filter::Kalman};
 /// Tracker for a single player.
 pub struct PlayerTracker {
     /// Player's unique id
-    id: u32,
+    id: PlayerId,
     /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
     /// converting coordinates.
     play_dir_x: f64,
@@ -22,7 +22,7 @@ pub struct PlayerTracker {
 
 impl PlayerTracker {
     /// Create a new PlayerTracker.
-    pub fn new(id: u32, initial_play_dir_x: f64) -> PlayerTracker {
+    pub fn new(id: PlayerId, initial_play_dir_x: f64) -> PlayerTracker {
         PlayerTracker {
             id,
             play_dir_x: initial_play_dir_x,
@@ -115,7 +115,7 @@ mod test {
 
     #[test]
     fn test_no_player() {
-        let tracker = PlayerTracker::new(1, 1.0);
+        let tracker = PlayerTracker::new(PlayerId::new(1), 1.0);
 
         assert!(!tracker.is_init());
         assert!(tracker.get().is_none());
@@ -123,7 +123,7 @@ mod test {
 
     #[test]
     fn test_no_data_after_one_update() {
-        let mut tracker = PlayerTracker::new(1, 1.0);
+        let mut tracker = PlayerTracker::new(PlayerId::new(1), 1.0);
 
         let mut player = SSL_DetectionRobot::new();
         player.set_x(100.0);
@@ -137,7 +137,7 @@ mod test {
 
     #[test]
     fn test_basic_update() {
-        let mut tracker = PlayerTracker::new(1, 1.0);
+        let mut tracker = PlayerTracker::new(PlayerId::new(1), 1.0);
 
         let mut player = SSL_DetectionRobot::new();
         player.set_x(100.0);
@@ -151,7 +151,7 @@ mod test {
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
-        assert_eq!(data.id, 1);
+        assert_eq!(data.id.as_u32(), 1);
         assert_eq!(data.position, Vector2::new(100.0, 200.0));
         assert_eq!(data.velocity, Vector2::zeros());
         assert_eq!(data.orientation, 0.0);
@@ -165,7 +165,7 @@ mod test {
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
-        assert_eq!(data.id, 1);
+        assert_eq!(data.id.as_u32(), 1);
         assert_eq!(data.position, Vector2::new(200.0, 300.0));
         assert_eq!(data.velocity, Vector2::new(100.0, 100.0));
         assert_eq!(data.orientation, 1.0);
@@ -174,7 +174,7 @@ mod test {
 
     #[test]
     fn test_x_flip() {
-        let mut tracker = PlayerTracker::new(1, -1.0);
+        let mut tracker = PlayerTracker::new(PlayerId::new(1), -1.0);
 
         let mut player = SSL_DetectionRobot::new();
         let dir = PI / 2.0;
@@ -189,7 +189,7 @@ mod test {
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
-        assert_eq!(data.id, 1);
+        assert_eq!(data.id.as_u32(), 1);
         assert_eq!(data.position, Vector2::new(-100.0, 200.0));
         assert_eq!(data.velocity, Vector2::zeros());
         assert_eq!(data.orientation, -dir);
@@ -205,7 +205,7 @@ mod test {
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
-        assert_eq!(data.id, 1);
+        assert_eq!(data.id.as_u32(), 1);
         assert_eq!(data.position, Vector2::new(200.0, 300.0));
         assert_eq!(data.velocity, Vector2::new(100.0, 100.0));
         assert_eq!(data.orientation, -dir);

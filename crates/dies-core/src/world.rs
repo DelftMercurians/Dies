@@ -1,7 +1,7 @@
 use nalgebra::{Vector2, Vector3};
 use serde::Serialize;
 
-use crate::FieldGeometry;
+use crate::{FieldGeometry, PlayerId};
 
 /// The game state, as reported by the referee.
 #[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
@@ -49,7 +49,7 @@ pub struct PlayerData {
     /// seconds). This is the time that ssl-vision received the frame.
     pub timestamp: f64,
     /// The player's unique id
-    pub id: u32,
+    pub id: PlayerId,
     /// Unfiltered position as reported by vision
     pub raw_position: Vector2<f64>,
     /// Position of the player filtered by us in mm, in dies coordinates

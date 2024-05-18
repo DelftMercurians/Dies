@@ -11,13 +11,38 @@ pub type GcRefereeMsg = dies_protos::ssl_gc_referee_message::Referee;
 
 use serde::{Deserialize, Serialize};
 
+pub type Scalar = f64;
+pub type Vector2 = nalgebra::Vector2<Scalar>;
+pub type Vector3 = nalgebra::Vector3<Scalar>;
+pub type Point2 = nalgebra::Point2<Scalar>;
+pub type Point3 = nalgebra::Point3<Scalar>;
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
+pub struct PlayerId(u32);
+
+impl PlayerId {
+    pub fn new(id: u32) -> Self {
+        Self(id)
+    }
+
+    pub fn as_u32(&self) -> u32 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for PlayerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// A command to one of our players as it will be sent to the robot.
 ///
 /// All values are relative to the robots local frame and are in meters.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct PlayerCmd {
     /// The robot's ID
-    pub id: u32,
+    pub id: PlayerId,
     /// The player's x (left-right, with `+` left) velocity \[m/s]
     pub sx: f64,
     /// The player's y (forward-backward, with `+` forward) velocity \[m/s]
@@ -33,7 +58,7 @@ pub struct PlayerCmd {
 }
 
 impl PlayerCmd {
-    pub fn zero(id: u32) -> PlayerCmd {
+    pub fn zero(id: PlayerId) -> PlayerCmd {
         PlayerCmd {
             id,
             sx: 0.0,
@@ -64,19 +89,10 @@ impl PlayerCmd {
     }
 }
 
-/// A position command to one of our players
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct PlayerPosCmd {
-    pub id: u32,
-    pub x: f64,
-    pub y: f64,
-    pub orientation: f64,
-}
-
 /// A message from one of our robots to the AI
 pub struct PlayerFeedbackMsg {
     /// The robot's ID
-    pub id: u32,
+    pub id: PlayerId,
     /// Capacitor voltage
     pub cap_v: f64,
 }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use dies_protos::ssl_gc_referee_message::Referee;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
@@ -13,14 +15,9 @@ use ball::BallTracker;
 pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
 };
-use dies_core::{GameState, WorldData};
+use dies_core::{GameState, PlayerId, WorldData};
 use player::PlayerTracker;
 
-/// The number of players with unique ids in a single team.
-///
-/// Might be higher than the number of players on the field at a time so there should
-/// be a safe margin.
-const MAX_PLAYERS: usize = 15;
 const IS_DIV_A: bool = false;
 
 /// A struct to configure the world tracker.
@@ -39,8 +36,8 @@ pub struct WorldTracker {
     /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
     /// converting coordinates.
     play_dir_x: f64,
-    own_players_tracker: Vec<Option<PlayerTracker>>,
-    opp_players_tracker: Vec<Option<PlayerTracker>>,
+    own_players_tracker: HashMap<PlayerId, PlayerTracker>,
+    opp_players_tracker: HashMap<PlayerId, PlayerTracker>,
     ball_tracker: BallTracker,
     game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
@@ -50,17 +47,11 @@ pub struct WorldTracker {
 impl WorldTracker {
     /// Create a new world tracker from a config.
     pub fn new(config: WorldConfig) -> Self {
-        let mut own_players_tracker = Vec::with_capacity(MAX_PLAYERS);
-        let mut opp_players_tracker = Vec::with_capacity(MAX_PLAYERS);
-        for _ in 0..MAX_PLAYERS {
-            opp_players_tracker.push(None);
-            own_players_tracker.push(None);
-        }
         Self {
             is_blue: config.is_blue,
             play_dir_x: config.initial_opp_goal_x,
-            own_players_tracker,
-            opp_players_tracker,
+            own_players_tracker: HashMap::new(),
+            opp_players_tracker: HashMap::new(),
             ball_tracker: BallTracker::new(config.initial_opp_goal_x),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
@@ -72,15 +63,11 @@ impl WorldTracker {
     pub fn set_play_dir_x(&mut self, sign: f64) {
         self.play_dir_x = sign.signum();
         self.ball_tracker.set_play_dir_x(self.play_dir_x);
-        for player_tracker in self.own_players_tracker.iter_mut() {
-            if let Some(player_tracker) = player_tracker.as_mut() {
-                player_tracker.set_play_dir_x(self.play_dir_x);
-            }
+        for player_tracker in self.own_players_tracker.values_mut() {
+            player_tracker.set_play_dir_x(self.play_dir_x);
         }
-        for player_tracker in self.opp_players_tracker.iter_mut() {
-            if let Some(player_tracker) = player_tracker.as_mut() {
-                player_tracker.set_play_dir_x(self.play_dir_x);
-            }
+        for player_tracker in self.opp_players_tracker.values_mut() {
+            player_tracker.set_play_dir_x(self.play_dir_x);
         }
     }
 
@@ -129,36 +116,20 @@ impl WorldTracker {
 
             // Blue players
             for player in data.detection.robots_blue.iter() {
-                let id = player.robot_id();
-                if id as usize >= MAX_PLAYERS {
-                    tracing::error!("Player id {} is too high", id);
-                    continue;
-                }
-
-                if blue_trackers[id as usize].is_none() {
-                    blue_trackers[id as usize] = Some(PlayerTracker::new(id, self.play_dir_x));
-                }
-
-                if let Some(tracker) = blue_trackers[id as usize].as_mut() {
-                    tracker.update(t_capture, player);
-                }
+                let id = PlayerId::new(player.robot_id());
+                let tracker = blue_trackers
+                    .entry(id)
+                    .or_insert_with(|| PlayerTracker::new(id, self.play_dir_x));
+                tracker.update(t_capture, player);
             }
 
             // Yellow players
             for player in data.detection.robots_yellow.iter() {
-                let id = player.robot_id();
-                if id as usize >= MAX_PLAYERS {
-                    tracing::error!("Player id {} is too high", id);
-                    continue;
-                }
-
-                if yellow_tracker[id as usize].is_none() {
-                    yellow_tracker[id as usize] = Some(PlayerTracker::new(id, self.play_dir_x));
-                }
-
-                if let Some(tracker) = yellow_tracker[id as usize].as_mut() {
-                    tracker.update(t_capture, player);
-                }
+                let id = PlayerId::new(player.robot_id());
+                let tracker = yellow_tracker
+                    .entry(id)
+                    .or_insert_with(|| PlayerTracker::new(id, self.play_dir_x));
+                tracker.update(t_capture, player);
             }
 
             // Update ball
@@ -185,9 +156,9 @@ impl WorldTracker {
     pub fn is_init(&self) -> bool {
         let any_player_init = self
             .own_players_tracker
-            .iter()
-            .chain(self.opp_players_tracker.iter())
-            .any(|t| t.as_ref().map(|t| t.is_init()).unwrap_or(false));
+            .values()
+            .chain(self.opp_players_tracker.values())
+            .any(|t| t.is_init());
 
         let ball_init = self.ball_tracker.is_init();
         let field_geom_init = self.field_geometry.is_some();
@@ -207,15 +178,15 @@ impl WorldTracker {
         };
 
         let mut own_players = Vec::new();
-        for player_tracker in self.own_players_tracker.iter() {
-            if let Some(player_data) = player_tracker.as_ref().and_then(|t| t.get()) {
+        for player_tracker in self.own_players_tracker.values() {
+            if let Some(player_data) = player_tracker.get() {
                 own_players.push(player_data);
             }
         }
 
         let mut opp_players = Vec::new();
-        for player_tracker in self.opp_players_tracker.iter() {
-            if let Some(player_data) = player_tracker.as_ref().and_then(|t| t.get()) {
+        for player_tracker in self.opp_players_tracker.values() {
+            if let Some(player_data) = player_tracker.get() {
                 opp_players.push(player_data);
             }
         }
