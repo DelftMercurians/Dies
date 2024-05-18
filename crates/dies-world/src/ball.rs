@@ -1,5 +1,5 @@
-use dies_core::BallData;
-use nalgebra::{SVector, Vector3, Vector6};
+use dies_core::{BallData, Vector3};
+use nalgebra::{SVector, Vector6};
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
@@ -62,7 +62,7 @@ impl BallTracker {
                     !ball.has_confidence() || ball.confidence.unwrap() < 0.9,
                 )
             })
-            .collect::<Vec<(Vector3<f64>, bool)>>();
+            .collect::<Vec<(Vector3, bool)>>();
         if ball_measurements.is_empty() {
             return;
         }
