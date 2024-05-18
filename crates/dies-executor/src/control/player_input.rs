@@ -60,17 +60,17 @@ impl FromIterator<(u32, PlayerControlInput)> for PlayerInputs {
 #[derive(Debug, Clone, Default)]
 pub struct PlayerControlInput {
     /// Target position. If `None`, the player will just follow the given velocity
-    pub position: Option<Vector2<f32>>,
+    pub position: Option<Vector2<f64>>,
     /// Target velocity (in global frame). This is added to the output of the position
     /// controller.
-    pub velocity: Vector2<f32>,
+    pub velocity: Vector2<f64>,
     /// Target orientation. If `None` the player will just follow the given angula
     /// velocity
-    pub orientation: Option<f32>,
+    pub orientation: Option<f64>,
     /// Target angular velocity. This is added to the output of the controller.
-    pub angular_velocity: f32,
+    pub angular_velocity: f64,
     /// Dribbler speed normalised to [0, 1]
-    pub dribbling_speed: f32,
+    pub dribbling_speed: f64,
     /// Kicker control input
     pub kicker: KickerControlInput,
 }
@@ -82,19 +82,19 @@ impl PlayerControlInput {
     }
 
     /// Set the target position of the player.
-    pub fn with_position(&mut self, pos: Vector2<f32>) -> &mut Self {
+    pub fn with_position(&mut self, pos: Vector2<f64>) -> &mut Self {
         self.position = Some(pos);
         self
     }
 
     /// Set the target heading of the player.
-    pub fn with_orientation(&mut self, orientation: f32) -> &mut Self {
+    pub fn with_orientation(&mut self, orientation: f64) -> &mut Self {
         self.orientation = Some(orientation);
         self
     }
 
     /// Set the dribbling speed of the player.
-    pub fn with_dribbling(&mut self, speed: f32) -> &mut Self {
+    pub fn with_dribbling(&mut self, speed: f64) -> &mut Self {
         self.dribbling_speed = speed;
         self
     }

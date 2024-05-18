@@ -29,7 +29,7 @@ pub struct WorldConfig {
     /// Whether our team color is blue
     pub is_blue: bool,
     /// The initial sign of the enemy goal's x coordinate in ssl-vision coordinates.
-    pub initial_opp_goal_x: f32,
+    pub initial_opp_goal_x: f64,
 }
 
 /// A struct to track the world state.
@@ -38,7 +38,7 @@ pub struct WorldTracker {
     is_blue: bool,
     /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
     /// converting coordinates.
-    play_dir_x: f32,
+    play_dir_x: f64,
     own_players_tracker: Vec<Option<PlayerTracker>>,
     opp_players_tracker: Vec<Option<PlayerTracker>>,
     ball_tracker: BallTracker,
@@ -69,7 +69,7 @@ impl WorldTracker {
     }
 
     /// Update the sign of the enemy goal's x coordinate (in ssl-vision coordinates).
-    pub fn set_play_dir_x(&mut self, sign: f32) {
+    pub fn set_play_dir_x(&mut self, sign: f64) {
         self.play_dir_x = sign.signum();
         self.ball_tracker.set_play_dir_x(self.play_dir_x);
         for player_tracker in self.own_players_tracker.iter_mut() {
@@ -84,7 +84,7 @@ impl WorldTracker {
         }
     }
 
-    pub fn get_play_dir_x(&self) -> f32 {
+    pub fn get_play_dir_x(&self) -> f64 {
         self.play_dir_x
     }
 

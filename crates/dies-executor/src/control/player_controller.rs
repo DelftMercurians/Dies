@@ -6,7 +6,7 @@ use dies_core::{PlayerCmd, PlayerData};
 use nalgebra::Vector2;
 
 const MISSING_FRAMES_THRESHOLD: u32 = 50;
-const MAX_DRIBBLE_SPEED: f32 = 100.0;
+const MAX_DRIBBLE_SPEED: f64 = 100.0;
 
 enum KickerState {
     Disarming,
@@ -16,20 +16,20 @@ enum KickerState {
 
 pub struct PlayerController {
     id: u32,
-    position_pid: PID<Vector2<f32>>,
-    heading_pid: PID<f32>,
-    last_pos: Vector2<f32>,
-    last_orientation: f32,
+    position_pid: PID<Vector2<f64>>,
+    heading_pid: PID<f64>,
+    last_pos: Vector2<f64>,
+    last_orientation: f64,
     frame_missings: u32,
 
     /// Output velocity \[mm/s\]
-    target_velocity: Vector2<f32>,
+    target_velocity: Vector2<f64>,
     /// Output angular velocity \[rad/s\]
-    target_angular_velocity: f32,
+    target_angular_velocity: f64,
     /// Kicker control
     kicker: KickerState,
     /// Dribble speed normalized to \[0, 1\]
-    dribble_speed: f32,
+    dribble_speed: f64,
 }
 
 impl PlayerController {
@@ -132,7 +132,7 @@ impl PlayerController {
     }
 }
 
-fn rotate_vector(v: Vector2<f32>, angle: f32) -> Vector2<f32> {
+fn rotate_vector(v: Vector2<f64>, angle: f64) -> Vector2<f64> {
     let rot = nalgebra::Rotation2::new(angle);
     rot * v
 }

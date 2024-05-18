@@ -19,13 +19,13 @@ pub struct PlayerCmd {
     /// The robot's ID
     pub id: u32,
     /// The player's x (left-right, with `+` left) velocity \[m/s]
-    pub sx: f32,
+    pub sx: f64,
     /// The player's y (forward-backward, with `+` forward) velocity \[m/s]
-    pub sy: f32,
+    pub sy: f64,
     /// The player's angular velocity (with `+` counter-clockwise, `-` clockwise) \[rad/s]
-    pub w: f32,
+    pub w: f64,
     /// The player's dribble speed
-    pub dribble_speed: f32,
+    pub dribble_speed: f64,
 
     pub arm: bool,
     pub disarm: bool,
@@ -68,9 +68,9 @@ impl PlayerCmd {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct PlayerPosCmd {
     pub id: u32,
-    pub x: f32,
-    pub y: f32,
-    pub orientation: f32,
+    pub x: f64,
+    pub y: f64,
+    pub orientation: f64,
 }
 
 /// A message from one of our robots to the AI
@@ -78,5 +78,5 @@ pub struct PlayerFeedbackMsg {
     /// The robot's ID
     pub id: u32,
     /// Capacitor voltage
-    pub cap_v: f32,
+    pub cap_v: f64,
 }

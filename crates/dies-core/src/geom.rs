@@ -8,15 +8,15 @@ pub struct FieldCircularArc {
     /// Readable name of the arc
     pub name: String,
     /// Center of the arc, in dies coordinates
-    pub center: Vector2<f32>,
+    pub center: Vector2<f64>,
     // Radius of the arc, in mm
-    pub radius: f32,
+    pub radius: f64,
     // Start angle in counter-clockwise order, in radians
-    pub a1: f32,
+    pub a1: f64,
     // End angle in counter-clockwise order, in radians
-    pub a2: f32,
+    pub a2: f64,
     // Thickness of the arc stroke, in mm
-    pub thickness: f32,
+    pub thickness: f64,
 }
 
 /// A single field line segment
@@ -25,11 +25,11 @@ pub struct FieldLineSegment {
     /// Readable name of the line segment
     pub name: String,
     /// Start point of the line segment, in dies coordinates
-    pub p1: Vector2<f32>,
+    pub p1: Vector2<f64>,
     /// End point of the line segment, in dies coordinates
-    pub p2: Vector2<f32>,
+    pub p2: Vector2<f64>,
     /// Thickness of the line segment, in mm
-    pub thickness: f32,
+    pub thickness: f64,
 }
 
 /// The field geometry.
@@ -58,14 +58,14 @@ impl FieldGeometry {
         let mut field_line_segments = Vec::new();
         for line in geometry.field_lines.iter() {
             let p1 = if let Some(p1) = line.p1.as_ref() {
-                Vector2::new(p1.x(), p1.y())
+                Vector2::new(p1.x() as f64, p1.y() as f64)
             } else {
                 tracing::error!("Field line segment has no p1");
                 continue;
             };
 
             let p2 = if let Some(p2) = line.p2.as_ref() {
-                Vector2::new(p2.x(), p2.y())
+                Vector2::new(p2.x() as f64, p2.y() as f64)
             } else {
                 tracing::error!("Field line segment has no p2");
                 continue;
@@ -74,7 +74,7 @@ impl FieldGeometry {
                 name: line.name().to_owned(),
                 p1,
                 p2,
-                thickness: line.thickness(),
+                thickness: line.thickness() as f64,
             });
         }
 
@@ -82,7 +82,7 @@ impl FieldGeometry {
         let mut field_circular_arcs = Vec::new();
         for arc in geometry.field_arcs.iter() {
             let center = if let Some(center) = arc.center.as_ref() {
-                Vector2::new(center.x(), center.y())
+                Vector2::new(center.x() as f64, center.y() as f64)
             } else {
                 tracing::error!("Field circular arc has no center");
                 continue;
@@ -91,10 +91,10 @@ impl FieldGeometry {
             field_circular_arcs.push(FieldCircularArc {
                 name: arc.name().to_owned(),
                 center,
-                radius: arc.radius(),
-                a1: arc.a1(),
-                a2: arc.a2(),
-                thickness: arc.thickness(),
+                radius: arc.radius() as f64,
+                a1: arc.a1() as f64,
+                a2: arc.a2() as f64,
+                thickness: arc.thickness() as f64,
             });
         }
 

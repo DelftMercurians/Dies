@@ -58,7 +58,7 @@ impl Executor {
 
     /// Set the play direction for the executor. This is used to determine which side of
     /// the field the team is playing on.
-    pub fn set_play_dir_x(&mut self, opp_x_sign: f32) {
+    pub fn set_play_dir_x(&mut self, opp_x_sign: f64) {
         self.tracker.set_play_dir_x(opp_x_sign);
     }
 

@@ -10,7 +10,7 @@ pub struct PlayerTracker {
     id: u32,
     /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
     /// converting coordinates.
-    play_dir_x: f32,
+    play_dir_x: f64,
     /// Whether the tracker has been initialized (i.e. the player has been detected at
     /// least twice)
     is_init: bool,
@@ -22,7 +22,7 @@ pub struct PlayerTracker {
 
 impl PlayerTracker {
     /// Create a new PlayerTracker.
-    pub fn new(id: u32, initial_play_dir_x: f32) -> PlayerTracker {
+    pub fn new(id: u32, initial_play_dir_x: f64) -> PlayerTracker {
         PlayerTracker {
             id,
             play_dir_x: initial_play_dir_x,
@@ -33,7 +33,7 @@ impl PlayerTracker {
     }
 
     /// Set the sign of the enemy goal's x coordinate in ssl-vision coordinates.
-    pub fn set_play_dir_x(&mut self, play_dir_x: f32) {
+    pub fn set_play_dir_x(&mut self, play_dir_x: f64) {
         if play_dir_x != self.play_dir_x {
             // Flip the x coordinate of the player's position, velocity and orientation
             if let Some(last_data) = &mut self.last_data {
@@ -54,7 +54,7 @@ impl PlayerTracker {
     /// Update the tracker with a new frame.
     pub fn update(&mut self, t_capture: f64, player: &SSL_DetectionRobot) {
         let current_position = to_dies_coords2(player.x(), player.y(), self.play_dir_x);
-        let current_orientation = player.orientation() * self.play_dir_x;
+        let current_orientation = player.orientation() as f64 * self.play_dir_x;
 
         if let Some(filter) = &mut self.filter {
             let z = na::convert(Vector2::new(current_position.x, current_position.y));
@@ -79,7 +79,7 @@ impl PlayerTracker {
                 last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
                 last_data.orientation = current_orientation;
                 last_data.angular_speed = (current_orientation - last_data.orientation)
-                    / ((t_capture - last_data.timestamp + std::f64::EPSILON) as f32);
+                    / ((t_capture - last_data.timestamp + std::f64::EPSILON) as f64);
                 last_data.timestamp = t_capture;
             }
         } else {
@@ -109,7 +109,7 @@ impl PlayerTracker {
 
 #[cfg(test)]
 mod test {
-    use std::f32::consts::PI;
+    use std::f64::consts::PI;
 
     use super::*;
 
@@ -180,7 +180,7 @@ mod test {
         let dir = PI / 2.0;
         player.set_x(100.0);
         player.set_y(200.0);
-        player.set_orientation(dir);
+        player.set_orientation(dir as f32);
 
         tracker.update(0.0, &player);
         assert!(!tracker.is_init());
@@ -199,7 +199,7 @@ mod test {
 
         player.set_x(200.0);
         player.set_y(300.0);
-        player.set_orientation(-dir);
+        player.set_orientation(-dir as f32);
 
         tracker.update(2.0, &player);
         assert!(tracker.is_init());

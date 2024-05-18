@@ -6,28 +6,28 @@ use nalgebra::Vector2;
 const N_POINTS: usize = 5;
 
 /// The spacing between points in the path in mm
-const POINT_SPACING: f32 = 100.0;
+const POINT_SPACING: f64 = 100.0;
 
 /// The attractive force constant
-const ALPHA: f32 = 0.00001;
+const ALPHA: f64 = 0.00001;
 
 /// The repulsive force constant
-const BETA: f32 = 0.01;
+const BETA: f64 = 0.01;
 
 /// The influence factor constants
-const INFLUENCE_FACTOR: (f32, f32) = (5.0, 1.0);
+const INFLUENCE_FACTOR: (f64, f64) = (5.0, 1.0);
 
 /// A circular obstacle
 #[derive(Debug, Clone)]
 pub struct Obstacle {
-    pub position: Vector2<f32>,
-    pub radius: f32,
-    pub velocity: Vector2<f32>,
+    pub position: Vector2<f64>,
+    pub radius: f64,
+    pub velocity: Vector2<f64>,
 }
 
 impl Obstacle {
     /// Creates a new obstacle
-    pub fn new(position: Vector2<f32>, radius: f32, velocity: Vector2<f32>) -> Self {
+    pub fn new(position: Vector2<f64>, radius: f64, velocity: Vector2<f64>) -> Self {
         Self {
             position,
             radius,
@@ -36,7 +36,7 @@ impl Obstacle {
     }
 
     /// Creates a new obstacle with 0 velocity
-    pub fn new_without_vel(position: Vector2<f32>, radius: f32) -> Self {
+    pub fn new_without_vel(position: Vector2<f64>, radius: f64) -> Self {
         Self {
             position,
             radius,
@@ -56,18 +56,18 @@ impl Obstacle {
 ///
 /// _TODO:_ Explore other path planning algorithms
 pub fn compute_path(
-    start: &Vector2<f32>,
-    goal: &Vector2<f32>,
+    start: &Vector2<f64>,
+    goal: &Vector2<f64>,
     obstacles: &[Obstacle],
-    start_speed: Option<Vector2<f32>>,
-) -> [Vector2<f32>; N_POINTS] {
-    let mut path: [Vector2<f32>; N_POINTS] = [Vector2::new(0.0, 0.0); N_POINTS];
+    start_speed: Option<Vector2<f64>>,
+) -> [Vector2<f64>; N_POINTS] {
+    let mut path: [Vector2<f64>; N_POINTS] = [Vector2::new(0.0, 0.0); N_POINTS];
     let mut pos = start.clone();
     let start_speed = start_speed.unwrap_or(Vector2::new(0.0, 0.0));
 
     for index in 0..N_POINTS {
-        let mut f: Vector2<f32> = (goal - pos)
-            .try_normalize(f32::EPSILON)
+        let mut f: Vector2<f64> = (goal - pos)
+            .try_normalize(f64::EPSILON)
             .unwrap_or(Vector2::zeros());
         let dist = (goal - pos).norm();
         let attractive_force = ALPHA * dist;
@@ -77,22 +77,22 @@ pub fn compute_path(
         for obs in obstacles {
             let d = (obs.position - pos).norm();
             let relative_speed = (pos - obs.position)
-                .try_normalize(f32::EPSILON)
+                .try_normalize(f64::EPSILON)
                 .unwrap_or(Vector2::zeros())
                 .dot(&(start_speed - obs.velocity))
                 .abs();
             let influence_radius =
-                base_factor as f32 * obs.radius + relative_speed * speed_factor as f32;
+                base_factor as f64 * obs.radius + relative_speed * speed_factor as f64;
             if d < influence_radius {
-                let repulsive_force = (1.0 / ((d - 2.0 * obs.radius) + f32::EPSILON)
-                    - 1.0 / ((influence_radius - 2.0 * obs.radius) + f32::EPSILON))
+                let repulsive_force = (1.0 / ((d - 2.0 * obs.radius) + f64::EPSILON)
+                    - 1.0 / ((influence_radius - 2.0 * obs.radius) + f64::EPSILON))
                     * (relative_speed * (BETA + 1.0));
 
                 f += (pos - obs.position) * repulsive_force;
             }
         }
 
-        pos += f.try_normalize(f32::EPSILON).unwrap_or(Vector2::zeros()) * POINT_SPACING;
+        pos += f.try_normalize(f64::EPSILON).unwrap_or(Vector2::zeros()) * POINT_SPACING;
 
         if index == 0 || (goal - pos).norm() < (goal - path[index - 1]).norm() {
             path[index] = pos.clone();
@@ -112,7 +112,7 @@ mod tests {
         let start = Vector2::new(0.0, 0.0);
         let goal = Vector2::new(9000.0, 6000.0);
         let direction = (goal - start).normalize();
-        let expected_points: [Vector2<f32>; 5] = [
+        let expected_points: [Vector2<f64>; 5] = [
             start + direction * 100.0,
             start + direction * 200.0,
             start + direction * 300.0,

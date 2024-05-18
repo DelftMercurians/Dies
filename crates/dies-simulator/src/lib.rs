@@ -6,7 +6,7 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
-use rapier3d::{
+use rapier3d_f64::{
     na::{SimdPartialOrd, Vector2},
     prelude::*,
 };
@@ -16,35 +16,35 @@ use utils::IntervalTrigger;
 
 mod utils;
 
-const BALL_RADIUS: f32 = 43.0;
-const PLAYER_RADIUS: f32 = 200.0;
-const PLAYER_HEIGHT: f32 = 140.0;
-const DRIBBLER_RADIUS: f32 = BALL_RADIUS + 60.0;
-const DRIBBLER_ANGLE: f32 = std::f32::consts::PI / 6.0;
-const DRIBBLER_STRENGHT: f32 = 0.6;
-const KICKER_STRENGHT: f32 = 300000.0;
-const FIELD_LENGTH: f32 = 11000.0;
-const FIELD_WIDTH: f32 = 9000.0;
-const GROUND_THICKNESS: f32 = 10.0;
-const WALL_HEIGHT: f32 = 1000.0;
-const WALL_THICKNESS: f32 = 100.0;
+const BALL_RADIUS: f64 = 43.0;
+const PLAYER_RADIUS: f64 = 200.0;
+const PLAYER_HEIGHT: f64 = 140.0;
+const DRIBBLER_RADIUS: f64 = BALL_RADIUS + 60.0;
+const DRIBBLER_ANGLE: f64 = std::f64::consts::PI / 6.0;
+const DRIBBLER_STRENGHT: f64 = 0.6;
+const KICKER_STRENGHT: f64 = 300000.0;
+const FIELD_LENGTH: f64 = 11000.0;
+const FIELD_WIDTH: f64 = 9000.0;
+const GROUND_THICKNESS: f64 = 10.0;
+const WALL_HEIGHT: f64 = 1000.0;
+const WALL_THICKNESS: f64 = 100.0;
 const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
 const GEOM_INTERVAL: f64 = 3.0;
 
 #[derive(Debug, Clone)]
 pub struct SimulationConfig {
-    pub gravity: Vector<f32>,
-    pub bias: f32,
-    pub ball_damping: f32,    // angular damping (rolling friction) on the ball
+    pub gravity: Vector<f64>,
+    pub bias: f64,
+    pub ball_damping: f64,    // angular damping (rolling friction) on the ball
     pub simulation_step: f64, // time between simulation steps
     pub vision_update_step: f64, // time between vision updates
     pub command_delay: f64,   // delay for the execution of the command
-    pub max_accel: Vector<f32>, // max lateral acceleration
-    pub max_vel: Vector<f32>, // max lateral velocity
-    pub max_ang_accel: f32,   // max angular acceleration
-    pub max_ang_vel: f32,     // max angular velocity
-    pub velocity_treshold: f32, // max difference between target and current velocity
-    pub angular_velocity_treshold: f32, // max difference between target and current angular velocity
+    pub max_accel: Vector<f64>, // max lateral acceleration
+    pub max_vel: Vector<f64>, // max lateral velocity
+    pub max_ang_accel: f64,   // max angular acceleration
+    pub max_ang_vel: f64,     // max angular velocity
+    pub velocity_treshold: f64, // max difference between target and current velocity
+    pub angular_velocity_treshold: f64, // max difference between target and current angular velocity
 }
 
 impl Default for SimulationConfig {
@@ -69,13 +69,13 @@ impl Default for SimulationConfig {
 #[derive(Debug, Clone, Serialize)]
 pub struct SimulationState {
     players: Vec<SimulationPlayerState>,
-    ball: Option<Vector<f32>>,
+    ball: Option<Vector<f64>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SimulationPlayerState {
-    position: Vector2<f32>,
-    orientation: f32,
+    position: Vector2<f64>,
+    orientation: f64,
 }
 
 #[derive(Debug)]
@@ -91,9 +91,9 @@ struct Player {
     rigid_body_handle: RigidBodyHandle,
     _collider_handle: ColliderHandle,
     last_cmd_time: f64,
-    target_velocity: Vector<f32>,
-    target_ang_velocity: f32,
-    current_dribble_speed: f32,
+    target_velocity: Vector<f64>,
+    target_ang_velocity: f64,
+    current_dribble_speed: f64,
 }
 
 #[derive(Debug)]
@@ -232,7 +232,7 @@ impl Simulation {
         simulation
     }
 
-    fn add_wall(&mut self, x: f32, y: f32, width: f32, height: f32) {
+    fn add_wall(&mut self, x: f64, y: f64, width: f64, height: f64) {
         let wall_body = RigidBodyBuilder::fixed()
             .translation(Vector::new(x, y, 0.0))
             .build();
@@ -340,13 +340,13 @@ impl Simulation {
 
             // Convert to global frame
             let target_velocity =
-                Rotation::<f32>::new(Vector::z() * rigid_body.rotation().euler_angles().2)
+                Rotation::<f64>::new(Vector::z() * rigid_body.rotation().euler_angles().2)
                     * player.target_velocity;
 
             let vel_err = target_velocity - velocity;
             let new_vel = if vel_err.norm() > 10.0 {
                 let acc = (2.0 * vel_err).simd_clamp(-self.config.max_accel, self.config.max_accel);
-                velocity + acc * (dt as f32)
+                velocity + acc * (dt as f64)
             } else {
                 target_velocity
             };
@@ -358,7 +358,7 @@ impl Simulation {
             let delta = (target_ang_vel - ang_velocity).abs();
             let new_ang_vel = if delta > self.config.angular_velocity_treshold {
                 let dir = (target_ang_vel - ang_velocity).signum();
-                ang_velocity + (dir * self.config.max_ang_accel * (dt as f32))
+                ang_velocity + (dir * self.config.max_ang_accel * (dt as f64))
             } else {
                 target_ang_vel
             };
@@ -398,7 +398,7 @@ impl Simulation {
             }
         }
 
-        self.integration_parameters.dt = dt as f32;
+        self.integration_parameters.dt = dt as f64;
         self.physics_pipeline.step(
             &self.config.gravity,
             &self.integration_parameters,
@@ -430,9 +430,9 @@ impl Simulation {
             let orientation = rigid_body.rotation().euler_angles().2;
             let mut robot = SSL_DetectionRobot::new();
             robot.set_robot_id(player.id as u32);
-            robot.set_x(position.x);
-            robot.set_y(position.y);
-            robot.set_orientation(orientation);
+            robot.set_x(position.x as f32);
+            robot.set_y(position.y as f32);
+            robot.set_orientation(orientation as f32);
             robot.set_confidence(1.0);
             if player.is_own {
                 detection.robots_blue.push(robot);
@@ -446,9 +446,9 @@ impl Simulation {
             let mut ball_det = SSL_DetectionBall::new();
             let ball_body = self.rigid_body_set.get(ball._rigid_body_handle).unwrap();
             let ball_position = ball_body.position().translation.vector;
-            ball_det.set_x(ball_position.x);
-            ball_det.set_y(ball_position.y);
-            ball_det.set_z(ball_position.z);
+            ball_det.set_x(ball_position.x as f32);
+            ball_det.set_y(ball_position.y as f32);
+            ball_det.set_z(ball_position.z as f32);
             ball_det.set_confidence(1.0);
             detection.balls.push(ball_det);
         }
@@ -540,8 +540,8 @@ impl SimulationBuilder {
     pub fn add_own_player_with_id(
         mut self,
         id: u32,
-        position: Vector2<f32>,
-        orientation: f32,
+        position: Vector2<f64>,
+        orientation: f64,
     ) -> Self {
         self.add_player(id, true, position, orientation);
         self
@@ -550,26 +550,26 @@ impl SimulationBuilder {
     pub fn add_opp_player_with_id(
         mut self,
         id: u32,
-        position: Vector2<f32>,
-        orientation: f32,
+        position: Vector2<f64>,
+        orientation: f64,
     ) -> Self {
         self.add_player(id, false, position, orientation);
         self
     }
 
-    pub fn add_own_player(mut self, position: Vector2<f32>, orientation: f32) -> Self {
+    pub fn add_own_player(mut self, position: Vector2<f64>, orientation: f64) -> Self {
         self.add_player(self.last_own_id, true, position, orientation);
         self.last_own_id += 1;
         self
     }
 
-    pub fn add_opp_player(mut self, position: Vector2<f32>, orientation: f32) -> Self {
+    pub fn add_opp_player(mut self, position: Vector2<f64>, orientation: f64) -> Self {
         self.add_player(self.last_opp_id, false, position, orientation);
         self.last_opp_id += 1;
         self
     }
 
-    pub fn add_ball(mut self, position: Vector<f32>) -> Self {
+    pub fn add_ball(mut self, position: Vector<f64>) -> Self {
         let sim = &mut self.sim;
 
         let ball_body = RigidBodyBuilder::dynamic()
@@ -600,7 +600,7 @@ impl SimulationBuilder {
         self.sim
     }
 
-    fn add_player(&mut self, id: u32, is_own: bool, position: Vector2<f32>, orientation: f32) {
+    fn add_player(&mut self, id: u32, is_own: bool, position: Vector2<f64>, orientation: f64) {
         let sim = &mut self.sim;
 
         // Players have fixed z position - their bottom surface 1mm above the ground
@@ -615,7 +615,7 @@ impl SimulationBuilder {
             )
             .build();
         let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS)
-            .rotation(Vector::x() * std::f32::consts::FRAC_PI_2)
+            .rotation(Vector::x() * std::f64::consts::FRAC_PI_2)
             .restitution(0.0)
             .restitution_combine_rule(CoefficientCombineRule::Min)
             .build();
@@ -658,14 +658,14 @@ fn geometry(config: &FieldGeometry) -> SSL_WrapperPacket {
         let mut ssl_segment = SSL_FieldLineSegment::new();
         ssl_segment.set_name(line.name.clone());
         let mut p1 = dies_protos::ssl_vision_geometry::Vector2f::new();
-        p1.set_x(line.p1.x);
-        p1.set_y(line.p1.y);
+        p1.set_x(line.p1.x as f32);
+        p1.set_y(line.p1.y as f32);
         ssl_segment.p1 = Some(p1).into();
         let mut p2 = dies_protos::ssl_vision_geometry::Vector2f::new();
-        p2.set_x(line.p2.x);
-        p2.set_y(line.p2.y);
+        p2.set_x(line.p2.x as f32);
+        p2.set_y(line.p2.y as f32);
         ssl_segment.p2 = Some(p2).into();
-        ssl_segment.set_thickness(line.thickness);
+        ssl_segment.set_thickness(line.thickness as f32);
         field.field_lines.push(ssl_segment);
     }
 
@@ -673,13 +673,13 @@ fn geometry(config: &FieldGeometry) -> SSL_WrapperPacket {
         let mut ssl_arc = SSL_FieldCircularArc::new();
         ssl_arc.set_name(arc.name.clone());
         let mut center = dies_protos::ssl_vision_geometry::Vector2f::new();
-        center.set_x(arc.center.x);
-        center.set_y(arc.center.y);
+        center.set_x(arc.center.x as f32);
+        center.set_y(arc.center.y as f32);
         ssl_arc.center = Some(center).into();
-        ssl_arc.set_radius(arc.radius);
-        ssl_arc.set_a1(arc.a1);
-        ssl_arc.set_a2(arc.a2);
-        ssl_arc.set_thickness(arc.thickness);
+        ssl_arc.set_radius(arc.radius as f32);
+        ssl_arc.set_a1(arc.a1 as f32);
+        ssl_arc.set_a2(arc.a2 as f32);
+        ssl_arc.set_thickness(arc.thickness as f32);
         field.field_arcs.push(ssl_arc);
     }
 

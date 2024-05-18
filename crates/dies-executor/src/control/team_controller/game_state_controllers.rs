@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use std::{collections::HashMap, f32::consts::PI};
+use std::{collections::HashMap, f64::consts::PI};
 
 use dies_core::{GameState, WorldData};
 use nalgebra::Vector2;
@@ -35,8 +35,8 @@ pub enum PlayerStatus {
 
 pub struct KickOffController {
     pub(crate) assigned_player: Option<(u32, PlayerStatus)>,
-    pub(crate) pos_assigned: HashMap<u32, Vector2<f32>>,
-    pub(crate) step: f32,
+    pub(crate) pos_assigned: HashMap<u32, Vector2<f64>>,
+    pub(crate) step: f64,
 }
 
 impl KickOffController {
@@ -70,15 +70,15 @@ impl KickOffController {
             }
 
             // move our robot to our half of the field
-            let x_coord = (world_data.field_geom.clone().unwrap().field_length as f32) / 4.0;
+            let x_coord = (world_data.field_geom.clone().unwrap().field_length as f64) / 4.0;
             for player in world_data.own_players.iter() {
                 let id = player.id;
                 if !self.pos_assigned.contains_key(&id) {
                     let y_pos = match self.pos_assigned.len() % 2 {
-                        0 => ((self.pos_assigned.len() / 2) as f32) * self.step,
+                        0 => ((self.pos_assigned.len() / 2) as f64) * self.step,
                         1 => {
                             let offset: i32 = (self.pos_assigned.len() as i32 + 1) / 2;
-                            -(offset as f32) * self.step
+                            -(offset as f64) * self.step
                         }
                         _ => 0.0,
                     };
@@ -138,12 +138,12 @@ pub enum BallReplacementStatus {
 
 pub struct BallReplacementController {
     pub(crate) assigned_player: Option<(u32, BallReplacementStatus)>,
-    pub(crate) assigned_pos: Option<Vector2<f32>>,
-    pub(crate) play_dir_x: f32,
+    pub(crate) assigned_pos: Option<Vector2<f64>>,
+    pub(crate) play_dir_x: f64,
 }
 
 impl BallReplacementController {
-    pub fn new(play_dir_x: f32) -> Self {
+    pub fn new(play_dir_x: f64) -> Self {
         Self {
             assigned_player: None,
             assigned_pos: None,
@@ -154,14 +154,14 @@ impl BallReplacementController {
     /// it will move to the ball and heading to it(before manipulation)
     /// then it starts dribbling and move to the designated position(after manipulation)
     /// then it stops the dribbler and the task is accomplished, afterwards the robot step back 0.05m
-    pub fn update(&mut self, world_data: &WorldData, designated_pos: Vector2<f32>) -> PlayerInputs {
+    pub fn update(&mut self, world_data: &WorldData, designated_pos: Vector2<f64>) -> PlayerInputs {
         self.assigned_pos = Some(designated_pos);
         let mut inputs = PlayerInputs::new();
         let ball_pos = world_data.ball.clone().unwrap().position;
 
         if self.assigned_player.is_none() {
             //assign the nearest player to the ball
-            let mut min_distance = f32::MAX;
+            let mut min_distance = f64::MAX;
             let mut nearest_player = None;
             for player in &world_data.own_players {
                 let distance = (player.position - ball_pos.xy()).norm();
@@ -256,8 +256,8 @@ pub enum PenaltyKickStatus {
 
 pub struct PenaltyKickController {
     pub(crate) assigned_player: Option<(u32, PenaltyKickStatus)>,
-    pub(crate) pos_assigned: HashMap<u32, Vector2<f32>>,
-    pub(crate) kick_angle: Option<f32>,
+    pub(crate) pos_assigned: HashMap<u32, Vector2<f64>>,
+    pub(crate) kick_angle: Option<f64>,
 }
 
 impl PenaltyKickController {
@@ -271,10 +271,10 @@ impl PenaltyKickController {
 
     /// generate a location to go based on an existing assigned locations
     /// TODO: collision avoidance
-    pub fn generate_position(&self, x_range: Vector2<f32>) -> Vector2<f32> {
+    pub fn generate_position(&self, x_range: Vector2<f64>) -> Vector2<f64> {
         // get all the assigned xs and all the assigned ys
-        let mut xs: Vec<f32> = [x_range.x, x_range.y].to_vec();
-        let mut ys: Vec<f32> = [-3000.0, 3000.0].to_vec();
+        let mut xs: Vec<f64> = [x_range.x, x_range.y].to_vec();
+        let mut ys: Vec<f64> = [-3000.0, 3000.0].to_vec();
         for (_, pos) in &self.pos_assigned {
             xs.push(pos.x);
             ys.push(pos.y);

@@ -11,7 +11,7 @@ use crate::filter::Kalman;
 pub struct BallTracker {
     /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
     /// converting coordinates.
-    play_dir_x: f32,
+    play_dir_x: f64,
     /// Whether the tracker has been initialized (i.e. the ball has been detected at
     /// least twice)
     is_init: bool,
@@ -23,7 +23,7 @@ pub struct BallTracker {
 
 impl BallTracker {
     /// Create a new BallTracker.
-    pub fn new(play_dir_x: f32) -> BallTracker {
+    pub fn new(play_dir_x: f64) -> BallTracker {
         BallTracker {
             play_dir_x,
             is_init: false,
@@ -33,7 +33,7 @@ impl BallTracker {
     }
 
     /// Set the sign of the enemy goal's x coordinate in ssl-vision coordinates.
-    pub fn set_play_dir_x(&mut self, play_dir_x: f32) {
+    pub fn set_play_dir_x(&mut self, play_dir_x: f64) {
         if play_dir_x != self.play_dir_x {
             // Flip the x coordinate of the ball's position and velocity
             if let Some(last_data) = &mut self.last_data {
@@ -62,7 +62,7 @@ impl BallTracker {
                     !ball.has_confidence() || ball.confidence.unwrap() < 0.9,
                 )
             })
-            .collect::<Vec<(Vector3<f32>, bool)>>();
+            .collect::<Vec<(Vector3<f64>, bool)>>();
         if ball_measurements.is_empty() {
             return;
         }
@@ -103,14 +103,14 @@ impl BallTracker {
                 .update(pos_ov, current_time, is_noisy.clone());
             if z.is_some() {
                 let mut pos_v3 = Vector3::new(
-                    z.unwrap()[0] as f32,
-                    z.unwrap()[2] as f32,
-                    z.unwrap()[4] as f32,
+                    z.unwrap()[0] as f64,
+                    z.unwrap()[2] as f64,
+                    z.unwrap()[4] as f64,
                 );
                 let vel_v3 = Vector3::new(
-                    z.unwrap()[1] as f32,
-                    z.unwrap()[3] as f32,
-                    z.unwrap()[5] as f32,
+                    z.unwrap()[1] as f64,
+                    z.unwrap()[3] as f64,
+                    z.unwrap()[5] as f64,
                 );
                 if pos_v3.z < 0.0 {
                     pos_v3.z = 0.0;
