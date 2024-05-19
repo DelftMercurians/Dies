@@ -209,23 +209,44 @@ const App: React.FC = () => {
 
   return (
     <main className="cont">
-      <div className="sidebar" style={{ color: 'white' }}>
+      <div className="sidebar" style={{ color: "white" }}>
         <h3>Controls</h3>
         <ul>
-          <li>Use <strong>W,A,S,D</strong> to move the robot</li>
-          <li>Use <strong>Q,E</strong> to rotate the robot</li>
-          <li>Hold <strong>Space</strong> to use the dribbler</li>
-          <li>Press <strong>V</strong> to kick (not implemented yet, should also allow charging the kick + showing this)</li>
+          <li>
+            Use <strong>W,A,S,D</strong> to move the robot
+          </li>
+          <li>
+            Use <strong>Q,E</strong> to rotate the robot
+          </li>
+          <li>
+            Hold <strong>Space</strong> to use the dribbler
+          </li>
+          <li>
+            Press <strong>V</strong> to kick (not implemented yet, should also
+            allow charging the kick + showing this)
+          </li>
         </ul>
         <label>
           X-Axis:
-          <input type="range" min={-fieldH / 2} max={fieldH / 2} value={crossX} onChange={handleXChange} />
+          <input
+            type="range"
+            min={-fieldH / 2}
+            max={fieldH / 2}
+            value={crossX}
+            onChange={handleXChange}
+          />
           {crossX}
         </label>
         <br />
         <label>
           Y-Axis:
-          <input type="range" min={-fieldW / 2} max={fieldW / 2} value={crossY} onChange={handleYChange} />
+          <input
+            type="range"
+            min={-fieldW / 2}
+            max={fieldW / 2}
+            value={crossY}
+            onChange={handleYChange}
+          />
           {crossY}
         </label>
       </div>
@@ -254,16 +275,16 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
   };
 
   if (pressedKeys.has("w")) {
-    cmd.sy = 3;
+    cmd.sx = 2;
   }
   if (pressedKeys.has("s")) {
-    cmd.sy = -3;
+    cmd.sx = -2;
   }
   if (pressedKeys.has("a")) {
-    cmd.sx = 3;
+    cmd.sy = -2;
   }
   if (pressedKeys.has("d")) {
-    cmd.sx = -3;
+    cmd.sy = 2;
   }
   if (pressedKeys.has("q")) {
     cmd.w = 3;

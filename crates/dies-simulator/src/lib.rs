@@ -312,11 +312,11 @@ impl Simulation {
         for player in self.players.iter_mut() {
             let mut is_kicking = false;
             if let Some(command) = commands_to_exec.get(&player.id) {
-                // In the robot's local frame, +sy means forward, +sx means left and both are in m/s
+                // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
                 // Angular velocity is in rad/s and +w means counter-clockwise
                 // To make things easier, we swap the x and y velocities so that they
                 // correspond to the simulator's frame
-                player.target_velocity = Vector::new(command.sy, command.sx, 0.0) * 1000.0; // m/s to mm/s
+                player.target_velocity = Vector::new(command.sx, -command.sy, 0.0) * 1000.0; // m/s to mm/s
                 player.target_ang_velocity = command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
