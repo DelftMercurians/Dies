@@ -321,8 +321,6 @@ impl Simulation {
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
                 is_kicking = command.kick;
-
-                println!("Player position: {:?}", self.rigid_body_set.get(player.rigid_body_handle).unwrap().position().translation.vector);
             }
 
             let rigid_body = self

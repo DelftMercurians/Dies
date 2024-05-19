@@ -26,6 +26,10 @@ pub(crate) struct ServerState {
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum UiCommand {
     DirectPlayerCmd { cmd: PlayerCmd },
+    // ToDo
+    // select scenario
+    // start
+    // stop
 }
 
 pub async fn start(

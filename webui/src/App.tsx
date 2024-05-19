@@ -207,17 +207,33 @@ const App: React.FC = () => {
     ctx.stroke();
   }
 
+  const handleStartSimulation = () => {
+    // ToDo
+  };
+
+  const handleStopSimulation = () => {
+    // ToDo
+  };
+
+  const handleScenarioChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    // ToDo
+  };
+
   return (
     <main className="cont">
-      <div className="sidebar" style={{ color: 'white' }}>
-        
-        <h3>Controls</h3>
-        <ul>
-          <li>Use <strong>W,A,S,D</strong> to move the robot</li>
-          <li>Use <strong>Q,E</strong> to rotate the robot</li>
-          <li>Hold <strong>Space</strong> to use the dribbler</li>
-          <li>Press <strong>V</strong> to kick (not implemented yet, should also allow charging the kick + showing this)</li>
-        </ul>
+      <div className="sidebar">
+        <label>
+          Select Scenario:
+          <select onChange={handleScenarioChange}>
+            <option value="scenario1">Scenario 1</option>
+            <option value="scenario2">Scenario 2</option>
+          </select>
+        </label>
+        <label>
+          Simulation:
+          <button onClick={handleStartSimulation}>Start</button>
+          <button onClick={handleStopSimulation}>Stop</button>
+        </label>
         <label>
           X-Axis:
           <input type="range" min={-fieldW / 2} max={fieldW / 2} value={crossX} onChange={handleXChange} />
@@ -231,11 +247,17 @@ const App: React.FC = () => {
         </label>
       </div>
 
-      <div className="sidebar"></div>
-
       <canvas ref={canvasRef} width={1100} height={900} className="canvas" />
 
-      <div className="sidebar"></div>
+      <div className="sidebar">
+        <h3>Controls</h3>
+        <ul>
+          <li>Use <strong>W,A,S,D</strong> to move the robot</li>
+          <li>Use <strong>Q,E</strong> to rotate the robot</li>
+          <li>Hold <strong>Space</strong> to use the dribbler</li>
+          <li>Press <strong>V</strong> to kick (not implemented yet, should also allow charging the kick + showing this)</li>
+        </ul>
+      </div>
     </main>
   );
 };

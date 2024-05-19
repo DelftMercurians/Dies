@@ -41,6 +41,8 @@ pub async fn run(mut shutdown_rx: broadcast::Receiver<()>) -> Result<()> {
                 match cmd {
                     dies_webui::UiCommand::DirectPlayerCmd { cmd } => {
                         simulator.execute_cmd(cmd);
+                        // ToDo handle new commands
+                        // For changing scenario: re-start executor, like you do when you call a new simulation from the terminal
                     }
                 }
             }
