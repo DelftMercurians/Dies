@@ -121,8 +121,9 @@ impl Role for Receiver {
         
         //println!("ball velocity: {}", Vector2::new(ball_vel.x, ball_vel.y).norm());
         let ball_vel_norm = Vector2::new(ball_vel.x, ball_vel.y).norm();
-        if ball_vel_norm < 1.0 {
-            println!("[RECEIVER]: ball velocity is below 0.1");
+        let ball_vel_threshold = 80.0;
+        if ball_vel_norm < ball_vel_threshold {
+            println!("[RECEIVER]: ball velocity is below {}", ball_vel_threshold);
             target_pos = Vector2::new(ball_pos.x, ball_pos.y);
         } else {
             target_pos = self.find_intersection(_player_data, _world);
@@ -132,7 +133,7 @@ impl Role for Receiver {
         let target_angle = self.angle_to_ball(_player_data, _world);
         // print!("target_pos: {}", target_pos);
         input.with_position(target_pos);
-        // input.with_orientation(target_angle);
+        input.with_orientation(target_angle);
 
         input
     }
@@ -198,9 +199,9 @@ pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result
 
     // use Arc to share the state between the passer and the receiver
     let has_kicked_communication = Arc::new(AtomicBool::new(false));
-    strategy.add_role_with_id(PlayerId::new(14), Box::new(Receiver{has_passer_kicked: has_kicked_communication.clone()}));
+    strategy.add_role_with_id(RECEIVER_ID, Box::new(Receiver{has_passer_kicked: has_kicked_communication.clone()}));
     let timestamp_instant = tokio::time::Instant::now();
-    strategy.add_role_with_id(PlayerId::new(0), Box::new(Passer{timestamp: timestamp_instant, is_armed: false, has_kicked: has_kicked_communication.clone()}));
+    strategy.add_role_with_id(PASSER_ID, Box::new(Passer{timestamp: timestamp_instant, is_armed: false, has_kicked: has_kicked_communication.clone()}));
 
     let mut builder = Executor::builder();
     builder.with_world_config(WorldConfig {
