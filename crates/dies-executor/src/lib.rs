@@ -14,7 +14,7 @@ use tokio::sync::broadcast::{self, error::TryRecvError};
 
 mod control;
 mod gc_client;
-mod mpc;
+// mod mpc;
 pub mod strategy;
 
 use control::TeamController;

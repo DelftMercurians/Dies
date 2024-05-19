@@ -19,7 +19,7 @@ pub type Vector3 = nalgebra::Vector3<Scalar>;
 pub struct PlayerId(u32);
 
 impl PlayerId {
-    pub fn new(id: u32) -> Self {
+    pub const fn new(id: u32) -> Self {
         Self(id)
     }
 
