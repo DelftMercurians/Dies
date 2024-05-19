@@ -2,6 +2,10 @@ export type XY = [number, number];
 
 export type XYZ = [number, number, number];
 
+export interface SymScenario {
+  type: "Empty" | "SinglePlayerWithoutBall" | "SinglePlayer" | "TwoPlayers";
+}
+
 export interface PlayerCmd {
   id: number;
   /**
@@ -26,10 +30,11 @@ export interface PlayerCmd {
   kick: boolean;
 }
 
-export type UiCommand = {
-  type: "directPlayerCmd";
-  cmd: PlayerCmd;
-};
+export type UiCommand = 
+  | { type: "directPlayerCmd"; cmd: PlayerCmd }
+  | { type: "selectScenarioCmd"; scenario: SymScenario }
+  | { type: "startCmd" }
+  | { type: "stopCmd" };
 
 export interface BallData {
   timestamp: number;

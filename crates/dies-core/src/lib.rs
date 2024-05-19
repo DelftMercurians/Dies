@@ -94,3 +94,11 @@ pub struct PlayerFeedbackMsg {
     /// Capacitor voltage
     pub cap_v: f64,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+pub enum SymScenario {
+    Empty,
+    SinglePlayerWithoutBall,
+    SinglePlayer,
+    TwoPlayers
+}

@@ -2,7 +2,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use dies_core::PlayerCmd;
+use dies_core::{PlayerCmd, SymScenario};
 use dies_executor::WorldUpdate;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -26,10 +26,9 @@ pub(crate) struct ServerState {
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum UiCommand {
     DirectPlayerCmd { cmd: PlayerCmd },
-    // ToDo
-    // select scenario
-    // start
-    // stop
+    SelectScenarioCmd { scenario: SymScenario },
+    StartCmd,
+    StopCmd,
 }
 
 pub async fn start(

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { PlayerCmd, World, XY, XYZ } from "./types";
+import type { PlayerCmd, SymScenario, World, XY, XYZ } from "./types";
 import { useWebSocket } from "./client";
 
 const ROBOT_RADIUS = 0.14 * 1000;
@@ -208,15 +208,32 @@ const App: React.FC = () => {
   }
 
   const handleStartSimulation = () => {
-    // ToDo
+    sendCommand({ type: "startCmd" });
   };
 
   const handleStopSimulation = () => {
-    // ToDo
+    sendCommand({ type: "stopCmd" });
   };
 
   const handleScenarioChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    // ToDo
+    const scenario = e.target.value;
+    let selectedScenario: SymScenario;
+    switch (scenario) {
+      case "Empty":
+        selectedScenario = { type: "Empty" };
+        break;
+      case "SinglePlayerWithoutBall":
+        selectedScenario = { type: "SinglePlayerWithoutBall" };
+        break;
+      case "SinglePlayer":
+        selectedScenario = { type: "SinglePlayer" };
+        break;
+      case "TwoPlayers":
+        selectedScenario = { type: "TwoPlayers" };
+        break;
+      default:
+        throw new Error(`Unknown scenario: ${scenario}`);
+    }
   };
 
   return (
@@ -225,8 +242,10 @@ const App: React.FC = () => {
         <label>
           Select Scenario:
           <select onChange={handleScenarioChange}>
-            <option value="scenario1">Scenario 1</option>
-            <option value="scenario2">Scenario 2</option>
+            <option value="Empty">Empty</option>
+            <option value="SinglePlayerWithoutBall">SinglePlayerWithoutBall</option>
+            <option value="SinglePlayer">SinglePlayer</option>
+            <option value="TwoPlayers">TwoPlayers</option>
           </select>
         </label>
         <label>
