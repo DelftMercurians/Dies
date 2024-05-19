@@ -58,10 +58,9 @@ impl PlayerController {
     pub fn command(&mut self) -> PlayerCmd {
         let mut cmd = PlayerCmd {
             id: self.id,
-            // In the robot's local frame +sx means left, +sy means forward, so we
-            // need to swap the x and y components here.
-            sy: self.target_velocity.x / 1000.0, // Convert to m/s
-            sx: self.target_velocity.y / 1000.0, // Convert to m/s
+            // In the robot's local frame +sx means forward and +sy means right
+            sx: self.target_velocity.x / 1000.0, // Convert to m/s
+            sy: self.target_velocity.y / 1000.0, // Convert to m/s
             w: self.target_angular_velocity,
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
             arm: false,

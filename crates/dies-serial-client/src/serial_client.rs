@@ -1,10 +1,10 @@
-use std::{io::Write, time::Duration};
+use std::{collections::HashMap, io::Write, time::Duration};
 
 use anyhow::{Context, Result};
 use serialport::available_ports;
 use tokio::sync::{mpsc, oneshot};
 
-use dies_core::{PlayerCmd, PlayerFeedbackMsg};
+use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId};
 
 const MAX_MSG_FREQ: f64 = 60.0;
 const TIMEOUT: Duration = Duration::from_millis(20);
@@ -26,6 +26,8 @@ pub struct SerialClientConfig {
     port_name: String,
     /// The baud rate of the serial port. The default is 115200.
     baud_rate: u32,
+    /// Map of player IDs to robot ids
+    robot_id_map: HashMap<PlayerId, u32>,
 }
 
 impl SerialClientConfig {
@@ -33,7 +35,38 @@ impl SerialClientConfig {
         SerialClientConfig {
             port_name: port,
             baud_rate: 115200,
+            robot_id_map: HashMap::new(),
         }
+    }
+
+    pub fn new_with_id_map(port: String, robot_id_map: HashMap<PlayerId, u32>) -> Self {
+        SerialClientConfig {
+            port_name: port,
+            baud_rate: 115200,
+            robot_id_map,
+        }
+    }
+
+    pub fn set_robot_id_map_from_string(&mut self, map: &str) {
+        // Parse string "<id1>:<id1>;..."
+        self.robot_id_map = map
+            .split(';')
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                let mut parts = s.split(':');
+                let player_id = parts
+                    .next()
+                    .expect("Failed to parse player id")
+                    .parse::<u32>()
+                    .expect("Failed to parse player id");
+                let robot_id = parts
+                    .next()
+                    .expect("Failed to parse robot id")
+                    .parse::<u32>()
+                    .expect("Failed to parse robot id");
+                (PlayerId::new(player_id), robot_id)
+            })
+            .collect();
     }
 }
 
@@ -45,6 +78,7 @@ impl Default for SerialClientConfig {
             #[cfg(not(target_os = "windows"))]
             port_name: "/dev/ttyACM0".to_string(),
             baud_rate: 115200,
+            robot_id_map: HashMap::new(),
         }
     }
 }
@@ -60,6 +94,7 @@ impl SerialClient {
         let SerialClientConfig {
             port_name,
             baud_rate,
+            robot_id_map,
         } = config;
 
         let mut port = serialport::new(port_name, baud_rate)
@@ -94,6 +129,12 @@ impl SerialClient {
                             tracing::warn!("Message frequency too high, skipping message");
                             continue;
                         }
+
+                        let mut msg = msg;
+                        msg.id = robot_id_map
+                            .get(&msg.id)
+                            .map(|id| PlayerId::new(*id))
+                            .unwrap_or(msg.id);
 
                         let cmd = msg.to_string();
                         // Write to serial port with timeout
