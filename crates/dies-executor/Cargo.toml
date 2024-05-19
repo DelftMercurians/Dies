@@ -14,3 +14,4 @@ dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 tracing = "0.1.40"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 nalgebra = "0.32.5"
+optimization_engine = "0.9.0"
