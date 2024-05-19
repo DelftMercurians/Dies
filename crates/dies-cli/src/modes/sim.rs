@@ -110,7 +110,7 @@ impl Role for Receiver {
 
         // don't move until the passer kicks the ball
         if !self.has_passer_kicked.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Waiting for passer to kick the ball");
+            println!("[RECEIVER]: Waiting for passer to kick the ball");
             return input;
         }
         
@@ -122,7 +122,7 @@ impl Role for Receiver {
         //println!("ball velocity: {}", Vector2::new(ball_vel.x, ball_vel.y).norm());
         let ball_vel_norm = Vector2::new(ball_vel.x, ball_vel.y).norm();
         if ball_vel_norm < 1.0 {
-            println!("ball velocity is below 0.1");
+            println!("[RECEIVER]: ball velocity is below 0.1");
             target_pos = Vector2::new(ball_pos.x, ball_pos.y);
         } else {
             target_pos = self.find_intersection(_player_data, _world);
@@ -153,7 +153,7 @@ impl Role for Passer {
             self.timestamp = Instant::now();
             let kicker = dies_executor::KickerControlInput::Arm;
             
-            println!("Armed");
+            println!("[PASSER]:Armed");
             input.with_kicker(kicker);
 
             return input;
@@ -167,7 +167,7 @@ impl Role for Passer {
             let kicker = dies_executor::KickerControlInput::Kick;
             input.with_kicker(kicker);
             
-            println!("Kicked");
+            println!("[PASSER]: Kicked");
 
             return input
         } else if self.timestamp.elapsed().as_secs_f64() < 1.1 && self.has_kicked.load(std::sync::atomic::Ordering::Relaxed) {
@@ -178,7 +178,7 @@ impl Role for Passer {
             let kicker = dies_executor::KickerControlInput::Kick;
             input.with_kicker(kicker);
             
-            println!("Kicked");
+            println!("[PASSER]: Kicked2");
 
             return input
             
