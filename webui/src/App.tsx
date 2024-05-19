@@ -12,8 +12,19 @@ const App: React.FC = () => {
   const worldStateRef = useRef<World | null>(null);
   const [crossX, setCrossX] = useState(0); // State for the X position of the cross
   const [crossY, setCrossY] = useState(0); // State for the Y position of the cross
-  const fieldW = worldStateRef.current?.field_geom?.field_width! ?? 0;
-  const fieldH = worldStateRef.current?.field_geom?.field_length! ?? 0;
+  const fieldW = worldStateRef.current?.field_geom?.field_length! ?? 0;
+  const fieldH = worldStateRef.current?.field_geom?.field_width! ?? 0;
+  const canvasW = canvasRef.current?.width! - PADDING * 2;
+  const canvasH = canvasRef.current?.height! - PADDING * 2;
+
+  const convertCoords = (coords: XY | XYZ): XY => {
+    const [x, y] = coords;
+
+    return [
+      (x + fieldW / 2) * (canvasW / fieldW) + PADDING,
+      (-y + fieldH / 2) * (canvasH / fieldH) + PADDING,
+    ];
+  };
 
   const onUpdate = useCallback((world: World) => {
     worldStateRef.current = world;
@@ -77,15 +88,6 @@ const App: React.FC = () => {
         return Math.ceil(length * (width / fieldW));
       };
 
-      const convertCoords = (coords: XY | XYZ): XY => {
-        const [x, y] = coords;
-
-        return [
-          (x + fieldW / 2) * (width / fieldW) + PADDING,
-          (-y + fieldH / 2) * (height / fieldH) + PADDING,
-        ];
-      };
-
       ctx.fillStyle = "#00aa00";
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -99,6 +101,10 @@ const App: React.FC = () => {
         ctx.lineTo(x2, y2);
         ctx.stroke();
       });
+
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(PADDING, PADDING, canvasW, canvasH);
 
       const drawPlayer = (
         serverPos: XY,
@@ -189,13 +195,7 @@ const App: React.FC = () => {
   }
 
   function drawCross(ctx: CanvasRenderingContext2D, x: number, y: number) {
-    const canvas = canvasRef.current;
-    const width = canvas!.width - PADDING * 2;
-    const height = canvas!.height - PADDING * 2;
-    const fieldH = worldStateRef.current?.field_geom?.field_width ?? 0;
-    const fieldW = worldStateRef.current?.field_geom?.field_length ?? 0;
-    const crossCanvasX = ((crossX + fieldW / 2) / fieldW) * width + PADDING;
-    const crossCanvasY = ((-crossY + fieldH / 2) / fieldH) * height + PADDING;
+    const [crossCanvasX, crossCanvasY] = convertCoords([x, y]);
 
     const crossSize = 10; // Length of each arm of the cross
     ctx.strokeStyle = "red";
@@ -210,6 +210,7 @@ const App: React.FC = () => {
   return (
     <main className="cont">
       <div className="sidebar" style={{ color: 'white' }}>
+        
         <h3>Controls</h3>
         <ul>
           <li>Use <strong>W,A,S,D</strong> to move the robot</li>
@@ -219,20 +220,20 @@ const App: React.FC = () => {
         </ul>
         <label>
           X-Axis:
-          <input type="range" min={-fieldH / 2} max={fieldH / 2} value={crossX} onChange={handleXChange} />
+          <input type="range" min={-fieldW / 2} max={fieldW / 2} value={crossX} onChange={handleXChange} />
           {crossX}
         </label>
         <br />
         <label>
           Y-Axis:
-          <input type="range" min={-fieldW / 2} max={fieldW / 2} value={crossY} onChange={handleYChange} />
+          <input type="range" min={-fieldH / 2} max={fieldH / 2} value={crossY} onChange={handleYChange} />
           {crossY}
         </label>
       </div>
 
       <div className="sidebar"></div>
 
-      <canvas ref={canvasRef} width={840} height={600} className="canvas" />
+      <canvas ref={canvasRef} width={1100} height={900} className="canvas" />
 
       <div className="sidebar"></div>
     </main>

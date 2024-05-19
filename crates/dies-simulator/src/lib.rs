@@ -24,7 +24,7 @@ const FIELD_LENGTH: f64 = 11000.0;
 const FIELD_WIDTH: f64 = 9000.0;
 const GROUND_THICKNESS: f64 = 10.0;
 const WALL_HEIGHT: f64 = 1000.0;
-const WALL_THICKNESS: f64 = 100.0;
+const WALL_THICKNESS: f64 = 1.0;
 const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
 const GEOM_INTERVAL: f64 = 3.0;
 
@@ -153,8 +153,8 @@ impl Simulation {
     /// [`SimulationBuilder`] to create a new simulation and add players and a ball.
     pub fn new(config: SimulationConfig) -> Simulation {
         let geom_config = FieldGeometry {
-            field_length: 11000,
-            field_width: 9000,
+            field_length: FIELD_LENGTH as i32,
+            field_width: FIELD_WIDTH as i32,
             goal_width: 1000,
             goal_depth: 200,
             boundary_width: 200,
@@ -203,24 +203,24 @@ impl Simulation {
 
         simulation.add_wall(
             0.0,
-            FIELD_WIDTH / 2.0 + WALL_THICKNESS,
+            FIELD_WIDTH / 2.0,
             FIELD_LENGTH,
             WALL_THICKNESS,
         );
         simulation.add_wall(
             0.0,
-            -FIELD_WIDTH / 2.0 - WALL_THICKNESS,
+            -FIELD_WIDTH / 2.0,
             FIELD_LENGTH,
             WALL_THICKNESS,
         );
         simulation.add_wall(
-            FIELD_LENGTH / 2.0 + WALL_THICKNESS,
+            FIELD_LENGTH / 2.0,
             0.0,
             WALL_THICKNESS,
             FIELD_WIDTH,
         );
         simulation.add_wall(
-            -FIELD_LENGTH / 2.0 - WALL_THICKNESS,
+            -FIELD_LENGTH / 2.0,
             0.0,
             WALL_THICKNESS,
             FIELD_WIDTH,
@@ -321,6 +321,8 @@ impl Simulation {
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
                 is_kicking = command.kick;
+
+                println!("Player position: {:?}", self.rigid_body_set.get(player.rigid_body_handle).unwrap().position().translation.vector);
             }
 
             let rigid_body = self
