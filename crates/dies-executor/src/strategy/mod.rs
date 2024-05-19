@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use dies_core::{PlayerData, WorldData};
+use dies_core::{PlayerData, PlayerId, WorldData};
 
 use crate::control::{PlayerControlInput, PlayerInputs};
 
@@ -13,7 +13,7 @@ pub trait Role: Send {
 }
 
 pub struct AdHocStrategy {
-    roles: HashMap<u32, Box<dyn Role>>,
+    roles: HashMap<PlayerId, Box<dyn Role>>,
     unassigned_roles: Vec<Box<dyn Role>>,
 }
 
@@ -25,7 +25,7 @@ impl AdHocStrategy {
         }
     }
 
-    pub fn add_role_with_id(&mut self, id: u32, role: Box<dyn Role>) {
+    pub fn add_role_with_id(&mut self, id: PlayerId, role: Box<dyn Role>) {
         self.roles.insert(id, role);
     }
 

@@ -10,16 +10,17 @@ use dies_ssl_client::VisionClient;
 use dies_world::{WorldConfig, WorldTracker};
 use gc_client::GcClient;
 use strategy::Strategy;
-use tokio::sync::broadcast;
+use tokio::sync::broadcast::{self, error::TryRecvError};
 
 mod control;
 mod gc_client;
+mod mpc;
 pub mod strategy;
 
 use control::TeamController;
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 
-const CMD_INTERVAL: Duration = Duration::from_millis(1000 / 60);
+const CMD_INTERVAL: Duration = Duration::from_millis(1000 / 30);
 
 #[derive(Debug, Clone)]
 pub struct WorldUpdate {
@@ -58,7 +59,7 @@ impl Executor {
 
     /// Set the play direction for the executor. This is used to determine which side of
     /// the field the team is playing on.
-    pub fn set_play_dir_x(&mut self, opp_x_sign: f32) {
+    pub fn set_play_dir_x(&mut self, opp_x_sign: f64) {
         self.tracker.set_play_dir_x(opp_x_sign);
     }
 
@@ -87,11 +88,26 @@ impl Executor {
             Controller::DirectControl(ref mut rx) => {
                 let queue = {
                     let mut queue = Vec::new();
-                    while let Ok(cmd) = rx.try_recv() {
-                        queue.push(cmd);
+                    loop {
+                        match rx.try_recv() {
+                            Ok(cmd) => queue.push(cmd),
+                            Err(TryRecvError::Empty) => break,
+                            Err(TryRecvError::Closed) => {
+                                tracing::error!("Direct control channel closed");
+                                break;
+                            }
+                            Err(TryRecvError::Lagged(err)) => {
+                                tracing::warn!("Direct control channel lagging: {}", err);
+                            }
+                        }
                     }
                     queue
                 };
+
+                if queue.is_empty() {
+                    return queue;
+                }
+
                 // Merge commands with the same ID
                 let mut cmd_map = std::collections::HashMap::new();
                 for cmd in queue {
@@ -104,6 +120,7 @@ impl Executor {
                     entry.disarm = cmd.disarm;
                     entry.kick = cmd.kick;
                 }
+
                 cmd_map.values().cloned().collect()
             }
         }
@@ -212,7 +229,7 @@ impl Executor {
                 // }
                 _ = cmd_interval.tick() => {
                     for cmd in self.player_commands() {
-                        bs_client.send(cmd).await?;
+                        bs_client.send_no_wait(cmd);
                     }
                 }
             }

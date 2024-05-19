@@ -4,14 +4,20 @@ use axum::{
 };
 use dies_core::PlayerCmd;
 use dies_executor::WorldUpdate;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 use tower_http::services::ServeDir;
 
 use crate::routes;
 
+#[derive(Debug, Clone, Serialize)]
+pub struct UiSettings {
+    pub can_control: bool,
+}
+
 pub(crate) struct ServerState {
+    pub(crate) settings: UiSettings,
     pub(crate) world_state: watch::Receiver<Option<WorldUpdate>>,
     pub(crate) cmd_sender: broadcast::Sender<UiCommand>,
 }
@@ -23,12 +29,14 @@ pub enum UiCommand {
 }
 
 pub async fn start(
+    settings: UiSettings,
     mut update_rx: broadcast::Receiver<WorldUpdate>,
     ui_command_tx: broadcast::Sender<UiCommand>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
     let (inner_update_tx, inner_update_rx) = watch::channel(None);
     let state = Arc::new(ServerState {
+        settings,
         world_state: inner_update_rx,
         cmd_sender: ui_command_tx,
     });
@@ -54,6 +62,7 @@ pub async fn start(
         let shutdown_fut = async move {
             let _ = shutdown_rx2.recv().await;
         };
+        tracing::info!("Webui running at http://localhost:5555");
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_fut)
             .await

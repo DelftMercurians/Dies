@@ -1,5 +1,6 @@
 use anyhow::Result;
 use dies_executor::Executor;
+use dies_webui::UiSettings;
 use dies_world::WorldConfig;
 use tokio::sync::broadcast;
 
@@ -43,8 +44,9 @@ pub async fn run(args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<
     // Spawn webui
     let update_rx = executor.subscribe();
     let webui_shutdown_rx = stop_rx.resubscribe();
+    let settings = UiSettings { can_control: true };
     let webui_task = tokio::spawn(async move {
-        dies_webui::start(update_rx, ui_command_tx, webui_shutdown_rx).await
+        dies_webui::start(settings, update_rx, ui_command_tx, webui_shutdown_rx).await
     });
 
     executor.run_real_time(stop_rx).await?;

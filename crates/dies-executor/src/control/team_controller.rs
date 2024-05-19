@@ -6,13 +6,11 @@ use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
-use dies_core::GameState;
+use dies_core::{GameState, PlayerId};
 use dies_core::{PlayerCmd, WorldData};
 
-mod game_state_controllers;
-
 pub struct TeamController {
-    player_controllers: HashMap<u32, PlayerController>,
+    player_controllers: HashMap<PlayerId, PlayerController>,
     strategy: Box<dyn Strategy>,
 }
 

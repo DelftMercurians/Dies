@@ -2,11 +2,10 @@ use super::{
     pid::PID,
     player_input::{KickerControlInput, PlayerControlInput},
 };
-use dies_core::{PlayerCmd, PlayerData};
-use nalgebra::Vector2;
+use dies_core::{PlayerCmd, PlayerData, PlayerId, Vector2};
 
-const MISSING_FRAMES_THRESHOLD: u32 = 50;
-const MAX_DRIBBLE_SPEED: f32 = 100.0;
+const MISSING_FRAMES_THRESHOLD: usize = 50;
+const MAX_DRIBBLE_SPEED: f64 = 100.0;
 
 enum KickerState {
     Disarming,
@@ -15,26 +14,26 @@ enum KickerState {
 }
 
 pub struct PlayerController {
-    id: u32,
-    position_pid: PID<Vector2<f32>>,
-    heading_pid: PID<f32>,
-    last_pos: Vector2<f32>,
-    last_orientation: f32,
-    frame_missings: u32,
+    id: PlayerId,
+    position_pid: PID<Vector2>,
+    heading_pid: PID<f64>,
+    last_pos: Vector2,
+    last_orientation: f64,
+    frame_missings: usize,
 
     /// Output velocity \[mm/s\]
-    target_velocity: Vector2<f32>,
+    target_velocity: Vector2,
     /// Output angular velocity \[rad/s\]
-    target_angular_velocity: f32,
+    target_angular_velocity: f64,
     /// Kicker control
     kicker: KickerState,
     /// Dribble speed normalized to \[0, 1\]
-    dribble_speed: f32,
+    dribble_speed: f64,
 }
 
 impl PlayerController {
     /// Create a new player controller with the given ID.
-    pub fn new(id: u32) -> Self {
+    pub fn new(id: PlayerId) -> Self {
         let heading_pid = PID::new(2.0, 0.002, 0.0);
         Self {
             id,
@@ -51,7 +50,7 @@ impl PlayerController {
     }
 
     /// Get the ID of the player.
-    pub fn id(&self) -> u32 {
+    pub fn id(&self) -> PlayerId {
         self.id
     }
 
@@ -65,7 +64,9 @@ impl PlayerController {
             sx: self.target_velocity.y / 1000.0, // Convert to m/s
             w: self.target_angular_velocity,
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
-            ..Default::default()
+            arm: false,
+            disarm: false,
+            kick: false,
         };
 
         match self.kicker {
@@ -86,6 +87,7 @@ impl PlayerController {
     pub fn increment_frames_missings(&mut self) {
         self.frame_missings += 1;
         if self.frame_missings > MISSING_FRAMES_THRESHOLD {
+            tracing::warn!("Player {} has missing frames, stopping", self.id);
             self.target_velocity = Vector2::new(0.0, 0.0);
             self.target_angular_velocity = 0.0;
         }
@@ -131,7 +133,7 @@ impl PlayerController {
     }
 }
 
-fn rotate_vector(v: Vector2<f32>, angle: f32) -> Vector2<f32> {
+fn rotate_vector(v: Vector2, angle: f64) -> Vector2 {
     let rot = nalgebra::Rotation2::new(angle);
     rot * v
 }

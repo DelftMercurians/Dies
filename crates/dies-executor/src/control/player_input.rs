@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use nalgebra::Vector2;
+use dies_core::{PlayerId, Vector2};
 
 /// A collection of player inputs.
 pub struct PlayerInputs {
-    inputs: HashMap<u32, PlayerControlInput>,
+    inputs: HashMap<PlayerId, PlayerControlInput>,
 }
 
 impl PlayerInputs {
@@ -16,17 +16,17 @@ impl PlayerInputs {
     }
 
     /// Get an iterator over the player inputs.
-    pub fn iter(&self) -> impl Iterator<Item = (&u32, &PlayerControlInput)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&PlayerId, &PlayerControlInput)> {
         self.inputs.iter()
     }
 
     /// Get the mutable input for a player, creating a new one if it doesn't exist.
-    pub fn player_mut(&mut self, id: u32) -> &mut PlayerControlInput {
+    pub fn player_mut(&mut self, id: PlayerId) -> &mut PlayerControlInput {
         self.inputs.entry(id).or_insert(PlayerControlInput::new())
     }
 
     /// Get the input for a player, or an empty one if it doesn't exist.
-    pub fn player(&self, id: u32) -> PlayerControlInput {
+    pub fn player(&self, id: PlayerId) -> PlayerControlInput {
         self.inputs
             .get(&id)
             .cloned()
@@ -34,22 +34,22 @@ impl PlayerInputs {
     }
 
     /// Set the input for a player
-    pub fn insert(&mut self, id: u32, input: PlayerControlInput) {
+    pub fn insert(&mut self, id: PlayerId, input: PlayerControlInput) {
         self.inputs.insert(id, input);
     }
 }
 
 impl IntoIterator for PlayerInputs {
-    type Item = (u32, PlayerControlInput);
-    type IntoIter = std::collections::hash_map::IntoIter<u32, PlayerControlInput>;
+    type Item = (PlayerId, PlayerControlInput);
+    type IntoIter = std::collections::hash_map::IntoIter<PlayerId, PlayerControlInput>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inputs.into_iter()
     }
 }
 
-impl FromIterator<(u32, PlayerControlInput)> for PlayerInputs {
-    fn from_iter<T: IntoIterator<Item = (u32, PlayerControlInput)>>(iter: T) -> Self {
+impl FromIterator<(PlayerId, PlayerControlInput)> for PlayerInputs {
+    fn from_iter<T: IntoIterator<Item = (PlayerId, PlayerControlInput)>>(iter: T) -> Self {
         Self {
             inputs: iter.into_iter().collect(),
         }
@@ -60,17 +60,17 @@ impl FromIterator<(u32, PlayerControlInput)> for PlayerInputs {
 #[derive(Debug, Clone, Default)]
 pub struct PlayerControlInput {
     /// Target position. If `None`, the player will just follow the given velocity
-    pub position: Option<Vector2<f32>>,
+    pub position: Option<Vector2>,
     /// Target velocity (in global frame). This is added to the output of the position
     /// controller.
-    pub velocity: Vector2<f32>,
+    pub velocity: Vector2,
     /// Target orientation. If `None` the player will just follow the given angula
     /// velocity
-    pub orientation: Option<f32>,
+    pub orientation: Option<f64>,
     /// Target angular velocity. This is added to the output of the controller.
-    pub angular_velocity: f32,
+    pub angular_velocity: f64,
     /// Dribbler speed normalised to [0, 1]
-    pub dribbling_speed: f32,
+    pub dribbling_speed: f64,
     /// Kicker control input
     pub kicker: KickerControlInput,
 }
@@ -82,19 +82,19 @@ impl PlayerControlInput {
     }
 
     /// Set the target position of the player.
-    pub fn with_position(&mut self, pos: Vector2<f32>) -> &mut Self {
+    pub fn with_position(&mut self, pos: Vector2) -> &mut Self {
         self.position = Some(pos);
         self
     }
 
     /// Set the target heading of the player.
-    pub fn with_orientation(&mut self, orientation: f32) -> &mut Self {
+    pub fn with_orientation(&mut self, orientation: f64) -> &mut Self {
         self.orientation = Some(orientation);
         self
     }
 
     /// Set the dribbling speed of the player.
-    pub fn with_dribbling(&mut self, speed: f32) -> &mut Self {
+    pub fn with_dribbling(&mut self, speed: f64) -> &mut Self {
         self.dribbling_speed = speed;
         self
     }

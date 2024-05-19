@@ -1,7 +1,6 @@
-use nalgebra::{Vector2, Vector3};
 use serde::Serialize;
 
-use crate::FieldGeometry;
+use crate::{FieldGeometry, PlayerId, Vector2, Vector3};
 
 /// The game state, as reported by the referee.
 #[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
@@ -12,7 +11,7 @@ pub enum GameState {
     Timeout,
     Stop,
     PrepareKickoff,
-    BallReplacement(Vector2<f32>),
+    BallReplacement(Vector2),
     PreparePenalty,
     Kickoff,
     FreeKick,
@@ -28,9 +27,9 @@ pub struct BallData {
     /// seconds). This is the time that ssl-vision received the frame.
     pub timestamp: f64,
     /// Position of the ball filtered by us, in mm, in dies coordinates
-    pub position: Vector3<f32>,
+    pub position: Vector3,
     /// Velocity of the ball in mm/s, in dies coordinates
-    pub velocity: Vector3<f32>,
+    pub velocity: Vector3,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -49,18 +48,18 @@ pub struct PlayerData {
     /// seconds). This is the time that ssl-vision received the frame.
     pub timestamp: f64,
     /// The player's unique id
-    pub id: u32,
+    pub id: PlayerId,
     /// Unfiltered position as reported by vision
-    pub raw_position: Vector2<f32>,
+    pub raw_position: Vector2,
     /// Position of the player filtered by us in mm, in dies coordinates
-    pub position: Vector2<f32>,
+    pub position: Vector2,
     /// Velocity of the player in mm/s, in dies coordinates
-    pub velocity: Vector2<f32>,
+    pub velocity: Vector2,
     /// Orientation of the player, in radians, (`-pi`, `pi`), where `0` is the positive
     /// x direction, and `pi/2` is the positive y direction.
-    pub orientation: f32,
+    pub orientation: f64,
     /// Angular speed of the player (in rad/s)
-    pub angular_speed: f32,
+    pub angular_speed: f64,
 }
 
 /// A struct to store the world state from a single frame.

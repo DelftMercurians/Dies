@@ -1,8 +1,8 @@
 use crate::BallData;
 use dies_core::GameState;
-use dies_protos::ssl_gc_referee_message::referee::{Command};
-use nalgebra::Vector3;
-use nalgebra::Vector2;
+use dies_core::Vector2;
+use dies_core::Vector3;
+use dies_protos::ssl_gc_referee_message::referee::Command;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
@@ -11,7 +11,7 @@ pub struct GameStateTracker {
     prev_state: GameState,
     new_state_movement: GameState,
     new_state_timeout: GameState,
-    init_ball_pos: Vector3<f32>,
+    init_ball_pos: Vector3,
     start: Instant,
     timeout: u64,
     is_outdated: bool,
@@ -32,8 +32,8 @@ impl GameStateTracker {
             operator_is_blue: None,
         }
     }
-    
-    pub fn update(&mut self, command: &Command, pos: Option<Vector2<f32>>) -> GameState {
+
+    pub fn update(&mut self, command: &Command, pos: Option<Vector2>) -> GameState {
         self.game_state = match command {
             Command::HALT => GameState::Halt,
             Command::STOP => GameState::Stop,
@@ -80,21 +80,20 @@ impl GameStateTracker {
 
         //reset
         match self.game_state {
-            GameState::Halt | GameState::Stop | GameState::Timeout 
-            | GameState::Run => self.operator_is_blue = None, 
+            GameState::Halt | GameState::Stop | GameState::Timeout | GameState::Run => {
+                self.operator_is_blue = None
+            }
             _ => (),
         }
-        
+
         return self.game_state;
     }
 
-    
     pub fn get_operator_is_blue(&self) -> Option<bool> {
         self.operator_is_blue
     }
-    
-    
-    pub fn start_ball_movement_check(&mut self, ball_pos: Vector3<f32>, timeout: u64) {
+
+    pub fn start_ball_movement_check(&mut self, ball_pos: Vector3, timeout: u64) {
         if self.is_outdated == false {
             return;
         }
@@ -169,7 +168,10 @@ mod tests {
         tracker.update(&Command::TIMEOUT_BLUE, None);
         assert_eq!(tracker.get_game_state(), GameState::Timeout);
         tracker.update(&Command::BALL_PLACEMENT_BLUE, Some(Vector2::new(0.0, 0.0)));
-        assert_eq!(tracker.get_game_state(), GameState::BallReplacement(Vector2::new(0.0, 0.0)));
+        assert_eq!(
+            tracker.get_game_state(),
+            GameState::BallReplacement(Vector2::new(0.0, 0.0))
+        );
     }
 
     #[test]

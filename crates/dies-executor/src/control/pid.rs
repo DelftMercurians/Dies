@@ -3,9 +3,9 @@ use std::time::Instant;
 use super::variable::Variable;
 
 pub struct PID<T> {
-    kp: f32,
-    ki: f32,
-    kd: f32,
+    kp: f64,
+    ki: f64,
+    kd: f64,
     setpoint: Option<T>,
     integral: T,
     last_error: Option<T>,
@@ -16,7 +16,7 @@ impl<T> PID<T>
 where
     T: Variable,
 {
-    pub fn new(kp: f32, ki: f32, kd: f32) -> Self {
+    pub fn new(kp: f64, ki: f64, kd: f64) -> Self {
         Self {
             kp,
             ki,
@@ -35,7 +35,7 @@ where
     pub fn update(&mut self, input: T) -> T {
         if let Some(setpoint) = self.setpoint {
             let error = setpoint - input;
-            let dt = self.last_time.elapsed().as_secs_f32();
+            let dt = self.last_time.elapsed().as_secs_f64();
             self.last_time = Instant::now();
 
             self.integral += error * dt;
@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn test_pid_update_without_setpoint() {
-        let mut pid = PID::<f32>::new(1.0, 1.0, 1.0);
+        let mut pid = PID::<f64>::new(1.0, 1.0, 1.0);
 
         let output = pid.update(1.0);
 
@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn test_pid_update_with_setpoint() {
-        let mut pid = PID::<f32>::new(1.0, 1.0, 1.0);
+        let mut pid = PID::<f64>::new(1.0, 1.0, 1.0);
         pid.set_setpoint(2.0);
 
         let output = pid.update(1.0);
