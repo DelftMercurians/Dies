@@ -316,7 +316,7 @@ impl Simulation {
                 // Angular velocity is in rad/s and +w means counter-clockwise
                 // To make things easier, we swap the x and y velocities so that they
                 // correspond to the simulator's frame
-                player.target_velocity = Vector::new(command.sx, -command.sy, 0.0) * 1000.0; // m/s to mm/s
+                player.target_velocity = Vector::new(command.sx, command.sy, 0.0) * 1000.0; // m/s to mm/s
                 player.target_ang_velocity = command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;

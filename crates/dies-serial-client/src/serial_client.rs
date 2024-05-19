@@ -46,6 +46,28 @@ impl SerialClientConfig {
             robot_id_map,
         }
     }
+
+    pub fn set_robot_id_map_from_string(&mut self, map: &str) {
+        // Parse string "<id1>:<id1>;..."
+        self.robot_id_map = map
+            .split(';')
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                let mut parts = s.split(':');
+                let player_id = parts
+                    .next()
+                    .expect("Failed to parse player id")
+                    .parse::<u32>()
+                    .expect("Failed to parse player id");
+                let robot_id = parts
+                    .next()
+                    .expect("Failed to parse robot id")
+                    .parse::<u32>()
+                    .expect("Failed to parse robot id");
+                (PlayerId::new(player_id), robot_id)
+            })
+            .collect();
+    }
 }
 
 impl Default for SerialClientConfig {

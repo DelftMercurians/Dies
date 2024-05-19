@@ -60,8 +60,7 @@ impl PlayerController {
             id: self.id,
             // In the robot's local frame +sx means forward and +sy means right
             sx: self.target_velocity.x / 1000.0, // Convert to m/s
-            // We flip the y so the +sy is right
-            sy: -self.target_velocity.y / 1000.0, // Convert to m/s
+            sy: self.target_velocity.y / 1000.0, // Convert to m/s
             w: self.target_angular_velocity,
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
             arm: false,

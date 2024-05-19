@@ -43,7 +43,7 @@ const App: React.FC = () => {
 
       const cmd = createCmd(player.id, pressedKeys);
       sendCommand({ type: "directPlayerCmd", cmd });
-    }, 1 / 10);
+    }, 100);
 
     window.addEventListener("keydown", keydownHandler);
     window.addEventListener("keyup", keyupHandler);
@@ -275,16 +275,16 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
   };
 
   if (pressedKeys.has("w")) {
-    cmd.sx = 2;
+    cmd.sx = 0.5;
   }
   if (pressedKeys.has("s")) {
-    cmd.sx = -2;
+    cmd.sx = -0.5;
   }
   if (pressedKeys.has("a")) {
-    cmd.sy = -2;
+    cmd.sy = -0.5;
   }
   if (pressedKeys.has("d")) {
-    cmd.sy = 2;
+    cmd.sy = 0.5;
   }
   if (pressedKeys.has("q")) {
     cmd.w = 3;
@@ -293,7 +293,7 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
     cmd.w = -3;
   }
   if (pressedKeys.has(" ")) {
-    cmd.dribble_speed = 200;
+    cmd.dribble_speed = 10_000;
   }
   if (pressedKeys.has("v")) {
     cmd.kick = true;
