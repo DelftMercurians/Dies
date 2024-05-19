@@ -27,6 +27,12 @@ impl MpcConfig {
     }
 }
 
+pub struct MpcSolver {
+    config: MpcConfig,
+    num_players: usize,
+    cache: PANOCCache,
+}
+
 pub fn mpc(config: MpcConfig, targets: Vec<MpcTarget>, world: &WorldData) {
     let cost_f = |u: &[f64], c: &mut f64| -> Result<(), SolverError> {
         *c = cost(&config, &targets, world, u);
@@ -40,7 +46,7 @@ pub fn mpc(config: MpcConfig, targets: Vec<MpcTarget>, world: &WorldData) {
     let constraints = NoConstraints::new();
     let problem = Problem::new(&constraints, cost_df, cost_f);
 
-    let n = 50;
+    let n = config.timesteps() * 3 * world.own_players.len();
     let lbfgs_memory = 10;
     let tolerance = 1e-6;
     let max_iters = 200;
