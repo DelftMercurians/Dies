@@ -10,10 +10,14 @@ use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_webui::UiSettings;
 use dies_world::WorldConfig;
 use nalgebra::{Vector2, Vector3};
-use tokio::sync::broadcast;
+use tokio::{sync::broadcast, time::Instant};
 use dies_core::PlayerId;
 
-struct Passer;
+struct Passer{
+    timestamp: Instant,
+    is_armed: bool,
+    has_kicked: bool,
+}
 struct Receiver;
 static PASSER_ID: PlayerId = PlayerId::new(0);
 static RECEIVER_ID: PlayerId = PlayerId::new(14);
@@ -117,24 +121,50 @@ impl Role for Receiver {
 }
 
 impl Role for Passer {
-    
+
+    // assume for now that we stand close to the ball
+    // and we can kick it after a few seconds
+
     fn update(&mut self, _player_data: &PlayerData, _world: &WorldData) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
-        let target_angle = self.angle_to_receiver(_player_data, _world);
-        input.with_orientation(target_angle);
+        // let target_angle = self.angle_to_receiver(_player_data, _world);
+        // input.with_orientation(target_angle);
+        if (self.timestamp.elapsed().as_secs() > 3) && !self.is_armed {
+            self.is_armed = true;
+            self.timestamp = Instant::now();
+            
+            let kicker = dies_executor::KickerControlInput::Arm;
+            
+            println!("Armed");
+            input.with_kicker(kicker);
+
+            return input;
+        } else if  self.timestamp.elapsed().as_secs() > 1 &&  self.is_armed && !self.has_kicked {
+            self.has_kicked = true;
+            self.timestamp = Instant::now();
+            
+            let kicker = dies_executor::KickerControlInput::Kick;
+            input.with_kicker(kicker);
+            
+            println!("Kicked");
+
+            return input
+        }
         input
+
     }
 }
 
 pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<()> {
     let simulator = SimulationBuilder::new(SimulationConfig::default())
         .add_own_player_with_id(14, Vector2::new(2600.0, -1000.0), 0.0)
-        .add_own_player_with_id(0, Vector2::new(-2500.0, 0.0), 0.0)
-        .add_ball(Vector3::new(3000.0, 0.0, 0.0))
+        .add_own_player_with_id(0, Vector2::new(-1300.0, 0.0), 0.0)
+        .add_ball(Vector3::new(-1000.0, 0.0, 0.0))
         .build();
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Receiver));
-    strategy.add_role(Box::new(Passer));
+    let timestamp_instant = tokio::time::Instant::now();
+    strategy.add_role(Box::new(Passer{timestamp: timestamp_instant, is_armed: false, has_kicked: false}));
 
     let mut builder = Executor::builder();
     builder.with_world_config(WorldConfig {
