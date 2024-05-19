@@ -22,7 +22,7 @@ struct Receiver{
     has_passer_kicked: Arc<AtomicBool>,
 }
 static PASSER_ID: PlayerId = PlayerId::new(0);
-static RECEIVER_ID: PlayerId = PlayerId::new(14);
+static RECEIVER_ID: PlayerId = PlayerId::new(5);
 
 
 impl Receiver {
@@ -103,7 +103,6 @@ impl Passer {
 }
 
 impl Role for Receiver {
-    // passer id = 15 using world data to get position of passer
 
     fn update(&mut self, _player_data: &PlayerData, _world: &WorldData) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
@@ -121,7 +120,7 @@ impl Role for Receiver {
         
         //println!("ball velocity: {}", Vector2::new(ball_vel.x, ball_vel.y).norm());
         let ball_vel_norm = Vector2::new(ball_vel.x, ball_vel.y).norm();
-        let ball_vel_threshold = 80.0;
+        let ball_vel_threshold = 90.0;
         if ball_vel_norm < ball_vel_threshold {
             println!("[RECEIVER]: ball velocity is below {}", ball_vel_threshold);
             target_pos = Vector2::new(ball_pos.x, ball_pos.y);
@@ -191,8 +190,8 @@ impl Role for Passer {
 
 pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<()> {
     let simulator = SimulationBuilder::new(SimulationConfig::default())
-        .add_own_player_with_id(14, Vector2::new(2600.0, -1000.0), 0.0)
-        .add_own_player_with_id(0, Vector2::new(-1245.0, 0.0), 0.0)
+        .add_own_player_with_id(RECEIVER_ID.as_u32(), Vector2::new(2600.0, -1000.0), 0.0)
+        .add_own_player_with_id(PASSER_ID.as_u32(), Vector2::new(-1245.0, 0.0), 0.0)
         .add_ball(Vector3::new(-1000.0, 0.0, 0.0))
         .build();
     let mut strategy = AdHocStrategy::new();
