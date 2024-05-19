@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::{atomic::AtomicBool, Arc}, time::Duration};
 
 use anyhow::Result;
 use dies_core::{PlayerData, WorldData};
@@ -16,9 +16,11 @@ use dies_core::PlayerId;
 struct Passer{
     timestamp: Instant,
     is_armed: bool,
-    has_kicked: bool,
+    has_kicked: Arc<AtomicBool>,
 }
-struct Receiver;
+struct Receiver{
+    has_passer_kicked: Arc<AtomicBool>,
+}
 static PASSER_ID: PlayerId = PlayerId::new(0);
 static RECEIVER_ID: PlayerId = PlayerId::new(14);
 
@@ -58,13 +60,8 @@ impl Receiver {
         let denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
 
         if denominator == 0.0 {
-            // println!("denominator is 0");
+            println!("denominator is 0");
             return receiver_pos;
-        }
-
-        if ball_vel.norm() == 0.0 {
-            // println!("ball velocity is 0");
-            return Vector2::new(x1, x2);
         }
 
         let t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denominator;
@@ -110,11 +107,32 @@ impl Role for Receiver {
 
     fn update(&mut self, _player_data: &PlayerData, _world: &WorldData) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
-        let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>> = self.find_intersection(_player_data, _world);
+
+        // don't move until the passer kicks the ball
+        if !self.has_passer_kicked.load(std::sync::atomic::Ordering::Relaxed) {
+            println!("Waiting for passer to kick the ball");
+            return input;
+        }
+        
+        let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>>;
+
+        let ball_pos = _world.ball.as_ref().unwrap().position;
+        let ball_vel = _world.ball.as_ref().unwrap().velocity;
+        
+        //println!("ball velocity: {}", Vector2::new(ball_vel.x, ball_vel.y).norm());
+        let ball_vel_norm = Vector2::new(ball_vel.x, ball_vel.y).norm();
+        if ball_vel_norm < 1.0 {
+            println!("ball velocity is below 0.1");
+            target_pos = Vector2::new(ball_pos.x, ball_pos.y);
+        } else {
+            target_pos = self.find_intersection(_player_data, _world);
+        }
+
+        // let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>> = self.find_intersection(_player_data, _world);
         let target_angle = self.angle_to_ball(_player_data, _world);
         // print!("target_pos: {}", target_pos);
         input.with_position(target_pos);
-        input.with_orientation(target_angle);
+        // input.with_orientation(target_angle);
 
         input
     }
@@ -129,18 +147,21 @@ impl Role for Passer {
         let mut input = PlayerControlInput::new();
         // let target_angle = self.angle_to_receiver(_player_data, _world);
         // input.with_orientation(target_angle);
+        
         if (self.timestamp.elapsed().as_secs() > 3) && !self.is_armed {
             self.is_armed = true;
             self.timestamp = Instant::now();
-            
             let kicker = dies_executor::KickerControlInput::Arm;
             
             println!("Armed");
             input.with_kicker(kicker);
 
             return input;
-        } else if  self.timestamp.elapsed().as_secs() > 1 &&  self.is_armed && !self.has_kicked {
-            self.has_kicked = true;
+        } else if  self.timestamp.elapsed().as_secs() > 1 &&  self.is_armed && !self.has_kicked.load(std::sync::atomic::Ordering::Relaxed) {
+            
+            input.with_dribbling(0.0);
+
+            self.has_kicked.store(true, std::sync::atomic::Ordering::Relaxed);
             self.timestamp = Instant::now();
             
             let kicker = dies_executor::KickerControlInput::Kick;
@@ -149,6 +170,18 @@ impl Role for Passer {
             println!("Kicked");
 
             return input
+        } else if self.timestamp.elapsed().as_secs_f64() < 1.1 && self.has_kicked.load(std::sync::atomic::Ordering::Relaxed) {
+            
+            // kick for 0.1 seconds
+            
+            input.with_dribbling(0.0);
+            let kicker = dies_executor::KickerControlInput::Kick;
+            input.with_kicker(kicker);
+            
+            println!("Kicked");
+
+            return input
+            
         }
         input
 
@@ -158,13 +191,16 @@ impl Role for Passer {
 pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<()> {
     let simulator = SimulationBuilder::new(SimulationConfig::default())
         .add_own_player_with_id(14, Vector2::new(2600.0, -1000.0), 0.0)
-        .add_own_player_with_id(0, Vector2::new(-1300.0, 0.0), 0.0)
+        .add_own_player_with_id(0, Vector2::new(-1245.0, 0.0), 0.0)
         .add_ball(Vector3::new(-1000.0, 0.0, 0.0))
         .build();
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(Receiver));
+
+    // use Arc to share the state between the passer and the receiver
+    let has_kicked_communication = Arc::new(AtomicBool::new(false));
+    strategy.add_role_with_id(PlayerId::new(14), Box::new(Receiver{has_passer_kicked: has_kicked_communication.clone()}));
     let timestamp_instant = tokio::time::Instant::now();
-    strategy.add_role(Box::new(Passer{timestamp: timestamp_instant, is_armed: false, has_kicked: false}));
+    strategy.add_role_with_id(PlayerId::new(0), Box::new(Passer{timestamp: timestamp_instant, is_armed: false, has_kicked: has_kicked_communication.clone()}));
 
     let mut builder = Executor::builder();
     builder.with_world_config(WorldConfig {
