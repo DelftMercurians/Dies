@@ -1,7 +1,6 @@
 use std::f64::consts::PI;
 
 use dies_core::Vector2;
-use nalgebra::DMatrix;
 
 #[derive(Debug, Clone)]
 pub enum PositionTarget {
@@ -14,49 +13,33 @@ pub enum PositionTarget {
 }
 
 impl PositionTarget {
-    pub fn cost(&self, position: Vector2, ball_position: Option<Vector2>) -> f64 {
+    fn target_position(&self, ball_position: Option<Vector2>) -> Vector2 {
         match self {
-            PositionTarget::ConstantPosition(target) => (position - target).norm(),
-            PositionTarget::BallPosition => {
-                if let Some(ball_position) = ball_position {
-                    (position - ball_position).norm()
-                } else {
-                    tracing::warn!("Cannot compute ball position target cost, no ball found");
-                    0.0
-                }
-            }
+            PositionTarget::ConstantPosition(target) => *target,
+            PositionTarget::BallPosition => ball_position.unwrap(),
             PositionTarget::Offset { target, offset } => {
-                let target_position = target.cost(position, ball_position);
-                target_position + offset.norm()
+                let target_position = target.target_position(ball_position);
+                target_position + offset
             }
         }
     }
 
-    pub fn cost_grad(&self, position: Vector2, ball_position: Option<Vector2>) -> Vector2 {
-        match self {
-            PositionTarget::ConstantPosition(target) => euclidian_dist_grad(&position, target),
-            PositionTarget::BallPosition => {
-                if let Some(ball_position) = ball_position {
-                    euclidian_dist_grad(&position, &ball_position)
-                } else {
-                    tracing::warn!(
-                        "Cannot compute ball position target cost gradient, no ball found"
-                    );
-                    Vector2::zeros()
-                }
-            }
-            PositionTarget::Offset { target, offset } => {
-                let target_grad = target.cost_grad(position, ball_position);
-                let with_offset = target_grad + offset;
-                euclidian_dist_grad(&position, &with_offset)
-            }
-        }
+    pub fn cost(&self, position: Vector2, ball_position: Option<Vector2>) -> f64 {
+        (position - self.target_position(ball_position)).norm()
+    }
+
+    pub fn cost_grad(&self, dt: f64, position: Vector2, ball_position: Option<Vector2>) -> Vector2 {
+        let target_position = self.target_position(ball_position);
+        // x[i] = x[i-1] + u[i] * dt
+        // -> grad wrt u[i] = dt * (x[i] - x_target) / ||x[i] - x_target||
+        dt * euclidian_dist_grad(&position, &target_position)
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum HeadingTarget {
     None,
+    /// Target heading in radians \[-pi, pi\]
     ConstantHeading(f64),
 }
 
@@ -65,19 +48,20 @@ impl HeadingTarget {
         match self {
             HeadingTarget::None => 0.0,
             HeadingTarget::ConstantHeading(target) => {
-                let diff = angle_diff(*target, heading);
+                let diff = angle_diff(heading, *target);
                 diff.abs()
             }
         }
     }
 
-    pub fn cost_grad(&self, heading: f64) -> f64 {
+    pub fn cost_grad(&self, dt: f64, heading: f64) -> f64 {
         match self {
             HeadingTarget::None => 0.0,
             HeadingTarget::ConstantHeading(target) => {
-                let diff = angle_diff(*target, heading);
-                // Normalize to (-1, 1)
-                diff / PI
+                let diff = angle_diff(heading, *target);
+                // phi[i] = phi[i-1] + u[i] * dt
+                // -> grad wrt u[i] = dt * sign(phi[i] - phi_target)
+                dt * diff.signum()
             }
         }
     }
@@ -98,13 +82,14 @@ impl MpcTarget {
 
     pub fn cost_grad(
         &self,
+        dt: f64,
         position: Vector2,
         heading: f64,
         ball_position: Option<Vector2>,
     ) -> (Vector2, f64) {
         (
-            self.position_target.cost_grad(position, ball_position),
-            self.heading_target.cost_grad(heading),
+            self.position_target.cost_grad(dt, position, ball_position),
+            self.heading_target.cost_grad(dt, heading),
         )
     }
 }
@@ -125,4 +110,135 @@ fn angle_diff(target: f64, phi: f64) -> f64 {
     // Reference from Python:
     //  (target - phi + np.pi) % (2 * np.pi) - np.pi
     (target - phi + PI).rem_euclid(2.0 * PI) - PI
+}
+
+#[cfg(test)]
+mod test {
+    use std::f64::consts::{FRAC_PI_2, PI};
+
+    use dies_core::Vector2;
+
+    use crate::mpc::{
+        state::{OwnPlayerState, State},
+        target::{HeadingTarget, PositionTarget},
+    };
+
+    #[test]
+    fn test_position_target_cost() {
+        let target = PositionTarget::ConstantPosition(Vector2::new(1.0, 1.0));
+        let position = Vector2::new(0.0, 0.0);
+        assert_eq!(target.cost(position, None), (2.0_f64).sqrt());
+
+        let target = PositionTarget::BallPosition;
+        let position = Vector2::new(0.0, 0.0);
+        let ball_position = Some(Vector2::new(1.0, 1.0));
+        assert_eq!(target.cost(position, ball_position), (2.0_f64).sqrt());
+
+        let target = PositionTarget::Offset {
+            target: Box::new(PositionTarget::ConstantPosition(Vector2::new(1.0, 1.0))),
+            offset: Vector2::new(1.0, 1.0),
+        };
+        let position = Vector2::new(0.0, 0.0);
+        assert_eq!(target.cost(position, None), (8.0_f64).sqrt());
+    }
+
+    #[test]
+    fn test_position_target_cost_grad() {
+        let dt = 0.1;
+        let target = PositionTarget::ConstantPosition(Vector2::new(1.0, 1.0));
+        let position = Vector2::new(0.0, 0.0);
+        assert_eq!(
+            target.cost_grad(dt, position, None),
+            Vector2::new(-1.0, -1.0) / (2.0_f64).sqrt() * dt
+        );
+
+        let target = PositionTarget::BallPosition;
+        let position = Vector2::new(0.0, 0.0);
+        let ball_position = Some(Vector2::new(1.0, 1.0));
+        assert_eq!(
+            target.cost_grad(dt, position, ball_position),
+            Vector2::new(-1.0, -1.0) / (2.0_f64).sqrt() * dt
+        );
+
+        let target = PositionTarget::Offset {
+            target: Box::new(PositionTarget::ConstantPosition(Vector2::new(1.0, 1.0))),
+            offset: Vector2::new(1.0, 1.0),
+        };
+        let position = Vector2::new(0.0, 0.0);
+        assert_eq!(
+            target.cost_grad(dt, position, None),
+            Vector2::new(-2.0, -2.0) / (8.0_f64).sqrt() * dt
+        );
+    }
+
+    #[test]
+    fn test_grad_step_pos_target() {
+        // Test that making a step in the -grad direction decreases the cost
+        let dt = 0.1;
+        let state = State {
+            own_players: vec![OwnPlayerState {
+                position: Vector2::new(0.0, 0.0),
+                orientation: 0.0,
+            }],
+            opp_players: vec![],
+            ball: None,
+        };
+        let target = PositionTarget::ConstantPosition(Vector2::new(100.0, 0.0));
+
+        let cost1 = target.cost(state.own_players[0].position, None);
+        let grad = target.cost_grad(dt, state.own_players[0].position, None);
+        let step_size = 0.1;
+        let new_position = state.own_players[0].position - grad * step_size;
+        let cost2 = target.cost(new_position, None);
+
+        assert!(cost2 < cost1);
+    }
+
+    #[test]
+    fn test_grad_step_heading_target() {
+        // Test that making a step in the -grad direction decreases the cost
+        let dt = 0.1;
+        let state = State {
+            own_players: vec![OwnPlayerState {
+                position: Vector2::new(0.0, 0.0),
+                orientation: 0.0,
+            }],
+            opp_players: vec![],
+            ball: None,
+        };
+        let target = HeadingTarget::ConstantHeading(FRAC_PI_2);
+
+        let cost1 = target.cost(state.own_players[0].orientation);
+        let grad = target.cost_grad(dt, state.own_players[0].orientation);
+        let step_size = 0.01;
+        let new_orientation = state.own_players[0].orientation - grad * step_size;
+        let cost2 = target.cost(new_orientation);
+
+        assert!(cost2 < cost1);
+    }
+
+    #[test]
+    fn test_grad_step_heading_wraparound() {
+        // Test that making a step in the -grad direction decreases the cost
+        let dt = 0.1;
+        let state = State {
+            own_players: vec![OwnPlayerState {
+                position: Vector2::new(0.0, 0.0),
+                orientation: -PI,
+            }],
+            opp_players: vec![],
+            ball: None,
+        };
+        let target = HeadingTarget::ConstantHeading(PI - 0.1);
+
+        let cost1 = target.cost(state.own_players[0].orientation);
+        let grad = target.cost_grad(dt, state.own_players[0].orientation);
+        let step_size = 0.01;
+        let new_orientation = state.own_players[0].orientation - grad * step_size;
+        // Wrap new_orientation to (-PI, PI)
+        let new_orientation = (new_orientation + PI).rem_euclid(2.0 * PI) - PI;
+        let cost2 = target.cost(new_orientation);
+
+        assert!(cost2 < cost1);
+    }
 }

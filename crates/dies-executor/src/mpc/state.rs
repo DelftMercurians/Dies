@@ -1,64 +1,46 @@
-use dies_core::{BallData, PlayerData, Vector2, Vector3, WorldData};
-use nalgebra::{Dyn, Matrix1xX, Matrix2xX, MatrixView1xX, MatrixView2xX, U0, U2};
+use std::f64::consts::PI;
 
-use super::cost::ControlOutput;
+use dies_core::{BallData, PlayerData, Vector2, WorldData};
 
-pub struct OwnPlayersState {
-    pub positions: Matrix2xX<f64>,
-    pub orientations: Matrix1xX<f64>,
+use super::control_output::ControlOutputItem;
+
+pub struct OwnPlayerState {
+    pub position: Vector2,
+    pub orientation: f64,
 }
 
-impl OwnPlayersState {
-    pub fn new(data: &WorldData) -> Self {
-        let mut positions = Matrix2xX::zeros(data.own_players.len());
-        let mut orientations = Matrix1xX::zeros(data.own_players.len());
-        for (i, player) in data.own_players.iter().enumerate() {
-            positions[(0, i)] = player.position.x;
-            positions[(1, i)] = player.position.y;
-            orientations[(0, i)] = player.orientation;
-        }
-
+impl OwnPlayerState {
+    pub fn new(data: &PlayerData) -> Self {
         Self {
-            positions,
-            orientations,
+            position: data.position,
+            orientation: data.orientation,
         }
     }
 
-    pub fn step(
-        &mut self,
-        dt: f64,
-        velocites: MatrixView2xX<f64>,
-        angular_velocities: MatrixView1xX<f64>,
-    ) {
-        self.positions += velocites * dt;
-        self.orientations += angular_velocities * dt;
+    pub fn step(&mut self, dt: f64, control: &ControlOutputItem) {
+        self.position += control.velocity * dt;
+
+        let new_orientation = self.orientation + control.angular_velocity * dt;
+        // Wrap orientation to [-pi, pi]
+        self.orientation = (new_orientation + PI).rem_euclid(2.0 * PI) - PI;
     }
 }
 
-pub struct OppPlayersState {
-    pub positions: Matrix2xX<f64>,
-    pub velocities: Matrix2xX<f64>,
+pub struct OppPlayerState {
+    pub position: Vector2,
+    pub velocity: Vector2,
 }
 
-impl OppPlayersState {
-    pub fn new(data: &WorldData) -> Self {
-        let mut positions = Matrix2xX::zeros(data.opp_players.len());
-        let mut velocities = Matrix2xX::zeros(data.opp_players.len());
-        for (i, player) in data.opp_players.iter().enumerate() {
-            positions[(0, i)] = player.position.x;
-            positions[(1, i)] = player.position.y;
-            velocities[(0, i)] = player.velocity.x;
-            velocities[(1, i)] = player.velocity.y;
-        }
-
+impl OppPlayerState {
+    pub fn new(data: &PlayerData) -> Self {
         Self {
-            positions,
-            velocities,
+            position: data.position,
+            velocity: data.velocity,
         }
     }
 
     pub fn step(&mut self, dt: f64) {
-        self.positions += self.velocities.scale(dt);
+        self.position += self.velocity * dt;
     }
 }
 
@@ -81,40 +63,97 @@ impl BallState {
 }
 
 pub struct State {
-    pub own_players: OwnPlayersState,
-    pub opp_players: OppPlayersState,
+    pub own_players: Vec<OwnPlayerState>,
+    pub opp_players: Vec<OppPlayerState>,
     pub ball: Option<BallState>,
 }
 
 impl State {
     pub fn new(world: &WorldData) -> Self {
         Self {
-            own_players: OwnPlayersState::new(&world),
-            opp_players: OppPlayersState::new(&world),
+            own_players: world.own_players.iter().map(OwnPlayerState::new).collect(),
+            opp_players: world.opp_players.iter().map(OppPlayerState::new).collect(),
             ball: world.ball.as_ref().map(BallState::new),
         }
     }
 
-    pub fn position(&self, player_idx: usize) -> Vector2 {
-        self.own_players.positions.column(player_idx).into()
-    }
-
-    pub fn heading(&self, player_idx: usize) -> f64 {
-        self.own_players.orientations[player_idx]
-    }
-
     pub fn ball_position(&self) -> Option<Vector2> {
-        self.ball.as_ref().map(|b| b.position)
+        self.ball.as_ref().map(|ball| ball.position)
     }
 
-    pub fn step(
-        &mut self,
-        dt: f64,
-        velocities: MatrixView2xX<f64>,
-        angular_velocities: MatrixView1xX<f64>,
-    ) {
-        self.own_players.step(dt, velocities, angular_velocities);
-        self.opp_players.step(dt);
-        self.ball.as_mut().map(|ball| ball.step(dt));
+    pub fn step(&mut self, dt: f64, u: &Vec<ControlOutputItem>) {
+        for (player, control) in self.own_players.iter_mut().zip(u.iter()) {
+            player.step(dt, control);
+        }
+
+        for player in self.opp_players.iter_mut() {
+            player.step(dt);
+        }
+
+        if let Some(ball) = self.ball.as_mut() {
+            ball.step(dt);
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use dies_core::{PlayerId, Vector3};
+
+    #[test]
+    fn test_state() {
+        let player_data = vec![
+            PlayerData {
+                id: PlayerId::new(0),
+                timestamp: 0.0,
+                position: Vector2::new(0.0, 100.0),
+                raw_position: Vector2::new(0.0, 100.0),
+                velocity: Vector2::new(0.0, 0.0),
+                orientation: 0.0,
+                angular_speed: 0.0,
+            },
+            PlayerData {
+                id: PlayerId::new(1),
+                timestamp: 0.0,
+                position: Vector2::new(100.0, 0.0),
+                raw_position: Vector2::new(100.0, 0.0),
+                velocity: Vector2::new(0.0, 0.0),
+                orientation: 0.0,
+                angular_speed: 0.0,
+            },
+        ];
+        let ball_data = BallData {
+            position: Vector3::new(0.0, 0.0, 0.0),
+            velocity: Vector3::new(0.0, 0.0, 0.0),
+            timestamp: 0.0,
+        };
+        let world = WorldData {
+            own_players: player_data,
+            opp_players: vec![],
+            ball: Some(ball_data),
+            ..Default::default()
+        };
+
+        let mut state = State::new(&world);
+        assert_eq!(state.own_players.len(), 2);
+
+        let control = vec![
+            ControlOutputItem {
+                velocity: Vector2::new(10.0, 0.0),
+                angular_velocity: 0.0,
+            },
+            ControlOutputItem {
+                velocity: Vector2::new(0.0, 10.0),
+                angular_velocity: 0.0,
+            },
+        ];
+
+        state.step(0.1, &control);
+
+        assert_eq!(state.own_players[0].position, Vector2::new(1.0, 100.0));
+        assert_eq!(state.own_players[1].position, Vector2::new(100.0, 1.0));
+
+        assert_eq!(state.ball_position(), Some(Vector2::new(0.0, 0.0)));
     }
 }
