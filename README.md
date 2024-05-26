@@ -30,6 +30,21 @@ The following options are required:
 
 - `-m`: Mode: `sim` for simulation, `irl` for real robot. `irl-test` allows manual control of the robot over the web interface.
 
+## Crates
+
+Dies is split into several crates, each with a specific purpose:
+
+- ![`dies-core`](./crates/dies-core): Contains the most widely used types and traits. Should be kept slim.
+- ![`dies-executor`](./crates/dies-executor): Contains the `Executor`, `TeamController`, `PlayerController`, `Role`, and `Strategy` types.
+- ![`dies-serial-client`](./crates/dies-serial-client): Contains the `SerialClient` type.
+- ![`dies-ssl-client`](./crates/dies-ssl-client): Contains the `SSLClient` type.
+- ![`dies-protos`](./crates/dies-protos): Contains the protobuf definitions used for communication with the game controller and vision.
+- ![`dies-simulator`](./crates/dies-simulator): Contains the `Simulator` type, which can be used to replace the `SSLClient` and `SerialClient` with a simulator for testing.
+- ![`dies-world`](./crates/dies-world): Contains the `World` type, which is used to represent the state of the game world, as well as filters and processors for incoming data.
+- ![`dies-webui`](./crates/dies-webui): Contains the backend for the web interface, which can be used to monitor and control the AI. The frotend is in the `webui` directory.
+- ![`dies-cli`](./crates/dies-cli): Contains the command line interface for running the AI. This is the main entry point for the framework.
+
+
 ## Documentation
 
 See [http://docs.delftmercurians.nl/](http://docs.delftmercurians.nl/) for the latest documentation.
