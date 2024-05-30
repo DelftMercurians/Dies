@@ -30,6 +30,8 @@ The following options are required:
 
 - `-m`: Mode: `sim` for simulation, `irl` for real robot. `irl-test` allows manual control of the robot over the web interface.
 
+See [http://docs.delftmercurians.nl/](http://docs.delftmercurians.nl/) for the latest documentation.
+
 ## Crates
 
 Dies is split into several crates, each with a specific purpose:
@@ -43,8 +45,3 @@ Dies is split into several crates, each with a specific purpose:
 - ![`dies-world`](./crates/dies-world): Contains the `World` type, which is used to represent the state of the game world, as well as filters and processors for incoming data.
 - ![`dies-webui`](./crates/dies-webui): Contains the backend for the web interface, which can be used to monitor and control the AI. The frotend is in the `webui` directory.
 - ![`dies-cli`](./crates/dies-cli): Contains the command line interface for running the AI. This is the main entry point for the framework.
-
-
-## Documentation
-
-See [http://docs.delftmercurians.nl/](http://docs.delftmercurians.nl/) for the latest documentation.
