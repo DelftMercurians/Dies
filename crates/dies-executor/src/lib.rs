@@ -7,7 +7,6 @@ use dies_core::{
 };
 use dies_logger::{log_referee, log_vision};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
-use dies_serial_client::SerialClient;
 use dies_simulator::Simulation;
 use dies_ssl_client::VisionClient;
 use dies_world::{WorldConfig, WorldTracker};

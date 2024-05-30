@@ -16,7 +16,7 @@ anyhow = "1.0.75"
 chrono = "0.4.34"
 clap = { version = "4.5.1", features = ["derive", "string"] }
 dies-core = { version = "0.1.0", path = "../dies-core" }
-dies-serial-client = { version = "0.1.0", path = "../dies-serial-client" }
+dies-basestation-client = { version = "0.1.0", path = "../dies-basestation-client" }
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
 dirs = "5.0.1"
 log = "0.4.21"
