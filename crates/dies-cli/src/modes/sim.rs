@@ -23,6 +23,74 @@ struct Receiver{
 }
 static PASSER_ID: PlayerId = PlayerId::new(0);
 static RECEIVER_ID: PlayerId = PlayerId::new(5);
+static GOALKEEPER_ID: PlayerId = PlayerId::new(1);
+
+struct Goalkeeper{
+    has_passer_kicked: Arc<AtomicBool>,
+}
+
+
+impl Goalkeeper {
+
+    fn find_intersection(&self, _player_data: &PlayerData, _world: &WorldData) -> Vector2<f64> {
+        // Find the goalkeeper's position
+        let goalkeeper_pos = _world.own_players.iter().find(|p| p.id == GOALKEEPER_ID).unwrap().position;
+    
+        // Get the ball's current position and velocity
+        let ball_pos = _world.ball.as_ref().unwrap().position;
+        let ball_vel = _world.ball.as_ref().unwrap().velocity;
+    
+        // Calculate the second point based on the ball's trajectory
+        let second_point = ball_pos - ball_vel;
+    
+        // Coordinates of the ball's trajectory points
+        let x1 = ball_pos.x;
+        let y1 = ball_pos.y;
+        let x2 = second_point.x;
+        let y2 = second_point.y;
+    
+        // Vertical line's x-coordinate is the goalkeeper's x-coordinate
+        // Maybe it would be better to get a static value so that it doesn't deviate over time...
+        let x_vertical = goalkeeper_pos.x;
+    
+        // Handle the special case where the ball's trajectory is vertical
+        if x1 == x2 {
+            return Vector2::new(x_vertical, ball_pos.y);
+        }
+    
+        // Calculate the parameter t to find the y-coordinate at the intersection with the vertical line
+        let t = (x_vertical - x1) / (x2 - x1);
+        let py = y1 + t * (y2 - y1);
+    
+        // Get the goal width from the world data
+        let goal_width = _world.field_geom.as_ref().unwrap().goal_width as f64;
+        // let goal_width = 1000.0;
+        // print!("goal width: {}", goal_width);
+    
+        // Calculate the min and max y-coordinates the goalkeeper can move to, constrained by the goal width
+        let y_min = goalkeeper_pos.y - goal_width / 2.0;
+        let y_max = goalkeeper_pos.y + goal_width / 2.0;
+    
+        // Clamp the y-coordinate to ensure it stays within the goal width range
+        let py_clamped = py.max(y_min).min(y_max);
+    
+        // Return the clamped intersection point
+        return Vector2::new(x_vertical, py_clamped);
+    }
+
+    fn angle_to_ball(&self, _player_data: &PlayerData, _world: &WorldData) -> f64 {
+        // Angle needed to face the passer (using arc tangent)
+        let receiver_pos = _world.own_players.iter().find(|p| p.id == GOALKEEPER_ID).unwrap().position;
+        let ball_pos = _world.ball.as_ref().unwrap().position;
+        let dx = ball_pos.x - receiver_pos.x;
+        let dy = ball_pos.y - receiver_pos.y;
+        let angle = dy.atan2(dx);
+        // println!("angle: {}", angle);
+
+        dy.atan2(dx)
+    }
+    
+}
 
 
 impl Receiver {
@@ -102,43 +170,43 @@ impl Passer {
 
 }
 
-impl Role for Receiver {
+// impl Role for Receiver {
 
-    fn update(&mut self, _player_data: &PlayerData, _world: &WorldData) -> PlayerControlInput {
-        let mut input = PlayerControlInput::new();
+//     fn update(&mut self, _player_data: &PlayerData, _world: &WorldData) -> PlayerControlInput {
+//         let mut input = PlayerControlInput::new();
 
-        // don't move until the passer kicks the ball
-        if !self.has_passer_kicked.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("[RECEIVER]: Waiting for passer to kick the ball");
-            return input;
-        }
+//         // don't move until the passer kicks the ball
+//         if !self.has_passer_kicked.load(std::sync::atomic::Ordering::Relaxed) {
+//             println!("[RECEIVER]: Waiting for passer to kick the ball");
+//             return input;
+//         }
         
-        let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>>;
+//         let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>>;
 
-        let ball_pos = _world.ball.as_ref().unwrap().position;
-        let ball_vel = _world.ball.as_ref().unwrap().velocity;
+//         let ball_pos = _world.ball.as_ref().unwrap().position;
+//         let ball_vel = _world.ball.as_ref().unwrap().velocity;
         
-        //println!("ball velocity: {}", Vector2::new(ball_vel.x, ball_vel.y).norm());
-        let ball_vel_norm = Vector2::new(ball_vel.x, ball_vel.y).norm();
-        let ball_vel_threshold = 90.0;
-        if ball_vel_norm < ball_vel_threshold {
-            println!("[RECEIVER]: ball velocity is below {}", ball_vel_threshold);
-            target_pos = Vector2::new(ball_pos.x, ball_pos.y);
-        } else {
-            target_pos = self.find_intersection(_player_data, _world);
-        }
+//         //println!("ball velocity: {}", Vector2::new(ball_vel.x, ball_vel.y).norm());
+//         let ball_vel_norm = Vector2::new(ball_vel.x, ball_vel.y).norm();
+//         let ball_vel_threshold = 90.0;
+//         if ball_vel_norm < ball_vel_threshold {
+//             println!("[RECEIVER]: ball velocity is below {}", ball_vel_threshold);
+//             target_pos = Vector2::new(ball_pos.x, ball_pos.y);
+//         } else {
+//             target_pos = self.find_intersection(_player_data, _world);
+//         }
 
-        let target_pos = Vector2::new(0.0,0.0);
-        // let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>> = self.find_intersection(_player_data, _world);
-        let target_angle = self.angle_to_ball(_player_data, _world);
-        print!("target_pos: {}", target_pos);
+//         let target_pos = Vector2::new(0.0,0.0);
+//         // let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>> = self.find_intersection(_player_data, _world);
+//         let target_angle = self.angle_to_ball(_player_data, _world);
+//         print!("target_pos: {}", target_pos);
 
-        input.with_position(target_pos);
-        input.with_orientation(target_angle);
+//         input.with_position(target_pos);
+//         input.with_orientation(target_angle);
 
-        input
-    }
-}
+//         input
+//     }
+// }
 
 impl Role for Passer {
 
@@ -190,9 +258,33 @@ impl Role for Passer {
     }
 }
 
+impl Role for Goalkeeper {
+
+    fn update(&mut self, _player_data: &PlayerData, _world: &WorldData) -> PlayerControlInput {
+        let mut input = PlayerControlInput::new();
+
+        // don't move until the passer kicks the ball
+        if !self.has_passer_kicked.load(std::sync::atomic::Ordering::Relaxed) {
+            println!("[RECEIVER]: Waiting for passer to kick the ball");
+            return input;
+        }
+        
+        let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>>;
+        target_pos = self.find_intersection(_player_data, _world);
+
+        // let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>> = self.find_intersection(_player_data, _world);
+        let target_angle = self.angle_to_ball(_player_data, _world);
+
+        input.with_position(target_pos);
+        input.with_orientation(target_angle);
+
+        input
+    }
+}
+
 pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<()> {
     let simulator = SimulationBuilder::new(SimulationConfig::default())
-        .add_own_player_with_id(RECEIVER_ID.as_u32(), Vector2::new(2600.0, -1000.0), 0.0)
+        .add_own_player_with_id(GOALKEEPER_ID.as_u32(), Vector2::new(2600.0, -1000.0), 0.0)
         .add_own_player_with_id(PASSER_ID.as_u32(), Vector2::new(-510.0, 0.0), 0.0) // Position was -1245.0, 0.0
         .add_ball(Vector3::new(-265.0, 0.0, 0.0)) // Position before was -1000.0 0.0
         .build();
@@ -200,7 +292,7 @@ pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result
 
     // use Arc to share the state between the passer and the receiver
     let has_kicked_communication = Arc::new(AtomicBool::new(false));
-    strategy.add_role_with_id(RECEIVER_ID, Box::new(Receiver{has_passer_kicked: has_kicked_communication.clone()}));
+    strategy.add_role_with_id(GOALKEEPER_ID, Box::new(Goalkeeper{has_passer_kicked: has_kicked_communication.clone()}));
     let timestamp_instant = tokio::time::Instant::now();
     strategy.add_role_with_id(PASSER_ID, Box::new(Passer{timestamp: timestamp_instant, is_armed: false, has_kicked: has_kicked_communication.clone()}));
 
