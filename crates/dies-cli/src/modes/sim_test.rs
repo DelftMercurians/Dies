@@ -45,7 +45,6 @@ pub async fn run(mut shutdown_rx: broadcast::Receiver<()>) -> Result<()> {
                     dies_webui::UiCommand::SelectScenarioCmd { scenario } => {
                         // ToDo For changing scenario: re-start executor, like you do when you call a new simulation from the terminal
                         println!("Selecting scenario: {:?}", scenario);
-                        // ToDO
                     },
                     dies_webui::UiCommand::StartCmd => {
                         println!("Starting simulation");

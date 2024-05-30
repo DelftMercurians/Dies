@@ -1,10 +1,13 @@
+import type { SymScenario } from "./App.tsx";
+
 export type XY = [number, number];
 
 export type XYZ = [number, number, number];
 
-export interface SymScenario {
-  type: "Empty" | "SinglePlayerWithoutBall" | "SinglePlayer" | "TwoPlayers";
-}
+export const DIRECT_PLAYER_CMD = "directPlayerCmd";
+export const SELECT_SCENARIO_CMD = "selectScenarioCmd";
+export const START_CMD = "startCmd";
+export const STOP_CMD = "stopCmd";
 
 export interface PlayerCmd {
   id: number;
@@ -31,10 +34,10 @@ export interface PlayerCmd {
 }
 
 export type UiCommand = 
-  | { type: "directPlayerCmd"; cmd: PlayerCmd }
-  | { type: "selectScenarioCmd"; scenario: SymScenario }
-  | { type: "startCmd" }
-  | { type: "stopCmd" };
+  | { type: typeof DIRECT_PLAYER_CMD; cmd: PlayerCmd }
+  | { type: typeof SELECT_SCENARIO_CMD; scenario: SymScenario }
+  | { type: typeof START_CMD }
+  | { type: typeof STOP_CMD };
 
 export interface BallData {
   timestamp: number;

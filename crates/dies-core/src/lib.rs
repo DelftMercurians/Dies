@@ -96,6 +96,7 @@ pub struct PlayerFeedbackMsg {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type")]
 pub enum SymScenario {
     Empty,
     SinglePlayerWithoutBall,

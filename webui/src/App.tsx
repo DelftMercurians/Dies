@@ -1,10 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { PlayerCmd, SymScenario, World, XY, XYZ } from "./types";
+import { type PlayerCmd, type World, type XY, type XYZ, SELECT_SCENARIO_CMD, DIRECT_PLAYER_CMD , START_CMD, STOP_CMD } from "./types";
 import { useWebSocket } from "./client";
 
 const ROBOT_RADIUS = 0.14 * 1000;
 const BALL_RADIUS = 0.043 * 1000;
 const PADDING = 20;
+
+const scenarios = ["Empty", "SinglePlayerWithoutBall", "SinglePlayer", "TwoPlayers"] as const;
+export interface SymScenario {
+  type: typeof scenarios[number];
+}
 
 const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -16,6 +21,7 @@ const App: React.FC = () => {
   const fieldH = worldStateRef.current?.field_geom?.field_width! ?? 0;
   const canvasW = canvasRef.current?.width! - PADDING * 2;
   const canvasH = canvasRef.current?.height! - PADDING * 2;
+  const [selectedScenario, setSelectedScenario] = useState<SymScenario>({ type: scenarios[0] });
 
   const convertCoords = (coords: XY | XYZ): XY => {
     const [x, y] = coords;
@@ -53,7 +59,7 @@ const App: React.FC = () => {
       }
 
       const cmd = createCmd(player.id, pressedKeys);
-      sendCommand({ type: "directPlayerCmd", cmd });
+      sendCommand({ type: DIRECT_PLAYER_CMD, cmd });
     }, 1 / 10);
 
     window.addEventListener("keydown", keydownHandler);
@@ -208,32 +214,18 @@ const App: React.FC = () => {
   }
 
   const handleStartSimulation = () => {
-    sendCommand({ type: "startCmd" });
+    sendCommand({ type: START_CMD });
   };
 
   const handleStopSimulation = () => {
-    sendCommand({ type: "stopCmd" });
+    sendCommand({ type: STOP_CMD });
   };
 
-  const handleScenarioChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const scenario = e.target.value;
-    let selectedScenario: SymScenario;
-    switch (scenario) {
-      case "Empty":
-        selectedScenario = { type: "Empty" };
-        break;
-      case "SinglePlayerWithoutBall":
-        selectedScenario = { type: "SinglePlayerWithoutBall" };
-        break;
-      case "SinglePlayer":
-        selectedScenario = { type: "SinglePlayer" };
-        break;
-      case "TwoPlayers":
-        selectedScenario = { type: "TwoPlayers" };
-        break;
-      default:
-        throw new Error(`Unknown scenario: ${scenario}`);
-    }
+  const handleScenarioChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const newType = event.target.value as SymScenario['type'];
+    const scenario: SymScenario = { type: newType };
+    setSelectedScenario(scenario);
+    sendCommand({ type: SELECT_SCENARIO_CMD, scenario });
   };
 
   return (
@@ -241,11 +233,12 @@ const App: React.FC = () => {
       <div className="sidebar">
         <label>
           Select Scenario:
-          <select onChange={handleScenarioChange}>
-            <option value="Empty">Empty</option>
-            <option value="SinglePlayerWithoutBall">SinglePlayerWithoutBall</option>
-            <option value="SinglePlayer">SinglePlayer</option>
-            <option value="TwoPlayers">TwoPlayers</option>
+          <select id="scenario-select" value={selectedScenario.type} onChange={handleScenarioChange}>
+            {scenarios.map((scenario) => (
+              <option key={scenario} value={scenario}>
+                {scenario}
+              </option>
+            ))}
           </select>
         </label>
         <label>
