@@ -41,9 +41,9 @@ impl std::fmt::Display for PlayerId {
 pub struct PlayerCmd {
     /// The robot's ID
     pub id: PlayerId,
-    /// The player's x (left-right, with `+` left) velocity \[m/s]
+    /// The player's x (forward-backward, with `+` forward) velocity \[m/s]
     pub sx: f64,
-    /// The player's y (forward-backward, with `+` forward) velocity \[m/s]
+    /// The player's y (left-right, with `+` right) velocity \[m/s]
     pub sy: f64,
     /// The player's angular velocity (with `+` counter-clockwise, `-` clockwise) \[rad/s]
     pub w: f64,

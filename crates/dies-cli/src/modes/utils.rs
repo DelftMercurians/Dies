@@ -68,7 +68,9 @@ pub async fn setup_vision_and_serial(args: &Args) -> Result<(VisionClient, Optio
         tracing::debug!("Serial port: {:?}", port);
 
         if let Some(port) = &port {
-            Some(SerialClient::new(SerialClientConfig::new(port.clone()))?)
+            let mut config = SerialClientConfig::new(port.clone());
+            config.set_robot_id_map_from_string(&args.robot_ids);
+            Some(SerialClient::new(config)?)
         } else {
             None
         }

@@ -264,10 +264,19 @@ const App: React.FC = () => {
       <div className="sidebar">
         <h3>Controls</h3>
         <ul>
-          <li>Use <strong>W,A,S,D</strong> to move the robot</li>
-          <li>Use <strong>Q,E</strong> to rotate the robot</li>
-          <li>Hold <strong>Space</strong> to use the dribbler</li>
-          <li>Press <strong>V</strong> to kick (not implemented yet, should also allow charging the kick + showing this)</li>
+          <li>
+            Use <strong>W,A,S,D</strong> to move the robot
+          </li>
+          <li>
+            Use <strong>Q,E</strong> to rotate the robot
+          </li>
+          <li>
+            Hold <strong>Space</strong> to use the dribbler
+          </li>
+          <li>
+            Press <strong>V</strong> to kick (not implemented yet, should also
+            allow charging the kick + showing this)
+          </li>
         </ul>
       </div>
     </main>
@@ -289,16 +298,16 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
   };
 
   if (pressedKeys.has("w")) {
-    cmd.sy = 3;
+    cmd.sx = 0.5;
   }
   if (pressedKeys.has("s")) {
-    cmd.sy = -3;
+    cmd.sx = -0.5;
   }
   if (pressedKeys.has("a")) {
-    cmd.sx = 3;
+    cmd.sy = -0.5;
   }
   if (pressedKeys.has("d")) {
-    cmd.sx = -3;
+    cmd.sy = 0.5;
   }
   if (pressedKeys.has("q")) {
     cmd.w = 3;
@@ -307,7 +316,7 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
     cmd.w = -3;
   }
   if (pressedKeys.has(" ")) {
-    cmd.dribble_speed = 200;
+    cmd.dribble_speed = 10_000;
   }
   if (pressedKeys.has("v")) {
     cmd.kick = true;

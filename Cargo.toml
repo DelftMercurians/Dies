@@ -1,5 +1,15 @@
 [workspace]
-members = ["crates/*"]
+members = [
+    "crates/dies-cli",
+    "crates/dies-core",
+    "crates/dies-executor",
+    "crates/dies-protos",
+    "crates/dies-serial-client",
+    "crates/dies-simulator",
+    "crates/dies-ssl-client",
+    "crates/dies-webui",
+    "crates/dies-world",
+]
 package.edition = "2021"
 resolver = "2"
 default-members = ["crates/dies-cli"]

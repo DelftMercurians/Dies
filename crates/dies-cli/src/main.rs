@@ -34,7 +34,7 @@ pub(crate) struct Args {
     #[clap(long, default_value = "false")]
     disable_python: bool,
 
-    #[clap(long, default_value = "14:3,5:2")]
+    #[clap(long, default_value = "")]
     robot_ids: String,
 
     #[clap(long, default_value = "dies-test-strat")]
