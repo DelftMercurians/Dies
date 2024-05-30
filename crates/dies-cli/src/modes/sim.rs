@@ -128,9 +128,11 @@ impl Role for Receiver {
             target_pos = self.find_intersection(_player_data, _world);
         }
 
+        let target_pos = Vector2::new(0.0,0.0);
         // let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>> = self.find_intersection(_player_data, _world);
         let target_angle = self.angle_to_ball(_player_data, _world);
-        // print!("target_pos: {}", target_pos);
+        print!("target_pos: {}", target_pos);
+
         input.with_position(target_pos);
         input.with_orientation(target_angle);
 
@@ -191,8 +193,8 @@ impl Role for Passer {
 pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<()> {
     let simulator = SimulationBuilder::new(SimulationConfig::default())
         .add_own_player_with_id(RECEIVER_ID.as_u32(), Vector2::new(2600.0, -1000.0), 0.0)
-        .add_own_player_with_id(PASSER_ID.as_u32(), Vector2::new(-1245.0, 0.0), 0.0)
-        .add_ball(Vector3::new(-1000.0, 0.0, 0.0))
+        .add_own_player_with_id(PASSER_ID.as_u32(), Vector2::new(-510.0, 0.0), 0.0) // Position was -1245.0, 0.0
+        .add_ball(Vector3::new(-265.0, 0.0, 0.0)) // Position before was -1000.0 0.0
         .build();
     let mut strategy = AdHocStrategy::new();
 
