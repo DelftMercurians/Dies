@@ -70,4 +70,6 @@ pub struct WorldData {
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameStateData,
+    // duration between the last two data generations
+    pub duration: f64,
 }
