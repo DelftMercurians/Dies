@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 
+use dies_basestation_client::BasestationClient;
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, WorldData};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
-use dies_serial_client::SerialClient;
 use dies_simulator::Simulation;
 use dies_ssl_client::VisionClient;
 use dies_world::{WorldConfig, WorldTracker};
@@ -44,7 +44,7 @@ pub struct Executor {
     controller: Controller,
     gc_client: GcClient,
     ssl_client: Option<VisionClient>,
-    bs_client: Option<SerialClient>,
+    bs_client: Option<BasestationClient>,
     simulator: Option<Simulation>,
     simulator_dt: Duration,
     update_broadcast: broadcast::Sender<WorldUpdate>,
@@ -267,7 +267,7 @@ pub struct ExecutorBuilder {
     direct_control_rx: Option<broadcast::Receiver<PlayerCmd>>,
     strategy: Option<Box<dyn Strategy>>,
     ssl_client: Option<VisionClient>,
-    bs_client: Option<SerialClient>,
+    bs_client: Option<BasestationClient>,
     simulator: Option<Simulation>,
     world_config: Option<WorldConfig>,
     simulator_dt: Duration,
@@ -289,7 +289,7 @@ impl ExecutorBuilder {
         self
     }
 
-    pub fn with_bs_client(&mut self, bs_client: SerialClient) -> &mut Self {
+    pub fn with_bs_client(&mut self, bs_client: BasestationClient) -> &mut Self {
         self.bs_client = Some(bs_client);
         self
     }

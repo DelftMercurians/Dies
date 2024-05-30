@@ -445,15 +445,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "dies-basestation-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dies-core",
+ "serialport",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "dies-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "dies-basestation-client",
  "dies-core",
  "dies-executor",
- "dies-serial-client",
  "dies-simulator",
  "dies-ssl-client",
  "dies-webui",
@@ -483,9 +494,9 @@ name = "dies-executor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dies-basestation-client",
  "dies-core",
  "dies-protos",
- "dies-serial-client",
  "dies-simulator",
  "dies-ssl-client",
  "dies-world",
@@ -501,17 +512,6 @@ dependencies = [
  "glob",
  "protobuf",
  "protobuf-codegen",
-]
-
-[[package]]
-name = "dies-serial-client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dies-core",
- "serialport",
- "tokio",
- "tracing",
 ]
 
 [[package]]

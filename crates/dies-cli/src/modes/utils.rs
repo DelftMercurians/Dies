@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
-use dies_serial_client::{list_serial_ports, SerialClient, SerialClientConfig};
+use dies_basestation_client::{list_serial_ports, BasestationClient, BasestationClientConfig};
 use dies_ssl_client::{VisionClient, VisionClientConfig};
 
 use crate::{Args, VisionType};
 
-pub async fn setup_vision_and_serial(args: &Args) -> Result<(VisionClient, Option<SerialClient>)> {
+pub async fn setup_vision_and_serial(
+    args: &Args,
+) -> Result<(VisionClient, Option<BasestationClient>)> {
     let vision_config = match args.vision {
         VisionType::Tcp => VisionClientConfig::Tcp {
             host: args.vision_addr.ip().to_string(),
@@ -68,9 +70,9 @@ pub async fn setup_vision_and_serial(args: &Args) -> Result<(VisionClient, Optio
         tracing::debug!("Serial port: {:?}", port);
 
         if let Some(port) = &port {
-            let mut config = SerialClientConfig::new(port.clone());
+            let mut config = BasestationClientConfig::new(port.clone());
             config.set_robot_id_map_from_string(&args.robot_ids);
-            Some(SerialClient::new(config)?)
+            Some(BasestationClient::new(config)?)
         } else {
             None
         }

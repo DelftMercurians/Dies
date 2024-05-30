@@ -10,7 +10,7 @@ const MAX_MSG_FREQ: f64 = 60.0;
 const TIMEOUT: Duration = Duration::from_millis(20);
 
 /// List available serial ports. The port names can be used to create a
-/// [`SerialClient`].
+/// [`BasestationClient`].
 pub fn list_serial_ports() -> Result<Vec<String>> {
     available_ports()
         .context("Failed to get available ports")?
@@ -20,7 +20,7 @@ pub fn list_serial_ports() -> Result<Vec<String>> {
 }
 
 /// Configuration for the serial client.
-pub struct SerialClientConfig {
+pub struct BasestationClientConfig {
     /// The name of the serial port. Use [`list_serial_ports`] to get a list of
     /// available ports.
     port_name: String,
@@ -30,9 +30,9 @@ pub struct SerialClientConfig {
     robot_id_map: HashMap<PlayerId, u32>,
 }
 
-impl SerialClientConfig {
+impl BasestationClientConfig {
     pub fn new(port: String) -> Self {
-        SerialClientConfig {
+        BasestationClientConfig {
             port_name: port,
             baud_rate: 115200,
             robot_id_map: HashMap::new(),
@@ -40,7 +40,7 @@ impl SerialClientConfig {
     }
 
     pub fn new_with_id_map(port: String, robot_id_map: HashMap<PlayerId, u32>) -> Self {
-        SerialClientConfig {
+        BasestationClientConfig {
             port_name: port,
             baud_rate: 115200,
             robot_id_map,
@@ -70,7 +70,7 @@ impl SerialClientConfig {
     }
 }
 
-impl Default for SerialClientConfig {
+impl Default for BasestationClientConfig {
     fn default() -> Self {
         Self {
             #[cfg(target_os = "windows")]
@@ -84,14 +84,14 @@ impl Default for SerialClientConfig {
 }
 
 /// Async client for the serial port.
-pub struct SerialClient {
+pub struct BasestationClient {
     writer_tx: mpsc::UnboundedSender<(PlayerCmd, oneshot::Sender<Result<()>>)>,
 }
 
-impl SerialClient {
-    /// Create a new `SerialClient`.
-    pub fn new(config: SerialClientConfig) -> Result<Self> {
-        let SerialClientConfig {
+impl BasestationClient {
+    /// Create a new `BasestationClient`.
+    pub fn new(config: BasestationClientConfig) -> Result<Self> {
+        let BasestationClientConfig {
             port_name,
             baud_rate,
             robot_id_map,
