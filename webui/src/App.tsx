@@ -21,7 +21,7 @@ const App: React.FC = () => {
   const fieldH = worldStateRef.current?.field_geom?.field_width! ?? 0;
   const canvasW = canvasRef.current?.width! - PADDING * 2;
   const canvasH = canvasRef.current?.height! - PADDING * 2;
-  const [selectedScenario, setSelectedScenario] = useState<SymScenario>({ type: scenarios[0] });
+  const [selectedScenario, setSelectedScenario] = useState<SymScenario>({ type: scenarios[2] });
 
   const convertCoords = (coords: XY | XYZ): XY => {
     const [x, y] = coords;
@@ -298,16 +298,16 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
   };
 
   if (pressedKeys.has("w")) {
-    cmd.sx = 0.5;
+    cmd.sx = 2;
   }
   if (pressedKeys.has("s")) {
-    cmd.sx = -0.5;
+    cmd.sx = -2;
   }
   if (pressedKeys.has("a")) {
-    cmd.sy = -0.5;
+    cmd.sy = 2;
   }
   if (pressedKeys.has("d")) {
-    cmd.sy = 0.5;
+    cmd.sy = -2;
   }
   if (pressedKeys.has("q")) {
     cmd.w = 3;
@@ -316,7 +316,7 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
     cmd.w = -3;
   }
   if (pressedKeys.has(" ")) {
-    cmd.dribble_speed = 10_000;
+    cmd.dribble_speed = 100;
   }
   if (pressedKeys.has("v")) {
     cmd.kick = true;
