@@ -1,5 +1,5 @@
 use super::{
-    pid::PID,
+    pid::{CircularPID, PID},
     player_input::{KickerControlInput, PlayerControlInput},
 };
 use dies_core::{PlayerCmd, PlayerData, PlayerId, Vector2};
@@ -16,7 +16,7 @@ enum KickerState {
 pub struct PlayerController {
     id: PlayerId,
     position_pid: PID<Vector2>,
-    heading_pid: PID<f64>,
+    heading_pid: CircularPID,
     last_pos: Vector2,
     last_orientation: f64,
     frame_missings: usize,
@@ -34,10 +34,11 @@ pub struct PlayerController {
 impl PlayerController {
     /// Create a new player controller with the given ID.
     pub fn new(id: PlayerId) -> Self {
-        let heading_pid = PID::new(2.0, 0.002, 0.0);
+        let heading_pid = CircularPID::new(2.0, 0.002, 0.0);
         Self {
             id,
-            position_pid: PID::new(0.2, 0.0, 0.0),
+            // position_pid: PID::new(0.2, 0.0, 0.0),
+            position_pid: PID::new(0.5, 0.0, 0.05),
             heading_pid,
             last_pos: Vector2::new(0.0, 0.0),
             last_orientation: 0.0,
