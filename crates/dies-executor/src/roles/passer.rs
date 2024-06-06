@@ -11,7 +11,7 @@ use crate::PlayerControlInput;
 pub(super) static PASSER_ID: PlayerId = PlayerId::new(0);
 pub(super) static RECEIVER_ID: PlayerId = PlayerId::new(5);
 
-struct Passer {
+pub struct Passer {
     timestamp: Instant,
     is_armed: bool,
     has_kicked: Arc<AtomicBool>,

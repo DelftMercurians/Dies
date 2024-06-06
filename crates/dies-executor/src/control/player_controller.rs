@@ -8,11 +8,10 @@ const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 100.0;
 
 // maximum acceleration unit: mm/s2
-const MAX_ACC: f64 = 500.0;
+const MAX_ACC: f64 = 5000.0;
 
 // maximum acceleration unit: radius/s2
-const MAX_ACC_RADIUS: f64 = 1.5;
-
+const MAX_ACC_RADIUS: f64 = 50.0;
 
 enum KickerState {
     Disarming,
@@ -45,7 +44,7 @@ impl PlayerController {
         Self {
             id,
             // position_pid: PID::new(0.2, 0.0, 0.0),
-            position_pid: PID::new(0.5, 0.0, 0.05),
+            position_pid: PID::new(0.8, 0.0, 0.05),
             heading_pid,
             last_pos: Vector2::new(0.0, 0.0),
             last_orientation: 0.0,
@@ -105,7 +104,7 @@ impl PlayerController {
         // Calculate velocity using the PID controller
         self.last_orientation = state.orientation;
         self.last_pos = state.position;
-        let last_vel:Vector2 = state.velocity;
+        let last_vel: Vector2 = state.velocity;
         if let Some(pos_target) = input.position {
             self.position_pid.set_setpoint(pos_target);
             let pos_u = self.position_pid.update(self.last_pos);
@@ -114,12 +113,12 @@ impl PlayerController {
         }
         let local_vel = rotate_vector(input.velocity, -self.last_orientation);
         self.target_velocity += local_vel;
-        
+
         // Cap the velocity
         let mut v_diff = self.target_velocity - last_vel;
         v_diff = v_diff.cap_magnitude(MAX_ACC * duration);
         self.target_velocity = last_vel + v_diff;
-        
+
         let last_ang_vel = state.angular_speed;
         if let Some(orientation) = input.orientation {
             self.heading_pid.set_setpoint(orientation);
@@ -130,10 +129,11 @@ impl PlayerController {
 
         // Cap the angular velocity
         let ang_diff = self.target_angular_velocity - last_ang_vel;
-        self.target_angular_velocity = last_ang_vel + ang_diff.max(-MAX_ACC_RADIUS * duration).min(MAX_ACC_RADIUS * duration);
-        
-        
-        
+        self.target_angular_velocity = last_ang_vel
+            + ang_diff
+                .max(-MAX_ACC_RADIUS * duration)
+                .min(MAX_ACC_RADIUS * duration);
+
         // Set dribbling speed
         self.dribble_speed = input.dribbling_speed;
 
