@@ -1,5 +1,6 @@
 use anyhow::Result;
 use dies_executor::{
+    roles::Goalkeeper,
     strategy::{AdHocStrategy, Role, Strategy},
     Executor, PlayerControlInput,
 };
@@ -10,25 +11,11 @@ use tokio::sync::broadcast;
 
 use super::utils::setup_vision_and_serial;
 
-struct TestRole;
-
-impl Role for TestRole {
-    fn update(
-        &mut self,
-        _player_data: &dies_core::PlayerData,
-        _world: &dies_core::WorldData,
-    ) -> dies_executor::PlayerControlInput {
-        let mut input = PlayerControlInput::new();
-        input.with_position(Vector2::zeros());
-        input
-    }
-}
-
 pub async fn run(args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<()> {
     let (vision, serial) = setup_vision_and_serial(&args).await?;
 
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole) as Box<dyn Role>);
+    strategy.add_role(Box::new(Goalkeeper::new()) as Box<dyn Role>);
 
     let mut builder = Executor::builder();
     builder.with_world_config(WorldConfig {

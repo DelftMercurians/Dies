@@ -72,17 +72,18 @@ const App: React.FC = () => {
       const { own_players, opp_players, ball } = worldState;
       const width = canvas.width - PADDING * 2;
       const height = canvas.height - PADDING * 2;
+      const displaySize = Math.min(width, height);
 
       const convertLength = (length: number): number => {
-        return Math.ceil(length * (width / fieldW));
+        return Math.ceil(length * (displaySize / fieldW));
       };
 
       const convertCoords = (coords: XY | XYZ): XY => {
         const [x, y] = coords;
 
         return [
-          (x + fieldW / 2) * (width / fieldW) + PADDING,
-          (-y + fieldH / 2) * (height / fieldH) + PADDING,
+          (x + fieldW / 2) * (displaySize / fieldW) + PADDING,
+          (-y + fieldH / 2) * (displaySize / fieldH) + PADDING,
         ];
       };
 
