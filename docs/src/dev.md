@@ -43,7 +43,7 @@ dies-core ------------> dies-cli
      +-  feature crates  -+
 ```
 
-There should be a few root crates (`dies-core`) which will rarely change, a number of specialized feature crates (`dies-ersim-env`, `dies-python-rt`, etc.), and a few small leaf crates which just glue things together (`dies-cli`).
+There should be a few root crates (`dies-core`) which will rarely change, a number of specialized feature crates (`dies-serial-client`, `dies-executor`, etc.), and a few small leaf crates which just glue things together (`dies-cli`).
 
 For an up-to-date list of crates, see the README.
 
