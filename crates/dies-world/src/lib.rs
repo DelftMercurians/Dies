@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use dies_protos::ssl_gc_referee_message::Referee;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
+use std::time::{Instant};
+
 mod ball;
 mod coord_utils;
 mod filter;
@@ -42,6 +44,7 @@ pub struct WorldTracker {
     game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
     last_timestamp: Option<f64>,
+    local_time: Option<Instant>,
 }
 
 impl WorldTracker {
@@ -56,6 +59,7 @@ impl WorldTracker {
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
             last_timestamp: None,
+            local_time: None
         }
     }
 
@@ -170,7 +174,13 @@ impl WorldTracker {
     ///
     /// Returns `None` if the world state is not initialized (see
     /// [`WorldTracker::is_init`]).
-    pub fn get(&self) -> WorldData {
+    pub fn get(&mut self) -> WorldData {
+        let duration:f64 = if let Some(local_time) = self.local_time {
+            local_time.elapsed().as_secs_f64()
+        } else {
+            0.0
+        };
+        self.local_time = Some(Instant::now());
         let field_geom = if let Some(v) = &self.field_geometry {
             Some(v)
         } else {
@@ -206,6 +216,7 @@ impl WorldTracker {
             ball: self.ball_tracker.get().cloned(),
             field_geom: field_geom.cloned(),
             current_game_state: game_state,
+            duration,
         }
     }
 }

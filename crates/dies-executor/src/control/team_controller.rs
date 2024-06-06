@@ -50,7 +50,7 @@ impl TeamController {
 
             if let Some(player_data) = player_data {
                 let input = inputs.player(controller.id());
-                controller.update(player_data, input);
+                controller.update(player_data, input, world_data.duration);
             } else {
                 controller.increment_frames_missings();
             }
