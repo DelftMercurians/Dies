@@ -23,7 +23,19 @@ pub async fn run(args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<
                             if let Err(err) = direct_cmd_tx.send(cmd) {
                                 tracing::error!("Failed to send direct command: {}", err);
                             }
-                        }
+                        },
+                        dies_webui::UiCommand::SelectScenarioCmd { scenario } => {
+                            println!("Selecting scenario: {:?}", scenario);
+                            // ToDO
+                        },
+                        dies_webui::UiCommand::StartCmd => {
+                            println!("Starting simulation");
+                            // ToDO
+                        },
+                        dies_webui::UiCommand::StopCmd => {
+                            println!("Stopping simulation");
+                            // ToDO
+                        },
                     }
                 }
                 else => break,

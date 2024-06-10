@@ -75,9 +75,14 @@ async fn handle_ws_conn(
 async fn handle_ws_msg(tx: broadcast::Sender<UiCommand>, msg: Message) {
     match msg {
         Message::Text(text) => {
-            if let Ok(cmd) = serde_json::from_str::<UiCommand>(&text) {
-                let _ = tx.send(cmd);
-            }
+            match serde_json::from_str::<UiCommand>(&text) {
+                Ok(cmd) => {
+                    let _ = tx.send(cmd);
+                }
+                Err(err) => {
+                    tracing::error!("Failed to parse command: {}", err);
+                }
+            } 
         }
         _ => {}
     }

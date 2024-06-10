@@ -1,10 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { PlayerCmd, World, XY, XYZ } from "./types";
+import { type PlayerCmd, type World, type XY, type XYZ, SELECT_SCENARIO_CMD, DIRECT_PLAYER_CMD , START_CMD, STOP_CMD } from "./types";
 import { useWebSocket } from "./client";
 
 const ROBOT_RADIUS = 0.14 * 1000;
 const BALL_RADIUS = 0.043 * 1000;
 const PADDING = 20;
+
+const scenarios = ["Empty", "SinglePlayerWithoutBall", "SinglePlayer", "TwoPlayers"] as const;
+export interface SymScenario {
+  type: typeof scenarios[number];
+}
 
 const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -12,8 +17,20 @@ const App: React.FC = () => {
   const worldStateRef = useRef<World | null>(null);
   const [crossX, setCrossX] = useState(0); // State for the X position of the cross
   const [crossY, setCrossY] = useState(0); // State for the Y position of the cross
-  const fieldW = worldStateRef.current?.field_geom?.field_width! ?? 0;
-  const fieldH = worldStateRef.current?.field_geom?.field_length! ?? 0;
+  const fieldW = worldStateRef.current?.field_geom?.field_length! ?? 0;
+  const fieldH = worldStateRef.current?.field_geom?.field_width! ?? 0;
+  const canvasW = canvasRef.current?.width! - PADDING * 2;
+  const canvasH = canvasRef.current?.height! - PADDING * 2;
+  const [selectedScenario, setSelectedScenario] = useState<SymScenario>({ type: scenarios[2] });
+
+  const convertCoords = (coords: XY | XYZ): XY => {
+    const [x, y] = coords;
+
+    return [
+      (x + fieldW / 2) * (canvasW / fieldW) + PADDING,
+      (-y + fieldH / 2) * (canvasH / fieldH) + PADDING,
+    ];
+  };
 
   const onUpdate = useCallback((world: World) => {
     worldStateRef.current = world;
@@ -42,8 +59,8 @@ const App: React.FC = () => {
       }
 
       const cmd = createCmd(player.id, pressedKeys);
-      sendCommand({ type: "directPlayerCmd", cmd });
-    }, 100);
+      sendCommand({ type: DIRECT_PLAYER_CMD, cmd });
+    }, 1 / 10);
 
     window.addEventListener("keydown", keydownHandler);
     window.addEventListener("keyup", keyupHandler);
@@ -77,15 +94,6 @@ const App: React.FC = () => {
         return Math.ceil(length * (width / fieldW));
       };
 
-      const convertCoords = (coords: XY | XYZ): XY => {
-        const [x, y] = coords;
-
-        return [
-          (x + fieldW / 2) * (width / fieldW) + PADDING,
-          (-y + fieldH / 2) * (height / fieldH) + PADDING,
-        ];
-      };
-
       ctx.fillStyle = "#00aa00";
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -99,6 +107,10 @@ const App: React.FC = () => {
         ctx.lineTo(x2, y2);
         ctx.stroke();
       });
+
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(PADDING, PADDING, canvasW, canvasH);
 
       const drawPlayer = (
         serverPos: XY,
@@ -189,13 +201,7 @@ const App: React.FC = () => {
   }
 
   function drawCross(ctx: CanvasRenderingContext2D, x: number, y: number) {
-    const canvas = canvasRef.current;
-    const width = canvas!.width - PADDING * 2;
-    const height = canvas!.height - PADDING * 2;
-    const fieldH = worldStateRef.current?.field_geom?.field_width ?? 0;
-    const fieldW = worldStateRef.current?.field_geom?.field_length ?? 0;
-    const crossCanvasX = ((crossX + fieldW / 2) / fieldW) * width + PADDING;
-    const crossCanvasY = ((-crossY + fieldH / 2) / fieldH) * height + PADDING;
+    const [crossCanvasX, crossCanvasY] = convertCoords([x, y]);
 
     const crossSize = 10; // Length of each arm of the cross
     ctx.strokeStyle = "red";
@@ -207,9 +213,55 @@ const App: React.FC = () => {
     ctx.stroke();
   }
 
+  const handleStartSimulation = () => {
+    sendCommand({ type: START_CMD });
+  };
+
+  const handleStopSimulation = () => {
+    sendCommand({ type: STOP_CMD });
+  };
+
+  const handleScenarioChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const newType = event.target.value as SymScenario['type'];
+    const scenario: SymScenario = { type: newType };
+    setSelectedScenario(scenario);
+    sendCommand({ type: SELECT_SCENARIO_CMD, scenario });
+  };
+
   return (
     <main className="cont">
-      <div className="sidebar" style={{ color: "white" }}>
+      <div className="sidebar">
+        <label>
+          Select Scenario:
+          <select id="scenario-select" value={selectedScenario.type} onChange={handleScenarioChange}>
+            {scenarios.map((scenario) => (
+              <option key={scenario} value={scenario}>
+                {scenario}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Simulation:
+          <button onClick={handleStartSimulation}>Start</button>
+          <button onClick={handleStopSimulation}>Stop</button>
+        </label>
+        <label>
+          X-Axis:
+          <input type="range" min={-fieldW / 2} max={fieldW / 2} value={crossX} onChange={handleXChange} />
+          {crossX}
+        </label>
+        <br />
+        <label>
+          Y-Axis:
+          <input type="range" min={-fieldH / 2} max={fieldH / 2} value={crossY} onChange={handleYChange} />
+          {crossY}
+        </label>
+      </div>
+
+      <canvas ref={canvasRef} width={1100} height={900} className="canvas" />
+
+      <div className="sidebar">
         <h3>Controls</h3>
         <ul>
           <li>
@@ -226,36 +278,7 @@ const App: React.FC = () => {
             allow charging the kick + showing this)
           </li>
         </ul>
-        <label>
-          X-Axis:
-          <input
-            type="range"
-            min={-fieldH / 2}
-            max={fieldH / 2}
-            value={crossX}
-            onChange={handleXChange}
-          />
-          {crossX}
-        </label>
-        <br />
-        <label>
-          Y-Axis:
-          <input
-            type="range"
-            min={-fieldW / 2}
-            max={fieldW / 2}
-            value={crossY}
-            onChange={handleYChange}
-          />
-          {crossY}
-        </label>
       </div>
-
-      <div className="sidebar"></div>
-
-      <canvas ref={canvasRef} width={840} height={600} className="canvas" />
-
-      <div className="sidebar"></div>
     </main>
   );
 };
@@ -275,16 +298,16 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
   };
 
   if (pressedKeys.has("w")) {
-    cmd.sx = 0.5;
+    cmd.sx = 2;
   }
   if (pressedKeys.has("s")) {
-    cmd.sx = -0.5;
+    cmd.sx = -2;
   }
   if (pressedKeys.has("a")) {
-    cmd.sy = -0.5;
+    cmd.sy = 2;
   }
   if (pressedKeys.has("d")) {
-    cmd.sy = 0.5;
+    cmd.sy = -2;
   }
   if (pressedKeys.has("q")) {
     cmd.w = 3;
@@ -293,7 +316,7 @@ function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
     cmd.w = -3;
   }
   if (pressedKeys.has(" ")) {
-    cmd.dribble_speed = 10_000;
+    cmd.dribble_speed = 100;
   }
   if (pressedKeys.has("v")) {
     cmd.kick = true;
