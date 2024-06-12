@@ -5,7 +5,7 @@ use dies_protos::{
 };
 use log::{Log, Metadata, Record};
 use protobuf::{EnumOrUnknown, Message};
-use std::{path::PathBuf, sync::OnceLock};
+use std::{path::PathBuf, sync::OnceLock, thread};
 use tokio::sync::mpsc;
 
 use crate::log_codec::{LogFileWriter, LogMessage};
@@ -55,7 +55,7 @@ impl AsyncProtobufLogger {
     pub fn init_with_env_logger(log_file_path: PathBuf, env: env_logger::Logger) -> &'static Self {
         PROTOBUF_LOGGER.get_or_init(|| {
             let (sender, receiver) = mpsc::unbounded_channel();
-            tokio::spawn(Self::run_worker(receiver, log_file_path));
+            thread::spawn(|| Self::run_worker(receiver, log_file_path));
             Self {
                 env_logger: env,
                 sender,
@@ -68,8 +68,8 @@ impl AsyncProtobufLogger {
         Self::init_with_env_logger(log_file_path, env_logger::Logger::from_default_env())
     }
 
-    async fn run_worker(mut receiver: mpsc::UnboundedReceiver<WorkerMsg>, log_file_path: PathBuf) {
-        let mut log_file = match LogFileWriter::open(log_file_path, LOG_VERSION).await {
+    fn run_worker(mut receiver: mpsc::UnboundedReceiver<WorkerMsg>, log_file_path: PathBuf) {
+        let mut log_file = match LogFileWriter::open(log_file_path, LOG_VERSION) {
             Ok(file) => file,
             Err(e) => {
                 eprintln!("Failed to open log file: {}", e);
@@ -77,20 +77,21 @@ impl AsyncProtobufLogger {
             }
         };
 
-        while let Some(msg) = receiver.recv().await {
+        while let Some(msg) = receiver.blocking_recv() {
             match msg {
                 WorkerMsg::Log(msg) => {
-                    if let Err(e) = log_file.write_log_message(&msg).await {
+                    if let Err(e) = log_file.write_log_message(&msg) {
                         eprintln!("Failed to write to log file: {}", e);
                     }
                 }
                 WorkerMsg::Flush => {
-                    if let Err(e) = log_file.flush().await {
+                    if let Err(e) = log_file.flush() {
                         eprintln!("Failed to flush log file: {}", e);
                     }
                 }
             }
-            let _ = log_file.flush().await;
+            // TODO: This is a temporary workaround to ensure that the log file is flushed
+            let _ = log_file.flush();
         }
     }
 }
