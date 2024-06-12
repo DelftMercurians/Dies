@@ -1,6 +1,5 @@
 use anyhow::Result;
 use dies_core::SymScenario;
-use dies_executor::WorldUpdate;
 use dies_simulator::{Simulation, SimulationBuilder, SimulationConfig};
 use dies_webui::UiSettings;
 use nalgebra::{Vector2, Vector3};

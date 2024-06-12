@@ -1,12 +1,48 @@
-use dies_protos::dies_log_line::{LogLevel, LogLine};
+use dies_protos::{
+    dies_log_line::{LogLevel, LogLine},
+    ssl_gc_referee_message::Referee,
+    ssl_vision_wrapper::SSL_WrapperPacket,
+};
 use log::{Log, Metadata, Record};
 use protobuf::{EnumOrUnknown, Message};
-use std::path::PathBuf;
-use tokio::{io::AsyncWriteExt, sync::mpsc};
+use std::{path::PathBuf, sync::OnceLock};
+use tokio::sync::mpsc;
+
+use crate::log_codec::{LogFileWriter, LogMessage};
+
+static PROTOBUF_LOGGER: OnceLock<AsyncProtobufLogger> = OnceLock::new();
+const LOG_VERSION: u32 = 1;
 
 enum WorkerMsg {
-    Log(Vec<u8>),
+    Log(LogMessage),
     Flush,
+}
+
+pub fn log_vision(data: &SSL_WrapperPacket) {
+    if let Some(logger) = PROTOBUF_LOGGER.get() {
+        logger
+            .sender
+            .send(WorkerMsg::Log(LogMessage::Vision(data.clone())))
+            .unwrap();
+    }
+}
+
+pub fn log_referee(data: &Referee) {
+    if let Some(logger) = PROTOBUF_LOGGER.get() {
+        logger
+            .sender
+            .send(WorkerMsg::Log(LogMessage::Referee(data.clone())))
+            .unwrap();
+    }
+}
+
+pub fn log_bytes(bytes: &[u8]) {
+    if let Some(logger) = PROTOBUF_LOGGER.get() {
+        logger
+            .sender
+            .send(WorkerMsg::Log(LogMessage::Bytes(bytes.to_vec())))
+            .unwrap();
+    }
 }
 
 pub struct AsyncProtobufLogger {
@@ -15,24 +51,31 @@ pub struct AsyncProtobufLogger {
 }
 
 impl AsyncProtobufLogger {
-    pub fn init(log_file_path: PathBuf) -> Self {
-        let (sender, receiver) = mpsc::unbounded_channel();
-        tokio::spawn(Self::run_worker(receiver, log_file_path));
-        Self {
-            env_logger: env_logger::Logger::from_default_env(),
-            sender,
-        }
+    /// Initialize the logger with the given log file path.
+    pub fn get_or_init(log_file_path: PathBuf) -> &'static Self {
+        PROTOBUF_LOGGER.get_or_init(|| {
+            let (sender, receiver) = mpsc::unbounded_channel();
+            tokio::spawn(Self::run_worker(receiver, log_file_path));
+            Self {
+                env_logger: env_logger::Logger::from_default_env(),
+                sender,
+            }
+        })
     }
 
     async fn run_worker(mut receiver: mpsc::UnboundedReceiver<WorkerMsg>, log_file_path: PathBuf) {
-        let log_file = tokio::fs::File::create(log_file_path)
-            .await
-            .expect("Failed to create log file");
-        let mut log_file = tokio::io::BufWriter::new(log_file);
+        let mut log_file = match LogFileWriter::open(log_file_path, LOG_VERSION).await {
+            Ok(file) => file,
+            Err(e) => {
+                eprintln!("Failed to open log file: {}", e);
+                return;
+            }
+        };
+
         while let Some(msg) = receiver.recv().await {
             match msg {
-                WorkerMsg::Log(buf) => {
-                    if let Err(e) = log_file.write_all(&buf).await {
+                WorkerMsg::Log(msg) => {
+                    if let Err(e) = log_file.write_log_message(&msg).await {
                         eprintln!("Failed to write to log file: {}", e);
                     }
                 }
@@ -82,7 +125,9 @@ impl Log for AsyncProtobufLogger {
         };
         let mut buf = Vec::new();
         log_line.write_to_vec(&mut buf).unwrap();
-        self.sender.send(WorkerMsg::Log(buf)).unwrap();
+        self.sender
+            .send(WorkerMsg::Log(LogMessage::DiesLog(log_line)))
+            .unwrap();
     }
 
     fn flush(&self) {
@@ -93,24 +138,35 @@ impl Log for AsyncProtobufLogger {
 
 #[cfg(test)]
 mod tests {
-    use std::future::Future;
+    use std::time::Duration;
 
-    #[test]
-    fn one_message() {
-        run_async_test(async {
-            let logger = super::AsyncProtobufLogger::init("./test.log".into());
-            log::set_boxed_logger(Box::new(logger)).unwrap();
-            log::set_max_level(log::LevelFilter::Trace);
-            
-            log::info!("testing!");
-        });
-    }
-    
-    fn run_async_test<F: Future>(f: F) {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(f);
+    use log::Log;
+    use tempfile::NamedTempFile;
+
+    use crate::{LogFile, LogMessage};
+
+    #[tokio::test]
+    async fn one_message() {
+        let temp = NamedTempFile::new().unwrap();
+        if temp.path().exists() {
+            std::fs::remove_file(temp.path()).unwrap();
+        }
+
+        let logger = super::AsyncProtobufLogger::get_or_init(temp.path().into());
+        log::set_logger(logger).unwrap();
+        log::set_max_level(log::LevelFilter::Trace);
+
+        log::info!("testing!");
+
+        // Wait for the log message to be written
+        logger.flush();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let logfile = LogFile::open(temp.path()).unwrap();
+        assert!(logfile.messages().len() == 1);
+        match &logfile.messages()[0] {
+            LogMessage::DiesLog(line) => assert_eq!(line.message, Some("testing!".into())),
+            _ => panic!("unexpected message type"),
+        }
     }
 }

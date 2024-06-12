@@ -9,6 +9,7 @@ members = [
     "crates/dies-ssl-client",
     "crates/dies-webui",
     "crates/dies-world",
+    "crates/dies-logger",
 ]
 package.edition = "2021"
 resolver = "2"

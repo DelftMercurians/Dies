@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use std::{io::Read, path::Path};
 use tokio::{
     fs::File,
-    io::AsyncWriteExt,
+    io::{AsyncWriteExt, BufWriter},
 };
 
 use dies_protos::{
@@ -10,10 +10,16 @@ use dies_protos::{
 };
 use protobuf::Message;
 
-enum LogMessage {
+// *GENERAL NOTE*: All log files use big-endian byte order for all integers.
+
+const LOG_FILE_HEADER: &str = "SSL_LOG_FILE";
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LogMessage {
     DiesLog(LogLine),
     Vision(SSL_WrapperPacket),
     Referee(Referee),
+    Bytes(Vec<u8>),
 }
 
 #[derive(Debug)]
@@ -39,7 +45,7 @@ impl LogFileMessageType {
 }
 
 pub struct LogFileWriter {
-    file: File,
+    writer: BufWriter<File>,
     buf: Vec<u8>,
 }
 
@@ -49,25 +55,27 @@ impl LogFileWriter {
     /// # Errors
     ///
     /// Returns an error if the file already exists or if an I/O error occurs.
-    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>, version: u32) -> Result<Self> {
         if path.as_ref().exists() {
             bail!("Log file already exists: {:?}", path.as_ref());
         }
 
         let file = File::create(path).await?;
         let mut writer = LogFileWriter {
-            file,
+            writer: BufWriter::new(file),
             buf: Vec::new(),
         };
-        writer.write_header().await?;
+        writer.write_header(version).await?;
         Ok(writer)
     }
 
-    async fn write_header(&mut self) -> Result<()> {
-        let header = "SSL_LOG_FILE".as_bytes();
-        let version = 1i32.to_be_bytes();
-        self.file.write_all(header).await?;
-        self.file.write_all(&version).await?;
+    async fn write_header(&mut self, version: u32) -> Result<()> {
+        let header = LOG_FILE_HEADER.as_bytes();
+        self.writer.write_all(header).await?;
+        self.writer
+            .write_all(&(version as i32).to_be_bytes())
+            .await?;
+        self.writer.flush().await?;
         Ok(())
     }
 
@@ -76,6 +84,7 @@ impl LogFileWriter {
             LogMessage::DiesLog(log_line) => self.write_log_line(&log_line).await,
             LogMessage::Vision(vision) => self.write_vision(&vision).await,
             LogMessage::Referee(referee) => self.write_referee(&referee).await,
+            LogMessage::Bytes(bytes) => self.write_bytes(&bytes).await,
         }
     }
 
@@ -99,33 +108,46 @@ impl LogFileWriter {
         self.write_message(LogFileMessageType::Blank).await
     }
 
+    /// Write a raw byte buffer to the log file.
+    pub async fn write_bytes(&mut self, bytes: &[u8]) -> Result<()> {
+        self.buf.clear();
+        self.buf.extend_from_slice(bytes);
+        self.write_message(LogFileMessageType::Blank).await
+    }
+
+    /// Flush the log file.
+    pub async fn flush(&mut self) -> Result<()> {
+        self.writer.flush().await?;
+        Ok(())
+    }
+
     async fn write_message(&mut self, message_type: LogFileMessageType) -> Result<()> {
         let receiver_timestamp = 0i64.to_be_bytes();
         let message_type = message_type as i32;
         let message_size = self.buf.len() as i32;
-        self.file.write_all(&receiver_timestamp).await?;
-        self.file.write_all(&message_type.to_be_bytes()).await?;
-        self.file.write_all(&message_size.to_be_bytes()).await?;
-        self.file.write_all(&self.buf).await?;
+        self.writer.write_all(&receiver_timestamp).await?;
+        self.writer.write_all(&message_type.to_be_bytes()).await?;
+        self.writer.write_all(&message_size.to_be_bytes()).await?;
+        self.writer.write_all(&self.buf).await?;
         Ok(())
     }
 }
 
-struct LogFile {
-    version: i32,
+pub struct LogFile {
+    version: u32,
     messages: Vec<LogMessage>,
 }
 
 impl LogFile {
-    fn read(mut source: impl Read) -> Result<Self> {
+    pub fn read(mut source: impl Read) -> Result<Self> {
         // Read header + version
-        let mut buf = [0u8; 12 + 4];
+        let mut buf = [0u8; 4 + LOG_FILE_HEADER.len()];
         source.read_exact(&mut buf)?;
         let file_type = String::from_utf8(buf[0..12].to_vec())?;
-        if file_type != "SSL_LOG_FILE" {
+        if file_type != LOG_FILE_HEADER {
             bail!("Invalid log file type: {}", file_type);
         }
-        let version = i32::from_be_bytes(buf[12..16].try_into()?);
+        let version = i32::from_be_bytes(buf[12..16].try_into()?) as u32;
         if version != 1 {
             bail!("Unsupported log file version: {}", version);
         }
@@ -134,7 +156,7 @@ impl LogFile {
         let mut messages = Vec::new();
         'msg_loop: loop {
             // Read message header
-            let mut buf = [0u8; 16];
+            let mut buf = [0u8; 8 + 4 + 4];
             match source.read_exact(&mut buf) {
                 Ok(_) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
@@ -147,11 +169,7 @@ impl LogFile {
 
             // Read message
             let mut message_buf = vec![0u8; message_size as usize];
-            match source.read_exact(&mut message_buf) {
-                Ok(_) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(e.into()),
-            }
+            source.read_exact(&mut message_buf)?;
 
             let message = match message_type {
                 LogFileMessageType::SSLVision2014 | LogFileMessageType::SSLVision2010 => {
@@ -174,18 +192,21 @@ impl LogFile {
                     };
                     LogMessage::Referee(referee)
                 }
-                _ => 'msg: {
-                    // Try to parse as LogLine, then Vision, then Referee
+                LogFileMessageType::Blank => {
                     if let Ok(log_line) = LogLine::parse_from_bytes(&message_buf) {
-                        break 'msg LogMessage::DiesLog(log_line);
+                        LogMessage::DiesLog(log_line)
+                    } else {
+                        LogMessage::Bytes(message_buf.clone())
                     }
+                }
+                LogFileMessageType::Unknown => 'msg: {
+                    // Try to parse as Vision, then Referee
                     if let Ok(packet) = SSL_WrapperPacket::parse_from_bytes(&message_buf) {
                         break 'msg LogMessage::Vision(packet);
                     }
                     if let Ok(referee) = Referee::parse_from_bytes(&message_buf) {
                         break 'msg LogMessage::Referee(referee);
                     }
-                    eprintln!("Failed to parse message");
                     continue 'msg_loop;
                 }
             };
@@ -195,84 +216,123 @@ impl LogFile {
 
         Ok(LogFile { version, messages })
     }
+
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        println!(
+            "{} file len: {:?}",
+            path.as_ref().display(),
+            std::fs::read(path.as_ref())?.len()
+        );
+        Self::read(std::fs::File::open(path)?)
+    }
+
+    pub fn messages(&self) -> &[LogMessage] {
+        &self.messages
+    }
+
+    pub fn version(&self) -> u32 {
+        self.version
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, future::Future};
     use dies_protos::dies_log_line::LogLevel;
+    use flate2::read::GzDecoder;
+    use tempfile::NamedTempFile;
 
     use super::*;
 
-    const INPUT_FILE: &str = "./test_input.log";
-    
-    // #[test]
-    // fn test_write_log_file() {
-    //     run_async_test(async {
-    //         if Path::new("./test_output.log").exists() {
-    //             std::fs::remove_file("./test_output.log").unwrap();
-    //         }
+    const TEST_FILE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/test.log.gz"));
 
-    //         let file = File::open(INPUT_FILE).unwrap();
-    //         let log_file = LogFile::read(file).unwrap();
-    //         let mut writer = LogFileWriter::open("./test_output.log").await.unwrap();
-
-    //         for message in &log_file.messages {
-    //             writer.write_log_message(message).await.unwrap();
-    //         }
-
-    //         drop(writer); // to close file
-    //         
-    //         let written_file = File::open("./test_output.log").unwrap();
-    //         let written_log_file = LogFile::read(written_file).unwrap();
-
-    //         assert_eq!(log_file.version, written_log_file.version);
-    //         assert_eq!(log_file.messages.len(), written_log_file.messages.len());
-
-    //         std::fs::remove_file("./test_output.log").unwrap();
-    //     });
-    // }
-    
     #[test]
-    fn write_dummy_message() {
-        run_async_test(async {
-            if Path::new("./test_output.log").exists() {
-                std::fs::remove_file("./test_output.log").unwrap();
-            }
+    fn test_read_standard_file() {
+        let test_data = GzDecoder::new(TEST_FILE)
+            .bytes()
+            .collect::<Result<Vec<u8>, _>>()
+            .unwrap();
+        let log_file = LogFile::read(test_data.as_slice()).unwrap();
 
-            let mut writer = LogFileWriter::open("./test_output.log").await.unwrap();
-            
-            let log_line = LogLine {
+        assert_eq!(log_file.version, 1);
+        assert_eq!(log_file.messages.len(), 409519);
+
+        // Check that all messages are either vision or referee
+        for message in &log_file.messages {
+            match message {
+                LogMessage::Vision(_) | LogMessage::Referee(_) => {}
+                LogMessage::Bytes(_) => panic!("Unexpected message type: Bytes"),
+                LogMessage::DiesLog(_) => panic!("Unexpected message type: DiesLog"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_standard_file_then_write() {
+        let temp = NamedTempFile::new().unwrap();
+        if temp.path().exists() {
+            std::fs::remove_file(temp.path()).unwrap();
+        }
+
+        let test_data = GzDecoder::new(TEST_FILE)
+            .bytes()
+            .collect::<Result<Vec<u8>, _>>()
+            .unwrap();
+        let log_file = LogFile::read(test_data.as_slice()).unwrap();
+        let mut writer = LogFileWriter::open(temp.path(), log_file.version())
+            .await
+            .unwrap();
+
+        for message in &log_file.messages {
+            writer.write_log_message(message).await.unwrap();
+        }
+
+        // Close writer
+        writer.flush().await.unwrap();
+        drop(writer);
+
+        let written_log = LogFile::open(temp.path()).unwrap();
+        assert_eq!(written_log.version, log_file.version);
+        assert_eq!(written_log.messages(), log_file.messages());
+    }
+
+    #[tokio::test]
+    async fn test_roundtrip() {
+        let temp = NamedTempFile::new().unwrap();
+        if temp.path().exists() {
+            std::fs::remove_file(temp.path()).unwrap();
+        }
+
+        let version = 1;
+        let mut writer = LogFileWriter::open(temp.path(), version).await.unwrap();
+
+        let messages = vec![
+            LogMessage::DiesLog(LogLine {
                 level: Some(LogLevel::DEBUG.into()),
                 target: Some("test".to_string()),
                 message: Some("test".to_string()),
                 source: Some("unknown:0".to_string()),
                 ..Default::default()
-            };
-            writer.write_log_line(&log_line).await.unwrap();
-            
-            let log_reader = LogFile::read(File::open("./test_output.log").unwrap()).unwrap();
-            std::fs::remove_file("./test_output.log").unwrap();
-            
-            assert_eq!(log_reader.messages.len(), 1);
-            match &log_reader.messages[0] {
-                LogMessage::DiesLog(log_line) => {
-                    assert_eq!(log_line.level, Some(LogLevel::DEBUG.into()));
-                    assert_eq!(log_line.target, Some("test".to_string()));
-                    assert_eq!(log_line.message, Some("test".to_string()));
-                    assert_eq!(log_line.source, Some("unknown:0".to_string()));
-                }
-                _ => { panic!("Expected LogMessage::DiesLog"); }
-            };
-        });
-    
-    }
+            }),
+            LogMessage::Vision(SSL_WrapperPacket::default()),
+            LogMessage::DiesLog(LogLine {
+                level: Some(LogLevel::DEBUG.into()),
+                target: Some("test".to_string()),
+                message: Some("test".to_string()),
+                source: Some("unknown:0".to_string()),
+                ..Default::default()
+            }),
+        ];
+        for message in &messages {
+            writer.write_log_message(message).await.unwrap();
+        }
 
-    fn run_async_test<F: Future>(f: F) {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(f);
+        // Close writer
+        writer.flush().await.unwrap();
+        drop(writer);
+
+        // Check that the written file is the same as the original
+        let log_file = LogFile::open(temp.path()).unwrap();
+        assert_eq!(log_file.version, version);
+        assert_eq!(log_file.messages(), messages);
     }
 }

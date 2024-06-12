@@ -11,7 +11,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
 
-mod modes;
+// mod modes;
 
 #[derive(Debug, Clone, ValueEnum)]
 pub(crate) enum VisionType {
@@ -22,9 +22,8 @@ pub(crate) enum VisionType {
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
 pub(crate) struct Args {
-    #[clap(long, short)]
-    mode: modes::Mode,
-
+    // #[clap(long, short)]
+    // mode: modes::Mode,
     #[clap(long, default_value = "auto")]
     serial_port: String,
 
@@ -141,26 +140,26 @@ async fn main() -> Result<()> {
         None
     };
 
-    let (stop_tx, stop_rx) = broadcast::channel(1);
-    let main_task = tokio::spawn(async move {
-        let result = match args.mode {
-            modes::Mode::Irl => modes::irl::run(args, stop_rx).await,
-            modes::Mode::IrlTest => modes::irl_test::run(args, stop_rx).await,
-            modes::Mode::SimTest => modes::sim_test::run(stop_rx).await,
-            modes::Mode::Sim => modes::sim::run(args, stop_rx).await,
-        };
-        if let Err(err) = result {
-            tracing::error!("Mode failed: {}", err);
-        }
-    });
+    // let (stop_tx, stop_rx) = broadcast::channel(1);
+    // let main_task = tokio::spawn(async move {
+    //     let result = match args.mode {
+    //         modes::Mode::Irl => modes::irl::run(args, stop_rx).await,
+    //         modes::Mode::IrlTest => modes::irl_test::run(args, stop_rx).await,
+    //         modes::Mode::SimTest => modes::sim_test::run(stop_rx).await,
+    //         modes::Mode::Sim => modes::sim::run(args, stop_rx).await,
+    //     };
+    //     if let Err(err) = result {
+    //         tracing::error!("Mode failed: {}", err);
+    //     }
+    // });
 
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to listen for ctrl-c");
+    // tokio::signal::ctrl_c()
+    //     .await
+    //     .expect("Failed to listen for ctrl-c");
 
-    tracing::info!("Shutting down");
-    stop_tx.send(()).expect("Failed to send stop signal");
-    main_task.await.expect("Executor task failed");
+    // tracing::info!("Shutting down");
+    // stop_tx.send(()).expect("Failed to send stop signal");
+    // main_task.await.expect("Executor task failed");
 
     if let Some(mut child) = devserver {
         child.kill().await.expect("Failed to kill dev server");
