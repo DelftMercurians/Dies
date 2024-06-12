@@ -148,7 +148,10 @@ impl WorldTracker {
             }
 
             self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
-            tracing::debug!("Received field geometry: {:?}", self.field_geometry);
+            tracing::event!(
+                tracing::Level::DEBUG,
+                geometry = serde_json::to_string(&self.field_geometry).unwrap()
+            );
         }
     }
 
