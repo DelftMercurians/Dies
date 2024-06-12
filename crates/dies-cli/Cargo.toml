@@ -21,8 +21,6 @@ dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
 dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 dirs = "5.0.1"
 log = "0.4.21"
-tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }
-tracing-appender = "0.2.3"
 nalgebra = "0.32.4"
 dies-executor = { version = "0.1.0", path = "../dies-executor" }
 dies-webui = { version = "0.1.0", path = "../dies-webui" }

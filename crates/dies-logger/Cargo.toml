@@ -7,7 +7,6 @@ edition.workspace = true
 
 [dependencies]
 anyhow = "1.0.81"
-chrono = { version = "0.4.35", features = ["alloc"] }
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 env_logger = "0.11.3"
 log = "0.4.21"

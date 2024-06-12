@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use dies_logger::log_vision;
 use dies_protos::ssl_gc_referee_message::Referee;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
@@ -148,10 +149,6 @@ impl WorldTracker {
             }
 
             self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
-            // log::event!(
-            //     log::Level::DEBUG,
-            //     geometry = serde_json::to_string(&self.field_geometry).unwrap()
-            // );
         }
     }
 

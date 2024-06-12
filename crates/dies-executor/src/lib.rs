@@ -3,6 +3,7 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, WorldUpdate};
+use dies_logger::{log_referee, log_vision};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_serial_client::SerialClient;
 use dies_simulator::Simulation;
@@ -109,12 +110,14 @@ impl Executor {
 
     /// Update the executor with a vision message.
     pub fn update_from_vision_msg(&mut self, message: SSL_WrapperPacket) {
+        log_vision(&message);
         self.tracker.update_from_vision(&message);
         self.update_team_controller();
     }
 
     /// Update the executor with a referee message.
     pub fn update_from_gc_msg(&mut self, message: Referee) {
+        log_referee(&message);
         self.tracker.update_from_referee(&message);
         self.update_team_controller();
     }

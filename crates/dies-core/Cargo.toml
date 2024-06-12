@@ -12,4 +12,3 @@ lazy_static = "1.4.0"
 log = "0.4.21"
 nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
 serde = { version = "1.0.192", features = ["derive"] }
-tokio = { version = "1.38.0", features = ["sync"] }
