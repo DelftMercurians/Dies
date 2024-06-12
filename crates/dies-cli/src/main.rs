@@ -6,8 +6,9 @@ use dies_logger::AsyncProtobufLogger;
 use log::LevelFilter;
 use std::net::SocketAddr;
 use std::{path::PathBuf, str::FromStr};
+use tokio::sync::broadcast;
 
-// mod modes;
+mod modes;
 
 #[derive(Debug, Clone, ValueEnum)]
 pub(crate) enum VisionType {
@@ -18,8 +19,9 @@ pub(crate) enum VisionType {
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
 pub(crate) struct Args {
-    // #[clap(long, short)]
-    // mode: modes::Mode,
+    #[clap(long, short)]
+    mode: modes::Mode,
+
     #[clap(long, default_value = "auto")]
     serial_port: String,
 
@@ -114,26 +116,24 @@ async fn main() -> Result<()> {
         None
     };
 
-    // let (stop_tx, stop_rx) = broadcast::channel(1);
-    // let main_task = tokio::spawn(async move {
-    //     let result = match args.mode {
-    //         modes::Mode::Irl => modes::irl::run(args, stop_rx).await,
-    //         modes::Mode::IrlTest => modes::irl_test::run(args, stop_rx).await,
-    //         modes::Mode::SimTest => modes::sim_test::run(stop_rx).await,
-    //         modes::Mode::Sim => modes::sim::run(args, stop_rx).await,
-    //     };
-    //     if let Err(err) = result {
-    //         log::error!("Mode failed: {}", err);
-    //     }
-    // });
+    let (stop_tx, stop_rx) = broadcast::channel(1);
+    let main_task = tokio::spawn(async move {
+        let result = match args.mode {
+            modes::Mode::Live => modes::live::run(args, stop_rx).await,
+            modes::Mode::Sim => modes::sim::run(args, stop_rx).await,
+        };
+        if let Err(err) = result {
+            log::error!("Mode failed: {}", err);
+        }
+    });
 
-    // tokio::signal::ctrl_c()
-    //     .await
-    //     .expect("Failed to listen for ctrl-c");
+    tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to listen for ctrl-c");
 
-    // log::info!("Shutting down");
-    // stop_tx.send(()).expect("Failed to send stop signal");
-    // main_task.await.expect("Executor task failed");
+    log::info!("Shutting down");
+    stop_tx.send(()).expect("Failed to send stop signal");
+    main_task.await.expect("Executor task failed");
 
     if let Some(mut child) = devserver {
         child.kill().await.expect("Failed to kill dev server");

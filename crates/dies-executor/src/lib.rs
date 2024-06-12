@@ -10,7 +10,7 @@ use dies_simulator::Simulation;
 use dies_ssl_client::VisionClient;
 use dies_world::{WorldConfig, WorldTracker};
 use gc_client::GcClient;
-use handle::{ControlMsg, ExecutorHandle};
+pub use handle::{ControlMsg, ExecutorHandle};
 use strategy::Strategy;
 use tokio::sync::{
     broadcast::{self},
