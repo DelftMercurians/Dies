@@ -2,8 +2,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use dies_core::{PlayerCmd, SymScenario};
-use dies_executor::WorldUpdate;
+use dies_core::{PlayerCmd, SymScenario, WorldUpdate};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch};

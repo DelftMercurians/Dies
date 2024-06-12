@@ -3,7 +3,7 @@ use axum::extract::WebSocketUpgrade;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use dies_executor::WorldUpdate;
+use dies_core::WorldUpdate;
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
@@ -74,16 +74,14 @@ async fn handle_ws_conn(
 
 async fn handle_ws_msg(tx: broadcast::Sender<UiCommand>, msg: Message) {
     match msg {
-        Message::Text(text) => {
-            match serde_json::from_str::<UiCommand>(&text) {
-                Ok(cmd) => {
-                    let _ = tx.send(cmd);
-                }
-                Err(err) => {
-                    tracing::error!("Failed to parse command: {}", err);
-                }
-            } 
-        }
+        Message::Text(text) => match serde_json::from_str::<UiCommand>(&text) {
+            Ok(cmd) => {
+                let _ = tx.send(cmd);
+            }
+            Err(err) => {
+                tracing::error!("Failed to parse command: {}", err);
+            }
+        },
         _ => {}
     }
 }

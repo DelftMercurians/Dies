@@ -8,57 +8,92 @@ use dies_protos::{
 };
 use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, f64::consts::PI};
 use utils::IntervalTrigger;
 
 mod utils;
 
+// Simulation constants - these are in mm
 const BALL_RADIUS: f64 = 43.0;
-const PLAYER_RADIUS: f64 = 200.0;
-const PLAYER_HEIGHT: f64 = 140.0;
-const DRIBBLER_RADIUS: f64 = BALL_RADIUS + 60.0;
-const DRIBBLER_ANGLE: f64 = std::f64::consts::PI / 6.0;
-const DRIBBLER_STRENGHT: f64 = 0.6;
-const KICKER_STRENGHT: f64 = 300000.0;
-const FIELD_LENGTH: f64 = 11000.0;
-const FIELD_WIDTH: f64 = 9000.0;
 const GROUND_THICKNESS: f64 = 10.0;
 const WALL_HEIGHT: f64 = 1000.0;
 const WALL_THICKNESS: f64 = 1.0;
-const PLAYER_CMD_TIMEOUT: f64 = 1.0 / 20.0;
-const GEOM_INTERVAL: f64 = 3.0;
 
 #[derive(Debug, Clone)]
 pub struct SimulationConfig {
+    // PHYSICAL CONSTANTS
+    /// Gravity vector in mm/s^2
     pub gravity: Vector<f64>,
-    pub bias: f64,
-    pub ball_damping: f64,    // angular damping (rolling friction) on the ball
-    pub simulation_step: f64, // time between simulation steps
-    pub vision_update_step: f64, // time between vision updates
-    pub command_delay: f64,   // delay for the execution of the command
-    pub max_accel: Vector<f64>, // max lateral acceleration
-    pub max_vel: Vector<f64>, // max lateral velocity
-    pub max_ang_accel: f64,   // max angular acceleration
-    pub max_ang_vel: f64,     // max angular velocity
-    pub velocity_treshold: f64, // max difference between target and current velocity
-    pub angular_velocity_treshold: f64, // max difference between target and current angular velocity
+    /// Angular damping (rolling friction) on the ball
+    pub ball_damping: f64,
+    /// Time between vision updates
+    pub vision_update_step: f64,
+
+    // ROBOT MODEL PARAMETERS
+    /// Radius of the player in mm
+    pub player_radius: f64,
+    /// Height of the player in mm
+    pub player_height: f64,
+    /// Maximum reach of the dribbler from the edge of the robot in mm
+    pub dribbler_radius: f64,
+    /// Maximum angle from the front of the robot where the dribbler can pick up the ball
+    /// in radians
+    pub dribbler_angle: f64,
+    /// Maximum force exerted by the kicker
+    pub kicker_strength: f64,
+    /// Time after which the player defaults to zero velocity if no command is received
+    pub player_cmd_timeout: f64,
+    /// Strength of the dribbler in picking up the ball
+    pub dribbler_strength: f64,
+    /// Delay for the execution of the command
+    pub command_delay: f64,
+    /// Maximum lateral acceleration in mm/s^2
+    pub max_accel: Vector<f64>,
+    /// Maximum lateral velocity in mm/s
+    pub max_vel: Vector<f64>,
+    /// Maximum angular acceleration in rad/s^2
+    pub max_ang_accel: f64,
+    /// Maximum angular velocity in rad/s
+    pub max_ang_vel: f64,
+    /// Maximum difference between target and current velocity
+    pub velocity_treshold: f64,
+    /// Maximum difference between target and current angular velocity
+    pub angular_velocity_treshold: f64,
+
+    // FIELD GEOMRTY PARAMETERS
+    /// Field configuration
+    pub field_geometry: FieldGeometry,
+    /// Interval for sending geometry packets
+    pub geometry_interval: f64,
 }
 
 impl Default for SimulationConfig {
     fn default() -> Self {
         SimulationConfig {
+            // PHYSICAL CONSTANTS
             gravity: Vector::z() * -9.81 * 1000.0,
-            bias: 0.0,
             ball_damping: 1.4,
-            command_delay: 110.0 / 1000.0, // 6 ms
+            vision_update_step: 1.0 / 40.0, // 6 ms
+
+            // ROBOT MODEL PARAMETERS
+            player_radius: 200.0,
+            player_height: 140.0,
+            dribbler_radius: BALL_RADIUS + 60.0,
+            dribbler_angle: PI / 6.0,
+            kicker_strength: 300000.0,
+            player_cmd_timeout: 0.1,
+            dribbler_strength: 0.6,
+            command_delay: 110.0 / 1000.0,
             max_accel: Vector::new(1200.0, 1200.0, 0.0),
             max_vel: Vector::new(5000.0, 5000.0, 0.0),
             max_ang_accel: 4.0,
             max_ang_vel: 10.0,
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
-            simulation_step: 1.0 / 60.0,
-            vision_update_step: 1.0 / 40.0,
+
+            // FIELD GEOMRTY PARAMETERS
+            field_geometry: FieldGeometry::default(),
+            geometry_interval: 3.0,
         }
     }
 }
@@ -152,16 +187,11 @@ impl Simulation {
     /// empty and needs to be populated with players and a ball. It is better to use
     /// [`SimulationBuilder`] to create a new simulation and add players and a ball.
     pub fn new(config: SimulationConfig) -> Simulation {
-        let geom_config = FieldGeometry {
-            field_length: FIELD_LENGTH as i32,
-            field_width: FIELD_WIDTH as i32,
-            goal_width: 1000,
-            goal_depth: 200,
-            boundary_width: 200,
-            line_segments: Vec::new(),
-            circular_arcs: Vec::new(),
-        };
         let vision_update_step = config.vision_update_step;
+        let geometry_interval = config.geometry_interval;
+        let field_length = config.field_geometry.field_length as f64;
+        let field_width = config.field_geometry.field_width as f64;
+        let geometry_packet = geometry(&config.field_geometry);
 
         let mut simulation = Simulation {
             config,
@@ -182,8 +212,8 @@ impl Simulation {
             cmd_queue: Vec::new(),
             detection_interval: IntervalTrigger::new(vision_update_step),
             last_detection_packet: None,
-            geometry_interval: IntervalTrigger::new(GEOM_INTERVAL),
-            geometry_packet: geometry(&geom_config),
+            geometry_interval: IntervalTrigger::new(geometry_interval),
+            geometry_packet,
         };
 
         // Create the ground
@@ -192,7 +222,7 @@ impl Simulation {
             .translation(Vector::new(0.0, 0.0, -GROUND_THICKNESS / 2.0))
             .build();
         let ground_collider =
-            ColliderBuilder::cuboid(FIELD_WIDTH / 2.0, FIELD_LENGTH / 2.0, GROUND_THICKNESS)
+            ColliderBuilder::cuboid(field_width / 2.0, field_length / 2.0, GROUND_THICKNESS)
                 .build();
         let ground_body_handle = simulation.rigid_body_set.insert(ground_body);
         simulation.collider_set.insert_with_parent(
@@ -201,30 +231,10 @@ impl Simulation {
             &mut simulation.rigid_body_set,
         );
 
-        simulation.add_wall(
-            0.0,
-            FIELD_WIDTH / 2.0,
-            FIELD_LENGTH,
-            WALL_THICKNESS,
-        );
-        simulation.add_wall(
-            0.0,
-            -FIELD_WIDTH / 2.0,
-            FIELD_LENGTH,
-            WALL_THICKNESS,
-        );
-        simulation.add_wall(
-            FIELD_LENGTH / 2.0,
-            0.0,
-            WALL_THICKNESS,
-            FIELD_WIDTH,
-        );
-        simulation.add_wall(
-            -FIELD_LENGTH / 2.0,
-            0.0,
-            WALL_THICKNESS,
-            FIELD_WIDTH,
-        );
+        simulation.add_wall(0.0, field_width / 2.0, field_length, WALL_THICKNESS);
+        simulation.add_wall(0.0, -field_width / 2.0, field_length, WALL_THICKNESS);
+        simulation.add_wall(field_length / 2.0, 0.0, WALL_THICKNESS, field_width);
+        simulation.add_wall(-field_length / 2.0, 0.0, WALL_THICKNESS, field_width);
 
         simulation
     }
@@ -328,7 +338,7 @@ impl Simulation {
                 .get_mut(player.rigid_body_handle)
                 .unwrap();
 
-            if (self.current_time - player.last_cmd_time).abs() > PLAYER_CMD_TIMEOUT {
+            if (self.current_time - player.last_cmd_time).abs() > self.config.player_cmd_timeout {
                 player.target_velocity = Vector::zeros();
                 player.target_ang_velocity = 0.0;
             }
@@ -367,7 +377,7 @@ impl Simulation {
                 let heading = rigid_body.position().rotation * Vector::x();
                 let player_position = rigid_body.position().translation.vector;
                 let dribbler_position =
-                    player_position + heading * (PLAYER_RADIUS + BALL_RADIUS + 20.0);
+                    player_position + heading * (self.config.player_radius + BALL_RADIUS + 20.0);
                 let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
 
                 if let Some(ball_handle) = ball_handle {
@@ -376,13 +386,16 @@ impl Simulation {
                     let ball_dir = ball_position - player_position;
                     let distance = ball_dir.norm();
                     let angle = heading.angle(&ball_dir);
-                    if distance < PLAYER_RADIUS + DRIBBLER_RADIUS && angle < DRIBBLER_ANGLE {
+                    if distance < self.config.player_radius + self.config.dribbler_radius
+                        && angle < self.config.dribbler_angle
+                    {
                         if is_kicking {
-                            let force = heading * KICKER_STRENGHT;
+                            let force = heading * self.config.kicker_strength;
                             ball_body.add_force(force, true);
                             ball_body.set_linear_damping(self.config.ball_damping * 2.0);
                         } else {
-                            let force = (player.current_dribble_speed * DRIBBLER_STRENGHT)
+                            let force = (player.current_dribble_speed
+                                * self.config.dribbler_strength)
                                 * (dribbler_position - ball_position);
                             // clamp the force to the max force
                             // let force = force.cap_magnitude(200.0);
@@ -591,7 +604,9 @@ impl SimulationBuilder {
         let sim = &mut self.sim;
 
         // Players have fixed z position - their bottom surface 1mm above the ground
-        let position = Vector::new(position.x, position.y, (PLAYER_HEIGHT / 2.0) + 1.0);
+        let player_radius = sim.config.player_radius;
+        let player_height = sim.config.player_height;
+        let position = Vector::new(position.x, position.y, (player_height / 2.0) + 1.0);
         let rigid_body = RigidBodyBuilder::dynamic()
             .translation(position)
             .rotation(Vector::z() * orientation)
@@ -601,7 +616,7 @@ impl SimulationBuilder {
                     | LockedAxes::ROTATION_LOCKED_Y,
             )
             .build();
-        let collider = ColliderBuilder::cylinder(PLAYER_HEIGHT / 2.0, PLAYER_RADIUS)
+        let collider = ColliderBuilder::cylinder(player_height / 2.0, player_radius)
             .rotation(Vector::x() * std::f64::consts::FRAC_PI_2)
             .restitution(0.0)
             .restitution_combine_rule(CoefficientCombineRule::Min)

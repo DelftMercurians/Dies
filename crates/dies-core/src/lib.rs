@@ -101,5 +101,5 @@ pub enum SymScenario {
     Empty,
     SinglePlayerWithoutBall,
     SinglePlayer,
-    TwoPlayers
+    TwoPlayers,
 }

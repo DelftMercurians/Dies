@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-tokio = { version = "1.35.1", features = ["rt", "macros", "signal"] }
+tokio = { version = "1.35.1", features = ["rt", "macros", "signal", "time"] }
 anyhow = "1.0.75"
 dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-serial-client = { version = "0.1.0", path = "../dies-serial-client" }
@@ -14,3 +14,4 @@ dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 tracing = "0.1.40"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 nalgebra = "0.32.5"
+paste = "1.0.15"

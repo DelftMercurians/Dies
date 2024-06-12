@@ -2,6 +2,11 @@ use serde::Serialize;
 
 use crate::{FieldGeometry, PlayerId, Vector2, Vector3};
 
+#[derive(Debug, Clone)]
+pub struct WorldUpdate {
+    pub world_data: WorldData,
+}
+
 /// The game state, as reported by the referee.
 #[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
 pub enum GameState {
