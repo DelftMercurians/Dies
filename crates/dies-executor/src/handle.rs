@@ -23,7 +23,7 @@ impl ExecutorHandle {
             .recv()
             .await
             .map_err(|err| {
-                tracing::error!("Error receiving world update: {:?}", err);
+                log::error!("Error receiving world update: {:?}", err);
             })
             .ok()
     }
@@ -32,7 +32,7 @@ impl ExecutorHandle {
         self.control_tx
             .send(msg)
             .map_err(|err| {
-                tracing::error!("Error sending control message: {:?}", err);
+                log::error!("Error sending control message: {:?}", err);
             })
             .ok();
     }

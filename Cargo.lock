@@ -462,15 +462,17 @@ dependencies = [
  "clap",
  "dies-core",
  "dies-executor",
+ "dies-logger",
  "dies-serial-client",
  "dies-simulator",
  "dies-ssl-client",
  "dies-webui",
  "dies-world",
  "dirs",
+ "env_logger",
+ "log",
  "nalgebra",
  "tokio",
- "tracing",
  "tracing-appender",
  "tracing-subscriber",
 ]
@@ -482,10 +484,10 @@ dependencies = [
  "anyhow",
  "dies-protos",
  "lazy_static",
+ "log",
  "nalgebra",
  "serde",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -499,10 +501,10 @@ dependencies = [
  "dies-simulator",
  "dies-ssl-client",
  "dies-world",
+ "log",
  "nalgebra",
  "paste",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -535,9 +537,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dies-core",
+ "log",
  "serialport",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -556,9 +558,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dies-protos",
+ "log",
  "socket2",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -570,11 +572,11 @@ dependencies = [
  "dies-core",
  "dies-executor",
  "futures",
+ "log",
  "serde",
  "serde_json",
  "tokio",
  "tower-http",
- "tracing",
 ]
 
 [[package]]
@@ -583,11 +585,11 @@ version = "0.1.0"
 dependencies = [
  "dies-core",
  "dies-protos",
+ "log",
  "nalgebra",
  "rand",
  "rand_distr",
  "serde_json",
- "tracing",
 ]
 
 [[package]]
@@ -2029,7 +2031,6 @@ checksum = "c3523ab5a71916ccf420eebdf5521fcef02141234bbc0b8a49f2fdc4544364ef"
 dependencies = [
  "log",
  "pin-project-lite",
- "tracing-attributes",
  "tracing-core",
 ]
 
@@ -2043,17 +2044,6 @@ dependencies = [
  "thiserror",
  "time",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "tracing-attributes"
-version = "0.1.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34704c8d6ebcbc939824180af020566b01a7c01f80641264eba0999f6c2b6be7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.66",
 ]
 
 [[package]]

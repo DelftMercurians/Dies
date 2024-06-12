@@ -9,7 +9,7 @@ edition.workspace = true
 anyhow = "1.0.75"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 lazy_static = "1.4.0"
-tracing = "0.1.40"
+log = "0.4.21"
 nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
 serde = { version = "1.0.192", features = ["derive"] }
 tokio = { version = "1.38.0", features = ["sync"] }

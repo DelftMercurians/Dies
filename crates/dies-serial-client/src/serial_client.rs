@@ -126,7 +126,7 @@ impl SerialClient {
                     Some((msg, sender)) => {
                         let elapsed = last_time.elapsed().as_secs_f64();
                         if elapsed < 1.0 / MAX_MSG_FREQ {
-                            tracing::warn!("Message frequency too high, skipping message");
+                            log::warn!("Message frequency too high, skipping message");
                             continue;
                         }
 
@@ -166,7 +166,7 @@ impl SerialClient {
 
                         // Check if there was an error writing to the serial port
                         if let Err(err) = write_res {
-                            tracing::error!("Error writing to serial port: {}", err);
+                            log::error!("Error writing to serial port: {}", err);
                             sender.send(Err(err.into())).ok();
                         } else {
                             sender.send(Ok(())).ok();

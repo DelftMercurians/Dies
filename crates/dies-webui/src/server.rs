@@ -64,7 +64,7 @@ pub async fn start(
         let shutdown_fut = async move {
             let _ = shutdown_rx2.recv().await;
         };
-        tracing::info!("Webui running at http://localhost:5555");
+        log::info!("Webui running at http://localhost:5555");
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_fut)
             .await

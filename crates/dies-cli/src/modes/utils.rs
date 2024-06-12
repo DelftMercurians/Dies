@@ -35,10 +35,10 @@ pub async fn setup_vision_and_serial(args: &Args) -> Result<(VisionClient, Optio
                 }
                 Some(args.serial_port.clone())
             } else if ports.is_empty() {
-                tracing::warn!("No serial ports found, disabling serial");
+                log::warn!("No serial ports found, disabling serial");
                 None
             } else if ports.len() == 1 {
-                tracing::info!("Connecting to serial port {}", ports[0]);
+                log::info!("Connecting to serial port {}", ports[0]);
                 Some(ports[0].clone())
             } else {
                 println!("Available ports:");
@@ -62,10 +62,10 @@ pub async fn setup_vision_and_serial(args: &Args) -> Result<(VisionClient, Optio
                 }
             }
         } else {
-            tracing::warn!("Serial disabled");
+            log::warn!("Serial disabled");
             None
         };
-        tracing::debug!("Serial port: {:?}", port);
+        log::debug!("Serial port: {:?}", port);
 
         if let Some(port) = &port {
             let mut config = SerialClientConfig::new(port.clone());

@@ -224,7 +224,7 @@ impl Executor {
                             self.update_from_vision_msg(vision_msg);
                         }
                         Err(err) => {
-                            tracing::error!("Failed to receive vision msg: {}", err);
+                            log::error!("Failed to receive vision msg: {}", err);
                         }
                     }
                 }
@@ -234,7 +234,7 @@ impl Executor {
                 //             self.update_from_bs_msg(bs_msg);
                 //         }
                 //         Err(err) => {
-                //             tracing::error!("Failed to receive BS msg: {}", err);
+                //             log::error!("Failed to receive BS msg: {}", err);
                 //         }
                 //     }
                 // }
@@ -278,7 +278,7 @@ impl Executor {
             world_data: world_data.clone(),
         };
         if let Err(err) = self.update_tx.send(update) {
-            tracing::error!("Failed to broadcast world update: {}", err);
+            log::error!("Failed to broadcast world update: {}", err);
         }
 
         self.controller.update(world_data);

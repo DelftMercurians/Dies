@@ -72,14 +72,14 @@ impl FieldGeometry {
             let p1 = if let Some(p1) = line.p1.as_ref() {
                 Vector2::new(p1.x() as f64, p1.y() as f64)
             } else {
-                tracing::error!("Field line segment has no p1");
+                log::error!("Field line segment has no p1");
                 continue;
             };
 
             let p2 = if let Some(p2) = line.p2.as_ref() {
                 Vector2::new(p2.x() as f64, p2.y() as f64)
             } else {
-                tracing::error!("Field line segment has no p2");
+                log::error!("Field line segment has no p2");
                 continue;
             };
             field_line_segments.push(FieldLineSegment {
@@ -96,7 +96,7 @@ impl FieldGeometry {
             let center = if let Some(center) = arc.center.as_ref() {
                 Vector2::new(center.x() as f64, center.y() as f64)
             } else {
-                tracing::error!("Field circular arc has no center");
+                log::error!("Field circular arc has no center");
                 continue;
             };
 

@@ -51,16 +51,21 @@ pub struct AsyncProtobufLogger {
 }
 
 impl AsyncProtobufLogger {
-    /// Initialize the logger with the given log file path.
-    pub fn get_or_init(log_file_path: PathBuf) -> &'static Self {
+    /// Initialize the logger with the given log file path and stdout logger.
+    pub fn init_with_env_logger(log_file_path: PathBuf, env: env_logger::Logger) -> &'static Self {
         PROTOBUF_LOGGER.get_or_init(|| {
             let (sender, receiver) = mpsc::unbounded_channel();
             tokio::spawn(Self::run_worker(receiver, log_file_path));
             Self {
-                env_logger: env_logger::Logger::from_default_env(),
+                env_logger: env,
                 sender,
             }
         })
+    }
+
+    /// Initialize the logger with the given log file path and the default environment for the stdout logger.
+    pub fn init(log_file_path: PathBuf) -> &'static Self {
+        Self::init_with_env_logger(log_file_path, env_logger::Logger::from_default_env())
     }
 
     async fn run_worker(mut receiver: mpsc::UnboundedReceiver<WorkerMsg>, log_file_path: PathBuf) {
@@ -152,7 +157,7 @@ mod tests {
             std::fs::remove_file(temp.path()).unwrap();
         }
 
-        let logger = super::AsyncProtobufLogger::get_or_init(temp.path().into());
+        let logger = super::AsyncProtobufLogger::init(temp.path().into());
         log::set_logger(logger).unwrap();
         log::set_max_level(log::LevelFilter::Trace);
 

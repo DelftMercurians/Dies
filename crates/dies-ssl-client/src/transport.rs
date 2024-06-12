@@ -126,7 +126,7 @@ impl<I: Message, O: Message> Transport<I, O> {
                 Ok(())
             }
             TransportType::InMemory { .. } => {
-                tracing::error!("Sending messages not supported for in-memory transport");
+                log::error!("Sending messages not supported for in-memory transport");
                 Ok(())
             }
         }

@@ -57,7 +57,7 @@ async fn handle_ws_conn(
             }
             Ok(()) = rx.changed() => {
                 if let Err(err) = handle_send_ws_update(&mut rx, &mut socket).await {
-                    tracing::error!("Failed to send update: {}", err);
+                    log::error!("Failed to send update: {}", err);
                     break;
                 }
             }
@@ -68,7 +68,7 @@ async fn handle_ws_conn(
     }
 
     if let Err(err) = socket.close().await {
-        tracing::error!("Failed to close websocket: {}", err);
+        log::error!("Failed to close websocket: {}", err);
     }
 }
 
@@ -79,7 +79,7 @@ async fn handle_ws_msg(tx: broadcast::Sender<UiCommand>, msg: Message) {
                 let _ = tx.send(cmd);
             }
             Err(err) => {
-                tracing::error!("Failed to parse command: {}", err);
+                log::error!("Failed to parse command: {}", err);
             }
         },
         _ => {}

@@ -2,14 +2,10 @@ use anyhow::Context;
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use dies_core::workspace_utils;
+use dies_logger::AsyncProtobufLogger;
+use log::LevelFilter;
 use std::net::SocketAddr;
 use std::{path::PathBuf, str::FromStr};
-use tokio::sync::broadcast;
-use tracing::level_filters::LevelFilter;
-use tracing_subscriber::fmt;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::Layer;
-use tracing_subscriber::Registry;
 
 // mod modes;
 
@@ -48,7 +44,7 @@ pub(crate) struct Args {
     #[clap(long, default_value = "224.5.23.2:10006")]
     vision_addr: SocketAddr,
 
-    #[clap(long, default_value = "debug")]
+    #[clap(long, default_value = "info")]
     log_level: String,
 
     #[clap(long, default_value = "auto")]
@@ -58,8 +54,6 @@ pub(crate) struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-
-    // console_subscriber::init();
 
     // Set up log file
     let log_file_path = if args.log_file != "auto" {
@@ -84,37 +78,17 @@ async fn main() -> Result<()> {
     };
 
     // Create log file appender
-    let appender = tracing_appender::rolling::never(
-        log_file_path.parent().unwrap(),
-        log_file_path.file_name().unwrap(),
-    );
-    let (non_blocking_appender, _guard) = tracing_appender::non_blocking(appender);
+    let stdout_env = env_logger::Builder::new()
+        .filter_level(LevelFilter::from_str(&args.log_level).expect("Invalid log level"))
+        .format_timestamp(None)
+        .format_module_path(false)
+        .build();
 
-    // Set up tracing
-    let stdout_log_level = match tracing::Level::from_str(&args.log_level) {
-        Ok(level) => level,
-        Err(_) => {
-            eprintln!("Invalid log level: {}", args.log_level);
-            std::process::exit(1);
-        }
-    };
-    let log_subscriber = Registry::default()
-        .with(
-            fmt::layer()
-                .json()
-                .with_ansi(false)
-                .with_writer(non_blocking_appender),
-        )
-        .with(
-            fmt::layer()
-                .pretty()
-                .without_time()
-                .with_filter(LevelFilter::from_level(stdout_log_level)),
-        );
-    tracing::subscriber::set_global_default(log_subscriber)
-        .expect("Unable to set global tracing subscriber");
+    let logger = AsyncProtobufLogger::init_with_env_logger(log_file_path.clone(), stdout_env);
+    log::set_logger(logger).unwrap();
+    log::set_max_level(log::LevelFilter::Debug);
 
-    tracing::info!("Saving logs to {}", log_file_path.display());
+    log::info!("Saving logs to {}", log_file_path.display());
 
     let devserver = if args.webui_devserver {
         let workspace_root = workspace_utils::get_workspace_root();
@@ -149,7 +123,7 @@ async fn main() -> Result<()> {
     //         modes::Mode::Sim => modes::sim::run(args, stop_rx).await,
     //     };
     //     if let Err(err) = result {
-    //         tracing::error!("Mode failed: {}", err);
+    //         log::error!("Mode failed: {}", err);
     //     }
     // });
 
@@ -157,7 +131,7 @@ async fn main() -> Result<()> {
     //     .await
     //     .expect("Failed to listen for ctrl-c");
 
-    // tracing::info!("Shutting down");
+    // log::info!("Shutting down");
     // stop_tx.send(()).expect("Failed to send stop signal");
     // main_task.await.expect("Executor task failed");
 

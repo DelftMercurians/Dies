@@ -21,7 +21,7 @@ pub async fn run(args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<
                     match cmd {
                         dies_webui::UiCommand::DirectPlayerCmd { cmd } => {
                             if let Err(err) = direct_cmd_tx.send(cmd) {
-                                tracing::error!("Failed to send direct command: {}", err);
+                                log::error!("Failed to send direct command: {}", err);
                             }
                         },
                         dies_webui::UiCommand::SelectScenarioCmd { scenario } => {
