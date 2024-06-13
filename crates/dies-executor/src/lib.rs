@@ -1,8 +1,8 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::{bail, Result};
 
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, WorldUpdate};
+use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate};
 use dies_logger::{log_referee, log_vision};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_serial_client::SerialClient;
@@ -22,8 +22,8 @@ mod gc_client;
 mod handle;
 pub mod strategy;
 
-use control::TeamController;
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
+use control::{TeamController, Velocity};
 
 const CMD_INTERVAL: Duration = Duration::from_millis(1000 / 30);
 
@@ -43,6 +43,107 @@ enum Environment {
     },
 }
 
+struct PlayerOverrideState {
+    frame_counter: u32,
+    current_command: PlayerOverrideCommand,
+}
+
+impl PlayerOverrideState {
+    const VELOCITY_TIMEOUT: u32 = 5;
+
+    pub fn new() -> Self {
+        Self {
+            frame_counter: 0,
+            current_command: PlayerOverrideCommand::Stop,
+        }
+    }
+
+    pub fn set_cmd(&mut self, cmd: PlayerOverrideCommand) {
+        self.current_command = cmd;
+        self.frame_counter = 0;
+    }
+
+    pub fn advance(&mut self) -> PlayerControlInput {
+        let input = match self.current_command {
+            PlayerOverrideCommand::Stop => PlayerControlInput::new(),
+            PlayerOverrideCommand::MoveTo {
+                position,
+                orientation,
+                dribble_speed,
+                arm_kick,
+            } => PlayerControlInput {
+                position: Some(position),
+                orientation: Some(orientation),
+                dribbling_speed: dribble_speed,
+                kicker: if arm_kick {
+                    KickerControlInput::Arm
+                } else {
+                    KickerControlInput::default()
+                },
+                ..Default::default()
+            },
+            PlayerOverrideCommand::LocalVelocity {
+                velocity,
+                angular_velocity,
+                dribble_speed,
+                arm_kick,
+            } => PlayerControlInput {
+                velocity: Velocity::local(velocity),
+                angular_velocity,
+                dribbling_speed: dribble_speed,
+                kicker: if arm_kick {
+                    KickerControlInput::Arm
+                } else {
+                    KickerControlInput::default()
+                },
+                ..Default::default()
+            },
+            PlayerOverrideCommand::GlobalVelocity {
+                velocity,
+                angular_velocity,
+                dribble_speed,
+                arm_kick,
+            } => PlayerControlInput {
+                velocity: Velocity::global(velocity),
+                angular_velocity,
+                dribbling_speed: dribble_speed,
+                kicker: if arm_kick {
+                    KickerControlInput::Arm
+                } else {
+                    KickerControlInput::default()
+                },
+                ..Default::default()
+            },
+            PlayerOverrideCommand::Kick { .. } => PlayerControlInput {
+                kicker: KickerControlInput::Kick,
+                ..Default::default()
+            },
+            PlayerOverrideCommand::DischargeKicker => PlayerControlInput {
+                kicker: KickerControlInput::Disarm,
+                ..Default::default()
+            },
+        };
+
+        // Advance the frame counter
+        self.frame_counter += 1;
+        match self.current_command {
+            PlayerOverrideCommand::LocalVelocity { .. }
+            | PlayerOverrideCommand::GlobalVelocity { .. } => {
+                if self.frame_counter > Self::VELOCITY_TIMEOUT {
+                    self.current_command = PlayerOverrideCommand::Stop;
+                    self.frame_counter = 0;
+                }
+            }
+            PlayerOverrideCommand::Kick { .. } => {
+                self.current_command = PlayerOverrideCommand::Stop
+            }
+            _ => {}
+        };
+
+        input
+    }
+}
+
 /// The central component of the framework. It contains all state and logic needed to
 /// run a match -- processing vision and referee messages, executing the strategy, and
 /// sending commands to the robots.
@@ -54,6 +155,7 @@ pub struct Executor {
     controller: TeamController,
     gc_client: GcClient,
     environment: Option<Environment>,
+    manual_override: HashMap<PlayerId, PlayerOverrideState>,
     update_tx: broadcast::Sender<WorldUpdate>,
     command_tx: mpsc::UnboundedSender<ControlMsg>,
     command_rx: mpsc::UnboundedReceiver<ControlMsg>,
@@ -79,6 +181,7 @@ impl Executor {
                 ssl_client,
                 bs_client,
             }),
+            manual_override: HashMap::new(),
             command_tx,
             command_rx,
             update_tx,
@@ -101,6 +204,7 @@ impl Executor {
             controller: TeamController::new(strategy),
             gc_client: GcClient::new(),
             environment: Some(Environment::Simulation { simulator, dt }),
+            manual_override: HashMap::new(),
             command_tx,
             command_rx,
             update_tx,
@@ -269,7 +373,19 @@ impl Executor {
             ControlMsg::SetPlayerOverride {
                 player_id,
                 override_active,
-            } => todo!(),
+            } => {
+                if override_active {
+                    self.manual_override
+                        .insert(player_id, PlayerOverrideState::new());
+                } else {
+                    self.manual_override.remove(&player_id);
+                }
+            }
+            ControlMsg::PlayerOverrideCommand(player_id, cmd) => {
+                if let Some(state) = self.manual_override.get_mut(&player_id) {
+                    state.set_cmd(cmd);
+                }
+            }
             ControlMsg::Stop => {}
         }
     }
@@ -284,6 +400,11 @@ impl Executor {
             log::error!("Failed to broadcast world update: {}", err);
         }
 
-        self.controller.update(world_data);
+        let manual_override = self
+            .manual_override
+            .iter_mut()
+            .map(|(id, s)| (*id, s.advance()))
+            .collect();
+        self.controller.update(world_data, manual_override);
     }
 }

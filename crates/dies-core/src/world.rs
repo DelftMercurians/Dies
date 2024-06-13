@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::{FieldGeometry, PlayerId, Vector2, Vector3};
+use crate::{player::PlayerId, FieldGeometry, Vector2, Vector3};
 
 #[derive(Debug, Clone)]
 pub struct WorldUpdate {

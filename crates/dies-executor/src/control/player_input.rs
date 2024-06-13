@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use dies_core::{PlayerId, Vector2};
 
+use super::utils::rotate_vector;
+
 /// A collection of player inputs.
 pub struct PlayerInputs {
     inputs: HashMap<PlayerId, PlayerControlInput>,
@@ -56,14 +58,54 @@ impl FromIterator<(PlayerId, PlayerControlInput)> for PlayerInputs {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Velocity {
+    Global(Vector2),
+    Local(Vector2),
+}
+
+impl Velocity {
+    pub fn local(v: Vector2) -> Self {
+        Self::Local(v)
+    }
+
+    pub fn global(v: Vector2) -> Self {
+        Self::Global(v)
+    }
+
+    pub fn to_local(&self, orientation: f64) -> Vector2 {
+        match self {
+            Self::Global(v) => rotate_vector(*v, -orientation),
+            Self::Local(v) => *v,
+        }
+    }
+
+    pub fn map(&self, f: impl FnOnce(&Vector2) -> Vector2) -> Self {
+        match self {
+            Velocity::Global(v) => Velocity::Global(f(v)),
+            Velocity::Local(v) => Velocity::Local(f(v)),
+        }
+    }
+
+    pub fn cap_magnitude(&self, max: f64) -> Self {
+        self.map(|v| v.cap_magnitude(max))
+    }
+}
+
+impl Default for Velocity {
+    fn default() -> Self {
+        Self::Local(Vector2::zeros())
+    }
+}
+
 /// Input to the player controller.
 #[derive(Debug, Clone, Default)]
 pub struct PlayerControlInput {
     /// Target position. If `None`, the player will just follow the given velocity
     pub position: Option<Vector2>,
-    /// Target velocity (in global frame). This is added to the output of the position
+    /// Target velocity. This is added to the output of the position
     /// controller.
-    pub velocity: Vector2,
+    pub velocity: Velocity,
     /// Target orientation. If `None` the player will just follow the given angula
     /// velocity
     pub orientation: Option<f64>,

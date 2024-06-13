@@ -1,6 +1,7 @@
 use super::{
     pid::PID,
     player_input::{KickerControlInput, PlayerControlInput},
+    utils::rotate_vector,
 };
 use dies_core::{PlayerCmd, PlayerData, PlayerId, Vector2};
 
@@ -99,7 +100,7 @@ impl PlayerController {
     }
 
     /// Update the controller with the current state of the player.
-    pub fn update(&mut self, state: &PlayerData, input: PlayerControlInput, duration: f64) {
+    pub fn update(&mut self, state: &PlayerData, input: &PlayerControlInput, duration: f64) {
         // Calculate velocity using the PID controller
         self.last_orientation = state.orientation;
         self.last_pos = state.position;
@@ -110,7 +111,7 @@ impl PlayerController {
             let local_u = rotate_vector(pos_u, -self.last_orientation);
             self.target_velocity = local_u;
         }
-        let local_vel = rotate_vector(input.velocity, -self.last_orientation);
+        let local_vel = input.velocity.to_local(self.last_orientation);
         self.target_velocity += local_vel;
 
         // Cap the velocity
@@ -149,9 +150,4 @@ impl PlayerController {
             }
         }
     }
-}
-
-fn rotate_vector(v: Vector2, angle: f64) -> Vector2 {
-    let rot = nalgebra::Rotation2::new(angle);
-    rot * v
 }
