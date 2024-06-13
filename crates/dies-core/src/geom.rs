@@ -20,23 +20,36 @@ pub struct FieldCircularArc {
     pub thickness: f64,
 }
 
+impl FieldCircularArc {
+    pub fn new(name: &str, center: Vector2, radius: f64, a1: f64, a2: f64, thickness: f64) -> Self {
+        Self {
+            name: name.to_owned(),
+            center,
+            radius,
+            a1,
+            a2,
+            thickness,
+        }
+    }
+}
+
 /// A single field line segment
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FieldLineSegment {
     /// Readable name of the line segment
     pub name: String,
-    /// Start point of the line segment, in dies coordinates
+    /// Start Vector2 of the line segment, in dies coordinates
     pub p1: Vector2,
-    /// End point of the line segment, in dies coordinates
+    /// End Vector2 of the line segment, in dies coordinates
     pub p2: Vector2,
     /// Thickness of the line segment, in mm
     pub thickness: f64,
 }
 
 impl FieldLineSegment {
-    pub fn new(name: String, p1: Vector2, p2: Vector2, thickness: f64) -> Self {
+    pub fn new(name: &str, p1: Vector2, p2: Vector2, thickness: f64) -> Self {
         Self {
-            name,
+            name: name.to_owned(),
             p1,
             p2,
             thickness,
@@ -123,833 +136,98 @@ impl FieldGeometry {
 }
 
 impl Default for FieldGeometry {
-    // <Var name="Field Length" type="double" minval="" maxval="">
-    //     12040.000000
-    // </Var>
-    // <Var name="Field Width" type="double" minval="" maxval="">
-    //     9020.000000
-    // </Var>
-    // <Var name="Goal Width" type="double" minval="" maxval="">
-    //     1200.000000
-    // </Var>
-    // <Var name="Goal Depth" type="double" minval="" maxval="">
-    //     180.000000
-    // </Var>
-    // <Var name="Goal Height" type="double" minval="" maxval="">
-    //     155.000000
-    // </Var>
-    // <Var name="Boundary Width" type="double" minval="" maxval="">
-    //     300.000000
-    // </Var>
-    // <Var name="Line Thickness" type="double" minval="" maxval="">
-    //     10.000000
-    // </Var>
-    // <Var name="Penalty Area Depth" type="double" minval="" maxval="">
-    //     1220.000000
-    // </Var>
-    // <Var name="Penalty Area Width" type="double" minval="" maxval="">
-    //     2410.000000
-    // </Var>
-    // <Var name="Goal Line to Penalty Mark" type="double" minval="" maxval="">
-    //     8000.000000
-    // </Var>
-    // <Var name="Center Circle Radius" type="double" minval="" maxval="">
-    //     500.000000
-    // </Var>
-    // <Var name="Field Lines" type="list">
-    // 			<Var name="TopTouchLine" type="list">
-    // 				<Var name="Name" type="string">
-    // 					TopTouchLine
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					TopTouchLine
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					-6020.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					4510.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					6020.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					4510.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="BottomTouchLine" type="list">
-    // 				<Var name="Name" type="string">
-    // 					BottomTouchLine
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					BottomTouchLine
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					-6020.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					-4510.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					6020.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					-4510.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="LeftGoalLine" type="list">
-    // 				<Var name="Name" type="string">
-    // 					LeftGoalLine
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					LeftGoalLine
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					-6020.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					-4510.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					-6020.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					4510.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="RightGoalLine" type="list">
-    // 				<Var name="Name" type="string">
-    // 					RightGoalLine
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					RightGoalLine
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					6020.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					-4510.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					6020.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					4510.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="HalfwayLine" type="list">
-    // 				<Var name="Name" type="string">
-    // 					HalfwayLine
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					HalfwayLine
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					0.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					-4510.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					0.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					4510.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="CenterLine" type="list">
-    // 				<Var name="Name" type="string">
-    // 					CenterLine
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					CenterLine
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					-6020.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					0.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					6020.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					0.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="LeftPenaltyStretch" type="list">
-    // 				<Var name="Name" type="string">
-    // 					LeftPenaltyStretch
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					LeftPenaltyStretch
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					-4800.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					-1205.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					-4800.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					1205.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="RightPenaltyStretch" type="list">
-    // 				<Var name="Name" type="string">
-    // 					RightPenaltyStretch
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					RightPenaltyStretch
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					4800.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					-1205.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					4800.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					1205.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="LeftFieldLeftPenaltyStretch" type="list">
-    // 				<Var name="Name" type="string">
-    // 					LeftFieldLeftPenaltyStretch
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					LeftFieldLeftPenaltyStretch
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					-6020.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					-1205.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					-4800.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					-1205.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="LeftFieldRightPenaltyStretch" type="list">
-    // 				<Var name="Name" type="string">
-    // 					LeftFieldRightPenaltyStretch
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					LeftFieldRightPenaltyStretch
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					-6020.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					1205.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					-4800.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					1205.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="RightFieldRightPenaltyStretch" type="list">
-    // 				<Var name="Name" type="string">
-    // 					RightFieldRightPenaltyStretch
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					RightFieldRightPenaltyStretch
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					6020.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					-1205.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					4800.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					-1205.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 			<Var name="RightFieldLeftPenaltyStretch" type="list">
-    // 				<Var name="Name" type="string">
-    // 					RightFieldLeftPenaltyStretch
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					RightFieldLeftPenaltyStretch
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						TopTouchLine
-    // 					</Var>
-    // 					<Var name="2" type="string">
-    // 						BottomTouchLine
-    // 					</Var>
-    // 					<Var name="3" type="string">
-    // 						LeftGoalLine
-    // 					</Var>
-    // 					<Var name="4" type="string">
-    // 						RightGoalLine
-    // 					</Var>
-    // 					<Var name="5" type="string">
-    // 						HalfwayLine
-    // 					</Var>
-    // 					<Var name="6" type="string">
-    // 						CenterLine
-    // 					</Var>
-    // 					<Var name="7" type="string">
-    // 						LeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="8" type="string">
-    // 						RightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="9" type="string">
-    // 						LeftFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="10" type="string">
-    // 						LeftFieldRightPenaltyStretch
-    // 					</Var>
-    // 					<Var name="11" type="string">
-    // 						RightFieldLeftPenaltyStretch
-    // 					</Var>
-    // 					<Var name="12" type="string">
-    // 						RightFieldRightPenaltyStretch
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="P1.x" type="double" minval="" maxval="">
-    // 					6020.000000
-    // 				</Var>
-    // 				<Var name="P1.y" type="double" minval="" maxval="">
-    // 					1205.000000
-    // 				</Var>
-    // 				<Var name="P2.x" type="double" minval="" maxval="">
-    // 					4800.000000
-    // 				</Var>
-    // 				<Var name="P2.y" type="double" minval="" maxval="">
-    // 					1205.000000
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 		</Var>
-    // 		<Var name="Field Arcs" type="list">
-    // 			<Var name="CenterCircle" type="list">
-    // 				<Var name="Name" type="string">
-    // 					CenterCircle
-    // 				</Var>
-    // 				<Var name="Type" type="stringenum">
-    // 					CenterCircle
-    // 					<Var name="0" type="string">
-    // 						Undefined
-    // 					</Var>
-    // 					<Var name="1" type="string">
-    // 						CenterCircle
-    // 					</Var>
-    // 				</Var>
-    // 				<Var name="Center.x" type="double" minval="" maxval="">
-    // 					0.000000
-    // 				</Var>
-    // 				<Var name="Center.y" type="double" minval="" maxval="">
-    // 					0.000000
-    // 				</Var>
-    // 				<Var name="Radius" type="double" minval="" maxval="">
-    // 					500.000000
-    // 				</Var>
-    // 				<Var name="Start angle" type="double" minval="" maxval="">
-    // 					0.000000
-    // 				</Var>
-    // 				<Var name="End angle" type="double" minval="" maxval="">
-    // 					6.283185
-    // 				</Var>
-    // 				<Var name="Line thickness" type="double" minval="" maxval="">
-    // 					10.000000
-    // 				</Var>
-    // 			</Var>
-    // 		</Var>
-    // 	</Var>
-
     fn default() -> Self {
-        // let lines = vec![
-        //     FieldLineSegment::new("TopTouchLine",
-        // ]
+        let lines = vec![
+            FieldLineSegment::new(
+                "TopTouchLine",
+                Vector2::new(-6020.0, -4510.0),
+                Vector2::new(6020.0, -4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "BottomTouchLine",
+                Vector2::new(-6020.0, 4510.0),
+                Vector2::new(6020.0, 4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "LeftGoalLine",
+                Vector2::new(-6020.0, -4510.0),
+                Vector2::new(-6020.0, 4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "RightGoalLine",
+                Vector2::new(6020.0, -4510.0),
+                Vector2::new(6020.0, 4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "HalfwayLine",
+                Vector2::new(0.0, -4510.0),
+                Vector2::new(0.0, 4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "CenterLine",
+                Vector2::new(-6020.0, 0.0),
+                Vector2::new(6020.0, 0.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "LeftPenaltyStretch",
+                Vector2::new(-4800.0, -1205.0),
+                Vector2::new(-4800.0, 1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "RightPenaltyStretch",
+                Vector2::new(4800.0, -1205.0),
+                Vector2::new(4800.0, 1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "LeftFieldLeftPenaltyStretch",
+                Vector2::new(-6020.0, -1205.0),
+                Vector2::new(-4800.0, -1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "LeftFieldRightPenaltyStretch",
+                Vector2::new(-6020.0, 1205.0),
+                Vector2::new(-4800.0, 1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "RightFieldRightPenaltyStretch",
+                Vector2::new(6020.0, -1205.0),
+                Vector2::new(4800.0, -1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "RightFieldLeftPenaltyStretch",
+                Vector2::new(6020.0, 1205.0),
+                Vector2::new(4800.0, 1205.0),
+                10.0,
+            ),
+        ];
+        let arcs = vec![FieldCircularArc::new(
+            "CenterCircle",
+            Vector2::new(0.0, 0.0),
+            500.0,
+            0.0,
+            6.283185,
+            10.0,
+        )];
+
         Self {
-            field_length: todo!(),
-            field_width: todo!(),
-            goal_width: todo!(),
-            goal_depth: todo!(),
-            boundary_width: todo!(),
-            line_segments: todo!(),
-            circular_arcs: todo!(),
+            field_width: 12040,
+            field_length: 9020,
+            boundary_width: 300,
+            goal_depth: 180,
+            goal_width: 1200,
+            line_segments: lines,
+            circular_arcs: arcs,
         }
     }
 }
