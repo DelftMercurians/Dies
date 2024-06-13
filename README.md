@@ -32,6 +32,8 @@ The following options are required:
 
 - `-m`: Mode: `sim` for simulation, `live` for real robot.
 
+_Note:_ If you have large files in the repository that you wouldn't like to upload to the server, add their names to `.rsyncignore`.
+
 ### Web UI Development
 
 If you do not indent to make changes to the Typescript code of the web UI, feel free to skip this section.
