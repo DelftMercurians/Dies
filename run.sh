@@ -31,9 +31,7 @@ function ctrl_c() {
 if [ ! "$(ls -A ./crates/dies-webui/static)" ] || [ "$1" == "--web-build" ]; then
     shift 1
     echo "Building webui..."
-    cd ./webui
-    npm run build
-    cd ../
+    cargo make webui
 fi
 
 # Sync files to the remote server

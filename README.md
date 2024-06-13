@@ -11,6 +11,8 @@ In Roman mythology [Dies](<https://en.wikipedia.org/wiki/Dies_(mythology)>) (_da
 
 Dies is the framework powering the [Delft Mercurian](https://delftmercurians.nl/)'s RoboCup AI. It consists of a core written in Rust, which includes a physics simulator, networking, vision data processing, game state management, and a Python API and executor. Strategies -- the high-level logic that governs the player's behaviors -- are written in Python and can be run in a separate process, allowing for hot reloading and easy debugging.
 
+See [http://docs.delftmercurians.nl/](http://docs.delftmercurians.nl/) for the latest documentation.
+
 ## Getting Started
 
 You'll need the following dependencies on your system:
@@ -28,9 +30,36 @@ If you are connected to the team VPN, you can run your local copy of Dies on the
 
 The following options are required:
 
-- `-m`: Mode: `sim` for simulation, `irl` for real robot. `irl-test` allows manual control of the robot over the web interface.
+- `-m`: Mode: `sim` for simulation, `live` for real robot.
 
-See [http://docs.delftmercurians.nl/](http://docs.delftmercurians.nl/) for the latest documentation.
+### Web UI Development
+
+If you do not indent to make changes to the Typescript code of the web UI, feel free to skip this section.
+
+If you want to work on the web UI (`./webui`) you will also need:
+
+- Node.JS v18+ - Recommended to use [`fnm`](https://github.com/Schniz/fnm) for installing it.
+- [cargo-make](https://sagiegurari.github.io/cargo-make) - Install with `cargo install cargo-make`.
+
+Then you will need to install the web dependencies
+
+```bash
+cd webui
+npm install
+```
+
+To build the webui after making changes in `./webui`:
+
+```bash
+# From the project root:
+cargo make webui
+```
+
+You can also pass the `--web-build` flag to `./run.sh` for the same effect (you still need all the other dependencies):
+
+```bash
+./run.sh --web-build <options>
+```
 
 ## Crates
 
