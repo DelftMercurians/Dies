@@ -68,12 +68,12 @@ impl PlayerOverrideState {
             PlayerOverrideCommand::Stop => PlayerControlInput::new(),
             PlayerOverrideCommand::MoveTo {
                 position,
-                orientation,
+                yaw,
                 dribble_speed,
                 arm_kick,
             } => PlayerControlInput {
                 position: Some(position),
-                orientation: Some(orientation),
+                yaw: Some(yaw),
                 dribbling_speed: dribble_speed,
                 kicker: if arm_kick {
                     KickerControlInput::Arm

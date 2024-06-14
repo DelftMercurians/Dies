@@ -37,9 +37,18 @@ impl Angle {
     }
 
     /// Rotate a vector by this angle.
-    pub fn rotate_vector(&self, v: Vector2) -> Vector2 {
+    pub fn rotate_vector(&self, v: &Vector2) -> Vector2 {
         let rot = nalgebra::Rotation2::new(self.0);
         rot * v
+    }
+
+    /// Get the inversion of the angle (* -1)
+    pub fn inv(&self) -> Self {
+        -*self
+    }
+
+    pub fn as_f64(&self) -> f64 {
+        self.0
     }
 }
 
@@ -83,13 +92,19 @@ impl std::ops::Mul<Vector2> for Angle {
     type Output = Vector2;
 
     fn mul(self, v: Vector2) -> Vector2 {
-        self.rotate_vector(v)
+        self.rotate_vector(&v)
     }
 }
 
 impl std::fmt::Display for Angle {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{} rad", self.0)
+    }
+}
+
+impl Default for Angle {
+    fn default() -> Self {
+        Self::from_radians(0.0)
     }
 }
 

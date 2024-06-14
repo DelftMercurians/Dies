@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::{player::PlayerId, FieldGeometry, Vector2, Vector3};
+use crate::{player::PlayerId, Angle, FieldGeometry, Vector2, Vector3};
 
 #[derive(Debug, Clone)]
 pub struct WorldUpdate {
@@ -60,9 +60,9 @@ pub struct PlayerData {
     pub position: Vector2,
     /// Velocity of the player in mm/s, in dies coordinates
     pub velocity: Vector2,
-    /// Orientation of the player, in radians, (`-pi`, `pi`), where `0` is the positive
+    /// Yaw of the player, in radians, (`-pi`, `pi`), where `0` is the positive
     /// x direction, and `pi/2` is the positive y direction.
-    pub orientation: f64,
+    pub yaw: Angle,
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f64,
 }

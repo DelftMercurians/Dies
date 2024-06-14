@@ -1,4 +1,6 @@
-use dies_core::{BallData, FieldGeometry, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData};
+use dies_core::{
+    Angle, BallData, FieldGeometry, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
+};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -107,7 +109,7 @@ pub struct SimulationState {
 #[derive(Debug, Clone, Serialize)]
 pub struct SimulationPlayerState {
     position: Vector2,
-    orientation: f64,
+    yaw: Angle,
 }
 
 #[derive(Debug)]
@@ -374,10 +376,10 @@ impl Simulation {
 
             // Check if the ball is in the dribbler
             if player.current_dribble_speed > 0.0 || is_kicking {
-                let heading = rigid_body.position().rotation * Vector::x();
+                let yaw = rigid_body.position().rotation * Vector::x();
                 let player_position = rigid_body.position().translation.vector;
                 let dribbler_position =
-                    player_position + heading * (self.config.player_radius + BALL_RADIUS + 20.0);
+                    player_position + yaw * (self.config.player_radius + BALL_RADIUS + 20.0);
                 let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
 
                 if let Some(ball_handle) = ball_handle {
@@ -385,12 +387,12 @@ impl Simulation {
                     let ball_position = ball_body.position().translation.vector;
                     let ball_dir = ball_position - player_position;
                     let distance = ball_dir.norm();
-                    let angle = heading.angle(&ball_dir);
+                    let angle = yaw.angle(&ball_dir);
                     if distance < self.config.player_radius + self.config.dribbler_radius
                         && angle < self.config.dribbler_angle
                     {
                         if is_kicking {
-                            let force = heading * self.config.kicker_strength;
+                            let force = yaw * self.config.kicker_strength;
                             ball_body.add_force(force, true);
                             ball_body.set_linear_damping(self.config.ball_damping * 2.0);
                         } else {
@@ -437,12 +439,12 @@ impl Simulation {
         for player in self.players.iter() {
             let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
             let position = rigid_body.position().translation.vector;
-            let orientation = rigid_body.rotation().euler_angles().2;
+            let yaw = rigid_body.rotation().euler_angles().2;
             let mut robot = SSL_DetectionRobot::new();
             robot.set_robot_id(player.id.as_u32());
             robot.set_x(position.x as f32);
             robot.set_y(position.y as f32);
-            robot.set_orientation(orientation as f32);
+            robot.set_orientation(yaw as f32);
             robot.set_confidence(1.0);
             if player.is_own {
                 detection.robots_blue.push(robot);
@@ -475,13 +477,13 @@ impl Simulation {
         self.players.iter().for_each(|player| {
             let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
             let position = rigid_body.position().translation.vector;
-            let orientation = rigid_body.rotation().euler_angles().2;
+            let yaw = Angle::from_radians(rigid_body.rotation().euler_angles().2);
             let data = PlayerData {
                 id: player.id,
                 timestamp: self.current_time,
                 position: Vector2::new(position.x, position.y),
                 velocity: Vector2::new(rigid_body.linvel().x, rigid_body.linvel().y),
-                orientation,
+                yaw,
                 angular_speed: rigid_body.angvel().z,
                 raw_position: Vector2::new(position.x, position.y),
             };
@@ -547,24 +549,24 @@ impl SimulationBuilder {
         }
     }
 
-    pub fn add_own_player_with_id(mut self, id: u32, position: Vector2, orientation: f64) -> Self {
-        self.add_player(id, true, position, orientation);
+    pub fn add_own_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
+        self.add_player(id, true, position, yaw);
         self
     }
 
-    pub fn add_opp_player_with_id(mut self, id: u32, position: Vector2, orientation: f64) -> Self {
-        self.add_player(id, false, position, orientation);
+    pub fn add_opp_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
+        self.add_player(id, false, position, yaw);
         self
     }
 
-    pub fn add_own_player(mut self, position: Vector2, orientation: f64) -> Self {
-        self.add_player(self.last_own_id, true, position, orientation);
+    pub fn add_own_player(mut self, position: Vector2, yaw: Angle) -> Self {
+        self.add_player(self.last_own_id, true, position, yaw);
         self.last_own_id += 1;
         self
     }
 
-    pub fn add_opp_player(mut self, position: Vector2, orientation: f64) -> Self {
-        self.add_player(self.last_opp_id, false, position, orientation);
+    pub fn add_opp_player(mut self, position: Vector2, yaw: Angle) -> Self {
+        self.add_player(self.last_opp_id, false, position, yaw);
         self.last_opp_id += 1;
         self
     }
@@ -600,7 +602,7 @@ impl SimulationBuilder {
         self.sim
     }
 
-    fn add_player(&mut self, id: u32, is_own: bool, position: Vector2, orientation: f64) {
+    fn add_player(&mut self, id: u32, is_own: bool, position: Vector2, yaw: Angle) {
         let sim = &mut self.sim;
 
         // Players have fixed z position - their bottom surface 1mm above the ground
@@ -609,7 +611,7 @@ impl SimulationBuilder {
         let position = Vector::new(position.x, position.y, (player_height / 2.0) + 1.0);
         let rigid_body = RigidBodyBuilder::dynamic()
             .translation(position)
-            .rotation(Vector::z() * orientation)
+            .rotation(Vector::z() * yaw.as_f64())
             .locked_axes(
                 LockedAxes::TRANSLATION_LOCKED_Z
                     | LockedAxes::ROTATION_LOCKED_X

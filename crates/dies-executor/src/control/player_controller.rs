@@ -1,9 +1,8 @@
 use super::{
     pid::PID,
     player_input::{KickerControlInput, PlayerControlInput},
-    utils::rotate_vector,
 };
-use dies_core::{PlayerCmd, PlayerData, PlayerId, Vector2};
+use dies_core::{Angle, PlayerCmd, PlayerData, PlayerId, Vector2};
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 100.0;
@@ -23,9 +22,9 @@ enum KickerState {
 pub struct PlayerController {
     id: PlayerId,
     position_pid: PID<Vector2>,
-    heading_pid: PID<f64>,
+    yaw_pid: PID<f64>,
     last_pos: Vector2,
-    last_orientation: f64,
+    last_yaw: Angle,
     frame_missings: usize,
 
     /// Output velocity \[mm/s\]
@@ -41,13 +40,13 @@ pub struct PlayerController {
 impl PlayerController {
     /// Create a new player controller with the given ID.
     pub fn new(id: PlayerId) -> Self {
-        let heading_pid = PID::new(2.0, 0.002, 0.0);
+        let yaw_pid = PID::new(2.0, 0.002, 0.0);
         Self {
             id,
             position_pid: PID::new(0.7, 0.0, 0.0),
-            heading_pid,
+            yaw_pid,
             last_pos: Vector2::new(0.0, 0.0),
-            last_orientation: 0.0,
+            last_yaw: Angle::from_radians(0.0),
             frame_missings: 0,
             target_velocity: Vector2::new(0.0, 0.0),
             target_angular_velocity: 0.0,
@@ -102,16 +101,16 @@ impl PlayerController {
     /// Update the controller with the current state of the player.
     pub fn update(&mut self, state: &PlayerData, input: &PlayerControlInput, duration: f64) {
         // Calculate velocity using the PID controller
-        self.last_orientation = state.orientation;
+        self.last_yaw = state.yaw;
         self.last_pos = state.position;
         let last_vel: Vector2 = state.velocity;
         if let Some(pos_target) = input.position {
             self.position_pid.set_setpoint(pos_target);
             let pos_u = self.position_pid.update(self.last_pos);
-            let local_u = rotate_vector(pos_u, -self.last_orientation);
+            let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         }
-        let local_vel = input.velocity.to_local(self.last_orientation);
+        let local_vel = input.velocity.to_local(self.last_yaw);
         self.target_velocity += local_vel;
 
         // Cap the velocity
@@ -120,9 +119,10 @@ impl PlayerController {
         self.target_velocity = last_vel + v_diff;
 
         let last_ang_vel = state.angular_speed;
-        if let Some(orientation) = input.orientation {
-            self.heading_pid.set_setpoint(orientation);
-            let head_u = self.heading_pid.update(self.last_orientation);
+        if let Some(yaw) = input.yaw {
+            // TODO: Use Angle directly
+            self.yaw_pid.set_setpoint(yaw.as_f64());
+            let head_u = self.yaw_pid.update(self.last_yaw.as_f64());
             self.target_angular_velocity = head_u;
         }
         self.target_angular_velocity += input.angular_velocity;

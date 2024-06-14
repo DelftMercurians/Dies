@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::Angle;
+
 use super::Vector2;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
@@ -80,10 +82,10 @@ pub enum PlayerOverrideCommand {
     /// Do nothing
     #[default]
     Stop,
-    /// Move the robot to a globel position and orientation
+    /// Move the robot to a globel position and yaw
     MoveTo {
         position: Vector2,
-        orientation: f64,
+        yaw: Angle,
         dribble_speed: f64,
         arm_kick: bool,
     },

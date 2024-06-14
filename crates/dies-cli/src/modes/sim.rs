@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use dies_core::{PlayerData, WorldData};
+use dies_core::{Angle, PlayerData, WorldData};
 use dies_executor::{
     strategy::{AdHocStrategy, Role, Strategy},
     Executor, ExecutorConfig, PlayerControlInput,
@@ -24,7 +24,7 @@ impl Role for TestRole {
 
 pub async fn run(_args: crate::Args, stop_rx: broadcast::Receiver<()>) -> Result<()> {
     let simulator = SimulationBuilder::new(SimulationConfig::default())
-        .add_own_player(Vector2::new(0.0, -1000.0), 0.0)
+        .add_own_player(Vector2::new(0.0, -1000.0), Angle::default())
         .add_ball(Vector3::zeros())
         .build();
     let mut strategy = AdHocStrategy::new();

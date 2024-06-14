@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use dies_core::{PlayerId, Vector2};
-
-use super::utils::rotate_vector;
+use dies_core::{Angle, PlayerId, Vector2};
 
 /// A collection of player inputs.
 pub struct PlayerInputs {
@@ -73,9 +71,9 @@ impl Velocity {
         Self::Global(v)
     }
 
-    pub fn to_local(&self, orientation: f64) -> Vector2 {
+    pub fn to_local(&self, yaw: Angle) -> Vector2 {
         match self {
-            Self::Global(v) => rotate_vector(*v, -orientation),
+            Self::Global(v) => yaw.inv().rotate_vector(v),
             Self::Local(v) => *v,
         }
     }
@@ -106,9 +104,9 @@ pub struct PlayerControlInput {
     /// Target velocity. This is added to the output of the position
     /// controller.
     pub velocity: Velocity,
-    /// Target orientation. If `None` the player will just follow the given angula
+    /// Target yaw. If `None` the player will just follow the given angula
     /// velocity
-    pub orientation: Option<f64>,
+    pub yaw: Option<Angle>,
     /// Target angular velocity. This is added to the output of the controller.
     pub angular_velocity: f64,
     /// Dribbler speed normalised to [0, 1]
@@ -129,9 +127,9 @@ impl PlayerControlInput {
         self
     }
 
-    /// Set the target heading of the player.
-    pub fn with_orientation(&mut self, orientation: f64) -> &mut Self {
-        self.orientation = Some(orientation);
+    /// Set the target yaw of the player.
+    pub fn with_yaw(&mut self, yaw: Angle) -> &mut Self {
+        self.yaw = Some(yaw);
         self
     }
 
