@@ -2,64 +2,75 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use dies_core::{PlayerCmd, SymScenario, WorldUpdate};
+use dies_core::{PlayerCmd, PlayerId, PlayerOverrideCommand, SymScenario, WorldData};
+use dies_executor::{ControlMsg, ExecutorHandle};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tower_http::services::ServeDir;
+use typeshare::typeshare;
 
-use crate::routes;
+use crate::routes::{self, ServerState};
 
 #[derive(Debug, Clone, Serialize)]
-pub struct UiSettings {
-    pub can_control: bool,
-}
-
-pub(crate) struct ServerState {
-    pub(crate) settings: UiSettings,
-    pub(crate) world_state: watch::Receiver<Option<WorldUpdate>>,
-    pub(crate) cmd_sender: broadcast::Sender<UiCommand>,
+#[serde(rename_all = "camelCase")]
+#[typeshare]
+pub enum ExecutorStatus {
+    None,
+    Running,
+    Paused,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[typeshare]
 pub enum UiCommand {
-    DirectPlayerCmd { cmd: PlayerCmd },
-    SelectScenarioCmd { scenario: SymScenario },
-    StartCmd,
-    StopCmd,
+    SetManualOverride {
+        player_id: PlayerId,
+        manual_override: bool,
+    },
+    OverrideCommand {
+        player_id: PlayerId,
+        command: PlayerOverrideCommand,
+    },
+    StartScenario {
+        scenario: SymScenario,
+    },
+    SetPause(bool),
+    Stop,
 }
 
-pub async fn start(
-    settings: UiSettings,
-    mut update_rx: broadcast::Receiver<WorldUpdate>,
-    ui_command_tx: broadcast::Sender<UiCommand>,
-    mut shutdown_rx: broadcast::Receiver<()>,
-) {
+enum ExecutorTaskCommand {
+    ExecutorCommand(ControlMsg),
+    StartScenario { scenario: SymScenario },
+}
+
+pub async fn start(mut shutdown_rx: broadcast::Receiver<()>) {
     let (inner_update_tx, inner_update_rx) = watch::channel(None);
     let state = Arc::new(ServerState {
-        settings,
-        world_state: inner_update_rx,
+        update_rx: inner_update_rx,
         cmd_sender: ui_command_tx,
     });
 
-    let path = std::env::current_dir()
-        .unwrap()
-        .join("crates")
-        .join("dies-webui")
-        .join("static");
-    let serve_dir = ServeDir::new(path);
-    let app = Router::new()
-        .route("/api/state", get(routes::state))
-        .route("/api/command", post(routes::command))
-        .route("/api/ws", get(routes::websocket))
-        .nest_service("/", serve_dir.clone())
-        .fallback_service(serve_dir)
-        .with_state(Arc::clone(&state));
+    let (executor_tx, executor_rx) = mpsc::unbounded_channel::<ExecutorTaskCommand>();
 
     // Start the web server
     let mut shutdown_rx2 = shutdown_rx.resubscribe();
     let task = tokio::spawn(async move {
+        let path = std::env::current_dir()
+            .unwrap()
+            .join("crates")
+            .join("dies-webui")
+            .join("static");
+        let serve_dir = ServeDir::new(path);
+        let app = Router::new()
+            .route("/api/state", get(routes::state))
+            .route("/api/command", post(routes::command))
+            .route("/api/ws", get(routes::websocket))
+            .nest_service("/", serve_dir.clone())
+            .fallback_service(serve_dir)
+            .with_state(Arc::clone(&state));
+
         let listener = tokio::net::TcpListener::bind("0.0.0.0:5555").await.unwrap();
         let shutdown_fut = async move {
             let _ = shutdown_rx2.recv().await;
@@ -69,6 +80,18 @@ pub async fn start(
             .with_graceful_shutdown(shutdown_fut)
             .await
             .unwrap();
+    });
+
+    // Start executor
+    tokio::spawn(async {
+        let mut task_handle = None;
+        let mut executor_handle = None;
+        while let Some(cmd) = executor_rx.recv().await {
+            match cmd {
+                ExecutorTaskCommand::ExecutorCommand(_) => todo!(),
+                ExecutorTaskCommand::StartScenario { scenario } => todo!(),
+            }
+        }
     });
 
     // Receive world updates

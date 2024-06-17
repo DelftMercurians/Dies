@@ -3,7 +3,6 @@ use dies_executor::{
     strategy::{AdHocStrategy, Role, Strategy},
     Executor, ExecutorConfig, PlayerControlInput,
 };
-use dies_webui::UiSettings;
 use dies_world::WorldConfig;
 use nalgebra::Vector2;
 use tokio::sync::broadcast;

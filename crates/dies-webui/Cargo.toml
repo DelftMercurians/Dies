@@ -15,3 +15,5 @@ serde_json = "1.0.116"
 log = "0.4.21"
 anyhow = "1.0.82"
 serde = { version = "1.0.200", features = ["derive"] }
+dies-executor = { version = "0.1.0", path = "../dies-executor" }
+typeshare = "1.0.3"

@@ -121,8 +121,8 @@ impl PlayerController {
         let last_ang_vel = state.angular_speed;
         if let Some(yaw) = input.yaw {
             // TODO: Use Angle directly
-            self.yaw_pid.set_setpoint(yaw.as_f64());
-            let head_u = self.yaw_pid.update(self.last_yaw.as_f64());
+            self.yaw_pid.set_setpoint(yaw.radians());
+            let head_u = self.yaw_pid.update(self.last_yaw.radians());
             self.target_angular_velocity = head_u;
         }
         self.target_angular_velocity += input.angular_velocity;

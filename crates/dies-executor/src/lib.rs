@@ -20,6 +20,7 @@ use tokio::sync::{
 mod control;
 mod gc_client;
 mod handle;
+pub mod scenarios;
 pub mod strategy;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};

@@ -3,17 +3,31 @@ use axum::extract::WebSocketUpgrade;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use dies_core::WorldUpdate;
+use dies_core::{WorldData, WorldUpdate};
 use futures::StreamExt;
-use std::sync::Arc;
+use serde::Serialize;
+use std::sync::{Arc, RwLock};
 use tokio::sync::{broadcast, watch};
+use typeshare::typeshare;
 
-use crate::server::ServerState;
-use crate::server::UiCommand;
+use crate::server::{ExecutorStatus, UiCommand};
 use dies_core::PlayerCmd;
 
+pub(crate) struct ServerState {
+    pub(crate) update_rx: watch::Receiver<Option<WorldUpdate>>,
+    pub(crate) cmd_sender: broadcast::Sender<UiCommand>,
+    pub(crate) executor_status: RwLock<ExecutorStatus>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+struct UiState {
+    status: ExecutorStatus,
+    world: Option<WorldData>,
+}
+
 pub(crate) async fn state(state: State<Arc<ServerState>>) -> impl IntoResponse {
-    let update = state.world_state.borrow();
+    let update = state.update_rx.borrow();
     if let Some(update) = update.as_ref() {
         Json(update.world_data.clone()).into_response()
     } else {
@@ -25,20 +39,15 @@ pub(crate) async fn command(
     state: State<Arc<ServerState>>,
     Json(cmd): Json<PlayerCmd>,
 ) -> impl IntoResponse {
-    let _ = state.cmd_sender.send(UiCommand::DirectPlayerCmd { cmd });
+    let _ = state.cmd_sender.send(UiCommand::DirectPlayer { cmd });
     StatusCode::OK
-}
-
-pub(crate) async fn settings(state: State<Arc<ServerState>>) -> impl IntoResponse {
-    let settings = state.settings.clone();
-    Json(settings)
 }
 
 pub(crate) async fn websocket(
     ws: WebSocketUpgrade,
     state: State<Arc<ServerState>>,
 ) -> impl IntoResponse {
-    let rx = state.world_state.clone();
+    let rx = state.update_rx.clone();
     let tx = state.cmd_sender.clone();
     ws.on_upgrade(|socket| async move {
         handle_ws_conn(tx, rx, socket).await;

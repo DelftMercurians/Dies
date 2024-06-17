@@ -1,14 +1,18 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use typeshare::typeshare;
 
 use crate::{player::PlayerId, Angle, FieldGeometry, Vector2, Vector3};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
 pub struct WorldUpdate {
     pub world_data: WorldData,
 }
 
 /// The game state, as reported by the referee.
 #[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
+#[typeshare]
+#[serde(tag = "type", content = "data")]
 pub enum GameState {
     #[default]
     Unknown,
@@ -27,6 +31,7 @@ pub enum GameState {
 
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Clone, Debug)]
+#[typeshare]
 pub struct BallData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
     /// seconds). This is the time that ssl-vision received the frame.
@@ -38,6 +43,7 @@ pub struct BallData {
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
+#[typeshare]
 pub struct GameStateData {
     /// The state of current game
     pub game_state: GameState,
@@ -48,6 +54,7 @@ pub struct GameStateData {
 
 /// A struct to store the player state from a single frame.
 #[derive(Serialize, Clone, Debug)]
+#[typeshare]
 pub struct PlayerData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
     /// seconds). This is the time that ssl-vision received the frame.
@@ -67,8 +74,23 @@ pub struct PlayerData {
     pub angular_speed: f64,
 }
 
+impl PlayerData {
+    pub fn new(id: PlayerId) -> Self {
+        Self {
+            timestamp: 0.0,
+            id,
+            raw_position: Vector2::zeros(),
+            position: Vector2::zeros(),
+            velocity: Vector2::zeros(),
+            yaw: Angle::default(),
+            angular_speed: 0.0,
+        }
+    }
+}
+
 /// A struct to store the world state from a single frame.
 #[derive(Serialize, Clone, Debug, Default)]
+#[typeshare]
 pub struct WorldData {
     pub own_players: Vec<PlayerData>,
     pub opp_players: Vec<PlayerData>,

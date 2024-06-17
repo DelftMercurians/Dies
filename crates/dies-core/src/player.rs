@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
+use typeshare::typeshare;
 
 use crate::Angle;
 
 use super::Vector2;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
+#[typeshare(serialized_as = "u32")]
 pub struct PlayerId(u32);
 
 impl PlayerId {
@@ -77,7 +79,9 @@ impl PlayerCmd {
 }
 
 /// An override command for a player for manual control.
+#[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(tag = "type", content = "data")]
 pub enum PlayerOverrideCommand {
     /// Do nothing
     #[default]

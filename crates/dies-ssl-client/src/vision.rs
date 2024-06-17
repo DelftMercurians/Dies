@@ -1,20 +1,16 @@
 use anyhow::{Context, Result};
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
-use tokio::sync::mpsc;
 
 use crate::transport::Transport;
 
 /// Configuration for [`VisionClient`].
+#[derive(Debug, Clone)]
+
 pub enum VisionClientConfig {
     /// Receive messages from a TCP socket.
     Tcp { host: String, port: u16 },
     /// Receive messages from a UDP socket.
     Udp { host: String, port: u16 },
-    /// In-memory transport for testing.
-    InMemory(
-        /// Receiver for incoming messages.
-        mpsc::UnboundedReceiver<SSL_WrapperPacket>,
-    ),
 }
 
 /// Async client for SSL Vision.
@@ -32,7 +28,6 @@ impl VisionClient {
             VisionClientConfig::Udp { host, port } => Transport::udp(&host, port)
                 .await
                 .context("Failed to create UDP transport")?,
-            VisionClientConfig::InMemory(rx) => Transport::in_memory(rx),
         };
         Ok(Self { transport })
     }

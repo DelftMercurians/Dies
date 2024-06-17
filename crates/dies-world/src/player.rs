@@ -78,7 +78,7 @@ impl PlayerTracker {
                 last_data.position = na::convert(Vector2::new(x[0], x[2]));
                 last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
                 last_data.yaw = current_yaw;
-                last_data.angular_speed = (current_yaw - last_data.yaw).as_f64()
+                last_data.angular_speed = (current_yaw - last_data.yaw).radians()
                     / ((t_capture - last_data.timestamp + std::f64::EPSILON) as f64);
                 last_data.timestamp = t_capture;
             }

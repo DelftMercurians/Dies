@@ -611,7 +611,7 @@ impl SimulationBuilder {
         let position = Vector::new(position.x, position.y, (player_height / 2.0) + 1.0);
         let rigid_body = RigidBodyBuilder::dynamic()
             .translation(position)
-            .rotation(Vector::z() * yaw.as_f64())
+            .rotation(Vector::z() * yaw.radians())
             .locked_axes(
                 LockedAxes::TRANSLATION_LOCKED_Z
                     | LockedAxes::ROTATION_LOCKED_X

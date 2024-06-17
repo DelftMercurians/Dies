@@ -1,3 +1,5 @@
+use std::f64::consts::PI;
+
 use serde::{Deserialize, Serialize};
 
 use crate::Vector2;
@@ -47,8 +49,10 @@ impl Angle {
         -*self
     }
 
-    pub fn as_f64(&self) -> f64 {
-        self.0
+    /// Get a random angle in (-pi, pi]
+    pub fn random() -> Self {
+        let radians = (rand::random::<f64>() * 2.0 * PI) - PI;
+        Self::from_radians(radians)
     }
 }
 

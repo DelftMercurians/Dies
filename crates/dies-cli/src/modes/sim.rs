@@ -7,7 +7,6 @@ use dies_executor::{
     Executor, ExecutorConfig, PlayerControlInput,
 };
 use dies_simulator::{SimulationBuilder, SimulationConfig};
-use dies_webui::UiSettings;
 use dies_world::WorldConfig;
 use nalgebra::{Vector2, Vector3};
 use tokio::sync::broadcast;
