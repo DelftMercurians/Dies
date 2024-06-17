@@ -11,8 +11,8 @@ pub struct WorldUpdate {
 
 /// The game state, as reported by the referee.
 #[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
+#[serde( tag = "type", content = "data")]
 #[typeshare]
-#[serde(tag = "type", content = "data")]
 pub enum GameState {
     #[default]
     Unknown,

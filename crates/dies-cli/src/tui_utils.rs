@@ -40,7 +40,7 @@ impl ValueEnum for SerialPort {
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
-            SerialPort::Disabled => Some(clap::builder::PossibleValue::new("none")),
+            SerialPort::Disabled => Some(clap::builder::PossibleValue::new("disabled")),
             SerialPort::Auto => Some(clap::builder::PossibleValue::new("auto")),
             SerialPort::Port(port) => Some(clap::builder::PossibleValue::new(port)),
         }
@@ -49,13 +49,13 @@ impl ValueEnum for SerialPort {
     fn from_str(input: &str, ignore_case: bool) -> std::result::Result<Self, String> {
         if ignore_case {
             match input.to_lowercase().as_str() {
-                "none" => Ok(SerialPort::Disabled),
+                "disabled" => Ok(SerialPort::Disabled),
                 "auto" => Ok(SerialPort::Auto),
                 _ => Ok(SerialPort::Port(input.to_owned())),
             }
         } else {
             match input {
-                "none" => Ok(SerialPort::Disabled),
+                "disabled" => Ok(SerialPort::Disabled),
                 "auto" => Ok(SerialPort::Auto),
                 _ => Ok(SerialPort::Port(input.to_owned())),
             }
@@ -66,7 +66,7 @@ impl ValueEnum for SerialPort {
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
 pub struct CliArgs {
-    #[clap(long, short)]
+    #[clap(long, short, default_value = "ui")]
     pub mode: Mode,
 
     #[clap(long, default_value = "disabled", default_missing_value = "auto")]
@@ -127,7 +127,7 @@ impl CliArgs {
     pub async fn serial_config(&self) -> Option<SerialClientConfig> {
         select_serial_port(self)
             .await
-            .map_err(|err| log::error!("Failed to setup serial: {}", err))
+            .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()
             .map(|port| {
                 let mut config = SerialClientConfig::new(port);

@@ -1,4 +1,4 @@
-use dies_core::{PlayerId, PlayerOverrideCommand, ScenarioInfo};
+use dies_core::{PlayerId, PlayerOverrideCommand, ScenarioInfo, WorldData};
 use dies_executor::scenarios::ScenarioType;
 use dies_serial_client::SerialClientConfig;
 use dies_ssl_client::VisionClientConfig;
@@ -38,7 +38,7 @@ impl UiConfig {
 
 /// The current status of the executor.
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde( tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum ExecutorStatus {
     None,
@@ -49,7 +49,6 @@ pub(crate) enum ExecutorStatus {
 
 /// The current status of the UI.
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 #[typeshare]
 pub(crate) struct UiStatus {
     pub(crate) is_live_available: bool,
@@ -59,7 +58,7 @@ pub(crate) struct UiStatus {
 
 /// A command from the frontend to the backend.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[serde( tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum UiCommand {
     SetManualOverride {
@@ -83,4 +82,12 @@ pub(crate) enum UiCommand {
 pub enum UiMode {
     Simulation,
     Live,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde( tag = "type", content = "data")]
+#[typeshare]
+pub enum UiWorldState {
+    Loaded(WorldData),
+    None,
 }

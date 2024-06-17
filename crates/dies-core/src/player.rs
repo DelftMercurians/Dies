@@ -28,7 +28,7 @@ impl std::fmt::Display for PlayerId {
 /// A command to one of our players as it will be sent to the robot.
 ///
 /// All values are relative to the robots local frame and are in meters.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug)]
 pub struct PlayerCmd {
     /// The robot's ID
     pub id: PlayerId,

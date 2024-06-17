@@ -9,14 +9,16 @@ use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 
+use crate::UiWorldState;
 use crate::{server::ServerState, UiCommand, UiMode};
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> impl IntoResponse {
     let update = state.update_rx.borrow().clone();
     if let Some(update) = update {
-        Json(update.world_data).into_response()
+        let state = UiWorldState::Loaded(update.world_data);
+        Json(state).into_response()
     } else {
-        StatusCode::NOT_FOUND.into_response()
+        Json(UiWorldState::None).into_response()
     }
 }
 
