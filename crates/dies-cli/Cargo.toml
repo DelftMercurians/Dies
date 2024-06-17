@@ -18,12 +18,8 @@ clap = { version = "4.5.1", features = ["derive"] }
 dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-serial-client = { version = "0.1.0", path = "../dies-serial-client" }
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
-dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 dirs = "5.0.1"
 log = "0.4.21"
-nalgebra = "0.32.4"
-dies-executor = { version = "0.1.0", path = "../dies-executor" }
 dies-webui = { version = "0.1.0", path = "../dies-webui" }
-dies-world = { version = "0.1.0", path = "../dies-world" }
 dies-logger = { version = "0.1.0", path = "../dies-logger" }
 env_logger = "0.11.3"

@@ -452,17 +452,13 @@ dependencies = [
  "chrono",
  "clap",
  "dies-core",
- "dies-executor",
  "dies-logger",
  "dies-serial-client",
- "dies-simulator",
  "dies-ssl-client",
  "dies-webui",
- "dies-world",
  "dirs",
  "env_logger",
  "log",
- "nalgebra",
  "tokio",
 ]
 
@@ -498,7 +494,6 @@ dependencies = [
  "rand",
  "serde",
  "tokio",
- "typeshare",
 ]
 
 [[package]]
@@ -551,7 +546,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dies-protos",
- "log",
  "socket2",
  "tokio",
 ]
@@ -562,7 +556,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
- "clap",
  "dies-core",
  "dies-executor",
  "dies-serial-client",
@@ -583,7 +576,6 @@ name = "dies-world"
 version = "0.1.0"
 dependencies = [
  "dies-core",
- "dies-logger",
  "dies-protos",
  "nalgebra",
  "rand",
