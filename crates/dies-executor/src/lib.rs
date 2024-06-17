@@ -31,6 +31,7 @@ const CMD_INTERVAL: Duration = Duration::from_millis(1000 / 30);
 #[derive(Debug, Clone)]
 pub struct ExecutorConfig {
     pub world_config: WorldConfig,
+    pub sim_dt: Duration,
 }
 
 enum Environment {
@@ -194,7 +195,6 @@ impl Executor {
         config: ExecutorConfig,
         strategy: Box<dyn Strategy>,
         simulator: Simulation,
-        dt: Duration,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
@@ -204,7 +204,10 @@ impl Executor {
             tracker: WorldTracker::new(config.world_config),
             controller: TeamController::new(strategy),
             gc_client: GcClient::new(),
-            environment: Some(Environment::Simulation { simulator, dt }),
+            environment: Some(Environment::Simulation {
+                simulator,
+                dt: config.sim_dt,
+            }),
             manual_override: HashMap::new(),
             command_tx,
             command_rx,

@@ -85,12 +85,7 @@ impl ScenarioSetup {
     }
 
     /// Create an executor in simulation mode from this setup.
-    pub fn into_simulation(
-        self,
-        config: ExecutorConfig,
-        sim_config: SimulationConfig,
-        dt: Duration,
-    ) -> Executor {
+    pub fn into_simulation(self, config: ExecutorConfig, sim_config: SimulationConfig) -> Executor {
         let field_width = sim_config.field_geometry.field_width as f64;
         let field_length = sim_config.field_geometry.field_length as f64;
         let mut builder = SimulationBuilder::new(sim_config);
@@ -118,7 +113,7 @@ impl ScenarioSetup {
 
         let sim = builder.build();
 
-        Executor::new_simulation(config, self.strategy, sim, dt)
+        Executor::new_simulation(config, self.strategy, sim)
     }
 
     /// Create an executor in live mode from this setup.

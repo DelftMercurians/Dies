@@ -50,7 +50,7 @@ export function useWebSocket({
     connect();
 
     // Fetch initial state
-    fetch("/api/state")
+    fetch("/api/world-state")
       .then((response) => response.json())
       .then((data: World) => {
         onUpdate?.(data);

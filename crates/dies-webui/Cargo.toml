@@ -17,3 +17,8 @@ anyhow = "1.0.82"
 serde = { version = "1.0.200", features = ["derive"] }
 dies-executor = { version = "0.1.0", path = "../dies-executor" }
 typeshare = "1.0.3"
+dies-world = { version = "0.1.0", path = "../dies-world" }
+dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
+dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
+dies-serial-client = { version = "0.1.0", path = "../dies-serial-client" }
+clap = { version = "4.5.7", features = ["string"] }

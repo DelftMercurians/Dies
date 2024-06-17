@@ -14,7 +14,7 @@ pub use world::*;
 pub type VisionMsg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 pub type GcRefereeMsg = dies_protos::ssl_gc_referee_message::Referee;
 
-use serde::Deserialize;
+use serde::Serialize;
 
 pub type Scalar = f64;
 pub type Vector2 = nalgebra::Vector2<Scalar>;
@@ -29,7 +29,7 @@ pub struct PlayerFeedbackMsg {
 }
 
 /// Setup for a player in a scenario.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[typeshare]
 pub struct PlayerPlacement {
     /// Initial position of the player. If `None`, any position is acceptable.
@@ -39,7 +39,7 @@ pub struct PlayerPlacement {
 }
 
 /// Setup for the ball in a scenario.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub enum BallPlacement {
@@ -52,7 +52,7 @@ pub enum BallPlacement {
 }
 
 /// Information about a scenario.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[typeshare]
 pub struct ScenarioInfo {
     pub own_player_placements: Vec<PlayerPlacement>,

@@ -20,6 +20,7 @@ pub fn list_serial_ports() -> Result<Vec<String>> {
 }
 
 /// Configuration for the serial client.
+#[derive(Debug, Clone)]
 pub struct SerialClientConfig {
     /// The name of the serial port. Use [`list_serial_ports`] to get a list of
     /// available ports.

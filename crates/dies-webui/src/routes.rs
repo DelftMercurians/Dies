@@ -3,52 +3,54 @@ use axum::extract::WebSocketUpgrade;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use dies_core::{WorldData, WorldUpdate};
+use dies_core::WorldUpdate;
+use dies_executor::scenarios::ScenarioType;
 use futures::StreamExt;
-use serde::Serialize;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
-use typeshare::typeshare;
 
-use crate::server::{ExecutorStatus, UiCommand};
-use dies_core::PlayerCmd;
+use crate::{server::ServerState, UiCommand, UiMode};
 
-pub(crate) struct ServerState {
-    pub(crate) update_rx: watch::Receiver<Option<WorldUpdate>>,
-    pub(crate) cmd_sender: broadcast::Sender<UiCommand>,
-    pub(crate) executor_status: RwLock<ExecutorStatus>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
-struct UiState {
-    status: ExecutorStatus,
-    world: Option<WorldData>,
-}
-
-pub(crate) async fn state(state: State<Arc<ServerState>>) -> impl IntoResponse {
-    let update = state.update_rx.borrow();
-    if let Some(update) = update.as_ref() {
-        Json(update.world_data.clone()).into_response()
+pub async fn get_world_state(state: State<Arc<ServerState>>) -> impl IntoResponse {
+    let update = state.update_rx.borrow().clone();
+    if let Some(update) = update {
+        Json(update.world_data).into_response()
     } else {
         StatusCode::NOT_FOUND.into_response()
     }
 }
 
-pub(crate) async fn command(
+pub async fn get_ui_status(state: State<Arc<ServerState>>) -> impl IntoResponse {
+    Json(state.ui_status()).into_response()
+}
+
+pub async fn get_scenarios() -> impl IntoResponse {
+    Json(ScenarioType::get_names()).into_response()
+}
+
+pub async fn post_ui_mode(
     state: State<Arc<ServerState>>,
-    Json(cmd): Json<PlayerCmd>,
+    Json(mode): Json<UiMode>,
 ) -> impl IntoResponse {
-    let _ = state.cmd_sender.send(UiCommand::DirectPlayer { cmd });
+    if mode == UiMode::Live && !state.is_live_available {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
+    state.set_ui_mode(mode);
+    StatusCode::OK.into_response()
+}
+
+pub async fn post_command(
+    state: State<Arc<ServerState>>,
+    Json(cmd): Json<UiCommand>,
+) -> impl IntoResponse {
+    let _ = state.cmd_tx.send(cmd);
     StatusCode::OK
 }
 
-pub(crate) async fn websocket(
-    ws: WebSocketUpgrade,
-    state: State<Arc<ServerState>>,
-) -> impl IntoResponse {
+pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> impl IntoResponse {
     let rx = state.update_rx.clone();
-    let tx = state.cmd_sender.clone();
+    let tx = state.cmd_tx.clone();
     ws.on_upgrade(|socket| async move {
         handle_ws_conn(tx, rx, socket).await;
     })

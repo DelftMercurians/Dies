@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use dies_logger::log_vision;
 use dies_protos::ssl_gc_referee_message::Referee;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;

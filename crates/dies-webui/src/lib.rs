@@ -1,4 +1,86 @@
-// mod routes;
+use dies_core::{PlayerId, PlayerOverrideCommand, ScenarioInfo};
+use dies_executor::scenarios::ScenarioType;
+use dies_serial_client::SerialClientConfig;
+use dies_ssl_client::VisionClientConfig;
+use serde::{Deserialize, Serialize};
+use typeshare::typeshare;
+
+mod executor_task;
+mod routes;
 mod server;
 
-pub use server::{start, UiCommand};
+pub use server::start;
+
+/// The configuration for the web UI.
+#[derive(Debug, Clone)]
+pub struct UiConfig {
+    pub port: u16,
+    pub environment: UiEnvironment,
+}
+
+#[derive(Debug, Clone)]
+pub enum UiEnvironment {
+    WithLive {
+        ssl_config: VisionClientConfig,
+        bs_config: SerialClientConfig,
+    },
+    SimulationOnly,
+}
+
+impl UiConfig {
+    pub fn is_live_available(&self) -> bool {
+        match self.environment {
+            UiEnvironment::WithLive { .. } => true,
+            UiEnvironment::SimulationOnly => false,
+        }
+    }
+}
+
+/// The current status of the executor.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[typeshare]
+pub(crate) enum ExecutorStatus {
+    None,
+    StartingScenario(ScenarioInfo),
+    RunningExecutor,
+    Failed(String),
+}
+
+/// The current status of the UI.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[typeshare]
+pub(crate) struct UiStatus {
+    pub(crate) is_live_available: bool,
+    pub(crate) ui_mode: UiMode,
+    pub(crate) executor: ExecutorStatus,
+}
+
+/// A command from the frontend to the backend.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[typeshare]
+pub(crate) enum UiCommand {
+    SetManualOverride {
+        player_id: PlayerId,
+        manual_override: bool,
+    },
+    OverrideCommand {
+        player_id: PlayerId,
+        command: PlayerOverrideCommand,
+    },
+    SetPause(bool),
+    StartScenario {
+        scenario: ScenarioType,
+    },
+    Stop,
+}
+
+/// The current mode of the UI - either simulation or live.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[typeshare]
+pub enum UiMode {
+    Simulation,
+    Live,
+}
