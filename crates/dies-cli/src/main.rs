@@ -1,5 +1,4 @@
 use clap::Parser;
-use dies_core::workspace_utils;
 use dies_logger::AsyncProtobufLogger;
 use log::{LevelFilter, Log};
 use modes::Mode;
@@ -31,37 +30,6 @@ async fn main() {
     log::set_max_level(log::LevelFilter::Debug);
     log::info!("Saving logs to {}", log_file_path.display());
 
-    let devserver = if args.webui_devserver {
-        let workspace_root = workspace_utils::get_workspace_root();
-        let child = match tokio::process::Command::new("npm")
-            .args([
-                "run",
-                "--silent",
-                "dev",
-                "--",
-                "--clearScreen",
-                "false",
-                "--logLevel",
-                "error",
-                "--port",
-                "5173",
-            ])
-            .current_dir(workspace_root.join("webui"))
-            .spawn()
-        {
-            Ok(child) => child,
-            Err(err) => {
-                log::error!("Failed to start webui dev server: {}", err);
-                return;
-            }
-        };
-
-        log::info!("Started webui dev server at {}", "http://localhost:5173");
-        Some(child)
-    } else {
-        None
-    };
-
     let (stop_tx, stop_rx) = broadcast::channel(1);
     let main_task = tokio::spawn(async move { Mode::run(args, stop_rx).await });
 
@@ -76,10 +44,6 @@ async fn main() {
     let shutdown_fut = async move {
         stop_tx.send(()).expect("Failed to send stop signal");
         main_task.await.expect("Executor task failed");
-
-        if let Some(mut child) = devserver {
-            child.kill().await.expect("Failed to kill dev server");
-        }
     };
     tokio::select! {
         _ = shutdown_fut => {}

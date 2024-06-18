@@ -79,9 +79,6 @@ pub struct CliArgs {
     pub webui_port: u16,
 
     #[clap(long, default_value = "false")]
-    pub webui_devserver: bool,
-
-    #[clap(long, default_value = "false")]
     pub disable_python: bool,
 
     #[clap(long, default_value = "")]
