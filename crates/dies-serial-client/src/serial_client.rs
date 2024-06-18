@@ -187,7 +187,6 @@ impl SerialClient {
 
     /// Send a message to the serial port.
     pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
-        std::io::stdout().flush().unwrap();
         let (tx, rx) = oneshot::channel();
         self.writer_tx
             .send((msg, tx))

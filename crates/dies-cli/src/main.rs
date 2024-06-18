@@ -1,15 +1,15 @@
 use clap::Parser;
+use cli_modes::CliMode;
 use dies_logger::AsyncProtobufLogger;
 use log::{LevelFilter, Log};
-use modes::Mode;
-use std::str::FromStr;
+use std::{process::ExitCode, str::FromStr};
 use tokio::sync::broadcast;
 
-mod modes;
+mod cli_modes;
 mod tui_utils;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     let args = tui_utils::CliArgs::parse();
 
     // Set up logging
@@ -17,7 +17,7 @@ async fn main() {
         Ok(path) => path,
         Err(err) => {
             log::error!("Failed to create log file: {}", err);
-            return;
+            return ExitCode::FAILURE;
         }
     };
     let stdout_env = env_logger::Builder::new()
@@ -26,12 +26,12 @@ async fn main() {
         .format_module_path(false)
         .build();
     let logger = AsyncProtobufLogger::init_with_env_logger(log_file_path.clone(), stdout_env);
-    log::set_logger(logger).unwrap();
+    log::set_logger(logger).unwrap(); // Safe to unwrap because we know no logger has been set yet
     log::set_max_level(log::LevelFilter::Debug);
     log::info!("Saving logs to {}", log_file_path.display());
 
     let (stop_tx, stop_rx) = broadcast::channel(1);
-    let main_task = tokio::spawn(async move { Mode::run(args, stop_rx).await });
+    let main_task = tokio::spawn(async move { CliMode::run(args, stop_rx).await });
 
     tokio::signal::ctrl_c()
         .await
@@ -49,11 +49,13 @@ async fn main() {
         _ = shutdown_fut => {}
         _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
             eprintln!("Shutdown timed out");
-            std::process::exit(1);
+            return ExitCode::FAILURE;
         }
         _ = tokio::signal::ctrl_c() => {
             eprintln!("Forced shutdown");
-            std::process::exit(1);
+            return ExitCode::FAILURE;
         }
     };
+
+    ExitCode::SUCCESS
 }

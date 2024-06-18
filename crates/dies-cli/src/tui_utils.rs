@@ -6,7 +6,7 @@ use dies_webui::{UiConfig, UiEnvironment};
 use std::{net::SocketAddr, path::PathBuf};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::modes::Mode;
+use crate::cli_modes::CliMode;
 
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum VisionType {
@@ -67,7 +67,7 @@ impl ValueEnum for SerialPort {
 #[command(name = "dies-cli")]
 pub struct CliArgs {
     #[clap(long, short, default_value = "ui")]
-    pub mode: Mode,
+    pub mode: CliMode,
 
     #[clap(long, default_value = "disabled", default_missing_value = "auto")]
     pub serial_port: SerialPort,
@@ -166,7 +166,9 @@ impl CliArgs {
             let path = dirs::data_local_dir()
                 .map(|p| p.join("dies").join(&filemame))
                 .unwrap_or_else(|| PathBuf::from(&filemame));
-            let dir = path.parent().unwrap();
+            let dir = path
+                .parent()
+                .ok_or(anyhow::anyhow!("Invalid log file path"))?;
             tokio::fs::create_dir_all(dir).await?;
             Ok(path)
         }
