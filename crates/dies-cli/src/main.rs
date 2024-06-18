@@ -1,7 +1,7 @@
 use clap::Parser;
 use dies_core::workspace_utils;
 use dies_logger::AsyncProtobufLogger;
-use log::LevelFilter;
+use log::{LevelFilter, Log};
 use modes::Mode;
 use std::str::FromStr;
 use tokio::sync::broadcast;
@@ -68,12 +68,28 @@ async fn main() {
     tokio::signal::ctrl_c()
         .await
         .expect("Failed to listen for ctrl-c");
+    logger.flush();
+    println!("Shutting down... Press ctrl-c again to force shutdown");
+    // Allow the logger to flush before shutting down
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
-    log::info!("Shutting down");
-    stop_tx.send(()).expect("Failed to send stop signal");
-    main_task.await.expect("Executor task failed");
+    let shutdown_fut = async move {
+        stop_tx.send(()).expect("Failed to send stop signal");
+        main_task.await.expect("Executor task failed");
 
-    if let Some(mut child) = devserver {
-        child.kill().await.expect("Failed to kill dev server");
-    }
+        if let Some(mut child) = devserver {
+            child.kill().await.expect("Failed to kill dev server");
+        }
+    };
+    tokio::select! {
+        _ = shutdown_fut => {}
+        _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
+            eprintln!("Shutdown timed out");
+            std::process::exit(1);
+        }
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("Forced shutdown");
+            std::process::exit(1);
+        }
+    };
 }
