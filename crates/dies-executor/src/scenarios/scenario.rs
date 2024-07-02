@@ -103,7 +103,7 @@ impl ScenarioSetup {
 
         for player in self.own_players.iter() {
             let (position, yaw) = player_into_simulation(&player, field_width, field_length);
-            builder = builder.add_opp_player(position, yaw);
+            builder = builder.add_own_player(position, yaw);
         }
 
         for player in self.opp_players.iter() {
