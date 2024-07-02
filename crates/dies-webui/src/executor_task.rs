@@ -75,7 +75,6 @@ impl ExecutorTask {
                 }
             }
         }
-        log::info!("Executor task done");
     }
 
     async fn handle_cmd(&mut self, cmd: UiCommand, mut shutdown_rx: broadcast::Receiver<()>) {

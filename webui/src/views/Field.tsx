@@ -5,7 +5,7 @@ import { useResizeObserver } from "@/lib/useResizeObserver";
 
 const ROBOT_RADIUS = 0.14 * 1000;
 const BALL_RADIUS = 0.043 * 1000;
-const FIELD_ASPECT_RATIO = [52, 37];
+const DEFAULT_FIELD_SIZE = [10400, 7400];
 const CANVAS_PADDING = 20;
 const CONT_PADDING_PX = 8;
 
@@ -16,18 +16,23 @@ const Field: FC = () => {
   const world = useWorldState();
   const worldData = world.status === "connected" ? world.data : null;
   const contRef = useRef(null);
+
   const { width: contWidth = 0, height: contHeight = 0 } = useResizeObserver({
     ref: contRef,
   });
-
+  const fieldSize = [
+    (worldData?.field_geom?.field_length ?? DEFAULT_FIELD_SIZE[0]) +
+      2 * CANVAS_PADDING,
+    (worldData?.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1]) +
+      2 * CANVAS_PADDING,
+  ];
   const availableHeight = contHeight - 2 * CONT_PADDING_PX;
   const availableWidth = contWidth - 2 * CONT_PADDING_PX;
   const canvasWidth = Math.min(
     availableWidth,
-    availableHeight * (FIELD_ASPECT_RATIO[0] / FIELD_ASPECT_RATIO[1])
+    availableHeight * (fieldSize[0] / fieldSize[1])
   );
-  const canvasHeight =
-    canvasWidth * (FIELD_ASPECT_RATIO[1] / FIELD_ASPECT_RATIO[0]);
+  const canvasHeight = canvasWidth * (fieldSize[1] / fieldSize[0]);
 
   // Render the field when the world state changes
   useEffect(() => {
@@ -75,20 +80,20 @@ const render = (
   const { own_players, opp_players, ball } = worldState;
   const fieldW = worldState.field_geom?.field_length ?? 0;
   const fieldH = worldState.field_geom?.field_width ?? 0;
-  const width = canvas.width - CANVAS_PADDING * 2;
-  const height = canvas.height - CANVAS_PADDING * 2;
+  const screenFieldW = canvas.width - CANVAS_PADDING * 2;
+  const screenFieldH = canvas.height - CANVAS_PADDING * 2;
 
   const convertCoords = (coords: Vector2 | Vector3): Vector2 => {
     const [x, y] = coords;
 
     return [
-      (x + fieldW / 2) * (width / fieldW) + CANVAS_PADDING,
-      (-y + fieldH / 2) * (height / fieldH) + CANVAS_PADDING,
+      (x + fieldW / 2) * (screenFieldW / fieldW) + CANVAS_PADDING,
+      (-y + fieldH / 2) * (screenFieldH / fieldH) + CANVAS_PADDING,
     ];
   };
 
   const convertLength = (length: number): number => {
-    return Math.ceil(length * (width / fieldW));
+    return Math.ceil(length * (screenFieldW / fieldW));
   };
 
   const drawPlayer = (

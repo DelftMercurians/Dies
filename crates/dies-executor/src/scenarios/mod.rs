@@ -1,4 +1,5 @@
 mod scenario;
+use dies_core::Vector2;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -6,6 +7,15 @@ use crate::strategy::AdHocStrategy;
 
 fn empty_simulation() -> ScenarioSetup {
     ScenarioSetup::new(AdHocStrategy::new())
+}
+
+fn two_players_one_ball() -> ScenarioSetup {
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+    scenario
+        .add_ball()
+        .add_own_player(Vector2::zeros())
+        .add_own_player(Vector2::new(-500.0, 0.0));
+    scenario
 }
 
 /// Creates a lookup table for scenarios as a global constant.
@@ -54,11 +64,10 @@ macro_rules! scenarios {
             /// Converts the scenario type into a scenario setup.
             pub fn into_setup(&self) -> ScenarioSetup {
                 paste! {
-                    let f = match self {
-                        $(ScenarioType::[< $scen:camel >] => Box::new($scen)),+
-                    };
+                    match self {
+                        $(ScenarioType::[< $scen:camel >] => $scen()),+
+                    }
                 }
-                f()
             }
         }
     };
@@ -86,7 +95,8 @@ impl Serialize for ScenarioType {
 
 // **NOTE**: Add new scenarios here.
 scenarios! {
-    empty_simulation
+    empty_simulation,
+    two_players_one_ball
 }
 
 #[cfg(test)]

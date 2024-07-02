@@ -223,7 +223,7 @@ fn player_into_simulation(
 
     let yaw = match placement.yaw {
         Some(yaw) => yaw,
-        None => todo!(),
+        None => Angle::default(),
     };
 
     (position, yaw)

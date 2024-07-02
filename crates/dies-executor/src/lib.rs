@@ -267,10 +267,12 @@ impl Executor {
 
     pub fn step_simulation(&mut self, simulator: &mut Simulation, dt: Duration) -> Result<()> {
         simulator.step(dt.as_secs_f64());
-        simulator
-            .detection()
-            .or(simulator.geometry())
-            .map(|p| self.update_from_vision_msg(p));
+        if let Some(geom) = simulator.geometry() {
+            self.update_from_vision_msg(geom);
+        }
+        if let Some(det) = simulator.detection() {
+            self.update_from_vision_msg(det);
+        }
 
         Ok(())
     }
