@@ -9,44 +9,44 @@ use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 
-use crate::UiWorldState;
 use crate::{server::ServerState, UiCommand, UiMode};
+use crate::{PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState};
 
-pub async fn get_world_state(state: State<Arc<ServerState>>) -> impl IntoResponse {
+pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
     let update = state.update_rx.borrow().clone();
     if let Some(update) = update {
         let state = UiWorldState::Loaded(update.world_data);
-        Json(state).into_response()
+        Json(state)
     } else {
-        Json(UiWorldState::None).into_response()
+        Json(UiWorldState::None)
     }
 }
 
-pub async fn get_ui_status(state: State<Arc<ServerState>>) -> impl IntoResponse {
-    Json(state.ui_status()).into_response()
+pub async fn get_ui_status(state: State<Arc<ServerState>>) -> Json<UiStatus> {
+    Json(state.ui_status())
 }
 
-pub async fn get_scenarios() -> impl IntoResponse {
-    Json(ScenarioType::get_names()).into_response()
+pub async fn get_scenarios() -> Json<Vec<&'static str>> {
+    Json(ScenarioType::get_names())
 }
 
 pub async fn post_ui_mode(
     state: State<Arc<ServerState>>,
-    Json(mode): Json<UiMode>,
-) -> impl IntoResponse {
-    if mode == UiMode::Live && !state.is_live_available {
-        return StatusCode::BAD_REQUEST.into_response();
+    Json(data): Json<PostUiModeBody>,
+) -> StatusCode {
+    if data.mode == UiMode::Live && !state.is_live_available {
+        return StatusCode::BAD_REQUEST;
     }
 
-    state.set_ui_mode(mode);
-    StatusCode::OK.into_response()
+    state.set_ui_mode(data.mode);
+    StatusCode::OK
 }
 
 pub async fn post_command(
     state: State<Arc<ServerState>>,
-    Json(cmd): Json<UiCommand>,
-) -> impl IntoResponse {
-    let _ = state.cmd_tx.send(cmd);
+    Json(data): Json<PostUiCommandBody>,
+) -> StatusCode {
+    let _ = state.cmd_tx.send(data.command);
     StatusCode::OK
 }
 

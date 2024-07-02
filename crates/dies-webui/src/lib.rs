@@ -38,7 +38,7 @@ impl UiConfig {
 
 /// The current status of the executor.
 #[derive(Debug, Clone, Serialize)]
-#[serde( tag = "type", content = "data")]
+#[serde(tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum ExecutorStatus {
     None,
@@ -58,7 +58,7 @@ pub(crate) struct UiStatus {
 
 /// A command from the frontend to the backend.
 #[derive(Debug, Clone, Deserialize)]
-#[serde( tag = "type", content = "data")]
+#[serde(tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum UiCommand {
     SetManualOverride {
@@ -76,6 +76,12 @@ pub(crate) enum UiCommand {
     Stop,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[typeshare]
+pub(crate) struct PostUiCommandBody {
+    pub(crate) command: UiCommand,
+}
+
 /// The current mode of the UI - either simulation or live.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[typeshare]
@@ -84,10 +90,16 @@ pub enum UiMode {
     Live,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde( tag = "type", content = "data")]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[typeshare]
-pub enum UiWorldState {
+pub(crate) struct PostUiModeBody {
+    pub mode: UiMode,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare]
+pub(crate) enum UiWorldState {
     Loaded(WorldData),
     None,
 }

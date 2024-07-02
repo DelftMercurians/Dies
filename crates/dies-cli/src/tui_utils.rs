@@ -72,9 +72,6 @@ pub struct CliArgs {
     #[clap(long, default_value = "disabled", default_missing_value = "auto")]
     pub serial_port: SerialPort,
 
-    #[clap(long, default_value = "true")]
-    pub webui: bool,
-
     #[clap(long, default_value = "5555")]
     pub webui_port: u16,
 
@@ -83,9 +80,6 @@ pub struct CliArgs {
 
     #[clap(long, default_value = "")]
     pub robot_ids: String,
-
-    #[clap(long, default_value = "dies-test-strat")]
-    pub package: String,
 
     #[clap(long, default_value = "none")]
     pub vision: VisionType,

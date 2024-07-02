@@ -184,6 +184,30 @@ export interface UiStatus {
 	executor: ExecutorStatus;
 }
 
+/** A command from the frontend to the backend. */
+export type UiCommand = 
+	| { type: "SetManualOverride", data: {
+	player_id: PlayerId;
+	manual_override: boolean;
+}}
+	| { type: "OverrideCommand", data: {
+	player_id: PlayerId;
+	command: PlayerOverrideCommand;
+}}
+	| { type: "SetPause", data: boolean }
+	| { type: "StartScenario", data: {
+	scenario: ScenarioType;
+}}
+	| { type: "Stop",  };
+
+export interface PostUiCommandBody {
+	command: UiCommand;
+}
+
+export interface PostUiModeBody {
+	mode: UiMode;
+}
+
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
 	/** Do nothing */
@@ -215,22 +239,6 @@ export type PlayerOverrideCommand =
 }}
 	/** Discharge the kicker safely */
 	| { type: "DischargeKicker",  };
-
-/** A command from the frontend to the backend. */
-export type UiCommand = 
-	| { type: "SetManualOverride", data: {
-	player_id: PlayerId;
-	manual_override: boolean;
-}}
-	| { type: "OverrideCommand", data: {
-	player_id: PlayerId;
-	command: PlayerOverrideCommand;
-}}
-	| { type: "SetPause", data: boolean }
-	| { type: "StartScenario", data: {
-	scenario: ScenarioType;
-}}
-	| { type: "Stop",  };
 
 export type UiWorldState = 
 	| { type: "Loaded", data: WorldData }
