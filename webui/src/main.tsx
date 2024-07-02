@@ -4,18 +4,19 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App.js";
-import { WorldDataProvider } from "./api";
+import { WorldDataProvider, startWsClient } from "./api";
 import { Toaster } from "./components/ui/sonner";
+import { TooltipProvider } from "./components/ui/tooltip";
 
-const queryClient = new QueryClient();
+startWsClient();
 
 ReactDOM.createRoot(document.getElementById("app")!).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
       <WorldDataProvider>
         <App />
         <Toaster />
       </WorldDataProvider>
-    </QueryClientProvider>
+    </TooltipProvider>
   </React.StrictMode>
 );

@@ -7,7 +7,13 @@ import React, {
   createContext,
   useState,
 } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   UiMode,
   UiStatus,
@@ -17,6 +23,7 @@ import {
   PostUiCommandBody,
   UiWorldState,
 } from "./bindings";
+import { toast } from "sonner";
 
 export type Status =
   | { status: "loading" }
@@ -28,19 +35,20 @@ export type WorldStatus =
   | { status: "loading" }
   | { status: "connected"; data: WorldData };
 
+const queryClient = new QueryClient();
 const WsConnectedContext = createContext(false);
 
 const getWorldState = (): Promise<UiWorldState> =>
   fetch("/api/world-state").then((res) => res.json());
 
 const getUiStatus = (): Promise<UiStatus> =>
-  fetch("/api/status").then((res) => res.json());
+  fetch("/api/ui-status").then((res) => res.json());
 
 const getScenarios = (): Promise<string[]> =>
   fetch("/api/scenarios").then((res) => res.json());
 
 const postUiMode = (mode: UiMode) =>
-  fetch("/api/mode", {
+  fetch("/api/ui-mode", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -58,21 +66,12 @@ async function postCommand(command: UiCommand) {
   });
 }
 
-export const useStatus = (): Status => {
-  const query = useQuery({
+export const useStatus = () =>
+  useQuery({
     queryKey: ["status"],
     queryFn: getUiStatus,
-    refetchInterval: 500,
+    refetchInterval: 1500,
   });
-
-  if (query.data && query.isSuccess) {
-    return { status: "connected", data: query.data };
-  } else if (query.isError) {
-    return { status: "error" };
-  } else {
-    return { status: "loading" };
-  }
-};
 
 export const useScenarios = (): string[] | null => {
   const query = useQuery({
@@ -86,14 +85,12 @@ export const useScenarios = (): string[] | null => {
 
 export const useSetMode = () => {
   const queryClient = useQueryClient();
-  const mutation = useMutation({
+  return useMutation({
     mutationFn: postUiMode,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["status"] });
     },
   });
-
-  return (mode: UiMode) => mutation.mutate(mode);
 };
 
 export const useSendCommand = () => {
@@ -127,75 +124,91 @@ export const useWorldState = (): WorldStatus => {
   return { status: "loading" };
 };
 
+let ws: WebSocket | null = null;
+const onWsConnectedChange: ((connected: boolean) => void)[] = [];
+const addWsConnectedListener = (cb: (connected: boolean) => void) => {
+  onWsConnectedChange.push(cb);
+};
+const removeWsConnectedListener = (cb: (connected: boolean) => void) => {
+  const idx = onWsConnectedChange.indexOf(cb);
+  if (idx >= 0) onWsConnectedChange.splice(idx, 1);
+};
+export const sendWsCommand = (command: UiCommand) => {
+  if (ws) {
+    ws.send(JSON.stringify(command));
+  } else {
+    console.error("Websocket not connected");
+  }
+};
+export function startWsClient() {
+  const notify = (connected: boolean) => {
+    onWsConnectedChange.forEach((cb) => cb(connected));
+  };
+
+  const connectAndListen = (): Promise<void> => {
+    if (ws) return Promise.resolve();
+    return new Promise((_, reject) => {
+      ws = new WebSocket(`ws://127.0.0.1:5555/api/ws`);
+
+      ws.onopen = () => {
+        toast.success("WebSocket connected");
+        notify(true);
+      };
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data) as WorldData;
+        queryClient.setQueryData(["world-state"], {
+          type: "Loaded",
+          data,
+        } satisfies UiWorldState);
+      };
+      ws.onerror = (err) => {
+        if (ws) {
+          ws.onmessage = () => {};
+          ws.onclose = () => {};
+          ws.close();
+        }
+        notify(false);
+        reject(err);
+      };
+      ws.onclose = () => {
+        notify(false);
+        reject(new Error("Websocket closed"));
+      };
+    });
+  };
+
+  const run = async () => {
+    while (true) {
+      try {
+        await connectAndListen();
+      } catch (err) {
+        toast.error("WebSocket unexpectadly closed");
+        console.error("Error in WebSocket connection", err);
+      }
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  };
+  run();
+}
+
 export const WorldDataProvider: FC<PropsWithChildren> = ({ children }) => {
-  const ws = useRef<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
-  const queryClient = useQueryClient();
-
   useEffect(() => {
-    const host = window.location.host.replace("localhost", "127.0.0.1");
-
-    const connectAndListen = (): Promise<WebSocket> => {
-      return new Promise((_, reject) => {
-        ws.current = new WebSocket(`ws://127.0.0.1:5555/api/ws`);
-
-        ws.current.onopen = () => {
-          console.log("Connected to websocket");
-          setConnected(true);
-        };
-        ws.current.onmessage = (event) => {
-          const data = JSON.parse(event.data) as WorldData;
-          queryClient.setQueryData(["world-state"], {
-            type: "Loaded",
-            data,
-          } satisfies UiWorldState);
-        };
-        ws.current.onerror = (err) => {
-          if (ws.current) {
-            ws.current.onmessage = () => {};
-            ws.current.onclose = () => {};
-            ws.current.close();
-          }
-          setConnected(false);
-          reject(err);
-        };
-        ws.current.onclose = () => {
-          setConnected(false);
-          reject(new Error("Websocket closed"));
-        };
-      });
-    };
-
-    let closing = false;
-    const startWs = async () => {
-      while (true) {
-        try {
-          await connectAndListen();
-        } catch (err) {
-          console.error("Error in WebSocket connection", err);
-        }
-        if (closing) {
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    };
-
-    startWs();
-
+    addWsConnectedListener(setConnected);
     return () => {
-      closing = true;
-      if (ws.current) {
-        ws.current.onmessage = () => {};
-        ws.current.close();
-      }
-      ws.current = null;
+      removeWsConnectedListener(setConnected);
     };
   }, []);
 
   return (
-    <WsConnectedContext.Provider value={connected}>
-      {children}
-    </WsConnectedContext.Provider>
+    <QueryClientProvider client={queryClient}>
+      <WsConnectedContext.Provider value={connected}>
+        {children}
+      </WsConnectedContext.Provider>
+    </QueryClientProvider>
   );
 };
