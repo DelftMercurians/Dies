@@ -179,7 +179,6 @@ impl SerialClient {
             }
             port.clear(serialport::ClearBuffer::All).unwrap();
             drop(port);
-            println!("Closing serial port");
         });
 
         Ok(Self { writer_tx: tx })

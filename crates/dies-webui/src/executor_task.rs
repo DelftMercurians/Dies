@@ -69,9 +69,13 @@ impl ExecutorTask {
                         broadcast::error::RecvError::Closed => break
                     }
                 },
-                _ = shutdown_rx.recv() => break
+                _ = shutdown_rx.recv() => {
+                    self.stop_executor().await;
+                    break;
+                }
             }
         }
+        log::info!("Executor task done");
     }
 
     async fn handle_cmd(&mut self, cmd: UiCommand, mut shutdown_rx: broadcast::Receiver<()>) {
@@ -80,7 +84,7 @@ impl ExecutorTask {
                 player_id,
                 manual_override,
             } => self.handle_executor_msg(ControlMsg::SetPlayerOverride {
-                player_id: player_id,
+                player_id,
                 override_active: manual_override,
             }),
             UiCommand::OverrideCommand { player_id, command } => {
@@ -89,6 +93,7 @@ impl ExecutorTask {
             UiCommand::SetPause(pause) => self.handle_executor_msg(ControlMsg::SetPause(pause)),
             UiCommand::Stop => self.stop_executor().await,
             UiCommand::StartScenario { scenario } => {
+                log::info!("Starting scenarion \"{}\"", scenario.name());
                 // This is a potentially long running operation (in case of live mode),
                 // so we allow cancelling
                 tokio::select! {
@@ -107,6 +112,7 @@ impl ExecutorTask {
             } => {
                 let _ = executor_handle.send(ControlMsg::Stop);
                 let _ = task_handle.await;
+                log::info!("Executor stopped");
             }
             ExecutorTaskState::Starting {
                 cancel_tx,
@@ -114,9 +120,11 @@ impl ExecutorTask {
             } => {
                 let _ = cancel_tx.send(());
                 let _ = task_handle.await;
+                log::info!("Executor startup cancelled");
             }
             ExecutorTaskState::Idle => {}
         }
+        self.server_state.set_executor_status(ExecutorStatus::None);
     }
 
     async fn start_scenario(&mut self, scenario: ScenarioType) {
@@ -165,10 +173,8 @@ impl ExecutorTask {
                         let _ = handle_tx.send(executor.handle());
                         let mut handle = executor.handle();
                         tokio::spawn(async move {
-                            loop {
-                                while let Ok(update) = handle.update_rx.recv().await {
-                                    let _ = update_tx.send(Some(update));
-                                }
+                            while let Ok(update) = handle.update_rx.recv().await {
+                                let _ = update_tx.send(Some(update));
                             }
                         });
 

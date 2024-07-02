@@ -96,7 +96,7 @@ async fn start_webserver(
     let serve_dir = ServeDir::new(path);
     let app = Router::new()
         .route("/api/world-state", get(routes::get_world_state))
-        .route("/api/ui-status", post(routes::get_ui_status))
+        .route("/api/ui-status", get(routes::get_ui_status))
         .route("/api/scenarios", get(routes::get_scenarios))
         .route("/api/ws", get(routes::websocket))
         .route("/api/ui-mode", post(routes::post_ui_mode))

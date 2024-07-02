@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate};
 use dies_logger::{log_referee, log_vision};
@@ -218,7 +218,8 @@ impl Executor {
 
     /// Update the executor with a vision message.
     pub fn update_from_vision_msg(&mut self, message: SSL_WrapperPacket) {
-        log_vision(&message);
+        // TODO: FIX
+        // log_vision(&message);
         self.tracker.update_from_vision(&message);
         self.update_team_controller();
     }
@@ -264,16 +265,12 @@ impl Executor {
         Ok(())
     }
 
-    pub fn step_simulation(&mut self) -> Result<()> {
-        let packet = if let Some(Environment::Simulation { simulator, dt }) = &mut self.environment
-        {
-            simulator.step(dt.as_secs_f64());
-            simulator.detection().or(simulator.geometry())
-        } else {
-            bail!("Simulator not set");
-        };
-
-        packet.map(|p| self.update_from_vision_msg(p));
+    pub fn step_simulation(&mut self, simulator: &mut Simulation, dt: Duration) -> Result<()> {
+        simulator.step(dt.as_secs_f64());
+        simulator
+            .detection()
+            .or(simulator.geometry())
+            .map(|p| self.update_from_vision_msg(p));
 
         Ok(())
     }
@@ -281,11 +278,14 @@ impl Executor {
     /// Run the executor in real time on the simulator
     async fn run_rt_sim(&mut self, mut simulator: Simulation, dt: Duration) -> Result<()> {
         let mut update_interval = tokio::time::interval(dt);
+        update_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut cmd_interval = tokio::time::interval(CMD_INTERVAL);
+        cmd_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         let mut paused_rx = self.paused_tx.subscribe();
         loop {
             let paused = { *paused_rx.borrow_and_update() };
-            if paused {
+            if !paused {
                 tokio::select! {
                     Some(msg) = self.command_rx.recv() => {
                         match msg {
@@ -294,7 +294,7 @@ impl Executor {
                         }
                     }
                     _ = update_interval.tick() => {
-                        self.step_simulation()?;
+                        self.step_simulation(&mut simulator, dt)?;
                     }
                     _ = cmd_interval.tick() => {
                         for cmd in self.player_commands() {
@@ -303,7 +303,10 @@ impl Executor {
                     }
                 }
             } else {
-                paused_rx.changed().await?;
+                tokio::select! {
+                    Some(ControlMsg::Stop) = self.command_rx.recv() => break,
+                    res = paused_rx.changed() => res?
+                }
             }
         }
 

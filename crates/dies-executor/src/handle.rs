@@ -2,6 +2,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use dies_core::{PlayerId, PlayerOverrideCommand, WorldUpdate};
 
+#[derive(Debug)]
 pub enum ControlMsg {
     SetPlayerOverride {
         player_id: PlayerId,

@@ -37,9 +37,16 @@ async fn main() -> ExitCode {
         .await
         .expect("Failed to listen for ctrl-c");
     logger.flush();
-    println!("Shutting down... Press ctrl-c again to force shutdown");
+    println!("Shutting down (timeout 3 seconds)... Press ctrl-c again to force shutdown");
     // Allow the logger to flush before shutting down
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    // Fool-proof timeout for shutdown
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        eprintln!("Shutdown timed out");
+        std::process::exit(1);
+    });
 
     let shutdown_fut = async move {
         stop_tx.send(()).expect("Failed to send stop signal");
@@ -47,13 +54,9 @@ async fn main() -> ExitCode {
     };
     tokio::select! {
         _ = shutdown_fut => {}
-        _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
-            eprintln!("Shutdown timed out");
-            return ExitCode::FAILURE;
-        }
         _ = tokio::signal::ctrl_c() => {
             eprintln!("Forced shutdown");
-            return ExitCode::FAILURE;
+            std::process::exit(1);
         }
     };
 
