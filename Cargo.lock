@@ -485,6 +485,7 @@ name = "dies-executor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "approx",
  "dies-core",
  "dies-logger",
  "dies-protos",
