@@ -2,7 +2,9 @@ use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate};
+use dies_core::{
+    ExecutorInfo, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate,
+};
 use dies_logger::{log_referee, log_vision};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_serial_client::SerialClient;
@@ -12,10 +14,7 @@ use dies_world::{WorldConfig, WorldTracker};
 use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
 use strategy::Strategy;
-use tokio::sync::{
-    broadcast::{self},
-    mpsc, watch,
-};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 mod control;
 mod gc_client;
@@ -162,6 +161,8 @@ pub struct Executor {
     command_tx: mpsc::UnboundedSender<ControlMsg>,
     command_rx: mpsc::UnboundedReceiver<ControlMsg>,
     paused_tx: watch::Sender<bool>,
+    info_channel_rx: mpsc::UnboundedReceiver<oneshot::Sender<ExecutorInfo>>,
+    info_channel_tx: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
 }
 
 impl Executor {
@@ -174,6 +175,7 @@ impl Executor {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
+        let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
             tracker: WorldTracker::new(config.world_config),
@@ -188,6 +190,8 @@ impl Executor {
             command_rx,
             update_tx,
             paused_tx,
+            info_channel_rx,
+            info_channel_tx,
         }
     }
 
@@ -199,6 +203,7 @@ impl Executor {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
+        let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
             tracker: WorldTracker::new(config.world_config),
@@ -213,6 +218,8 @@ impl Executor {
             command_rx,
             update_tx,
             paused_tx,
+            info_channel_rx,
+            info_channel_tx,
         }
     }
 
@@ -246,6 +253,14 @@ impl Executor {
     /// internal queue.
     pub fn gc_messages(&mut self) -> Vec<Referee> {
         self.gc_client.messages()
+    }
+
+    /// Get runtime information about the executor.
+    pub fn info(&self) -> ExecutorInfo {
+        ExecutorInfo {
+            paused: *self.paused_tx.borrow(),
+            manual_controlled_players: self.manual_override.keys().copied().collect(),
+        }
     }
 
     /// Run the executor in real time, either with real clients or with a simulator,
@@ -295,6 +310,9 @@ impl Executor {
                             msg => self.handle_control_msg(msg)
                         }
                     }
+                    Some(tx) = self.info_channel_rx.recv() => {
+                        let _  = tx.send(self.info());
+                    }
                     _ = update_interval.tick() => {
                         self.step_simulation(&mut simulator, dt)?;
                     }
@@ -307,6 +325,9 @@ impl Executor {
             } else {
                 tokio::select! {
                     Some(ControlMsg::Stop) = self.command_rx.recv() => break,
+                    Some(tx) = self.info_channel_rx.recv() => {
+                        let _  = tx.send(self.info());
+                    }
                     res = paused_rx.changed() => res?
                 }
             }
@@ -344,6 +365,9 @@ impl Executor {
                         }
                     }
                 }
+                Some(tx) = self.info_channel_rx.recv() => {
+                    let _  = tx.send(self.info());
+                }
                 // bs_msg = bs_client.recv() => {
                 //     match bs_msg {
                 //         Ok(bs_msg) => {
@@ -371,6 +395,7 @@ impl Executor {
         ExecutorHandle {
             control_tx: self.command_tx.clone(),
             update_rx: self.update_tx.subscribe(),
+            info_channel: self.info_channel_tx.clone(),
         }
     }
 

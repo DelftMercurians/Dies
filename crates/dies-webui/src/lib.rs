@@ -1,4 +1,4 @@
-use dies_core::{PlayerId, PlayerOverrideCommand, ScenarioInfo, WorldData};
+use dies_core::{ExecutorInfo, PlayerId, PlayerOverrideCommand, ScenarioInfo, WorldData};
 use dies_executor::scenarios::ScenarioType;
 use dies_serial_client::SerialClientConfig;
 use dies_ssl_client::VisionClientConfig;
@@ -43,8 +43,15 @@ impl UiConfig {
 pub(crate) enum ExecutorStatus {
     None,
     StartingScenario(ScenarioInfo),
-    RunningExecutor,
+    RunningExecutor { scenario: String },
     Failed(String),
+}
+
+/// Runtime information about the active executor.
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct ExecutorInfoResponse {
+    info: Option<ExecutorInfo>,
 }
 
 /// The current status of the UI.

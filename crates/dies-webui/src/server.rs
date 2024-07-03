@@ -2,7 +2,8 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use dies_core::WorldUpdate;
+use dies_core::{ExecutorInfo, WorldUpdate};
+use dies_executor::ExecutorHandle;
 use std::sync::{Arc, RwLock};
 use tokio::sync::{broadcast, watch};
 use tower_http::services::ServeDir;
@@ -17,6 +18,7 @@ pub struct ServerState {
     pub cmd_tx: broadcast::Sender<UiCommand>,
     pub ui_mode: RwLock<UiMode>,
     pub executor_status: RwLock<ExecutorStatus>,
+    pub executor_handle: RwLock<Option<ExecutorHandle>>,
 }
 
 impl ServerState {
@@ -31,6 +33,7 @@ impl ServerState {
             cmd_tx,
             ui_mode: RwLock::new(UiMode::Simulation),
             executor_status: RwLock::new(ExecutorStatus::None),
+            executor_handle: RwLock::new(None),
         }
     }
 
@@ -47,6 +50,22 @@ impl ServerState {
             is_live_available: self.is_live_available,
             ui_mode: *self.ui_mode.read().unwrap(),
             executor: self.executor_status.read().unwrap().clone(),
+        }
+    }
+
+    /// Get the current executor info.
+    pub async fn executor_info(&self) -> Option<ExecutorInfo> {
+        let rx = {
+            self.executor_handle
+                .read()
+                .unwrap()
+                .as_ref()
+                .map(|h| h.info())
+        };
+        if let Some(rx) = rx {
+            rx.recv().await
+        } else {
+            None
         }
     }
 }
@@ -95,6 +114,7 @@ async fn start_webserver(
         .join("static");
     let serve_dir = ServeDir::new(path);
     let app = Router::new()
+        .route("/api/executor", get(routes::get_executor_info))
         .route("/api/world-state", get(routes::get_world_state))
         .route("/api/ui-status", get(routes::get_ui_status))
         .route("/api/scenarios", get(routes::get_scenarios))

@@ -28,11 +28,14 @@ const TooltipContent = React.forwardRef<
 TooltipContent.displayName = TooltipPrimitive.Content.displayName;
 
 const SimpleTooltip: React.FC<
-  React.ComponentProps<typeof TooltipPrimitive.Root> & { title: string }
-> = ({ children, ...props }) => (
+  React.ComponentProps<typeof TooltipPrimitive.Root> & {
+    title: string;
+    className?: string;
+  }
+> = ({ children, className, ...props }) => (
   <Tooltip {...props}>
     <TooltipTrigger asChild>
-      <div>{children}</div>
+      <div className={className}>{children}</div>
     </TooltipTrigger>
     <TooltipContent>{props.title}</TooltipContent>
   </Tooltip>

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 
 use crate::{server::ServerState, UiCommand, UiMode};
-use crate::{PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState};
+use crate::{ExecutorInfoResponse, PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState};
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
     let update = state.update_rx.borrow().clone();
@@ -28,6 +28,11 @@ pub async fn get_ui_status(state: State<Arc<ServerState>>) -> Json<UiStatus> {
 
 pub async fn get_scenarios() -> Json<Vec<&'static str>> {
     Json(ScenarioType::get_names())
+}
+
+pub async fn get_executor_info(state: State<Arc<ServerState>>) -> Json<ExecutorInfoResponse> {
+    let info = state.executor_info().await;
+    Json(ExecutorInfoResponse { info })
 }
 
 pub async fn post_ui_mode(

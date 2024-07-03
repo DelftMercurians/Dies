@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  useKeyboardControl,
   useScenarios,
   useSendCommand,
   useSetMode,
@@ -34,6 +35,7 @@ import {
 import logo from "./assets/mercury-logo.svg";
 import { log } from "console";
 import { cn } from "./lib/utils";
+import PlayerSidebar from "./views/PlayerSidebar";
 
 const App: React.FC = () => {
   const scenarios = useScenarios() ?? [];
@@ -42,6 +44,9 @@ const App: React.FC = () => {
   const worldState = useWorldState();
   const { mutate: setMode, status: setModeStatus } = useSetMode();
   const sendCommand = useSendCommand();
+  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
+
+  useKeyboardControl(selectedPlayerId);
 
   if (!backendState) {
     return (
@@ -73,16 +78,21 @@ const App: React.FC = () => {
         data: { scenario: selectedScenario },
       });
     } else if (val === "stop" && playingState !== "stop") {
+      setSelectedPlayerId(null);
       sendCommand({ type: "Stop" });
     } else {
       toast.error(`Unhandled state ${val}`);
     }
   };
+  const runningScenario =
+    executorStatus.type === "RunningExecutor"
+      ? executorStatus.data.scenario
+      : null;
 
   return (
     <main className="w-full h-full flex flex-col bg-background bg-slate-100">
       {/* Toolbar */}
-      <div className="flex flex-row gap-6 bg-slate-800 p-4 text-accent">
+      <div className="flex flex-row gap-6 bg-slate-800 p-4">
         <img src={logo} width="45px" height="41px" />
 
         <ToggleGroup
@@ -106,10 +116,13 @@ const App: React.FC = () => {
         </ToggleGroup>
 
         <Select
-          value={selectedScenario ?? undefined}
+          value={
+            runningScenario ? runningScenario : selectedScenario ?? undefined
+          }
           onValueChange={(val) => setSelectedScenario(val)}
+          disabled={!!runningScenario}
         >
-          <SelectTrigger className="text-accent-foreground w-64">
+          <SelectTrigger className="w-64">
             <SelectValue placeholder="Select Scenario" />
           </SelectTrigger>
 
@@ -136,13 +149,21 @@ const App: React.FC = () => {
                 : "Select a scenario first"
             }
           >
-            <ToggleGroupItem value="play" disabled={!selectedScenario}>
+            <ToggleGroupItem
+              value="play"
+              disabled={!selectedScenario}
+              className="data-[state=on]:bg-green-400 data-[state=on]:opacity-100  data-[state=on]:text-gray-500"
+            >
               <Play />
             </ToggleGroupItem>
           </SimpleTooltip>
 
           <SimpleTooltip title="Pause">
-            <ToggleGroupItem value="pause" disabled={playingState !== "play"}>
+            <ToggleGroupItem
+              value="pause"
+              disabled={playingState !== "play"}
+              className="data-[state=on]:bg-yellow-400 data-[state=on]:opacity-100  data-[state=on]:text-gray-500"
+            >
               <Pause />
             </ToggleGroupItem>
           </SimpleTooltip>
@@ -159,12 +180,22 @@ const App: React.FC = () => {
         </ToggleGroup>
       </div>
 
-      <Field />
+      {/* Main content */}
+      <div className="h-full w-full grid grid-cols-6">
+        <div className="bg-slate-950"></div>
+        <div className="col-span-4 bg-green-800 p-6">
+          <Field
+            selectedPlayerId={selectedPlayerId}
+            onSelectPlayer={(id) => setSelectedPlayerId(id)}
+          />
+        </div>
+        <PlayerSidebar selectedPlayerId={selectedPlayerId} />
+      </div>
 
       {/* Statusbar */}
       <div
         className={cn(
-          "w-full text-accent text-sm px-4 py-1 select-none",
+          "w-full text-sm px-4 py-1 select-none",
           "bg-slate-800",
           executorStatus.type === "StartingScenario" && "bg-yellow-500",
           executorStatus.type === "RunningExecutor" &&

@@ -1,4 +1,5 @@
 mod angle;
+mod executor_info;
 mod geom;
 mod player;
 mod world;
@@ -6,15 +7,16 @@ mod world;
 pub mod workspace_utils;
 
 pub use angle::*;
+pub use executor_info::*;
 pub use geom::*;
 pub use player::*;
-use typeshare::typeshare;
 pub use world::*;
+
+use serde::Serialize;
+use typeshare::typeshare;
 
 pub type VisionMsg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 pub type GcRefereeMsg = dies_protos::ssl_gc_referee_message::Referee;
-
-use serde::Serialize;
 
 pub type Scalar = f64;
 pub type Vector2 = nalgebra::Vector2<Scalar>;

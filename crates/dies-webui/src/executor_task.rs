@@ -169,6 +169,7 @@ impl ExecutorTask {
 
                 match executor {
                     Ok(executor) => {
+                        // Relay world update to the UI
                         let _ = handle_tx.send(executor.handle());
                         let mut handle = executor.handle();
                         tokio::spawn(async move {
@@ -177,7 +178,9 @@ impl ExecutorTask {
                             }
                         });
 
-                        server_state.set_executor_status(ExecutorStatus::RunningExecutor);
+                        server_state.set_executor_status(ExecutorStatus::RunningExecutor {
+                            scenario: scenario.name().to_owned(),
+                        });
                         if let Err(err) = executor.run_real_time().await {
                             log::error!("Executor failed: {}", err);
                         }
@@ -199,6 +202,7 @@ impl ExecutorTask {
         if let Ok(executor_handle) = handle_rx.await {
             if let ExecutorTaskState::Starting { task_handle, .. } = std::mem::take(&mut self.state)
             {
+                *self.server_state.executor_handle.write().unwrap() = Some(executor_handle.clone());
                 self.state = ExecutorTaskState::Runnning {
                     task_handle,
                     executor_handle,

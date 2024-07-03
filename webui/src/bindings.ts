@@ -18,6 +18,14 @@ export type Angle = number;
 
 export type PlayerId = number;
 
+/** Runtime information about the active executor. */
+export interface ExecutorInfo {
+	/** Whether the executor is currently paused. */
+	paused: boolean;
+	/** The player IDs that are currently controlled manually. */
+	manual_controlled_players: PlayerId[];
+}
+
 /** A single field arc -- eg. the center circle */
 export interface FieldCircularArc {
 	/** Readable name of the arc */
@@ -164,6 +172,11 @@ export interface WorldUpdate {
 	world_data: WorldData;
 }
 
+/** Runtime information about the active executor. */
+export interface ExecutorInfoResponse {
+	info?: ExecutorInfo;
+}
+
 /** The current mode of the UI - either simulation or live. */
 export enum UiMode {
 	Simulation = "Simulation",
@@ -174,7 +187,9 @@ export enum UiMode {
 export type ExecutorStatus = 
 	| { type: "None",  }
 	| { type: "StartingScenario", data: ScenarioInfo }
-	| { type: "RunningExecutor",  }
+	| { type: "RunningExecutor", data: {
+	scenario: string;
+}}
 	| { type: "Failed", data: string };
 
 /** The current status of the UI. */

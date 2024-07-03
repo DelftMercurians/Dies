@@ -6,6 +6,7 @@ import React, {
   useContext,
   createContext,
   useState,
+  Key,
 } from "react";
 import {
   QueryClient,
@@ -22,6 +23,8 @@ import {
   PostUiModeBody,
   PostUiCommandBody,
   UiWorldState,
+  ExecutorInfoResponse,
+  ExecutorInfo,
 } from "./bindings";
 import { toast } from "sonner";
 
@@ -46,6 +49,11 @@ const getUiStatus = (): Promise<UiStatus> =>
 
 const getScenarios = (): Promise<string[]> =>
   fetch("/api/scenarios").then((res) => res.json());
+
+const getExecutorInfo = (): Promise<ExecutorInfo | null> =>
+  fetch("/api/executor")
+    .then((res) => res.json())
+    .then((data) => (data as ExecutorInfoResponse).info ?? null);
 
 const postUiMode = (mode: UiMode) =>
   fetch("/api/ui-mode", {
@@ -83,6 +91,16 @@ export const useScenarios = (): string[] | null => {
   return query.data ?? null;
 };
 
+export const useExecutorInfo = (): ExecutorInfo | null => {
+  const query = useQuery({
+    queryKey: ["executor-info"],
+    queryFn: getExecutorInfo,
+    refetchInterval: 1000,
+  });
+
+  return query.data ?? null;
+};
+
 export const useSetMode = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -95,12 +113,22 @@ export const useSetMode = () => {
 
 export const useSendCommand = () => {
   const queryClient = useQueryClient();
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["status"] });
+    queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+  };
+  const isWsConnected = useContext(WsConnectedContext);
   const mutation = useMutation({
     mutationFn: postCommand,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["status"] });
-    },
+    onSuccess: invalidate,
   });
+
+  if (isWsConnected) {
+    return (command: UiCommand) => {
+      sendWsCommand(command);
+      invalidate();
+    };
+  }
 
   return (command: UiCommand) => mutation.mutate(command);
 };
@@ -137,7 +165,7 @@ export const sendWsCommand = (command: UiCommand) => {
   if (ws) {
     ws.send(JSON.stringify(command));
   } else {
-    console.error("Websocket not connected");
+    throw new Error("Websocket not connected");
   }
 };
 export function startWsClient() {
@@ -194,6 +222,67 @@ export function startWsClient() {
   };
   run();
 }
+
+export const useKeyboardControl = (playerId: number | null) => {
+  const sendCommand = useSendCommand();
+
+  useEffect(() => {
+    if (playerId === null) return;
+    const pressedKeys = new Set<string>();
+    const handleKeyDown = (ev: KeyboardEvent) => {
+      if (ev.repeat) return;
+      pressedKeys.add(ev.key);
+    };
+    const handleKeyUp = (ev: KeyboardEvent) => {
+      pressedKeys.delete(ev.key);
+    };
+
+    const interval = setInterval(() => {
+      if (playerId === null) return;
+
+      let velocity = [0, 0] as [number, number];
+      if (pressedKeys.has("w")) velocity[1] += 1;
+      if (pressedKeys.has("s")) velocity[1] -= 1;
+      if (pressedKeys.has("a")) velocity[0] -= 1;
+      if (pressedKeys.has("d")) velocity[0] += 1;
+      const vel_mag = Math.sqrt(velocity[0] ** 2 + velocity[1] ** 2);
+      if (vel_mag > 0) {
+        velocity = velocity.map((v) => v / vel_mag) as [number, number];
+      }
+
+      let angular_velocity = 0;
+      if (pressedKeys.has("q")) angular_velocity += 1;
+      if (pressedKeys.has("e")) angular_velocity -= 1;
+
+      if (Math.abs(angular_velocity) > 0 || vel_mag > 0) {
+        const command: UiCommand = {
+          type: "OverrideCommand",
+          data: {
+            player_id: playerId,
+            command: {
+              type: "GlobalVelocity",
+              data: {
+                velocity,
+                angular_velocity,
+                arm_kick: false,
+                dribble_speed: 0,
+              },
+            },
+          },
+        };
+        sendCommand(command);
+      }
+    }, 1000 / 30);
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      clearInterval(interval);
+    };
+  }, [playerId]);
+};
 
 export const WorldDataProvider: FC<PropsWithChildren> = ({ children }) => {
   const [connected, setConnected] = useState(false);
