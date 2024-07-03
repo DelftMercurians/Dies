@@ -111,6 +111,7 @@ export class FieldRenderer {
   private drawFieldLines() {
     if (!this.worldData?.field_geom?.line_segments) return;
 
+    this.ctx.lineWidth = 1;
     this.worldData.field_geom.line_segments.forEach(({ p1, p2 }) => {
       const [x1, y1] = this.fieldToCanvas(p1);
       const [x2, y2] = this.fieldToCanvas(p2);
@@ -153,6 +154,7 @@ export class FieldRenderer {
 
     const angle = -data.yaw;
     this.ctx.strokeStyle = "white";
+    this.ctx.lineWidth = 2;
     this.ctx.save();
     this.ctx.translate(x, y);
     this.ctx.rotate(angle);

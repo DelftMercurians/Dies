@@ -116,6 +116,7 @@ export const useSendCommand = () => {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["status"] });
     queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+    queryClient.invalidateQueries({ queryKey: ["world-state"] });
   };
   const isWsConnected = useContext(WsConnectedContext);
   const mutation = useMutation({
