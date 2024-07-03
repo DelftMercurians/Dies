@@ -13,6 +13,7 @@ import {
 interface TimeSeriesChartProps<D, K extends keyof D> {
   newDataPoint: D;
   selectedKey: K;
+  paused?: boolean;
   objectId?: string | number;
   transform?: (value: D[K]) => number;
   axisLabels?: { [K in keyof D]?: string };
@@ -24,6 +25,7 @@ function TimeSeriesChart<D extends { timestamp: number }, K extends keyof D>({
   newDataPoint,
   selectedKey,
   axisLabels,
+  paused = false,
   objectId = 0,
   transform = (v) => Number(v),
   maxDataPoints = 100,
@@ -45,10 +47,12 @@ function TimeSeriesChart<D extends { timestamp: number }, K extends keyof D>({
   }, [objectId, currentObjectId]);
 
   useEffect(() => {
-    setData((oldData) =>
-      [...oldData, newDataPoint].slice(-maxDataPointsRef.current)
-    );
-  }, [newDataPoint]);
+    if (!paused) {
+      setData((oldData) =>
+        [...oldData, newDataPoint].slice(-maxDataPointsRef.current)
+      );
+    }
+  }, [newDataPoint, paused]);
 
   const formatXAxis = (timestamp: number) => {
     return (timestamp - firstTs).toFixed(1);

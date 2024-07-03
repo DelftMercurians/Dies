@@ -189,25 +189,20 @@ export class FieldRenderer {
     this.ctx.fill();
   }
 
-  getClickedObject(x: number, y: number): { type: string; id?: number } | null {
+  getPlayerAt(x: number, y: number): number | null {
     if (!this.worldData) return null;
 
     const { own_players, ball } = this.worldData;
     for (const player of own_players) {
-      const [playerX, playerY] = this.fieldToCanvas(player.raw_position);
-      const robotCanvasRadius = this.convertLength(ROBOT_RADIUS) + 10;
+      const [playerX, playerY] =
+        this.positionDisplayMode === "raw"
+          ? player.raw_position
+          : player.position;
+      const robotCanvasRadius = ROBOT_RADIUS + 100;
       if (
         Math.sqrt((x - playerX) ** 2 + (y - playerY) ** 2) <= robotCanvasRadius
       ) {
-        return { type: "player", id: player.id };
-      }
-    }
-
-    if (ball) {
-      const [ballX, ballY] = this.fieldToCanvas(ball.position);
-      const ballCanvasRadius = this.convertLength(BALL_RADIUS);
-      if (Math.sqrt((x - ballX) ** 2 + (y - ballY) ** 2) <= ballCanvasRadius) {
-        return { type: "ball" };
+        return player.id;
       }
     }
 

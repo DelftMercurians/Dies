@@ -11,6 +11,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { FC, useState } from "react";
 import TimeSeriesChart from "./TimeSeriesChart";
+import { Button } from "@/components/ui/button";
+import { Pause, Play } from "lucide-react";
+import { SimpleTooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface PlayerSidebarProps {
   selectedPlayerId: number | null;
@@ -27,7 +31,8 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
   const world = useWorldState();
   const executorInfo = useExecutorInfo();
   const sendCommand = useSendCommand();
-  const [activeGraph, setActiveGraph] = useState<Graphable>("angular_speed");
+  const [activeGraph, setActiveGraph] = useState<Graphable>("velocity");
+  const [graphPaused, setGraphPaused] = useState(true);
 
   if (world.status !== "connected" || selectedPlayerId === null)
     return <div className="bg-slate-950"></div>;
@@ -55,12 +60,12 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
       <h1 className="text-lg font-bold mb-2">Player #{selectedPlayerId}</h1>
 
       <div>
-        <div className="flex flex-row gap-2 items-center">
+        <div className="flex flex-row gap-2 items-center mb-2">
           <Select
             value={activeGraph}
             onValueChange={(val) => setActiveGraph(val as Graphable)}
           >
-            <SelectTrigger className="w-64 mb-2 flex-1">
+            <SelectTrigger className="h-full w-64 flex-1">
               <SelectValue placeholder="Select graph" />
             </SelectTrigger>
 
@@ -72,8 +77,13 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
               ))}
             </SelectContent>
           </Select>
+
+          <Button variant="ghost" onClick={() => setGraphPaused((p) => !p)}>
+            {graphPaused ? <Play /> : <Pause />}
+          </Button>
         </div>
         <TimeSeriesChart
+          paused={graphPaused}
           objectId={selectedPlayerId}
           newDataPoint={selectedPlayer}
           selectedKey={activeGraph}
@@ -93,11 +103,62 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
         />
         <Label htmlFor="manual-control">Manual Control</Label>
       </div>
+
+      {manualControl ? (
+        <div className="flex justify-center">
+          <div className="inline-block bg-slate-600 p-6 rounded-xl">
+            <div className="flex justify-center mb-2 space-x-2">
+              <SimpleTooltip title="Turn left">
+                <KeyboardKey letter="q" />
+              </SimpleTooltip>
+              <SimpleTooltip title="Go forward (global coordinates)">
+                <KeyboardKey letter="w" />
+              </SimpleTooltip>
+              <SimpleTooltip title="Turn right">
+                <KeyboardKey letter="e" />
+              </SimpleTooltip>
+            </div>
+            <div className="flex justify-center mb-2 space-x-2">
+              <SimpleTooltip title="Go left (global coordinates)">
+                <KeyboardKey letter="a" />
+              </SimpleTooltip>
+              <SimpleTooltip title="Go backward (global coordinates)">
+                <KeyboardKey letter="s" />
+              </SimpleTooltip>
+              <SimpleTooltip title="Go right (global coordinates)">
+                <KeyboardKey letter="d" />
+              </SimpleTooltip>
+            </div>
+            <div className="flex justify-center space-x-2 w-full">
+              <SimpleTooltip title="Dribble" className="w-full">
+                <KeyboardKey letter="Space" className="w-full" />
+              </SimpleTooltip>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
 
 export default PlayerSidebar;
+
+const KeyboardKey = ({
+  letter,
+  className,
+}: {
+  letter: string;
+  className?: string;
+}) => (
+  <div
+    className={cn(
+      "w-12 h-12 bg-gray-200 rounded-md shadow-md flex items-center justify-center text-gray-700 font-bold text-lg uppercase border-b-4 border-gray-400 hover:border-b-0  transition-all duration-100 select-none",
+      className
+    )}
+  >
+    {letter}
+  </div>
+);
 
 const magnitude = ([x, y]: [number, number]) => Math.sqrt(x * x + y * y);
 

@@ -1,6 +1,6 @@
 import React, { FC, useEffect, useRef, useCallback, useState } from "react";
-import { useExecutorInfo, useWorldState } from "../api";
-import { WorldData } from "../bindings";
+import { useExecutorInfo, useSendCommand, useWorldState } from "../api";
+import { Vector2, WorldData } from "../bindings";
 import { useResizeObserver } from "@/lib/useResizeObserver";
 import {
   CANVAS_PADDING,
@@ -17,6 +17,13 @@ import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 
 const CONT_PADDING_PX = 8;
 
@@ -25,14 +32,25 @@ interface FieldProps {
   onSelectPlayer: (playerId: null | number) => void;
 }
 
+interface PlayerTooltip {
+  position: [number, number];
+  playerId: number;
+}
+
 const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
-  const contRef = useRef(null);
+  const contRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<FieldRenderer | null>(null);
+  const [mouseField, setMouseField] = useState<Vector2>([0, 0]);
+  const [playerTooltip, setPlayerTooltip] = useState<PlayerTooltip | null>(
+    null
+  );
+  const contextMenuPosRef = useRef([0, 0] as [number, number]);
 
   const manualControl = useExecutorInfo()?.manual_controlled_players ?? [];
   const world = useWorldState();
   const worldData = world.status === "connected" ? world.data : null;
+  const sendCommand = useSendCommand();
 
   const [positionDisplayMode, setPositionDisplayMode] =
     useState<PositionDisplayMode>("filtered");
@@ -73,16 +91,73 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
 
-      const clickedObject = rendererRef.current.getClickedObject(x, y);
+      const [fieldX, fieldY] = rendererRef.current.canvasToField([x, y]);
+      const clickedPlayer = rendererRef.current.getPlayerAt(fieldX, fieldY);
 
-      if (clickedObject && clickedObject.type === "player") {
-        onSelectPlayer(clickedObject.id ?? null);
+      if (clickedPlayer !== null) {
+        onSelectPlayer(clickedPlayer);
       } else {
         onSelectPlayer(null);
       }
     },
     [onSelectPlayer]
   );
+
+  const handleMouseMove = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!canvasRef.current || !contRef.current || !rendererRef.current)
+        return;
+
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const fieldXY = rendererRef.current.canvasToField([x, y]);
+      setMouseField(fieldXY);
+
+      const playerId = rendererRef.current.getPlayerAt(fieldXY[0], fieldXY[1]);
+      if (playerId !== null) {
+        const contRect = contRef.current.getBoundingClientRect();
+        const x = event.clientX - contRect.left + 10;
+        const y = event.clientY - contRect.top + 10;
+        setPlayerTooltip({
+          position: [x, y],
+          playerId,
+        });
+      } else {
+        setPlayerTooltip(null);
+      }
+    },
+    []
+  );
+  const playerTooltipData = worldData?.own_players.find(
+    (p) => p.id === playerTooltip?.playerId
+  );
+
+  const handleContextMenu = (event: React.MouseEvent<HTMLElement>) => {
+    if (!canvasRef.current || !contRef.current || !rendererRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    contextMenuPosRef.current = rendererRef.current.canvasToField([x, y]);
+  };
+  const handleTargetPosition = () => {
+    sendCommand({
+      type: "OverrideCommand",
+      data: {
+        player_id: manualControl[0],
+        command: {
+          type: "MoveTo",
+          data: {
+            position: contextMenuPosRef.current,
+            arm_kick: false,
+            yaw: 0,
+            dribble_speed: 0,
+          },
+        },
+      },
+    });
+  };
 
   return (
     <div
@@ -123,13 +198,68 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         </PopoverContent>
       </Popover>
 
-      <canvas
-        ref={canvasRef}
-        className="border-8 border-green-950 rounded"
-        width={canvasWidth}
-        height={canvasHeight}
-        onClick={handleCanvasClick}
-      />
+      {playerTooltip ? (
+        <div
+          className="absolute z-10 bg-slate-950 bg-opacity-70 p-2 rounded"
+          style={{
+            left: playerTooltip.position[0],
+            top: playerTooltip.position[1],
+          }}
+        >
+          <div
+            className={cn(
+              "mb-2",
+              selectedPlayerId === playerTooltip.playerId && "font-bold"
+            )}
+          >
+            Player #{playerTooltip.playerId}
+          </div>
+          <div className="flex flex-row font-mono">
+            <div className="w-20">
+              X: {playerTooltipData?.position[0].toFixed(0)}
+            </div>
+            <span>mm</span>
+          </div>
+          <div className="flex flex-row font-mono">
+            <div className="w-20">
+              Y: {playerTooltipData?.position[1].toFixed(0)}
+            </div>
+            <span>mm</span>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="absolute bottom-0 right-0 bg-slate-950 bg-opacity-70 p-2 rounded">
+        <div className="flex flex-row font-mono">
+          <div className="w-20">X: {mouseField[0].toFixed(0)}</div>
+          <span>mm</span>
+        </div>
+        <div className="flex flex-row font-mono">
+          <div className="w-20">Y: {mouseField[1].toFixed(0)}</div>
+          <span>mm</span>
+        </div>
+      </div>
+
+      <ContextMenu>
+        <ContextMenuTrigger onContextMenu={handleContextMenu}>
+          <canvas
+            ref={canvasRef}
+            className="border-8 border-green-950 rounded"
+            width={canvasWidth}
+            height={canvasHeight}
+            onClick={handleCanvasClick}
+            onMouseMove={handleMouseMove}
+          />
+        </ContextMenuTrigger>
+
+        <ContextMenuContent>
+          {manualControl.length === 1 ? (
+            <ContextMenuItem onClick={handleTargetPosition}>
+              Set target position
+            </ContextMenuItem>
+          ) : null}
+        </ContextMenuContent>
+      </ContextMenu>
     </div>
   );
 };
