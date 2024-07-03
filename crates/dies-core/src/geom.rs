@@ -225,8 +225,8 @@ impl Default for FieldGeometry {
         )];
 
         Self {
-            field_width: 12040,
-            field_length: 9020,
+            field_width: 9020,
+            field_length: 12040,
             boundary_width: 300,
             goal_depth: 180,
             goal_width: 1200,

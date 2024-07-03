@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use typeshare::typeshare;
 
 use crate::{player::PlayerId, Angle, FieldGeometry, Vector2, Vector3};
@@ -11,8 +11,8 @@ pub struct WorldUpdate {
 
 /// The game state, as reported by the referee.
 #[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
+#[serde( tag = "type", content = "data")]
 #[typeshare]
-#[serde(tag = "type", content = "data")]
 pub enum GameState {
     #[default]
     Unknown,

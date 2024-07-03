@@ -1,328 +1,223 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { type PlayerCmd, type World, type XY, type XYZ, SELECT_SCENARIO_CMD, DIRECT_PLAYER_CMD , START_CMD, STOP_CMD } from "./types";
-import { useWebSocket } from "./client";
-
-const ROBOT_RADIUS = 0.14 * 1000;
-const BALL_RADIUS = 0.043 * 1000;
-const PADDING = 20;
-
-const scenarios = ["Empty", "SinglePlayerWithoutBall", "SinglePlayer", "TwoPlayers"] as const;
-export interface SymScenario {
-  type: typeof scenarios[number];
-}
+import { useState } from "react";
+import {
+  useKeyboardControl,
+  useScenarios,
+  useSendCommand,
+  useSetMode,
+  useStatus,
+  useWorldState,
+} from "./api";
+import Field from "./views/Field";
+import {
+  Select,
+  SelectItem,
+  SelectContent,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
+import { Button } from "./components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
+import {
+  LaptopMinimal,
+  Loader,
+  Pause,
+  Play,
+  Radio,
+  Square,
+} from "lucide-react";
+import { toast } from "sonner";
+import {
+  SimpleTooltip,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "./components/ui/tooltip";
+import logo from "./assets/mercury-logo.svg";
+import { log } from "console";
+import { cn } from "./lib/utils";
+import PlayerSidebar from "./views/PlayerSidebar";
 
 const App: React.FC = () => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scenarios = useScenarios() ?? [];
+  const [selectedScenario, setSelectedScenario] = useState<null | string>(null);
+  const { data: backendState, status: backendLoadingState } = useStatus();
+  const worldState = useWorldState();
+  const { mutate: setMode, status: setModeStatus } = useSetMode();
+  const sendCommand = useSendCommand();
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
-  const worldStateRef = useRef<World | null>(null);
-  const [crossX, setCrossX] = useState(0); // State for the X position of the cross
-  const [crossY, setCrossY] = useState(0); // State for the Y position of the cross
-  const fieldW = worldStateRef.current?.field_geom?.field_length! ?? 0;
-  const fieldH = worldStateRef.current?.field_geom?.field_width! ?? 0;
-  const canvasW = canvasRef.current?.width! - PADDING * 2;
-  const canvasH = canvasRef.current?.height! - PADDING * 2;
-  const [selectedScenario, setSelectedScenario] = useState<SymScenario>({ type: scenarios[2] });
 
-  const convertCoords = (coords: XY | XYZ): XY => {
-    const [x, y] = coords;
+  useKeyboardControl(selectedPlayerId);
 
-    return [
-      (x + fieldW / 2) * (canvasW / fieldW) + PADDING,
-      (-y + fieldH / 2) * (canvasH / fieldH) + PADDING,
-    ];
-  };
-
-  const onUpdate = useCallback((world: World) => {
-    worldStateRef.current = world;
-  }, []);
-  const { sendCommand } = useWebSocket({ onUpdate });
-
-  // Keyboard input
-  useEffect(() => {
-    const pressedKeys = new Set<string>();
-    const keydownHandler = (ev: KeyboardEvent) => {
-      pressedKeys.add(ev.key);
-    };
-    const keyupHandler = (ev: KeyboardEvent) => {
-      pressedKeys.delete(ev.key);
-    };
-
-    const cmdInterval = setInterval(() => {
-      const worldState = worldStateRef.current;
-      if (pressedKeys.size === 0 || !worldState) return;
-      const player = worldState.own_players.find(
-        (player) => player.id === selectedPlayerId
-      );
-      if (!player) {
-        console.error("Player not found");
-        return;
-      }
-
-      const cmd = createCmd(player.id, pressedKeys);
-      sendCommand({ type: DIRECT_PLAYER_CMD, cmd });
-    }, 1 / 10);
-
-    window.addEventListener("keydown", keydownHandler);
-    window.addEventListener("keyup", keyupHandler);
-    return () => {
-      clearInterval(cmdInterval);
-      window.removeEventListener("keydown", keydownHandler);
-      window.removeEventListener("keyup", keyupHandler);
-    };
-  }, [selectedPlayerId]);
-
-  // Canvas rendering
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let frame: number | null = null;
-    const render = () => {
-      const worldState = worldStateRef.current;
-      if (!worldState) {
-        frame = requestAnimationFrame(render);
-        return;
-      }
-
-      const { own_players, opp_players, ball } = worldState;
-      const width = canvas.width - PADDING * 2;
-      const height = canvas.height - PADDING * 2;
-
-      const convertLength = (length: number): number => {
-        return Math.ceil(length * (width / fieldW));
-      };
-
-      ctx.fillStyle = "#00aa00";
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      worldState.field_geom?.line_segments?.forEach?.(({ p1, p2 }) => {
-        const [x1, y1] = convertCoords(p1);
-        const [x2, y2] = convertCoords(p2);
-        ctx.strokeStyle = "white";
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
+  if (!backendState) {
+    return (
+      <div className="w-full h-full flex justify-center items-center bg-slate-100">
+        {backendLoadingState === "error" ? (
+          <div className="flex flex-col items-center gap-4">
+            <h1 className="text-red-900">Failed to connect to the backend</h1>
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+          </div>
+        ) : (
+          <Loader className="animate-spin h-16 w-16" />
+        )}
+      </div>
+    );
+  }
+  const {
+    executor: executorStatus,
+    is_live_available: isLiveAvailable,
+    ui_mode: uiMode,
+  } = backendState;
+  const playingState =
+    executorStatus.type === "None" || executorStatus.type === "Failed"
+      ? "stop"
+      : "play";
+  const handleSetPlayState = (val: string) => {
+    if (val === "play" && playingState !== "play" && selectedScenario) {
+      sendCommand({
+        type: "StartScenario",
+        data: { scenario: selectedScenario },
       });
-
-      ctx.strokeStyle = "red";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(PADDING, PADDING, canvasW, canvasH);
-
-      const drawPlayer = (
-        serverPos: XY,
-        orientation: number,
-        color: string,
-        selected: boolean
-      ) => {
-        const [x, y] = convertCoords(serverPos);
-        const robotCanvasRadius = convertLength(ROBOT_RADIUS);
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(x, y, robotCanvasRadius, 0, 2 * Math.PI);
-        ctx.fill();
-
-        const angle = -orientation;
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(angle);
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(robotCanvasRadius, 0);
-        ctx.closePath();
-        ctx.restore();
-        ctx.stroke();
-
-        if (selected) {
-          ctx.strokeStyle = "white";
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(x, y, robotCanvasRadius + 2, 0, 2 * Math.PI);
-          ctx.stroke();
-        }
-      };
-      own_players.forEach(({ id, raw_position, orientation }) =>
-        drawPlayer(raw_position, orientation, "blue", id === selectedPlayerId)
-      );
-      opp_players.forEach(({ raw_position, orientation }) =>
-        drawPlayer(raw_position, orientation, "yellow", false)
-      );
-
-      if (ball) {
-        const ballPos = convertCoords(ball.position);
-        const ballCanvasRadius = convertLength(BALL_RADIUS);
-        ctx.fillStyle = "red";
-        ctx.beginPath();
-        ctx.arc(ballPos[0], ballPos[1], ballCanvasRadius, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-
-      if (worldState.own_players.length > 0) {
-        let selectedPlayer = worldState.own_players[0];
-        if (selectedPlayerId === null) {
-          setSelectedPlayerId(worldState.own_players[0].id);
-        } else {
-          const _selectedPlayer = worldState.own_players.find(
-            (player) => player.id === selectedPlayerId
-          );
-          if (_selectedPlayer) {
-            selectedPlayer = _selectedPlayer;
-          } else {
-            setSelectedPlayerId(selectedPlayer.id);
-          }
-        }
-      }
-
-      drawCross(ctx, crossX, crossY);
-
-      frame = requestAnimationFrame(render);
-    };
-
-    render();
-
-    return () => {
-      if (frame !== null) {
-        cancelAnimationFrame(frame);
-      }
-    };
-  }, [selectedPlayerId, crossX, crossY]);
-
-  function handleXChange(e: React.ChangeEvent<HTMLInputElement>): void {
-    const newX = parseInt(e.target.value);
-    setCrossX(newX);
-  }
-
-  function handleYChange(e: React.ChangeEvent<HTMLInputElement>): void {
-    const newY = parseInt(e.target.value);
-    setCrossY(newY);
-  }
-
-  function drawCross(ctx: CanvasRenderingContext2D, x: number, y: number) {
-    const [crossCanvasX, crossCanvasY] = convertCoords([x, y]);
-
-    const crossSize = 10; // Length of each arm of the cross
-    ctx.strokeStyle = "red";
-    ctx.beginPath();
-    ctx.moveTo(crossCanvasX - crossSize, crossCanvasY); // Horizontal line
-    ctx.lineTo(crossCanvasX + crossSize, crossCanvasY);
-    ctx.moveTo(crossCanvasX, crossCanvasY - crossSize); // Vertical line
-    ctx.lineTo(crossCanvasX, crossCanvasY + crossSize);
-    ctx.stroke();
-  }
-
-  const handleStartSimulation = () => {
-    sendCommand({ type: START_CMD });
+    } else if (val === "stop" && playingState !== "stop") {
+      setSelectedPlayerId(null);
+      sendCommand({ type: "Stop" });
+    } else {
+      toast.error(`Unhandled state ${val}`);
+    }
   };
-
-  const handleStopSimulation = () => {
-    sendCommand({ type: STOP_CMD });
-  };
-
-  const handleScenarioChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newType = event.target.value as SymScenario['type'];
-    const scenario: SymScenario = { type: newType };
-    setSelectedScenario(scenario);
-    sendCommand({ type: SELECT_SCENARIO_CMD, scenario });
-  };
+  const runningScenario =
+    executorStatus.type === "RunningExecutor"
+      ? executorStatus.data.scenario
+      : null;
 
   return (
-    <main className="cont">
-      <div className="sidebar">
-        <label>
-          Select Scenario:
-          <select id="scenario-select" value={selectedScenario.type} onChange={handleScenarioChange}>
+    <main className="w-full h-full flex flex-col bg-background bg-slate-100">
+      {/* Toolbar */}
+      <div className="flex flex-row gap-6 bg-slate-800 p-4">
+        <img src={logo} width="45px" height="41px" />
+
+        <ToggleGroup
+          type="single"
+          value={uiMode}
+          onValueChange={setMode}
+          disabled={setModeStatus === "pending"}
+          className="border border-gray-500 rounded-lg"
+        >
+          <SimpleTooltip title="Simulation">
+            <ToggleGroupItem value="Simulation">
+              <LaptopMinimal />
+            </ToggleGroupItem>
+          </SimpleTooltip>
+
+          <SimpleTooltip title="Live">
+            <ToggleGroupItem value="Live" disabled={!isLiveAvailable}>
+              <Radio />
+            </ToggleGroupItem>
+          </SimpleTooltip>
+        </ToggleGroup>
+
+        <Select
+          value={
+            runningScenario ? runningScenario : selectedScenario ?? undefined
+          }
+          onValueChange={(val) => setSelectedScenario(val)}
+          disabled={!!runningScenario}
+        >
+          <SelectTrigger className="w-64">
+            <SelectValue placeholder="Select Scenario" />
+          </SelectTrigger>
+
+          <SelectContent>
             {scenarios.map((scenario) => (
-              <option key={scenario} value={scenario}>
+              <SelectItem key={scenario} value={scenario}>
                 {scenario}
-              </option>
+              </SelectItem>
             ))}
-          </select>
-        </label>
-        <label>
-          Simulation:
-          <button onClick={handleStartSimulation}>Start</button>
-          <button onClick={handleStopSimulation}>Stop</button>
-        </label>
-        <label>
-          X-Axis:
-          <input type="range" min={-fieldW / 2} max={fieldW / 2} value={crossX} onChange={handleXChange} />
-          {crossX}
-        </label>
-        <br />
-        <label>
-          Y-Axis:
-          <input type="range" min={-fieldH / 2} max={fieldH / 2} value={crossY} onChange={handleYChange} />
-          {crossY}
-        </label>
+          </SelectContent>
+        </Select>
+
+        <ToggleGroup
+          type="single"
+          value={playingState}
+          onValueChange={handleSetPlayState}
+          disabled={executorStatus.type === "StartingScenario"}
+          className="border border-gray-500 rounded-lg"
+        >
+          <SimpleTooltip
+            title={
+              selectedScenario
+                ? "Start selected scenario"
+                : "Select a scenario first"
+            }
+          >
+            <ToggleGroupItem
+              value="play"
+              disabled={!selectedScenario}
+              className="data-[state=on]:bg-green-400 data-[state=on]:opacity-100  data-[state=on]:text-gray-500"
+            >
+              <Play />
+            </ToggleGroupItem>
+          </SimpleTooltip>
+
+          <SimpleTooltip title="Pause">
+            <ToggleGroupItem
+              value="pause"
+              disabled={playingState !== "play"}
+              className="data-[state=on]:bg-yellow-400 data-[state=on]:opacity-100  data-[state=on]:text-gray-500"
+            >
+              <Pause />
+            </ToggleGroupItem>
+          </SimpleTooltip>
+
+          <SimpleTooltip title="Terminate executor">
+            <ToggleGroupItem
+              className="hover:bg-red-500 hover:text-accent-foreground"
+              value="stop"
+              disabled={playingState !== "play"}
+            >
+              <Square />
+            </ToggleGroupItem>
+          </SimpleTooltip>
+        </ToggleGroup>
       </div>
 
-      <canvas ref={canvasRef} width={1100} height={900} className="canvas" />
+      {/* Main content */}
+      <div className="h-full w-full grid grid-cols-6">
+        <div className="bg-slate-950"></div>
+        <div className="col-span-4 bg-green-800 p-6">
+          <Field
+            selectedPlayerId={selectedPlayerId}
+            onSelectPlayer={(id) => setSelectedPlayerId(id)}
+          />
+        </div>
+        <PlayerSidebar selectedPlayerId={selectedPlayerId} />
+      </div>
 
-      <div className="sidebar">
-        <h3>Controls</h3>
-        <ul>
-          <li>
-            Use <strong>W,A,S,D</strong> to move the robot
-          </li>
-          <li>
-            Use <strong>Q,E</strong> to rotate the robot
-          </li>
-          <li>
-            Hold <strong>Space</strong> to use the dribbler
-          </li>
-          <li>
-            Press <strong>V</strong> to kick (not implemented yet, should also
-            allow charging the kick + showing this)
-          </li>
-        </ul>
+      {/* Statusbar */}
+      <div
+        className={cn(
+          "w-full text-sm px-4 py-1 select-none",
+          "bg-slate-800",
+          executorStatus.type === "StartingScenario" && "bg-yellow-500",
+          executorStatus.type === "RunningExecutor" &&
+            worldState.status === "connected" &&
+            "bg-green-500",
+          (backendLoadingState === "error" ||
+            executorStatus.type === "Failed") &&
+            "bg-red-500"
+        )}
+      >
+        {backendLoadingState === "error"
+          ? "Failed to connect to backend"
+          : executorStatus.type === "Failed"
+          ? "Executor failed"
+          : executorStatus.type === "RunningExecutor"
+          ? "Running"
+          : executorStatus.type === "StartingScenario"
+          ? "Starting scenario"
+          : "Idle"}
       </div>
     </main>
   );
 };
 
 export default App;
-
-function createCmd(id: number, pressedKeys: Set<String>): PlayerCmd {
-  const cmd: PlayerCmd = {
-    id,
-    sx: 0,
-    sy: 0,
-    w: 0,
-    dribble_speed: 0,
-    arm: false,
-    disarm: false,
-    kick: false,
-  };
-
-  if (pressedKeys.has("w")) {
-    cmd.sx = 2;
-  }
-  if (pressedKeys.has("s")) {
-    cmd.sx = -2;
-  }
-  if (pressedKeys.has("a")) {
-    cmd.sy = 2;
-  }
-  if (pressedKeys.has("d")) {
-    cmd.sy = -2;
-  }
-  if (pressedKeys.has("q")) {
-    cmd.w = 3;
-  }
-  if (pressedKeys.has("e")) {
-    cmd.w = -3;
-  }
-  if (pressedKeys.has(" ")) {
-    cmd.dribble_speed = 100;
-  }
-  if (pressedKeys.has("v")) {
-    cmd.kick = true;
-  } else {
-    cmd.kick = false;
-  }
-
-  return cmd;
-}

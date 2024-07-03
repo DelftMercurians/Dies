@@ -7,7 +7,7 @@ edition.workspace = true
 tokio = { version = "1.35.1", features = ["rt", "macros", "signal", "time"] }
 anyhow = "1.0.75"
 dies-core = { version = "0.1.0", path = "../dies-core" }
-dies-serial-client = { version = "0.1.0", path = "../dies-serial-client" }
+dies-basestation-client = { version = "0.1.0", path = "../dies-basestation-client" }
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
 dies-world = { version = "0.1.0", path = "../dies-world" }
 dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
@@ -17,6 +17,7 @@ nalgebra = "0.32.5"
 dies-logger = { version = "0.1.0", path = "../dies-logger" }
 paste = "1.0.15"
 rand = "0.8.5"
+serde = "1.0.203"
 
 [dev-dependencies]
 approx = "0.5.1"

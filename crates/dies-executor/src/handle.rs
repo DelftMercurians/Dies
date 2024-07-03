@@ -1,7 +1,10 @@
-use tokio::sync::{broadcast, mpsc};
+use std::time::Duration;
 
-use dies_core::{PlayerId, PlayerOverrideCommand, WorldUpdate};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
+use dies_core::{ExecutorInfo, PlayerId, PlayerOverrideCommand, WorldUpdate};
+
+#[derive(Debug)]
 pub enum ControlMsg {
     SetPlayerOverride {
         player_id: PlayerId,
@@ -12,10 +15,26 @@ pub enum ControlMsg {
     Stop,
 }
 
+pub struct ExecutorInfoReceiver(oneshot::Receiver<ExecutorInfo>);
+
+impl ExecutorInfoReceiver {
+    /// Wait for the executor info with a timeout of 500ms.
+    ///
+    /// If the timeout is reached,
+    /// `None` is returned. This can happen if the executor is not running or stopped
+    /// mid-request.
+    pub async fn recv(self) -> Option<ExecutorInfo> {
+        match tokio::time::timeout(Duration::from_millis(500), self.0).await {
+            Ok(Ok(info)) => Some(info),
+            _ => None,
+        }
+    }
+}
 #[derive(Debug)]
 pub struct ExecutorHandle {
     pub control_tx: mpsc::UnboundedSender<ControlMsg>,
     pub update_rx: broadcast::Receiver<WorldUpdate>,
+    pub info_channel: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
 }
 
 impl ExecutorHandle {
@@ -37,6 +56,18 @@ impl ExecutorHandle {
             })
             .ok();
     }
+
+    /// Request the current executor info.
+    pub fn info(&self) -> ExecutorInfoReceiver {
+        let (tx, rx) = oneshot::channel();
+        self.info_channel
+            .send(tx)
+            .map_err(|err| {
+                log::error!("Error sending info request: {:?}", err);
+            })
+            .ok();
+        ExecutorInfoReceiver(rx)
+    }
 }
 
 impl Clone for ExecutorHandle {
@@ -44,6 +75,7 @@ impl Clone for ExecutorHandle {
         Self {
             control_tx: self.control_tx.clone(),
             update_rx: self.update_rx.resubscribe(),
+            info_channel: self.info_channel.clone(),
         }
     }
 }

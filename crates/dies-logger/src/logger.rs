@@ -20,28 +20,25 @@ enum WorkerMsg {
 
 pub fn log_vision(data: &SSL_WrapperPacket) {
     if let Some(logger) = PROTOBUF_LOGGER.get() {
-        logger
+        let _ = logger
             .sender
-            .send(WorkerMsg::Log(LogMessage::Vision(data.clone())))
-            .unwrap();
+            .send(WorkerMsg::Log(LogMessage::Vision(data.clone())));
     }
 }
 
 pub fn log_referee(data: &Referee) {
     if let Some(logger) = PROTOBUF_LOGGER.get() {
-        logger
+        let _ = logger
             .sender
-            .send(WorkerMsg::Log(LogMessage::Referee(data.clone())))
-            .unwrap();
+            .send(WorkerMsg::Log(LogMessage::Referee(data.clone())));
     }
 }
 
 pub fn log_bytes(bytes: &[u8]) {
     if let Some(logger) = PROTOBUF_LOGGER.get() {
-        logger
+        let _ = logger
             .sender
-            .send(WorkerMsg::Log(LogMessage::Bytes(bytes.to_vec())))
-            .unwrap();
+            .send(WorkerMsg::Log(LogMessage::Bytes(bytes.to_vec())));
     }
 }
 
@@ -130,15 +127,15 @@ impl Log for AsyncProtobufLogger {
             ..Default::default()
         };
         let mut buf = Vec::new();
-        log_line.write_to_vec(&mut buf).unwrap();
-        self.sender
-            .send(WorkerMsg::Log(LogMessage::DiesLog(log_line)))
-            .unwrap();
+        let _ = log_line.write_to_vec(&mut buf);
+        let _ = self
+            .sender
+            .send(WorkerMsg::Log(LogMessage::DiesLog(log_line)));
     }
 
     fn flush(&self) {
         self.env_logger.flush();
-        self.sender.send(WorkerMsg::Flush).unwrap();
+        let _ = self.sender.send(WorkerMsg::Flush);
     }
 }
 

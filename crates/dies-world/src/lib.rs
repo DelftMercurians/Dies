@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use dies_logger::log_vision;
 use dies_protos::ssl_gc_referee_message::Referee;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
@@ -253,7 +252,7 @@ mod test {
         player.set_robot_id(1);
         player.set_x(100.0);
         player.set_y(200.0);
-        player.set_yaw(0.0);
+        player.set_orientation(0.0);
         frame.robots_blue.push(player.clone());
         let mut packet_detection = SSL_WrapperPacket::new();
         packet_detection.detection = Some(frame.clone()).into();

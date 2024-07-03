@@ -1,5 +1,5 @@
 [package]
-name = "dies-serial-client"
+name = "dies-basestation-client"
 version = "0.1.0"
 edition.workspace = true
 
@@ -11,3 +11,4 @@ dies-core = { version = "0.1.0", path = "../dies-core" }
 log = "0.4.21"
 serialport = "4.3.0"
 tokio = { version = "1.35.1", features = ["rt", "sync"] }
+glue = { git = "https://github.com/DelftMercurians/glue.git", tag = "v0.2.0" }

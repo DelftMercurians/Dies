@@ -4,7 +4,7 @@ members = [
     "crates/dies-core",
     "crates/dies-executor",
     "crates/dies-protos",
-    "crates/dies-serial-client",
+    "crates/dies-basestation-client",
     "crates/dies-simulator",
     "crates/dies-ssl-client",
     "crates/dies-webui",

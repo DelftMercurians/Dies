@@ -1,11 +1,11 @@
 use anyhow::{bail, Result};
 use std::{collections::HashSet, time::Duration};
 
+use dies_basestation_client::{BasestationClient, BasestationClientConfig};
 use dies_core::{
     Angle, BallPlacement, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo, Vector2, Vector3,
     WorldData,
 };
-use dies_serial_client::{SerialClient, SerialClientConfig};
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_world::WorldTracker;
@@ -85,12 +85,7 @@ impl ScenarioSetup {
     }
 
     /// Create an executor in simulation mode from this setup.
-    pub fn into_simulation(
-        self,
-        config: ExecutorConfig,
-        sim_config: SimulationConfig,
-        dt: Duration,
-    ) -> Executor {
+    pub fn into_simulation(self, config: ExecutorConfig, sim_config: SimulationConfig) -> Executor {
         let field_width = sim_config.field_geometry.field_width as f64;
         let field_length = sim_config.field_geometry.field_length as f64;
         let mut builder = SimulationBuilder::new(sim_config);
@@ -108,7 +103,7 @@ impl ScenarioSetup {
 
         for player in self.own_players.iter() {
             let (position, yaw) = player_into_simulation(&player, field_width, field_length);
-            builder = builder.add_opp_player(position, yaw);
+            builder = builder.add_own_player(position, yaw);
         }
 
         for player in self.opp_players.iter() {
@@ -118,7 +113,7 @@ impl ScenarioSetup {
 
         let sim = builder.build();
 
-        Executor::new_simulation(config, self.strategy, sim, dt)
+        Executor::new_simulation(config, self.strategy, sim)
     }
 
     /// Create an executor in live mode from this setup.
@@ -126,7 +121,7 @@ impl ScenarioSetup {
         self,
         config: ExecutorConfig,
         ssl_config: VisionClientConfig,
-        bs_config: SerialClientConfig,
+        bs_config: BasestationClientConfig,
     ) -> Result<Executor> {
         // Wait for the setup check to succeed
         let mut tracker = WorldTracker::new(config.world_config.clone());
@@ -150,7 +145,7 @@ impl ScenarioSetup {
             check_interval.tick().await;
         }
 
-        let bs_client = SerialClient::new(bs_config)?;
+        let bs_client = BasestationClient::new(bs_config)?;
         Ok(Executor::new_live(
             config,
             self.strategy,
@@ -228,7 +223,7 @@ fn player_into_simulation(
 
     let yaw = match placement.yaw {
         Some(yaw) => yaw,
-        None => todo!(),
+        None => Angle::default(),
     };
 
     (position, yaw)

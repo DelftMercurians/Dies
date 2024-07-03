@@ -1,6 +1,4 @@
-use dies_core::{
-    Angle, BallData, FieldGeometry, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
-};
+use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerId, Vector2};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -332,7 +330,7 @@ impl Simulation {
                 player.target_ang_velocity = command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
-                is_kicking = command.kick;
+                is_kicking = matches!(command.kicker_cmd, KickerCmd::Kick);
             }
 
             let rigid_body = self
@@ -469,62 +467,6 @@ impl Simulation {
         packet.detection = Some(detection).into();
 
         self.last_detection_packet = Some(packet);
-    }
-
-    pub fn world_data(&self) -> WorldData {
-        let mut own_players = Vec::new();
-        let mut opp_players = Vec::new();
-        self.players.iter().for_each(|player| {
-            let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
-            let position = rigid_body.position().translation.vector;
-            let yaw = Angle::from_radians(rigid_body.rotation().euler_angles().2);
-            let data = PlayerData {
-                id: player.id,
-                timestamp: self.current_time,
-                position: Vector2::new(position.x, position.y),
-                velocity: Vector2::new(rigid_body.linvel().x, rigid_body.linvel().y),
-                yaw,
-                angular_speed: rigid_body.angvel().z,
-                raw_position: Vector2::new(position.x, position.y),
-            };
-
-            if player.is_own {
-                own_players.push(data);
-            } else {
-                opp_players.push(data);
-            }
-        });
-
-        let ball = if let Some(ball) = self.ball.as_ref() {
-            let ball_body = self.rigid_body_set.get(ball._rigid_body_handle).unwrap();
-            let position = ball_body.position().translation.vector;
-            Some(BallData {
-                position: Vector::new(position.x, position.y, position.z),
-                timestamp: self.current_time,
-                velocity: Vector::new(
-                    ball_body.linvel().x,
-                    ball_body.linvel().y,
-                    ball_body.linvel().z,
-                ),
-            })
-        } else {
-            None
-        };
-
-        WorldData {
-            own_players,
-            opp_players,
-            ball,
-            field_geom: Some(FieldGeometry::from_protobuf(
-                &self
-                    .geometry_packet
-                    .geometry
-                    .as_ref()
-                    .unwrap_or_default()
-                    .field,
-            )),
-            ..Default::default()
-        }
     }
 }
 

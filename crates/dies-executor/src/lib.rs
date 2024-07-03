@@ -1,21 +1,20 @@
 use std::{collections::HashMap, time::Duration};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate};
+use dies_basestation_client::BasestationClient;
+use dies_core::{
+    ExecutorInfo, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate,
+};
 use dies_logger::{log_referee, log_vision};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
-use dies_serial_client::SerialClient;
 use dies_simulator::Simulation;
 use dies_ssl_client::VisionClient;
 use dies_world::{WorldConfig, WorldTracker};
 use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
 use strategy::Strategy;
-use tokio::sync::{
-    broadcast::{self},
-    mpsc, watch,
-};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 mod control;
 mod gc_client;
@@ -31,12 +30,13 @@ const CMD_INTERVAL: Duration = Duration::from_millis(1000 / 30);
 #[derive(Debug, Clone)]
 pub struct ExecutorConfig {
     pub world_config: WorldConfig,
+    pub sim_dt: Duration,
 }
 
 enum Environment {
     Live {
         ssl_client: VisionClient,
-        bs_client: SerialClient,
+        bs_client: BasestationClient,
     },
     Simulation {
         simulator: Simulation,
@@ -161,6 +161,8 @@ pub struct Executor {
     command_tx: mpsc::UnboundedSender<ControlMsg>,
     command_rx: mpsc::UnboundedReceiver<ControlMsg>,
     paused_tx: watch::Sender<bool>,
+    info_channel_rx: mpsc::UnboundedReceiver<oneshot::Sender<ExecutorInfo>>,
+    info_channel_tx: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
 }
 
 impl Executor {
@@ -168,11 +170,12 @@ impl Executor {
         config: ExecutorConfig,
         strategy: Box<dyn Strategy>,
         ssl_client: VisionClient,
-        bs_client: SerialClient,
+        bs_client: BasestationClient,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
+        let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
             tracker: WorldTracker::new(config.world_config),
@@ -187,6 +190,8 @@ impl Executor {
             command_rx,
             update_tx,
             paused_tx,
+            info_channel_rx,
+            info_channel_tx,
         }
     }
 
@@ -194,28 +199,34 @@ impl Executor {
         config: ExecutorConfig,
         strategy: Box<dyn Strategy>,
         simulator: Simulation,
-        dt: Duration,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
+        let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
             tracker: WorldTracker::new(config.world_config),
             controller: TeamController::new(strategy),
             gc_client: GcClient::new(),
-            environment: Some(Environment::Simulation { simulator, dt }),
+            environment: Some(Environment::Simulation {
+                simulator,
+                dt: config.sim_dt,
+            }),
             manual_override: HashMap::new(),
             command_tx,
             command_rx,
             update_tx,
             paused_tx,
+            info_channel_rx,
+            info_channel_tx,
         }
     }
 
     /// Update the executor with a vision message.
     pub fn update_from_vision_msg(&mut self, message: SSL_WrapperPacket) {
-        log_vision(&message);
+        // TODO: FIX
+        // log_vision(&message);
         self.tracker.update_from_vision(&message);
         self.update_team_controller();
     }
@@ -244,6 +255,14 @@ impl Executor {
         self.gc_client.messages()
     }
 
+    /// Get runtime information about the executor.
+    pub fn info(&self) -> ExecutorInfo {
+        ExecutorInfo {
+            paused: *self.paused_tx.borrow(),
+            manual_controlled_players: self.manual_override.keys().copied().collect(),
+        }
+    }
+
     /// Run the executor in real time, either with real clients or with a simulator,
     /// depending on the configuration.
     pub async fn run_real_time(mut self) -> Result<()> {
@@ -261,16 +280,14 @@ impl Executor {
         Ok(())
     }
 
-    pub fn step_simulation(&mut self) -> Result<()> {
-        let packet = if let Some(Environment::Simulation { simulator, dt }) = &mut self.environment
-        {
-            simulator.step(dt.as_secs_f64());
-            simulator.detection().or(simulator.geometry())
-        } else {
-            bail!("Simulator not set");
-        };
-
-        packet.map(|p| self.update_from_vision_msg(p));
+    pub fn step_simulation(&mut self, simulator: &mut Simulation, dt: Duration) -> Result<()> {
+        simulator.step(dt.as_secs_f64());
+        if let Some(geom) = simulator.geometry() {
+            self.update_from_vision_msg(geom);
+        }
+        if let Some(det) = simulator.detection() {
+            self.update_from_vision_msg(det);
+        }
 
         Ok(())
     }
@@ -278,11 +295,14 @@ impl Executor {
     /// Run the executor in real time on the simulator
     async fn run_rt_sim(&mut self, mut simulator: Simulation, dt: Duration) -> Result<()> {
         let mut update_interval = tokio::time::interval(dt);
+        update_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut cmd_interval = tokio::time::interval(CMD_INTERVAL);
+        cmd_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         let mut paused_rx = self.paused_tx.subscribe();
         loop {
             let paused = { *paused_rx.borrow_and_update() };
-            if paused {
+            if !paused {
                 tokio::select! {
                     Some(msg) = self.command_rx.recv() => {
                         match msg {
@@ -290,8 +310,11 @@ impl Executor {
                             msg => self.handle_control_msg(msg)
                         }
                     }
+                    Some(tx) = self.info_channel_rx.recv() => {
+                        let _  = tx.send(self.info());
+                    }
                     _ = update_interval.tick() => {
-                        self.step_simulation()?;
+                        self.step_simulation(&mut simulator, dt)?;
                     }
                     _ = cmd_interval.tick() => {
                         for cmd in self.player_commands() {
@@ -300,7 +323,13 @@ impl Executor {
                     }
                 }
             } else {
-                paused_rx.changed().await?;
+                tokio::select! {
+                    Some(ControlMsg::Stop) = self.command_rx.recv() => break,
+                    Some(tx) = self.info_channel_rx.recv() => {
+                        let _  = tx.send(self.info());
+                    }
+                    res = paused_rx.changed() => res?
+                }
             }
         }
 
@@ -312,7 +341,7 @@ impl Executor {
     async fn run_rt_live(
         &mut self,
         mut ssl_client: VisionClient,
-        mut bs_client: SerialClient,
+        mut bs_client: BasestationClient,
     ) -> Result<()> {
         // Check that we have ssl and bs clients
 
@@ -335,6 +364,9 @@ impl Executor {
                             log::error!("Failed to receive vision msg: {}", err);
                         }
                     }
+                }
+                Some(tx) = self.info_channel_rx.recv() => {
+                    let _  = tx.send(self.info());
                 }
                 // bs_msg = bs_client.recv() => {
                 //     match bs_msg {
@@ -363,6 +395,7 @@ impl Executor {
         ExecutorHandle {
             control_tx: self.command_tx.clone(),
             update_rx: self.update_tx.subscribe(),
+            info_channel: self.info_channel_tx.clone(),
         }
     }
 
