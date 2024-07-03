@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, ValueEnum};
-use dies_serial_client::{list_serial_ports, SerialClientConfig};
+use dies_basestation_client::{list_serial_ports, BasestationClientConfig};
 use dies_ssl_client::VisionClientConfig;
 use dies_webui::{UiConfig, UiEnvironment};
 use std::{net::SocketAddr, path::PathBuf};
@@ -115,13 +115,13 @@ impl CliArgs {
     /// to choose a port if multiple ports are available and the `serial_port` argument is set to "auto".
     ///
     /// If there is an issue selecting a serial port, an error message will be logged and `None` will be returned.
-    pub async fn serial_config(&self) -> Option<SerialClientConfig> {
+    pub async fn serial_config(&self) -> Option<BasestationClientConfig> {
         select_serial_port(self)
             .await
             .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()
             .map(|port| {
-                let mut config = SerialClientConfig::new(port);
+                let mut config = BasestationClientConfig::new(port);
                 config.set_robot_id_map_from_string(&self.robot_ids);
                 config
             })
@@ -173,7 +173,7 @@ impl CliArgs {
 /// to choose a port if multiple ports are available and the `serial_port` argument is
 /// set to "auto".
 pub async fn select_serial_port(args: &CliArgs) -> Result<String> {
-    let ports = list_serial_ports().context("Failed to list serial ports")?;
+    let ports = list_serial_ports();
     let port = match &args.serial_port {
         SerialPort::Disabled => None,
         SerialPort::Auto => {

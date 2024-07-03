@@ -1,6 +1,6 @@
+use dies_basestation_client::BasestationClientConfig;
 use dies_core::{ExecutorInfo, PlayerId, PlayerOverrideCommand, ScenarioInfo, WorldData};
 use dies_executor::scenarios::ScenarioType;
-use dies_serial_client::SerialClientConfig;
 use dies_ssl_client::VisionClientConfig;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
@@ -22,7 +22,7 @@ pub struct UiConfig {
 pub enum UiEnvironment {
     WithLive {
         ssl_config: VisionClientConfig,
-        bs_config: SerialClientConfig,
+        bs_config: BasestationClientConfig,
     },
     SimulationOnly,
 }

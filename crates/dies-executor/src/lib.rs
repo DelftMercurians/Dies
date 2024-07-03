@@ -2,6 +2,7 @@ use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 
+use dies_basestation_client::BasestationClient;
 use dies_core::{
     ExecutorInfo, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate,
 };
@@ -35,7 +36,7 @@ pub struct ExecutorConfig {
 enum Environment {
     Live {
         ssl_client: VisionClient,
-        bs_client: SerialClient,
+        bs_client: BasestationClient,
     },
     Simulation {
         simulator: Simulation,
@@ -169,7 +170,7 @@ impl Executor {
         config: ExecutorConfig,
         strategy: Box<dyn Strategy>,
         ssl_client: VisionClient,
-        bs_client: SerialClient,
+        bs_client: BasestationClient,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
@@ -340,7 +341,7 @@ impl Executor {
     async fn run_rt_live(
         &mut self,
         mut ssl_client: VisionClient,
-        mut bs_client: SerialClient,
+        mut bs_client: BasestationClient,
     ) -> Result<()> {
         // Check that we have ssl and bs clients
 

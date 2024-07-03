@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Write, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use glue::{Monitor, Serial};
@@ -8,7 +8,6 @@ use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
 
 const MAX_MSG_FREQ: f64 = 60.0;
 const BASE_STATION_READ_FREQ: f64 = 20.0;
-const TIMEOUT: Duration = Duration::from_millis(20);
 
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
@@ -16,6 +15,7 @@ pub fn list_serial_ports() -> Vec<String> {
     Serial::list_ports(true)
 }
 
+#[derive(Debug, Clone)]
 /// Configuration for the serial client.
 pub struct BasestationClientConfig {
     /// The name of the serial port. Use [`list_serial_ports`] to get a list of
@@ -122,24 +122,27 @@ impl BasestationClient {
                         .enumerate()
                         .map(|(id, msg)| {
                             let player_id = PlayerId::new(id as u32);
-                            let robot_id = robot_id_map.get(&player_id).copied();
                             PlayerFeedbackMsg {
                                 id: player_id,
                                 primary_status: SysStatus::from_option(msg.primary_status()),
                                 kicker_status: SysStatus::from_option(msg.kicker_status()),
                                 imu_status: SysStatus::from_option(msg.imu_status()),
                                 fan_status: SysStatus::from_option(msg.fan_status()),
-                                kicker_cap_voltage: msg.kicker_cap_voltage().map(|v| v as f64),
-                                kicker_temp: msg.kicker_temperature().map(|v| v as f64),
-                                motor_statuses: 
-                                motor_speeds: msg.motor_speeds().map(|v| v as f64),
-                                motor_temps: msg.motor_temps().map(|v| v as f64),
+                                kicker_cap_voltage: msg.kicker_cap_voltage(),
+                                kicker_temp: msg.kicker_temperature(),
+                                motor_statuses: msg.motor_statuses().map(|v| v.map(Into::into)),
+                                motor_speeds: msg.motor_speeds(),
+                                motor_temps: msg.motor_temperatures(),
                                 breakbeam_ball_detected: msg.breakbeam_ball_detected(),
                                 breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
-                                pack_voltages: msg.pack_voltages().map(|v| v as f64),
+                                pack_voltages: msg.pack_voltages(),
                             }
                         })
                         .collect::<Vec<_>>();
+
+                    for msg in feedback {
+                        info_tx.send(msg).ok();
+                    }
                 }
 
                 // Sleep
@@ -158,7 +161,6 @@ impl BasestationClient {
 
     /// Send a message to the serial port.
     pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
-        std::io::stdout().flush().unwrap();
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send((msg, tx))

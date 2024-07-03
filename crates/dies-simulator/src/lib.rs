@@ -1,5 +1,5 @@
 use dies_core::{
-    Angle, BallData, FieldGeometry, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
+    Angle, BallData, FieldGeometry, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
 };
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
@@ -332,7 +332,7 @@ impl Simulation {
                 player.target_ang_velocity = command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
-                is_kicking = command.kick;
+                is_kicking = matches!(command.kicker_cmd, KickerCmd::Kick);
             }
 
             let rigid_body = self

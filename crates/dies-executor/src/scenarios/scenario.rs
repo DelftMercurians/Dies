@@ -1,11 +1,11 @@
 use anyhow::{bail, Result};
 use std::{collections::HashSet, time::Duration};
 
+use dies_basestation_client::{BasestationClient, BasestationClientConfig};
 use dies_core::{
     Angle, BallPlacement, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo, Vector2, Vector3,
     WorldData,
 };
-use dies_serial_client::{SerialClient, SerialClientConfig};
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_world::WorldTracker;
@@ -121,7 +121,7 @@ impl ScenarioSetup {
         self,
         config: ExecutorConfig,
         ssl_config: VisionClientConfig,
-        bs_config: SerialClientConfig,
+        bs_config: BasestationClientConfig,
     ) -> Result<Executor> {
         // Wait for the setup check to succeed
         let mut tracker = WorldTracker::new(config.world_config.clone());
@@ -145,7 +145,7 @@ impl ScenarioSetup {
             check_interval.tick().await;
         }
 
-        let bs_client = SerialClient::new(bs_config)?;
+        let bs_client = BasestationClient::new(bs_config)?;
         Ok(Executor::new_live(
             config,
             self.strategy,

@@ -2,7 +2,7 @@ use super::{
     pid::PID,
     player_input::{KickerControlInput, PlayerControlInput},
 };
-use dies_core::{Angle, PlayerCmd, PlayerData, PlayerId, Vector2};
+use dies_core::{Angle, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2};
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 100.0;
@@ -69,17 +69,15 @@ impl PlayerController {
             sy: self.target_velocity.y / 1000.0, // Convert to m/s
             w: self.target_angular_velocity,
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
-            arm: false,
-            disarm: false,
-            kick: false,
+            kicker_cmd: KickerCmd::None,
         };
 
         match self.kicker {
             KickerState::Arming => {
-                cmd.arm = true;
+                cmd.kicker_cmd = KickerCmd::Arm;
             }
             KickerState::Kicking => {
-                cmd.kick = true;
+                cmd.kicker_cmd = KickerCmd::Kick;
                 self.kicker = KickerState::Disarming;
             }
             _ => {}
