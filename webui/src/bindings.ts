@@ -46,42 +46,32 @@ export interface FieldGeometry {
 	circular_arcs: FieldCircularArc[];
 }
 
-/** A struct to store the ball state from a single frame. */
-export interface BallData {
-	/**
-	 * Unix timestamp of the recorded frame from which this data was extracted (in
-	 * seconds). This is the time that ssl-vision received the frame.
-	 */
-	timestamp: number;
-	/** Position of the ball filtered by us, in mm, in dies coordinates */
-	position: Vector3;
-	/** Velocity of the ball in mm/s, in dies coordinates */
-	velocity: Vector3;
+/** Setup for a player in a scenario. */
+export interface PlayerPlacement {
+	/** Initial position of the player. If `None`, any position is acceptable. */
+	position?: Vector2;
+	/** Initial yaw of the player. If `None`, any yaw is acceptable. */
+	yaw?: Angle;
 }
 
-/** The game state, as reported by the referee. */
-export type GameState = 
-	| { type: "Unknown", content?: undefined }
-	| { type: "Halt", content?: undefined }
-	| { type: "Timeout", content?: undefined }
-	| { type: "Stop", content?: undefined }
-	| { type: "PrepareKickoff", content?: undefined }
-	| { type: "BallReplacement", content: Vector2 }
-	| { type: "PreparePenalty", content?: undefined }
-	| { type: "Kickoff", content?: undefined }
-	| { type: "FreeKick", content?: undefined }
-	| { type: "Penalty", content?: undefined }
-	| { type: "PenaltyRun", content?: undefined }
-	| { type: "Run", content?: undefined };
+/** Setup for the ball in a scenario. */
+export type BallPlacement = 
+	/** Ball is placed at a specific position. */
+	| { type: "Position", data: Vector3 }
+	/** Ball is placed at any position. */
+	| { type: "AnyPosition", data?: undefined }
+	/** No ball is required. */
+	| { type: "NoBall", data?: undefined };
 
-export interface GameStateData {
-	/** The state of current game */
-	game_state: GameState;
-	/**
-	 * If we are the main party currently performing tasks in the state.
-	 * true for symmetric states(halt stop run timout)
-	 */
-	us_operating: boolean;
+/** Information about a scenario. */
+export interface ScenarioInfo {
+	own_player_placements: PlayerPlacement[];
+	opponent_player_placements: PlayerPlacement[];
+	ball_placement: BallPlacement;
+	/** Position tolerance for player and ball positions in mm. */
+	tolerance: number;
+	/** Yaw tolerance for players in rad */
+	yaw_tolerance: number;
 }
 
 /** A struct to store the player state from a single frame. */
@@ -100,12 +90,50 @@ export interface PlayerData {
 	/** Velocity of the player in mm/s, in dies coordinates */
 	velocity: Vector2;
 	/**
-	 * Orientation of the player, in radians, (`-pi`, `pi`), where `0` is the positive
+	 * Yaw of the player, in radians, (`-pi`, `pi`), where `0` is the positive
 	 * x direction, and `pi/2` is the positive y direction.
 	 */
-	orientation: number;
+	yaw: Angle;
 	/** Angular speed of the player (in rad/s) */
 	angular_speed: number;
+}
+
+/** A struct to store the ball state from a single frame. */
+export interface BallData {
+	/**
+	 * Unix timestamp of the recorded frame from which this data was extracted (in
+	 * seconds). This is the time that ssl-vision received the frame.
+	 */
+	timestamp: number;
+	/** Position of the ball filtered by us, in mm, in dies coordinates */
+	position: Vector3;
+	/** Velocity of the ball in mm/s, in dies coordinates */
+	velocity: Vector3;
+}
+
+/** The game state, as reported by the referee. */
+export type GameState = 
+	| { type: "Unknown", data?: undefined }
+	| { type: "Halt", data?: undefined }
+	| { type: "Timeout", data?: undefined }
+	| { type: "Stop", data?: undefined }
+	| { type: "PrepareKickoff", data?: undefined }
+	| { type: "BallReplacement", data: Vector2 }
+	| { type: "PreparePenalty", data?: undefined }
+	| { type: "Kickoff", data?: undefined }
+	| { type: "FreeKick", data?: undefined }
+	| { type: "Penalty", data?: undefined }
+	| { type: "PenaltyRun", data?: undefined }
+	| { type: "Run", data?: undefined };
+
+export interface GameStateData {
+	/** The state of current game */
+	game_state: GameState;
+	/**
+	 * If we are the main party currently performing tasks in the state.
+	 * true for symmetric states(halt stop run timout)
+	 */
+	us_operating: boolean;
 }
 
 /** A struct to store the world state from a single frame. */
@@ -118,37 +146,64 @@ export interface WorldData {
 	duration: number;
 }
 
+export interface WorldUpdate {
+	world_data: WorldData;
+}
+
+export enum ExecutorStatus {
+	None = "none",
+	Running = "running",
+	Paused = "paused",
+}
+
+export interface UiState {
+	status: ExecutorStatus;
+	world?: WorldData;
+}
+
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
 	/** Do nothing */
-	| { type: "Stop", content?: undefined }
-	/** Move the robot to a globel position and orientation */
-	| { type: "MoveTo", content: {
+	| { type: "Stop", data?: undefined }
+	/** Move the robot to a globel position and yaw */
+	| { type: "MoveTo", data: {
 	position: Vector2;
-	orientation: number;
+	yaw: Angle;
 	dribble_speed: number;
 	arm_kick: boolean;
 }}
 	/** Move the robot with velocity in local frame */
-	| { type: "LocalVelocity", content: {
+	| { type: "LocalVelocity", data: {
 	velocity: Vector2;
 	angular_velocity: number;
 	dribble_speed: number;
 	arm_kick: boolean;
 }}
 	/** Move the robot with velocity in global frame */
-	| { type: "GlobalVelocity", content: {
+	| { type: "GlobalVelocity", data: {
 	velocity: Vector2;
 	angular_velocity: number;
 	dribble_speed: number;
 	arm_kick: boolean;
 }}
 	/** Engage the kicker */
-	| { type: "Kick", content: {
+	| { type: "Kick", data: {
 	speed: number;
 }}
 	/** Discharge the kicker safely */
-	| { type: "DischargeKicker", content?: undefined };
+	| { type: "DischargeKicker", data?: undefined };
+
+export type UiCommand = 
+	| { type: "setManualOverride", data: {
+	player_id: PlayerId;
+	manual_override: boolean;
+}}
+	| { type: "overrideCommand", data: {
+	player_id: PlayerId;
+	command: PlayerOverrideCommand;
+}}
+	| { type: "setPause", data: boolean }
+	| { type: "stop", data?: undefined };
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];
