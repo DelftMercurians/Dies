@@ -16,8 +16,6 @@
  */
 export type Angle = number;
 
-export type PlayerId = number;
-
 /** Runtime information about the active executor. */
 export interface ExecutorInfo {
 	/** Whether the executor is currently paused. */
@@ -81,15 +79,9 @@ export type BallPlacement =
 	/** Ball is placed at a specific position. */
 	| { type: "Position", data: Vector3 }
 	/** Ball is placed at any position. */
-<<<<<<< HEAD
-	| { type: "AnyPosition", data?: undefined }
-	/** No ball is required. */
-	| { type: "NoBall", data?: undefined };
-=======
 	| { type: "AnyPosition",  }
 	/** No ball is required. */
 	| { type: "NoBall",  };
->>>>>>> main
 
 /** Information about a scenario. */
 export interface ScenarioInfo {
@@ -141,20 +133,6 @@ export interface BallData {
 
 /** The game state, as reported by the referee. */
 export type GameState = 
-<<<<<<< HEAD
-	| { type: "Unknown", data?: undefined }
-	| { type: "Halt", data?: undefined }
-	| { type: "Timeout", data?: undefined }
-	| { type: "Stop", data?: undefined }
-	| { type: "PrepareKickoff", data?: undefined }
-	| { type: "BallReplacement", data: Vector2 }
-	| { type: "PreparePenalty", data?: undefined }
-	| { type: "Kickoff", data?: undefined }
-	| { type: "FreeKick", data?: undefined }
-	| { type: "Penalty", data?: undefined }
-	| { type: "PenaltyRun", data?: undefined }
-	| { type: "Run", data?: undefined };
-=======
 	| { type: "Unknown",  }
 	| { type: "Halt",  }
 	| { type: "Timeout",  }
@@ -167,7 +145,6 @@ export type GameState =
 	| { type: "Penalty",  }
 	| { type: "PenaltyRun",  }
 	| { type: "Run",  };
->>>>>>> main
 
 export interface GameStateData {
 	/** The state of current game */
@@ -193,17 +170,6 @@ export interface WorldUpdate {
 	world_data: WorldData;
 }
 
-<<<<<<< HEAD
-export enum ExecutorStatus {
-	None = "none",
-	Running = "running",
-	Paused = "paused",
-}
-
-export interface UiState {
-	status: ExecutorStatus;
-	world?: WorldData;
-=======
 /** Runtime information about the active executor. */
 export interface ExecutorInfoResponse {
 	info?: ExecutorInfo;
@@ -253,17 +219,12 @@ export interface PostUiCommandBody {
 
 export interface PostUiModeBody {
 	mode: UiMode;
->>>>>>> main
 }
 
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
 	/** Do nothing */
-<<<<<<< HEAD
-	| { type: "Stop", data?: undefined }
-=======
 	| { type: "Stop",  }
->>>>>>> main
 	/** Move the robot to a globel position and yaw */
 	| { type: "MoveTo", data: {
 	position: Vector2;
@@ -290,27 +251,11 @@ export type PlayerOverrideCommand =
 	speed: number;
 }}
 	/** Discharge the kicker safely */
-<<<<<<< HEAD
-	| { type: "DischargeKicker", data?: undefined };
-
-export type UiCommand = 
-	| { type: "setManualOverride", data: {
-	player_id: PlayerId;
-	manual_override: boolean;
-}}
-	| { type: "overrideCommand", data: {
-	player_id: PlayerId;
-	command: PlayerOverrideCommand;
-}}
-	| { type: "setPause", data: boolean }
-	| { type: "stop", data?: undefined };
-=======
 	| { type: "DischargeKicker",  };
 
 export type UiWorldState = 
 	| { type: "Loaded", data: WorldData }
 	| { type: "None",  };
->>>>>>> main
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];
