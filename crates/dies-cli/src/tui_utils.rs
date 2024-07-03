@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use clap::{Parser, ValueEnum};
 use dies_basestation_client::{list_serial_ports, BasestationClientConfig};
 use dies_ssl_client::VisionClientConfig;

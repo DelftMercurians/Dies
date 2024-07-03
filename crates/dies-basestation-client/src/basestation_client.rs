@@ -84,10 +84,7 @@ pub struct BasestationClient {
 impl BasestationClient {
     /// Create a new `BasestationClient`.
     pub fn new(config: BasestationClientConfig) -> Result<Self> {
-        let BasestationClientConfig {
-            port_name,
-            robot_id_map,
-        } = config;
+        let BasestationClientConfig { port_name, .. } = config;
 
         // Launch a blocking thread for writing to the serial port
         let (cmd_tx, mut cmd_rx) =
@@ -175,6 +172,6 @@ impl BasestationClient {
 
     /// Receive a message from the serial port.
     pub async fn recv(&mut self) -> Result<PlayerFeedbackMsg> {
-        Err(anyhow::anyhow!("Not implemented"))
+        self.info_rx.recv().await.map_err(|e| e.into())
     }
 }

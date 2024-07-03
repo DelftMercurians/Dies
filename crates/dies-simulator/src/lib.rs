@@ -1,6 +1,4 @@
-use dies_core::{
-    Angle, BallData, FieldGeometry, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
-};
+use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerId, Vector2};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
