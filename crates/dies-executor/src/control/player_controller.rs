@@ -1,5 +1,5 @@
 use super::{
-    pid::PID,
+    mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
 };
 use dies_core::{Angle, PlayerCmd, PlayerData, PlayerId, Vector2};
@@ -21,8 +21,8 @@ enum KickerState {
 
 pub struct PlayerController {
     id: PlayerId,
-    position_pid: PID<Vector2>,
-    yaw_pid: PID<f64>,
+    position_mtp: MTP<Vector2>,
+    yaw_mtp: MTP<f64>,
     last_pos: Vector2,
     last_yaw: Angle,
     frame_missings: usize,
@@ -40,11 +40,11 @@ pub struct PlayerController {
 impl PlayerController {
     /// Create a new player controller with the given ID.
     pub fn new(id: PlayerId) -> Self {
-        let yaw_pid = PID::new(2.0, 0.002, 0.0);
+        let yaw_mtp = MTP::new(2.0, 0.002, 0.0);
         Self {
             id,
-            position_pid: PID::new(0.7, 0.0, 0.0),
-            yaw_pid,
+            position_mtp: MTP::new(0.7, 0.0, 0.0),
+            yaw_mtp,
             last_pos: Vector2::new(0.0, 0.0),
             last_yaw: Angle::from_radians(0.0),
             frame_missings: 0,
@@ -99,14 +99,14 @@ impl PlayerController {
     }
 
     /// Update the controller with the current state of the player.
-    pub fn update(&mut self, state: &PlayerData, input: &PlayerControlInput, duration: f64) {
-        // Calculate velocity using the PID controller
+    pub fn update(&mut self, state: &PlayerData, input: &PlayerControlInput, dt: f64) {
+        // Calculate velocity using the MTP controller
         self.last_yaw = state.yaw;
         self.last_pos = state.position;
         let last_vel: Vector2 = state.velocity;
         if let Some(pos_target) = input.position {
-            self.position_pid.set_setpoint(pos_target);
-            let pos_u = self.position_pid.update(self.last_pos);
+            self.position_mtp.set_setpoint(pos_target);
+            let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         }
@@ -115,24 +115,24 @@ impl PlayerController {
 
         // Cap the velocity
         let mut v_diff = self.target_velocity - last_vel;
-        v_diff = v_diff.cap_magnitude(MAX_ACC * duration);
+        v_diff = v_diff.cap_magnitude(MAX_ACC * dt);
         self.target_velocity = last_vel + v_diff;
 
         let last_ang_vel = state.angular_speed;
         if let Some(yaw) = input.yaw {
             // TODO: Use Angle directly
-            self.yaw_pid.set_setpoint(yaw.radians());
-            let head_u = self.yaw_pid.update(self.last_yaw.radians());
+            self.yaw_mtp.set_setpoint(yaw.radians());
+            let head_u = self
+                .yaw_mtp
+                .update(self.last_yaw.radians(), state.angular_speed, dt);
             self.target_angular_velocity = head_u;
         }
         self.target_angular_velocity += input.angular_velocity;
 
         // Cap the angular velocity
         let ang_diff = self.target_angular_velocity - last_ang_vel;
-        self.target_angular_velocity = last_ang_vel
-            + ang_diff
-                .max(-MAX_ACC_RADIUS * duration)
-                .min(MAX_ACC_RADIUS * duration);
+        self.target_angular_velocity =
+            last_ang_vel + ang_diff.max(-MAX_ACC_RADIUS * dt).min(MAX_ACC_RADIUS * dt);
 
         // Set dribbling speed
         self.dribble_speed = input.dribbling_speed;
