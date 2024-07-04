@@ -6,6 +6,7 @@ trap ctrl_c INT
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 LOG_FILE_PATH="/home/mercury/.local/share/dies/dies-$TIMESTAMP.log"
+REMOTE_DIR="$REMOTE_DIR$(whoami)/"
 
 function pull_logs() {
     echo "** Pulling logs (from $LOG_FILE_PATH)..."
@@ -35,10 +36,10 @@ if [ ! "$(ls -A ./crates/dies-webui/static)" ] || [ "$1" == "--web-build" ]; the
 fi
 
 # Sync files to the remote server
-rsync -avz --delete --exclude-from='.gitignore' --exclude-from='.rsyncignore' --exclude .git  . mercury@mercuryvision:Code/dies/
+rsync -avz --delete --exclude-from='.gitignore' --exclude-from='.rsyncignore' --exclude .git  . mercury@mercuryvision:$REMOTE_DIR
 
 # Run the program on the remote server
-ssh -L 5555:localhost:5555 mercury@mercuryvision "cd Code/dies && /home/mercury/.cargo/bin/cargo run -- --log-file $LOG_FILE_PATH $@"
+ssh -L 5555:localhost:5555 mercury@mercuryvision "cd $REMOTE_DIR && /home/mercury/.cargo/bin/cargo run -- --log-file $LOG_FILE_PATH --serial-port auto --vision udp $@"
 
 # Pull logs
 pull_logs

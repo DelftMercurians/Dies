@@ -98,17 +98,24 @@ const App: React.FC = () => {
           type="single"
           value={uiMode}
           onValueChange={setMode}
-          disabled={setModeStatus === "pending"}
+          // disabled={setModeStatus === "pending"}
           className="border border-gray-500 rounded-lg"
         >
           <SimpleTooltip title="Simulation">
-            <ToggleGroupItem value="Simulation">
+            <ToggleGroupItem
+              value="Simulation"
+              className="data-[state=on]:bg-green-600"
+            >
               <LaptopMinimal />
             </ToggleGroupItem>
           </SimpleTooltip>
 
           <SimpleTooltip title="Live">
-            <ToggleGroupItem value="Live" disabled={!isLiveAvailable}>
+            <ToggleGroupItem
+              value="Live"
+              disabled={!isLiveAvailable}
+              className="data-[state=on]:bg-green-600"
+            >
               <Radio />
             </ToggleGroupItem>
           </SimpleTooltip>
