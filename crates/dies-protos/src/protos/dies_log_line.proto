@@ -1,0 +1,16 @@
+syntax = "proto2";
+
+enum LogLevel {
+  TRACE = 0;
+  DEBUG = 1;
+  INFO = 2;
+  WARN = 3;
+  ERROR = 4;
+}
+
+message LogLine {
+  required string message = 1;
+  required LogLevel level = 2;
+  required string target = 4;
+  required string source = 5;
+}

@@ -1,10 +1,12 @@
 use dies_protos::ssl_vision_geometry::SSL_GeometryFieldSize;
 use serde::{Deserialize, Serialize};
+use typeshare::typeshare;
 
 use crate::Vector2;
 
 /// A single field arc -- eg. the center circle
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[typeshare]
 pub struct FieldCircularArc {
     /// Readable name of the arc
     pub name: String,
@@ -20,21 +22,47 @@ pub struct FieldCircularArc {
     pub thickness: f64,
 }
 
+impl FieldCircularArc {
+    pub fn new(name: &str, center: Vector2, radius: f64, a1: f64, a2: f64, thickness: f64) -> Self {
+        Self {
+            name: name.to_owned(),
+            center,
+            radius,
+            a1,
+            a2,
+            thickness,
+        }
+    }
+}
+
 /// A single field line segment
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[typeshare]
 pub struct FieldLineSegment {
     /// Readable name of the line segment
     pub name: String,
-    /// Start point of the line segment, in dies coordinates
+    /// Start Vector2 of the line segment, in dies coordinates
     pub p1: Vector2,
-    /// End point of the line segment, in dies coordinates
+    /// End Vector2 of the line segment, in dies coordinates
     pub p2: Vector2,
     /// Thickness of the line segment, in mm
     pub thickness: f64,
 }
 
+impl FieldLineSegment {
+    pub fn new(name: &str, p1: Vector2, p2: Vector2, thickness: f64) -> Self {
+        Self {
+            name: name.to_owned(),
+            p1,
+            p2,
+            thickness,
+        }
+    }
+}
+
 /// The field geometry.
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[typeshare]
 pub struct FieldGeometry {
     /// Field length (distance between goal lines) in mm
     pub field_length: i32,
@@ -61,14 +89,14 @@ impl FieldGeometry {
             let p1 = if let Some(p1) = line.p1.as_ref() {
                 Vector2::new(p1.x() as f64, p1.y() as f64)
             } else {
-                tracing::error!("Field line segment has no p1");
+                log::error!("Field line segment has no p1");
                 continue;
             };
 
             let p2 = if let Some(p2) = line.p2.as_ref() {
                 Vector2::new(p2.x() as f64, p2.y() as f64)
             } else {
-                tracing::error!("Field line segment has no p2");
+                log::error!("Field line segment has no p2");
                 continue;
             };
             field_line_segments.push(FieldLineSegment {
@@ -85,7 +113,7 @@ impl FieldGeometry {
             let center = if let Some(center) = arc.center.as_ref() {
                 Vector2::new(center.x() as f64, center.y() as f64)
             } else {
-                tracing::error!("Field circular arc has no center");
+                log::error!("Field circular arc has no center");
                 continue;
             };
 
@@ -107,6 +135,103 @@ impl FieldGeometry {
             boundary_width: geometry.boundary_width(),
             line_segments: field_line_segments,
             circular_arcs: field_circular_arcs,
+        }
+    }
+}
+
+impl Default for FieldGeometry {
+    fn default() -> Self {
+        let lines = vec![
+            FieldLineSegment::new(
+                "TopTouchLine",
+                Vector2::new(-6020.0, -4510.0),
+                Vector2::new(6020.0, -4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "BottomTouchLine",
+                Vector2::new(-6020.0, 4510.0),
+                Vector2::new(6020.0, 4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "LeftGoalLine",
+                Vector2::new(-6020.0, -4510.0),
+                Vector2::new(-6020.0, 4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "RightGoalLine",
+                Vector2::new(6020.0, -4510.0),
+                Vector2::new(6020.0, 4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "HalfwayLine",
+                Vector2::new(0.0, -4510.0),
+                Vector2::new(0.0, 4510.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "CenterLine",
+                Vector2::new(-6020.0, 0.0),
+                Vector2::new(6020.0, 0.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "LeftPenaltyStretch",
+                Vector2::new(-4800.0, -1205.0),
+                Vector2::new(-4800.0, 1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "RightPenaltyStretch",
+                Vector2::new(4800.0, -1205.0),
+                Vector2::new(4800.0, 1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "LeftFieldLeftPenaltyStretch",
+                Vector2::new(-6020.0, -1205.0),
+                Vector2::new(-4800.0, -1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "LeftFieldRightPenaltyStretch",
+                Vector2::new(-6020.0, 1205.0),
+                Vector2::new(-4800.0, 1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "RightFieldRightPenaltyStretch",
+                Vector2::new(6020.0, -1205.0),
+                Vector2::new(4800.0, -1205.0),
+                10.0,
+            ),
+            FieldLineSegment::new(
+                "RightFieldLeftPenaltyStretch",
+                Vector2::new(6020.0, 1205.0),
+                Vector2::new(4800.0, 1205.0),
+                10.0,
+            ),
+        ];
+        let arcs = vec![FieldCircularArc::new(
+            "CenterCircle",
+            Vector2::new(0.0, 0.0),
+            500.0,
+            0.0,
+            6.283185,
+            10.0,
+        )];
+
+        Self {
+            field_width: 9020,
+            field_length: 12040,
+            boundary_width: 300,
+            goal_depth: 180,
+            goal_width: 1200,
+            line_segments: lines,
+            circular_arcs: arcs,
         }
     }
 }

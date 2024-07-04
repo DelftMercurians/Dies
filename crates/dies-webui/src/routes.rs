@@ -3,43 +3,79 @@ use axum::extract::WebSocketUpgrade;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use dies_executor::WorldUpdate;
+use dies_core::WorldUpdate;
+use dies_executor::scenarios::ScenarioType;
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 
-use crate::server::ServerState;
-use crate::server::UiCommand;
-use dies_core::PlayerCmd;
+use crate::{server::ServerState, UiCommand, UiMode};
+use crate::{
+    ControllerSettingsResponse, ExecutorInfoResponse, PostControllerSettingsBody,
+    PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState,
+};
 
-pub(crate) async fn state(state: State<Arc<ServerState>>) -> impl IntoResponse {
-    let update = state.world_state.borrow();
-    if let Some(update) = update.as_ref() {
-        Json(update.world_data.clone()).into_response()
+pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
+    let update = state.update_rx.borrow().clone();
+    if let Some(update) = update {
+        let state = UiWorldState::Loaded(update.world_data);
+        Json(state)
     } else {
-        StatusCode::NOT_FOUND.into_response()
+        Json(UiWorldState::None)
     }
 }
 
-pub(crate) async fn command(
+pub async fn get_ui_status(state: State<Arc<ServerState>>) -> Json<UiStatus> {
+    Json(state.ui_status())
+}
+
+pub async fn get_scenarios() -> Json<Vec<&'static str>> {
+    Json(ScenarioType::get_names())
+}
+
+pub async fn get_executor_info(state: State<Arc<ServerState>>) -> Json<ExecutorInfoResponse> {
+    let info = state.executor_info().await;
+    Json(ExecutorInfoResponse { info })
+}
+
+pub async fn post_ui_mode(
     state: State<Arc<ServerState>>,
-    Json(cmd): Json<PlayerCmd>,
-) -> impl IntoResponse {
-    let _ = state.cmd_sender.send(UiCommand::DirectPlayerCmd { cmd });
+    Json(data): Json<PostUiModeBody>,
+) -> StatusCode {
+    if data.mode == UiMode::Live && !state.is_live_available {
+        return StatusCode::BAD_REQUEST;
+    }
+
+    state.set_ui_mode(data.mode);
     StatusCode::OK
 }
 
-pub(crate) async fn settings(state: State<Arc<ServerState>>) -> impl IntoResponse {
-    let settings = state.settings.clone();
-    Json(settings)
+pub async fn post_command(
+    state: State<Arc<ServerState>>,
+    Json(data): Json<PostUiCommandBody>,
+) -> StatusCode {
+    let _ = state.cmd_tx.send(data.command);
+    StatusCode::OK
 }
 
-pub(crate) async fn websocket(
-    ws: WebSocketUpgrade,
+pub async fn get_controller_settings(
     state: State<Arc<ServerState>>,
-) -> impl IntoResponse {
-    let rx = state.world_state.clone();
-    let tx = state.cmd_sender.clone();
+) -> Json<ControllerSettingsResponse> {
+    let settings = state.controller_settings.read().unwrap().clone();
+    Json(ControllerSettingsResponse { settings })
+}
+
+pub async fn post_controller_settings(
+    state: State<Arc<ServerState>>,
+    Json(data): Json<PostControllerSettingsBody>,
+) -> StatusCode {
+    state.update_controller_settings(data.settings);
+    StatusCode::OK
+}
+
+pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> impl IntoResponse {
+    let rx = state.update_rx.clone();
+    let tx = state.cmd_tx.clone();
     ws.on_upgrade(|socket| async move {
         handle_ws_conn(tx, rx, socket).await;
     })
@@ -57,7 +93,7 @@ async fn handle_ws_conn(
             }
             Ok(()) = rx.changed() => {
                 if let Err(err) = handle_send_ws_update(&mut rx, &mut socket).await {
-                    tracing::error!("Failed to send update: {}", err);
+                    log::error!("Failed to send update: {}", err);
                     break;
                 }
             }
@@ -68,17 +104,20 @@ async fn handle_ws_conn(
     }
 
     if let Err(err) = socket.close().await {
-        tracing::error!("Failed to close websocket: {}", err);
+        log::error!("Failed to close websocket: {}", err);
     }
 }
 
 async fn handle_ws_msg(tx: broadcast::Sender<UiCommand>, msg: Message) {
     match msg {
-        Message::Text(text) => {
-            if let Ok(cmd) = serde_json::from_str::<UiCommand>(&text) {
+        Message::Text(text) => match serde_json::from_str::<UiCommand>(&text) {
+            Ok(cmd) => {
                 let _ = tx.send(cmd);
             }
-        }
+            Err(err) => {
+                log::error!("Failed to parse command: {}", err);
+            }
+        },
         _ => {}
     }
 }

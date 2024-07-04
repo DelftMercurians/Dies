@@ -1,8 +1,11 @@
+use std::time::Duration;
+
 use super::{
     pid::{CircularPID, PID},
+    mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
 };
-use dies_core::{PlayerCmd, PlayerData, PlayerId, Vector2};
+use dies_core::{Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2};
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 100.0;
@@ -10,8 +13,8 @@ const MAX_DRIBBLE_SPEED: f64 = 100.0;
 // maximum acceleration unit: mm/s2
 const MAX_ACC: f64 = 5000.0;
 
-// maximum acceleration unit: radius/s2
-const MAX_ACC_RADIUS: f64 = 50.0;
+// maximum acceleration unit: radians/s2
+const MAX_ACC_RADIUS: f64 = 20.0;
 
 enum KickerState {
     Disarming,
@@ -21,16 +24,21 @@ enum KickerState {
 
 pub struct PlayerController {
     id: PlayerId,
-    position_pid: PID<Vector2>,
-    heading_pid: CircularPID,
-    last_pos: Vector2,
-    last_orientation: f64,
-    frame_missings: usize,
 
+    position_pid: PID<Vector2>,
+    position_mtp: MTP<Vector2>,
+    last_pos: Vector2,
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
+
+    yaw_pid: CircularPID,
+    yaw_mtp: MTP<f64>,
+    last_yaw: Angle,
     /// Output angular velocity \[rad/s\]
     target_angular_velocity: f64,
+
+    frame_misses: usize,
+
     /// Kicker control
     kicker: KickerState,
     /// Dribble speed normalized to \[0, 1\]
@@ -40,20 +48,41 @@ pub struct PlayerController {
 impl PlayerController {
     /// Create a new player controller with the given ID.
     pub fn new(id: PlayerId) -> Self {
-        let heading_pid = CircularPID::new(2.0, 0.002, 0.0);
         Self {
             id,
-            // position_pid: PID::new(0.2, 0.0, 0.0),
+
             position_pid: PID::new(0.8, 0.0, 0.05),
-            heading_pid,
+            position_mtp: MTP::new(0.7, 0.0, 0.0),
             last_pos: Vector2::new(0.0, 0.0),
-            last_orientation: 0.0,
-            frame_missings: 0,
             target_velocity: Vector2::new(0.0, 0.0),
+
+            yaw_pid: CircularPID::new(2.0, 0.002, 0.0),
+            yaw_mtp: MTP::new(2.0, 0.002, 0.0),
+            last_yaw: Angle::from_radians(0.0),
             target_angular_velocity: 0.0,
+
+            frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
         }
+    }
+
+    /// Update the controller settings.
+    pub fn update_settings(&mut self, settings: &ControllerSettings) {
+        self.position_mtp.update_settings(
+            settings.max_acceleration,
+            settings.max_velocity,
+            settings.max_deceleration,
+            settings.position_kp,
+            Duration::from_secs_f64(settings.position_proportional_time_window),
+        );
+        self.yaw_mtp.update_settings(
+            settings.max_angular_acceleration,
+            settings.max_angular_velocity,
+            settings.max_angular_deceleration,
+            settings.angle_kp,
+            Duration::from_secs_f64(settings.angle_proportional_time_window),
+        );
     }
 
     /// Get the ID of the player.
@@ -70,17 +99,15 @@ impl PlayerController {
             sy: self.target_velocity.y / 1000.0, // Convert to m/s
             w: self.target_angular_velocity,
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
-            arm: false,
-            disarm: false,
-            kick: false,
+            kicker_cmd: KickerCmd::None,
         };
 
         match self.kicker {
             KickerState::Arming => {
-                cmd.arm = true;
+                cmd.kicker_cmd = KickerCmd::Arm;
             }
             KickerState::Kicking => {
-                cmd.kick = true;
+                cmd.kicker_cmd = KickerCmd::Kick;
                 self.kicker = KickerState::Disarming;
             }
             _ => {}
@@ -90,49 +117,50 @@ impl PlayerController {
     }
 
     /// Increment the missing frame count, stops the robot if it is too high.
-    pub fn increment_frames_missings(&mut self) {
-        self.frame_missings += 1;
-        if self.frame_missings > MISSING_FRAMES_THRESHOLD {
-            tracing::warn!("Player {} has missing frames, stopping", self.id);
+    pub fn increment_frames_misses(&mut self) {
+        self.frame_misses += 1;
+        if self.frame_misses > MISSING_FRAMES_THRESHOLD {
+            log::warn!("Player {} has missing frames, stopping", self.id);
             self.target_velocity = Vector2::new(0.0, 0.0);
             self.target_angular_velocity = 0.0;
         }
     }
 
     /// Update the controller with the current state of the player.
-    pub fn update(&mut self, state: &PlayerData, input: PlayerControlInput, duration: f64) {
-        // Calculate velocity using the PID controller
-        self.last_orientation = state.orientation;
+    pub fn update(&mut self, state: &PlayerData, input: &PlayerControlInput, dt: f64) {
+        // Calculate velocity using the MTP controller
+        self.last_yaw = state.yaw;
         self.last_pos = state.position;
         let last_vel: Vector2 = state.velocity;
         if let Some(pos_target) = input.position {
-            self.position_pid.set_setpoint(pos_target);
-            let pos_u = self.position_pid.update(self.last_pos);
-            let local_u = rotate_vector(pos_u, -self.last_orientation);
+            self.position_mtp.set_setpoint(pos_target);
+            let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
+            let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         }
-        let local_vel = rotate_vector(input.velocity, -self.last_orientation);
+        let local_vel = input.velocity.to_local(self.last_yaw);
         self.target_velocity += local_vel;
 
         // Cap the velocity
         let mut v_diff = self.target_velocity - last_vel;
-        v_diff = v_diff.cap_magnitude(MAX_ACC * duration);
+        v_diff = v_diff.cap_magnitude(MAX_ACC * dt);
         self.target_velocity = last_vel + v_diff;
 
         let last_ang_vel = state.angular_speed;
-        if let Some(orientation) = input.orientation {
-            self.heading_pid.set_setpoint(orientation);
-            let head_u = self.heading_pid.update(self.last_orientation);
+        if let Some(yaw) = input.yaw {
+            // TODO: Use Angle directly
+            self.yaw_mtp.set_setpoint(yaw.radians());
+            let head_u = self
+                .yaw_mtp
+                .update(self.last_yaw.radians(), state.angular_speed, dt);
             self.target_angular_velocity = head_u;
         }
         self.target_angular_velocity += input.angular_velocity;
 
         // Cap the angular velocity
         let ang_diff = self.target_angular_velocity - last_ang_vel;
-        self.target_angular_velocity = last_ang_vel
-            + ang_diff
-                .max(-MAX_ACC_RADIUS * duration)
-                .min(MAX_ACC_RADIUS * duration);
+        self.target_angular_velocity =
+            last_ang_vel + ang_diff.max(-MAX_ACC_RADIUS * dt).min(MAX_ACC_RADIUS * dt);
 
         // Set dribbling speed
         self.dribble_speed = input.dribbling_speed;
@@ -150,9 +178,4 @@ impl PlayerController {
             }
         }
     }
-}
-
-fn rotate_vector(v: Vector2, angle: f64) -> Vector2 {
-    let rot = nalgebra::Rotation2::new(angle);
-    rot * v
 }

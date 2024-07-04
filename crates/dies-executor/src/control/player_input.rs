@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use dies_core::{PlayerId, Vector2};
+use dies_core::{Angle, PlayerId, Vector2};
 
 /// A collection of player inputs.
 pub struct PlayerInputs {
@@ -56,20 +56,60 @@ impl FromIterator<(PlayerId, PlayerControlInput)> for PlayerInputs {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Velocity {
+    Global(Vector2),
+    Local(Vector2),
+}
+
+impl Velocity {
+    pub fn local(v: Vector2) -> Self {
+        Self::Local(v)
+    }
+
+    pub fn global(v: Vector2) -> Self {
+        Self::Global(v)
+    }
+
+    pub fn to_local(&self, yaw: Angle) -> Vector2 {
+        match self {
+            Self::Global(v) => yaw.inv().rotate_vector(v),
+            Self::Local(v) => *v,
+        }
+    }
+
+    pub fn map(&self, f: impl FnOnce(&Vector2) -> Vector2) -> Self {
+        match self {
+            Velocity::Global(v) => Velocity::Global(f(v)),
+            Velocity::Local(v) => Velocity::Local(f(v)),
+        }
+    }
+
+    pub fn cap_magnitude(&self, max: f64) -> Self {
+        self.map(|v| v.cap_magnitude(max))
+    }
+}
+
+impl Default for Velocity {
+    fn default() -> Self {
+        Self::Local(Vector2::zeros())
+    }
+}
+
 /// Input to the player controller.
 #[derive(Debug, Clone, Default)]
 pub struct PlayerControlInput {
     /// Target position. If `None`, the player will just follow the given velocity
     pub position: Option<Vector2>,
-    /// Target velocity (in global frame). This is added to the output of the position
+    /// Target velocity. This is added to the output of the position
     /// controller.
-    pub velocity: Vector2,
-    /// Target orientation. If `None` the player will just follow the given angula
+    pub velocity: Velocity,
+    /// Target yaw. If `None` the player will just follow the given angula
     /// velocity
-    pub orientation: Option<f64>,
+    pub yaw: Option<Angle>,
     /// Target angular velocity. This is added to the output of the controller.
     pub angular_velocity: f64,
-    /// Dribbler speed normalised to [0, 1]
+    /// Dribbler speed normalised to \[0, 1\]
     pub dribbling_speed: f64,
     /// Kicker control input
     pub kicker: KickerControlInput,
@@ -87,9 +127,9 @@ impl PlayerControlInput {
         self
     }
 
-    /// Set the target heading of the player.
-    pub fn with_orientation(&mut self, orientation: f64) -> &mut Self {
-        self.orientation = Some(orientation);
+    /// Set the target yaw of the player.
+    pub fn with_yaw(&mut self, yaw: Angle) -> &mut Self {
+        self.yaw = Some(yaw);
         self
     }
 

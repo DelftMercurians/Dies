@@ -1,4 +1,4 @@
-use dies_core::{PlayerData, PlayerId};
+use dies_core::{Angle, PlayerData, PlayerId};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector2, Vector4};
 
@@ -35,11 +35,11 @@ impl PlayerTracker {
     /// Set the sign of the enemy goal's x coordinate in ssl-vision coordinates.
     pub fn set_play_dir_x(&mut self, play_dir_x: f64) {
         if play_dir_x != self.play_dir_x {
-            // Flip the x coordinate of the player's position, velocity and orientation
+            // Flip the x coordinate of the player's position, velocity and yaw
             if let Some(last_data) = &mut self.last_data {
                 last_data.position.x *= -1.0;
                 last_data.velocity.x *= -1.0;
-                last_data.orientation *= -1.0;
+                last_data.yaw = last_data.yaw.inv();
             }
         }
         self.play_dir_x = play_dir_x;
@@ -54,7 +54,7 @@ impl PlayerTracker {
     /// Update the tracker with a new frame.
     pub fn update(&mut self, t_capture: f64, player: &SSL_DetectionRobot) {
         let current_position = to_dies_coords2(player.x(), player.y(), self.play_dir_x);
-        let current_orientation = player.orientation() as f64 * self.play_dir_x;
+        let current_yaw = Angle::from_radians(player.orientation() as f64 * self.play_dir_x);
 
         if let Some(filter) = &mut self.filter {
             let z = na::convert(Vector2::new(current_position.x, current_position.y));
@@ -68,7 +68,7 @@ impl PlayerTracker {
                         raw_position: current_position,
                         position: na::convert(Vector2::new(x[0], x[2])),
                         velocity: na::convert(Vector2::new(x[1], x[3])),
-                        orientation: current_orientation,
+                        yaw: current_yaw,
                         angular_speed: 0.0,
                     });
                     self.is_init = true;
@@ -77,8 +77,8 @@ impl PlayerTracker {
                 last_data.raw_position = current_position;
                 last_data.position = na::convert(Vector2::new(x[0], x[2]));
                 last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
-                last_data.orientation = current_orientation;
-                last_data.angular_speed = (current_orientation - last_data.orientation)
+                last_data.yaw = current_yaw;
+                last_data.angular_speed = (current_yaw - last_data.yaw).radians()
                     / ((t_capture - last_data.timestamp + std::f64::EPSILON) as f64);
                 last_data.timestamp = t_capture;
             }
@@ -154,7 +154,7 @@ mod test {
         assert_eq!(data.id.as_u32(), 1);
         assert_eq!(data.position, Vector2::new(100.0, 200.0));
         assert_eq!(data.velocity, Vector2::zeros());
-        assert_eq!(data.orientation, 0.0);
+        assert_eq!(data.yaw, Angle::from_radians(0.0));
         assert_eq!(data.angular_speed, 0.0);
 
         player.set_x(200.0);
@@ -168,7 +168,7 @@ mod test {
         assert_eq!(data.id.as_u32(), 1);
         assert_eq!(data.position, Vector2::new(200.0, 300.0));
         assert_eq!(data.velocity, Vector2::new(100.0, 100.0));
-        assert_eq!(data.orientation, 1.0);
+        assert_eq!(data.yaw, Angle::from_radians(1.0));
         assert_eq!(data.angular_speed, 1.0);
     }
 
@@ -192,7 +192,7 @@ mod test {
         assert_eq!(data.id.as_u32(), 1);
         assert_eq!(data.position, Vector2::new(-100.0, 200.0));
         assert_eq!(data.velocity, Vector2::zeros());
-        assert_eq!(data.orientation, -dir);
+        assert_eq!(data.yaw, Angle::from_radians(-dir));
         assert_eq!(data.angular_speed, 0.0);
 
         tracker.set_play_dir_x(1.0);
@@ -208,7 +208,7 @@ mod test {
         assert_eq!(data.id.as_u32(), 1);
         assert_eq!(data.position, Vector2::new(200.0, 300.0));
         assert_eq!(data.velocity, Vector2::new(100.0, 100.0));
-        assert_eq!(data.orientation, -dir);
+        assert_eq!(data.yaw, Angle::from_radians(-dir));
         assert_eq!(data.angular_speed, -PI);
     }
 }

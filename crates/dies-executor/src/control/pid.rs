@@ -22,10 +22,7 @@ pub struct CircularPID {
 }
 
 
-impl<T> PID<T>
-where
-    T: Variable,
-{
+impl<T: Variable> PID<T> {
     pub fn new(kp: f64, ki: f64, kd: f64) -> Self {
         Self {
             kp,

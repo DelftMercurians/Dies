@@ -1,6 +1,6 @@
 import { defineConfig, ViteDevServer } from "vite";
-import open from "open";
 import react from "@vitejs/plugin-react";
+import * as path from "path";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -22,4 +22,9 @@ export default defineConfig({
     emptyOutDir: true,
   },
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
 });

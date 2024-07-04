@@ -47,7 +47,7 @@ impl Strategy for AdHocStrategy {
             }
         }
         if self.unassigned_roles.len() > 0 {
-            tracing::warn!("Not enough players to assign all roles");
+            log::warn!("Not enough players to assign all roles");
         }
 
         let mut inputs = PlayerInputs::new();
@@ -56,7 +56,7 @@ impl Strategy for AdHocStrategy {
                 let input = role.update(player_data, world);
                 inputs.insert(*id, input);
             } else {
-                tracing::error!("No detetion data for player #{id} with active role");
+                log::error!("No detetion data for player #{id} with active role");
             }
         }
         inputs

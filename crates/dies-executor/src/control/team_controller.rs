@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::strategy::Strategy;
+use crate::{strategy::Strategy, PlayerControlInput};
 
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
-use dies_core::{GameState, PlayerId};
+use dies_core::{ControllerSettings, GameState, PlayerId};
 use dies_core::{PlayerCmd, WorldData};
 
 pub struct TeamController {
@@ -23,8 +23,18 @@ impl TeamController {
         }
     }
 
+    pub fn update_controller_settings(&mut self, settings: &ControllerSettings) {
+        for controller in self.player_controllers.values_mut() {
+            controller.update_settings(settings);
+        }
+    }
+
     /// Update the controllers with the current state of the players.
-    pub fn update(&mut self, world_data: WorldData) {
+    pub fn update(
+        &mut self,
+        world_data: WorldData,
+        manual_override: HashMap<PlayerId, PlayerControlInput>,
+    ) {
         // Ensure there is a player controller for every ID
         let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
         for id in detected_ids.iter() {
@@ -49,10 +59,13 @@ impl TeamController {
                 .find(|p| p.id == controller.id());
 
             if let Some(player_data) = player_data {
-                let input = inputs.player(controller.id());
+                let default_input = inputs.player(controller.id());
+                let input = manual_override
+                    .get(&controller.id())
+                    .unwrap_or(&default_input);
                 controller.update(player_data, input, world_data.duration);
             } else {
-                controller.increment_frames_missings();
+                controller.increment_frames_misses();
             }
         }
     }
