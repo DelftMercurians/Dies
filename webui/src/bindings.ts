@@ -16,6 +16,30 @@
  */
 export type Angle = number;
 
+/** Settings for the low-level controller. */
+export interface ControllerSettings {
+	/** Maximum acceleration of the robot in mm/s². */
+	max_acceleration: number;
+	/** Maximum velocity of the robot in mm/s. */
+	max_velocity: number;
+	/** Maximum deceleration of the robot in mm/s². */
+	max_deceleration: number;
+	/** Maximum angular velocity of the robot in rad/s. */
+	max_angular_velocity: number;
+	/** Maximum angular acceleration of the robot in rad/s². */
+	max_angular_acceleration: number;
+	/** Maximum angular deceleration of the robot in rad/s². */
+	max_angular_deceleration: number;
+	/** Proportional gain for the close-range position controller. */
+	position_kp: number;
+	/** Time until destination in which the proportional controller is used, in seconds. */
+	position_propotional_time_window: number;
+	/** Proportional gain for the close-range angle controller. */
+	angle_kp: number;
+	/** Time until destination in which the proportional controller is used, in seconds. */
+	angle_propotional_time_window: number;
+}
+
 /** Runtime information about the active executor. */
 export interface ExecutorInfo {
 	/** Whether the executor is currently paused. */
@@ -221,6 +245,14 @@ export interface PostUiModeBody {
 	mode: UiMode;
 }
 
+export interface ControllerSettingsResponse {
+	settings: ControllerSettings;
+}
+
+export interface PostControllerSettingsBody {
+	settings: ControllerSettings;
+}
+
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
 	/** Do nothing */
@@ -229,6 +261,7 @@ export type PlayerOverrideCommand =
 	| { type: "MoveTo", data: {
 	position: Vector2;
 	yaw: Angle;
+	/** Dribbler speed normalised to \[0, 1\] */
 	dribble_speed: number;
 	arm_kick: boolean;
 }}
@@ -236,6 +269,7 @@ export type PlayerOverrideCommand =
 	| { type: "LocalVelocity", data: {
 	velocity: Vector2;
 	angular_velocity: number;
+	/** Dribbler speed normalised to \[0, 1\] */
 	dribble_speed: number;
 	arm_kick: boolean;
 }}
@@ -243,6 +277,7 @@ export type PlayerOverrideCommand =
 	| { type: "GlobalVelocity", data: {
 	velocity: Vector2;
 	angular_velocity: number;
+	/** Dribbler speed normalised to \[0, 1\] */
 	dribble_speed: number;
 	arm_kick: boolean;
 }}

@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Pause, Play } from "lucide-react";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 interface PlayerSidebarProps {
   selectedPlayerId: number | null;
@@ -40,23 +41,24 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
   const [graphPaused, setGraphPaused] = useState(true);
   const [speed, setSpeed] = useState(1000);
   const [angularSpeedDegPerSec, setAngularSpeedDegPerSec] = useState(30);
+  const [keyboardControl, setKeyboardControl] = useState(false);
 
   const manualControl =
     executorInfo?.manual_controlled_players.includes(selectedPlayerId);
   useKeyboardControl({
-    playerId: manualControl ? selectedPlayerId : null,
+    playerId: manualControl && keyboardControl ? selectedPlayerId : null,
     speed,
     angularSpeedDegPerSec,
   });
 
-  if (world.status !== "connected" || selectedPlayerId === null)
-    return <div className="bg-slate-950"></div>;
+  if (world.status !== "connected" || typeof selectedPlayerId !== "number")
+    return null;
 
   const selectedPlayer = world.data.own_players.find(
     (p) => p.id === selectedPlayerId
   );
   if (!selectedPlayer)
-    throw new Error(`Player with id ${selectedPlayer} not found!`);
+    return <div>Player with id {selectedPlayerId} not found</div>;
 
   const handleToggleManual = (val: boolean) => {
     sendCommand({
@@ -69,8 +71,8 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
   };
 
   return (
-    <div className="flex flex-col gap-6 bg-slate-950 p-6">
-      <h1 className="text-lg font-bold mb-2">Player #{selectedPlayerId}</h1>
+    <div className="flex-1 flex flex-col gap-6 p-4">
+      <h1 className="text-2xl font-bold mb-2">Player #{selectedPlayerId}</h1>
 
       <div>
         <div className="flex flex-row gap-2 items-center mb-2">
@@ -107,21 +109,35 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
         />
       </div>
 
-      <div className="flex flex-row gap-2 items-center">
-        <Switch
-          id="manual-control"
-          checked={manualControl}
-          disabled={typeof manualControl !== "boolean"}
-          onCheckedChange={handleToggleManual}
-        />
-        <Label htmlFor="manual-control">Manual Control</Label>
-      </div>
+      <SimpleTooltip title="Set this player to manual control -- it will stop following the strategy">
+        <div className="flex flex-row gap-2 items-center">
+          <Switch
+            id="manual-control"
+            checked={manualControl}
+            disabled={typeof manualControl !== "boolean"}
+            onCheckedChange={handleToggleManual}
+          />
+          <Label htmlFor="manual-control">Manual Control</Label>
+        </div>
+      </SimpleTooltip>
 
       {manualControl ? (
         <>
-          <div className="flex flex-row gap-2">
+          <SimpleTooltip title="Control the robot using the keyboard">
+            <div className="flex flex-row gap-2 items-center">
+              <Switch
+                id="keyboard-control"
+                checked={keyboardControl}
+                disabled={typeof keyboardControl !== "boolean"}
+                onCheckedChange={setKeyboardControl}
+              />
+              <Label htmlFor="keyboard-control">Keyboard Control</Label>
+            </div>
+          </SimpleTooltip>
+
+          <div className="flex flex-row gap-2 items-center">
             <div>Speed</div>
-            <input
+            <Input
               type="number"
               min="0"
               max="10000"
@@ -131,9 +147,9 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
             <div>mm/s</div>
           </div>
 
-          <div className="flex flex-row gap-2">
+          <div className="flex flex-row gap-2 items-center">
             <div>Angular Speed</div>
-            <input
+            <Input
               type="number"
               min="0"
               max="360"

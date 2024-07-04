@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use dies_core::{ExecutorInfo, PlayerId, PlayerOverrideCommand, WorldUpdate};
+use dies_core::{ControllerSettings, ExecutorInfo, PlayerId, PlayerOverrideCommand, WorldUpdate};
 
 #[derive(Debug)]
 pub enum ControlMsg {
@@ -12,6 +12,7 @@ pub enum ControlMsg {
     },
     PlayerOverrideCommand(PlayerId, PlayerOverrideCommand),
     SetPause(bool),
+    UpdateControllerSettings(ControllerSettings),
     Stop,
 }
 
@@ -48,7 +49,7 @@ impl ExecutorHandle {
             .ok()
     }
 
-    pub fn send(&mut self, msg: ControlMsg) {
+    pub fn send(&self, msg: ControlMsg) {
         self.control_tx
             .send(msg)
             .map_err(|err| {

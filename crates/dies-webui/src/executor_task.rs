@@ -107,7 +107,7 @@ impl ExecutorTask {
         match std::mem::take(&mut self.state) {
             ExecutorTaskState::Runnning {
                 task_handle,
-                mut executor_handle,
+                executor_handle,
             } => {
                 let _ = executor_handle.send(ControlMsg::Stop);
                 let _ = task_handle.await;

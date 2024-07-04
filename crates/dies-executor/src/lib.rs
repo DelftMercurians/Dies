@@ -420,6 +420,9 @@ impl Executor {
                     state.set_cmd(cmd);
                 }
             }
+            ControlMsg::UpdateControllerSettings(settings) => {
+                self.controller.update_controller_settings(&settings);
+            }
             ControlMsg::Stop => {}
         }
     }

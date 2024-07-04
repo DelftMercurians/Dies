@@ -1,8 +1,10 @@
+use std::time::Duration;
+
 use super::{
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
 };
-use dies_core::{Angle, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2};
+use dies_core::{Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2};
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 100.0;
@@ -53,6 +55,24 @@ impl PlayerController {
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
         }
+    }
+
+    /// Update the controller settings.
+    pub fn update_settings(&mut self, settings: &ControllerSettings) {
+        self.position_mtp.update_settings(
+            settings.max_acceleration,
+            settings.max_velocity,
+            settings.max_deceleration,
+            settings.position_kp,
+            Duration::from_secs_f64(settings.position_propotional_time_window),
+        );
+        self.yaw_mtp.update_settings(
+            settings.max_angular_acceleration,
+            settings.max_angular_velocity,
+            settings.max_angular_deceleration,
+            settings.angle_kp,
+            Duration::from_secs_f64(settings.angle_propotional_time_window),
+        );
     }
 
     /// Get the ID of the player.

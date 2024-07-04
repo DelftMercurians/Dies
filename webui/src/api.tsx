@@ -6,7 +6,6 @@ import React, {
   useContext,
   createContext,
   useState,
-  Key,
 } from "react";
 import {
   QueryClient,
@@ -25,6 +24,9 @@ import {
   UiWorldState,
   ExecutorInfoResponse,
   ExecutorInfo,
+  ControllerSettingsResponse,
+  ControllerSettings,
+  PostControllerSettingsBody,
 } from "./bindings";
 import { toast } from "sonner";
 
@@ -54,6 +56,20 @@ const getExecutorInfo = (): Promise<ExecutorInfo | null> =>
   fetch("/api/executor")
     .then((res) => res.json())
     .then((data) => (data as ExecutorInfoResponse).info ?? null);
+
+const getControllerSettings = (): Promise<ControllerSettings> =>
+  fetch("/api/controller")
+    .then((res) => res.json() as Promise<ControllerSettingsResponse>)
+    .then((data) => data.settings);
+
+const postControllerSettings = (settings: ControllerSettings) =>
+  fetch("/api/controller", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ settings } satisfies PostControllerSettingsBody),
+  });
 
 const postUiMode = (mode: UiMode) =>
   fetch("/api/ui-mode", {
@@ -151,6 +167,26 @@ export const useWorldState = (): WorldStatus => {
     }
   }
   return { status: "loading" };
+};
+
+export const useControllerSettings = () => {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ["controller-settings"],
+    queryFn: getControllerSettings,
+  });
+
+  const mutation = useMutation({
+    mutationFn: postControllerSettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
+    },
+  });
+
+  return {
+    settings: query.data,
+    updateSettings: mutation.mutate,
+  };
 };
 
 let ws: WebSocket | null = null;

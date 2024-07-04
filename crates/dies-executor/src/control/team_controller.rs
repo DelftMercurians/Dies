@@ -6,7 +6,7 @@ use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
-use dies_core::{GameState, PlayerId};
+use dies_core::{ControllerSettings, GameState, PlayerId};
 use dies_core::{PlayerCmd, WorldData};
 
 pub struct TeamController {
@@ -20,6 +20,12 @@ impl TeamController {
         Self {
             player_controllers: HashMap::new(),
             strategy,
+        }
+    }
+
+    pub fn update_controller_settings(&mut self, settings: &ControllerSettings) {
+        for controller in self.player_controllers.values_mut() {
+            controller.update_settings(settings);
         }
     }
 
@@ -53,10 +59,10 @@ impl TeamController {
                 .find(|p| p.id == controller.id());
 
             if let Some(player_data) = player_data {
-                let manual_input = inputs.player(controller.id());
+                let default_input = inputs.player(controller.id());
                 let input = manual_override
                     .get(&controller.id())
-                    .unwrap_or(&manual_input);
+                    .unwrap_or(&default_input);
                 controller.update(player_data, input, world_data.duration);
             } else {
                 controller.increment_frames_missings();

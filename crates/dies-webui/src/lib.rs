@@ -1,5 +1,7 @@
 use dies_basestation_client::BasestationClientConfig;
-use dies_core::{ExecutorInfo, PlayerId, PlayerOverrideCommand, ScenarioInfo, WorldData};
+use dies_core::{
+    ControllerSettings, ExecutorInfo, PlayerId, PlayerOverrideCommand, ScenarioInfo, WorldData,
+};
 use dies_executor::scenarios::ScenarioType;
 use dies_ssl_client::VisionClientConfig;
 use serde::{Deserialize, Serialize};
@@ -109,4 +111,16 @@ pub(crate) struct PostUiModeBody {
 pub(crate) enum UiWorldState {
     Loaded(WorldData),
     None,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[typeshare]
+pub(crate) struct ControllerSettingsResponse {
+    pub(crate) settings: ControllerSettings,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[typeshare]
+pub(crate) struct PostControllerSettingsBody {
+    pub(crate) settings: ControllerSettings,
 }

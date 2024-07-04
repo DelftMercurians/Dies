@@ -27,12 +27,19 @@ impl<T: Variable> MTP<T> {
         self.setpoint = Some(setpoint);
     }
 
-    pub fn set_kp(&mut self, kp: f64) {
+    pub fn update_settings(
+        &mut self,
+        max_accel: f64,
+        max_speed: f64,
+        max_decel: f64,
+        kp: f64,
+        proportional_time_window: Duration,
+    ) {
+        self.max_accel = max_accel;
+        self.max_speed = max_speed;
+        self.max_decel = max_decel;
         self.kp = kp;
-    }
-
-    pub fn set_proportional_time_window(&mut self, window: Duration) {
-        self.proportional_time_window = window;
+        self.proportional_time_window = proportional_time_window;
     }
 
     pub fn update(&self, current: T, velocity: T, dt: f64) -> T {

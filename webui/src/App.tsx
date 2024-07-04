@@ -36,6 +36,7 @@ import logo from "./assets/mercury-logo.svg";
 import { log } from "console";
 import { cn } from "./lib/utils";
 import PlayerSidebar from "./views/PlayerSidebar";
+import ControllerSettingsEditor from "./views/ControllerSettingsEditor";
 
 const App: React.FC = () => {
   const scenarios = useScenarios() ?? [];
@@ -180,14 +181,18 @@ const App: React.FC = () => {
 
       {/* Main content */}
       <div className="h-full w-full grid grid-cols-6">
-        <div className="bg-slate-950"></div>
+        <div className="bg-slate-950 flex flex-col">
+          <ControllerSettingsEditor className="h-full" />
+        </div>
         <div className="col-span-4 bg-green-800 p-6">
           <Field
             selectedPlayerId={selectedPlayerId}
             onSelectPlayer={(id) => setSelectedPlayerId(id)}
           />
         </div>
-        <PlayerSidebar selectedPlayerId={selectedPlayerId} />
+        <div className="bg-slate-950 flex flex-col">
+          <PlayerSidebar selectedPlayerId={selectedPlayerId} />
+        </div>
       </div>
 
       {/* Statusbar */}

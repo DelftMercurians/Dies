@@ -10,7 +10,10 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 
 use crate::{server::ServerState, UiCommand, UiMode};
-use crate::{ExecutorInfoResponse, PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState};
+use crate::{
+    ControllerSettingsResponse, ExecutorInfoResponse, PostControllerSettingsBody,
+    PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState,
+};
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
     let update = state.update_rx.borrow().clone();
@@ -52,6 +55,21 @@ pub async fn post_command(
     Json(data): Json<PostUiCommandBody>,
 ) -> StatusCode {
     let _ = state.cmd_tx.send(data.command);
+    StatusCode::OK
+}
+
+pub async fn get_controller_settings(
+    state: State<Arc<ServerState>>,
+) -> Json<ControllerSettingsResponse> {
+    let settings = state.controller_settings.read().unwrap().clone();
+    Json(ControllerSettingsResponse { settings })
+}
+
+pub async fn post_controller_settings(
+    state: State<Arc<ServerState>>,
+    Json(data): Json<PostControllerSettingsBody>,
+) -> StatusCode {
+    state.update_controller_settings(data.settings);
     StatusCode::OK
 }
 
