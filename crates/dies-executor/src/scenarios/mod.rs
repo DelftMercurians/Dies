@@ -5,16 +5,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::strategy::AdHocStrategy;
 
-fn empty_simulation() -> ScenarioSetup {
+// **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
+
+fn empty_scenario() -> ScenarioSetup {
     ScenarioSetup::new(AdHocStrategy::new())
+}
+
+fn one_player() -> ScenarioSetup {
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+    scenario.add_own_player();
+    scenario
 }
 
 fn two_players_one_ball() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
     scenario
         .add_ball()
-        .add_own_player(Vector2::zeros())
-        .add_own_player(Vector2::new(-500.0, 0.0));
+        .add_own_player_at(Vector2::zeros())
+        .add_own_player_at(Vector2::new(-500.0, 0.0));
     scenario
 }
 
@@ -95,7 +103,8 @@ impl Serialize for ScenarioType {
 
 // **NOTE**: Add new scenarios here.
 scenarios! {
-    empty_simulation,
+    empty_scenario,
+    one_player,
     two_players_one_ball
 }
 
@@ -106,8 +115,8 @@ mod tests {
     #[test]
     fn test_scenarios() {
         let names = ScenarioType::get_names();
-        assert_eq!(names[0], "empty_simulation");
+        assert_eq!(names[0], "empty_scenario");
 
-        ScenarioType::get_setup_by_name("empty_simulation").expect("empty_simulation not found");
+        ScenarioType::get_setup_by_name("empty_scenario").expect("empty_scenario not found");
     }
 }

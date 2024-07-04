@@ -20,6 +20,7 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    println!("Saving logs to {}", log_file_path.display());
     let stdout_env = env_logger::Builder::new()
         .filter_level(LevelFilter::from_str(&args.log_level).expect("Invalid log level"))
         .format_timestamp(None)

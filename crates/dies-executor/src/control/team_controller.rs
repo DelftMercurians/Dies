@@ -17,13 +17,16 @@ pub struct TeamController {
 impl TeamController {
     /// Create a new team controller.
     pub fn new(strategy: Box<dyn Strategy>) -> Self {
-        Self {
+        let mut team = Self {
             player_controllers: HashMap::new(),
             strategy,
-        }
+        };
+        team.update_controller_settings(&ControllerSettings::default());
+        team
     }
 
     pub fn update_controller_settings(&mut self, settings: &ControllerSettings) {
+        log::info!("New controller settings: {:?}", settings);
         for controller in self.player_controllers.values_mut() {
             controller.update_settings(settings);
         }
