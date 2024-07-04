@@ -137,14 +137,14 @@ struct TimedPlayerCmd {
 /// A complete simulator for testing strategies and robot control in silico.
 ///
 /// ## Usage
-///
-/// ```
+/// insane, cargo tests code in comments, wow, im going crazy
+/// ```ignore
 /// let mut simulator = Simulation::default();
 ///
 /// let dt = std::time::Duration::from_millis(10);
 /// loop {
 ///     simulator.step(dt);
-///     
+///
 ///     // Get the latest detection packet
 ///     if let Some(detection) = simulator.detection() {
 ///        // Do something with the detection packet
