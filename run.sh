@@ -6,7 +6,7 @@ trap ctrl_c INT
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 LOG_FILE_PATH="/home/mercury/.local/share/dies/dies-$TIMESTAMP.log"
-REMOTE_DIR="$REMOTE_DIR$(whoami)/"
+REMOTE_DIR="Code/dies/$(whoami)/"
 
 function pull_logs() {
     echo "** Pulling logs (from $LOG_FILE_PATH)..."
@@ -23,8 +23,10 @@ function ctrl_c() {
     has_pressed_ctrl_c=true
     
     echo "** Trapped CTRL-C"
-    ssh mercury@mercuryvision "killall dies-cli"
+    ssh mercury@mercuryvision "killall -s INT dies-cli && echo 'Sent SIGINT'"
+    sleep 0.5
     pull_logs
+    ssh mercury@mercuryvision "killall dies-cli"
     exit 1
 }
 
@@ -34,6 +36,8 @@ if [ ! "$(ls -A ./crates/dies-webui/static)" ] || [ "$1" == "--web-build" ]; the
     echo "Building webui..."
     cargo make webui
 fi
+
+ssh mercury@mercuryvision "mkdir -p $REMOTE_DIR"
 
 # Sync files to the remote server
 rsync -avz --delete --exclude-from='.gitignore' --exclude-from='.rsyncignore' --exclude .git  . mercury@mercuryvision:$REMOTE_DIR
