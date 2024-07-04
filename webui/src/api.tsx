@@ -224,9 +224,21 @@ export function startWsClient() {
   run();
 }
 
-export const useKeyboardControl = (playerId: number | null) => {
+export const useKeyboardControl = ({
+  playerId,
+  angularSpeedDegPerSec,
+  speed,
+}: {
+  playerId: number | null;
+  speed: number;
+  angularSpeedDegPerSec: number;
+}) => {
   const sendCommand = useSendCommand();
 
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
+  const angularSpeedRef = useRef(angularSpeedDegPerSec);
+  angularSpeedRef.current = angularSpeedDegPerSec;
   useEffect(() => {
     if (playerId === null) return;
     const pressedKeys = new Set<string>();
@@ -241,6 +253,22 @@ export const useKeyboardControl = (playerId: number | null) => {
     const interval = setInterval(() => {
       if (playerId === null) return;
 
+      const command = {
+        type: "OverrideCommand",
+        data: {
+          player_id: playerId,
+          command: {
+            type: "GlobalVelocity",
+            data: {
+              velocity: [0, 0] as [number, number],
+              angular_velocity: 0,
+              arm_kick: false,
+              dribble_speed: 0,
+            },
+          },
+        },
+      };
+
       let velocity = [0, 0] as [number, number];
       if (pressedKeys.has("w")) velocity[1] += 1;
       if (pressedKeys.has("s")) velocity[1] -= 1;
@@ -248,31 +276,26 @@ export const useKeyboardControl = (playerId: number | null) => {
       if (pressedKeys.has("d")) velocity[0] += 1;
       const vel_mag = Math.sqrt(velocity[0] ** 2 + velocity[1] ** 2);
       if (vel_mag > 0) {
-        velocity = velocity.map((v) => v / vel_mag) as [number, number];
+        velocity = velocity.map((v) => (v / vel_mag) * speedRef.current) as [
+          number,
+          number
+        ];
       }
+      command.data.command.data.velocity = velocity;
 
+      const angularSpeedRadPerSec = (angularSpeedRef.current * Math.PI) / 180;
       let angular_velocity = 0;
-      if (pressedKeys.has("q")) angular_velocity += 1;
-      if (pressedKeys.has("e")) angular_velocity -= 1;
+      if (pressedKeys.has("q")) angular_velocity += angularSpeedRadPerSec;
+      if (pressedKeys.has("e")) angular_velocity -= angularSpeedRadPerSec;
+      command.data.command.data.angular_velocity = angular_velocity;
 
-      if (Math.abs(angular_velocity) > 0 || vel_mag > 0) {
-        const command: UiCommand = {
-          type: "OverrideCommand",
-          data: {
-            player_id: playerId,
-            command: {
-              type: "GlobalVelocity",
-              data: {
-                velocity,
-                angular_velocity,
-                arm_kick: false,
-                dribble_speed: 0,
-              },
-            },
-          },
-        };
-        sendCommand(command);
+      let dribble_speed = 0;
+      if (pressedKeys.has(" ")) {
+        dribble_speed = 1;
       }
+      command.data.command.data.dribble_speed = dribble_speed;
+
+      sendCommand(command as UiCommand);
     }, 1000 / 30);
 
     window.addEventListener("keydown", handleKeyDown);

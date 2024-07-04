@@ -46,8 +46,6 @@ const App: React.FC = () => {
   const sendCommand = useSendCommand();
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
 
-  useKeyboardControl(selectedPlayerId);
-
   if (!backendState) {
     return (
       <div className="w-full h-full flex justify-center items-center bg-slate-100">

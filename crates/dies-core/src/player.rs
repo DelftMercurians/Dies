@@ -118,6 +118,7 @@ pub enum PlayerOverrideCommand {
     MoveTo {
         position: Vector2,
         yaw: Angle,
+        /// Dribbler speed normalised to \[0, 1\]
         dribble_speed: f64,
         arm_kick: bool,
     },
@@ -125,6 +126,7 @@ pub enum PlayerOverrideCommand {
     LocalVelocity {
         velocity: Vector2,
         angular_velocity: f64,
+        /// Dribbler speed normalised to \[0, 1\]
         dribble_speed: f64,
         arm_kick: bool,
     },
@@ -132,6 +134,7 @@ pub enum PlayerOverrideCommand {
     GlobalVelocity {
         velocity: Vector2,
         angular_velocity: f64,
+        /// Dribbler speed normalised to \[0, 1\]
         dribble_speed: f64,
         arm_kick: bool,
     },

@@ -1,4 +1,9 @@
-import { useExecutorInfo, useSendCommand, useWorldState } from "@/api";
+import {
+  useExecutorInfo,
+  useKeyboardControl,
+  useSendCommand,
+  useWorldState,
+} from "@/api";
 import { PlayerData } from "@/bindings";
 import { Label } from "@/components/ui/label";
 import {
@@ -33,6 +38,16 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
   const sendCommand = useSendCommand();
   const [activeGraph, setActiveGraph] = useState<Graphable>("velocity");
   const [graphPaused, setGraphPaused] = useState(true);
+  const [speed, setSpeed] = useState(1000);
+  const [angularSpeedDegPerSec, setAngularSpeedDegPerSec] = useState(30);
+
+  const manualControl =
+    executorInfo?.manual_controlled_players.includes(selectedPlayerId);
+  useKeyboardControl({
+    playerId: manualControl ? selectedPlayerId : null,
+    speed,
+    angularSpeedDegPerSec,
+  });
 
   if (world.status !== "connected" || selectedPlayerId === null)
     return <div className="bg-slate-950"></div>;
@@ -43,8 +58,6 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
   if (!selectedPlayer)
     throw new Error(`Player with id ${selectedPlayer} not found!`);
 
-  const manualControl =
-    executorInfo?.manual_controlled_players.includes(selectedPlayerId);
   const handleToggleManual = (val: boolean) => {
     sendCommand({
       type: "SetManualOverride",
@@ -105,37 +118,65 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
       </div>
 
       {manualControl ? (
-        <div className="flex justify-center">
-          <div className="inline-block bg-slate-600 p-6 rounded-xl">
-            <div className="flex justify-center mb-2 space-x-2">
-              <SimpleTooltip title="Turn left">
-                <KeyboardKey letter="q" />
-              </SimpleTooltip>
-              <SimpleTooltip title="Go forward (global coordinates)">
-                <KeyboardKey letter="w" />
-              </SimpleTooltip>
-              <SimpleTooltip title="Turn right">
-                <KeyboardKey letter="e" />
-              </SimpleTooltip>
-            </div>
-            <div className="flex justify-center mb-2 space-x-2">
-              <SimpleTooltip title="Go left (global coordinates)">
-                <KeyboardKey letter="a" />
-              </SimpleTooltip>
-              <SimpleTooltip title="Go backward (global coordinates)">
-                <KeyboardKey letter="s" />
-              </SimpleTooltip>
-              <SimpleTooltip title="Go right (global coordinates)">
-                <KeyboardKey letter="d" />
-              </SimpleTooltip>
-            </div>
-            <div className="flex justify-center space-x-2 w-full">
-              <SimpleTooltip title="Dribble" className="w-full">
-                <KeyboardKey letter="Space" className="w-full" />
-              </SimpleTooltip>
+        <>
+          <div className="flex flex-row gap-2">
+            <div>Speed</div>
+            <input
+              type="number"
+              min="0"
+              max="10000"
+              value={speed}
+              onChange={(e) => setSpeed(parseInt(e.target.value))}
+            />
+            <div>mm/s</div>
+          </div>
+
+          <div className="flex flex-row gap-2">
+            <div>Angular Speed</div>
+            <input
+              type="number"
+              min="0"
+              max="360"
+              value={angularSpeedDegPerSec}
+              onChange={(e) =>
+                setAngularSpeedDegPerSec(parseInt(e.target.value))
+              }
+            />
+            <div>deg/s</div>
+          </div>
+
+          <div className="flex justify-center">
+            <div className="inline-block bg-slate-600 p-6 rounded-xl">
+              <div className="flex justify-center mb-2 space-x-2">
+                <SimpleTooltip title="Turn left">
+                  <KeyboardKey letter="q" />
+                </SimpleTooltip>
+                <SimpleTooltip title="Go forward (global coordinates)">
+                  <KeyboardKey letter="w" />
+                </SimpleTooltip>
+                <SimpleTooltip title="Turn right">
+                  <KeyboardKey letter="e" />
+                </SimpleTooltip>
+              </div>
+              <div className="flex justify-center mb-2 space-x-2">
+                <SimpleTooltip title="Go left (global coordinates)">
+                  <KeyboardKey letter="a" />
+                </SimpleTooltip>
+                <SimpleTooltip title="Go backward (global coordinates)">
+                  <KeyboardKey letter="s" />
+                </SimpleTooltip>
+                <SimpleTooltip title="Go right (global coordinates)">
+                  <KeyboardKey letter="d" />
+                </SimpleTooltip>
+              </div>
+              <div className="flex justify-center space-x-2 w-full">
+                <SimpleTooltip title="Dribble" className="w-full">
+                  <KeyboardKey letter="Space" className="w-full" />
+                </SimpleTooltip>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       ) : null}
     </div>
   );
