@@ -11,5 +11,6 @@ dies-protos = { version = "0.1.0", path = "../dies-protos" }
 nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
 
 [dev-dependencies]
+approx = "0.5.1"
 rand = "0.8"
 rand_distr = "0.4"

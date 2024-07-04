@@ -636,6 +636,7 @@ dependencies = [
 name = "dies-world"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "dies-core",
  "dies-protos",
  "nalgebra",

@@ -111,6 +111,8 @@ impl PlayerTracker {
 mod test {
     use std::f64::consts::PI;
 
+    use approx::assert_relative_eq;
+
     use super::*;
 
     #[test]
@@ -192,7 +194,7 @@ mod test {
         assert_eq!(data.id.as_u32(), 1);
         assert_eq!(data.position, Vector2::new(-100.0, 200.0));
         assert_eq!(data.velocity, Vector2::zeros());
-        assert_eq!(data.yaw, Angle::from_radians(-dir));
+        assert_relative_eq!(data.yaw.radians(), Angle::from_radians(-dir).radians());
         assert_eq!(data.angular_speed, 0.0);
 
         tracker.set_play_dir_x(1.0);
