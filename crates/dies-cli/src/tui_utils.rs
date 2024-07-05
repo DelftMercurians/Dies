@@ -88,7 +88,7 @@ pub struct CliArgs {
     #[clap(long, short = 'f', default_value = "dies-settings.json")]
     pub settings_file: PathBuf,
 
-    #[clap(long, default_value = "disabled", default_missing_value = "auto")]
+    #[clap(long, default_value = "auto", default_missing_value = "auto")]
     pub serial_port: SerialPort,
 
     #[clap(long, default_value = "v1")]
@@ -103,7 +103,7 @@ pub struct CliArgs {
     #[clap(long, default_value = "")]
     pub robot_ids: String,
 
-    #[clap(long, default_value = "none")]
+    #[clap(long, default_value = "udp")]
     pub vision: VisionType,
 
     #[clap(long, default_value = "224.5.23.2:10006")]
