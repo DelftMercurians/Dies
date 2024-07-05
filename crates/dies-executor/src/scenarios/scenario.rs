@@ -136,7 +136,7 @@ impl ScenarioSetup {
         let mut tracker = WorldTracker::new(config.world_config.clone());
         let mut ssl_client = VisionClient::new(ssl_config.clone()).await?;
         let mut check_interval = tokio::time::interval(LIVE_CHECK_INTERVAL);
-        let max_iterations = LIVE_CHECK_TIMEOUT.as_secs() / LIVE_CHECK_INTERVAL.as_secs();
+        let max_iterations = LIVE_CHECK_TIMEOUT.as_millis() / LIVE_CHECK_INTERVAL.as_millis();
         let mut iterations = 0;
         loop {
             let packet = ssl_client.recv().await?;
@@ -173,6 +173,7 @@ impl ScenarioSetup {
                 }
             }
             (BallPlacement::AnyPosition, Some(_)) => {}
+            (BallPlacement::NoBall, _) => {}
             _ => return false,
         }
 

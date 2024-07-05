@@ -153,6 +153,7 @@ impl ExecutorTask {
                             bs_config,
                         },
                     ) => {
+                        log::info!("Starting live scenario {}", scenario.name());
                         server_state.set_executor_status(ExecutorStatus::StartingScenario(
                             setup.get_info(),
                         ));
@@ -169,6 +170,8 @@ impl ExecutorTask {
 
                 match executor {
                     Ok(executor) => {
+                        log::info!("Scenario started, executor ready");
+
                         // Relay world update to the UI
                         let _ = handle_tx.send(executor.handle());
                         let mut handle = executor.handle();
