@@ -15,7 +15,7 @@
           "kind": "bin"
         }
       },
-      "args": ["--vision=simulator", "--disable-python"],
+      "args": [],
       "cwd": "${workspaceFolder}"
     }
   ]

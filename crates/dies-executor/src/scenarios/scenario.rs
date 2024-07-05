@@ -14,7 +14,7 @@ use crate::{strategy::Strategy, Executor, ExecutorConfig};
 
 const LIVE_CHECK_INTERVAL: Duration = Duration::from_millis(100);
 const LIVE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
-const SIMULATION_FIELD_MARGIN: f64 = 400.0;
+const SIMULATION_FIELD_MARGIN: f64 = 0.1;
 
 pub struct ScenarioSetup {
     /// Initial ball position. If `None`, ther won
@@ -229,6 +229,7 @@ fn player_into_simulation(
         Some(pos) => pos,
         None => random_pos(field_width, field_length),
     };
+    dbg!(placement.position, position);
 
     let yaw = match placement.yaw {
         Some(yaw) => yaw,
@@ -288,11 +289,11 @@ fn find_player(
 }
 
 fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
-    let w = field_width - 2.0 * SIMULATION_FIELD_MARGIN;
-    let l = field_length - 2.0 * SIMULATION_FIELD_MARGIN;
+    let w = field_width - 2.0 * (SIMULATION_FIELD_MARGIN * field_width);
+    let l = field_length - 2.0 * (SIMULATION_FIELD_MARGIN * field_length);
     Vector2::new(
-        rand::random::<f64>() - 0.5 * w,
-        rand::random::<f64>() - 0.5 * l,
+        (rand::random::<f64>() - 0.5) * w,
+        (rand::random::<f64>() - 0.5) * l,
     )
 }
 
