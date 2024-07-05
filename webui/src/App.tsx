@@ -47,102 +47,6 @@ const App: React.FC = () => {
   const sendCommand = useSendCommand();
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
 
-  const onUpdate = useCallback((world: World) => {
-    worldStateRef.current = world;
-  }, []);
-  const { sendCommand } = useWebSocket({ onUpdate });
-
-  // Keyboard input
-  useEffect(() => {
-    const pressedKeys = new Set<string>();
-    const keydownHandler = (ev: KeyboardEvent) => {
-      pressedKeys.add(ev.key);
-    };
-    const keyupHandler = (ev: KeyboardEvent) => {
-      pressedKeys.delete(ev.key);
-    };
-
-    const cmdInterval = setInterval(() => {
-      const worldState = worldStateRef.current;
-      if (pressedKeys.size === 0 || !worldState) return;
-      const player = worldState.own_players.find(
-        (player) => player.id === selectedPlayerId
-      );
-      if (!player) {
-        console.error("Player not found");
-        return;
-      }
-
-      const cmd = createCmd(player.id, pressedKeys);
-      sendCommand({ type: "directPlayerCmd", cmd });
-    }, 100);
-
-    window.addEventListener("keydown", keydownHandler);
-    window.addEventListener("keyup", keyupHandler);
-    return () => {
-      clearInterval(cmdInterval);
-      window.removeEventListener("keydown", keydownHandler);
-      window.removeEventListener("keyup", keyupHandler);
-    };
-  }, [selectedPlayerId]);
-
-  // Canvas rendering
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let frame: number | null = null;
-    const render = () => {
-      const worldState = worldStateRef.current;
-      if (!worldState) {
-        frame = requestAnimationFrame(render);
-        return;
-      }
-
-      const { own_players, opp_players, ball } = worldState;
-      const width = canvas.width - PADDING * 2;
-      const height = canvas.height - PADDING * 2;
-      const displaySize = Math.min(width, height);
-
-      const convertLength = (length: number): number => {
-        return Math.ceil(length * (displaySize / fieldW));
-      };
-
-      const convertCoords = (coords: XY | XYZ): XY => {
-        const [x, y] = coords;
-
-        return [
-          (x + fieldW / 2) * (displaySize / fieldW) + PADDING,
-          (-y + fieldH / 2) * (displaySize / fieldH) + PADDING,
-        ];
-      };
-
-      ctx.fillStyle = "#00aa00";
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      worldState.field_geom?.line_segments?.forEach?.(({ p1, p2 }) => {
-        const [x1, y1] = convertCoords(p1);
-        const [x2, y2] = convertCoords(p2);
-        ctx.strokeStyle = "white";
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
-			})
-    } else if (val === "stop" && playingState !== "stop") {
-      setSelectedPlayerId(null);
-      sendCommand({ type: "Stop" });
-    } else {
-      toast.error(`Unhandled state ${val}`);
-    }
-  };
-  const runningScenario =
-    executorStatus.type === "RunningExecutor"
-      ? executorStatus.data.scenario
-      : null;
   if (!backendState) {
     return (
       <div className="w-full h-full flex justify-center items-center bg-slate-100">
@@ -172,8 +76,17 @@ const App: React.FC = () => {
         type: "StartScenario",
         data: { scenario: selectedScenario },
       });
-		}
-	};
+    } else if (val === "stop" && playingState !== "stop") {
+      setSelectedPlayerId(null);
+      sendCommand({ type: "Stop" });
+    } else {
+      toast.error(`Unhandled state ${val}`);
+    }
+  };
+  const runningScenario =
+    executorStatus.type === "RunningExecutor"
+      ? executorStatus.data.scenario
+      : null;
 
   return (
     <main className="w-full h-full flex flex-col bg-background bg-slate-100">

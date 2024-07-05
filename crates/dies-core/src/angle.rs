@@ -15,7 +15,7 @@ use crate::Vector2;
 /// let c = a + b;
 /// assert_eq!(c.degrees(), 135.0);
 /// ```
-#[derive(Debug, Clone, Copy, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[typeshare(serialized_as = "f64")]
 pub struct Angle(f64);
 
@@ -55,14 +55,6 @@ impl Angle {
     pub fn random() -> Self {
         let radians = (rand::random::<f64>() * 2.0 * PI) - PI;
         Self::from_radians(radians)
-    }
-}
-
-impl PartialEq for Angle {
-    fn eq(&self, other: &Self) -> bool {
-        let diff: f64 = (self.radians() - other.radians()).abs();
-        const TOLERANCE: f64 = 1e-5; // about sqrt of f32 precision
-        (diff < TOLERANCE) | (diff > (2.0 * PI - TOLERANCE))
     }
 }
 
@@ -131,8 +123,6 @@ fn wrap_angle(angle: f64) -> f64 {
     }
     angle
 }
-
-
 
 #[cfg(test)]
 mod tests {

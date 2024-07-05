@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use super::{
-    pid::{CircularPID, PID},
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
 };
@@ -24,14 +23,11 @@ enum KickerState {
 
 pub struct PlayerController {
     id: PlayerId,
-
-    position_pid: PID<Vector2>,
     position_mtp: MTP<Vector2>,
     last_pos: Vector2,
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
 
-    yaw_pid: CircularPID,
     yaw_mtp: MTP<f64>,
     last_yaw: Angle,
     /// Output angular velocity \[rad/s\]
@@ -51,12 +47,10 @@ impl PlayerController {
         Self {
             id,
 
-            position_pid: PID::new(0.8, 0.0, 0.05),
             position_mtp: MTP::new(0.7, 0.0, 0.0),
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
-            yaw_pid: CircularPID::new(2.0, 0.002, 0.0),
             yaw_mtp: MTP::new(2.0, 0.002, 0.0),
             last_yaw: Angle::from_radians(0.0),
             target_angular_velocity: 0.0,

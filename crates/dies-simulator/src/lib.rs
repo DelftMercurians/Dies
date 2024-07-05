@@ -137,7 +137,7 @@ struct TimedPlayerCmd {
 /// A complete simulator for testing strategies and robot control in silico.
 ///
 /// ## Usage
-/// insane, cargo tests code in comments, wow, im going crazy
+///
 /// ```ignore
 /// let mut simulator = Simulation::default();
 ///
