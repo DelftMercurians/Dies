@@ -16,6 +16,22 @@ pub enum VisionType {
     Udp,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+pub enum BasestationProtocolVersion {
+    #[default]
+    V1,
+    V0,
+}
+
+impl Into<dies_basestation_client::BaseStationProtocol> for BasestationProtocolVersion {
+    fn into(self) -> dies_basestation_client::BaseStationProtocol {
+        match self {
+            BasestationProtocolVersion::V0 => dies_basestation_client::BaseStationProtocol::V0,
+            BasestationProtocolVersion::V1 => dies_basestation_client::BaseStationProtocol::V1,
+        }
+    }
+}
+
 /// The serial port to connect to.
 #[derive(Debug, Clone, Default)]
 pub enum SerialPort {
@@ -72,6 +88,9 @@ pub struct CliArgs {
     #[clap(long, default_value = "disabled", default_missing_value = "auto")]
     pub serial_port: SerialPort,
 
+    #[clap(long, default_value = "v1")]
+    pub protocol: BasestationProtocolVersion,
+
     #[clap(long, default_value = "5555")]
     pub webui_port: u16,
 
@@ -121,7 +140,7 @@ impl CliArgs {
             .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()
             .map(|port| {
-                let mut config = BasestationClientConfig::new(port);
+                let mut config = BasestationClientConfig::new(port, self.protocol.into());
                 config.set_robot_id_map_from_string(&self.robot_ids);
                 config
             })

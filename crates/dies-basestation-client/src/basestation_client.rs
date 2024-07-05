@@ -1,10 +1,10 @@
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
-use glue::{Monitor, Serial};
+use glue::{Monitor, Radio_Command, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
+use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus, Vector2};
 
 const MAX_MSG_FREQ: f64 = 60.0;
 const BASE_STATION_READ_FREQ: f64 = 20.0;
@@ -15,6 +15,13 @@ pub fn list_serial_ports() -> Vec<String> {
     Serial::list_ports(true)
 }
 
+/// Protocol version for the base station communication.
+#[derive(Debug, Clone)]
+pub enum BaseStationProtocol {
+    V0,
+    V1,
+}
+
 #[derive(Debug, Clone)]
 /// Configuration for the serial client.
 pub struct BasestationClientConfig {
@@ -23,20 +30,16 @@ pub struct BasestationClientConfig {
     port_name: String,
     /// Map of player IDs to robot ids
     robot_id_map: HashMap<PlayerId, u32>,
+    /// Protocol version
+    protocol: BaseStationProtocol,
 }
 
 impl BasestationClientConfig {
-    pub fn new(port: String) -> Self {
+    pub fn new(port: String, protocol: BaseStationProtocol) -> Self {
         BasestationClientConfig {
             port_name: port,
             robot_id_map: HashMap::new(),
-        }
-    }
-
-    pub fn new_with_id_map(port: String, robot_id_map: HashMap<PlayerId, u32>) -> Self {
-        BasestationClientConfig {
-            port_name: port,
-            robot_id_map,
+            protocol,
         }
     }
 
@@ -71,8 +74,14 @@ impl Default for BasestationClientConfig {
             #[cfg(not(target_os = "windows"))]
             port_name: "/dev/ttyACM0".to_string(),
             robot_id_map: HashMap::new(),
+            protocol: BaseStationProtocol::V1,
         }
     }
+}
+
+enum Connection {
+    V0(Serial),
+    V1(Monitor),
 }
 
 /// Async client for the serial port.
@@ -90,55 +99,86 @@ impl BasestationClient {
         let (cmd_tx, mut cmd_rx) =
             mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
         let (info_tx, info_rx) = broadcast::channel::<PlayerFeedbackMsg>(1);
-        let monitor = Monitor::start();
-        monitor
-            .connect_to(&port_name)
-            .map_err(|_| anyhow!("Failed to connect to base station"))?;
+
+        let mut connection = match config.protocol {
+            BaseStationProtocol::V0 => {
+                let serial = Serial::new(&port_name)?;
+                Connection::V0(serial)
+            }
+            BaseStationProtocol::V1 => {
+                let monitor = Monitor::start();
+                monitor
+                    .connect_to(&port_name)
+                    .map_err(|_| anyhow!("Failed to connect to base station"))?;
+                Connection::V1(monitor)
+            }
+        };
 
         tokio::task::spawn_blocking(move || {
             let mut last_send = std::time::Instant::now();
             let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
 
             loop {
-                // Send commands
                 if let Ok((cmd, resp)) = cmd_rx.try_recv() {
-                    let mut commands = [None; glue::MAX_NUM_ROBOTS];
-                    commands[cmd.id.as_u32() as usize] = Some(cmd.into());
-                    resp.send(
-                        monitor
-                            .send(commands)
-                            .map_err(|_| anyhow!("Failed to send command")),
-                    )
-                    .ok();
-                }
+                    let robot_id = config
+                        .robot_id_map
+                        .get(&cmd.id)
+                        .copied()
+                        .unwrap_or_else(|| cmd.id.as_u32())
+                        as usize;
+                    match &mut connection {
+                        Connection::V1(monitor) => {
+                            // Send commands
+                            let mut commands = [None; glue::MAX_NUM_ROBOTS];
+                            commands[robot_id] = Some(cmd.into());
+                            resp.send(
+                                monitor
+                                    .send(commands)
+                                    .map_err(|_| anyhow!("Failed to send command")),
+                            )
+                            .ok();
 
-                // Receive feedback
-                if let Some(robots) = monitor.get_robots() {
-                    let feedback = robots
-                        .iter()
-                        .enumerate()
-                        .map(|(id, msg)| {
-                            let player_id = PlayerId::new(id as u32);
-                            PlayerFeedbackMsg {
-                                id: player_id,
-                                primary_status: SysStatus::from_option(msg.primary_status()),
-                                kicker_status: SysStatus::from_option(msg.kicker_status()),
-                                imu_status: SysStatus::from_option(msg.imu_status()),
-                                fan_status: SysStatus::from_option(msg.fan_status()),
-                                kicker_cap_voltage: msg.kicker_cap_voltage(),
-                                kicker_temp: msg.kicker_temperature(),
-                                motor_statuses: msg.motor_statuses().map(|v| v.map(Into::into)),
-                                motor_speeds: msg.motor_speeds(),
-                                motor_temps: msg.motor_temperatures(),
-                                breakbeam_ball_detected: msg.breakbeam_ball_detected(),
-                                breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
-                                pack_voltages: msg.pack_voltages(),
+                            // Receive feedback
+                            if let Some(robots) = monitor.get_robots() {
+                                let feedback = robots
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(id, msg)| {
+                                        let player_id = PlayerId::new(id as u32);
+                                        PlayerFeedbackMsg {
+                                            id: player_id,
+                                            primary_status: SysStatus::from_option(
+                                                msg.primary_status(),
+                                            ),
+                                            kicker_status: SysStatus::from_option(
+                                                msg.kicker_status(),
+                                            ),
+                                            imu_status: SysStatus::from_option(msg.imu_status()),
+                                            fan_status: SysStatus::from_option(msg.fan_status()),
+                                            kicker_cap_voltage: msg.kicker_cap_voltage(),
+                                            kicker_temp: msg.kicker_temperature(),
+                                            motor_statuses: msg
+                                                .motor_statuses()
+                                                .map(|v| v.map(Into::into)),
+                                            motor_speeds: msg.motor_speeds(),
+                                            motor_temps: msg.motor_temperatures(),
+                                            breakbeam_ball_detected: msg.breakbeam_ball_detected(),
+                                            breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
+                                            pack_voltages: msg.pack_voltages(),
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+
+                                for msg in feedback {
+                                    info_tx.send(msg).ok();
+                                }
                             }
-                        })
-                        .collect::<Vec<_>>();
-
-                    for msg in feedback {
-                        info_tx.send(msg).ok();
+                        }
+                        Connection::V0(serial) => {
+                            let cmd_str = cmd.into_proto_v0_with_id(robot_id);
+                            serial.send(&cmd_str);
+                            resp.send(Ok(())).ok();
+                        }
                     }
                 }
 

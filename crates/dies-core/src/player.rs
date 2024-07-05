@@ -87,6 +87,23 @@ impl PlayerCmd {
             kicker_cmd: KickerCmd::None,
         }
     }
+
+    pub fn into_proto_v0_with_id(self, with_id: usize) -> String {
+        let extra = match self.kicker_cmd {
+            KickerCmd::Arm => "A".to_string(),
+            KickerCmd::Disarm => "D".to_string(),
+            KickerCmd::Kick => "K".to_string(),
+            KickerCmd::Discharge => "".to_string(),
+            KickerCmd::None => "".to_string(),
+            KickerCmd::Chip => "".to_string(),
+            KickerCmd::PowerBoardOff => "".to_string(),
+        };
+
+        format!(
+            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};Kt7000;S.{};\n",
+            with_id, self.sx, self.sy, self.w, self.dribble_speed, extra
+        )
+    }
 }
 
 impl Into<glue::Radio_Command> for PlayerCmd {
