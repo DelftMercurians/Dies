@@ -50,6 +50,18 @@ export interface ControllerSettings {
 
 /** Settings for the `WorldTracker`. */
 export interface TrackerSettings {
+	/** Whether our team color is blue */
+	is_blue: boolean;
+	/** The initial sign of the enemy goal's x coordinate in ssl-vision coordinates. */
+	initial_opp_goal_x: number;
+	/** Transition variance for the player Kalman filter. */
+	player_unit_transition_var: number;
+	/** Measurement variance for the player Kalman filter. */
+	player_measurement_var: number;
+	/** Transition variance for the ball Kalman filter. */
+	ball_unit_transition_var: number;
+	/** Measurement variance for the ball Kalman filter. */
+	ball_measurement_var: number;
 }
 
 /** Settings for the executor. */

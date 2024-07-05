@@ -60,14 +60,10 @@ pub struct TrackerSettings {
     /// Measurement variance for the player Kalman filter.
     pub player_measurement_var: f64,
 
-    /// If true, Kalman filter is used for the ball, otherwise a low-pass filter is used.
-    pub use_ball_kalman: bool,
     /// Transition variance for the ball Kalman filter.
     pub ball_unit_transition_var: f64,
     /// Measurement variance for the ball Kalman filter.
     pub ball_measurement_var: f64,
-    /// Alpha value for the low-pass filter for the ball.
-    pub ball_low_pass_alpha: f64,
 }
 
 impl Default for TrackerSettings {
@@ -77,10 +73,8 @@ impl Default for TrackerSettings {
             initial_opp_goal_x: 1.0,
             player_unit_transition_var: 0.1,
             player_measurement_var: 2.0,
-            use_ball_kalman: true,
             ball_unit_transition_var: 10.0,
             ball_measurement_var: 10.0,
-            ball_low_pass_alpha: 0.5,
         }
     }
 }

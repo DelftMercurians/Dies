@@ -3,15 +3,25 @@ import { ExecutorSettings } from "@/bindings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { MoveLeft, MoveRight } from "lucide-react";
 
 type FieldConfig = {
   [K in keyof ExecutorSettings]?: {
     [M in keyof ExecutorSettings[K]]?: {
+      hidden?: boolean;
       min?: number;
       max?: number;
+      step?: number;
       unit?: string;
       disableSlider?: boolean;
       isAngle?: boolean;
+      customComponent?: React.ComponentType<{
+        id: string;
+        value: ExecutorSettings[K][M];
+        onChange: (value: ExecutorSettings[K][M]) => void;
+      }>;
     };
   };
 };
@@ -44,7 +54,26 @@ const fieldConfig: FieldConfig = {
     angle_kp: { min: 0, max: 10, unit: "", disableSlider: true },
     angle_proportional_time_window: { min: 0, max: 10, unit: "s" },
   },
-  tracker_settings: {},
+  tracker_settings: {
+    is_blue: { hidden: true },
+    initial_opp_goal_x: {
+      customComponent: ({ value, onChange }) => (
+        <ToggleGroup
+          type="single"
+          value={value == -1 ? "-1" : "1"}
+          onValueChange={(value) => onChange(value === "-1" ? -1 : 1)}
+          className="border border-gray-500 rounded-lg"
+        >
+          <ToggleGroupItem value="-1">
+            <MoveLeft />
+          </ToggleGroupItem>
+          <ToggleGroupItem value="1">
+            <MoveRight />
+          </ToggleGroupItem>
+        </ToggleGroup>
+      ),
+    },
+  },
 };
 
 function SettingsEditor<K extends keyof ExecutorSettings>({
@@ -52,6 +81,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
   className = "",
 }: SettingsEditorProps<K>) {
   type SettingsKey = keyof ExecutorSettings[K];
+  type Value = ExecutorSettings[K][SettingsKey];
   const { settings: allSettings, updateSettings } = useExecutorSettings();
 
   if (!allSettings)
@@ -62,12 +92,12 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
     );
 
   const settings = allSettings[settingsKey];
-  const handleChange = (key: SettingsKey, value: number) => {
+  const handleChange = (key: SettingsKey, value: Value) => {
     if (allSettings && settings) {
       const config = fieldConfig[settingsKey]?.[key];
-      if (config?.isAngle) {
+      if (config?.isAngle && typeof value === "number") {
         // Convert degrees to radians before updating
-        value = value * (Math.PI / 180);
+        value = (value * (Math.PI / 180)) as Value;
       }
       updateSettings({
         ...allSettings,
@@ -76,25 +106,33 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
     }
   };
 
-  const formatValue = (value: number) => value.toFixed(2);
-
   return (
-    <div className={`flex flex-col space-y-6 p-4 ${className}`}>
-      <h1 className="text-2xl font-bold">Controller Settings</h1>
-
-      <div className="h-full overflow-y-auto flex flex-col gap-4">
-        {Object.entries(settings).map(([key, value]) => {
+    <div className="h-full relative">
+      <div className="absolute inset-0 overflow-y-auto flex flex-col gap-4 p-4">
+        {Object.entries(settings).map(([key, _value]) => {
+          const value = _value as Value;
           const config = fieldConfig[settingsKey]?.[key as SettingsKey] || {};
           const {
+            hidden = false,
             min = 0,
             max = 100,
-            unit = "",
+            step,
+            unit = null,
             disableSlider = false,
             isAngle = false,
+            customComponent: CustomComponent,
           } = config;
 
-          const displayValue = isAngle ? value * (180 / Math.PI) : value;
-          const displayUnit = isAngle ? unit.replace("rad", "deg") : unit;
+          if (hidden) return null;
+
+          const displayValue =
+            isAngle && typeof value === "number"
+              ? value * (180 / Math.PI)
+              : value;
+          const formattedValue =
+            typeof displayValue === "number"
+              ? displayValue.toFixed(2)
+              : `${displayValue}`;
 
           return (
             <div key={key} className="space-y-2">
@@ -103,37 +141,62 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
                   .replace(/_/g, " ")
                   .replace(/\b\w/g, (l) => l.toUpperCase())}
               </Label>
-              <div className="flex items-center space-x-4">
-                {!disableSlider && (
-                  <Slider
-                    id={`${key}-slider`}
-                    min={min}
-                    max={max}
-                    step={(max - min) / 100}
-                    value={[displayValue]}
-                    onValueChange={([newValue]) =>
-                      handleChange(key as SettingsKey, newValue)
-                    }
-                    className="flex-grow"
-                  />
-                )}
-                <div className="flex items-center space-x-2">
-                  <Input
+              <div className="flex items-center gap-2 flex-wrap">
+                {typeof CustomComponent === "function" ? (
+                  <CustomComponent
                     id={key}
-                    type="number"
-                    value={formatValue(displayValue)}
-                    onChange={(e) =>
-                      handleChange(
-                        key as SettingsKey,
-                        parseFloat(e.target.value)
-                      )
+                    value={value}
+                    onChange={(value) =>
+                      handleChange(key as SettingsKey, value)
                     }
-                    className="w-24"
                   />
-                  {displayUnit && (
-                    <span className="text-sm text-gray-500">{displayUnit}</span>
-                  )}
-                </div>
+                ) : typeof displayValue === "number" ? (
+                  <>
+                    {!disableSlider ? (
+                      <Slider
+                        id={`${key}-slider`}
+                        min={min}
+                        max={max}
+                        step={step ?? (max - min) / 100}
+                        value={[displayValue]}
+                        onValueChange={([newValue]) =>
+                          handleChange(key as SettingsKey, newValue as Value)
+                        }
+                        className="flex-1 min-w-24"
+                      />
+                    ) : null}
+                    <div className="flex items-center">
+                      <Input
+                        id={key}
+                        type="number"
+                        value={formattedValue}
+                        step={step ?? (max - min) / 100}
+                        onChange={(e) =>
+                          handleChange(
+                            key as SettingsKey,
+                            parseFloat(e.target.value) as Value
+                          )
+                        }
+                        className="w-24"
+                      />
+                      {unit ? (
+                        <span className="text-sm text-gray-500 ml-2">
+                          {unit}
+                        </span>
+                      ) : null}
+                    </div>
+                  </>
+                ) : typeof displayValue === "boolean" ? (
+                  <Switch
+                    id={key}
+                    checked={displayValue}
+                    onCheckedChange={(newValue) =>
+                      handleChange(key as SettingsKey, newValue as Value)
+                    }
+                  />
+                ) : (
+                  <span>{`${displayValue}`}</span>
+                )}
               </div>
             </div>
           );
