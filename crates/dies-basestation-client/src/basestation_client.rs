@@ -147,7 +147,12 @@ impl BasestationHandle {
                             }
                         }
                     }
-                    Err(mpsc::error::TryRecvError::Disconnected) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        if let Connection::V1(monitor) = connection {
+                            monitor.stop();
+                        }
+                        break;
+                    }
                     _ => {}
                 }
 

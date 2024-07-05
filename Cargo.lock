@@ -884,7 +884,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "glue"
 version = "0.2.0"
-source = "git+https://github.com/DelftMercurians/glue.git?branch=dev/radio-link#925ffe0a5af361f96d7167535b7c720ce629524f"
+source = "git+https://github.com/DelftMercurians/glue.git?branch=dev/radio-link#9b1f082855d012ae5dc32dd58461a116f11e26c7"
 dependencies = [
  "bindgen",
  "chrono",
@@ -1952,9 +1952,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.6.1"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c55115c6fbe2d2bef26eb09ad74bde02d8255476fc0c7b515ef09fbb35742d82"
+checksum = "ce6b6a2fb3a985e99cebfaefa9faa3024743da73304ca1c683a36429613d3d22"
 dependencies = [
  "tinyvec_macros",
 ]
