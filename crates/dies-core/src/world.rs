@@ -1,7 +1,7 @@
 use serde::Serialize;
 use typeshare::typeshare;
 
-use crate::{player::PlayerId, Angle, FieldGeometry, Vector2, Vector3};
+use crate::{player::PlayerId, Angle, FieldGeometry, SysStatus, Vector2, Vector3};
 
 #[derive(Debug, Clone, Serialize)]
 #[typeshare]
@@ -11,7 +11,7 @@ pub struct WorldUpdate {
 
 /// The game state, as reported by the referee.
 #[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
-#[serde( tag = "type", content = "data")]
+#[serde(tag = "type", content = "data")]
 #[typeshare]
 pub enum GameState {
     #[default]
@@ -70,8 +70,21 @@ pub struct PlayerData {
     /// Yaw of the player, in radians, (`-pi`, `pi`), where `0` is the positive
     /// x direction, and `pi/2` is the positive y direction.
     pub yaw: Angle,
+    /// Unfiltered yaw as reported by vision
+    pub raw_yaw: f64,
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f64,
+
+    /// The overall status of the robot
+    pub primary_status: Option<SysStatus>,
+    /// The voltage of the kicker capacitor
+    pub kicker_cap_voltage: Option<f32>,
+    /// The temperature of the kicker
+    pub kicker_temp: Option<f32>,
+    /// The voltages of the battery packs
+    pub pack_voltages: Option<[f32; 2]>,
+    /// Whether the breakbeam sensor detected a ball
+    pub breakbeam_ball_detected: bool,
 }
 
 impl PlayerData {
@@ -83,7 +96,13 @@ impl PlayerData {
             position: Vector2::zeros(),
             velocity: Vector2::zeros(),
             yaw: Angle::default(),
+            raw_yaw: 0.0,
             angular_speed: 0.0,
+            primary_status: None,
+            kicker_cap_voltage: None,
+            kicker_temp: None,
+            pack_voltages: None,
+            breakbeam_ball_detected: false,
         }
     }
 }

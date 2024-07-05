@@ -1,3 +1,4 @@
+use anyhow::Result;
 use clap::ValueEnum;
 use tokio::sync::broadcast;
 
@@ -10,9 +11,10 @@ pub enum CliMode {
 
 impl CliMode {
     /// Run the selected mode.
-    pub async fn run(args: CliArgs, stop_rx: broadcast::Receiver<()>) {
+    pub async fn run(args: CliArgs, stop_rx: broadcast::Receiver<()>) -> Result<()> {
         match args.mode {
-            CliMode::Ui => dies_webui::start(args.into_ui().await, stop_rx).await,
+            CliMode::Ui => dies_webui::start(args.into_ui().await?, stop_rx).await,
         }
+        Ok(())
     }
 }

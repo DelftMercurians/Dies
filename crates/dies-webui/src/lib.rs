@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
-use dies_basestation_client::BasestationClientConfig;
+use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, ScenarioInfo, WorldData,
+    ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
+    ScenarioInfo, WorldData,
 };
 use dies_executor::scenarios::ScenarioType;
 use dies_ssl_client::VisionClientConfig;
@@ -27,7 +28,7 @@ pub struct UiConfig {
 pub enum UiEnvironment {
     WithLive {
         ssl_config: VisionClientConfig,
-        bs_config: BasestationClientConfig,
+        bs_handle: BasestationHandle,
     },
     SimulationOnly,
 }
@@ -126,4 +127,10 @@ pub(crate) struct ExecutorSettingsResponse {
 #[typeshare]
 pub(crate) struct PostExecutorSettingsBody {
     pub(crate) settings: ExecutorSettings,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct BasestationResponse {
+    pub(crate) players: HashMap<PlayerId, PlayerFeedbackMsg>,
 }

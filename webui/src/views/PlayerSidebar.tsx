@@ -44,6 +44,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
   const [keyboardControl, setKeyboardControl] = useState(false);
 
   const manualControl =
+    typeof selectedPlayerId === "number" &&
     executorInfo?.manual_controlled_players.includes(selectedPlayerId);
   useKeyboardControl({
     playerId: manualControl && keyboardControl ? selectedPlayerId : null,

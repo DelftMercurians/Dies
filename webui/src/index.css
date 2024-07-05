@@ -81,3 +81,31 @@ body,
   width: 100vw;
   height: 100vh;
 }
+
+.AnimatedCollapsible {
+  overflow: hidden;
+}
+.AnimatedCollapsible[data-state="open"] {
+  animation: slideDown 300ms ease-out;
+}
+.AnimatedCollapsible[data-state="closed"] {
+  animation: slideUp 300ms ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
+}

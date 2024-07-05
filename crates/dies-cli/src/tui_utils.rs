@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use clap::{Parser, ValueEnum};
-use dies_basestation_client::{list_serial_ports, BasestationClientConfig};
+use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
 use dies_ssl_client::VisionClientConfig;
 use dies_webui::{UiConfig, UiEnvironment};
 use std::{net::SocketAddr, path::PathBuf};
@@ -118,20 +118,20 @@ pub struct CliArgs {
 
 impl CliArgs {
     /// Converts the CLI arguments into a `UiConfig` object that can be used to start the web UI.
-    pub async fn into_ui(self) -> UiConfig {
+    pub async fn into_ui(self) -> Result<UiConfig> {
         let environment = match (self.serial_config().await, self.vision_config()) {
             (Some(bs_config), Some(ssl_config)) => UiEnvironment::WithLive {
-                bs_config,
+                bs_handle: BasestationHandle::spawn(bs_config)?,
                 ssl_config,
             },
             _ => UiEnvironment::SimulationOnly,
         };
 
-        UiConfig {
+        Ok(UiConfig {
             settings_file: self.settings_file,
             environment,
             port: self.webui_port,
-        }
+        })
     }
 
     /// Configures the serial client based on the CLI arguments. This function may prompt the user

@@ -36,6 +36,7 @@ import { cn } from "./lib/utils";
 import Field from "./views/Field";
 import PlayerSidebar from "./views/PlayerSidebar";
 import SettingsEditor from "./views/SettingsEditor";
+import Basestation from "./views/Basestation";
 
 type Panel = "left" | "right";
 
@@ -212,6 +213,7 @@ const App: React.FC = () => {
               <TabsList>
                 <TabsTrigger value="controller">Controller</TabsTrigger>
                 <TabsTrigger value="tracker">Tracker</TabsTrigger>
+                <TabsTrigger value="basestation">Basestation</TabsTrigger>
               </TabsList>
 
               <TabsContent value="controller" asChild>
@@ -219,6 +221,9 @@ const App: React.FC = () => {
               </TabsContent>
               <TabsContent value="tracker" asChild>
                 <SettingsEditor settingsKey="tracker_settings" />
+              </TabsContent>
+              <TabsContent value="basestation" asChild>
+                <Basestation className="h-full" />
               </TabsContent>
             </Tabs>
           ) : null}

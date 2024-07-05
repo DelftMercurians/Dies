@@ -16,6 +16,8 @@
  */
 export type Angle = number;
 
+export type PlayerId = number;
+
 /** Runtime information about the active executor. */
 export interface ExecutorInfo {
 	/** Whether the executor is currently paused. */
@@ -140,6 +142,39 @@ export interface ScenarioInfo {
 	yaw_tolerance: number;
 }
 
+/** The status of a sub-system on the robot */
+export enum SysStatus {
+	Emergency = "Emergency",
+	Ok = "Ok",
+	Stop = "Stop",
+	Starting = "Starting",
+	Overtemp = "Overtemp",
+	NoReply = "NoReply",
+	Armed = "Armed",
+	Disarmed = "Disarmed",
+	Safe = "Safe",
+	NotInstalled = "NotInstalled",
+	Standby = "Standby",
+}
+
+/** A message from one of our robots to the AI */
+export interface PlayerFeedbackMsg {
+	/** The robot's ID */
+	id: PlayerId;
+	primary_status?: SysStatus;
+	kicker_status?: SysStatus;
+	imu_status?: SysStatus;
+	fan_status?: SysStatus;
+	kicker_cap_voltage?: number;
+	kicker_temp?: number;
+	motor_statuses?: [SysStatus, SysStatus, SysStatus, SysStatus, SysStatus];
+	motor_speeds?: [number, number, number, number, number];
+	motor_temps?: [number, number, number, number, number];
+	breakbeam_ball_detected?: boolean;
+	breakbeam_sensor_ok?: boolean;
+	pack_voltages?: [number, number];
+}
+
 /** A struct to store the player state from a single frame. */
 export interface PlayerData {
 	/**
@@ -160,8 +195,20 @@ export interface PlayerData {
 	 * x direction, and `pi/2` is the positive y direction.
 	 */
 	yaw: Angle;
+	/** Unfiltered yaw as reported by vision */
+	raw_yaw: number;
 	/** Angular speed of the player (in rad/s) */
 	angular_speed: number;
+	/** The overall status of the robot */
+	primary_status?: SysStatus;
+	/** The voltage of the kicker capacitor */
+	kicker_cap_voltage?: number;
+	/** The temperature of the kicker */
+	kicker_temp?: number;
+	/** The voltages of the battery packs */
+	pack_voltages?: [number, number];
+	/** Whether the breakbeam sensor detected a ball */
+	breakbeam_ball_detected: boolean;
 }
 
 /** A struct to store the ball state from a single frame. */
@@ -273,6 +320,10 @@ export interface ExecutorSettingsResponse {
 
 export interface PostExecutorSettingsBody {
 	settings: ExecutorSettings;
+}
+
+export interface BasestationResponse {
+	players: Record<PlayerId, PlayerFeedbackMsg>;
 }
 
 /** An override command for a player for manual control. */

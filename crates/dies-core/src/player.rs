@@ -6,6 +6,7 @@ use crate::Angle;
 use super::Vector2;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
+#[typeshare(serialized_as = "u32")]
 pub struct PlayerId(u32);
 
 impl PlayerId {
@@ -186,7 +187,8 @@ impl PlayerOverrideCommand {
 }
 
 /// The status of a sub-system on the robot
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[typeshare]
 pub enum SysStatus {
     Emergency,
     Ok,
@@ -226,7 +228,8 @@ impl Into<SysStatus> for glue::HG_Status {
 }
 
 /// A message from one of our robots to the AI
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize)]
+#[typeshare]
 pub struct PlayerFeedbackMsg {
     /// The robot's ID
     pub id: PlayerId,

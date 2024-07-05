@@ -27,6 +27,7 @@ import {
   ExecutorSettingsResponse,
   ExecutorSettings,
   PostExecutorSettingsBody,
+  BasestationResponse,
 } from "./bindings";
 import { toast } from "sonner";
 
@@ -58,12 +59,15 @@ const getExecutorInfo = (): Promise<ExecutorInfo | null> =>
     .then((data) => (data as ExecutorInfoResponse).info ?? null);
 
 const getExecutorSettings = (): Promise<ExecutorSettings> =>
-  fetch("/api/controller")
+  fetch("/api/settings")
     .then((res) => res.json() as Promise<ExecutorSettingsResponse>)
     .then((data) => data.settings);
 
+const getBasestationInfo = (): Promise<BasestationResponse> =>
+  fetch("/api/basestation").then((res) => res.json());
+
 const postExecutorSettings = (settings: ExecutorSettings) =>
-  fetch("/api/controller", {
+  fetch("/api/settings", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -126,6 +130,13 @@ export const useSetMode = () => {
     },
   });
 };
+
+export const useBasestationInfo = () =>
+  useQuery({
+    queryKey: ["basestation"],
+    queryFn: getBasestationInfo,
+    refetchInterval: 1000,
+  });
 
 export const useSendCommand = () => {
   const queryClient = useQueryClient();

@@ -51,7 +51,7 @@ async fn main() -> ExitCode {
 
     let shutdown_fut = async move {
         stop_tx.send(()).expect("Failed to send stop signal");
-        main_task.await.expect("Executor task failed");
+        let _ = main_task.await.expect("Executor task failed");
     };
     tokio::select! {
         _ = shutdown_fut => {}

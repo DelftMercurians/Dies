@@ -11,8 +11,8 @@ use tokio::sync::{broadcast, watch};
 
 use crate::{server::ServerState, UiCommand, UiMode};
 use crate::{
-    ExecutorInfoResponse, ExecutorSettingsResponse, PostExecutorSettingsBody, PostUiCommandBody,
-    PostUiModeBody, UiStatus, UiWorldState,
+    BasestationResponse, ExecutorInfoResponse, ExecutorSettingsResponse, PostExecutorSettingsBody,
+    PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -71,6 +71,12 @@ pub async fn post_executor_settings(
 ) -> StatusCode {
     state.update_executor_settings(data.settings);
     StatusCode::OK
+}
+
+pub async fn get_basesation_info(state: State<Arc<ServerState>>) -> Json<BasestationResponse> {
+    Json(BasestationResponse {
+        players: state.basestation_feedback.read().unwrap().clone(),
+    })
 }
 
 pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> impl IntoResponse {

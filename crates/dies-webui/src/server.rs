@@ -2,9 +2,10 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use dies_core::{ExecutorInfo, ExecutorSettings, WorldUpdate};
+use dies_core::{ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, WorldUpdate};
 use dies_executor::{ControlMsg, ExecutorHandle};
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
@@ -12,12 +13,14 @@ use tokio::sync::{broadcast, watch};
 use tower_http::services::ServeDir;
 
 use crate::{
-    executor_task::ExecutorTask, routes, ExecutorStatus, UiCommand, UiConfig, UiMode, UiStatus,
+    executor_task::ExecutorTask, routes, ExecutorStatus, UiCommand, UiConfig, UiEnvironment,
+    UiMode, UiStatus,
 };
 
 pub struct ServerState {
     pub is_live_available: bool,
     pub update_rx: watch::Receiver<Option<WorldUpdate>>,
+    pub basestation_feedback: RwLock<HashMap<PlayerId, PlayerFeedbackMsg>>,
     pub cmd_tx: broadcast::Sender<UiCommand>,
     pub ui_mode: RwLock<UiMode>,
     pub executor_status: RwLock<ExecutorStatus>,
@@ -37,6 +40,7 @@ impl ServerState {
             is_live_available,
             update_rx,
             cmd_tx,
+            basestation_feedback: RwLock::new(HashMap::new()),
             ui_mode: RwLock::new(UiMode::Simulation),
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
@@ -101,6 +105,23 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         cmd_tx,
     ));
 
+    // Start basestation watcher
+    let basestation_task = {
+        let state = Arc::clone(&state);
+        let env = config.environment.clone();
+        tokio::spawn(async move {
+            match env {
+                UiEnvironment::WithLive { mut bs_handle, .. } => {
+                    while let Ok(msg) = bs_handle.recv().await {
+                        let mut feedback = state.basestation_feedback.write().unwrap();
+                        feedback.insert(msg.id, msg);
+                    }
+                }
+                UiEnvironment::SimulationOnly => {}
+            }
+        })
+    };
+
     // Start executor task
     let executor_task = {
         let shutdown_rx = shutdown_rx.resubscribe();
@@ -119,6 +140,9 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     executor_task
         .await
         .expect("Shutting down executor task failed");
+    basestation_task
+        .await
+        .expect("Shutting down basestation watcher task failed");
     web_task.await.expect("Shutting down server task failed");
 }
 
@@ -139,8 +163,9 @@ async fn start_webserver(
         .route("/api/ui-status", get(routes::get_ui_status))
         .route("/api/scenarios", get(routes::get_scenarios))
         .route("/api/ws", get(routes::websocket))
-        .route("/api/controller", get(routes::get_executor_settings))
-        .route("/api/controller", post(routes::post_executor_settings))
+        .route("/api/settings", get(routes::get_executor_settings))
+        .route("/api/basestation", get(routes::get_basesation_info))
+        .route("/api/settings", post(routes::post_executor_settings))
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))
         .nest_service("/", serve_dir.clone())

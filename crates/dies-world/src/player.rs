@@ -1,4 +1,4 @@
-use dies_core::{Angle, PlayerData, PlayerId, TrackerSettings};
+use dies_core::{Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector2, Vector4};
 
@@ -74,6 +74,7 @@ impl PlayerTracker {
                             velocity: na::convert(Vector2::new(x[1], x[3])),
                             yaw: current_yaw,
                             angular_speed: 0.0,
+                            ..PlayerData::new(self.id)
                         });
                         self.is_init = true;
                         self.last_data.as_mut().unwrap()
@@ -97,6 +98,20 @@ impl PlayerTracker {
                     ),
                     t_capture,
                 );
+            }
+        }
+    }
+
+    /// Update the tracker with feedback from the player.
+    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg) {
+        if feedback.id == self.id {
+            if let Some(last_data) = &mut self.last_data {
+                last_data.primary_status = feedback.primary_status;
+                last_data.kicker_cap_voltage = feedback.kicker_cap_voltage;
+                last_data.kicker_temp = feedback.kicker_temp;
+                last_data.pack_voltages = feedback.pack_voltages;
+                last_data.breakbeam_ball_detected =
+                    feedback.breakbeam_ball_detected.unwrap_or(false);
             }
         }
     }

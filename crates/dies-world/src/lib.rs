@@ -17,7 +17,7 @@ use ball::BallTracker;
 pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
 };
-use dies_core::{GameState, PlayerId, TrackerSettings, WorldData};
+use dies_core::{GameState, PlayerFeedbackMsg, PlayerId, TrackerSettings, WorldData};
 use player::PlayerTracker;
 
 const IS_DIV_A: bool = false;
@@ -161,6 +161,12 @@ impl WorldTracker {
             }
 
             self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
+        }
+    }
+
+    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg) {
+        if let Some(player_tracker) = self.own_players_tracker.get_mut(&feedback.id) {
+            player_tracker.update_from_feedback(feedback);
         }
     }
 

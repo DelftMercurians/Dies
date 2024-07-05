@@ -139,7 +139,7 @@ impl ExecutorTask {
                         UiMode::Live,
                         UiEnvironment::WithLive {
                             ssl_config,
-                            bs_config,
+                            bs_handle,
                         },
                     ) => {
                         log::info!("Starting live scenario {}", scenario.name());
@@ -149,7 +149,7 @@ impl ExecutorTask {
 
                         tokio::select! {
                             _ = cancel_rx => Err(anyhow::anyhow!("Cancelled")),
-                            executor = setup.into_live(settings, ssl_config, bs_config) => executor
+                            executor = setup.into_live(settings, ssl_config, bs_handle) => executor
                         }
                     }
                     (UiMode::Live, UiEnvironment::SimulationOnly) => {
