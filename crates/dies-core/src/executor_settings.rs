@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
@@ -91,4 +91,39 @@ impl Default for TrackerSettings {
 pub struct ExecutorSettings {
     pub controller_settings: ControllerSettings,
     pub tracker_settings: TrackerSettings,
+}
+
+impl ExecutorSettings {
+    /// Load the executor settings from a file, or store the default settings if the file does not
+    /// exist or is invalid.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the file exists but cannot be read or if creating the file fails.
+    pub fn load_or_insert(path: impl AsRef<Path>) -> Self {
+        match fs::read_to_string(path.as_ref()) {
+            Ok(contents) => match serde_json::from_str(&contents) {
+                Ok(settings) => settings,
+                Err(err) => {
+                    eprintln!("Failed to parse executor settings: {}", err);
+                    Self::default()
+                }
+            },
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                let settings = Self::default();
+                fs::write(path, serde_json::to_string_pretty(&settings).unwrap())
+                    .expect("Failed to write executor settings");
+                settings
+            }
+            Err(err) => panic!("Failed to read executor settings: {}", err),
+        }
+    }
+
+    /// Store the executor settings in the given file.
+    pub async fn store(&self, path: impl AsRef<Path>) {
+        if let Err(err) = tokio::fs::write(path, serde_json::to_string_pretty(self).unwrap()).await
+        {
+            log::error!("Failed to write executor settings: {}", err);
+        }
+    }
 }

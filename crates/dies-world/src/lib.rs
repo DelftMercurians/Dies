@@ -20,7 +20,6 @@ pub use dies_core::{
 use dies_core::{GameState, PlayerId, TrackerSettings, WorldData};
 use player::PlayerTracker;
 
-const MAX_PLAYERS: usize = 15;
 const IS_DIV_A: bool = false;
 
 /// A struct to track the world state.

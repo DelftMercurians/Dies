@@ -4,7 +4,10 @@ use axum::{
 };
 use dies_core::{ExecutorInfo, ExecutorSettings, WorldUpdate};
 use dies_executor::{ControlMsg, ExecutorHandle};
-use std::sync::{Arc, RwLock};
+use std::{
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 use tokio::sync::{broadcast, watch};
 use tower_http::services::ServeDir;
 
@@ -20,11 +23,13 @@ pub struct ServerState {
     pub executor_status: RwLock<ExecutorStatus>,
     pub executor_handle: RwLock<Option<ExecutorHandle>>,
     pub executor_settings: RwLock<ExecutorSettings>,
+    settings_file: PathBuf,
 }
 
 impl ServerState {
     pub fn new(
         is_live_available: bool,
+        settings_file: PathBuf,
         update_rx: watch::Receiver<Option<WorldUpdate>>,
         cmd_tx: broadcast::Sender<UiCommand>,
     ) -> Self {
@@ -35,7 +40,8 @@ impl ServerState {
             ui_mode: RwLock::new(UiMode::Simulation),
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
-            executor_settings: RwLock::new(ExecutorSettings::default()),
+            executor_settings: RwLock::new(ExecutorSettings::load_or_insert(&settings_file)),
+            settings_file,
         }
     }
 
@@ -76,7 +82,10 @@ impl ServerState {
         if let Some(handle) = self.executor_handle.read().unwrap().as_ref() {
             handle.send(ControlMsg::UpdateSettings(settings.clone()));
         }
+        let settings2 = settings.clone();
         *self.executor_settings.write().unwrap() = settings;
+        let settings_file = self.settings_file.clone();
+        tokio::spawn(async move { settings2.store(settings_file).await });
     }
 }
 
@@ -87,6 +96,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     let (cmd_tx, cmd_rx) = broadcast::channel(16);
     let state = Arc::new(ServerState::new(
         config.is_live_available(),
+        config.settings_file,
         update_rx,
         cmd_tx,
     ));

@@ -2,10 +2,7 @@ use dies_core::{Angle, PlayerData, PlayerId, TrackerSettings};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector2, Vector4};
 
-use crate::{
-    coord_utils::to_dies_coords2,
-    filter::{self, Kalman, MaybeKalman},
-};
+use crate::{coord_utils::to_dies_coords2, filter::MaybeKalman};
 /// Tracker for a single player.
 pub struct PlayerTracker {
     /// Player's unique id

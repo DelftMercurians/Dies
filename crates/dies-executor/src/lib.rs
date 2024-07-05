@@ -7,7 +7,7 @@ use dies_core::{
     ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
     WorldUpdate,
 };
-use dies_logger::{log_referee, log_vision};
+use dies_logger::log_referee;
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_simulator::Simulation;
 use dies_ssl_client::VisionClient;

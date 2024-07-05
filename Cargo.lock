@@ -544,6 +544,8 @@ dependencies = [
  "nalgebra",
  "rand",
  "serde",
+ "serde_json",
+ "tokio",
  "typeshare",
 ]
 

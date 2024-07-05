@@ -85,6 +85,9 @@ pub struct CliArgs {
     #[clap(long, short, default_value = "ui")]
     pub mode: CliMode,
 
+    #[clap(long, short = 'f', default_value = "dies-settings.json")]
+    pub settings_file: PathBuf,
+
     #[clap(long, default_value = "disabled", default_missing_value = "auto")]
     pub serial_port: SerialPort,
 
@@ -125,6 +128,7 @@ impl CliArgs {
         };
 
         UiConfig {
+            settings_file: self.settings_file,
             environment,
             port: self.webui_port,
         }

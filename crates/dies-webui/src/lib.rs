@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use dies_basestation_client::BasestationClientConfig;
 use dies_core::{
     ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, ScenarioInfo, WorldData,
@@ -17,6 +19,7 @@ pub use server::start;
 #[derive(Debug, Clone)]
 pub struct UiConfig {
     pub port: u16,
+    pub settings_file: PathBuf,
     pub environment: UiEnvironment,
 }
 
