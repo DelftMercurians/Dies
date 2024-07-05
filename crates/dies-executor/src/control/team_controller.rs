@@ -68,7 +68,7 @@ impl TeamController {
                     .unwrap_or(&default_input);
                 controller.update(player_data, input, world_data.duration);
             } else {
-                controller.increment_frames_missings();
+                controller.increment_frames_misses();
             }
         }
     }

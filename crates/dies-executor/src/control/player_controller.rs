@@ -10,10 +10,10 @@ const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 100.0;
 
 // maximum acceleration unit: mm/s2
-const MAX_ACC: f64 = 500.0;
+const MAX_ACC: f64 = 5000.0;
 
-// maximum acceleration unit: radius/s2
-const MAX_ACC_RADIUS: f64 = 1.5;
+// maximum acceleration unit: radians/s2
+const MAX_ACC_RADIUS: f64 = 20.0;
 
 enum KickerState {
     Disarming,
@@ -24,15 +24,17 @@ enum KickerState {
 pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP<Vector2>,
-    yaw_mtp: MTP<f64>,
     last_pos: Vector2,
-    last_yaw: Angle,
-    frame_missings: usize,
-
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
+
+    yaw_mtp: MTP<f64>,
+    last_yaw: Angle,
     /// Output angular velocity \[rad/s\]
     target_angular_velocity: f64,
+
+    frame_misses: usize,
+
     /// Kicker control
     kicker: KickerState,
     /// Dribble speed normalized to \[0, 1\]
@@ -42,16 +44,18 @@ pub struct PlayerController {
 impl PlayerController {
     /// Create a new player controller with the given ID.
     pub fn new(id: PlayerId) -> Self {
-        let yaw_mtp = MTP::new(2.0, 0.002, 0.0);
         Self {
             id,
+
             position_mtp: MTP::new(0.7, 0.0, 0.0),
-            yaw_mtp,
             last_pos: Vector2::new(0.0, 0.0),
-            last_yaw: Angle::from_radians(0.0),
-            frame_missings: 0,
             target_velocity: Vector2::new(0.0, 0.0),
+
+            yaw_mtp: MTP::new(2.0, 0.002, 0.0),
+            last_yaw: Angle::from_radians(0.0),
             target_angular_velocity: 0.0,
+
+            frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
         }
@@ -64,14 +68,14 @@ impl PlayerController {
             settings.max_velocity,
             settings.max_deceleration,
             settings.position_kp,
-            Duration::from_secs_f64(settings.position_propotional_time_window),
+            Duration::from_secs_f64(settings.position_proportional_time_window),
         );
         self.yaw_mtp.update_settings(
             settings.max_angular_acceleration,
             settings.max_angular_velocity,
             settings.max_angular_deceleration,
             settings.angle_kp,
-            Duration::from_secs_f64(settings.angle_propotional_time_window),
+            Duration::from_secs_f64(settings.angle_proportional_time_window),
         );
     }
 
@@ -107,9 +111,9 @@ impl PlayerController {
     }
 
     /// Increment the missing frame count, stops the robot if it is too high.
-    pub fn increment_frames_missings(&mut self) {
-        self.frame_missings += 1;
-        if self.frame_missings > MISSING_FRAMES_THRESHOLD {
+    pub fn increment_frames_misses(&mut self) {
+        self.frame_misses += 1;
+        if self.frame_misses > MISSING_FRAMES_THRESHOLD {
             log::warn!("Player {} has missing frames, stopping", self.id);
             self.target_velocity = Vector2::new(0.0, 0.0);
             self.target_angular_velocity = 0.0;

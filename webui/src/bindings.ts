@@ -33,11 +33,11 @@ export interface ControllerSettings {
 	/** Proportional gain for the close-range position controller. */
 	position_kp: number;
 	/** Time until destination in which the proportional controller is used, in seconds. */
-	position_propotional_time_window: number;
+	position_proportional_time_window: number;
 	/** Proportional gain for the close-range angle controller. */
 	angle_kp: number;
 	/** Time until destination in which the proportional controller is used, in seconds. */
-	angle_propotional_time_window: number;
+	angle_proportional_time_window: number;
 }
 
 /** Runtime information about the active executor. */

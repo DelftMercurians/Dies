@@ -20,11 +20,11 @@ pub struct ControllerSettings {
     /// Proportional gain for the close-range position controller.
     pub position_kp: f64,
     /// Time until destination in which the proportional controller is used, in seconds.
-    pub position_propotional_time_window: f64,
+    pub position_proportional_time_window: f64,
     /// Proportional gain for the close-range angle controller.
     pub angle_kp: f64,
     /// Time until destination in which the proportional controller is used, in seconds.
-    pub angle_propotional_time_window: f64,
+    pub angle_proportional_time_window: f64,
 }
 
 impl Default for ControllerSettings {
@@ -37,9 +37,9 @@ impl Default for ControllerSettings {
             max_angular_acceleration: 15.0f64.to_radians(),
             max_angular_deceleration: 15.0f64.to_radians(),
             position_kp: 0.7,
-            position_propotional_time_window: 0.7,
+            position_proportional_time_window: 0.7,
             angle_kp: 1.0,
-            angle_propotional_time_window: 0.02,
+            angle_proportional_time_window: 0.02,
         }
     }
 }
