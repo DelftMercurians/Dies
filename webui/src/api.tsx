@@ -331,7 +331,9 @@ export const useKeyboardControl = ({
       }
       command.data.command.data.dribble_speed = dribble_speed;
 
-      sendCommand(command as UiCommand);
+      if (vel_mag > 0 || angular_velocity !== 0 || dribble_speed > 0) {
+        sendCommand(command as UiCommand);
+      }
     }, 1000 / 30);
 
     window.addEventListener("keydown", handleKeyDown);
