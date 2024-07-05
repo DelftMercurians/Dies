@@ -24,9 +24,9 @@ import {
   UiWorldState,
   ExecutorInfoResponse,
   ExecutorInfo,
-  ControllerSettingsResponse,
-  ControllerSettings,
-  PostControllerSettingsBody,
+  ExecutorSettingsResponse,
+  ExecutorSettings,
+  PostExecutorSettingsBody,
 } from "./bindings";
 import { toast } from "sonner";
 
@@ -57,18 +57,18 @@ const getExecutorInfo = (): Promise<ExecutorInfo | null> =>
     .then((res) => res.json())
     .then((data) => (data as ExecutorInfoResponse).info ?? null);
 
-const getControllerSettings = (): Promise<ControllerSettings> =>
+const getExecutorSettings = (): Promise<ExecutorSettings> =>
   fetch("/api/controller")
-    .then((res) => res.json() as Promise<ControllerSettingsResponse>)
+    .then((res) => res.json() as Promise<ExecutorSettingsResponse>)
     .then((data) => data.settings);
 
-const postControllerSettings = (settings: ControllerSettings) =>
+const postExecutorSettings = (settings: ExecutorSettings) =>
   fetch("/api/controller", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ settings } satisfies PostControllerSettingsBody),
+    body: JSON.stringify({ settings } satisfies PostExecutorSettingsBody),
   });
 
 const postUiMode = (mode: UiMode) =>
@@ -169,15 +169,15 @@ export const useWorldState = (): WorldStatus => {
   return { status: "loading" };
 };
 
-export const useControllerSettings = () => {
+export const useExecutorSettings = () => {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["controller-settings"],
-    queryFn: getControllerSettings,
+    queryFn: getExecutorSettings,
   });
 
   const mutation = useMutation({
-    mutationFn: postControllerSettings,
+    mutationFn: postExecutorSettings,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
     },

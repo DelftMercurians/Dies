@@ -3,14 +3,14 @@ use std::{collections::HashSet, time::Duration};
 
 use dies_basestation_client::{BasestationClient, BasestationClientConfig};
 use dies_core::{
-    Angle, BallPlacement, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo, Vector2, Vector3,
-    WorldData,
+    Angle, BallPlacement, ExecutorSettings, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo,
+    Vector2, Vector3, WorldData,
 };
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_world::WorldTracker;
 
-use crate::{strategy::Strategy, Executor, ExecutorConfig};
+use crate::{strategy::Strategy, Executor};
 
 const LIVE_CHECK_INTERVAL: Duration = Duration::from_millis(100);
 const LIVE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
@@ -94,7 +94,11 @@ impl ScenarioSetup {
     }
 
     /// Create an executor in simulation mode from this setup.
-    pub fn into_simulation(self, config: ExecutorConfig, sim_config: SimulationConfig) -> Executor {
+    pub fn into_simulation(
+        self,
+        settings: ExecutorSettings,
+        sim_config: SimulationConfig,
+    ) -> Executor {
         let field_width = sim_config.field_geometry.field_width as f64;
         let field_length = sim_config.field_geometry.field_length as f64;
         let mut builder = SimulationBuilder::new(sim_config);
@@ -122,18 +126,18 @@ impl ScenarioSetup {
 
         let sim = builder.build();
 
-        Executor::new_simulation(config, self.strategy, sim)
+        Executor::new_simulation(settings, self.strategy, sim)
     }
 
     /// Create an executor in live mode from this setup.
     pub async fn into_live(
         self,
-        config: ExecutorConfig,
+        settings: ExecutorSettings,
         ssl_config: VisionClientConfig,
         bs_config: BasestationClientConfig,
     ) -> Result<Executor> {
         // Wait for the setup check to succeed
-        let mut tracker = WorldTracker::new(config.world_config.clone());
+        let mut tracker = WorldTracker::new(&settings.tracker_settings);
         let mut ssl_client = VisionClient::new(ssl_config.clone()).await?;
         let mut check_interval = tokio::time::interval(LIVE_CHECK_INTERVAL);
         let max_iterations = LIVE_CHECK_TIMEOUT.as_millis() / LIVE_CHECK_INTERVAL.as_millis();
@@ -156,7 +160,7 @@ impl ScenarioSetup {
 
         let bs_client = BasestationClient::new(bs_config)?;
         Ok(Executor::new_live(
-            config,
+            settings,
             self.strategy,
             ssl_client,
             bs_client,

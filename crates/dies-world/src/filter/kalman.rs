@@ -4,6 +4,33 @@ use crate::filter::matrix_gen::{
 use na::{SMatrix, SVector};
 use nalgebra as na;
 
+#[derive(Debug)]
+pub enum MaybeKalman<const OS: usize, const SS: usize> {
+    Init(Kalman<OS, SS>),
+    Uninit {
+        init_var: f64,
+        unit_transition_var: f64,
+        measurement_var: f64,
+    },
+}
+
+impl<const OS: usize, const SS: usize> MaybeKalman<OS, SS> {
+    pub fn new(init_var: f64, unit_transition_var: f64, measurement_var: f64) -> Self {
+        MaybeKalman::Uninit {
+            init_var,
+            unit_transition_var,
+            measurement_var,
+        }
+    }
+
+    pub fn as_mut(&mut self) -> Option<&mut Kalman<OS, SS>> {
+        match self {
+            MaybeKalman::Init(k) => Some(k),
+            _ => None,
+        }
+    }
+}
+
 /// OS: Observation Space, SS: State Space
 #[derive(Debug)]
 pub struct Kalman<const OS: usize, const SS: usize> {
@@ -120,6 +147,33 @@ impl Kalman<2, 4> {
             control: None,
         }
     }
+
+    /// Update the unit transition variance and measurement variance.
+    pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
+        self.var = unit_transition_var;
+        self.measurement_noise =
+            SMatrix::<f64, 2, 2>::new(measurement_var, 0.0, 0.0, measurement_var);
+    }
+}
+
+impl MaybeKalman<2, 4> {
+    /// Initialize the Kalman filter if it is not initialized.
+    pub fn init(&mut self, init_pos: SVector<f64, 4>, int_time: f64) {
+        if let MaybeKalman::Uninit {
+            init_var,
+            unit_transition_var,
+            measurement_var,
+        } = self
+        {
+            *self = Self::Init(Kalman::new_player_filter(
+                *init_var,
+                *unit_transition_var,
+                *measurement_var,
+                init_pos,
+                int_time,
+            ))
+        }
+    }
 }
 
 impl Kalman<3, 6> {
@@ -157,6 +211,42 @@ impl Kalman<3, 6> {
             posteriori_covariance: SMatrix::<f64, 6, 6>::identity() * init_var,
             x: init_pos,
             control: Some(Box::new(GravityControl)),
+        }
+    }
+
+    /// Update the unit transition variance and measurement variance.
+    pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
+        self.var = unit_transition_var;
+        self.measurement_noise = SMatrix::<f64, 3, 3>::new(
+            measurement_var,
+            0.0,
+            0.0,
+            0.0,
+            measurement_var,
+            0.0,
+            0.0,
+            0.0,
+            measurement_var,
+        );
+    }
+}
+
+impl MaybeKalman<3, 6> {
+    /// Initialize the Kalman filter if it is not initialized.
+    pub fn init(&mut self, init_pos: SVector<f64, 6>, int_time: f64) {
+        if let MaybeKalman::Uninit {
+            init_var,
+            unit_transition_var,
+            measurement_var,
+        } = self
+        {
+            *self = MaybeKalman::Init(Kalman::new_ball_filter(
+                *init_var,
+                *unit_transition_var,
+                *measurement_var,
+                init_pos,
+                int_time,
+            ));
         }
     }
 }

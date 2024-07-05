@@ -1,10 +1,10 @@
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
-use glue::{Monitor, Radio_Command, Serial};
+use glue::{Monitor, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus, Vector2};
+use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
 
 const MAX_MSG_FREQ: f64 = 60.0;
 const BASE_STATION_READ_FREQ: f64 = 20.0;

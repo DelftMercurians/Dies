@@ -1,59 +1,78 @@
-import React, { FC, useState } from "react";
-import { useControllerSettings } from "@/api";
-import { Slider } from "@/components/ui/slider";
+import { useExecutorSettings } from "@/api";
+import { ExecutorSettings } from "@/bindings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { ControllerSettings } from "@/bindings";
-
-interface ControllerSettingsProps {
-  className?: string;
-}
+import { Slider } from "@/components/ui/slider";
 
 type FieldConfig = {
-  [K in keyof ControllerSettings]?: {
-    min?: number;
-    max?: number;
-    unit?: string;
-    disableSlider?: boolean;
-    isAngle?: boolean;
+  [K in keyof ExecutorSettings]?: {
+    [M in keyof ExecutorSettings[K]]?: {
+      min?: number;
+      max?: number;
+      unit?: string;
+      disableSlider?: boolean;
+      isAngle?: boolean;
+    };
   };
 };
 
-// Custom configuration for fields
-const FIELD_CONFIG: FieldConfig = {
-  max_acceleration: { min: 0, max: 10000, unit: "mm/s²" },
-  max_velocity: { min: 0, max: 5000, unit: "mm/s" },
-  max_deceleration: { min: 0, max: 10000, unit: "mm/s²" },
-  max_angular_velocity: { min: 0, max: 10, unit: "deg/s", isAngle: true },
-  max_angular_acceleration: { min: 0, max: 20, unit: "deg/s²", isAngle: true },
-  max_angular_deceleration: { min: 0, max: 20, unit: "deg/s²", isAngle: true },
-  position_kp: { min: 0, max: 10, unit: "", disableSlider: true },
-  position_propotional_time_window: { min: 0, max: 10, unit: "s" },
-  angle_kp: { min: 0, max: 10, unit: "", disableSlider: true },
-  angle_propotional_time_window: { min: 0, max: 10, unit: "s" },
+interface SettingsEditorProps<K> {
+  settingsKey: K;
+  className?: string;
+}
+
+const fieldConfig: FieldConfig = {
+  controller_settings: {
+    max_acceleration: { min: 0, max: 10000, unit: "mm/s²" },
+    max_velocity: { min: 0, max: 5000, unit: "mm/s" },
+    max_deceleration: { min: 0, max: 10000, unit: "mm/s²" },
+    max_angular_velocity: { min: 0, max: 10, unit: "deg/s", isAngle: true },
+    max_angular_acceleration: {
+      min: 0,
+      max: 20,
+      unit: "deg/s²",
+      isAngle: true,
+    },
+    max_angular_deceleration: {
+      min: 0,
+      max: 20,
+      unit: "deg/s²",
+      isAngle: true,
+    },
+    position_kp: { min: 0, max: 10, unit: "", disableSlider: true },
+    position_proportional_time_window: { min: 0, max: 10, unit: "s" },
+    angle_kp: { min: 0, max: 10, unit: "", disableSlider: true },
+    angle_proportional_time_window: { min: 0, max: 10, unit: "s" },
+  },
+  tracker_settings: {},
 };
 
-const ControllerSettingsEditor: FC<ControllerSettingsProps> = ({
+function SettingsEditor<K extends keyof ExecutorSettings>({
+  settingsKey,
   className = "",
-}) => {
-  const { settings, updateSettings } = useControllerSettings();
+}: SettingsEditorProps<K>) {
+  type SettingsKey = keyof ExecutorSettings[K];
+  const { settings: allSettings, updateSettings } = useExecutorSettings();
 
-  if (!settings)
+  if (!allSettings)
     return (
       <div className={`space-y-6 ${className}`}>
         <h1 className="text-2xl font-bold mb-4">Controller Settings</h1>
       </div>
     );
 
-  const handleChange = (key: string, value: number) => {
-    if (settings) {
-      const config = FIELD_CONFIG[key as keyof typeof FIELD_CONFIG];
+  const settings = allSettings[settingsKey];
+  const handleChange = (key: SettingsKey, value: number) => {
+    if (allSettings && settings) {
+      const config = fieldConfig[settingsKey]?.[key];
       if (config?.isAngle) {
         // Convert degrees to radians before updating
         value = value * (Math.PI / 180);
       }
-      updateSettings({ ...settings, [key]: value });
+      updateSettings({
+        ...allSettings,
+        [settingsKey]: { ...settings, [key]: value },
+      });
     }
   };
 
@@ -65,7 +84,7 @@ const ControllerSettingsEditor: FC<ControllerSettingsProps> = ({
 
       <div className="h-full overflow-y-auto flex flex-col gap-4">
         {Object.entries(settings).map(([key, value]) => {
-          const config = FIELD_CONFIG[key as keyof typeof FIELD_CONFIG] || {};
+          const config = fieldConfig[settingsKey]?.[key as SettingsKey] || {};
           const {
             min = 0,
             max = 100,
@@ -92,7 +111,9 @@ const ControllerSettingsEditor: FC<ControllerSettingsProps> = ({
                     max={max}
                     step={(max - min) / 100}
                     value={[displayValue]}
-                    onValueChange={([newValue]) => handleChange(key, newValue)}
+                    onValueChange={([newValue]) =>
+                      handleChange(key as SettingsKey, newValue)
+                    }
                     className="flex-grow"
                   />
                 )}
@@ -102,7 +123,10 @@ const ControllerSettingsEditor: FC<ControllerSettingsProps> = ({
                     type="number"
                     value={formatValue(displayValue)}
                     onChange={(e) =>
-                      handleChange(key, parseFloat(e.target.value))
+                      handleChange(
+                        key as SettingsKey,
+                        parseFloat(e.target.value)
+                      )
                     }
                     className="w-24"
                   />
@@ -117,6 +141,6 @@ const ControllerSettingsEditor: FC<ControllerSettingsProps> = ({
       </div>
     </div>
   );
-};
+}
 
-export default ControllerSettingsEditor;
+export default SettingsEditor;

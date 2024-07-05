@@ -11,8 +11,8 @@ use tokio::sync::{broadcast, watch};
 
 use crate::{server::ServerState, UiCommand, UiMode};
 use crate::{
-    ControllerSettingsResponse, ExecutorInfoResponse, PostControllerSettingsBody,
-    PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState,
+    ExecutorInfoResponse, ExecutorSettingsResponse, PostExecutorSettingsBody, PostUiCommandBody,
+    PostUiModeBody, UiStatus, UiWorldState,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -58,18 +58,18 @@ pub async fn post_command(
     StatusCode::OK
 }
 
-pub async fn get_controller_settings(
+pub async fn get_executor_settings(
     state: State<Arc<ServerState>>,
-) -> Json<ControllerSettingsResponse> {
-    let settings = state.controller_settings.read().unwrap().clone();
-    Json(ControllerSettingsResponse { settings })
+) -> Json<ExecutorSettingsResponse> {
+    let settings = state.executor_settings.read().unwrap().clone();
+    Json(ExecutorSettingsResponse { settings })
 }
 
-pub async fn post_controller_settings(
+pub async fn post_executor_settings(
     state: State<Arc<ServerState>>,
-    Json(data): Json<PostControllerSettingsBody>,
+    Json(data): Json<PostExecutorSettingsBody>,
 ) -> StatusCode {
-    state.update_controller_settings(data.settings);
+    state.update_executor_settings(data.settings);
     StatusCode::OK
 }
 

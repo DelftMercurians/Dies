@@ -2,7 +2,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use dies_core::{ControllerSettings, ExecutorInfo, WorldUpdate};
+use dies_core::{ExecutorInfo, ExecutorSettings, WorldUpdate};
 use dies_executor::{ControlMsg, ExecutorHandle};
 use std::sync::{Arc, RwLock};
 use tokio::sync::{broadcast, watch};
@@ -19,7 +19,7 @@ pub struct ServerState {
     pub ui_mode: RwLock<UiMode>,
     pub executor_status: RwLock<ExecutorStatus>,
     pub executor_handle: RwLock<Option<ExecutorHandle>>,
-    pub controller_settings: RwLock<ControllerSettings>,
+    pub executor_settings: RwLock<ExecutorSettings>,
 }
 
 impl ServerState {
@@ -35,7 +35,7 @@ impl ServerState {
             ui_mode: RwLock::new(UiMode::Simulation),
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
-            controller_settings: RwLock::new(ControllerSettings::default()),
+            executor_settings: RwLock::new(ExecutorSettings::default()),
         }
     }
 
@@ -72,11 +72,11 @@ impl ServerState {
     }
 
     /// Update the controller settings.
-    pub fn update_controller_settings(&self, settings: ControllerSettings) {
+    pub fn update_executor_settings(&self, settings: ExecutorSettings) {
         if let Some(handle) = self.executor_handle.read().unwrap().as_ref() {
-            handle.send(ControlMsg::UpdateControllerSettings(settings.clone()));
+            handle.send(ControlMsg::UpdateSettings(settings.clone()));
         }
-        *self.controller_settings.write().unwrap() = settings;
+        *self.executor_settings.write().unwrap() = settings;
     }
 }
 
@@ -129,8 +129,8 @@ async fn start_webserver(
         .route("/api/ui-status", get(routes::get_ui_status))
         .route("/api/scenarios", get(routes::get_scenarios))
         .route("/api/ws", get(routes::websocket))
-        .route("/api/controller", get(routes::get_controller_settings))
-        .route("/api/controller", post(routes::post_controller_settings))
+        .route("/api/controller", get(routes::get_executor_settings))
+        .route("/api/controller", post(routes::post_executor_settings))
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))
         .nest_service("/", serve_dir.clone())

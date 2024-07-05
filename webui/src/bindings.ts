@@ -16,6 +16,14 @@
  */
 export type Angle = number;
 
+/** Runtime information about the active executor. */
+export interface ExecutorInfo {
+	/** Whether the executor is currently paused. */
+	paused: boolean;
+	/** The player IDs that are currently controlled manually. */
+	manual_controlled_players: PlayerId[];
+}
+
 /** Settings for the low-level controller. */
 export interface ControllerSettings {
 	/** Maximum acceleration of the robot in mm/s². */
@@ -40,12 +48,14 @@ export interface ControllerSettings {
 	angle_proportional_time_window: number;
 }
 
-/** Runtime information about the active executor. */
-export interface ExecutorInfo {
-	/** Whether the executor is currently paused. */
-	paused: boolean;
-	/** The player IDs that are currently controlled manually. */
-	manual_controlled_players: PlayerId[];
+/** Settings for the `WorldTracker`. */
+export interface TrackerSettings {
+}
+
+/** Settings for the executor. */
+export interface ExecutorSettings {
+	controller_settings: ControllerSettings;
+	tracker_settings: TrackerSettings;
 }
 
 /** A single field arc -- eg. the center circle */
@@ -245,12 +255,12 @@ export interface PostUiModeBody {
 	mode: UiMode;
 }
 
-export interface ControllerSettingsResponse {
-	settings: ControllerSettings;
+export interface ExecutorSettingsResponse {
+	settings: ExecutorSettings;
 }
 
-export interface PostControllerSettingsBody {
-	settings: ControllerSettings;
+export interface PostExecutorSettingsBody {
+	settings: ExecutorSettings;
 }
 
 /** An override command for a player for manual control. */

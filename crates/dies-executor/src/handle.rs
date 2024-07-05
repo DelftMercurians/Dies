@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use dies_core::{ControllerSettings, ExecutorInfo, PlayerId, PlayerOverrideCommand, WorldUpdate};
+use dies_core::{ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, WorldUpdate};
 
 #[derive(Debug)]
 pub enum ControlMsg {
@@ -12,7 +12,7 @@ pub enum ControlMsg {
     },
     PlayerOverrideCommand(PlayerId, PlayerOverrideCommand),
     SetPause(bool),
-    UpdateControllerSettings(ControllerSettings),
+    UpdateSettings(ExecutorSettings),
     Stop,
 }
 

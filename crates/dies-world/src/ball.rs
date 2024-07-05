@@ -1,45 +1,10 @@
-use dies_core::{BallData, Vector3};
+use dies_core::{BallData, TrackerSettings, Vector3};
 use nalgebra::{SVector, Vector6};
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
 use crate::coord_utils::to_dies_coords3;
-use crate::filter::Kalman;
-
-/// Simple low pass filter.
-#[derive(Debug)]
-pub struct LowPassFilter<T> {
-    alpha: f64,
-    value: Option<T>,
-}
-
-impl<T> LowPassFilter<T>
-where
-    T: std::ops::Mul<f64, Output = T>,
-    T: std::ops::Add<Output = T> + std::ops::Sub<Output = T> + Copy,
-{
-    /// Create a new LowPassFilter with the given alpha value.
-    pub fn new(alpha: f64) -> LowPassFilter<T> {
-        LowPassFilter { alpha, value: None }
-    }
-
-    /// Update the filter with a new value and return the filtered result.
-    pub fn update(&mut self, input: T) -> T {
-        if let Some(value) = self.value.take() {
-            let filtered_value = value + (input - value) * self.alpha;
-            self.value = Some(filtered_value);
-            filtered_value
-        } else {
-            self.value = Some(input);
-            input
-        }
-    }
-
-    /// Reset the filter to its initial state.
-    pub fn reset(&mut self) {
-        self.value = None;
-    }
-}
+use crate::filter::MaybeKalman;
 
 /// Tracker for the ball.
 #[derive(Debug)]
@@ -52,20 +17,31 @@ pub struct BallTracker {
     is_init: bool,
     /// Last recorded data (for caching)
     last_data: Option<BallData>,
-    // /// Kalman filter for the ball's position and velocity
-    // filter: Option<Kalman<3, 6>>,
-    /// Low pass filter for the ball's position
-    filter: LowPassFilter<Vector3>,
+
+    filter: MaybeKalman<3, 6>,
 }
 
 impl BallTracker {
     /// Create a new BallTracker.
-    pub fn new(play_dir_x: f64) -> BallTracker {
+    pub fn new(settings: &TrackerSettings) -> BallTracker {
         BallTracker {
-            play_dir_x,
+            play_dir_x: settings.initial_opp_goal_x,
             is_init: false,
             last_data: None,
-            filter: LowPassFilter::new(0.5),
+            filter: MaybeKalman::new(
+                0.1,
+                settings.ball_unit_transition_var,
+                settings.ball_measurement_var,
+            ),
+        }
+    }
+
+    pub fn update_settings(&mut self, settings: &TrackerSettings) {
+        if let Some(filter) = self.filter.as_mut() {
+            filter.update_settings(
+                settings.ball_unit_transition_var,
+                settings.ball_measurement_var,
+            );
         }
     }
 
@@ -114,71 +90,56 @@ impl BallTracker {
                 velocity: Vector3::zeros(),
             });
             self.is_init = true;
-            self.filter.reset();
-            self.filter.update(ball_measurements[0].0);
-            // self.filter = Some(Kalman::<3, 6>::new_ball_filter(
-            //     1.0,
-            //     10.0,
-            //     10.0,
-            //     Vector6::new(
-            //         ball_measurements[0].0.x as f64,
-            //         0.0,
-            //         ball_measurements[0].0.y as f64,
-            //         0.0,
-            //         ball_measurements[0].0.z as f64,
-            //         0.0,
-            //     ),
-            //     current_time,
-            // ));
-            return;
-        }
 
-        ball_measurements.iter().for_each(|(pos, is_noisy)| {
-            let pos_ov = SVector::<f64, 3>::new(pos.x as f64, pos.y as f64, pos.z as f64);
-            let pos = self.filter.update(pos_ov);
-            // if z.is_some() {
-            //     let pos = Vector3::new(
-            //         z.unwrap()[0] as f64,
-            //         z.unwrap()[1] as f64,
-            //         z.unwrap()[2] as f64,
-            //     );
-            let vel = if let Some(last_data) = &self.last_data {
-                if (current_time - last_data.timestamp) > 0.0 {
-                    (pos - last_data.position) / (current_time - last_data.timestamp)
-                } else {
-                    Vector3::zeros()
+            self.filter.init(
+                Vector6::new(
+                    ball_measurements[0].0.x as f64,
+                    0.0,
+                    ball_measurements[0].0.y as f64,
+                    0.0,
+                    ball_measurements[0].0.z as f64,
+                    0.0,
+                ),
+                current_time,
+            );
+        } else {
+            for (pos, is_noisy) in ball_measurements.iter() {
+                let pos_ov = SVector::<f64, 3>::new(pos.x as f64, pos.y as f64, pos.z as f64);
+                let z =
+                    self.filter
+                        .as_mut()
+                        .unwrap()
+                        .update(pos_ov, current_time, is_noisy.clone());
+                if z.is_some() {
+                    let mut pos_v3 = Vector3::new(
+                        z.unwrap()[0] as f64,
+                        z.unwrap()[2] as f64,
+                        z.unwrap()[4] as f64,
+                    );
+                    let vel_v3 = Vector3::new(
+                        z.unwrap()[1] as f64,
+                        z.unwrap()[3] as f64,
+                        z.unwrap()[5] as f64,
+                    );
+                    if pos_v3.z < 0.0 {
+                        pos_v3.z = 0.0;
+                        self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
+                            pos_v3.x as f64,
+                            vel_v3.x as f64,
+                            pos_v3.y as f64,
+                            vel_v3.y as f64,
+                            pos_v3.z as f64,
+                            -vel_v3.z as f64,
+                        ));
+                    }
+                    self.last_data = Some(BallData {
+                        timestamp: current_time,
+                        position: pos_v3,
+                        velocity: vel_v3,
+                    });
                 }
-            } else {
-                Vector3::zeros()
-            };
-            // let mut pos_v3 = Vector3::new(
-            //     z.unwrap()[0] as f64,
-            //     z.unwrap()[2] as f64,
-            //     z.unwrap()[4] as f64,
-            // );
-            // let vel_v3 = Vector3::new(
-            //     z.unwrap()[1] as f64,
-            //     z.unwrap()[3] as f64,
-            //     z.unwrap()[5] as f64,
-            // );
-            // if pos_v3.z < 0.0 {
-            //     pos_v3.z = 0.0;
-            //     self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
-            //         pos_v3.x as f64,
-            //         vel_v3.x as f64,
-            //         pos_v3.y as f64,
-            //         vel_v3.y as f64,
-            //         pos_v3.z as f64,
-            //         -vel_v3.z as f64,
-            //     ));
-            // }
-            self.last_data = Some(BallData {
-                timestamp: current_time,
-                position: pos,
-                velocity: vel,
-            });
-            // }
-        });
+            }
+        }
     }
 
     pub fn get(&self) -> Option<&BallData> {
@@ -197,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_update_no_ball() {
-        let mut tracker = BallTracker::new(1.0);
+        let mut tracker = BallTracker::new(&TrackerSettings::default());
         let frame = SSL_DetectionFrame::new();
 
         tracker.update(&frame);
@@ -207,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_no_data_after_first_update() {
-        let mut tracker = BallTracker::new(1.0);
+        let mut tracker = BallTracker::new(&TrackerSettings::default());
 
         // 1st update
         let mut frame = SSL_DetectionFrame::new();
@@ -225,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_basic_update() {
-        let mut tracker = BallTracker::new(1.0);
+        let mut tracker = BallTracker::new(&TrackerSettings::default());
 
         // 1st update
         let mut frame = SSL_DetectionFrame::new();
@@ -255,7 +216,11 @@ mod tests {
 
     #[test]
     fn test_x_flip() {
-        let mut tracker = BallTracker::new(-1.0);
+        let settings = TrackerSettings {
+            initial_opp_goal_x: -1.0,
+            ..Default::default()
+        };
+        let mut tracker = BallTracker::new(&settings);
 
         // 1st update
         let mut frame = SSL_DetectionFrame::new();

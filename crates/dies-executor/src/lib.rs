@@ -4,13 +4,14 @@ use anyhow::Result;
 
 use dies_basestation_client::BasestationClient;
 use dies_core::{
-    ExecutorInfo, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate,
+    ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
+    WorldUpdate,
 };
 use dies_logger::{log_referee, log_vision};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_simulator::Simulation;
 use dies_ssl_client::VisionClient;
-use dies_world::{WorldConfig, WorldTracker};
+use dies_world::WorldTracker;
 use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
 use strategy::Strategy;
@@ -25,13 +26,8 @@ pub mod strategy;
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
 
-const CMD_INTERVAL: Duration = Duration::from_millis(1000 / 30);
-
-#[derive(Debug, Clone)]
-pub struct ExecutorConfig {
-    pub world_config: WorldConfig,
-    pub sim_dt: Duration,
-}
+const SIMULATION_DT: Duration = Duration::from_micros(1000_000 / 60);
+const CMD_INTERVAL: Duration = Duration::from_micros(1000_000 / 30);
 
 enum Environment {
     Live {
@@ -40,7 +36,6 @@ enum Environment {
     },
     Simulation {
         simulator: Simulation,
-        dt: Duration,
     },
 }
 
@@ -167,7 +162,7 @@ pub struct Executor {
 
 impl Executor {
     pub fn new_live(
-        config: ExecutorConfig,
+        settings: ExecutorSettings,
         strategy: Box<dyn Strategy>,
         ssl_client: VisionClient,
         bs_client: BasestationClient,
@@ -178,8 +173,8 @@ impl Executor {
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
-            tracker: WorldTracker::new(config.world_config),
-            controller: TeamController::new(strategy),
+            tracker: WorldTracker::new(&settings.tracker_settings),
+            controller: TeamController::new(strategy, &settings.controller_settings),
             gc_client: GcClient::new(),
             environment: Some(Environment::Live {
                 ssl_client,
@@ -196,7 +191,7 @@ impl Executor {
     }
 
     pub fn new_simulation(
-        config: ExecutorConfig,
+        settings: ExecutorSettings,
         strategy: Box<dyn Strategy>,
         simulator: Simulation,
     ) -> Self {
@@ -206,13 +201,10 @@ impl Executor {
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
-            tracker: WorldTracker::new(config.world_config),
-            controller: TeamController::new(strategy),
+            tracker: WorldTracker::new(&settings.tracker_settings),
+            controller: TeamController::new(strategy, &settings.controller_settings),
             gc_client: GcClient::new(),
-            environment: Some(Environment::Simulation {
-                simulator,
-                dt: config.sim_dt,
-            }),
+            environment: Some(Environment::Simulation { simulator }),
             manual_override: HashMap::new(),
             command_tx,
             command_rx,
@@ -271,8 +263,8 @@ impl Executor {
                 ssl_client,
                 bs_client,
             }) => self.run_rt_live(ssl_client, bs_client).await?,
-            Some(Environment::Simulation { simulator, dt }) => {
-                self.run_rt_sim(simulator, dt).await?
+            Some(Environment::Simulation { simulator }) => {
+                self.run_rt_sim(simulator, SIMULATION_DT).await?
             }
             _ => unreachable!(),
         }
@@ -420,8 +412,9 @@ impl Executor {
                     state.set_cmd(cmd);
                 }
             }
-            ControlMsg::UpdateControllerSettings(settings) => {
-                self.controller.update_controller_settings(&settings);
+            ControlMsg::UpdateSettings(settings) => {
+                self.controller
+                    .update_controller_settings(&settings.controller_settings);
             }
             ControlMsg::Stop => {}
         }
