@@ -147,7 +147,11 @@ const PlayerStatus: FC<{ player: PlayerFeedbackMsg }> = ({ player }) => {
               <StatusIndicator status={player.fan_status} label="Fan" />
 
               <StatusIndicator
-                status={player.breakbeam_ball_detected ? "OK" : "NO BALL"}
+                status={
+                  player.breakbeam_ball_detected
+                    ? SysStatus.Ok
+                    : SysStatus.NoReply
+                }
                 label="BreakBeam"
                 details={{
                   "Sensor OK": player.breakbeam_sensor_ok ? "Yes" : "No",

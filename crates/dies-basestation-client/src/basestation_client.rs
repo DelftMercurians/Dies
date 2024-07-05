@@ -1,7 +1,7 @@
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
-use glue::{Monitor, Serial};
+use glue::{HG_Status, Monitor, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
@@ -120,6 +120,7 @@ impl BasestationHandle {
             let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
 
             loop {
+                // Send commands
                 match cmd_rx.try_recv() {
                     Ok((cmd, resp)) => {
                         let robot_id = config
@@ -130,7 +131,6 @@ impl BasestationHandle {
                             as usize;
                         match &mut connection {
                             Connection::V1(monitor) => {
-                                // Send commands
                                 let mut commands = [None; glue::MAX_NUM_ROBOTS];
                                 commands[robot_id] = Some(cmd.into());
                                 resp.send(
@@ -139,57 +139,6 @@ impl BasestationHandle {
                                         .map_err(|_| anyhow!("Failed to send command")),
                                 )
                                 .ok();
-
-                                // Receive feedback
-                                if let Some(robots) = monitor.get_robots() {
-                                    let feedback = robots
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(id, msg)| {
-                                            let player_id = config
-                                                .robot_id_map
-                                                .iter()
-                                                .find_map(|(k, v)| {
-                                                    if *v == id as u32 {
-                                                        Some(*k)
-                                                    } else {
-                                                        None
-                                                    }
-                                                })
-                                                .unwrap_or_else(|| PlayerId::new(id as u32));
-                                            PlayerFeedbackMsg {
-                                                id: player_id,
-                                                primary_status: SysStatus::from_option(
-                                                    msg.primary_status(),
-                                                ),
-                                                kicker_status: SysStatus::from_option(
-                                                    msg.kicker_status(),
-                                                ),
-                                                imu_status: SysStatus::from_option(
-                                                    msg.imu_status(),
-                                                ),
-                                                fan_status: SysStatus::from_option(
-                                                    msg.fan_status(),
-                                                ),
-                                                kicker_cap_voltage: msg.kicker_cap_voltage(),
-                                                kicker_temp: msg.kicker_temperature(),
-                                                motor_statuses: msg
-                                                    .motor_statuses()
-                                                    .map(|v| v.map(Into::into)),
-                                                motor_speeds: msg.motor_speeds(),
-                                                motor_temps: msg.motor_temperatures(),
-                                                breakbeam_ball_detected: msg
-                                                    .breakbeam_ball_detected(),
-                                                breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
-                                                pack_voltages: msg.pack_voltages(),
-                                            }
-                                        })
-                                        .collect::<Vec<_>>();
-
-                                    for msg in feedback {
-                                        info_tx.send(msg).ok();
-                                    }
-                                }
                             }
                             Connection::V0(serial) => {
                                 let cmd_str = cmd.into_proto_v0_with_id(robot_id);
@@ -200,6 +149,52 @@ impl BasestationHandle {
                     }
                     Err(mpsc::error::TryRecvError::Disconnected) => break,
                     _ => {}
+                }
+
+                // Receive feedback
+                if let Connection::V1(monitor) = &mut connection {
+                    if let Some(robots) = monitor.get_robots() {
+                        let feedback = robots
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(id, msg)| match msg.primary_status() {
+                                Some(status) if !matches!(status, HG_Status::NO_REPLY) => {
+                                    let player_id = config
+                                        .robot_id_map
+                                        .iter()
+                                        .find_map(
+                                            |(k, v)| if *v == id as u32 { Some(*k) } else { None },
+                                        )
+                                        .unwrap_or_else(|| PlayerId::new(id as u32));
+
+                                    Some(PlayerFeedbackMsg {
+                                        id: player_id,
+                                        primary_status: SysStatus::from_option(
+                                            msg.primary_status(),
+                                        ),
+                                        kicker_status: SysStatus::from_option(msg.kicker_status()),
+                                        imu_status: SysStatus::from_option(msg.imu_status()),
+                                        fan_status: SysStatus::from_option(msg.fan_status()),
+                                        kicker_cap_voltage: msg.kicker_cap_voltage(),
+                                        kicker_temp: msg.kicker_temperature(),
+                                        motor_statuses: msg
+                                            .motor_statuses()
+                                            .map(|v| v.map(Into::into)),
+                                        motor_speeds: msg.motor_speeds(),
+                                        motor_temps: msg.motor_temperatures(),
+                                        breakbeam_ball_detected: msg.breakbeam_ball_detected(),
+                                        breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
+                                        pack_voltages: msg.pack_voltages(),
+                                    })
+                                }
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+
+                        for msg in feedback {
+                            info_tx.send(msg).ok();
+                        }
+                    }
                 }
 
                 // Sleep
