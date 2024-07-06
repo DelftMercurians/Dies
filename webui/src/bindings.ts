@@ -16,6 +16,13 @@
  */
 export type Angle = number;
 
+export type DebugValue = 
+	| { type: "Shape", data: DebugShape }
+	| { type: "Number", data: number }
+	| { type: "String", data: string };
+
+export type DebugMap = Record<string, DebugValue>;
+
 export type PlayerId = number;
 
 /** Runtime information about the active executor. */
@@ -314,6 +321,10 @@ export interface PostUiModeBody {
 	mode: UiMode;
 }
 
+export interface GetDebugMapResponse {
+	debug_map: DebugMap;
+}
+
 export interface ExecutorSettingsResponse {
 	settings: ExecutorSettings;
 }
@@ -325,6 +336,30 @@ export interface PostExecutorSettingsBody {
 export interface BasestationResponse {
 	players: Record<PlayerId, PlayerFeedbackMsg>;
 }
+
+export enum DebugColor {
+	Red = "red",
+	Green = "green",
+	Orange = "orange",
+	Purple = "purple",
+}
+
+export type DebugShape = 
+	| { type: "Cross", data: {
+	center: Vector2;
+	color: DebugColor;
+}}
+	| { type: "Circle", data: {
+	center: Vector2;
+	radius: number;
+	fill?: DebugColor;
+	stroke?: DebugColor;
+}}
+	| { type: "Line", data: {
+	start: Vector2;
+	end: Vector2;
+	color: DebugColor;
+}};
 
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
@@ -364,6 +399,10 @@ export type PlayerOverrideCommand =
 export type UiWorldState = 
 	| { type: "Loaded", data: WorldData }
 	| { type: "None",  };
+
+export type WsMessage = 
+	| { type: "WorldUpdate", data: WorldData }
+	| { type: "Debug", data: DebugMap };
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];

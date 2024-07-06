@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
+    DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
     ScenarioInfo, WorldData,
 };
 use dies_executor::scenarios::ScenarioType;
@@ -115,6 +115,20 @@ pub(crate) struct PostUiModeBody {
 pub(crate) enum UiWorldState {
     Loaded(WorldData),
     None,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare]
+pub(crate) enum WsMessage<'a> {
+    WorldUpdate(&'a WorldData),
+    Debug(&'a DebugMap),
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct GetDebugMapResponse {
+    pub(crate) debug_map: DebugMap,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

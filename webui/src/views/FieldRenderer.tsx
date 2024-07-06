@@ -1,4 +1,11 @@
-import { PlayerData, Vector2, Vector3, WorldData } from "../bindings";
+import {
+  DebugMap,
+  DebugShape,
+  PlayerData,
+  Vector2,
+  Vector3,
+  WorldData,
+} from "../bindings";
 
 const ROBOT_RADIUS = 0.14 * 1000;
 const BALL_RADIUS = 0.043 * 1000;
@@ -19,6 +26,7 @@ export class FieldRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private worldData: WorldData | null = null;
+  private debugShapes: DebugShape[] = [];
   private fieldSize: [number, number] = DEFAULT_FIELD_SIZE;
   private positionDisplayMode: PositionDisplayMode = "filtered";
 
@@ -35,6 +43,12 @@ export class FieldRenderer {
         worldData.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1],
       ];
     }
+  }
+
+  setDebugData(data: DebugMap) {
+    this.debugShapes = Object.values(data)
+      .filter(({ type }) => type === "Shape")
+      .map(({ data }) => data as DebugShape);
   }
 
   setPositionDisplayMode(mode: PositionDisplayMode) {
@@ -76,6 +90,8 @@ export class FieldRenderer {
     if (ball) {
       this.drawBall(ball.position);
     }
+
+    this.debugShapes.forEach((shape) => this.drawDebugShape(shape));
   }
 
   public fieldToCanvas(coords: Vector2 | Vector3): Vector2 {
@@ -189,6 +205,45 @@ export class FieldRenderer {
     this.ctx.beginPath();
     this.ctx.arc(x, y, ballCanvasRadius, 0, 2 * Math.PI);
     this.ctx.fill();
+  }
+
+  private drawDebugShape(shape: DebugShape) {
+    if (shape.type === "Line") {
+      const { start, end, color } = shape.data;
+      this.ctx.strokeStyle = color;
+      this.ctx.lineWidth = 1;
+      const [x1, y1] = this.fieldToCanvas(start);
+      const [x2, y2] = this.fieldToCanvas(end);
+      this.ctx.beginPath();
+      this.ctx.moveTo(x1, y1);
+      this.ctx.lineTo(x2, y2);
+      this.ctx.stroke();
+    } else if (shape.type === "Circle") {
+      const { center, radius, fill, stroke } = shape.data;
+      const [x, y] = this.fieldToCanvas(center);
+      const canvasRadius = this.convertLength(radius);
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, canvasRadius, 0, 2 * Math.PI);
+      if (fill) {
+        this.ctx.fillStyle = fill;
+        this.ctx.fill();
+      }
+      if (stroke) {
+        this.ctx.strokeStyle = stroke;
+        this.ctx.stroke();
+      }
+    } else if (shape.type === "Cross") {
+      const { center, color } = shape.data;
+      const [x, y] = this.fieldToCanvas(center);
+      this.ctx.strokeStyle = color;
+      this.ctx.lineWidth = 1;
+      this.ctx.beginPath();
+      this.ctx.moveTo(x - 10, y - 10);
+      this.ctx.lineTo(x + 10, y + 10);
+      this.ctx.moveTo(x + 10, y - 10);
+      this.ctx.lineTo(x - 10, y + 10);
+      this.ctx.stroke();
+    }
   }
 
   getPlayerAt(x: number, y: number): number | null {

@@ -1,5 +1,10 @@
 import React, { FC, useEffect, useRef, useCallback, useState } from "react";
-import { useExecutorInfo, useSendCommand, useWorldState } from "../api";
+import {
+  useDebugData,
+  useExecutorInfo,
+  useSendCommand,
+  useWorldState,
+} from "../api";
 import { Vector2, WorldData } from "../bindings";
 import { useResizeObserver } from "@/lib/useResizeObserver";
 import {
@@ -52,6 +57,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const worldData = world.status === "connected" ? world.data : null;
   const sendCommand = useSendCommand();
 
+  const debugMap = useDebugData();
+
   const [positionDisplayMode, setPositionDisplayMode] =
     useState<PositionDisplayMode>("filtered");
 
@@ -71,10 +78,14 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       rendererRef.current = new FieldRenderer(canvasRef.current);
     }
 
+    if (debugMap) {
+      rendererRef.current.setDebugData(debugMap);
+    }
     rendererRef.current.setPositionDisplayMode(positionDisplayMode);
     rendererRef.current.setWorldData(worldData);
     rendererRef.current.render(selectedPlayerId, manualControl);
   }, [
+    debugMap,
     worldData,
     canvasWidth,
     canvasHeight,

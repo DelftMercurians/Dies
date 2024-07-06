@@ -2,14 +2,16 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use dies_core::{ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, WorldUpdate};
+use dies_core::{
+    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, WorldUpdate,
+};
 use dies_executor::{ControlMsg, ExecutorHandle};
 use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tower_http::services::ServeDir;
 
 use crate::{
@@ -20,12 +22,14 @@ use crate::{
 pub struct ServerState {
     pub is_live_available: bool,
     pub update_rx: watch::Receiver<Option<WorldUpdate>>,
+    pub debug_sub: DebugSubscriber,
     pub basestation_feedback: RwLock<HashMap<PlayerId, PlayerFeedbackMsg>>,
     pub cmd_tx: broadcast::Sender<UiCommand>,
     pub ui_mode: RwLock<UiMode>,
     pub executor_status: RwLock<ExecutorStatus>,
     pub executor_handle: RwLock<Option<ExecutorHandle>>,
     pub executor_settings: RwLock<ExecutorSettings>,
+    pub robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     settings_file: PathBuf,
 }
 
@@ -35,17 +39,21 @@ impl ServerState {
         settings_file: PathBuf,
         update_rx: watch::Receiver<Option<WorldUpdate>>,
         cmd_tx: broadcast::Sender<UiCommand>,
+        robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     ) -> Self {
+        let debug_sub = DebugSubscriber::spawn();
         Self {
             is_live_available,
             update_rx,
             cmd_tx,
+            debug_sub,
             basestation_feedback: RwLock::new(HashMap::new()),
             ui_mode: RwLock::new(UiMode::Simulation),
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
             executor_settings: RwLock::new(ExecutorSettings::load_or_insert(&settings_file)),
             settings_file,
+            robot_id_map_tx,
         }
     }
 
@@ -98,11 +106,13 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     // Setup state
     let (update_tx, update_rx) = watch::channel(None);
     let (cmd_tx, cmd_rx) = broadcast::channel(16);
+    let (id_map_tx, _id_map_rx) = mpsc::unbounded_channel();
     let state = Arc::new(ServerState::new(
         config.is_live_available(),
         config.settings_file,
         update_rx,
         cmd_tx,
+        id_map_tx,
     ));
 
     // Start basestation watcher
@@ -165,6 +175,7 @@ async fn start_webserver(
         .route("/api/ws", get(routes::websocket))
         .route("/api/settings", get(routes::get_executor_settings))
         .route("/api/basestation", get(routes::get_basesation_info))
+        .route("/api/debug", get(routes::get_debug_map))
         .route("/api/settings", post(routes::post_executor_settings))
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))

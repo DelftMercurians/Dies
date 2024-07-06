@@ -28,6 +28,9 @@ import {
   ExecutorSettings,
   PostExecutorSettingsBody,
   BasestationResponse,
+  WsMessage,
+  DebugMap,
+  GetDebugMapResponse,
 } from "./bindings";
 import { toast } from "sonner";
 
@@ -74,6 +77,11 @@ const postExecutorSettings = (settings: ExecutorSettings) =>
     },
     body: JSON.stringify({ settings } satisfies PostExecutorSettingsBody),
   });
+
+const getDebugMap = (): Promise<DebugMap> =>
+  fetch("/api/debug")
+    .then((res) => res.json())
+    .then((data: GetDebugMapResponse) => data.debug_map);
 
 const postUiMode = (mode: UiMode) =>
   fetch("/api/ui-mode", {
@@ -180,6 +188,18 @@ export const useWorldState = (): WorldStatus => {
   return { status: "loading" };
 };
 
+export const useDebugData = (): DebugMap | null => {
+  const wsConnected = useContext(WsConnectedContext);
+  const query = useQuery({
+    queryKey: ["debug-map"],
+    queryFn: getDebugMap,
+    refetchInterval: 100,
+    enabled: !wsConnected,
+  });
+
+  return query.data ?? null;
+};
+
 export const useExecutorSettings = () => {
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -231,11 +251,15 @@ export function startWsClient() {
         notify(true);
       };
       ws.onmessage = (event) => {
-        const data = JSON.parse(event.data) as WorldData;
-        queryClient.setQueryData(["world-state"], {
-          type: "Loaded",
-          data,
-        } satisfies UiWorldState);
+        const msg = JSON.parse(event.data) as WsMessage;
+        if (msg.type === "WorldUpdate") {
+          queryClient.setQueryData(["world-state"], {
+            type: "Loaded",
+            data: msg.data,
+          } satisfies UiWorldState);
+        } else if (msg.type === "Debug") {
+          queryClient.setQueryData(["debug-map"], msg.data satisfies DebugMap);
+        }
       };
       ws.onerror = (err) => {
         if (ws) {

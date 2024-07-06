@@ -6,8 +6,8 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
 
-const MAX_MSG_FREQ: f64 = 60.0;
-const BASE_STATION_READ_FREQ: f64 = 20.0;
+const MAX_MSG_FREQ: f64 = 200.0;
+const BASE_STATION_READ_FREQ: f64 = 100.0;
 
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
@@ -84,10 +84,15 @@ enum Connection {
     V1(Monitor),
 }
 
+enum Message {
+    PlayerCmd((PlayerCmd, oneshot::Sender<Result<()>>)),
+    ChangeIdMap(HashMap<PlayerId, u32>),
+}
+
 /// Async client for the serial port.
 #[derive(Debug)]
 pub struct BasestationHandle {
-    cmd_tx: mpsc::UnboundedSender<(PlayerCmd, oneshot::Sender<Result<()>>)>,
+    cmd_tx: mpsc::UnboundedSender<Message>,
     info_rx: broadcast::Receiver<PlayerFeedbackMsg>,
 }
 
@@ -97,8 +102,7 @@ impl BasestationHandle {
         let BasestationClientConfig { port_name, .. } = config;
 
         // Launch a blocking thread for writing to the serial port
-        let (cmd_tx, mut cmd_rx) =
-            mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
+        let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Message>();
         let (info_tx, info_rx) = broadcast::channel::<PlayerFeedbackMsg>(1);
 
         let mut connection = match config.protocol {
@@ -118,13 +122,13 @@ impl BasestationHandle {
         tokio::task::spawn_blocking(move || {
             let mut last_send = std::time::Instant::now();
             let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
+            let mut id_map = config.robot_id_map;
 
             loop {
                 // Send commands
                 match cmd_rx.try_recv() {
-                    Ok((cmd, resp)) => {
-                        let robot_id = config
-                            .robot_id_map
+                    Ok(Message::PlayerCmd((cmd, resp))) => {
+                        let robot_id = id_map
                             .get(&cmd.id)
                             .copied()
                             .unwrap_or_else(|| cmd.id.as_u32())
@@ -147,6 +151,9 @@ impl BasestationHandle {
                             }
                         }
                     }
+                    Ok(Message::ChangeIdMap(new_id_map)) => {
+                        id_map = new_id_map;
+                    }
                     Err(mpsc::error::TryRecvError::Disconnected) => {
                         if let Connection::V1(monitor) = connection {
                             monitor.stop();
@@ -164,8 +171,7 @@ impl BasestationHandle {
                             .enumerate()
                             .filter_map(|(id, msg)| match msg.primary_status() {
                                 Some(status) if !matches!(status, HG_Status::NO_REPLY) => {
-                                    let player_id = config
-                                        .robot_id_map
+                                    let player_id = id_map
                                         .iter()
                                         .find_map(
                                             |(k, v)| if *v == id as u32 { Some(*k) } else { None },
@@ -220,14 +226,19 @@ impl BasestationHandle {
     pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
-            .send((msg, tx))
+            .send(Message::PlayerCmd((msg, tx)))
             .context("Failed to send message to serial port")?;
         rx.await?
     }
 
     pub fn send_no_wait(&mut self, msg: PlayerCmd) {
         let (tx, _) = oneshot::channel();
-        self.cmd_tx.send((msg, tx)).ok();
+        self.cmd_tx.send(Message::PlayerCmd((msg, tx))).ok();
+    }
+
+    /// Update the id map
+    pub fn update_id_map(&mut self, id_map: HashMap<PlayerId, u32>) {
+        self.cmd_tx.send(Message::ChangeIdMap(id_map)).ok();
     }
 
     /// Receive a message from the serial port.
