@@ -12,6 +12,7 @@ use dies_core::{PlayerCmd, WorldData};
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     strategy: Box<dyn Strategy>,
+    settings: ControllerSettings,
 }
 
 impl TeamController {
@@ -20,6 +21,7 @@ impl TeamController {
         let mut team = Self {
             player_controllers: HashMap::new(),
             strategy,
+            settings: settings.clone(),
         };
         team.update_controller_settings(settings);
         team
@@ -29,6 +31,7 @@ impl TeamController {
         for controller in self.player_controllers.values_mut() {
             controller.update_settings(settings);
         }
+        self.settings = settings.clone();
     }
 
     /// Update the controllers with the current state of the players.
@@ -42,7 +45,7 @@ impl TeamController {
         for id in detected_ids.iter() {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
-                    .insert(*id, PlayerController::new(*id));
+                    .insert(*id, PlayerController::new(*id, &self.settings));
             }
         }
 

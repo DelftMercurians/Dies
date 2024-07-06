@@ -29,6 +29,7 @@ pub struct ServerState {
     pub executor_status: RwLock<ExecutorStatus>,
     pub executor_handle: RwLock<Option<ExecutorHandle>>,
     pub executor_settings: RwLock<ExecutorSettings>,
+    #[allow(dead_code)]
     pub robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     settings_file: PathBuf,
 }

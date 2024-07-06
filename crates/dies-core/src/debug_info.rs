@@ -51,6 +51,16 @@ pub enum DebugValue {
     String(String),
 }
 
+/// A map of debug messages.
+///
+/// # Key format
+///
+/// The keys should always be `snake_case` and should only contain alphanumerical
+/// characters. The `.` character is reserved for separating different parts of the key.
+///
+/// Keys can be arbitrary, but there are some patterns that are recognized by the
+/// UI:
+/// - `p{player_id}.{value}`: A value associated with a player.
 #[typeshare]
 pub type DebugMap = HashMap<String, DebugValue>;
 

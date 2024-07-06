@@ -43,22 +43,32 @@ pub struct PlayerController {
 
 impl PlayerController {
     /// Create a new player controller with the given ID.
-    pub fn new(id: PlayerId) -> Self {
-        Self {
+    pub fn new(id: PlayerId, settings: &ControllerSettings) -> Self {
+        let mut instance = Self {
             id,
 
-            position_mtp: MTP::new(0.7, 0.0, 0.0),
+            position_mtp: MTP::new(
+                settings.max_acceleration,
+                settings.max_velocity,
+                settings.max_deceleration,
+            ),
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
-            yaw_mtp: MTP::new(2.0, 0.002, 0.0),
+            yaw_mtp: MTP::new(
+                settings.max_angular_acceleration,
+                settings.max_angular_velocity,
+                settings.max_angular_deceleration,
+            ),
             last_yaw: Angle::from_radians(0.0),
             target_angular_velocity: 0.0,
 
             frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
-        }
+        };
+        instance.update_settings(settings);
+        instance
     }
 
     /// Update the controller settings.
@@ -107,6 +117,15 @@ impl PlayerController {
             _ => {}
         }
 
+        dies_core::debug_value(format!("p{}.sx", self.id), cmd.sx);
+        dies_core::debug_value(format!("p{}.sy", self.id), cmd.sy);
+        dies_core::debug_value(format!("p{}.w", self.id), cmd.w);
+        dies_core::debug_value(format!("p{}.dribble_speed", self.id), cmd.dribble_speed);
+        dies_core::debug_string(
+            format!("p{}.kicker_cmd", self.id),
+            format!("{:?}", cmd.kicker_cmd),
+        );
+
         cmd
     }
 
@@ -122,6 +141,21 @@ impl PlayerController {
 
     /// Update the controller with the current state of the player.
     pub fn update(&mut self, state: &PlayerData, input: &PlayerControlInput, dt: f64) {
+        // log player input
+        // dies_core::debug_string(
+        //     format!("p{}.input.vel", self.id),
+        //     format!("{:?}", input.velocity),
+        // );
+        // dies_core::debug_value(format!("p{}.input.w", self.id), input.angular_velocity);
+        // dies_core::debug_string(
+        //     format!("p{}.input.pos", self.id),
+        //     format!("{:?}", input.position),
+        // );
+        // dies_core::debug_string(
+        //     format!("p{}.input.yaw", self.id),
+        //     format!("{:?}", input.yaw),
+        // );
+
         // Calculate velocity using the MTP controller
         self.last_yaw = state.yaw;
         self.last_pos = state.position;
@@ -130,6 +164,10 @@ impl PlayerController {
         if let Some(pos_target) = input.position {
             self.position_mtp.set_setpoint(pos_target);
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
+            dies_core::debug_string(
+                format!("p{}.control.pos_u", self.id),
+                format!("{:?}", pos_u),
+            );
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         }

@@ -1,8 +1,8 @@
-use dies_core::BallData;
+use dies_core::{Angle, BallData};
 use dies_core::{PlayerData, WorldData};
 use nalgebra::Vector2;
 
-use crate::strategy::Role;
+use crate::roles::Role;
 use crate::PlayerControlInput;
 
 pub struct Goalkeeper {}
@@ -59,17 +59,6 @@ impl Goalkeeper {
         // Return the clamped intersection point
         return Vector2::new(x_vertical, py_clamped);
     }
-
-    fn angle_to_ball(&self, player_data: &PlayerData, ball: &BallData) -> f64 {
-        // Angle needed to face the passer (using arc tangent)
-        let receiver_pos = player_data.position;
-        let dx = ball.position.x - receiver_pos.x;
-        let dy = ball.position.y - receiver_pos.y;
-        // let angle = dy.atan2(dx);
-        // println!("angle: {}", angle);
-
-        dy.atan2(dx)
-    }
 }
 
 impl Role for Goalkeeper {
@@ -91,11 +80,10 @@ impl Role for Goalkeeper {
                 target_pos =
                     self.find_intersection(player_data, ball, field_geom.goal_width as f64);
 
-                // let target_pos: nalgebra::Matrix<f64, nalgebra::Const<2>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 2, 1>> = self.find_intersection(_player_data, _world);
-                let target_angle = self.angle_to_ball(player_data, ball);
+                let target_angle = Angle::between_points(player_data.position, ball.position.xy());
 
                 input.with_position(target_pos);
-                input.with_orientation(target_angle);
+                input.with_yaw(target_angle);
             }
         }
 

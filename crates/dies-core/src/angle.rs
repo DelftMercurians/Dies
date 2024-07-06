@@ -30,6 +30,12 @@ impl Angle {
         Self::from_radians(degrees.to_radians())
     }
 
+    /// Compute the smallest signed counter-clockwise angle between two vectors.
+    pub fn between_points(a: Vector2, b: Vector2) -> Self {
+        let angle = (b.y - a.y).atan2(b.x - a.x);
+        Self::from_radians(angle)
+    }
+
     /// Get the angle in radians.
     pub fn radians(&self) -> f64 {
         self.0
@@ -144,6 +150,14 @@ mod tests {
         assert_eq!(wrap_angle(-PI), PI);
         assert_eq!(wrap_angle(3.0 * PI), PI);
         assert_eq!(wrap_angle(-3.0 * PI), PI);
+    }
+
+    #[test]
+    fn between_points() {
+        let a = Vector2::new(0.0, 0.0);
+        let b = Vector2::new(1.0, 1.0);
+        let angle = Angle::between_points(a, b);
+        assert_eq!(angle.degrees(), 45.0);
     }
 
     #[test]

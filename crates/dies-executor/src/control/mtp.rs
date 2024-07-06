@@ -66,7 +66,7 @@ impl<T: Variable> MTP<T> {
         }
 
         // Calculate deceleration distance based on current_speed and max_decel
-        let decel_distance = (self.max_speed * self.max_speed) / (2.0 * self.max_decel);
+        let decel_distance = (current_speed * current_speed) / (2.0 * self.max_decel);
 
         let time_to_target = distance / current_speed;
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
@@ -74,11 +74,11 @@ impl<T: Variable> MTP<T> {
             let proportional_velocity = direction * distance * self.kp;
             let dv = proportional_velocity - velocity;
             velocity + dv.cap_magnitude(self.max_decel * dt)
-        } else if distance <= decel_distance {
+        } else if distance <= decel_distance && current_speed > 0.0 {
             // Deceleration phase
             let target_v = velocity
                 - (velocity * (1.0 / (velocity.magnitude() + f64::EPSILON)) * self.max_decel * dt);
-            let target_v = if (target_v * dt).magnitude() > distance {
+            let target_v = if (target_v * dt).magnitude() < distance {
                 direction * distance / dt
             } else {
                 target_v
@@ -108,6 +108,20 @@ mod tests {
     fn test_mtp_update_without_setpoint() {
         let mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
         assert_eq!(mtp.update(0.0, 0.0, DT), 0.0);
+    }
+
+    #[test]
+    fn test_zero_velocity() {
+        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
+        mtp.set_setpoint(100.0);
+        assert_eq!(mtp.update(0.0, 0.0, DT), 1.0 * DT);
+    }
+
+    #[test]
+    fn test_zero_velocity_within_decelaration_distance() {
+        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
+        mtp.set_setpoint(100.0);
+        assert_eq!(mtp.update(95.0, 0.0, DT), 2.0 * DT);
     }
 
     #[test]

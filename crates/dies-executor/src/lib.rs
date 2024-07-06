@@ -20,6 +20,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 mod control;
 mod gc_client;
 mod handle;
+mod roles;
 pub mod scenarios;
 pub mod strategy;
 
