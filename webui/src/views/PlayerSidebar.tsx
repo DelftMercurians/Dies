@@ -20,13 +20,14 @@ import TimeSeriesChart from "./TimeSeriesChart";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Pause, Play } from "lucide-react";
 import { SimpleTooltip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn, prettyPrintSnakeCases } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import HierarchicalList from "./HierarchicalList";
 
 interface PlayerSidebarProps {
   selectedPlayerId: number | null;
@@ -93,7 +94,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
   };
 
   return (
-    <div className="flex-1 flex flex-col gap-6 p-4">
+    <div className="flex-1 flex flex-col gap-6 p-4 h-full overflow-auto">
       <h1 className="text-2xl font-bold mb-2">Player #{selectedPlayerId}</h1>
 
       <div>
@@ -246,108 +247,7 @@ const KeyboardKey = ({
   </div>
 );
 
-const HierarchicalList: FC<{ data: PlayerDebugValues }> = ({ data }) => {
-  const [openKeys, setOpenKeys] = useState<string[]>([]);
-
-  const groupedData = useMemo(() => {
-    const grouped: Record<string, any> = {};
-    data.forEach(([key, value]) => {
-      const parts = key.split(".");
-      let current = grouped;
-      parts.forEach((part, index) => {
-        if (!current[part]) {
-          current[part] = index === parts.length - 1 ? value : {};
-        }
-        current = current[part];
-      });
-    });
-    return grouped;
-  }, [data]);
-
-  const formatValue = (value: any) => {
-    if (typeof value === "number") {
-      return value.toFixed(2);
-    }
-    return `${value}`;
-  };
-
-  const renderGroup = (group: Record<string, any>, key = "", depth = 0) => {
-    const isLeaf = typeof group.data !== "undefined";
-    if (isLeaf) {
-      return (
-        <div key={key} className="flex flex-row items-stretch py-1 w-full">
-          <div className="font-semibold mr-2 min-w-max">
-            {prettyPrintSnakeCases(key)}:
-          </div>
-          <div className="w-full flex items-center overflow-x-auto">
-            <span className="min-w-max font-mono whitespace-nowrap">
-              {formatValue(group.data)}
-            </span>
-          </div>
-        </div>
-      );
-    }
-
-    const isOpen = openKeys.includes(key);
-    const handleOpenChange = (isOpen: boolean) => {
-      if (isOpen) {
-        setOpenKeys((keys) => [...keys, key]);
-      } else {
-        setOpenKeys((keys) => keys.filter((k) => k !== key));
-      }
-    };
-
-    return (
-      <div key={key} className="flex flex-col">
-        <Collapsible
-          open={isOpen}
-          onOpenChange={handleOpenChange}
-          className="w-full"
-        >
-          <CollapsibleTrigger className="flex items-center py-1 w-full">
-            {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            <span className="font-semibold ml-1">
-              {prettyPrintSnakeCases(key)}
-            </span>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="ml-4 relative">
-              <div className="w-4 h-full border-l border-gray-300 absolute -left-4"></div>
-              {sortKeys(group).map(([subKey, subGroup]) =>
-                renderGroup(subGroup, subKey, depth + 1)
-              )}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      </div>
-    );
-  };
-
-  return (
-    <div className="p-2">
-      {sortKeys(groupedData).map(([key, group]) => renderGroup(group, key))}
-    </div>
-  );
-};
-
 const magnitude = ([x, y]: [number, number]) => Math.sqrt(x * x + y * y);
-
-const sortKeys = (group: Record<string, any>): [string, any][] => {
-  return Object.entries(group).sort(([keyA, valueA], [keyB, valueB]) => {
-    const isLeafA = typeof valueA.data !== "undefined";
-    const isLeafB = typeof valueB.data !== "undefined";
-    if (isLeafA !== isLeafB) {
-      return isLeafA ? 1 : -1; // Non-leaf nodes first
-    }
-    return keyA.localeCompare(keyB); // Alphabetical order
-  });
-};
-
-const prettyPrintSnakeCases = (s: string): string =>
-  s
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
 
 const radiansToDegrees = (radians: number): number => {
   return (radians * 180) / Math.PI;

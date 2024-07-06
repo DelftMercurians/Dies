@@ -7,9 +7,10 @@ import {
   Radio,
   Square,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  useDebugData,
   useScenarios,
   useSendCommand,
   useSetMode,
@@ -32,11 +33,12 @@ import {
 } from "@/components/ui/resizable";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import { SimpleTooltip } from "./components/ui/tooltip";
-import { cn } from "./lib/utils";
+import { cn, useIsOverflow } from "./lib/utils";
 import Field from "./views/Field";
 import PlayerSidebar from "./views/PlayerSidebar";
 import SettingsEditor from "./views/SettingsEditor";
 import Basestation from "./views/Basestation";
+import HierarchicalList from "./views/HierarchicalList";
 
 type Panel = "left" | "right";
 
@@ -49,6 +51,9 @@ const App: React.FC = () => {
   const sendCommand = useSendCommand();
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState<Panel[]>([]);
+  const debugData = useDebugData();
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
 
   if (!backendState) {
     return (
@@ -209,11 +214,16 @@ const App: React.FC = () => {
             <Tabs
               defaultValue="controller"
               className="h-full w-full flex flex-col gap-2"
+              orientation={isTabListOverflowing ? "vertical" : "horizontal"}
             >
-              <TabsList>
+              <TabsList
+                ref={tabListRef}
+                className="w-full data-[orientation=vertical]:flex-col"
+              >
                 <TabsTrigger value="controller">Controller</TabsTrigger>
                 <TabsTrigger value="tracker">Tracker</TabsTrigger>
                 <TabsTrigger value="basestation">Basestation</TabsTrigger>
+                <TabsTrigger value="debug">Debug Values</TabsTrigger>
               </TabsList>
 
               <TabsContent value="controller" asChild>
@@ -224,6 +234,14 @@ const App: React.FC = () => {
               </TabsContent>
               <TabsContent value="basestation" asChild>
                 <Basestation className="h-full" />
+              </TabsContent>
+              <TabsContent value="debug" asChild>
+                <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
+                  <HierarchicalList
+                    data={debugData ? Object.entries(debugData) : []}
+                    className="h-full"
+                  />
+                </div>
               </TabsContent>
             </Tabs>
           ) : null}
