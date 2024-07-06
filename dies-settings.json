@@ -15,10 +15,8 @@
     "is_blue": true,
     "initial_opp_goal_x": 1.0,
     "player_unit_transition_var": 0.1,
-    "player_measurement_var": 2.0,
-    "use_ball_kalman": true,
+    "player_measurement_var": 0.0,
     "ball_unit_transition_var": 10.0,
-    "ball_measurement_var": 10.0,
-    "ball_low_pass_alpha": 0.5
+    "ball_measurement_var": 10.0
   }
 }

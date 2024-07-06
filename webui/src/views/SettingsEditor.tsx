@@ -73,6 +73,10 @@ const fieldConfig: FieldConfig = {
         </ToggleGroup>
       ),
     },
+    player_measurement_var: { min: 0.01, max: 100, step: 0.01, unit: "s" },
+    player_unit_transition_var: { min: 0.01, max: 100, step: 0.01, unit: "s" },
+    ball_measurement_var: { min: 0.01, max: 100, step: 0.01, unit: "s" },
+    ball_unit_transition_var: { min: 0.01, max: 100, step: 0.01, unit: "s" },
   },
 };
 
@@ -129,10 +133,6 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
             isAngle && typeof value === "number"
               ? value * (180 / Math.PI)
               : value;
-          const formattedValue =
-            typeof displayValue === "number"
-              ? displayValue.toFixed(2)
-              : `${displayValue}`;
 
           return (
             <div key={key} className="space-y-2">
@@ -169,8 +169,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
                       <Input
                         id={key}
                         type="number"
-                        value={formattedValue}
-                        step={step ?? (max - min) / 100}
+                        value={displayValue}
                         onChange={(e) =>
                           handleChange(
                             key as SettingsKey,

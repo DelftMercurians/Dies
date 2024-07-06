@@ -416,6 +416,7 @@ impl Executor {
             ControlMsg::UpdateSettings(settings) => {
                 self.controller
                     .update_controller_settings(&settings.controller_settings);
+                self.tracker.update_settings(&settings.tracker_settings);
             }
             ControlMsg::Stop => {}
         }

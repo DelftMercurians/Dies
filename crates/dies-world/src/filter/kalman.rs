@@ -107,7 +107,9 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
             + &self.measurement_noise;
         let kalman_gain = &posteriori_covariance
             * &self.transformation_matrix.transpose()
-            * innovation_covariance.try_inverse().unwrap();
+            * innovation_covariance
+                .try_inverse()
+                .unwrap_or(SMatrix::<f64, OS, OS>::zeros());
         self.x = x + &kalman_gain * r;
         self.posteriori_covariance = &posteriori_covariance
             - &kalman_gain * &self.transformation_matrix * &posteriori_covariance;
