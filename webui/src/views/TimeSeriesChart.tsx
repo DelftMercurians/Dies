@@ -10,27 +10,41 @@ import {
   YAxis,
 } from "recharts";
 
-interface TimeSeriesChartProps<D, K extends keyof D> {
+export interface ComputedValues<D> {
+  [key: string]: (data: D) => number;
+}
+
+interface TimeSeriesChartProps<
+  D,
+  C extends ComputedValues<D>,
+  K extends keyof D | keyof C
+> {
   newDataPoint: D;
   selectedKey: K;
+  computedValues?: C;
   paused?: boolean;
   objectId?: string | number;
-  transform?: (value: D[K]) => number;
-  axisLabels?: { [K in keyof D]?: string };
+  transform?: (value: D[keyof D]) => number;
+  axisLabels?: { [K in keyof D | keyof C]?: string };
   maxDataPoints?: number;
   className?: string;
 }
 
-function TimeSeriesChart<D extends { timestamp: number }, K extends keyof D>({
+function TimeSeriesChart<
+  D extends { timestamp: number },
+  C extends ComputedValues<D>,
+  K extends keyof D | keyof C
+>({
   newDataPoint,
   selectedKey,
   axisLabels,
+  computedValues = {} as unknown as C,
   paused = false,
   objectId = 0,
   transform = (v) => Number(v),
   maxDataPoints = 100,
   className = "",
-}: TimeSeriesChartProps<D, K>) {
+}: TimeSeriesChartProps<D, C, K>) {
   const [currentObjectId, setObjectId] = useState<string | number>(objectId);
   const [firstTs, setFirstTs] = useState<number>(newDataPoint.timestamp);
   const [data, setData] = useState<D[]>([]);
@@ -58,6 +72,13 @@ function TimeSeriesChart<D extends { timestamp: number }, K extends keyof D>({
     return (timestamp - firstTs).toFixed(1);
   };
 
+  const getValue = (data: any) => {
+    if (selectedKey in computedValues) {
+      return computedValues[selectedKey as keyof C](data);
+    }
+    return data[selectedKey];
+  };
+
   return (
     <div className={cn("w-full h-64 bg-white rounded-lg px-2", className)}>
       <ResponsiveContainer
@@ -70,7 +91,7 @@ function TimeSeriesChart<D extends { timestamp: number }, K extends keyof D>({
           <XAxis dataKey="timestamp" tick={false} />
           <YAxis
             label={{
-              value: axisLabels?.[selectedKey] || selectedKey,
+              value: axisLabels?.[selectedKey as keyof D] || selectedKey,
               angle: -90,
               position: "insideLeft",
               offset: 15,
@@ -87,13 +108,13 @@ function TimeSeriesChart<D extends { timestamp: number }, K extends keyof D>({
             }
             formatter={(value) =>
               `${typeof value === "number" ? value.toFixed(2) : value}${
-                " " + axisLabels?.[selectedKey] ?? ""
+                " " + axisLabels?.[selectedKey as keyof D] ?? ""
               }`
             }
           />
           <Line
             type="monotone"
-            dataKey={(data) => transform(data[selectedKey as string])}
+            dataKey={(data) => transform(getValue(data))}
             stroke="black"
             dot={false}
             isAnimationActive={false}

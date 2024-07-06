@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { FC, useMemo, useState } from "react";
-import TimeSeriesChart from "./TimeSeriesChart";
+import TimeSeriesChart, { ComputedValues } from "./TimeSeriesChart";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Pause, Play } from "lucide-react";
 import { SimpleTooltip } from "@/components/ui/tooltip";
@@ -33,10 +33,19 @@ interface PlayerSidebarProps {
   selectedPlayerId: number | null;
 }
 
+const computedValues = {
+  filter_error: (data) =>
+    magnitude([
+      data.position[0] - data.raw_position[0],
+      data.position[1] - data.raw_position[1],
+    ]),
+} as const satisfies ComputedValues<PlayerData>;
+
 const graphableValues = [
   "velocity",
   "angular_speed",
-] as const satisfies (keyof PlayerData)[];
+  "filter_error",
+] as const satisfies (keyof PlayerData | keyof typeof computedValues)[];
 
 type Graphable = (typeof graphableValues)[number];
 
@@ -125,10 +134,17 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
           objectId={selectedPlayerId}
           newDataPoint={selectedPlayer}
           selectedKey={activeGraph}
+          computedValues={computedValues}
           transform={(val) =>
-            Array.isArray(val) ? magnitude(val) : radiansToDegrees(val)
+            Array.isArray(val)
+              ? magnitude(val)
+              : radiansToDegrees(val as number)
           }
-          axisLabels={{ velocity: "mm/s", angular_speed: "deg/s" }}
+          axisLabels={{
+            velocity: "mm/s",
+            angular_speed: "deg/s",
+            filter_error: "mm",
+          }}
         />
       </div>
 

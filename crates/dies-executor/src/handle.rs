@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -59,15 +60,12 @@ impl ExecutorHandle {
     }
 
     /// Request the current executor info.
-    pub fn info(&self) -> ExecutorInfoReceiver {
+    pub fn info(&self) -> Result<ExecutorInfoReceiver> {
         let (tx, rx) = oneshot::channel();
         self.info_channel
             .send(tx)
-            .map_err(|err| {
-                log::error!("Error sending info request: {:?}", err);
-            })
-            .ok();
-        ExecutorInfoReceiver(rx)
+            .map_err(|err| anyhow!("Error sending info request: {:?}", err))?;
+        Ok(ExecutorInfoReceiver(rx))
     }
 }
 

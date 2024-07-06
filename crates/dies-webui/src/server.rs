@@ -77,11 +77,21 @@ impl ServerState {
     /// Get the current executor info.
     pub async fn executor_info(&self) -> Option<ExecutorInfo> {
         let rx = {
-            self.executor_handle
+            match self
+                .executor_handle
                 .read()
                 .unwrap()
                 .as_ref()
                 .map(|h| h.info())
+            {
+                Some(Ok(rx)) => Some(rx),
+                Some(Err(_)) => {
+                    // If the receiver is gone, remove the handle
+                    self.executor_handle.write().unwrap().take();
+                    None
+                }
+                None => None,
+            }
         };
         if let Some(rx) = rx {
             rx.recv().await

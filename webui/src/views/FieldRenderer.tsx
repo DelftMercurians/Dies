@@ -14,8 +14,10 @@ export const CANVAS_PADDING = 20;
 
 const FIELD_GREEN = "#15803d";
 const FIELD_LINE = "#ffffff";
-const BLUE_ROBOT = "#2563eb";
-const YELLOW_ROBOT = "#facc15";
+const BLUE_ROBOT_FILTERED = "#2563eb";
+const BLUE_ROBOT_RAW = "#7c3aed";
+const YELLOW_ROBOT_FILTERED = "#facc15";
+const YELLOW_ROBOT_RAW = "#f97316";
 const BALL = "#fb923c";
 const MANUAL_OUTLINE = "#dc2626";
 const SELECTED_OUTLINE = "#ffffff";
@@ -71,20 +73,14 @@ export class FieldRenderer {
     own_players.forEach((player) =>
       this.drawPlayer(
         player,
-        BLUE_ROBOT,
+        "blue",
         player.id === selectedPlayerId,
         manualControl.includes(player.id),
         this.positionDisplayMode
       )
     );
     opp_players.forEach((player) =>
-      this.drawPlayer(
-        player,
-        YELLOW_ROBOT,
-        false,
-        false,
-        this.positionDisplayMode
-      )
+      this.drawPlayer(player, "yellow", false, false, this.positionDisplayMode)
     );
 
     if (ball) {
@@ -141,17 +137,26 @@ export class FieldRenderer {
 
   private drawPlayer(
     data: PlayerData,
-    hexColor: string,
+    team: "blue" | "yellow",
     selected: boolean,
     manualControl: boolean,
     positionDisplayMode: PositionDisplayMode,
     opacity = 1
   ) {
     if (positionDisplayMode === "both") {
-      this.drawPlayer(data, hexColor, false, false, "raw");
-      this.drawPlayer(data, hexColor, selected, manualControl, "filtered", 0.7);
+      this.drawPlayer(data, team, selected, manualControl, "filtered");
+      this.drawPlayer(data, team, false, false, "raw", 0.7);
       return;
     }
+
+    const hexColor =
+      team === "blue"
+        ? positionDisplayMode === "raw"
+          ? BLUE_ROBOT_RAW
+          : BLUE_ROBOT_FILTERED
+        : positionDisplayMode === "raw"
+        ? YELLOW_ROBOT_RAW
+        : YELLOW_ROBOT_FILTERED;
 
     const serverPos =
       positionDisplayMode === "raw" ? data.raw_position : data.position;

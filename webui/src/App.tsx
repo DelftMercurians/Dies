@@ -54,7 +54,6 @@ const App: React.FC = () => {
   const debugData = useDebugData();
   const tabListRef = useRef<HTMLDivElement>(null);
   const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
-  console.log(isTabListOverflowing ? "vertical" : "horizontal");
 
   if (!backendState) {
     return (
