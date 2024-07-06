@@ -1,4 +1,4 @@
-use dies_core::{Angle, PlayerData};
+use dies_core::{Angle, DebugColor, PlayerData};
 use crate::{PlayerControlInput, KickerControlInput};
 use nalgebra::Vector2;
 use tokio::{time::Instant};
@@ -28,12 +28,23 @@ impl Task3Phase {
     }
 
     pub fn relocate(&mut self, player_data: &PlayerData, goal: Vector2<f64>, yaw: Angle) -> PlayerControlInput {
+        //log::info!("playerid: {:?}, Relocating to {:?}, current position: {:?}, self status: {:?}", player_data.id, goal, player_data.position,self.status);
+        dies_core::debug_cross("p0.cross", goal, DebugColor::Red);
+        if player_data.id.as_u32() == 0 {
+            dies_core::debug_string("p0.goal", format!("{}, {}", goal.x, goal.y));
+            dies_core::debug_string("p0.position", format!("{}, {}", player_data.position.x, player_data.position.y));
+            dies_core::debug_string("p0.status", format!("{:?}", self.status));
+        } else {
+            dies_core::debug_string("p1.goal", format!("{}, {}", goal.x, goal.y));
+            dies_core::debug_string("p1.position", format!("{}, {}", player_data.position.x, player_data.position.y));
+            dies_core::debug_string("p1.status", format!("{:?}", self.status));
+        }
         let new_status = match self.status {
             Status3::NoGoal => {
                 Status3::Ongoing
             },
             Status3::Ongoing => {
-                if (player_data.position - goal).norm() < 1e-6 && (player_data.yaw - yaw).abs() < 1e-6{
+                if (player_data.position - goal).norm() < 50.0 && (player_data.yaw - yaw).abs() < 0.1{
                     Status3::Accomplished
                 } else {
                     Status3::Ongoing
@@ -44,7 +55,9 @@ impl Task3Phase {
             }
         };
         self.status = new_status;
-        PlayerControlInput::new().with_position(goal).with_yaw(yaw).clone()
+        let mut input = PlayerControlInput::new();
+        input.with_position(goal).with_yaw(yaw);
+        input
     }
     
     pub fn is_accomplished(&self) -> bool {

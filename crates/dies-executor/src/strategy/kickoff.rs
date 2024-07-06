@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use log::log;
 use dies_core::{Angle, GameState, PlayerData, PlayerId, WorldData};
 use crate::strategy::{Role, Strategy};
 use nalgebra::Vector2;
@@ -109,6 +110,7 @@ impl Role for Kicker {
 
 impl Role for OtherPlayer {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+        // log the player's position and the fixed position
         return self.move_to_half_field.relocate(ctx.player, self.fixed_position, Angle::from_degrees(0.0));
     }
 }
@@ -147,7 +149,9 @@ impl Strategy for KickoffStrategy {
                 if us_attacking && !self.has_kicker {
                     self.has_kicker = true;
                     self.roles.insert(player_data.id, Box::new(Kicker::new()));
+                    log::info!("Adding player {} as the kicker", player_data.id);
                 } else {
+                    log::info!("Adding player {} as normal role", player_data.id);
                     self.roles.insert(player_data.id, Box::new(OtherPlayer::new(self.position_generator.next().unwrap())));
                 }
             }

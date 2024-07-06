@@ -1,10 +1,11 @@
 mod scenario;
-use dies_core::Vector2;
+use dies_core::{PlayerId, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
 use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
 
+use crate::strategy::kickoff::KickoffStrategy;
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
 fn empty_scenario() -> ScenarioSetup {
@@ -39,6 +40,17 @@ fn two_players_one_ball() -> ScenarioSetup {
         .add_own_player_at(Vector2::new(-500.0, 0.0));
     scenario
 }
+
+fn kickoff() -> ScenarioSetup {
+    let strategy = KickoffStrategy::new(None);
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0));
+    scenario
+}
+
 
 /// Creates a lookup table for scenarios as a global constant.
 macro_rules! scenarios {
@@ -120,7 +132,8 @@ scenarios! {
     empty_scenario,
     one_random_player,
     one_player_go_to_origin,
-    two_players_one_ball
+    two_players_one_ball,
+    kickoff
 }
 
 #[cfg(test)]
