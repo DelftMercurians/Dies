@@ -54,6 +54,7 @@ const App: React.FC = () => {
   const debugData = useDebugData();
   const tabListRef = useRef<HTMLDivElement>(null);
   const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
+  console.log(isTabListOverflowing ? "vertical" : "horizontal");
 
   if (!backendState) {
     return (
@@ -218,7 +219,7 @@ const App: React.FC = () => {
             >
               <TabsList
                 ref={tabListRef}
-                className="w-full data-[orientation=vertical]:flex-col"
+                className="w-full data-[orientation=vertical]:flex-col data-[orientation=vertical]:h-auto data-[orientation=vertical]:w-auto"
               >
                 <TabsTrigger value="controller">Controller</TabsTrigger>
                 <TabsTrigger value="tracker">Tracker</TabsTrigger>

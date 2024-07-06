@@ -13,34 +13,6 @@ export const prettyPrintSnakeCases = (s: string): string =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
-export const areChildrenWithinBounds = (
-  parentRef: React.MutableRefObject<HTMLElement | null>
-) => {
-  const checkChildrenBounds = () => {
-    if (parentRef.current) {
-      const parentBounds = parentRef.current.getBoundingClientRect();
-      const children = Array.from(parentRef.current.children);
-
-      for (const child of children) {
-        const childBounds = child.getBoundingClientRect();
-
-        if (
-          childBounds.left < parentBounds.left ||
-          childBounds.right > parentBounds.right ||
-          childBounds.top < parentBounds.top ||
-          childBounds.bottom > parentBounds.bottom
-        ) {
-          return false;
-        }
-      }
-    }
-
-    return true;
-  };
-
-  return checkChildrenBounds();
-};
-
 export const useIsOverflow = (
   ref: React.MutableRefObject<HTMLElement | null>,
   orientation: "horizontal" | "vertical" = "horizontal"
@@ -50,9 +22,21 @@ export const useIsOverflow = (
     ref,
     onResize: () => {
       if (ref.current) {
-        const hasOverflow = !areChildrenWithinBounds(ref);
-        console.log(hasOverflow);
-        setIsOverflow(hasOverflow);
+        if (orientation === "horizontal") {
+          const childrenTotalWidth = Array.from(ref.current.children).reduce(
+            (acc, child) => acc + child.clientWidth,
+            0
+          );
+          const hasOverflow = childrenTotalWidth > ref.current.clientWidth;
+          setIsOverflow(hasOverflow);
+        } else {
+          const childrenTotalHeight = Array.from(ref.current.children).reduce(
+            (acc, child) => acc + child.clientHeight,
+            0
+          );
+          const hasOverflow = childrenTotalHeight > ref.current.clientHeight;
+          setIsOverflow(hasOverflow);
+        }
       }
     },
   });
