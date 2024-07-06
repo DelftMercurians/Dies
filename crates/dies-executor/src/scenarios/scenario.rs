@@ -233,8 +233,6 @@ fn player_into_simulation(
         Some(pos) => pos,
         None => random_pos(field_width, field_length),
     };
-    dbg!(placement.position, position);
-
     let yaw = match placement.yaw {
         Some(yaw) => yaw,
         None => Angle::default(),
