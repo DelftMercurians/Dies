@@ -56,7 +56,7 @@ impl<T: Variable + Debug> MTP<T> {
         let distance = displacement.magnitude();
         
         if distance < self.cutoff_distance {
-            println!("Sending cutoff");
+            // println!("Sending cutoff");
             
             return T::zero();
         }
@@ -75,7 +75,7 @@ impl<T: Variable + Debug> MTP<T> {
             // Proportional control to reduce overshoot
             let proportional_velocity = direction * distance * self.kp;
             let dv = proportional_velocity - velocity;
-            println!("Overshoot case returning");
+            // println!("Overshoot case returning");
             // dies_core::debug_string("p5.Goal", format!("{:?}", velocity + dv.cap_magnitude(self.max_decel * dt)));
             
             // besides decreasing the velocity with dv, we also go in the opposite direction to compensate for the overshoot 
