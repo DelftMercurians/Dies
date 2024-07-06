@@ -8,11 +8,11 @@ use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
 fn empty_scenario() -> ScenarioSetup {
-    ScenarioSetup::new(AdHocStrategy::new())
+    ScenarioSetup::new(AdHocStrategy::new(), None)
 }
 
-fn one_random_player() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+fn one_player() -> ScenarioSetup {
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(),None);
     scenario.add_own_player();
     scenario
 }
@@ -26,7 +26,7 @@ fn one_player_go_to_origin() -> ScenarioSetup {
 }
 
 fn two_players_one_ball() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(),None);
     scenario
         .add_ball()
         .add_own_player_at(Vector2::zeros())

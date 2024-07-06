@@ -3,10 +3,7 @@ use std::{collections::HashMap, time::Duration};
 use anyhow::Result;
 
 use dies_basestation_client::BasestationHandle;
-use dies_core::{
-    ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    WorldUpdate,
-};
+use dies_core::{ExecutorInfo, ExecutorSettings, GameState, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate};
 use dies_logger::log_referee;
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_simulator::Simulation;
@@ -164,7 +161,7 @@ pub struct Executor {
 impl Executor {
     pub fn new_live(
         settings: ExecutorSettings,
-        strategy: Box<dyn Strategy>,
+        strategy: HashMap<GameState, Box<dyn Strategy>>,
         ssl_client: VisionClient,
         bs_client: BasestationHandle,
     ) -> Self {
@@ -193,7 +190,7 @@ impl Executor {
 
     pub fn new_simulation(
         settings: ExecutorSettings,
-        strategy: Box<dyn Strategy>,
+        strategy: HashMap<GameState, Box<dyn Strategy>>,
         simulator: Simulation,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();

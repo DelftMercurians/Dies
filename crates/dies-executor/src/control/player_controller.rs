@@ -25,6 +25,7 @@ pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP<Vector2>,
     last_pos: Vector2,
+    if_gate_keeper: bool,
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
 
@@ -66,6 +67,7 @@ impl PlayerController {
             frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
+            if_gate_keeper: false,
         };
         instance.update_settings(settings);
         instance
@@ -94,6 +96,11 @@ impl PlayerController {
     /// Get the ID of the player.
     pub fn id(&self) -> PlayerId {
         self.id
+    }
+
+    /// set the player as the gate keeper
+    pub fn set_gate_keeper(&mut self) {
+        self.if_gate_keeper = true;
     }
 
     /// Get the current command for the player.

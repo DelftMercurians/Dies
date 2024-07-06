@@ -1,3 +1,6 @@
+mod Task;
+pub mod kickoff;
+
 use std::collections::HashMap;
 
 use dies_core::{PlayerId, WorldData};
@@ -16,6 +19,8 @@ pub struct AdHocStrategy {
     unassigned_roles: Vec<Box<dyn Role>>,
     skill_map: HashMap<String, Box<dyn Skill>>,
 }
+
+
 
 impl AdHocStrategy {
     pub fn new() -> Self {
@@ -38,6 +43,7 @@ impl AdHocStrategy {
 }
 
 impl Strategy for AdHocStrategy {
+
     fn update(&mut self, world: &WorldData) -> PlayerInputs {
         // Assign roles to players
         for player_data in world.own_players.iter() {
@@ -50,6 +56,7 @@ impl Strategy for AdHocStrategy {
         if self.unassigned_roles.len() > 0 {
             log::warn!("Not enough players to assign all roles");
         }
+
 
         let mut inputs = PlayerInputs::new();
         for (id, role) in self.roles.iter_mut() {

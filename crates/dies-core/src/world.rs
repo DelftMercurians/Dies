@@ -1,3 +1,5 @@
+use std::fmt::Display;
+use std::hash::Hash;
 use serde::Serialize;
 use typeshare::typeshare;
 
@@ -10,7 +12,7 @@ pub struct WorldUpdate {
 }
 
 /// The game state, as reported by the referee.
-#[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
+#[derive(Serialize, Clone, Debug, Copy, Default)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub enum GameState {
@@ -28,6 +30,40 @@ pub enum GameState {
     PenaltyRun,
     Run,
 }
+
+impl Display for GameState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            GameState::Unknown => "Unknown".to_string(),
+            GameState::Halt => "Halt".to_string(),
+            GameState::Timeout => "Timeout".to_string(),
+            GameState::Stop => "Stop".to_string(),
+            GameState::PrepareKickoff => "PrepareKickoff".to_string(),
+            GameState::BallReplacement(_) => "BallReplacement".to_string(),
+            GameState::PreparePenalty => "PreparePenalty".to_string(),
+            GameState::Kickoff => "Kickoff".to_string(),
+            GameState::FreeKick => "FreeKick".to_string(),
+            GameState::Penalty => "Penalty".to_string(),
+            GameState::PenaltyRun => "PenaltyRun".to_string(),
+            GameState::Run => "Run".to_string(),
+        };
+        write!(f, "{}", str)
+    }
+}
+impl Hash for GameState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.to_string().hash(state);
+    }
+}
+
+impl PartialEq for GameState {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+impl Eq for GameState {}
+
 
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Clone, Debug)]

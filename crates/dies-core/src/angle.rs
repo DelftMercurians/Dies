@@ -62,6 +62,11 @@ impl Angle {
         let radians = (rand::random::<f64>() * 2.0 * PI) - PI;
         Self::from_radians(radians)
     }
+    
+    //abs
+    pub fn abs(&self) -> f64 {
+        self.0.abs()
+    }
 }
 
 impl std::ops::Add for Angle {

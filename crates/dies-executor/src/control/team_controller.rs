@@ -1,23 +1,24 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{strategy::Strategy, PlayerControlInput};
-
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
 use dies_core::{ControllerSettings, GameState, PlayerId};
 use dies_core::{PlayerCmd, WorldData};
+use crate::strategy::AdHocStrategy;
+use crate::strategy::kickoff::KickoffStrategy;
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
-    strategy: Box<dyn Strategy>,
+    strategy: HashMap<GameState, Box<dyn Strategy>>,
     settings: ControllerSettings,
 }
 
 impl TeamController {
     /// Create a new team controller.
-    pub fn new(strategy: Box<dyn Strategy>, settings: &ControllerSettings) -> Self {
+    pub fn new(strategy: HashMap<GameState, Box<dyn Strategy>>, settings: &ControllerSettings) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             strategy,
@@ -46,10 +47,14 @@ impl TeamController {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
                     .insert(*id, PlayerController::new(*id, &self.settings));
+                if self.player_controllers.len() == 1 {
+                    self.player_controllers.get_mut(id).unwrap().set_gate_keeper();
+                }
             }
         }
+        let state = world_data.current_game_state.game_state;
 
-        let mut inputs = self.strategy.update(&world_data);
+        let mut inputs = self.strategy.get_mut(&state).unwrap().update(&world_data);
 
         // If in a stop state, override the inputs
         if world_data.current_game_state.game_state == GameState::Stop {

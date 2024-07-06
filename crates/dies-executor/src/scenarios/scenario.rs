@@ -1,11 +1,10 @@
 use anyhow::{bail, Result};
 use std::{collections::HashSet, time::Duration};
-
+use std::collections::HashMap;
 use dies_basestation_client::BasestationHandle;
-use dies_core::{
-    Angle, BallPlacement, ExecutorSettings, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo,
-    Vector2, Vector3, WorldData,
-};
+use dies_core::{Angle, BallPlacement, ExecutorSettings, GameState, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo, Vector2, Vector3, WorldData};
+use dies_protos::ssl_gc_referee_message::referee::Stage;
+use dies_protos::ssl_gc_state::State;
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_world::WorldTracker;
@@ -28,18 +27,26 @@ pub struct ScenarioSetup {
     /// Yaw tolerance for players in rad
     yaw_tolerance: f64,
     /// Strategy to use.
-    strategy: Box<dyn Strategy>,
+    strategy: HashMap<GameState, Box<dyn Strategy>>,
 }
 
 impl ScenarioSetup {
-    pub fn new(strategy: impl Strategy + 'static) -> Self {
+    pub fn new(strategy: impl Strategy + 'static, state: Option<GameState>) -> Self {
+        let state = match state {
+            Some(state) => {
+                state
+            }
+            None => GameState::Unknown,
+        };
+        let mut strategy_map = HashMap::new();
+        strategy_map.insert(state, Box::new(strategy) as Box<dyn Strategy>);
         Self {
             ball: BallPlacement::NoBall,
             own_players: Vec::new(),
             opp_players: Vec::new(),
             tolerance: 10.0,
             yaw_tolerance: 10.0f64.to_radians(),
-            strategy: Box::new(strategy),
+            strategy: strategy_map,
         }
     }
 
