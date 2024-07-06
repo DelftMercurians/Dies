@@ -107,8 +107,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 
       if (clickedPlayer !== null) {
         onSelectPlayer(clickedPlayer);
-      } else {
-        onSelectPlayer(null);
       }
     },
     [onSelectPlayer]

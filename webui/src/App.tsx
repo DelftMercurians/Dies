@@ -273,7 +273,10 @@ const App: React.FC = () => {
           }
         >
           {!collapsed.includes("right") ? (
-            <PlayerSidebar selectedPlayerId={selectedPlayerId} />
+            <PlayerSidebar
+              selectedPlayerId={selectedPlayerId}
+              onClose={() => setSelectedPlayerId(null)}
+            />
           ) : null}
         </ResizablePanel>
       </ResizablePanelGroup>

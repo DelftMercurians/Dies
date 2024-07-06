@@ -18,7 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { FC, useMemo, useState } from "react";
 import TimeSeriesChart, { ComputedValues } from "./TimeSeriesChart";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight, Pause, Play } from "lucide-react";
+import { ChevronDown, ChevronRight, X, Pause, Play } from "lucide-react";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn, prettyPrintSnakeCases } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,7 @@ import HierarchicalList from "./HierarchicalList";
 
 interface PlayerSidebarProps {
   selectedPlayerId: number | null;
+  onClose: () => void;
 }
 
 const computedValues = {
@@ -51,7 +52,10 @@ type Graphable = (typeof graphableValues)[number];
 
 type PlayerDebugValues = [string, Exclude<DebugValue, { type: "Shape" }>][];
 
-const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
+const PlayerSidebar: FC<PlayerSidebarProps> = ({
+  selectedPlayerId,
+  onClose,
+}) => {
   const world = useWorldState();
   const executorInfo = useExecutorInfo();
   const sendCommand = useSendCommand();
@@ -84,7 +88,13 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
     : [];
 
   if (world.status !== "connected" || typeof selectedPlayerId !== "number")
-    return null;
+    return (
+      <div className="flex-1 flex flex-col gap-6 p-4 h-full w-full justify-center items-center">
+        <h1 className="text-2xl font-bold mb-2 text-center text-slate-300">
+          Select a player by clicking
+        </h1>
+      </div>
+    );
 
   const selectedPlayer = world.data.own_players.find(
     (p) => p.id === selectedPlayerId
@@ -104,7 +114,12 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
 
   return (
     <div className="flex-1 flex flex-col gap-6 p-4 h-full overflow-auto">
-      <h1 className="text-2xl font-bold mb-2">Player #{selectedPlayerId}</h1>
+      <div className="flex flex-row">
+        <h1 className="text-2xl font-bold mb-2">Player #{selectedPlayerId}</h1>
+        <Button className="ml-auto" variant="ghost" onClick={onClose}>
+          <X />
+        </Button>
+      </div>
 
       <div>
         <div className="flex flex-row gap-2 items-center mb-2">
