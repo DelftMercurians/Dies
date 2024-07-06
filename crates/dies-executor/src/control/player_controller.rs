@@ -79,6 +79,7 @@ impl PlayerController {
             settings.max_deceleration,
             settings.position_kp,
             Duration::from_secs_f64(settings.position_proportional_time_window),
+            settings.position_cutoff_distance,
         );
         self.yaw_mtp.update_settings(
             settings.max_angular_acceleration,
@@ -86,6 +87,7 @@ impl PlayerController {
             settings.max_angular_deceleration,
             settings.angle_kp,
             Duration::from_secs_f64(settings.angle_proportional_time_window),
+            settings.angle_cutoff_distance,
         );
     }
 
@@ -163,6 +165,8 @@ impl PlayerController {
         self.target_velocity = Vector2::zeros();
         if let Some(pos_target) = input.position {
             self.position_mtp.set_setpoint(pos_target);
+            dies_core::debug_circle_stroke("p5.cutoff", pos_target, self.position_mtp.cutoff_distance, dies_core::DebugColor::Purple);
+            
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
             dies_core::debug_string(
                 format!("p{}.control.pos_u", self.id),
@@ -173,12 +177,16 @@ impl PlayerController {
         }
         let local_vel = input.velocity.to_local(self.last_yaw);
         self.target_velocity += local_vel;
-
+        
         // Cap the velocity
         let mut v_diff = self.target_velocity - last_vel_target;
         v_diff = v_diff.cap_magnitude(MAX_ACC * dt);
         self.target_velocity = last_vel_target + v_diff;
 
+        // draw the velocity
+        // the velocity is in local coords, that is the reason why we need to convert it to global
+        dies_core::debug_line(format!("p{}.target_vel", self.id), self.last_pos, self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity), dies_core::DebugColor::Red);
+        
         let last_ang_vel_target = self.target_angular_velocity;
         self.target_angular_velocity = 0.0;
         if let Some(yaw) = input.yaw {

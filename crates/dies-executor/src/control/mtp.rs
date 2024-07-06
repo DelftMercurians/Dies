@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt::Debug, time::Duration};
 
 use super::variable::Variable;
 
@@ -9,9 +9,10 @@ pub struct MTP<T: Variable> {
     setpoint: Option<T>,
     kp: f64,
     proportional_time_window: Duration,
+    pub cutoff_distance: f64,
 }
 
-impl<T: Variable> MTP<T> {
+impl<T: Variable + Debug> MTP<T> {
     pub fn new(max_accel: f64, max_speed: f64, max_decel: f64) -> Self {
         Self {
             max_accel,
@@ -20,6 +21,7 @@ impl<T: Variable> MTP<T> {
             setpoint: None,
             kp: 1.0,
             proportional_time_window: Duration::from_millis(700),
+            cutoff_distance: 0.,
         }
     }
 
@@ -34,12 +36,14 @@ impl<T: Variable> MTP<T> {
         max_decel: f64,
         kp: f64,
         proportional_time_window: Duration,
+        cutoff_distance: f64,
     ) {
         self.max_accel = max_accel;
         self.max_speed = max_speed;
         self.max_decel = max_decel;
         self.kp = kp;
         self.proportional_time_window = proportional_time_window;
+        self.cutoff_distance = cutoff_distance;
     }
 
     pub fn update(&self, current: T, velocity: T, dt: f64) -> T {
@@ -50,6 +54,15 @@ impl<T: Variable> MTP<T> {
 
         let displacement = setpoint - current;
         let distance = displacement.magnitude();
+        
+        if distance < self.cutoff_distance {
+            println!("Sending cutoff");
+            
+            return T::zero();
+        }
+
+        // compute the normalized direction with the displacement and the distance
+        // the if condition statement prevents a division by 0
         let direction = if distance > f64::EPSILON {
             displacement * (1.0 / distance)
         } else {
@@ -62,7 +75,11 @@ impl<T: Variable> MTP<T> {
             // Proportional control to reduce overshoot
             let proportional_velocity = direction * distance * self.kp;
             let dv = proportional_velocity - velocity;
-            return velocity + dv.cap_magnitude(self.max_decel * dt);
+            println!("Overshoot case returning");
+            // dies_core::debug_string("p5.Goal", format!("{:?}", velocity + dv.cap_magnitude(self.max_decel * dt)));
+            
+            // besides decreasing the velocity with dv, we also go in the opposite direction to compensate for the overshoot 
+            return -velocity + dv.cap_magnitude(self.max_decel * dt);
         }
 
         // Calculate deceleration distance based on current_speed and max_decel
@@ -73,6 +90,7 @@ impl<T: Variable> MTP<T> {
             // Proportional control
             let proportional_velocity = direction * distance * self.kp;
             let dv = proportional_velocity - velocity;
+            // println!("Proportional control: time_to_target <= self.proportional_time_window.as_secs_f64()");
             velocity + dv.cap_magnitude(self.max_decel * dt)
         } else if distance <= decel_distance && current_speed > 0.0 {
             // Deceleration phase
@@ -84,14 +102,17 @@ impl<T: Variable> MTP<T> {
                 target_v
             };
             let dv = target_v - velocity;
+            // println!("Deceleration phase: distance <= decel_distance && current_speed > 0.0 ");
             velocity + dv.cap_magnitude(self.max_decel * dt)
         } else if current_speed < self.max_speed {
             // Acceleration phase
             let target_v = direction * self.max_speed;
             let dv = target_v - velocity;
+            // println!("current_speed < self.max_speed");
             velocity + dv.cap_magnitude(self.max_accel * dt)
         } else {
             // Cruise phase
+            // println!("Cruise returning");
             velocity
         }
     }
