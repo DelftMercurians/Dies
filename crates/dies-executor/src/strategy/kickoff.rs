@@ -3,6 +3,7 @@ use dies_core::{Angle, GameState, PlayerData, PlayerId, WorldData};
 use crate::strategy::{Role, Strategy};
 use nalgebra::Vector2;
 use crate::{PlayerControlInput, PlayerInputs};
+use crate::roles::RoleCtx;
 use crate::strategy::Task::{Task3Phase, Task4Phase};
 
 
@@ -85,8 +86,10 @@ impl OtherPlayer {
 }
 
 impl Role for Kicker {
-    fn update(&mut self, player_data: &PlayerData, world: &WorldData) -> PlayerControlInput {
-        let gamestate = world.current_game_state.game_state;
+    fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+        
+        let gamestate = ctx.world.current_game_state.game_state;
+        let player_data = ctx.player;
         if gamestate == GameState::PrepareKickoff {
             return self.move_to_circle.relocate(player_data, Vector2::new(-100.0, 0.0), Angle::from_degrees(0.0));
         }
@@ -95,7 +98,7 @@ impl Role for Kicker {
             //kick
             return self.kick.kick();
         }
-        else if let Some(balldata) = world.ball.clone() {
+        else if let Some(balldata) = ctx.world.ball.clone() {
             let ball_pos_v2 = Vector2::new(balldata.position.x, balldata.position.y);
             return self.move_to_ball.relocate(player_data, ball_pos_v2, Angle::from_degrees(0.0));
         } else {
@@ -105,8 +108,8 @@ impl Role for Kicker {
 }
 
 impl Role for OtherPlayer {
-    fn update(&mut self, player_data: &PlayerData, world: &WorldData) -> PlayerControlInput {
-        return self.move_to_half_field.relocate(player_data, self.fixed_position, Angle::from_degrees(0.0));
+    fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+        return self.move_to_half_field.relocate(ctx.player, self.fixed_position, Angle::from_degrees(0.0));
     }
 }
 
@@ -154,7 +157,9 @@ impl Strategy for KickoffStrategy {
         let mut inputs = PlayerInputs::new();
         for (id, role) in self.roles.iter_mut() {
             if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-                let input = role.update(player_data, world);
+                let player_data = player_data.clone();
+                
+                let input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
                 inputs.insert(*id, input);
             } else {
                 log::error!("No detetion data for player #{id} with active role");
