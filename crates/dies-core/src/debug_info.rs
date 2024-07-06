@@ -11,10 +11,11 @@ use crate::Vector2;
 
 static DEBUG_MESSAGES: OnceLock<mpsc::UnboundedSender<UpdateMsg>> = OnceLock::new();
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[typeshare]
 pub enum DebugColor {
+    #[default]
     Red,
     Green,
     Orange,
@@ -259,4 +260,97 @@ pub fn debug_value(key: impl Into<String>, value: f64) {
 /// Record a debug message with a string.
 pub fn debug_string(key: impl Into<String>, value: impl Into<String>) {
     debug_record(key, DebugValue::String(value.into()));
+}
+
+/// Draw a debug shape on the field in the UI. A string key is the first argument,
+/// which is used only to update and remove shapes.
+///
+/// # Examples
+///
+/// ```rust
+/// # use dies_core::{dbg_draw, Vector2, DebugColor};
+/// dbg_draw!("test", cross, Vector2::new(0.0, 0.0));
+///
+/// let id = 1;
+/// // Cross shape with specified color
+/// dbg_draw!(("p{}.test", id), cross, Vector2::new(0.0, 0.0), DebugColor::Red);
+///
+/// // Line shape with default color
+/// dbg_draw!(
+///     ("p{}.test", id),
+///     line,
+///     Vector2::new(0.0, 0.0),
+///     Vector2::new(1.0, 1.0)
+/// );
+///
+/// // Filled circle shape with specified fill color
+/// dbg_draw!(
+///     ("p{}.test", id),
+///     circle_fill,
+///     Vector2::new(0.0, 0.0),
+///     1.0,
+///     DebugColor::Green
+/// );
+/// ```
+#[macro_export]
+macro_rules! dbg_draw {
+    // Pattern for cross with default color
+    (($($key:tt)+), cross, $pos:expr) => {
+        dies_core::debug_cross(format!($($key)+), $pos, dies_core::DebugColor::default())
+    };
+    ($key:tt, cross, $pos:expr) => {
+        dies_core::debug_cross($key, $pos, dies_core::DebugColor::default())
+    };
+
+    // Pattern for cross with specified color
+    (($($key:tt)+), cross, $pos:expr, $color:expr) => {
+        dies_core::debug_cross(format!($($key)+), $pos, $color)
+    };
+    ($key:tt, cross, $pos:expr, $color:expr) => {
+        dies_core::debug_cross($key, $pos, $color)
+    };
+
+    // Pattern for line with default color
+    (($($key:tt)+), line, $v1:expr, $v2:expr) => {
+        dies_core::debug_line(format!($($key)+), $v1, $v2, dies_core::DebugColor::default())
+    };
+    ($key:tt, line, $v1:expr, $v2:expr) => {
+        dies_core::debug_line($key, $v1, $v2, dies_core::DebugColor::default())
+    };
+
+    // Pattern for line with specified color
+    (($($key:tt)+), line, $v1:expr, $v2:expr, $color:expr) => {
+        dies_core::debug_line(format!($($key)+), $v1, $v2, $color)
+    };
+    ($key:tt, line, $v1:expr, $v2:expr, $color:expr) => {
+        dies_core::debug_line($key, $v1, $v2, $color)
+    };
+
+    // Pattern for filled circle
+    (($($key:tt)+), circle_fill, $center:expr, $radius:expr, $fill:expr) => {
+        dies_core::debug_circle_fill(format!($($key)+), $center, $radius, $fill)
+    };
+    ($key:tt, circle_fill, $center:expr, $radius:expr, $fill:expr) => {
+        dies_core::debug_circle_fill($key, $center, $radius, $fill)
+    };
+    (($($key:tt)+), circle_fill, $center:expr, $radius:expr) => {
+        dies_core::debug_circle_fill(format!($($key)+), $center, $radius, dies_core::DebugColor::default())
+    };
+    ($key:tt, circle_fill, $center:expr, $radius:expr) => {
+        dies_core::debug_circle_fill($key, $center, $radius, dies_core::DebugColor::default())
+    };
+
+    // Pattern for hollow circle
+    (($($key:tt)+), circle_stroke, $center:expr, $radius:expr, $stroke:expr) => {
+        dies_core::debug_circle_stroke(format!($($key)+), $center, $radius, $stroke)
+    };
+    ($key:tt, circle_stroke, $center:expr, $radius:expr, $stroke:expr) => {
+        dies_core::debug_circle_stroke($key, $center, $radius, $stroke)
+    };
+    (($($key:tt)+), circle_stroke, $center:expr, $radius:expr) => {
+        dies_core::debug_circle_stroke(format!($($key)+), $center, $radius, dies_core::DebugColor::default())
+    };
+    ($key:tt, circle_stroke, $center:expr, $radius:expr) => {
+        dies_core::debug_circle_stroke($key, $center, $radius, dies_core::DebugColor::default())
+    };
 }

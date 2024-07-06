@@ -3,10 +3,7 @@ use dies_core::Vector2;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    roles::test_role::TestRole,
-    strategy::{self, AdHocStrategy},
-};
+use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
 
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
