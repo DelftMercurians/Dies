@@ -6,6 +6,8 @@ import {
   useWorldState,
 } from "@/api";
 import { DebugValue, PlayerData } from "@/bindings";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -15,42 +17,49 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { FC, useMemo, useState } from "react";
-import TimeSeriesChart, { ComputedValues } from "./TimeSeriesChart";
-import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight, X, Pause, Play } from "lucide-react";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn, prettyPrintSnakeCases } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Pause, Play, X } from "lucide-react";
+import { FC, useState } from "react";
+import CodeEditor from "./CodeEditor";
 import HierarchicalList from "./HierarchicalList";
+import TimeSeriesChart from "./TimeSeriesChart";
 
 interface PlayerSidebarProps {
   selectedPlayerId: number | null;
   onClose: () => void;
 }
 
-const computedValues = {
-  filter_error: (data) =>
-    magnitude([
-      data.position[0] - data.raw_position[0],
-      data.position[1] - data.raw_position[1],
-    ]),
-} as const satisfies ComputedValues<PlayerData>;
-
-const graphableValues = [
-  "velocity",
-  "angular_speed",
-  "filter_error",
-] as const satisfies (keyof PlayerData | keyof typeof computedValues)[];
-
-type Graphable = (typeof graphableValues)[number];
+interface GraphData {
+  player: PlayerData;
+  playerDebug: Record<string, number | string>;
+}
 
 type PlayerDebugValues = [string, Exclude<DebugValue, { type: "Shape" }>][];
+
+type Graphable = keyof typeof graphableValues | "custom";
+
+type AxisLabels = {
+  [key in Graphable]: string;
+};
+
+const graphableValues = {
+  velocity: (data) => magnitude(data.player.velocity),
+  angular_speed: (data) => radiansToDegrees(data.player.angular_speed),
+  filter_error: ({ player }) =>
+    magnitude([
+      player.position[0] - player.raw_position[0],
+      player.position[1] - player.raw_position[1],
+    ]),
+} as const satisfies Record<string, (data: GraphData) => number>;
+const graphableLabels = Object.keys(graphableValues);
+
+const axisLabels: AxisLabels = {
+  velocity: "mm/s",
+  angular_speed: "deg/s",
+  filter_error: "mm",
+  custom: "custom",
+};
 
 const PlayerSidebar: FC<PlayerSidebarProps> = ({
   selectedPlayerId,
@@ -64,6 +73,9 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
   const [speed, setSpeed] = useState(1000);
   const [angularSpeedDegPerSec, setAngularSpeedDegPerSec] = useState(30);
   const [keyboardControl, setKeyboardControl] = useState(false);
+  const [customFunction, setCustomFunction] = useState<
+    ((data: GraphData) => number) | null
+  >(null);
 
   const manualControl =
     typeof selectedPlayerId === "number" &&
@@ -86,6 +98,9 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
           val,
         ]) as PlayerDebugValues)
     : [];
+  const playerDebugMap = Object.fromEntries(
+    playerDebugData.map(([k, v]) => [k, v.data])
+  );
 
   if (world.status !== "connected" || typeof selectedPlayerId !== "number")
     return (
@@ -112,6 +127,11 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
     });
   };
 
+  const graphData: GraphData = {
+    player: selectedPlayer,
+    playerDebug: playerDebugMap,
+  };
+
   return (
     <div className="flex-1 flex flex-col gap-6 p-4 h-full overflow-auto">
       <div className="flex flex-row">
@@ -121,8 +141,8 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
         </Button>
       </div>
 
-      <div>
-        <div className="flex flex-row gap-2 items-center mb-2">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-row gap-2 items-center">
           <Select
             value={activeGraph}
             onValueChange={(val) => setActiveGraph(val as Graphable)}
@@ -132,11 +152,13 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
             </SelectTrigger>
 
             <SelectContent>
-              {graphableValues.map((v, index) => (
-                <SelectItem key={index} value={v}>
+              {graphableLabels.map((v) => (
+                <SelectItem key={v} value={v}>
                   {prettyPrintSnakeCases(v)}
                 </SelectItem>
               ))}
+
+              <SelectItem value={"custom"}>Custom function</SelectItem>
             </SelectContent>
           </Select>
 
@@ -144,22 +166,34 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
             {graphPaused ? <Play /> : <Pause />}
           </Button>
         </div>
+
+        {(activeGraph as string) === "custom" ? (
+          <div>
+            <CodeEditor
+              globals={graphData}
+              onRun={(code) => {
+                setCustomFunction(() =>
+                  // need to wrap in a function otherwise react would use it as a
+                  // production function
+                  createCustomFunction(code, Object.keys(graphData))
+                );
+              }}
+            />
+          </div>
+        ) : null}
+
         <TimeSeriesChart
           paused={graphPaused}
           objectId={selectedPlayerId}
-          newDataPoint={selectedPlayer}
-          selectedKey={activeGraph}
-          computedValues={computedValues}
-          transform={(val) =>
-            Array.isArray(val)
-              ? magnitude(val)
-              : radiansToDegrees(val as number)
-          }
-          axisLabels={{
-            velocity: "mm/s",
-            angular_speed: "deg/s",
-            filter_error: "mm",
+          newDataPoint={{ timestamp: selectedPlayer.timestamp, ...graphData }}
+          getData={(data) => {
+            let value =
+              activeGraph === "custom"
+                ? customFunction?.(data) ?? 0
+                : graphableValues[activeGraph](data);
+            return value;
           }}
+          axisLabel={axisLabels[activeGraph]}
         />
       </div>
 
@@ -282,4 +316,24 @@ const magnitude = ([x, y]: [number, number]) => Math.sqrt(x * x + y * y);
 
 const radiansToDegrees = (radians: number): number => {
   return (radians * 180) / Math.PI;
+};
+
+const createCustomFunction = (code: string, args: string[]) => {
+  try {
+    const fun = new Function(...args, `return (${code});`);
+    let errored = false;
+    return (d: Record<string, any>) => {
+      if (errored) return 0;
+      try {
+        return fun(...args.map((a) => d[a]));
+      } catch (e) {
+        alert(`Error in custom function: ${e}`);
+        errored = true;
+        return 0;
+      }
+    };
+  } catch (e) {
+    alert(`Error in custom function: ${e}`);
+    return null;
+  }
 };

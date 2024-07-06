@@ -21,3 +21,4 @@ dies-world = { version = "0.1.0", path = "../dies-world" }
 dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
 dies-basestation-client = { version = "0.1.0", path = "../dies-basestation-client" }
+tower-layer = "0.3.2"

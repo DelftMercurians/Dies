@@ -10,41 +10,27 @@ import {
   YAxis,
 } from "recharts";
 
-export interface ComputedValues<D> {
-  [key: string]: (data: D) => number;
-}
+type DataPoint = { timestamp: number; [key: string]: any };
 
-interface TimeSeriesChartProps<
-  D,
-  C extends ComputedValues<D>,
-  K extends keyof D | keyof C
-> {
+interface TimeSeriesChartProps<D> {
   newDataPoint: D;
-  selectedKey: K;
-  computedValues?: C;
+  getData: (data: D) => number;
+  axisLabel: string;
   paused?: boolean;
   objectId?: string | number;
-  transform?: (value: D[keyof D]) => number;
-  axisLabels?: { [K in keyof D | keyof C]?: string };
   maxDataPoints?: number;
   className?: string;
 }
 
-function TimeSeriesChart<
-  D extends { timestamp: number },
-  C extends ComputedValues<D>,
-  K extends keyof D | keyof C
->({
+function TimeSeriesChart<D extends DataPoint>({
   newDataPoint,
-  selectedKey,
-  axisLabels,
-  computedValues = {} as unknown as C,
+  getData,
+  axisLabel,
   paused = false,
   objectId = 0,
-  transform = (v) => Number(v),
   maxDataPoints = 100,
   className = "",
-}: TimeSeriesChartProps<D, C, K>) {
+}: TimeSeriesChartProps<D>) {
   const [currentObjectId, setObjectId] = useState<string | number>(objectId);
   const [firstTs, setFirstTs] = useState<number>(newDataPoint.timestamp);
   const [data, setData] = useState<D[]>([]);
@@ -72,13 +58,6 @@ function TimeSeriesChart<
     return (timestamp - firstTs).toFixed(1);
   };
 
-  const getValue = (data: any) => {
-    if (selectedKey in computedValues) {
-      return computedValues[selectedKey as keyof C](data);
-    }
-    return data[selectedKey];
-  };
-
   return (
     <div className={cn("w-full h-64 bg-white rounded-lg px-2", className)}>
       <ResponsiveContainer
@@ -91,7 +70,7 @@ function TimeSeriesChart<
           <XAxis dataKey="timestamp" tick={false} />
           <YAxis
             label={{
-              value: axisLabels?.[selectedKey as keyof D] || selectedKey,
+              value: axisLabel,
               angle: -90,
               position: "insideLeft",
               offset: 15,
@@ -103,18 +82,18 @@ function TimeSeriesChart<
           />
           <Tooltip
             labelStyle={{ color: "black" }}
-            labelFormatter={(label, val) =>
+            labelFormatter={(label, _) =>
               `Time: ${formatXAxis(label as number)}`
             }
             formatter={(value) =>
-              `${typeof value === "number" ? value.toFixed(2) : value}${
-                " " + axisLabels?.[selectedKey as keyof D] ?? ""
-              }`
+              `${
+                typeof value === "number" ? value.toFixed(2) : value
+              } ${axisLabel}`
             }
           />
           <Line
             type="monotone"
-            dataKey={(data) => transform(getValue(data))}
+            dataKey={(d) => (d !== null ? getData(d) : null)}
             stroke="black"
             dot={false}
             isAnimationActive={false}

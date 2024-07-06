@@ -1,4 +1,9 @@
 use axum::{
+    body::Body,
+    extract::Request,
+    http::{header, Response},
+    middleware,
+    response::IntoResponse,
     routing::{get, post},
     Router,
 };
@@ -13,6 +18,7 @@ use std::{
 };
 use tokio::sync::{broadcast, mpsc, watch};
 use tower_http::services::ServeDir;
+use tower_layer::Layer;
 
 use crate::{
     executor_task::ExecutorTask, routes, ExecutorStatus, UiCommand, UiConfig, UiEnvironment,
@@ -178,6 +184,8 @@ async fn start_webserver(
         .join("dies-webui")
         .join("static");
     let serve_dir = ServeDir::new(path);
+    let serve_dir_with_csp = middleware::from_fn(add_csp_header);
+
     let app = Router::new()
         .route("/api/executor", get(routes::get_executor_info))
         .route("/api/world-state", get(routes::get_world_state))
@@ -190,7 +198,7 @@ async fn start_webserver(
         .route("/api/settings", post(routes::post_executor_settings))
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))
-        .nest_service("/", serve_dir.clone())
+        .nest_service("/", serve_dir_with_csp.layer(serve_dir.clone()))
         .fallback_service(serve_dir)
         .with_state(Arc::clone(&state));
 
@@ -210,4 +218,15 @@ async fn start_webserver(
         .with_graceful_shutdown(shutdown_fut)
         .await
         .unwrap();
+}
+
+async fn add_csp_header(req: Request<Body>, next: axum::middleware::Next) -> impl IntoResponse {
+    let mut response = next.run(req).await;
+    response.headers_mut().insert(
+        header::CONTENT_SECURITY_POLICY,
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
+            .parse()
+            .unwrap(),
+    );
+    response
 }
