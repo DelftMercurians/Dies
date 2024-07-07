@@ -33,26 +33,28 @@ interface SettingsEditorProps<K> {
 
 const fieldConfig: FieldConfig = {
   controller_settings: {
-    max_acceleration: { min: 0, max: 10000, unit: "mm/s²" },
-    max_velocity: { min: 0, max: 5000, unit: "mm/s" },
-    max_deceleration: { min: 0, max: 10000, unit: "mm/s²" },
-    max_angular_velocity: { min: 0, max: 10, unit: "deg/s", isAngle: true },
+    max_acceleration: { min: 0, max: 50000, step: 10, unit: "mm/s²" },
+    max_velocity: { min: 0, max: 10000, step: 10, unit: "mm/s" },
+    max_deceleration: { min: 0, max: 50000, step: 10, unit: "mm/s²" },
+    max_angular_velocity: { min: 0, max: 720, unit: "deg/s", isAngle: true },
     max_angular_acceleration: {
       min: 0,
-      max: 20,
+      max: 720,
       unit: "deg/s²",
       isAngle: true,
     },
     max_angular_deceleration: {
       min: 0,
-      max: 20,
+      max: 720,
       unit: "deg/s²",
       isAngle: true,
     },
-    position_kp: { min: 0, max: 10, unit: "", disableSlider: true },
+    position_kp: { min: 0, max: 10, unit: "" },
     position_proportional_time_window: { min: 0, max: 10, unit: "s" },
-    angle_kp: { min: 0, max: 10, unit: "", disableSlider: true },
+    angle_kp: { min: 0, max: 10, unit: "" },
     angle_proportional_time_window: { min: 0, max: 10, unit: "s" },
+    angle_cutoff_distance: { min: 0, max: 180, unit: "deg", isAngle: true },
+    position_cutoff_distance: { min: 0, max: 2000, unit: "mm" },
   },
   tracker_settings: {
     is_blue: { hidden: true },
@@ -73,10 +75,10 @@ const fieldConfig: FieldConfig = {
         </ToggleGroup>
       ),
     },
-    player_measurement_var: { min: 0.01, max: 100, step: 0.01, unit: "s" },
-    player_unit_transition_var: { min: 0.01, max: 100, step: 0.01, unit: "s" },
-    ball_measurement_var: { min: 0.01, max: 100, step: 0.01, unit: "s" },
-    ball_unit_transition_var: { min: 0.01, max: 100, step: 0.01, unit: "s" },
+    player_measurement_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
+    player_unit_transition_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
+    ball_measurement_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
+    ball_unit_transition_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
   },
 };
 
