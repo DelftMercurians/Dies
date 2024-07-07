@@ -4,6 +4,7 @@ use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dies_core::{ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, WorldUpdate};
+use dies_core::GcRefereeMsg;
 
 #[derive(Debug)]
 pub enum ControlMsg {
@@ -14,6 +15,9 @@ pub enum ControlMsg {
     PlayerOverrideCommand(PlayerId, PlayerOverrideCommand),
     SetPause(bool),
     UpdateSettings(ExecutorSettings),
+    GcCommand {
+        command: dies_protos::ssl_gc_referee_message::referee::Command,
+    },
     Stop,
 }
 

@@ -2,6 +2,7 @@ use dies_core::WorldUpdate;
 use dies_executor::{scenarios::ScenarioType, ControlMsg, ExecutorHandle};
 use dies_simulator::SimulationConfig;
 use std::sync::Arc;
+use dies_core::GcRefereeMsg;
 use tokio::{
     sync::{broadcast, oneshot, watch},
     task::JoinHandle,
@@ -90,6 +91,9 @@ impl ExecutorTask {
                     _ = shutdown_rx.recv() => self.stop_executor().await,
                     _ = self.start_scenario(scenario) => {}
                 }
+            },
+            UiCommand::GcCommand {command} => {
+                self.handle_executor_msg(ControlMsg::GcCommand {command});
             }
         }
     }

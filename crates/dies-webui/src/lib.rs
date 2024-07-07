@@ -6,9 +6,11 @@ use dies_core::{
     ScenarioInfo, WorldData,
 };
 use dies_executor::scenarios::ScenarioType;
+use dies_core::GcRefereeMsg;
 use dies_ssl_client::VisionClientConfig;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
+
 
 mod executor_task;
 mod routes;
@@ -85,6 +87,9 @@ pub(crate) enum UiCommand {
     SetPause(bool),
     StartScenario {
         scenario: ScenarioType,
+    },
+    GcCommand {
+        command: GcRefereeMsg::Command,
     },
     Stop,
 }

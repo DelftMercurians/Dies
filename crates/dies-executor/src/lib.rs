@@ -23,6 +23,7 @@ pub mod strategy;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
+use dies_core::GcRefereeMsg;
 
 const SIMULATION_DT: Duration = Duration::from_micros(1000_000 / 60);
 const CMD_INTERVAL: Duration = Duration::from_micros(1000_000 / 30);
@@ -414,6 +415,11 @@ impl Executor {
                 self.controller
                     .update_controller_settings(&settings.controller_settings);
                 self.tracker.update_settings(&settings.tracker_settings);
+            }
+            ControlMsg::GcCommand { command } => {
+                let mut referee_msg = GcRefereeMsg::new();
+                referee_msg.set_command(command);
+                self.update_from_gc_msg(referee_msg);
             }
             ControlMsg::Stop => {}
         }
