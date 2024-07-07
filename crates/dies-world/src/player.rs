@@ -1,6 +1,6 @@
 use dies_core::{Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
-use nalgebra::{self as na, Vector2, Vector4};
+use nalgebra::{self as na, ComplexField, Vector2, Vector4};
 
 use crate::{
     coord_utils::to_dies_coords2,
@@ -94,6 +94,9 @@ impl PlayerTracker {
                     last_data.position = na::convert(Vector2::new(x[0], x[2]));
                     last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
                     last_data.angular_speed = (yaw - last_data.yaw).radians();
+                    if last_data.angular_speed.abs() < 0.05 {
+                        last_data.angular_speed = 0.0;
+                    }
                     last_data.yaw = yaw;
                     last_data.timestamp = t_capture;
                 }
