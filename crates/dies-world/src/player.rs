@@ -68,6 +68,7 @@ impl PlayerTracker {
     pub fn update(&mut self, t_capture: f64, player: &SSL_DetectionRobot) {
         let current_position = to_dies_coords2(player.x(), player.y(), self.play_dir_x);
         let current_yaw = player.orientation() as f64 * self.play_dir_x;
+        let vision_yaw = Angle::from_radians(current_yaw);
         let yaw = Angle::from_radians(self.yaw_filter.update(current_yaw));
 
         match &mut self.filter {
@@ -84,6 +85,7 @@ impl PlayerTracker {
                             position: na::convert(Vector2::new(x[0], x[2])),
                             velocity: na::convert(Vector2::new(x[1], x[3])),
                             yaw,
+                            raw_yaw: vision_yaw,
                             angular_speed: 0.0,
                             ..PlayerData::new(self.id)
                         });
@@ -93,11 +95,10 @@ impl PlayerTracker {
                     last_data.raw_position = current_position;
                     last_data.position = na::convert(Vector2::new(x[0], x[2]));
                     last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
-                    last_data.angular_speed = (yaw - last_data.yaw).radians();
-                    if last_data.angular_speed.abs() < 0.05 {
-                        last_data.angular_speed = 0.0;
-                    }
+                    last_data.angular_speed = (yaw - last_data.yaw).radians()
+                        / (t_capture - last_data.timestamp + std::f64::EPSILON);
                     last_data.yaw = yaw;
+                    last_data.raw_yaw = vision_yaw;
                     last_data.timestamp = t_capture;
                 }
             }

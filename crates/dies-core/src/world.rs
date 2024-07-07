@@ -71,7 +71,7 @@ pub struct PlayerData {
     /// x direction, and `pi/2` is the positive y direction.
     pub yaw: Angle,
     /// Unfiltered yaw as reported by vision
-    pub raw_yaw: f64,
+    pub raw_yaw: Angle,
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f64,
 
@@ -96,7 +96,7 @@ impl PlayerData {
             position: Vector2::zeros(),
             velocity: Vector2::zeros(),
             yaw: Angle::default(),
-            raw_yaw: 0.0,
+            raw_yaw: Angle::default(),
             angular_speed: 0.0,
             primary_status: None,
             kicker_cap_voltage: None,

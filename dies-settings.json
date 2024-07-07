@@ -1,27 +1,24 @@
 {
   "controller_settings": {
-    "max_acceleration": 700.0,
+    "max_acceleration": 18890.0,
     "max_velocity": 2000.0,
-    "max_deceleration": 900.0,
-    "max_angular_velocity": 0.5235987755982988,
-    "max_angular_acceleration": 0.2617993877991494,
-    "max_angular_deceleration": 0.2617993877991494,
-    "position_kp": 0.7,
-    "position_proportional_time_window": 0.7,
-    "position_cutoff_distance": 0.0,
+    "max_deceleration": 16860.0,
+    "max_angular_velocity": 12.566370614359172,
+    "max_angular_acceleration": 12.566370614359172,
+    "max_angular_deceleration": 12.566370614359172,
+    "position_kp": 1.9,
+    "position_proportional_time_window": 1.6,
+    "position_cutoff_distance": 50.0,
     "angle_kp": 1.0,
     "angle_proportional_time_window": 0.02,
-    "angle_cutoff_distance": 0.0
+    "angle_cutoff_distance": 0.08726646259971647
   },
   "tracker_settings": {
     "is_blue": true,
     "initial_opp_goal_x": 1.0,
     "player_unit_transition_var": 0.1,
     "player_measurement_var": 2.0,
-    "player_yaw_lpf_b1": 0.11,
-    "player_yaw_lpf_b2": 0.0,
-    "player_yaw_lpf_a1": 1.0,
-    "player_yaw_lpf_a2": 0.9,
+    "player_yaw_lpf_alpha": 0.15,
     "ball_unit_transition_var": 10.0,
     "ball_measurement_var": 10.0
   }

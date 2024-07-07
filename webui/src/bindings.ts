@@ -221,7 +221,7 @@ export interface PlayerData {
 	 */
 	yaw: Angle;
 	/** Unfiltered yaw as reported by vision */
-	raw_yaw: number;
+	raw_yaw: Angle;
 	/** Angular speed of the player (in rad/s) */
 	angular_speed: number;
 	/** The overall status of the robot */

@@ -159,7 +159,7 @@ impl PlayerController {
         // );
 
         // Calculate velocity using the MTP controller
-        self.last_yaw = state.yaw;
+        self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
         let last_vel_target = self.target_velocity;
         self.target_velocity = Vector2::zeros();
@@ -220,9 +220,9 @@ impl PlayerController {
         self.target_angular_velocity += input.angular_velocity;
 
         // Cap the angular velocity
-        let ang_diff = self.target_angular_velocity - last_ang_vel_target;
-        self.target_angular_velocity =
-            last_ang_vel_target + ang_diff.max(-MAX_ACC_RADIUS * dt).min(MAX_ACC_RADIUS * dt);
+        // let ang_diff = self.target_angular_velocity - last_ang_vel_target;
+        // self.target_angular_velocity =
+        //     last_ang_vel_target + ang_diff.max(-MAX_ACC_RADIUS * dt).min(MAX_ACC_RADIUS * dt);
 
         // Set dribbling speed
         self.dribble_speed = input.dribbling_speed;
