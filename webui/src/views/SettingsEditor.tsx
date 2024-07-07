@@ -79,6 +79,10 @@ const fieldConfig: FieldConfig = {
     player_unit_transition_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
     ball_measurement_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
     ball_unit_transition_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
+    player_yaw_lpf_a1: { min: 0, max: 1, step: 0.01 },
+    player_yaw_lpf_a2: { min: 0, max: 1, step: 0.01 },
+    player_yaw_lpf_b1: { min: 0, max: 1, step: 0.01 },
+    player_yaw_lpf_b2: { min: 0, max: 1, step: 0.01 },
   },
 };
 

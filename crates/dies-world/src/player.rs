@@ -2,7 +2,10 @@ use dies_core::{Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings}
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector2, Vector4};
 
-use crate::{coord_utils::to_dies_coords2, filter::MaybeKalman};
+use crate::{
+    coord_utils::to_dies_coords2,
+    filter::{LowpassFilter, MaybeKalman},
+};
 /// Tracker for a single player.
 pub struct PlayerTracker {
     /// Player's unique id
@@ -17,6 +20,8 @@ pub struct PlayerTracker {
     last_data: Option<PlayerData>,
     /// Kalman filter for the player's position and velocity
     filter: MaybeKalman<2, 4>,
+    /// Low-pass filter for the player's yaw
+    yaw_filter: LowpassFilter,
 }
 
 impl PlayerTracker {
@@ -31,6 +36,11 @@ impl PlayerTracker {
                 0.1,
                 settings.player_unit_transition_var,
                 settings.player_measurement_var,
+            ),
+            yaw_filter: LowpassFilter::new(
+                1,
+                vec![settings.player_yaw_lpf_b1, settings.player_yaw_lpf_b2],
+                vec![settings.player_yaw_lpf_a1, settings.player_yaw_lpf_a2],
             ),
         }
     }
@@ -57,7 +67,8 @@ impl PlayerTracker {
     /// Update the tracker with a new frame.
     pub fn update(&mut self, t_capture: f64, player: &SSL_DetectionRobot) {
         let current_position = to_dies_coords2(player.x(), player.y(), self.play_dir_x);
-        let current_yaw = Angle::from_radians(player.orientation() as f64 * self.play_dir_x);
+        let current_yaw = player.orientation() as f64 * self.play_dir_x;
+        let yaw = Angle::from_radians(self.yaw_filter.update(current_yaw));
 
         match &mut self.filter {
             MaybeKalman::Init(filter) => {
@@ -72,7 +83,7 @@ impl PlayerTracker {
                             raw_position: current_position,
                             position: na::convert(Vector2::new(x[0], x[2])),
                             velocity: na::convert(Vector2::new(x[1], x[3])),
-                            yaw: current_yaw,
+                            yaw,
                             angular_speed: 0.0,
                             ..PlayerData::new(self.id)
                         });
@@ -82,9 +93,8 @@ impl PlayerTracker {
                     last_data.raw_position = current_position;
                     last_data.position = na::convert(Vector2::new(x[0], x[2]));
                     last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
-                    last_data.angular_speed = (current_yaw - last_data.yaw).radians()
-                    / ((t_capture - last_data.timestamp + std::f64::EPSILON) as f64);
-                    last_data.yaw = current_yaw;
+                    last_data.angular_speed = (yaw - last_data.yaw).radians();
+                    last_data.yaw = yaw;
                     last_data.timestamp = t_capture;
                 }
             }
