@@ -28,6 +28,8 @@ impl Task3Phase {
     }
 
     pub fn relocate(&mut self, player_data: &PlayerData, goal: Vector2<f64>, yaw: Angle) -> PlayerControlInput {
+
+        let mut input = PlayerControlInput::new();
         //log::info!("playerid: {:?}, Relocating to {:?}, current position: {:?}, self status: {:?}", player_data.id, goal, player_data.position,self.status);
         dies_core::debug_cross("p0.cross", goal, DebugColor::Red);
         if player_data.id.as_u32() == 0 {
@@ -41,9 +43,11 @@ impl Task3Phase {
         }
         let new_status = match self.status {
             Status3::NoGoal => {
+                input.with_position(goal).with_yaw(yaw);
                 Status3::Ongoing
             },
             Status3::Ongoing => {
+                input.with_position(goal).with_yaw(yaw);
                 if (player_data.position - goal).norm() < 50.0 && (player_data.yaw - yaw).abs() < 0.1{
                     Status3::Accomplished
                 } else {
@@ -51,12 +55,12 @@ impl Task3Phase {
                 }
             },
             Status3::Accomplished => {
+                input.with_position(goal).with_yaw(yaw);
                 Status3::Accomplished
             }
         };
         self.status = new_status;
-        let mut input = PlayerControlInput::new();
-        input.with_position(goal).with_yaw(yaw);
+
         input
     }
     

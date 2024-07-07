@@ -180,6 +180,7 @@ pub struct Simulation {
     last_detection_packet: Option<SSL_WrapperPacket>,
     geometry_interval: IntervalTrigger,
     geometry_packet: SSL_WrapperPacket,
+    
 }
 
 impl Simulation {

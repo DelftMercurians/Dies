@@ -46,8 +46,8 @@ fn kickoff() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
-        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
-        .add_own_player_at(Vector2::new(-1000.0, 1000.0));
+        .add_own_player_at(Vector2::new(1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
 }
 

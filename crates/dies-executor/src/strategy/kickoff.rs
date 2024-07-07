@@ -121,7 +121,7 @@ impl KickoffStrategy {
             roles: HashMap::new(),
             has_kicker: false,
             gate_keeper_id,
-            position_generator: PositionGenerator::new(500.0),
+            position_generator: PositionGenerator::new(1000.0),
         }
     }
 
