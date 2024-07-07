@@ -108,6 +108,14 @@ impl std::ops::Mul<Vector2> for Angle {
     }
 }
 
+impl std::ops::Mul<f64> for Angle {
+    type Output = Self;
+
+    fn mul(self, scalar: f64) -> Self {
+        Angle::from_radians(self.0 * scalar)
+    }
+}
+
 impl std::fmt::Display for Angle {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{} rad", self.0)

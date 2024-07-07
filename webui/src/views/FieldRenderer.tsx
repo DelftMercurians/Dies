@@ -1,4 +1,5 @@
 import {
+  DebugColor,
   DebugMap,
   DebugShape,
   PlayerData,
@@ -21,6 +22,13 @@ const YELLOW_ROBOT_RAW = "#f97316";
 const BALL = "#fb923c";
 const MANUAL_OUTLINE = "#dc2626";
 const SELECTED_OUTLINE = "#ffffff";
+
+const DEBUG_COLORS: Record<DebugColor, string> = {
+  green: "#14b8a6",
+  red: "#dc2626",
+  orange: "#f97316",
+  purple: "#9333ea",
+};
 
 export type PositionDisplayMode = "raw" | "filtered" | "both";
 
@@ -215,8 +223,8 @@ export class FieldRenderer {
   private drawDebugShape(shape: DebugShape) {
     if (shape.type === "Line") {
       const { start, end, color } = shape.data;
-      this.ctx.strokeStyle = color;
-      this.ctx.lineWidth = 1;
+      this.ctx.strokeStyle = DEBUG_COLORS[color];
+      this.ctx.lineWidth = 3;
       const [x1, y1] = this.fieldToCanvas(start);
       const [x2, y2] = this.fieldToCanvas(end);
       this.ctx.beginPath();
@@ -230,18 +238,19 @@ export class FieldRenderer {
       this.ctx.beginPath();
       this.ctx.arc(x, y, canvasRadius, 0, 2 * Math.PI);
       if (fill) {
-        this.ctx.fillStyle = fill;
+        this.ctx.fillStyle = DEBUG_COLORS[fill];
         this.ctx.fill();
       }
       if (stroke) {
-        this.ctx.strokeStyle = stroke;
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeStyle = DEBUG_COLORS[stroke];
         this.ctx.stroke();
       }
     } else if (shape.type === "Cross") {
       const { center, color } = shape.data;
       const [x, y] = this.fieldToCanvas(center);
-      this.ctx.strokeStyle = color;
-      this.ctx.lineWidth = 1;
+      this.ctx.strokeStyle = DEBUG_COLORS[color];
+      this.ctx.lineWidth = 3;
       this.ctx.beginPath();
       this.ctx.moveTo(x - 10, y - 10);
       this.ctx.lineTo(x + 10, y + 10);

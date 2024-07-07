@@ -30,11 +30,34 @@ const HierarchicalList: FC<HierarchicalListProps> = ({ data, className }) => {
     return grouped;
   }, [data]);
 
-  const formatValue = (value: any) => {
+  const formatValue = (value: any): string => {
     if (typeof value === "number") {
       return value.toFixed(2);
     }
-    return `${value}`;
+    if (typeof value === "object") {
+      if (Array.isArray(value) && value.every((v) => typeof v === "number")) {
+        return `[${value.map((v: number) => v.toFixed(2)).join(", ")}]`;
+      }
+      if (value === null) {
+        return "null";
+      }
+      if (
+        "type" in value &&
+        "data" in value &&
+        ["Line", "Circle", "Cross"].includes(value.type)
+      ) {
+        return `${value.type}(${formatValue(value.data).slice(1, -1)})`;
+      }
+
+      // recursively format object
+      return `{${Object.entries(value)
+        .map(([k, v]) => `${prettyPrintSnakeCases(k)}: ${formatValue(v)}`)
+        .join(", ")}}`;
+    }
+    if (typeof value === "string") {
+      return value;
+    }
+    return JSON.stringify(value);
   };
 
   const renderGroup = (group: Record<string, any>, key = "", depth = 0) => {

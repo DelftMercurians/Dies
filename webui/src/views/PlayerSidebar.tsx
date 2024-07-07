@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { SimpleTooltip } from "@/components/ui/tooltip";
-import { cn, prettyPrintSnakeCases } from "@/lib/utils";
+import { cn, prettyPrintSnakeCases, radiansToDegrees } from "@/lib/utils";
 import { Pause, Play, X } from "lucide-react";
 import { FC, useState } from "react";
 import CodeEditor from "./CodeEditor";
@@ -187,7 +187,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 
         <TimeSeriesChart
           paused={graphPaused}
-          objectId={selectedPlayerId}
+          objectId={`${selectedPlayerId}${activeGraph}`}
           newDataPoint={{ timestamp: selectedPlayer.timestamp, ...graphData }}
           getData={(data) => {
             let value =
@@ -316,10 +316,6 @@ const KeyboardKey = ({
 );
 
 const magnitude = ([x, y]: [number, number]) => Math.sqrt(x * x + y * y);
-
-const radiansToDegrees = (radians: number): number => {
-  return (radians * 180) / Math.PI;
-};
 
 const createCustomFunction = (code: string, args: string[]) => {
   try {

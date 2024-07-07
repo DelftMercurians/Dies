@@ -20,9 +20,8 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
-import { SimpleTooltip } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { cn } from "@/lib/utils";
+import { cn, radiansToDegrees } from "@/lib/utils";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -93,6 +92,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     positionDisplayMode,
     selectedPlayerId,
   ]);
+
+  const selectedPlayerData =
+    worldData?.own_players.find((p) => p.id === selectedPlayerId) ?? null;
 
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -168,6 +170,28 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     });
   };
 
+  const handleTargetHeading = () => {
+    // compute yaw
+    const pos1 = selectedPlayerData?.position ?? [0, 0];
+    const pos2 = contextMenuPosRef.current;
+    const angle = Math.atan2(pos2[1] - pos1[1], pos2[0] - pos1[0]);
+    sendCommand({
+      type: "OverrideCommand",
+      data: {
+        player_id: manualControl[0],
+        command: {
+          type: "MoveTo",
+          data: {
+            position: selectedPlayerData?.position ?? [0, 0],
+            arm_kick: false,
+            yaw: angle,
+            dribble_speed: 0,
+          },
+        },
+      },
+    });
+  };
+
   return (
     <div
       ref={contRef}
@@ -224,16 +248,20 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
             Player #{playerTooltip.playerId}
           </div>
           <div className="flex flex-row font-mono">
-            <div className="w-20">
-              X: {playerTooltipData?.position[0].toFixed(0)}
+            <div className="w-full">
+              X: {playerTooltipData?.position[0].toFixed(0)} mm
             </div>
-            <span>mm</span>
           </div>
           <div className="flex flex-row font-mono">
-            <div className="w-20">
-              Y: {playerTooltipData?.position[1].toFixed(0)}
+            <div className="w-full">
+              Y: {playerTooltipData?.position[1].toFixed(0)} mm
             </div>
-            <span>mm</span>
+          </div>
+          <div className="flex flex-row font-mono">
+            <div className="w-full">
+              Yaw: {radiansToDegrees(playerTooltipData?.yaw ?? 0).toFixed(2)}{" "}
+              deg
+            </div>
           </div>
         </div>
       ) : null}
@@ -263,9 +291,14 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 
         <ContextMenuContent>
           {manualControl.length === 1 ? (
-            <ContextMenuItem onClick={handleTargetPosition}>
-              Set target position
-            </ContextMenuItem>
+            <>
+              <ContextMenuItem onClick={handleTargetPosition}>
+                Set target position
+              </ContextMenuItem>
+              <ContextMenuItem onClick={handleTargetHeading}>
+                Set target heading
+              </ContextMenuItem>
+            </>
           ) : null}
         </ContextMenuContent>
       </ContextMenu>

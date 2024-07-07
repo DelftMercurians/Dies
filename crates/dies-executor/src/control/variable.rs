@@ -8,8 +8,8 @@ pub trait Variable:
     + Add<Self, Output = Self>
     + AddAssign
     + Mul<f64, Output = Self>
-    + Sub<Output = Self>
     + Div<f64, Output = Self>
+    + Sub<Output = Self>
     + PartialOrd
     + Neg<Output = Self>
 {

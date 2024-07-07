@@ -165,8 +165,13 @@ impl PlayerController {
         self.target_velocity = Vector2::zeros();
         if let Some(pos_target) = input.position {
             self.position_mtp.set_setpoint(pos_target);
-            dies_core::debug_circle_stroke("p5.cutoff", pos_target, self.position_mtp.cutoff_distance, dies_core::DebugColor::Purple);
-            
+            dies_core::debug_circle_stroke(
+                "p5.cutoff",
+                pos_target,
+                self.position_mtp.cutoff_distance,
+                dies_core::DebugColor::Purple,
+            );
+
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
             dies_core::debug_string(
                 format!("p{}.control.pos_u", self.id),
@@ -177,7 +182,7 @@ impl PlayerController {
         }
         let local_vel = input.velocity.to_local(self.last_yaw);
         self.target_velocity += local_vel;
-        
+
         // Cap the velocity
         let mut v_diff = self.target_velocity - last_vel_target;
         v_diff = v_diff.cap_magnitude(MAX_ACC * dt);
@@ -185,11 +190,25 @@ impl PlayerController {
 
         // draw the velocity
         // the velocity is in local coords, that is the reason why we need to convert it to global
-        dies_core::debug_line(format!("p{}.target_vel", self.id), self.last_pos, self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity), dies_core::DebugColor::Red);
-        
+        dies_core::debug_line(
+            format!("p{}.target_vel", self.id),
+            self.last_pos,
+            self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+            dies_core::DebugColor::Red,
+        );
+
         let last_ang_vel_target = self.target_angular_velocity;
         self.target_angular_velocity = 0.0;
         if let Some(yaw) = input.yaw {
+            // draw target yaw
+            dies_core::debug_value(format!("p{}.target_yaw", self.id), yaw.degrees());
+            dies_core::debug_line(
+                format!("p{}.target_yaw_line", self.id),
+                self.last_pos,
+                self.last_pos + yaw.rotate_vector(&Vector2::new(200.0, 0.0)),
+                dies_core::DebugColor::Green,
+            );
+
             // TODO: Use Angle directly
             self.yaw_mtp.set_setpoint(yaw.radians());
             let head_u = self
