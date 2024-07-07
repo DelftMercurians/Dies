@@ -98,6 +98,13 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
             return Option::from(x.clone());
         }
 
+        dies_core::debug_value(
+            "kalman.posteriori_covariance",
+            self.posteriori_covariance[(0, 0)],
+        );
+        dies_core::debug_value("kalman.var", self.var);
+        dies_core::debug_value("kalman.measurement_var", self.measurement_noise[(0, 0)]);
+
         let posteriori_covariance =
             &transition_matrix * &self.posteriori_covariance * &transition_matrix.transpose()
                 + &process_noise * self.var;
@@ -153,7 +160,7 @@ impl Kalman<2, 4> {
     /// Update the unit transition variance and measurement variance.
     pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
         let mut new_filter = Kalman::new_player_filter(
-            self.posteriori_covariance[(0, 0)],
+            0.1,
             unit_transition_var,
             measurement_var,
             self.x.clone(),
@@ -225,7 +232,7 @@ impl Kalman<3, 6> {
     /// Update the unit transition variance and measurement variance.
     pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
         let mut new_filter = Self::new_ball_filter(
-            self.posteriori_covariance[(0, 0)],
+            0.1,
             unit_transition_var,
             measurement_var,
             self.x.clone(),

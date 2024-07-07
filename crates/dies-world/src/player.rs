@@ -133,7 +133,7 @@ impl PlayerTracker {
     pub fn update_settings(&mut self, settings: &TrackerSettings) {
         if let Some(filter) = self.filter.as_mut() {
             filter.update_settings(
-                settings.player_measurement_var,
+                settings.player_unit_transition_var,
                 settings.player_measurement_var,
             );
         }
