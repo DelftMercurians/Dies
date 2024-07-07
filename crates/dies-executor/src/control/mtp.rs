@@ -1,6 +1,6 @@
 use std::{fmt::Debug, time::Duration};
 
-use super::variable::Variable;
+use dies_core::variable::Variable;
 
 pub struct MTP<T: Variable> {
     max_accel: f64,

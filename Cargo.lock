@@ -537,6 +537,7 @@ name = "dies-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "approx",
  "dies-protos",
  "glue",
  "lazy_static",

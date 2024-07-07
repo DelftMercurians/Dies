@@ -103,7 +103,7 @@ export class FieldRenderer {
         this.positionDisplayMode === "both" ||
         this.positionDisplayMode === "raw"
       ) {
-        this.drawBall(ball.position, "raw");
+        ball.raw_position.forEach(pos => this.drawBall(pos, "raw"));
       }
     }
 
@@ -175,8 +175,8 @@ export class FieldRenderer {
           ? BLUE_ROBOT_RAW
           : BLUE_ROBOT_FILTERED
         : positionDisplayMode === "raw"
-        ? YELLOW_ROBOT_RAW
-        : YELLOW_ROBOT_FILTERED;
+          ? YELLOW_ROBOT_RAW
+          : YELLOW_ROBOT_FILTERED;
 
     const serverPos =
       positionDisplayMode === "raw" ? data.raw_position : data.position;
@@ -193,7 +193,7 @@ export class FieldRenderer {
     this.ctx.arc(x, y, robotCanvasRadius, 0, 2 * Math.PI);
     this.ctx.fill();
 
-    const angle = -data.yaw;
+    const angle = positionDisplayMode === "raw" ? -data.raw_yaw : -data.yaw;
     this.ctx.strokeStyle = "white";
     this.ctx.lineWidth = 2;
     this.ctx.save();

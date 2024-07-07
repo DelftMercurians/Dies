@@ -2,7 +2,7 @@ use crate::filter::matrix_gen::{
     GravityControl, MatrixCreator, Piecewise1stOrder, ULMotionModel, WhiteNoise1stOrder,
 };
 use na::{SMatrix, SVector};
-use nalgebra as na;
+use nalgebra::{self as na};
 
 #[derive(Debug)]
 pub enum MaybeKalman<const OS: usize, const SS: usize> {
@@ -117,6 +117,7 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
             * innovation_covariance
                 .try_inverse()
                 .unwrap_or(SMatrix::<f64, OS, OS>::zeros());
+
         self.x = x + &kalman_gain * r;
         self.posteriori_covariance = &posteriori_covariance
             - &kalman_gain * &self.transformation_matrix * &posteriori_covariance;
