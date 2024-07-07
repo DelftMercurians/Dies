@@ -199,6 +199,7 @@ impl PlayerController {
 
         let last_ang_vel_target = self.target_angular_velocity;
         self.target_angular_velocity = 0.0;
+        dies_core::debug_value(format!("p{}.angular_speed", self.id), state.angular_speed.to_degrees());
         if let Some(yaw) = input.yaw {
             // draw target yaw
             dies_core::debug_value(format!("p{}.target_yaw", self.id), yaw.degrees());
