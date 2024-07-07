@@ -101,6 +101,8 @@ impl<T: Variable + Debug> MTP<T> {
             // dies_core::debug_string("p5.Goal", format!("{:?}", velocity + dv.cap_magnitude(self.max_decel * dt)));
 
             // besides decreasing the velocity with dv, we also go in the opposite direction to compensate for the overshoot
+
+            dies_core::debug_string("p5.MTPMode", "Overshoot");
             return -velocity + dv.cap_magnitude(self.max_decel * dt);
         }
 
@@ -110,10 +112,12 @@ impl<T: Variable + Debug> MTP<T> {
         let time_to_target = distance / current_speed;
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
-            let proportional_velocity = direction * distance * self.kp;
-            let dv = proportional_velocity - velocity;
-            // println!("Proportional control: time_to_target <= self.proportional_time_window.as_secs_f64()");
-            velocity + dv.cap_magnitude(self.max_decel * dt)
+            let proportional_velocity_magnitude = distance * self.kp;
+            let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
+
+            dies_core::debug_string("p5.MTPMode", "Proportional");
+            let new_speed = current_speed + dv_magnitude.cap_magnitude(self.max_decel * dt);
+            direction * new_speed
         } else if distance <= decel_distance && current_speed > 0.0 {
             // Deceleration phase
             let target_v = velocity
@@ -123,19 +127,21 @@ impl<T: Variable + Debug> MTP<T> {
             } else {
                 target_v
             };
-            let dv = target_v - velocity;
-            // println!("Deceleration phase: distance <= decel_distance && current_speed > 0.0 ");
-            velocity + dv.cap_magnitude(self.max_decel * dt)
+            let dv_mag = target_v.magnitude() - velocity.magnitude();
+            dies_core::debug_string("p5.MTPMode", "Deceleration");
+            let new_speed = current_speed + dv_mag.min(self.max_accel * dt);
+            direction * new_speed
         } else if current_speed < self.max_speed {
             // Acceleration phase
-            let target_v = direction * self.max_speed;
-            let dv = target_v - velocity;
-            // println!("current_speed < self.max_speed");
-            velocity + dv.cap_magnitude(self.max_accel * dt)
+            let target_v = self.max_speed;
+            let dv = target_v - current_speed;
+            let new_speed = current_speed + dv.min(self.max_accel * dt);
+            dies_core::debug_string("p5.MTPMode", "Acceleration");
+            direction * new_speed
         } else {
             // Cruise phase
-            // println!("Cruise returning");
-            velocity
+            dies_core::debug_string("p5.MTPMode", "Cruise");
+            direction * velocity.magnitude()
         }
     }
 }
