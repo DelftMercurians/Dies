@@ -6,9 +6,9 @@ use dies_core::{
     ScenarioInfo, WorldData,
 };
 use dies_executor::scenarios::ScenarioType;
-use dies_core::GcRefereeMsg;
 use dies_ssl_client::VisionClientConfig;
 use serde::{Deserialize, Serialize};
+
 use typeshare::typeshare;
 
 
@@ -89,7 +89,7 @@ pub(crate) enum UiCommand {
         scenario: ScenarioType,
     },
     GcCommand {
-        command: GcRefereeMsg::Command,
+        command: dies_protos::ssl_gc_referee_message::referee::Command,
     },
     Stop,
 }

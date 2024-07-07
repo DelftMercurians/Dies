@@ -279,7 +279,8 @@ impl Executor {
         if let Some(det) = simulator.detection() {
             self.update_from_vision_msg(det);
         }
-
+        let gc_message = simulator.gc_message();
+        self.update_from_gc_msg(gc_message);
         Ok(())
     }
 
@@ -419,7 +420,12 @@ impl Executor {
             ControlMsg::GcCommand { command } => {
                 let mut referee_msg = GcRefereeMsg::new();
                 referee_msg.set_command(command);
-                self.update_from_gc_msg(referee_msg);
+                match self.environment {
+                    Some(Environment::Simulation { ref mut simulator }) => {
+                        simulator.update_referee_message(referee_msg);
+                    }
+                    _ => {}
+                }
             }
             ControlMsg::Stop => {}
         }

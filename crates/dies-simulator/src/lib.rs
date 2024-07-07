@@ -9,6 +9,7 @@ use dies_protos::{
 use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
 use std::{collections::HashMap, f64::consts::PI};
+use dies_protos::ssl_gc_referee_message::Referee;
 use utils::IntervalTrigger;
 
 mod utils;
@@ -180,6 +181,7 @@ pub struct Simulation {
     last_detection_packet: Option<SSL_WrapperPacket>,
     geometry_interval: IntervalTrigger,
     geometry_packet: SSL_WrapperPacket,
+    referee_message: Referee,
     
 }
 
@@ -215,6 +217,7 @@ impl Simulation {
             last_detection_packet: None,
             geometry_interval: IntervalTrigger::new(geometry_interval),
             geometry_packet,
+            referee_message: Referee::new(),
         };
 
         // Create the ground
@@ -275,6 +278,15 @@ impl Simulation {
 
     pub fn detection(&mut self) -> Option<SSL_WrapperPacket> {
         self.last_detection_packet.take()
+    }
+    
+    
+    pub fn update_referee_message(&mut self, referee_message: Referee) {
+        self.referee_message = referee_message;
+    }
+    
+    pub fn gc_message(&self) -> Referee {
+        self.referee_message.clone()
     }
 
     pub fn geometry(&mut self) -> Option<SSL_WrapperPacket> {
