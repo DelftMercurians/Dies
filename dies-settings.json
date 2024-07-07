@@ -19,7 +19,7 @@
     "player_unit_transition_var": 146.21,
     "player_measurement_var": 0.01,
     "player_yaw_lpf_alpha": 0.15,
-    "ball_unit_transition_var": 10.0,
-    "ball_measurement_var": 10.0
+    "ball_unit_transition_var": 40000.0,
+    "ball_measurement_var": 25.0
   }
 }
