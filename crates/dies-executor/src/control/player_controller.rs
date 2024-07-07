@@ -166,10 +166,22 @@ impl PlayerController {
         if let Some(pos_target) = input.position {
             self.position_mtp.set_setpoint(pos_target);
             dies_core::debug_circle_stroke(
-                "p5.cutoff",
+                format!("p{}.cutoff", self.id),
                 pos_target,
-                self.position_mtp.cutoff_distance,
+                self.position_mtp.cutoff_distance(),
                 dies_core::DebugColor::Purple,
+            );
+            dies_core::debug_circle_stroke(
+                format!("p{}.deceleration_window", self.id),
+                pos_target,
+                state.velocity.norm_squared() / (2.0 * self.position_mtp.max_decel()),
+                dies_core::DebugColor::Green,
+            );
+            dies_core::debug_circle_stroke(
+                format!("p{}.proportional_time_window", self.id),
+                pos_target,
+                state.velocity.norm() * self.position_mtp.proportional_time_window().as_secs_f64(),
+                dies_core::DebugColor::Orange,
             );
 
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
@@ -179,6 +191,10 @@ impl PlayerController {
             );
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
+        } else {
+            dies_core::debug_remove(format!("p{}.cutoff", self.id));
+            dies_core::debug_remove(format!("p{}.deceleration_window", self.id));
+            dies_core::debug_remove(format!("p{}.proportional_time_window", self.id));
         }
         let local_vel = input.velocity.to_local(self.last_yaw);
         self.target_velocity += local_vel;
@@ -199,7 +215,10 @@ impl PlayerController {
 
         let last_ang_vel_target = self.target_angular_velocity;
         self.target_angular_velocity = 0.0;
-        dies_core::debug_value(format!("p{}.angular_speed", self.id), state.angular_speed.to_degrees());
+        dies_core::debug_value(
+            format!("p{}.angular_speed", self.id),
+            state.angular_speed.to_degrees(),
+        );
         if let Some(yaw) = input.yaw {
             // draw target yaw
             dies_core::debug_value(format!("p{}.target_yaw", self.id), yaw.degrees());

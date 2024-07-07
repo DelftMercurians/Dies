@@ -9,7 +9,7 @@ pub struct MTP<T: Variable> {
     setpoint: Option<T>,
     kp: f64,
     proportional_time_window: Duration,
-    pub cutoff_distance: f64,
+    cutoff_distance: f64,
 }
 
 impl<T: Variable + Debug> MTP<T> {
@@ -27,6 +27,28 @@ impl<T: Variable + Debug> MTP<T> {
 
     pub fn set_setpoint(&mut self, setpoint: T) {
         self.setpoint = Some(setpoint);
+    }
+
+    pub fn max_accel(&self) -> f64 {
+        self.max_accel
+    }
+    pub fn max_speed(&self) -> f64 {
+        self.max_speed
+    }
+    pub fn max_decel(&self) -> f64 {
+        self.max_decel
+    }
+    pub fn setpoint(&self) -> Option<T> {
+        self.setpoint
+    }
+    pub fn kp(&self) -> f64 {
+        self.kp
+    }
+    pub fn proportional_time_window(&self) -> Duration {
+        self.proportional_time_window
+    }
+    pub fn cutoff_distance(&self) -> f64 {
+        self.cutoff_distance
     }
 
     pub fn update_settings(
