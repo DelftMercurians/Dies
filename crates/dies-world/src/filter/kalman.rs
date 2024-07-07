@@ -84,7 +84,7 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         use_gate: bool,
     ) -> Option<SVector<f64, SS>> {
         let dt = newt - self.t;
-        if dt < 0.0 {
+        if dt <= 0.0 {
             return None;
         }
         let transition_matrix = self.transition_matrix.create_matrix(dt);

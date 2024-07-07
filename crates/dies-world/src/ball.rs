@@ -76,6 +76,12 @@ impl BallTracker {
                 )
             })
             .collect::<Vec<(Vector3, bool)>>();
+        let measured_positions = ball_measurements
+            .iter()
+            .map(|(pos, _)| pos)
+            .cloned()
+            .collect::<Vec<_>>();
+
         if ball_measurements.is_empty() {
             return;
         }
@@ -87,6 +93,7 @@ impl BallTracker {
             self.last_data = Some(BallData {
                 timestamp: current_time,
                 position: ball_measurements[0].0,
+                raw_position: measured_positions,
                 velocity: Vector3::zeros(),
             });
             self.is_init = true;
@@ -135,10 +142,12 @@ impl BallTracker {
                     self.last_data = Some(BallData {
                         timestamp: current_time,
                         position: pos_v3,
+                        raw_position: Vec::with_capacity(0),
                         velocity: vel_v3,
                     });
                 }
             }
+            self.last_data.as_mut().unwrap().raw_position = measured_positions;
         }
     }
 

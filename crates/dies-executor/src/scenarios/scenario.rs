@@ -340,6 +340,7 @@ mod tests {
             timestamp: 0.0,
             position: Vector3::zeros(),
             velocity: Vector3::zeros(),
+            raw_position: vec![],
         });
         world.own_players[0].position = Vector2::new(91.0, 0.0);
 

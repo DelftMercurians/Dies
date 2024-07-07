@@ -38,6 +38,8 @@ pub struct BallData {
     pub timestamp: f64,
     /// Position of the ball filtered by us, in mm, in dies coordinates
     pub position: Vector3,
+    /// Raw position as reported by vision
+    pub raw_position: Vec<Vector3>,
     /// Velocity of the ball in mm/s, in dies coordinates
     pub velocity: Vector3,
 }

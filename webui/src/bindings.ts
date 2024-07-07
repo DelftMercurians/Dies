@@ -245,6 +245,8 @@ export interface BallData {
 	timestamp: number;
 	/** Position of the ball filtered by us, in mm, in dies coordinates */
 	position: Vector3;
+	/** Raw position as reported by vision */
+	raw_position: Vector3[];
 	/** Velocity of the ball in mm/s, in dies coordinates */
 	velocity: Vector3;
 }

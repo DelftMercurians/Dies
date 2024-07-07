@@ -18,8 +18,9 @@ const FIELD_LINE = "#ffffff";
 const BLUE_ROBOT_FILTERED = "#2563eb";
 const BLUE_ROBOT_RAW = "#7c3aed";
 const YELLOW_ROBOT_FILTERED = "#facc15";
-const YELLOW_ROBOT_RAW = "#f97316";
-const BALL = "#fb923c";
+const YELLOW_ROBOT_RAW = "#f9731688";
+const BALL_FILTERED = "#fb923c";
+const BALL_RAW = "#eab308";
 const MANUAL_OUTLINE = "#dc2626";
 const SELECTED_OUTLINE = "#ffffff";
 
@@ -92,7 +93,18 @@ export class FieldRenderer {
     );
 
     if (ball) {
-      this.drawBall(ball.position);
+      if (
+        this.positionDisplayMode === "both" ||
+        this.positionDisplayMode === "filtered"
+      ) {
+        this.drawBall(ball.position, "filtered");
+      }
+      if (
+        this.positionDisplayMode === "both" ||
+        this.positionDisplayMode === "raw"
+      ) {
+        this.drawBall(ball.position, "raw");
+      }
     }
 
     this.debugShapes.forEach((shape) => this.drawDebugShape(shape));
@@ -211,10 +223,14 @@ export class FieldRenderer {
     }
   }
 
-  private drawBall(position: Vector2 | Vector3) {
+  private drawBall(
+    position: Vector2 | Vector3,
+    positionDisplayMode: PositionDisplayMode
+  ) {
     const [x, y] = this.fieldToCanvas(position);
     const ballCanvasRadius = this.convertLength(BALL_RADIUS);
-    this.ctx.fillStyle = BALL;
+    this.ctx.fillStyle =
+      positionDisplayMode === "filtered" ? BALL_FILTERED : BALL_RAW;
     this.ctx.beginPath();
     this.ctx.arc(x, y, ballCanvasRadius, 0, 2 * Math.PI);
     this.ctx.fill();
