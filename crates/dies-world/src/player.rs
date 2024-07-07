@@ -133,6 +133,11 @@ impl PlayerTracker {
                 settings.player_measurement_var,
             );
         }
+        self.yaw_filter.update_settings(
+            1,
+            vec![settings.player_yaw_lpf_b1, settings.player_yaw_lpf_b2],
+            vec![settings.player_yaw_lpf_a1, settings.player_yaw_lpf_a2],
+        );
     }
 
     pub fn get(&self) -> Option<&PlayerData> {

@@ -51,7 +51,7 @@ impl LowpassFilter {
                 output -= a * self.output_buffer[i];
             }
         }
-        output /= self.a_coeffs[0];
+        output /= self.a_coeffs[0] + std::f64::EPSILON;
 
         // Add new output to the buffer
         self.output_buffer.push_front(output);
