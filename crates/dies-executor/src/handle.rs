@@ -1,3 +1,4 @@
+use std::fmt;
 use anyhow::{anyhow, Result};
 use std::time::Duration;
 
@@ -5,6 +6,9 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dies_core::{ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, WorldUpdate};
 use dies_core::GcRefereeMsg;
+use dies_protos::ssl_gc_engine::continue_action::State;
+use dies_protos::ssl_gc_referee_message::referee::Command;
+
 
 #[derive(Debug)]
 pub enum ControlMsg {
@@ -16,10 +20,36 @@ pub enum ControlMsg {
     SetPause(bool),
     UpdateSettings(ExecutorSettings),
     GcCommand {
-        command: dies_protos::ssl_gc_referee_message::referee::Command,
+        command: Command,
     },
     Stop,
 }
+
+fn string_to_command(command_str: String) -> Result<Command> {
+    match command_str.as_str() {
+        "HALT" => Ok(Command::HALT),
+        "STOP" => Ok(Command::STOP),
+        "NORMAL_START" => Ok(Command::NORMAL_START),
+        "FORCE_START" => Ok(Command::FORCE_START),
+        "PREPARE_KICKOFF_YELLOW" => Ok(Command::PREPARE_KICKOFF_YELLOW),
+        "PREPARE_KICKOFF_BLUE" => Ok(Command::PREPARE_KICKOFF_BLUE),
+        "PREPARE_PENALTY_YELLOW" => Ok(Command::PREPARE_PENALTY_YELLOW),
+        "PREPARE_PENALTY_BLUE" => Ok(Command::PREPARE_PENALTY_BLUE),
+        "DIRECT_FREE_YELLOW" => Ok(Command::DIRECT_FREE_YELLOW),
+        "DIRECT_FREE_BLUE" => Ok(Command::DIRECT_FREE_BLUE),
+        "INDIRECT_FREE_YELLOW" => Ok(Command::INDIRECT_FREE_YELLOW),
+        "INDIRECT_FREE_BLUE" => Ok(Command::INDIRECT_FREE_BLUE),
+        "TIMEOUT_YELLOW" => Ok(Command::TIMEOUT_YELLOW),
+        "TIMEOUT_BLUE" => Ok(Command::TIMEOUT_BLUE),
+        "GOAL_YELLOW" => Ok(Command::GOAL_YELLOW),
+        "GOAL_BLUE" => Ok(Command::GOAL_BLUE),
+        "BALL_PLACEMENT_YELLOW" => Ok(Command::BALL_PLACEMENT_YELLOW),
+        "BALL_PLACEMENT_BLUE" => Ok(Command::BALL_PLACEMENT_BLUE),
+        _ => Err(anyhow!("Unknown command: {}", command_str)),
+    }
+}
+
+
 
 pub struct ExecutorInfoReceiver(oneshot::Receiver<ExecutorInfo>);
 
