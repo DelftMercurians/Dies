@@ -39,8 +39,8 @@ impl PlayerTracker {
             ),
             yaw_filter: LowpassFilter::new(
                 1,
-                vec![settings.player_yaw_lpf_b1, settings.player_yaw_lpf_b2],
-                vec![settings.player_yaw_lpf_a1, settings.player_yaw_lpf_a2],
+                vec![settings.player_yaw_lpf_alpha, 0.0],
+                vec![1.0, settings.player_yaw_lpf_alpha - 1.0],
             ),
         }
     }
@@ -135,8 +135,8 @@ impl PlayerTracker {
         }
         self.yaw_filter.update_settings(
             1,
-            vec![settings.player_yaw_lpf_b1, settings.player_yaw_lpf_b2],
-            vec![settings.player_yaw_lpf_a1, settings.player_yaw_lpf_a2],
+            vec![settings.player_yaw_lpf_alpha, 0.0],
+            vec![1.0, settings.player_yaw_lpf_alpha - 1.0],
         );
     }
 

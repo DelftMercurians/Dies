@@ -65,14 +65,8 @@ pub struct TrackerSettings {
     pub player_unit_transition_var: f64,
     /// Measurement variance for the player Kalman filter.
     pub player_measurement_var: f64,
-    /// Feedforward coefficient 1 (for input samples) for the low-pass filter for the player yaw.
-    pub player_yaw_lpf_b1: f64,
-    /// Feedforward coefficient 2 (for previous output samples) for the low-pass filter for the player yaw.
-    pub player_yaw_lpf_b2: f64,
-    /// Feedback coefficient 1 (for previous output samples) for the low-pass filter for the player yaw.
-    pub player_yaw_lpf_a1: f64,
-    /// Feedback coefficient 2 (for previous output samples) for the low-pass filter for the player yaw.
-    pub player_yaw_lpf_a2: f64,
+    /// Smoothinfg factor for the yaw LPF
+    pub player_yaw_lpf_alpha: f64,
 
     /// Transition variance for the ball Kalman filter.
     pub ball_unit_transition_var: f64,
@@ -89,10 +83,7 @@ impl Default for TrackerSettings {
             player_measurement_var: 2.0,
             ball_unit_transition_var: 10.0,
             ball_measurement_var: 10.0,
-            player_yaw_lpf_b1: 1.0,
-            player_yaw_lpf_b2: 0.0,
-            player_yaw_lpf_a1: 0.0,
-            player_yaw_lpf_a2: 0.0,
+            player_yaw_lpf_alpha: 0.5,
         }
     }
 }

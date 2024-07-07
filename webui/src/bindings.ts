@@ -83,14 +83,8 @@ export interface TrackerSettings {
 	player_unit_transition_var: number;
 	/** Measurement variance for the player Kalman filter. */
 	player_measurement_var: number;
-	/** Feedforward coefficient 1 (for input samples) for the low-pass filter for the player yaw. */
-	player_yaw_lpf_b1: number;
-	/** Feedforward coefficient 2 (for previous output samples) for the low-pass filter for the player yaw. */
-	player_yaw_lpf_b2: number;
-	/** Feedback coefficient 1 (for previous output samples) for the low-pass filter for the player yaw. */
-	player_yaw_lpf_a1: number;
-	/** Feedback coefficient 2 (for previous output samples) for the low-pass filter for the player yaw. */
-	player_yaw_lpf_a2: number;
+	/** Smoothinfg factor for the yaw LPF */
+	player_yaw_lpf_alpha: number;
 	/** Transition variance for the ball Kalman filter. */
 	ball_unit_transition_var: number;
 	/** Measurement variance for the ball Kalman filter. */
