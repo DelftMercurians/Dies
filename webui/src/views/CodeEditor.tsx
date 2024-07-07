@@ -7,6 +7,7 @@ import { Play, Save } from "lucide-react";
 import { useLocalStorage } from "@uidotdev/usehooks";
 import { Button } from "@/components/ui/button";
 import { useResizeObserver } from "@/lib/useResizeObserver";
+import * as math from "mathjs";
 
 interface CodeEditorProps {
   globals: Record<string, any>;
@@ -46,6 +47,10 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ globals, onRun }) => {
 
   useEffect(() => {
     if (editorRef.current) {
+      if (storedCode.length > 0) {
+        onRunRef.current && onRunRef.current(storedCode);
+      }
+
       const newEditor = monaco.editor.create(editorRef.current, {
         value: storedCode,
         language: "typescript",
@@ -95,27 +100,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ globals, onRun }) => {
       });
 
       const standardGlobals = {
-        Math: Math,
-        Date: Date,
-        Array: Array,
-        Object: Object,
-        String: String,
-        Number: Number,
-        Boolean: Boolean,
-        RegExp: RegExp,
-        Function: Function,
-        Promise: Promise,
-        JSON: JSON,
-        Error: Error,
-        Map: Map,
-        Set: Set,
-        WeakMap: WeakMap,
-        WeakSet: WeakSet,
-        Symbol: Symbol,
-        Proxy: Proxy,
-        Reflect: Reflect,
-        Intl: Intl,
-        console: console,
+        math,
       };
 
       const allGlobals = { ...standardGlobals, ...globalsRef.current };

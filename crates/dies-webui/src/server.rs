@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::Request,
-    http::{header, Response},
+    http::header,
     middleware,
     response::IntoResponse,
     routing::{get, post},

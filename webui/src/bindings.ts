@@ -63,10 +63,14 @@ export interface ControllerSettings {
 	position_kp: number;
 	/** Time until destination in which the proportional controller is used, in seconds. */
 	position_proportional_time_window: number;
+	/** Distance used as threshold for the controller to prevent shaky behavior */
+	position_cutoff_distance: number;
 	/** Proportional gain for the close-range angle controller. */
 	angle_kp: number;
 	/** Time until destination in which the proportional controller is used, in seconds. */
 	angle_proportional_time_window: number;
+	/** Distance used as threshold for the controller to prevent shaky behavior */
+	angle_cutoff_distance: number;
 }
 
 /** Settings for the `WorldTracker`. */

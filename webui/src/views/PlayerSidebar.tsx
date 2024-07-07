@@ -5,6 +5,7 @@ import {
   useSendCommand,
   useWorldState,
 } from "@/api";
+import * as math from "mathjs";
 import { DebugValue, PlayerData } from "@/bindings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,8 @@ const graphableValues = {
     ]),
 } as const satisfies Record<string, (data: GraphData) => number>;
 const graphableLabels = Object.keys(graphableValues);
+
+const functionGlobals = { math };
 
 const axisLabels: AxisLabels = {
   velocity: "mm/s",
@@ -320,12 +323,14 @@ const radiansToDegrees = (radians: number): number => {
 
 const createCustomFunction = (code: string, args: string[]) => {
   try {
-    const fun = new Function(...args, `return (${code});`);
+    const globalKeys = Object.keys(functionGlobals);
+    const globalValues = Object.values(functionGlobals);
+    const fun = new Function(...args, ...globalKeys, `return (${code});`);
     let errored = false;
     return (d: Record<string, any>) => {
       if (errored) return 0;
       try {
-        return fun(...args.map((a) => d[a]));
+        return fun(...args.map((a) => d[a]), ...globalValues);
       } catch (e) {
         alert(`Error in custom function: ${e}`);
         errored = true;
