@@ -93,7 +93,7 @@ impl ServerState {
                 Some(Ok(rx)) => Some(rx),
                 Some(Err(_)) => {
                     // If the receiver is gone, remove the handle
-                    self.executor_handle.write().unwrap().take();
+                    // self.executor_handle.write().unwrap().take();
                     None
                 }
                 None => None,
