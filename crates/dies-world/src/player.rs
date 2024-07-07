@@ -4,7 +4,7 @@ use nalgebra::{self as na, ComplexField, Vector2, Vector4};
 
 use crate::{
     coord_utils::to_dies_coords2,
-    filter::{LowpassFilter, MaybeKalman},
+    filter::{AngleLowPassFilter, MaybeKalman},
 };
 /// Tracker for a single player.
 pub struct PlayerTracker {
@@ -21,7 +21,7 @@ pub struct PlayerTracker {
     /// Kalman filter for the player's position and velocity
     filter: MaybeKalman<2, 4>,
     /// Low-pass filter for the player's yaw
-    yaw_filter: LowpassFilter,
+    yaw_filter: AngleLowPassFilter,
 }
 
 impl PlayerTracker {
@@ -37,11 +37,7 @@ impl PlayerTracker {
                 settings.player_unit_transition_var,
                 settings.player_measurement_var,
             ),
-            yaw_filter: LowpassFilter::new(
-                1,
-                vec![settings.player_yaw_lpf_alpha, 0.0],
-                vec![1.0, settings.player_yaw_lpf_alpha - 1.0],
-            ),
+            yaw_filter: AngleLowPassFilter::new(settings.player_yaw_lpf_alpha),
         }
     }
 
@@ -137,11 +133,8 @@ impl PlayerTracker {
                 settings.player_measurement_var,
             );
         }
-        self.yaw_filter.update_settings(
-            1,
-            vec![settings.player_yaw_lpf_alpha, 0.0],
-            vec![1.0, settings.player_yaw_lpf_alpha - 1.0],
-        );
+        self.yaw_filter
+            .update_settings(settings.player_yaw_lpf_alpha);
     }
 
     pub fn get(&self) -> Option<&PlayerData> {
