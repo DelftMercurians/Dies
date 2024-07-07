@@ -152,9 +152,15 @@ impl Kalman<2, 4> {
 
     /// Update the unit transition variance and measurement variance.
     pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
-        self.var = unit_transition_var;
-        self.measurement_noise =
-            SMatrix::<f64, 2, 2>::new(measurement_var, 0.0, 0.0, measurement_var);
+        let mut new_filter = Kalman::new_player_filter(
+            self.posteriori_covariance[(0, 0)],
+            unit_transition_var,
+            measurement_var,
+            self.x.clone(),
+            self.t,
+        );
+        new_filter.posteriori_covariance = self.posteriori_covariance;
+        *self = new_filter;
     }
 }
 
@@ -218,18 +224,15 @@ impl Kalman<3, 6> {
 
     /// Update the unit transition variance and measurement variance.
     pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
-        self.var = unit_transition_var;
-        self.measurement_noise = SMatrix::<f64, 3, 3>::new(
+        let mut new_filter = Self::new_ball_filter(
+            self.posteriori_covariance[(0, 0)],
+            unit_transition_var,
             measurement_var,
-            0.0,
-            0.0,
-            0.0,
-            measurement_var,
-            0.0,
-            0.0,
-            0.0,
-            measurement_var,
+            self.x.clone(),
+            self.t,
         );
+        new_filter.posteriori_covariance = self.posteriori_covariance;
+        *self = new_filter;
     }
 }
 
