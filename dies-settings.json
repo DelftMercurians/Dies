@@ -18,10 +18,10 @@
     "initial_opp_goal_x": 1.0,
     "player_unit_transition_var": 0.1,
     "player_measurement_var": 2.0,
-    "player_yaw_lpf_b1": 0.34,
-    "player_yaw_lpf_b2": 0.32,
-    "player_yaw_lpf_a1": 0.0,
-    "player_yaw_lpf_a2": 0.0,
+    "player_yaw_lpf_b1": 0.11,
+    "player_yaw_lpf_b2": 0.0,
+    "player_yaw_lpf_a1": 1.0,
+    "player_yaw_lpf_a2": 0.9,
     "ball_unit_transition_var": 10.0,
     "ball_measurement_var": 10.0
   }

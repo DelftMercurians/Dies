@@ -20,7 +20,6 @@ impl LowpassFilter {
     pub fn new(order: usize, b_coeffs: Vec<f64>, a_coeffs: Vec<f64>) -> Self {
         assert_eq!(b_coeffs.len(), order + 1);
         assert_eq!(a_coeffs.len(), order + 1);
-        assert!(a_coeffs[0] != 0.0, "First a coefficient must not be zero");
 
         LowpassFilter {
             order,
