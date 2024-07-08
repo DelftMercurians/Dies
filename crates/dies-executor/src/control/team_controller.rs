@@ -54,7 +54,12 @@ impl TeamController {
         }
         let state = world_data.current_game_state.game_state;
 
-        let mut inputs = self.strategy.get_mut(&state).unwrap().update(&world_data);
+        let mut inputs = if let Some(strategy) = self.strategy.get_mut(&state) {
+            strategy
+        } else {
+            log::warn!("No strategy found for game state {:?}", state);
+            return;
+        }.update(&world_data);
 
         // If in a stop state, override the inputs
         if world_data.current_game_state.game_state == GameState::Stop {

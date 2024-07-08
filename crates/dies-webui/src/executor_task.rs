@@ -2,12 +2,13 @@ use dies_core::WorldUpdate;
 use dies_executor::{scenarios::ScenarioType, ControlMsg, ExecutorHandle};
 use dies_simulator::SimulationConfig;
 use std::sync::Arc;
+use anyhow::anyhow;
 use dies_core::GcRefereeMsg;
 use tokio::{
     sync::{broadcast, oneshot, watch},
     task::JoinHandle,
 };
-
+use dies_protos::ssl_gc_referee_message::referee::Command;
 use crate::{server::ServerState, ExecutorStatus, UiCommand, UiEnvironment, UiMode};
 
 #[derive(Default)]
@@ -92,8 +93,9 @@ impl ExecutorTask {
                     _ = self.start_scenario(scenario) => {}
                 }
             },
-            UiCommand::GcCommand {command} => {
-                self.handle_executor_msg(ControlMsg::GcCommand {command});
+            UiCommand::GcCommand(command) => {
+                let cmd = string_to_command(command).unwrap();
+                self.handle_executor_msg(ControlMsg::GcCommand {command: cmd});
             }
         }
     }
@@ -218,5 +220,30 @@ impl ExecutorTask {
         {
             let _ = executor_handle.send(cmd);
         }
+    }
+}
+
+
+fn string_to_command(command_str: String) -> anyhow::Result<Command> {
+    match command_str.as_str() {
+        "HALT" => Ok(Command::HALT),
+        "STOP" => Ok(Command::STOP),
+        "NORMAL_START" => Ok(Command::NORMAL_START),
+        "FORCE_START" => Ok(Command::FORCE_START),
+        "PREPARE_KICKOFF_YELLOW" => Ok(Command::PREPARE_KICKOFF_YELLOW),
+        "PREPARE_KICKOFF_BLUE" => Ok(Command::PREPARE_KICKOFF_BLUE),
+        "PREPARE_PENALTY_YELLOW" => Ok(Command::PREPARE_PENALTY_YELLOW),
+        "PREPARE_PENALTY_BLUE" => Ok(Command::PREPARE_PENALTY_BLUE),
+        "DIRECT_FREE_YELLOW" => Ok(Command::DIRECT_FREE_YELLOW),
+        "DIRECT_FREE_BLUE" => Ok(Command::DIRECT_FREE_BLUE),
+        "INDIRECT_FREE_YELLOW" => Ok(Command::INDIRECT_FREE_YELLOW),
+        "INDIRECT_FREE_BLUE" => Ok(Command::INDIRECT_FREE_BLUE),
+        "TIMEOUT_YELLOW" => Ok(Command::TIMEOUT_YELLOW),
+        "TIMEOUT_BLUE" => Ok(Command::TIMEOUT_BLUE),
+        "GOAL_YELLOW" => Ok(Command::GOAL_YELLOW),
+        "GOAL_BLUE" => Ok(Command::GOAL_BLUE),
+        "BALL_PLACEMENT_YELLOW" => Ok(Command::BALL_PLACEMENT_YELLOW),
+        "BALL_PLACEMENT_BLUE" => Ok(Command::BALL_PLACEMENT_BLUE),
+        _ => Err(anyhow!("Unknown command: {}", command_str)),
     }
 }
