@@ -49,6 +49,11 @@ impl ScenarioSetup {
             strategy: strategy_map,
         }
     }
+    
+    pub fn add_strategy(&mut self, state: GameState, strategy: impl Strategy + 'static) -> &mut Self {
+        self.strategy.insert(state, Box::new(strategy) as Box<dyn Strategy>);
+        self
+    }
 
     /// Sets the ball to be at a specific position.
     pub fn add_ball_at(&mut self, ball: Vector3) -> &mut Self {
