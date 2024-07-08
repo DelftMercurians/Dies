@@ -1,6 +1,6 @@
 {
   "controller_settings": {
-    "max_acceleration": 5230.0,
+    "max_acceleration": 5160.0,
     "max_velocity": 3950.0,
     "max_deceleration": 870.0,
     "max_angular_velocity": 12.566370614359172,
@@ -19,7 +19,7 @@
     "player_unit_transition_var": 146.21,
     "player_measurement_var": 0.01,
     "player_yaw_lpf_alpha": 0.15,
-    "ball_unit_transition_var": 153.59,
+    "ball_unit_transition_var": 75.61,
     "ball_measurement_var": 0.01
   }
 }

@@ -16,34 +16,35 @@ impl Waller {
         Self {}
     }
 
-    // HAVE A LOOK AT THE CORRECT DIMENSIONS OF THE GOALKEEPER AREA ONCE YOU CAN RUN THE CODE!
     fn find_intersection(&self, player_data: &PlayerData, ball: &BallData) -> Vector2<f64> {
-        let goal_center = Vector2::new(6117.0, -100.0); // Center of the goal area
+        let goal_center = Vector2::new(6117.0, -129.0); // Center of the goal area
         let ball_pos = Vector2::new(ball.position.x, ball.position.y);
 
         // Compute the direction vector from the ball to the goal center
-        // let direction = goal_center - ball_pos;
         let direction: Vector2<f64> = goal_center - ball_pos;
         // Normalize the direction vector
         let direction = direction.normalize();
+        println!("Direction: {:?}", direction);
 
         // Points representing the boundary of the goalkeeper area
         let area_top = 1400.0; // top boundary y-coordinate
         let area_bottom = -1400.0; // bottom boundary y-coordinate
-        let area_right = 4485.0;  // right boundary x-coordinate
+        let area_right = 4630.0;  // right boundary x-coordinate
 
         // Intersect with the top boundary
         if direction.y != 0.0 {
             let t = (area_top - ball_pos.y) / direction.y;
             let x = ball_pos.x + t * direction.x;
-            if x.abs() <= area_right {
+            println!("Intersecting with top boundary: {:?}", x);
+            if x.abs() >= area_right && x.abs() <= 6125.0{
                 return Vector2::new(x, area_top);
             }
 
             // Intersect with the bottom boundary
             let t = (area_bottom - ball_pos.y) / direction.y;
             let x = ball_pos.x + t * direction.x;
-            if x.abs() <= area_right {
+            println!("Intersecting with bottom boundary: {:?}", x);
+            if x.abs() >= area_right && x.abs() <= 6125.0{
                 return Vector2::new(x, area_bottom);
             }
         }
@@ -59,6 +60,7 @@ impl Waller {
 
         // Default fallback to ball position (should not happen in normal cases)
         // CHANGE THIS TO MIDDLE OF THE GOAL 
+        //println!("Falling back to ball position");
         return Vector2::new(area_right, ball_pos.y)
     }
 
