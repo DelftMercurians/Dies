@@ -19,9 +19,9 @@ fn one_random_player() -> ScenarioSetup {
 
 fn one_test_role_player() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole {}));
+    strategy.add_role(Box::new(TestRole::new()));
     let mut scenario = ScenarioSetup::new(strategy);
-    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    scenario.add_own_player_at(Vector2::new(-1000.0, 0.0));
     scenario
 }
 
