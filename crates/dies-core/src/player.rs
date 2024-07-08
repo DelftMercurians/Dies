@@ -192,6 +192,7 @@ impl PlayerOverrideCommand {
 pub enum SysStatus {
     Emergency,
     Ok,
+    Ready,
     Stop,
     Starting,
     Overtemp,
@@ -213,6 +214,7 @@ impl Into<SysStatus> for glue::HG_Status {
     fn into(self) -> SysStatus {
         match self {
             Self::EMERGENCY => SysStatus::Emergency,
+            Self::READY => SysStatus::Ready,
             Self::OK => SysStatus::Ok,
             Self::STOP => SysStatus::Stop,
             Self::STARTING => SysStatus::Starting,
