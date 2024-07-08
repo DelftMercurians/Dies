@@ -108,7 +108,9 @@ impl Role for TestRole {
         // skill!(ctx, GoToPositionSkill::new(target));
         // // skill!(ctx, GoToPositionSkill::new(target2));
         let mut input = PlayerControlInput::new();
-        input.velocity = Velocity::global(Vector2::new(1000.0, 0.0));
+        let preferred_vel = target - ctx.player.position;
+        let max_speed = 100000.0;
+        input.velocity = Velocity::global(Vector2::new(preferred_vel.x , preferred_vel.y).normalize() * max_speed);
 
         self.agent.position = Vec2::new(ctx.player.position.x as f32, ctx.player.position.y as f32);
         self.agent.velocity = Vec2::new(ctx.player.velocity.x as f32, ctx.player.velocity.y as f32);
@@ -136,7 +138,7 @@ impl Role for TestRole {
                                 .map(|obstacle| obstacle.clone())
                                 .collect::<Vec<Cow<'_, Obstacle>>>();
                     let time_horizon = 100.0;
-                    let obstacle_time_horizon = 100.0;
+                    let obstacle_time_horizon = 10.0;
     
                     let avoidance_velocity : Vec2 = self.agent.compute_avoiding_velocity(
                         // Neighbors - other players
