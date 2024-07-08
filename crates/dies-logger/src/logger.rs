@@ -78,7 +78,7 @@ impl AsyncProtobufLogger {
             match msg {
                 WorkerMsg::Log(msg) => {
                     if let Err(e) = log_file.write_log_message(&msg) {
-                        eprintln!("Failed to write to log file: {}", e);
+                     //   eprintln!("Failed to write to log file: {}", e);
                     }
                 }
                 WorkerMsg::Flush => {

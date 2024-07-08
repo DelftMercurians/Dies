@@ -331,6 +331,7 @@ export type UiCommand =
 	| { type: "StartScenario", data: {
 	scenario: ScenarioType;
 }}
+	| { type: "GcCommand", data: string }
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {

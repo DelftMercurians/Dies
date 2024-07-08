@@ -1,7 +1,7 @@
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
-
+use log::log;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{ExecutorInfo, ExecutorSettings, GameState, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, WorldUpdate};
 use dies_logger::log_referee;
@@ -299,6 +299,12 @@ impl Executor {
                     Some(msg) = self.command_rx.recv() => {
                         match msg {
                             ControlMsg::Stop => break,
+                            ControlMsg::GcCommand { command } => {
+                                let mut referee_msg = GcRefereeMsg::new();
+                                referee_msg.set_command(command);
+                            //    log::info!("fake referee msg: {:?}", referee_msg);
+                                simulator.update_referee_message(referee_msg);
+                            }
                             msg => self.handle_control_msg(msg)
                         }
                     }
@@ -392,6 +398,7 @@ impl Executor {
     }
 
     fn handle_control_msg(&mut self, msg: ControlMsg) {
+
         match msg {
             ControlMsg::SetPause(pause) => {
                 self.paused_tx.send(pause).ok();
@@ -417,16 +424,7 @@ impl Executor {
                     .update_controller_settings(&settings.controller_settings);
                 self.tracker.update_settings(&settings.tracker_settings);
             }
-            ControlMsg::GcCommand { command } => {
-                let mut referee_msg = GcRefereeMsg::new();
-                referee_msg.set_command(command);
-                match self.environment {
-                    Some(Environment::Simulation { ref mut simulator }) => {
-                        simulator.update_referee_message(referee_msg);
-                    }
-                    _ => {}
-                }
-            }
+            ControlMsg::GcCommand { command } => {}
             ControlMsg::Stop => {}
         }
     }

@@ -54,7 +54,14 @@ const App: React.FC = () => {
   const debugData = useDebugData();
   const tabListRef = useRef<HTMLDivElement>(null);
   const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
-
+  const GCcommands = [
+    "HALT", "STOP", "NORMAL_START", "FORCE_START", "PREPARE_KICKOFF_YELLOW",
+    "PREPARE_KICKOFF_BLUE", "PREPARE_PENALTY_YELLOW", "PREPARE_PENALTY_BLUE",
+    "DIRECT_FREE_YELLOW", "DIRECT_FREE_BLUE", "INDIRECT_FREE_YELLOW", "INDIRECT_FREE_BLUE",
+    "TIMEOUT_YELLOW", "TIMEOUT_BLUE", "GOAL_YELLOW", "GOAL_BLUE", "BALL_PLACEMENT_YELLOW",
+    "BALL_PLACEMENT_BLUE",
+  ];
+  const [selectedCommand, setSelectedCommand] = useState<null | string>("HALT");
   if (!backendState) {
     return (
       <div className="w-full h-full flex justify-center items-center bg-slate-100">
@@ -91,6 +98,13 @@ const App: React.FC = () => {
       toast.error(`Unhandled state ${val}`);
     }
   };
+  const handleCommandChange = (val: string) => {
+    setSelectedCommand(val);
+    sendCommand({
+      type: "GcCommand",
+      data: val
+    })
+  }
   const runningScenario =
     executorStatus.type === "RunningExecutor"
       ? executorStatus.data.scenario
@@ -127,6 +141,7 @@ const App: React.FC = () => {
               <Radio />
             </ToggleGroupItem>
           </SimpleTooltip>
+
         </ToggleGroup>
 
         <Select
@@ -192,7 +207,30 @@ const App: React.FC = () => {
             </ToggleGroupItem>
           </SimpleTooltip>
         </ToggleGroup>
+
+
+        <Select
+            value={
+              selectedCommand
+            }
+            onValueChange={(val) => handleCommandChange(val)}
+        >
+          <SelectTrigger className="w-64">
+            <SelectValue placeholder="Select GC command" />
+          </SelectTrigger>
+
+          <SelectContent>
+            {GCcommands.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
       </div>
+
+
 
       {/* Main content */}
       <ResizablePanelGroup autoSaveId="main-layout" direction="horizontal">
