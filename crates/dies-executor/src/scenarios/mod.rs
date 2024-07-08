@@ -3,8 +3,7 @@ use dies_core::Vector2;
 use dies_core::Vector3;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
-
-use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
+use crate::{roles::test_role::TestRole, roles::waller::Waller, strategy::AdHocStrategy};
 
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
@@ -35,14 +34,13 @@ fn two_players_one_ball() -> ScenarioSetup {
     scenario
 }
 
-fn two_wallers_one_ball() -> ScenarioSetup {
+fn one_waller_one_ball() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Waller::new());
+    strategy.add_role(Box::new(Waller {}));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
         .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
-        .add_own_player_at(Vector2::new(2264.0, 336.0))
-        .add_own_player_at(Vector2::new(2050.0, -878.0));
+        .add_own_player_at(Vector2::new(2264.0, 336.0));
     scenario
 }
 
@@ -127,7 +125,7 @@ scenarios! {
     one_random_player,
     one_player_go_to_origin,
     two_players_one_ball,
-    two_wallers_one_ball
+    one_waller_one_ball
 }
 
 #[cfg(test)]
