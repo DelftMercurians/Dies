@@ -18,9 +18,9 @@ See [http://docs.delftmercurians.nl/](http://docs.delftmercurians.nl/) for the l
 You'll need the following dependencies on your system:
 
 - Stable [Rust](https://www.rust-lang.org/tools/install) toolchain. Use rustup if you can.
-- On Linux, you'll need to install the `pkg-config`, `libudev-dev` and `libssl-dev` packages: `sudo apt install libudev-dev libssl-dev pkg-config`.
+- On Linux, you'll need to install the `pkg-config`, `clang`, `libudev-dev` and `libssl-dev` packages: `sudo apt install libudev-dev libssl-dev pkg-config clang`.
 
-To run Dies locally, simply use `cargo run -- <option>`.
+To run Dies locally, simply use `cargo run -- <options>`.
 
 If you are connected to the team VPN, you can run your local copy of Dies on the server. For now, this will only work on Linux. First of all make sure you have `ssh` and `rsync` and that your public key is added to the server. Then, you can run the following command:
 
@@ -28,11 +28,23 @@ If you are connected to the team VPN, you can run your local copy of Dies on the
 ./run.sh <options>
 ```
 
-The following options are required:
-
-- `-m`: Mode: `sim` for simulation, `live` for real robot.
-
 _Note:_ If you have large files in the repository that you wouldn't like to upload to the server, add their names to `.rsyncignore`.
+
+### Debugging hanging issues
+
+If you are experiencing hanging issues, you can use `tokio-console` to see the state of running tasks. To do this, you need to install `tokio-console`:
+
+```sh
+cargo install --locked tokio-console
+```
+
+Then while Dies is running, you can run:
+
+```sh
+tokio-console
+```
+
+You will see a `top`-like interface that shows the state of all running tasks. You can use `q` to quit.
 
 ### Web UI Development
 
