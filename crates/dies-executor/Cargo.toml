@@ -18,6 +18,7 @@ dies-logger = { version = "0.1.0", path = "../dies-logger" }
 paste = "1.0.15"
 rand = "0.8.5"
 serde = "1.0.203"
+dodgy_2d = { git = "https://github.com/DelftMercurians/dodgy.git", version = "0.5.1" }
 
 [dev-dependencies]
 approx = "0.5.1"

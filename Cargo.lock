@@ -670,6 +670,7 @@ dependencies = [
  "dies-simulator",
  "dies-ssl-client",
  "dies-world",
+ "dodgy_2d",
  "log",
  "nalgebra",
  "paste",
@@ -784,6 +785,14 @@ dependencies = [
  "option-ext",
  "redox_users",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "dodgy_2d"
+version = "0.5.1"
+source = "git+https://github.com/DelftMercurians/dodgy.git#b0ab42a261faf444f312d93d9684795a1f3109d5"
+dependencies = [
+ "glam",
 ]
 
 [[package]]
@@ -983,6 +992,12 @@ name = "gimli"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40ecd4077b5ae9fd2e9e169b102c6c330d0605168eb0e8bf79952b256dbefffd"
+
+[[package]]
+name = "glam"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "779ae4bf7e8421cf91c0b3b64e7e8b40b862fba4d393f59150042de7c4965a94"
 
 [[package]]
 name = "glob"
