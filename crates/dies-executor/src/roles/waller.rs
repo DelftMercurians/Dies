@@ -14,7 +14,7 @@ impl Waller {
 
     // HAVE A LOOK AT THE CORRECT DIMENSIONS OF THE GOALKEEPER AREA ONCE YOU CAN RUN THE CODE!
     fn find_intersection(&self, player_data: &PlayerData, ball: &BallData, goal_width: f64) -> Vector2<f64> {
-        let goal_center = Vector2::new(0.0, 0.0); // Center of the goal area
+        let goal_center = Vector2::new(6117.0, -100.0); // Center of the goal area
         let ball_pos = ball.position;
 
         // Compute the direction vector from the ball to the goal center
@@ -24,9 +24,9 @@ impl Waller {
         let direction = direction.normalize();
 
         // Points representing the boundary of the goalkeeper area
-        let area_top = 1000.0; // top boundary y-coordinate
-        let area_bottom = -1000.0; // bottom boundary y-coordinate
-        let area_right = 1000.0;  // right boundary x-coordinate
+        let area_top = 1400.0; // top boundary y-coordinate
+        let area_bottom = -1400.0; // bottom boundary y-coordinate
+        let area_right = 4485.0;  // right boundary x-coordinate
 
         // Intersect with the top boundary
         if direction.y != 0.0 {
