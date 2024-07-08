@@ -62,7 +62,9 @@ impl Role for TestRole {
                         Velocity::Local(_) => return input,
                     };
     
-                    // PlayerControlInput::new()
+                    // other words, obstacles with vertices going counter-clockwise will
+                    // prevent objects from getting into the loop, and obstacles with vertices
+                    // going clockwise will prevent objects from leaving the loop.
                     let obstacles: Vec<Cow<'static, Obstacle>> = vec![
                                 Cow::Owned(Obstacle::Closed{
                                     vertices: vec![
