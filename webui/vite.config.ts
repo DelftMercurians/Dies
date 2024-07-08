@@ -8,6 +8,10 @@ export default defineConfig({
     proxy: {
       "/api": `http://127.0.0.1:5555`,
     },
+    headers: {
+      "Content-Security-Policy":
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+    },
   },
   // logLevel: "error",
   clearScreen: false,

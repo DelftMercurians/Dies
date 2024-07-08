@@ -1,6 +1,9 @@
-use dies_basestation_client::BasestationClientConfig;
+use std::{collections::HashMap, path::PathBuf};
+
+use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    ControllerSettings, ExecutorInfo, PlayerId, PlayerOverrideCommand, ScenarioInfo, WorldData,
+    DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
+    ScenarioInfo, WorldData,
 };
 use dies_executor::scenarios::ScenarioType;
 use dies_ssl_client::VisionClientConfig;
@@ -17,6 +20,7 @@ pub use server::start;
 #[derive(Debug, Clone)]
 pub struct UiConfig {
     pub port: u16,
+    pub settings_file: PathBuf,
     pub environment: UiEnvironment,
 }
 
@@ -24,7 +28,7 @@ pub struct UiConfig {
 pub enum UiEnvironment {
     WithLive {
         ssl_config: VisionClientConfig,
-        bs_config: BasestationClientConfig,
+        bs_handle: BasestationHandle,
     },
     SimulationOnly,
 }
@@ -113,14 +117,34 @@ pub(crate) enum UiWorldState {
     None,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "data")]
 #[typeshare]
-pub(crate) struct ControllerSettingsResponse {
-    pub(crate) settings: ControllerSettings,
+pub(crate) enum WsMessage<'a> {
+    WorldUpdate(&'a WorldData),
+    Debug(&'a DebugMap),
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct GetDebugMapResponse {
+    pub(crate) debug_map: DebugMap,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[typeshare]
-pub(crate) struct PostControllerSettingsBody {
-    pub(crate) settings: ControllerSettings,
+pub(crate) struct ExecutorSettingsResponse {
+    pub(crate) settings: ExecutorSettings,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[typeshare]
+pub(crate) struct PostExecutorSettingsBody {
+    pub(crate) settings: ExecutorSettings,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct BasestationResponse {
+    pub(crate) players: HashMap<PlayerId, PlayerFeedbackMsg>,
 }

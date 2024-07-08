@@ -2,7 +2,34 @@ use crate::filter::matrix_gen::{
     GravityControl, MatrixCreator, Piecewise1stOrder, ULMotionModel, WhiteNoise1stOrder,
 };
 use na::{SMatrix, SVector};
-use nalgebra as na;
+use nalgebra::{self as na};
+
+#[derive(Debug)]
+pub enum MaybeKalman<const OS: usize, const SS: usize> {
+    Init(Kalman<OS, SS>),
+    Uninit {
+        init_var: f64,
+        unit_transition_var: f64,
+        measurement_var: f64,
+    },
+}
+
+impl<const OS: usize, const SS: usize> MaybeKalman<OS, SS> {
+    pub fn new(init_var: f64, unit_transition_var: f64, measurement_var: f64) -> Self {
+        MaybeKalman::Uninit {
+            init_var,
+            unit_transition_var,
+            measurement_var,
+        }
+    }
+
+    pub fn as_mut(&mut self) -> Option<&mut Kalman<OS, SS>> {
+        match self {
+            MaybeKalman::Init(k) => Some(k),
+            _ => None,
+        }
+    }
+}
 
 /// OS: Observation Space, SS: State Space
 #[derive(Debug)]
@@ -57,7 +84,7 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         use_gate: bool,
     ) -> Option<SVector<f64, SS>> {
         let dt = newt - self.t;
-        if dt < 0.0 {
+        if dt <= 0.0 {
             return None;
         }
         let transition_matrix = self.transition_matrix.create_matrix(dt);
@@ -71,6 +98,13 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
             return Option::from(x.clone());
         }
 
+        dies_core::debug_value(
+            "kalman.posteriori_covariance",
+            self.posteriori_covariance[(0, 0)],
+        );
+        dies_core::debug_value("kalman.var", self.var);
+        dies_core::debug_value("kalman.measurement_var", self.measurement_noise[(0, 0)]);
+
         let posteriori_covariance =
             &transition_matrix * &self.posteriori_covariance * &transition_matrix.transpose()
                 + &process_noise * self.var;
@@ -80,7 +114,10 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
             + &self.measurement_noise;
         let kalman_gain = &posteriori_covariance
             * &self.transformation_matrix.transpose()
-            * innovation_covariance.try_inverse().unwrap();
+            * innovation_covariance
+                .try_inverse()
+                .unwrap_or(SMatrix::<f64, OS, OS>::zeros());
+
         self.x = x + &kalman_gain * r;
         self.posteriori_covariance = &posteriori_covariance
             - &kalman_gain * &self.transformation_matrix * &posteriori_covariance;
@@ -120,6 +157,39 @@ impl Kalman<2, 4> {
             control: None,
         }
     }
+
+    /// Update the unit transition variance and measurement variance.
+    pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
+        let mut new_filter = Kalman::new_player_filter(
+            0.1,
+            unit_transition_var,
+            measurement_var,
+            self.x.clone(),
+            self.t,
+        );
+        new_filter.posteriori_covariance = self.posteriori_covariance;
+        *self = new_filter;
+    }
+}
+
+impl MaybeKalman<2, 4> {
+    /// Initialize the Kalman filter if it is not initialized.
+    pub fn init(&mut self, init_pos: SVector<f64, 4>, int_time: f64) {
+        if let MaybeKalman::Uninit {
+            init_var,
+            unit_transition_var,
+            measurement_var,
+        } = self
+        {
+            *self = Self::Init(Kalman::new_player_filter(
+                *init_var,
+                *unit_transition_var,
+                *measurement_var,
+                init_pos,
+                int_time,
+            ))
+        }
+    }
 }
 
 impl Kalman<3, 6> {
@@ -157,6 +227,39 @@ impl Kalman<3, 6> {
             posteriori_covariance: SMatrix::<f64, 6, 6>::identity() * init_var,
             x: init_pos,
             control: Some(Box::new(GravityControl)),
+        }
+    }
+
+    /// Update the unit transition variance and measurement variance.
+    pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
+        let mut new_filter = Self::new_ball_filter(
+            0.1,
+            unit_transition_var,
+            measurement_var,
+            self.x.clone(),
+            self.t,
+        );
+        new_filter.posteriori_covariance = self.posteriori_covariance;
+        *self = new_filter;
+    }
+}
+
+impl MaybeKalman<3, 6> {
+    /// Initialize the Kalman filter if it is not initialized.
+    pub fn init(&mut self, init_pos: SVector<f64, 6>, int_time: f64) {
+        if let MaybeKalman::Uninit {
+            init_var,
+            unit_transition_var,
+            measurement_var,
+        } = self
+        {
+            *self = MaybeKalman::Init(Kalman::new_ball_filter(
+                *init_var,
+                *unit_transition_var,
+                *measurement_var,
+                init_pos,
+                int_time,
+            ));
         }
     }
 }

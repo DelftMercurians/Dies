@@ -10,27 +10,27 @@ import {
   YAxis,
 } from "recharts";
 
-interface TimeSeriesChartProps<D, K extends keyof D> {
+type DataPoint = { timestamp: number; [key: string]: any };
+
+interface TimeSeriesChartProps<D> {
   newDataPoint: D;
-  selectedKey: K;
+  getData: (data: D) => number;
+  axisLabel: string;
   paused?: boolean;
   objectId?: string | number;
-  transform?: (value: D[K]) => number;
-  axisLabels?: { [K in keyof D]?: string };
   maxDataPoints?: number;
   className?: string;
 }
 
-function TimeSeriesChart<D extends { timestamp: number }, K extends keyof D>({
+function TimeSeriesChart<D extends DataPoint>({
   newDataPoint,
-  selectedKey,
-  axisLabels,
+  getData,
+  axisLabel,
   paused = false,
   objectId = 0,
-  transform = (v) => Number(v),
   maxDataPoints = 100,
   className = "",
-}: TimeSeriesChartProps<D, K>) {
+}: TimeSeriesChartProps<D>) {
   const [currentObjectId, setObjectId] = useState<string | number>(objectId);
   const [firstTs, setFirstTs] = useState<number>(newDataPoint.timestamp);
   const [data, setData] = useState<D[]>([]);
@@ -70,7 +70,7 @@ function TimeSeriesChart<D extends { timestamp: number }, K extends keyof D>({
           <XAxis dataKey="timestamp" tick={false} />
           <YAxis
             label={{
-              value: axisLabels?.[selectedKey] || selectedKey,
+              value: axisLabel,
               angle: -90,
               position: "insideLeft",
               offset: 15,
@@ -82,18 +82,18 @@ function TimeSeriesChart<D extends { timestamp: number }, K extends keyof D>({
           />
           <Tooltip
             labelStyle={{ color: "black" }}
-            labelFormatter={(label, val) =>
+            labelFormatter={(label, _) =>
               `Time: ${formatXAxis(label as number)}`
             }
             formatter={(value) =>
-              `${typeof value === "number" ? value.toFixed(2) : value}${
-                " " + axisLabels?.[selectedKey] ?? ""
-              }`
+              `${
+                typeof value === "number" ? value.toFixed(2) : value
+              } ${axisLabel}`
             }
           />
           <Line
             type="monotone"
-            dataKey={(data) => transform(data[selectedKey as string])}
+            dataKey={(d) => (d !== null ? getData(d) : null)}
             stroke="black"
             dot={false}
             isAnimationActive={false}

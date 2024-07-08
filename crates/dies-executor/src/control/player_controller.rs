@@ -43,22 +43,32 @@ pub struct PlayerController {
 
 impl PlayerController {
     /// Create a new player controller with the given ID.
-    pub fn new(id: PlayerId) -> Self {
-        Self {
+    pub fn new(id: PlayerId, settings: &ControllerSettings) -> Self {
+        let mut instance = Self {
             id,
 
-            position_mtp: MTP::new(0.7, 0.0, 0.0),
+            position_mtp: MTP::new(
+                settings.max_acceleration,
+                settings.max_velocity,
+                settings.max_deceleration,
+            ),
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
-            yaw_mtp: MTP::new(2.0, 0.002, 0.0),
+            yaw_mtp: MTP::new(
+                settings.max_angular_acceleration,
+                settings.max_angular_velocity,
+                settings.max_angular_deceleration,
+            ),
             last_yaw: Angle::from_radians(0.0),
             target_angular_velocity: 0.0,
 
             frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
-        }
+        };
+        instance.update_settings(settings);
+        instance
     }
 
     /// Update the controller settings.
@@ -69,6 +79,7 @@ impl PlayerController {
             settings.max_deceleration,
             settings.position_kp,
             Duration::from_secs_f64(settings.position_proportional_time_window),
+            settings.position_cutoff_distance,
         );
         self.yaw_mtp.update_settings(
             settings.max_angular_acceleration,
@@ -76,6 +87,7 @@ impl PlayerController {
             settings.max_angular_deceleration,
             settings.angle_kp,
             Duration::from_secs_f64(settings.angle_proportional_time_window),
+            settings.angle_cutoff_distance,
         );
     }
 
@@ -107,6 +119,15 @@ impl PlayerController {
             _ => {}
         }
 
+        dies_core::debug_value(format!("p{}.sx", self.id), cmd.sx);
+        dies_core::debug_value(format!("p{}.sy", self.id), cmd.sy);
+        dies_core::debug_value(format!("p{}.w", self.id), cmd.w);
+        dies_core::debug_value(format!("p{}.dribble_speed", self.id), cmd.dribble_speed);
+        dies_core::debug_string(
+            format!("p{}.kicker_cmd", self.id),
+            format!("{:?}", cmd.kicker_cmd),
+        );
+
         cmd
     }
 
@@ -122,26 +143,92 @@ impl PlayerController {
 
     /// Update the controller with the current state of the player.
     pub fn update(&mut self, state: &PlayerData, input: &PlayerControlInput, dt: f64) {
+        // log player input
+        // dies_core::debug_string(
+        //     format!("p{}.input.vel", self.id),
+        //     format!("{:?}", input.velocity),
+        // );
+        // dies_core::debug_value(format!("p{}.input.w", self.id), input.angular_velocity);
+        // dies_core::debug_string(
+        //     format!("p{}.input.pos", self.id),
+        //     format!("{:?}", input.position),
+        // );
+        // dies_core::debug_string(
+        //     format!("p{}.input.yaw", self.id),
+        //     format!("{:?}", input.yaw),
+        // );
+
         // Calculate velocity using the MTP controller
-        self.last_yaw = state.yaw;
+        self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
-        let last_vel: Vector2 = state.velocity;
+        let last_vel_target = self.target_velocity;
+        self.target_velocity = Vector2::zeros();
         if let Some(pos_target) = input.position {
             self.position_mtp.set_setpoint(pos_target);
+            dies_core::debug_circle_stroke(
+                format!("p{}.cutoff", self.id),
+                pos_target,
+                self.position_mtp.cutoff_distance(),
+                dies_core::DebugColor::Purple,
+            );
+            dies_core::debug_circle_stroke(
+                format!("p{}.deceleration_window", self.id),
+                pos_target,
+                state.velocity.norm_squared() / (2.0 * self.position_mtp.max_decel()),
+                dies_core::DebugColor::Green,
+            );
+            dies_core::debug_circle_stroke(
+                format!("p{}.proportional_time_window", self.id),
+                pos_target,
+                state.velocity.norm() * self.position_mtp.proportional_time_window().as_secs_f64(),
+                dies_core::DebugColor::Orange,
+            );
+
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
+            dies_core::debug_string(
+                format!("p{}.control.pos_u", self.id),
+                format!("{:?}", pos_u),
+            );
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
+        } else {
+            dies_core::debug_remove(format!("p{}.cutoff", self.id));
+            dies_core::debug_remove(format!("p{}.deceleration_window", self.id));
+            dies_core::debug_remove(format!("p{}.proportional_time_window", self.id));
         }
         let local_vel = input.velocity.to_local(self.last_yaw);
         self.target_velocity += local_vel;
 
         // Cap the velocity
-        let mut v_diff = self.target_velocity - last_vel;
+        let mut v_diff = self.target_velocity - last_vel_target;
         v_diff = v_diff.cap_magnitude(MAX_ACC * dt);
-        self.target_velocity = last_vel + v_diff;
+        self.target_velocity = last_vel_target + v_diff;
 
-        let last_ang_vel = state.angular_speed;
+        // draw the velocity
+        // the velocity is in local coords, that is the reason why we need to convert it to global
+        dies_core::debug_line(
+            format!("p{}.target_vel", self.id),
+            self.last_pos,
+            self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+            dies_core::DebugColor::Red,
+        );
+
+        let last_ang_vel_target = self.target_angular_velocity;
+        self.target_angular_velocity = 0.0;
+        dies_core::debug_value(
+            format!("p{}.angular_speed", self.id),
+            state.angular_speed.to_degrees(),
+        );
         if let Some(yaw) = input.yaw {
+            // draw target yaw
+            dies_core::debug_value(format!("p{}.target_yaw", self.id), yaw.degrees());
+            dies_core::debug_line(
+                format!("p{}.target_yaw_line", self.id),
+                self.last_pos,
+                self.last_pos + yaw.rotate_vector(&Vector2::new(200.0, 0.0)),
+                dies_core::DebugColor::Green,
+            );
+
             // TODO: Use Angle directly
             self.yaw_mtp.set_setpoint(yaw.radians());
             let head_u = self
@@ -152,9 +239,9 @@ impl PlayerController {
         self.target_angular_velocity += input.angular_velocity;
 
         // Cap the angular velocity
-        let ang_diff = self.target_angular_velocity - last_ang_vel;
-        self.target_angular_velocity =
-            last_ang_vel + ang_diff.max(-MAX_ACC_RADIUS * dt).min(MAX_ACC_RADIUS * dt);
+        // let ang_diff = self.target_angular_velocity - last_ang_vel_target;
+        // self.target_angular_velocity =
+        //     last_ang_vel_target + ang_diff.max(-MAX_ACC_RADIUS * dt).min(MAX_ACC_RADIUS * dt);
 
         // Set dribbling speed
         self.dribble_speed = input.dribbling_speed;

@@ -16,6 +16,35 @@
  */
 export type Angle = number;
 
+export type DebugValue = 
+	| { type: "Shape", data: DebugShape }
+	| { type: "Number", data: number }
+	| { type: "String", data: string };
+
+/**
+ * A map of debug messages.
+ * 
+ * # Key format
+ * 
+ * The keys should always be `snake_case` and should only contain alphanumerical
+ * characters. The `.` character is reserved for separating different parts of the key.
+ * 
+ * Keys can be arbitrary, but there are some patterns that are recognized by the
+ * UI:
+ * - `p{player_id}.{value}`: A value associated with a player.
+ */
+export type DebugMap = Record<string, DebugValue>;
+
+export type PlayerId = number;
+
+/** Runtime information about the active executor. */
+export interface ExecutorInfo {
+	/** Whether the executor is currently paused. */
+	paused: boolean;
+	/** The player IDs that are currently controlled manually. */
+	manual_controlled_players: PlayerId[];
+}
+
 /** Settings for the low-level controller. */
 export interface ControllerSettings {
 	/** Maximum acceleration of the robot in mm/s². */
@@ -34,18 +63,38 @@ export interface ControllerSettings {
 	position_kp: number;
 	/** Time until destination in which the proportional controller is used, in seconds. */
 	position_proportional_time_window: number;
+	/** Distance used as threshold for the controller to prevent shaky behavior */
+	position_cutoff_distance: number;
 	/** Proportional gain for the close-range angle controller. */
 	angle_kp: number;
 	/** Time until destination in which the proportional controller is used, in seconds. */
 	angle_proportional_time_window: number;
+	/** Distance used as threshold for the controller to prevent shaky behavior */
+	angle_cutoff_distance: number;
 }
 
-/** Runtime information about the active executor. */
-export interface ExecutorInfo {
-	/** Whether the executor is currently paused. */
-	paused: boolean;
-	/** The player IDs that are currently controlled manually. */
-	manual_controlled_players: PlayerId[];
+/** Settings for the `WorldTracker`. */
+export interface TrackerSettings {
+	/** Whether our team color is blue */
+	is_blue: boolean;
+	/** The initial sign of the enemy goal's x coordinate in ssl-vision coordinates. */
+	initial_opp_goal_x: number;
+	/** Transition variance for the player Kalman filter. */
+	player_unit_transition_var: number;
+	/** Measurement variance for the player Kalman filter. */
+	player_measurement_var: number;
+	/** Smoothinfg factor for the yaw LPF */
+	player_yaw_lpf_alpha: number;
+	/** Transition variance for the ball Kalman filter. */
+	ball_unit_transition_var: number;
+	/** Measurement variance for the ball Kalman filter. */
+	ball_measurement_var: number;
+}
+
+/** Settings for the executor. */
+export interface ExecutorSettings {
+	controller_settings: ControllerSettings;
+	tracker_settings: TrackerSettings;
 }
 
 /** A single field arc -- eg. the center circle */
@@ -118,6 +167,39 @@ export interface ScenarioInfo {
 	yaw_tolerance: number;
 }
 
+/** The status of a sub-system on the robot */
+export enum SysStatus {
+	Emergency = "Emergency",
+	Ok = "Ok",
+	Stop = "Stop",
+	Starting = "Starting",
+	Overtemp = "Overtemp",
+	NoReply = "NoReply",
+	Armed = "Armed",
+	Disarmed = "Disarmed",
+	Safe = "Safe",
+	NotInstalled = "NotInstalled",
+	Standby = "Standby",
+}
+
+/** A message from one of our robots to the AI */
+export interface PlayerFeedbackMsg {
+	/** The robot's ID */
+	id: PlayerId;
+	primary_status?: SysStatus;
+	kicker_status?: SysStatus;
+	imu_status?: SysStatus;
+	fan_status?: SysStatus;
+	kicker_cap_voltage?: number;
+	kicker_temp?: number;
+	motor_statuses?: [SysStatus, SysStatus, SysStatus, SysStatus, SysStatus];
+	motor_speeds?: [number, number, number, number, number];
+	motor_temps?: [number, number, number, number, number];
+	breakbeam_ball_detected?: boolean;
+	breakbeam_sensor_ok?: boolean;
+	pack_voltages?: [number, number];
+}
+
 /** A struct to store the player state from a single frame. */
 export interface PlayerData {
 	/**
@@ -138,8 +220,20 @@ export interface PlayerData {
 	 * x direction, and `pi/2` is the positive y direction.
 	 */
 	yaw: Angle;
+	/** Unfiltered yaw as reported by vision */
+	raw_yaw: Angle;
 	/** Angular speed of the player (in rad/s) */
 	angular_speed: number;
+	/** The overall status of the robot */
+	primary_status?: SysStatus;
+	/** The voltage of the kicker capacitor */
+	kicker_cap_voltage?: number;
+	/** The temperature of the kicker */
+	kicker_temp?: number;
+	/** The voltages of the battery packs */
+	pack_voltages?: [number, number];
+	/** Whether the breakbeam sensor detected a ball */
+	breakbeam_ball_detected: boolean;
 }
 
 /** A struct to store the ball state from a single frame. */
@@ -151,6 +245,8 @@ export interface BallData {
 	timestamp: number;
 	/** Position of the ball filtered by us, in mm, in dies coordinates */
 	position: Vector3;
+	/** Raw position as reported by vision */
+	raw_position: Vector3[];
 	/** Velocity of the ball in mm/s, in dies coordinates */
 	velocity: Vector3;
 }
@@ -245,13 +341,45 @@ export interface PostUiModeBody {
 	mode: UiMode;
 }
 
-export interface ControllerSettingsResponse {
-	settings: ControllerSettings;
+export interface GetDebugMapResponse {
+	debug_map: DebugMap;
 }
 
-export interface PostControllerSettingsBody {
-	settings: ControllerSettings;
+export interface ExecutorSettingsResponse {
+	settings: ExecutorSettings;
 }
+
+export interface PostExecutorSettingsBody {
+	settings: ExecutorSettings;
+}
+
+export interface BasestationResponse {
+	players: Record<PlayerId, PlayerFeedbackMsg>;
+}
+
+export enum DebugColor {
+	Red = "red",
+	Green = "green",
+	Orange = "orange",
+	Purple = "purple",
+}
+
+export type DebugShape = 
+	| { type: "Cross", data: {
+	center: Vector2;
+	color: DebugColor;
+}}
+	| { type: "Circle", data: {
+	center: Vector2;
+	radius: number;
+	fill?: DebugColor;
+	stroke?: DebugColor;
+}}
+	| { type: "Line", data: {
+	start: Vector2;
+	end: Vector2;
+	color: DebugColor;
+}};
 
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
@@ -291,6 +419,10 @@ export type PlayerOverrideCommand =
 export type UiWorldState = 
 	| { type: "Loaded", data: WorldData }
 	| { type: "None",  };
+
+export type WsMessage = 
+	| { type: "WorldUpdate", data: WorldData }
+	| { type: "Debug", data: DebugMap };
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];

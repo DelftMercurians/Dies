@@ -24,9 +24,13 @@ import {
   UiWorldState,
   ExecutorInfoResponse,
   ExecutorInfo,
-  ControllerSettingsResponse,
-  ControllerSettings,
-  PostControllerSettingsBody,
+  ExecutorSettingsResponse,
+  ExecutorSettings,
+  PostExecutorSettingsBody,
+  BasestationResponse,
+  WsMessage,
+  DebugMap,
+  GetDebugMapResponse,
 } from "./bindings";
 import { toast } from "sonner";
 
@@ -57,19 +61,27 @@ const getExecutorInfo = (): Promise<ExecutorInfo | null> =>
     .then((res) => res.json())
     .then((data) => (data as ExecutorInfoResponse).info ?? null);
 
-const getControllerSettings = (): Promise<ControllerSettings> =>
-  fetch("/api/controller")
-    .then((res) => res.json() as Promise<ControllerSettingsResponse>)
+const getExecutorSettings = (): Promise<ExecutorSettings> =>
+  fetch("/api/settings")
+    .then((res) => res.json() as Promise<ExecutorSettingsResponse>)
     .then((data) => data.settings);
 
-const postControllerSettings = (settings: ControllerSettings) =>
-  fetch("/api/controller", {
+const getBasestationInfo = (): Promise<BasestationResponse> =>
+  fetch("/api/basestation").then((res) => res.json());
+
+const postExecutorSettings = (settings: ExecutorSettings) =>
+  fetch("/api/settings", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ settings } satisfies PostControllerSettingsBody),
+    body: JSON.stringify({ settings } satisfies PostExecutorSettingsBody),
   });
+
+const getDebugMap = (): Promise<DebugMap> =>
+  fetch("/api/debug")
+    .then((res) => res.json())
+    .then((data: GetDebugMapResponse) => data.debug_map);
 
 const postUiMode = (mode: UiMode) =>
   fetch("/api/ui-mode", {
@@ -127,6 +139,13 @@ export const useSetMode = () => {
   });
 };
 
+export const useBasestationInfo = () =>
+  useQuery({
+    queryKey: ["basestation"],
+    queryFn: getBasestationInfo,
+    refetchInterval: 1000,
+  });
+
 export const useSendCommand = () => {
   const queryClient = useQueryClient();
   const invalidate = () => {
@@ -169,15 +188,27 @@ export const useWorldState = (): WorldStatus => {
   return { status: "loading" };
 };
 
-export const useControllerSettings = () => {
+export const useDebugData = (): DebugMap | null => {
+  const wsConnected = useContext(WsConnectedContext);
+  const query = useQuery({
+    queryKey: ["debug-map"],
+    queryFn: getDebugMap,
+    refetchInterval: 100,
+    enabled: !wsConnected,
+  });
+
+  return query.data ?? null;
+};
+
+export const useExecutorSettings = () => {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["controller-settings"],
-    queryFn: getControllerSettings,
+    queryFn: getExecutorSettings,
   });
 
   const mutation = useMutation({
-    mutationFn: postControllerSettings,
+    mutationFn: postExecutorSettings,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
     },
@@ -220,11 +251,15 @@ export function startWsClient() {
         notify(true);
       };
       ws.onmessage = (event) => {
-        const data = JSON.parse(event.data) as WorldData;
-        queryClient.setQueryData(["world-state"], {
-          type: "Loaded",
-          data,
-        } satisfies UiWorldState);
+        const msg = JSON.parse(event.data) as WsMessage;
+        if (msg.type === "WorldUpdate") {
+          queryClient.setQueryData(["world-state"], {
+            type: "Loaded",
+            data: msg.data,
+          } satisfies UiWorldState);
+        } else if (msg.type === "Debug") {
+          queryClient.setQueryData(["debug-map"], msg.data satisfies DebugMap);
+        }
       };
       ws.onerror = (err) => {
         if (ws) {
@@ -331,7 +366,9 @@ export const useKeyboardControl = ({
       }
       command.data.command.data.dribble_speed = dribble_speed;
 
-      sendCommand(command as UiCommand);
+      if (vel_mag > 0 || angular_velocity !== 0 || dribble_speed > 0) {
+        sendCommand(command as UiCommand);
+      }
     }, 1000 / 30);
 
     window.addEventListener("keydown", handleKeyDown);

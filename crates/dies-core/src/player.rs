@@ -6,6 +6,7 @@ use crate::Angle;
 use super::Vector2;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
+#[typeshare(serialized_as = "u32")]
 pub struct PlayerId(u32);
 
 impl PlayerId {
@@ -86,6 +87,23 @@ impl PlayerCmd {
             dribble_speed: 0.0,
             kicker_cmd: KickerCmd::None,
         }
+    }
+
+    pub fn into_proto_v0_with_id(self, with_id: usize) -> String {
+        let extra = match self.kicker_cmd {
+            KickerCmd::Arm => "A".to_string(),
+            KickerCmd::Disarm => "D".to_string(),
+            KickerCmd::Kick => "K".to_string(),
+            KickerCmd::Discharge => "".to_string(),
+            KickerCmd::None => "".to_string(),
+            KickerCmd::Chip => "".to_string(),
+            KickerCmd::PowerBoardOff => "".to_string(),
+        };
+
+        format!(
+            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};Kt7000;S.{};\n",
+            with_id, self.sx, self.sy, self.w, self.dribble_speed, extra
+        )
     }
 }
 
@@ -169,7 +187,8 @@ impl PlayerOverrideCommand {
 }
 
 /// The status of a sub-system on the robot
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[typeshare]
 pub enum SysStatus {
     Emergency,
     Ok,
@@ -209,7 +228,8 @@ impl Into<SysStatus> for glue::HG_Status {
 }
 
 /// A message from one of our robots to the AI
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize)]
+#[typeshare]
 pub struct PlayerFeedbackMsg {
     /// The robot's ID
     pub id: PlayerId,

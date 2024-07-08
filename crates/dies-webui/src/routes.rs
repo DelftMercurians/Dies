@@ -3,7 +3,7 @@ use axum::extract::WebSocketUpgrade;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use dies_core::WorldUpdate;
+use dies_core::{DebugMap, DebugSubscriber, WorldUpdate};
 use dies_executor::scenarios::ScenarioType;
 use futures::StreamExt;
 use std::sync::Arc;
@@ -11,8 +11,8 @@ use tokio::sync::{broadcast, watch};
 
 use crate::{server::ServerState, UiCommand, UiMode};
 use crate::{
-    ControllerSettingsResponse, ExecutorInfoResponse, PostControllerSettingsBody,
-    PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState,
+    BasestationResponse, ExecutorInfoResponse, ExecutorSettingsResponse, GetDebugMapResponse,
+    PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState, WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -58,41 +58,61 @@ pub async fn post_command(
     StatusCode::OK
 }
 
-pub async fn get_controller_settings(
+pub async fn get_executor_settings(
     state: State<Arc<ServerState>>,
-) -> Json<ControllerSettingsResponse> {
-    let settings = state.controller_settings.read().unwrap().clone();
-    Json(ControllerSettingsResponse { settings })
+) -> Json<ExecutorSettingsResponse> {
+    let settings = state.executor_settings.read().unwrap().clone();
+    Json(ExecutorSettingsResponse { settings })
 }
 
-pub async fn post_controller_settings(
+pub async fn post_executor_settings(
     state: State<Arc<ServerState>>,
-    Json(data): Json<PostControllerSettingsBody>,
+    Json(data): Json<PostExecutorSettingsBody>,
 ) -> StatusCode {
-    state.update_controller_settings(data.settings);
+    state.update_executor_settings(data.settings);
     StatusCode::OK
+}
+
+pub async fn get_basesation_info(state: State<Arc<ServerState>>) -> Json<BasestationResponse> {
+    Json(BasestationResponse {
+        players: state.basestation_feedback.read().unwrap().clone(),
+    })
+}
+
+pub async fn get_debug_map(state: State<Arc<ServerState>>) -> Json<GetDebugMapResponse> {
+    Json(GetDebugMapResponse {
+        debug_map: state.debug_sub.get_copy(),
+    })
 }
 
 pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> impl IntoResponse {
     let rx = state.update_rx.clone();
     let tx = state.cmd_tx.clone();
+    let debug_sub = state.debug_sub.clone();
     ws.on_upgrade(|socket| async move {
-        handle_ws_conn(tx, rx, socket).await;
+        handle_ws_conn(tx, rx, debug_sub, socket).await;
     })
 }
 
 async fn handle_ws_conn(
     tx: broadcast::Sender<UiCommand>,
-    mut rx: watch::Receiver<Option<WorldUpdate>>,
+    mut world_rx: watch::Receiver<Option<WorldUpdate>>,
+    debug_rx: DebugSubscriber,
     mut socket: WebSocket,
 ) {
     loop {
         tokio::select! {
             Some(Ok(msg)) = socket.next() => {
-                handle_ws_msg(tx.clone(), msg).await;
+                handle_ws_msg(tx.clone(), msg).await
             }
-            Ok(()) = rx.changed() => {
-                if let Err(err) = handle_send_ws_update(&mut rx, &mut socket).await {
+            Ok(()) = world_rx.changed() => {
+                if let Err(err) = handle_send_ws_world_update(&mut world_rx, &mut socket).await {
+                    log::error!("Failed to send update: {}", err);
+                    break;
+                }
+            }
+            debug_map = debug_rx.wait_and_get_copy() => {
+                if let Err(err) =  handle_send_debug_map_update(debug_map, &mut socket).await {
                     log::error!("Failed to send update: {}", err);
                     break;
                 }
@@ -122,13 +142,15 @@ async fn handle_ws_msg(tx: broadcast::Sender<UiCommand>, msg: Message) {
     }
 }
 
-async fn handle_send_ws_update(
+async fn handle_send_ws_world_update(
     rx: &mut watch::Receiver<Option<WorldUpdate>>,
     socket: &mut WebSocket,
 ) -> anyhow::Result<()> {
     let text_data = {
         if let Some(data) = rx.borrow_and_update().as_ref() {
-            Some(serde_json::to_string(&data.world_data)?)
+            Some(serde_json::to_string(&WsMessage::WorldUpdate(
+                &data.world_data,
+            ))?)
         } else {
             None
         }
@@ -137,5 +159,15 @@ async fn handle_send_ws_update(
         socket.send(Message::Text(text_data)).await?;
     }
 
+    Ok(())
+}
+
+async fn handle_send_debug_map_update(
+    data: DebugMap,
+    socket: &mut WebSocket,
+) -> anyhow::Result<()> {
+    let msg = WsMessage::Debug(&data);
+    let text_data = serde_json::to_string(&msg)?;
+    socket.send(Message::Text(text_data)).await?;
     Ok(())
 }

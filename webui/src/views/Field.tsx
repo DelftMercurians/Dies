@@ -1,5 +1,10 @@
 import React, { FC, useEffect, useRef, useCallback, useState } from "react";
-import { useExecutorInfo, useSendCommand, useWorldState } from "../api";
+import {
+  useDebugData,
+  useExecutorInfo,
+  useSendCommand,
+  useWorldState,
+} from "../api";
 import { Vector2, WorldData } from "../bindings";
 import { useResizeObserver } from "@/lib/useResizeObserver";
 import {
@@ -15,9 +20,8 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
-import { SimpleTooltip } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { cn } from "@/lib/utils";
+import { cn, radiansToDegrees } from "@/lib/utils";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -52,6 +56,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const worldData = world.status === "connected" ? world.data : null;
   const sendCommand = useSendCommand();
 
+  const debugMap = useDebugData();
+
   const [positionDisplayMode, setPositionDisplayMode] =
     useState<PositionDisplayMode>("filtered");
 
@@ -71,10 +77,14 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       rendererRef.current = new FieldRenderer(canvasRef.current);
     }
 
+    if (debugMap) {
+      rendererRef.current.setDebugData(debugMap);
+    }
     rendererRef.current.setPositionDisplayMode(positionDisplayMode);
     rendererRef.current.setWorldData(worldData);
     rendererRef.current.render(selectedPlayerId, manualControl);
   }, [
+    debugMap,
     worldData,
     canvasWidth,
     canvasHeight,
@@ -82,6 +92,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     positionDisplayMode,
     selectedPlayerId,
   ]);
+
+  const selectedPlayerData =
+    worldData?.own_players.find((p) => p.id === selectedPlayerId) ?? null;
 
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -96,8 +109,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 
       if (clickedPlayer !== null) {
         onSelectPlayer(clickedPlayer);
-      } else {
-        onSelectPlayer(null);
       }
     },
     [onSelectPlayer]
@@ -152,6 +163,28 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
             position: contextMenuPosRef.current,
             arm_kick: false,
             yaw: 0,
+            dribble_speed: 0,
+          },
+        },
+      },
+    });
+  };
+
+  const handleTargetHeading = () => {
+    // compute yaw
+    const pos1 = selectedPlayerData?.position ?? [0, 0];
+    const pos2 = contextMenuPosRef.current;
+    const angle = Math.atan2(pos2[1] - pos1[1], pos2[0] - pos1[0]);
+    sendCommand({
+      type: "OverrideCommand",
+      data: {
+        player_id: manualControl[0],
+        command: {
+          type: "MoveTo",
+          data: {
+            position: selectedPlayerData?.position ?? [0, 0],
+            arm_kick: false,
+            yaw: angle,
             dribble_speed: 0,
           },
         },
@@ -215,16 +248,20 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
             Player #{playerTooltip.playerId}
           </div>
           <div className="flex flex-row font-mono">
-            <div className="w-20">
-              X: {playerTooltipData?.position[0].toFixed(0)}
+            <div className="w-full">
+              X: {playerTooltipData?.position[0].toFixed(0)} mm
             </div>
-            <span>mm</span>
           </div>
           <div className="flex flex-row font-mono">
-            <div className="w-20">
-              Y: {playerTooltipData?.position[1].toFixed(0)}
+            <div className="w-full">
+              Y: {playerTooltipData?.position[1].toFixed(0)} mm
             </div>
-            <span>mm</span>
+          </div>
+          <div className="flex flex-row font-mono">
+            <div className="w-full">
+              Yaw: {radiansToDegrees(playerTooltipData?.yaw ?? 0).toFixed(2)}{" "}
+              deg
+            </div>
           </div>
         </div>
       ) : null}
@@ -254,9 +291,14 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 
         <ContextMenuContent>
           {manualControl.length === 1 ? (
-            <ContextMenuItem onClick={handleTargetPosition}>
-              Set target position
-            </ContextMenuItem>
+            <>
+              <ContextMenuItem onClick={handleTargetPosition}>
+                Set target position
+              </ContextMenuItem>
+              <ContextMenuItem onClick={handleTargetHeading}>
+                Set target heading
+              </ContextMenuItem>
+            </>
           ) : null}
         </ContextMenuContent>
       </ContextMenu>

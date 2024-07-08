@@ -1,18 +1,25 @@
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
-use glue::{Monitor, Serial};
+use glue::{HG_Status, Monitor, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
 
-const MAX_MSG_FREQ: f64 = 60.0;
-const BASE_STATION_READ_FREQ: f64 = 20.0;
+const MAX_MSG_FREQ: f64 = 200.0;
+const BASE_STATION_READ_FREQ: f64 = 100.0;
 
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
 pub fn list_serial_ports() -> Vec<String> {
     Serial::list_ports(true)
+}
+
+/// Protocol version for the base station communication.
+#[derive(Debug, Clone)]
+pub enum BaseStationProtocol {
+    V0,
+    V1,
 }
 
 #[derive(Debug, Clone)]
@@ -23,20 +30,16 @@ pub struct BasestationClientConfig {
     port_name: String,
     /// Map of player IDs to robot ids
     robot_id_map: HashMap<PlayerId, u32>,
+    /// Protocol version
+    protocol: BaseStationProtocol,
 }
 
 impl BasestationClientConfig {
-    pub fn new(port: String) -> Self {
+    pub fn new(port: String, protocol: BaseStationProtocol) -> Self {
         BasestationClientConfig {
             port_name: port,
             robot_id_map: HashMap::new(),
-        }
-    }
-
-    pub fn new_with_id_map(port: String, robot_id_map: HashMap<PlayerId, u32>) -> Self {
-        BasestationClientConfig {
-            port_name: port,
-            robot_id_map,
+            protocol,
         }
     }
 
@@ -71,74 +74,137 @@ impl Default for BasestationClientConfig {
             #[cfg(not(target_os = "windows"))]
             port_name: "/dev/ttyACM0".to_string(),
             robot_id_map: HashMap::new(),
+            protocol: BaseStationProtocol::V1,
         }
     }
 }
 
+enum Connection {
+    V0(Serial),
+    V1(Monitor),
+}
+
+enum Message {
+    PlayerCmd((PlayerCmd, oneshot::Sender<Result<()>>)),
+    ChangeIdMap(HashMap<PlayerId, u32>),
+}
+
 /// Async client for the serial port.
-pub struct BasestationClient {
-    cmd_tx: mpsc::UnboundedSender<(PlayerCmd, oneshot::Sender<Result<()>>)>,
+#[derive(Debug)]
+pub struct BasestationHandle {
+    cmd_tx: mpsc::UnboundedSender<Message>,
     info_rx: broadcast::Receiver<PlayerFeedbackMsg>,
 }
 
-impl BasestationClient {
-    /// Create a new `BasestationClient`.
-    pub fn new(config: BasestationClientConfig) -> Result<Self> {
+impl BasestationHandle {
+    /// Spawn a new basestation client in a new thread.
+    pub fn spawn(config: BasestationClientConfig) -> Result<Self> {
         let BasestationClientConfig { port_name, .. } = config;
 
         // Launch a blocking thread for writing to the serial port
-        let (cmd_tx, mut cmd_rx) =
-            mpsc::unbounded_channel::<(PlayerCmd, oneshot::Sender<Result<()>>)>();
+        let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Message>();
         let (info_tx, info_rx) = broadcast::channel::<PlayerFeedbackMsg>(1);
-        let monitor = Monitor::start();
-        monitor
-            .connect_to(&port_name)
-            .map_err(|_| anyhow!("Failed to connect to base station"))?;
+
+        let mut connection = match config.protocol {
+            BaseStationProtocol::V0 => {
+                let serial = Serial::new(&port_name)?;
+                Connection::V0(serial)
+            }
+            BaseStationProtocol::V1 => {
+                let monitor = Monitor::start();
+                monitor
+                    .connect_to(&port_name)
+                    .map_err(|_| anyhow!("Failed to connect to base station"))?;
+                Connection::V1(monitor)
+            }
+        };
 
         tokio::task::spawn_blocking(move || {
             let mut last_send = std::time::Instant::now();
             let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
+            let mut id_map = config.robot_id_map;
 
             loop {
                 // Send commands
-                if let Ok((cmd, resp)) = cmd_rx.try_recv() {
-                    let mut commands = [None; glue::MAX_NUM_ROBOTS];
-                    commands[cmd.id.as_u32() as usize] = Some(cmd.into());
-                    resp.send(
-                        monitor
-                            .send(commands)
-                            .map_err(|_| anyhow!("Failed to send command")),
-                    )
-                    .ok();
+                match cmd_rx.try_recv() {
+                    Ok(Message::PlayerCmd((cmd, resp))) => {
+                        let robot_id = id_map
+                            .get(&cmd.id)
+                            .copied()
+                            .unwrap_or_else(|| cmd.id.as_u32())
+                            as usize;
+                        match &mut connection {
+                            Connection::V1(monitor) => {
+                                let mut commands = [None; glue::MAX_NUM_ROBOTS];
+                                commands[robot_id] = Some(cmd.into());
+                                resp.send(
+                                    monitor
+                                        .send(commands)
+                                        .map_err(|_| anyhow!("Failed to send command")),
+                                )
+                                .ok();
+                            }
+                            Connection::V0(serial) => {
+                                let cmd_str = cmd.into_proto_v0_with_id(robot_id);
+                                serial.send(&cmd_str);
+                                resp.send(Ok(())).ok();
+                            }
+                        }
+                    }
+                    Ok(Message::ChangeIdMap(new_id_map)) => {
+                        id_map = new_id_map;
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        if let Connection::V1(monitor) = connection {
+                            monitor.stop();
+                        }
+                        break;
+                    }
+                    _ => {}
                 }
 
                 // Receive feedback
-                if let Some(robots) = monitor.get_robots() {
-                    let feedback = robots
-                        .iter()
-                        .enumerate()
-                        .map(|(id, msg)| {
-                            let player_id = PlayerId::new(id as u32);
-                            PlayerFeedbackMsg {
-                                id: player_id,
-                                primary_status: SysStatus::from_option(msg.primary_status()),
-                                kicker_status: SysStatus::from_option(msg.kicker_status()),
-                                imu_status: SysStatus::from_option(msg.imu_status()),
-                                fan_status: SysStatus::from_option(msg.fan_status()),
-                                kicker_cap_voltage: msg.kicker_cap_voltage(),
-                                kicker_temp: msg.kicker_temperature(),
-                                motor_statuses: msg.motor_statuses().map(|v| v.map(Into::into)),
-                                motor_speeds: msg.motor_speeds(),
-                                motor_temps: msg.motor_temperatures(),
-                                breakbeam_ball_detected: msg.breakbeam_ball_detected(),
-                                breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
-                                pack_voltages: msg.pack_voltages(),
-                            }
-                        })
-                        .collect::<Vec<_>>();
+                if let Connection::V1(monitor) = &mut connection {
+                    if let Some(robots) = monitor.get_robots() {
+                        let feedback = robots
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(id, msg)| match msg.primary_status() {
+                                Some(status) if !matches!(status, HG_Status::NO_REPLY) => {
+                                    let player_id = id_map
+                                        .iter()
+                                        .find_map(
+                                            |(k, v)| if *v == id as u32 { Some(*k) } else { None },
+                                        )
+                                        .unwrap_or_else(|| PlayerId::new(id as u32));
 
-                    for msg in feedback {
-                        info_tx.send(msg).ok();
+                                    Some(PlayerFeedbackMsg {
+                                        id: player_id,
+                                        primary_status: SysStatus::from_option(
+                                            msg.primary_status(),
+                                        ),
+                                        kicker_status: SysStatus::from_option(msg.kicker_status()),
+                                        imu_status: SysStatus::from_option(msg.imu_status()),
+                                        fan_status: SysStatus::from_option(msg.fan_status()),
+                                        kicker_cap_voltage: msg.kicker_cap_voltage(),
+                                        kicker_temp: msg.kicker_temperature(),
+                                        motor_statuses: msg
+                                            .motor_statuses()
+                                            .map(|v| v.map(Into::into)),
+                                        motor_speeds: msg.motor_speeds(),
+                                        motor_temps: msg.motor_temperatures(),
+                                        breakbeam_ball_detected: msg.breakbeam_ball_detected(),
+                                        breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
+                                        pack_voltages: msg.pack_voltages(),
+                                    })
+                                }
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+
+                        for msg in feedback {
+                            info_tx.send(msg).ok();
+                        }
                     }
                 }
 
@@ -160,18 +226,32 @@ impl BasestationClient {
     pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
-            .send((msg, tx))
+            .send(Message::PlayerCmd((msg, tx)))
             .context("Failed to send message to serial port")?;
         rx.await?
     }
 
     pub fn send_no_wait(&mut self, msg: PlayerCmd) {
         let (tx, _) = oneshot::channel();
-        self.cmd_tx.send((msg, tx)).ok();
+        self.cmd_tx.send(Message::PlayerCmd((msg, tx))).ok();
+    }
+
+    /// Update the id map
+    pub fn update_id_map(&mut self, id_map: HashMap<PlayerId, u32>) {
+        self.cmd_tx.send(Message::ChangeIdMap(id_map)).ok();
     }
 
     /// Receive a message from the serial port.
     pub async fn recv(&mut self) -> Result<PlayerFeedbackMsg> {
         self.info_rx.recv().await.map_err(|e| e.into())
+    }
+}
+
+impl Clone for BasestationHandle {
+    fn clone(&self) -> Self {
+        Self {
+            cmd_tx: self.cmd_tx.clone(),
+            info_rx: self.info_rx.resubscribe(),
+        }
     }
 }

@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use clap::{Parser, ValueEnum};
-use dies_basestation_client::{list_serial_ports, BasestationClientConfig};
+use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
 use dies_ssl_client::VisionClientConfig;
 use dies_webui::{UiConfig, UiEnvironment};
 use std::{net::SocketAddr, path::PathBuf};
@@ -14,6 +14,22 @@ pub enum VisionType {
     None,
     Tcp,
     Udp,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+pub enum BasestationProtocolVersion {
+    #[default]
+    V1,
+    V0,
+}
+
+impl Into<dies_basestation_client::BaseStationProtocol> for BasestationProtocolVersion {
+    fn into(self) -> dies_basestation_client::BaseStationProtocol {
+        match self {
+            BasestationProtocolVersion::V0 => dies_basestation_client::BaseStationProtocol::V0,
+            BasestationProtocolVersion::V1 => dies_basestation_client::BaseStationProtocol::V1,
+        }
+    }
 }
 
 /// The serial port to connect to.
@@ -69,8 +85,14 @@ pub struct CliArgs {
     #[clap(long, short, default_value = "ui")]
     pub mode: CliMode,
 
-    #[clap(long, default_value = "disabled", default_missing_value = "auto")]
+    #[clap(long, short = 'f', default_value = "dies-settings.json")]
+    pub settings_file: PathBuf,
+
+    #[clap(long, default_value = "auto", default_missing_value = "auto")]
     pub serial_port: SerialPort,
+
+    #[clap(long, default_value = "v1")]
+    pub protocol: BasestationProtocolVersion,
 
     #[clap(long, default_value = "5555")]
     pub webui_port: u16,
@@ -81,7 +103,7 @@ pub struct CliArgs {
     #[clap(long, default_value = "")]
     pub robot_ids: String,
 
-    #[clap(long, default_value = "none")]
+    #[clap(long, default_value = "udp")]
     pub vision: VisionType,
 
     #[clap(long, default_value = "224.5.23.2:10006")]
@@ -96,19 +118,20 @@ pub struct CliArgs {
 
 impl CliArgs {
     /// Converts the CLI arguments into a `UiConfig` object that can be used to start the web UI.
-    pub async fn into_ui(self) -> UiConfig {
+    pub async fn into_ui(self) -> Result<UiConfig> {
         let environment = match (self.serial_config().await, self.vision_config()) {
             (Some(bs_config), Some(ssl_config)) => UiEnvironment::WithLive {
-                bs_config,
+                bs_handle: BasestationHandle::spawn(bs_config)?,
                 ssl_config,
             },
             _ => UiEnvironment::SimulationOnly,
         };
 
-        UiConfig {
+        Ok(UiConfig {
+            settings_file: self.settings_file,
             environment,
             port: self.webui_port,
-        }
+        })
     }
 
     /// Configures the serial client based on the CLI arguments. This function may prompt the user
@@ -121,7 +144,7 @@ impl CliArgs {
             .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()
             .map(|port| {
-                let mut config = BasestationClientConfig::new(port);
+                let mut config = BasestationClientConfig::new(port, self.protocol.into());
                 config.set_robot_id_map_from_string(&self.robot_ids);
                 config
             })

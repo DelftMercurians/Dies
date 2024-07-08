@@ -1,8 +1,7 @@
 use dies_core::WorldUpdate;
-use dies_executor::{scenarios::ScenarioType, ControlMsg, ExecutorConfig, ExecutorHandle};
+use dies_executor::{scenarios::ScenarioType, ControlMsg, ExecutorHandle};
 use dies_simulator::SimulationConfig;
-use dies_world::WorldConfig;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tokio::{
     sync::{broadcast, oneshot, watch},
     task::JoinHandle,
@@ -31,7 +30,6 @@ pub struct ExecutorTask {
     server_state: Arc<ServerState>,
     ui_env: UiEnvironment,
     sim_config: SimulationConfig,
-    executor_config: ExecutorConfig,
 }
 
 impl ExecutorTask {
@@ -48,13 +46,6 @@ impl ExecutorTask {
             server_state,
             ui_env: config,
             sim_config: SimulationConfig::default(),
-            executor_config: ExecutorConfig {
-                world_config: WorldConfig {
-                    is_blue: true,
-                    initial_opp_goal_x: 1.0,
-                },
-                sim_dt: Duration::from_secs_f64(1.0 / 60.0),
-            },
         }
     }
 
@@ -136,30 +127,29 @@ impl ExecutorTask {
         let (handle_tx, handle_rx) = oneshot::channel::<ExecutorHandle>();
         let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
         let task_handle = {
-            let executor_config = self.executor_config.clone();
+            let settings = { self.server_state.executor_settings.read().unwrap().clone() };
             let ui_env = self.ui_env.clone();
             let sim_config = self.sim_config.clone();
             let server_state = Arc::clone(&self.server_state);
             let update_tx = self.update_tx.clone();
             tokio::spawn(async move {
                 let executor = match (mode, ui_env) {
-                    (UiMode::Simulation, _) => {
-                        Ok(setup.into_simulation(executor_config, sim_config))
-                    }
+                    (UiMode::Simulation, _) => Ok(setup.into_simulation(settings, sim_config)),
                     (
                         UiMode::Live,
                         UiEnvironment::WithLive {
                             ssl_config,
-                            bs_config,
+                            bs_handle,
                         },
                     ) => {
+                        log::info!("Starting live scenario {}", scenario.name());
                         server_state.set_executor_status(ExecutorStatus::StartingScenario(
                             setup.get_info(),
                         ));
 
                         tokio::select! {
                             _ = cancel_rx => Err(anyhow::anyhow!("Cancelled")),
-                            executor = setup.into_live(executor_config, ssl_config, bs_config) => executor
+                            executor = setup.into_live(settings, ssl_config, bs_handle) => executor
                         }
                     }
                     (UiMode::Live, UiEnvironment::SimulationOnly) => {
@@ -169,6 +159,8 @@ impl ExecutorTask {
 
                 match executor {
                     Ok(executor) => {
+                        log::info!("Scenario started, executor ready");
+
                         // Relay world update to the UI
                         let _ = handle_tx.send(executor.handle());
                         let mut handle = executor.handle();

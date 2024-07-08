@@ -1,22 +1,4 @@
-import { useState } from "react";
-import {
-  useKeyboardControl,
-  useScenarios,
-  useSendCommand,
-  useSetMode,
-  useStatus,
-  useWorldState,
-} from "./api";
-import Field from "./views/Field";
-import {
-  Select,
-  SelectItem,
-  SelectContent,
-  SelectTrigger,
-  SelectValue,
-} from "./components/ui/select";
-import { Button } from "./components/ui/button";
-import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   LaptopMinimal,
   Loader,
@@ -25,18 +7,40 @@ import {
   Radio,
   Square,
 } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  SimpleTooltip,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "./components/ui/tooltip";
+  useDebugData,
+  useScenarios,
+  useSendCommand,
+  useSetMode,
+  useStatus,
+  useWorldState,
+} from "./api";
 import logo from "./assets/mercury-logo.svg";
-import { log } from "console";
-import { cn } from "./lib/utils";
+import { Button } from "./components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
+import { SimpleTooltip } from "./components/ui/tooltip";
+import { cn, useIsOverflow } from "./lib/utils";
+import Field from "./views/Field";
 import PlayerSidebar from "./views/PlayerSidebar";
-import ControllerSettingsEditor from "./views/ControllerSettingsEditor";
+import SettingsEditor from "./views/SettingsEditor";
+import Basestation from "./views/Basestation";
+import HierarchicalList from "./views/HierarchicalList";
+
+type Panel = "left" | "right";
 
 const App: React.FC = () => {
   const scenarios = useScenarios() ?? [];
@@ -46,6 +50,10 @@ const App: React.FC = () => {
   const { mutate: setMode, status: setModeStatus } = useSetMode();
   const sendCommand = useSendCommand();
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState<Panel[]>([]);
+  const debugData = useDebugData();
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
 
   if (!backendState) {
     return (
@@ -187,20 +195,91 @@ const App: React.FC = () => {
       </div>
 
       {/* Main content */}
-      <div className="h-full w-full grid grid-cols-6">
-        <div className="bg-slate-950 flex flex-col">
-          <ControllerSettingsEditor className="h-full" />
-        </div>
-        <div className="col-span-4 bg-green-800 p-6">
-          <Field
-            selectedPlayerId={selectedPlayerId}
-            onSelectPlayer={(id) => setSelectedPlayerId(id)}
-          />
-        </div>
-        <div className="bg-slate-950 flex flex-col">
-          <PlayerSidebar selectedPlayerId={selectedPlayerId} />
-        </div>
-      </div>
+      <ResizablePanelGroup autoSaveId="main-layout" direction="horizontal">
+        <ResizablePanel
+          defaultSize={20}
+          minSize={10}
+          collapsible
+          className="h-full bg-slate-950 p-2"
+          onCollapse={() =>
+            setCollapsed((prev) =>
+              !prev.includes("left") ? [...prev, "left"] : prev
+            )
+          }
+          onExpand={() =>
+            setCollapsed((prev) => prev.filter((v) => v !== "left"))
+          }
+        >
+          {!collapsed.includes("left") ? (
+            <Tabs
+              defaultValue="controller"
+              className="h-full w-full flex flex-col gap-2"
+              orientation={isTabListOverflowing ? "vertical" : "horizontal"}
+            >
+              <TabsList
+                ref={tabListRef}
+                className="w-full data-[orientation=vertical]:flex-col data-[orientation=vertical]:h-auto data-[orientation=vertical]:w-auto"
+              >
+                <TabsTrigger value="controller">Controller</TabsTrigger>
+                <TabsTrigger value="tracker">Tracker</TabsTrigger>
+                <TabsTrigger value="basestation">Basestation</TabsTrigger>
+                <TabsTrigger value="debug">Debug Values</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="controller" asChild>
+                <SettingsEditor settingsKey="controller_settings" />
+              </TabsContent>
+              <TabsContent value="tracker" asChild>
+                <SettingsEditor settingsKey="tracker_settings" />
+              </TabsContent>
+              <TabsContent value="basestation" asChild>
+                <Basestation className="h-full" />
+              </TabsContent>
+              <TabsContent value="debug" asChild>
+                <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
+                  <HierarchicalList
+                    data={debugData ? Object.entries(debugData) : []}
+                    className="h-full"
+                  />
+                </div>
+              </TabsContent>
+            </Tabs>
+          ) : null}
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+
+        <ResizablePanel className="bg-green-800 p-6" minSize={30}>
+          <div className="flex justify-center items-center w-full h-full min-w-[600px] overflow-auto">
+            <Field
+              selectedPlayerId={selectedPlayerId}
+              onSelectPlayer={(id) => setSelectedPlayerId(id)}
+            />
+          </div>
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+
+        <ResizablePanel
+          defaultSize={20}
+          minSize={10}
+          collapsible
+          className=" bg-slate-950 flex flex-col"
+          onCollapse={() =>
+            setCollapsed((prev) =>
+              !prev.includes("right") ? [...prev, "right"] : prev
+            )
+          }
+          onExpand={() =>
+            setCollapsed((prev) => prev.filter((v) => v !== "right"))
+          }
+        >
+          {!collapsed.includes("right") ? (
+            <PlayerSidebar
+              selectedPlayerId={selectedPlayerId}
+              onClose={() => setSelectedPlayerId(null)}
+            />
+          ) : null}
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {/* Statusbar */}
       <div

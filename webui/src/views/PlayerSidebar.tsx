@@ -1,10 +1,14 @@
 import {
+  useDebugData,
   useExecutorInfo,
   useKeyboardControl,
   useSendCommand,
   useWorldState,
 } from "@/api";
-import { PlayerData } from "@/bindings";
+import * as math from "mathjs";
+import { DebugValue, PlayerData } from "@/bindings";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -14,26 +18,56 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { FC, useState } from "react";
-import TimeSeriesChart from "./TimeSeriesChart";
-import { Button } from "@/components/ui/button";
-import { Pause, Play } from "lucide-react";
 import { SimpleTooltip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
+import { cn, prettyPrintSnakeCases, radiansToDegrees } from "@/lib/utils";
+import { Pause, Play, X } from "lucide-react";
+import { FC, useState } from "react";
+import CodeEditor from "./CodeEditor";
+import HierarchicalList from "./HierarchicalList";
+import TimeSeriesChart from "./TimeSeriesChart";
 
 interface PlayerSidebarProps {
   selectedPlayerId: number | null;
+  onClose: () => void;
 }
 
-const graphableValues = [
-  "velocity",
-  "angular_speed",
-] as const satisfies (keyof PlayerData)[];
+interface GraphData {
+  player: PlayerData;
+  playerDebug: Record<string, number | string>;
+}
 
-type Graphable = (typeof graphableValues)[number];
+type PlayerDebugValues = [string, Exclude<DebugValue, { type: "Shape" }>][];
 
-const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
+type Graphable = keyof typeof graphableValues | "custom";
+
+type AxisLabels = {
+  [key in Graphable]: string;
+};
+
+const graphableValues = {
+  velocity: (data) => magnitude(data.player.velocity),
+  angular_speed: (data) => radiansToDegrees(data.player.angular_speed),
+  filter_error: ({ player }) =>
+    magnitude([
+      player.position[0] - player.raw_position[0],
+      player.position[1] - player.raw_position[1],
+    ]),
+} as const satisfies Record<string, (data: GraphData) => number>;
+const graphableLabels = Object.keys(graphableValues);
+
+const functionGlobals = { math };
+
+const axisLabels: AxisLabels = {
+  velocity: "mm/s",
+  angular_speed: "deg/s",
+  filter_error: "mm",
+  custom: "custom",
+};
+
+const PlayerSidebar: FC<PlayerSidebarProps> = ({
+  selectedPlayerId,
+  onClose,
+}) => {
   const world = useWorldState();
   const executorInfo = useExecutorInfo();
   const sendCommand = useSendCommand();
@@ -42,8 +76,12 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
   const [speed, setSpeed] = useState(1000);
   const [angularSpeedDegPerSec, setAngularSpeedDegPerSec] = useState(30);
   const [keyboardControl, setKeyboardControl] = useState(false);
+  const [customFunction, setCustomFunction] = useState<
+    ((data: GraphData) => number) | null
+  >(null);
 
   const manualControl =
+    typeof selectedPlayerId === "number" &&
     executorInfo?.manual_controlled_players.includes(selectedPlayerId);
   useKeyboardControl({
     playerId: manualControl && keyboardControl ? selectedPlayerId : null,
@@ -51,8 +89,30 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
     angularSpeedDegPerSec,
   });
 
+  const debugData = useDebugData();
+  const playerDebugData = debugData
+    ? (Object.entries(debugData)
+        .filter(
+          ([key, val]) =>
+            key.startsWith(`p${selectedPlayerId}`) && val.type !== "Shape"
+        )
+        .map(([key, val]) => [
+          key.slice(`p${selectedPlayerId}`.length + 1),
+          val,
+        ]) as PlayerDebugValues)
+    : [];
+  const playerDebugMap = Object.fromEntries(
+    playerDebugData.map(([k, v]) => [k, v.data])
+  );
+
   if (world.status !== "connected" || typeof selectedPlayerId !== "number")
-    return null;
+    return (
+      <div className="flex-1 flex flex-col gap-6 p-4 h-full w-full justify-center items-center">
+        <h1 className="text-2xl font-bold mb-2 text-center text-slate-300">
+          Select a player by clicking
+        </h1>
+      </div>
+    );
 
   const selectedPlayer = world.data.own_players.find(
     (p) => p.id === selectedPlayerId
@@ -70,12 +130,22 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
     });
   };
 
-  return (
-    <div className="flex-1 flex flex-col gap-6 p-4">
-      <h1 className="text-2xl font-bold mb-2">Player #{selectedPlayerId}</h1>
+  const graphData: GraphData = {
+    player: selectedPlayer,
+    playerDebug: playerDebugMap,
+  };
 
-      <div>
-        <div className="flex flex-row gap-2 items-center mb-2">
+  return (
+    <div className="flex-1 flex flex-col gap-6 p-4 h-full overflow-auto">
+      <div className="flex flex-row">
+        <h1 className="text-2xl font-bold mb-2">Player #{selectedPlayerId}</h1>
+        <Button className="ml-auto" variant="ghost" onClick={onClose}>
+          <X />
+        </Button>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-row gap-2 items-center">
           <Select
             value={activeGraph}
             onValueChange={(val) => setActiveGraph(val as Graphable)}
@@ -85,11 +155,13 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
             </SelectTrigger>
 
             <SelectContent>
-              {graphableValues.map((v, index) => (
-                <SelectItem key={index} value={v}>
+              {graphableLabels.map((v) => (
+                <SelectItem key={v} value={v}>
                   {prettyPrintSnakeCases(v)}
                 </SelectItem>
               ))}
+
+              <SelectItem value={"custom"}>Custom function</SelectItem>
             </SelectContent>
           </Select>
 
@@ -97,16 +169,42 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({ selectedPlayerId }) => {
             {graphPaused ? <Play /> : <Pause />}
           </Button>
         </div>
+
+        {(activeGraph as string) === "custom" ? (
+          <div>
+            <CodeEditor
+              globals={graphData}
+              onRun={(code) => {
+                setCustomFunction(() =>
+                  // need to wrap in a function otherwise react would use it as a
+                  // production function
+                  createCustomFunction(code, Object.keys(graphData))
+                );
+              }}
+            />
+          </div>
+        ) : null}
+
         <TimeSeriesChart
           paused={graphPaused}
-          objectId={selectedPlayerId}
-          newDataPoint={selectedPlayer}
-          selectedKey={activeGraph}
-          transform={(val) =>
-            Array.isArray(val) ? magnitude(val) : radiansToDegrees(val)
-          }
-          axisLabels={{ velocity: "mm/s", angular_speed: "deg/s" }}
+          objectId={`${selectedPlayerId}${activeGraph}`}
+          newDataPoint={{ timestamp: selectedPlayer.timestamp, ...graphData }}
+          getData={(data) => {
+            let value =
+              activeGraph === "custom"
+                ? customFunction?.(data) ?? 0
+                : graphableValues[activeGraph](data);
+            return value;
+          }}
+          axisLabel={axisLabels[activeGraph]}
         />
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold mb-2">Debug Data</h2>
+        <div className="bg-slate-800 p-2 rounded-xl max-h-[50vh] overflow-auto">
+          <HierarchicalList data={playerDebugData} />
+        </div>
       </div>
 
       <SimpleTooltip title="Set this player to manual control -- it will stop following the strategy">
@@ -219,12 +317,24 @@ const KeyboardKey = ({
 
 const magnitude = ([x, y]: [number, number]) => Math.sqrt(x * x + y * y);
 
-const prettyPrintSnakeCases = (s: string): string =>
-  s
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-
-const radiansToDegrees = (radians: number): number => {
-  return (radians * 180) / Math.PI;
+const createCustomFunction = (code: string, args: string[]) => {
+  try {
+    const globalKeys = Object.keys(functionGlobals);
+    const globalValues = Object.values(functionGlobals);
+    const fun = new Function(...args, ...globalKeys, `return (${code});`);
+    let errored = false;
+    return (d: Record<string, any>) => {
+      if (errored) return 0;
+      try {
+        return fun(...args.map((a) => d[a]), ...globalValues);
+      } catch (e) {
+        alert(`Error in custom function: ${e}`);
+        errored = true;
+        return 0;
+      }
+    };
+  } catch (e) {
+    alert(`Error in custom function: ${e}`);
+    return null;
+  }
 };

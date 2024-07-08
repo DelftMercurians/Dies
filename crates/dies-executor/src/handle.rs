@@ -1,8 +1,9 @@
+use anyhow::{anyhow, Result};
 use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use dies_core::{ControllerSettings, ExecutorInfo, PlayerId, PlayerOverrideCommand, WorldUpdate};
+use dies_core::{ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, WorldUpdate};
 
 #[derive(Debug)]
 pub enum ControlMsg {
@@ -12,7 +13,7 @@ pub enum ControlMsg {
     },
     PlayerOverrideCommand(PlayerId, PlayerOverrideCommand),
     SetPause(bool),
-    UpdateControllerSettings(ControllerSettings),
+    UpdateSettings(ExecutorSettings),
     Stop,
 }
 
@@ -59,15 +60,12 @@ impl ExecutorHandle {
     }
 
     /// Request the current executor info.
-    pub fn info(&self) -> ExecutorInfoReceiver {
+    pub fn info(&self) -> Result<ExecutorInfoReceiver> {
         let (tx, rx) = oneshot::channel();
         self.info_channel
             .send(tx)
-            .map_err(|err| {
-                log::error!("Error sending info request: {:?}", err);
-            })
-            .ok();
-        ExecutorInfoReceiver(rx)
+            .map_err(|err| anyhow!("Error sending info request: {:?}", err))?;
+        Ok(ExecutorInfoReceiver(rx))
     }
 }
 

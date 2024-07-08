@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 
-use dies_core::{PlayerData, PlayerId, WorldData};
+use dies_core::{PlayerId, WorldData};
 
-use crate::control::{PlayerControlInput, PlayerInputs};
+use crate::{
+    control::PlayerInputs,
+    roles::{Role, RoleCtx, Skill},
+};
 
 pub trait Strategy: Send {
     fn update(&mut self, world: &WorldData) -> PlayerInputs;
 }
 
-pub trait Role: Send {
-    fn update(&mut self, player_data: &PlayerData, world: &WorldData) -> PlayerControlInput;
-}
-
 pub struct AdHocStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
     unassigned_roles: Vec<Box<dyn Role>>,
+    skill_map: HashMap<String, Box<dyn Skill>>,
 }
 
 impl AdHocStrategy {
@@ -22,6 +22,7 @@ impl AdHocStrategy {
         AdHocStrategy {
             roles: HashMap::new(),
             unassigned_roles: Vec::new(),
+            skill_map: HashMap::new(),
         }
     }
 
@@ -53,7 +54,8 @@ impl Strategy for AdHocStrategy {
         let mut inputs = PlayerInputs::new();
         for (id, role) in self.roles.iter_mut() {
             if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-                let input = role.update(player_data, world);
+                let ctx = RoleCtx::new(player_data, world, &mut self.skill_map);
+                let input = role.update(ctx);
                 inputs.insert(*id, input);
             } else {
                 log::error!("No detetion data for player #{id} with active role");

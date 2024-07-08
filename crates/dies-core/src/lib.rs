@@ -1,15 +1,18 @@
 mod angle;
-mod controller_settings;
+mod debug_info;
 mod executor_info;
+mod executor_settings;
 mod geom;
 mod player;
 mod world;
 
 pub mod workspace_utils;
+pub mod variable;
 
 pub use angle::*;
-pub use controller_settings::*;
+pub use debug_info::*;
 pub use executor_info::*;
+pub use executor_settings::*;
 pub use geom::*;
 pub use player::*;
 pub use world::*;

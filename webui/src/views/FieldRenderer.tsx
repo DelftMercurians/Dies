@@ -1,4 +1,12 @@
-import { PlayerData, Vector2, Vector3, WorldData } from "../bindings";
+import {
+  DebugColor,
+  DebugMap,
+  DebugShape,
+  PlayerData,
+  Vector2,
+  Vector3,
+  WorldData,
+} from "../bindings";
 
 const ROBOT_RADIUS = 0.14 * 1000;
 const BALL_RADIUS = 0.043 * 1000;
@@ -7,11 +15,21 @@ export const CANVAS_PADDING = 20;
 
 const FIELD_GREEN = "#15803d";
 const FIELD_LINE = "#ffffff";
-const BLUE_ROBOT = "#2563eb";
-const YELLOW_ROBOT = "#facc15";
-const BALL = "#fb923c";
+const BLUE_ROBOT_FILTERED = "#2563eb";
+const BLUE_ROBOT_RAW = "#7c3aed";
+const YELLOW_ROBOT_FILTERED = "#facc15";
+const YELLOW_ROBOT_RAW = "#f9731688";
+const BALL_FILTERED = "#fb923c";
+const BALL_RAW = "#eab308";
 const MANUAL_OUTLINE = "#dc2626";
 const SELECTED_OUTLINE = "#ffffff";
+
+const DEBUG_COLORS: Record<DebugColor, string> = {
+  green: "#14b8a6",
+  red: "#dc2626",
+  orange: "#f97316",
+  purple: "#9333ea",
+};
 
 export type PositionDisplayMode = "raw" | "filtered" | "both";
 
@@ -19,6 +37,7 @@ export class FieldRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private worldData: WorldData | null = null;
+  private debugShapes: DebugShape[] = [];
   private fieldSize: [number, number] = DEFAULT_FIELD_SIZE;
   private positionDisplayMode: PositionDisplayMode = "filtered";
 
@@ -35,6 +54,12 @@ export class FieldRenderer {
         worldData.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1],
       ];
     }
+  }
+
+  setDebugData(data: DebugMap) {
+    this.debugShapes = Object.values(data)
+      .filter(({ type }) => type === "Shape")
+      .map(({ data }) => data as DebugShape);
   }
 
   setPositionDisplayMode(mode: PositionDisplayMode) {
@@ -57,25 +82,32 @@ export class FieldRenderer {
     own_players.forEach((player) =>
       this.drawPlayer(
         player,
-        BLUE_ROBOT,
+        "blue",
         player.id === selectedPlayerId,
         manualControl.includes(player.id),
         this.positionDisplayMode
       )
     );
     opp_players.forEach((player) =>
-      this.drawPlayer(
-        player,
-        YELLOW_ROBOT,
-        false,
-        false,
-        this.positionDisplayMode
-      )
+      this.drawPlayer(player, "yellow", false, false, this.positionDisplayMode)
     );
 
     if (ball) {
-      this.drawBall(ball.position);
+      if (
+        this.positionDisplayMode === "both" ||
+        this.positionDisplayMode === "filtered"
+      ) {
+        this.drawBall(ball.position, "filtered");
+      }
+      if (
+        this.positionDisplayMode === "both" ||
+        this.positionDisplayMode === "raw"
+      ) {
+        ball.raw_position.forEach(pos => this.drawBall(pos, "raw"));
+      }
     }
+
+    this.debugShapes.forEach((shape) => this.drawDebugShape(shape));
   }
 
   public fieldToCanvas(coords: Vector2 | Vector3): Vector2 {
@@ -125,17 +157,26 @@ export class FieldRenderer {
 
   private drawPlayer(
     data: PlayerData,
-    hexColor: string,
+    team: "blue" | "yellow",
     selected: boolean,
     manualControl: boolean,
     positionDisplayMode: PositionDisplayMode,
     opacity = 1
   ) {
     if (positionDisplayMode === "both") {
-      this.drawPlayer(data, hexColor, false, false, "raw");
-      this.drawPlayer(data, hexColor, selected, manualControl, "filtered", 0.7);
+      this.drawPlayer(data, team, selected, manualControl, "filtered");
+      this.drawPlayer(data, team, false, false, "raw", 0.7);
       return;
     }
+
+    const hexColor =
+      team === "blue"
+        ? positionDisplayMode === "raw"
+          ? BLUE_ROBOT_RAW
+          : BLUE_ROBOT_FILTERED
+        : positionDisplayMode === "raw"
+          ? YELLOW_ROBOT_RAW
+          : YELLOW_ROBOT_FILTERED;
 
     const serverPos =
       positionDisplayMode === "raw" ? data.raw_position : data.position;
@@ -152,7 +193,7 @@ export class FieldRenderer {
     this.ctx.arc(x, y, robotCanvasRadius, 0, 2 * Math.PI);
     this.ctx.fill();
 
-    const angle = -data.yaw;
+    const angle = positionDisplayMode === "raw" ? -data.raw_yaw : -data.yaw;
     this.ctx.strokeStyle = "white";
     this.ctx.lineWidth = 2;
     this.ctx.save();
@@ -182,13 +223,57 @@ export class FieldRenderer {
     }
   }
 
-  private drawBall(position: Vector2 | Vector3) {
+  private drawBall(
+    position: Vector2 | Vector3,
+    positionDisplayMode: PositionDisplayMode
+  ) {
     const [x, y] = this.fieldToCanvas(position);
     const ballCanvasRadius = this.convertLength(BALL_RADIUS);
-    this.ctx.fillStyle = BALL;
+    this.ctx.fillStyle =
+      positionDisplayMode === "filtered" ? BALL_FILTERED : BALL_RAW;
     this.ctx.beginPath();
     this.ctx.arc(x, y, ballCanvasRadius, 0, 2 * Math.PI);
     this.ctx.fill();
+  }
+
+  private drawDebugShape(shape: DebugShape) {
+    if (shape.type === "Line") {
+      const { start, end, color } = shape.data;
+      this.ctx.strokeStyle = DEBUG_COLORS[color];
+      this.ctx.lineWidth = 3;
+      const [x1, y1] = this.fieldToCanvas(start);
+      const [x2, y2] = this.fieldToCanvas(end);
+      this.ctx.beginPath();
+      this.ctx.moveTo(x1, y1);
+      this.ctx.lineTo(x2, y2);
+      this.ctx.stroke();
+    } else if (shape.type === "Circle") {
+      const { center, radius, fill, stroke } = shape.data;
+      const [x, y] = this.fieldToCanvas(center);
+      const canvasRadius = this.convertLength(radius);
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, canvasRadius, 0, 2 * Math.PI);
+      if (fill) {
+        this.ctx.fillStyle = DEBUG_COLORS[fill];
+        this.ctx.fill();
+      }
+      if (stroke) {
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeStyle = DEBUG_COLORS[stroke];
+        this.ctx.stroke();
+      }
+    } else if (shape.type === "Cross") {
+      const { center, color } = shape.data;
+      const [x, y] = this.fieldToCanvas(center);
+      this.ctx.strokeStyle = DEBUG_COLORS[color];
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      this.ctx.moveTo(x - 10, y - 10);
+      this.ctx.lineTo(x + 10, y + 10);
+      this.ctx.moveTo(x + 10, y - 10);
+      this.ctx.lineTo(x - 10, y + 10);
+      this.ctx.stroke();
+    }
   }
 
   getPlayerAt(x: number, y: number): number | null {

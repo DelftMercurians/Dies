@@ -17,19 +17,10 @@ use ball::BallTracker;
 pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
 };
-use dies_core::{GameState, PlayerId, WorldData};
+use dies_core::{GameState, PlayerFeedbackMsg, PlayerId, TrackerSettings, WorldData};
 use player::PlayerTracker;
 
 const IS_DIV_A: bool = false;
-
-/// A struct to configure the world tracker.
-#[derive(Clone, Debug)]
-pub struct WorldConfig {
-    /// Whether our team color is blue
-    pub is_blue: bool,
-    /// The initial sign of the enemy goal's x coordinate in ssl-vision coordinates.
-    pub initial_opp_goal_x: f64,
-}
 
 /// A struct to track the world state.
 pub struct WorldTracker {
@@ -45,22 +36,44 @@ pub struct WorldTracker {
     field_geometry: Option<FieldGeometry>,
     last_timestamp: Option<f64>,
     local_time: Option<Instant>,
+    tracker_settings: TrackerSettings,
 }
 
 impl WorldTracker {
     /// Create a new world tracker from a config.
-    pub fn new(config: WorldConfig) -> Self {
+    pub fn new(settings: &TrackerSettings) -> Self {
         Self {
-            is_blue: config.is_blue,
-            play_dir_x: config.initial_opp_goal_x,
+            is_blue: settings.is_blue,
+            play_dir_x: settings.initial_opp_goal_x,
             own_players_tracker: HashMap::new(),
             opp_players_tracker: HashMap::new(),
-            ball_tracker: BallTracker::new(config.initial_opp_goal_x),
+            ball_tracker: BallTracker::new(settings),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
             last_timestamp: None,
             local_time: None,
+            tracker_settings: settings.clone(),
         }
+    }
+
+    pub fn update_settings(&mut self, settings: &TrackerSettings) {
+        assert_eq!(
+            settings.initial_opp_goal_x, self.play_dir_x,
+            "Changing the initial opponent goal x coordinate is not supported"
+        );
+        assert_eq!(
+            settings.is_blue, self.is_blue,
+            "Changing the team color is not supported"
+        );
+
+        self.tracker_settings = settings.clone();
+        for player_tracker in self.own_players_tracker.values_mut() {
+            player_tracker.update_settings(settings);
+        }
+        for player_tracker in self.opp_players_tracker.values_mut() {
+            player_tracker.update_settings(settings);
+        }
+        self.ball_tracker.update_settings(settings);
     }
 
     /// Update the sign of the enemy goal's x coordinate (in ssl-vision coordinates).
@@ -123,7 +136,7 @@ impl WorldTracker {
                 let id = PlayerId::new(player.robot_id());
                 let tracker = blue_trackers
                     .entry(id)
-                    .or_insert_with(|| PlayerTracker::new(id, self.play_dir_x));
+                    .or_insert_with(|| PlayerTracker::new(id, &self.tracker_settings));
                 tracker.update(t_capture, player);
             }
 
@@ -132,7 +145,7 @@ impl WorldTracker {
                 let id = PlayerId::new(player.robot_id());
                 let tracker = yellow_tracker
                     .entry(id)
-                    .or_insert_with(|| PlayerTracker::new(id, self.play_dir_x));
+                    .or_insert_with(|| PlayerTracker::new(id, &self.tracker_settings));
                 tracker.update(t_capture, player);
             }
 
@@ -148,6 +161,12 @@ impl WorldTracker {
             }
 
             self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
+        }
+    }
+
+    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg) {
+        if let Some(player_tracker) = self.own_players_tracker.get_mut(&feedback.id) {
+            player_tracker.update_from_feedback(feedback);
         }
     }
 
@@ -233,9 +252,10 @@ mod test {
 
     #[test]
     fn test_init() {
-        let mut tracker = WorldTracker::new(WorldConfig {
+        let mut tracker = WorldTracker::new(&TrackerSettings {
             is_blue: true,
             initial_opp_goal_x: 1.0,
+            ..Default::default()
         });
 
         // First detection frame
@@ -342,9 +362,10 @@ mod test {
 
     #[test]
     fn test_game_state_tracker_simple() {
-        let mut tracker = WorldTracker::new(WorldConfig {
+        let mut tracker = WorldTracker::new(&TrackerSettings {
             is_blue: true,
             initial_opp_goal_x: 1.0,
+            ..Default::default()
         });
         let messages = Director::process_commands(vec![
             Command::HALT,
@@ -364,9 +385,10 @@ mod test {
 
     #[test]
     fn test_game_state_tracker_freekick() {
-        let mut tracker = WorldTracker::new(WorldConfig {
+        let mut tracker = WorldTracker::new(&TrackerSettings {
             is_blue: true,
             initial_opp_goal_x: 1.0,
+            ..Default::default()
         });
         let mut frame = SSL_DetectionFrame::new();
         frame.set_t_capture(0.0);
@@ -408,9 +430,10 @@ mod test {
 
     #[test]
     fn test_game_penalty_stop_early() {
-        let mut tracker = WorldTracker::new(WorldConfig {
+        let mut tracker = WorldTracker::new(&TrackerSettings {
             is_blue: true,
             initial_opp_goal_x: 1.0,
+            ..Default::default()
         });
         let mut frame = SSL_DetectionFrame::new();
         frame.set_t_capture(0.0);
