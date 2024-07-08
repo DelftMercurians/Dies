@@ -1,4 +1,4 @@
-use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerId, Vector2};
+use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerId, Vector2, WorldInstant};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -8,7 +8,11 @@ use dies_protos::{
 };
 use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
-use std::{collections::HashMap, f64::consts::PI};
+use std::{
+    collections::HashMap,
+    f64::consts::PI,
+    time::{Duration, Instant, UNIX_EPOCH},
+};
 use utils::IntervalTrigger;
 
 mod utils;
@@ -237,6 +241,10 @@ impl Simulation {
         simulation.add_wall(-field_length / 2.0, 0.0, WALL_THICKNESS, field_width);
 
         simulation
+    }
+
+    pub fn time(&self) -> WorldInstant {
+        WorldInstant::Simulated(self.current_time)
     }
 
     fn add_wall(&mut self, x: f64, y: f64, width: f64, height: f64) {

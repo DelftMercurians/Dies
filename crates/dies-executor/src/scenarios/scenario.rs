@@ -1,10 +1,13 @@
 use anyhow::{bail, Result};
-use std::{collections::HashSet, time::Duration};
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     Angle, BallPlacement, ExecutorSettings, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo,
-    Vector2, Vector3, WorldData,
+    Vector2, Vector3, WorldData, WorldInstant,
 };
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{VisionClient, VisionClientConfig};
@@ -144,7 +147,7 @@ impl ScenarioSetup {
         let mut iterations = 0;
         loop {
             let packet = ssl_client.recv().await?;
-            tracker.update_from_vision(&packet);
+            tracker.update_from_vision(&packet, WorldInstant::now_real());
 
             if self.check_live(tracker.get()) {
                 break;

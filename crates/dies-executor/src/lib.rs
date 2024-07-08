@@ -1,11 +1,14 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    WorldUpdate,
+    WorldInstant, WorldUpdate,
 };
 use dies_logger::log_referee;
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
@@ -217,10 +220,10 @@ impl Executor {
     }
 
     /// Update the executor with a vision message.
-    pub fn update_from_vision_msg(&mut self, message: SSL_WrapperPacket) {
+    pub fn update_from_vision_msg(&mut self, message: SSL_WrapperPacket, time: WorldInstant) {
         // TODO: FIX
         // log_vision(&message);
-        self.tracker.update_from_vision(&message);
+        self.tracker.update_from_vision(&message, time);
         self.update_team_controller();
     }
 
@@ -276,10 +279,10 @@ impl Executor {
     pub fn step_simulation(&mut self, simulator: &mut Simulation, dt: Duration) -> Result<()> {
         simulator.step(dt.as_secs_f64());
         if let Some(geom) = simulator.geometry() {
-            self.update_from_vision_msg(geom);
+            self.update_from_vision_msg(geom, simulator.time());
         }
         if let Some(det) = simulator.detection() {
-            self.update_from_vision_msg(det);
+            self.update_from_vision_msg(det, simulator.time());
         }
 
         Ok(())
@@ -351,7 +354,7 @@ impl Executor {
                 vision_msg = ssl_client.recv() => {
                     match vision_msg {
                         Ok(vision_msg) => {
-                            self.update_from_vision_msg(vision_msg);
+                            self.update_from_vision_msg(vision_msg, WorldInstant::now_real());
                         }
                         Err(err) => {
                             log::error!("Failed to receive vision msg: {}", err);

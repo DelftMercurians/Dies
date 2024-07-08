@@ -68,7 +68,7 @@ impl TeamController {
                 let input = manual_override
                     .get(&controller.id())
                     .unwrap_or(&default_input);
-                controller.update(player_data, input, world_data.duration);
+                controller.update(player_data, input, world_data.dt);
             } else {
                 controller.increment_frames_misses();
             }

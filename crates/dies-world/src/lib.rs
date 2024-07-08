@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use dies_protos::ssl_gc_referee_message::Referee;
 
@@ -17,7 +17,7 @@ use ball::BallTracker;
 pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
 };
-use dies_core::{GameState, PlayerFeedbackMsg, PlayerId, TrackerSettings, WorldData};
+use dies_core::{GameState, PlayerFeedbackMsg, PlayerId, TrackerSettings, WorldData, WorldInstant};
 use player::PlayerTracker;
 
 const IS_DIV_A: bool = false;
@@ -34,8 +34,18 @@ pub struct WorldTracker {
     ball_tracker: BallTracker,
     game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
-    last_timestamp: Option<f64>,
-    local_time: Option<Instant>,
+    /// Local timestamp of the first detection frame received from vision
+    first_t_received: Option<WorldInstant>,
+    /// Local timestamp of the last received detection frame, in seconds. This is
+    ///  relative to `first_t_received`
+    last_t_received: Option<f64>,
+    /// Duration between the last two received frames (received time)
+    dt_received: Option<f64>,
+    /// The `t_capture` timestamp of the first frame received from vision, in seconds
+    first_t_capture: Option<f64>,
+    /// Capture timestamp of the last frame from vision, in seconds. This is relative to
+    /// `first_t_capture`
+    last_t_capture: Option<f64>,
     tracker_settings: TrackerSettings,
 }
 
@@ -50,8 +60,11 @@ impl WorldTracker {
             ball_tracker: BallTracker::new(settings),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
-            last_timestamp: None,
-            local_time: None,
+            first_t_received: None,
+            last_t_received: None,
+            dt_received: None,
+            first_t_capture: None,
+            last_t_capture: None,
             tracker_settings: settings.clone(),
         }
     }
@@ -117,12 +130,20 @@ impl WorldTracker {
     }
 
     /// Update the world state from a vision message.
-    pub fn update_from_vision(&mut self, data: &SSL_WrapperPacket) {
+    pub fn update_from_vision(&mut self, data: &SSL_WrapperPacket, time: WorldInstant) {
         if let Some(frame) = data.detection.as_ref() {
-            let t_capture = frame.t_capture();
-            if (t_capture - self.last_timestamp.unwrap_or(0.0)).abs() <= (1.0 / 60.0) {
-                return;
+            // Update t_received
+            let first_t_received = *self.first_t_received.get_or_insert(time);
+            let t_received = time.duration_since(&first_t_received);
+            if let Some(last_t_received) = self.last_t_received {
+                self.dt_received = Some(t_received - last_t_received);
             }
+            self.last_t_received = Some(t_received);
+
+            // Update t_capture
+            let t_capture = frame.t_capture();
+            let first_t_capture = *self.first_t_capture.get_or_insert(t_capture);
+            self.last_t_capture = Some(t_capture - first_t_capture);
 
             // Update players
             let (blue_trackers, yellow_tracker) = if self.is_blue {
@@ -151,8 +172,6 @@ impl WorldTracker {
 
             // Update ball
             self.ball_tracker.update(frame);
-
-            self.last_timestamp = Some(t_capture);
         }
         if let Some(geometry) = data.geometry.as_ref() {
             // We don't expect the field geometry to change, so only update it once.
@@ -193,12 +212,6 @@ impl WorldTracker {
     /// Returns `None` if the world state is not initialized (see
     /// [`WorldTracker::is_init`]).
     pub fn get(&mut self) -> WorldData {
-        let duration: f64 = if let Some(local_time) = self.local_time {
-            local_time.elapsed().as_secs_f64()
-        } else {
-            0.0
-        };
-        self.local_time = Some(Instant::now());
         let field_geom = if let Some(v) = &self.field_geometry {
             Some(v)
         } else {
@@ -229,12 +242,14 @@ impl WorldTracker {
         };
 
         WorldData {
+            dt: self.dt_received.unwrap_or(0.0),
+            t_capture: self.last_t_capture.unwrap_or(0.0),
+            t_received: self.last_t_received.unwrap_or(0.0),
             own_players: own_players.into_iter().cloned().collect(),
             opp_players: opp_players.into_iter().cloned().collect(),
             ball: self.ball_tracker.get().cloned(),
             field_geom: field_geom.cloned(),
             current_game_state: game_state,
-            duration,
         }
     }
 }
@@ -289,10 +304,10 @@ mod test {
         let mut packet_geom = SSL_WrapperPacket::new();
         packet_geom.geometry = Some(geom).into();
 
-        tracker.update_from_vision(&packet_detection);
+        tracker.update_from_vision(&packet_detection, WorldInstant::now_real());
         assert!(!tracker.is_init());
 
-        tracker.update_from_vision(&packet_geom);
+        tracker.update_from_vision(&packet_geom, WorldInstant::now_real());
         assert!(!tracker.is_init());
 
         // Second detection frame
@@ -301,7 +316,7 @@ mod test {
         let mut packet_detection = SSL_WrapperPacket::new();
         packet_detection.detection = Some(frame).into();
 
-        tracker.update_from_vision(&packet_detection);
+        tracker.update_from_vision(&packet_detection, WorldInstant::now_real());
         assert!(tracker.is_init());
 
         let data = tracker.get();
