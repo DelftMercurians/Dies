@@ -17,7 +17,7 @@ fn one_random_player() -> ScenarioSetup {
     scenario
 }
 
-fn one_player_go_to_origin() -> ScenarioSetup {
+fn one_test_role_player() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(TestRole {}));
     let mut scenario = ScenarioSetup::new(strategy);
@@ -113,7 +113,7 @@ impl Serialize for ScenarioType {
 scenarios! {
     empty_scenario,
     one_random_player,
-    one_player_go_to_origin,
+    one_test_role_player,
     two_players_one_ball
 }
 

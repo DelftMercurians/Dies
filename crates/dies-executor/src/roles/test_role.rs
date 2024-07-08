@@ -82,5 +82,11 @@ impl Role for TestRole {
             }
             SkillResult::Done => PlayerControlInput::new(),
         }
+
+        // let target = Vector2::new(1000.0, 1000.0);
+        // dbg_draw!(("p{}.target", ctx.player.id), cross, target);
+        // skill!(ctx, GoToPositionSkill::new(target));
+        // // skill!(ctx, GoToPositionSkill::new(target2));
+        // PlayerControlInput::new()
     }
 }
