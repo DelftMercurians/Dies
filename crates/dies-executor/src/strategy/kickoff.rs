@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::f64::consts::PI;
 use log::log;
 use dies_core::{Angle, GameState, PlayerData, PlayerId, WorldData};
 use crate::strategy::{Role, Strategy};
@@ -33,16 +34,16 @@ impl Iterator for PositionGenerator {
     type Item = Vector2<f64>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let result = Vector2::new(self.x, self.y);
+
         self.count += 1;
         if self.count % 2 == 0 {
             self.x += self.d;
-            self.y = 0.0;
             self.direction = 1.0;
         } else {
-            self.y = self.direction * (self.count as f64 / 2.0) * self.d;
             self.direction *= -1.0;
         }
+        self.y = self.direction * ((self.count as f64 / 2.0) + 1.0) * self.d;
+        let result = Vector2::new(self.x, self.y);
         Some(result)
     }
 }
@@ -92,7 +93,7 @@ impl Role for Kicker {
         let gamestate = ctx.world.current_game_state.game_state;
         let player_data = ctx.player;
         if gamestate == GameState::PrepareKickoff {
-            return self.move_to_circle.relocate(player_data, Vector2::new(-100.0, 0.0), Angle::from_degrees(0.0));
+            return self.move_to_circle.relocate(player_data, Vector2::new(-800.0, PI), Angle::from_degrees(0.0));
         }
         
         if self.move_to_ball.is_accomplished() {
@@ -121,7 +122,7 @@ impl KickoffStrategy {
             roles: HashMap::new(),
             has_kicker: false,
             gate_keeper_id,
-            position_generator: PositionGenerator::new(1000.0),
+            position_generator: PositionGenerator::new(-1000.0),
         }
     }
 

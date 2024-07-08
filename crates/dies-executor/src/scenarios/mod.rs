@@ -2,7 +2,6 @@ mod scenario;
 use dies_core::{GameState, PlayerId, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
-use serde::de::Unexpected::Option;
 use dies_core::GameState::{Kickoff, PrepareKickoff};
 use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
 
@@ -48,7 +47,7 @@ fn kickoff() -> ScenarioSetup {
     scenario.add_strategy(Kickoff,KickoffStrategy::new(None));
     scenario
         .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
-        .add_own_player_at(Vector2::new(1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0))
         .add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
 }
