@@ -335,11 +335,11 @@ mod test {
 
         // Check field geometry
         let field_geom = data.field_geom.unwrap();
-        assert!(field_geom.field_length == 9000);
-        assert!(field_geom.field_width == 6000);
-        assert!(field_geom.goal_width == 1000);
-        assert!(field_geom.goal_depth == 200);
-        assert!(field_geom.boundary_width == 300);
+        assert!(field_geom.field_length == 9000.0);
+        assert!(field_geom.field_width == 6000.0);
+        assert!(field_geom.goal_width == 1000.0);
+        assert!(field_geom.goal_depth == 200.0);
+        assert!(field_geom.boundary_width == 300.0);
     }
 
     pub struct RefereeBuilder {
