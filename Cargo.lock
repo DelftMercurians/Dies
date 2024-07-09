@@ -414,9 +414,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.8"
+version = "4.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84b3edb18336f4df585bc9aa31dd99c036dfa5dc5e9a2939a722a188f3a8970d"
+checksum = "64acc1846d54c1fe936a78dc189c34e28d3f5afc348403f28ecf53660b9b8462"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -424,9 +424,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.8"
+version = "4.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1c09dd5ada6c6c78075d6fd0da3f90d8080651e2d6cc8eb2f1aaa4034ced708"
+checksum = "6fb8393d67ba2e7bfaf28a23458e4e2b543cc73a99595511eb207fdb8aede942"
 dependencies = [
  "anstream",
  "anstyle",
@@ -790,7 +790,7 @@ dependencies = [
 [[package]]
 name = "dodgy_2d"
 version = "0.5.1"
-source = "git+https://github.com/DelftMercurians/dodgy.git#b0ab42a261faf444f312d93d9684795a1f3109d5"
+source = "git+https://github.com/DelftMercurians/dodgy.git?branch=fix/perpendicular-velocity#9e355e457ecb9d1e5cc607d3b94756bc5c9bcebb"
 dependencies = [
  "glam",
 ]
@@ -1007,8 +1007,8 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "glue"
-version = "0.2.0"
-source = "git+https://github.com/DelftMercurians/glue.git?branch=dev/radio-link#04c75f179822a9e9d661f4e86309ded9842a8802"
+version = "0.3.0"
+source = "git+https://github.com/DelftMercurians/glue.git?branch=dev/radio-link#6a1649aaa976cd0b2fe371c7d19bf86036fd438e"
 dependencies = [
  "bindgen",
  "chrono",
@@ -2176,9 +2176,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.69"
+version = "2.0.70"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "201fcda3845c23e8212cd466bfebf0bd20694490fc0356ae8e428e0824a915a6"
+checksum = "2f0209b68b3613b093e0ec905354eccaedcfe83b8cb37cbdeae64026c3064c16"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2579,9 +2579,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.9.1"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de17fd2f7da591098415cff336e12965a28061ddace43b59cb3c430179c9439"
+checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
 dependencies = [
  "getrandom",
 ]
