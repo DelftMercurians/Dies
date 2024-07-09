@@ -31,15 +31,14 @@ impl TestRole {
 
 impl Role for TestRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        
         // CONSTANTS OF GEOMETRY
 
-        let target = Vector2::new(2000.0, 100.0);
+        let target = Vector2::new(2000.0, 0.0);
         let size = 250;
-        let a = Vector2::new( - size as f64, -size as f64);
-        let b = Vector2::new(  - size as f64, size as f64);
-        let c = Vector2::new(size as f64,  size as f64);
-        let d = Vector2::new(size as f64,  -size as f64);
+        let a = Vector2::new(-size as f64, -size as f64);
+        let b = Vector2::new(-size as f64, size as f64);
+        let c = Vector2::new(size as f64, size as f64);
+        let d = Vector2::new(size as f64, -size as f64);
 
         // DRAWING
         dbg_draw!(("p{}.target", ctx.player.id), cross, target);
@@ -49,65 +48,76 @@ impl Role for TestRole {
         dbg_draw!(("p{}.obs3", ctx.player.id), line, c, d);
         dbg_draw!(("p{}.obs4", ctx.player.id), line, d, a);
 
-      
         let mut input = PlayerControlInput::new();
         let preferred_vel = target - ctx.player.position;
         let max_speed = 1000.0;
-        input.velocity = Velocity::global(Vector2::new(preferred_vel.x , preferred_vel.y).normalize() * max_speed);
+        input.velocity = Velocity::global(
+            Vector2::new(preferred_vel.x, preferred_vel.y).normalize() * max_speed,
+        );
 
         self.agent.position = Vec2::new(ctx.player.position.x as f32, ctx.player.position.y as f32);
         self.agent.velocity = Vec2::new(ctx.player.velocity.x as f32, ctx.player.velocity.y as f32);
         let desired_vel = match input.velocity {
-                        Velocity::Global(v) => Vec2::new(v.x as f32, v.y as f32),
-                        Velocity::Local(_) => return input,
-                    };
-    
-                    // other words, obstacles with vertices going counter-clockwise will
-                    // prevent objects from getting into the loop, and obstacles with vertices
-                    // going clockwise will prevent objects from leaving the loop.
-                    let obstacles: Vec<Cow<'static, Obstacle>> = vec![
-                                Cow::Owned(Obstacle::Closed{
-                                    vertices: vec![
-                                    Vec2::new(a.x as f32, a.y as f32),
-                                    Vec2::new(d.x as f32, d.y as f32),
-                                    Vec2::new(c.x as f32, c.y as f32),
-                                    Vec2::new(b.x as f32, b.y as f32),
-                                   
-                                    ],
-                                }),
-                                // Add more obstacles here.
-                                ];
+            Velocity::Global(v) => Vec2::new(v.x as f32, v.y as f32),
+            Velocity::Local(_) => return input,
+        };
 
-                    
-                    let nearby_obstacles = obstacles
-                                .iter()
-                                .map(|obstacle| obstacle.clone())
-                                .collect::<Vec<Cow<'_, Obstacle>>>();
-                    let time_horizon = 100.0;
-                    let obstacle_time_horizon = 10.0;
-    
-                    let avoidance_velocity : Vec2 = self.agent.compute_avoiding_velocity(
-                        // Neighbors - other players
-                        &vec![],
-                        // Obstacles
-                        &nearby_obstacles,
-                        desired_vel,
-                        max_speed as f32,
-                        ctx.world.dt as f32,
-                        &AvoidanceOptions {
-                            obstacle_margin: 200.,
-                            time_horizon,
-                            obstacle_time_horizon,
-                        },
-                    );
-    
-                    input.velocity = Velocity::global(Vector2::new(
-                        avoidance_velocity.x as f64,
-                        avoidance_velocity.y as f64,
-                    ));
-                    dies_core::debug_line(format!("p{}.orca_velocity", ctx.player.id), ctx.player.position, ctx.player.position + Vector2::new(avoidance_velocity.x as f64, avoidance_velocity.y as f64), dies_core::DebugColor::Purple);
-                    dies_core::debug_value(format!("p{}.orca_vel_x", ctx.player.id), avoidance_velocity.x as f64);
-                    dies_core::debug_value(format!("p{}.orca_vel_y", ctx.player.id), avoidance_velocity.y as f64);
-                    input
+        // other words, obstacles with vertices going counter-clockwise will
+        // prevent objects from getting into the loop, and obstacles with vertices
+        // going clockwise will prevent objects from leaving the loop.
+        let obstacles: Vec<Cow<'static, Obstacle>> = vec![
+            Cow::Owned(Obstacle::Closed {
+                vertices: vec![
+                    Vec2::new(a.x as f32, a.y as f32),
+                    Vec2::new(d.x as f32, d.y as f32),
+                    Vec2::new(c.x as f32, c.y as f32),
+                    Vec2::new(b.x as f32, b.y as f32),
+                ],
+            }),
+            // Add more obstacles here.
+        ];
+
+        let nearby_obstacles = obstacles
+            .iter()
+            .map(|obstacle| obstacle.clone())
+            .collect::<Vec<Cow<'_, Obstacle>>>();
+        let time_horizon = 100.0;
+        let obstacle_time_horizon = 10.0;
+
+        let avoidance_velocity: Vec2 = self.agent.compute_avoiding_velocity(
+            // Neighbors - other players
+            &vec![],
+            // Obstacles
+            &nearby_obstacles,
+            desired_vel,
+            max_speed as f32,
+            ctx.world.dt as f32,
+            &AvoidanceOptions {
+                obstacle_margin: 200.,
+                time_horizon,
+                obstacle_time_horizon,
+            },
+        );
+
+        input.velocity = Velocity::global(Vector2::new(
+            avoidance_velocity.x as f64,
+            avoidance_velocity.y as f64,
+        ));
+        dies_core::debug_line(
+            format!("p{}.orca_velocity", ctx.player.id),
+            ctx.player.position,
+            ctx.player.position
+                + Vector2::new(avoidance_velocity.x as f64, avoidance_velocity.y as f64),
+            dies_core::DebugColor::Purple,
+        );
+        dies_core::debug_value(
+            format!("p{}.orca_vel_x", ctx.player.id),
+            avoidance_velocity.x as f64,
+        );
+        dies_core::debug_value(
+            format!("p{}.orca_vel_y", ctx.player.id),
+            avoidance_velocity.y as f64,
+        );
+        input
     }
 }

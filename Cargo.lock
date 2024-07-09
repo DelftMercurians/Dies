@@ -368,9 +368,9 @@ checksum = "514de17de45fdb8dc022b1a7975556c53c86f9f0aa5f534b98977b171857c2c9"
 
 [[package]]
 name = "cc"
-version = "1.0.106"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "066fce287b1d4eafef758e89e09d724a24808a9196fe9756b8ca90e86d0719a2"
+checksum = "eaff6f8ce506b9773fa786672d63fc7a191ffea1be33f72bbd4aeacefca9ffc8"
 
 [[package]]
 name = "cexpr"
@@ -790,7 +790,7 @@ dependencies = [
 [[package]]
 name = "dodgy_2d"
 version = "0.5.1"
-source = "git+https://github.com/DelftMercurians/dodgy.git?branch=fix/perpendicular-velocity#9e355e457ecb9d1e5cc607d3b94756bc5c9bcebb"
+source = "git+https://github.com/DelftMercurians/dodgy.git?branch=fix/perpendicular-velocity#c3743857e2d021248f4f222b3d135d5847431358"
 dependencies = [
  "glam",
 ]
@@ -1008,7 +1008,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "glue"
 version = "0.3.0"
-source = "git+https://github.com/DelftMercurians/glue.git?branch=dev/radio-link#6a1649aaa976cd0b2fe371c7d19bf86036fd438e"
+source = "git+https://github.com/DelftMercurians/glue.git?branch=dev/radio-link#df602e77fdeabf7d5abd1c4296b59e726fb780ff"
 dependencies = [
  "bindgen",
  "chrono",
