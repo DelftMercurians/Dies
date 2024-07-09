@@ -602,11 +602,16 @@ impl Default for SimulationBuilder {
 fn geometry(config: &FieldGeometry) -> SSL_WrapperPacket {
     let mut geometry = SSL_GeometryData::new();
     let mut field = SSL_GeometryFieldSize::new();
-    field.set_field_length(config.field_length);
-    field.set_field_width(config.field_width);
-    field.set_goal_width(config.goal_width);
-    field.set_goal_depth(config.goal_depth);
-    field.set_boundary_width(config.boundary_width);
+    field.set_field_length(config.field_length as i32);
+    field.set_field_width(config.field_width as i32);
+    field.set_goal_width(config.goal_width as i32);
+    field.set_goal_depth(config.goal_depth as i32);
+    field.set_boundary_width(config.boundary_width as i32);
+    field.set_penalty_area_depth(config.penalty_area_depth as i32);
+    field.set_penalty_area_width(config.penalty_area_width as i32);
+    field.set_center_circle_radius(config.center_circle_radius as i32);
+    field.set_goal_center_to_penalty_mark(config.goal_line_to_penalty_mark as i32);
+    field.set_ball_radius(config.ball_radius as f32);
 
     for line in &config.line_segments {
         let mut ssl_segment = SSL_FieldLineSegment::new();
