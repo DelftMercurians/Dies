@@ -645,6 +645,7 @@ dependencies = [
  "anyhow",
  "approx",
  "dies-protos",
+ "dodgy_2d",
  "glue",
  "lazy_static",
  "log",

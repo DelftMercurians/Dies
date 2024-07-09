@@ -1,9 +1,13 @@
 use std::time::Instant;
 
+use dodgy_2d::Obstacle;
+use nalgebra::Vector2;
 use serde::Serialize;
 use typeshare::typeshare;
 
 use crate::{player::PlayerId, Angle, FieldGeometry, SysStatus, Vector2, Vector3};
+
+const STOP_BALL_AVOIDANCE_RADIUS: f64 = 500.0;
 
 #[derive(Debug, Clone, Copy)]
 pub enum WorldInstant {
@@ -154,4 +158,72 @@ pub struct WorldData {
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameStateData,
+}
+
+impl WorldData {
+    pub fn players_within_radius(&self, pos: Vector2, radius: f64) -> Vec<&PlayerData> {
+        self.own_players
+            .iter()
+            .chain(self.opp_players.iter())
+            .filter(|p| (p.position.xy() - pos).norm() < radius)
+            .collect()
+    }
+
+    pub fn get_obstacles(&self) -> Vec<Obstacle> {
+        if let Some(field_geom) = self.field_geom {
+            let field_boundary = {
+                let hl = field_geom.field_length as f32 / 2.0;
+                let hw = field_geom.field_width as f32 / 2.0;
+                Obstacle::Closed {
+                    vertices: vec![
+                        // Clockwise -> prevent leaving the field
+                        dodgy_2d::Vec2::new(-hl, -hw),
+                        dodgy_2d::Vec2::new(hl, -hw),
+                        dodgy_2d::Vec2::new(hl, hw),
+                        dodgy_2d::Vec2::new(-hl, hw),
+                    ],
+                }
+            };
+
+            let mut obstacles = vec![field_boundary];
+            match self.current_game_state.game_state {
+                GameState::Stop => {
+                    // Add obstacle to prevent getting close to the ball
+                    if let Some(ball) = &self.ball {
+                        let hw = STOP_BALL_AVOIDANCE_RADIUS as f32 / 2.0;
+                        let x = ball.position.x as f32;
+                        let y = ball.position.y as f32;
+                        obstacles.push(Obstacle::Closed {
+                            vertices: vec![
+                                // Counter-clockwise -> prevent getting into the loop
+                                dodgy_2d::Vec2::new(x - hw, y - hw),
+                                dodgy_2d::Vec2::new(x - hw, y + hw),
+                                dodgy_2d::Vec2::new(x + hw, y + hw),
+                                dodgy_2d::Vec2::new(x + hw, y - hw),
+                            ],
+                        });
+                    }
+                }
+                GameState::Halt => {
+                    // Nothing to do
+                }
+                GameState::Timeout => {
+                    // Nothing to do
+                }
+                GameState::PrepareKickoff => todo!(),
+                GameState::BallReplacement(_) => todo!(),
+                GameState::PreparePenalty => todo!(),
+                GameState::Kickoff => todo!(),
+                GameState::FreeKick => todo!(),
+                GameState::Penalty => todo!(),
+                GameState::PenaltyRun => todo!(),
+                GameState::Run => todo!(),
+                GameState::Unknown => {}
+            };
+
+            obstacles
+        } else {
+            vec![]
+        }
+    }
 }

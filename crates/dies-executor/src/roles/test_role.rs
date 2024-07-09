@@ -1,11 +1,10 @@
-use std::{borrow::Cow, fmt::format, vec};
+use std::{borrow::Cow, vec};
 
 use dies_core::{dbg_draw, Vector2};
 use dodgy_2d::{Agent, AvoidanceOptions, Obstacle, Vec2};
 
 use crate::{
     control::Velocity,
-    invoke_skill,
     roles::{skills::GoToPositionSkill, Role, SkillResult},
     skill, PlayerControlInput,
 };
@@ -32,7 +31,6 @@ impl TestRole {
 impl Role for TestRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         // CONSTANTS OF GEOMETRY
-
         let target = Vector2::new(2000.0, 0.0);
         let size = 250;
         let a = Vector2::new(-size as f64, -size as f64);

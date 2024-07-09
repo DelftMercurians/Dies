@@ -8,6 +8,7 @@ use super::{
 };
 use dies_core::{ControllerSettings, GameState, PlayerId};
 use dies_core::{PlayerCmd, WorldData};
+use dodgy_2d::Obstacle;
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
