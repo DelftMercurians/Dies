@@ -1,7 +1,6 @@
 use std::time::Instant;
 
 use dodgy_2d::Obstacle;
-use nalgebra::Vector2;
 use serde::Serialize;
 use typeshare::typeshare;
 
@@ -170,7 +169,7 @@ impl WorldData {
     }
 
     pub fn get_obstacles(&self) -> Vec<Obstacle> {
-        if let Some(field_geom) = self.field_geom {
+        if let Some(field_geom) = &self.field_geom {
             let field_boundary = {
                 let hl = field_geom.field_length as f32 / 2.0;
                 let hw = field_geom.field_width as f32 / 2.0;
