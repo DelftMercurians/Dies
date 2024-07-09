@@ -1,9 +1,8 @@
 mod scenario;
+use crate::{roles::test_role::TestRole, roles::waller::Waller, strategy::AdHocStrategy};
 use dies_core::Vector2;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
-
-use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
 
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
@@ -31,6 +30,20 @@ fn two_players_one_ball() -> ScenarioSetup {
         .add_ball()
         .add_own_player_at(Vector2::zeros())
         .add_own_player_at(Vector2::new(-500.0, 0.0));
+    scenario
+}
+
+fn one_waller_one_ball() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Waller::new(0.0)));
+    strategy.add_role(Box::new(Waller::new(500.0)));
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        // .add_ball_at(Vector3::new(895.0, 2623.0, 0.0))
+        .add_ball()
+        .add_own_player_at(Vector2::new(2264.0, 336.0))
+        .add_own_player_at(Vector2::new(500.0, -336.0))
+        .add_own_player_at(Vector2::new(0.0, 0.0));
     scenario
 }
 
@@ -114,7 +127,8 @@ scenarios! {
     empty_scenario,
     one_random_player,
     one_test_role_player,
-    two_players_one_ball
+    two_players_one_ball,
+    one_waller_one_ball
 }
 
 #[cfg(test)]

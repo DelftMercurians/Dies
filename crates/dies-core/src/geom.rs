@@ -1,3 +1,5 @@
+use std::f64::consts::PI;
+
 use dies_protos::ssl_vision_geometry::SSL_GeometryFieldSize;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
@@ -65,21 +67,29 @@ impl FieldLineSegment {
 #[typeshare]
 pub struct FieldGeometry {
     /// Field length (distance between goal lines) in mm
-    pub field_length: i32,
+    pub field_length: f64,
     /// Field width (distance between touch lines) in mm
-    pub field_width: i32,
+    pub field_width: f64,
     /// Goal width (distance inner edges of goal posts) in mm
-    pub goal_width: i32,
+    pub goal_width: f64,
     /// Goal depth (distance from outer goal line edge to inner goal back) in mm
-    pub goal_depth: i32,
+    pub goal_depth: f64,
     /// Boundary width (distance from touch/goal line centers to boundary walls) in mm
-    pub boundary_width: i32,
+    pub boundary_width: f64,
     /// Generated line segments based on the other parameters
     pub line_segments: Vec<FieldLineSegment>,
     /// Generated circular arcs based on the other parameters
     pub circular_arcs: Vec<FieldCircularArc>,
-    /// Radius of the center circle in mm
+    /// Penalty area depth (distance from goal line to penalty mark) in mm
+    pub penalty_area_depth: f64,
+    /// Penalty area width (distance from penalty mark to penalty area edge) in mm
+    pub penalty_area_width: f64,
+    /// Center circle radius in mm
     pub center_circle_radius: f64,
+    /// Distance from goal line to penalty mark in mm
+    pub goal_line_to_penalty_mark: f64,
+    /// Ball radius in mm
+    pub ball_radius: f64,
 }
 
 impl FieldGeometry {
@@ -130,112 +140,141 @@ impl FieldGeometry {
         }
 
         FieldGeometry {
-            field_length: geometry.field_length(),
-            field_width: geometry.field_width(),
-            goal_width: geometry.goal_width(),
-            goal_depth: geometry.goal_depth(),
-            boundary_width: geometry.boundary_width(),
-            center_circle_radius: geometry.center_circle_radius() as f64,
+            field_length: geometry.field_length() as f64,
+            field_width: geometry.field_width() as f64,
+            goal_width: geometry.goal_width() as f64,
+            goal_depth: geometry.goal_depth() as f64,
+            boundary_width: geometry.boundary_width() as f64,
             line_segments: field_line_segments,
             circular_arcs: field_circular_arcs,
+            penalty_area_depth: geometry.penalty_area_depth() as f64,
+            penalty_area_width: geometry.penalty_area_width() as f64,
+            center_circle_radius: geometry.center_circle_radius() as f64,
+            goal_line_to_penalty_mark: geometry.goal_center_to_penalty_mark() as f64,
+            ball_radius: geometry.ball_radius() as f64,
         }
     }
 }
 
 impl Default for FieldGeometry {
     fn default() -> Self {
-        let lines = vec![
-            FieldLineSegment::new(
-                "TopTouchLine",
-                Vector2::new(-6020.0, -4510.0),
-                Vector2::new(6020.0, -4510.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "BottomTouchLine",
-                Vector2::new(-6020.0, 4510.0),
-                Vector2::new(6020.0, 4510.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "LeftGoalLine",
-                Vector2::new(-6020.0, -4510.0),
-                Vector2::new(-6020.0, 4510.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "RightGoalLine",
-                Vector2::new(6020.0, -4510.0),
-                Vector2::new(6020.0, 4510.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "HalfwayLine",
-                Vector2::new(0.0, -4510.0),
-                Vector2::new(0.0, 4510.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "CenterLine",
-                Vector2::new(-6020.0, 0.0),
-                Vector2::new(6020.0, 0.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "LeftPenaltyStretch",
-                Vector2::new(-4800.0, -1205.0),
-                Vector2::new(-4800.0, 1205.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "RightPenaltyStretch",
-                Vector2::new(4800.0, -1205.0),
-                Vector2::new(4800.0, 1205.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "LeftFieldLeftPenaltyStretch",
-                Vector2::new(-6020.0, -1205.0),
-                Vector2::new(-4800.0, -1205.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "LeftFieldRightPenaltyStretch",
-                Vector2::new(-6020.0, 1205.0),
-                Vector2::new(-4800.0, 1205.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "RightFieldRightPenaltyStretch",
-                Vector2::new(6020.0, -1205.0),
-                Vector2::new(4800.0, -1205.0),
-                10.0,
-            ),
-            FieldLineSegment::new(
-                "RightFieldLeftPenaltyStretch",
-                Vector2::new(6020.0, 1205.0),
-                Vector2::new(4800.0, 1205.0),
-                10.0,
-            ),
+        // Division B constants
+        // Sourced from https://github.com/DelftMercurians/ssl-vision/blob/fd7b426df1b19a183ed2a6bdad7d7448ad1a9832/src/shared/util/field_default_constants.h#L50-L66
+        // and https://github.com/DelftMercurians/ssl-vision/blob/fd7b426df1b19a183ed2a6bdad7d7448ad1a9832/src/shared/util/field.cpp#L681
+        let field_length = 9000.0f64;
+        let field_width = 6000.0f64;
+        let goal_width = 1000.0f64;
+        let goal_depth = 180.0f64;
+        let boundary_width = 300.0f64;
+        let line_thickness = 10.0f64;
+        let penalty_area_depth = 1000.0f64;
+        let penalty_area_width = 2000.0f64;
+        let center_circle_radius = 500.0f64;
+        let goal_line_to_penalty_mark = 6000.0f64;
+        let ball_radius = 21.5;
+
+        let field_length_half = field_length / 2.0;
+        let field_width_half = field_width / 2.0;
+        let pen_area_x = field_length_half - penalty_area_depth;
+        let pen_area_y = penalty_area_width / 2.0;
+
+        let line_segments = vec![
+            FieldLineSegment {
+                name: "TopTouchLine".to_string(),
+                p1: Vector2::new(-field_length_half, field_width_half),
+                p2: Vector2::new(field_length_half, field_width_half),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "BottomTouchLine".to_string(),
+                p1: Vector2::new(-field_length_half, -field_width_half),
+                p2: Vector2::new(field_length_half, -field_width_half),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "LeftGoalLine".to_string(),
+                p1: Vector2::new(-field_length_half, -field_width_half),
+                p2: Vector2::new(-field_length_half, field_width_half),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "RightGoalLine".to_string(),
+                p1: Vector2::new(field_length_half, -field_width_half),
+                p2: Vector2::new(field_length_half, field_width_half),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "HalfwayLine".to_string(),
+                p1: Vector2::new(0.0, -field_width_half),
+                p2: Vector2::new(0.0, field_width_half),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "CenterLine".to_string(),
+                p1: Vector2::new(-field_length_half, 0.0),
+                p2: Vector2::new(field_length_half, 0.0),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "LeftPenaltyStretch".to_string(),
+                p1: Vector2::new(-pen_area_x, -pen_area_y),
+                p2: Vector2::new(-pen_area_x, pen_area_y),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "RightPenaltyStretch".to_string(),
+                p1: Vector2::new(pen_area_x, -pen_area_y),
+                p2: Vector2::new(pen_area_x, pen_area_y),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "LeftFieldLeftPenaltyStretch".to_string(),
+                p1: Vector2::new(-field_length_half, -pen_area_y),
+                p2: Vector2::new(-pen_area_x, -pen_area_y),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "LeftFieldRightPenaltyStretch".to_string(),
+                p1: Vector2::new(-field_length_half, pen_area_y),
+                p2: Vector2::new(-pen_area_x, pen_area_y),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "RightFieldRightPenaltyStretch".to_string(),
+                p1: Vector2::new(field_length_half, -pen_area_y),
+                p2: Vector2::new(pen_area_x, -pen_area_y),
+                thickness: line_thickness,
+            },
+            FieldLineSegment {
+                name: "RightFieldLeftPenaltyStretch".to_string(),
+                p1: Vector2::new(field_length_half, pen_area_y),
+                p2: Vector2::new(pen_area_x, pen_area_y),
+                thickness: line_thickness,
+            },
         ];
-        let arcs = vec![FieldCircularArc::new(
-            "CenterCircle",
-            Vector2::new(0.0, 0.0),
-            500.0,
-            0.0,
-            6.283185,
-            10.0,
-        )];
+
+        let circular_arcs = vec![FieldCircularArc {
+            name: "CenterCircle".to_string(),
+            center: Vector2::zeros(),
+            radius: center_circle_radius as f64,
+            a1: 0.0,
+            a2: 2.0 * PI,
+            thickness: line_thickness,
+        }];
 
         Self {
-            field_width: 9020,
-            field_length: 12040,
-            boundary_width: 300,
-            goal_depth: 180,
-            goal_width: 1200,
-            center_circle_radius: 500.0,
-            line_segments: lines,
-            circular_arcs: arcs,
+            field_length,
+            field_width,
+            goal_width,
+            goal_depth,
+            boundary_width,
+            line_segments,
+            circular_arcs,
+            penalty_area_depth,
+            penalty_area_width,
+            center_circle_radius,
+            goal_line_to_penalty_mark,
+            ball_radius,
         }
     }
 }
