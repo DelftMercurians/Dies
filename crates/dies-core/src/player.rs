@@ -250,3 +250,15 @@ pub struct PlayerFeedbackMsg {
     pub breakbeam_sensor_ok: Option<bool>,
     pub pack_voltages: Option<[f32; 2]>,
 }
+
+/// Role of a player according to the game rules. These are mainly for rule-compliance.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[typeshare]
+pub enum RoleType {
+    /// A regular player with no special role
+    Player,
+    /// The goalkeeper
+    Goalkeeper,
+    /// The attacking kicker during kick-off
+    KickoffKicker,
+}

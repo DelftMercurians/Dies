@@ -1,10 +1,11 @@
 use std::time::Instant;
 
 use dodgy_2d::Obstacle;
+use nalgebra::Vector;
 use serde::Serialize;
 use typeshare::typeshare;
 
-use crate::{player::PlayerId, Angle, FieldGeometry, SysStatus, Vector2, Vector3};
+use crate::{player::PlayerId, Angle, FieldGeometry, RoleType, SysStatus, Vector2, Vector3};
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 500.0;
 
@@ -168,7 +169,7 @@ impl WorldData {
             .collect()
     }
 
-    pub fn get_obstacles(&self) -> Vec<Obstacle> {
+    pub fn get_obstacles_for_player(&self, role: RoleType) -> Vec<Obstacle> {
         if let Some(field_geom) = &self.field_geom {
             let field_boundary = {
                 let hl = field_geom.field_length as f32 / 2.0;
@@ -177,14 +178,14 @@ impl WorldData {
                     vertices: vec![
                         // Clockwise -> prevent leaving the field
                         dodgy_2d::Vec2::new(-hl, -hw),
-                        dodgy_2d::Vec2::new(hl, -hw),
-                        dodgy_2d::Vec2::new(hl, hw),
                         dodgy_2d::Vec2::new(-hl, hw),
+                        dodgy_2d::Vec2::new(hl, hw),
+                        dodgy_2d::Vec2::new(hl, -hw),
                     ],
                 }
             };
-
             let mut obstacles = vec![field_boundary];
+
             match self.current_game_state.game_state {
                 GameState::Stop => {
                     // Add obstacle to prevent getting close to the ball
@@ -196,12 +197,30 @@ impl WorldData {
                             vertices: vec![
                                 // Counter-clockwise -> prevent getting into the loop
                                 dodgy_2d::Vec2::new(x - hw, y - hw),
-                                dodgy_2d::Vec2::new(x - hw, y + hw),
-                                dodgy_2d::Vec2::new(x + hw, y + hw),
                                 dodgy_2d::Vec2::new(x + hw, y - hw),
+                                dodgy_2d::Vec2::new(x + hw, y + hw),
+                                dodgy_2d::Vec2::new(x - hw, y + hw),
                             ],
                         });
                     }
+                }
+                GameState::Kickoff | GameState::PrepareKickoff => match role {
+                    RoleType::KickoffKicker => {}
+                    _ => {
+                        // Add center circle for non kicker robots
+                        obstacles.push(create_bbox_from_circle(
+                            Vector2::zeros(),
+                            field_geom.center_circle_radius,
+                        ));
+                    }
+                },
+                GameState::BallReplacement(_) => todo!(),
+                GameState::PreparePenalty => todo!(),
+                GameState::FreeKick => todo!(),
+                GameState::Penalty => todo!(),
+                GameState::PenaltyRun => todo!(),
+                GameState::Run => {
+                    // Nothing to do
                 }
                 GameState::Halt => {
                     // Nothing to do
@@ -209,14 +228,6 @@ impl WorldData {
                 GameState::Timeout => {
                     // Nothing to do
                 }
-                GameState::PrepareKickoff => todo!(),
-                GameState::BallReplacement(_) => todo!(),
-                GameState::PreparePenalty => todo!(),
-                GameState::Kickoff => todo!(),
-                GameState::FreeKick => todo!(),
-                GameState::Penalty => todo!(),
-                GameState::PenaltyRun => todo!(),
-                GameState::Run => todo!(),
                 GameState::Unknown => {}
             };
 
@@ -224,5 +235,35 @@ impl WorldData {
         } else {
             vec![]
         }
+    }
+}
+
+fn create_bbox_from_circle(center: Vector2, radius: f64) -> Obstacle {
+    let hw = radius as f32 / 2.0;
+    let x = center.x as f32;
+    let y = center.y as f32;
+    Obstacle::Closed {
+        vertices: vec![
+            // Counter-clockwise -> prevent getting into the loop
+            dodgy_2d::Vec2::new(x - hw, y - hw),
+            dodgy_2d::Vec2::new(x + hw, y - hw),
+            dodgy_2d::Vec2::new(x + hw, y + hw),
+            dodgy_2d::Vec2::new(x - hw, y + hw),
+        ],
+    }
+}
+
+fn create_bbox_from_rect(center: Vector2, width: f64, height: f64) -> Obstacle {
+    let hw = width as f32 / 2.0;
+    let hh = height as f32 / 2.0;
+    let x = center.x as f32;
+    let y = center.y as f32;
+    Obstacle::Closed {
+        vertices: vec![
+            dodgy_2d::Vec2::new(x - hw, y - hh),
+            dodgy_2d::Vec2::new(x + hw, y - hh),
+            dodgy_2d::Vec2::new(x + hw, y + hh),
+            dodgy_2d::Vec2::new(x - hw, y + hh),
+        ],
     }
 }

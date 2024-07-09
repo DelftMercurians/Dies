@@ -78,6 +78,8 @@ pub struct FieldGeometry {
     pub line_segments: Vec<FieldLineSegment>,
     /// Generated circular arcs based on the other parameters
     pub circular_arcs: Vec<FieldCircularArc>,
+    /// Radius of the center circle in mm
+    pub center_circle_radius: f64,
 }
 
 impl FieldGeometry {
@@ -133,6 +135,7 @@ impl FieldGeometry {
             goal_width: geometry.goal_width(),
             goal_depth: geometry.goal_depth(),
             boundary_width: geometry.boundary_width(),
+            center_circle_radius: geometry.center_circle_radius() as f64,
             line_segments: field_line_segments,
             circular_arcs: field_circular_arcs,
         }
@@ -230,6 +233,7 @@ impl Default for FieldGeometry {
             boundary_width: 300,
             goal_depth: 180,
             goal_width: 1200,
+            center_circle_radius: 500.0,
             line_segments: lines,
             circular_arcs: arcs,
         }
