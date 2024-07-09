@@ -1,6 +1,5 @@
 mod scenario;
 use dies_core::Vector2;
-use dies_core::Vector3;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 use crate::{roles::test_role::TestRole, roles::waller::Waller, strategy::AdHocStrategy};

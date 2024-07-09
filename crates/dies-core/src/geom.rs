@@ -78,6 +78,10 @@ pub struct FieldGeometry {
     pub line_segments: Vec<FieldLineSegment>,
     /// Generated circular arcs based on the other parameters
     pub circular_arcs: Vec<FieldCircularArc>,
+    /// Penalty area depth (distance from goal line to penalty mark) in mm
+    pub penalty_area_depth: i32,
+    /// Penalty area width (distance from penalty mark to penalty area edge) in mm
+    pub penalty_area_width: i32,
 }
 
 impl FieldGeometry {
@@ -135,6 +139,8 @@ impl FieldGeometry {
             boundary_width: geometry.boundary_width(),
             line_segments: field_line_segments,
             circular_arcs: field_circular_arcs,
+            penalty_area_depth: geometry.penalty_area_depth(),
+            penalty_area_width: geometry.penalty_area_width(),
         }
     }
 }
@@ -225,13 +231,15 @@ impl Default for FieldGeometry {
         )];
 
         Self {
-            field_width: 9020,
-            field_length: 12040,
+            field_width: 6000,
+            field_length: 9000,
             boundary_width: 300,
             goal_depth: 180,
-            goal_width: 1200,
+            goal_width: 1000,
             line_segments: lines,
             circular_arcs: arcs,
+            penalty_area_depth: 1000,
+            penalty_area_width: 2000,
         }
     }
 }
