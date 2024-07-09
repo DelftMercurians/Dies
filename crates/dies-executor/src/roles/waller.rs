@@ -8,12 +8,14 @@ use crate::{
 };
 
 
-pub struct Waller {}
+pub struct Waller {
+    pub offset: f64,
+}
 use super::RoleCtx;
 
 impl Waller {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(offset: f64) -> Self {
+        Self { offset }
     }
 
     fn find_intersection(&self, player_data: &PlayerData, ball: &BallData) -> Vector2<f64> {
@@ -36,16 +38,16 @@ impl Waller {
             let t = (area_top - ball_pos.y) / direction.y;
             let x = ball_pos.x + t * direction.x;
             println!("Intersecting with top boundary: {:?}", x);
-            if x >= area_right && x <= 6125.0{
-                return Vector2::new(x, area_top);
+            if x >= area_right && x <= 6125.0 {
+                return Vector2::new(x + self.offset, area_top);
             }
 
             // Intersect with the bottom boundary
             let t = (area_bottom - ball_pos.y) / direction.y;
             let x = ball_pos.x + t * direction.x;
             println!("Intersecting with bottom boundary: {:?}", x);
-            if x >= area_right && x <= 6125.0{
-                return Vector2::new(x, area_bottom);
+            if x >= area_right && x <= 6125.0 {
+                return Vector2::new(x + self.offset, area_bottom);
             }
         }
 
@@ -54,7 +56,7 @@ impl Waller {
             let t = (area_right - ball_pos.x) / direction.x;
             let y = ball_pos.y + t * direction.y;
             if y.abs() <= area_top {
-                return Vector2::new(area_right, y);
+                return Vector2::new(area_right, y + self.offset);
             }
         }
 

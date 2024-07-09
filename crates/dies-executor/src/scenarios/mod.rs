@@ -36,12 +36,14 @@ fn two_players_one_ball() -> ScenarioSetup {
 
 fn one_waller_one_ball() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(Waller {}));
+    strategy.add_role(Box::new(Waller {offset: 0.0}));
+    strategy.add_role(Box::new(Waller {offset: 500.0}));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
         // .add_ball_at(Vector3::new(895.0, 2623.0, 0.0))
         .add_ball()
         .add_own_player_at(Vector2::new(2264.0, 336.0))
+        .add_own_player_at(Vector2::new(500.0, -336.0))
         .add_own_player_at(Vector2::new(0.0, 0.0));
     scenario
 }
