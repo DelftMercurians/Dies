@@ -1,6 +1,7 @@
 mod skills;
 
 pub mod test_role;
+pub mod harasser;
 
 use std::collections::HashMap;
 

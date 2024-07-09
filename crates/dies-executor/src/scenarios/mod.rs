@@ -3,7 +3,7 @@ use dies_core::Vector2;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
-use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
+use crate::{roles::harasser::Harasser, strategy::AdHocStrategy};
 
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
@@ -19,7 +19,7 @@ fn one_random_player() -> ScenarioSetup {
 
 fn one_player_go_to_origin() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole {}));
+    strategy.add_role(Box::new(Harasser {distance_behind_ball: 500.0}));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
@@ -31,6 +31,18 @@ fn two_players_one_ball() -> ScenarioSetup {
         .add_ball()
         .add_own_player_at(Vector2::zeros())
         .add_own_player_at(Vector2::new(-500.0, 0.0));
+    scenario
+}
+
+fn one_harasser_one_player_one_ball() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Harasser {distance_behind_ball: 500.0}));
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        // .add_ball_at(Vector3::new(895.0, 2623.0, 0.0))
+        .add_ball()
+        .add_own_player_at(Vector2::new(2264.0, 336.0))
+        .add_own_player_at(Vector2::new(0.0, 0.0));
     scenario
 }
 
@@ -114,7 +126,8 @@ scenarios! {
     empty_scenario,
     one_random_player,
     one_player_go_to_origin,
-    two_players_one_ball
+    two_players_one_ball,
+    one_harasser_one_player_one_ball
 }
 
 #[cfg(test)]
