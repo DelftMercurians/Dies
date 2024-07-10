@@ -161,8 +161,13 @@ impl TeamController {
             .collect::<Vec<_>>();
 
         for (id, agent) in own_agents.iter() {
-            let obstacles = world_data
-                .get_obstacles_for_player(self.strategy.get_role_type(*id).unwrap_or_default());
+            let obstacles = world_data.get_obstacles_for_player(
+                self.strategy
+                    .get_roles()
+                    .get(id)
+                    .map(|r| r.role_type())
+                    .unwrap_or_default(),
+            );
 
             let obstacles = obstacles
                 .iter()
