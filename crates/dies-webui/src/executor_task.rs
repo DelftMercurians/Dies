@@ -105,7 +105,7 @@ impl ExecutorTask {
                 task_handle,
                 executor_handle,
             } => {
-                let _ = executor_handle.send(ControlMsg::Stop);
+                executor_handle.send(ControlMsg::Stop);
                 let _ = task_handle.await;
                 log::info!("Executor stopped");
             }
@@ -217,7 +217,7 @@ impl ExecutorTask {
             executor_handle, ..
         } = &mut self.state
         {
-            let _ = executor_handle.send(cmd);
+            executor_handle.send(cmd);
         }
     }
 }

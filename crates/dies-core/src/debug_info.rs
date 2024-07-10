@@ -128,6 +128,12 @@ pub struct DebugRecord {
     key: String,
 }
 
+impl Default for DebugRecord {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DebugRecord {
     /// Create a new debug record with a random key.
     pub fn new() -> Self {

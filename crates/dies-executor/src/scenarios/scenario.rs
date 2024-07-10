@@ -1,4 +1,6 @@
 use anyhow::{bail, Result};
+use std::{collections::HashSet, time::Duration};
+
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     Angle, BallPlacement, ExecutorSettings, GameState, PlayerData, PlayerId, PlayerPlacement,
@@ -117,8 +119,8 @@ impl ScenarioSetup {
         settings: ExecutorSettings,
         sim_config: SimulationConfig,
     ) -> Executor {
-        let field_width = sim_config.field_geometry.field_width as f64;
-        let field_length = sim_config.field_geometry.field_length as f64;
+        let field_width = sim_config.field_geometry.field_width;
+        let field_length = sim_config.field_geometry.field_length;
         let mut builder = SimulationBuilder::new(sim_config);
 
         match self.ball {
@@ -133,12 +135,12 @@ impl ScenarioSetup {
         }
 
         for player in self.own_players.iter() {
-            let (position, yaw) = player_into_simulation(&player, field_width, field_length);
+            let (position, yaw) = player_into_simulation(player, field_width, field_length);
             builder = builder.add_own_player(position, yaw);
         }
 
         for player in self.opp_players.iter() {
-            let (position, yaw) = player_into_simulation(&player, field_width, field_length);
+            let (position, yaw) = player_into_simulation(player, field_width, field_length);
             builder = builder.add_opp_player(position, yaw);
         }
 
@@ -206,7 +208,7 @@ impl ScenarioSetup {
             .collect::<HashSet<_>>();
         for player in self.own_players.iter() {
             if let Some(id) = find_player(
-                &player,
+                player,
                 &available_ids,
                 &world.own_players,
                 self.tolerance,
@@ -226,7 +228,7 @@ impl ScenarioSetup {
             .collect::<HashSet<_>>();
         for player in self.opp_players.iter() {
             if let Some(id) = find_player(
-                &player,
+                player,
                 &available_ids,
                 &world.opp_players,
                 self.tolerance,
@@ -251,10 +253,7 @@ fn player_into_simulation(
         Some(pos) => pos,
         None => random_pos(field_width, field_length),
     };
-    let yaw = match placement.yaw {
-        Some(yaw) => yaw,
-        None => Angle::default(),
-    };
+    let yaw = placement.yaw.unwrap_or_default();
 
     (position, yaw)
 }
@@ -284,7 +283,7 @@ fn find_player(
         available_ids.iter().next().copied()
     };
 
-    if let Some(player) = id.map(|id| players.iter().find(|p| p.id == id)).flatten() {
+    if let Some(player) = id.and_then(|id| players.iter().find(|p| p.id == id)) {
         match placement.position {
             Some(target) => {
                 if (player.position - target).norm() > tolerance {

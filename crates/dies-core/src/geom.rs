@@ -256,7 +256,7 @@ impl Default for FieldGeometry {
         let circular_arcs = vec![FieldCircularArc {
             name: "CenterCircle".to_string(),
             center: Vector2::zeros(),
-            radius: center_circle_radius as f64,
+            radius: center_circle_radius,
             a1: 0.0,
             a2: 2.0 * PI,
             thickness: line_thickness,

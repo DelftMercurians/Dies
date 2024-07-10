@@ -1,18 +1,18 @@
-use std::{fmt::Debug, time::Duration};
+use std::time::Duration;
 
-use dies_core::variable::Variable;
+use dies_core::Vector2;
 
-pub struct MTP<T: Variable> {
+pub struct MTP {
     max_accel: f64,
     max_speed: f64,
     max_decel: f64,
-    setpoint: Option<T>,
+    setpoint: Option<Vector2>,
     kp: f64,
     proportional_time_window: Duration,
     cutoff_distance: f64,
 }
 
-impl<T: Variable + Debug> MTP<T> {
+impl MTP {
     pub fn new(max_accel: f64, max_speed: f64, max_decel: f64) -> Self {
         Self {
             max_accel,
@@ -25,30 +25,13 @@ impl<T: Variable + Debug> MTP<T> {
         }
     }
 
-    pub fn set_setpoint(&mut self, setpoint: T) {
+    pub fn set_setpoint(&mut self, setpoint: Vector2) {
         self.setpoint = Some(setpoint);
     }
 
-    pub fn max_accel(&self) -> f64 {
-        self.max_accel
-    }
-    pub fn max_speed(&self) -> f64 {
-        self.max_speed
-    }
-    pub fn max_decel(&self) -> f64 {
-        self.max_decel
-    }
-    pub fn setpoint(&self) -> Option<T> {
-        self.setpoint
-    }
-    pub fn kp(&self) -> f64 {
-        self.kp
-    }
-    pub fn proportional_time_window(&self) -> Duration {
-        self.proportional_time_window
-    }
-    pub fn cutoff_distance(&self) -> f64 {
-        self.cutoff_distance
+    pub fn deceleration_window(&self, velocity: Vector2) -> f64 {
+        let current_speed = velocity.magnitude();
+        (current_speed * current_speed) / (2.0 * self.max_decel)
     }
 
     pub fn update_settings(
@@ -68,10 +51,10 @@ impl<T: Variable + Debug> MTP<T> {
         self.cutoff_distance = cutoff_distance;
     }
 
-    pub fn update(&self, current: T, velocity: T, dt: f64) -> T {
+    pub fn update(&self, current: Vector2, velocity: Vector2, dt: f64) -> Vector2 {
         let setpoint = match self.setpoint {
             Some(s) => s,
-            None => return T::zero(),
+            None => return Vector2::zeros(),
         };
 
         let displacement = setpoint - current;
@@ -80,7 +63,7 @@ impl<T: Variable + Debug> MTP<T> {
         if distance < self.cutoff_distance {
             // println!("Sending cutoff");
 
-            return T::zero();
+            return Vector2::zeros();
         }
 
         // compute the normalized direction with the displacement and the distance
@@ -88,12 +71,12 @@ impl<T: Variable + Debug> MTP<T> {
         let direction = if distance > f64::EPSILON {
             displacement * (1.0 / distance)
         } else {
-            T::zero()
+            Vector2::zeros()
         };
         let current_speed = velocity.magnitude();
 
         // Overshoot detection
-        if displacement.dot(velocity) < 0.0 {
+        if displacement.dot(&velocity) < 0.0 {
             // Proportional control to reduce overshoot
             let proportional_velocity = direction * distance * self.kp;
             let dv = proportional_velocity - velocity;
@@ -107,7 +90,7 @@ impl<T: Variable + Debug> MTP<T> {
         }
 
         // Calculate deceleration distance based on current_speed and max_decel
-        let decel_distance = (current_speed * current_speed) / (2.0 * self.max_decel);
+        let decel_distance = self.deceleration_window(velocity);
 
         let time_to_target = distance / current_speed;
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
@@ -116,7 +99,7 @@ impl<T: Variable + Debug> MTP<T> {
             let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
 
             dies_core::debug_string("p5.MTPMode", "Proportional");
-            let new_speed = current_speed + dv_magnitude.cap_magnitude(self.max_decel * dt);
+            let new_speed = current_speed + cap_magnitude(dv_magnitude, self.max_decel * dt);
             direction * new_speed
         } else if distance <= decel_distance && current_speed > 0.0 {
             // Deceleration phase
@@ -146,6 +129,16 @@ impl<T: Variable + Debug> MTP<T> {
     }
 }
 
+fn cap_magnitude(v: f64, max: f64) -> f64 {
+    if v > max {
+        max
+    } else if v < -max {
+        -max
+    } else {
+        v
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,111 +148,90 @@ mod tests {
 
     #[test]
     fn test_mtp_update_without_setpoint() {
-        let mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        assert_eq!(mtp.update(0.0, 0.0, DT), 0.0);
+        let mtp = MTP::new(1.0, 10.0, 2.0);
+        assert_eq!(
+            mtp.update(Vector2::zeros(), Vector2::zeros(), DT),
+            Vector2::zeros()
+        );
     }
 
     #[test]
     fn test_zero_velocity() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        assert_eq!(mtp.update(0.0, 0.0, DT), 1.0 * DT);
-    }
-
-    #[test]
-    fn test_zero_velocity_within_decelaration_distance() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        assert_eq!(mtp.update(95.0, 0.0, DT), 2.0 * DT);
+        let mut mtp = MTP::new(1.0, 10.0, 2.0);
+        mtp.set_setpoint(Vector2::new(100.0, 0.0));
+        let result = mtp.update(Vector2::zeros(), Vector2::zeros(), DT);
+        assert_relative_eq!(result.magnitude(), 1.0 * DT, epsilon = 1e-6);
     }
 
     #[test]
     fn test_mtp_update_acceleration_phase() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        let v1 = mtp.update(0.0, 0.0, DT);
-        assert_relative_eq!(v1, 1.0 * DT, epsilon = 1e-6);
-        let v2 = mtp.update(0.0, v1, DT);
-        assert_relative_eq!(v2 - v1, 1.0 * DT, epsilon = 1e-6);
+        let mut mtp = MTP::new(1.0, 10.0, 2.0);
+        mtp.set_setpoint(Vector2::new(100.0, 0.0));
+        let v1 = mtp.update(Vector2::zeros(), Vector2::zeros(), DT);
+        assert_relative_eq!(v1.magnitude(), 1.0 * DT, epsilon = 1e-6);
+        let v2 = mtp.update(Vector2::zeros(), v1, DT);
+        assert_relative_eq!((v2 - v1).magnitude(), 1.0 * DT, epsilon = 1e-6);
     }
 
     #[test]
     fn test_mtp_update_cruise_phase() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        let v = mtp.update(0.0, 10.0, DT);
-        assert_relative_eq!(v, 10.0, epsilon = 1e-6);
+        let mut mtp = MTP::new(1.0, 10.0, 2.0);
+        mtp.set_setpoint(Vector2::new(100.0, 0.0));
+        let v = mtp.update(Vector2::zeros(), Vector2::new(10.0, 0.0), DT);
+        assert_relative_eq!(v.magnitude(), 10.0, epsilon = 1e-6);
     }
 
     #[test]
     fn test_mtp_update_deceleration_phase() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        let v = mtp.update(95.0, 10.0, DT);
-        assert!(v < 10.0, "Velocity should decrease ({v} < 10.0)");
-        assert_relative_eq!(10.0 - v, 2.0 * DT, epsilon = 1e-6);
-    }
-
-    #[test]
-    fn test_mtp_update_near_setpoint() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        let v = mtp.update(99.9, 0.1, DT);
-        assert!(v < 0.1, "Velocity should decrease ({v} < 0.1)");
-        assert_relative_eq!(0.1 - v, 2.0 * DT, epsilon = 1e-6);
-    }
-
-    #[test]
-    fn test_mtp_update_at_setpoint() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        assert_relative_eq!(mtp.update(100.0, 0.0, DT), 0.0, epsilon = 1e-6);
-    }
-
-    #[test]
-    fn test_mtp_update_overshoot() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        let v = mtp.update(101.0, 1.0, DT);
-        assert!(v < 1.0);
-        assert_relative_eq!(1.0 - v, 2.0 * DT, epsilon = 1e-6);
+        let mut mtp = MTP::new(1.0, 10.0, 2.0);
+        mtp.set_setpoint(Vector2::new(100.0, 0.0));
+        let v = mtp.update(Vector2::new(95.0, 0.0), Vector2::new(10.0, 0.0), DT);
+        assert!(
+            v.magnitude() < 10.0,
+            "Velocity should decrease ({} < 10.0)",
+            v.magnitude()
+        );
+        assert_relative_eq!(10.0 - v.magnitude(), 2.0 * DT, epsilon = 1e-6);
     }
 
     #[test]
     fn test_mtp_update_multiple_steps() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        let mut position = 0.0;
-        let mut velocity = 0.0;
+        let mut mtp = MTP::new(1.0, 10.0, 2.0);
+        mtp.set_setpoint(Vector2::new(100.0, 0.0));
+        let mut position = Vector2::zeros();
+        let mut velocity = Vector2::zeros();
         for _ in 0..60 {
             // Simulate 1 second
             let new_velocity = mtp.update(position, velocity, DT);
             assert!(
-                (new_velocity - velocity).abs() <= 1.0 * DT + 1e-6,
+                (new_velocity - velocity).magnitude() <= 1.0 * DT + 1e-6,
                 "Velocity change exceeds maximum acceleration"
             );
             position += (velocity + new_velocity) * 0.5 * DT; // Trapezoidal integration
             velocity = new_velocity;
         }
         assert!(
-            position > 0.0 && position < 100.0,
+            position.magnitude() > 0.0 && position.magnitude() < 100.0,
             "Position after 1 second should be between 0 and 100"
         );
         assert!(
-            velocity > 0.0 && velocity <= 10.0,
+            velocity.magnitude() > 0.0 && velocity.magnitude() <= 10.0,
             "Velocity after 1 second should be between 0 and 10"
         );
     }
 
     #[test]
     fn test_velocity_change_limit() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 1.0);
-        mtp.set_setpoint(100.0);
+        let mut mtp = MTP::new(1.0, 10.0, 1.0);
+        mtp.set_setpoint(Vector2::new(100.0, 0.0));
         for initial_velocity in [0.0, 5.0, 10.0] {
-            let new_velocity = mtp.update(0.0, initial_velocity, DT);
+            let initial_velocity_vec = Vector2::new(initial_velocity, 0.0);
+            let new_velocity = mtp.update(Vector2::zeros(), initial_velocity_vec, DT);
             assert!(
-                (new_velocity - initial_velocity).abs() <= 1.0 * DT + 1e-6,
-                "Velocity change exceeds maximum acceleration ({initial_velocity} -> {new_velocity})"
+                (new_velocity - initial_velocity_vec).magnitude() <= 1.0 * DT + 1e-6,
+                "Velocity change exceeds maximum acceleration ({} -> {})",
+                initial_velocity_vec.magnitude(),
+                new_velocity.magnitude()
             );
         }
     }

@@ -751,6 +751,7 @@ dependencies = [
  "approx",
  "dies-core",
  "dies-protos",
+ "log",
  "nalgebra",
  "rand",
  "rand_distr",
