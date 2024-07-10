@@ -1,15 +1,14 @@
+use crate::{server::ServerState, ExecutorStatus, UiCommand, UiEnvironment, UiMode};
+use anyhow::anyhow;
 use dies_core::WorldUpdate;
 use dies_executor::{scenarios::ScenarioType, ControlMsg, ExecutorHandle};
+use dies_protos::ssl_gc_referee_message::referee::Command;
 use dies_simulator::SimulationConfig;
 use std::sync::Arc;
-use anyhow::anyhow;
-use dies_core::GcRefereeMsg;
 use tokio::{
     sync::{broadcast, oneshot, watch},
     task::JoinHandle,
 };
-use dies_protos::ssl_gc_referee_message::referee::Command;
-use crate::{server::ServerState, ExecutorStatus, UiCommand, UiEnvironment, UiMode};
 
 #[derive(Default)]
 enum ExecutorTaskState {
@@ -92,10 +91,10 @@ impl ExecutorTask {
                     _ = shutdown_rx.recv() => self.stop_executor().await,
                     _ = self.start_scenario(scenario) => {}
                 }
-            },
+            }
             UiCommand::GcCommand(command) => {
                 let cmd = string_to_command(command).unwrap();
-                self.handle_executor_msg(ControlMsg::GcCommand {command: cmd});
+                self.handle_executor_msg(ControlMsg::GcCommand { command: cmd });
             }
         }
     }
@@ -222,7 +221,6 @@ impl ExecutorTask {
         }
     }
 }
-
 
 fn string_to_command(command_str: String) -> anyhow::Result<Command> {
     match command_str.as_str() {

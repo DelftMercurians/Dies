@@ -1,4 +1,4 @@
-use dies_core::{BallData, TrackerSettings, Vector3};
+use dies_core::{debug_line, debug_value, BallData, TrackerSettings, Vector3};
 use nalgebra::{SVector, Vector6};
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
@@ -65,6 +65,11 @@ impl BallTracker {
 
     /// Update the tracker with a new frame.
     pub fn update(&mut self, frame: &SSL_DetectionFrame) {
+        frame
+            .balls
+            .iter()
+            .for_each(|b| debug_value("ball.confidence", b.confidence() as f64));
+
         let mut ball_measurements = frame
             .balls
             .iter()
@@ -112,22 +117,14 @@ impl BallTracker {
         } else {
             for (pos, is_noisy) in ball_measurements.iter() {
                 let pos_ov = SVector::<f64, 3>::new(pos.x as f64, pos.y as f64, pos.z as f64);
-                let z =
-                    self.filter
-                        .as_mut()
-                        .unwrap()
-                        .update(pos_ov, current_time, is_noisy.clone());
-                if z.is_some() {
-                    let mut pos_v3 = Vector3::new(
-                        z.unwrap()[0] as f64,
-                        z.unwrap()[2] as f64,
-                        z.unwrap()[4] as f64,
-                    );
-                    let vel_v3 = Vector3::new(
-                        z.unwrap()[1] as f64,
-                        z.unwrap()[3] as f64,
-                        z.unwrap()[5] as f64,
-                    );
+                let z = self
+                    .filter
+                    .as_mut()
+                    .unwrap()
+                    .update(pos_ov, current_time, false);
+                if let Some(z) = z {
+                    let mut pos_v3 = Vector3::new(z[0] as f64, z[2] as f64, z[4] as f64);
+                    let vel_v3 = Vector3::new(z[1] as f64, z[3] as f64, z[5] as f64);
                     if pos_v3.z < 0.0 {
                         pos_v3.z = 0.0;
                         self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
@@ -139,6 +136,7 @@ impl BallTracker {
                             -vel_v3.z as f64,
                         ));
                     }
+                    debug_line("ball.vel", pos_v3.xy(), pos_v3.xy() + vel_v3.xy(), dies_core::DebugColor::Orange);
                     self.last_data = Some(BallData {
                         timestamp: current_time,
                         position: pos_v3,

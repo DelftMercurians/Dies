@@ -1,11 +1,15 @@
 mod scenario;
-use dies_core::{GameState, PlayerId, Vector2, Vector3};
-use scenario::ScenarioSetup;
-use serde::{Deserialize, Serialize};
-use dies_core::GameState::{Kickoff, PrepareKickoff};
-use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
 
+use serde::{Deserialize, Serialize};
+
+use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
+use dies_core::GameState::{self, Kickoff, PrepareKickoff};
+use dies_core::{Vector2, Vector3};
+use scenario::ScenarioSetup;
+
+use crate::roles::waller::Waller;
 use crate::strategy::kickoff::KickoffStrategy;
+
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
 fn empty_scenario() -> ScenarioSetup {
@@ -13,13 +17,13 @@ fn empty_scenario() -> ScenarioSetup {
 }
 
 fn one_player() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(),None);
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario.add_own_player();
     scenario
 }
 
 fn one_random_player() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(),None);
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario.add_own_player();
     scenario
 }
@@ -27,13 +31,13 @@ fn one_random_player() -> ScenarioSetup {
 fn one_player_go_to_origin() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(TestRole {}));
-    let mut scenario = ScenarioSetup::new(strategy,None);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
 }
 
 fn two_players_one_ball() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(),None);
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario
         .add_ball()
         .add_own_player_at(Vector2::zeros())
@@ -44,7 +48,7 @@ fn two_players_one_ball() -> ScenarioSetup {
 fn kickoff() -> ScenarioSetup {
     let strategy = KickoffStrategy::new(None);
     let mut scenario = ScenarioSetup::new(strategy, Some(PrepareKickoff));
-    scenario.add_strategy(Kickoff,KickoffStrategy::new(None));
+    scenario.add_strategy(Kickoff, KickoffStrategy::new(None));
     scenario
         .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
         .add_own_player_at(Vector2::new(-1000.0, 1000.0))
@@ -52,6 +56,20 @@ fn kickoff() -> ScenarioSetup {
     scenario
 }
 
+fn one_waller_one_ball() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Waller::new(0.0)));
+    strategy.add_role(Box::new(Waller::new(500.0)));
+
+    let mut scenario = ScenarioSetup::new(strategy, Some(GameState::Run));
+    scenario
+        // .add_ball_at(Vector3::new(895.0, 2623.0, 0.0))
+        .add_ball()
+        .add_own_player_at(Vector2::new(2264.0, 336.0))
+        .add_own_player_at(Vector2::new(500.0, -336.0))
+        .add_own_player_at(Vector2::new(0.0, 0.0));
+    scenario
+}
 
 /// Creates a lookup table for scenarios as a global constant.
 macro_rules! scenarios {
@@ -134,7 +152,8 @@ scenarios! {
     one_random_player,
     one_player_go_to_origin,
     two_players_one_ball,
-    kickoff
+    kickoff,
+    one_waller_one_ball
 }
 
 #[cfg(test)]

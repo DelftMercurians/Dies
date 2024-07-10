@@ -1,4 +1,5 @@
-use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerId, Vector2};
+use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerId, Vector2, WorldInstant};
+use dies_protos::ssl_gc_referee_message::Referee;
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -9,7 +10,6 @@ use dies_protos::{
 use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
 use std::{collections::HashMap, f64::consts::PI};
-use dies_protos::ssl_gc_referee_message::Referee;
 use utils::IntervalTrigger;
 
 mod utils;
@@ -182,7 +182,6 @@ pub struct Simulation {
     geometry_interval: IntervalTrigger,
     geometry_packet: SSL_WrapperPacket,
     referee_message: Referee,
-    
 }
 
 impl Simulation {
@@ -243,6 +242,10 @@ impl Simulation {
         simulation
     }
 
+    pub fn time(&self) -> WorldInstant {
+        WorldInstant::Simulated(self.current_time)
+    }
+
     fn add_wall(&mut self, x: f64, y: f64, width: f64, height: f64) {
         let wall_body = RigidBodyBuilder::fixed()
             .translation(Vector::new(x, y, 0.0))
@@ -279,12 +282,11 @@ impl Simulation {
     pub fn detection(&mut self) -> Option<SSL_WrapperPacket> {
         self.last_detection_packet.take()
     }
-    
-    
+
     pub fn update_referee_message(&mut self, referee_message: Referee) {
         self.referee_message = referee_message;
     }
-    
+
     pub fn gc_message(&self) -> Referee {
         self.referee_message.clone()
     }
@@ -607,11 +609,16 @@ impl Default for SimulationBuilder {
 fn geometry(config: &FieldGeometry) -> SSL_WrapperPacket {
     let mut geometry = SSL_GeometryData::new();
     let mut field = SSL_GeometryFieldSize::new();
-    field.set_field_length(config.field_length);
-    field.set_field_width(config.field_width);
-    field.set_goal_width(config.goal_width);
-    field.set_goal_depth(config.goal_depth);
-    field.set_boundary_width(config.boundary_width);
+    field.set_field_length(config.field_length as i32);
+    field.set_field_width(config.field_width as i32);
+    field.set_goal_width(config.goal_width as i32);
+    field.set_goal_depth(config.goal_depth as i32);
+    field.set_boundary_width(config.boundary_width as i32);
+    field.set_penalty_area_depth(config.penalty_area_depth as i32);
+    field.set_penalty_area_width(config.penalty_area_width as i32);
+    field.set_center_circle_radius(config.center_circle_radius as i32);
+    field.set_goal_center_to_penalty_mark(config.goal_line_to_penalty_mark as i32);
+    field.set_ball_radius(config.ball_radius as f32);
 
     for line in &config.line_segments {
         let mut ssl_segment = SSL_FieldLineSegment::new();

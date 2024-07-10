@@ -1,9 +1,37 @@
 use std::fmt::Display;
 use std::hash::Hash;
+use std::time::Instant;
+
 use serde::Serialize;
 use typeshare::typeshare;
 
 use crate::{player::PlayerId, Angle, FieldGeometry, SysStatus, Vector2, Vector3};
+
+#[derive(Debug, Clone, Copy)]
+pub enum WorldInstant {
+    Real(Instant),
+    Simulated(f64),
+}
+
+impl WorldInstant {
+    pub fn now_real() -> Self {
+        WorldInstant::Real(Instant::now())
+    }
+
+    pub fn simulated(t: f64) -> Self {
+        WorldInstant::Simulated(t)
+    }
+
+    pub fn duration_since(&self, earlier: &Self) -> f64 {
+        match (earlier, self) {
+            (WorldInstant::Real(earlier), WorldInstant::Real(later)) => {
+                later.duration_since(*earlier).as_secs_f64()
+            }
+            (WorldInstant::Simulated(earlier), WorldInstant::Simulated(later)) => later - earlier,
+            _ => panic!("Cannot compare real and simulated instants"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[typeshare]
@@ -63,7 +91,6 @@ impl PartialEq for GameState {
 }
 
 impl Eq for GameState {}
-
 
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Clone, Debug)]
@@ -149,11 +176,17 @@ impl PlayerData {
 #[derive(Serialize, Clone, Debug, Default)]
 #[typeshare]
 pub struct WorldData {
+    /// Timestamp of the frame, in seconds. This timestamp is relative to the time the
+    /// world tracking was started.
+    pub t_received: f64,
+    /// Recording timestamp of the frame, in seconds, as reported by vision. This
+    /// timestamp is relative to the time the first image was captured.
+    pub t_capture: f64,
+    /// The time since the last frame was received, in seconds
+    pub dt: f64,
     pub own_players: Vec<PlayerData>,
     pub opp_players: Vec<PlayerData>,
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameStateData,
-    // duration between the last two data generations
-    pub duration: f64,
 }

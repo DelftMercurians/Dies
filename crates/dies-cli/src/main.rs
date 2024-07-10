@@ -10,6 +10,8 @@ mod tui_utils;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    console_subscriber::init();
+
     let args = tui_utils::CliArgs::parse();
 
     // Set up logging

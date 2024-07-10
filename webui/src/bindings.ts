@@ -137,6 +137,16 @@ export interface FieldGeometry {
 	line_segments: FieldLineSegment[];
 	/** Generated circular arcs based on the other parameters */
 	circular_arcs: FieldCircularArc[];
+	/** Penalty area depth (distance from goal line to penalty mark) in mm */
+	penalty_area_depth: number;
+	/** Penalty area width (distance from penalty mark to penalty area edge) in mm */
+	penalty_area_width: number;
+	/** Center circle radius in mm */
+	center_circle_radius: number;
+	/** Distance from goal line to penalty mark in mm */
+	goal_line_to_penalty_mark: number;
+	/** Ball radius in mm */
+	ball_radius: number;
 }
 
 /** Setup for a player in a scenario. */
@@ -171,6 +181,7 @@ export interface ScenarioInfo {
 export enum SysStatus {
 	Emergency = "Emergency",
 	Ok = "Ok",
+	Ready = "Ready",
 	Stop = "Stop",
 	Starting = "Starting",
 	Overtemp = "Overtemp",
@@ -278,12 +289,23 @@ export interface GameStateData {
 
 /** A struct to store the world state from a single frame. */
 export interface WorldData {
+	/**
+	 * Timestamp of the frame, in seconds. This timestamp is relative to the time the
+	 * world tracking was started.
+	 */
+	t_received: number;
+	/**
+	 * Recording timestamp of the frame, in seconds, as reported by vision. This
+	 * timestamp is relative to the time the first image was captured.
+	 */
+	t_capture: number;
+	/** The time since the last frame was received, in seconds */
+	dt: number;
 	own_players: PlayerData[];
 	opp_players: PlayerData[];
 	ball?: BallData;
 	field_geom?: FieldGeometry;
 	current_game_state: GameStateData;
-	duration: number;
 }
 
 export interface WorldUpdate {

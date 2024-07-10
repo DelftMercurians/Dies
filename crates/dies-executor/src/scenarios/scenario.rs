@@ -1,10 +1,13 @@
 use anyhow::{bail, Result};
-use std::{collections::HashSet, time::Duration};
-use std::collections::HashMap;
 use dies_basestation_client::BasestationHandle;
-use dies_core::{Angle, BallPlacement, ExecutorSettings, GameState, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo, Vector2, Vector3, WorldData};
-use dies_protos::ssl_gc_referee_message::referee::Stage;
-use dies_protos::ssl_gc_state::State;
+use dies_core::{
+    Angle, BallPlacement, ExecutorSettings, GameState, PlayerData, PlayerId, PlayerPlacement,
+    ScenarioInfo, Vector2, Vector3, WorldData,
+};
+use std::collections::HashMap;
+use std::{collections::HashSet, time::Duration};
+
+use dies_core::WorldInstant;
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_world::WorldTracker;
@@ -33,9 +36,7 @@ pub struct ScenarioSetup {
 impl ScenarioSetup {
     pub fn new(strategy: impl Strategy + 'static, state: Option<GameState>) -> Self {
         let state = match state {
-            Some(state) => {
-                state
-            }
+            Some(state) => state,
             None => GameState::Unknown,
         };
         let mut strategy_map = HashMap::new();
@@ -49,9 +50,14 @@ impl ScenarioSetup {
             strategy: strategy_map,
         }
     }
-    
-    pub fn add_strategy(&mut self, state: GameState, strategy: impl Strategy + 'static) -> &mut Self {
-        self.strategy.insert(state, Box::new(strategy) as Box<dyn Strategy>);
+
+    pub fn add_strategy(
+        &mut self,
+        state: GameState,
+        strategy: impl Strategy + 'static,
+    ) -> &mut Self {
+        self.strategy
+            .insert(state, Box::new(strategy) as Box<dyn Strategy>);
         self
     }
 
@@ -156,7 +162,7 @@ impl ScenarioSetup {
         let mut iterations = 0;
         loop {
             let packet = ssl_client.recv().await?;
-            tracker.update_from_vision(&packet);
+            tracker.update_from_vision(&packet, WorldInstant::now_real());
 
             if self.check_live(tracker.get()) {
                 break;
@@ -331,7 +337,7 @@ mod tests {
             opp_players: vec![],
             tolerance: 10.0,
             yaw_tolerance: 10.0f64.to_radians(),
-            strategy: Box::new(AdHocStrategy::new()),
+            strategy: HashMap::new(),
         };
 
         let mut world = WorldData {
