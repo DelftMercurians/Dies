@@ -1,7 +1,7 @@
 use dies_core::Angle;
 use dies_core::BallData;
 use nalgebra::Vector2;
-
+use super::RoleCtx;
 use dies_core::FieldGeometry;
 
 use crate::{
@@ -12,7 +12,6 @@ use crate::{
 pub struct Harasser {
     distance_behind_ball: f64,
 }
-use super::RoleCtx;
 
 impl Harasser {
     pub fn new(distance_behind_ball: f64) -> Self {
