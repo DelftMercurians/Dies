@@ -62,6 +62,16 @@ impl Angle {
         let radians = (rand::random::<f64>() * 2.0 * PI) - PI;
         Self::from_radians(radians)
     }
+
+    /// Get the absolute value of the angle
+    pub fn abs(&self) -> f64 {
+        self.0.abs()
+    }
+
+    /// Get the sign of the angle
+    pub fn signum(&self) -> f64 {
+        self.0.signum()
+    }
 }
 
 impl std::ops::Add for Angle {
@@ -145,17 +155,19 @@ impl PartialEq for Angle {
 }
 
 fn wrap_angle(angle: f64) -> f64 {
-    let mut angle = angle % (2.0 * std::f64::consts::PI);
-    if angle <= -std::f64::consts::PI {
-        angle += 2.0 * std::f64::consts::PI;
-    } else if angle > std::f64::consts::PI {
-        angle -= 2.0 * std::f64::consts::PI;
+    let mut angle = angle % (2.0 * PI);
+    if angle <= -PI {
+        angle += 2.0 * PI;
+    } else if angle > PI {
+        angle -= 2.0 * PI;
     }
     angle
 }
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
+
     use super::*;
     use std::f64::consts::PI;
 
@@ -190,6 +202,14 @@ mod tests {
         let b = Angle::from_degrees(45.0);
         let c = a - b;
         assert_eq!(c.degrees(), 45.0);
+
+        let a = Angle::from_degrees(-180.0);
+        let b = Angle::from_degrees(180.0);
+        assert_eq!((a - b).degrees(), 0.0);
+
+        let a = Angle::from_degrees(180.0);
+        let b = Angle::from_degrees(-179.0);
+        assert_relative_eq!((a - b).degrees(), -1.0, epsilon = 1e-5);
     }
 
     #[test]
