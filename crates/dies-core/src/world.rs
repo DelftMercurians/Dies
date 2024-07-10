@@ -109,15 +109,15 @@ pub struct PlayerData {
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f64,
 
-    /// The overall status of the robot
+    /// The overall status of the robot. Only available for own players.
     pub primary_status: Option<SysStatus>,
-    /// The voltage of the kicker capacitor
+    /// The voltage of the kicker capacitor (in V). Only available for own players.
     pub kicker_cap_voltage: Option<f32>,
-    /// The temperature of the kicker
+    /// The temperature of the kicker. Only available for own players.
     pub kicker_temp: Option<f32>,
-    /// The voltages of the battery packs
+    /// The voltages of the battery packs. Only available for own players.
     pub pack_voltages: Option<[f32; 2]>,
-    /// Whether the breakbeam sensor detected a ball
+    /// Whether the breakbeam sensor detected a ball. Only available for own players.
     pub breakbeam_ball_detected: bool,
 }
 

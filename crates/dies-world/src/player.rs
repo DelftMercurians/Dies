@@ -59,7 +59,7 @@ impl PlayerTracker {
     }
 
     pub fn is_init(&self) -> bool {
-        self.last_detection.is_some() && self.last_feedback.is_some()
+        self.last_detection.is_some()
     }
 
     /// Set the sign of the enemy goal's x coordinate in ssl-vision coordinates.
@@ -130,7 +130,7 @@ impl PlayerTracker {
     }
 
     pub fn get(&self) -> Option<PlayerData> {
-        if let (Some(data), Some(feedback)) = (&self.last_detection, &self.last_feedback) {
+        if let Some(data) = &self.last_detection {
             Some(PlayerData {
                 id: self.id,
                 timestamp: data.timestamp,
@@ -141,11 +141,14 @@ impl PlayerTracker {
                 angular_speed: data.angular_speed * self.play_dir_x,
                 raw_position: to_dies_coords2(data.raw_position, self.play_dir_x),
                 raw_yaw: to_dies_yaw(data.raw_yaw, self.play_dir_x),
-                primary_status: feedback.primary_status,
-                kicker_cap_voltage: feedback.kicker_cap_voltage,
-                kicker_temp: feedback.kicker_temp,
-                pack_voltages: feedback.pack_voltages,
-                breakbeam_ball_detected: feedback.breakbeam_ball_detected.unwrap_or(false),
+                primary_status: self.last_feedback.and_then(|f| f.primary_status),
+                kicker_cap_voltage: self.last_feedback.and_then(|f| f.kicker_cap_voltage),
+                kicker_temp: self.last_feedback.and_then(|f| f.kicker_temp),
+                pack_voltages: self.last_feedback.and_then(|f| f.pack_voltages),
+                breakbeam_ball_detected: self
+                    .last_feedback
+                    .and_then(|f| f.breakbeam_ball_detected)
+                    .unwrap_or(false),
             })
         } else {
             None
@@ -197,7 +200,6 @@ mod test {
         assert!(!tracker.is_init());
 
         tracker.update(1.0, &player);
-        tracker.update_from_feedback(&PlayerFeedbackMsg::empty(id));
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
@@ -244,7 +246,6 @@ mod test {
         player.set_x(150.0);
 
         tracker.update(1.0, &player);
-        tracker.update_from_feedback(&PlayerFeedbackMsg::empty(id));
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
