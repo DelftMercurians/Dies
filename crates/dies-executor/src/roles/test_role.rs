@@ -1,15 +1,6 @@
-use std::{borrow::Cow, vec};
-
-use dies_core::{dbg_draw, Vector2};
-use dodgy_2d::{Agent, AvoidanceOptions, Obstacle, Vec2};
-
-use crate::{
-    control::Velocity,
-    roles::{skills::GoToPositionSkill, Role, SkillResult},
-    skill, PlayerControlInput,
-};
-
-use super::{skills, RoleCtx};
+use super::RoleCtx;
+use crate::{roles::Role, PlayerControlInput};
+use dies_core::Vector2;
 
 pub struct TestRole {
     target: Vector2,
