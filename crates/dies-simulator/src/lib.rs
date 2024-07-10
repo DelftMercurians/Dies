@@ -1,4 +1,6 @@
-use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerId, Vector2, WorldInstant};
+use dies_core::{
+    Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant,
+};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -59,6 +61,8 @@ pub struct SimulationConfig {
     pub velocity_treshold: f64,
     /// Maximum difference between target and current angular velocity
     pub angular_velocity_treshold: f64,
+    /// Interval for sending feedback packets in seconds
+    pub feedback_interval: f64,
 
     // FIELD GEOMRTY PARAMETERS
     /// Field configuration
@@ -90,6 +94,7 @@ impl Default for SimulationConfig {
             max_ang_vel: 720.0f64.to_radians(),
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
+            feedback_interval: 0.5,
 
             // FIELD GEOMRTY PARAMETERS
             field_geometry: FieldGeometry::default(),
@@ -180,6 +185,8 @@ pub struct Simulation {
     last_detection_packet: Option<SSL_WrapperPacket>,
     geometry_interval: IntervalTrigger,
     geometry_packet: SSL_WrapperPacket,
+    feedback_interval: IntervalTrigger,
+    feedback_queue: Vec<PlayerFeedbackMsg>,
 }
 
 impl Simulation {
@@ -189,6 +196,7 @@ impl Simulation {
     pub fn new(config: SimulationConfig) -> Simulation {
         let vision_update_step = config.vision_update_step;
         let geometry_interval = config.geometry_interval;
+        let feedback_interval = config.feedback_interval;
         let field_length = config.field_geometry.field_length;
         let field_width = config.field_geometry.field_width;
         let geometry_packet = geometry(&config.field_geometry);
@@ -214,6 +222,8 @@ impl Simulation {
             last_detection_packet: None,
             geometry_interval: IntervalTrigger::new(geometry_interval),
             geometry_packet,
+            feedback_interval: IntervalTrigger::new(feedback_interval),
+            feedback_queue: Vec::new(),
         };
 
         // Create the ground
@@ -288,6 +298,10 @@ impl Simulation {
         }
     }
 
+    pub fn feedback(&mut self) -> Option<PlayerFeedbackMsg> {
+        self.feedback_queue.pop()
+    }
+
     pub fn step(&mut self, dt: f64) {
         // Create detection update if it's time
         if self.detection_interval.trigger(self.current_time) {
@@ -323,7 +337,23 @@ impl Simulation {
         }
 
         // Update players
+        let send_feedback = self.feedback_interval.trigger(self.current_time);
         for player in self.players.iter_mut() {
+            if !player.is_own {
+                let rigid_body = self
+                    .rigid_body_set
+                    .get_mut(player.rigid_body_handle)
+                    .unwrap();
+                rigid_body.set_linvel(Vector::zeros(), false);
+                rigid_body.set_angvel(Vector::zeros(), false);
+                continue;
+            }
+
+            if send_feedback {
+                self.feedback_queue
+                    .push(PlayerFeedbackMsg::empty(player.id));
+            }
+
             let mut is_kicking = false;
             if let Some(command) = commands_to_exec.get(&player.id) {
                 // In the robot's local frame, +sx means forward, +sy means right and both are in m/s

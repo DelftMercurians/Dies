@@ -5,18 +5,21 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "lldb",
+      "name": "Debug Dies with webui",
+      "type": "cppdbg",
       "request": "launch",
-      "name": "Debug executable 'dies-cli'",
-      "cargo": {
-        "args": ["build", "--bin=dies-cli", "--package=dies-cli"],
-        "filter": {
-          "name": "dies-cli",
-          "kind": "bin"
-        }
-      },
+      "program": "${workspaceRoot}/target/debug/dies-cli",
+      "miDebuggerPath": "${env:HOME}/.cargo/bin/rust-gdb",
       "args": [],
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceRoot}",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": false
+        }
+      ],
+      "preLaunchTask": "cargo build"
     }
   ]
 }

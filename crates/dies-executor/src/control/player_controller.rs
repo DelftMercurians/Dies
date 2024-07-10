@@ -88,6 +88,11 @@ impl PlayerController {
         self.id
     }
 
+    /// Get the current target velocity of the player.
+    pub(super) fn target_velocity(&self) -> Vector2 {
+        self.target_velocity
+    }
+
     /// Get the current command for the player.
     pub fn command(&mut self) -> PlayerCmd {
         let mut cmd = PlayerCmd {
@@ -158,7 +163,7 @@ impl PlayerController {
 
         // Draw the velocity
         dies_core::debug_line(
-            format!("p{}.target_vel", self.id),
+            format!("p{}.target_velocity", self.id),
             self.last_pos,
             self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
             dies_core::DebugColor::Red,
@@ -200,5 +205,15 @@ impl PlayerController {
                 self.kicker = KickerState::Disarming;
             }
         }
+    }
+
+    pub fn update_target_velocity_with_avoidance(&mut self, target_velocity: Vector2) {
+        self.target_velocity = target_velocity;
+        dies_core::debug_line(
+            format!("p{}.target_velocity", self.id),
+            self.last_pos,
+            self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+            dies_core::DebugColor::Red,
+        );
     }
 }
