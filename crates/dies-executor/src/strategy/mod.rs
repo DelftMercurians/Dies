@@ -2,19 +2,23 @@ use std::collections::HashMap;
 
 use dies_core::{PlayerId, WorldData};
 
-use crate::{
-    control::PlayerInputs,
-    roles::{Role, RoleCtx, Skill},
-};
+use crate::roles::Role;
+
+pub struct StrategyCtx<'a> {
+    pub world: &'a WorldData,
+}
 
 pub trait Strategy: Send {
-    fn update(&mut self, world: &WorldData) -> PlayerInputs;
+    /// Update the strategy with the current world state.
+    fn update(&mut self, ctx: StrategyCtx);
+
+    /// Get the roles assigned to players.
+    fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>>;
 }
 
 pub struct AdHocStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
     unassigned_roles: Vec<Box<dyn Role>>,
-    skill_map: HashMap<String, Box<dyn Skill>>,
 }
 
 impl Default for AdHocStrategy {
@@ -28,10 +32,10 @@ impl AdHocStrategy {
         AdHocStrategy {
             roles: HashMap::new(),
             unassigned_roles: Vec::new(),
-            skill_map: HashMap::new(),
         }
     }
 
+    /// Add a role to a specific player.
     pub fn add_role_with_id(&mut self, id: PlayerId, role: Box<dyn Role>) {
         self.roles.insert(id, role);
     }
@@ -44,9 +48,9 @@ impl AdHocStrategy {
 }
 
 impl Strategy for AdHocStrategy {
-    fn update(&mut self, world: &WorldData) -> PlayerInputs {
+    fn update(&mut self, ctx: StrategyCtx) {
         // Assign roles to players
-        for player_data in world.own_players.iter() {
+        for player_data in ctx.world.own_players.iter() {
             if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
                 if let Some(role) = self.unassigned_roles.pop() {
                     e.insert(role);
@@ -56,17 +60,9 @@ impl Strategy for AdHocStrategy {
         if !self.unassigned_roles.is_empty() {
             log::warn!("Not enough players to assign all roles");
         }
+    }
 
-        let mut inputs = PlayerInputs::new();
-        for (id, role) in self.roles.iter_mut() {
-            if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-                let ctx = RoleCtx::new(player_data, world, &mut self.skill_map);
-                let input = role.update(ctx);
-                inputs.insert(*id, input);
-            } else {
-                log::error!("No detetion data for player #{id} with active role");
-            }
-        }
-        inputs
+    fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>> {
+        &mut self.roles
     }
 }

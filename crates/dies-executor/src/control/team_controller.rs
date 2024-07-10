@@ -1,6 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{strategy::Strategy, PlayerControlInput};
+use crate::{
+    roles::{RoleCtx, Skill},
+    strategy::{Strategy, StrategyCtx},
+    PlayerControlInput,
+};
 
 use super::{
     player_controller::PlayerController,
@@ -9,9 +13,15 @@ use super::{
 use dies_core::{ControllerSettings, GameState, PlayerId};
 use dies_core::{PlayerCmd, WorldData};
 
+#[derive(Default)]
+struct RoleState {
+    skill_map: HashMap<String, Box<dyn Skill>>,
+}
+
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     strategy: Box<dyn Strategy>,
+    role_states: HashMap<PlayerId, RoleState>,
     settings: ControllerSettings,
 }
 
@@ -21,6 +31,7 @@ impl TeamController {
         let mut team = Self {
             player_controllers: HashMap::new(),
             strategy,
+            role_states: HashMap::new(),
             settings: settings.clone(),
         };
         team.update_controller_settings(settings);
@@ -49,11 +60,28 @@ impl TeamController {
             }
         }
 
-        let mut inputs = self.strategy.update(&world_data);
+        let strategy_ctx = StrategyCtx { world: &world_data };
+        self.strategy.update(strategy_ctx);
+        let roles = self.strategy.get_roles();
+        let mut inputs = roles
+            .iter_mut()
+            .fold(PlayerInputs::new(), |mut inputs, (id, role)| {
+                let player_data = world_data
+                    .own_players
+                    .iter()
+                    .find(|p| p.id == *id)
+                    .expect("Player not found in world data");
+
+                let role_state = self.role_states.entry(*id).or_default();
+                let role_ctx = RoleCtx::new(&player_data, &world_data, &mut role_state.skill_map);
+                let new_input = role.update(role_ctx);
+                inputs.insert(*id, new_input);
+                inputs
+            });
 
         // If in a stop state, override the inputs
         if world_data.current_game_state.game_state == GameState::Stop {
-            inputs = stop_override(world_data.clone(), inputs);
+            inputs = stop_override(&world_data, inputs);
         }
 
         // Update the player controllers
@@ -85,7 +113,7 @@ impl TeamController {
 }
 
 /// Override the inputs to comply with the stop state.
-fn stop_override(world_data: WorldData, inputs: PlayerInputs) -> PlayerInputs {
+fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
     let ball_pos = world_data.ball.as_ref().map(|b| b.position.xy());
     let ball_vel = world_data.ball.as_ref().map(|b| b.velocity.xy());
     inputs

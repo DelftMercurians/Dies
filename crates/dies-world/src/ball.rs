@@ -251,23 +251,4 @@ mod tests {
         assert_eq!(ball_data.raw_position[0], Vector3::new(-2.0, 4.0, 6.0));
         assert!(ball_data.velocity.x < 0.0)
     }
-
-    fn generate_SSL_Wrapper(
-        t: f64,
-        xs: Vec<f64>,
-        ys: Vec<f64>,
-        zs: Vec<f64>,
-    ) -> SSL_DetectionFrame {
-        let mut frame = SSL_DetectionFrame::new();
-        frame.set_t_capture(t);
-        for i in 0..xs.len() {
-            let mut ball = SSL_DetectionBall::new();
-            ball.set_x((xs[i] * 1000.0) as f32);
-            ball.set_y((ys[i] * 1000.0) as f32);
-            ball.set_z((zs[i] * 1000.0) as f32);
-            ball.confidence = Some(1.0);
-            frame.balls.push(ball);
-        }
-        frame
-    }
 }
