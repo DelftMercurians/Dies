@@ -1,11 +1,29 @@
-use dies_core::{Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings};
+use dies_core::{
+    Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2, Vector3,
+};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
-use nalgebra::{self as na, ComplexField, Vector2, Vector4};
+use nalgebra::{self as na, Vector4};
 
 use crate::{
-    coord_utils::to_dies_coords2,
+    coord_utils::{to_dies_coords2, to_dies_yaw},
     filter::{AngleLowPassFilter, MaybeKalman},
 };
+
+/// Stored data for a player from the last update.
+///
+/// This type contains **vision coordinates**, meaning the x axis is unchanged -- it may point towards our or the enemy goal.
+///
+/// For documentation on the fields, see the `PlayerData` struct in `dies-core`.
+struct StoredData {
+    timestamp: f64,
+    raw_position: Vector2,
+    position: Vector2,
+    velocity: Vector2,
+    yaw: Angle,
+    raw_yaw: Angle,
+    angular_speed: f64,
+}
+
 /// Tracker for a single player.
 pub struct PlayerTracker {
     /// Player's unique id
@@ -13,15 +31,16 @@ pub struct PlayerTracker {
     /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
     /// converting coordinates.
     play_dir_x: f64,
-    /// Whether the tracker has been initialized (i.e. the player has been detected at
-    /// least twice)
-    is_init: bool,
-    /// Last recorded data (for caching)
-    last_data: Option<PlayerData>,
+
     /// Kalman filter for the player's position and velocity
     filter: MaybeKalman<2, 4>,
     /// Low-pass filter for the player's yaw
     yaw_filter: AngleLowPassFilter,
+
+    /// Last feedback received from the player
+    last_feedback: Option<PlayerFeedbackMsg>,
+    /// The result of the last vision update
+    last_detection: Option<StoredData>,
 }
 
 impl PlayerTracker {
@@ -30,82 +49,64 @@ impl PlayerTracker {
         PlayerTracker {
             id,
             play_dir_x: settings.initial_opp_goal_x,
-            last_data: None,
-            is_init: false,
             filter: MaybeKalman::new(
                 0.1,
                 settings.player_unit_transition_var,
                 settings.player_measurement_var,
             ),
             yaw_filter: AngleLowPassFilter::new(settings.player_yaw_lpf_alpha),
+            last_feedback: None,
+            last_detection: None,
         }
+    }
+
+    pub fn is_init(&self) -> bool {
+        self.last_detection.is_some() && self.last_feedback.is_some()
     }
 
     /// Set the sign of the enemy goal's x coordinate in ssl-vision coordinates.
     pub fn set_play_dir_x(&mut self, play_dir_x: f64) {
-        if play_dir_x != self.play_dir_x {
-            // Flip the x coordinate of the player's position, velocity and yaw
-            if let Some(last_data) = &mut self.last_data {
-                last_data.position.x *= -1.0;
-                last_data.velocity.x *= -1.0;
-                last_data.yaw = last_data.yaw.inv();
-            }
-        }
         self.play_dir_x = play_dir_x;
-    }
-
-    /// Whether the tracker has been initialized (i.e. the player has been detected at
-    /// least twice)
-    pub fn is_init(&self) -> bool {
-        self.is_init
     }
 
     /// Update the tracker with a new frame.
     pub fn update(&mut self, t_capture: f64, player: &SSL_DetectionRobot) {
-        let current_position = to_dies_coords2(player.x(), player.y(), self.play_dir_x);
-        let current_yaw = player.orientation() as f64 * self.play_dir_x;
-        let vision_yaw = Angle::from_radians(current_yaw);
-        let yaw = Angle::from_radians(self.yaw_filter.update(current_yaw));
+        let raw_position = Vector2::new(player.x() as f64, player.y() as f64);
+        let raw_yaw_f64 = player.orientation() as f64;
+        let raw_yaw = Angle::from_radians(raw_yaw_f64);
+        let yaw = Angle::from_radians(self.yaw_filter.update(raw_yaw_f64));
 
         match &mut self.filter {
             MaybeKalman::Init(filter) => {
-                let z = na::convert(Vector2::new(current_position.x, current_position.y));
+                let z = na::convert(Vector2::new(raw_position.x, raw_position.y));
                 if let Some(x) = filter.update(z, t_capture, false) {
-                    let last_data = if let Some(last_data) = &mut self.last_data {
+                    let last_data = if let Some(last_data) = &mut self.last_detection {
                         last_data
                     } else {
-                        self.last_data = Some(PlayerData {
+                        self.last_detection = Some(StoredData {
                             timestamp: t_capture,
-                            id: self.id,
-                            raw_position: current_position,
+                            raw_position,
                             position: na::convert(Vector2::new(x[0], x[2])),
                             velocity: na::convert(Vector2::new(x[1], x[3])),
                             yaw,
-                            raw_yaw: vision_yaw,
+                            raw_yaw,
                             angular_speed: 0.0,
-                            ..PlayerData::new(self.id)
                         });
-                        self.is_init = true;
-                        self.last_data.as_mut().unwrap()
+                        self.last_detection.as_mut().unwrap()
                     };
-                    last_data.raw_position = current_position;
+                    last_data.raw_position = raw_position;
                     last_data.position = na::convert(Vector2::new(x[0], x[2]));
                     last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
                     last_data.angular_speed = (yaw - last_data.yaw).radians()
                         / (t_capture - last_data.timestamp + std::f64::EPSILON);
                     last_data.yaw = yaw;
-                    last_data.raw_yaw = vision_yaw;
+                    last_data.raw_yaw = raw_yaw;
                     last_data.timestamp = t_capture;
                 }
             }
             kalman => {
                 kalman.init(
-                    Vector4::new(
-                        current_position.x as f64,
-                        0.0,
-                        current_position.y as f64,
-                        0.0,
-                    ),
+                    Vector4::new(raw_position.x as f64, 0.0, raw_position.y as f64, 0.0),
                     t_capture,
                 );
             }
@@ -115,14 +116,7 @@ impl PlayerTracker {
     /// Update the tracker with feedback from the player.
     pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg) {
         if feedback.id == self.id {
-            if let Some(last_data) = &mut self.last_data {
-                last_data.primary_status = feedback.primary_status;
-                last_data.kicker_cap_voltage = feedback.kicker_cap_voltage;
-                last_data.kicker_temp = feedback.kicker_temp;
-                last_data.pack_voltages = feedback.pack_voltages;
-                last_data.breakbeam_ball_detected =
-                    feedback.breakbeam_ball_detected.unwrap_or(false);
-            }
+            self.last_feedback = Some(feedback.clone());
         }
     }
 
@@ -137,9 +131,24 @@ impl PlayerTracker {
             .update_settings(settings.player_yaw_lpf_alpha);
     }
 
-    pub fn get(&self) -> Option<&PlayerData> {
-        if self.is_init {
-            self.last_data.as_ref()
+    pub fn get(&self) -> Option<PlayerData> {
+        if let (Some(data), Some(feedback)) = (&self.last_detection, &self.last_feedback) {
+            Some(PlayerData {
+                id: self.id,
+                timestamp: data.timestamp,
+                position: to_dies_coords2(data.position, self.play_dir_x),
+                velocity: to_dies_coords2(data.velocity, self.play_dir_x),
+                yaw: to_dies_yaw(data.yaw, self.play_dir_x),
+                // Flip the angular speed if the goal is on the left
+                angular_speed: data.angular_speed * self.play_dir_x,
+                raw_position: to_dies_coords2(data.raw_position, self.play_dir_x),
+                raw_yaw: to_dies_yaw(data.raw_yaw, self.play_dir_x),
+                primary_status: feedback.primary_status,
+                kicker_cap_voltage: feedback.kicker_cap_voltage,
+                kicker_temp: feedback.kicker_temp,
+                pack_voltages: feedback.pack_voltages,
+                breakbeam_ball_detected: feedback.breakbeam_ball_detected.unwrap_or(false),
+            })
         } else {
             None
         }
@@ -178,7 +187,8 @@ mod test {
 
     #[test]
     fn test_basic_update() {
-        let mut tracker = PlayerTracker::new(PlayerId::new(1), &TrackerSettings::default());
+        let id = PlayerId::new(1);
+        let mut tracker = PlayerTracker::new(id, &TrackerSettings::default());
 
         let mut player = SSL_DetectionRobot::new();
         player.set_x(100.0);
@@ -189,6 +199,7 @@ mod test {
         assert!(!tracker.is_init());
 
         tracker.update(1.0, &player);
+        tracker.update_from_feedback(&PlayerFeedbackMsg::empty(id));
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
@@ -207,22 +218,23 @@ mod test {
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id.as_u32(), 1);
-        assert_eq!(data.position, Vector2::new(200.0, 300.0));
-        assert_eq!(data.velocity, Vector2::new(100.0, 100.0));
-        assert_eq!(data.yaw, Angle::from_radians(1.0));
-        assert_eq!(data.angular_speed, 1.0);
+        assert_eq!(data.raw_position, Vector2::new(200.0, 300.0));
+        assert!(data.velocity.norm() > 0.0);
+        assert_eq!(data.raw_yaw, Angle::from_radians(1.0));
+        assert!(data.angular_speed > 0.0);
     }
 
     #[test]
     fn test_x_flip() {
+        let id = PlayerId::new(1);
         let settings = TrackerSettings {
             initial_opp_goal_x: -1.0,
             ..Default::default()
         };
-        let mut tracker = PlayerTracker::new(PlayerId::new(1), &settings);
+        let mut tracker = PlayerTracker::new(id, &settings);
 
         let mut player = SSL_DetectionRobot::new();
-        let dir = PI / 2.0;
+        let dir = PI / 8.0;
         player.set_x(100.0);
         player.set_y(200.0);
         player.set_orientation(dir as f32);
@@ -230,14 +242,22 @@ mod test {
         tracker.update(0.0, &player);
         assert!(!tracker.is_init());
 
+        // Move player forward
+        player.set_x(150.0);
+
         tracker.update(1.0, &player);
+        tracker.update_from_feedback(&PlayerFeedbackMsg::empty(id));
         assert!(tracker.is_init());
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id.as_u32(), 1);
-        assert_eq!(data.position, Vector2::new(-100.0, 200.0));
-        assert_eq!(data.velocity, Vector2::zeros());
-        assert_relative_eq!(data.yaw.radians(), Angle::from_radians(-dir).radians());
+        assert_eq!(data.raw_position, Vector2::new(-150.0, 200.0));
+        assert!(data.velocity.x < 0.0);
+        assert_relative_eq!(
+            data.yaw.radians(),
+            (Angle::PI + Angle::from_radians(dir)).radians(),
+            epsilon = 1e-6
+        );
         assert_eq!(data.angular_speed, 0.0);
 
         tracker.set_play_dir_x(1.0);
@@ -251,9 +271,9 @@ mod test {
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id.as_u32(), 1);
-        assert_eq!(data.position, Vector2::new(200.0, 300.0));
-        assert_eq!(data.velocity, Vector2::new(100.0, 100.0));
-        assert_eq!(data.yaw, Angle::from_radians(-dir));
-        assert_eq!(data.angular_speed, -PI);
+        assert_eq!(data.raw_position, Vector2::new(200.0, 300.0));
+        assert!(data.velocity.x > 0.0);
+        assert_relative_eq!(data.raw_yaw.radians(), -dir, epsilon = 1e-6);
+        assert!(data.angular_speed < 0.0);
     }
 }

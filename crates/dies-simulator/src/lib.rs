@@ -6,7 +6,6 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
-use nalgebra::ComplexField;
 use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
 use std::{

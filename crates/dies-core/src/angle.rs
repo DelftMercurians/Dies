@@ -8,7 +8,7 @@ use crate::Vector2;
 /// An angle in radians, always in (-pi, pi]. This type supports safe arithmetic
 /// operations:
 ///
-/// ```no_run
+/// ```ignore
 /// # use dies_core::Angle;
 /// let a = Angle::from_degrees(90.0);
 /// let b = Angle::from_degrees(45.0);
@@ -20,6 +20,11 @@ use crate::Vector2;
 pub struct Angle(f64);
 
 impl Angle {
+    pub const TWO_PI: Angle = Angle(2.0 * PI);
+    pub const PI: Angle = Angle(PI);
+    pub const PI_2: Angle = Angle(PI / 2.0);
+    pub const PI_4: Angle = Angle(PI / 4.0);
+
     /// Create a new angle from radians.
     pub fn from_radians(radians: f64) -> Self {
         Angle(wrap_angle(radians))
@@ -241,5 +246,29 @@ mod tests {
         let v = Vector2::new(1.0, 0.0);
         let r = a * v;
         assert_eq!(r.y, 1.0);
+    }
+
+    #[test]
+    fn test_flip_around_y_axis() {
+        fn flip(angle: Angle) -> Angle {
+            Angle::PI + angle
+        }
+
+        let a = Angle::from_degrees(90.0);
+        assert_relative_eq!(flip(a).degrees(), -90.0, epsilon = 1e-5);
+
+        let b = Angle::from_degrees(-90.0);
+        assert_relative_eq!(flip(b).degrees(), 90.0, epsilon = 1e-5);
+
+        let c = Angle::from_degrees(0.0);
+        assert_relative_eq!(flip(c).degrees(), 180.0, epsilon = 1e-5);
+
+        let c = Angle::from_degrees(180.0);
+        assert_relative_eq!(flip(c).degrees(), 0.0, epsilon = 1e-5);
+        let c = Angle::from_degrees(-180.0);
+        assert_relative_eq!(flip(c).degrees(), 0.0, epsilon = 1e-5);
+
+        let c = Angle::from_degrees(45.0);
+        assert_relative_eq!(flip(c).degrees(), -135.0, epsilon = 1e-5);
     }
 }

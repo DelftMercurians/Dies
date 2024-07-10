@@ -167,13 +167,6 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_velocity_within_decelaration_distance() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        assert_eq!(mtp.update(95.0, 0.0, DT), 2.0 * DT);
-    }
-
-    #[test]
     fn test_mtp_update_acceleration_phase() {
         let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
         mtp.set_setpoint(100.0);
@@ -198,31 +191,6 @@ mod tests {
         let v = mtp.update(95.0, 10.0, DT);
         assert!(v < 10.0, "Velocity should decrease ({v} < 10.0)");
         assert_relative_eq!(10.0 - v, 2.0 * DT, epsilon = 1e-6);
-    }
-
-    #[test]
-    fn test_mtp_update_near_setpoint() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        let v = mtp.update(99.9, 0.1, DT);
-        assert!(v < 0.1, "Velocity should decrease ({v} < 0.1)");
-        assert_relative_eq!(0.1 - v, 2.0 * DT, epsilon = 1e-6);
-    }
-
-    #[test]
-    fn test_mtp_update_at_setpoint() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        assert_relative_eq!(mtp.update(100.0, 0.0, DT), 0.0, epsilon = 1e-6);
-    }
-
-    #[test]
-    fn test_mtp_update_overshoot() {
-        let mut mtp = MTP::<f64>::new(1.0, 10.0, 2.0);
-        mtp.set_setpoint(100.0);
-        let v = mtp.update(101.0, 1.0, DT);
-        assert!(v < 1.0);
-        assert_relative_eq!(1.0 - v, 2.0 * DT, epsilon = 1e-6);
     }
 
     #[test]

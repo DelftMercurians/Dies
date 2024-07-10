@@ -250,3 +250,23 @@ pub struct PlayerFeedbackMsg {
     pub breakbeam_sensor_ok: Option<bool>,
     pub pack_voltages: Option<[f32; 2]>,
 }
+
+impl PlayerFeedbackMsg {
+    pub fn empty(id: PlayerId) -> Self {
+        Self {
+            id,
+            primary_status: None,
+            kicker_status: None,
+            imu_status: None,
+            fan_status: None,
+            kicker_cap_voltage: None,
+            kicker_temp: None,
+            motor_statuses: None,
+            motor_speeds: None,
+            motor_temps: None,
+            breakbeam_ball_detected: None,
+            breakbeam_sensor_ok: None,
+            pack_voltages: None,
+        }
+    }
+}

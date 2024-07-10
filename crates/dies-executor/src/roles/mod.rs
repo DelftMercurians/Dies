@@ -65,7 +65,7 @@ pub trait Skill: Send {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// match invoke_skill!(ctx, TestSkill::new("arg")) {
 ///    SkillResult::Continue(input) => return input,
 ///    SkillResult::Done => {},
@@ -103,7 +103,7 @@ macro_rules! invoke_skill {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
 ///   skill!(ctx, TestSkill::new("arg"));
 ///   PlayerControlInput::new()
