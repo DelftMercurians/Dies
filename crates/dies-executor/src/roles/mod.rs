@@ -1,7 +1,10 @@
 mod skills;
 
+mod goalkeeper;
+pub use goalkeeper::Goalkeeper;
 pub mod test_role;
 pub mod waller;
+
 
 use std::collections::HashMap;
 
