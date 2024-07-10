@@ -7,6 +7,7 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
+use nalgebra::ComplexField;
 use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
 use std::{collections::HashMap, f64::consts::PI};
@@ -85,10 +86,10 @@ impl Default for SimulationConfig {
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 30.0 / 1000.0,
-            max_accel: Vector::new(50000.0, 50000.0, 0.0),
-            max_vel: Vector::new(50000.0, 50000.0, 0.0),
-            max_ang_accel: 360.0f64.to_radians(),
-            max_ang_vel: 420.0f64.to_radians(),
+            max_accel: Vector::new(50_000.0, 50_000.0, 0.0),
+            max_vel: Vector::new(50_000.0, 50_000.0, 0.0),
+            max_ang_accel: 2.0 * 720.0f64.to_radians(),
+            max_ang_vel: 720.0f64.to_radians(),
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
 
@@ -380,7 +381,13 @@ impl Simulation {
             let delta = (target_ang_vel - ang_velocity).abs();
             let new_ang_vel = if delta > self.config.angular_velocity_treshold {
                 let dir = (target_ang_vel - ang_velocity).signum();
-                ang_velocity + (dir * self.config.max_ang_accel * (dt as f64))
+                let new_ang_vel = ang_velocity + (dir * self.config.max_ang_accel * (dt as f64));
+                // Check for overshoot
+                if (target_ang_vel - new_ang_vel).abs() < self.config.angular_velocity_treshold {
+                    target_ang_vel
+                } else {
+                    new_ang_vel
+                }
             } else {
                 target_ang_vel
             };
