@@ -1,4 +1,3 @@
-
 use dies_core::Angle;
 
 // Assuming the Angle type is in scope or in the same module
@@ -80,7 +79,7 @@ impl YawController {
 
 #[cfg(test)]
 mod tests {
-    use crate::control;
+    use std::f64::consts::PI;
 
     use super::*;
 

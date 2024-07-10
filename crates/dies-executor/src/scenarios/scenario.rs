@@ -1,8 +1,5 @@
 use anyhow::{bail, Result};
-use std::{
-    collections::HashSet,
-    time::{Duration},
-};
+use std::{collections::HashSet, time::Duration};
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{

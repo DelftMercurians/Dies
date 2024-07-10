@@ -8,10 +8,7 @@ use dies_protos::{
 };
 use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
-use std::{
-    collections::HashMap,
-    f64::consts::PI,
-};
+use std::{collections::HashMap, f64::consts::PI};
 use utils::IntervalTrigger;
 
 mod utils;

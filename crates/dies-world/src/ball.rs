@@ -125,7 +125,7 @@ impl BallTracker {
                 current_time,
             );
         } else {
-            for (pos, is_noisy) in ball_measurements.iter() {
+            for (pos, _is_noisy) in ball_measurements.iter() {
                 let pos_ov = SVector::<f64, 3>::new(pos.x, pos.y, pos.z);
                 let z = self
                     .filter
@@ -138,12 +138,7 @@ impl BallTracker {
                     if pos_v3.z < 0.0 {
                         pos_v3.z = 0.0;
                         self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
-                            pos_v3.x,
-                            vel_v3.x,
-                            pos_v3.y,
-                            vel_v3.y,
-                            pos_v3.z,
-                            -vel_v3.z,
+                            pos_v3.x, vel_v3.x, pos_v3.y, vel_v3.y, pos_v3.z, -vel_v3.z,
                         ));
                     }
                     debug_line(
@@ -166,15 +161,15 @@ impl BallTracker {
 
     pub fn get(&self) -> Option<BallData> {
         self.last_detection.as_ref().map(|data| BallData {
-                timestamp: data.timestamp,
-                raw_position: data
-                    .raw_position
-                    .iter()
-                    .map(|v| to_dies_coords3(*v, self.play_dir_x))
-                    .collect(),
-                position: to_dies_coords3(data.position, self.play_dir_x),
-                velocity: to_dies_coords3(data.velocity, self.play_dir_x),
-            })
+            timestamp: data.timestamp,
+            raw_position: data
+                .raw_position
+                .iter()
+                .map(|v| to_dies_coords3(*v, self.play_dir_x))
+                .collect(),
+            position: to_dies_coords3(data.position, self.play_dir_x),
+            velocity: to_dies_coords3(data.velocity, self.play_dir_x),
+        })
     }
 }
 

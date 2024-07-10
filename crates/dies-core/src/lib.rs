@@ -7,7 +7,6 @@ mod player;
 mod world;
 
 pub mod workspace_utils;
-pub mod variable;
 
 pub use angle::*;
 pub use debug_info::*;

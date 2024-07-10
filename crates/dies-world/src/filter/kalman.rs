@@ -160,13 +160,8 @@ impl Kalman<2, 4> {
 
     /// Update the unit transition variance and measurement variance.
     pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
-        let mut new_filter = Kalman::new_player_filter(
-            0.1,
-            unit_transition_var,
-            measurement_var,
-            self.x,
-            self.t,
-        );
+        let mut new_filter =
+            Kalman::new_player_filter(0.1, unit_transition_var, measurement_var, self.x, self.t);
         new_filter.posteriori_covariance = self.posteriori_covariance;
         *self = new_filter;
     }
@@ -232,13 +227,8 @@ impl Kalman<3, 6> {
 
     /// Update the unit transition variance and measurement variance.
     pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
-        let mut new_filter = Self::new_ball_filter(
-            0.1,
-            unit_transition_var,
-            measurement_var,
-            self.x,
-            self.t,
-        );
+        let mut new_filter =
+            Self::new_ball_filter(0.1, unit_transition_var, measurement_var, self.x, self.t);
         new_filter.posteriori_covariance = self.posteriori_covariance;
         *self = new_filter;
     }

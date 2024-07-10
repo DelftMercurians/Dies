@@ -1,6 +1,4 @@
-use dies_core::{
-    Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2,
-};
+use dies_core::{Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
 

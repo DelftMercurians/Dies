@@ -1,4 +1,4 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use dies_protos::ssl_gc_referee_message::Referee;
 
@@ -91,6 +91,7 @@ impl WorldTracker {
     pub fn set_play_dir_x(&mut self, sign: f64) {
         self.play_dir_x = sign.signum();
         self.ball_tracker.set_play_dir_x(self.play_dir_x);
+        self.game_state_tracker.set_play_dir_x(self.play_dir_x);
         for player_tracker in self.own_players_tracker.values_mut() {
             player_tracker.set_play_dir_x(self.play_dir_x);
         }
