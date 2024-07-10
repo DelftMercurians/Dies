@@ -1,3 +1,5 @@
+use std::default;
+
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
@@ -252,10 +254,11 @@ pub struct PlayerFeedbackMsg {
 }
 
 /// Role of a player according to the game rules. These are mainly for rule-compliance.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[typeshare]
 pub enum RoleType {
     /// A regular player with no special role
+    #[default]
     Player,
     /// The goalkeeper
     Goalkeeper,

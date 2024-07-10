@@ -66,10 +66,10 @@ impl Role for Waller {
             let target_pos = self.find_intersection(ball, geom);
             let mut input = PlayerControlInput::new();
             input.with_position(target_pos);
-            input.with_yaw(Angle::between_points(
-                ctx.player.position,
-                ball.position.xy(),
-            ));
+            // input.with_yaw(Angle::between_points(
+            //     ctx.player.position,
+            //     ball.position.xy(),
+            // ));
             input
         } else {
             PlayerControlInput::new()

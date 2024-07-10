@@ -186,22 +186,38 @@ impl WorldData {
             };
             let mut obstacles = vec![field_boundary];
 
+            // Add own defence area for non-keeper robots
+            if role != RoleType::Goalkeeper {
+                let defence_area = create_bbox_from_rect(
+                    Vector2::new(
+                        -field_geom.field_length + field_geom.penalty_area_depth / 2.0,
+                        0.0,
+                    ),
+                    field_geom.penalty_area_depth,
+                    field_geom.penalty_area_width,
+                );
+                obstacles.push(defence_area);
+            }
+
+            // Add opponent defence area for all robots
+            let defence_area = create_bbox_from_rect(
+                Vector2::new(
+                    field_geom.field_length - field_geom.penalty_area_depth / 2.0,
+                    0.0,
+                ),
+                field_geom.penalty_area_depth,
+                field_geom.penalty_area_width,
+            );
+            obstacles.push(defence_area);
+
             match self.current_game_state.game_state {
                 GameState::Stop => {
                     // Add obstacle to prevent getting close to the ball
                     if let Some(ball) = &self.ball {
-                        let hw = STOP_BALL_AVOIDANCE_RADIUS as f32 / 2.0;
-                        let x = ball.position.x as f32;
-                        let y = ball.position.y as f32;
-                        obstacles.push(Obstacle::Closed {
-                            vertices: vec![
-                                // Counter-clockwise -> prevent getting into the loop
-                                dodgy_2d::Vec2::new(x - hw, y - hw),
-                                dodgy_2d::Vec2::new(x + hw, y - hw),
-                                dodgy_2d::Vec2::new(x + hw, y + hw),
-                                dodgy_2d::Vec2::new(x - hw, y + hw),
-                            ],
-                        });
+                        obstacles.push(create_bbox_from_circle(
+                            ball.position.xy(),
+                            STOP_BALL_AVOIDANCE_RADIUS,
+                        ));
                     }
                 }
                 GameState::Kickoff | GameState::PrepareKickoff => match role {
@@ -219,16 +235,9 @@ impl WorldData {
                 GameState::FreeKick => todo!(),
                 GameState::Penalty => todo!(),
                 GameState::PenaltyRun => todo!(),
-                GameState::Run => {
+                GameState::Run | GameState::Halt | GameState::Timeout | GameState::Unknown => {
                     // Nothing to do
                 }
-                GameState::Halt => {
-                    // Nothing to do
-                }
-                GameState::Timeout => {
-                    // Nothing to do
-                }
-                GameState::Unknown => {}
             };
 
             obstacles

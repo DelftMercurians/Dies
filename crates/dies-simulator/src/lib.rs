@@ -328,6 +328,16 @@ impl Simulation {
 
         // Update players
         for player in self.players.iter_mut() {
+            if !player.is_own {
+                let rigid_body = self
+                    .rigid_body_set
+                    .get_mut(player.rigid_body_handle)
+                    .unwrap();
+                rigid_body.set_linvel(Vector::zeros(), false);
+                rigid_body.set_angvel(Vector::zeros(), false);
+                continue;
+            }
+
             let mut is_kicking = false;
             if let Some(command) = commands_to_exec.get(&player.id) {
                 // In the robot's local frame, +sx means forward, +sy means right and both are in m/s

@@ -16,14 +16,6 @@ fn one_random_player() -> ScenarioSetup {
     scenario
 }
 
-fn one_test_role_player() -> ScenarioSetup {
-    let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new()));
-    let mut scenario = ScenarioSetup::new(strategy);
-    scenario.add_own_player_at(Vector2::new(-1000.0, 0.0));
-    scenario
-}
-
 fn two_players_one_ball() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
     scenario
@@ -44,6 +36,32 @@ fn one_waller_one_ball() -> ScenarioSetup {
         .add_own_player_at(Vector2::new(2264.0, 336.0))
         .add_own_player_at(Vector2::new(500.0, -336.0))
         .add_own_player_at(Vector2::new(0.0, 0.0));
+    scenario
+}
+
+fn two_players_crossing() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(TestRole::new(Vector2::new(-800.0, -1000.0))));
+    strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        .add_ball()
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_own_player_at(Vector2::new(1000.0, 1000.0));
+    scenario
+}
+
+fn navigate_stationary_opponents() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
+
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    scenario.add_opp_player_at(Vector2::new(-500.0, 0.0));
+    scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
+    scenario.add_opp_player_at(Vector2::new(500.0, -500.0));
+    scenario.add_opp_player_at(Vector2::new(-250.0, 750.0));
+
     scenario
 }
 
@@ -126,9 +144,10 @@ impl Serialize for ScenarioType {
 scenarios! {
     empty_scenario,
     one_random_player,
-    one_test_role_player,
     two_players_one_ball,
-    one_waller_one_ball
+    one_waller_one_ball,
+    two_players_crossing,
+    navigate_stationary_opponents
 }
 
 #[cfg(test)]
