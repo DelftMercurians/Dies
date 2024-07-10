@@ -7,6 +7,12 @@ pub struct PlayerInputs {
     inputs: HashMap<PlayerId, PlayerControlInput>,
 }
 
+impl Default for PlayerInputs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlayerInputs {
     /// Create a new instance of `PlayerInputs`.
     pub fn new() -> Self {
@@ -22,7 +28,7 @@ impl PlayerInputs {
 
     /// Get the mutable input for a player, creating a new one if it doesn't exist.
     pub fn player_mut(&mut self, id: PlayerId) -> &mut PlayerControlInput {
-        self.inputs.entry(id).or_insert(PlayerControlInput::new())
+        self.inputs.entry(id).or_default()
     }
 
     /// Get the input for a player, or an empty one if it doesn't exist.

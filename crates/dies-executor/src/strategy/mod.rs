@@ -21,6 +21,12 @@ pub struct AdHocStrategy {
     skill_map: HashMap<String, Box<dyn Skill>>,
 }
 
+impl Default for AdHocStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AdHocStrategy {
     pub fn new() -> Self {
         AdHocStrategy {
@@ -45,13 +51,13 @@ impl Strategy for AdHocStrategy {
     fn update(&mut self, world: &WorldData) -> PlayerInputs {
         // Assign roles to players
         for player_data in world.own_players.iter() {
-            if !self.roles.contains_key(&player_data.id) {
+            if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
                 if let Some(role) = self.unassigned_roles.pop() {
-                    self.roles.insert(player_data.id, role);
+                    e.insert(role);
                 }
             }
         }
-        if self.unassigned_roles.len() > 0 {
+        if !self.unassigned_roles.is_empty() {
             log::warn!("Not enough players to assign all roles");
         }
 

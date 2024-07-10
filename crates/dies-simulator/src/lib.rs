@@ -8,11 +8,7 @@ use dies_protos::{
 };
 use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
-use std::{
-    collections::HashMap,
-    f64::consts::PI,
-    time::{Duration, Instant, UNIX_EPOCH},
-};
+use std::{collections::HashMap, f64::consts::PI};
 use utils::IntervalTrigger;
 
 mod utils;
@@ -88,10 +84,10 @@ impl Default for SimulationConfig {
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 30.0 / 1000.0,
-            max_accel: Vector::new(50000.0, 50000.0, 0.0),
-            max_vel: Vector::new(50000.0, 50000.0, 0.0),
-            max_ang_accel: 360.0f64.to_radians(),
-            max_ang_vel: 420.0f64.to_radians(),
+            max_accel: Vector::new(50_000.0, 50_000.0, 0.0),
+            max_vel: Vector::new(50_000.0, 50_000.0, 0.0),
+            max_ang_accel: 2.0 * 720.0f64.to_radians(),
+            max_ang_vel: 720.0f64.to_radians(),
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
 
@@ -193,8 +189,8 @@ impl Simulation {
     pub fn new(config: SimulationConfig) -> Simulation {
         let vision_update_step = config.vision_update_step;
         let geometry_interval = config.geometry_interval;
-        let field_length = config.field_geometry.field_length as f64;
-        let field_width = config.field_geometry.field_width as f64;
+        let field_length = config.field_geometry.field_length;
+        let field_width = config.field_geometry.field_width;
         let geometry_packet = geometry(&config.field_geometry);
 
         let mut simulation = Simulation {
@@ -303,7 +299,7 @@ impl Simulation {
             let mut to_exec = HashMap::new();
             self.cmd_queue.retain(|cmd| {
                 if cmd.execute_time <= self.current_time {
-                    to_exec.insert(cmd.player_cmd.id, cmd.player_cmd.clone());
+                    to_exec.insert(cmd.player_cmd.id, cmd.player_cmd);
                     false
                 } else {
                     true
@@ -371,7 +367,7 @@ impl Simulation {
             let vel_err = target_velocity - velocity;
             let new_vel = if vel_err.norm() > 10.0 {
                 let acc = (2.0 * vel_err).simd_clamp(-self.config.max_accel, self.config.max_accel);
-                velocity + acc * (dt as f64)
+                velocity + acc * dt
             } else {
                 target_velocity
             };
@@ -383,7 +379,13 @@ impl Simulation {
             let delta = (target_ang_vel - ang_velocity).abs();
             let new_ang_vel = if delta > self.config.angular_velocity_treshold {
                 let dir = (target_ang_vel - ang_velocity).signum();
-                ang_velocity + (dir * self.config.max_ang_accel * (dt as f64))
+                let new_ang_vel = ang_velocity + (dir * self.config.max_ang_accel * dt);
+                // Check for overshoot
+                if (target_ang_vel - new_ang_vel).abs() < self.config.angular_velocity_treshold {
+                    target_ang_vel
+                } else {
+                    new_ang_vel
+                }
             } else {
                 target_ang_vel
             };
@@ -426,7 +428,7 @@ impl Simulation {
             }
         }
 
-        self.integration_parameters.dt = dt as f64;
+        self.integration_parameters.dt = dt;
         self.physics_pipeline.step(
             &self.config.gravity,
             &self.integration_parameters,
@@ -443,7 +445,7 @@ impl Simulation {
             &(),
         );
 
-        self.current_time += dt as f64;
+        self.current_time += dt;
     }
 
     fn new_detection_packet(&mut self) {

@@ -3,6 +3,7 @@ use std::time::Duration;
 use super::{
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
+    yaw_control::YawController,
 };
 use dies_core::{Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2};
 
@@ -17,12 +18,12 @@ enum KickerState {
 
 pub struct PlayerController {
     id: PlayerId,
-    position_mtp: MTP<Vector2>,
+    position_mtp: MTP,
     last_pos: Vector2,
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
 
-    yaw_mtp: MTP<f64>,
+    yaw_control: YawController,
     last_yaw: Angle,
     /// Output angular velocity \[rad/s\]
     target_angular_velocity: f64,
@@ -49,10 +50,10 @@ impl PlayerController {
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
-            yaw_mtp: MTP::new(
-                settings.max_angular_acceleration,
+            yaw_control: YawController::new(
                 settings.max_angular_velocity,
-                settings.max_angular_deceleration,
+                settings.max_angular_acceleration,
+                settings.angle_cutoff_distance,
             ),
             last_yaw: Angle::from_radians(0.0),
             target_angular_velocity: 0.0,
@@ -75,12 +76,9 @@ impl PlayerController {
             Duration::from_secs_f64(settings.position_proportional_time_window),
             settings.position_cutoff_distance,
         );
-        self.yaw_mtp.update_settings(
-            settings.max_angular_acceleration,
+        self.yaw_control.update_settings(
             settings.max_angular_velocity,
-            settings.max_angular_deceleration,
-            settings.angle_kp,
-            Duration::from_secs_f64(settings.angle_proportional_time_window),
+            settings.max_angular_acceleration,
             settings.angle_cutoff_distance,
         );
     }
@@ -149,15 +147,16 @@ impl PlayerController {
         if let Some(pos_target) = input.position {
             self.position_mtp.set_setpoint(pos_target);
             dies_core::debug_cross(
-                format!("p{}.position_target", self.id),
+                format!("p{}.control.target", self.id),
                 pos_target,
-                dies_core::DebugColor::Purple,
+                dies_core::DebugColor::Red,
             );
+
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         } else {
-            dies_core::debug_remove(format!("p{}.position_target", self.id));
+            dies_core::debug_remove(format!("p{}.control.target", self.id));
         }
         let local_vel = input.velocity.to_local(self.last_yaw);
         self.target_velocity += local_vel;
@@ -176,8 +175,6 @@ impl PlayerController {
             state.angular_speed.to_degrees(),
         );
         if let Some(yaw) = input.yaw {
-            // draw target yaw
-            dies_core::debug_value(format!("p{}.target_yaw", self.id), yaw.degrees());
             dies_core::debug_line(
                 format!("p{}.target_yaw_line", self.id),
                 self.last_pos,
@@ -185,11 +182,10 @@ impl PlayerController {
                 dies_core::DebugColor::Green,
             );
 
-            // TODO: Use Angle directly
-            self.yaw_mtp.set_setpoint(yaw.radians());
+            self.yaw_control.set_setpoint(yaw);
             let head_u = self
-                .yaw_mtp
-                .update(self.last_yaw.radians(), state.angular_speed, dt);
+                .yaw_control
+                .update(self.last_yaw, state.angular_speed, dt);
             self.target_angular_velocity = head_u;
         }
         self.target_angular_velocity += input.angular_velocity;

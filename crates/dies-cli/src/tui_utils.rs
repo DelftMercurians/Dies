@@ -23,9 +23,9 @@ pub enum BasestationProtocolVersion {
     V0,
 }
 
-impl Into<dies_basestation_client::BaseStationProtocol> for BasestationProtocolVersion {
-    fn into(self) -> dies_basestation_client::BaseStationProtocol {
-        match self {
+impl From<BasestationProtocolVersion> for dies_basestation_client::BaseStationProtocol {
+    fn from(val: BasestationProtocolVersion) -> Self {
+        match val {
             BasestationProtocolVersion::V0 => dies_basestation_client::BaseStationProtocol::V0,
             BasestationProtocolVersion::V1 => dies_basestation_client::BaseStationProtocol::V1,
         }

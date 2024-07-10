@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 
@@ -30,8 +27,8 @@ pub mod strategy;
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
 
-const SIMULATION_DT: Duration = Duration::from_micros(1000_000 / 60);
-const CMD_INTERVAL: Duration = Duration::from_micros(1000_000 / 30);
+const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60);
+const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30);
 
 enum Environment {
     Live {

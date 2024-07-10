@@ -28,11 +28,11 @@ impl RoleCtx<'_> {
     }
 }
 
-impl<'a> Into<SkillCtx<'a>> for &RoleCtx<'a> {
-    fn into(self) -> SkillCtx<'a> {
+impl<'a> From<&RoleCtx<'a>> for SkillCtx<'a> {
+    fn from(val: &RoleCtx<'a>) -> Self {
         SkillCtx {
-            player: self.player,
-            world: self.world,
+            player: val.player,
+            world: val.world,
         }
     }
 }
@@ -70,7 +70,7 @@ pub trait Skill: Send {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// match invoke_skill!(ctx, TestSkill::new("arg")) {
 ///    SkillResult::Continue(input) => return input,
 ///    SkillResult::Done => {},
@@ -81,7 +81,7 @@ macro_rules! invoke_skill {
     ($ctx:ident, $skill:expr) => {{
         let key = format!("{}:{}", file!(), line!());
         let debug_key = format!("p{}.active_skill", $ctx.player.id);
-        let skill_ctx = Into::<crate::roles::SkillCtx>::into(&$ctx);
+        let skill_ctx = Into::<$crate::roles::SkillCtx>::into(&$ctx);
         let skill = $ctx.skill_map.entry(key.clone()).or_insert_with(|| {
             dies_core::debug_string(debug_key.clone(), stringify!($skill));
             Box::new($skill)
@@ -108,7 +108,7 @@ macro_rules! invoke_skill {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
 ///   skill!(ctx, TestSkill::new("arg"));
 ///   PlayerControlInput::new()
@@ -117,7 +117,7 @@ macro_rules! invoke_skill {
 #[macro_export]
 macro_rules! skill {
     ($ctx:ident, $skill:expr) => {
-        match crate::invoke_skill!($ctx, $skill) {
+        match $crate::invoke_skill!($ctx, $skill) {
             crate::roles::SkillResult::Continue(input) => return input,
             crate::roles::SkillResult::Done => {}
         };
