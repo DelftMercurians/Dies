@@ -45,7 +45,6 @@ fn two_players_crossing() -> ScenarioSetup {
     strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
-        .add_ball()
         .add_own_player_at(Vector2::new(-1000.0, -1000.0))
         .add_own_player_at(Vector2::new(1000.0, 1000.0));
     scenario
