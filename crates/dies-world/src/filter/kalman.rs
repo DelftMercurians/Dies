@@ -70,7 +70,7 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
                 return false;
             }
         }
-        return true;
+        true
     }
 
     /// update the filter with a new measurement
@@ -95,7 +95,7 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         }
         let r = z - &self.transformation_matrix * &x;
         if use_gate && !self.gating(r.clone_owned()) {
-            return Option::from(x.clone());
+            return Option::from(x);
         }
 
         dies_core::debug_value(
@@ -122,7 +122,7 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         self.posteriori_covariance = &posteriori_covariance
             - &kalman_gain * &self.transformation_matrix * &posteriori_covariance;
         self.t = newt;
-        Some(self.x.clone())
+        Some(self.x)
     }
 }
 
@@ -164,7 +164,7 @@ impl Kalman<2, 4> {
             0.1,
             unit_transition_var,
             measurement_var,
-            self.x.clone(),
+            self.x,
             self.t,
         );
         new_filter.posteriori_covariance = self.posteriori_covariance;
@@ -236,7 +236,7 @@ impl Kalman<3, 6> {
             0.1,
             unit_transition_var,
             measurement_var,
-            self.x.clone(),
+            self.x,
             self.t,
         );
         new_filter.posteriori_covariance = self.posteriori_covariance;

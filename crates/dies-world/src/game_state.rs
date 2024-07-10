@@ -105,7 +105,7 @@ impl GameStateTracker {
             _ => (),
         }
 
-        return self.game_state;
+        self.game_state
     }
 
     pub fn get_operator_is_blue(&self) -> Option<bool> {
@@ -113,10 +113,10 @@ impl GameStateTracker {
     }
 
     pub fn start_ball_movement_check(&mut self, ball_pos: Vector3, timeout: u64) {
-        if self.is_outdated == false {
+        if !self.is_outdated {
             return;
         }
-        self.init_ball_pos = ball_pos.clone();
+        self.init_ball_pos = ball_pos;
         self.start = Instant::now();
         self.timeout = timeout;
         self.is_outdated = false;
@@ -134,8 +134,8 @@ impl GameStateTracker {
     }
 
     pub fn update_ball_movement_check(&mut self, ball_data: Option<&BallData>) -> GameState {
-        let p = self.init_ball_pos.clone();
-        if self.is_outdated == true || ball_data.is_none() {
+        let p = self.init_ball_pos;
+        if self.is_outdated || ball_data.is_none() {
             return self.game_state;
         } else if self.prev_state != self.game_state {
             self.is_outdated = true;
@@ -151,7 +151,7 @@ impl GameStateTracker {
             }
             return self.game_state;
         }
-        return self.game_state;
+        self.game_state
     }
 
     pub fn get(&self) -> GameState {

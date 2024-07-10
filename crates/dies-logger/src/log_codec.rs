@@ -85,10 +85,10 @@ impl LogFileWriter {
 
     pub fn write_log_message(&mut self, message: &LogMessage) -> Result<()> {
         match message {
-            LogMessage::DiesLog(log_line) => self.write_log_line(&log_line),
-            LogMessage::Vision(vision) => self.write_vision(&vision),
-            LogMessage::Referee(referee) => self.write_referee(&referee),
-            LogMessage::Bytes(bytes) => self.write_bytes(&bytes),
+            LogMessage::DiesLog(log_line) => self.write_log_line(log_line),
+            LogMessage::Vision(vision) => self.write_vision(vision),
+            LogMessage::Referee(referee) => self.write_referee(referee),
+            LogMessage::Bytes(bytes) => self.write_bytes(bytes),
         }
     }
 

@@ -44,9 +44,9 @@ pub enum KickerCmd {
     PowerBoardOff,
 }
 
-impl Into<glue::Radio_KickerCommand> for KickerCmd {
-    fn into(self) -> glue::Radio_KickerCommand {
-        match self {
+impl From<KickerCmd> for glue::Radio_KickerCommand {
+    fn from(val: KickerCmd) -> Self {
+        match val {
             KickerCmd::None => glue::Radio_KickerCommand::NONE,
             KickerCmd::Arm => glue::Radio_KickerCommand::ARM,
             KickerCmd::Disarm => glue::Radio_KickerCommand::DISARM,
@@ -107,16 +107,16 @@ impl PlayerCmd {
     }
 }
 
-impl Into<glue::Radio_Command> for PlayerCmd {
-    fn into(self) -> glue::Radio_Command {
+impl From<PlayerCmd> for glue::Radio_Command {
+    fn from(val: PlayerCmd) -> Self {
         glue::Radio_Command {
             speed: glue::HG_Pose {
-                x: self.sx as f32,
-                y: self.sy as f32,
-                z: self.w as f32,
+                x: val.sx as f32,
+                y: val.sy as f32,
+                z: val.w as f32,
             },
-            dribbler_speed: self.dribble_speed as f32,
-            kicker_command: self.kicker_cmd.into(),
+            dribbler_speed: val.dribble_speed as f32,
+            kicker_command: val.kicker_cmd.into(),
             _pad: [0, 0, 0],
             kick_time: 0.0,
             fan_speed: 0.0,
@@ -210,21 +210,21 @@ impl SysStatus {
     }
 }
 
-impl Into<SysStatus> for glue::HG_Status {
-    fn into(self) -> SysStatus {
-        match self {
-            Self::EMERGENCY => SysStatus::Emergency,
-            Self::READY => SysStatus::Ready,
-            Self::OK => SysStatus::Ok,
-            Self::STOP => SysStatus::Stop,
-            Self::STARTING => SysStatus::Starting,
-            Self::OVERTEMP => SysStatus::Overtemp,
-            Self::NO_REPLY => SysStatus::NoReply,
-            Self::ARMED => SysStatus::Armed,
-            Self::DISARMED => SysStatus::Disarmed,
-            Self::SAFE => SysStatus::Safe,
-            Self::NOT_INSTALLED => SysStatus::NotInstalled,
-            Self::STANDBY => SysStatus::Standby,
+impl From<glue::HG_Status> for SysStatus {
+    fn from(val: glue::HG_Status) -> Self {
+        match val {
+            glue::HG_Status::EMERGENCY => SysStatus::Emergency,
+            glue::HG_Status::READY => SysStatus::Ready,
+            glue::HG_Status::OK => SysStatus::Ok,
+            glue::HG_Status::STOP => SysStatus::Stop,
+            glue::HG_Status::STARTING => SysStatus::Starting,
+            glue::HG_Status::OVERTEMP => SysStatus::Overtemp,
+            glue::HG_Status::NO_REPLY => SysStatus::NoReply,
+            glue::HG_Status::ARMED => SysStatus::Armed,
+            glue::HG_Status::DISARMED => SysStatus::Disarmed,
+            glue::HG_Status::SAFE => SysStatus::Safe,
+            glue::HG_Status::NOT_INSTALLED => SysStatus::NotInstalled,
+            glue::HG_Status::STANDBY => SysStatus::Standby,
         }
     }
 }

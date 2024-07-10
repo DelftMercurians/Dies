@@ -66,7 +66,7 @@ impl Skill for WaitSkill {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillResult {
         let until = *self
             .until
-            .get_or_insert_with(|| ctx.world.t_received + self.amount);
+            .get_or_insert(ctx.world.t_received + self.amount);
         if ctx.world.t_received >= until {
             SkillResult::Done
         } else {

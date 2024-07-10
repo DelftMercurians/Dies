@@ -1,4 +1,3 @@
-use std::f64::consts::PI;
 
 use dies_core::Angle;
 

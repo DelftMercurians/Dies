@@ -1,5 +1,5 @@
 use dies_core::{
-    Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2, Vector3,
+    Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2,
 };
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
@@ -106,7 +106,7 @@ impl PlayerTracker {
             }
             kalman => {
                 kalman.init(
-                    Vector4::new(raw_position.x as f64, 0.0, raw_position.y as f64, 0.0),
+                    Vector4::new(raw_position.x, 0.0, raw_position.y, 0.0),
                     t_capture,
                 );
             }
@@ -116,7 +116,7 @@ impl PlayerTracker {
     /// Update the tracker with feedback from the player.
     pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg) {
         if feedback.id == self.id {
-            self.last_feedback = Some(feedback.clone());
+            self.last_feedback = Some(*feedback);
         }
     }
 

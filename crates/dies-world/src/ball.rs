@@ -115,35 +115,35 @@ impl BallTracker {
 
             self.filter.init(
                 Vector6::new(
-                    ball_measurements[0].0.x as f64,
+                    ball_measurements[0].0.x,
                     0.0,
-                    ball_measurements[0].0.y as f64,
+                    ball_measurements[0].0.y,
                     0.0,
-                    ball_measurements[0].0.z as f64,
+                    ball_measurements[0].0.z,
                     0.0,
                 ),
                 current_time,
             );
         } else {
             for (pos, is_noisy) in ball_measurements.iter() {
-                let pos_ov = SVector::<f64, 3>::new(pos.x as f64, pos.y as f64, pos.z as f64);
+                let pos_ov = SVector::<f64, 3>::new(pos.x, pos.y, pos.z);
                 let z = self
                     .filter
                     .as_mut()
                     .unwrap()
                     .update(pos_ov, current_time, false);
                 if let Some(z) = z {
-                    let mut pos_v3 = Vector3::new(z[0] as f64, z[2] as f64, z[4] as f64);
-                    let vel_v3 = Vector3::new(z[1] as f64, z[3] as f64, z[5] as f64);
+                    let mut pos_v3 = Vector3::new(z[0], z[2], z[4]);
+                    let vel_v3 = Vector3::new(z[1], z[3], z[5]);
                     if pos_v3.z < 0.0 {
                         pos_v3.z = 0.0;
                         self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
-                            pos_v3.x as f64,
-                            vel_v3.x as f64,
-                            pos_v3.y as f64,
-                            vel_v3.y as f64,
-                            pos_v3.z as f64,
-                            -vel_v3.z as f64,
+                            pos_v3.x,
+                            vel_v3.x,
+                            pos_v3.y,
+                            vel_v3.y,
+                            pos_v3.z,
+                            -vel_v3.z,
                         ));
                     }
                     debug_line(
@@ -165,8 +165,7 @@ impl BallTracker {
     }
 
     pub fn get(&self) -> Option<BallData> {
-        if let Some(data) = &self.last_detection {
-            Some(BallData {
+        self.last_detection.as_ref().map(|data| BallData {
                 timestamp: data.timestamp,
                 raw_position: data
                     .raw_position
@@ -176,9 +175,6 @@ impl BallTracker {
                 position: to_dies_coords3(data.position, self.play_dir_x),
                 velocity: to_dies_coords3(data.velocity, self.play_dir_x),
             })
-        } else {
-            None
-        }
     }
 }
 

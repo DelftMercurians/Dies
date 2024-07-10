@@ -1,9 +1,8 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap};
 
 use dies_protos::ssl_gc_referee_message::Referee;
 
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
-use std::time::Instant;
 
 mod ball;
 mod coord_utils;
@@ -11,7 +10,6 @@ mod filter;
 mod game_state;
 mod player;
 
-use crate::coord_utils::to_dies_coords2;
 use crate::game_state::GameStateTracker;
 use ball::BallTracker;
 pub use dies_core::{
@@ -110,7 +108,7 @@ impl WorldTracker {
         self.game_state_tracker
             .update_ball_movement_check(self.ball_tracker.get().as_ref());
 
-        let cur = self.game_state_tracker.update(&data);
+        let cur = self.game_state_tracker.update(data);
         if cur == GameState::Kickoff || cur == GameState::FreeKick {
             let timeout = if IS_DIV_A { 10 } else { 5 };
             self.game_state_tracker

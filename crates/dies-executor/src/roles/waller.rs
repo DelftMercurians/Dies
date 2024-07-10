@@ -56,7 +56,7 @@ impl Waller {
         }
 
         // Default fallback to ball position (should not happen in normal cases)
-        return Vector2::new(area_right_x, ball_pos.y);
+        Vector2::new(area_right_x, ball_pos.y)
     }
 }
 

@@ -155,7 +155,7 @@ impl PartialEq for Angle {
     fn eq(&self, other: &Self) -> bool {
         let diff: f64 = (self.radians() - other.radians()).abs();
         const TOLERANCE: f64 = 1e-5; // about sqrt of f32 precision
-        (diff < TOLERANCE) | (diff > (2.0 * PI - TOLERANCE))
+        !(TOLERANCE..=(2.0 * PI - TOLERANCE)).contains(&diff)
     }
 }
 
