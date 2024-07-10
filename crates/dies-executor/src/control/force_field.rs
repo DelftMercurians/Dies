@@ -62,7 +62,7 @@ pub fn compute_path(
     start_speed: Option<Vector2>,
 ) -> [Vector2; N_POINTS] {
     let mut path: [Vector2; N_POINTS] = [Vector2::new(0.0, 0.0); N_POINTS];
-    let mut pos = start.clone();
+    let mut pos = *start;
     let start_speed = start_speed.unwrap_or(Vector2::new(0.0, 0.0));
 
     for index in 0..N_POINTS {
@@ -82,7 +82,7 @@ pub fn compute_path(
                 .dot(&(start_speed - obs.velocity))
                 .abs();
             let influence_radius =
-                base_factor as f64 * obs.radius + relative_speed * speed_factor as f64;
+                base_factor * obs.radius + relative_speed * speed_factor;
             if d < influence_radius {
                 let repulsive_force = (1.0 / ((d - 2.0 * obs.radius) + f64::EPSILON)
                     - 1.0 / ((influence_radius - 2.0 * obs.radius) + f64::EPSILON))
@@ -95,7 +95,7 @@ pub fn compute_path(
         pos += f.try_normalize(f64::EPSILON).unwrap_or(Vector2::zeros()) * POINT_SPACING;
 
         if index == 0 || (goal - pos).norm() < (goal - path[index - 1]).norm() {
-            path[index] = pos.clone();
+            path[index] = pos;
         } else {
             path[index] = path[index - 1];
         }

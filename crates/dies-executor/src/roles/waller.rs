@@ -1,4 +1,4 @@
-use dies_core::{Angle, BallData, FieldGeometry, Vector2};
+use dies_core::{BallData, FieldGeometry, Vector2};
 
 use super::RoleCtx;
 use crate::{roles::Role, PlayerControlInput};

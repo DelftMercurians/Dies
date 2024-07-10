@@ -130,8 +130,7 @@ impl PlayerTracker {
     }
 
     pub fn get(&self) -> Option<PlayerData> {
-        if let Some(data) = &self.last_detection {
-            Some(PlayerData {
+        self.last_detection.as_ref().map(|data| PlayerData {
                 id: self.id,
                 timestamp: data.timestamp,
                 position: to_dies_coords2(data.position, self.play_dir_x),
@@ -150,9 +149,6 @@ impl PlayerTracker {
                     .and_then(|f| f.breakbeam_ball_detected)
                     .unwrap_or(false),
             })
-        } else {
-            None
-        }
     }
 }
 

@@ -112,7 +112,7 @@ mod tests {
     fn test_deceleration() {
         let controller = create_controller(0.0);
         let output = controller.update(Angle::from_radians(0.1), 0.5, DT);
-        assert!(output < 0.5 && output >= 0.0);
+        assert!((0.0..0.5).contains(&output));
     }
 
     #[test]
@@ -161,7 +161,7 @@ mod tests {
     fn test_overshoot() {
         let controller = create_controller(PI / 2.0);
         let output = controller.update(Angle::from_radians((PI / 2.0) + 0.05), 0.1, DT);
-        assert_eq!(output < 0.0, true);
+        assert!(output < 0.0);
     }
 
     #[test]

@@ -77,7 +77,7 @@ impl TeamController {
                     .expect("Player not found in world data");
 
                 let role_state = self.role_states.entry(*id).or_default();
-                let role_ctx = RoleCtx::new(&player_data, &world_data, &mut role_state.skill_map);
+                let role_ctx = RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
                 let new_input = role.update(role_ctx);
                 inputs.insert(*id, new_input);
                 inputs
@@ -171,7 +171,7 @@ impl TeamController {
 
             let obstacles = obstacles
                 .iter()
-                .map(|o| Cow::Borrowed(o))
+                .map(Cow::Borrowed)
                 .collect::<Vec<_>>();
 
             let neighbors = own_agents

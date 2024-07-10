@@ -115,8 +115,8 @@ macro_rules! invoke_skill {
 macro_rules! skill {
     ($ctx:ident, $skill:expr) => {
         match $crate::invoke_skill!($ctx, $skill) {
-            crate::roles::SkillResult::Continue(input) => return input,
-            crate::roles::SkillResult::Done => {}
+            $crate::roles::SkillResult::Continue(input) => return input,
+            $crate::roles::SkillResult::Done => {}
         };
     };
 }
