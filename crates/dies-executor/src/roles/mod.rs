@@ -26,6 +26,10 @@ impl RoleCtx<'_> {
             skill_map,
         }
     }
+
+    pub fn reset_skills(&mut self) {
+        self.skill_map.clear();
+    }
 }
 
 impl<'a> From<&RoleCtx<'a>> for SkillCtx<'a> {
@@ -57,8 +61,7 @@ pub trait Skill: Send {
 }
 
 /// A macro to conveniently invoke a skill from a Role's `update` method. It takes
-/// care of creating the skill instance, updating it, and cleaning up the skill
-/// instance if it is done.
+/// care of creating the skill instance and updating it.
 ///
 /// This is the same as [`skill!`], but it does not call return with the input from the
 /// skill.
@@ -74,25 +77,19 @@ pub trait Skill: Send {
 #[macro_export]
 macro_rules! invoke_skill {
     ($ctx:ident, $skill:expr) => {{
-        let key = format!("{}:{}", file!(), line!());
+        let key = format!("{}-{}:{}", $ctx.player.id, file!(), line!());
         let debug_key = format!("p{}.active_skill", $ctx.player.id);
         let skill_ctx = Into::<$crate::roles::SkillCtx>::into(&$ctx);
         let skill = $ctx.skill_map.entry(key.clone()).or_insert_with(|| {
             dies_core::debug_string(debug_key.clone(), stringify!($skill));
             Box::new($skill)
         });
-        let result = skill.update(skill_ctx);
-        if let crate::roles::SkillResult::Done = &result {
-            $ctx.skill_map.remove(&key);
-            dies_core::debug_string(debug_key, "");
-        }
-        result
+        skill.update(skill_ctx)
     }};
 }
 
 /// A macro to conveniently invoke a skill from a Role's `update` method. It takes
-/// care of creating the skill instance, updating it, and cleaning up the skill
-/// instance if it is done.
+/// care of creating the skill instance and updating it.
 ///
 /// Expands to a call to the skill's `update` method. If the skill returns
 /// `SkillResult::Continue`, the macro will return the input. If the skill
