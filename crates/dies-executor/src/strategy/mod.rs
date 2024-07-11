@@ -4,7 +4,7 @@ mod penalty_kick;
 
 use std::collections::HashMap;
 
-use dies_core::{PlayerId, WorldData};
+use dies_core::{PlayerId, RoleType, WorldData};
 
 use crate::{
     control::PlayerInputs,
@@ -12,7 +12,11 @@ use crate::{
 };
 
 pub trait Strategy: Send {
+    /// Update the strategy and return the inputs for all players.
     fn update(&mut self, world: &WorldData) -> PlayerInputs;
+
+    /// Get the role type of a player, if any.
+    fn get_role_type(&self, player_id: PlayerId) -> Option<RoleType>;
 }
 
 pub struct AdHocStrategy {
@@ -74,5 +78,9 @@ impl Strategy for AdHocStrategy {
             }
         }
         inputs
+    }
+
+    fn get_role_type(&self, player_id: PlayerId) -> Option<RoleType> {
+        self.roles.get(&player_id).map(|r| r.role_type())
     }
 }

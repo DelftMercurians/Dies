@@ -9,7 +9,7 @@ pub mod waller;
 use std::collections::HashMap;
 
 use crate::control::PlayerControlInput;
-use dies_core::{PlayerData, WorldData};
+use dies_core::{PlayerData, RoleType, WorldData};
 
 pub struct RoleCtx<'a> {
     pub player: &'a PlayerData,
@@ -43,6 +43,11 @@ impl<'a> From<&RoleCtx<'a>> for SkillCtx<'a> {
 pub trait Role: Send {
     /// Updates the role and returns the control input for the player
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput;
+
+    /// Returns the type of the role. Default implementation returns `RoleType::Player`.
+    fn role_type(&self) -> RoleType {
+        RoleType::Player
+    }
 }
 
 pub struct SkillCtx<'a> {

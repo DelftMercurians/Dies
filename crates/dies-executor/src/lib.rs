@@ -233,9 +233,8 @@ impl Executor {
     }
 
     /// Update the executor with a feedback message from the robots.
-    #[allow(dead_code)]
-    pub fn update_from_bs_msg(&mut self, _message: PlayerFeedbackMsg) {
-        todo!()
+    pub fn update_from_bs_msg(&mut self, message: PlayerFeedbackMsg) {
+        self.tracker.update_from_feedback(&message);
     }
 
     /// Get the currently active player commands.
@@ -282,6 +281,10 @@ impl Executor {
         if let Some(det) = simulator.detection() {
             self.update_from_vision_msg(det, simulator.time());
         }
+        if let Some(feedback) = simulator.feedback() {
+            self.update_from_bs_msg(feedback);
+        }
+
         let gc_message = simulator.gc_message();
         self.update_from_gc_msg(gc_message);
         Ok(())

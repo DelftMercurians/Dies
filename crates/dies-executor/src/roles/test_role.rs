@@ -1,18 +1,21 @@
-use dies_core::{dbg_draw, Vector2};
-
-use crate::{
-    roles::{skills::GoToPositionSkill, Role},
-    skill, PlayerControlInput,
-};
-
 use super::RoleCtx;
+use crate::{roles::Role, PlayerControlInput};
+use dies_core::Vector2;
 
-pub struct TestRole {}
+pub struct TestRole {
+    target: Vector2,
+}
+
+impl TestRole {
+    pub fn new(target: Vector2) -> Self {
+        Self { target }
+    }
+}
 
 impl Role for TestRole {
-    fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        dbg_draw!(("p{}.target", ctx.player.id), cross, Vector2::new(0.0, 0.0));
-        skill!(ctx, GoToPositionSkill::new(Vector2::new(0.0, 0.0)));
-        PlayerControlInput::new()
+    fn update(&mut self, _ctx: RoleCtx<'_>) -> PlayerControlInput {
+        let mut input = PlayerControlInput::default();
+        input.with_position(self.target);
+        input
     }
 }
