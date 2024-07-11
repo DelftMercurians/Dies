@@ -64,14 +64,27 @@ fn navigate_stationary_opponents() -> ScenarioSetup {
     scenario
 }
 
-fn three_attackers() -> ScenarioSetup {
+fn one_attacker() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new(Vector2::new(-800.0, -1000.0))));
-    strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-800.0, -1000.0))));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
-        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_ball()
         .add_own_player_at(Vector2::new(1000.0, 1000.0));
+    scenario
+}
+
+fn three_attackers() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-3400.0, 2000.0))));
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-3400.0, -2000.0))));
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2000.0, 0.0))));
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        .add_ball()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player();
     scenario
 }
 
@@ -158,7 +171,9 @@ scenarios! {
     two_players_one_ball,
     one_waller_one_ball,
     two_players_crossing,
-    navigate_stationary_opponents
+    navigate_stationary_opponents,
+    one_attacker,
+    three_attackers
 }
 
 #[cfg(test)]
