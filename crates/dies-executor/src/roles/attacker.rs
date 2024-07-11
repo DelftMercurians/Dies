@@ -30,18 +30,18 @@ impl Attacker {
         return angle;
     }
 
-    fn closest_player_to_ball<'a>(&self, world: &'a WorldData) -> Option<&'a PlayerData> {
+    fn closest_player_to_ball(&self, world: &WorldData) -> Option<PlayerId> {
         let ball = world.ball.as_ref().unwrap();
         let mut min_distance = f64::MAX;
-        let mut closest_player = None;
+        let mut closest_player_id = None;
         for player in world.own_players.iter() {
             let distance = self.distance(player.position, ball.position.xy());
             if distance < min_distance {
                 min_distance = distance;
-                closest_player = Some(player);
+                closest_player_id = Some(player.id);
             }
         }
-        return closest_player;
+        return closest_player_id;
     }
 
     /// Go to given position
@@ -51,15 +51,15 @@ impl Attacker {
 
     fn closest_player_to_passer(&self, world: &WorldData, passer_pos: Vector2) -> Option<PlayerId> {
         let mut min_distance = f64::MAX;
-        let mut closest_player = None;
+        let mut closest_player_id = None;
         for player in world.own_players.iter() {
             let distance = self.distance(player.position, passer_pos);
             if distance < min_distance {
                 min_distance = distance;
-                closest_player = Some(player.id);
+                closest_player_id = Some(player.id);
             }
         }
-        return closest_player;
+        return closest_player_id;
     
     }
 }
@@ -70,7 +70,9 @@ impl Role for Attacker {
             let passer = self.closest_player_to_ball(ctx.world);
             let mut input = PlayerControlInput::new();
             for player in ctx.world.own_players.iter() {
-                if player.id == passer.unwrap().id {
+                if player.id == passer.unwrap() {
+                    println!("passer ID: {}", passer.unwrap());
+                    let mut input = PlayerControlInput::new();
                     let target_pos = ball.position.xy();
                     let target_angle = self.aim_at_ball(ctx.player.position, target_pos);
                     let dribble_speed = 10.0;
@@ -82,24 +84,18 @@ impl Role for Attacker {
                         input.with_kicker(KickerControlInput::Arm);
                         return input;
                     }
+                    if self.distance(player.position, self.position) < 100.0 {
+                        input.with_kicker(KickerControlInput::Kick);
+                        return input;
+                    }
                 }
-                if self.distance(player.position, self.position) < 100.0 {
-                    input.with_kicker(KickerControlInput::Kick);
-                    return input;
-                }
-                input.with_dribbling(10.0);
-                input.with_position(self.position);
-                input.with_yaw(self.aim_at_goal(ctx.player.position, geom));
-                return input;
+
+            input.with_dribbling(10.0);
+            input.with_position(self.position);
+            input.with_yaw(self.aim_at_goal(ctx.player.position, geom));
+            return input;
 
             }
-            let target_pos = self.go_to_pos();
-            let mut input = PlayerControlInput::new();
-            input.with_position(target_pos);
-            input.with_yaw(Angle::between_points(
-                ctx.player.position,
-                ball.position.xy(),
-            ));
             input
         } else {
             PlayerControlInput::new()
