@@ -112,13 +112,10 @@ pub trait Skill: Send {
 /// ```
 #[macro_export]
 macro_rules! invoke_skill {
-    ($ctx:ident, $skill:expr) => {{
-        let line_key = format!("{}-{}:{}", $ctx.player.id, file!(), line!());
-        let invoke_count = $ctx.get_invoke_count_and_increment(&line_key);
-        let key = format!("{}-{}", line_key, invoke_count);
+    ($ctx:ident, $key:tt, $skill:expr) => {{
         let debug_key = format!("p{}.active_skill", $ctx.player.id);
         let skill_ctx = Into::<$crate::roles::SkillCtx>::into(&$ctx);
-        let skill_state = $ctx.skill_map.entry(key.clone()).or_insert_with(|| {
+        let skill_state = $ctx.skill_map.entry($key.to_owned()).or_insert_with(|| {
             dies_core::debug_string(debug_key.clone(), stringify!($skill));
             $crate::roles::SkillState::InProgress(Box::new($skill))
         });
@@ -134,6 +131,12 @@ macro_rules! invoke_skill {
             $crate::roles::SkillState::Done(result) => $crate::roles::SkillProgress::Done(*result),
         }
     }};
+    ($ctx:ident, $skill:expr) => {{
+        let line_key = format!("{}-{}:{}", $ctx.player.id, file!(), line!());
+        let invoke_count = $ctx.get_invoke_count_and_increment(&line_key);
+        let key = format!("{}-{}", line_key, invoke_count);
+        $crate::invoke_skill!($ctx, key, $skill)
+    }};
 }
 
 /// A macro to conveniently invoke a skill from a Role's `update` method. It takes
@@ -145,18 +148,20 @@ macro_rules! invoke_skill {
 /// returns `SkillProgress::Done`, the macro will continue executing the role.
 ///
 /// This is the same as [`invoke_skill!`], but it calls return with the input from the
-/// skill if the skill is not done.
+/// skill if the skill is not done. This macro should be preferred whenever possible.
 ///
 /// **WARNING**: This macro is intended to be used in a Role's `update` method. It should
 /// not be called from closures or other functions that are not the `update` method.
 ///
 /// **WARNING**: When calling the macro from a loop, you must ensure the invocations are
 /// in the same order on every `update` call. This is because the macro uses a counter to
-/// keep track of the active skills.
+/// keep track of the active skills. If this is not the case, a custom key must be provided
+/// to the macro to ensure the correct order.
 ///
 /// **Good**:
 /// ```ignore
 /// fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+///  // Targets are consistent across updates -> good
 ///  for target in &self.targets {
 ///   skill!(ctx, GoToPositionSkill::new(target.clone()));
 ///  }
@@ -167,6 +172,7 @@ macro_rules! invoke_skill {
 /// **Bad**:
 /// ```compile_fail
 /// fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+///   // Calling from closure -> bad
 ///   self.targets.iter().for_each(|target| {
 ///    skill!(ctx, GoToPositionSkill::new(target.clone()));
 ///   });
@@ -174,6 +180,18 @@ macro_rules! invoke_skill {
 /// }
 /// ```
 ///
+/// **Good**:
+/// ```ignore
+/// fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+///  let players_closest_to_ball = self.get_players_closest_to_ball();
+///  // Custom key to ensure order -> good
+///  for player in players_closest_to_ball {
+///     skill!(ctx, player.id, GoToPositionSkill::new(player.position));
+///  }
+///  PlayerControlInput::default()
+/// }
+/// ```
+///     
 /// # Example
 ///
 /// The macro returns `SkillResult` when the skill is done.
@@ -188,6 +206,12 @@ macro_rules! invoke_skill {
 /// ```
 #[macro_export]
 macro_rules! skill {
+    ($ctx:ident, $key:tt, $skill:expr) => {
+        match $crate::invoke_skill!($ctx, $key, $skill) {
+            $crate::roles::SkillProgress::Continue(input) => return input,
+            $crate::roles::SkillProgress::Done(result) => result,
+        }
+    };
     ($ctx:ident, $skill:expr) => {
         match $crate::invoke_skill!($ctx, $skill) {
             $crate::roles::SkillProgress::Continue(input) => return input,
