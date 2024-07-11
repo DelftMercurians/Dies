@@ -4,7 +4,7 @@ use dies_core::Vector2;
 
 use crate::PlayerControlInput;
 
-use super::{Skill, SkillCtx, SkillResult};
+use super::{Skill, SkillCtx, SkillProgress};
 
 const DEFAULT_TOLERANCE: f64 = 70.0;
 
@@ -24,15 +24,15 @@ impl GoToPositionSkill {
 }
 
 impl Skill for GoToPositionSkill {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillResult {
+    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let position = ctx.player.position;
         let distance = (self.target - position).norm();
         if distance < self.tolerance {
-            return SkillResult::Done;
+            return SkillProgress::success();
         }
         let mut input = PlayerControlInput::new();
         input.with_position(self.target);
-        SkillResult::Continue(input)
+        SkillProgress::Continue(input)
     }
 }
 
@@ -63,12 +63,12 @@ impl WaitSkill {
 }
 
 impl Skill for WaitSkill {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillResult {
+    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let until = *self.until.get_or_insert(ctx.world.t_received + self.amount);
         if ctx.world.t_received >= until {
-            SkillResult::Done
+            SkillProgress::success()
         } else {
-            SkillResult::Continue(PlayerControlInput::new())
+            SkillProgress::Continue(PlayerControlInput::new())
         }
     }
 }

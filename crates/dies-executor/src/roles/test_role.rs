@@ -1,21 +1,30 @@
 use super::RoleCtx;
-use crate::{roles::Role, PlayerControlInput};
+use crate::{
+    roles::{
+        skills::{GoToPositionSkill, WaitSkill},
+        Role,
+    },
+    skill, PlayerControlInput,
+};
 use dies_core::Vector2;
 
 pub struct TestRole {
-    target: Vector2,
+    targets: Vec<Vector2>,
 }
 
 impl TestRole {
-    pub fn new(target: Vector2) -> Self {
-        Self { target }
+    pub fn new(targets: Vec<Vector2>) -> Self {
+        Self { targets }
     }
 }
 
 impl Role for TestRole {
-    fn update(&mut self, _ctx: RoleCtx<'_>) -> PlayerControlInput {
-        let mut input = PlayerControlInput::default();
-        input.with_position(self.target);
-        input
+    fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+        for target in &self.targets {
+            skill!(ctx, GoToPositionSkill::new(target.clone()));
+            skill!(ctx, WaitSkill::new_secs_f64(1.0));
+        }
+
+        PlayerControlInput::default()
     }
 }

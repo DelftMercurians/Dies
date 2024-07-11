@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    roles::{RoleCtx, Skill},
+    roles::{RoleCtx, Skill, SkillState},
     strategy::{Strategy, StrategyCtx},
     PlayerControlInput,
 };
@@ -19,7 +19,7 @@ use dodgy_2d::{Agent, AvoidanceOptions};
 
 #[derive(Default)]
 struct RoleState {
-    skill_map: HashMap<String, Box<dyn Skill>>,
+    skill_map: HashMap<String, SkillState>,
 }
 
 pub struct TeamController {
@@ -169,10 +169,7 @@ impl TeamController {
                     .unwrap_or_default(),
             );
 
-            let obstacles = obstacles
-                .iter()
-                .map(Cow::Borrowed)
-                .collect::<Vec<_>>();
+            let obstacles = obstacles.iter().map(Cow::Borrowed).collect::<Vec<_>>();
 
             let neighbors = own_agents
                 .iter()

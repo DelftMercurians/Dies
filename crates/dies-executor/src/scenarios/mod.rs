@@ -39,10 +39,26 @@ fn one_waller_one_ball() -> ScenarioSetup {
     scenario
 }
 
+fn test_role_multiple_targets() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    // square
+    let targets = vec![
+        Vector2::new(-1000.0, -1000.0),
+        Vector2::new(1000.0, -1000.0),
+        Vector2::new(1000.0, 1000.0),
+        Vector2::new(-1000.0, 1000.0),
+    ];
+    strategy.add_role(Box::new(TestRole::new(targets)));
+
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    scenario
+}
+
 fn two_players_crossing() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new(Vector2::new(-800.0, -1000.0))));
-    strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
+    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(-800.0, -1000.0)])));
+    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(1000.0, 1000.0)])));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
         .add_own_player_at(Vector2::new(-1000.0, -1000.0))
@@ -52,7 +68,7 @@ fn two_players_crossing() -> ScenarioSetup {
 
 fn navigate_stationary_opponents() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
+    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(1000.0, 1000.0)])));
 
     let mut scenario = ScenarioSetup::new(strategy);
     scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
@@ -146,6 +162,7 @@ scenarios! {
     two_players_one_ball,
     one_waller_one_ball,
     two_players_crossing,
+    test_role_multiple_targets,
     navigate_stationary_opponents
 }
 

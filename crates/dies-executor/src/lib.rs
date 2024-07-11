@@ -27,8 +27,8 @@ pub mod strategy;
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
 
-const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60);
-const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30);
+const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
+const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30); // 30 Hz
 
 enum Environment {
     Live {
