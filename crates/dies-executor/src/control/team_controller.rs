@@ -71,6 +71,13 @@ impl TeamController {
             inputs = stop_override(world_data.clone(), inputs);
         }
 
+
+        if self.strategy.get_mut(&state).is_none() {
+            return;
+        }
+        let strategy = self.strategy.get_mut(&state).unwrap();
+
+
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
@@ -145,7 +152,7 @@ impl TeamController {
 
         for (id, agent) in own_agents.iter() {
             let obstacles = world_data
-                .get_obstacles_for_player(self.strategy.get_role_type(*id).unwrap_or_default());
+                .get_obstacles_for_player(strategy.get_role_type(*id).unwrap_or_default());
 
             let obstacles = obstacles
                 .iter()

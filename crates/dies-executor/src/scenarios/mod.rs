@@ -67,7 +67,7 @@ fn two_players_crossing() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(TestRole::new(Vector2::new(-800.0, -1000.0))));
     strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
-    let mut scenario = ScenarioSetup::new(strategy);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_own_player_at(Vector2::new(-1000.0, -1000.0))
         .add_own_player_at(Vector2::new(1000.0, 1000.0));
@@ -78,7 +78,7 @@ fn navigate_stationary_opponents() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
 
-    let mut scenario = ScenarioSetup::new(strategy);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario.add_opp_player_at(Vector2::new(-500.0, 0.0));
     scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
@@ -170,8 +170,8 @@ scenarios! {
     two_players_one_ball,
     one_waller_one_ball,
     two_players_crossing,
-    navigate_stationary_opponents
-    kickoff,
+    navigate_stationary_opponents,
+    kickoff
 }
 
 #[cfg(test)]

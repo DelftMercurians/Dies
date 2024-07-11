@@ -2,7 +2,7 @@ use crate::roles::RoleCtx;
 use crate::strategy::Task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
 use crate::{PlayerControlInput, PlayerInputs};
-use dies_core::{Angle, GameState, PlayerData, PlayerId, WorldData};
+use dies_core::{Angle, GameState, PlayerData, PlayerId, RoleType, WorldData};
 use log::log;
 use nalgebra::Vector2;
 use std::collections::HashMap;
@@ -76,6 +76,9 @@ impl Role for Attacker {
         } else {
             return PlayerControlInput::new();
         }
+    }
+    fn role_type(&self) -> RoleType {
+        RoleType::PenaltyKicker
     }
 }
 
@@ -156,5 +159,9 @@ impl Strategy for PenaltyKickStrategy {
             }
         }
         inputs
+    }
+
+    fn get_role_type(&self, player_id: PlayerId) -> Option<RoleType> {
+        self.roles.get(&player_id).map(|r| r.role_type())
     }
 }

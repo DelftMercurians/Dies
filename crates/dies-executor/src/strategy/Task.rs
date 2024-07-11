@@ -68,7 +68,7 @@ impl Task3Phase {
                 }
             }
             Status3::Accomplished => {
-                input.with_position(goal).with_yaw(yaw)
+                input.with_position(goal).with_yaw(yaw);
                 Status3::Accomplished
             }
         };

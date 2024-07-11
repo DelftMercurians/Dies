@@ -2,12 +2,11 @@ use crate::roles::RoleCtx;
 use crate::strategy::Task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
 use crate::{PlayerControlInput, PlayerInputs};
-use dies_core::{Angle, GameState, PlayerData, PlayerId, WorldData};
+use dies_core::{Angle, GameState, PlayerData, PlayerId, WorldData, RoleType};
 use log::log;
 use nalgebra::Vector2;
 use std::collections::HashMap;
 use std::f64::consts::PI;
-
 /// A generator for creating a sequence of 2D positions.
 ///
 /// This struct generates positions in a specific pattern, alternating between
@@ -100,7 +99,8 @@ impl Role for Kicker {
             return self.move_to_circle.relocate(
                 player_data,
                 Vector2::new(-800.0, PI),
-                Angle::from_degrees(180.0),
+                Angle::from_degrees(0.0),
+                0.0,
             );
         }
 
@@ -112,11 +112,15 @@ impl Role for Kicker {
             return self.move_to_ball.relocate(
                 player_data,
                 ball_pos_v2,
-                Angle::from_degrees(180.0),
+                Angle::from_degrees(0.0),
+                0.0,
             );
         } else {
             return PlayerControlInput::new();
         }
+    }
+    fn role_type(&self) -> RoleType {
+        RoleType::KickoffKicker
     }
 }
 
@@ -126,8 +130,13 @@ impl Role for OtherPlayer {
         return self.move_to_half_field.relocate(
             ctx.player,
             self.fixed_position,
-            Angle::from_degrees(180.0),
+            Angle::from_degrees(0.0),
+            0.0,
         );
+    }
+
+    fn role_type(&self) -> RoleType {
+        RoleType::Player
     }
 }
 
@@ -187,5 +196,9 @@ impl Strategy for KickoffStrategy {
             }
         }
         inputs
+    }
+
+    fn get_role_type(&self, player_id: PlayerId) -> Option<RoleType> {
+        self.roles.get(&player_id).map(|r| r.role_type())
     }
 }

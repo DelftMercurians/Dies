@@ -1,9 +1,11 @@
 use dies_core::{Angle, BallData};
-use dies_core::{PlayerData, WorldData};
+use dies_core::{PlayerData};
 use nalgebra::Vector2;
 
-use crate::roles::Role;
+use crate::roles::{Role, RoleCtx};
 use crate::PlayerControlInput;
+use dies_core::{PlayerId, RoleType};
+
 
 pub struct Goalkeeper {}
 
@@ -62,8 +64,10 @@ impl Goalkeeper {
 }
 
 impl Role for Goalkeeper {
-    fn update(&mut self, player_data: &PlayerData, world: &WorldData) -> PlayerControlInput {
+    fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
+        let world = ctx.world;
+        let player_data = ctx.player;
 
         if let (Some(ball), Some(field_geom)) = (world.ball.as_ref(), world.field_geom.as_ref()) {
             let ball_y = ball.position.y;

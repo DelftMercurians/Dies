@@ -7,7 +7,6 @@ use dies_core::{
     ScenarioInfo, Vector2, Vector3, WorldData,
 };
 use std::collections::HashMap;
-use std::{collections::HashSet, time::Duration};
 
 use dies_core::WorldInstant;
 use dies_simulator::{SimulationBuilder, SimulationConfig};
