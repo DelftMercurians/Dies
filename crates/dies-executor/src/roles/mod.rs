@@ -2,6 +2,7 @@ mod skills;
 
 pub mod test_role;
 pub mod waller;
+pub mod attacker;
 
 use std::collections::HashMap;
 

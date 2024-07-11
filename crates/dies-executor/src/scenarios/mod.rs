@@ -1,5 +1,5 @@
 mod scenario;
-use crate::{roles::test_role::TestRole, roles::waller::Waller, strategy::AdHocStrategy};
+use crate::{roles::test_role::TestRole, roles::waller::Waller, roles::attacker::Attacker, strategy::AdHocStrategy};
 use dies_core::Vector2;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
@@ -63,6 +63,18 @@ fn navigate_stationary_opponents() -> ScenarioSetup {
 
     scenario
 }
+
+fn three_attackers() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(TestRole::new(Vector2::new(-800.0, -1000.0))));
+    strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_own_player_at(Vector2::new(1000.0, 1000.0));
+    scenario
+}
+
 
 /// Creates a lookup table for scenarios as a global constant.
 macro_rules! scenarios {

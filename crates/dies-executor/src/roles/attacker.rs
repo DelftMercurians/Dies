@@ -1,4 +1,4 @@
-use dies_core::{Angle, BallData, FieldGeometry, Vector2};
+use dies_core::{Angle, BallData, FieldGeometry, Vector2, WorldData};
 
 use super::RoleCtx;
 use crate::{roles::Role, PlayerControlInput};
@@ -15,61 +15,82 @@ impl Attacker {
         Self { position }
     }
 
-    /// Find the intersection point of the ball's path with the goal line and return the
-    /// target position for the player.
-    fn find_intersection(&self, ball: &BallData, world: &FieldGeometry) -> Vector2 {
-        let ball_pos = ball.position.xy();
-        let half_length = world.field_length / 2.0;
-        let goal_center = Vector2::new(-half_length, 0.0);
+    /// Calculate the distance between two points.
+    fn distance(a: Vector2, b: Vector2) -> f64 {
+        ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
+    }
 
-        // Compute the direction vector from the ball to the goal center
-        let direction = (goal_center - ball_pos).normalize();
+    fn aim_at_goal(player_pos: Vec<Vector2>, world: &WorldData) -> Angle {
+        let opp_goal_center = - world.field_length / 2.0;
+        let angle = Angle::between_points(player_pos, opp_goal_center);
+        return angle;
+    }
 
-        // Points redebuesenting the boundary of the goalkeeper area
-        let area_top_y = world.goal_width / 2.0; // top boundary y-coordinate
-        let area_bottom_y = -area_top_y; // bottom boundary y-coordinate
-        let area_right_x = -half_length + world.penalty_area_depth; // right boundary x-coordinate
+    fn aim_at_ball(player_pos: Vec<Vector2>, ball_pos: Vec<Vector2>) -> Angle {
+        let angle = Angle::between_points(player_pos, ball_pos);
+        return angle;
+    }
 
-        // Intersect with the top boundary
-        if direction.y != 0.0 {
-            let t = (area_top_y - ball_pos.y) / direction.y;
-            let x = ball_pos.x + t * direction.x;
-            if x <= area_right_x && x >= -half_length {
-                return Vector2::new(x + self.offset, area_top_y);
-            }
-
-            // Intersect with the bottom boundary
-            let t = (area_bottom_y - ball_pos.y) / direction.y;
-            let x = ball_pos.x + t * direction.x;
-            if x <= area_right_x && x >= -half_length {
-                return Vector2::new(x + self.offset, area_bottom_y);
+    fn closest_player_to_ball(world: &WorldData) -> Option<PlayerData> {
+        let mut min_distance = f64::MAX;
+        let mut closest_player = None;
+        for player in world.own_players.iter() {
+            let distance = distance(player.position, world.ball.position.xy());
+            if distance < min_distance {
+                min_distance = distance;
+                closest_player = Some(player);
             }
         }
+        return closest_player;
+    }
 
-        // Intersect with the right boundary
-        if direction.x != 0.0 {
-            let t = (area_right_x - ball_pos.x) / direction.x;
-            let y = ball_pos.y + t * direction.y;
-            if y.abs() <= area_top_y {
-                return Vector2::new(area_right_x, y + self.offset);
+    /// Go to given position
+    fn go_to_pos() -> Vector2 {
+        return self.position;
+    }
+
+    fn closest_player_to_passer(world: &WorldData, passer_pos: Vec<Vector2>) -> Option<u8> {
+        let mut min_distance = f64::MAX;
+        let mut closest_player = None;
+        for player in world.own_players.iter() {
+            let distance = distance(player.position, passer_pos);
+            if distance < min_distance {
+                min_distance = distance;
+                closest_player = Some(player.id);
             }
         }
-
-        // Default fallback to ball position (should not happen in normal cases)
-        Vector2::new(area_right_x, ball_pos.y)
+        return closest_player;
+    
     }
 }
 
 impl Role for Attacker {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        if let (Some(ball), Some(geom), Some(player)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref(), ctx.player.as_ref()) {
-            let target_pos = self.find_intersection(ball, geom);
+        if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
+            let passer = closest_player_to_ball(ctx.world);
+            for player in ctx.players.iter() {
+                if player.id == passer.id {
+                    let target_pos = ball.position.xy();
+                    let target_angle = aim_at_ball(ctx.player.position, target_pos);
+                    let dribble_speed = 1.0;
+                    let mut input = PlayerControlInput::new();
+                    while player.breakbeam_ball_detected == false {
+                        input.with_position(target_pos);
+                        input.with_yaw(target_angle);
+                        input.with_dribbling_speed(dribble_speed);
+                        return input;
+                    }
+                }
+                input.with_position(self.position);
+                input.with_yaw(aim_at_goal(ctx.player.position, ctx.world));
+            }
+            let target_pos = self.go_to_pos();
             let mut input = PlayerControlInput::new();
             input.with_position(target_pos);
-            // input.with_yaw(Angle::between_points(
-            //     ctx.player.position,
-            //     ball.position.xy(),
-            // ));
+            input.with_yaw(Angle::between_points(
+                ctx.player.position,
+                ball.position.xy(),
+            ));
             input
         } else {
             PlayerControlInput::new()
