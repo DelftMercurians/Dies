@@ -6,12 +6,15 @@ use crate::{roles::Role, PlayerControlInput, KickerControlInput};
 /// line, acting as a wall to block the ball from reaching the goal.
 pub struct Attacker {
     position: Vector2,
+    passer_id: Option<PlayerId>,
+    shooter_id: Option<PlayerId>,
+    passer_kicked: bool,
 }
 
 impl Attacker {
     /// Create a new Waller role with the given offset from the intersection point.
     pub fn new(position: Vector2) -> Self {
-        Self { position }
+        Self { position, passer_id: None, shooter_id: None, passer_kicked: false}
     }
 
     /// Calculate the distance between two points.
@@ -69,11 +72,19 @@ impl Attacker {
 impl Role for Attacker {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
-            let passer_id = self.closest_player_to_ball(ctx.world, ball);
-            let passer_pos = ctx.world.own_players.iter().find(|p| p.id == passer_id.unwrap()).unwrap().position;
-            let shooter_id = self.closest_player_to_passer(ctx.world, passer_pos, passer_id.unwrap());
+            if self.passer_id == None {
+                // println!("Finding passer and shooter");
+                self.passer_id = self.closest_player_to_ball(ctx.world, ball);
+                self.shooter_id = self.closest_player_to_passer(ctx.world, ctx.world.own_players.iter().find(|p| p.id == self.passer_id.unwrap()).unwrap().position, self.passer_id.unwrap());
+            }
+            let passer_pos = ctx.world.own_players.iter().find(|p| p.id == self.passer_id.unwrap()).unwrap().position;
+
+            // let passer_id = self.closest_player_to_ball(ctx.world, ball);
+            // let passer_pos = ctx.world.own_players.iter().find(|p| p.id == passer_id.unwrap()).unwrap().position;
+            // let shooter_id = self.closest_player_to_passer(ctx.world, passer_pos, passer_id.unwrap());
+
             let mut input = PlayerControlInput::new();
-                if ctx.player.id == passer_id.unwrap() {
+                if ctx.player.id == self.passer_id.unwrap() {
                     // println!("passer ID: {}", passer_id.unwrap());
                     // let mut input = PlayerControlInput::new();
                     let target_pos = ball.position.xy();
@@ -89,33 +100,40 @@ impl Role for Attacker {
                     }
                     // Input to find the closest player, then face the shooter and pass the ball
                     if self.distance(ctx.player.position, self.position) < 100.0 {
-                        let shooter_id = self.closest_player_to_passer(ctx.world, passer_pos, passer_id.unwrap());
-                        let shooter_pos = ctx.world.own_players.iter().find(|p| p.id == shooter_id.unwrap()).unwrap().position;
+                        // let shooter_id = self.closest_player_to_passer(ctx.world, passer_pos, self.passer_id.unwrap());
+                        let shooter_pos = ctx.world.own_players.iter().find(|p| p.id == self.shooter_id.unwrap()).unwrap().position;
                         dies_core::debug_cross("ShooterPos", shooter_pos, dies_core::DebugColor::Purple);
                         let target_angle = self.aim_at_player(passer_pos, shooter_pos);
                         input.with_yaw(target_angle);
                         input.with_dribbling(1.0);
                         if (target_angle - ctx.player.yaw).abs() < 0.1 {
                             println!("Passing the ball");
+                            self.passer_kicked = true;
                             input.with_kicker(KickerControlInput::Kick);
+                            
                         }
                         return input;
                         
                     }
                 }
 
-                if ctx.player.id == shooter_id.unwrap() {
+                if ctx.player.id == self.shooter_id.unwrap() {
                     let target_pos = self.position;
                     let target_angle = self.aim_at_player(passer_pos, ctx.player.position);
                     let dribble_speed = 1.0;
-                    while self.distance(ctx.player.position, self.position) > 100.0 {
-                        // Input to move to the ball and dribble.
-                        input.with_position(target_pos);
-                        input.with_yaw(target_angle);
-                        input.with_dribbling(dribble_speed);
-                        return input;
+                    println!("Passer Kicked : {}", self.passer_kicked);
+                    if self.passer_kicked == true {
+                        println!("Shooter ID: {}", self.shooter_id.unwrap());
+                        while self.distance(ctx.player.position, ball.position.xy()) > 300.0 {
+                            // Input to move to the ball and dribble.
+                            input.with_position(target_pos);
+                            input.with_yaw(self.aim_at_ball(ctx.player.position, ball.position.xy()));
+                            input.with_dribbling(dribble_speed);
+                            input.with_kicker(KickerControlInput::Arm);
+                            return input;
+                        }
                     }
-
+                    // If the shooter has the ball nearby he shoots
                     if self.distance(ctx.player.position, self.position) < 100.0 && self.distance(ctx.player.position, ball.position.xy()) < 300.0 {
                         let target_angle = self.aim_at_goal(ctx.player.position, geom);
                         input.with_yaw(target_angle);
