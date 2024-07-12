@@ -103,7 +103,7 @@ impl BasestationHandle {
 
         // Launch a blocking thread for writing to the serial port
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Message>();
-        let (info_tx, info_rx) = broadcast::channel::<PlayerFeedbackMsg>(1);
+        let (info_tx, info_rx) = broadcast::channel::<PlayerFeedbackMsg>(16);
 
         let mut connection = match config.protocol {
             BaseStationProtocol::V0 => {
