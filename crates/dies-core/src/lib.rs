@@ -3,6 +3,7 @@ mod debug_info;
 mod executor_info;
 mod executor_settings;
 mod geom;
+mod math;
 mod player;
 mod world;
 
@@ -13,6 +14,7 @@ pub use debug_info::*;
 pub use executor_info::*;
 pub use executor_settings::*;
 pub use geom::*;
+pub use math::*;
 pub use player::*;
 pub use world::*;
 

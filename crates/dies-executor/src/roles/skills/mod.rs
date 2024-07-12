@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use dies_core::{Angle, Vector2};
+use dies_core::{find_intersection, Angle, Vector2};
 
 use crate::PlayerControlInput;
 
@@ -115,12 +115,14 @@ impl Skill for Wait {
 /// A skill that fetches the ball
 pub struct FetchBall {
     max_relative_speed: f64,
+    initial_ball_direction: Option<Vector2>,
 }
 
 impl FetchBall {
     pub fn new() -> Self {
         Self {
             max_relative_speed: 1000.0,
+            initial_ball_direction: None,
         }
     }
 }
@@ -130,16 +132,38 @@ impl Skill for FetchBall {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let ball_pos = ball.position.xy();
             let player_pos = ctx.player.position;
+            let inital_ball_direction = self
+                .initial_ball_direction
+                .get_or_insert((ball_pos - player_pos).normalize());
+            let ball_normal = Vector2::new(inital_ball_direction.y, -inital_ball_direction.x);
             let distance = (ball_pos - player_pos).norm();
             if distance < 100.0 {
                 return SkillProgress::success();
             }
 
-            let heading = Angle::between_points(player_pos, ball_pos);
-            let target_pos = ball_pos + heading * Vector2::new(-100.0, 0.0);
             let mut input = PlayerControlInput::new();
-            input.with_position(target_pos);
+            let heading = Angle::between_points(player_pos, ball_pos);
             input.with_yaw(heading);
+            if ball.velocity.norm() < 100.0 {
+                // If the ball is too slow, just go to the ball
+                let target_pos = ball_pos + heading * Vector2::new(-100.0, 0.0);
+                input.with_position(target_pos);
+            } else {
+                // If the ball is moving, try to intercept it
+                let intersection = find_intersection(
+                    player_pos,
+                    ball_normal,
+                    ball_pos,
+                    ball.velocity.xy().normalize(),
+                );
+                if let Some(intersection) = intersection {
+                    input.with_position(intersection);
+                } else {
+                    input.with_position(ball_pos);
+                }
+                let target_pos = intersection.unwrap_or(ball_pos);
+                input.with_position(target_pos);
+            }
 
             let relative_velocity = ball.velocity.xy() - ctx.player.velocity;
             if relative_velocity.norm() > self.max_relative_speed {
