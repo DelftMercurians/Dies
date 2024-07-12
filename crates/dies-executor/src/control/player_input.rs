@@ -150,6 +150,12 @@ impl PlayerControlInput {
         self.kicker = kicker;
         self
     }
+
+    /// Set the target velocity of the player.
+    pub fn with_global_velocity(&mut self, vel: Vector2) -> &mut Self {
+        self.velocity = Velocity::Global(vel);
+        self
+    }
 }
 
 /// Kicker state in the current update.

@@ -6,19 +6,24 @@ use crate::PlayerControlInput;
 
 use super::{Skill, SkillCtx, SkillProgress};
 
-const DEFAULT_TOLERANCE: f64 = 70.0;
+const DEFAULT_POS_TOLERANCE: f64 = 70.0;
+const DEFAULT_VEL_TOLERANCE: f64 = 10.0;
 
 /// A skill that makes the player go to a specific position
 pub struct GoToPositionSkill {
-    target: Vector2,
-    tolerance: f64,
+    target_pos: Vector2,
+    target_velocity: Vector2,
+    pos_tolerance: f64,
+    velocity_tolerance: f64,
 }
 
 impl GoToPositionSkill {
     pub fn new(target: Vector2) -> Self {
         Self {
-            target,
-            tolerance: DEFAULT_TOLERANCE,
+            target_pos: target,
+            target_velocity: Vector2::zeros(),
+            pos_tolerance: DEFAULT_POS_TOLERANCE,
+            velocity_tolerance: DEFAULT_VEL_TOLERANCE,
         }
     }
 }
@@ -26,12 +31,14 @@ impl GoToPositionSkill {
 impl Skill for GoToPositionSkill {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let position = ctx.player.position;
-        let distance = (self.target - position).norm();
-        if distance < self.tolerance {
+        let distance = (self.target_pos - position).norm();
+        let dv = (self.target_velocity - ctx.player.velocity).norm();
+        if distance < self.pos_tolerance && dv < self.velocity_tolerance {
             return SkillProgress::success();
         }
         let mut input = PlayerControlInput::new();
-        input.with_position(self.target);
+        input.with_position(self.target_pos);
+        input.with_global_velocity(self.target_velocity);
         SkillProgress::Continue(input)
     }
 }
