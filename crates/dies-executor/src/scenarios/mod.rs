@@ -3,13 +3,13 @@ mod scenario;
 use serde::{Deserialize, Serialize};
 
 use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
-use dies_core::GameState::{self, Kickoff, PrepareKickoff};
+use dies_core::GameState::{self, Kickoff, Penalty, PenaltyRun, PrepareKickoff, PreparePenalty};
 use dies_core::{Vector2, Vector3};
 use scenario::ScenarioSetup;
 
 use crate::roles::waller::Waller;
 use crate::strategy::kickoff::KickoffStrategy;
-
+use crate::strategy::penalty_kick::PenaltyKickStrategy;
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
 fn empty_scenario() -> ScenarioSetup {
@@ -34,6 +34,20 @@ fn two_players_one_ball() -> ScenarioSetup {
         .add_ball()
         .add_own_player_at(Vector2::zeros())
         .add_own_player_at(Vector2::new(-500.0, 0.0));
+    scenario
+}
+
+fn penalty_kick() -> ScenarioSetup {
+    let strategy = PenaltyKickStrategy::new(None);
+    let mut scenario = ScenarioSetup::new(strategy, Some(PreparePenalty));
+    scenario.add_strategy(Penalty, PenaltyKickStrategy::new(None));
+    scenario.add_strategy(PenaltyRun, PenaltyKickStrategy::new(None));
+    scenario
+        .add_ball_at(Vector3::new(0.0, 300.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_opp_player_at(Vector2::new(3500.0, 0.0))
+        .add_own_player_at(Vector2::new(-3500.0, 0.0));
     scenario
 }
 
@@ -171,7 +185,8 @@ scenarios! {
     one_waller_one_ball,
     two_players_crossing,
     navigate_stationary_opponents,
-    kickoff
+    kickoff,
+    penalty_kick
 }
 
 #[cfg(test)]

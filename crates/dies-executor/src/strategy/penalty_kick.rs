@@ -2,7 +2,7 @@ use crate::roles::RoleCtx;
 use crate::strategy::Task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
 use crate::{PlayerControlInput, PlayerInputs};
-use dies_core::{Angle, GameState, PlayerData, PlayerId, RoleType, WorldData};
+use dies_core::{Angle, BallData, GameState, PlayerData, PlayerId, RoleType, WorldData};
 use log::log;
 use nalgebra::Vector2;
 use std::collections::HashMap;
@@ -24,6 +24,7 @@ pub struct Attacker {
     move_to_ball: Task3Phase,
     manipulating_ball: Task3Phase,
     kick: Task4Phase,
+    init_ball: Option<BallData>
 }
 
 
@@ -33,6 +34,7 @@ impl Attacker {
             move_to_ball: Task3Phase::new(),
             manipulating_ball: Task3Phase::new(),
             kick: Task4Phase::new(),
+            init_ball: None,
         }
     }
 }
@@ -47,7 +49,8 @@ impl Role for Attacker {
         if self.move_to_ball.is_accomplished() && gamestate == GameState::Penalty {
             //stage 3: kick
             if self.manipulating_ball.is_accomplished(){
-                self.kick.kick();
+                println!("stage 3: kick");
+                return self.kick.kick();
             }
                 //stage 2: dribbling
             else {
@@ -56,22 +59,29 @@ impl Role for Attacker {
                     let pos = player.position;
                     pos.x >= 3500.0 && pos.x <= 4500.0 && pos.y >= -1000.0 && pos.y <= 1000.0
                 }).map(|player|
-                    (player.position - player_data.position).angle(&Vector2::new(1.0, 0.0))
+                    Angle::between_points(player.position, player_data.position)
                 );
-                let target = goalkeeper_dir.map_or(0.0, |dir| {
-                    if dir > 0.0 {
-                        (Vector2::new(4500.0, -1000.0) - player_data.position).angle(&Vector2::new(1.0, 0.0))
+                let target:Angle = goalkeeper_dir.map_or(Angle::from_radians(0.0), |dir| {
+                    if dir.radians() > 0.0 {
+                        Angle::between_points(player_data.position, Vector2::new(4500.0, -1000.0))
                     } else {
-                        (Vector2::new(4500.0, 1000.0) - player_data.position).angle(&Vector2::new(1.0, 0.0))
+                        Angle::between_points(player_data.position, Vector2::new(4500.0, 1000.0))
                     }
                 });
-                self.manipulating_ball.relocate(player_data, player_data.position, Angle::from_radians(target), 1.0);
+                println!("stage 2: dribbling, target: {:?}", target);
+                return self.manipulating_ball.relocate(player_data, player_data.position, target, 1.0);
             }
         }
         // stage1: move to ball
         if let Some(ball) = &world_data.ball {
-            let ball_pos = ball.position;
-            let dir = (ball_pos.xy() - player_data.position).angle(&Vector2::new(1.0, 0.0));
+
+            println!("stage1: {}", self.move_to_ball.is_accomplished());
+            if self.init_ball.is_none() {
+                self.init_ball = Some(ball.clone());
+            }
+            let ball_pos = self.init_ball.as_ref().unwrap().position;
+            let dir_vec = (ball_pos.xy() - player_data.position);
+            let dir = dir_vec.y.atan2(dir_vec.x);
             return self.move_to_ball.relocate(player_data, ball_pos.xy(), Angle::from_radians(dir), 0.0);
         } else {
             return PlayerControlInput::new();
@@ -145,12 +155,13 @@ impl Strategy for PenaltyKickStrategy {
         }
 
         let mut inputs = PlayerInputs::new();
+        println!("game state: {:?}", world.current_game_state.game_state);
         for (id, role) in self.roles.iter_mut() {
             if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
                 let player_data = player_data.clone();
 
                 let mut input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
-                if (world.current_game_state.game_state != PenaltyRun && player_data.id == self.gate_keeper_id.unwrap()){
+                if world.current_game_state.game_state != PenaltyRun && self.gate_keeper_id.map_or(false, |id| id == player_data.id) {
                     input = PlayerControlInput::new();
                 }
                 inputs.insert(*id, input);
