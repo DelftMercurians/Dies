@@ -115,7 +115,7 @@ macro_rules! invoke_skill {
     ($ctx:ident, $key:tt, $skill:expr) => {{
         let debug_key = format!("p{}.active_skill", $ctx.player.id);
         let skill_ctx = Into::<$crate::roles::SkillCtx>::into(&$ctx);
-        let skill_state = $ctx.skill_map.entry($key.to_owned()).or_insert_with(|| {
+        let skill_state = $ctx.skill_map.entry($key.to_string()).or_insert_with(|| {
             dies_core::debug_string(debug_key.clone(), stringify!($skill));
             $crate::roles::SkillState::InProgress(Box::new($skill))
         });
