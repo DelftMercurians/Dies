@@ -46,7 +46,6 @@ impl Role for FreeAttacker {
         if self.move_to_ball.is_accomplished() {
             //stage 3: kick
             if self.manipulating_ball.is_accomplished(){
-                println!("stage 3: kick");
                 return self.kick.kick();
             }
                 //stage 2: dribbling
@@ -76,8 +75,6 @@ impl Role for FreeAttacker {
         }
         // stage1: move to ball
         if let Some(ball) = &world_data.ball {
-
-            println!("stage1: {}", self.move_to_ball.is_accomplished());
             if self.init_ball.is_none() {
                 self.init_ball = Some(ball.clone());
             }
@@ -124,6 +121,7 @@ impl Strategy for FreeKickStrategy {
             if !self.roles.contains_key(&player_data.id) {
                 if us_attacking  {
                     if (!self.has_attacker){
+                        log::info!("Attacker is created");
                         self.has_attacker = true;
                         self.roles.insert(player_data.id, Box::new(FreeAttacker::new()));
                     }
@@ -132,7 +130,8 @@ impl Strategy for FreeKickStrategy {
                         let ball_pos = ball.position;
                         // get the disance between the ball and the player
                         let distance = (player_data.position - ball_pos.xy()).norm();
-                        if distance > 500.0 {
+                        if distance < 500.0 {
+                            log::info!("Player {} is moving out of the ball", player_data.id);
                             // get the target pos that is 500.0 away from the ball
                             let target = ball_pos.xy() + (player_data.position - ball_pos.xy()).normalize() * 500.0;
                             self.roles.insert(player_data.id, Box::new(OtherPlayer::new(target)));
@@ -143,7 +142,6 @@ impl Strategy for FreeKickStrategy {
         }
 
         let mut inputs = PlayerInputs::new();
-        println!("game state: {:?}", world.current_game_state.game_state);
         for (id, role) in self.roles.iter_mut() {
             if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
                 let player_data = player_data.clone();

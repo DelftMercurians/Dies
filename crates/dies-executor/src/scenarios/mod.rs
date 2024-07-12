@@ -9,6 +9,7 @@ use dies_core::RoleType::FreeKicker;
 use scenario::ScenarioSetup;
 
 use crate::roles::waller::Waller;
+use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
@@ -52,12 +53,12 @@ fn penalty_kick() -> ScenarioSetup {
 }
 
 fn free_kick() -> ScenarioSetup {
-    let strategy = PenaltyKickStrategy::new(None);
+    let strategy = FreeKickStrategy::new(None);
     let mut scenario = ScenarioSetup::new(strategy, Some(FreeKick));
     scenario
-        .add_ball_at(Vector3::new(0.0, 300.0, 0.0))
-        .add_own_player_at(Vector2::new(-200.0, 100.0))
-        .add_own_player_at(Vector2::new(-20.0, 100.0));
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_own_player_at(Vector2::new(1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
 }
 

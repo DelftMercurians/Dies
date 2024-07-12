@@ -267,7 +267,9 @@ impl WorldData {
                 GameState::BallReplacement(_) => todo!(),
                 GameState::PreparePenalty => {
                 }
-                GameState::FreeKick => todo!(),
+                GameState::FreeKick => {
+
+                }
                 GameState::Penalty => {
                 }
                 GameState::PenaltyRun => {

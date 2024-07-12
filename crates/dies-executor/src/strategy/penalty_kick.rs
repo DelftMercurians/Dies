@@ -49,7 +49,6 @@ impl Role for Attacker {
         if self.move_to_ball.is_accomplished() && gamestate == GameState::Penalty {
             //stage 3: kick
             if self.manipulating_ball.is_accomplished(){
-                println!("stage 3: kick");
                 return self.kick.kick();
             }
                 //stage 2: dribbling
@@ -68,14 +67,12 @@ impl Role for Attacker {
                         (Angle::between_points(  player_data.position, Vector2::new(4500.0, 1000.0)) + goalkeeper_dir.unwrap())/2.0
                     }
                 });
-                println!("stage 2: dribbling, target: {:?}", target);
                 return self.manipulating_ball.relocate(player_data, player_data.position, target, 1.0);
             }
         }
         // stage1: move to ball
         if let Some(ball) = &world_data.ball {
 
-            println!("stage1: {}", self.move_to_ball.is_accomplished());
             if self.init_ball.is_none() {
                 self.init_ball = Some(ball.clone());
             }
@@ -152,7 +149,6 @@ impl Strategy for PenaltyKickStrategy {
         }
 
         let mut inputs = PlayerInputs::new();
-        println!("game state: {:?}", world.current_game_state.game_state);
         for (id, role) in self.roles.iter_mut() {
             if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
                 let player_data = player_data.clone();
