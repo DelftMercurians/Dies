@@ -31,6 +31,11 @@ pub struct ControllerSettings {
     pub angle_proportional_time_window: f64,
     /// Distance used as threshold for the controller to prevent shaky behavior
     pub angle_cutoff_distance: f64,
+
+    /// Attractive force coefficient for players
+    pub force_alpha: f64,
+    /// Repulsive force coefficient for players
+    pub force_beta: f64,
 }
 
 impl Default for ControllerSettings {
@@ -48,6 +53,8 @@ impl Default for ControllerSettings {
             angle_kp: 1.0,
             angle_proportional_time_window: 0.02,
             angle_cutoff_distance: 0.,
+            force_alpha: 0.001,
+            force_beta: 0.01,
         }
     }
 }

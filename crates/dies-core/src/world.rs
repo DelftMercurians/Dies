@@ -160,6 +160,10 @@ pub struct WorldData {
 }
 
 impl WorldData {
+    pub fn get_player(&self, id: PlayerId) -> Option<&PlayerData> {
+        self.own_players.iter().find(|p| p.id == id)
+    }
+
     pub fn players_within_radius(&self, pos: Vector2, radius: f64) -> Vec<&PlayerData> {
         self.own_players
             .iter()

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::{
+    force_field::compute_force,
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
     yaw_control::YawController,

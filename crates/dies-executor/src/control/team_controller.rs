@@ -10,6 +10,7 @@ use crate::{
 };
 
 use super::{
+    force_field::compute_force,
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
