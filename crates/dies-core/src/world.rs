@@ -3,7 +3,6 @@ use std::hash::Hash;
 use std::time::Instant;
 
 use dodgy_2d::Obstacle;
-use nalgebra::Vector;
 use serde::Serialize;
 use typeshare::typeshare;
 

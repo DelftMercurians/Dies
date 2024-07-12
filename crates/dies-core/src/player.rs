@@ -1,5 +1,3 @@
-use std::default;
-
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
@@ -286,4 +284,6 @@ pub enum RoleType {
     KickoffKicker,
     /// penalty kicker
     PenaltyKicker,
+    /// freekicker
+    FreeKicker,
 }

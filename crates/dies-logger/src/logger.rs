@@ -77,7 +77,7 @@ impl AsyncProtobufLogger {
         while let Some(msg) = receiver.blocking_recv() {
             match msg {
                 WorkerMsg::Log(msg) => {
-                    if let Err(e) = log_file.write_log_message(&msg) {
+                    if let Err(_) = log_file.write_log_message(&msg) {
                      //   eprintln!("Failed to write to log file: {}", e);
                     }
                 }

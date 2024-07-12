@@ -2,8 +2,6 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
 };
-
-use log::log;
 use crate::{strategy::Strategy, PlayerControlInput};
 use super::{
     player_controller::PlayerController,
@@ -11,7 +9,6 @@ use super::{
 };
 use dies_core::{ControllerSettings, GameState, PlayerId, Vector2};
 use dies_core::{PlayerCmd, WorldData};
-use crate::strategy::AdHocStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use dodgy_2d::{Agent, AvoidanceOptions};
 

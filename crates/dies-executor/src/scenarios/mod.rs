@@ -3,8 +3,9 @@ mod scenario;
 use serde::{Deserialize, Serialize};
 
 use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
-use dies_core::GameState::{self, Kickoff, Penalty, PenaltyRun, PrepareKickoff, PreparePenalty};
+use dies_core::GameState::{self, FreeKick, Kickoff, Penalty, PenaltyRun, PrepareKickoff, PreparePenalty};
 use dies_core::{Vector2, Vector3};
+use dies_core::RoleType::FreeKicker;
 use scenario::ScenarioSetup;
 
 use crate::roles::waller::Waller;
@@ -46,8 +47,17 @@ fn penalty_kick() -> ScenarioSetup {
         .add_ball_at(Vector3::new(0.0, 300.0, 0.0))
         .add_own_player_at(Vector2::new(-1000.0, 1000.0))
         .add_own_player_at(Vector2::new(-1000.0, -1000.0))
-        .add_opp_player_at(Vector2::new(3500.0, 0.0))
-        .add_own_player_at(Vector2::new(-3500.0, 0.0));
+        .add_opp_player_at(Vector2::new(3500.0, 0.0));
+    scenario
+}
+
+fn free_kick() -> ScenarioSetup {
+    let strategy = PenaltyKickStrategy::new(None);
+    let mut scenario = ScenarioSetup::new(strategy, Some(FreeKick));
+    scenario
+        .add_ball_at(Vector3::new(0.0, 300.0, 0.0))
+        .add_own_player_at(Vector2::new(-200.0, 100.0))
+        .add_own_player_at(Vector2::new(-20.0, 100.0));
     scenario
 }
 
@@ -186,7 +196,9 @@ scenarios! {
     two_players_crossing,
     navigate_stationary_opponents,
     kickoff,
-    penalty_kick
+    penalty_kick,
+    one_player,
+    free_kick
 }
 
 #[cfg(test)]

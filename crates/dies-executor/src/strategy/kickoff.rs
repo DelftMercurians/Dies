@@ -1,5 +1,5 @@
 use crate::roles::RoleCtx;
-use crate::strategy::Task::{Task3Phase, Task4Phase};
+use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
 use crate::{PlayerControlInput, PlayerInputs};
 use dies_core::{Angle, GameState, PlayerData, PlayerId, WorldData, RoleType};

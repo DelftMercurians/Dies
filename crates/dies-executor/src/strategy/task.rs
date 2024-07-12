@@ -127,11 +127,4 @@ impl Task4Phase {
         self.status = new_status;
         res
     }
-
-    pub fn is_accomplished(&self) -> bool {
-        match self.status {
-            Status4::Accomplished => true,
-            _ => false,
-        }
-    }
 }

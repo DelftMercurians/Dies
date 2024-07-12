@@ -1,6 +1,7 @@
-mod Task;
+mod task;
 pub mod kickoff;
 pub mod penalty_kick;
+pub mod free_kick;
 
 use std::collections::HashMap;
 

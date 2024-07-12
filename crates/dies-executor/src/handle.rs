@@ -1,11 +1,10 @@
-use std::fmt;
+
 use anyhow::{anyhow, Result};
 use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dies_core::{ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, WorldUpdate};
-use dies_core::GcRefereeMsg;
 use dies_protos::ssl_gc_engine::continue_action::State;
 use dies_protos::ssl_gc_referee_message::referee::Command;
 
