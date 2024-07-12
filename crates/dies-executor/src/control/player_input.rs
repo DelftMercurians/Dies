@@ -152,8 +152,12 @@ impl PlayerControlInput {
     }
 
     /// Set the target velocity of the player.
-    pub fn with_global_velocity(&mut self, vel: Vector2) -> &mut Self {
-        self.velocity = Velocity::Global(vel);
+    pub fn add_global_velocity(&mut self, vel: Vector2) -> &mut Self {
+        self.velocity = match self.velocity {
+            Velocity::Global(v) => Velocity::Global(v + vel),
+            Velocity::Local(_) => Velocity::Global(vel),
+        };
+
         self
     }
 }

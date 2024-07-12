@@ -1,5 +1,6 @@
 mod skills;
 
+pub mod dribble_role;
 pub mod test_role;
 pub mod waller;
 
@@ -55,7 +56,7 @@ impl<'a> From<&RoleCtx<'a>> for SkillCtx<'a> {
     }
 }
 
-pub trait Role: Send {
+pub trait Role<S = ()>: Send {
     /// Updates the role and returns the control input for the player
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput;
 
@@ -89,6 +90,11 @@ impl SkillProgress {
     /// Creates a new `SkillProgress` with a `Success` result
     pub fn success() -> SkillProgress {
         SkillProgress::Done(SkillResult::Success)
+    }
+
+    /// Creates a new `SkillProgress` with a `Failure` result
+    pub fn failure() -> SkillProgress {
+        SkillProgress::Done(SkillResult::Failure)
     }
 }
 

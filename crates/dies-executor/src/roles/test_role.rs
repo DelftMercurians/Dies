@@ -1,7 +1,7 @@
 use super::RoleCtx;
 use crate::{
     roles::{
-        skills::{GoToPositionSkill, WaitSkill},
+        skills::{GoToPosition, Wait},
         Role,
     },
     skill, PlayerControlInput,
@@ -21,8 +21,8 @@ impl TestRole {
 impl Role for TestRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         for target in &self.targets {
-            skill!(ctx, GoToPositionSkill::new(target.clone()));
-            skill!(ctx, WaitSkill::new_secs_f64(1.0));
+            skill!(ctx, GoToPosition::new(target.clone()));
+            skill!(ctx, Wait::new_secs_f64(1.0));
         }
 
         PlayerControlInput::default()

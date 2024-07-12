@@ -50,9 +50,9 @@ pub struct SimulationConfig {
     /// Delay for the execution of the command
     pub command_delay: f64,
     /// Maximum lateral acceleration in mm/s^2
-    pub max_accel: Vector<f64>,
-    /// Maximum lateral velocity in mm/s
-    pub max_vel: Vector<f64>,
+    pub max_accel: f64,
+    /// Maximum lateral speed in mm/s
+    pub max_vel: f64,
     /// Maximum angular acceleration in rad/s^2
     pub max_ang_accel: f64,
     /// Maximum angular velocity in rad/s
@@ -88,8 +88,8 @@ impl Default for SimulationConfig {
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 30.0 / 1000.0,
-            max_accel: Vector::new(50_000.0, 50_000.0, 0.0),
-            max_vel: Vector::new(50_000.0, 50_000.0, 0.0),
+            max_accel: 6_000.0,
+            max_vel: 5_000.0,
             max_ang_accel: 2.0 * 720.0f64.to_radians(),
             max_ang_vel: 720.0f64.to_radians(),
             velocity_treshold: 1.0,
@@ -386,12 +386,12 @@ impl Simulation {
 
             let vel_err = target_velocity - velocity;
             let new_vel = if vel_err.norm() > 10.0 {
-                let acc = (2.0 * vel_err).simd_clamp(-self.config.max_accel, self.config.max_accel);
+                let acc = (vel_err / dt).cap_magnitude(self.config.max_accel);
                 velocity + acc * dt
             } else {
                 target_velocity
             };
-            let new_vel = new_vel.simd_clamp(-self.config.max_vel, self.config.max_vel);
+            let new_vel = new_vel.cap_magnitude(self.config.max_vel);
             rigid_body.set_linvel(new_vel, true);
 
             let target_ang_vel = player.target_ang_velocity;
