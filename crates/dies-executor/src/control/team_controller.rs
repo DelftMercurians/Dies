@@ -89,25 +89,6 @@ impl TeamController {
             inputs = stop_override(&world_data, inputs);
         }
 
-        // Update the player controllers
-        for controller in self.player_controllers.values_mut() {
-            let player_data = world_data
-                .own_players
-                .iter()
-                .find(|p| p.id == controller.id());
-
-            if let Some(player_data) = player_data {
-                let default_input = inputs.player(controller.id());
-                let input = manual_override
-                    .get(&controller.id())
-                    .unwrap_or(&default_input);
-                controller.update(player_data, input, world_data.dt);
-            } else {
-                controller.increment_frames_misses();
-            }
-        }
-
-        // Compute cooperative avoidance velocities
         let own_agents = world_data
             .own_players
             .iter()
@@ -123,95 +104,63 @@ impl TeamController {
                             x: p.velocity.x as f32,
                             y: p.velocity.y as f32,
                         },
-                        // Not sure why, but a higher radius seems to work better
                         radius: 200.0,
-                        avoidance_responsibility: if self
-                            .player_controllers
-                            .get(&p.id)
-                            .unwrap()
-                            .target_velocity()
-                            .norm()
-                            > 0.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        avoidance_responsibility: p.velocity.norm() as f32,
                     }),
                 )
             })
             .collect::<Vec<_>>();
-        let opp_agents = world_data
-            .opp_players
-            .iter()
-            .map(|p| {
-                Cow::Owned::<Agent>(Agent {
-                    position: dodgy_2d::Vec2 {
-                        x: p.position.x as f32,
-                        y: p.position.y as f32,
-                    },
-                    velocity: dodgy_2d::Vec2 {
-                        x: p.velocity.x as f32,
-                        y: p.velocity.y as f32,
-                    },
-                    // Not sure why, but a higher radius seems to work better
-                    radius: 200.0,
-                    avoidance_responsibility: 0.,
-                })
-            })
-            .collect::<Vec<_>>();
 
-        for (id, agent) in own_agents.iter() {
-            let obstacles = world_data.get_obstacles_for_player(
-                self.strategy
-                    .get_roles()
-                    .get(id)
-                    .map(|r| r.role_type())
-                    .unwrap_or_default(),
-            );
-
-            let obstacles = obstacles.iter().map(Cow::Borrowed).collect::<Vec<_>>();
-
-            let neighbors = own_agents
+        // Update the player controllers
+        for controller in self.player_controllers.values_mut() {
+            let player_data = world_data
+                .own_players
                 .iter()
-                .filter(|(other_id, _)| *other_id != *id)
-                .map(|(_, a)| a)
-                .chain(opp_agents.iter())
-                .cloned()
-                .collect::<Vec<_>>();
+                .find(|p| p.id == controller.id());
 
-            let player_controller = self
-                .player_controllers
-                .get_mut(id)
-                .expect("Player controller not found");
-            let target_vel = player_controller.target_velocity();
-            let target_vel = dodgy_2d::Vec2 {
-                x: target_vel.x as f32,
-                y: target_vel.y as f32,
-            };
+            if let Some(player_data) = player_data {
+                let id = controller.id();
+                let default_input = inputs.player(id);
+                let input = manual_override.get(&id).unwrap_or(&default_input);
+                let is_manual = manual_override.contains_key(&id);
+                controller.update(player_data, input, world_data.dt);
 
-            if agent.avoidance_responsibility == 0.0 {
-                continue;
+                if !is_manual {
+                    let agent = &own_agents.iter().find(|(aid, _)| id == *aid).unwrap().1;
+                    let neighbors = own_agents
+                        .iter()
+                        .filter(|(other_id, _)| *other_id != id)
+                        .map(|(_, a)| a)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let target_vel = controller.target_velocity();
+                    let target_vel = dodgy_2d::Vec2 {
+                        x: target_vel.x as f32,
+                        y: target_vel.y as f32,
+                    };
+
+                    let avoidance_velocity = agent.compute_avoiding_velocity(
+                        // Neighbors - other players
+                        neighbors.as_slice(),
+                        // Obstacles
+                        &vec![],
+                        target_vel,
+                        self.settings.max_velocity as f32,
+                        world_data.dt as f32,
+                        &AvoidanceOptions {
+                            obstacle_margin: 0.0,
+                            time_horizon: 3.0,
+                            obstacle_time_horizon: 1.0,
+                        },
+                    );
+
+                    let avoidance_velocity =
+                        Vector2::new(avoidance_velocity.x as f64, avoidance_velocity.y as f64);
+                    controller.update_target_velocity_with_avoidance(avoidance_velocity);
+                }
+            } else {
+                controller.increment_frames_misses();
             }
-
-            let avoidance_velocity = agent.compute_avoiding_velocity(
-                // Neighbors - other players
-                neighbors.as_slice(),
-                // Obstacles
-                &obstacles,
-                target_vel,
-                self.settings.max_velocity as f32,
-                world_data.dt as f32,
-                &AvoidanceOptions {
-                    obstacle_margin: 100.0,
-                    time_horizon: 3.0,
-                    obstacle_time_horizon: 3.0,
-                },
-            );
-
-            let avoidance_velocity =
-                Vector2::new(avoidance_velocity.x as f64, avoidance_velocity.y as f64);
-            player_controller.update_target_velocity_with_avoidance(avoidance_velocity);
         }
     }
 

@@ -51,11 +51,7 @@ impl YawController {
                 }
             } else {
                 // Accelerate
-                let acceleration = if current_angular_velocity.abs() < self.max_angular_velocity {
-                    self.max_angular_acceleration * direction
-                } else {
-                    0.0
-                };
+                let acceleration = self.max_angular_acceleration * direction;
                 (current_angular_velocity + acceleration * dt)
                     .min(self.max_angular_velocity)
                     .max(-self.max_angular_velocity)

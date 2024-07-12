@@ -189,29 +189,29 @@ impl WorldData {
             };
             let mut obstacles = vec![field_boundary];
 
-            // Add own defence area for non-keeper robots
-            if role != RoleType::Goalkeeper {
-                let defence_area = create_bbox_from_rect(
-                    Vector2::new(
-                        -field_geom.field_length + field_geom.penalty_area_depth / 2.0,
-                        0.0,
-                    ),
-                    field_geom.penalty_area_depth,
-                    field_geom.penalty_area_width,
-                );
-                obstacles.push(defence_area);
-            }
+            // // Add own defence area for non-keeper robots
+            // if role != RoleType::Goalkeeper {
+            //     let defence_area = create_bbox_from_rect(
+            //         Vector2::new(
+            //             -field_geom.field_length + field_geom.penalty_area_depth / 2.0,
+            //             0.0,
+            //         ),
+            //         field_geom.penalty_area_depth,
+            //         field_geom.penalty_area_width,
+            //     );
+            //     obstacles.push(defence_area);
+            // }
 
-            // Add opponent defence area for all robots
-            let defence_area = create_bbox_from_rect(
-                Vector2::new(
-                    field_geom.field_length - field_geom.penalty_area_depth / 2.0,
-                    0.0,
-                ),
-                field_geom.penalty_area_depth,
-                field_geom.penalty_area_width,
-            );
-            obstacles.push(defence_area);
+            // // Add opponent defence area for all robots
+            // let defence_area = create_bbox_from_rect(
+            //     Vector2::new(
+            //         field_geom.field_length - field_geom.penalty_area_depth / 2.0,
+            //         0.0,
+            //     ),
+            //     field_geom.penalty_area_depth,
+            //     field_geom.penalty_area_width,
+            // );
+            // obstacles.push(defence_area);
 
             match self.current_game_state.game_state {
                 GameState::Stop => {

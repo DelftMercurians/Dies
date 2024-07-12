@@ -8,7 +8,7 @@ import {
   WorldData,
 } from "../bindings";
 
-const ROBOT_RADIUS = 0.14 * 1000;
+const ROBOT_RADIUS = 0.08 * 1000;
 const BALL_RADIUS = 0.043 * 1000;
 export const DEFAULT_FIELD_SIZE = [10400, 7400] as [number, number];
 export const CANVAS_PADDING = 20;
