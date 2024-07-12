@@ -89,28 +89,6 @@ impl TeamController {
             inputs = stop_override(&world_data, inputs);
         }
 
-        let own_agents = world_data
-            .own_players
-            .iter()
-            .map(|p| {
-                (
-                    p.id,
-                    Cow::Owned::<Agent>(Agent {
-                        position: dodgy_2d::Vec2 {
-                            x: p.position.x as f32,
-                            y: p.position.y as f32,
-                        },
-                        velocity: dodgy_2d::Vec2 {
-                            x: p.velocity.x as f32,
-                            y: p.velocity.y as f32,
-                        },
-                        radius: 200.0,
-                        avoidance_responsibility: p.velocity.norm() as f32,
-                    }),
-                )
-            })
-            .collect::<Vec<_>>();
-
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
@@ -126,6 +104,7 @@ impl TeamController {
                 controller.update(player_data, input, world_data.dt);
 
                 if !is_manual {
+                    // let position = player_data.position;
                     let agent = &own_agents.iter().find(|(aid, _)| id == *aid).unwrap().1;
                     let neighbors = own_agents
                         .iter()
