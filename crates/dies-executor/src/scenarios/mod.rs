@@ -1,10 +1,10 @@
 #[deny(dead_code)]
 mod scenario;
 use crate::{
-    roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller},
+    roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller, fetcher_role::FetcherRole},
     strategy::AdHocStrategy,
 };
-use dies_core::Vector2;
+use dies_core::{Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -80,6 +80,18 @@ fn navigate_stationary_opponents() -> ScenarioSetup {
     scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
     scenario.add_opp_player_at(Vector2::new(500.0, -500.0));
     scenario.add_opp_player_at(Vector2::new(-250.0, 750.0));
+
+    scenario
+}
+
+fn fetch_ball_test () -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(FetcherRole::new()));
+
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        .add_own_player_at(Vector2::new(-2000.0, -2000.0))
+        .add_ball_at(Vector3::new(0.0,0.0, 0.0));
 
     scenario
 }
@@ -180,7 +192,8 @@ scenarios! {
     two_players_crossing,
     test_role_multiple_targets,
     navigate_stationary_opponents,
-    dribble
+    dribble,
+    fetch_ball_test
 }
 
 #[cfg(test)]

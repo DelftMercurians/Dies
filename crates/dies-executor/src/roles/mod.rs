@@ -3,6 +3,7 @@ mod skills;
 pub mod dribble_role;
 pub mod test_role;
 pub mod waller;
+pub mod fetcher_role;
 
 use std::{cell::RefCell, collections::HashMap};
 

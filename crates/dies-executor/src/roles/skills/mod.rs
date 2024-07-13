@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt::format, time::Duration};
 
 use dies_core::{find_intersection, Angle, Vector2};
 
@@ -130,6 +130,7 @@ impl FetchBall {
 impl Skill for FetchBall {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
+            let mut input = PlayerControlInput::new();
             let ball_pos = ball.position.xy();
             let player_pos = ctx.player.position;
             let inital_ball_direction = self
@@ -141,12 +142,12 @@ impl Skill for FetchBall {
                 return SkillProgress::success();
             }
 
-            let mut input = PlayerControlInput::new();
             let heading = Angle::between_points(player_pos, ball_pos);
             input.with_yaw(heading);
-            if ball.velocity.norm() < 100.0 {
+            if ball.velocity.norm() < 1000.0 {
                 // If the ball is too slow, just go to the ball
                 let target_pos = ball_pos + heading * Vector2::new(-100.0, 0.0);
+                dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "STOPPED");
                 input.with_position(target_pos);
             } else {
                 // If the ball is moving, try to intercept it
@@ -157,17 +158,23 @@ impl Skill for FetchBall {
                     ball.velocity.xy().normalize(),
                 );
                 if let Some(intersection) = intersection {
+                    dies_core::debug_string(format!("p{}.BallState", ctx.player.id), format!("INTERCEPT, ballvel_norm is: {}", ball.velocity.norm()));
+
                     input.with_position(intersection);
                 } else {
+                    dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "cannot intercept, go to ball");
+
                     input.with_position(ball_pos);
                 }
+                //return the intersection if it is valid, otherwise return the ball position
+
                 let target_pos = intersection.unwrap_or(ball_pos);
                 input.with_position(target_pos);
             }
 
             let relative_velocity = ball.velocity.xy() - ctx.player.velocity;
             if relative_velocity.norm() > self.max_relative_speed {
-                input.add_global_velocity(relative_velocity);
+                input.add_global_velocity(relative_velocity.normalize() * self.max_relative_speed);
             }
 
             SkillProgress::Continue(input)
