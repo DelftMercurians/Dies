@@ -43,12 +43,12 @@ impl YawController {
 
             if error.abs() <= stopping_distance {
                 // Decelerate
-                if current_angular_velocity * direction > 0.0 {
-                    (current_angular_velocity.abs() - self.max_angular_acceleration).max(0.0)
-                        * direction
-                } else {
-                    0.0
-                }
+                // if current_angular_velocity * direction > 0.0 {
+                (current_angular_velocity.abs() - self.max_angular_acceleration * dt).max(0.0)
+                    * direction
+                // } else {
+                //     0.0
+                // }
             } else {
                 // Accelerate
                 let acceleration = self.max_angular_acceleration * direction;

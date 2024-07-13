@@ -25,6 +25,6 @@ impl Role for FetcherRole {
         
         skill!(ctx, FetchBall::new());
 
-        PlayerControlInput::new().with_dribbling(FetchBall::new().dribbling_distance).clone()
+        PlayerControlInput::new().with_dribbling(1.0).clone()
     }
 }

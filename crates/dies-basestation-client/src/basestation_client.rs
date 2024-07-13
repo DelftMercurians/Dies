@@ -170,8 +170,8 @@ impl BasestationHandle {
                     Err(mpsc::error::TryRecvError::Empty) => {}
                 }
 
-                if last_cmd_time.elapsed().as_secs_f32() >= 3.0 {
-                    if last_cmd_time.elapsed().as_secs_f32() - 3.0 < 1.0 / 30.0 {
+                if last_cmd_time.elapsed().as_secs_f32() >= 1.0 {
+                    if last_cmd_time.elapsed().as_secs_f32() - 1.0 < 1.0 / 30.0 {
                         log::warn!("Command timeout, sending stop to all robots");
                     }
 

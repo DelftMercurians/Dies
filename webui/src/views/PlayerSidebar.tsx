@@ -79,6 +79,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
   const [customFunction, setCustomFunction] = useState<
     ((data: GraphData) => number) | null
   >(null);
+  const [keyboardMode, setKeyboardMode] = useState<"local" | "global">("global");
 
   const manualControl =
     typeof selectedPlayerId === "number" &&
@@ -87,6 +88,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
     playerId: manualControl && keyboardControl ? selectedPlayerId : null,
     speed,
     angularSpeedDegPerSec,
+    mode: keyboardMode,
   });
 
   const debugData = useDebugData();
@@ -230,6 +232,18 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                 onCheckedChange={setKeyboardControl}
               />
               <Label htmlFor="keyboard-control">Keyboard Control</Label>
+            </div>
+          </SimpleTooltip>
+
+          <SimpleTooltip title="Whether to control the robot in local or global frame">
+            <div className="flex flex-row gap-2 items-center">
+              <Switch
+                id="keyboard-mode"
+                checked={keyboardMode === "global"}
+                disabled={keyboardControl !== true}
+                onCheckedChange={(checked) => setKeyboardMode(checked ?  "global" : "local")}
+              />
+              <Label htmlFor="keyboard-mode">Global keyboard control</Label>
             </div>
           </SimpleTooltip>
 

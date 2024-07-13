@@ -114,21 +114,25 @@ impl Skill for Wait {
 
 /// A skill that fetches the ball
 pub struct FetchBall {
-    pub dribbling_distance: f64,
-    pub dribbling_speed: f64,
-    pub stop_distance: f64,
-    pub max_relative_speed: f64,
-    pub initial_ball_direction: Option<Vector2>,
+    dribbling_distance: f64,
+    dribbling_speed: f64,
+    stop_distance: f64,
+    max_relative_speed: f64,
+    initial_ball_direction: Option<Vector2>,
+    last_good_heading: Option<Angle>,
+    initial_ball_velocity: Option<Angle>,
 }
 
 impl FetchBall {
     pub fn new() -> Self {
         Self {
             dribbling_distance: 1000.0,
-            dribbling_speed: 3.0,
+            dribbling_speed: 1.0,
             stop_distance: 200.0,
             max_relative_speed: 1000.0,
             initial_ball_direction: None,
+            last_good_heading: None,
+            initial_ball_velocity: None,
         }
     }
 }
@@ -138,25 +142,42 @@ impl Skill for FetchBall {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
             let ball_pos = ball.position.xy();
+            let ball_speed = ball.velocity.xy().norm();
             let player_pos = ctx.player.position;
             let inital_ball_direction = self
                 .initial_ball_direction
                 .get_or_insert((ball_pos - player_pos).normalize());
+            let initial_ball_velocity = self.initial_ball_velocity.or_else(|| {
+                if ball.velocity.norm() > 10.0 {
+                    Some(Angle::from_vector(ball.velocity.xy()))
+                } else {
+                    None
+                }
+            });
             let ball_normal = Vector2::new(inital_ball_direction.y, -inital_ball_direction.x);
             let distance = (ball_pos - player_pos).norm();
-            
-            if distance < self.stop_distance {
+
+            if ctx.player.breakbeam_ball_detected {
                 return SkillProgress::success();
             }
 
-            let heading = Angle::between_points(player_pos, ball_pos);
-            input.with_yaw(heading);
-            if ball.velocity.norm() < 1000.0 {
+            let ball_angle = {
+                let angle: Angle = Angle::between_points(player_pos, ball_pos);
+                if distance > 50.0 {
+                    self.last_good_heading = Some(angle);
+                    angle
+                } else {
+                    self.last_good_heading.unwrap_or(angle)
+                }
+            };
+            input.with_yaw(ball_angle);
+
+            if ball_speed < 100.0 {
                 // If the ball is too slow, just go to the ball
-                let target_pos = ball_pos + heading * Vector2::new(-self.stop_distance, 0.0);
+                let target_pos = ball_pos + ball_angle * Vector2::new(-self.stop_distance, 0.0);
                 dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "STOPPED");
                 input.with_position(target_pos);
-            } else {
+            } else if ball_speed > 0.0 {
                 // If the ball is moving, try to intercept it
                 let intersection = find_intersection(
                     player_pos,
@@ -167,32 +188,52 @@ impl Skill for FetchBall {
 
                 //return the intersection if it is valid, otherwise return the ball position
                 if let Some(intersection) = intersection {
-                    
-                    dies_core::debug_cross(format!("p{}.BallIntersection", ctx.player.id), intersection, dies_core::DebugColor::Purple);
-                    dies_core::debug_string(format!("p{}.BallState", ctx.player.id), format!("INTERCEPT, ballvel_norm is: {}", ball.velocity.norm()));
+                    dies_core::debug_cross(
+                        format!("p{}.BallIntersection", ctx.player.id),
+                        intersection,
+                        dies_core::DebugColor::Purple,
+                    );
+                    dies_core::debug_string(
+                        format!("p{}.BallState", ctx.player.id),
+                        format!("INTERCEPT, ballvel_norm is: {}", ball.velocity.norm()),
+                    );
 
                     input.with_position(intersection);
                 } else {
-                    dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "cannot intercept, go to ball");
+                    dies_core::debug_string(
+                        format!("p{}.BallState", ctx.player.id),
+                        "cannot intercept, go to ball",
+                    );
 
                     input.with_position(ball_pos);
                 }
+                // input.with_yaw(
+                //     initial_ball_velocity
+                //         .unwrap_or(Angle::from_vector(inital_ball_direction.clone())),
+                // );
             }
-            
+
             // if we're close enough, use a PID to override the velocity
             // commands of the position controller
 
             // this is meant to avoid touching the ball at high speeds and losing control
             // maybe this issue is not present in real life, it happens in the sim
-            if distance < self.dribbling_distance && ball.velocity.norm() < 1000.0{
+            if distance < self.dribbling_distance && ball_speed < 200.0 {
                 input.with_dribbling(self.dribbling_speed);
                 // override the velocity inverse to the distance
                 // at distance 0, the velocity is 0
                 // at distance dribbling_distance, the velocity max_relative_speed
-                dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "overriding velocity");
+                // dies_core::debug_string(
+                //     format!("p{}.BallState", ctx.player.id),
+                //     "overriding velocity",
+                // );
 
                 input.position = None;
-                input.velocity = Velocity::global(distance * (self.max_relative_speed / self.dribbling_distance) * (ball_pos - player_pos).normalize());
+                input.velocity = Velocity::global(
+                    distance
+                        * (self.max_relative_speed / self.dribbling_distance)
+                        * (ball_pos - player_pos).normalize(),
+                );
             }
 
             SkillProgress::Continue(input)

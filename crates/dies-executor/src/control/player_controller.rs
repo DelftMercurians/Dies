@@ -103,7 +103,7 @@ impl PlayerController {
 
     /// Get the current target velocity of the player.
     pub(super) fn target_velocity(&self) -> Vector2 {
-        self.target_velocity
+        self.last_yaw.rotate_vector(&self.target_velocity)
     }
 
     /// Get the current command for the player.
@@ -243,13 +243,13 @@ impl PlayerController {
     }
 
     pub fn update_target_velocity_with_avoidance(&mut self, target_velocity: Vector2) {
-        self.target_velocity = target_velocity;
-        // dies_core::debug_line(
-        //     format!("p{}.target_velocity", self.id),
-        //     self.last_pos,
-        //     self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
-        //     dies_core::DebugColor::Red,
-        // );
+        self.target_velocity = self.last_yaw.inv().rotate_vector(&target_velocity);
+        dies_core::debug_line(
+            format!("p{}.target_velocity", self.id),
+            self.last_pos,
+            self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+            dies_core::DebugColor::Green,
+        );
     }
 }
 

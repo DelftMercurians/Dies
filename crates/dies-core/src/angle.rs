@@ -41,6 +41,10 @@ impl Angle {
         Self::from_radians(angle)
     }
 
+    pub fn from_vector(v: Vector2) -> Self {
+        Self::between_points(Vector2::x(), v)
+    }
+
     /// Get the angle in radians.
     pub fn radians(&self) -> f64 {
         self.0
