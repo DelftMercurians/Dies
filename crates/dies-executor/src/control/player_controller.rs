@@ -159,13 +159,13 @@ impl PlayerController {
         input: &PlayerControlInput,
         dt: f64,
     ) {
-        if is_about_to_collide(state, world, 3.0 * dt) {
-            debug_string(format!("p{}.collision", self.id), "true");
+        // if is_about_to_collide(state, world, 3.0 * dt) {
+        //     debug_string(format!("p{}.collision", self.id), "true");
 
-            self.target_velocity = Vector2::zeros();
-            self.target_angular_velocity = 0.0;
-            return;
-        }
+        //     self.target_velocity = Vector2::zeros();
+        //     self.target_angular_velocity = 0.0;
+        //     return;
+        // }
 
         // Calculate velocity using the MTP controller
         self.last_yaw = state.raw_yaw;
