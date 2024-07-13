@@ -72,25 +72,32 @@ impl Attacker {
 impl Role for Attacker {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
+            
+            // Passer and Shooter only needs to be assigned once if not it creates many bugs
             if self.passer_id == None {
-                // println!("Finding passer and shooter");
                 self.passer_id = self.closest_player_to_ball(ctx.world, ball);
                 self.shooter_id = self.closest_player_to_passer(ctx.world, ctx.world.own_players.iter().find(|p| p.id == self.passer_id.unwrap()).unwrap().position, self.passer_id.unwrap());
             }
+            // Getting the position of the passer and the shooter
             let passer_pos = ctx.world.own_players.iter().find(|p| p.id == self.passer_id.unwrap()).unwrap().position;
-
-            // let passer_id = self.closest_player_to_ball(ctx.world, ball);
-            // let passer_pos = ctx.world.own_players.iter().find(|p| p.id == passer_id.unwrap()).unwrap().position;
-            // let shooter_id = self.closest_player_to_passer(ctx.world, passer_pos, passer_id.unwrap());
-
+            let shooter_pos = ctx.world.own_players.iter().find(|p| p.id == self.shooter_id.unwrap()).unwrap().position;
             let mut input = PlayerControlInput::new();
+
+            // If the player is the passer
                 if ctx.player.id == self.passer_id.unwrap() {
-                    // println!("passer ID: {}", passer_id.unwrap());
-                    // let mut input = PlayerControlInput::new();
                     let target_pos = ball.position.xy();
                     let target_angle = self.aim_at_ball(ctx.player.position, target_pos);
                     let dribble_speed = 1.0;
-                    while self.distance(ctx.player.position, ball.position.xy()) > 300.0 {
+
+                    // When the ball is close to the shooter, the passer moves back to its position (to make sure it doesn't endlessly follow the ball)
+                    if self.distance(shooter_pos, ball.position.xy()) < 600.0 {
+                        input.with_position(self.position);
+                        input.with_dribbling(0.0);
+                        return input;
+                    }
+                    
+                    // If the ball is far from the passer, the passer moves to the ball and arms the kicker ready to pass
+                    while self.distance(ctx.player.position, ball.position.xy()) > 280.0 {
                         // Input to move to the ball and dribble.
                         input.with_position(target_pos);
                         input.with_yaw(target_angle);
@@ -98,14 +105,15 @@ impl Role for Attacker {
                         input.with_kicker(KickerControlInput::Arm);
                         return input;
                     }
-                    // Input to find the closest player, then face the shooter and pass the ball
+
+                    // Once the passer has the ball and it is in position it aims for the shooter
                     if self.distance(ctx.player.position, self.position) < 100.0 {
-                        // let shooter_id = self.closest_player_to_passer(ctx.world, passer_pos, self.passer_id.unwrap());
-                        let shooter_pos = ctx.world.own_players.iter().find(|p| p.id == self.shooter_id.unwrap()).unwrap().position;
                         dies_core::debug_cross("ShooterPos", shooter_pos, dies_core::DebugColor::Purple);
                         let target_angle = self.aim_at_player(passer_pos, shooter_pos);
                         input.with_yaw(target_angle);
                         input.with_dribbling(1.0);
+
+                        // If the passer is facing the shooter it passes the ball
                         if (target_angle - ctx.player.yaw).abs() < 0.1 {
                             println!("Passing the ball");
                             self.passer_kicked = true;
@@ -113,42 +121,54 @@ impl Role for Attacker {
                             
                         }
                         return input;
-                        
                     }
+
+
                 }
 
+                // If the player is the shooter it aims at the ball and moves to its designated position
                 if ctx.player.id == self.shooter_id.unwrap() {
-                    let target_pos = self.position;
-                    let target_angle = self.aim_at_player(passer_pos, ctx.player.position);
+                    dies_core::debug_cross("PasserPos", passer_pos, dies_core::DebugColor::Orange);
+                    let target_angle = self.aim_at_ball(shooter_pos, ball.position.xy());
                     let dribble_speed = 1.0;
-                    println!("Passer Kicked : {}", self.passer_kicked);
-                    if self.passer_kicked == true {
-                        println!("Shooter ID: {}", self.shooter_id.unwrap());
-                        while self.distance(ctx.player.position, ball.position.xy()) > 300.0 {
+                    input.with_yaw(target_angle);
+                    input.with_dribbling(dribble_speed);
+                    // If the shooter is close to the ball (meaning the passer passed the ball), it moves toward the ball to "catch" it
+                    // This should be changed to the parameter passer_has_kicked once it works!!
+                    if self.distance(shooter_pos, ball.position.xy()) < 800.0 {
+                        while self.distance(shooter_pos, ball.position.xy()) > 280.0 {
+                            println!("Moving to ball");
                             // Input to move to the ball and dribble.
-                            input.with_position(target_pos);
-                            input.with_yaw(self.aim_at_ball(ctx.player.position, ball.position.xy()));
+                            input.with_position(ball.position.xy());
+                            input.with_yaw(self.aim_at_ball(shooter_pos, ball.position.xy()));
                             input.with_dribbling(dribble_speed);
                             input.with_kicker(KickerControlInput::Arm);
                             return input;
                         }
+                        
                     }
-                    // If the shooter has the ball nearby he shoots
-                    if self.distance(ctx.player.position, self.position) < 100.0 && self.distance(ctx.player.position, ball.position.xy()) < 300.0 {
-                        let target_angle = self.aim_at_goal(ctx.player.position, geom);
+                    // If the shooter has the ball, is in the designated spot it faces the goal
+                    if self.distance(shooter_pos, self.position) < 100.0 && self.distance(shooter_pos, ball.position.xy()) < 280.0 {
+                        let target_angle = self.aim_at_goal(shooter_pos, geom);
                         input.with_yaw(target_angle);
                         input.with_dribbling(1.0);
-                        input.with_kicker(KickerControlInput::Kick);
+
+                        // If the shooter is facing the goal it kicks the ball
+                        if (target_angle - ctx.player.yaw).abs() < 0.1 {
+                            println!("GOLLLLLLLLLLL");
+                            self.passer_kicked = true;
+                            input.with_kicker(KickerControlInput::Kick);
+                            
+                        }
                         return input;
                     }
-            }
 
-                // If the shooter has the ball nearby he shoots
+            }
                 
-            // Input to move to the specified position and aim at the goal.
+            // This is the default input for all players, going to their designated position and facing the ball
             input.with_dribbling(1.0);
             input.with_position(self.position);
-            input.with_yaw(self.aim_at_goal(ctx.player.position, geom));
+            input.with_yaw(self.aim_at_ball(ctx.player.position, ball.position.xy()));
             return input;
             
         } else {

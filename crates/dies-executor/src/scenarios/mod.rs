@@ -78,7 +78,7 @@ fn three_attackers() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, 2000.0))));
     strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, -2000.0))));
-    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2000.0, 0.0))));
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-200.0, 0.0))));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
         .add_ball()
