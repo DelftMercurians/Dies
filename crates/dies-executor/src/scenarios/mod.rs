@@ -127,12 +127,12 @@ fn rvo_benchmark() -> ScenarioSetup {
 
 fn fetch_ball_test () -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(FetcherRole::new()));
-    strategy.add_role(Box::new(KickerRole::new()));
+    strategy.add_role_with_id(PlayerId::new(0), Box::new(FetcherRole::new()));
+    strategy.add_role_with_id(PlayerId::new(1), Box::new(KickerRole::new()));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
         .add_own_player_at(Vector2::new(-2500.0, -1000.0))
-        .add_own_player_at_with_yaw(Vector2::new(250.0, 0.0), Angle::from_radians(PI as f64))
+        .add_own_player_at_with_yaw(Vector2::new(100.0, 0.0), Angle::from_radians(PI as f64))
         .add_ball_at(Vector3::new(0.0,0.0, 0.0));
 
     scenario

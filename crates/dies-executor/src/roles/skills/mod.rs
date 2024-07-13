@@ -164,7 +164,11 @@ impl Skill for FetchBall {
                     ball_pos,
                     ball.velocity.xy().normalize(),
                 );
+                
+                //return the intersection if it is valid, otherwise return the ball position
                 if let Some(intersection) = intersection {
+                    
+                    dies_core::debug_cross(format!("p{}.BallIntersection", ctx.player.id), intersection, dies_core::DebugColor::Purple);
                     dies_core::debug_string(format!("p{}.BallState", ctx.player.id), format!("INTERCEPT, ballvel_norm is: {}", ball.velocity.norm()));
 
                     input.with_position(intersection);
@@ -173,19 +177,6 @@ impl Skill for FetchBall {
 
                     input.with_position(ball_pos);
                 }
-                //return the intersection if it is valid, otherwise return the ball position
-
-                let target_pos = intersection.unwrap_or(ball_pos);
-                input.with_position(target_pos);
-            }
-
-            let relative_velocity = ball.velocity.xy() - ctx.player.velocity;
-            if relative_velocity.norm() > self.max_relative_speed {
-                // input.add_global_velocity(relative_velocity.normalize() * self.max_relative_speed);
-                
-                // override the velocity
-                input.position = None;
-                input.velocity = Velocity::global(Vector2::zeros());
             }
             
             // if we're close enough, use a PID to override the velocity
@@ -193,12 +184,12 @@ impl Skill for FetchBall {
 
             // this is meant to avoid touching the ball at high speeds and losing control
             // maybe this issue is not present in real life, it happens in the sim
-            if distance < self.dribbling_distance {
+            if distance < self.dribbling_distance && ball.velocity.norm() < 1000.0{
                 input.with_dribbling(self.dribbling_speed);
                 // override the velocity inverse to the distance
                 // at distance 0, the velocity is 0
                 // at distance dribbling_distance, the velocity max_relative_speed
-                dies_core::debug_string(format!("p{}.BallState", ctx.player.id), format!("INTERCEPT, ballvel_norm is: {}", ball.velocity.norm()));
+                dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "overriding velocity");
 
                 input.position = None;
                 input.velocity = Velocity::global(distance * (self.max_relative_speed / self.dribbling_distance) * (ball_pos - player_pos).normalize());
