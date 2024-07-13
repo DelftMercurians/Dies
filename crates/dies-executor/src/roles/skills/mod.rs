@@ -164,7 +164,7 @@ impl Skill for FetchBall {
                     ball_pos,
                     ball.velocity.xy().normalize(),
                 );
-                
+
                 //return the intersection if it is valid, otherwise return the ball position
                 if let Some(intersection) = intersection {
                     
@@ -197,7 +197,8 @@ impl Skill for FetchBall {
 
             SkillProgress::Continue(input)
         } else {
-            SkillProgress::failure()
+            // wait for the ball to appear
+            SkillProgress::Continue(PlayerControlInput::default())
         }
     }
 }
