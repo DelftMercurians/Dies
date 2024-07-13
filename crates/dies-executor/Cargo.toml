@@ -4,16 +4,21 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-tokio = { version = "1.35.1", features = ["rt", "macros", "signal"] }
+tokio = { version = "1.35.1", features = ["rt", "macros", "signal", "time"] }
 anyhow = "1.0.75"
 dies-core = { version = "0.1.0", path = "../dies-core" }
-dies-python-rt = { version = "0.1.0", path = "../dies-python-rt" }
-dies-serial-client = { version = "0.1.0", path = "../dies-serial-client" }
+dies-basestation-client = { version = "0.1.0", path = "../dies-basestation-client" }
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
-dies-webui = { version = "0.1.0", path = "../dies-webui" }
 dies-world = { version = "0.1.0", path = "../dies-world" }
 dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
-tracing = "0.1.40"
-nalgebra = "0.32.4"
+log = "0.4.21"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
-dies-control = { version = "0.1.0", path = "../dies-control" }
+nalgebra = "0.32.5"
+dies-logger = { version = "0.1.0", path = "../dies-logger" }
+paste = "1.0.15"
+rand = "0.8.5"
+serde = "1.0.203"
+dodgy_2d = { git = "https://github.com/DelftMercurians/dodgy.git", branch = "fix/perpendicular-velocity" }
+
+[dev-dependencies]
+approx = "0.5.1"

@@ -1,65 +1,65 @@
+mod angle;
+mod debug_info;
+mod executor_info;
+mod executor_settings;
 mod geom;
+mod math;
+mod player;
 mod world;
 
 pub mod workspace_utils;
 
+pub use angle::*;
+pub use debug_info::*;
+pub use executor_info::*;
+pub use executor_settings::*;
 pub use geom::*;
+pub use math::*;
+pub use player::*;
 pub use world::*;
+
+use serde::Serialize;
+use typeshare::typeshare;
 
 pub type VisionMsg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 pub type GcRefereeMsg = dies_protos::ssl_gc_referee_message::Referee;
 
-use serde::{Deserialize, Serialize};
+pub type Scalar = f64;
+pub type Vector2 = nalgebra::Vector2<Scalar>;
+pub type Vector3 = nalgebra::Vector3<Scalar>;
 
-/// A command to one of our players (placeholder)
-///
-/// All values are relative to the robots local frame and are in meters.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
-pub struct PlayerCmd {
-    /// The robot's ID
-    pub id: u32,
-    /// The player's x (left-right, with `+` left) velocity \[mm/s]
-    pub sx: f32,
-    /// The player's y (forward-backward, with `+` forward) velocity \[mm/s]
-    pub sy: f32,
-    /// The player's angular velocity (with `+` counter-clockwise, `-` clockwise) \[rad/s]
-    pub w: f32,
-    /// The player's dribble speed
-    pub dribble_speed: f32,
-
-    pub arm: bool,
-    pub disarm: bool,
-    pub kick: bool,
+/// Setup for a player in a scenario.
+#[derive(Clone, Debug, Serialize)]
+#[typeshare]
+pub struct PlayerPlacement {
+    /// Initial position of the player. If `None`, any position is acceptable.
+    pub position: Option<Vector2>,
+    /// Initial yaw of the player. If `None`, any yaw is acceptable.
+    pub yaw: Option<Angle>,
 }
 
-impl PlayerCmd {
-    pub fn zero(id: u32) -> PlayerCmd {
-        PlayerCmd {
-            id,
-            sx: 0.0,
-            sy: 0.0,
-            w: 0.0,
-            dribble_speed: 0.0,
-            arm: false,
-            disarm: false,
-            kick: false,
-        }
-    }
+/// Setup for the ball in a scenario.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare]
+pub enum BallPlacement {
+    /// Ball is placed at a specific position.
+    Position(Vector3),
+    /// Ball is placed at any position.
+    AnyPosition,
+    /// No ball is required.
+    NoBall,
 }
 
-/// A position command to one of our players
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct PlayerPosCmd {
-    pub id: u32,
-    pub x: f32,
-    pub y: f32,
-    pub orientation: f32,
-}
-
-/// A message from one of our robots to the AI
-pub struct PlayerFeedbackMsg {
-    /// The robot's ID
-    pub id: u32,
-    /// Capacitor voltage
-    pub cap_v: f32,
+/// Information about a scenario.
+#[derive(Clone, Debug, Serialize)]
+#[typeshare]
+pub struct ScenarioInfo {
+    pub own_player_placements: Vec<PlayerPlacement>,
+    pub opponent_player_placements: Vec<PlayerPlacement>,
+    pub ball_placement: BallPlacement,
+    /// Position tolerance for player and ball positions in mm.
+    pub tolerance: f64,
+    /// Yaw tolerance for players in rad
+    pub yaw_tolerance: f64,
 }

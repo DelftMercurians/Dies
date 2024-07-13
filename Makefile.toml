@@ -1,3 +1,11 @@
-[tasks.run-on-server]
+[tasks.webui]
 workspace = false
-script = "cargo run -p dies-scripts --bin run-on-server"
+install_crate = "typeshare-cli"
+script_runner = "@shell"
+script = '''
+typeshare . --lang=typescript --output-file=webui/src/bindings.ts
+printf "export type Vector2 = [number, number];\nexport type Vector3 = [number, number, number];\nexport type ScenarioType = string;" >> webui/src/bindings.ts
+sed -i 's/data?: undefined//g' webui/src/bindings.ts
+cd webui
+npm run build
+'''
