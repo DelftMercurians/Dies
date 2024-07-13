@@ -159,7 +159,7 @@ impl PlayerController {
         input: &PlayerControlInput,
         dt: f64,
     ) {
-        if is_about_to_collide(state, world, dt) {
+        if is_about_to_collide(state, world, 3.0 * dt) {
             debug_string(format!("p{}.collision", self.id), "true");
 
             self.target_velocity = Vector2::zeros();
@@ -253,7 +253,7 @@ impl PlayerController {
     }
 }
 
-fn is_about_to_collide(player: &PlayerData, world: &WorldData, dt: f64) -> bool {
+fn is_about_to_collide(player: &PlayerData, world: &WorldData, time_horizon: f64) -> bool {
     // Check if the player is about to collide with any other player
     for other in world.own_players.iter().chain(world.opp_players.iter()) {
         if player.position == other.position {
@@ -263,7 +263,7 @@ fn is_about_to_collide(player: &PlayerData, world: &WorldData, dt: f64) -> bool 
         let dist = (player.position - other.position).norm();
         let relative_velocity = player.velocity - other.velocity;
         let time_to_collision = dist / relative_velocity.norm();
-        if time_to_collision < dt && dist < 140.0 {
+        if time_to_collision < time_horizon && dist < 140.0 {
             return true;
         }
     }
@@ -274,7 +274,7 @@ fn is_about_to_collide(player: &PlayerData, world: &WorldData, dt: f64) -> bool 
         let hl = geom.field_length / 2.0;
         let pos = player.position;
         let vel = player.velocity;
-        let new_pos = pos + vel * dt;
+        let new_pos = pos + vel * time_horizon;
         if new_pos.x.abs() > hw || new_pos.y.abs() > hl {
             return true;
         }
