@@ -8,7 +8,8 @@ use super::{
     yaw_control::YawController,
 };
 use dies_core::{
-    Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
+    debug_string, Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2,
+    WorldData,
 };
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
@@ -158,6 +159,14 @@ impl PlayerController {
         input: &PlayerControlInput,
         dt: f64,
     ) {
+        if is_about_to_collide(state, world, dt) {
+            debug_string(format!("p{}.collision", self.id), "true");
+
+            self.target_velocity = Vector2::zeros();
+            self.target_angular_velocity = 0.0;
+            return;
+        }
+
         // Calculate velocity using the MTP controller
         self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
@@ -242,4 +251,34 @@ impl PlayerController {
         //     dies_core::DebugColor::Red,
         // );
     }
+}
+
+fn is_about_to_collide(player: &PlayerData, world: &WorldData, dt: f64) -> bool {
+    // Check if the player is about to collide with any other player
+    for other in world.own_players.iter().chain(world.opp_players.iter()) {
+        if player.position == other.position {
+            continue;
+        }
+
+        let dist = (player.position - other.position).norm();
+        let relative_velocity = player.velocity - other.velocity;
+        let time_to_collision = dist / relative_velocity.norm();
+        if time_to_collision < dt && dist < 140.0 {
+            return true;
+        }
+    }
+
+    // Check if the player is about to leave the field
+    if let Some(geom) = world.field_geom.as_ref() {
+        let hw = geom.field_width / 2.0;
+        let hl = geom.field_length / 2.0;
+        let pos = player.position;
+        let vel = player.velocity;
+        let new_pos = pos + vel * dt;
+        if new_pos.x.abs() > hw || new_pos.y.abs() > hl {
+            return true;
+        }
+    }
+
+    false
 }
