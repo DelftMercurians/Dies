@@ -171,8 +171,8 @@ impl PlayerController {
             );
 
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
-            let f = compute_force(state, &pos_target, world, self.force_alpha, self.force_beta);
-            let pos_u = pos_u.norm() * f;
+            // let f = compute_force(state, &pos_target, world, self.force_alpha, self.force_beta);
+            // let pos_u = pos_u.norm() * f;
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         } else {

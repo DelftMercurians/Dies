@@ -4,7 +4,7 @@ use crate::{
     roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller},
     strategy::AdHocStrategy,
 };
-use dies_core::Vector2;
+use dies_core::{PlayerId, Vector2};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -86,9 +86,39 @@ fn navigate_stationary_opponents() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(strategy);
     scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario.add_opp_player_at(Vector2::new(-500.0, 0.0));
-    scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
-    scenario.add_opp_player_at(Vector2::new(500.0, -500.0));
-    scenario.add_opp_player_at(Vector2::new(-250.0, 750.0));
+    // scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
+    // scenario.add_opp_player_at(Vector2::new(500.0, -500.0));
+    // scenario.add_opp_player_at(Vector2::new(-250.0, 750.0));
+
+    scenario
+}
+
+fn rvo_benchmark() -> ScenarioSetup {
+    // 6 players on a circle, each navigating to the opposite side
+    let mut strategy = AdHocStrategy::new();
+
+    let n = 6;
+    let radius = 1000.0;
+    let mut targets = Vec::new();
+    let mut players = Vec::new();
+    for i in 0..n {
+        let angle = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
+        let p = Vector2::new(radius * angle.cos(), radius * angle.sin());
+        targets.push(-p);
+        players.push(p);
+    }
+
+    for (i, target) in targets.into_iter().enumerate() {
+        strategy.add_role_with_id(
+            PlayerId::new(i as u32),
+            Box::new(TestRole::new(vec![target])),
+        );
+    }
+
+    let mut scenario = ScenarioSetup::new(strategy);
+    for player in players {
+        scenario.add_own_player_at(player);
+    }
 
     scenario
 }
@@ -190,7 +220,8 @@ scenarios! {
     two_players_crossing,
     test_role_multiple_targets,
     navigate_stationary_opponents,
-    dribble
+    dribble,
+    rvo_benchmark
 }
 
 #[cfg(test)]

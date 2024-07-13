@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     fmt::format,
+    time::Instant,
 };
 
 use crate::{
@@ -15,11 +16,12 @@ use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     rrt::find_path,
+    rvo::velocity_obstacle_update,
     vo::{compute_velocity_constraints, Obstacle},
 };
 use dies_core::{
-    debug_circle_stroke, debug_line, ControllerSettings, DebugColor, GameState, PlayerData,
-    PlayerId, Vector2,
+    debug_circle_stroke, debug_line, debug_string, debug_value, ControllerSettings, DebugColor,
+    GameState, PlayerData, PlayerId, Vector2,
 };
 use dies_core::{PlayerCmd, WorldData};
 use dodgy_2d::{Agent, AvoidanceOptions};
@@ -134,6 +136,12 @@ impl TeamController {
         //     }
         // }
 
+        let all_players = world_data
+            .own_players
+            .iter()
+            .chain(world_data.opp_players.iter())
+            .collect::<Vec<_>>();
+
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
@@ -230,50 +238,60 @@ impl TeamController {
                     .unwrap_or(false);
 
                 if !is_manual {
-                    let position = player_data.position;
-                    let agent = agent_from_player(player_data);
-
-                    let obstacle_margin = 50.0;
-                    let time_horizon = world_data.dt * 10.0;
-                    let obstacle_time_horizon = world_data.dt * 4.0;
-
-                    let query_dist = self.settings.max_velocity * time_horizon + 200.0;
-                    let neighbors = world_data
-                        .own_players
-                        .iter()
-                        .filter_map(|p| {
-                            if p.id != id && (p.position - position).norm() < query_dist {
-                                Some(agent_from_player(p))
-                            } else {
-                                None
-                            }
-                        })
-                        .map(Cow::Owned)
-                        .collect::<Vec<_>>();
-                    let target_vel = controller.target_velocity();
-                    let target_vel = dodgy_2d::Vec2 {
-                        x: target_vel.x as f32,
-                        y: target_vel.y as f32,
-                    };
-
-                    let avoidance_velocity = agent.compute_avoiding_velocity(
-                        // Neighbors - other players
-                        neighbors.as_slice(),
-                        // Obstacles
-                        opponent_obstacles.as_slice(),
-                        target_vel,
-                        self.settings.max_velocity as f32,
-                        world_data.dt as f32,
-                        &AvoidanceOptions {
-                            obstacle_margin,
-                            time_horizon: time_horizon as f32,
-                            obstacle_time_horizon: obstacle_time_horizon as f32,
-                        },
+                    let start = Instant::now();
+                    let vel = velocity_obstacle_update(
+                        player_data,
+                        &controller.target_velocity(),
+                        all_players.as_slice(),
+                        &vec![],
+                        super::rvo::VelocityObstacleType::VO,
                     );
-
-                    let avoidance_velocity =
-                        Vector2::new(avoidance_velocity.x as f64, avoidance_velocity.y as f64);
-                    controller.update_target_velocity_with_avoidance(avoidance_velocity);
+                    controller.update_target_velocity_with_avoidance(vel);
+                    let end = Instant::now();
+                    debug_value(
+                        format!("rvo-time-{}", id),
+                        end.duration_since(start).as_millis() as f64,
+                    );
+                    // let position = player_data.position;
+                    // let agent = agent_from_player(player_data);
+                    // let obstacle_margin = 50.0;
+                    // let time_horizon = world_data.dt * 10.0;
+                    // let obstacle_time_horizon = world_data.dt * 4.0;
+                    // let query_dist = self.settings.max_velocity * time_horizon + 200.0;
+                    // let neighbors = world_data
+                    //     .own_players
+                    //     .iter()
+                    //     .filter_map(|p| {
+                    //         if p.id != id && (p.position - position).norm() < query_dist {
+                    //             Some(agent_from_player(p))
+                    //         } else {
+                    //             None
+                    //         }
+                    //     })
+                    //     .map(Cow::Owned)
+                    //     .collect::<Vec<_>>();
+                    // let target_vel = controller.target_velocity();
+                    // let target_vel = dodgy_2d::Vec2 {
+                    //     x: target_vel.x as f32,
+                    //     y: target_vel.y as f32,
+                    // };
+                    // let avoidance_velocity = agent.compute_avoiding_velocity(
+                    //     // Neighbors - other players
+                    //     neighbors.as_slice(),
+                    //     // Obstacles
+                    //     opponent_obstacles.as_slice(),
+                    //     target_vel,
+                    //     self.settings.max_velocity as f32,
+                    //     world_data.dt as f32,
+                    //     &AvoidanceOptions {
+                    //         obstacle_margin,
+                    //         time_horizon: time_horizon as f32,
+                    //         obstacle_time_horizon: obstacle_time_horizon as f32,
+                    //     },
+                    // );
+                    // let avoidance_velocity =
+                    //     Vector2::new(avoidance_velocity.x as f64, avoidance_velocity.y as f64);
+                    // controller.update_target_velocity_with_avoidance(avoidance_velocity);
                 }
             } else {
                 controller.increment_frames_misses();

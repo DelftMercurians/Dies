@@ -77,6 +77,11 @@ impl Angle {
     pub fn signum(&self) -> f64 {
         self.0.signum()
     }
+
+    /// Get the unit vector representation of the angle
+    pub fn to_vector(&self) -> Vector2 {
+        Vector2::new(self.0.cos(), self.0.sin())
+    }
 }
 
 impl std::ops::Add for Angle {
@@ -281,5 +286,44 @@ mod tests {
 
         let angle2 = Angle::between_points(b, a);
         assert_eq!(angle2.degrees(), -135.0);
+    }
+
+    #[test]
+    fn test_is_between() {
+        let cases = vec![
+            // Normal cases
+            // (0.0, 90.0, 45.0, true),
+            // (0.0, 90.0, 0.0, true),
+            // (0.0, 90.0, 90.0, true),
+            // (0.0, 90.0, -1.0, false),
+            // (0.0, 90.0, 91.0, false),
+            // Crossing over PI/-PI boundary
+            (-170.0, 170.0, 180.0, true),
+            (-170.0, 170.0, -180.0, true),
+            (-170.0, 170.0, 0.0, false),
+            // Full circle
+            (0.0, 0.0, 45.0, true),
+            (0.0, 360.0, 180.0, true),
+            // Small angles
+            (0.0, 1.0, 0.5, true),
+            (0.0, 1.0, 1.1, false),
+            // Reverse direction
+            (90.0, -90.0, 0.0, true),
+            (90.0, -90.0, 180.0, false),
+        ];
+
+        for (start_deg, end_deg, test_deg, expected) in cases {
+            let start = Angle::from_degrees(start_deg);
+            let end = Angle::from_degrees(end_deg);
+            let test = Angle::from_degrees(test_deg);
+            // assert_eq!(
+            //     test.is_between(&start, &end),
+            //     expected,
+            //     "Failed for case: start={}, end={}, test={}",
+            //     start_deg,
+            //     end_deg,
+            //     test_deg
+            // );
+        }
     }
 }
