@@ -182,10 +182,16 @@ impl PlayerController {
         self.target_velocity += local_vel;
 
         // Draw the velocity
+        // dies_core::debug_line(
+        //     format!("p{}.target_velocity", self.id),
+        //     self.last_pos,
+        //     self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+        //     dies_core::DebugColor::Red,
+        // );
         dies_core::debug_line(
-            format!("p{}.target_velocity", self.id),
+            format!("p{}.velocity", self.id),
             self.last_pos,
-            self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+            self.last_pos + state.velocity,
             dies_core::DebugColor::Red,
         );
 
@@ -229,11 +235,11 @@ impl PlayerController {
 
     pub fn update_target_velocity_with_avoidance(&mut self, target_velocity: Vector2) {
         self.target_velocity = target_velocity;
-        dies_core::debug_line(
-            format!("p{}.target_velocity", self.id),
-            self.last_pos,
-            self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
-            dies_core::DebugColor::Red,
-        );
+        // dies_core::debug_line(
+        //     format!("p{}.target_velocity", self.id),
+        //     self.last_pos,
+        //     self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+        //     dies_core::DebugColor::Red,
+        // );
     }
 }

@@ -76,18 +76,18 @@ impl MTP {
         let current_speed = velocity.magnitude();
 
         // Overshoot detection
-        if displacement.dot(&velocity) < 0.0 {
-            // Proportional control to reduce overshoot
-            let proportional_velocity = direction * distance * self.kp;
-            let dv = proportional_velocity - velocity;
-            // println!("Overshoot case returning");
-            // dies_core::debug_string("p5.Goal", format!("{:?}", velocity + dv.cap_magnitude(self.max_decel * dt)));
+        // if displacement.dot(&velocity) < 0.0 {
+        //     // Proportional control to reduce overshoot
+        //     let proportional_velocity = direction * distance * self.kp;
+        //     let dv = proportional_velocity - velocity;
+        //     // println!("Overshoot case returning");
+        //     // dies_core::debug_string("p5.Goal", format!("{:?}", velocity + dv.cap_magnitude(self.max_decel * dt)));
 
-            // besides decreasing the velocity with dv, we also go in the opposite direction to compensate for the overshoot
+        //     // besides decreasing the velocity with dv, we also go in the opposite direction to compensate for the overshoot
 
-            dies_core::debug_string("p5.MTPMode", "Overshoot");
-            return -velocity + dv.cap_magnitude(self.max_decel * dt);
-        }
+        //     dies_core::debug_string("p5.MTPMode", "Overshoot");
+        //     return -velocity + dv.cap_magnitude(self.max_decel * dt);
+        // }
 
         // Calculate deceleration distance based on current_speed and max_decel
         let decel_distance = self.deceleration_window(velocity);
