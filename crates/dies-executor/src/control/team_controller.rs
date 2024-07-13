@@ -105,37 +105,37 @@ impl TeamController {
 
                 if !is_manual {
                     // let position = player_data.position;
-                    let agent = &own_agents.iter().find(|(aid, _)| id == *aid).unwrap().1;
-                    let neighbors = own_agents
-                        .iter()
-                        .filter(|(other_id, _)| *other_id != id)
-                        .map(|(_, a)| a)
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let target_vel = controller.target_velocity();
-                    let target_vel = dodgy_2d::Vec2 {
-                        x: target_vel.x as f32,
-                        y: target_vel.y as f32,
-                    };
+                    // let agent = &own_agents.iter().find(|(aid, _)| id == *aid).unwrap().1;
+                    // let neighbors = own_agents
+                    //     .iter()
+                    //     .filter(|(other_id, _)| *other_id != id)
+                    //     .map(|(_, a)| a)
+                    //     .cloned()
+                    //     .collect::<Vec<_>>();
+                    // let target_vel = controller.target_velocity();
+                    // let target_vel = dodgy_2d::Vec2 {
+                    //     x: target_vel.x as f32,
+                    //     y: target_vel.y as f32,
+                    // };
 
-                    let avoidance_velocity = agent.compute_avoiding_velocity(
-                        // Neighbors - other players
-                        neighbors.as_slice(),
-                        // Obstacles
-                        &vec![],
-                        target_vel,
-                        self.settings.max_velocity as f32,
-                        world_data.dt as f32,
-                        &AvoidanceOptions {
-                            obstacle_margin: 0.0,
-                            time_horizon: 3.0,
-                            obstacle_time_horizon: 1.0,
-                        },
-                    );
+                    // let avoidance_velocity = agent.compute_avoiding_velocity(
+                    //     // Neighbors - other players
+                    //     neighbors.as_slice(),
+                    //     // Obstacles
+                    //     &vec![],
+                    //     target_vel,
+                    //     self.settings.max_velocity as f32,
+                    //     world_data.dt as f32,
+                    //     &AvoidanceOptions {
+                    //         obstacle_margin: 0.0,
+                    //         time_horizon: 3.0,
+                    //         obstacle_time_horizon: 1.0,
+                    //     },
+                    // );
 
-                    let avoidance_velocity =
-                        Vector2::new(avoidance_velocity.x as f64, avoidance_velocity.y as f64);
-                    controller.update_target_velocity_with_avoidance(avoidance_velocity);
+                    // let avoidance_velocity =
+                    //     Vector2::new(avoidance_velocity.x as f64, avoidance_velocity.y as f64);
+                    // controller.update_target_velocity_with_avoidance(avoidance_velocity);
                 }
             } else {
                 controller.increment_frames_misses();
