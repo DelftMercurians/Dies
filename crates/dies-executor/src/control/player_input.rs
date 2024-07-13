@@ -94,6 +94,13 @@ impl Velocity {
     pub fn cap_magnitude(&self, max: f64) -> Self {
         self.map(|v| v.cap_magnitude(max))
     }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Velocity::Global(v) => v.norm() < 1e-6,
+            Velocity::Local(v) => v.norm() < 1e-6,
+        }
+    }
 }
 
 impl Default for Velocity {

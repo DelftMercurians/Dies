@@ -22,6 +22,11 @@ pub fn find_intersection(
     Some(intersection)
 }
 
+/// Returns a vector perpendicular to the given vector.
+pub fn perp(v: Vector2) -> Vector2 {
+    Vector2::new(-v.y, v.x)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

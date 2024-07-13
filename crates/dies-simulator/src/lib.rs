@@ -80,7 +80,7 @@ impl Default for SimulationConfig {
             vision_update_step: 1.0 / 40.0, // 6 ms
 
             // ROBOT MODEL PARAMETERS
-            player_radius: 200.0,
+            player_radius: 80.0,
             player_height: 140.0,
             dribbler_radius: BALL_RADIUS + 60.0,
             dribbler_angle: PI / 6.0,
@@ -88,7 +88,7 @@ impl Default for SimulationConfig {
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 30.0 / 1000.0,
-            max_accel: 30_000.0,
+            max_accel: 40_000.0,
             max_vel: 6_000.0,
             max_ang_accel: 2.0 * 720.0f64.to_radians(),
             max_ang_vel: 720.0f64.to_radians(),

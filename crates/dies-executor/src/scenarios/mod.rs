@@ -6,7 +6,7 @@ use crate::{
     roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller, fetcher_role::FetcherRole, kicker_role::KickerRole},
     strategy::AdHocStrategy,
 };
-use dies_core::{Vector2, Vector3, Angle};
+use dies_core::{PlayerId, Vector2, Vector3, Angle};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,13 @@ fn empty_scenario() -> ScenarioSetup {
 fn one_random_player() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
     scenario.add_own_player();
+    scenario
+}
+
+fn test_vo() -> ScenarioSetup {
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    // scenario.add_own_player_at(Vector2::new(1000.0, 0.0));
     scenario
 }
 
@@ -63,7 +70,9 @@ fn test_role_multiple_targets() -> ScenarioSetup {
 
 fn two_players_crossing() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(-800.0, -1000.0)])));
+    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(
+        -1000.0, -1000.0,
+    )])));
     strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(1000.0, 1000.0)])));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
@@ -79,9 +88,39 @@ fn navigate_stationary_opponents() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(strategy);
     scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario.add_opp_player_at(Vector2::new(-500.0, 0.0));
-    scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
-    scenario.add_opp_player_at(Vector2::new(500.0, -500.0));
-    scenario.add_opp_player_at(Vector2::new(-250.0, 750.0));
+    // scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
+    // scenario.add_opp_player_at(Vector2::new(500.0, -500.0));
+    // scenario.add_opp_player_at(Vector2::new(-250.0, 750.0));
+
+    scenario
+}
+
+fn rvo_benchmark() -> ScenarioSetup {
+    // 6 players on a circle, each navigating to the opposite side
+    let mut strategy = AdHocStrategy::new();
+
+    let n = 6;
+    let radius = 1000.0;
+    let mut targets = Vec::new();
+    let mut players = Vec::new();
+    for i in 0..n {
+        let angle = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
+        let p = Vector2::new(radius * angle.cos(), radius * angle.sin());
+        targets.push(-p);
+        players.push(p);
+    }
+
+    for (i, target) in targets.into_iter().enumerate() {
+        strategy.add_role_with_id(
+            PlayerId::new(i as u32),
+            Box::new(TestRole::new(vec![target])),
+        );
+    }
+
+    let mut scenario = ScenarioSetup::new(strategy);
+    for player in players {
+        scenario.add_own_player_at(player);
+    }
 
     scenario
 }
@@ -190,12 +229,14 @@ impl Serialize for ScenarioType {
 scenarios! {
     empty_scenario,
     one_random_player,
+    test_vo,
     two_players_one_ball,
     one_waller_one_ball,
     two_players_crossing,
     test_role_multiple_targets,
     navigate_stationary_opponents,
     dribble,
+    rvo_benchmark,
     fetch_ball_test
 }
 
