@@ -1,4 +1,4 @@
-use dies_core::{debug_value, BallData, TrackerSettings, Vector3};
+use dies_core::{debug_line, debug_value, BallData, TrackerSettings, Vector3};
 use nalgebra::{SVector, Vector6};
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
@@ -138,20 +138,28 @@ impl BallTracker {
             if pos_v3.z < 0.0 {
                 pos_v3.z = 0.0;
                 self.filter.as_mut().unwrap().set_x(SVector::<f64, 6>::new(
-                    pos_v3.x as f64,
-                    vel_v3.x as f64,
-                    pos_v3.y as f64,
-                    vel_v3.y as f64,
-                    pos_v3.z as f64,
-                    -vel_v3.z as f64,
+                    pos_v3.x,
+                    vel_v3.x,
+                    pos_v3.y,
+                    vel_v3.y,
+                    pos_v3.z,
+                    -vel_v3.z,
                 ));
             }
-            // self.last_data = Some(BallData {
-            //     timestamp: current_time,
-            //     raw_position: Vec::with_capacity(0),
-            //     position: pos_v3,
-            //     velocity: vel_v3,
-            // });
+
+            debug_line(
+                "ball.vel",
+                pos_v3.xy(),
+                pos_v3.xy() + vel_v3.xy(),
+                dies_core::DebugColor::Orange,
+            );
+
+            self.last_detection = Some(StoredData {
+                timestamp: current_time,
+                raw_position: Vec::with_capacity(0),
+                position: pos_v3,
+                velocity: vel_v3,
+            });
         });
     }
 
