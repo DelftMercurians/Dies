@@ -2,7 +2,7 @@ use std::{fmt::format, time::Duration};
 
 use dies_core::{find_intersection, Angle, Vector2};
 
-use crate::PlayerControlInput;
+use crate::{control::Velocity, PlayerControlInput};
 
 use super::{Skill, SkillCtx, SkillProgress, SkillResult};
 
@@ -114,13 +114,19 @@ impl Skill for Wait {
 
 /// A skill that fetches the ball
 pub struct FetchBall {
-    max_relative_speed: f64,
-    initial_ball_direction: Option<Vector2>,
+    pub dribbling_distance: f64,
+    pub dribbling_speed: f64,
+    pub stop_distance: f64,
+    pub max_relative_speed: f64,
+    pub initial_ball_direction: Option<Vector2>,
 }
 
 impl FetchBall {
     pub fn new() -> Self {
         Self {
+            dribbling_distance: 250.0,
+            dribbling_speed: 3.0,
+            stop_distance: 230.0,
             max_relative_speed: 1000.0,
             initial_ball_direction: None,
         }
@@ -138,15 +144,18 @@ impl Skill for FetchBall {
                 .get_or_insert((ball_pos - player_pos).normalize());
             let ball_normal = Vector2::new(inital_ball_direction.y, -inital_ball_direction.x);
             let distance = (ball_pos - player_pos).norm();
-            if distance < 100.0 {
-                return SkillProgress::success();
+            if distance < self.dribbling_distance {
+                input.with_dribbling(self.dribbling_speed);
+                if distance < self.stop_distance {
+                    return SkillProgress::success();
+                }
             }
 
             let heading = Angle::between_points(player_pos, ball_pos);
             input.with_yaw(heading);
             if ball.velocity.norm() < 1000.0 {
                 // If the ball is too slow, just go to the ball
-                let target_pos = ball_pos + heading * Vector2::new(-100.0, 0.0);
+                let target_pos = ball_pos + heading * Vector2::new(-self.stop_distance, 0.0);
                 dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "STOPPED");
                 input.with_position(target_pos);
             } else {
@@ -174,7 +183,11 @@ impl Skill for FetchBall {
 
             let relative_velocity = ball.velocity.xy() - ctx.player.velocity;
             if relative_velocity.norm() > self.max_relative_speed {
-                input.add_global_velocity(relative_velocity.normalize() * self.max_relative_speed);
+                // input.add_global_velocity(relative_velocity.normalize() * self.max_relative_speed);
+                
+                // override the velocity
+                input.position = None;
+                input.velocity = Velocity::global(Vector2::zeros());
             }
 
             SkillProgress::Continue(input)

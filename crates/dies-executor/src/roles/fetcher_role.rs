@@ -7,6 +7,7 @@ use crate::{
     skill, PlayerControlInput,
 };
 use dies_core::Vector2;
+use dies_protos::ssl_gc_api::Input;
 
 pub struct FetcherRole {
 }
@@ -21,6 +22,6 @@ impl Role for FetcherRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         skill!(ctx, FetchBall::new());
 
-        PlayerControlInput::default()
+        PlayerControlInput::new().with_dribbling(FetchBall::new().dribbling_distance).clone()
     }
 }
