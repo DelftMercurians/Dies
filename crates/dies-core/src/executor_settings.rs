@@ -53,8 +53,8 @@ impl Default for ControllerSettings {
             angle_kp: 1.0,
             angle_proportional_time_window: 0.02,
             angle_cutoff_distance: 0.,
-            force_alpha: 0.001,
-            force_beta: 0.01,
+            force_alpha: 1.0,
+            force_beta: 16.0,
         }
     }
 }

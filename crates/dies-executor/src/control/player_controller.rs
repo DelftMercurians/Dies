@@ -4,9 +4,12 @@ use super::{
     force_field::compute_force,
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
+    rrt::find_path,
     yaw_control::YawController,
 };
-use dies_core::{Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2};
+use dies_core::{
+    Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
+};
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 100.0;
@@ -35,6 +38,9 @@ pub struct PlayerController {
     kicker: KickerState,
     /// Dribble speed normalized to \[0, 1\]
     dribble_speed: f64,
+
+    force_alpha: f64,
+    force_beta: f64,
 }
 
 impl PlayerController {
@@ -62,6 +68,9 @@ impl PlayerController {
             frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
+
+            force_alpha: settings.force_alpha,
+            force_beta: settings.force_beta,
         };
         instance.update_settings(settings);
         instance
@@ -82,6 +91,8 @@ impl PlayerController {
             settings.max_angular_acceleration,
             settings.angle_cutoff_distance,
         );
+        self.force_alpha = settings.force_alpha;
+        self.force_beta = settings.force_beta;
     }
 
     /// Get the ID of the player.
@@ -140,7 +151,13 @@ impl PlayerController {
     }
 
     /// Update the controller with the current state of the player.
-    pub fn update(&mut self, state: &PlayerData, input: &PlayerControlInput, dt: f64) {
+    pub fn update(
+        &mut self,
+        state: &PlayerData,
+        world: &WorldData,
+        input: &PlayerControlInput,
+        dt: f64,
+    ) {
         // Calculate velocity using the MTP controller
         self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
@@ -154,6 +171,8 @@ impl PlayerController {
             );
 
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
+            let f = compute_force(state, &pos_target, world, self.force_alpha, self.force_beta);
+            let pos_u = pos_u.norm() * f;
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         } else {

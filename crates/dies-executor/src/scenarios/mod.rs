@@ -20,6 +20,13 @@ fn one_random_player() -> ScenarioSetup {
     scenario
 }
 
+fn test_vo() -> ScenarioSetup {
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    // scenario.add_own_player_at(Vector2::new(1000.0, 0.0));
+    scenario
+}
+
 fn two_players_one_ball() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
     scenario
@@ -61,7 +68,9 @@ fn test_role_multiple_targets() -> ScenarioSetup {
 
 fn two_players_crossing() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(-800.0, -1000.0)])));
+    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(
+        -1000.0, -1000.0,
+    )])));
     strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(1000.0, 1000.0)])));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
@@ -175,6 +184,7 @@ impl Serialize for ScenarioType {
 scenarios! {
     empty_scenario,
     one_random_player,
+    test_vo,
     two_players_one_ball,
     one_waller_one_ball,
     two_players_crossing,

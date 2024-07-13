@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
+    fmt::format,
 };
 
 use crate::{
@@ -13,10 +14,16 @@ use super::{
     force_field::compute_force,
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
+    rrt::find_path,
+    vo::{compute_velocity_constraints, Obstacle},
 };
-use dies_core::{ControllerSettings, GameState, PlayerId, Vector2};
+use dies_core::{
+    debug_circle_stroke, debug_line, ControllerSettings, DebugColor, GameState, PlayerData,
+    PlayerId, Vector2,
+};
 use dies_core::{PlayerCmd, WorldData};
 use dodgy_2d::{Agent, AvoidanceOptions};
+use serde::de;
 
 #[derive(Default)]
 struct RoleState {
@@ -89,6 +96,44 @@ impl TeamController {
             inputs = stop_override(&world_data, inputs);
         }
 
+        let opponent_obstacles = world_data
+            .opp_players
+            .iter()
+            .map(|p| {
+                Cow::Owned::<dodgy_2d::Obstacle>(velocity_aligned_bounding_box(
+                    p.position.xy(),
+                    p.velocity.xy(),
+                    100.0,
+                    world_data.dt,
+                ))
+            })
+            .collect::<Vec<_>>();
+
+        // draw obstacles
+        // for (obs_idx, obs) in opponent_obstacles.iter().enumerate() {
+        //     match obs.as_ref() {
+        //         dodgy_2d::Obstacle::Closed { vertices } => {
+        //             for i in 0..vertices.len() {
+        //                 let j = (i + 1) % vertices.len();
+        //                 let a = Vector2::new(vertices[i].x as f64, vertices[i].y as f64);
+        //                 let b = Vector2::new(vertices[j].x as f64, vertices[j].y as f64);
+        //                 debug_line(format!("obstacle-{}-{}", obs_idx, i), a, b, DebugColor::Red);
+        //             }
+        //         }
+        //         dodgy_2d::Obstacle::Open { vertices } => {
+        //             for i in 0..vertices.len() {
+        //                 if i == vertices.len() - 1 {
+        //                     break;
+        //                 }
+        //                 let j = (i + 1) % vertices.len();
+        //                 let a = Vector2::new(vertices[i].x as f64, vertices[i].y as f64);
+        //                 let b = Vector2::new(vertices[j].x as f64, vertices[j].y as f64);
+        //                 debug_line(format!("obstacle-{}-{}", obs_idx, i), a, b, DebugColor::Red);
+        //             }
+        //         }
+        //     }
+        // }
+
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
@@ -100,17 +145,110 @@ impl TeamController {
                 let id = controller.id();
                 let default_input = inputs.player(id);
                 let input = manual_override.get(&id).unwrap_or(&default_input);
-                let is_manual = manual_override.contains_key(&id);
-                controller.update(player_data, input, world_data.dt);
+                controller.update(player_data, &world_data, input, world_data.dt);
+
+                // if id.as_u32() == 0 {
+                //     let obstacles = vec![
+                //         // Obstacle::Circular {
+                //         //     center: Vector2::new(0.0, 0.0),
+                //         //     velocity: Vector2::new(0.0, 0.0),
+                //         //     radius: 100.0,
+                //         // },
+                //         Obstacle::Rectangular {
+                //             center: Vector2::new(1000.0, 1000.0),
+                //             width: 200.0,
+                //             height: 200.0,
+                //         },
+                //     ];
+                //     // draw obstacles
+                //     obstacles
+                //         .iter()
+                //         .enumerate()
+                //         .for_each(|(idx, obs)| match obs {
+                //             Obstacle::Circular { center, radius, .. } => {
+                //                 debug_circle_stroke(
+                //                     format!("obstacle-{}", idx),
+                //                     *center,
+                //                     *radius,
+                //                     DebugColor::Red,
+                //                 );
+                //             }
+                //             Obstacle::Rectangular {
+                //                 center,
+                //                 width,
+                //                 height,
+                //             } => {
+                //                 let half_width = *width / 2.0;
+                //                 let half_height = *height / 2.0;
+                //                 let vertices = vec![
+                //                     Vector2::new(center.x - half_width, center.y - half_height),
+                //                     Vector2::new(center.x + half_width, center.y - half_height),
+                //                     Vector2::new(center.x + half_width, center.y + half_height),
+                //                     Vector2::new(center.x - half_width, center.y + half_height),
+                //                 ];
+                //                 for i in 0..vertices.len() {
+                //                     let j = (i + 1) % vertices.len();
+                //                     debug_line(
+                //                         format!("obstacle-{}-{}", idx, i),
+                //                         vertices[i],
+                //                         vertices[j],
+                //                         DebugColor::Red,
+                //                     );
+                //                 }
+                //             }
+                //         });
+                //     compute_velocity_constraints(
+                //         player_data,
+                //         &world_data.own_players,
+                //         &obstacles,
+                //         0.5,
+                //     )
+                //     .iter()
+                //     .enumerate()
+                //     .for_each(|(idx, constraint)| {
+                //         let center = player_data.position + constraint.apex;
+                //         let left = center + constraint.left * 1000.0;
+                //         let right = center + constraint.right * 1000.0;
+                //         debug_line(
+                //             format!("constraint-{}-left", idx),
+                //             center,
+                //             left,
+                //             DebugColor::Purple,
+                //         );
+                //         debug_line(
+                //             format!("constraint-{}-right", idx),
+                //             center,
+                //             right,
+                //             DebugColor::Purple,
+                //         );
+                //     });
+                // }
+
+                let is_manual = manual_override
+                    .get(&id)
+                    .map(|i| !i.velocity.is_zero())
+                    .unwrap_or(false);
 
                 if !is_manual {
-                    // let position = player_data.position;
-                    let agent = &own_agents.iter().find(|(aid, _)| id == *aid).unwrap().1;
-                    let neighbors = own_agents
+                    let position = player_data.position;
+                    let agent = agent_from_player(player_data);
+
+                    let obstacle_margin = 50.0;
+                    let time_horizon = world_data.dt * 10.0;
+                    let obstacle_time_horizon = world_data.dt * 4.0;
+
+                    let query_dist = self.settings.max_velocity * time_horizon + 200.0;
+                    let neighbors = world_data
+                        .own_players
                         .iter()
-                        .filter(|(other_id, _)| *other_id != id)
-                        .map(|(_, a)| a)
-                        .cloned()
+                        .filter_map(|p| {
+                            if p.id != id && (p.position - position).norm() < query_dist {
+                                Some(agent_from_player(p))
+                            } else {
+                                None
+                            }
+                        })
+                        .map(Cow::Owned)
                         .collect::<Vec<_>>();
                     let target_vel = controller.target_velocity();
                     let target_vel = dodgy_2d::Vec2 {
@@ -122,14 +260,14 @@ impl TeamController {
                         // Neighbors - other players
                         neighbors.as_slice(),
                         // Obstacles
-                        &vec![],
+                        opponent_obstacles.as_slice(),
                         target_vel,
                         self.settings.max_velocity as f32,
                         world_data.dt as f32,
                         &AvoidanceOptions {
-                            obstacle_margin: 0.0,
-                            time_horizon: 3.0,
-                            obstacle_time_horizon: 1.0,
+                            obstacle_margin,
+                            time_horizon: time_horizon as f32,
+                            obstacle_time_horizon: obstacle_time_horizon as f32,
                         },
                     );
 
@@ -189,4 +327,50 @@ fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
             (*id, new_input)
         })
         .collect()
+}
+
+fn agent_from_player(player: &PlayerData) -> dodgy_2d::Agent {
+    dodgy_2d::Agent {
+        position: dodgy_2d::Vec2::new(player.position.x as f32, player.position.y as f32),
+        velocity: dodgy_2d::Vec2::new(player.velocity.x as f32, player.velocity.y as f32),
+        radius: 100.0,
+        avoidance_responsibility: player.velocity.norm() as f32,
+    }
+}
+
+fn velocity_aligned_bounding_box(
+    position: Vector2,
+    velocity: Vector2,
+    radius: f64,
+    dt: f64,
+) -> dodgy_2d::Obstacle {
+    let position = dodgy_2d::Vec2::new(position.x as f32, position.y as f32);
+    if velocity.magnitude() == 0.0 {
+        let radius = radius as f32;
+        return dodgy_2d::Obstacle::Closed {
+            vertices: vec![
+                position + dodgy_2d::Vec2::new(radius, radius),
+                position + dodgy_2d::Vec2::new(-radius, radius),
+                position + dodgy_2d::Vec2::new(-radius, -radius),
+                position + dodgy_2d::Vec2::new(radius, -radius),
+            ],
+        };
+    }
+
+    let direction = velocity.normalize();
+    let perpendicular = Vector2::new(-direction.y, direction.x);
+    let half_width = radius * perpendicular;
+    let half_length = 0.5 * velocity * dt + radius * direction;
+
+    let half_width = dodgy_2d::Vec2::new(half_width.x as f32, half_width.y as f32);
+    let half_length = dodgy_2d::Vec2::new(half_length.x as f32, half_length.y as f32);
+
+    dodgy_2d::Obstacle::Closed {
+        vertices: vec![
+            position + half_width + half_length,
+            position - half_width + half_length,
+            position - half_width - half_length,
+            position + half_width - half_length,
+        ],
+    }
 }
