@@ -20,6 +20,7 @@ impl FetcherRole {
 
 impl Role for FetcherRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+        skill!(ctx, Wait::new_secs_f64(0.5));
         skill!(ctx, FetchBall::new());
 
         PlayerControlInput::new().with_dribbling(FetchBall::new().dribbling_distance).clone()

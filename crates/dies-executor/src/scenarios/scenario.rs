@@ -73,6 +73,14 @@ impl ScenarioSetup {
         self
     }
 
+    pub fn add_own_player_at_with_yaw(&mut self, player: Vector2, _yaw: Angle) -> &mut Self {
+        self.own_players.push(PlayerPlacement {
+            position: Some(player),
+            yaw: Some(_yaw),
+        });
+        self
+    }
+
     /// Add an opponent player at a specific position.
     pub fn add_opp_player_at(&mut self, player: Vector2) -> &mut Self {
         self.opp_players.push(PlayerPlacement {

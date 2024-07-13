@@ -1,10 +1,12 @@
 #[deny(dead_code)]
 mod scenario;
+use std::f64::consts::PI;
+
 use crate::{
-    roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller, fetcher_role::FetcherRole},
+    roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller, fetcher_role::FetcherRole, kicker_role::KickerRole},
     strategy::AdHocStrategy,
 };
-use dies_core::{Vector2, Vector3};
+use dies_core::{Vector2, Vector3, Angle};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -87,10 +89,11 @@ fn navigate_stationary_opponents() -> ScenarioSetup {
 fn fetch_ball_test () -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(FetcherRole::new()));
-
+    strategy.add_role(Box::new(KickerRole::new()));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
-        .add_own_player_at(Vector2::new(-2000.0, -2000.0))
+        .add_own_player_at(Vector2::new(-2500.0, -1000.0))
+        .add_own_player_at_with_yaw(Vector2::new(250.0, 0.0), Angle::from_radians(PI as f64))
         .add_ball_at(Vector3::new(0.0,0.0, 0.0));
 
     scenario

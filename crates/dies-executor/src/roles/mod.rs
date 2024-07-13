@@ -4,6 +4,7 @@ pub mod dribble_role;
 pub mod test_role;
 pub mod waller;
 pub mod fetcher_role;
+pub mod kicker_role;
 
 use std::{cell::RefCell, collections::HashMap};
 
