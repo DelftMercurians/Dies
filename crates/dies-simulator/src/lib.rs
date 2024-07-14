@@ -470,8 +470,10 @@ impl Simulation {
 
     fn new_detection_packet(&mut self) {
         let mut detection = SSL_DetectionFrame::new();
+        detection.set_frame_number(1);
         detection.set_t_capture(self.current_time);
         detection.set_t_sent(self.current_time);
+        detection.set_camera_id(1);
 
         // Players
         for player in self.players.iter() {
@@ -482,6 +484,8 @@ impl Simulation {
             robot.set_robot_id(player.id.as_u32());
             robot.set_x(position.x as f32);
             robot.set_y(position.y as f32);
+            robot.set_pixel_x(0.0);
+            robot.set_pixel_y(0.0);
             robot.set_orientation(yaw as f32);
             robot.set_confidence(1.0);
             if player.is_own {
@@ -500,6 +504,8 @@ impl Simulation {
             ball_det.set_y(ball_position.y as f32);
             ball_det.set_z(ball_position.z as f32);
             ball_det.set_confidence(1.0);
+            ball_det.set_pixel_x(0.0);
+            ball_det.set_pixel_y(0.0);
             detection.balls.push(ball_det);
         }
 
