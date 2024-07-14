@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use dodgy_2d::Obstacle;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
@@ -46,7 +46,7 @@ pub struct WorldUpdate {
 }
 
 /// The game state, as reported by the referee.
-#[derive(Serialize, Clone, Debug, PartialEq, Copy, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Copy, Default)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub enum GameState {
@@ -66,7 +66,7 @@ pub enum GameState {
 }
 
 /// A struct to store the ball state from a single frame.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct BallData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
@@ -80,7 +80,7 @@ pub struct BallData {
     pub velocity: Vector3,
 }
 
-#[derive(Serialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[typeshare]
 pub struct GameStateData {
     /// The state of current game
@@ -91,7 +91,7 @@ pub struct GameStateData {
 }
 
 /// A struct to store the player state from a single frame.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct PlayerData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
@@ -145,7 +145,7 @@ impl PlayerData {
     }
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PlayerModel {
     pub radius: f64,
     pub dribbler_angle: Angle,
@@ -174,7 +174,7 @@ pub enum BallPrediction {
 }
 
 /// A struct to store the world state from a single frame.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct WorldData {
     /// Timestamp of the frame, in seconds. This timestamp is relative to the time the

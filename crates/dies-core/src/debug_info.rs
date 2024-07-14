@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Notify};
 use typeshare::typeshare;
 
@@ -11,7 +11,7 @@ use crate::Vector2;
 
 static DEBUG_MESSAGES: OnceLock<mpsc::UnboundedSender<UpdateMsg>> = OnceLock::new();
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[typeshare]
 pub enum DebugColor {
@@ -22,7 +22,7 @@ pub enum DebugColor {
     Purple,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub enum DebugShape {
@@ -43,7 +43,7 @@ pub enum DebugShape {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub enum DebugValue {

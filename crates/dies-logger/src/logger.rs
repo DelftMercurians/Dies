@@ -1,3 +1,4 @@
+use dies_core::{DebugMap, WorldData};
 use dies_protos::{
     dies_log_line::{LogLevel, LogLine},
     ssl_gc_referee_message::Referee,
@@ -5,10 +6,10 @@ use dies_protos::{
 };
 use log::{Log, Metadata, Record};
 use protobuf::{EnumOrUnknown, Message};
-use std::{path::PathBuf, sync::OnceLock, thread};
+use std::{borrow::Cow, path::PathBuf, sync::OnceLock, thread};
 use tokio::sync::mpsc;
 
-use crate::log_codec::{LogFileWriter, LogMessage};
+use crate::{log_codec::{LogFileWriter, LogMessage}, DataLogRef};
 
 static PROTOBUF_LOGGER: OnceLock<AsyncProtobufLogger> = OnceLock::new();
 const LOG_VERSION: u32 = 1;
@@ -31,6 +32,25 @@ pub fn log_referee(data: &Referee) {
         let _ = logger
             .sender
             .send(WorkerMsg::Log(LogMessage::Referee(data.clone())));
+    }
+}
+
+pub fn log_world(data: &WorldData) {
+    if let Some(logger) = PROTOBUF_LOGGER.get() {
+        // We serialize the data here to avoid borrowing issues
+        let data = bincode::serialize(&DataLogRef::World(Cow::Borrowed(data))).unwrap();
+        let _ = logger
+            .sender
+            .send(WorkerMsg::Log(LogMessage::Bytes(data)));
+    }
+}
+
+pub fn log_debug(data: &DebugMap) {
+    if let Some(logger) = PROTOBUF_LOGGER.get() {
+        let data = bincode::serialize(&DataLogRef::Debug(Cow::Borrowed(data))).unwrap();
+        let _ = logger
+            .sender
+            .send(WorkerMsg::Log(LogMessage::Bytes(data)));
     }
 }
 
@@ -167,7 +187,7 @@ mod tests {
 
         let logfile = LogFile::open(temp.path()).unwrap();
         assert!(logfile.messages().len() == 1);
-        match &logfile.messages()[0] {
+        match &logfile.messages()[0].message {
             LogMessage::DiesLog(line) => assert_eq!(line.message, Some("testing!".into())),
             _ => panic!("unexpected message type"),
         }
