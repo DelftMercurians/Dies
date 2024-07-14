@@ -114,6 +114,12 @@ pub struct CliArgs {
 
     #[clap(long, default_value = "logs")]
     pub log_directory: String,
+
+    #[clap(long, default_value = ".")]
+    pub log_input: PathBuf,
+
+    #[clap(long, default_value = ".")]
+    pub log_output: PathBuf,
 }
 
 impl CliArgs {

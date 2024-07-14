@@ -1,13 +1,14 @@
 use anyhow::{bail, Context, Result};
-use std::{
-    fs::File,
-    io::{BufWriter, Write}, time::Instant,
-};
-use std::{io::Read, path::Path};
-
 use dies_protos::{
     dies_log_line::LogLine, ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket,
 };
+use std::{
+    fs::File,
+    io::{BufWriter, Read, Write},
+    path::Path,
+    time::Instant,
+};
+
 use protobuf::Message;
 
 use crate::{DataLog, DataLogRef};
@@ -101,10 +102,7 @@ impl LogFileWriter {
             LogMessage::Vision(vision) => self.write_vision(vision),
             LogMessage::Referee(referee) => self.write_referee(referee),
             LogMessage::Bytes(bytes) => self.write_bytes(bytes),
-            LogMessage::DiesData(data) => {
-                let data: DataLogRef<'_> = data.into();
-                self.write_bytes(&bincode::serialize(&data)?)
-            }
+            LogMessage::DiesData(data) => self.write_bytes(&bincode::serialize(&data)?),
         }
     }
 
@@ -216,9 +214,12 @@ impl LogFile {
                     if let Ok(log_line) = LogLine::parse_from_bytes(&message_buf) {
                         LogMessage::DiesLog(log_line)
                     } else {
-                        match bincode::deserialize::<DataLogRef<'_>>(&message_buf) {
+                        match bincode::deserialize::<DataLog>(&message_buf) {
                             Ok(data) => LogMessage::DiesData(data.into()),
-                            Err(_) => LogMessage::Bytes(message_buf.clone()),
+                            Err(err) => {
+                                println!("Unknown message type, error: {}", err);
+                                LogMessage::Bytes(message_buf.clone())
+                            }
                         }
                     }
                 }
@@ -263,9 +264,15 @@ impl LogFile {
 
 #[cfg(test)]
 mod tests {
+    use dies_core::{
+        Angle, DebugColor, DebugValue, FieldGeometry, GameState, GameStateData, PlayerData,
+        PlayerId, PlayerModel, SysStatus, Vector2, WorldData,
+    };
     use dies_protos::dies_log_line::LogLevel;
     use flate2::read::GzDecoder;
     use tempfile::NamedTempFile;
+
+    use crate::TestData;
 
     use super::*;
 
@@ -391,9 +398,14 @@ mod tests {
         let version = 1;
         let mut writer = LogFileWriter::open(temp.path(), version).unwrap();
 
-        let messages = vec![LogMessage::DiesData(DataLog::Debug(Default::default()))];
+        let mut debug_map = std::collections::HashMap::new();
+        debug_map.insert("test".to_string(), DebugValue::Number(10.0));
+        let messages = vec![DataLog::Test(TestData::A {
+            color: DebugColor::Red,
+        })];
         for message in &messages {
-            writer.write_log_message(message).unwrap();
+            let data = bincode::serialize(&message).unwrap();
+            writer.write_bytes(&data).unwrap();
         }
 
         // Close writer
@@ -408,13 +420,75 @@ mod tests {
             .messages()
             .iter()
             .zip(messages.iter())
-            .all(|(a, b)| match (&a.message, b) {
-                (LogMessage::DiesData(a), LogMessage::DiesData(b)) => match (a, b) {
-                    (DataLog::Debug(_), DataLog::Debug(_)) => true,
+            .all(|(a, b)| match &a.message {
+                LogMessage::DiesData(a) => match (a, b) {
+                    (DataLog::Debug { .. }, DataLog::Debug { .. }) => true,
                     (DataLog::World(_), DataLog::World(_)) => true,
-                    _ => false,
+                    _ => {
+                        println!("Unexpected message type: {:?}", a);
+                        false
+                    }
                 },
-                _ => false,
+                _ => {
+                    println!("Unexpected message type: {:?}", a);
+                    false
+                }
             }));
+    }
+
+    fn setup_world_data() -> WorldData {
+        WorldData {
+            own_players: vec![PlayerData {
+                id: PlayerId::new(0),
+                position: Vector2::new(1000.0, 1000.0),
+                timestamp: 0.0,
+                raw_position: Vector2::new(1000.0, 1000.0),
+                velocity: Vector2::zeros(),
+                yaw: Angle::default(),
+                raw_yaw: Angle::default(),
+                angular_speed: 0.0,
+                primary_status: Some(SysStatus::Ready),
+                kicker_cap_voltage: Some(0.0),
+                kicker_temp: Some(0.0),
+                pack_voltages: Some([0.0, 0.0]),
+                breakbeam_ball_detected: false,
+            }],
+            opp_players: vec![PlayerData {
+                id: PlayerId::new(1),
+                position: Vector2::new(-1000.0, -1000.0),
+                timestamp: 0.0,
+                raw_position: Vector2::new(-1000.0, -1000.0),
+                velocity: Vector2::zeros(),
+                yaw: Angle::default(),
+                raw_yaw: Angle::default(),
+                angular_speed: 0.0,
+                primary_status: Some(SysStatus::Ready),
+                kicker_cap_voltage: Some(0.0),
+                kicker_temp: Some(0.0),
+                pack_voltages: Some([0.0, 0.0]),
+                breakbeam_ball_detected: false,
+            }],
+            field_geom: Some(FieldGeometry {
+                field_length: 9000.0,
+                field_width: 6000.0,
+                ..Default::default()
+            }),
+            player_model: PlayerModel {
+                radius: 90.0,
+                dribbler_angle: Angle::from_degrees(56.0),
+                max_speed: 1000.0,
+                max_acceleration: 1000.0,
+                max_angular_speed: 1000.0,
+                max_angular_acceleration: 1000.0,
+            },
+            t_received: 0.0,
+            t_capture: 0.0,
+            dt: 1.0,
+            ball: None,
+            current_game_state: GameStateData {
+                game_state: GameState::Run,
+                us_operating: true,
+            },
+        }
     }
 }

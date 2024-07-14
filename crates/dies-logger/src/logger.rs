@@ -55,20 +55,21 @@ pub fn log_referee(data: &Referee) {
     }
 }
 
-pub fn log_world(data: &WorldData) {
-    if let Some(logger) = PROTOBUF_LOGGER.get() {
-        // We serialize the data here to avoid borrowing issues
-        let data = bincode::serialize(&DataLogRef::World(Cow::Borrowed(data))).unwrap();
-        let _ = logger.sender.send(WorkerMsg::Log(LogMessage::Bytes(data)));
-    }
-}
+// pub fn log_world(data: &WorldData) {
+//     if let Some(logger) = PROTOBUF_LOGGER.get() {
+//         // We serialize the data here to avoid borrowing issues
+//         let data = bincode::serialize(&DataLogRef::World(Cow::Borrowed(data))).unwrap();
+//         let _ = logger.sender.send(WorkerMsg::Log(LogMessage::Bytes(data)));
+//     }
+// }
 
-pub fn log_debug(data: &DebugMap) {
-    if let Some(logger) = PROTOBUF_LOGGER.get() {
-        let data = bincode::serialize(&DataLogRef::Debug(Cow::Borrowed(data))).unwrap();
-        let _ = logger.sender.send(WorkerMsg::Log(LogMessage::Bytes(data)));
-    }
-}
+// pub fn log_debug(data: &DebugMap) {
+//     if let Some(logger) = PROTOBUF_LOGGER.get() {
+//         println!("Logging debug data: {:?}", data);
+//         let data = bincode::serialize(&DataLogRef::Debug(Cow::Borrowed(data))).unwrap();
+//         let _ = logger.sender.send(WorkerMsg::Log(LogMessage::Bytes(data)));
+//     }
+// }
 
 pub fn log_bytes(bytes: &[u8]) {
     if let Some(logger) = PROTOBUF_LOGGER.get() {

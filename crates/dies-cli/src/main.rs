@@ -6,6 +6,7 @@ use std::{process::ExitCode, str::FromStr};
 use tokio::sync::broadcast;
 
 mod cli_modes;
+mod convert_logs;
 mod tui_utils;
 
 #[tokio::main]
@@ -13,9 +14,9 @@ async fn main() -> ExitCode {
     println!("Dies CLI v{}", env!("CARGO_PKG_VERSION"));
 
     console_subscriber::init();
-    
+
     let args = tui_utils::CliArgs::parse();
-    
+
     // Set up logging
     let log_dir_path = match args.ensure_log_dir_path().await {
         Ok(path) => path,
@@ -36,11 +37,16 @@ async fn main() -> ExitCode {
     log::info!("Saving logs to {}", log_dir_path.display());
 
     let (stop_tx, stop_rx) = broadcast::channel(1);
-    let main_task = tokio::spawn(async move { CliMode::run(args, stop_rx).await });
+    let main_task = tokio::spawn(async move {
+        if let Err(err) = CliMode::run(args, stop_rx).await {
+            log::error!("Error in main task: {}", err);
+        }
+    });
 
     tokio::signal::ctrl_c()
         .await
         .expect("Failed to listen for ctrl-c");
+
     logger.flush();
     println!("Shutting down (timeout 3 seconds)... Press ctrl-c again to force shutdown");
     // Allow the logger to flush before shutting down
