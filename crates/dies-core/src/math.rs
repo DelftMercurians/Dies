@@ -39,9 +39,9 @@ pub fn get_tangent_line_direction(
     circle_radius: f64,
     point: Vector2,
 ) -> (Angle, Angle) {
-    let direction = point - circle_center;
+    let direction:Vector2 = circle_center - point;
     let distance = direction.norm();
-    let angle = Angle::from_vector(direction);
+    let angle = Angle::from_radians(direction.y.atan2(direction.x));
     let v = Angle::from_radians((circle_radius / distance).asin());
     let angle1 = angle + v;
     let angle2 = angle - v;
@@ -71,7 +71,8 @@ mod tests {
         let circle_radius = 1.0;
         let point = Vector2::new(2.0, 2.0);
         let (angle1, angle2) = get_tangent_line_direction(circle_center, circle_radius, point);
-        println!("{}, {}", angle1.radians(), angle2.radians());
+        assert_relative_eq!(angle1.degrees(), -90.0, epsilon = 1e-10);
+        assert_relative_eq!(angle2.degrees(), 180.0, epsilon = 1e-10);
     }
     #[test]
     fn test_intersecting_lines() {

@@ -266,13 +266,16 @@ impl Skill for FetchBallWithHeading {
         let world_data = ctx.world;
         let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius;
         let target_pos = self.init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
-
+        if (player_data.position - target_pos).norm() < 100.0 && player_data.yaw.angle_diff(self.target_heading) < 0.1{
+            return SkillProgress::Done(SkillResult::Success);
+        }
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
             let ball_distance = (ball.position.xy() - self.init_ball_pos).norm();
             if(ball_distance >= 100.0) {   //ball movement
                 return SkillProgress::Done(SkillResult::Failure);
             }
+            
             let direct_target = which_side_of_robot(self.target_heading, target_pos, player_data.position);
             if direct_target == true{
                 input.with_position(target_pos).with_yaw(self.target_heading);
@@ -283,10 +286,10 @@ impl Skill for FetchBallWithHeading {
                 let target_posA = find_intersection(player_data.position, Angle::to_vector(&dirA), target_pos, perp(self.target_heading.to_vector()));
                 let target_posB = find_intersection(player_data.position, Angle::to_vector(&dirB), target_pos, perp(self.target_heading.to_vector()));
                 // pick the nearest point as the target
-                let target_pos = if (target_posA - player_data.position).norm() < (target_posB - player_data.position).norm() {
-                    target_posA
+                let target_pos = if (target_posA.unwrap() - player_data.position).norm() < (target_posB.unwrap() - player_data.position).norm() {
+                    target_posA.unwrap()
                 } else {
-                    target_posB
+                    target_posB.unwrap()
                 };
                 input.with_position(target_pos).with_yaw(self.target_heading);
                 return SkillProgress::Continue(input);

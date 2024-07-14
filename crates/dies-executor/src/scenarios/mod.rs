@@ -138,6 +138,18 @@ fn fetch_ball_test () -> ScenarioSetup {
     scenario
 }
 
+fn fetch_ball_2 () -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role_with_id(PlayerId::new(0), Box::new(FetcherRole::new()));
+    strategy.add_role_with_id(PlayerId::new(1), Box::new(KickerRole::new()));
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        .add_own_player_at(Vector2::new(-2500.0, -1000.0))
+        .add_ball_at(Vector3::new(0.0,0.0, 0.0));
+
+    scenario
+}
+
 fn fetch_ball_test_live () -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role( Box::new(FetcherRole::new()));
@@ -247,7 +259,8 @@ scenarios! {
     dribble,
     rvo_benchmark,
     fetch_ball_test,
-    fetch_ball_test_live
+    fetch_ball_test_live,
+    fetch_ball_2
 }
 
 #[cfg(test)]
