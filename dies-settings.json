@@ -9,7 +9,7 @@
     "position_kp": 1.4,
     "position_proportional_time_window": 0.0,
     "position_cutoff_distance": 30.0,
-    "angle_kp": 1.0,
+    "angle_kp": 0.3,
     "angle_proportional_time_window": 0.02,
     "angle_cutoff_distance": 0.08726646259971647
   },

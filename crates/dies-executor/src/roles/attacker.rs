@@ -1,4 +1,5 @@
 use dies_core::{Angle, FieldGeometry, Vector2, WorldData, PlayerData, BallData, PlayerId};
+use nalgebra::distance;
 use super::RoleCtx;
 use crate::{roles::Role, PlayerControlInput, KickerControlInput};
 
@@ -9,12 +10,13 @@ pub struct Attacker {
     passer_id: Option<PlayerId>,
     shooter_id: Option<PlayerId>,
     passer_kicked: bool,
+    starting_pos: Vector2,
 }
 
 impl Attacker {
     /// Create a new Waller role with the given offset from the intersection point.
     pub fn new(position: Vector2) -> Self {
-        Self { position, passer_id: None, shooter_id: None, passer_kicked: false}
+        Self { position, starting_pos: Vector2::new(0.0,0.0), passer_id: None, shooter_id: None, passer_kicked: false}
     }
 
     /// Calculate the distance between two points.
@@ -82,6 +84,27 @@ impl Role for Attacker {
             let passer_pos = ctx.world.own_players.iter().find(|p| p.id == self.passer_id.unwrap()).unwrap().position;
             let shooter_pos = ctx.world.own_players.iter().find(|p| p.id == self.shooter_id.unwrap()).unwrap().position;
             let mut input = PlayerControlInput::new();
+
+            // If the player moved more than 1m then it should look for another player to pass the ball
+            if self.distance(ctx.player.position, ball.position.xy()) < 500.0 {
+                if self.starting_pos == Vector2::new(0.0,0.0) {
+                    self.starting_pos = ctx.player.position;
+                }
+                dies_core::debug_cross("StartingPos", self.starting_pos, dies_core::DebugColor::Green);
+                println!("Distance to starting pos: {}", self.distance(self.starting_pos, ctx.player.position));
+                if self.distance(self.starting_pos, ctx.player.position) >= 950.0 {
+                    println!("Moved more than 950 units");
+                    // input.with_position(ctx.player.position);
+                    let target_angle = self.aim_at_player(ctx.player.position, shooter_pos);
+                    input.with_yaw(target_angle);
+                    input.with_dribbling(1.0);
+                    if (target_angle - ctx.player.yaw).abs() < 0.1 {
+                        input.with_kicker(KickerControlInput::Kick);
+                        self.starting_pos = Vector2::new(0.0,0.0);
+                    }
+                    return input;
+                }
+            }
 
             // If the player is the passer
                 if ctx.player.id == self.passer_id.unwrap() {
@@ -156,7 +179,6 @@ impl Role for Attacker {
                         // If the shooter is facing the goal it kicks the ball
                         if (target_angle - ctx.player.yaw).abs() < 0.1 {
                             println!("GOLLLLLLLLLLL");
-                            self.passer_kicked = true;
                             input.with_kicker(KickerControlInput::Kick);
                             
                         }
