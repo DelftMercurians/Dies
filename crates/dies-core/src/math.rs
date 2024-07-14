@@ -31,7 +31,7 @@ pub fn perp(v: Vector2) -> Vector2 {
 pub fn which_side_of_robot(heading: Angle, target_pos: Vector2, robot_pos: Vector2) -> bool {
     let heading_v = Angle::to_vector(&heading);
     let heading_v_tangent = perp(heading_v);
-    return cross_product(heading_v_tangent, robot_pos - target_pos) >= -50.0;
+    return cross_product(heading_v_tangent, robot_pos - target_pos) >= -10.0;
 }
 /// given a circle and a point, return the two tangent line directions
 pub fn get_tangent_line_direction(

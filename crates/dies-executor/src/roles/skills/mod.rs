@@ -248,7 +248,7 @@ impl Skill for FetchBall {
 
 pub struct FetchBallWithHeading {
     init_ball_pos: Vector2,
-    target_heading: Angle
+    target_heading: Angle,
 }
 
 impl FetchBallWithHeading {
@@ -289,20 +289,26 @@ impl Skill for FetchBallWithHeading {
             }
             else {
                 println!("indirect target");
-                let (dirA, dirB) = get_tangent_line_direction(  ball.position.xy(), ball_radius, player_data.position);
+                let (dirA, dirB) = get_tangent_line_direction(  ball.position.xy(), ball_radius-20.0, player_data.position);
                 let target_posA = find_intersection(player_data.position, Angle::to_vector(&dirA), target_pos, perp(self.target_heading.to_vector()));
                 let target_posB = find_intersection(player_data.position, Angle::to_vector(&dirB), target_pos, perp(self.target_heading.to_vector()));
                 log::info!("target_posA: {:?}", target_posA);
                 log::info!("target_posB: {:?}", target_posB);
                 // pick the nearest point as the target
-                let target_pos = if (target_posA.unwrap() - self.init_ball_pos).norm() < (target_posB.unwrap() -self.init_ball_pos).norm() {
+                let mut indir_target_pos = if (target_posA.unwrap() - self.init_ball_pos).norm() < (target_posB.unwrap() -self.init_ball_pos).norm() {
                     target_posA.unwrap()
                 } else {
                     target_posB.unwrap()
                 };
-                dies_core::debug_value("p0.target_pos_x", target_pos.x);
-                dies_core::debug_value("p0.target_pos_y", target_pos.y);
-                input.with_position(target_pos).with_yaw(self.target_heading);
+                
+                if indir_target_pos.x.is_nan() || indir_target_pos.y.is_nan() {
+                    println!("fixing ball inside circle");
+                    let dirC = perp(player_data.position - ball.position.xy());
+                    indir_target_pos = find_intersection(player_data.position, dirC, target_pos, perp(self.target_heading.to_vector())).unwrap();
+                }
+                dies_core::debug_value("p0.target_pos_x", indir_target_pos.x);
+                dies_core::debug_value("p0.target_pos_y", indir_target_pos.y);
+                input.with_position(indir_target_pos).with_yaw(self.target_heading);
                 return SkillProgress::Continue(input);
             }
 
