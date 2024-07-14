@@ -10,10 +10,12 @@ mod tui_utils;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    println!("Dies CLI v{}", env!("CARGO_PKG_VERSION"));
+
     console_subscriber::init();
-
+    
     let args = tui_utils::CliArgs::parse();
-
+    
     // Set up logging
     let log_dir_path = match args.ensure_log_dir_path().await {
         Ok(path) => path,

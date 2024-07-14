@@ -10,6 +10,7 @@ import {
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  useBasestationInfo,
   useDebugData,
   useScenarios,
   useSendCommand,
@@ -33,12 +34,13 @@ import {
 } from "@/components/ui/resizable";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import { SimpleTooltip } from "./components/ui/tooltip";
-import { cn, useIsOverflow } from "./lib/utils";
+import { cn, useIsOverflow, useWarningSound } from "./lib/utils";
 import Field from "./views/Field";
 import PlayerSidebar from "./views/PlayerSidebar";
 import SettingsEditor from "./views/SettingsEditor";
 import Basestation from "./views/Basestation";
 import HierarchicalList from "./views/HierarchicalList";
+import { PlayerFeedbackMsg } from "./bindings";
 
 type Panel = "left" | "right";
 
@@ -54,6 +56,10 @@ const App: React.FC = () => {
   const debugData = useDebugData();
   const tabListRef = useRef<HTMLDivElement>(null);
   const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
+
+  const bsInfo = useBasestationInfo().data;
+  const allMotorsOk = Object.values(bsInfo?.players ?? {}).every((p: PlayerFeedbackMsg) => p.motor_statuses?.find((m) => m === "NoReply") === undefined);
+  useWarningSound(!allMotorsOk);
 
   if (!backendState) {
     return (
@@ -288,22 +294,22 @@ const App: React.FC = () => {
           "bg-slate-800",
           executorStatus.type === "StartingScenario" && "bg-yellow-500",
           executorStatus.type === "RunningExecutor" &&
-            worldState.status === "connected" &&
-            "bg-green-500",
+          worldState.status === "connected" &&
+          "bg-green-500",
           (backendLoadingState === "error" ||
             executorStatus.type === "Failed") &&
-            "bg-red-500"
+          "bg-red-500"
         )}
       >
         {backendLoadingState === "error"
           ? "Failed to connect to backend"
           : executorStatus.type === "Failed"
-          ? "Executor failed"
-          : executorStatus.type === "RunningExecutor"
-          ? "Running"
-          : executorStatus.type === "StartingScenario"
-          ? "Starting scenario"
-          : "Idle"}
+            ? "Executor failed"
+            : executorStatus.type === "RunningExecutor"
+              ? "Running"
+              : executorStatus.type === "StartingScenario"
+                ? "Starting scenario"
+                : "Idle"}
       </div>
     </main>
   );

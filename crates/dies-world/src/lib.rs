@@ -136,6 +136,7 @@ impl WorldTracker {
             let t_received = time.duration_since(&first_t_received);
             if let Some(last_t_received) = self.last_t_received {
                 self.dt_received = Some(t_received - last_t_received);
+                dies_core::debug_value("dt", t_received - last_t_received);
             }
             self.last_t_received = Some(t_received);
 

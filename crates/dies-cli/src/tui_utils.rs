@@ -168,7 +168,6 @@ impl CliArgs {
     /// Returns the path to the log directory, making sure it exists. Defaults to "logs" in the current directory.
     pub async fn ensure_log_dir_path(&self) -> Result<PathBuf> {
         let path = PathBuf::from(&self.log_directory);
-        let path = tokio::fs::canonicalize(&path).await?;
         tokio::fs::create_dir_all(&path).await?;
         Ok(path)
     }

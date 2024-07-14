@@ -138,8 +138,6 @@ impl AsyncProtobufLogger {
                         if let Err(e) = log_file.write_log_message(&msg) {
                             eprintln!("Failed to write to log file: {}", e);
                         }
-                    } else {
-                        eprintln!("No log file open");
                     }
                 }
                 WorkerMsg::Flush => {

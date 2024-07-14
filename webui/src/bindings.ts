@@ -310,6 +310,7 @@ export interface WorldData {
 	ball?: BallData;
 	field_geom?: FieldGeometry;
 	current_game_state: GameStateData;
+	player_model: PlayerModel;
 }
 
 export interface WorldUpdate {

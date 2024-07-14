@@ -6,8 +6,7 @@ use super::{
     yaw_control::YawController,
 };
 use dies_core::{
-    Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2,
-    WorldData,
+    Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
 };
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
@@ -59,6 +58,7 @@ impl PlayerController {
             yaw_control: YawController::new(
                 settings.max_angular_velocity,
                 settings.max_angular_acceleration,
+                settings.angle_kp,
                 settings.angle_cutoff_distance,
             ),
             last_yaw: Angle::from_radians(0.0),
@@ -88,6 +88,7 @@ impl PlayerController {
         self.yaw_control.update_settings(
             settings.max_angular_velocity,
             settings.max_angular_acceleration,
+            settings.angle_kp,
             settings.angle_cutoff_distance,
         );
         self.force_alpha = settings.force_alpha;
