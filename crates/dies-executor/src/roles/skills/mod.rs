@@ -161,19 +161,19 @@ impl Skill for FetchBall {
                 return SkillProgress::success();
             }
 
-            // let ball_angle = {
-            //     let angle: Angle = Angle::between_points(player_pos, ball_pos);
-            //     if distance > 50.0 {
-            //         self.last_good_heading = Some(angle);
-            //         angle
-            //     } else {
-            //         self.last_good_heading.unwrap_or(angle)
-            //     }
-            // };
-            let ball_angle = Angle::between_points(player_pos, ball_pos);
+            let ball_angle = {
+                let angle: Angle = Angle::between_points(player_pos, ball_pos);
+                if distance > 50.0 {
+                    self.last_good_heading = Some(angle);
+                    angle
+                } else {
+                    self.last_good_heading.unwrap_or(angle)
+                }
+            };
+            // let ball_angle = Angle::between_points(player_pos, ball_pos);
             input.with_yaw(ball_angle);
 
-            if ball_speed < 100.0 {
+            if ball_speed < 500.0 {
                 // If the ball is too slow, just go to the ball
                 let target_pos = ball_pos + ball_angle * Vector2::new(-self.stop_distance, 0.0);
                 dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "STOPPED");
@@ -219,7 +219,7 @@ impl Skill for FetchBall {
 
             // this is meant to avoid touching the ball at high speeds and losing control
             // maybe this issue is not present in real life, it happens in the sim
-            if distance < self.dribbling_distance && ball_speed < 200.0 {
+            if distance < self.dribbling_distance && ball_speed < 500.0 {
                 input.with_dribbling(self.dribbling_speed);
                 // override the velocity inverse to the distance
                 // at distance 0, the velocity is 0

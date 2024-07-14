@@ -43,11 +43,11 @@ impl Default for ControllerSettings {
         Self {
             max_acceleration: 125000.0,
             max_velocity: 2560.0,
-            max_deceleration: 37820.0,
+            max_deceleration: 2240.0,
             max_angular_velocity: 34.90658503988659,
             max_angular_acceleration: 34.90658503988659,
             max_angular_deceleration: 22.368139693559325,
-            position_kp: 3.6,
+            position_kp: 50_000.0,
             position_proportional_time_window: 0.7,
             position_cutoff_distance: 70.0,
             angle_kp: 2.0,
