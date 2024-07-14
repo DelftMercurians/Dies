@@ -11,6 +11,7 @@ use dies_core::{
     DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, WorldUpdate,
 };
 use dies_executor::{ControlMsg, ExecutorHandle};
+use serde::de;
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -44,11 +45,11 @@ impl ServerState {
     pub fn new(
         is_live_available: bool,
         settings_file: PathBuf,
+        debug_sub: DebugSubscriber,
         update_rx: watch::Receiver<Option<WorldUpdate>>,
         cmd_tx: broadcast::Sender<UiCommand>,
         robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     ) -> Self {
-        let debug_sub = DebugSubscriber::spawn();
         Self {
             is_live_available,
             update_rx,
@@ -124,13 +125,31 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     let (update_tx, update_rx) = watch::channel(None);
     let (cmd_tx, cmd_rx) = broadcast::channel(16);
     let (id_map_tx, _id_map_rx) = mpsc::unbounded_channel();
+    let debug_sub: DebugSubscriber = DebugSubscriber::spawn();
     let state = Arc::new(ServerState::new(
         config.is_live_available(),
         config.settings_file,
+        debug_sub.clone(),
         update_rx,
         cmd_tx,
         id_map_tx,
     ));
+
+    // Start debug log task -- this should probably be done elsewhere, but oh well
+    let debug_log_task = {
+        let debug_sub = debug_sub.clone();
+        let mut shutdown_rx = shutdown_rx.resubscribe();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    data = debug_sub.wait_and_get_copy() => {
+                        dies_logger::log_debug(&data);
+                    }
+                    _ = shutdown_rx.recv() => break,
+                }
+            }
+        })
+    };
 
     // Start basestation watcher
     let basestation_task = {
@@ -171,6 +190,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         .await
         .expect("Shutting down basestation watcher task failed");
     web_task.await.expect("Shutting down server task failed");
+    debug_log_task.await.expect("Shutting down debug log task failed");
 }
 
 async fn start_webserver(

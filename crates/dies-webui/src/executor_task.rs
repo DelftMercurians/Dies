@@ -191,6 +191,7 @@ impl ExecutorTask {
                 }
 
                 dies_logger::log_close();
+                dies_core::debug_clear();
             })
         };
 

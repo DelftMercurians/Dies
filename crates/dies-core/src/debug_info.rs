@@ -75,6 +75,7 @@ pub struct DebugSubscriber {
 enum UpdateMsg {
     InsertRecord { key: String, value: DebugValue },
     RemoveRecord { key: String },
+    Clear,
 }
 
 impl DebugSubscriber {
@@ -101,6 +102,9 @@ impl DebugSubscriber {
                         }
                         UpdateMsg::InsertRecord { key, value } => {
                             map.write().unwrap().insert(key, value);
+                        }
+                        UpdateMsg::Clear => {
+                            map.write().unwrap().clear();
                         }
                     }
                     notify.notify_waiters();
@@ -191,6 +195,13 @@ impl DebugRecord {
 impl Drop for DebugRecord {
     fn drop(&mut self) {
         debug_remove(self.key.clone());
+    }
+}
+
+/// Clear all debug messages.
+pub fn debug_clear() {
+    if let Some(sender) = DEBUG_MESSAGES.get() {
+        let _ = sender.send(UpdateMsg::Clear);
     }
 }
 

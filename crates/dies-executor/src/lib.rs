@@ -218,9 +218,9 @@ impl Executor {
 
     /// Update the executor with a vision message.
     pub fn update_from_vision_msg(&mut self, message: SSL_WrapperPacket, time: WorldInstant) {
-        // TODO: FIX
-        // log_vision(&message);
+        log_vision(&message);
         self.tracker.update_from_vision(&message, time);
+        log_world(&self.tracker.get());
         self.update_team_controller();
     }
 
