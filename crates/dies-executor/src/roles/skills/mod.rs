@@ -263,10 +263,12 @@ impl FetchBallWithHeading {
 impl Skill for FetchBallWithHeading {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let player_data = ctx.player;
+        log::info!("player_data.position: {:?}", player_data.position);
         let world_data = ctx.world;
-        let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius;
-        let target_pos = self.init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
-        
+        let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius * 10.0;
+        let target_pos:Vector2 = self.init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
+        dies_core::debug_value("p0.target_pos_x", target_pos.x);
+        dies_core::debug_value("p0.target_pos_y", target_pos.y);
         if (player_data.position - target_pos).norm() < 100.0 && (player_data.yaw - self.target_heading).abs() < 0.1{
             return SkillProgress::Done(SkillResult::Success);
         }
@@ -278,20 +280,28 @@ impl Skill for FetchBallWithHeading {
             }
             
             let direct_target = which_side_of_robot(self.target_heading, target_pos, player_data.position);
-            if direct_target == true{
+            if direct_target == true {
+                println!("direct target");
+                dies_core::debug_value("p0.target_pos_x", target_pos.x);
+                dies_core::debug_value("p0.target_pos_y", target_pos.y);
                 input.with_position(target_pos).with_yaw(self.target_heading);
                 return SkillProgress::Continue(input);
             }
             else {
+                println!("indirect target");
                 let (dirA, dirB) = get_tangent_line_direction(  ball.position.xy(), ball_radius, player_data.position);
                 let target_posA = find_intersection(player_data.position, Angle::to_vector(&dirA), target_pos, perp(self.target_heading.to_vector()));
                 let target_posB = find_intersection(player_data.position, Angle::to_vector(&dirB), target_pos, perp(self.target_heading.to_vector()));
+                log::info!("target_posA: {:?}", target_posA);
+                log::info!("target_posB: {:?}", target_posB);
                 // pick the nearest point as the target
-                let target_pos = if (target_posA.unwrap() - player_data.position).norm() < (target_posB.unwrap() - player_data.position).norm() {
+                let target_pos = if (target_posA.unwrap() - self.init_ball_pos).norm() < (target_posB.unwrap() -self.init_ball_pos).norm() {
                     target_posA.unwrap()
                 } else {
                     target_posB.unwrap()
                 };
+                dies_core::debug_value("p0.target_pos_x", target_pos.x);
+                dies_core::debug_value("p0.target_pos_y", target_pos.y);
                 input.with_position(target_pos).with_yaw(self.target_heading);
                 return SkillProgress::Continue(input);
             }

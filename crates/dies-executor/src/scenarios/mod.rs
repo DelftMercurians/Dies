@@ -145,7 +145,7 @@ fn fetch_ball_2 () -> ScenarioSetup {
     strategy.add_role_with_id(PlayerId::new(0), Box::new(DummyRole::new(Box::new(skill))));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
-        .add_own_player_at(Vector2::new(-2500.0, -1000.0))
+        .add_own_player_at(Vector2::new(0.0, 2500.0))
         .add_ball_at(Vector3::new(0.0,0.0, 0.0));
 
     scenario
