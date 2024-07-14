@@ -1,6 +1,6 @@
-use std::{fmt::format, time::Duration};
+use std::{ time::Duration};
 
-use dies_core::{find_intersection, Angle, Vector2};
+use dies_core::{find_intersection, Angle, Vector2, which_side_of_robot, get_tangent_line_direction, perp};
 
 use crate::{control::Velocity, PlayerControlInput};
 
@@ -240,6 +240,59 @@ impl Skill for FetchBall {
             SkillProgress::Continue(input)
         } else {
             // wait for the ball to appear
+            SkillProgress::Continue(PlayerControlInput::default())
+        }
+    }
+}
+
+
+pub struct FetchBallWithHeading {
+    init_ball_pos: Vector2,
+    target_heading: Angle
+}
+
+impl FetchBallWithHeading {
+    pub fn new(init_ball_pos: Vector2, target_heading: Angle) -> Self {
+        Self {
+            init_ball_pos,
+            target_heading,
+        }
+    }
+}
+
+impl Skill for FetchBallWithHeading {
+    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+        let player_data = ctx.player;
+        let world_data = ctx.world;
+        let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius;
+        let target_pos = self.init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
+
+        if let Some(ball) = ctx.world.ball.as_ref() {
+            let mut input = PlayerControlInput::new();
+            let ball_distance = (ball.position.xy() - self.init_ball_pos).norm();
+            if(ball_distance >= 100.0) {   //ball movement
+                return SkillProgress::Done(SkillResult::Failure);
+            }
+            let direct_target = which_side_of_robot(self.target_heading, target_pos, player_data.position);
+            if direct_target == true{
+                input.with_position(target_pos).with_yaw(self.target_heading);
+                return SkillProgress::Continue(input);
+            }
+            else {
+                let (dirA, dirB) = get_tangent_line_direction(  ball.position.xy(), ball_radius, player_data.position);
+                let target_posA = find_intersection(player_data.position, Angle::to_vector(&dirA), target_pos, perp(self.target_heading.to_vector()));
+                let target_posB = find_intersection(player_data.position, Angle::to_vector(&dirB), target_pos, perp(self.target_heading.to_vector()));
+                // pick the nearest point as the target
+                let target_pos = if (target_posA - player_data.position).norm() < (target_posB - player_data.position).norm() {
+                    target_posA
+                } else {
+                    target_posB
+                };
+                input.with_position(target_pos).with_yaw(self.target_heading);
+                return SkillProgress::Continue(input);
+            }
+
+        } else {
             SkillProgress::Continue(PlayerControlInput::default())
         }
     }

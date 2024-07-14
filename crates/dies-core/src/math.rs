@@ -1,5 +1,4 @@
-use crate::Vector2;
-
+use crate::{Angle, Vector2};
 /// Finds the intersection point of two lines.
 ///
 /// Each line is defined by a point and a direction vector. Returns None if the lines
@@ -27,11 +26,53 @@ pub fn perp(v: Vector2) -> Vector2 {
     Vector2::new(-v.y, v.x)
 }
 
+/// calculate if the robot is on the left or right side of the target point
+/// return true iff the robot can directly move to the target point without interference the ball
+pub fn which_side_of_robot(heading: Angle, target_pos: Vector2, robot_pos: Vector2) -> bool {
+    let heading_v = Angle::to_vector(&heading);
+    let heading_v_tangent = perp(heading_v);
+    return cross_product(heading_v_tangent, robot_pos - target_pos) > 0.0;
+}
+/// given a circle and a point, return the two tangent line directions
+pub fn get_tangent_line_direction(
+    circle_center: Vector2,
+    circle_radius: f64,
+    point: Vector2,
+) -> (Angle, Angle) {
+    let direction = point - circle_center;
+    let distance = direction.norm();
+    let angle = Angle::from_vector(direction);
+    let v = Angle::from_radians((circle_radius / distance).asin());
+    let angle1 = angle + v;
+    let angle2 = angle - v;
+    (angle1, angle2)
+}
+
+pub fn cross_product(v1: Vector2, v2: Vector2) -> f64 {
+    v1.x * v2.y - v1.y * v2.x
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-
+    #[test]
+    fn test_which_side_of_robot() {
+        let heading = Angle::from_degrees(0.0);
+        let target_pos = Vector2::new(1.0, 1.0);
+        let robot_pos = Vector2::new(2.0, 2.0);
+        let result = which_side_of_robot(heading, target_pos, robot_pos);
+        assert_eq!(result, false);
+        let result2 = which_side_of_robot(heading, target_pos, Vector2::new(0.0, 0.0));
+        assert_eq!(result2, true);
+    }
+    #[test]
+    fn test_get_tengent_line_direction() {
+        let circle_center = Vector2::new(1.0, 1.0);
+        let circle_radius = 1.0;
+        let point = Vector2::new(2.0, 2.0);
+        let (angle1, angle2) = get_tangent_line_direction(circle_center, circle_radius, point);
+        println!("{}, {}", angle1.radians(), angle2.radians());
+    }
     #[test]
     fn test_intersecting_lines() {
         let point1 = Vector2::new(0.0, 0.0);
