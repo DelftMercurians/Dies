@@ -15,23 +15,23 @@ async fn main() -> ExitCode {
     let args = tui_utils::CliArgs::parse();
 
     // Set up logging
-    let log_file_path = match args.ensure_log_file_path().await {
+    let log_dir_path = match args.ensure_log_dir_path().await {
         Ok(path) => path,
         Err(err) => {
-            log::error!("Failed to create log file: {}", err);
+            log::error!("Failed to create log directory: {}", err);
             return ExitCode::FAILURE;
         }
     };
-    println!("Saving logs to {}", log_file_path.display());
+    println!("Saving logs to {}", log_dir_path.display());
     let stdout_env = env_logger::Builder::new()
         .filter_level(LevelFilter::from_str(&args.log_level).expect("Invalid log level"))
         .format_timestamp(None)
         .format_module_path(false)
         .build();
-    let logger = AsyncProtobufLogger::init_with_env_logger(log_file_path.clone(), stdout_env);
+    let logger = AsyncProtobufLogger::init_with_env_logger(log_dir_path.clone(), stdout_env);
     log::set_logger(logger).unwrap(); // Safe to unwrap because we know no logger has been set yet
     log::set_max_level(log::LevelFilter::Debug);
-    log::info!("Saving logs to {}", log_file_path.display());
+    log::info!("Saving logs to {}", log_dir_path.display());
 
     let (stop_tx, stop_rx) = broadcast::channel(1);
     let main_task = tokio::spawn(async move { CliMode::run(args, stop_rx).await });

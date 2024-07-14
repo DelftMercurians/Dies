@@ -112,8 +112,8 @@ pub struct CliArgs {
     #[clap(long, default_value = "info")]
     pub log_level: String,
 
-    #[clap(long, default_value = "auto")]
-    pub log_file: String,
+    #[clap(long, default_value = "logs")]
+    pub log_directory: String,
 }
 
 impl CliArgs {
@@ -165,30 +165,12 @@ impl CliArgs {
         }
     }
 
-    /// Returns the path to the log file. If the `log_file` argument is set to "auto", a
-    /// timestamped log file will be created in the user's data directory.
-    ///
-    /// This function will make sure the log file does not already exist and will create the
-    /// necessary directories if needed.
-    pub async fn ensure_log_file_path(&self) -> Result<PathBuf> {
-        if self.log_file != "auto" {
-            let path = PathBuf::from(self.log_file.clone());
-            if path.exists() {
-                bail!("Log file already exists: {}", path.display());
-            }
-            Ok(path)
-        } else {
-            let time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-            let filemame = format!("dies-{time}.log");
-            let path = dirs::data_local_dir()
-                .map(|p| p.join("dies").join(&filemame))
-                .unwrap_or_else(|| PathBuf::from(&filemame));
-            let dir = path
-                .parent()
-                .ok_or(anyhow::anyhow!("Invalid log file path"))?;
-            tokio::fs::create_dir_all(dir).await?;
-            Ok(path)
-        }
+    /// Returns the path to the log directory, making sure it exists. Defaults to "logs" in the current directory.
+    pub async fn ensure_log_dir_path(&self) -> Result<PathBuf> {
+        let path = PathBuf::from(&self.log_directory);
+        let path = tokio::fs::canonicalize(&path).await?;
+        tokio::fs::create_dir_all(&path).await?;
+        Ok(path)
     }
 }
 

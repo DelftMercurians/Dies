@@ -133,6 +133,12 @@ impl ExecutorTask {
             let server_state = Arc::clone(&self.server_state);
             let update_tx = self.update_tx.clone();
             tokio::spawn(async move {
+                let log_file_name = {
+                    let time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+                    format!("dies-{time}.log")
+                };
+                dies_logger::log_start(log_file_name);
+
                 let executor = match (mode, ui_env) {
                     (UiMode::Simulation, _) => Ok(setup.into_simulation(settings, sim_config)),
                     (
@@ -183,6 +189,8 @@ impl ExecutorTask {
                             .set_executor_status(ExecutorStatus::Failed(format!("{}", err)));
                     }
                 }
+
+                dies_logger::log_close();
             })
         };
 

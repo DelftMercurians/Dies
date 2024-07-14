@@ -245,11 +245,6 @@ impl LogFile {
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        println!(
-            "{} file len: {:?}",
-            path.as_ref().display(),
-            std::fs::read(path.as_ref())?.len()
-        );
         Self::read(std::fs::File::open(path)?)
     }
 

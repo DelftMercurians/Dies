@@ -754,9 +754,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.7.5",
+ "chrono",
  "dies-basestation-client",
  "dies-core",
  "dies-executor",
+ "dies-logger",
  "dies-simulator",
  "dies-ssl-client",
  "dies-world",
