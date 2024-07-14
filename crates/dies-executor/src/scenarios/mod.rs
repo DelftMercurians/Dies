@@ -4,12 +4,13 @@ use std::f64::consts::PI;
 
 use crate::{
     roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller, fetcher_role::FetcherRole, kicker_role::KickerRole},
+    roles::skills::{FetchBallWithHeading},
     strategy::AdHocStrategy,
 };
 use dies_core::{PlayerId, Vector2, Vector3, Angle};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
-
+use crate::roles::dummy_role::DummyRole;
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
 fn empty_scenario() -> ScenarioSetup {
@@ -140,8 +141,8 @@ fn fetch_ball_test () -> ScenarioSetup {
 
 fn fetch_ball_2 () -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role_with_id(PlayerId::new(0), Box::new(FetcherRole::new()));
-    strategy.add_role_with_id(PlayerId::new(1), Box::new(KickerRole::new()));
+    let skill = FetchBallWithHeading::new(Vector2::new(0.0, 0.0), Angle::from_degrees(90.0));
+    strategy.add_role_with_id(PlayerId::new(0), Box::new(DummyRole::new(Box::new(skill))));
     let mut scenario = ScenarioSetup::new(strategy);
     scenario
         .add_own_player_at(Vector2::new(-2500.0, -1000.0))

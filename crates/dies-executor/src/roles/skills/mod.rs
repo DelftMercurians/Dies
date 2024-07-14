@@ -266,7 +266,8 @@ impl Skill for FetchBallWithHeading {
         let world_data = ctx.world;
         let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius;
         let target_pos = self.init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
-        if (player_data.position - target_pos).norm() < 100.0 && player_data.yaw.angle_diff(self.target_heading) < 0.1{
+        
+        if (player_data.position - target_pos).norm() < 100.0 && (player_data.yaw - self.target_heading).abs() < 0.1{
             return SkillProgress::Done(SkillResult::Success);
         }
         if let Some(ball) = ctx.world.ball.as_ref() {

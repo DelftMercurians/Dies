@@ -1,4 +1,4 @@
-mod skills;
+pub mod skills;
 
 pub mod dribble_role;
 pub mod test_role;
