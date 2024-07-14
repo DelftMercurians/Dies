@@ -98,6 +98,16 @@ impl SkillProgress {
     pub fn failure() -> SkillProgress {
         SkillProgress::Done(SkillResult::Failure)
     }
+
+    pub fn map_input<F>(self, f: F) -> SkillProgress
+    where
+        F: FnOnce(PlayerControlInput) -> PlayerControlInput,
+    {
+        match self {
+            SkillProgress::Continue(input) => SkillProgress::Continue(f(input)),
+            SkillProgress::Done(result) => SkillProgress::Done(result),
+        }
+    }
 }
 
 pub trait Skill: Send {

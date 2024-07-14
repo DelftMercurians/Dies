@@ -11,11 +11,12 @@ use dies_core::{
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 1_000.0;
+const KICK_COUNT: usize = 3;
 
 enum KickerState {
     Disarming,
     Arming,
-    Kicking,
+    Kicking(usize),
 }
 
 pub struct PlayerController {
@@ -121,9 +122,13 @@ impl PlayerController {
             KickerState::Arming => {
                 cmd.kicker_cmd = KickerCmd::Arm;
             }
-            KickerState::Kicking => {
-                cmd.kicker_cmd = KickerCmd::Kick;
-                self.kicker = KickerState::Disarming;
+            KickerState::Kicking(count) => {
+                if count == 0 {
+                    self.kicker = KickerState::Disarming;
+                } else {
+                    cmd.kicker_cmd = KickerCmd::Kick;
+                    self.kicker = KickerState::Kicking(count - 1);
+                }
             }
             _ => {}
         }
@@ -233,9 +238,14 @@ impl PlayerController {
                 self.kicker = KickerState::Arming;
             }
             KickerControlInput::Kick => {
-                self.kicker = KickerState::Kicking;
+                match self.kicker {
+                    KickerState::Disarming | KickerState::Arming => {
+                        self.kicker = KickerState::Kicking(KICK_COUNT);
+                    }
+                    KickerState::Kicking(_) => {}
+                }
             }
-            _ => {
+            KickerControlInput::Disarm | KickerControlInput::Idle => {
                 self.kicker = KickerState::Disarming;
             }
         }

@@ -232,8 +232,8 @@ impl Executor {
     }
 
     /// Update the executor with a feedback message from the robots.
-    pub fn update_from_bs_msg(&mut self, message: PlayerFeedbackMsg) {
-        self.tracker.update_from_feedback(&message);
+    pub fn update_from_bs_msg(&mut self, message: PlayerFeedbackMsg, time: WorldInstant) {
+        self.tracker.update_from_feedback(&message, time);
     }
 
     /// Get the currently active player commands.
@@ -281,7 +281,7 @@ impl Executor {
             self.update_from_vision_msg(det, simulator.time());
         }
         if let Some(feedback) = simulator.feedback() {
-            self.update_from_bs_msg(feedback);
+            self.update_from_bs_msg(feedback, simulator.time());
         }
 
         Ok(())
@@ -363,16 +363,16 @@ impl Executor {
                 Some(tx) = self.info_channel_rx.recv() => {
                     let _  = tx.send(self.info());
                 }
-                // bs_msg = bs_client.recv() => {
-                //     match bs_msg {
-                //         Ok(bs_msg) => {
-                //             self.update_from_bs_msg(bs_msg);
-                //         }
-                //         Err(err) => {
-                //             log::error!("Failed to receive BS msg: {}", err);
-                //         }
-                //     }
-                // }
+                bs_msg = bs_client.recv() => {
+                    match bs_msg {
+                        Ok(bs_msg) => {
+                            self.update_from_bs_msg(bs_msg, WorldInstant::now_real());
+                        }
+                        Err(err) => {
+                            log::error!("Failed to receive BS msg: {}", err);
+                        }
+                    }
+                }
                 _ = cmd_interval.tick() => {
                     let paused = { *self.paused_tx.borrow() };
                     if !paused {

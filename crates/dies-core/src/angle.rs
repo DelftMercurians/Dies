@@ -291,4 +291,11 @@ mod tests {
         let angle2 = Angle::between_points(b, a);
         assert_eq!(angle2.degrees(), -135.0);
     }
+
+    #[test]
+    fn test_from_vector() {
+        let v = Vector2::new(-1.0, -1.0);
+        let angle = Angle::from_vector(v);
+        assert_relative_eq!(angle.degrees(), -135.0, epsilon = 1e-5);
+    }
 }

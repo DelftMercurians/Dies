@@ -183,9 +183,9 @@ impl WorldTracker {
         }
     }
 
-    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg) {
+    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
         if let Some(player_tracker) = self.own_players_tracker.get_mut(&feedback.id) {
-            player_tracker.update_from_feedback(feedback);
+            player_tracker.update_from_feedback(feedback, time);
         }
     }
 
@@ -312,7 +312,7 @@ mod test {
         assert!(!tracker.is_init());
 
         tracker.update_from_vision(&packet_geom, WorldInstant::now_real());
-        tracker.update_from_feedback(&PlayerFeedbackMsg::empty(PlayerId::new(1)));
+        tracker.update_from_feedback(&PlayerFeedbackMsg::empty(PlayerId::new(1)), WorldInstant::now_real());
         assert!(!tracker.is_init());
 
         // Second detection frame
