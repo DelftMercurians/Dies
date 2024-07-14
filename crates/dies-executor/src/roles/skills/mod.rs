@@ -7,8 +7,8 @@ use crate::{control::Velocity, PlayerControlInput};
 use super::{Skill, SkillCtx, SkillProgress, SkillResult};
 
 const DEFAULT_POS_TOLERANCE: f64 = 70.0;
-const DEFAULT_VEL_TOLERANCE: f64 = 10.0;
-const DEFAULT_BALL_VEL_TOLERANCE: f64 = 10.0;
+const DEFAULT_VEL_TOLERANCE: f64 = 30.0;
+const DEFAULT_BALL_VEL_TOLERANCE: f64 = 30.0;
 const BALL_VEL_CORRECTION: f64 = 0.5;
 
 /// A skill that makes the player go to a specific position
@@ -161,15 +161,16 @@ impl Skill for FetchBall {
                 return SkillProgress::success();
             }
 
-            let ball_angle = {
-                let angle: Angle = Angle::between_points(player_pos, ball_pos);
-                if distance > 50.0 {
-                    self.last_good_heading = Some(angle);
-                    angle
-                } else {
-                    self.last_good_heading.unwrap_or(angle)
-                }
-            };
+            // let ball_angle = {
+            //     let angle: Angle = Angle::between_points(player_pos, ball_pos);
+            //     if distance > 50.0 {
+            //         self.last_good_heading = Some(angle);
+            //         angle
+            //     } else {
+            //         self.last_good_heading.unwrap_or(angle)
+            //     }
+            // };
+            let ball_angle = Angle::between_points(player_pos, ball_pos);
             input.with_yaw(ball_angle);
 
             if ball_speed < 100.0 {

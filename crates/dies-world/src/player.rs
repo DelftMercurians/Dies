@@ -39,6 +39,8 @@ pub struct PlayerTracker {
     last_feedback: Option<PlayerFeedbackMsg>,
     /// The result of the last vision update
     last_detection: Option<StoredData>,
+
+    velocity_samples: Vec<Vector2>,
 }
 
 impl PlayerTracker {
@@ -53,6 +55,7 @@ impl PlayerTracker {
                 settings.player_measurement_var,
             ),
             yaw_filter: AngleLowPassFilter::new(settings.player_yaw_lpf_alpha),
+            velocity_samples: Vec::new(),
             last_feedback: None,
             last_detection: None,
         }
@@ -99,6 +102,19 @@ impl PlayerTracker {
                         / (t_capture - last_data.timestamp + std::f64::EPSILON);
                     last_data.yaw = yaw;
                     last_data.raw_yaw = raw_yaw;
+                    
+                    if self.velocity_samples.len() < 10 {
+                        self.velocity_samples.push(last_data.velocity);
+                    } else {
+                        self.velocity_samples.remove(0);
+                        self.velocity_samples.push(last_data.velocity);
+
+                        let acc = self.velocity_samples.windows(2).fold(0.0, |acc, w| {
+                            acc + (w[1] - w[0]).norm() / (t_capture - last_data.timestamp)
+                        }) / 9.0;
+                        dies_core::debug_value(format!("p{}.acc", self.id), acc);
+                    }
+
                     last_data.timestamp = t_capture;
                 }
             }

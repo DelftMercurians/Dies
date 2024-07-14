@@ -174,7 +174,7 @@ impl Executor {
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
-            tracker: WorldTracker::new(&settings.tracker_settings),
+            tracker: WorldTracker::new(&settings),
             controller: TeamController::new(strategy, &settings.controller_settings),
             gc_client: GcClient::new(),
             environment: Some(Environment::Live {
@@ -202,7 +202,7 @@ impl Executor {
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
-            tracker: WorldTracker::new(&settings.tracker_settings),
+            tracker: WorldTracker::new(&settings),
             controller: TeamController::new(strategy, &settings.controller_settings),
             gc_client: GcClient::new(),
             environment: Some(Environment::Simulation { simulator }),
@@ -418,7 +418,7 @@ impl Executor {
             ControlMsg::UpdateSettings(settings) => {
                 self.controller
                     .update_controller_settings(&settings.controller_settings);
-                self.tracker.update_settings(&settings.tracker_settings);
+                self.tracker.update_settings(&settings);
             }
             ControlMsg::Stop => {}
         }

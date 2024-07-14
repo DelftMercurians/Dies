@@ -56,15 +56,15 @@ fn test_role_multiple_targets() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     // square
     let targets = vec![
-        Vector2::new(-1000.0, -1000.0),
-        Vector2::new(1000.0, -1000.0),
-        Vector2::new(1000.0, 1000.0),
-        Vector2::new(-1000.0, 1000.0),
+    Vector2::new(-500.0, -500.0),
+    Vector2::new(500.0, -500.0),
+    Vector2::new(500.0, 500.0),
+    Vector2::new(-500.0, 500.0),
     ];
     strategy.add_role(Box::new(TestRole::new(targets)));
 
     let mut scenario = ScenarioSetup::new(strategy);
-    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    scenario.add_own_player();
     scenario
 }
 

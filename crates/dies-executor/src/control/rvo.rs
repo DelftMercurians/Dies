@@ -1,11 +1,10 @@
 use dies_core::{
-    debug_circle_fill, debug_circle_stroke, debug_cross, debug_line, debug_string, debug_value,
-    Angle, DebugColor, PlayerData, Vector2,
+    debug_string, Angle, PlayerData, PlayerModel, Vector2
 };
 use std::f64::{consts::PI, EPSILON};
 
 // Constants
-const ROBOT_RADIUS: f64 = 100.0;
+const PLAYER_MARGIN: f64 = 20.0;
 const OVER_APPROX_C2S: f64 = 1.5;
 
 // Enum to represent different obstacle types
@@ -14,7 +13,9 @@ pub enum Obstacle {
     Rectangle { min: Vector2, max: Vector2 },
 }
 
-// Enum to switch between VO, RVO, and HRVO
+/// The type of VO algorithm to use
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
 pub enum VelocityObstacleType {
     VO,
     RVO,
@@ -32,14 +33,16 @@ pub fn velocity_obstacle_update(
     desired_velocity: &Vector2,
     players: &[&PlayerData],
     obstacles: &[Obstacle],
+    model: &PlayerModel,
     vo_type: VelocityObstacleType,
 ) -> Vector2 {
+    let player_radius = model.radius + PLAYER_MARGIN;
     let mut rvo_ba_all = Vec::new();
 
     // Consider other agents
     for other_player in players.iter() {
         if other_player.position != player.position {
-            let rvo_ba = compute_velocity_obstacle(&player, other_player, &vo_type, ROBOT_RADIUS);
+            let rvo_ba = compute_velocity_obstacle(&player, other_player, &vo_type, player_radius);
             rvo_ba_all.push(rvo_ba);
         }
     }
@@ -48,13 +51,13 @@ pub fn velocity_obstacle_update(
     for obstacle in obstacles {
         let rvo_ba = match obstacle {
             Obstacle::Circle { center, radius } => {
-                compute_obstacle_velocity_obstacle(&player, center, radius, ROBOT_RADIUS)
+                compute_obstacle_velocity_obstacle(&player, center, radius, player_radius)
             }
             Obstacle::Rectangle { min, max } => {
                 // Approximate rectangle with a circle
                 let center = Vector2::from((min + max) / 2.0);
                 let radius = (max.x - min.x).max(max.y - min.y) / 2.0;
-                compute_obstacle_velocity_obstacle(&player, &center, &radius, ROBOT_RADIUS)
+                compute_obstacle_velocity_obstacle(&player, &center, &radius, player_radius)
             }
         };
         rvo_ba_all.push(rvo_ba);

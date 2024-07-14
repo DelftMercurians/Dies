@@ -1,6 +1,6 @@
 {
   "controller_settings": {
-    "max_acceleration": 60000.0,
+    "max_acceleration": 4470.0,
     "max_velocity": 2560.0,
     "max_deceleration": 37820.0,
     "max_angular_velocity": 34.90658503988659,

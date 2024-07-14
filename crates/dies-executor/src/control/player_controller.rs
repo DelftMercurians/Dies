@@ -1,19 +1,17 @@
 use std::time::Duration;
 
 use super::{
-    force_field::compute_force,
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
-    rrt::find_path,
     yaw_control::YawController,
 };
 use dies_core::{
-    debug_string, Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2,
+    Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2,
     WorldData,
 };
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
-const MAX_DRIBBLE_SPEED: f64 = 100.0;
+const MAX_DRIBBLE_SPEED: f64 = 1_000.0;
 
 enum KickerState {
     Disarming,
@@ -159,13 +157,13 @@ impl PlayerController {
         input: &PlayerControlInput,
         dt: f64,
     ) {
-        // if is_about_to_collide(state, world, 3.0 * dt) {
-        //     debug_string(format!("p{}.collision", self.id), "true");
-
-        //     self.target_velocity = Vector2::zeros();
-        //     self.target_angular_velocity = 0.0;
-        //     return;
-        // }
+        if is_about_to_collide(state, world, 3.0 * dt) {
+            dies_core::debug_string(format!("p{}.collision", self.id), "true");
+            // TODO: Too strict
+            // self.target_velocity = Vector2::zeros();
+            // self.target_angular_velocity = 0.0;
+            // return;
+        }
 
         // Calculate velocity using the MTP controller
         self.last_yaw = state.raw_yaw;

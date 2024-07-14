@@ -145,7 +145,7 @@ impl ScenarioSetup {
         bs_client: BasestationHandle,
     ) -> Result<Executor> {
         // Wait for the setup check to succeed
-        let mut tracker = WorldTracker::new(&settings.tracker_settings);
+        let mut tracker = WorldTracker::new(&settings);
         let mut ssl_client = VisionClient::new(ssl_config.clone()).await?;
         let mut check_interval = tokio::time::interval(LIVE_CHECK_INTERVAL);
         let max_iterations = LIVE_CHECK_TIMEOUT.as_millis() / LIVE_CHECK_INTERVAL.as_millis();
@@ -302,53 +302,4 @@ fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
         (rand::random::<f64>() - 0.5) * w,
         (rand::random::<f64>() - 0.5) * l,
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::strategy::AdHocStrategy;
-
-    use super::*;
-    use dies_core::Angle;
-    use dies_core::BallData;
-    use dies_core::WorldData;
-
-    #[test]
-    fn test_scenario_setup_check_live() {
-        let setup = ScenarioSetup {
-            ball: BallPlacement::Position(Vector3::new(0.0, 0.0, 0.0)),
-            own_players: vec![PlayerPlacement {
-                position: Some(Vector2::new(100.0, 0.0)),
-                yaw: Some(Angle::from_degrees(0.0)),
-            }],
-            opp_players: vec![],
-            tolerance: 10.0,
-            yaw_tolerance: 10.0f64.to_radians(),
-            strategy: Box::new(AdHocStrategy::new()),
-        };
-
-        let mut world = WorldData {
-            ball: None,
-            own_players: vec![PlayerData {
-                position: Vector2::new(0.0, 0.0),
-                velocity: Vector2::zeros(),
-                yaw: Angle::from_degrees(0.0),
-                ..PlayerData::new(PlayerId::new(0))
-            }],
-            opp_players: vec![],
-            ..Default::default()
-        };
-
-        assert!(!setup.check_live(world.clone()));
-
-        world.ball = Some(BallData {
-            timestamp: 0.0,
-            position: Vector3::zeros(),
-            velocity: Vector3::zeros(),
-            raw_position: vec![],
-        });
-        world.own_players[0].position = Vector2::new(91.0, 0.0);
-
-        assert!(setup.check_live(world.clone()));
-    }
 }

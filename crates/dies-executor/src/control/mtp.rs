@@ -124,7 +124,7 @@ impl MTP {
         } else {
             // Cruise phase
             dies_core::debug_string("p5.MTPMode", "Cruise");
-            direction * velocity.magnitude()
+            direction * self.max_speed
         }
     }
 }
