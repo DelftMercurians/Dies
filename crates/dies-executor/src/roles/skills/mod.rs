@@ -281,14 +281,12 @@ impl Skill for FetchBallWithHeading {
             
             let direct_target = which_side_of_robot(self.target_heading, target_pos, player_data.position);
             if direct_target == true {
-                println!("direct target");
                 dies_core::debug_value("p0.target_pos_x", target_pos.x);
                 dies_core::debug_value("p0.target_pos_y", target_pos.y);
                 input.with_position(target_pos).with_yaw(self.target_heading);
                 return SkillProgress::Continue(input);
             }
             else {
-                println!("indirect target");
                 let (dirA, dirB) = get_tangent_line_direction(  ball.position.xy(), ball_radius-20.0, player_data.position);
                 let target_posA = find_intersection(player_data.position, Angle::to_vector(&dirA), target_pos, perp(self.target_heading.to_vector()));
                 let target_posB = find_intersection(player_data.position, Angle::to_vector(&dirB), target_pos, perp(self.target_heading.to_vector()));
@@ -302,7 +300,6 @@ impl Skill for FetchBallWithHeading {
                 };
                 
                 if indir_target_pos.x.is_nan() || indir_target_pos.y.is_nan() {
-                    println!("fixing ball inside circle");
                     let dirC = perp(player_data.position - ball.position.xy());
                     indir_target_pos = find_intersection(player_data.position, dirC, target_pos, perp(self.target_heading.to_vector())).unwrap();
                 }
