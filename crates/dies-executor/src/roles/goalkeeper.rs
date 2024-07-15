@@ -1,9 +1,10 @@
 use dies_core::{Angle, BallData};
-use dies_core::{PlayerData, WorldData};
+use dies_core::{PlayerData};
 use nalgebra::Vector2;
 
-use crate::roles::Role;
+use crate::roles::{Role, RoleCtx};
 use crate::PlayerControlInput;
+
 
 pub struct Goalkeeper {}
 
@@ -57,13 +58,15 @@ impl Goalkeeper {
         println!("{}, {}", x_vertical, py_clamped);
 
         // Return the clamped intersection point
-        return Vector2::new(x_vertical, py_clamped);
+        Vector2::new(x_vertical, py_clamped)
     }
 }
 
 impl Role for Goalkeeper {
-    fn update(&mut self, player_data: &PlayerData, world: &WorldData) -> PlayerControlInput {
+    fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
+        let world = ctx.world;
+        let player_data = ctx.player;
 
         if let (Some(ball), Some(field_geom)) = (world.ball.as_ref(), world.field_geom.as_ref()) {
             let ball_y = ball.position.y;
@@ -71,14 +74,14 @@ impl Role for Goalkeeper {
             let player_y = player_data.position.y;
 
             if (player_y < ball_y && ball_vy < 0.0) || (player_y > ball_y && ball_vy > 0.0) {
+                
                 let target_pos: nalgebra::Matrix<
                     f64,
                     nalgebra::Const<2>,
                     nalgebra::Const<1>,
                     nalgebra::ArrayStorage<f64, 2, 1>,
-                >;
-                target_pos =
-                    self.find_intersection(player_data, ball, field_geom.goal_width as f64);
+                > =
+                    self.find_intersection(player_data, ball, field_geom.goal_width);
 
                 let target_angle = Angle::between_points(player_data.position, ball.position.xy());
 

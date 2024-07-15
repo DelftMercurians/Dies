@@ -299,10 +299,12 @@ export const useKeyboardControl = ({
   playerId,
   angularSpeedDegPerSec,
   speed,
+  mode = "global",
 }: {
   playerId: number | null;
   speed: number;
   angularSpeedDegPerSec: number;
+  mode: "local" | "global";
 }) => {
   const sendCommand = useSendCommand();
 
@@ -310,6 +312,8 @@ export const useKeyboardControl = ({
   speedRef.current = speed;
   const angularSpeedRef = useRef(angularSpeedDegPerSec);
   angularSpeedRef.current = angularSpeedDegPerSec;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   useEffect(() => {
     if (playerId === null) return;
     const pressedKeys = new Set<string>();
@@ -329,7 +333,8 @@ export const useKeyboardControl = ({
         data: {
           player_id: playerId,
           command: {
-            type: "GlobalVelocity",
+            type:
+              modeRef.current === "global" ? "GlobalVelocity" : "LocalVelocity",
             data: {
               velocity: [0, 0] as [number, number],
               angular_velocity: 0,
@@ -338,7 +343,7 @@ export const useKeyboardControl = ({
             },
           },
         },
-      };
+      } satisfies UiCommand;
 
       let velocity = [0, 0] as [number, number];
       if (pressedKeys.has("w")) velocity[1] += 1;
@@ -349,7 +354,7 @@ export const useKeyboardControl = ({
       if (vel_mag > 0) {
         velocity = velocity.map((v) => (v / vel_mag) * speedRef.current) as [
           number,
-          number
+          number,
         ];
       }
       command.data.command.data.velocity = velocity;

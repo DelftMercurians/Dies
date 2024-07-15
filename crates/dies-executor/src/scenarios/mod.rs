@@ -1,32 +1,32 @@
+#[deny(dead_code)]
 mod scenario;
-use crate::{roles::test_role::TestRole, roles::waller::Waller, roles::harasser::Harasser, strategy::AdHocStrategy};
-use dies_core::Vector2;
+
+use crate::roles::harasser::Harasser;
+use crate::strategy::free_kick::FreeKickStrategy;
+use crate::strategy::kickoff::KickoffStrategy;
+use crate::strategy::penalty_kick::PenaltyKickStrategy;
+use crate::{
+    roles::{test_role::TestRole, waller::Waller},
+    strategy::AdHocStrategy,
+};
+use dies_core::{GameState, PlayerId, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
-
 
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
 fn empty_scenario() -> ScenarioSetup {
-    ScenarioSetup::new(AdHocStrategy::new())
+    ScenarioSetup::new(AdHocStrategy::new(), None)
 }
 
-fn one_random_player() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+fn one_player() -> ScenarioSetup {
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario.add_own_player();
     scenario
 }
 
-fn one_player_go_to_origin() -> ScenarioSetup {
-    let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(Harasser::new(500.0)));
-    let mut scenario = ScenarioSetup::new(strategy);
-    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
-    scenario
-}
-
 fn two_players_one_ball() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario
         .add_ball()
         .add_own_player_at(Vector2::zeros())
@@ -34,11 +34,46 @@ fn two_players_one_ball() -> ScenarioSetup {
     scenario
 }
 
+fn penalty_kick() -> ScenarioSetup {
+    let strategy = PenaltyKickStrategy::new(None);
+    let mut scenario = ScenarioSetup::new(strategy, Some(GameState::PreparePenalty));
+    scenario.add_strategy(GameState::Penalty, PenaltyKickStrategy::new(None));
+    scenario.add_strategy(GameState::PenaltyRun, PenaltyKickStrategy::new(None));
+    scenario
+        .add_ball_at(Vector3::new(0.0, 300.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_opp_player_at(Vector2::new(3500.0, 0.0));
+    scenario
+}
+
+fn free_kick() -> ScenarioSetup {
+    let strategy = FreeKickStrategy::new(None);
+    let mut scenario = ScenarioSetup::new(strategy, Some(GameState::FreeKick));
+    scenario
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_own_player_at(Vector2::new(1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    scenario
+}
+
+fn kickoff() -> ScenarioSetup {
+    let strategy = KickoffStrategy::new(None);
+    let mut scenario = ScenarioSetup::new(strategy, Some(GameState::PrepareKickoff));
+    scenario.add_strategy(GameState::Kickoff, KickoffStrategy::new(None));
+    scenario
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    scenario
+}
+
 fn one_waller_one_ball() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Waller::new(0.0)));
     strategy.add_role(Box::new(Waller::new(500.0)));
-    let mut scenario = ScenarioSetup::new(strategy);
+
+    let mut scenario = ScenarioSetup::new(strategy, Some(GameState::Run));
     scenario
         // .add_ball_at(Vector3::new(895.0, 2623.0, 0.0))
         .add_ball()
@@ -51,7 +86,7 @@ fn one_waller_one_ball() -> ScenarioSetup {
 fn one_harasser_one_player_one_ball() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Harasser::new(500.0)));
-    let mut scenario = ScenarioSetup::new(strategy);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         // .add_ball_at(Vector3::new(895.0, 2623.0, 0.0))
         .add_ball()
@@ -138,11 +173,13 @@ impl Serialize for ScenarioType {
 // **NOTE**: Add new scenarios here.
 scenarios! {
     empty_scenario,
-    one_random_player,
-    one_player_go_to_origin,
     two_players_one_ball,
     one_waller_one_ball,
-    one_harasser_one_player_one_ball
+    one_harasser_one_player_one_ball,
+    kickoff,
+    penalty_kick,
+    one_player,
+    free_kick
 }
 
 #[cfg(test)]

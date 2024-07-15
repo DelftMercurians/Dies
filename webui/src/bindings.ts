@@ -6,7 +6,7 @@
  * An angle in radians, always in (-pi, pi]. This type supports safe arithmetic
  * operations:
  * 
- * ```no_run
+ * ```ignore
  * # use dies_core::Angle;
  * let a = Angle::from_degrees(90.0);
  * let b = Angle::from_degrees(45.0);
@@ -71,6 +71,10 @@ export interface ControllerSettings {
 	angle_proportional_time_window: number;
 	/** Distance used as threshold for the controller to prevent shaky behavior */
 	angle_cutoff_distance: number;
+	/** Attractive force coefficient for players */
+	force_alpha: number;
+	/** Repulsive force coefficient for players */
+	force_beta: number;
 }
 
 /** Settings for the `WorldTracker`. */
@@ -137,6 +141,16 @@ export interface FieldGeometry {
 	line_segments: FieldLineSegment[];
 	/** Generated circular arcs based on the other parameters */
 	circular_arcs: FieldCircularArc[];
+	/** Penalty area depth (distance from goal line to penalty mark) in mm */
+	penalty_area_depth: number;
+	/** Penalty area width (distance from penalty mark to penalty area edge) in mm */
+	penalty_area_width: number;
+	/** Center circle radius in mm */
+	center_circle_radius: number;
+	/** Distance from goal line to penalty mark in mm */
+	goal_line_to_penalty_mark: number;
+	/** Ball radius in mm */
+	ball_radius: number;
 }
 
 /** Setup for a player in a scenario. */
@@ -171,6 +185,7 @@ export interface ScenarioInfo {
 export enum SysStatus {
 	Emergency = "Emergency",
 	Ok = "Ok",
+	Ready = "Ready",
 	Stop = "Stop",
 	Starting = "Starting",
 	Overtemp = "Overtemp",
@@ -224,15 +239,15 @@ export interface PlayerData {
 	raw_yaw: Angle;
 	/** Angular speed of the player (in rad/s) */
 	angular_speed: number;
-	/** The overall status of the robot */
+	/** The overall status of the robot. Only available for own players. */
 	primary_status?: SysStatus;
-	/** The voltage of the kicker capacitor */
+	/** The voltage of the kicker capacitor (in V). Only available for own players. */
 	kicker_cap_voltage?: number;
-	/** The temperature of the kicker */
+	/** The temperature of the kicker. Only available for own players. */
 	kicker_temp?: number;
-	/** The voltages of the battery packs */
+	/** The voltages of the battery packs. Only available for own players. */
 	pack_voltages?: [number, number];
-	/** Whether the breakbeam sensor detected a ball */
+	/** Whether the breakbeam sensor detected a ball. Only available for own players. */
 	breakbeam_ball_detected: boolean;
 }
 
@@ -278,12 +293,24 @@ export interface GameStateData {
 
 /** A struct to store the world state from a single frame. */
 export interface WorldData {
+	/**
+	 * Timestamp of the frame, in seconds. This timestamp is relative to the time the
+	 * world tracking was started.
+	 */
+	t_received: number;
+	/**
+	 * Recording timestamp of the frame, in seconds, as reported by vision. This
+	 * timestamp is relative to the time the first image was captured.
+	 */
+	t_capture: number;
+	/** The time since the last frame was received, in seconds */
+	dt: number;
 	own_players: PlayerData[];
 	opp_players: PlayerData[];
 	ball?: BallData;
 	field_geom?: FieldGeometry;
 	current_game_state: GameStateData;
-	duration: number;
+	player_model: PlayerModel;
 }
 
 export interface WorldUpdate {
@@ -327,10 +354,12 @@ export type UiCommand =
 	player_id: PlayerId;
 	command: PlayerOverrideCommand;
 }}
+	| { type: "SimulatorCmd", data: SimulatorCmd }
 	| { type: "SetPause", data: boolean }
 	| { type: "StartScenario", data: {
 	scenario: ScenarioType;
 }}
+	| { type: "GcCommand", data: string }
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
@@ -381,6 +410,12 @@ export type DebugShape =
 	color: DebugColor;
 }};
 
+/** Command to modify the simulator state. */
+export type SimulatorCmd = 
+	| { type: "ApplyBallForce", data: {
+	force: Vector2;
+}};
+
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
 	/** Do nothing */
@@ -415,6 +450,20 @@ export type PlayerOverrideCommand =
 }}
 	/** Discharge the kicker safely */
 	| { type: "DischargeKicker",  };
+
+/** Role of a player according to the game rules. These are mainly for rule-compliance. */
+export enum RoleType {
+	/** A regular player with no special role */
+	Player = "Player",
+	/** The goalkeeper */
+	Goalkeeper = "Goalkeeper",
+	/** The attacking kicker during kick-off */
+	KickoffKicker = "KickoffKicker",
+	/** penalty kicker */
+	PenaltyKicker = "PenaltyKicker",
+	/** freekicker */
+	FreeKicker = "FreeKicker",
+}
 
 export type UiWorldState = 
 	| { type: "Loaded", data: WorldData }

@@ -1,4 +1,4 @@
 mod protos;
 
-pub use protobuf::Message;
+pub use protobuf::{EnumOrUnknown, Message, MessageField};
 pub use protos::*;

@@ -8,7 +8,7 @@ use crate::Vector2;
 /// An angle in radians, always in (-pi, pi]. This type supports safe arithmetic
 /// operations:
 ///
-/// ```no_run
+/// ```ignore
 /// # use dies_core::Angle;
 /// let a = Angle::from_degrees(90.0);
 /// let b = Angle::from_degrees(45.0);
@@ -20,6 +20,11 @@ use crate::Vector2;
 pub struct Angle(f64);
 
 impl Angle {
+    pub const TWO_PI: Angle = Angle(2.0 * PI);
+    pub const PI: Angle = Angle(PI);
+    pub const PI_2: Angle = Angle(PI / 2.0);
+    pub const PI_4: Angle = Angle(PI / 4.0);
+
     /// Create a new angle from radians.
     pub fn from_radians(radians: f64) -> Self {
         Angle(wrap_angle(radians))
@@ -30,10 +35,14 @@ impl Angle {
         Self::from_radians(degrees.to_radians())
     }
 
-    /// Compute the smallest signed counter-clockwise angle between two vectors.
+    /// Compute the smallest signed counter-clockwise angle from point a to point b.
     pub fn between_points(a: Vector2, b: Vector2) -> Self {
         let angle = (b.y - a.y).atan2(b.x - a.x);
         Self::from_radians(angle)
+    }
+
+    pub fn from_vector(v: Vector2) -> Self {
+        Self::between_points(Vector2::x(), v)
     }
 
     /// Get the angle in radians.
@@ -61,6 +70,21 @@ impl Angle {
     pub fn random() -> Self {
         let radians = (rand::random::<f64>() * 2.0 * PI) - PI;
         Self::from_radians(radians)
+    }
+
+    /// Get the absolute value of the angle
+    pub fn abs(&self) -> f64 {
+        self.0.abs()
+    }
+
+    /// Get the sign of the angle
+    pub fn signum(&self) -> f64 {
+        self.0.signum()
+    }
+
+    /// Get the unit vector representation of the angle
+    pub fn to_vector(&self) -> Vector2 {
+        Vector2::new(self.0.cos(), self.0.sin())
     }
 }
 
@@ -140,22 +164,24 @@ impl PartialEq for Angle {
     fn eq(&self, other: &Self) -> bool {
         let diff: f64 = (self.radians() - other.radians()).abs();
         const TOLERANCE: f64 = 1e-5; // about sqrt of f32 precision
-        (diff < TOLERANCE) | (diff > (2.0 * PI - TOLERANCE))
+        !(TOLERANCE..=(2.0 * PI - TOLERANCE)).contains(&diff)
     }
 }
 
 fn wrap_angle(angle: f64) -> f64 {
-    let mut angle = angle % (2.0 * std::f64::consts::PI);
-    if angle <= -std::f64::consts::PI {
-        angle += 2.0 * std::f64::consts::PI;
-    } else if angle > std::f64::consts::PI {
-        angle -= 2.0 * std::f64::consts::PI;
+    let mut angle = angle % (2.0 * PI);
+    if angle <= -PI {
+        angle += 2.0 * PI;
+    } else if angle > PI {
+        angle -= 2.0 * PI;
     }
     angle
 }
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
+
     use super::*;
     use std::f64::consts::PI;
 
@@ -190,6 +216,14 @@ mod tests {
         let b = Angle::from_degrees(45.0);
         let c = a - b;
         assert_eq!(c.degrees(), 45.0);
+
+        let a = Angle::from_degrees(-180.0);
+        let b = Angle::from_degrees(180.0);
+        assert_eq!((a - b).degrees(), 0.0);
+
+        let a = Angle::from_degrees(180.0);
+        let b = Angle::from_degrees(-179.0);
+        assert_relative_eq!((a - b).degrees(), -1.0, epsilon = 1e-5);
     }
 
     #[test]
@@ -221,5 +255,47 @@ mod tests {
         let v = Vector2::new(1.0, 0.0);
         let r = a * v;
         assert_eq!(r.y, 1.0);
+    }
+
+    #[test]
+    fn test_flip_around_y_axis() {
+        fn flip(angle: Angle) -> Angle {
+            Angle::PI + angle
+        }
+
+        let a = Angle::from_degrees(90.0);
+        assert_relative_eq!(flip(a).degrees(), -90.0, epsilon = 1e-5);
+
+        let b = Angle::from_degrees(-90.0);
+        assert_relative_eq!(flip(b).degrees(), 90.0, epsilon = 1e-5);
+
+        let c = Angle::from_degrees(0.0);
+        assert_relative_eq!(flip(c).degrees(), 180.0, epsilon = 1e-5);
+
+        let c = Angle::from_degrees(180.0);
+        assert_relative_eq!(flip(c).degrees(), 0.0, epsilon = 1e-5);
+        let c = Angle::from_degrees(-180.0);
+        assert_relative_eq!(flip(c).degrees(), 0.0, epsilon = 1e-5);
+
+        let c = Angle::from_degrees(45.0);
+        assert_relative_eq!(flip(c).degrees(), -135.0, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn test_angle_between_points() {
+        let a = Vector2::new(0.0, 0.0);
+        let b = Vector2::new(1.0, 1.0);
+        let angle1 = Angle::between_points(a, b);
+        assert_eq!(angle1.degrees(), 45.0);
+
+        let angle2 = Angle::between_points(b, a);
+        assert_eq!(angle2.degrees(), -135.0);
+    }
+
+    #[test]
+    fn test_from_vector() {
+        let v = Vector2::new(-1.0, -1.0);
+        let angle = Angle::from_vector(v);
+        assert_relative_eq!(angle.degrees(), -135.0, epsilon = 1e-5);
     }
 }

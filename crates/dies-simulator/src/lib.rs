@@ -1,4 +1,5 @@
-use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerId, Vector2, WorldInstant};
+use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant};
+use dies_protos::ssl_gc_referee_message::{referee, Referee};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -6,13 +7,11 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
-use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
+use nalgebra::ComplexField;
+use rapier3d_f64::{prelude::*};
 use serde::Serialize;
-use std::{
-    collections::HashMap,
-    f64::consts::PI,
-    time::{Duration, Instant, UNIX_EPOCH},
-};
+use std::collections::VecDeque;
+use std::{collections::HashMap, f64::consts::PI};
 use utils::IntervalTrigger;
 
 mod utils;
@@ -52,9 +51,9 @@ pub struct SimulationConfig {
     /// Delay for the execution of the command
     pub command_delay: f64,
     /// Maximum lateral acceleration in mm/s^2
-    pub max_accel: Vector<f64>,
-    /// Maximum lateral velocity in mm/s
-    pub max_vel: Vector<f64>,
+    pub max_accel: f64,
+    /// Maximum lateral speed in mm/s
+    pub max_vel: f64,
     /// Maximum angular acceleration in rad/s^2
     pub max_ang_accel: f64,
     /// Maximum angular velocity in rad/s
@@ -63,6 +62,8 @@ pub struct SimulationConfig {
     pub velocity_treshold: f64,
     /// Maximum difference between target and current angular velocity
     pub angular_velocity_treshold: f64,
+    /// Interval for sending feedback packets in seconds
+    pub feedback_interval: f64,
 
     // FIELD GEOMRTY PARAMETERS
     /// Field configuration
@@ -80,20 +81,21 @@ impl Default for SimulationConfig {
             vision_update_step: 1.0 / 40.0, // 6 ms
 
             // ROBOT MODEL PARAMETERS
-            player_radius: 200.0,
+            player_radius: 80.0,
             player_height: 140.0,
             dribbler_radius: BALL_RADIUS + 60.0,
             dribbler_angle: PI / 6.0,
             kicker_strength: 300000.0,
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
-            command_delay: 30.0 / 1000.0,
-            max_accel: Vector::new(50000.0, 50000.0, 0.0),
-            max_vel: Vector::new(50000.0, 50000.0, 0.0),
-            max_ang_accel: 360.0f64.to_radians(),
-            max_ang_vel: 420.0f64.to_radians(),
+            command_delay: 10.0 / 1000.0,
+            max_accel: 105000.0,
+            max_vel: 2000.0,
+            max_ang_accel: 50.0 * 720.0f64.to_radians(),
+            max_ang_vel: 0.5 * 720.0f64.to_radians(),
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
+            feedback_interval: 0.5,
 
             // FIELD GEOMRTY PARAMETERS
             field_geometry: FieldGeometry::default(),
@@ -184,6 +186,9 @@ pub struct Simulation {
     last_detection_packet: Option<SSL_WrapperPacket>,
     geometry_interval: IntervalTrigger,
     geometry_packet: SSL_WrapperPacket,
+    referee_message: VecDeque<Referee>,
+    feedback_interval: IntervalTrigger,
+    feedback_queue: Vec<PlayerFeedbackMsg>,
 }
 
 impl Simulation {
@@ -193,8 +198,9 @@ impl Simulation {
     pub fn new(config: SimulationConfig) -> Simulation {
         let vision_update_step = config.vision_update_step;
         let geometry_interval = config.geometry_interval;
-        let field_length = config.field_geometry.field_length as f64;
-        let field_width = config.field_geometry.field_width as f64;
+        let feedback_interval = config.feedback_interval;
+        let field_length = config.field_geometry.field_length;
+        let field_width = config.field_geometry.field_width;
         let geometry_packet = geometry(&config.field_geometry);
 
         let mut simulation = Simulation {
@@ -218,6 +224,9 @@ impl Simulation {
             last_detection_packet: None,
             geometry_interval: IntervalTrigger::new(geometry_interval),
             geometry_packet,
+            referee_message: VecDeque::new(),
+            feedback_interval: IntervalTrigger::new(feedback_interval),
+            feedback_queue: Vec::new(),
         };
 
         // Create the ground
@@ -263,6 +272,13 @@ impl Simulation {
         );
     }
 
+    pub fn apply_force_to_ball(&mut self, force: Vector<f64>) {
+        if let Some(ball) = self.ball.as_ref() {
+            let ball_body = self.rigid_body_set.get_mut(ball._rigid_body_handle).unwrap();
+            ball_body.apply_impulse(force, true);
+        }
+    }
+
     /// Pushes a PlayerCmd onto the execution queue with the time delay specified in
     /// the config
     pub fn push_cmd(&mut self, cmd: PlayerCmd) {
@@ -284,12 +300,30 @@ impl Simulation {
         self.last_detection_packet.take()
     }
 
+    pub fn update_referee_command(&mut self, command: referee::Command) {
+        let mut msg = Referee::new();
+        msg.set_command(command);
+        msg.packet_timestamp = Some(0);
+        msg.set_stage(referee::Stage::NORMAL_FIRST_HALF);
+        msg.command_counter = Some(1);
+        msg.command_timestamp = Some(0);
+        self.referee_message.push_back(msg);
+    }
+
+    pub fn gc_message(&mut self) -> Option<Referee> {
+        self.referee_message.pop_front()
+    }
+
     pub fn geometry(&mut self) -> Option<SSL_WrapperPacket> {
         if self.geometry_interval.trigger(self.current_time) {
             Some(self.geometry_packet.clone())
         } else {
             None
         }
+    }
+
+    pub fn feedback(&mut self) -> Option<PlayerFeedbackMsg> {
+        self.feedback_queue.pop()
     }
 
     pub fn step(&mut self, dt: f64) {
@@ -303,7 +337,7 @@ impl Simulation {
             let mut to_exec = HashMap::new();
             self.cmd_queue.retain(|cmd| {
                 if cmd.execute_time <= self.current_time {
-                    to_exec.insert(cmd.player_cmd.id, cmd.player_cmd.clone());
+                    to_exec.insert(cmd.player_cmd.id, cmd.player_cmd);
                     false
                 } else {
                     true
@@ -327,7 +361,23 @@ impl Simulation {
         }
 
         // Update players
+        let send_feedback = self.feedback_interval.trigger(self.current_time);
         for player in self.players.iter_mut() {
+            if !player.is_own {
+                let rigid_body = self
+                    .rigid_body_set
+                    .get_mut(player.rigid_body_handle)
+                    .unwrap();
+                rigid_body.set_linvel(Vector::zeros(), false);
+                rigid_body.set_angvel(Vector::zeros(), false);
+                continue;
+            }
+
+            if send_feedback {
+                self.feedback_queue
+                    .push(PlayerFeedbackMsg::empty(player.id));
+            }
+
             let mut is_kicking = false;
             if let Some(command) = commands_to_exec.get(&player.id) {
                 // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
@@ -360,12 +410,12 @@ impl Simulation {
 
             let vel_err = target_velocity - velocity;
             let new_vel = if vel_err.norm() > 10.0 {
-                let acc = (2.0 * vel_err).simd_clamp(-self.config.max_accel, self.config.max_accel);
-                velocity + acc * (dt as f64)
+                let acc = (vel_err / dt).cap_magnitude(self.config.max_accel);
+                velocity + acc * dt
             } else {
                 target_velocity
             };
-            let new_vel = new_vel.simd_clamp(-self.config.max_vel, self.config.max_vel);
+            let new_vel = new_vel.cap_magnitude(self.config.max_vel);
             rigid_body.set_linvel(new_vel, true);
 
             let target_ang_vel = player.target_ang_velocity;
@@ -373,7 +423,13 @@ impl Simulation {
             let delta = (target_ang_vel - ang_velocity).abs();
             let new_ang_vel = if delta > self.config.angular_velocity_treshold {
                 let dir = (target_ang_vel - ang_velocity).signum();
-                ang_velocity + (dir * self.config.max_ang_accel * (dt as f64))
+                let new_ang_vel = ang_velocity + (dir * self.config.max_ang_accel * dt);
+                // Check for overshoot
+                if (target_ang_vel - new_ang_vel).abs() < self.config.angular_velocity_treshold {
+                    target_ang_vel
+                } else {
+                    new_ang_vel
+                }
             } else {
                 target_ang_vel
             };
@@ -416,7 +472,7 @@ impl Simulation {
             }
         }
 
-        self.integration_parameters.dt = dt as f64;
+        self.integration_parameters.dt = dt;
         self.physics_pipeline.step(
             &self.config.gravity,
             &self.integration_parameters,
@@ -433,13 +489,15 @@ impl Simulation {
             &(),
         );
 
-        self.current_time += dt as f64;
+        self.current_time += dt;
     }
 
     fn new_detection_packet(&mut self) {
         let mut detection = SSL_DetectionFrame::new();
+        detection.set_frame_number(1);
         detection.set_t_capture(self.current_time);
         detection.set_t_sent(self.current_time);
+        detection.set_camera_id(1);
 
         // Players
         for player in self.players.iter() {
@@ -450,6 +508,8 @@ impl Simulation {
             robot.set_robot_id(player.id.as_u32());
             robot.set_x(position.x as f32);
             robot.set_y(position.y as f32);
+            robot.set_pixel_x(0.0);
+            robot.set_pixel_y(0.0);
             robot.set_orientation(yaw as f32);
             robot.set_confidence(1.0);
             if player.is_own {
@@ -468,6 +528,8 @@ impl Simulation {
             ball_det.set_y(ball_position.y as f32);
             ball_det.set_z(ball_position.z as f32);
             ball_det.set_confidence(1.0);
+            ball_det.set_pixel_x(0.0);
+            ball_det.set_pixel_y(0.0);
             detection.balls.push(ball_det);
         }
 

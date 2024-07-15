@@ -36,16 +36,21 @@ const fieldConfig: FieldConfig = {
     max_acceleration: { min: 0, max: 50000, step: 10, unit: "mm/s²" },
     max_velocity: { min: 0, max: 10000, step: 10, unit: "mm/s" },
     max_deceleration: { min: 0, max: 50000, step: 10, unit: "mm/s²" },
-    max_angular_velocity: { min: 0, max: 360*4, unit: "deg/s", isAngle: true },
+    max_angular_velocity: {
+      min: 0,
+      max: 360 * 4,
+      unit: "deg/s",
+      isAngle: true,
+    },
     max_angular_acceleration: {
       min: 0,
-      max: 360*4,
+      max: 360 * 4,
       unit: "deg/s²",
       isAngle: true,
     },
     max_angular_deceleration: {
       min: 0,
-      max: 360*4,
+      max: 360 * 4,
       unit: "deg/s²",
       isAngle: true,
     },
@@ -176,7 +181,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
                         onChange={(e) =>
                           handleChange(
                             key as SettingsKey,
-                            parseFloat(e.target.value) as Value
+                            parseFloat(e.target.value) as Value,
                           )
                         }
                         className="w-24"

@@ -54,6 +54,7 @@ pub async fn post_command(
     state: State<Arc<ServerState>>,
     Json(data): Json<PostUiCommandBody>,
 ) -> StatusCode {
+  //  log::info!("Received command: {:?}", data);
     let _ = state.cmd_tx.send(data.command);
     StatusCode::OK
 }
