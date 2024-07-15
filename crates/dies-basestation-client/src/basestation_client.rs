@@ -143,7 +143,6 @@ impl BasestationHandle {
                             Connection::V1(monitor) => {
                                 let mut commands = [None; glue::MAX_NUM_ROBOTS];
                                 commands[robot_id] = Some(cmd.into());
-                                println!("Sending command {:?}", commands[robot_id]);
                                 resp.send(
                                     monitor
                                         .send(commands)
