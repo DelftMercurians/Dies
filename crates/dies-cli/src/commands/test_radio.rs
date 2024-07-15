@@ -48,6 +48,7 @@ pub async fn test_radio(
                 cmd.sy = sy;
             }
 
+            println!("Sending {:?}", cmd);
             bs_handle.send_no_wait(cmd);
         }
     }

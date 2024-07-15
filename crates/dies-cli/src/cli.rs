@@ -22,7 +22,7 @@ enum Command {
 
     #[clap(name = "test-radio")]
     TestRadio {
-        #[clap(short, long)]
+        #[clap(short, long, default_value = "auto")]
         port: SerialPort,
 
         #[clap(long, default_value = "3.0")]
