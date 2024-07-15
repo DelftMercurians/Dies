@@ -426,7 +426,8 @@ impl Simulation {
             rigid_body.set_linvel(new_vel, true);
 
             let target_ang_vel = player.target_ang_velocity;
-            let new_ang_vel = target_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);
+            let new_ang_vel =
+                target_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);
             rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
 
             // Check if the ball is in the dribbler

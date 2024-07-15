@@ -1,5 +1,8 @@
 use super::RoleCtx;
-use crate::{roles::{skills::FetchBall, Role}, skill, KickerControlInput, PlayerControlInput};
+use crate::{
+    roles::{skills::FetchBall, Role},
+    skill, KickerControlInput, PlayerControlInput,
+};
 use dies_core::{Angle, BallData, FieldGeometry, PlayerId, Vector2, WorldData};
 
 /// A role that moves the player to the intersection of the ball's path with the goal
@@ -117,7 +120,7 @@ impl Role for Attacker {
                 if self.starting_pos == Vector2::new(0.0, 0.0) {
                     self.starting_pos = ctx.player.position;
                 }
-                
+
                 // dies_core::debug_string(format!("p{}", ctx.player.id))
 
                 println!(
@@ -153,7 +156,7 @@ impl Role for Attacker {
 
                 // If the ball is far from the passer, the passer moves to the ball and arms the kicker ready to pass
                 if self.distance(ctx.player.position, ball.position.xy()) > 280.0 {
-                   skill!(ctx, FetchBall::new());
+                    skill!(ctx, FetchBall::new());
                 }
 
                 // Once the passer has the ball and it is in position it aims for the shooter
