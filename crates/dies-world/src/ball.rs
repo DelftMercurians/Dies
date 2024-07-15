@@ -141,6 +141,10 @@ impl BallTracker {
                             pos_v3.x, vel_v3.x, pos_v3.y, vel_v3.y, pos_v3.z, -vel_v3.z,
                         ));
                     }
+                    debug_value(
+                        "ball.speed",
+                        vel_v3.xy().norm()
+                    );
                     debug_line(
                         "ball.vel",
                         pos_v3.xy(),
@@ -250,24 +254,5 @@ mod tests {
         let ball_data = tracker.get().unwrap();
         assert_eq!(ball_data.raw_position[0], Vector3::new(-2.0, 4.0, 6.0));
         assert!(ball_data.velocity.x < 0.0)
-    }
-
-    fn generate_SSL_Wrapper(
-        t: f64,
-        xs: Vec<f64>,
-        ys: Vec<f64>,
-        zs: Vec<f64>,
-    ) -> SSL_DetectionFrame {
-        let mut frame = SSL_DetectionFrame::new();
-        frame.set_t_capture(t);
-        for i in 0..xs.len() {
-            let mut ball = SSL_DetectionBall::new();
-            ball.set_x((xs[i] * 1000.0) as f32);
-            ball.set_y((ys[i] * 1000.0) as f32);
-            ball.set_z((zs[i] * 1000.0) as f32);
-            ball.confidence = Some(1.0);
-            frame.balls.push(ball);
-        }
-        frame
     }
 }

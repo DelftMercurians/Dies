@@ -68,7 +68,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ globals, onRun }) => {
       const updateEditorHeight = () => {
         const contentHeight = Math.min(
           MAX_CODE_HEIGHT,
-          Math.max(1, newEditor.getContentHeight())
+          Math.max(1, newEditor.getContentHeight()),
         );
         editorRef.current!.style.height = `${contentHeight}px`;
         newEditor.layout();
@@ -106,7 +106,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ globals, onRun }) => {
       const allGlobals = { ...standardGlobals, ...globalsRef.current };
 
       const getCompletionItems = (
-        obj: any
+        obj: any,
       ): monaco.languages.CompletionItem[] => {
         const completionItems: monaco.languages.CompletionItem[] = [];
 
@@ -215,7 +215,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ globals, onRun }) => {
               };
             }
           },
-        }
+        },
       );
 
       return () => {
@@ -226,7 +226,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ globals, onRun }) => {
   }, []);
 
   const getCompletionItemKind = (
-    value: any
+    value: any,
   ): monaco.languages.CompletionItemKind => {
     if (typeof value === "function") {
       return monaco.languages.CompletionItemKind.Function;

@@ -103,7 +103,7 @@ const HierarchicalList: FC<HierarchicalListProps> = ({ data, className }) => {
             <div className="ml-4 relative">
               <div className="w-4 h-full border-l border-gray-300 absolute -left-4"></div>
               {sortKeys(group).map(([subKey, subGroup]) =>
-                renderGroup(subGroup, subKey, depth + 1)
+                renderGroup(subGroup, subKey, depth + 1),
               )}
             </div>
           </CollapsibleContent>

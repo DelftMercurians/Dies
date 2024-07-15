@@ -1,6 +1,5 @@
-use dies_core::{
-    Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant,
-};
+use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant};
+use dies_protos::ssl_gc_referee_message::{referee, Referee};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -8,8 +7,10 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
-use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
+use nalgebra::ComplexField;
+use rapier3d_f64::{prelude::*};
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::{collections::HashMap, f64::consts::PI};
 use utils::IntervalTrigger;
 
@@ -50,9 +51,9 @@ pub struct SimulationConfig {
     /// Delay for the execution of the command
     pub command_delay: f64,
     /// Maximum lateral acceleration in mm/s^2
-    pub max_accel: Vector<f64>,
-    /// Maximum lateral velocity in mm/s
-    pub max_vel: Vector<f64>,
+    pub max_accel: f64,
+    /// Maximum lateral speed in mm/s
+    pub max_vel: f64,
     /// Maximum angular acceleration in rad/s^2
     pub max_ang_accel: f64,
     /// Maximum angular velocity in rad/s
@@ -80,18 +81,18 @@ impl Default for SimulationConfig {
             vision_update_step: 1.0 / 40.0, // 6 ms
 
             // ROBOT MODEL PARAMETERS
-            player_radius: 200.0,
+            player_radius: 80.0,
             player_height: 140.0,
             dribbler_radius: BALL_RADIUS + 60.0,
             dribbler_angle: PI / 6.0,
             kicker_strength: 300000.0,
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
-            command_delay: 30.0 / 1000.0,
-            max_accel: Vector::new(50_000.0, 50_000.0, 0.0),
-            max_vel: Vector::new(50_000.0, 50_000.0, 0.0),
-            max_ang_accel: 2.0 * 720.0f64.to_radians(),
-            max_ang_vel: 720.0f64.to_radians(),
+            command_delay: 10.0 / 1000.0,
+            max_accel: 105000.0,
+            max_vel: 2000.0,
+            max_ang_accel: 50.0 * 720.0f64.to_radians(),
+            max_ang_vel: 0.5 * 720.0f64.to_radians(),
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
             feedback_interval: 0.5,
@@ -185,6 +186,7 @@ pub struct Simulation {
     last_detection_packet: Option<SSL_WrapperPacket>,
     geometry_interval: IntervalTrigger,
     geometry_packet: SSL_WrapperPacket,
+    referee_message: VecDeque<Referee>,
     feedback_interval: IntervalTrigger,
     feedback_queue: Vec<PlayerFeedbackMsg>,
 }
@@ -222,6 +224,7 @@ impl Simulation {
             last_detection_packet: None,
             geometry_interval: IntervalTrigger::new(geometry_interval),
             geometry_packet,
+            referee_message: VecDeque::new(),
             feedback_interval: IntervalTrigger::new(feedback_interval),
             feedback_queue: Vec::new(),
         };
@@ -269,6 +272,13 @@ impl Simulation {
         );
     }
 
+    pub fn apply_force_to_ball(&mut self, force: Vector<f64>) {
+        if let Some(ball) = self.ball.as_ref() {
+            let ball_body = self.rigid_body_set.get_mut(ball._rigid_body_handle).unwrap();
+            ball_body.apply_impulse(force, true);
+        }
+    }
+
     /// Pushes a PlayerCmd onto the execution queue with the time delay specified in
     /// the config
     pub fn push_cmd(&mut self, cmd: PlayerCmd) {
@@ -288,6 +298,20 @@ impl Simulation {
 
     pub fn detection(&mut self) -> Option<SSL_WrapperPacket> {
         self.last_detection_packet.take()
+    }
+
+    pub fn update_referee_command(&mut self, command: referee::Command) {
+        let mut msg = Referee::new();
+        msg.set_command(command);
+        msg.packet_timestamp = Some(0);
+        msg.set_stage(referee::Stage::NORMAL_FIRST_HALF);
+        msg.command_counter = Some(1);
+        msg.command_timestamp = Some(0);
+        self.referee_message.push_back(msg);
+    }
+
+    pub fn gc_message(&mut self) -> Option<Referee> {
+        self.referee_message.pop_front()
     }
 
     pub fn geometry(&mut self) -> Option<SSL_WrapperPacket> {
@@ -386,12 +410,12 @@ impl Simulation {
 
             let vel_err = target_velocity - velocity;
             let new_vel = if vel_err.norm() > 10.0 {
-                let acc = (2.0 * vel_err).simd_clamp(-self.config.max_accel, self.config.max_accel);
+                let acc = (vel_err / dt).cap_magnitude(self.config.max_accel);
                 velocity + acc * dt
             } else {
                 target_velocity
             };
-            let new_vel = new_vel.simd_clamp(-self.config.max_vel, self.config.max_vel);
+            let new_vel = new_vel.cap_magnitude(self.config.max_vel);
             rigid_body.set_linvel(new_vel, true);
 
             let target_ang_vel = player.target_ang_velocity;
@@ -470,8 +494,10 @@ impl Simulation {
 
     fn new_detection_packet(&mut self) {
         let mut detection = SSL_DetectionFrame::new();
+        detection.set_frame_number(1);
         detection.set_t_capture(self.current_time);
         detection.set_t_sent(self.current_time);
+        detection.set_camera_id(1);
 
         // Players
         for player in self.players.iter() {
@@ -482,6 +508,8 @@ impl Simulation {
             robot.set_robot_id(player.id.as_u32());
             robot.set_x(position.x as f32);
             robot.set_y(position.y as f32);
+            robot.set_pixel_x(0.0);
+            robot.set_pixel_y(0.0);
             robot.set_orientation(yaw as f32);
             robot.set_confidence(1.0);
             if player.is_own {
@@ -500,6 +528,8 @@ impl Simulation {
             ball_det.set_y(ball_position.y as f32);
             ball_det.set_z(ball_position.z as f32);
             ball_det.set_confidence(1.0);
+            ball_det.set_pixel_x(0.0);
+            ball_det.set_pixel_y(0.0);
             detection.balls.push(ball_det);
         }
 

@@ -1,25 +1,28 @@
 use std::time::Duration;
 
+use dies_core::{Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData};
+
 use super::{
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
     yaw_control::YawController,
 };
-use dies_core::{Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2};
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
-const MAX_DRIBBLE_SPEED: f64 = 100.0;
+const MAX_DRIBBLE_SPEED: f64 = 1_000.0;
+const KICK_COUNT: usize = 3;
 
 enum KickerState {
     Disarming,
     Arming,
-    Kicking,
+    Kicking(usize),
 }
 
 pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP,
     last_pos: Vector2,
+    if_gate_keeper: bool,
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
 
@@ -34,6 +37,9 @@ pub struct PlayerController {
     kicker: KickerState,
     /// Dribble speed normalized to \[0, 1\]
     dribble_speed: f64,
+
+    force_alpha: f64,
+    force_beta: f64,
 }
 
 impl PlayerController {
@@ -53,6 +59,7 @@ impl PlayerController {
             yaw_control: YawController::new(
                 settings.max_angular_velocity,
                 settings.max_angular_acceleration,
+                settings.angle_kp,
                 settings.angle_cutoff_distance,
             ),
             last_yaw: Angle::from_radians(0.0),
@@ -61,6 +68,10 @@ impl PlayerController {
             frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
+            if_gate_keeper: false,
+
+            force_alpha: settings.force_alpha,
+            force_beta: settings.force_beta,
         };
         instance.update_settings(settings);
         instance
@@ -79,8 +90,11 @@ impl PlayerController {
         self.yaw_control.update_settings(
             settings.max_angular_velocity,
             settings.max_angular_acceleration,
+            settings.angle_kp,
             settings.angle_cutoff_distance,
         );
+        self.force_alpha = settings.force_alpha;
+        self.force_beta = settings.force_beta;
     }
 
     /// Get the ID of the player.
@@ -88,9 +102,13 @@ impl PlayerController {
         self.id
     }
 
-    /// Get the current target velocity of the player.
-    pub(super) fn target_velocity(&self) -> Vector2 {
-        self.target_velocity
+    /// set the player as the gate keeper
+    pub fn set_gate_keeper(&mut self) {
+        self.if_gate_keeper = true;
+    }
+
+    pub fn target_velocity(&self) -> Vector2 {
+        self.last_yaw.rotate_vector(&self.target_velocity)
     }
 
     /// Get the current command for the player.
@@ -109,9 +127,13 @@ impl PlayerController {
             KickerState::Arming => {
                 cmd.kicker_cmd = KickerCmd::Arm;
             }
-            KickerState::Kicking => {
-                cmd.kicker_cmd = KickerCmd::Kick;
-                self.kicker = KickerState::Disarming;
+            KickerState::Kicking(count) => {
+                if count == 0 {
+                    self.kicker = KickerState::Disarming;
+                } else {
+                    cmd.kicker_cmd = KickerCmd::Kick;
+                    self.kicker = KickerState::Kicking(count - 1);
+                }
             }
             _ => {}
         }
@@ -139,7 +161,21 @@ impl PlayerController {
     }
 
     /// Update the controller with the current state of the player.
-    pub fn update(&mut self, state: &PlayerData, input: &PlayerControlInput, dt: f64) {
+    pub fn update(
+        &mut self,
+        state: &PlayerData,
+        world: &WorldData,
+        input: &PlayerControlInput,
+        dt: f64,
+    ) {
+        if is_about_to_collide(state, world, 3.0 * dt) {
+            dies_core::debug_string(format!("p{}.collision", self.id), "true");
+            // TODO: Too strict
+            // self.target_velocity = Vector2::zeros();
+            // self.target_angular_velocity = 0.0;
+            // return;
+        }
+
         // Calculate velocity using the MTP controller
         self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
@@ -162,10 +198,16 @@ impl PlayerController {
         self.target_velocity += local_vel;
 
         // Draw the velocity
+        // dies_core::debug_line(
+        //     format!("p{}.target_velocity", self.id),
+        //     self.last_pos,
+        //     self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+        //     dies_core::DebugColor::Red,
+        // );
         dies_core::debug_line(
-            format!("p{}.target_velocity", self.id),
+            format!("p{}.velocity", self.id),
             self.last_pos,
-            self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+            self.last_pos + state.velocity,
             dies_core::DebugColor::Red,
         );
 
@@ -199,21 +241,56 @@ impl PlayerController {
                 self.kicker = KickerState::Arming;
             }
             KickerControlInput::Kick => {
-                self.kicker = KickerState::Kicking;
+                match self.kicker {
+                    KickerState::Disarming | KickerState::Arming => {
+                        self.kicker = KickerState::Kicking(KICK_COUNT);
+                    }
+                    KickerState::Kicking(_) => {}
+                }
             }
-            _ => {
+            KickerControlInput::Disarm | KickerControlInput::Idle => {
                 self.kicker = KickerState::Disarming;
             }
         }
     }
 
     pub fn update_target_velocity_with_avoidance(&mut self, target_velocity: Vector2) {
-        self.target_velocity = target_velocity;
+        self.target_velocity = self.last_yaw.inv().rotate_vector(&target_velocity);
         dies_core::debug_line(
             format!("p{}.target_velocity", self.id),
             self.last_pos,
             self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
-            dies_core::DebugColor::Red,
+            dies_core::DebugColor::Green,
         );
     }
+}
+
+fn is_about_to_collide(player: &PlayerData, world: &WorldData, time_horizon: f64) -> bool {
+    // Check if the player is about to collide with any other player
+    for other in world.own_players.iter().chain(world.opp_players.iter()) {
+        if player.position == other.position {
+            continue;
+        }
+
+        let dist = (player.position - other.position).norm();
+        let relative_velocity = player.velocity - other.velocity;
+        let time_to_collision = dist / relative_velocity.norm();
+        if time_to_collision < time_horizon && dist < 140.0 {
+            return true;
+        }
+    }
+
+    // Check if the player is about to leave the field
+    if let Some(geom) = world.field_geom.as_ref() {
+        let hw = geom.field_width / 2.0;
+        let hl = geom.field_length / 2.0;
+        let pos = player.position;
+        let vel = player.velocity;
+        let new_pos = pos + vel * time_horizon;
+        if new_pos.x.abs() > hw || new_pos.y.abs() > hl {
+            return true;
+        }
+    }
+
+    false
 }

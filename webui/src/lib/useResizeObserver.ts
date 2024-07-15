@@ -20,7 +20,7 @@ const initialSize: Size = {
 };
 
 export function useResizeObserver<T extends HTMLElement = HTMLElement>(
-  options: UseResizeObserverOptions<T>
+  options: UseResizeObserverOptions<T>,
 ): Size {
   const { ref, box = "content-box" } = options;
   const [{ width, height }, setSize] = useState<Size>(initialSize);
@@ -39,8 +39,8 @@ export function useResizeObserver<T extends HTMLElement = HTMLElement>(
         box === "border-box"
           ? "borderBoxSize"
           : box === "device-pixel-content-box"
-          ? "devicePixelContentBoxSize"
-          : "contentBoxSize";
+            ? "devicePixelContentBoxSize"
+            : "contentBoxSize";
 
       const newWidth = extractSize(entry, boxProp, "inlineSize");
       const newHeight = extractSize(entry, boxProp, "blockSize");
@@ -82,7 +82,7 @@ type BoxSizesKey = keyof Pick<
 function extractSize(
   entry: ResizeObserverEntry,
   box: BoxSizesKey,
-  sizeType: keyof ResizeObserverSize
+  sizeType: keyof ResizeObserverSize,
 ): number | undefined {
   if (!entry[box]) {
     if (box === "contentBoxSize") {

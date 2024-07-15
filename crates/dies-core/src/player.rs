@@ -1,5 +1,3 @@
-use std::default;
-
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
@@ -46,16 +44,16 @@ pub enum KickerCmd {
     PowerBoardOff,
 }
 
-impl From<KickerCmd> for glue::Radio_KickerCommand {
+impl From<KickerCmd> for glue::Radio_RobotCommand {
     fn from(val: KickerCmd) -> Self {
         match val {
-            KickerCmd::None => glue::Radio_KickerCommand::NONE,
-            KickerCmd::Arm => glue::Radio_KickerCommand::ARM,
-            KickerCmd::Disarm => glue::Radio_KickerCommand::DISARM,
-            KickerCmd::Discharge => glue::Radio_KickerCommand::DISCHARGE,
-            KickerCmd::Kick => glue::Radio_KickerCommand::KICK,
-            KickerCmd::Chip => glue::Radio_KickerCommand::CHIP,
-            KickerCmd::PowerBoardOff => glue::Radio_KickerCommand::POWER_BOARD_OFF,
+            KickerCmd::None => glue::Radio_RobotCommand::NONE,
+            KickerCmd::Arm => glue::Radio_RobotCommand::ARM,
+            KickerCmd::Disarm => glue::Radio_RobotCommand::DISARM,
+            KickerCmd::Discharge => glue::Radio_RobotCommand::DISCHARGE,
+            KickerCmd::Kick => glue::Radio_RobotCommand::KICK,
+            KickerCmd::Chip => glue::Radio_RobotCommand::CHIP,
+            KickerCmd::PowerBoardOff => glue::Radio_RobotCommand::POWER_BOARD_OFF,
         }
     }
 }
@@ -118,10 +116,10 @@ impl From<PlayerCmd> for glue::Radio_Command {
                 z: val.w as f32,
             },
             dribbler_speed: val.dribble_speed as f32,
-            kicker_command: val.kicker_cmd.into(),
-            _pad: [0, 0, 0],
-            kick_time: 0.0,
+            robot_command: val.kicker_cmd.into(),
+            kick_time: 3_000.0,
             fan_speed: 0.0,
+            _pad: [0, 0, 0],
         }
     }
 }
@@ -284,4 +282,8 @@ pub enum RoleType {
     Goalkeeper,
     /// The attacking kicker during kick-off
     KickoffKicker,
+    /// penalty kicker
+    PenaltyKicker,
+    /// freekicker
+    FreeKicker,
 }

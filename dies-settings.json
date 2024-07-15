@@ -1,25 +1,27 @@
 {
   "controller_settings": {
-    "max_acceleration": 5160.0,
-    "max_velocity": 3950.0,
-    "max_deceleration": 1000.0,
-    "max_angular_velocity": 12.566370614359172,
-    "max_angular_acceleration": 9.299114254625788,
-    "max_angular_deceleration": 12.566370614359172,
-    "position_kp": 1.4,
-    "position_proportional_time_window": 0.0,
-    "position_cutoff_distance": 30.0,
-    "angle_kp": 0.3,
-    "angle_proportional_time_window": 0.02,
-    "angle_cutoff_distance": 0.08726646259971647
+    "max_acceleration": 125000.0,
+    "max_velocity": 2380.0,
+    "max_deceleration": 10620.0,
+    "max_angular_velocity": 34.90658503988659,
+    "max_angular_acceleration": 349.0658503988659,
+    "max_angular_deceleration": 22.368139693559325,
+    "position_kp": 50000.0,
+    "position_proportional_time_window": 1.1,
+    "position_cutoff_distance": 70.0,
+    "angle_kp": 8.5,
+    "angle_proportional_time_window": 0.0,
+    "angle_cutoff_distance": 0.03490658503988659,
+    "force_alpha": 10000.0,
+    "force_beta": 2.0
   },
   "tracker_settings": {
     "is_blue": true,
     "initial_opp_goal_x": 1.0,
-    "player_unit_transition_var": 146.21,
+    "player_unit_transition_var": 95.75,
     "player_measurement_var": 0.01,
     "player_yaw_lpf_alpha": 0.15,
-    "ball_unit_transition_var": 75.61,
+    "ball_unit_transition_var": 20.48,
     "ball_measurement_var": 0.01
   }
 }

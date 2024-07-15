@@ -1,30 +1,42 @@
 use std::{
-    borrow::Cow,
     collections::{HashMap, HashSet},
 };
-
 use crate::{strategy::Strategy, PlayerControlInput};
 
+use crate::{
+    roles::{RoleCtx, SkillState},
+    strategy::StrategyCtx,
+};
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
+    rvo::velocity_obstacle_update,
 };
-use dies_core::{ControllerSettings, GameState, PlayerId, Vector2};
+use dies_core::{
+    ControllerSettings,
+    GameState, PlayerId,
+};
 use dies_core::{PlayerCmd, WorldData};
-use dodgy_2d::{Agent, AvoidanceOptions};
+
+#[derive(Default)]
+struct RoleState {
+    skill_map: HashMap<String, SkillState>,
+}
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
-    strategy: Box<dyn Strategy>,
+    strategy: HashMap<GameState, Box<dyn Strategy>>,
+    role_states: HashMap<PlayerId, RoleState>,
     settings: ControllerSettings,
 }
 
 impl TeamController {
     /// Create a new team controller.
-    pub fn new(strategy: Box<dyn Strategy>, settings: &ControllerSettings) -> Self {
+    pub fn new(strategy: HashMap<GameState, Box<dyn Strategy>>, settings: &ControllerSettings) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             strategy,
+            role_states: HashMap::new(),
             settings: settings.clone(),
         };
         team.update_controller_settings(settings);
@@ -50,15 +62,49 @@ impl TeamController {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
                     .insert(*id, PlayerController::new(*id, &self.settings));
+                if self.player_controllers.len() == 1 {
+                    self.player_controllers.get_mut(id).unwrap().set_gate_keeper();
+                }
             }
         }
+        let state = world_data.current_game_state.game_state;
 
-        let mut inputs = self.strategy.update(&world_data);
+        let strategy = if let Some(strategy) = self.strategy.get_mut(&state) {
+            strategy
+        } else {
+            log::warn!("No strategy found for game state {:?}", state);
+            return;
+        };
+
+        let strategy_ctx = StrategyCtx { world: &world_data };
+        strategy.update(strategy_ctx);
+        let roles = strategy.get_roles();
+        let mut inputs = roles
+            .iter_mut()
+            .fold(PlayerInputs::new(), |mut inputs, (id, role)| {
+                let player_data = world_data
+                    .own_players
+                    .iter()
+                    .find(|p| p.id == *id)
+                    .expect("Player not found in world data");
+
+                let role_state = self.role_states.entry(*id).or_default();
+                let role_ctx = RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
+                let new_input = role.update(role_ctx);
+                inputs.insert(*id, new_input);
+                inputs
+            });
 
         // If in a stop state, override the inputs
         if world_data.current_game_state.game_state == GameState::Stop {
-            inputs = stop_override(world_data.clone(), inputs);
+            inputs = stop_override(&world_data, inputs);
         }
+
+        let all_players = world_data
+            .own_players
+            .iter()
+            .chain(world_data.opp_players.iter())
+            .collect::<Vec<_>>();
 
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
@@ -68,119 +114,30 @@ impl TeamController {
                 .find(|p| p.id == controller.id());
 
             if let Some(player_data) = player_data {
-                let default_input = inputs.player(controller.id());
-                let input = manual_override
-                    .get(&controller.id())
-                    .unwrap_or(&default_input);
-                controller.update(player_data, input, world_data.dt);
+                let id = controller.id();
+                let default_input = inputs.player(id);
+                let input = manual_override.get(&id).unwrap_or(&default_input);
+                controller.update(player_data, &world_data, input, world_data.dt);
+
+                let is_manual = manual_override
+                    .get(&id)
+                    .map(|i| !i.velocity.is_zero())
+                    .unwrap_or(false);
+
+                if !is_manual {
+                    let vel = velocity_obstacle_update(
+                        player_data,
+                        &controller.target_velocity(),
+                        all_players.as_slice(),
+                        &[],
+                        &world_data.player_model,
+                        super::rvo::VelocityObstacleType::VO,
+                    );
+                    controller.update_target_velocity_with_avoidance(vel);
+                }
             } else {
                 controller.increment_frames_misses();
             }
-        }
-
-        // Compute cooperative avoidance velocities
-        let own_agents = world_data
-            .own_players
-            .iter()
-            .map(|p| {
-                (
-                    p.id,
-                    Cow::Owned::<Agent>(Agent {
-                        position: dodgy_2d::Vec2 {
-                            x: p.position.x as f32,
-                            y: p.position.y as f32,
-                        },
-                        velocity: dodgy_2d::Vec2 {
-                            x: p.velocity.x as f32,
-                            y: p.velocity.y as f32,
-                        },
-                        // Not sure why, but a higher radius seems to work better
-                        radius: 200.0,
-                        avoidance_responsibility: if self
-                            .player_controllers
-                            .get(&p.id)
-                            .unwrap()
-                            .target_velocity()
-                            .norm()
-                            > 0.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
-                    }),
-                )
-            })
-            .collect::<Vec<_>>();
-        let opp_agents = world_data
-            .opp_players
-            .iter()
-            .map(|p| {
-                Cow::Owned::<Agent>(Agent {
-                    position: dodgy_2d::Vec2 {
-                        x: p.position.x as f32,
-                        y: p.position.y as f32,
-                    },
-                    velocity: dodgy_2d::Vec2 {
-                        x: p.velocity.x as f32,
-                        y: p.velocity.y as f32,
-                    },
-                    // Not sure why, but a higher radius seems to work better
-                    radius: 200.0,
-                    avoidance_responsibility: 0.,
-                })
-            })
-            .collect::<Vec<_>>();
-
-        for (id, agent) in own_agents.iter() {
-            let obstacles = world_data
-                .get_obstacles_for_player(self.strategy.get_role_type(*id).unwrap_or_default());
-
-            let obstacles = obstacles
-                .iter()
-                .map(|o| Cow::Borrowed(o))
-                .collect::<Vec<_>>();
-
-            let neighbors = own_agents
-                .iter()
-                .filter(|(other_id, _)| *other_id != *id)
-                .map(|(_, a)| a)
-                .chain(opp_agents.iter())
-                .cloned()
-                .collect::<Vec<_>>();
-
-            let player_controller = self
-                .player_controllers
-                .get_mut(id)
-                .expect("Player controller not found");
-            let target_vel = player_controller.target_velocity();
-            let target_vel = dodgy_2d::Vec2 {
-                x: target_vel.x as f32,
-                y: target_vel.y as f32,
-            };
-
-            if agent.avoidance_responsibility == 0.0 {
-                continue;
-            }
-
-            let avoidance_velocity = agent.compute_avoiding_velocity(
-                // Neighbors - other players
-                neighbors.as_slice(),
-                // Obstacles
-                &obstacles,
-                target_vel,
-                self.settings.max_velocity as f32,
-                world_data.dt as f32,
-                &AvoidanceOptions {
-                    obstacle_margin: 100.0,
-                    time_horizon: 3.0,
-                    obstacle_time_horizon: 3.0,
-                },
-            );
-
-            let avoidance_velocity =
-                Vector2::new(avoidance_velocity.x as f64, avoidance_velocity.y as f64);
-            player_controller.update_target_velocity_with_avoidance(avoidance_velocity);
         }
     }
 
@@ -194,7 +151,7 @@ impl TeamController {
 }
 
 /// Override the inputs to comply with the stop state.
-fn stop_override(world_data: WorldData, inputs: PlayerInputs) -> PlayerInputs {
+fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
     let ball_pos = world_data.ball.as_ref().map(|b| b.position.xy());
     let ball_vel = world_data.ball.as_ref().map(|b| b.velocity.xy());
     inputs
@@ -231,3 +188,4 @@ fn stop_override(world_data: WorldData, inputs: PlayerInputs) -> PlayerInputs {
         })
         .collect()
 }
+

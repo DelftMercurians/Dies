@@ -94,6 +94,13 @@ impl Velocity {
     pub fn cap_magnitude(&self, max: f64) -> Self {
         self.map(|v| v.cap_magnitude(max))
     }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Velocity::Global(v) => v.norm() < 1e-6,
+            Velocity::Local(v) => v.norm() < 1e-6,
+        }
+    }
 }
 
 impl Default for Velocity {
@@ -148,6 +155,16 @@ impl PlayerControlInput {
     /// Set the kicker control input.
     pub fn with_kicker(&mut self, kicker: KickerControlInput) -> &mut Self {
         self.kicker = kicker;
+        self
+    }
+
+    /// Set the target velocity of the player.
+    pub fn add_global_velocity(&mut self, vel: Vector2) -> &mut Self {
+        self.velocity = match self.velocity {
+            Velocity::Global(v) => Velocity::Global(v + vel),
+            Velocity::Local(_) => Velocity::Global(vel),
+        };
+
         self
     }
 }

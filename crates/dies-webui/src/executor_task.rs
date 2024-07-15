@@ -1,13 +1,14 @@
+use crate::{server::ServerState, ExecutorStatus, UiCommand, UiEnvironment, UiMode};
+use anyhow::anyhow;
 use dies_core::WorldUpdate;
 use dies_executor::{scenarios::ScenarioType, ControlMsg, ExecutorHandle};
+use dies_protos::ssl_gc_referee_message::referee::Command;
 use dies_simulator::SimulationConfig;
 use std::sync::Arc;
 use tokio::{
     sync::{broadcast, oneshot, watch},
     task::JoinHandle,
 };
-
-use crate::{server::ServerState, ExecutorStatus, UiCommand, UiEnvironment, UiMode};
 
 #[derive(Default)]
 enum ExecutorTaskState {
@@ -80,6 +81,7 @@ impl ExecutorTask {
             UiCommand::OverrideCommand { player_id, command } => {
                 self.handle_executor_msg(ControlMsg::PlayerOverrideCommand(player_id, command))
             }
+            UiCommand::SimulatorCmd(cmd) => self.handle_executor_msg(ControlMsg::SimulatorCmd(cmd)),
             UiCommand::SetPause(pause) => self.handle_executor_msg(ControlMsg::SetPause(pause)),
             UiCommand::Stop => self.stop_executor().await,
             UiCommand::StartScenario { scenario } => {
@@ -90,6 +92,10 @@ impl ExecutorTask {
                     _ = shutdown_rx.recv() => self.stop_executor().await,
                     _ = self.start_scenario(scenario) => {}
                 }
+            }
+            UiCommand::GcCommand(command) => {
+                let cmd = string_to_command(command).unwrap();
+                self.handle_executor_msg(ControlMsg::GcCommand { command: cmd });
             }
         }
     }
@@ -133,6 +139,13 @@ impl ExecutorTask {
             let server_state = Arc::clone(&self.server_state);
             let update_tx = self.update_tx.clone();
             tokio::spawn(async move {
+                let log_file_name = {
+                    let time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+                    format!("dies-{time}.log")
+                };
+                dies_core::debug_clear();
+                dies_logger::log_start(log_file_name);
+
                 let executor = match (mode, ui_env) {
                     (UiMode::Simulation, _) => Ok(setup.into_simulation(settings, sim_config)),
                     (
@@ -183,6 +196,8 @@ impl ExecutorTask {
                             .set_executor_status(ExecutorStatus::Failed(format!("{}", err)));
                     }
                 }
+
+                dies_logger::log_close();
             })
         };
 
@@ -214,5 +229,29 @@ impl ExecutorTask {
         {
             executor_handle.send(cmd);
         }
+    }
+}
+
+fn string_to_command(command_str: String) -> anyhow::Result<Command> {
+    match command_str.as_str() {
+        "HALT" => Ok(Command::HALT),
+        "STOP" => Ok(Command::STOP),
+        "NORMAL_START" => Ok(Command::NORMAL_START),
+        "FORCE_START" => Ok(Command::FORCE_START),
+        "PREPARE_KICKOFF_YELLOW" => Ok(Command::PREPARE_KICKOFF_YELLOW),
+        "PREPARE_KICKOFF_BLUE" => Ok(Command::PREPARE_KICKOFF_BLUE),
+        "PREPARE_PENALTY_YELLOW" => Ok(Command::PREPARE_PENALTY_YELLOW),
+        "PREPARE_PENALTY_BLUE" => Ok(Command::PREPARE_PENALTY_BLUE),
+        "DIRECT_FREE_YELLOW" => Ok(Command::DIRECT_FREE_YELLOW),
+        "DIRECT_FREE_BLUE" => Ok(Command::DIRECT_FREE_BLUE),
+        "INDIRECT_FREE_YELLOW" => Ok(Command::INDIRECT_FREE_YELLOW),
+        "INDIRECT_FREE_BLUE" => Ok(Command::INDIRECT_FREE_BLUE),
+        "TIMEOUT_YELLOW" => Ok(Command::TIMEOUT_YELLOW),
+        "TIMEOUT_BLUE" => Ok(Command::TIMEOUT_BLUE),
+        "GOAL_YELLOW" => Ok(Command::GOAL_YELLOW),
+        "GOAL_BLUE" => Ok(Command::GOAL_BLUE),
+        "BALL_PLACEMENT_YELLOW" => Ok(Command::BALL_PLACEMENT_YELLOW),
+        "BALL_PLACEMENT_BLUE" => Ok(Command::BALL_PLACEMENT_BLUE),
+        _ => Err(anyhow!("Unknown command: {}", command_str)),
     }
 }
