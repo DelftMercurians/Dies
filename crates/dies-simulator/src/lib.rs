@@ -7,8 +7,7 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
-use nalgebra::ComplexField;
-use rapier3d_f64::{prelude::*};
+use rapier3d_f64::prelude::*;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::{collections::HashMap, f64::consts::PI};

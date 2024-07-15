@@ -1103,8 +1103,8 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "glue"
-version = "0.3.0"
-source = "git+https://github.com/DelftMercurians/glue.git?rev=0634e1a1e578bfde517ef8425b0d1455d3beea1e#0634e1a1e578bfde517ef8425b0d1455d3beea1e"
+version = "0.4.0"
+source = "git+https://github.com/DelftMercurians/glue.git?tag=v0.4.0#88b6ef4024d761f6950b35d07fa5d8069105b4af"
 dependencies = [
  "bindgen",
  "chrono",
