@@ -1,6 +1,7 @@
 #[deny(dead_code)]
 mod scenario;
 
+use crate::roles::attacker::Attacker;
 use crate::roles::harasser::Harasser;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
@@ -95,6 +96,31 @@ fn one_harasser_one_player_one_ball() -> ScenarioSetup {
     scenario
 }
 
+fn one_attacker() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-800.0, -1000.0))));
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario
+        .add_ball()
+        .add_own_player_at(Vector2::new(1000.0, 1000.0));
+    scenario
+}
+
+fn three_attackers() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, 2000.0))));
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, -2000.0))));
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-200.0, 0.0))));
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario
+        .add_ball()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player();
+    scenario
+}
+
+
 /// Creates a lookup table for scenarios as a global constant.
 macro_rules! scenarios {
     ($($scen:ident),+) => {
@@ -175,6 +201,8 @@ scenarios! {
     empty_scenario,
     two_players_one_ball,
     one_waller_one_ball,
+    one_attacker,
+    three_attackers,
     one_harasser_one_player_one_ball,
     kickoff,
     penalty_kick,
