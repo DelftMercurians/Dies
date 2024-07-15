@@ -1,13 +1,10 @@
 use crate::roles::RoleCtx;
 use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
-use crate::{PlayerControlInput, PlayerInputs};
-use dies_core::{Angle, BallData, GameState, PlayerData, PlayerId, RoleType, WorldData};
-use log::log;
+use crate::{PlayerControlInput};
+use dies_core::{Angle, BallData, GameState, PlayerId, RoleType};
 use nalgebra::Vector2;
 use std::collections::HashMap;
-use std::f64::consts::PI;
-use dies_core::GameState::{PenaltyRun, PreparePenalty};
 use crate::strategy::kickoff::{OtherPlayer};
 use crate::roles::Goalkeeper;
 
@@ -29,6 +26,12 @@ pub struct Attacker {
     init_ball: Option<BallData>
 }
 
+
+impl Default for Attacker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Attacker {
     pub fn new() -> Self {
@@ -80,9 +83,9 @@ impl Role for Attacker {
             }
             let ball_pos = self.init_ball.as_ref().unwrap().position;
             let dir = Angle::between_points(player_data.position,ball_pos.xy());
-            return self.move_to_ball.relocate(player_data, ball_pos.xy(), dir, 0.0);
+            self.move_to_ball.relocate(player_data, ball_pos.xy(), dir, 0.0)
         } else {
-            return PlayerControlInput::new();
+            PlayerControlInput::new()
         }
     }
     fn role_type(&self) -> RoleType {
@@ -126,27 +129,19 @@ impl Strategy for PenaltyKickStrategy {
                     continue;
                 }
             }
-            if !self.roles.contains_key(&player_data.id) {
+            if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
                 if us_attacking && !self.has_attacker {
                     self.has_attacker = true;
-                    self.roles.insert(player_data.id, Box::new(Attacker::new()));
-                } else {
-                    if let Some(ball) = &world.ball {
-                        let ball_pos = ball.position;
-                        let pos_x = ball_pos.x + if us_attacking { -1000.0 } else { 1000.0 };
-                        self.pos_counter += 1;
-                        let mut pos_y = (self.pos_counter / 2) as f64 * self.pos_interval;
-                        if self.pos_counter % 2 != 0 {
-                            pos_y = -pos_y;
-                        }
-                        self.roles.insert(
-                            player_data.id,
-                            Box::new(OtherPlayer::new(Vector2::new(pos_x,pos_y))),
-                        );
+                    e.insert(Box::new(Attacker::new()));
+                } else if let Some(ball) = &world.ball {
+                    let ball_pos = ball.position;
+                    let pos_x = ball_pos.x + if us_attacking { -1000.0 } else { 1000.0 };
+                    self.pos_counter += 1;
+                    let mut pos_y = (self.pos_counter / 2) as f64 * self.pos_interval;
+                    if self.pos_counter % 2 != 0 {
+                        pos_y = -pos_y;
                     }
-
-
-
+                    e.insert(Box::new(OtherPlayer::new(Vector2::new(pos_x,pos_y))));
                 }
             }
         }

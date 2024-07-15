@@ -130,7 +130,7 @@ fn test_role_multiple_targets() -> ScenarioSetup {
 }
 
 fn two_players_crossing() -> ScenarioSetup {
-    let mut strategy = AdHocStrategy::new();
+    let strategy = AdHocStrategy::new();
     // strategy.add_role(Box::new(TestRole::new(Vector2::new(-800.0, -1000.0))));
     // strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
     let mut scenario = ScenarioSetup::new(strategy, None);

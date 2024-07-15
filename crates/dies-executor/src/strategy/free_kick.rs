@@ -1,14 +1,11 @@
 use crate::roles::RoleCtx;
 use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
-use crate::{PlayerControlInput, PlayerInputs};
-use dies_core::{Angle, BallData, GameState, PlayerData, PlayerId, RoleType, WorldData};
-use log::log;
+use crate::{PlayerControlInput};
+use dies_core::{Angle, BallData, PlayerId, RoleType};
 use nalgebra::Vector2;
 use std::collections::HashMap;
-use std::f64::consts::PI;
 use crate::strategy::kickoff::{OtherPlayer};
-use crate::roles::Goalkeeper;
 
 use super::StrategyCtx;
 
@@ -26,6 +23,12 @@ pub struct FreeAttacker {
     init_ball: Option<BallData>,
 }
 
+
+impl Default for FreeAttacker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl FreeAttacker {
     pub fn new() -> Self {
@@ -82,9 +85,9 @@ impl Role for FreeAttacker {
             }
             let ball_pos = self.init_ball.as_ref().unwrap().position;
             let dir= Angle::between_points(ball_pos.xy(), player_data.position);
-            return self.move_to_ball.relocate(player_data, ball_pos.xy(), dir, 0.0);
+            self.move_to_ball.relocate(player_data, ball_pos.xy(), dir, 0.0)
         } else {
-            return PlayerControlInput::new();
+            PlayerControlInput::new()
         }
     }
     fn role_type(&self) -> RoleType {
@@ -121,24 +124,22 @@ impl Strategy for FreeKickStrategy {
             if let Some(gate_keeper_id) = self.gate_keeper_id {
                     continue;
             }
-            if !self.roles.contains_key(&player_data.id) {
+            if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
                 if us_attacking  {
                     if !self.has_attacker {
                         log::info!("Attacker is created");
                         self.has_attacker = true;
-                        self.roles.insert(player_data.id, Box::new(FreeAttacker::new()));
+                        e.insert(Box::new(FreeAttacker::new()));
                     }
-                } else {
-                    if let Some(ball) = &world.ball {
-                        let ball_pos = ball.position;
-                        // get the disance between the ball and the player
-                        let distance = (player_data.position - ball_pos.xy()).norm();
-                        if distance < 500.0 {
-                            log::info!("Player {} is moving out of the ball", player_data.id);
-                            // get the target pos that is 500.0 away from the ball
-                            let target = ball_pos.xy() + (player_data.position - ball_pos.xy()).normalize() * 500.0;
-                            self.roles.insert(player_data.id, Box::new(OtherPlayer::new(target)));
-                        }
+                } else if let Some(ball) = &world.ball {
+                    let ball_pos = ball.position;
+                    // get the disance between the ball and the player
+                    let distance = (player_data.position - ball_pos.xy()).norm();
+                    if distance < 500.0 {
+                        log::info!("Player {} is moving out of the ball", player_data.id);
+                        // get the target pos that is 500.0 away from the ball
+                        let target = ball_pos.xy() + (player_data.position - ball_pos.xy()).normalize() * 500.0;
+                        e.insert(Box::new(OtherPlayer::new(target)));
                     }
                 }
             }
