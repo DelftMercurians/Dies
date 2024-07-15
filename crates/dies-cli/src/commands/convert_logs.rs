@@ -29,9 +29,6 @@ pub fn convert_log(input: &Path, output: &Path) -> anyhow::Result<()> {
     if !input.exists() || !input.is_file() {
         return Err(anyhow::anyhow!("Input file does not exist"));
     }
-    if output.exists() {
-        return Err(anyhow::anyhow!("Output file already exists"));
-    }
 
     let logs = LogFile::open(input)?;
 

@@ -20,6 +20,10 @@ enum Command {
         output: PathBuf,
     },
 
+    /// Convert the last log file in the logs directory to JSON, writing the output to log.json.
+    #[clap(name = "convert-last")]
+    ConvertLast,
+
     #[clap(name = "test-radio")]
     TestRadio {
         #[clap(short, long, default_value = "auto")]
@@ -59,6 +63,13 @@ impl Cli {
         let cli = Cli::parse();
         match cli.command {
             Some(Command::Convert { input, output }) => match convert_log(&input, &output) {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(err) => {
+                    eprintln!("Error converting logs: {}", err);
+                    ExitCode::FAILURE
+                }
+            },
+            Some(Command::ConvertLast) => match crate::commands::convert_last_log::convert_last_log() {
                 Ok(_) => ExitCode::SUCCESS,
                 Err(err) => {
                     eprintln!("Error converting logs: {}", err);
