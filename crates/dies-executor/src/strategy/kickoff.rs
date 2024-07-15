@@ -1,12 +1,13 @@
 use crate::roles::RoleCtx;
-use crate::strategy::Task::{Task3Phase, Task4Phase};
+use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
-use crate::{PlayerControlInput, PlayerInputs};
-use dies_core::{Angle, GameState, PlayerData, PlayerId, WorldData};
-use log::log;
+use crate::PlayerControlInput;
+use dies_core::{Angle, GameState, PlayerId};
 use nalgebra::Vector2;
 use std::collections::HashMap;
 use std::f64::consts::PI;
+
+use super::StrategyCtx;
 
 /// A generator for creating a sequence of 2D positions.
 ///
@@ -151,7 +152,9 @@ impl KickoffStrategy {
 }
 
 impl Strategy for KickoffStrategy {
-    fn update(&mut self, world: &WorldData) -> PlayerInputs {
+    fn update(&mut self, ctx: StrategyCtx<'_>) {
+        let world = ctx.world;
+
         let us_attacking = world.current_game_state.us_operating;
         // Assign roles to players
         for player_data in world.own_players.iter() {
@@ -175,17 +178,21 @@ impl Strategy for KickoffStrategy {
             }
         }
 
-        let mut inputs = PlayerInputs::new();
-        for (id, role) in self.roles.iter_mut() {
-            if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-                let player_data = player_data.clone();
+        // let mut inputs = PlayerInputs::new();
+        // for (id, role) in self.roles.iter_mut() {
+        //     if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
+        //         let player_data = player_data.clone();
 
-                let input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
-                inputs.insert(*id, input);
-            } else {
-                log::error!("No detetion data for player #{id} with active role");
-            }
-        }
-        inputs
+        //         let input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
+        //         inputs.insert(*id, input);
+        //     } else {
+        //         log::error!("No detetion data for player #{id} with active role");
+        //     }
+        // }
+        // inputs
+    }
+    
+    fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>> {
+        &mut self.roles
     }
 }

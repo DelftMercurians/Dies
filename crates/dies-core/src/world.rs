@@ -2,10 +2,18 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::time::Instant;
 
-use serde::Serialize;
+use dodgy_2d::Obstacle;
+use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::{player::PlayerId, Angle, FieldGeometry, SysStatus, Vector2, Vector3};
+use crate::{
+    find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry, RoleType,
+    SysStatus, Vector2, Vector3,
+};
+
+const STOP_BALL_AVOIDANCE_RADIUS: f64 = 500.0;
+const PLAYER_RADIUS: f64 = 90.0;
+const DRIBBLER_ANGLE_DEG: f64 = 56.0;
 
 #[derive(Debug, Clone, Copy)]
 pub enum WorldInstant {
@@ -40,7 +48,7 @@ pub struct WorldUpdate {
 }
 
 /// The game state, as reported by the referee.
-#[derive(Serialize, Clone, Debug, Copy, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub enum GameState {
@@ -93,7 +101,7 @@ impl PartialEq for GameState {
 impl Eq for GameState {}
 
 /// A struct to store the ball state from a single frame.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct BallData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
@@ -107,7 +115,7 @@ pub struct BallData {
     pub velocity: Vector3,
 }
 
-#[derive(Serialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[typeshare]
 pub struct GameStateData {
     /// The state of current game
@@ -118,7 +126,7 @@ pub struct GameStateData {
 }
 
 /// A struct to store the player state from a single frame.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct PlayerData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
@@ -140,15 +148,15 @@ pub struct PlayerData {
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f64,
 
-    /// The overall status of the robot
+    /// The overall status of the robot. Only available for own players.
     pub primary_status: Option<SysStatus>,
-    /// The voltage of the kicker capacitor
+    /// The voltage of the kicker capacitor (in V). Only available for own players.
     pub kicker_cap_voltage: Option<f32>,
-    /// The temperature of the kicker
+    /// The temperature of the kicker. Only available for own players.
     pub kicker_temp: Option<f32>,
-    /// The voltages of the battery packs
+    /// The voltages of the battery packs. Only available for own players.
     pub pack_voltages: Option<[f32; 2]>,
-    /// Whether the breakbeam sensor detected a ball
+    /// Whether the breakbeam sensor detected a ball. Only available for own players.
     pub breakbeam_ball_detected: bool,
 }
 
@@ -172,8 +180,36 @@ impl PlayerData {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PlayerModel {
+    pub radius: f64,
+    pub dribbler_angle: Angle,
+    pub max_speed: f64,
+    pub max_acceleration: f64,
+    pub max_angular_speed: f64,
+    pub max_angular_acceleration: f64,
+}
+
+impl Into<PlayerModel> for &ExecutorSettings {
+    fn into(self) -> PlayerModel {
+        PlayerModel {
+            radius: PLAYER_RADIUS,
+            dribbler_angle: Angle::from_degrees(DRIBBLER_ANGLE_DEG),
+            max_speed: self.controller_settings.max_velocity,
+            max_acceleration: self.controller_settings.max_acceleration,
+            max_angular_speed: self.controller_settings.max_angular_velocity,
+            max_angular_acceleration: self.controller_settings.max_angular_acceleration,
+        }
+    }
+}
+
+pub enum BallPrediction {
+    Linear(Vector2),
+    Collision(Vector2),
+}
+
 /// A struct to store the world state from a single frame.
-#[derive(Serialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct WorldData {
     /// Timestamp of the frame, in seconds. This timestamp is relative to the time the
@@ -189,4 +225,372 @@ pub struct WorldData {
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameStateData,
+    pub player_model: PlayerModel,
+}
+
+impl WorldData {
+    pub fn get_player(&self, id: PlayerId) -> Option<&PlayerData> {
+        self.own_players.iter().find(|p| p.id == id)
+    }
+
+    pub fn players_within_radius(&self, pos: Vector2, radius: f64) -> Vec<&PlayerData> {
+        self.own_players
+            .iter()
+            .chain(self.opp_players.iter())
+            .filter(|p| (p.position.xy() - pos).norm() < radius)
+            .collect()
+    }
+
+    /// Compute the approximate time it will take for the player to reach the target point
+    pub fn time_to_reach_point(&self, player: &PlayerData, target: Vector2) -> f64 {
+        let max_speed = self.player_model.max_speed;
+        let max_acceleration = self.player_model.max_acceleration;
+        let current_speed = player.velocity.norm();
+        let dist = (target - player.position.xy()).norm();
+
+        // Acceleration phase
+        let t1 = (max_speed - current_speed) / max_acceleration;
+        let d1 = current_speed * t1 + 0.5 * max_acceleration * t1.powi(2);
+
+        // Deceleration phase
+        let t3 = max_speed / max_acceleration;
+        let d3 = 0.5 * max_speed * t3;
+
+        // Constant speed phase
+        let d2 = dist - d1 - d3;
+
+        if d2 > 0.0 {
+            // The robot reaches max speed
+            let t2 = d2 / max_speed;
+            t1 + t2 + t3
+        } else {
+            // The robot doesn't reach max speed
+            // Calculate time considering both acceleration and deceleration
+            let v_peak = (max_acceleration * dist).sqrt();
+            let t_acc = (v_peak - current_speed) / max_acceleration;
+            let t_dec = v_peak / max_acceleration;
+            t_acc + t_dec
+        }
+    }
+
+    /// Cast a ray from the start point in the given direction and return the intersection point with the first
+    /// player or wall that it.
+    pub fn cast_ray(&self, start: Vector2, direction: Vector2) -> Option<Vector2> {
+        let normalized_direction = direction.normalize();
+        let mut closest_intersection: Option<(f64, Vector2)> = None;
+
+        let update_closest = |closest: &mut Option<(f64, Vector2)>, t: f64, point: Vector2| {
+            if t > 0.0 && (closest.is_none() || t < closest.unwrap().0) {
+                *closest = Some((t, point));
+            }
+        };
+
+        // Check intersections with players
+        for player in self.own_players.iter().chain(self.opp_players.iter()) {
+            let oc = start - player.position.xy();
+            let a = normalized_direction.dot(&normalized_direction);
+            let b = 2.0 * oc.dot(&normalized_direction);
+            let c = oc.dot(&oc) - self.player_model.radius * self.player_model.radius;
+            let discriminant = b * b - 4.0 * a * c;
+
+            if discriminant >= 0.0 {
+                let t = (-b - discriminant.sqrt()) / (2.0 * a);
+                if t > 0.0 {
+                    let intersection_point = start + normalized_direction * t;
+                    update_closest(&mut closest_intersection, t, intersection_point);
+                }
+            }
+        }
+
+        // Check intersections with field boundaries
+        if let Some(field_geom) = &self.field_geom {
+            let half_length = field_geom.field_length / 2.0;
+            let half_width = field_geom.field_width / 2.0;
+
+            let mut check_boundary = |p1: Vector2, p2: Vector2| {
+                let v1 = p2 - p1;
+                if let Some(intersection) = find_intersection(p1, v1, start, direction) {
+                    let t = (intersection - start).dot(&normalized_direction);
+                    update_closest(&mut closest_intersection, t, intersection);
+                }
+            };
+
+            // Check all four boundaries
+            check_boundary(
+                Vector2::new(-half_length, half_width),
+                Vector2::new(half_length, half_width),
+            );
+            check_boundary(
+                Vector2::new(-half_length, -half_width),
+                Vector2::new(half_length, -half_width),
+            );
+            check_boundary(
+                Vector2::new(-half_length, -half_width),
+                Vector2::new(-half_length, half_width),
+            );
+            check_boundary(
+                Vector2::new(half_length, -half_width),
+                Vector2::new(half_length, half_width),
+            );
+        }
+
+        closest_intersection.map(|(_, point)| point)
+    }
+
+    /// Predict the position of the ball at time `t` seconds in the future assuming it
+    /// moves in a straight line.
+    pub fn predict_ball_position(&self, t: f64) -> Option<BallPrediction> {
+        if let Some(ball) = &self.ball {
+            let current_pos = ball.position.xy();
+            let dp = ball.velocity.xy() * t;
+            let distance = dp.norm();
+            let pred_pos = ball.position.xy() + dp;
+
+            if let Some(intersection) = self.cast_ray(current_pos, dp) {
+                if (intersection - current_pos).norm() < distance {
+                    Some(BallPrediction::Collision(intersection))
+                } else {
+                    Some(BallPrediction::Linear(pred_pos))
+                }
+            } else {
+                Some(BallPrediction::Linear(pred_pos))
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn get_obstacles_for_player(&self, role: RoleType) -> Vec<Obstacle> {
+        if let Some(field_geom) = &self.field_geom {
+            let field_boundary = {
+                let hl = field_geom.field_length as f32 / 2.0;
+                let hw = field_geom.field_width as f32 / 2.0;
+                Obstacle::Closed {
+                    vertices: vec![
+                        // Clockwise -> prevent leaving the field
+                        dodgy_2d::Vec2::new(-hl, -hw),
+                        dodgy_2d::Vec2::new(-hl, hw),
+                        dodgy_2d::Vec2::new(hl, hw),
+                        dodgy_2d::Vec2::new(hl, -hw),
+                    ],
+                }
+            };
+            let mut obstacles = vec![field_boundary];
+
+            // // Add own defence area for non-keeper robots
+            // if role != RoleType::Goalkeeper {
+            //     let defence_area = create_bbox_from_rect(
+            //         Vector2::new(
+            //             -field_geom.field_length + field_geom.penalty_area_depth / 2.0,
+            //             0.0,
+            //         ),
+            //         field_geom.penalty_area_depth,
+            //         field_geom.penalty_area_width,
+            //     );
+            //     obstacles.push(defence_area);
+            // }
+
+            // // Add opponent defence area for all robots
+            // let defence_area = create_bbox_from_rect(
+            //     Vector2::new(
+            //         field_geom.field_length - field_geom.penalty_area_depth / 2.0,
+            //         0.0,
+            //     ),
+            //     field_geom.penalty_area_depth,
+            //     field_geom.penalty_area_width,
+            // );
+            // obstacles.push(defence_area);
+
+            match self.current_game_state.game_state {
+                GameState::Stop => {
+                    // Add obstacle to prevent getting close to the ball
+                    if let Some(ball) = &self.ball {
+                        obstacles.push(create_bbox_from_circle(
+                            ball.position.xy(),
+                            STOP_BALL_AVOIDANCE_RADIUS,
+                        ));
+                    }
+                }
+                GameState::Kickoff | GameState::PrepareKickoff => match role {
+                    RoleType::KickoffKicker => {}
+                    _ => {
+                        // Add center circle for non kicker robots
+                        obstacles.push(create_bbox_from_circle(
+                            Vector2::zeros(),
+                            field_geom.center_circle_radius,
+                        ));
+                    }
+                },
+                GameState::BallReplacement(_) => todo!(),
+                GameState::PreparePenalty => todo!(),
+                GameState::FreeKick => todo!(),
+                GameState::Penalty => todo!(),
+                GameState::PenaltyRun => todo!(),
+                GameState::Run | GameState::Halt | GameState::Timeout | GameState::Unknown => {
+                    // Nothing to do
+                }
+            };
+
+            obstacles
+        } else {
+            vec![]
+        }
+    }
+}
+
+fn create_bbox_from_circle(center: Vector2, radius: f64) -> Obstacle {
+    let hw = radius as f32 / 2.0;
+    let x = center.x as f32;
+    let y = center.y as f32;
+    Obstacle::Closed {
+        vertices: vec![
+            // Counter-clockwise -> prevent getting into the loop
+            dodgy_2d::Vec2::new(x - hw, y - hw),
+            dodgy_2d::Vec2::new(x + hw, y - hw),
+            dodgy_2d::Vec2::new(x + hw, y + hw),
+            dodgy_2d::Vec2::new(x - hw, y + hw),
+        ],
+    }
+}
+
+pub fn mock_world_data() -> WorldData {
+    WorldData {
+        own_players: vec![PlayerData {
+            id: PlayerId::new(0),
+            position: Vector2::new(1000.0, 1000.0),
+            timestamp: 0.0,
+            raw_position: Vector2::new(1000.0, 1000.0),
+            velocity: Vector2::zeros(),
+            yaw: Angle::default(),
+            raw_yaw: Angle::default(),
+            angular_speed: 0.0,
+            primary_status: Some(SysStatus::Ready),
+            kicker_cap_voltage: Some(0.0),
+            kicker_temp: Some(0.0),
+            pack_voltages: Some([0.0, 0.0]),
+            breakbeam_ball_detected: false,
+        }],
+        opp_players: vec![PlayerData {
+            id: PlayerId::new(1),
+            position: Vector2::new(-1000.0, -1000.0),
+            timestamp: 0.0,
+            raw_position: Vector2::new(-1000.0, -1000.0),
+            velocity: Vector2::zeros(),
+            yaw: Angle::default(),
+            raw_yaw: Angle::default(),
+            angular_speed: 0.0,
+            primary_status: Some(SysStatus::Ready),
+            kicker_cap_voltage: Some(0.0),
+            kicker_temp: Some(0.0),
+            pack_voltages: Some([0.0, 0.0]),
+            breakbeam_ball_detected: false,
+        }],
+        field_geom: Some(FieldGeometry {
+            field_length: 9000.0,
+            field_width: 6000.0,
+            ..Default::default()
+        }),
+        player_model: PlayerModel {
+            radius: 90.0,
+            dribbler_angle: Angle::from_degrees(56.0),
+            max_speed: 1000.0,
+            max_acceleration: 1000.0,
+            max_angular_speed: 1000.0,
+            max_angular_acceleration: 1000.0,
+        },
+        t_received: 0.0,
+        t_capture: 0.0,
+        dt: 1.0,
+        ball: None,
+        current_game_state: GameStateData {
+            game_state: GameState::Run,
+            us_operating: true,
+        },
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    
+    #[test]
+    fn test_ray_player_intersection() {
+        let world = mock_world_data();
+        let start = Vector2::new(0.0, 0.0);
+        let direction = Vector2::new(1.0, 1.0);
+
+        let result = world.cast_ray(start, direction);
+        assert!(result.is_some());
+        let intersection = result.unwrap();
+        assert_relative_eq!(intersection.x, 955.0, epsilon = 1.0);
+        assert_relative_eq!(intersection.y, 955.0, epsilon = 1.0);
+    }
+
+    #[test]
+    fn test_ray_wall_intersection() {
+        let world = mock_world_data();
+        let start = Vector2::new(0.0, 0.0);
+        let direction = Vector2::new(1.0, 0.0);
+
+        let result = world.cast_ray(start, direction);
+        assert!(result.is_some());
+        let intersection = result.unwrap();
+        assert_relative_eq!(intersection.x, 4500.0, epsilon = 1.0);
+        assert_relative_eq!(intersection.y, 0.0, epsilon = 1.0);
+    }
+
+    #[test]
+    fn test_no_intersection() {
+        let world = mock_world_data();
+        let start = Vector2::new(0.0, 0.0);
+        let direction = Vector2::new(0.0, 1.0);
+
+        let result = world.cast_ray(start, direction);
+        assert!(result.is_some());
+        let intersection = result.unwrap();
+        assert_relative_eq!(intersection.x, 0.0, epsilon = 1.0);
+        assert_relative_eq!(intersection.y, 3000.0, epsilon = 1.0);
+    }
+
+    #[test]
+    fn test_ray_origin_inside_player() {
+        let world = mock_world_data();
+        let start = Vector2::new(1000.0, 1000.0); // Inside the player
+        let direction = Vector2::new(1.0, 0.0);
+
+        let result = world.cast_ray(start, direction);
+        assert!(result.is_some());
+        let intersection = result.unwrap();
+        assert_relative_eq!(intersection.x, 1090.0, epsilon = 1.0);
+        assert_relative_eq!(intersection.y, 1000.0, epsilon = 1.0);
+    }
+
+    #[test]
+    fn test_ray_parallel_to_wall() {
+        let world = mock_world_data();
+        let start = Vector2::new(0.0, 3000.0);
+        let direction = Vector2::new(1.0, 0.0);
+
+        let result = world.cast_ray(start, direction);
+        assert!(result.is_some());
+        let intersection = result.unwrap();
+        assert_relative_eq!(intersection.x, 4500.0, epsilon = 1.0);
+        assert_relative_eq!(intersection.y, 3000.0, epsilon = 1.0);
+    }
+
+    #[test]
+    fn test_ray_away_from_everything() {
+        let world = mock_world_data();
+        let start = Vector2::new(0.0, 0.0);
+        let direction = Vector2::new(-1.0, -1.0);
+
+        let result = world.cast_ray(start, direction);
+        assert!(result.is_some());
+        let intersection = result.unwrap();
+        assert_relative_eq!(intersection.x, -4500.0, epsilon = 1.0);
+        assert_relative_eq!(intersection.y, -4500.0, epsilon = 1.0);
+    }
 }

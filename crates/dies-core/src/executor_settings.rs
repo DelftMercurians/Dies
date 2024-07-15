@@ -31,23 +31,30 @@ pub struct ControllerSettings {
     pub angle_proportional_time_window: f64,
     /// Distance used as threshold for the controller to prevent shaky behavior
     pub angle_cutoff_distance: f64,
+
+    /// Attractive force coefficient for players
+    pub force_alpha: f64,
+    /// Repulsive force coefficient for players
+    pub force_beta: f64,
 }
 
 impl Default for ControllerSettings {
     fn default() -> Self {
         Self {
-            max_acceleration: 700.0,
-            max_velocity: 2000.0,
-            max_deceleration: 900.0,
-            max_angular_velocity: 30.0f64.to_radians(),
-            max_angular_acceleration: 15.0f64.to_radians(),
-            max_angular_deceleration: 15.0f64.to_radians(),
-            position_kp: 0.7,
+            max_acceleration: 125000.0,
+            max_velocity: 2560.0,
+            max_deceleration: 2240.0,
+            max_angular_velocity: 34.90658503988659,
+            max_angular_acceleration: 34.90658503988659,
+            max_angular_deceleration: 22.368139693559325,
+            position_kp: 50_000.0,
             position_proportional_time_window: 0.7,
-            position_cutoff_distance: 0.,
-            angle_kp: 1.0,
-            angle_proportional_time_window: 0.02,
-            angle_cutoff_distance: 0.,
+            position_cutoff_distance: 70.0,
+            angle_kp: 2.0,
+            angle_proportional_time_window: 0.0,
+            angle_cutoff_distance: 0.03490658503988659,
+            force_alpha: 10000.0,
+            force_beta: 2.0
         }
     }
 }
@@ -79,11 +86,11 @@ impl Default for TrackerSettings {
         Self {
             is_blue: true,
             initial_opp_goal_x: 1.0,
-            player_unit_transition_var: 0.1,
-            player_measurement_var: 2.0,
-            ball_unit_transition_var: 10.0,
-            ball_measurement_var: 10.0,
-            player_yaw_lpf_alpha: 0.5,
+            player_unit_transition_var: 95.75,
+            player_measurement_var: 0.01,
+            player_yaw_lpf_alpha: 0.15,
+            ball_unit_transition_var: 20.48,
+            ball_measurement_var: 0.01
         }
     }
 }

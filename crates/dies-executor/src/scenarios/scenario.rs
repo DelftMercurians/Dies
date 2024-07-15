@@ -91,6 +91,14 @@ impl ScenarioSetup {
         self
     }
 
+    pub fn add_own_player_at_with_yaw(&mut self, player: Vector2, _yaw: Angle) -> &mut Self {
+        self.own_players.push(PlayerPlacement {
+            position: Some(player),
+            yaw: Some(_yaw),
+        });
+        self
+    }
+
     /// Add an opponent player at a specific position.
     pub fn add_opp_player_at(&mut self, player: Vector2) -> &mut Self {
         self.opp_players.push(PlayerPlacement {
@@ -117,8 +125,8 @@ impl ScenarioSetup {
         settings: ExecutorSettings,
         sim_config: SimulationConfig,
     ) -> Executor {
-        let field_width = sim_config.field_geometry.field_width as f64;
-        let field_length = sim_config.field_geometry.field_length as f64;
+        let field_width = sim_config.field_geometry.field_width;
+        let field_length = sim_config.field_geometry.field_length;
         let mut builder = SimulationBuilder::new(sim_config);
 
         match self.ball {
@@ -133,12 +141,12 @@ impl ScenarioSetup {
         }
 
         for player in self.own_players.iter() {
-            let (position, yaw) = player_into_simulation(&player, field_width, field_length);
+            let (position, yaw) = player_into_simulation(player, field_width, field_length);
             builder = builder.add_own_player(position, yaw);
         }
 
         for player in self.opp_players.iter() {
-            let (position, yaw) = player_into_simulation(&player, field_width, field_length);
+            let (position, yaw) = player_into_simulation(player, field_width, field_length);
             builder = builder.add_opp_player(position, yaw);
         }
 
@@ -155,7 +163,7 @@ impl ScenarioSetup {
         bs_client: BasestationHandle,
     ) -> Result<Executor> {
         // Wait for the setup check to succeed
-        let mut tracker = WorldTracker::new(&settings.tracker_settings);
+        let mut tracker = WorldTracker::new(&settings);
         let mut ssl_client = VisionClient::new(ssl_config.clone()).await?;
         let mut check_interval = tokio::time::interval(LIVE_CHECK_INTERVAL);
         let max_iterations = LIVE_CHECK_TIMEOUT.as_millis() / LIVE_CHECK_INTERVAL.as_millis();
@@ -206,7 +214,7 @@ impl ScenarioSetup {
             .collect::<HashSet<_>>();
         for player in self.own_players.iter() {
             if let Some(id) = find_player(
-                &player,
+                player,
                 &available_ids,
                 &world.own_players,
                 self.tolerance,
@@ -226,7 +234,7 @@ impl ScenarioSetup {
             .collect::<HashSet<_>>();
         for player in self.opp_players.iter() {
             if let Some(id) = find_player(
-                &player,
+                player,
                 &available_ids,
                 &world.opp_players,
                 self.tolerance,
@@ -251,10 +259,7 @@ fn player_into_simulation(
         Some(pos) => pos,
         None => random_pos(field_width, field_length),
     };
-    let yaw = match placement.yaw {
-        Some(yaw) => yaw,
-        None => Angle::default(),
-    };
+    let yaw = placement.yaw.unwrap_or_default();
 
     (position, yaw)
 }
@@ -284,7 +289,7 @@ fn find_player(
         available_ids.iter().next().copied()
     };
 
-    if let Some(player) = id.map(|id| players.iter().find(|p| p.id == id)).flatten() {
+    if let Some(player) = id.and_then(|id| players.iter().find(|p| p.id == id)) {
         match placement.position {
             Some(target) => {
                 if (player.position - target).norm() > tolerance {
@@ -319,9 +324,8 @@ fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
 
 #[cfg(test)]
 mod tests {
-    use crate::strategy::AdHocStrategy;
-
     use super::*;
+    use dies_core::mock_world_data;
     use dies_core::Angle;
     use dies_core::BallData;
     use dies_core::WorldData;
@@ -349,7 +353,7 @@ mod tests {
                 ..PlayerData::new(PlayerId::new(0))
             }],
             opp_players: vec![],
-            ..Default::default()
+            ..mock_world_data()
         };
 
         assert!(!setup.check_live(world.clone()));

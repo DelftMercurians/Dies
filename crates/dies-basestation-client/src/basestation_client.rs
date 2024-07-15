@@ -1,4 +1,7 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Duration, Instant},
+};
 
 use anyhow::{anyhow, Context, Result};
 use glue::{HG_Status, Monitor, Serial};
@@ -103,7 +106,7 @@ impl BasestationHandle {
 
         // Launch a blocking thread for writing to the serial port
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Message>();
-        let (info_tx, info_rx) = broadcast::channel::<PlayerFeedbackMsg>(1);
+        let (info_tx, info_rx) = broadcast::channel::<PlayerFeedbackMsg>(16);
 
         let mut connection = match config.protocol {
             BaseStationProtocol::V0 => {
@@ -124,10 +127,13 @@ impl BasestationHandle {
             let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
             let mut id_map = config.robot_id_map;
 
+            let mut last_cmd_time = Instant::now();
+            let mut all_ids = HashSet::new();
             loop {
                 // Send commands
                 match cmd_rx.try_recv() {
                     Ok(Message::PlayerCmd((cmd, resp))) => {
+                        last_cmd_time = Instant::now();
                         let robot_id = id_map
                             .get(&cmd.id)
                             .copied()
@@ -145,6 +151,7 @@ impl BasestationHandle {
                                 .ok();
                             }
                             Connection::V0(serial) => {
+                                all_ids.insert(robot_id);
                                 let cmd_str = cmd.into_proto_v0_with_id(robot_id);
                                 serial.send(&cmd_str);
                                 resp.send(Ok(())).ok();
@@ -160,7 +167,30 @@ impl BasestationHandle {
                         }
                         break;
                     }
-                    _ => {}
+                    Err(mpsc::error::TryRecvError::Empty) => {}
+                }
+
+                if last_cmd_time.elapsed().as_secs_f32() >= 1.0 {
+                    if last_cmd_time.elapsed().as_secs_f32() - 1.0 < 1.0 / 30.0 {
+                        log::warn!("Command timeout, sending stop to all robots");
+                    }
+
+                    for id in all_ids.iter() {
+                        let cmd = PlayerCmd::zero(PlayerId::new(*id as u32));
+                        match &mut connection {
+                            Connection::V1(monitor) => {
+                                let mut commands = [None; glue::MAX_NUM_ROBOTS];
+                                commands[*id] = Some(cmd.clone().into());
+                                let _ = monitor
+                                    .send(commands)
+                                    .map_err(|err| log::error!("Error sending stop: {:?}", err));
+                            }
+                            Connection::V0(serial) => {
+                                let cmd_str = cmd.into_proto_v0_with_id(*id);
+                                serial.send(&cmd_str);
+                            }
+                        }
+                    }
                 }
 
                 // Receive feedback
@@ -171,6 +201,7 @@ impl BasestationHandle {
                             .enumerate()
                             .filter_map(|(id, msg)| match msg.primary_status() {
                                 Some(status) if !matches!(status, HG_Status::NO_REPLY) => {
+                                    all_ids.insert(id as usize);
                                     let player_id = id_map
                                         .iter()
                                         .find_map(

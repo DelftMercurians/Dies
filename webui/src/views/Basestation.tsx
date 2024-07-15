@@ -53,15 +53,15 @@ const StatusIndicator: FC<{
             status === SysStatus.Emergency
               ? "bg-red-500"
               : [
-                  SysStatus.Stop,
-                  SysStatus.NoReply,
-                  SysStatus.Overtemp,
-                  SysStatus.Armed,
-                ].includes(status as SysStatus)
-              ? "bg-yellow-500"
-              : status === SysStatus.Ok
-              ? "bg-green-500"
-              : "bg-gray-500"
+                    SysStatus.Stop,
+                    SysStatus.NoReply,
+                    SysStatus.Overtemp,
+                    SysStatus.Armed,
+                  ].includes(status as SysStatus)
+                ? "bg-yellow-500"
+                : status === SysStatus.Ok
+                  ? "bg-green-500"
+                  : "bg-gray-500"
           }`}
         />
         <span className="text-xs">{label}</span>

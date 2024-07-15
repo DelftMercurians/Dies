@@ -1,22 +1,33 @@
 use anyhow::{bail, Context, Result};
-use std::{
-    fs::File,
-    io::{BufWriter, Write},
-};
-use std::{io::Read, path::Path};
-
 use dies_protos::{
     dies_log_line::LogLine, ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket,
 };
+use std::{
+    fs::File,
+    io::{BufWriter, Read, Write},
+    path::Path,
+    time::Instant,
+};
+
 use protobuf::Message;
+
+use crate::DataLog;
 
 // *GENERAL NOTE*: All log files use big-endian byte order for all integers.
 
 const LOG_FILE_HEADER: &str = "SSL_LOG_FILE";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
+pub struct TimestampedMessage {
+    /// The timestamp of the message in seconds relative to the start of the log.
+    pub timestamp: f64,
+    pub message: LogMessage,
+}
+
+#[derive(Debug, Clone)]
 pub enum LogMessage {
     DiesLog(LogLine),
+    DiesData(DataLog),
     Vision(SSL_WrapperPacket),
     Referee(Referee),
     Bytes(Vec<u8>),
@@ -47,6 +58,7 @@ impl LogFileMessageType {
 pub struct LogFileWriter {
     writer: BufWriter<File>,
     buf: Vec<u8>,
+    start_time: Instant,
 }
 
 impl LogFileWriter {
@@ -64,6 +76,7 @@ impl LogFileWriter {
         let mut writer = LogFileWriter {
             writer: BufWriter::new(file),
             buf: Vec::new(),
+            start_time: Instant::now(),
         };
         writer.write_header(version)?;
         Ok(writer)
@@ -85,10 +98,11 @@ impl LogFileWriter {
 
     pub fn write_log_message(&mut self, message: &LogMessage) -> Result<()> {
         match message {
-            LogMessage::DiesLog(log_line) => self.write_log_line(&log_line),
-            LogMessage::Vision(vision) => self.write_vision(&vision),
-            LogMessage::Referee(referee) => self.write_referee(&referee),
-            LogMessage::Bytes(bytes) => self.write_bytes(&bytes),
+            LogMessage::DiesLog(log_line) => self.write_log_line(log_line),
+            LogMessage::Vision(vision) => self.write_vision(vision),
+            LogMessage::Referee(referee) => self.write_referee(referee),
+            LogMessage::Bytes(bytes) => self.write_bytes(bytes),
+            LogMessage::DiesData(data) => self.write_bytes(&rmp_serde::to_vec_named(&data)?),
         }
     }
 
@@ -126,7 +140,7 @@ impl LogFileWriter {
     }
 
     fn write_message(&mut self, message_type: LogFileMessageType) -> Result<()> {
-        let receiver_timestamp = 0i64.to_be_bytes();
+        let receiver_timestamp = (self.start_time.elapsed().as_nanos() as i64).to_be_bytes();
         let message_type = message_type as i32;
         let message_size = self.buf.len() as i32;
         self.writer.write_all(&receiver_timestamp)?;
@@ -139,7 +153,7 @@ impl LogFileWriter {
 
 pub struct LogFile {
     version: u32,
-    messages: Vec<LogMessage>,
+    messages: Vec<TimestampedMessage>,
 }
 
 impl LogFile {
@@ -166,7 +180,7 @@ impl LogFile {
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e.into()),
             }
-            let _receiver_timestamp = i64::from_be_bytes(buf[0..8].try_into()?);
+            let receiver_timestamp = i64::from_be_bytes(buf[0..8].try_into()?);
             let message_type =
                 LogFileMessageType::from_i32(i32::from_be_bytes(buf[8..12].try_into()?));
             let message_size = i32::from_be_bytes(buf[12..16].try_into()?);
@@ -200,7 +214,13 @@ impl LogFile {
                     if let Ok(log_line) = LogLine::parse_from_bytes(&message_buf) {
                         LogMessage::DiesLog(log_line)
                     } else {
-                        LogMessage::Bytes(message_buf.clone())
+                        match rmp_serde::from_slice::<DataLog>(&message_buf) {
+                            Ok(data) => LogMessage::DiesData(data.into()),
+                            Err(err) => {
+                                println!("Unknown message type, error: {}", err);
+                                LogMessage::Bytes(message_buf.clone())
+                            }
+                        }
                     }
                 }
                 LogFileMessageType::Unknown => 'msg: {
@@ -215,32 +235,38 @@ impl LogFile {
                 }
             };
 
-            messages.push(message);
+            messages.push(TimestampedMessage {
+                // Convert nanoseconds to seconds
+                timestamp: receiver_timestamp as f64 / 1e9,
+                message,
+            });
         }
 
         Ok(LogFile { version, messages })
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        println!(
-            "{} file len: {:?}",
-            path.as_ref().display(),
-            std::fs::read(path.as_ref())?.len()
-        );
         Self::read(std::fs::File::open(path)?)
     }
 
-    pub fn messages(&self) -> &[LogMessage] {
+    pub fn messages(&self) -> &[TimestampedMessage] {
         &self.messages
     }
 
     pub fn version(&self) -> u32 {
         self.version
     }
+
+    pub fn take_messages(self) -> Vec<TimestampedMessage> {
+        self.messages
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use dies_core::{
+        mock_world_data, Angle, DebugValue, FieldGeometry, GameState, GameStateData, PlayerData, PlayerId, PlayerModel, SysStatus, Vector2, WorldData
+    };
     use dies_protos::dies_log_line::LogLevel;
     use flate2::read::GzDecoder;
     use tempfile::NamedTempFile;
@@ -248,6 +274,16 @@ mod tests {
     use super::*;
 
     const TEST_FILE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/test.log.gz"));
+
+    fn log_message_eq(a: &LogMessage, b: &LogMessage) -> bool {
+        match (a, b) {
+            (LogMessage::DiesLog(a), LogMessage::DiesLog(b)) => a == b,
+            (LogMessage::Vision(a), LogMessage::Vision(b)) => a == b,
+            (LogMessage::Referee(a), LogMessage::Referee(b)) => a == b,
+            (LogMessage::Bytes(a), LogMessage::Bytes(b)) => a == b,
+            _ => false,
+        }
+    }
 
     #[test]
     fn test_read_standard_file() {
@@ -262,10 +298,11 @@ mod tests {
 
         // Check that all messages are either vision or referee
         for message in &log_file.messages {
-            match message {
+            match message.message {
                 LogMessage::Vision(_) | LogMessage::Referee(_) => {}
                 LogMessage::Bytes(_) => panic!("Unexpected message type: Bytes"),
                 LogMessage::DiesLog(_) => panic!("Unexpected message type: DiesLog"),
+                LogMessage::DiesData(_) => panic!("Unexpected message type: DiesData"),
             }
         }
     }
@@ -285,7 +322,7 @@ mod tests {
         let mut writer = LogFileWriter::open(temp.path(), log_file.version()).unwrap();
 
         for message in &log_file.messages {
-            writer.write_log_message(message).unwrap();
+            writer.write_log_message(&message.message).unwrap();
         }
 
         // Close writer
@@ -294,7 +331,12 @@ mod tests {
 
         let written_log = LogFile::open(temp.path()).unwrap();
         assert_eq!(written_log.version, log_file.version);
-        assert_eq!(written_log.messages(), log_file.messages());
+        assert!(written_log.messages().len() == log_file.messages().len());
+        assert!(written_log
+            .messages()
+            .iter()
+            .zip(log_file.messages())
+            .all(|(a, b)| log_message_eq(&a.message, &b.message)));
     }
 
     #[test]
@@ -335,6 +377,61 @@ mod tests {
         // Check that the written file is the same as the original
         let log_file = LogFile::open(temp.path()).unwrap();
         assert_eq!(log_file.version, version);
-        assert_eq!(log_file.messages(), messages);
+        assert_eq!(log_file.messages().len(), messages.len());
+        assert!(log_file
+            .messages()
+            .iter()
+            .zip(messages.iter())
+            .all(|(a, b)| log_message_eq(&a.message, &b)));
+    }
+
+    #[test]
+    fn test_log_data_roundtrip() {
+        let temp = NamedTempFile::new().unwrap();
+        if temp.path().exists() {
+            std::fs::remove_file(temp.path()).unwrap();
+        }
+
+        let version = 1;
+        let mut writer = LogFileWriter::open(temp.path(), version).unwrap();
+
+        let mut debug_map = std::collections::HashMap::new();
+        debug_map.insert("test".to_string(), DebugValue::Number(10.0));
+        let messages = vec![
+            DataLog::Debug(debug_map),
+            DataLog::World(mock_world_data()),
+        ];
+        for message in &messages {
+            writer
+                .write_log_message(&LogMessage::DiesData(message.clone()))
+                .expect("Failed writing log message");
+        }
+
+        // Close writer
+        writer.flush().unwrap();
+        drop(writer);
+
+        // Check that the written file is the same as the original
+        let log_file = LogFile::open(temp.path()).unwrap();
+        assert_eq!(log_file.version, version);
+        assert_eq!(log_file.messages().len(), messages.len());
+        assert!(log_file
+            .messages()
+            .iter()
+            .zip(messages.iter())
+            .all(|(a, b)| match &a.message {
+                LogMessage::DiesData(a) => match (a, b) {
+                    (DataLog::Debug { .. }, DataLog::Debug { .. }) => true,
+                    (DataLog::World(_), DataLog::World(_)) => true,
+                    _ => {
+                        println!("Unexpected message type: {:?}", a);
+                        false
+                    }
+                },
+                _ => {
+                    println!("Unexpected message type: {:?}", a);
+                    false
+                }
+            }));
     }
 }

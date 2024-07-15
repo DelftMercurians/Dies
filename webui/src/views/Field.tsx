@@ -3,6 +3,7 @@ import {
   useDebugData,
   useExecutorInfo,
   useSendCommand,
+  useStatus,
   useWorldState,
 } from "../api";
 import { Vector2, WorldData } from "../bindings";
@@ -47,7 +48,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const rendererRef = useRef<FieldRenderer | null>(null);
   const [mouseField, setMouseField] = useState<Vector2>([0, 0]);
   const [playerTooltip, setPlayerTooltip] = useState<PlayerTooltip | null>(
-    null
+    null,
   );
   const contextMenuPosRef = useRef([0, 0] as [number, number]);
 
@@ -55,6 +56,33 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const world = useWorldState();
   const worldData = world.status === "connected" ? world.data : null;
   const sendCommand = useSendCommand();
+
+  const { data: backendState } = useStatus();
+  const isSim = backendState?.ui_mode === "Simulation";
+
+  const mouseFieldRef = useRef(mouseField);
+  mouseFieldRef.current = mouseField;
+  const ballRef = useRef(worldData?.ball);
+  ballRef.current = worldData?.ball;
+  const [ballToMouse, setBallToMouse] = useState<boolean>(false);
+  useEffect(() => {
+    if (ballToMouse && ballRef.current?.raw_position) {
+      const interval = setInterval(() => {
+        const [ballX, ballY] = ballRef.current?.raw_position[0]!;
+        const [mouseX, mouseY] = mouseFieldRef.current;
+        sendCommand({
+          type: "SimulatorCmd",
+          data: {
+            type: "ApplyBallForce",
+            data: {
+              force: [(mouseX - ballX) * 0.7, (mouseY - ballY) * 0.7],
+            },
+          },
+        });
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [ballToMouse]);
 
   const debugMap = useDebugData();
 
@@ -67,7 +95,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const { canvasWidth, canvasHeight } = useCanvasSize(
     worldData,
     contWidth,
-    contHeight
+    contHeight,
   );
 
   useEffect(() => {
@@ -111,7 +139,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         onSelectPlayer(clickedPlayer);
       }
     },
-    [onSelectPlayer]
+    [onSelectPlayer],
   );
 
   const handleMouseMove = useCallback(
@@ -138,10 +166,10 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         setPlayerTooltip(null);
       }
     },
-    []
+    [],
   );
   const playerTooltipData = worldData?.own_players.find(
-    (p) => p.id === playerTooltip?.playerId
+    (p) => p.id === playerTooltip?.playerId,
   );
 
   const handleContextMenu = (event: React.MouseEvent<HTMLElement>) => {
@@ -219,8 +247,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
                 val.length === 2
                   ? setPositionDisplayMode("both")
                   : val.length === 1
-                  ? setPositionDisplayMode(val[0] as PositionDisplayMode)
-                  : undefined
+                    ? setPositionDisplayMode(val[0] as PositionDisplayMode)
+                    : undefined
               }
               className="border border-gray-500 rounded-lg"
             >
@@ -242,7 +270,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           <div
             className={cn(
               "mb-2",
-              selectedPlayerId === playerTooltip.playerId && "font-bold"
+              selectedPlayerId === playerTooltip.playerId && "font-bold",
             )}
           >
             Player #{playerTooltip.playerId}
@@ -300,6 +328,12 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
               </ContextMenuItem>
             </>
           ) : null}
+
+          {isSim ? (
+            <ContextMenuItem onClick={() => setBallToMouse((s) => !s)}>
+              {ballToMouse ? "Stop moving ball" : "Move ball towards mouse"}
+            </ContextMenuItem>
+          ) : null}
         </ContextMenuContent>
       </ContextMenu>
     </div>
@@ -311,7 +345,7 @@ export default Field;
 function useCanvasSize(
   worldData: WorldData | null,
   contWidth: number,
-  contHeight: number
+  contHeight: number,
 ): { canvasWidth: number; canvasHeight: number } {
   const fieldSize = [
     (worldData?.field_geom?.field_length ?? DEFAULT_FIELD_SIZE[0]) +

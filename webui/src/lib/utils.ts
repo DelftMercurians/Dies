@@ -15,7 +15,7 @@ export const prettyPrintSnakeCases = (s: string): string =>
 
 export const useIsOverflow = (
   ref: React.MutableRefObject<HTMLElement | null>,
-  orientation: "horizontal" | "vertical" = "horizontal"
+  orientation: "horizontal" | "vertical" = "horizontal",
 ) => {
   const [isOverflow, setIsOverflow] = React.useState(false);
   useResizeObserver({
@@ -25,14 +25,14 @@ export const useIsOverflow = (
         if (orientation === "horizontal") {
           const childrenTotalWidth = Array.from(ref.current.children).reduce(
             (acc, child) => acc + child.clientWidth,
-            0
+            0,
           );
           const hasOverflow = childrenTotalWidth > ref.current.clientWidth;
           setIsOverflow(hasOverflow);
         } else {
           const childrenTotalHeight = Array.from(ref.current.children).reduce(
             (acc, child) => acc + child.clientHeight,
-            0
+            0,
           );
           const hasOverflow = childrenTotalHeight > ref.current.clientHeight;
           setIsOverflow(hasOverflow);
@@ -45,4 +45,51 @@ export const useIsOverflow = (
 
 export const radiansToDegrees = (radians: number): number => {
   return (radians * 180) / Math.PI;
+};
+
+import { useEffect, useRef } from "react";
+
+export const useWarningSound = (triggerValue: boolean) => {
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    // Create AudioContext only once
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext ||
+        (window as any).webkitAudioContext)();
+    }
+
+    if (triggerValue) {
+      const playWarningSound = () => {
+        const context = audioContextRef.current;
+        if (!context) {
+          return;
+        }
+
+        const oscillator = context.createOscillator();
+        const gainNode = context.createGain();
+
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(440, context.currentTime); // A4 note
+        oscillator.frequency.exponentialRampToValueAtTime(
+          880,
+          context.currentTime + 0.5,
+        ); // Ramp to A5
+
+        gainNode.gain.setValueAtTime(0.5, context.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(
+          0.01,
+          context.currentTime + 0.5,
+        );
+
+        oscillator.connect(gainNode);
+        gainNode.connect(context.destination);
+
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.5);
+      };
+
+      playWarningSound();
+    }
+  }, [triggerValue]);
 };
