@@ -1,4 +1,6 @@
-use dies_core::{Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2};
+use dies_core::{
+    Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2, WorldInstant,
+};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
 
@@ -39,6 +41,10 @@ pub struct PlayerTracker {
     last_feedback: Option<PlayerFeedbackMsg>,
     /// The result of the last vision update
     last_detection: Option<StoredData>,
+
+    velocity_samples: Vec<Vector2>,
+
+    breakbeam_triggerd: Option<WorldInstant>,
 }
 
 impl PlayerTracker {
@@ -53,8 +59,10 @@ impl PlayerTracker {
                 settings.player_measurement_var,
             ),
             yaw_filter: AngleLowPassFilter::new(settings.player_yaw_lpf_alpha),
+            velocity_samples: Vec::new(),
             last_feedback: None,
             last_detection: None,
+            breakbeam_triggerd: None,
         }
     }
 
@@ -99,6 +107,19 @@ impl PlayerTracker {
                         / (t_capture - last_data.timestamp + std::f64::EPSILON);
                     last_data.yaw = yaw;
                     last_data.raw_yaw = raw_yaw;
+
+                    if self.velocity_samples.len() < 10 {
+                        self.velocity_samples.push(last_data.velocity);
+                    } else {
+                        self.velocity_samples.remove(0);
+                        self.velocity_samples.push(last_data.velocity);
+
+                        let acc = self.velocity_samples.windows(2).fold(0.0, |acc, w| {
+                            acc + (w[1] - w[0]).norm() / (t_capture - last_data.timestamp)
+                        }) / 9.0;
+                        dies_core::debug_value(format!("p{}.acc", self.id), acc);
+                    }
+
                     last_data.timestamp = t_capture;
                 }
             }
@@ -112,8 +133,17 @@ impl PlayerTracker {
     }
 
     /// Update the tracker with feedback from the player.
-    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg) {
+    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
         if feedback.id == self.id {
+            if feedback.breakbeam_ball_detected.unwrap_or(false) {
+                self.breakbeam_triggerd = Some(time);
+            } else if self
+                .breakbeam_triggerd
+                .map(|t| time.duration_since(&t) > 0.1)
+                .unwrap_or(false)
+            {
+                self.breakbeam_triggerd = None;
+            }
             self.last_feedback = Some(*feedback);
         }
     }
@@ -130,29 +160,25 @@ impl PlayerTracker {
     }
 
     pub fn get(&self) -> Option<PlayerData> {
-        if let Some(data) = &self.last_detection {
-            Some(PlayerData {
-                id: self.id,
-                timestamp: data.timestamp,
-                position: to_dies_coords2(data.position, self.play_dir_x),
-                velocity: to_dies_coords2(data.velocity, self.play_dir_x),
-                yaw: to_dies_yaw(data.yaw, self.play_dir_x),
-                // Flip the angular speed if the goal is on the left
-                angular_speed: data.angular_speed * self.play_dir_x,
-                raw_position: to_dies_coords2(data.raw_position, self.play_dir_x),
-                raw_yaw: to_dies_yaw(data.raw_yaw, self.play_dir_x),
-                primary_status: self.last_feedback.and_then(|f| f.primary_status),
-                kicker_cap_voltage: self.last_feedback.and_then(|f| f.kicker_cap_voltage),
-                kicker_temp: self.last_feedback.and_then(|f| f.kicker_temp),
-                pack_voltages: self.last_feedback.and_then(|f| f.pack_voltages),
-                breakbeam_ball_detected: self
-                    .last_feedback
-                    .and_then(|f| f.breakbeam_ball_detected)
-                    .unwrap_or(false),
-            })
-        } else {
-            None
-        }
+        self.last_detection.as_ref().map(|data| PlayerData {
+            id: self.id,
+            timestamp: data.timestamp,
+            position: to_dies_coords2(data.position, self.play_dir_x),
+            velocity: to_dies_coords2(data.velocity, self.play_dir_x),
+            yaw: to_dies_yaw(data.yaw, self.play_dir_x),
+            // Flip the angular speed if the goal is on the left
+            angular_speed: data.angular_speed * self.play_dir_x,
+            raw_position: to_dies_coords2(data.raw_position, self.play_dir_x),
+            raw_yaw: to_dies_yaw(data.raw_yaw, self.play_dir_x),
+            primary_status: self.last_feedback.and_then(|f| f.primary_status),
+            kicker_cap_voltage: self.last_feedback.and_then(|f| f.kicker_cap_voltage),
+            kicker_temp: self.last_feedback.and_then(|f| f.kicker_temp),
+            pack_voltages: self.last_feedback.and_then(|f| f.pack_voltages),
+            breakbeam_ball_detected: self
+                .last_feedback
+                .and_then(|f| f.breakbeam_ball_detected)
+                .unwrap_or(false),
+        })
     }
 }
 

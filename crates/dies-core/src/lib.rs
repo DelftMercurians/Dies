@@ -3,6 +3,7 @@ mod debug_info;
 mod executor_info;
 mod executor_settings;
 mod geom;
+mod math;
 mod player;
 mod world;
 
@@ -13,10 +14,11 @@ pub use debug_info::*;
 pub use executor_info::*;
 pub use executor_settings::*;
 pub use geom::*;
+pub use math::*;
 pub use player::*;
 pub use world::*;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 pub type VisionMsg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
@@ -60,4 +62,14 @@ pub struct ScenarioInfo {
     pub tolerance: f64,
     /// Yaw tolerance for players in rad
     pub yaw_tolerance: f64,
+}
+
+/// Command to modify the simulator state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare]
+pub enum SimulatorCmd {
+    ApplyBallForce {
+        force: Vector2,
+    },
 }

@@ -92,6 +92,14 @@ impl ScenarioSetup {
         self
     }
 
+    pub fn add_own_player_at_with_yaw(&mut self, player: Vector2, _yaw: Angle) -> &mut Self {
+        self.own_players.push(PlayerPlacement {
+            position: Some(player),
+            yaw: Some(_yaw),
+        });
+        self
+    }
+
     /// Add an opponent player at a specific position.
     pub fn add_opp_player_at(&mut self, player: Vector2) -> &mut Self {
         self.opp_players.push(PlayerPlacement {
@@ -156,7 +164,7 @@ impl ScenarioSetup {
         bs_client: BasestationHandle,
     ) -> Result<Executor> {
         // Wait for the setup check to succeed
-        let mut tracker = WorldTracker::new(&settings.tracker_settings);
+        let mut tracker = WorldTracker::new(&settings);
         let mut ssl_client = VisionClient::new(ssl_config.clone()).await?;
         let mut check_interval = tokio::time::interval(LIVE_CHECK_INTERVAL);
         let max_iterations = LIVE_CHECK_TIMEOUT.as_millis() / LIVE_CHECK_INTERVAL.as_millis();
@@ -317,9 +325,8 @@ fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
 
 #[cfg(test)]
 mod tests {
-    use crate::strategy::AdHocStrategy;
-
     use super::*;
+    use dies_core::mock_world_data;
     use dies_core::Angle;
     use dies_core::BallData;
     use dies_core::WorldData;
@@ -347,7 +354,7 @@ mod tests {
                 ..PlayerData::new(PlayerId::new(0))
             }],
             opp_players: vec![],
-            ..Default::default()
+            ..mock_world_data()
         };
 
         assert!(!setup.check_live(world.clone()));

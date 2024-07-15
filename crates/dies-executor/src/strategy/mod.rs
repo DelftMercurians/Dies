@@ -5,14 +5,15 @@ pub mod free_kick;
 
 use std::collections::HashMap;
 
-use dies_core::{PlayerId, RoleType, WorldData};
-
-use crate::{
-    control::PlayerInputs,
-    roles::{Role, RoleCtx, Skill},
-};
+pub struct StrategyCtx<'a> {
+    pub world: &'a WorldData,
+}
 
 pub trait Strategy: Send {
+    /// Called when the strategy is entered (activated), before the first update.
+    ///
+    /// This method may be called multiple times during the lifetime of the strategy.
+    fn on_enter(&mut self, _ctx: StrategyCtx) {}
     /// Update the strategy and return the inputs for all players.
     fn update(&mut self, world: &WorldData) -> PlayerInputs;
 
@@ -45,43 +46,12 @@ impl AdHocStrategy {
         self.roles.insert(id, role);
     }
 
-    /// Add a role to the list of unassigned roles. On the next update, the role will be
-    /// to the first available player.
-    pub fn add_role(&mut self, role: Box<dyn Role>) {
-        self.unassigned_roles.push(role);
-    }
-}
+    /// Update the strategy with the current world state. Called once per frame.
+    ///
+    /// In this method, the strategy should assign and update roles, which will be used
+    /// by the team controller to produce player inputs.
+    fn update(&mut self, ctx: StrategyCtx);
 
-impl Strategy for AdHocStrategy {
-
-    fn update(&mut self, world: &WorldData) -> PlayerInputs {
-        // Assign roles to players
-        for player_data in world.own_players.iter() {
-            if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
-                if let Some(role) = self.unassigned_roles.pop() {
-                    e.insert(role);
-                }
-            }
-        }
-        if !self.unassigned_roles.is_empty() {
-            log::warn!("Not enough players to assign all roles");
-        }
-
-
-        let mut inputs = PlayerInputs::new();
-        for (id, role) in self.roles.iter_mut() {
-            if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-                let ctx = RoleCtx::new(player_data, world, &mut self.skill_map);
-                let input = role.update(ctx);
-                inputs.insert(*id, input);
-            } else {
-                log::error!("No detetion data for player #{id} with active role");
-            }
-        }
-        inputs
-    }
-
-    fn get_role_type(&self, player_id: PlayerId) -> Option<RoleType> {
-        self.roles.get(&player_id).map(|r| r.role_type())
-    }
+    /// Get the roles assigned to players.
+    fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>>;
 }

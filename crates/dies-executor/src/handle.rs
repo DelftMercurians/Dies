@@ -21,6 +21,7 @@ pub enum ControlMsg {
     GcCommand {
         command: Command,
     },
+    SimulatorCmd(SimulatorCmd),
     Stop,
 }
 

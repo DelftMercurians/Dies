@@ -1,7 +1,9 @@
-use dies_core::{Angle, BallData, FieldGeometry, Vector2};
+use dies_core::{BallData, FieldGeometry, PlayerId, Vector2};
 
 use super::RoleCtx;
 use crate::{roles::Role, PlayerControlInput};
+
+const MARGIN: f64 = 200.0;
 
 /// A role that moves the player to the intersection of the ball's path with the goal
 /// line, acting as a wall to block the ball from reaching the goal.
@@ -17,7 +19,12 @@ impl Waller {
 
     /// Find the intersection point of the ball's path with the goal line and return the
     /// target position for the player.
-    fn find_intersection(&self, ball: &BallData, world: &FieldGeometry) -> Vector2 {
+    fn find_intersection(
+        &self,
+        ball: &BallData,
+        world: &FieldGeometry,
+        player_id: PlayerId,
+    ) -> Vector2 {
         let ball_pos = ball.position.xy();
         let half_length = world.field_length / 2.0;
         let goal_center = Vector2::new(-half_length, 0.0);
@@ -26,9 +33,9 @@ impl Waller {
         let direction = (goal_center - ball_pos).normalize();
 
         // Points redebuesenting the boundary of the goalkeeper area
-        let area_top_y = world.goal_width / 2.0; // top boundary y-coordinate
-        let area_bottom_y = -area_top_y; // bottom boundary y-coordinate
-        let area_right_x = -half_length + world.penalty_area_depth; // right boundary x-coordinate
+        let area_top_y = world.penalty_area_width / 2.0 + MARGIN; // top boundary y-coordinate
+        let area_bottom_y = -area_top_y - MARGIN; // bottom boundary y-coordinate
+        let area_right_x = -half_length + world.penalty_area_depth + MARGIN; // right boundary x-coordinate
 
         // Intersect with the top boundary
         if direction.y != 0.0 {
@@ -63,7 +70,7 @@ impl Waller {
 impl Role for Waller {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
-            let target_pos = self.find_intersection(ball, geom);
+            let target_pos = self.find_intersection(ball, geom, ctx.player.id);
             let mut input = PlayerControlInput::new();
             input.with_position(target_pos);
             // input.with_yaw(Angle::between_points(

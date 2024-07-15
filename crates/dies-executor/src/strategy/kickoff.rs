@@ -1,12 +1,14 @@
+use crate::roles::skills::{FetchBall, GoToPosition, Kick};
 use crate::roles::RoleCtx;
-use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
-use crate::{PlayerControlInput, PlayerInputs};
-use dies_core::{Angle, GameState, PlayerData, PlayerId, WorldData, RoleType};
-use log::log;
+use crate::{skill, PlayerControlInput};
+use dies_core::{Angle, GameState, PlayerId};
 use nalgebra::Vector2;
 use std::collections::HashMap;
 use std::f64::consts::PI;
+
+use super::StrategyCtx;
+
 /// A generator for creating a sequence of 2D positions.
 ///
 /// This struct generates positions in a specific pattern, alternating between
@@ -61,31 +63,27 @@ pub struct KickoffStrategy {
     position_generator: PositionGenerator,
 }
 
-pub struct Kicker {
-    move_to_ball: Task3Phase,
-    move_to_circle: Task3Phase,
-    kick: Task4Phase,
-}
+pub struct Kicker {}
 
 pub struct OtherPlayer {
-    move_to_half_field: Task3Phase,
     fixed_position: Vector2<f64>,
+}
+
+impl Default for Kicker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Kicker {
     pub fn new() -> Self {
-        Self {
-            move_to_ball: Task3Phase::new(),
-            kick: Task4Phase::new(),
-            move_to_circle: Task3Phase::new(),
-        }
+        Self {}
     }
 }
 
 impl OtherPlayer {
     pub fn new(position: Vector2<f64>) -> Self {
         Self {
-            move_to_half_field: Task3Phase::new(),
             fixed_position: position,
         }
     }
@@ -93,31 +91,22 @@ impl OtherPlayer {
 
 impl Role for Kicker {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        let gamestate = ctx.world.current_game_state.game_state;
-        let player_data = ctx.player;
-        if gamestate == GameState::PrepareKickoff {
-            return self.move_to_circle.relocate(
-                player_data,
-                Vector2::new(-800.0, PI),
-                Angle::from_degrees(0.0),
-                0.0,
-            );
+        match ctx.world.current_game_state.game_state {
+            GameState::PrepareKickoff => {
+                skill!(
+                    ctx,
+                    GoToPosition::new(Vector2::new(-800.0, PI))
+                        .with_heading(Angle::from_degrees(180.0))
+                );
+            }
+            GameState::Kickoff => {
+                skill!(ctx, FetchBall::new());
+                skill!(ctx, Kick::new());
+            }
+            _ => {}
         }
 
-        if self.move_to_ball.is_accomplished() {
-            //kick
-            return self.kick.kick();
-        } else if let Some(balldata) = ctx.world.ball.clone() {
-            let ball_pos_v2 = Vector2::new(balldata.position.x, balldata.position.y);
-            return self.move_to_ball.relocate(
-                player_data,
-                ball_pos_v2,
-                Angle::from_degrees(0.0),
-                0.0,
-            );
-        } else {
-            return PlayerControlInput::new();
-        }
+        PlayerControlInput::new()
     }
     fn role_type(&self) -> RoleType {
         RoleType::KickoffKicker
@@ -126,13 +115,12 @@ impl Role for Kicker {
 
 impl Role for OtherPlayer {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        // log the player's position and the fixed position
-        return self.move_to_half_field.relocate(
-            ctx.player,
-            self.fixed_position,
-            Angle::from_degrees(0.0),
-            0.0,
+        skill!(
+            ctx,
+            GoToPosition::new(self.fixed_position).with_heading(Angle::from_degrees(90.0))
         );
+
+        PlayerControlInput::new()
     }
 
     fn role_type(&self) -> RoleType {
@@ -160,7 +148,14 @@ impl KickoffStrategy {
 }
 
 impl Strategy for KickoffStrategy {
-    fn update(&mut self, world: &WorldData) -> PlayerInputs {
+    fn on_enter(&mut self, _ctx: StrategyCtx) {
+        // Clear roles
+        self.roles.clear();
+    }
+
+    fn update(&mut self, ctx: StrategyCtx) {
+        let world = ctx.world;
+
         let us_attacking = world.current_game_state.us_operating;
         // Assign roles to players
         for player_data in world.own_players.iter() {
@@ -169,33 +164,34 @@ impl Strategy for KickoffStrategy {
                     continue;
                 }
             }
-            if !self.roles.contains_key(&player_data.id) {
+            if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
                 if us_attacking && !self.has_kicker {
                     self.has_kicker = true;
-                    self.roles.insert(player_data.id, Box::new(Kicker::new()));
+                    e.insert(Box::new(Kicker::new()));
                     log::info!("Adding player {} as the kicker", player_data.id);
                 } else {
                     log::info!("Adding player {} as normal role", player_data.id);
-                    self.roles.insert(
-                        player_data.id,
-                        Box::new(OtherPlayer::new(self.position_generator.next().unwrap())),
-                    );
+                    e.insert(Box::new(OtherPlayer::new(self.position_generator.next().unwrap())));
                 }
             }
         }
 
-        let mut inputs = PlayerInputs::new();
-        for (id, role) in self.roles.iter_mut() {
-            if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-                let player_data = player_data.clone();
+        // let mut inputs = PlayerInputs::new();
+        // for (id, role) in self.roles.iter_mut() {
+        //     if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
+        //         let player_data = player_data.clone();
 
-                let input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
-                inputs.insert(*id, input);
-            } else {
-                log::error!("No detetion data for player #{id} with active role");
-            }
-        }
-        inputs
+        //         let input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
+        //         inputs.insert(*id, input);
+        //     } else {
+        //         log::error!("No detetion data for player #{id} with active role");
+        //     }
+        // }
+        // inputs
+    }
+
+    fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>> {
+        &mut self.roles
     }
 
     fn get_role_type(&self, player_id: PlayerId) -> Option<RoleType> {

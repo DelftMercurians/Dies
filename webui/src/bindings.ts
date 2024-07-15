@@ -5,7 +5,7 @@
 /**
  * An angle in radians, always in (-pi, pi]. This type supports safe arithmetic
  * operations:
- *
+ * 
  * ```ignore
  * # use dies_core::Angle;
  * let a = Angle::from_degrees(90.0);
@@ -16,19 +16,19 @@
  */
 export type Angle = number;
 
-export type DebugValue =
-  | { type: "Shape"; data: DebugShape }
-  | { type: "Number"; data: number }
-  | { type: "String"; data: string };
+export type DebugValue = 
+	| { type: "Shape", data: DebugShape }
+	| { type: "Number", data: number }
+	| { type: "String", data: string };
 
 /**
  * A map of debug messages.
- *
+ * 
  * # Key format
- *
+ * 
  * The keys should always be `snake_case` and should only contain alphanumerical
  * characters. The `.` character is reserved for separating different parts of the key.
- *
+ * 
  * Keys can be arbitrary, but there are some patterns that are recognized by the
  * UI:
  * - `p{player_id}.{value}`: A value associated with a player.
@@ -39,423 +39,439 @@ export type PlayerId = number;
 
 /** Runtime information about the active executor. */
 export interface ExecutorInfo {
-  /** Whether the executor is currently paused. */
-  paused: boolean;
-  /** The player IDs that are currently controlled manually. */
-  manual_controlled_players: PlayerId[];
+	/** Whether the executor is currently paused. */
+	paused: boolean;
+	/** The player IDs that are currently controlled manually. */
+	manual_controlled_players: PlayerId[];
 }
 
 /** Settings for the low-level controller. */
 export interface ControllerSettings {
-  /** Maximum acceleration of the robot in mm/s². */
-  max_acceleration: number;
-  /** Maximum velocity of the robot in mm/s. */
-  max_velocity: number;
-  /** Maximum deceleration of the robot in mm/s². */
-  max_deceleration: number;
-  /** Maximum angular velocity of the robot in rad/s. */
-  max_angular_velocity: number;
-  /** Maximum angular acceleration of the robot in rad/s². */
-  max_angular_acceleration: number;
-  /** Maximum angular deceleration of the robot in rad/s². */
-  max_angular_deceleration: number;
-  /** Proportional gain for the close-range position controller. */
-  position_kp: number;
-  /** Time until destination in which the proportional controller is used, in seconds. */
-  position_proportional_time_window: number;
-  /** Distance used as threshold for the controller to prevent shaky behavior */
-  position_cutoff_distance: number;
-  /** Proportional gain for the close-range angle controller. */
-  angle_kp: number;
-  /** Time until destination in which the proportional controller is used, in seconds. */
-  angle_proportional_time_window: number;
-  /** Distance used as threshold for the controller to prevent shaky behavior */
-  angle_cutoff_distance: number;
+	/** Maximum acceleration of the robot in mm/s². */
+	max_acceleration: number;
+	/** Maximum velocity of the robot in mm/s. */
+	max_velocity: number;
+	/** Maximum deceleration of the robot in mm/s². */
+	max_deceleration: number;
+	/** Maximum angular velocity of the robot in rad/s. */
+	max_angular_velocity: number;
+	/** Maximum angular acceleration of the robot in rad/s². */
+	max_angular_acceleration: number;
+	/** Maximum angular deceleration of the robot in rad/s². */
+	max_angular_deceleration: number;
+	/** Proportional gain for the close-range position controller. */
+	position_kp: number;
+	/** Time until destination in which the proportional controller is used, in seconds. */
+	position_proportional_time_window: number;
+	/** Distance used as threshold for the controller to prevent shaky behavior */
+	position_cutoff_distance: number;
+	/** Proportional gain for the close-range angle controller. */
+	angle_kp: number;
+	/** Time until destination in which the proportional controller is used, in seconds. */
+	angle_proportional_time_window: number;
+	/** Distance used as threshold for the controller to prevent shaky behavior */
+	angle_cutoff_distance: number;
+	/** Attractive force coefficient for players */
+	force_alpha: number;
+	/** Repulsive force coefficient for players */
+	force_beta: number;
 }
 
 /** Settings for the `WorldTracker`. */
 export interface TrackerSettings {
-  /** Whether our team color is blue */
-  is_blue: boolean;
-  /** The initial sign of the enemy goal's x coordinate in ssl-vision coordinates. */
-  initial_opp_goal_x: number;
-  /** Transition variance for the player Kalman filter. */
-  player_unit_transition_var: number;
-  /** Measurement variance for the player Kalman filter. */
-  player_measurement_var: number;
-  /** Smoothinfg factor for the yaw LPF */
-  player_yaw_lpf_alpha: number;
-  /** Transition variance for the ball Kalman filter. */
-  ball_unit_transition_var: number;
-  /** Measurement variance for the ball Kalman filter. */
-  ball_measurement_var: number;
+	/** Whether our team color is blue */
+	is_blue: boolean;
+	/** The initial sign of the enemy goal's x coordinate in ssl-vision coordinates. */
+	initial_opp_goal_x: number;
+	/** Transition variance for the player Kalman filter. */
+	player_unit_transition_var: number;
+	/** Measurement variance for the player Kalman filter. */
+	player_measurement_var: number;
+	/** Smoothinfg factor for the yaw LPF */
+	player_yaw_lpf_alpha: number;
+	/** Transition variance for the ball Kalman filter. */
+	ball_unit_transition_var: number;
+	/** Measurement variance for the ball Kalman filter. */
+	ball_measurement_var: number;
 }
 
 /** Settings for the executor. */
 export interface ExecutorSettings {
-  controller_settings: ControllerSettings;
-  tracker_settings: TrackerSettings;
+	controller_settings: ControllerSettings;
+	tracker_settings: TrackerSettings;
 }
 
 /** A single field arc -- eg. the center circle */
 export interface FieldCircularArc {
-  /** Readable name of the arc */
-  name: string;
-  /** Center of the arc, in dies coordinates */
-  center: Vector2;
-  radius: number;
-  a1: number;
-  a2: number;
-  thickness: number;
+	/** Readable name of the arc */
+	name: string;
+	/** Center of the arc, in dies coordinates */
+	center: Vector2;
+	radius: number;
+	a1: number;
+	a2: number;
+	thickness: number;
 }
 
 /** A single field line segment */
 export interface FieldLineSegment {
-  /** Readable name of the line segment */
-  name: string;
-  /** Start Vector2 of the line segment, in dies coordinates */
-  p1: Vector2;
-  /** End Vector2 of the line segment, in dies coordinates */
-  p2: Vector2;
-  /** Thickness of the line segment, in mm */
-  thickness: number;
+	/** Readable name of the line segment */
+	name: string;
+	/** Start Vector2 of the line segment, in dies coordinates */
+	p1: Vector2;
+	/** End Vector2 of the line segment, in dies coordinates */
+	p2: Vector2;
+	/** Thickness of the line segment, in mm */
+	thickness: number;
 }
 
 /** The field geometry. */
 export interface FieldGeometry {
-  /** Field length (distance between goal lines) in mm */
-  field_length: number;
-  /** Field width (distance between touch lines) in mm */
-  field_width: number;
-  /** Goal width (distance inner edges of goal posts) in mm */
-  goal_width: number;
-  /** Goal depth (distance from outer goal line edge to inner goal back) in mm */
-  goal_depth: number;
-  /** Boundary width (distance from touch/goal line centers to boundary walls) in mm */
-  boundary_width: number;
-  /** Generated line segments based on the other parameters */
-  line_segments: FieldLineSegment[];
-  /** Generated circular arcs based on the other parameters */
-  circular_arcs: FieldCircularArc[];
+	/** Field length (distance between goal lines) in mm */
+	field_length: number;
+	/** Field width (distance between touch lines) in mm */
+	field_width: number;
+	/** Goal width (distance inner edges of goal posts) in mm */
+	goal_width: number;
+	/** Goal depth (distance from outer goal line edge to inner goal back) in mm */
+	goal_depth: number;
+	/** Boundary width (distance from touch/goal line centers to boundary walls) in mm */
+	boundary_width: number;
+	/** Generated line segments based on the other parameters */
+	line_segments: FieldLineSegment[];
+	/** Generated circular arcs based on the other parameters */
+	circular_arcs: FieldCircularArc[];
+	/** Penalty area depth (distance from goal line to penalty mark) in mm */
+	penalty_area_depth: number;
+	/** Penalty area width (distance from penalty mark to penalty area edge) in mm */
+	penalty_area_width: number;
+	/** Center circle radius in mm */
+	center_circle_radius: number;
+	/** Distance from goal line to penalty mark in mm */
+	goal_line_to_penalty_mark: number;
+	/** Ball radius in mm */
+	ball_radius: number;
 }
 
 /** Setup for a player in a scenario. */
 export interface PlayerPlacement {
-  /** Initial position of the player. If `None`, any position is acceptable. */
-  position?: Vector2;
-  /** Initial yaw of the player. If `None`, any yaw is acceptable. */
-  yaw?: Angle;
+	/** Initial position of the player. If `None`, any position is acceptable. */
+	position?: Vector2;
+	/** Initial yaw of the player. If `None`, any yaw is acceptable. */
+	yaw?: Angle;
 }
 
 /** Setup for the ball in a scenario. */
-export type BallPlacement =
-  /** Ball is placed at a specific position. */
-  | { type: "Position"; data: Vector3 }
-  /** Ball is placed at any position. */
-  | { type: "AnyPosition" }
-  /** No ball is required. */
-  | { type: "NoBall" };
+export type BallPlacement = 
+	/** Ball is placed at a specific position. */
+	| { type: "Position", data: Vector3 }
+	/** Ball is placed at any position. */
+	| { type: "AnyPosition",  }
+	/** No ball is required. */
+	| { type: "NoBall",  };
 
 /** Information about a scenario. */
 export interface ScenarioInfo {
-  own_player_placements: PlayerPlacement[];
-  opponent_player_placements: PlayerPlacement[];
-  ball_placement: BallPlacement;
-  /** Position tolerance for player and ball positions in mm. */
-  tolerance: number;
-  /** Yaw tolerance for players in rad */
-  yaw_tolerance: number;
+	own_player_placements: PlayerPlacement[];
+	opponent_player_placements: PlayerPlacement[];
+	ball_placement: BallPlacement;
+	/** Position tolerance for player and ball positions in mm. */
+	tolerance: number;
+	/** Yaw tolerance for players in rad */
+	yaw_tolerance: number;
 }
 
 /** The status of a sub-system on the robot */
 export enum SysStatus {
-  Emergency = "Emergency",
-  Ok = "Ok",
-  Stop = "Stop",
-  Starting = "Starting",
-  Overtemp = "Overtemp",
-  NoReply = "NoReply",
-  Armed = "Armed",
-  Disarmed = "Disarmed",
-  Safe = "Safe",
-  NotInstalled = "NotInstalled",
-  Standby = "Standby",
+	Emergency = "Emergency",
+	Ok = "Ok",
+	Ready = "Ready",
+	Stop = "Stop",
+	Starting = "Starting",
+	Overtemp = "Overtemp",
+	NoReply = "NoReply",
+	Armed = "Armed",
+	Disarmed = "Disarmed",
+	Safe = "Safe",
+	NotInstalled = "NotInstalled",
+	Standby = "Standby",
 }
 
 /** A message from one of our robots to the AI */
 export interface PlayerFeedbackMsg {
-  /** The robot's ID */
-  id: PlayerId;
-  primary_status?: SysStatus;
-  kicker_status?: SysStatus;
-  imu_status?: SysStatus;
-  fan_status?: SysStatus;
-  kicker_cap_voltage?: number;
-  kicker_temp?: number;
-  motor_statuses?: [SysStatus, SysStatus, SysStatus, SysStatus, SysStatus];
-  motor_speeds?: [number, number, number, number, number];
-  motor_temps?: [number, number, number, number, number];
-  breakbeam_ball_detected?: boolean;
-  breakbeam_sensor_ok?: boolean;
-  pack_voltages?: [number, number];
+	/** The robot's ID */
+	id: PlayerId;
+	primary_status?: SysStatus;
+	kicker_status?: SysStatus;
+	imu_status?: SysStatus;
+	fan_status?: SysStatus;
+	kicker_cap_voltage?: number;
+	kicker_temp?: number;
+	motor_statuses?: [SysStatus, SysStatus, SysStatus, SysStatus, SysStatus];
+	motor_speeds?: [number, number, number, number, number];
+	motor_temps?: [number, number, number, number, number];
+	breakbeam_ball_detected?: boolean;
+	breakbeam_sensor_ok?: boolean;
+	pack_voltages?: [number, number];
 }
 
 /** A struct to store the player state from a single frame. */
 export interface PlayerData {
-  /**
-   * Unix timestamp of the recorded frame from which this data was extracted (in
-   * seconds). This is the time that ssl-vision received the frame.
-   */
-  timestamp: number;
-  /** The player's unique id */
-  id: PlayerId;
-  /** Unfiltered position as reported by vision */
-  raw_position: Vector2;
-  /** Position of the player filtered by us in mm, in dies coordinates */
-  position: Vector2;
-  /** Velocity of the player in mm/s, in dies coordinates */
-  velocity: Vector2;
-  /**
-   * Yaw of the player, in radians, (`-pi`, `pi`), where `0` is the positive
-   * x direction, and `pi/2` is the positive y direction.
-   */
-  yaw: Angle;
-  /** Unfiltered yaw as reported by vision */
-  raw_yaw: Angle;
-  /** Angular speed of the player (in rad/s) */
-  angular_speed: number;
-  /** The overall status of the robot */
-  primary_status?: SysStatus;
-  /** The voltage of the kicker capacitor */
-  kicker_cap_voltage?: number;
-  /** The temperature of the kicker */
-  kicker_temp?: number;
-  /** The voltages of the battery packs */
-  pack_voltages?: [number, number];
-  /** Whether the breakbeam sensor detected a ball */
-  breakbeam_ball_detected: boolean;
+	/**
+	 * Unix timestamp of the recorded frame from which this data was extracted (in
+	 * seconds). This is the time that ssl-vision received the frame.
+	 */
+	timestamp: number;
+	/** The player's unique id */
+	id: PlayerId;
+	/** Unfiltered position as reported by vision */
+	raw_position: Vector2;
+	/** Position of the player filtered by us in mm, in dies coordinates */
+	position: Vector2;
+	/** Velocity of the player in mm/s, in dies coordinates */
+	velocity: Vector2;
+	/**
+	 * Yaw of the player, in radians, (`-pi`, `pi`), where `0` is the positive
+	 * x direction, and `pi/2` is the positive y direction.
+	 */
+	yaw: Angle;
+	/** Unfiltered yaw as reported by vision */
+	raw_yaw: Angle;
+	/** Angular speed of the player (in rad/s) */
+	angular_speed: number;
+	/** The overall status of the robot. Only available for own players. */
+	primary_status?: SysStatus;
+	/** The voltage of the kicker capacitor (in V). Only available for own players. */
+	kicker_cap_voltage?: number;
+	/** The temperature of the kicker. Only available for own players. */
+	kicker_temp?: number;
+	/** The voltages of the battery packs. Only available for own players. */
+	pack_voltages?: [number, number];
+	/** Whether the breakbeam sensor detected a ball. Only available for own players. */
+	breakbeam_ball_detected: boolean;
 }
 
 /** A struct to store the ball state from a single frame. */
 export interface BallData {
-  /**
-   * Unix timestamp of the recorded frame from which this data was extracted (in
-   * seconds). This is the time that ssl-vision received the frame.
-   */
-  timestamp: number;
-  /** Position of the ball filtered by us, in mm, in dies coordinates */
-  position: Vector3;
-  /** Raw position as reported by vision */
-  raw_position: Vector3[];
-  /** Velocity of the ball in mm/s, in dies coordinates */
-  velocity: Vector3;
+	/**
+	 * Unix timestamp of the recorded frame from which this data was extracted (in
+	 * seconds). This is the time that ssl-vision received the frame.
+	 */
+	timestamp: number;
+	/** Position of the ball filtered by us, in mm, in dies coordinates */
+	position: Vector3;
+	/** Raw position as reported by vision */
+	raw_position: Vector3[];
+	/** Velocity of the ball in mm/s, in dies coordinates */
+	velocity: Vector3;
 }
 
 /** The game state, as reported by the referee. */
-export type GameState =
-  | { type: "Unknown" }
-  | { type: "Halt" }
-  | { type: "Timeout" }
-  | { type: "Stop" }
-  | { type: "PrepareKickoff" }
-  | { type: "BallReplacement"; data: Vector2 }
-  | { type: "PreparePenalty" }
-  | { type: "Kickoff" }
-  | { type: "FreeKick" }
-  | { type: "Penalty" }
-  | { type: "PenaltyRun" }
-  | { type: "Run" };
+export type GameState = 
+	| { type: "Unknown",  }
+	| { type: "Halt",  }
+	| { type: "Timeout",  }
+	| { type: "Stop",  }
+	| { type: "PrepareKickoff",  }
+	| { type: "BallReplacement", data: Vector2 }
+	| { type: "PreparePenalty",  }
+	| { type: "Kickoff",  }
+	| { type: "FreeKick",  }
+	| { type: "Penalty",  }
+	| { type: "PenaltyRun",  }
+	| { type: "Run",  };
 
 export interface GameStateData {
-  /** The state of current game */
-  game_state: GameState;
-  /**
-   * If we are the main party currently performing tasks in the state.
-   * true for symmetric states(halt stop run timout)
-   */
-  us_operating: boolean;
+	/** The state of current game */
+	game_state: GameState;
+	/**
+	 * If we are the main party currently performing tasks in the state.
+	 * true for symmetric states(halt stop run timout)
+	 */
+	us_operating: boolean;
 }
 
 /** A struct to store the world state from a single frame. */
 export interface WorldData {
-  own_players: PlayerData[];
-  opp_players: PlayerData[];
-  ball?: BallData;
-  field_geom?: FieldGeometry;
-  current_game_state: GameStateData;
-  duration: number;
+	/**
+	 * Timestamp of the frame, in seconds. This timestamp is relative to the time the
+	 * world tracking was started.
+	 */
+	t_received: number;
+	/**
+	 * Recording timestamp of the frame, in seconds, as reported by vision. This
+	 * timestamp is relative to the time the first image was captured.
+	 */
+	t_capture: number;
+	/** The time since the last frame was received, in seconds */
+	dt: number;
+	own_players: PlayerData[];
+	opp_players: PlayerData[];
+	ball?: BallData;
+	field_geom?: FieldGeometry;
+	current_game_state: GameStateData;
+	player_model: PlayerModel;
 }
 
 export interface WorldUpdate {
-  world_data: WorldData;
+	world_data: WorldData;
 }
 
 /** Runtime information about the active executor. */
 export interface ExecutorInfoResponse {
-  info?: ExecutorInfo;
+	info?: ExecutorInfo;
 }
 
 /** The current mode of the UI - either simulation or live. */
 export enum UiMode {
-  Simulation = "Simulation",
-  Live = "Live",
+	Simulation = "Simulation",
+	Live = "Live",
 }
 
 /** The current status of the executor. */
-export type ExecutorStatus =
-  | { type: "None" }
-  | { type: "StartingScenario"; data: ScenarioInfo }
-  | {
-      type: "RunningExecutor";
-      data: {
-        scenario: string;
-      };
-    }
-  | { type: "Failed"; data: string };
+export type ExecutorStatus = 
+	| { type: "None",  }
+	| { type: "StartingScenario", data: ScenarioInfo }
+	| { type: "RunningExecutor", data: {
+	scenario: string;
+}}
+	| { type: "Failed", data: string };
 
 /** The current status of the UI. */
 export interface UiStatus {
-  is_live_available: boolean;
-  ui_mode: UiMode;
-  executor: ExecutorStatus;
+	is_live_available: boolean;
+	ui_mode: UiMode;
+	executor: ExecutorStatus;
 }
 
 /** A command from the frontend to the backend. */
-export type UiCommand =
-  | {
-      type: "SetManualOverride";
-      data: {
-        player_id: PlayerId;
-        manual_override: boolean;
-      };
-    }
-  | {
-      type: "OverrideCommand";
-      data: {
-        player_id: PlayerId;
-        command: PlayerOverrideCommand;
-      };
-    }
-  | { type: "SetPause"; data: boolean }
-  | {
-      type: "StartScenario";
-      data: {
-        scenario: ScenarioType;
-      };
-    }
-  | { type: "Stop" };
+export type UiCommand = 
+	| { type: "SetManualOverride", data: {
+	player_id: PlayerId;
+	manual_override: boolean;
+}}
+	| { type: "OverrideCommand", data: {
+	player_id: PlayerId;
+	command: PlayerOverrideCommand;
+}}
+	| { type: "SimulatorCmd", data: SimulatorCmd }
+	| { type: "SetPause", data: boolean }
+	| { type: "StartScenario", data: {
+	scenario: ScenarioType;
+}}
+	| { type: "GcCommand", data: string }
+	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
-  command: UiCommand;
+	command: UiCommand;
 }
 
 export interface PostUiModeBody {
-  mode: UiMode;
+	mode: UiMode;
 }
 
 export interface GetDebugMapResponse {
-  debug_map: DebugMap;
+	debug_map: DebugMap;
 }
 
 export interface ExecutorSettingsResponse {
-  settings: ExecutorSettings;
+	settings: ExecutorSettings;
 }
 
 export interface PostExecutorSettingsBody {
-  settings: ExecutorSettings;
+	settings: ExecutorSettings;
 }
 
 export interface BasestationResponse {
-  players: Record<PlayerId, PlayerFeedbackMsg>;
+	players: Record<PlayerId, PlayerFeedbackMsg>;
 }
 
 export enum DebugColor {
-  Red = "red",
-  Green = "green",
-  Orange = "orange",
-  Purple = "purple",
+	Red = "red",
+	Green = "green",
+	Orange = "orange",
+	Purple = "purple",
 }
 
-export type DebugShape =
-  | {
-      type: "Cross";
-      data: {
-        center: Vector2;
-        color: DebugColor;
-      };
-    }
-  | {
-      type: "Circle";
-      data: {
-        center: Vector2;
-        radius: number;
-        fill?: DebugColor;
-        stroke?: DebugColor;
-      };
-    }
-  | {
-      type: "Line";
-      data: {
-        start: Vector2;
-        end: Vector2;
-        color: DebugColor;
-      };
-    };
+export type DebugShape = 
+	| { type: "Cross", data: {
+	center: Vector2;
+	color: DebugColor;
+}}
+	| { type: "Circle", data: {
+	center: Vector2;
+	radius: number;
+	fill?: DebugColor;
+	stroke?: DebugColor;
+}}
+	| { type: "Line", data: {
+	start: Vector2;
+	end: Vector2;
+	color: DebugColor;
+}};
+
+/** Command to modify the simulator state. */
+export type SimulatorCmd = 
+	| { type: "ApplyBallForce", data: {
+	force: Vector2;
+}};
 
 /** An override command for a player for manual control. */
-export type PlayerOverrideCommand =
-  /** Do nothing */
-  | { type: "Stop" }
-  /** Move the robot to a globel position and yaw */
-  | {
-      type: "MoveTo";
-      data: {
-        position: Vector2;
-        yaw: Angle;
-        /** Dribbler speed normalised to \[0, 1\] */
-        dribble_speed: number;
-        arm_kick: boolean;
-      };
-    }
-  /** Move the robot with velocity in local frame */
-  | {
-      type: "LocalVelocity";
-      data: {
-        velocity: Vector2;
-        angular_velocity: number;
-        /** Dribbler speed normalised to \[0, 1\] */
-        dribble_speed: number;
-        arm_kick: boolean;
-      };
-    }
-  /** Move the robot with velocity in global frame */
-  | {
-      type: "GlobalVelocity";
-      data: {
-        velocity: Vector2;
-        angular_velocity: number;
-        /** Dribbler speed normalised to \[0, 1\] */
-        dribble_speed: number;
-        arm_kick: boolean;
-      };
-    }
-  /** Engage the kicker */
-  | {
-      type: "Kick";
-      data: {
-        speed: number;
-      };
-    }
-  /** Discharge the kicker safely */
-  | { type: "DischargeKicker" };
+export type PlayerOverrideCommand = 
+	/** Do nothing */
+	| { type: "Stop",  }
+	/** Move the robot to a globel position and yaw */
+	| { type: "MoveTo", data: {
+	position: Vector2;
+	yaw: Angle;
+	/** Dribbler speed normalised to \[0, 1\] */
+	dribble_speed: number;
+	arm_kick: boolean;
+}}
+	/** Move the robot with velocity in local frame */
+	| { type: "LocalVelocity", data: {
+	velocity: Vector2;
+	angular_velocity: number;
+	/** Dribbler speed normalised to \[0, 1\] */
+	dribble_speed: number;
+	arm_kick: boolean;
+}}
+	/** Move the robot with velocity in global frame */
+	| { type: "GlobalVelocity", data: {
+	velocity: Vector2;
+	angular_velocity: number;
+	/** Dribbler speed normalised to \[0, 1\] */
+	dribble_speed: number;
+	arm_kick: boolean;
+}}
+	/** Engage the kicker */
+	| { type: "Kick", data: {
+	speed: number;
+}}
+	/** Discharge the kicker safely */
+	| { type: "DischargeKicker",  };
 
-export type UiWorldState =
-  | { type: "Loaded"; data: WorldData }
-  | { type: "None" };
+/** Role of a player according to the game rules. These are mainly for rule-compliance. */
+export enum RoleType {
+	/** A regular player with no special role */
+	Player = "Player",
+	/** The goalkeeper */
+	Goalkeeper = "Goalkeeper",
+	/** The attacking kicker during kick-off */
+	KickoffKicker = "KickoffKicker",
+	/** penalty kicker */
+	PenaltyKicker = "PenaltyKicker",
+	/** freekicker */
+	FreeKicker = "FreeKicker",
+}
 
-export type WsMessage =
-  | { type: "WorldUpdate"; data: WorldData }
-  | { type: "Debug"; data: DebugMap };
+export type UiWorldState = 
+	| { type: "Loaded", data: WorldData }
+	| { type: "None",  };
+
+export type WsMessage = 
+	| { type: "WorldUpdate", data: WorldData }
+	| { type: "Debug", data: DebugMap };
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];

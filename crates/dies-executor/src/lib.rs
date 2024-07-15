@@ -2,12 +2,12 @@ use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
-use dies_core::WorldInstant;
 use dies_core::{
     ExecutorInfo, ExecutorSettings, GameState, PlayerCmd, PlayerFeedbackMsg, PlayerId,
     PlayerOverrideCommand, WorldUpdate,
 };
-use dies_logger::log_referee;
+use dies_core::{SimulatorCmd, Vector3, WorldInstant};
+use dies_logger::{log_referee, log_vision, log_world};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_simulator::Simulation;
 use dies_ssl_client::VisionClient;
@@ -26,10 +26,9 @@ pub mod strategy;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
-use dies_core::GcRefereeMsg;
 
-const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60);
-const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30);
+const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
+const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30); // 30 Hz
 
 enum Environment {
     Live {
@@ -175,7 +174,7 @@ impl Executor {
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
-            tracker: WorldTracker::new(&settings.tracker_settings),
+            tracker: WorldTracker::new(&settings),
             controller: TeamController::new(strategy, &settings.controller_settings),
             gc_client: GcClient::new(),
             environment: Some(Environment::Live {
@@ -203,7 +202,7 @@ impl Executor {
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
         Self {
-            tracker: WorldTracker::new(&settings.tracker_settings),
+            tracker: WorldTracker::new(&settings),
             controller: TeamController::new(strategy, &settings.controller_settings),
             gc_client: GcClient::new(),
             environment: Some(Environment::Simulation { simulator }),
@@ -219,9 +218,9 @@ impl Executor {
 
     /// Update the executor with a vision message.
     pub fn update_from_vision_msg(&mut self, message: SSL_WrapperPacket, time: WorldInstant) {
-        // TODO: FIX
-        // log_vision(&message);
+        log_vision(&message);
         self.tracker.update_from_vision(&message, time);
+        log_world(&self.tracker.get());
         self.update_team_controller();
     }
 
@@ -233,8 +232,8 @@ impl Executor {
     }
 
     /// Update the executor with a feedback message from the robots.
-    pub fn update_from_bs_msg(&mut self, message: PlayerFeedbackMsg) {
-        self.tracker.update_from_feedback(&message);
+    pub fn update_from_bs_msg(&mut self, message: PlayerFeedbackMsg, time: WorldInstant) {
+        self.tracker.update_from_feedback(&message, time);
     }
 
     /// Get the currently active player commands.
@@ -281,12 +280,13 @@ impl Executor {
         if let Some(det) = simulator.detection() {
             self.update_from_vision_msg(det, simulator.time());
         }
+        if let Some(gc_message) = simulator.gc_message() {
+            self.update_from_gc_msg(gc_message);
+        }
         if let Some(feedback) = simulator.feedback() {
-            self.update_from_bs_msg(feedback);
+            self.update_from_bs_msg(feedback, simulator.time());
         }
 
-        let gc_message = simulator.gc_message();
-        self.update_from_gc_msg(gc_message);
         Ok(())
     }
 
@@ -306,11 +306,9 @@ impl Executor {
                         match msg {
                             ControlMsg::Stop => break,
                             ControlMsg::GcCommand { command } => {
-                                let mut referee_msg = GcRefereeMsg::new();
-                                referee_msg.set_command(command);
-                            //    log::info!("fake referee msg: {:?}", referee_msg);
-                                simulator.update_referee_message(referee_msg);
+                                simulator.update_referee_command(command);
                             }
+                            ControlMsg::SimulatorCmd(cmd) => self.handle_simulator_cmd(&mut simulator, cmd),
                             msg => self.handle_control_msg(msg)
                         }
                     }
@@ -372,16 +370,16 @@ impl Executor {
                 Some(tx) = self.info_channel_rx.recv() => {
                     let _  = tx.send(self.info());
                 }
-                // bs_msg = bs_client.recv() => {
-                //     match bs_msg {
-                //         Ok(bs_msg) => {
-                //             self.update_from_bs_msg(bs_msg);
-                //         }
-                //         Err(err) => {
-                //             log::error!("Failed to receive BS msg: {}", err);
-                //         }
-                //     }
-                // }
+                bs_msg = bs_client.recv() => {
+                    match bs_msg {
+                        Ok(bs_msg) => {
+                            self.update_from_bs_msg(bs_msg, WorldInstant::now_real());
+                        }
+                        Err(err) => {
+                            log::error!("Failed to receive BS msg: {}", err);
+                        }
+                    }
+                }
                 _ = cmd_interval.tick() => {
                     let paused = { *self.paused_tx.borrow() };
                     if !paused {
@@ -393,6 +391,14 @@ impl Executor {
             }
         }
         Ok(())
+    }
+
+    fn handle_simulator_cmd(&self, sim: &mut Simulation, cmd: SimulatorCmd) {
+        match cmd {
+            SimulatorCmd::ApplyBallForce { force } => {
+                sim.apply_force_to_ball(Vector3::new(force.x, force.y, 0.0));
+            }
+        }
     }
 
     pub fn handle(&self) -> ExecutorHandle {
@@ -427,10 +433,12 @@ impl Executor {
             ControlMsg::UpdateSettings(settings) => {
                 self.controller
                     .update_controller_settings(&settings.controller_settings);
-                self.tracker.update_settings(&settings.tracker_settings);
+                self.tracker.update_settings(&settings);
             }
-            ControlMsg::GcCommand { command } => {}
             ControlMsg::Stop => {}
+            ControlMsg::GcCommand { .. } | ControlMsg::SimulatorCmd(_) => {
+                // This should be handled by the caller
+            }
         }
     }
 
