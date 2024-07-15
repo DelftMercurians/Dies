@@ -7,7 +7,7 @@ use typeshare::typeshare;
 
 use crate::{
     find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry, RoleType,
-    SysStatus, Vector2, Vector3,
+    SysStatus, Vector2, Vector3
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 500.0;
@@ -321,6 +321,7 @@ impl WorldData {
             };
 
             // Check all four boundaries
+            /*
             check_boundary(
                 Vector2::new(-half_length, half_width),
                 Vector2::new(half_length, half_width),
@@ -337,6 +338,7 @@ impl WorldData {
                 Vector2::new(half_length, -half_width),
                 Vector2::new(half_length, half_width),
             );
+            */
         }
 
         closest_intersection.map(|(_, point)| point)
@@ -370,35 +372,33 @@ impl WorldData {
             let field_boundary = {
                 let hl = field_geom.field_length as f64 / 2.0;
                 let hw = field_geom.field_width as f64 / 2.0;
+                Obstacle::Rectangle {
                     min: Vector2::new(-hl, -hw),
                     max: Vector2::new(hl, hw),
                 }
             };
             let mut obstacles = vec![field_boundary];
 
-            // // Add own defence area for non-keeper robots
-            // if role != RoleType::Goalkeeper {
-            //     let defence_area = create_bbox_from_rect(
-            //         Vector2::new(
-            //             -field_geom.field_length + field_geom.penalty_area_depth / 2.0,
-            //             0.0,
-            //         ),
-            //         field_geom.penalty_area_depth,
-            //         field_geom.penalty_area_width,
-            //     );
-            //     obstacles.push(defence_area);
-            // }
+            // Add own defence area for non-keeper robots
+            if role != RoleType::Goalkeeper {
+                let lower = Vector2::new(-field_geom.field_length / 2.0, -field_geom.penalty_area_width / 2.0);
+                let upper = Vector2::new(-field_geom.field_length / 2.0 + field_geom.penalty_area_depth / 2.0, field_geom.penalty_area_width / 2.0);
 
-            // // Add opponent defence area for all robots
-            // let defence_area = create_bbox_from_rect(
-            //     Vector2::new(
-            //         field_geom.field_length - field_geom.penalty_area_depth / 2.0,
-            //         0.0,
-            //     ),
-            //     field_geom.penalty_area_depth,
-            //     field_geom.penalty_area_width,
-            // );
-            // obstacles.push(defence_area);
+                let defence_area = Obstacle::Rectangle{
+                    min: lower,
+                    max: upper
+                };
+                obstacles.push(defence_area);
+            }
+
+            // Add opponent defence area for all robots
+            let lower = Vector2::new(field_geom.field_length / 2.0 - field_geom.penalty_area_depth / 2.0, -field_geom.penalty_area_width / 2.0);
+            let upper = Vector2::new(field_geom.field_length / 2.0, field_geom.penalty_area_width / 2.0);
+            let defence_area = Obstacle::Rectangle{
+                min: lower,
+                max: upper
+            };
+            obstacles.push(defence_area);
 
             match self.current_game_state.game_state {
                 GameState::Stop => {
