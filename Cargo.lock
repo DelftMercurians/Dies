@@ -752,6 +752,7 @@ dependencies = [
  "dies-core",
  "dies-executor",
  "dies-logger",
+ "dies-protos",
  "dies-simulator",
  "dies-ssl-client",
  "dies-world",

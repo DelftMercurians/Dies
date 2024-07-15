@@ -10,6 +10,7 @@ use dies_ssl_client::VisionClientConfig;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
+
 mod executor_task;
 mod routes;
 mod server;
@@ -87,6 +88,7 @@ pub(crate) enum UiCommand {
     StartScenario {
         scenario: ScenarioType,
     },
+    GcCommand(String),
     Stop,
 }
 

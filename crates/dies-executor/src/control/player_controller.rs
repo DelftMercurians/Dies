@@ -1,12 +1,11 @@
 use std::time::Duration;
 
+use dies_core::{Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData};
+
 use super::{
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
     yaw_control::YawController,
-};
-use dies_core::{
-    Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
 };
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
@@ -23,6 +22,7 @@ pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP,
     last_pos: Vector2,
+    if_gate_keeper: bool,
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
 
@@ -68,6 +68,7 @@ impl PlayerController {
             frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
+            if_gate_keeper: false,
 
             force_alpha: settings.force_alpha,
             force_beta: settings.force_beta,
@@ -101,8 +102,12 @@ impl PlayerController {
         self.id
     }
 
-    /// Get the current target velocity of the player.
-    pub(super) fn target_velocity(&self) -> Vector2 {
+    /// set the player as the gate keeper
+    pub fn set_gate_keeper(&mut self) {
+        self.if_gate_keeper = true;
+    }
+
+    pub fn target_velocity(&self) -> Vector2 {
         self.last_yaw.rotate_vector(&self.target_velocity)
     }
 
@@ -184,8 +189,6 @@ impl PlayerController {
             );
 
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
-            // let f = compute_force(state, &pos_target, world, self.force_alpha, self.force_beta);
-            // let pos_u = pos_u.norm() * f;
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         } else {

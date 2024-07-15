@@ -1,3 +1,5 @@
+use std::fmt::Display;
+use std::hash::Hash;
 use std::time::Instant;
 
 use dodgy_2d::Obstacle;
@@ -46,7 +48,7 @@ pub struct WorldUpdate {
 }
 
 /// The game state, as reported by the referee.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Copy, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub enum GameState {
@@ -64,6 +66,39 @@ pub enum GameState {
     PenaltyRun,
     Run,
 }
+
+impl Display for GameState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            GameState::Unknown => "Unknown".to_string(),
+            GameState::Halt => "Halt".to_string(),
+            GameState::Timeout => "Timeout".to_string(),
+            GameState::Stop => "Stop".to_string(),
+            GameState::PrepareKickoff => "PrepareKickoff".to_string(),
+            GameState::BallReplacement(_) => "BallReplacement".to_string(),
+            GameState::PreparePenalty => "PreparePenalty".to_string(),
+            GameState::Kickoff => "Kickoff".to_string(),
+            GameState::FreeKick => "FreeKick".to_string(),
+            GameState::Penalty => "Penalty".to_string(),
+            GameState::PenaltyRun => "PenaltyRun".to_string(),
+            GameState::Run => "Run".to_string(),
+        };
+        write!(f, "{}", str)
+    }
+}
+impl Hash for GameState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.to_string().hash(state);
+    }
+}
+
+impl PartialEq for GameState {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+impl Eq for GameState {}
 
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -418,70 +453,72 @@ fn create_bbox_from_circle(center: Vector2, radius: f64) -> Obstacle {
     }
 }
 
+pub fn mock_world_data() -> WorldData {
+    WorldData {
+        own_players: vec![PlayerData {
+            id: PlayerId::new(0),
+            position: Vector2::new(1000.0, 1000.0),
+            timestamp: 0.0,
+            raw_position: Vector2::new(1000.0, 1000.0),
+            velocity: Vector2::zeros(),
+            yaw: Angle::default(),
+            raw_yaw: Angle::default(),
+            angular_speed: 0.0,
+            primary_status: Some(SysStatus::Ready),
+            kicker_cap_voltage: Some(0.0),
+            kicker_temp: Some(0.0),
+            pack_voltages: Some([0.0, 0.0]),
+            breakbeam_ball_detected: false,
+        }],
+        opp_players: vec![PlayerData {
+            id: PlayerId::new(1),
+            position: Vector2::new(-1000.0, -1000.0),
+            timestamp: 0.0,
+            raw_position: Vector2::new(-1000.0, -1000.0),
+            velocity: Vector2::zeros(),
+            yaw: Angle::default(),
+            raw_yaw: Angle::default(),
+            angular_speed: 0.0,
+            primary_status: Some(SysStatus::Ready),
+            kicker_cap_voltage: Some(0.0),
+            kicker_temp: Some(0.0),
+            pack_voltages: Some([0.0, 0.0]),
+            breakbeam_ball_detected: false,
+        }],
+        field_geom: Some(FieldGeometry {
+            field_length: 9000.0,
+            field_width: 6000.0,
+            ..Default::default()
+        }),
+        player_model: PlayerModel {
+            radius: 90.0,
+            dribbler_angle: Angle::from_degrees(56.0),
+            max_speed: 1000.0,
+            max_acceleration: 1000.0,
+            max_angular_speed: 1000.0,
+            max_angular_acceleration: 1000.0,
+        },
+        t_received: 0.0,
+        t_capture: 0.0,
+        dt: 1.0,
+        ball: None,
+        current_game_state: GameStateData {
+            game_state: GameState::Run,
+            us_operating: true,
+        },
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
 
-    fn setup_world_data() -> WorldData {
-        WorldData {
-            own_players: vec![PlayerData {
-                id: PlayerId::new(0),
-                position: Vector2::new(1000.0, 1000.0),
-                timestamp: 0.0,
-                raw_position: Vector2::new(1000.0, 1000.0),
-                velocity: Vector2::zeros(),
-                yaw: Angle::default(),
-                raw_yaw: Angle::default(),
-                angular_speed: 0.0,
-                primary_status: Some(SysStatus::Ready),
-                kicker_cap_voltage: Some(0.0),
-                kicker_temp: Some(0.0),
-                pack_voltages: Some([0.0, 0.0]),
-                breakbeam_ball_detected: false,
-            }],
-            opp_players: vec![PlayerData {
-                id: PlayerId::new(1),
-                position: Vector2::new(-1000.0, -1000.0),
-                timestamp: 0.0,
-                raw_position: Vector2::new(-1000.0, -1000.0),
-                velocity: Vector2::zeros(),
-                yaw: Angle::default(),
-                raw_yaw: Angle::default(),
-                angular_speed: 0.0,
-                primary_status: Some(SysStatus::Ready),
-                kicker_cap_voltage: Some(0.0),
-                kicker_temp: Some(0.0),
-                pack_voltages: Some([0.0, 0.0]),
-                breakbeam_ball_detected: false,
-            }],
-            field_geom: Some(FieldGeometry {
-                field_length: 9000.0,
-                field_width: 6000.0,
-                ..Default::default()
-            }),
-            player_model: PlayerModel {
-                radius: 90.0,
-                dribbler_angle: Angle::from_degrees(56.0),
-                max_speed: 1000.0,
-                max_acceleration: 1000.0,
-                max_angular_speed: 1000.0,
-                max_angular_acceleration: 1000.0,
-            },
-            t_received: 0.0,
-            t_capture: 0.0,
-            dt: 1.0,
-            ball: None,
-            current_game_state: GameStateData {
-                game_state: GameState::Run,
-                us_operating: true,
-            },
-        }
-    }
-
+    
     #[test]
     fn test_ray_player_intersection() {
-        let world = setup_world_data();
+        let world = mock_world_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(1.0, 1.0);
 
@@ -494,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_ray_wall_intersection() {
-        let world = setup_world_data();
+        let world = mock_world_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(1.0, 0.0);
 
@@ -507,7 +544,7 @@ mod tests {
 
     #[test]
     fn test_no_intersection() {
-        let world = setup_world_data();
+        let world = mock_world_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(0.0, 1.0);
 
@@ -520,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_ray_origin_inside_player() {
-        let world = setup_world_data();
+        let world = mock_world_data();
         let start = Vector2::new(1000.0, 1000.0); // Inside the player
         let direction = Vector2::new(1.0, 0.0);
 
@@ -533,7 +570,7 @@ mod tests {
 
     #[test]
     fn test_ray_parallel_to_wall() {
-        let world = setup_world_data();
+        let world = mock_world_data();
         let start = Vector2::new(0.0, 3000.0);
         let direction = Vector2::new(1.0, 0.0);
 
@@ -546,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_ray_away_from_everything() {
-        let world = setup_world_data();
+        let world = mock_world_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(-1.0, -1.0);
 

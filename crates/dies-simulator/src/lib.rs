@@ -1,6 +1,6 @@
-use dies_core::{
-    Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant,
-};
+use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant};
+use dies_protos::ssl_gc_referee_message::{referee, Referee};
+use dies_protos::ssl_gc_state::Command;
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -8,8 +8,10 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
-use rapier3d_f64::prelude::*;
+use nalgebra::ComplexField;
+use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::{collections::HashMap, f64::consts::PI};
 use utils::IntervalTrigger;
 
@@ -88,10 +90,10 @@ impl Default for SimulationConfig {
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 10.0 / 1000.0,
-            max_accel: 80_000.0,
-            max_vel: 6_000.0,
-            max_ang_accel: 2.0 * 720.0f64.to_radians(),
-            max_ang_vel: 720.0f64.to_radians(),
+            max_accel: 105000.0,
+            max_vel: 2000.0,
+            max_ang_accel: 50.0 * 720.0f64.to_radians(),
+            max_ang_vel: 0.5 * 720.0f64.to_radians(),
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.1,
             feedback_interval: 0.5,
@@ -185,6 +187,7 @@ pub struct Simulation {
     last_detection_packet: Option<SSL_WrapperPacket>,
     geometry_interval: IntervalTrigger,
     geometry_packet: SSL_WrapperPacket,
+    referee_message: VecDeque<Referee>,
     feedback_interval: IntervalTrigger,
     feedback_queue: Vec<PlayerFeedbackMsg>,
 }
@@ -222,6 +225,7 @@ impl Simulation {
             last_detection_packet: None,
             geometry_interval: IntervalTrigger::new(geometry_interval),
             geometry_packet,
+            referee_message: VecDeque::new(),
             feedback_interval: IntervalTrigger::new(feedback_interval),
             feedback_queue: Vec::new(),
         };
@@ -295,6 +299,20 @@ impl Simulation {
 
     pub fn detection(&mut self) -> Option<SSL_WrapperPacket> {
         self.last_detection_packet.take()
+    }
+
+    pub fn update_referee_command(&mut self, command: referee::Command) {
+        let mut msg = Referee::new();
+        msg.set_command(command);
+        msg.packet_timestamp = Some(0);
+        msg.set_stage(referee::Stage::NORMAL_FIRST_HALF);
+        msg.command_counter = Some(1);
+        msg.command_timestamp = Some(0);
+        self.referee_message.push_back(msg);
+    }
+
+    pub fn gc_message(&mut self) -> Option<Referee> {
+        self.referee_message.pop_front()
     }
 
     pub fn geometry(&mut self) -> Option<SSL_WrapperPacket> {

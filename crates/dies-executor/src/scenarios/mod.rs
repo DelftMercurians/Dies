@@ -3,34 +3,46 @@ mod scenario;
 use std::f64::consts::PI;
 
 use crate::{
-    roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller, fetcher_role::FetcherRole, kicker_role::KickerRole},
+    roles::{
+        dribble_role::DribbleRole, fetcher_role::FetcherRole, kicker_role::KickerRole,
+        test_role::TestRole, waller::Waller,
+    },
     strategy::AdHocStrategy,
 };
-use dies_core::{PlayerId, Vector2, Vector3, Angle};
+use dies_core::{Angle, PlayerId, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
+
+use crate::strategy::kickoff::KickoffStrategy;
+use dies_core::GameState::{self, Kickoff, PrepareKickoff};
 
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
 fn empty_scenario() -> ScenarioSetup {
-    ScenarioSetup::new(AdHocStrategy::new())
+    ScenarioSetup::new(AdHocStrategy::new(), None)
+}
+
+fn one_player() -> ScenarioSetup {
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
+    scenario.add_own_player();
+    scenario
 }
 
 fn one_random_player() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario.add_own_player();
     scenario
 }
 
 fn test_vo() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
     // scenario.add_own_player_at(Vector2::new(1000.0, 0.0));
     scenario
 }
 
 fn two_players_one_ball() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new());
+    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario
         .add_ball()
         .add_own_player_at(Vector2::zeros())
@@ -38,11 +50,42 @@ fn two_players_one_ball() -> ScenarioSetup {
     scenario
 }
 
+fn kickoff() -> ScenarioSetup {
+    let strategy = KickoffStrategy::new(None);
+    let mut scenario = ScenarioSetup::new(strategy, Some(PrepareKickoff));
+    scenario.add_strategy(Kickoff, KickoffStrategy::new(None));
+    scenario
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    scenario
+}
+
+fn kickoff_2() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role_with_id(
+        PlayerId::new(0),
+        Box::new(TestRole::new(vec![Vector2::new(-1000.0, 0.0)])),
+    );
+    strategy.add_role_with_id(
+        PlayerId::new(1),
+        Box::new(TestRole::new(vec![Vector2::new(-1000.0, -1000.0)])),
+    );
+    let mut scenario = ScenarioSetup::new(strategy, Some(PrepareKickoff));
+
+    scenario
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0));
+    scenario
+}
+
 fn one_waller_one_ball() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Waller::new(0.0)));
     strategy.add_role(Box::new(Waller::new(500.0)));
-    let mut scenario = ScenarioSetup::new(strategy);
+
+    let mut scenario = ScenarioSetup::new(strategy, Some(GameState::Run));
     scenario
         // .add_ball_at(Vector3::new(895.0, 2623.0, 0.0))
         .add_ball()
@@ -56,14 +99,14 @@ fn test_role_multiple_targets() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     // square
     let targets = vec![
-    Vector2::new(-500.0, -500.0),
-    Vector2::new(500.0, -500.0),
-    Vector2::new(500.0, 500.0),
-    Vector2::new(-500.0, 500.0),
+        Vector2::new(-500.0, -500.0),
+        Vector2::new(500.0, -500.0),
+        Vector2::new(500.0, 500.0),
+        Vector2::new(-500.0, 500.0),
     ];
     strategy.add_role(Box::new(TestRole::new(targets)));
 
-    let mut scenario = ScenarioSetup::new(strategy);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     scenario.add_own_player();
     scenario
 }
@@ -74,7 +117,7 @@ fn two_players_crossing() -> ScenarioSetup {
         -1000.0, -1000.0,
     )])));
     strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(1000.0, 1000.0)])));
-    let mut scenario = ScenarioSetup::new(strategy);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_own_player_at(Vector2::new(-1000.0, -1000.0))
         .add_own_player_at(Vector2::new(1000.0, 1000.0));
@@ -85,7 +128,7 @@ fn navigate_stationary_opponents() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(1000.0, 1000.0)])));
 
-    let mut scenario = ScenarioSetup::new(strategy);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario.add_opp_player_at(Vector2::new(-500.0, 0.0));
     // scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
@@ -117,7 +160,7 @@ fn rvo_benchmark() -> ScenarioSetup {
         );
     }
 
-    let mut scenario = ScenarioSetup::new(strategy);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     for player in players {
         scenario.add_own_player_at(player);
     }
@@ -125,25 +168,24 @@ fn rvo_benchmark() -> ScenarioSetup {
     scenario
 }
 
-fn fetch_ball_test () -> ScenarioSetup {
+fn fetch_ball_test() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role_with_id(PlayerId::new(0), Box::new(FetcherRole::new()));
     strategy.add_role_with_id(PlayerId::new(1), Box::new(KickerRole::new()));
-    let mut scenario = ScenarioSetup::new(strategy);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_own_player_at(Vector2::new(-2500.0, -1000.0))
         .add_own_player_at_with_yaw(Vector2::new(100.0, 0.0), Angle::from_radians(PI as f64))
-        .add_ball_at(Vector3::new(0.0,0.0, 0.0));
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0));
 
     scenario
 }
 
-fn fetch_ball_test_live () -> ScenarioSetup {
+fn fetch_ball_test_live() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role( Box::new(FetcherRole::new()));
-    let mut scenario = ScenarioSetup::new(strategy);
-    scenario
-        .add_own_player();
+    strategy.add_role(Box::new(FetcherRole::new()));
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario.add_own_player();
     scenario
 }
 
@@ -151,7 +193,7 @@ fn dribble() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(DribbleRole::new()));
 
-    let mut scenario = ScenarioSetup::new(strategy);
+    let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_own_player_at(Vector2::new(-2000.0, -2000.0))
         .add_ball();
@@ -240,6 +282,8 @@ scenarios! {
     one_random_player,
     test_vo,
     two_players_one_ball,
+    kickoff,
+    kickoff_2,
     one_waller_one_ball,
     two_players_crossing,
     test_role_multiple_targets,

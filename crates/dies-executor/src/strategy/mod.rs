@@ -1,4 +1,6 @@
 mod adhoc;
+pub mod kickoff;
+mod task;
 
 pub use adhoc::AdHocStrategy;
 

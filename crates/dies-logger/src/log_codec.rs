@@ -265,8 +265,7 @@ impl LogFile {
 #[cfg(test)]
 mod tests {
     use dies_core::{
-        Angle, DebugValue, FieldGeometry, GameState, GameStateData, PlayerData, PlayerId,
-        PlayerModel, SysStatus, Vector2, WorldData,
+        mock_world_data, Angle, DebugValue, FieldGeometry, GameState, GameStateData, PlayerData, PlayerId, PlayerModel, SysStatus, Vector2, WorldData
     };
     use dies_protos::dies_log_line::LogLevel;
     use flate2::read::GzDecoder;
@@ -400,7 +399,7 @@ mod tests {
         debug_map.insert("test".to_string(), DebugValue::Number(10.0));
         let messages = vec![
             DataLog::Debug(debug_map),
-            DataLog::World(setup_world_data()),
+            DataLog::World(mock_world_data()),
         ];
         for message in &messages {
             writer
@@ -434,61 +433,5 @@ mod tests {
                     false
                 }
             }));
-    }
-
-    fn setup_world_data() -> WorldData {
-        WorldData {
-            own_players: vec![PlayerData {
-                id: PlayerId::new(0),
-                position: Vector2::new(1000.0, 1000.0),
-                timestamp: 0.0,
-                raw_position: Vector2::new(1000.0, 1000.0),
-                velocity: Vector2::zeros(),
-                yaw: Angle::default(),
-                raw_yaw: Angle::default(),
-                angular_speed: 0.0,
-                primary_status: Some(SysStatus::Ready),
-                kicker_cap_voltage: Some(0.0),
-                kicker_temp: Some(0.0),
-                pack_voltages: Some([0.0, 0.0]),
-                breakbeam_ball_detected: false,
-            }],
-            opp_players: vec![PlayerData {
-                id: PlayerId::new(1),
-                position: Vector2::new(-1000.0, -1000.0),
-                timestamp: 0.0,
-                raw_position: Vector2::new(-1000.0, -1000.0),
-                velocity: Vector2::zeros(),
-                yaw: Angle::default(),
-                raw_yaw: Angle::default(),
-                angular_speed: 0.0,
-                primary_status: Some(SysStatus::Ready),
-                kicker_cap_voltage: Some(0.0),
-                kicker_temp: Some(0.0),
-                pack_voltages: Some([0.0, 0.0]),
-                breakbeam_ball_detected: false,
-            }],
-            field_geom: Some(FieldGeometry {
-                field_length: 9000.0,
-                field_width: 6000.0,
-                ..Default::default()
-            }),
-            player_model: PlayerModel {
-                radius: 90.0,
-                dribbler_angle: Angle::from_degrees(56.0),
-                max_speed: 1000.0,
-                max_acceleration: 1000.0,
-                max_angular_speed: 1000.0,
-                max_angular_acceleration: 1000.0,
-            },
-            t_received: 0.0,
-            t_capture: 0.0,
-            dt: 1.0,
-            ball: None,
-            current_game_state: GameStateData {
-                game_state: GameState::Run,
-                us_operating: true,
-            },
-        }
     }
 }
