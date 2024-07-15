@@ -21,6 +21,7 @@ pub async fn test_vision(vision: VisionType, vision_addr: SocketAddr) -> Result<
     .ok_or(anyhow::anyhow!("Invalid vision configuration"))?;
 
     let mut ssl_client = dies_ssl_client::VisionClient::new(conf).await?;
+    println!("Starting vision client");
 
     let start = Instant::now();
     loop {
