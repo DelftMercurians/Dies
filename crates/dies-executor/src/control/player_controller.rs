@@ -107,6 +107,10 @@ impl PlayerController {
         self.if_gate_keeper = true;
     }
 
+    pub fn target_velocity(&self) -> Vector2 {
+        self.last_yaw.rotate_vector(&self.target_velocity)
+    }
+
     /// Get the current command for the player.
     pub fn command(&mut self) -> PlayerCmd {
         let mut cmd = PlayerCmd {
@@ -185,8 +189,6 @@ impl PlayerController {
             );
 
             let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
-            // let f = compute_force(state, &pos_target, world, self.force_alpha, self.force_beta);
-            // let pos_u = pos_u.norm() * f;
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         } else {
@@ -215,7 +217,6 @@ impl PlayerController {
             state.angular_speed.to_degrees(),
         );
         if let Some(yaw) = input.yaw {
-            dies_core::debug_value(format!("p{}.target_yaw", self.id), yaw.degrees());
             dies_core::debug_line(
                 format!("p{}.target_yaw_line", self.id),
                 self.last_pos,
@@ -224,23 +225,11 @@ impl PlayerController {
             );
 
             self.yaw_control.set_setpoint(yaw);
-            self.yaw_control.set_setpoint(yaw);
             let head_u = self
                 .yaw_control
                 .update(self.last_yaw, state.angular_speed, dt);
             self.target_angular_velocity = head_u;
         }
-        // Draw the angular velocity direction
-        dies_core::debug_line(
-            format!("p{}.target_w", self.id),
-            self.last_pos + self.last_yaw.rotate_vector(&Vector2::new(0.0, 100.0)),
-            self.last_pos
-                + self.last_yaw.rotate_vector(&Vector2::new(0.0, 100.0))
-                + self
-                    .last_yaw
-                    .rotate_vector(&Vector2::new(0.0, self.target_angular_velocity * 100.0)),
-            dies_core::DebugColor::Red,
-        );
         self.target_angular_velocity += input.angular_velocity;
 
         // Set dribbling speed
@@ -263,10 +252,6 @@ impl PlayerController {
                 self.kicker = KickerState::Disarming;
             }
         }
-    }
-
-    pub fn target_velocity(&self) -> Vector2 {
-        self.target_velocity
     }
 
     pub fn update_target_velocity_with_avoidance(&mut self, target_velocity: Vector2) {

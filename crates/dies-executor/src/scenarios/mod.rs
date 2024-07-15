@@ -3,15 +3,18 @@ mod scenario;
 use std::f64::consts::PI;
 
 use crate::{
-    roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller, fetcher_role::FetcherRole, kicker_role::KickerRole},
+    roles::{
+        dribble_role::DribbleRole, fetcher_role::FetcherRole, kicker_role::KickerRole,
+        test_role::TestRole, waller::Waller,
+    },
     strategy::AdHocStrategy,
 };
-use dies_core::{PlayerId, Vector2, Vector3, Angle};
+use dies_core::{Angle, PlayerId, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
-use dies_core::GameState::{self, Kickoff, PrepareKickoff};
 use crate::strategy::kickoff::KickoffStrategy;
+use dies_core::GameState::{self, Kickoff, PrepareKickoff};
 
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
@@ -28,15 +31,6 @@ fn one_player() -> ScenarioSetup {
 fn one_random_player() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario.add_own_player();
-    scenario
-}
-
-fn one_player_go_to_origin() -> ScenarioSetup {
-    let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new(vec![Vector2::zeros()])));
-    let mut scenario = ScenarioSetup::new(strategy, None);
-    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
-    // scenario.add_own_player_at(Vector2::new(1000.0, 0.0));
     scenario
 }
 
@@ -67,6 +61,25 @@ fn kickoff() -> ScenarioSetup {
     scenario
 }
 
+fn kickoff_2() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role_with_id(
+        PlayerId::new(0),
+        Box::new(TestRole::new(vec![Vector2::new(-1000.0, 0.0)])),
+    );
+    strategy.add_role_with_id(
+        PlayerId::new(1),
+        Box::new(TestRole::new(vec![Vector2::new(-1000.0, -1000.0)])),
+    );
+    let mut scenario = ScenarioSetup::new(strategy, Some(PrepareKickoff));
+
+    scenario
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0));
+    scenario
+}
+
 fn one_waller_one_ball() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Waller::new(0.0)));
@@ -86,10 +99,10 @@ fn test_role_multiple_targets() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     // square
     let targets = vec![
-    Vector2::new(-500.0, -500.0),
-    Vector2::new(500.0, -500.0),
-    Vector2::new(500.0, 500.0),
-    Vector2::new(-500.0, 500.0),
+        Vector2::new(-500.0, -500.0),
+        Vector2::new(500.0, -500.0),
+        Vector2::new(500.0, 500.0),
+        Vector2::new(-500.0, 500.0),
     ];
     strategy.add_role(Box::new(TestRole::new(targets)));
 
@@ -155,7 +168,7 @@ fn rvo_benchmark() -> ScenarioSetup {
     scenario
 }
 
-fn fetch_ball_test () -> ScenarioSetup {
+fn fetch_ball_test() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role_with_id(PlayerId::new(0), Box::new(FetcherRole::new()));
     strategy.add_role_with_id(PlayerId::new(1), Box::new(KickerRole::new()));
@@ -163,17 +176,16 @@ fn fetch_ball_test () -> ScenarioSetup {
     scenario
         .add_own_player_at(Vector2::new(-2500.0, -1000.0))
         .add_own_player_at_with_yaw(Vector2::new(100.0, 0.0), Angle::from_radians(PI as f64))
-        .add_ball_at(Vector3::new(0.0,0.0, 0.0));
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0));
 
     scenario
 }
 
-fn fetch_ball_test_live () -> ScenarioSetup {
+fn fetch_ball_test_live() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role( Box::new(FetcherRole::new()));
+    strategy.add_role(Box::new(FetcherRole::new()));
     let mut scenario = ScenarioSetup::new(strategy, None);
-    scenario
-        .add_own_player();
+    scenario.add_own_player();
     scenario
 }
 
@@ -271,6 +283,7 @@ scenarios! {
     test_vo,
     two_players_one_ball,
     kickoff,
+    kickoff_2,
     one_waller_one_ball,
     two_players_crossing,
     test_role_multiple_targets,

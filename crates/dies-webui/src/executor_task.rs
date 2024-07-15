@@ -143,6 +143,7 @@ impl ExecutorTask {
                     let time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
                     format!("dies-{time}.log")
                 };
+                dies_core::debug_clear();
                 dies_logger::log_start(log_file_name);
 
                 let executor = match (mode, ui_env) {
@@ -197,7 +198,6 @@ impl ExecutorTask {
                 }
 
                 dies_logger::log_close();
-                dies_core::debug_clear();
             })
         };
 

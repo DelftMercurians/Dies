@@ -4,7 +4,7 @@ use dies_core::{
 use std::f64::{consts::PI, EPSILON};
 
 // Constants
-const PLAYER_MARGIN: f64 = 20.0;
+const PLAYER_MARGIN: f64 = 30.0;
 const OVER_APPROX_C2S: f64 = 1.5;
 
 // Enum to represent different obstacle types

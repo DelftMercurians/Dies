@@ -2,11 +2,11 @@ use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
-use dies_core::{SimulatorCmd, Vector3, WorldInstant};
 use dies_core::{
     ExecutorInfo, ExecutorSettings, GameState, PlayerCmd, PlayerFeedbackMsg, PlayerId,
     PlayerOverrideCommand, WorldUpdate,
 };
+use dies_core::{SimulatorCmd, Vector3, WorldInstant};
 use dies_logger::{log_referee, log_vision, log_world};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_simulator::Simulation;
@@ -26,7 +26,6 @@ pub mod strategy;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
-use dies_core::GcRefereeMsg;
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30); // 30 Hz
@@ -281,8 +280,9 @@ impl Executor {
         if let Some(det) = simulator.detection() {
             self.update_from_vision_msg(det, simulator.time());
         }
-        let gc_message = simulator.gc_message();
-        self.update_from_gc_msg(gc_message);
+        if let Some(gc_message) = simulator.gc_message() {
+            self.update_from_gc_msg(gc_message);
+        }
         if let Some(feedback) = simulator.feedback() {
             self.update_from_bs_msg(feedback, simulator.time());
         }
@@ -306,9 +306,7 @@ impl Executor {
                         match msg {
                             ControlMsg::Stop => break,
                             ControlMsg::GcCommand { command } => {
-                                let mut referee_msg = GcRefereeMsg::new();
-                                referee_msg.set_command(command);
-                                simulator.update_referee_message(referee_msg);
+                                simulator.update_referee_command(command);
                             }
                             ControlMsg::SimulatorCmd(cmd) => self.handle_simulator_cmd(&mut simulator, cmd),
                             msg => self.handle_control_msg(msg)

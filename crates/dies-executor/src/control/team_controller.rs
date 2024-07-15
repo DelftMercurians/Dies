@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use log::log;
 use crate::{strategy::Strategy, PlayerControlInput};
 
 use crate::{
