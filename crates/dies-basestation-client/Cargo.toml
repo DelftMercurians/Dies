@@ -11,4 +11,4 @@ dies-core = { version = "0.1.0", path = "../dies-core" }
 log = "0.4.21"
 serialport = "4.3.0"
 tokio = { version = "1.35.1", features = ["rt", "sync"] }
-glue = { git = "https://github.com/DelftMercurians/glue.git", rev = "1a6dd93475ae3450b78c7214a30a2f45b2ceefd7" }
+glue = { git = "https://github.com/DelftMercurians/glue.git", rev = "0634e1a1e578bfde517ef8425b0d1455d3beea1e" }

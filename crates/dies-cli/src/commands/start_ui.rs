@@ -119,7 +119,6 @@ pub async fn start_ui(args: MainArgs) -> Result<()> {
     let logger = AsyncProtobufLogger::init_with_env_logger(log_dir_path.clone(), stdout_env);
     log::set_logger(logger).unwrap(); // Safe to unwrap because we know no logger has been set yet
     log::set_max_level(log::LevelFilter::Debug);
-    log::info!("Saving logs to {}", log_dir_path.display());
 
     let (stop_tx, stop_rx) = broadcast::channel(1);
     let main_task = tokio::spawn(async move {
