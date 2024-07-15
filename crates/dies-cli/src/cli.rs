@@ -1,12 +1,56 @@
 use anyhow::{bail, Result};
-use clap::{Parser, ValueEnum};
 use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
 use dies_ssl_client::VisionClientConfig;
 use dies_webui::{UiConfig, UiEnvironment};
-use std::{net::SocketAddr, path::PathBuf};
+use std::net::SocketAddr;
+use std::{path::PathBuf, process::ExitCode};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::cli_modes::CliMode;
+use crate::commands::{convert_logs::convert_log, start_ui::start_ui};
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Debug, Parser)]
+#[command(name = "dies-cli")]
+pub struct Cli {
+    #[clap(subcommand)]
+    command: Option<Command>,
+}
+
+impl Cli {
+    pub async fn start() -> ExitCode {
+        let cli = Cli::parse();
+        match cli.command {
+            Some(Command::Convert { input, output }) => match convert_log(&input, &output) {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(err) => {
+                    eprintln!("Error converting logs: {}", err);
+                    ExitCode::FAILURE
+                }
+            },
+            None => {
+                let args = MainArgs::parse();
+                match start_ui(args).await {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error in UI: {}", err);
+                        ExitCode::FAILURE
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum Command {
+    #[clap(name = "convert")]
+    Convert {
+        #[clap(short, long)]
+        input: PathBuf,
+        #[clap(short, long)]
+        output: PathBuf,
+    },
+}
 
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum VisionType {
@@ -81,10 +125,7 @@ impl ValueEnum for SerialPort {
 
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
-pub struct CliArgs {
-    #[clap(long, short, default_value = "ui")]
-    pub mode: CliMode,
-
+pub struct MainArgs {
     #[clap(long, short = 'f', default_value = "dies-settings.json")]
     pub settings_file: PathBuf,
 
@@ -114,15 +155,9 @@ pub struct CliArgs {
 
     #[clap(long, default_value = "logs")]
     pub log_directory: String,
-
-    #[clap(long, default_value = ".")]
-    pub log_input: PathBuf,
-
-    #[clap(long, default_value = ".")]
-    pub log_output: PathBuf,
 }
 
-impl CliArgs {
+impl MainArgs {
     /// Converts the CLI arguments into a `UiConfig` object that can be used to start the web UI.
     pub async fn into_ui(self) -> Result<UiConfig> {
         let environment = match (self.serial_config().await, self.vision_config()) {
@@ -182,7 +217,7 @@ impl CliArgs {
 /// Selects a serial port based on the CLI arguments. This function may prompt the user
 /// to choose a port if multiple ports are available and the `serial_port` argument is
 /// set to "auto".
-pub async fn select_serial_port(args: &CliArgs) -> Result<String> {
+pub async fn select_serial_port(args: &MainArgs) -> Result<String> {
     let ports = list_serial_ports();
     let port = match &args.serial_port {
         SerialPort::Disabled => None,
