@@ -128,12 +128,7 @@ impl TeamController {
                         player_data,
                         &controller.target_velocity(),
                         all_players.as_slice(),
-                        &vec![
-                            Obstacle::Rectangle{
-                                min: Vector2::new(-5000.0, -1000.0),
-                                max: Vector2::new(-3500.0, 1000.0)
-                            },
-                        ],
+                        &[],
                         &world_data.player_model,
                         super::rvo::VelocityObstacleType::VO,
                     );

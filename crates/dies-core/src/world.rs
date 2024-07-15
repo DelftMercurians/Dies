@@ -370,8 +370,6 @@ impl WorldData {
             let field_boundary = {
                 let hl = field_geom.field_length as f64 / 2.0;
                 let hw = field_geom.field_width as f64 / 2.0;
-                println!("{} {}", hl, hw);
-                Obstacle::Rectangle {
                     min: Vector2::new(-hl, -hw),
                     max: Vector2::new(hl, hw),
                 }

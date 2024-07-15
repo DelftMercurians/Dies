@@ -122,8 +122,6 @@ fn compute_obstacle_velocity_obstacle_rect(
         theta_high = 0.0;
     }
 
-    println!("angles are {:.3} {:.3}", theta_low, theta_high);
-
     VelocityObstacle {
         translated_center,
         left_bound: Vector2::new(theta_low.cos(), theta_low.sin()),
@@ -274,7 +272,6 @@ fn intersect(
             let tc2 = time_to_collision(&position, v2, velocity_obstacles);
             let cost1 = 0.2 / (tc1 + 1e-6) + (v1 - desired_velocity).norm();
             let cost2 = 0.2 / (tc2 + 1e-6) + (v2 - desired_velocity).norm();
-            println!("{}", tc1);
             cost1.partial_cmp(&cost2).unwrap()
         })
         .unwrap()
