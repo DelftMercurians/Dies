@@ -2,7 +2,7 @@ use crate::roles::skills::{FetchBall, GoToPosition, Kick};
 use crate::roles::RoleCtx;
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
-use dies_core::{Angle, GameState, PlayerId};
+use dies_core::{Angle, GameState, PlayerId, RoleType};
 use nalgebra::Vector2;
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -192,9 +192,5 @@ impl Strategy for KickoffStrategy {
 
     fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>> {
         &mut self.roles
-    }
-
-    fn get_role_type(&self, player_id: PlayerId) -> Option<RoleType> {
-        self.roles.get(&player_id).map(|r| r.role_type())
     }
 }

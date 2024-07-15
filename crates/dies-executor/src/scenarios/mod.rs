@@ -13,13 +13,8 @@ use dies_core::{Angle, PlayerId, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
-use crate::{roles::test_role::TestRole, strategy::AdHocStrategy};
 use dies_core::GameState::{self, FreeKick, Kickoff, Penalty, PenaltyRun, PrepareKickoff, PreparePenalty};
-use dies_core::{Vector2, Vector3};
-use dies_core::RoleType::FreeKicker;
-use scenario::ScenarioSetup;
 
-use crate::roles::waller::Waller;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
@@ -136,8 +131,8 @@ fn test_role_multiple_targets() -> ScenarioSetup {
 
 fn two_players_crossing() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new(Vector2::new(-800.0, -1000.0))));
-    strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
+    // strategy.add_role(Box::new(TestRole::new(Vector2::new(-800.0, -1000.0))));
+    // strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
     let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_own_player_at(Vector2::new(-1000.0, -1000.0))
@@ -301,7 +296,6 @@ impl Serialize for ScenarioType {
 scenarios! {
     empty_scenario,
     one_random_player,
-    test_vo,
     two_players_one_ball,
     one_waller_one_ball,
     two_players_crossing,

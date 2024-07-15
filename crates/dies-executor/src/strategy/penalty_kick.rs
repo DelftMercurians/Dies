@@ -11,6 +11,8 @@ use dies_core::GameState::{PenaltyRun, PreparePenalty};
 use crate::strategy::kickoff::{OtherPlayer};
 use crate::roles::Goalkeeper;
 
+use super::StrategyCtx;
+
 pub struct PenaltyKickStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
     has_attacker: bool,
@@ -110,14 +112,15 @@ impl PenaltyKickStrategy {
 }
 
 impl Strategy for PenaltyKickStrategy {
-    fn update(&mut self, world: &WorldData) -> PlayerInputs {
+    fn update(&mut self, ctx: StrategyCtx) {
+        let world = ctx.world;
         let us_attacking = world.current_game_state.us_operating;
 
         // Assign roles to players
         for player_data in world.own_players.iter() {
             if let Some(gate_keeper_id) = self.gate_keeper_id {
                 if player_data.id == gate_keeper_id {
-                    if (!us_attacking){
+                    if !us_attacking {
                         self.roles.insert(player_data.id, Box::new(Goalkeeper::new()));   
                     }
                     continue;
@@ -148,24 +151,24 @@ impl Strategy for PenaltyKickStrategy {
             }
         }
 
-        let mut inputs = PlayerInputs::new();
-        for (id, role) in self.roles.iter_mut() {
-            if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-                let player_data = player_data.clone();
+        // let mut inputs = PlayerInputs::new();
+        // for (id, role) in self.roles.iter_mut() {
+        //     if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
+        //         let player_data = player_data.clone();
 
-                let mut input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
-                if world.current_game_state.game_state != PenaltyRun && self.gate_keeper_id.map_or(false, |id| id == player_data.id) {
-                    input = PlayerControlInput::new();
-                }
-                inputs.insert(*id, input);
-            } else {
-                log::error!("No detetion data for player #{id} with active role");
-            }
-        }
-        inputs
+        //         let mut input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
+        //         if world.current_game_state.game_state != PenaltyRun && self.gate_keeper_id.map_or(false, |id| id == player_data.id) {
+        //             input = PlayerControlInput::new();
+        //         }
+        //         inputs.insert(*id, input);
+        //     } else {
+        //         log::error!("No detetion data for player #{id} with active role");
+        //     }
+        // }
+        // inputs
     }
-
-    fn get_role_type(&self, player_id: PlayerId) -> Option<RoleType> {
-        self.roles.get(&player_id).map(|r| r.role_type())
+    
+    fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>> {
+        &mut self.roles
     }
 }

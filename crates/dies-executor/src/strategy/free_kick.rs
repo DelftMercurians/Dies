@@ -10,6 +10,8 @@ use std::f64::consts::PI;
 use crate::strategy::kickoff::{OtherPlayer};
 use crate::roles::Goalkeeper;
 
+use super::StrategyCtx;
+
 pub struct FreeKickStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
     has_attacker: bool,
@@ -110,7 +112,8 @@ impl FreeKickStrategy {
 }
 
 impl Strategy for FreeKickStrategy {
-    fn update(&mut self, world: &WorldData) -> PlayerInputs {
+    fn update(&mut self, ctx: StrategyCtx) {
+        let world = ctx.world;
         let us_attacking = world.current_game_state.us_operating;
 
         // Assign roles to players
@@ -120,7 +123,7 @@ impl Strategy for FreeKickStrategy {
             }
             if !self.roles.contains_key(&player_data.id) {
                 if us_attacking  {
-                    if (!self.has_attacker){
+                    if !self.has_attacker {
                         log::info!("Attacker is created");
                         self.has_attacker = true;
                         self.roles.insert(player_data.id, Box::new(FreeAttacker::new()));
@@ -141,20 +144,20 @@ impl Strategy for FreeKickStrategy {
             }
         }
 
-        let mut inputs = PlayerInputs::new();
-        for (id, role) in self.roles.iter_mut() {
-            if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-                let player_data = player_data.clone();
-                let mut input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
-                inputs.insert(*id, input);
-            } else {
-                log::error!("No detetion data for player #{id} with active role");
-            }
-        }
-        inputs
+        // let mut inputs = PlayerInputs::new();
+        // for (id, role) in self.roles.iter_mut() {
+        //     if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
+        //         let player_data = player_data.clone();
+        //         let mut input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
+        //         inputs.insert(*id, input);
+        //     } else {
+        //         log::error!("No detetion data for player #{id} with active role");
+        //     }
+        // }
+        // inputs
     }
 
-    fn get_role_type(&self, player_id: PlayerId) -> Option<RoleType> {
-        self.roles.get(&player_id).map(|r| r.role_type())
+    fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>> {
+        &mut self.roles
     }
 }
