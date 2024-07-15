@@ -15,8 +15,6 @@ use dies_core::{
     GameState, PlayerId,
 };
 use dies_core::{PlayerCmd, WorldData};
-use crate::strategy::{self, AdHocStrategy};
-use crate::strategy::kickoff::KickoffStrategy;
 
 #[derive(Default)]
 struct RoleState {
@@ -69,7 +67,7 @@ impl TeamController {
         }
         let state = world_data.current_game_state.game_state;
 
-        let mut strategy = if let Some(strategy) = self.strategy.get_mut(&state) {
+        let strategy = if let Some(strategy) = self.strategy.get_mut(&state) {
             strategy
         } else {
             log::warn!("No strategy found for game state {:?}", state);
@@ -129,7 +127,7 @@ impl TeamController {
                         player_data,
                         &controller.target_velocity(),
                         all_players.as_slice(),
-                        &vec![],
+                        &[],
                         &world_data.player_model,
                         super::rvo::VelocityObstacleType::VO,
                     );

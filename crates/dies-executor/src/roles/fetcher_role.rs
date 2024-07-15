@@ -1,7 +1,7 @@
 use super::RoleCtx;
 use crate::{
     invoke_skill, roles::{
-        skills::{FetchBall, GoToPosition, Kick, Wait},
+        skills::{FetchBall, GoToPosition, Kick},
         Role, SkillProgress,
     }, skill, PlayerControlInput
 };

@@ -11,7 +11,6 @@ use dies_core::{
     DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, WorldUpdate,
 };
 use dies_executor::{ControlMsg, ExecutorHandle};
-use serde::de;
 use std::{
     collections::HashMap,
     path::PathBuf,

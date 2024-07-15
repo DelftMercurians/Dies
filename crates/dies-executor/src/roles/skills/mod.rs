@@ -1,10 +1,10 @@
-use std::{fmt::format, time::Duration};
+use std::{time::Duration};
 
 use dies_core::{find_intersection, Angle, Vector2};
 
 use crate::{control::Velocity, PlayerControlInput};
 
-use super::{Skill, SkillCtx, SkillProgress, SkillResult};
+use super::{Skill, SkillCtx, SkillProgress};
 
 const DEFAULT_POS_TOLERANCE: f64 = 70.0;
 const DEFAULT_VEL_TOLERANCE: f64 = 30.0;

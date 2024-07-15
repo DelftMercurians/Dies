@@ -153,7 +153,7 @@ pub async fn start_ui(args: MainArgs) -> Result<()> {
 
     let shutdown_fut = async move {
         stop_tx.send(()).expect("Failed to send stop signal");
-        let _ = main_task.await.expect("Executor task failed");
+        main_task.await.expect("Executor task failed");
     };
     tokio::select! {
         _ = shutdown_fut => {}

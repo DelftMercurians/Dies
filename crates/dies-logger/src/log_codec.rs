@@ -215,7 +215,7 @@ impl LogFile {
                         LogMessage::DiesLog(log_line)
                     } else {
                         match rmp_serde::from_slice::<DataLog>(&message_buf) {
-                            Ok(data) => LogMessage::DiesData(data.into()),
+                            Ok(data) => LogMessage::DiesData(data),
                             Err(err) => {
                                 println!("Unknown message type, error: {}", err);
                                 LogMessage::Bytes(message_buf.clone())
@@ -265,7 +265,7 @@ impl LogFile {
 #[cfg(test)]
 mod tests {
     use dies_core::{
-        mock_world_data, Angle, DebugValue, FieldGeometry, GameState, GameStateData, PlayerData, PlayerId, PlayerModel, SysStatus, Vector2, WorldData
+        mock_world_data, DebugValue
     };
     use dies_protos::dies_log_line::LogLevel;
     use flate2::read::GzDecoder;
@@ -382,7 +382,7 @@ mod tests {
             .messages()
             .iter()
             .zip(messages.iter())
-            .all(|(a, b)| log_message_eq(&a.message, &b)));
+            .all(|(a, b)| log_message_eq(&a.message, b)));
     }
 
     #[test]

@@ -175,7 +175,7 @@ fn fetch_ball_test() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_own_player_at(Vector2::new(-2500.0, -1000.0))
-        .add_own_player_at_with_yaw(Vector2::new(100.0, 0.0), Angle::from_radians(PI as f64))
+        .add_own_player_at_with_yaw(Vector2::new(100.0, 0.0), Angle::from_radians(PI))
         .add_ball_at(Vector3::new(0.0, 0.0, 0.0));
 
     scenario

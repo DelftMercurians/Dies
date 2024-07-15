@@ -12,7 +12,7 @@ fn msg_to_json(msg: &dies_logger::TimestampedMessage) -> serde_json::Value {
         dies_logger::LogMessage::DiesData(data) => {
             map.insert(
                 "data".to_string(),
-                serde_json::to_value(&data).unwrap(),
+                serde_json::to_value(data).unwrap(),
             );
         }
         dies_logger::LogMessage::DiesLog(_) => {}
@@ -38,7 +38,7 @@ pub fn convert_log(input: &Path, output: &Path) -> anyhow::Result<()> {
     let out = std::fs::File::create(output)?;
     let messages = logs.messages()
         .iter()
-        .map(|msg| msg_to_json(msg))
+        .map(msg_to_json)
         .collect::<Vec<_>>();
 
     serde_json::to_writer_pretty(out, &messages)?;

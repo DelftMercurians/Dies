@@ -190,15 +190,15 @@ pub struct PlayerModel {
     pub max_angular_acceleration: f64,
 }
 
-impl Into<PlayerModel> for &ExecutorSettings {
-    fn into(self) -> PlayerModel {
+impl From<&ExecutorSettings> for PlayerModel {
+    fn from(val: &ExecutorSettings) -> Self {
         PlayerModel {
             radius: PLAYER_RADIUS,
             dribbler_angle: Angle::from_degrees(DRIBBLER_ANGLE_DEG),
-            max_speed: self.controller_settings.max_velocity,
-            max_acceleration: self.controller_settings.max_acceleration,
-            max_angular_speed: self.controller_settings.max_angular_velocity,
-            max_angular_acceleration: self.controller_settings.max_angular_acceleration,
+            max_speed: val.controller_settings.max_velocity,
+            max_acceleration: val.controller_settings.max_acceleration,
+            max_angular_speed: val.controller_settings.max_angular_velocity,
+            max_angular_acceleration: val.controller_settings.max_angular_acceleration,
         }
     }
 }

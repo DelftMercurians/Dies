@@ -1,6 +1,5 @@
 use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant};
 use dies_protos::ssl_gc_referee_message::{referee, Referee};
-use dies_protos::ssl_gc_state::Command;
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
@@ -9,7 +8,7 @@ use dies_protos::{
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
 use nalgebra::ComplexField;
-use rapier3d_f64::{na::SimdPartialOrd, prelude::*};
+use rapier3d_f64::{prelude::*};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::{collections::HashMap, f64::consts::PI};

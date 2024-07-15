@@ -69,6 +69,12 @@ pub struct OtherPlayer {
     fixed_position: Vector2<f64>,
 }
 
+impl Default for Kicker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Kicker {
     pub fn new() -> Self {
         Self {}
@@ -151,17 +157,14 @@ impl Strategy for KickoffStrategy {
                     continue;
                 }
             }
-            if !self.roles.contains_key(&player_data.id) {
+            if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
                 if us_attacking && !self.has_kicker {
                     self.has_kicker = true;
-                    self.roles.insert(player_data.id, Box::new(Kicker::new()));
+                    e.insert(Box::new(Kicker::new()));
                     log::info!("Adding player {} as the kicker", player_data.id);
                 } else {
                     log::info!("Adding player {} as normal role", player_data.id);
-                    self.roles.insert(
-                        player_data.id,
-                        Box::new(OtherPlayer::new(self.position_generator.next().unwrap())),
-                    );
+                    e.insert(Box::new(OtherPlayer::new(self.position_generator.next().unwrap())));
                 }
             }
         }
