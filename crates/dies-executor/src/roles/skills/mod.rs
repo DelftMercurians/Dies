@@ -309,16 +309,16 @@ impl Skill for FetchBallWithHeading {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
             let ball_distance = (ball.position.xy() - self.init_ball_pos).norm();
-            if(ball_distance >= 100.0) {   //ball movement
+            if ball_distance >= 100.0 {   //ball movement
                 return SkillProgress::Done(SkillResult::Failure);
             }
             
             let direct_target = which_side_of_robot(self.target_heading, target_pos, player_data.position);
-            if direct_target == true {
+            if direct_target {
                 dies_core::debug_value("p0.target_pos_x", target_pos.x);
                 dies_core::debug_value("p0.target_pos_y", target_pos.y);
                 input.with_position(target_pos).with_yaw(self.target_heading);
-                return SkillProgress::Continue(input);
+                SkillProgress::Continue(input)
             }
             else {
                 let (dirA, dirB) = get_tangent_line_direction(  ball.position.xy(), ball_radius-20.0, player_data.position);
@@ -340,7 +340,7 @@ impl Skill for FetchBallWithHeading {
                 dies_core::debug_value("p0.target_pos_x", indir_target_pos.x);
                 dies_core::debug_value("p0.target_pos_y", indir_target_pos.y);
                 input.with_position(indir_target_pos).with_yaw(self.target_heading);
-                return SkillProgress::Continue(input);
+                SkillProgress::Continue(input)
             }
 
         } else {
