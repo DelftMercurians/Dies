@@ -3,6 +3,7 @@ mod skills;
 pub mod dribble_role;
 pub mod test_role;
 pub mod waller;
+pub mod goalkeeper;
 pub mod fetcher_role;
 pub mod kicker_role;
 
@@ -209,7 +210,7 @@ macro_rules! invoke_skill {
 ///  PlayerControlInput::default()
 /// }
 /// ```
-///     
+///
 /// # Example
 ///
 /// The macro returns `SkillResult` when the skill is done.

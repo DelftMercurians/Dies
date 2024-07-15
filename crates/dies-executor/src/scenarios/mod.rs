@@ -3,7 +3,14 @@ mod scenario;
 use std::f64::consts::PI;
 
 use crate::{
-    roles::{dribble_role::DribbleRole, test_role::TestRole, waller::Waller, fetcher_role::FetcherRole, kicker_role::KickerRole},
+    roles::{
+        dribble_role::DribbleRole,
+        test_role::TestRole,
+        goalkeeper::Goalkeeper,
+        waller::Waller,
+        fetcher_role::FetcherRole,
+        kicker_role::KickerRole
+    },
     strategy::AdHocStrategy,
 };
 use dies_core::{PlayerId, Vector2, Vector3, Angle};
@@ -51,6 +58,30 @@ fn one_waller_one_ball() -> ScenarioSetup {
         .add_own_player_at(Vector2::new(0.0, 0.0));
     scenario
 }
+
+fn need_to_cross_the_goal_area() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Waller::new(0.0)));
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        .add_ball_at(Vector3::new(-4300.0, 3000.0, 0.0))
+        .add_own_player_at(Vector2::new(-4000.0, -2000.0));
+
+    scenario
+}
+
+
+fn need_to_cross_the_goal_area_alt() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Waller::new(0.0)));
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        .add_ball_at(Vector3::new(-4500.0, -2950.0, 0.0))
+        .add_own_player_at(Vector2::new(-3800.0, 500.0));
+
+    scenario
+}
+
 
 fn test_role_multiple_targets() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
@@ -159,6 +190,19 @@ fn dribble() -> ScenarioSetup {
     scenario
 }
 
+fn goalkeeper_and_nothing_else() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role_with_id(PlayerId::new(0), Box::new(Goalkeeper::new()));
+
+    let mut scenario = ScenarioSetup::new(strategy);
+    scenario
+        .add_own_player_at(Vector2::new(-2000.0, -2000.0))
+        .add_own_player_at(Vector2::new(-200.0, -200.0))
+        .add_ball();
+
+    scenario
+}
+
 /// Creates a lookup table for scenarios as a global constant.
 macro_rules! scenarios {
     ($($scen:ident),+) => {
@@ -241,13 +285,16 @@ scenarios! {
     test_vo,
     two_players_one_ball,
     one_waller_one_ball,
+    need_to_cross_the_goal_area,
+    need_to_cross_the_goal_area_alt,
     two_players_crossing,
     test_role_multiple_targets,
     navigate_stationary_opponents,
     dribble,
     rvo_benchmark,
     fetch_ball_test,
-    fetch_ball_test_live
+    fetch_ball_test_live,
+    goalkeeper_and_nothing_else
 }
 
 #[cfg(test)]

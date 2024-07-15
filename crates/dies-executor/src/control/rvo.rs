@@ -1,5 +1,5 @@
 use dies_core::{
-    debug_string, Angle, PlayerData, PlayerModel, Vector2
+    debug_string, Angle, PlayerData, PlayerModel, Vector2, Obstacle
 };
 use std::f64::{consts::PI, EPSILON};
 
@@ -7,11 +7,6 @@ use std::f64::{consts::PI, EPSILON};
 const PLAYER_MARGIN: f64 = 20.0;
 const OVER_APPROX_C2S: f64 = 1.5;
 
-// Enum to represent different obstacle types
-pub enum Obstacle {
-    Circle { center: Vector2, radius: f64 },
-    Rectangle { min: Vector2, max: Vector2 },
-}
 
 /// The type of VO algorithm to use
 #[derive(Clone, Copy)]
@@ -54,10 +49,10 @@ pub fn velocity_obstacle_update(
                 compute_obstacle_velocity_obstacle(&player, center, radius, player_radius)
             }
             Obstacle::Rectangle { min, max } => {
-                // Approximate rectangle with a circle
-                let center = Vector2::from((min + max) / 2.0);
-                let radius = (max.x - min.x).max(max.y - min.y) / 2.0;
-                compute_obstacle_velocity_obstacle(&player, &center, &radius, player_radius)
+                // strange stuff i do to convert types?
+                let lower = Vector2::from(min + min) / 2.0;
+                let upper = Vector2::from(max + max) / 2.0;
+                compute_obstacle_velocity_obstacle_rect(&player, &lower, &upper, player_radius)
             }
         };
         rvo_ba_all.push(rvo_ba);
@@ -65,6 +60,77 @@ pub fn velocity_obstacle_update(
 
     // Compute optimal velocity
     intersect(&player, &desired_velocity, &rvo_ba_all)
+}
+
+// Compute velocity obstacle for agent-obstacle interaction
+fn compute_obstacle_velocity_obstacle_rect(
+    agent: &PlayerData,
+    obstacle_min: &Vector2,
+    obstacle_max: &Vector2,
+    robot_radius: f64,
+) -> VelocityObstacle {
+    let pa = agent.position;
+    let lower = *obstacle_min;
+    let upper = *obstacle_max;
+    let corner_lu = Vector2::new(lower.x, upper.y);
+    let corner_ul = Vector2::new(upper.x, lower.y);
+
+
+    // angles to each of the box corners
+    let theta_1 = (lower - pa).y.atan2((lower - pa).x);
+    let theta_2 = (corner_lu - pa).y.atan2((corner_lu - pa).x);
+    let theta_3 = (corner_ul - pa).y.atan2((corner_ul - pa).x);
+    let theta_4 = (upper - pa).y.atan2((upper - pa).x);
+
+    // find the minimal angle
+    let mut angles = vec![theta_1, theta_2, theta_3, theta_4];
+    angles.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let mut lowest_angle = Angle::from_radians(0.0);
+    let mut uppest_angle = Angle::from_radians(0.0);
+    let mut prev_max = 0.0;
+    for lower_angle_rad in &angles {
+        for upper_angle_rad in &angles {
+            let lower_angle = Angle::from_radians(*lower_angle_rad);
+            let upper_angle = Angle::from_radians(*upper_angle_rad);
+            if (lower_angle - upper_angle).abs() > prev_max {
+                prev_max = (lower_angle - upper_angle).abs();
+                lowest_angle = lower_angle;
+                uppest_angle = upper_angle;
+            }
+
+        }
+    }
+
+    let pb = Vector2::from(lower + upper) / 2.0;
+    let translated_center = pa;
+    let radius = (upper.x - lower.x).min(upper.y - lower.y) / 2.0;
+
+    let dist_ba = distance(&pa, &pb);
+    let mut theta_low: f64 = lowest_angle.radians();
+    let mut theta_high: f64 = uppest_angle.radians();
+
+    // ok, idfk how to fix the issue with getting stuck inside of
+    // the objects, so i will just hardcode ignoring the obstacle
+    // if we are inside of it :(
+
+    if (lower.x <= pa.x) &&
+            (pa.x <= upper.x) &&
+            (lower.y <= pa.y) &&
+            (pa.y <= upper.y) {
+        theta_low = 0.0;
+        theta_high = 0.0;
+    }
+
+    println!("angles are {:.3} {:.3}", theta_low, theta_high);
+
+    VelocityObstacle {
+        translated_center,
+        left_bound: Vector2::new(theta_low.cos(), theta_low.sin()),
+        right_bound: Vector2::new(theta_high.cos(), theta_high.sin()),
+        dist: dist_ba,
+        radius: radius + robot_radius,
+    }
 }
 
 // Compute velocity obstacle for agent-agent interaction
@@ -160,6 +226,7 @@ fn intersect(
             format!("{}-chosen-v", player.id),
             format!("desired velocity"),
         );
+        println!("asdf");
         return desired_velocity.clone();
     } else {
         unsuitable_v.push(*desired_velocity);
@@ -198,14 +265,17 @@ fn intersect(
         return best_v;
     }
 
+    println!("no suitable velocity is found");
+
     // If no suitable velocity found, choose the "least bad" option
     let least_bad = unsuitable_v
         .into_iter()
         .min_by(|v1, v2| {
             let tc1 = time_to_collision(&position, v1, velocity_obstacles);
             let tc2 = time_to_collision(&position, v2, velocity_obstacles);
-            let cost1 = 0.2 / tc1 + (v1 - desired_velocity).norm();
-            let cost2 = 0.2 / tc2 + (v2 - desired_velocity).norm();
+            let cost1 = 0.2 / (tc1 + 1e-6) + (v1 - desired_velocity).norm();
+            let cost2 = 0.2 / (tc2 + 1e-6) + (v2 - desired_velocity).norm();
+            println!("{}", tc1);
             cost1.partial_cmp(&cost2).unwrap()
         })
         .unwrap();
@@ -234,7 +304,7 @@ fn time_to_collision(
     velocity: &Vector2,
     velocity_obstacles: &[VelocityObstacle],
 ) -> f64 {
-    velocity_obstacles
+    let mut out = velocity_obstacles
         .iter()
         .filter_map(|vo| {
             let dif = velocity + position - vo.translated_center;
@@ -253,8 +323,15 @@ fn time_to_collision(
                 None
             }
         })
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or(f64::INFINITY)
+        .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or(f64::INFINITY);
+
+    if out.is_nan() {
+        f64::INFINITY
+    }
+    else {
+        out
+    }
 }
 
 // Function to check if an angle is between two other angles
