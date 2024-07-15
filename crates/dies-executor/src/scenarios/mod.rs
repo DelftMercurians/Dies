@@ -13,9 +13,11 @@ use dies_core::{Angle, PlayerId, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
-use crate::strategy::kickoff::KickoffStrategy;
-use dies_core::GameState::{self, Kickoff, PrepareKickoff};
+use dies_core::GameState::{self, FreeKick, Kickoff, Penalty, PenaltyRun, PrepareKickoff, PreparePenalty};
 
+use crate::strategy::free_kick::FreeKickStrategy;
+use crate::strategy::kickoff::KickoffStrategy;
+use crate::strategy::penalty_kick::PenaltyKickStrategy;
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
 fn empty_scenario() -> ScenarioSetup {
@@ -34,19 +36,35 @@ fn one_random_player() -> ScenarioSetup {
     scenario
 }
 
-fn test_vo() -> ScenarioSetup {
-    let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
-    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
-    // scenario.add_own_player_at(Vector2::new(1000.0, 0.0));
-    scenario
-}
-
 fn two_players_one_ball() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(AdHocStrategy::new(), None);
     scenario
         .add_ball()
         .add_own_player_at(Vector2::zeros())
         .add_own_player_at(Vector2::new(-500.0, 0.0));
+    scenario
+}
+
+fn penalty_kick() -> ScenarioSetup {
+    let strategy = PenaltyKickStrategy::new(None);
+    let mut scenario = ScenarioSetup::new(strategy, Some(PreparePenalty));
+    scenario.add_strategy(Penalty, PenaltyKickStrategy::new(None));
+    scenario.add_strategy(PenaltyRun, PenaltyKickStrategy::new(None));
+    scenario
+        .add_ball_at(Vector3::new(0.0, 300.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_opp_player_at(Vector2::new(3500.0, 0.0));
+    scenario
+}
+
+fn free_kick() -> ScenarioSetup {
+    let strategy = FreeKickStrategy::new(None);
+    let mut scenario = ScenarioSetup::new(strategy, Some(FreeKick));
+    scenario
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_own_player_at(Vector2::new(1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
 }
 
@@ -112,11 +130,9 @@ fn test_role_multiple_targets() -> ScenarioSetup {
 }
 
 fn two_players_crossing() -> ScenarioSetup {
-    let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(
-        -1000.0, -1000.0,
-    )])));
-    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(1000.0, 1000.0)])));
+    let strategy = AdHocStrategy::new();
+    // strategy.add_role(Box::new(TestRole::new(Vector2::new(-800.0, -1000.0))));
+    // strategy.add_role(Box::new(TestRole::new(Vector2::new(1000.0, 1000.0))));
     let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_own_player_at(Vector2::new(-1000.0, -1000.0))
@@ -280,18 +296,14 @@ impl Serialize for ScenarioType {
 scenarios! {
     empty_scenario,
     one_random_player,
-    test_vo,
     two_players_one_ball,
-    kickoff,
-    kickoff_2,
     one_waller_one_ball,
     two_players_crossing,
-    test_role_multiple_targets,
     navigate_stationary_opponents,
-    dribble,
-    rvo_benchmark,
-    fetch_ball_test,
-    fetch_ball_test_live
+    kickoff,
+    penalty_kick,
+    one_player,
+    free_kick
 }
 
 #[cfg(test)]

@@ -32,6 +32,7 @@ impl Task3Phase {
         player_data: &PlayerData,
         goal: Vector2<f64>,
         yaw: Angle,
+        dribbling: f64,
     ) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
         //log::info!("playerid: {:?}, Relocating to {:?}, current position: {:?}, self status: {:?}", player_data.id, goal, player_data.position,self.status);
@@ -53,11 +54,11 @@ impl Task3Phase {
         }
         let new_status = match self.status {
             Status3::NoGoal => {
-                input.with_position(goal).with_yaw(yaw);
+                input.with_position(goal).with_yaw(yaw).with_dribbling(dribbling);
                 Status3::Ongoing
             }
             Status3::Ongoing => {
-                input.with_position(goal).with_yaw(yaw);
+                input.with_position(goal).with_yaw(yaw).with_dribbling(dribbling);
                 if (player_data.position - goal).norm() < 50.0
                     && (player_data.yaw - yaw).abs() < 0.1
                 {
@@ -75,6 +76,9 @@ impl Task3Phase {
 
         input
     }
+
+
+
 
     pub fn is_accomplished(&self) -> bool {
         match self.status {
@@ -122,12 +126,5 @@ impl Task4Phase {
         };
         self.status = new_status;
         res
-    }
-
-    pub fn is_accomplished(&self) -> bool {
-        match self.status {
-            Status4::Accomplished => true,
-            _ => false,
-        }
     }
 }

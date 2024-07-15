@@ -1,11 +1,12 @@
 use anyhow::{bail, Result};
+use std::{collections::HashSet, time::Duration};
+
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     Angle, BallPlacement, ExecutorSettings, GameState, PlayerData, PlayerId, PlayerPlacement,
     ScenarioInfo, Vector2, Vector3, WorldData,
 };
 use std::collections::HashMap;
-use std::{collections::HashSet, time::Duration};
 
 use dies_core::WorldInstant;
 use dies_simulator::{SimulationBuilder, SimulationConfig};

@@ -2,7 +2,7 @@ use crate::roles::skills::{FetchBall, GoToPosition, Kick};
 use crate::roles::RoleCtx;
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
-use dies_core::{Angle, GameState, PlayerId};
+use dies_core::{Angle, GameState, PlayerId, RoleType};
 use nalgebra::Vector2;
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -108,6 +108,9 @@ impl Role for Kicker {
 
         PlayerControlInput::new()
     }
+    fn role_type(&self) -> RoleType {
+        RoleType::KickoffKicker
+    }
 }
 
 impl Role for OtherPlayer {
@@ -118,6 +121,10 @@ impl Role for OtherPlayer {
         );
 
         PlayerControlInput::new()
+    }
+
+    fn role_type(&self) -> RoleType {
+        RoleType::Player
     }
 }
 

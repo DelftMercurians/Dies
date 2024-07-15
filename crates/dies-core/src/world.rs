@@ -422,10 +422,16 @@ impl WorldData {
                     }
                 },
                 GameState::BallReplacement(_) => todo!(),
-                GameState::PreparePenalty => todo!(),
-                GameState::FreeKick => todo!(),
-                GameState::Penalty => todo!(),
-                GameState::PenaltyRun => todo!(),
+                GameState::PreparePenalty => {
+                }
+                GameState::FreeKick => {
+
+                }
+                GameState::Penalty => {
+                }
+                GameState::PenaltyRun => {
+
+                }
                 GameState::Run | GameState::Halt | GameState::Timeout | GameState::Unknown => {
                     // Nothing to do
                 }

@@ -459,6 +459,10 @@ export enum RoleType {
 	Goalkeeper = "Goalkeeper",
 	/** The attacking kicker during kick-off */
 	KickoffKicker = "KickoffKicker",
+	/** penalty kicker */
+	PenaltyKicker = "PenaltyKicker",
+	/** freekicker */
+	FreeKicker = "FreeKicker",
 }
 
 export type UiWorldState = 

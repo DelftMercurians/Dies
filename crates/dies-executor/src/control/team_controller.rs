@@ -1,9 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+};
 use crate::{strategy::Strategy, PlayerControlInput};
 
 use crate::{
     roles::{RoleCtx, SkillState},
-    strategy::{StrategyCtx},
+    strategy::StrategyCtx,
 };
 use super::{
     player_controller::PlayerController,

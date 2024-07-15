@@ -1,5 +1,7 @@
 pub mod skills;
 
+mod goalkeeper;
+pub use goalkeeper::Goalkeeper;
 pub mod dribble_role;
 pub mod test_role;
 pub mod waller;

@@ -1,12 +1,13 @@
+mod task;
 mod adhoc;
 pub mod kickoff;
-mod task;
+pub mod penalty_kick;
+pub mod free_kick;
 
+use std::collections::HashMap;
 pub use adhoc::AdHocStrategy;
-
 use crate::roles::Role;
 use dies_core::{PlayerId, WorldData};
-use std::collections::HashMap;
 
 pub struct StrategyCtx<'a> {
     pub world: &'a WorldData,
