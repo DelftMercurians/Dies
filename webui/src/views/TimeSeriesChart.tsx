@@ -49,7 +49,7 @@ function TimeSeriesChart<D extends DataPoint>({
   useEffect(() => {
     if (!paused) {
       setData((oldData) =>
-        [...oldData, newDataPoint].slice(-maxDataPointsRef.current)
+        [...oldData, newDataPoint].slice(-maxDataPointsRef.current),
       );
     }
   }, [newDataPoint, paused]);

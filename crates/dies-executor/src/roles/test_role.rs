@@ -24,6 +24,10 @@ impl TestRole {
 
 impl Role for TestRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+        if self.current_target >= self.targets.len() {
+            return PlayerControlInput::default();
+        }
+
         let target = self.targets[self.current_target];
         if self.start_time.is_none() {
             self.start_time = Some(Instant::now());

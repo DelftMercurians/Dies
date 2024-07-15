@@ -310,6 +310,7 @@ export interface WorldData {
 	ball?: BallData;
 	field_geom?: FieldGeometry;
 	current_game_state: GameStateData;
+	player_model: PlayerModel;
 }
 
 export interface WorldUpdate {
@@ -353,10 +354,12 @@ export type UiCommand =
 	player_id: PlayerId;
 	command: PlayerOverrideCommand;
 }}
+	| { type: "SimulatorCmd", data: SimulatorCmd }
 	| { type: "SetPause", data: boolean }
 	| { type: "StartScenario", data: {
 	scenario: ScenarioType;
 }}
+	| { type: "GcCommand", data: string }
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
@@ -407,6 +410,12 @@ export type DebugShape =
 	color: DebugColor;
 }};
 
+/** Command to modify the simulator state. */
+export type SimulatorCmd = 
+	| { type: "ApplyBallForce", data: {
+	force: Vector2;
+}};
+
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
 	/** Do nothing */
@@ -450,6 +459,10 @@ export enum RoleType {
 	Goalkeeper = "Goalkeeper",
 	/** The attacking kicker during kick-off */
 	KickoffKicker = "KickoffKicker",
+	/** penalty kicker */
+	PenaltyKicker = "PenaltyKicker",
+	/** freekicker */
+	FreeKicker = "FreeKicker",
 }
 
 export type UiWorldState = 

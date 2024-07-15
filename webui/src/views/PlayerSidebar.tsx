@@ -79,7 +79,9 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
   const [customFunction, setCustomFunction] = useState<
     ((data: GraphData) => number) | null
   >(null);
-  const [keyboardMode, setKeyboardMode] = useState<"local" | "global">("global");
+  const [keyboardMode, setKeyboardMode] = useState<"local" | "global">(
+    "global",
+  );
 
   const manualControl =
     typeof selectedPlayerId === "number" &&
@@ -96,7 +98,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
     ? (Object.entries(debugData)
         .filter(
           ([key, val]) =>
-            key.startsWith(`p${selectedPlayerId}`) && val.type !== "Shape"
+            key.startsWith(`p${selectedPlayerId}`) && val.type !== "Shape",
         )
         .map(([key, val]) => [
           key.slice(`p${selectedPlayerId}`.length + 1),
@@ -104,7 +106,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
         ]) as PlayerDebugValues)
     : [];
   const playerDebugMap = Object.fromEntries(
-    playerDebugData.map(([k, v]) => [k, v.data])
+    playerDebugData.map(([k, v]) => [k, v.data]),
   );
 
   if (world.status !== "connected" || typeof selectedPlayerId !== "number")
@@ -117,7 +119,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
     );
 
   const selectedPlayer = world.data.own_players.find(
-    (p) => p.id === selectedPlayerId
+    (p) => p.id === selectedPlayerId,
   );
   if (!selectedPlayer)
     return <div>Player with id {selectedPlayerId} not found</div>;
@@ -180,7 +182,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                 setCustomFunction(() =>
                   // need to wrap in a function otherwise react would use it as a
                   // production function
-                  createCustomFunction(code, Object.keys(graphData))
+                  createCustomFunction(code, Object.keys(graphData)),
                 );
               }}
             />
@@ -194,7 +196,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
           getData={(data) => {
             let value =
               activeGraph === "custom"
-                ? customFunction?.(data) ?? 0
+                ? (customFunction?.(data) ?? 0)
                 : graphableValues[activeGraph](data);
             return value;
           }}
@@ -241,7 +243,9 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                 id="keyboard-mode"
                 checked={keyboardMode === "global"}
                 disabled={keyboardControl !== true}
-                onCheckedChange={(checked) => setKeyboardMode(checked ?  "global" : "local")}
+                onCheckedChange={(checked) =>
+                  setKeyboardMode(checked ? "global" : "local")
+                }
               />
               <Label htmlFor="keyboard-mode">Global keyboard control</Label>
             </div>
@@ -322,7 +326,7 @@ const KeyboardKey = ({
   <div
     className={cn(
       "w-12 h-12 bg-gray-200 rounded-md shadow-md flex items-center justify-center text-gray-700 font-bold text-lg uppercase border-b-4 border-gray-400 hover:border-b-0  transition-all duration-100 select-none",
-      className
+      className,
     )}
   >
     {letter}

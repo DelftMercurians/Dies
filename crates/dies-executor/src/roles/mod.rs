@@ -1,8 +1,12 @@
 pub mod skills;
 
+mod goalkeeper;
+pub use goalkeeper::Goalkeeper;
 pub mod dribble_role;
 pub mod test_role;
 pub mod waller;
+pub mod attacker;
+pub mod harasser;
 pub mod fetcher_role;
 pub mod kicker_role;
 pub mod dummy_role;
@@ -15,8 +19,8 @@ use dies_core::{PlayerData, RoleType, WorldData};
 pub struct RoleCtx<'a> {
     pub player: &'a PlayerData,
     pub world: &'a WorldData,
-    skill_map: &'a mut HashMap<String, SkillState>,
-    invoke_counts: RefCell<HashMap<String, usize>>,
+    pub skill_map: &'a mut HashMap<String, SkillState>,
+    pub invoke_counts: RefCell<HashMap<String, usize>>,
 }
 
 impl RoleCtx<'_> {
@@ -37,7 +41,7 @@ impl RoleCtx<'_> {
         self.skill_map.clear();
     }
 
-    fn get_invoke_count_and_increment(&self, key: &str) -> usize {
+    pub(crate) fn get_invoke_count_and_increment(&self, key: &str) -> usize {
         let mut invoke_counts = self.invoke_counts.borrow_mut();
         let invoke_count = invoke_counts.entry(key.to_string()).or_insert(0);
         *invoke_count += 1;
@@ -98,6 +102,16 @@ impl SkillProgress {
     /// Creates a new `SkillProgress` with a `Failure` result
     pub fn failure() -> SkillProgress {
         SkillProgress::Done(SkillResult::Failure)
+    }
+
+    pub fn map_input<F>(self, f: F) -> SkillProgress
+    where
+        F: FnOnce(PlayerControlInput) -> PlayerControlInput,
+    {
+        match self {
+            SkillProgress::Continue(input) => SkillProgress::Continue(f(input)),
+            SkillProgress::Done(result) => SkillProgress::Done(result),
+        }
     }
 }
 

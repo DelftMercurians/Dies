@@ -117,9 +117,9 @@ impl From<PlayerCmd> for glue::Radio_Command {
             },
             dribbler_speed: val.dribble_speed as f32,
             robot_command: val.kicker_cmd.into(),
-            _pad: [0, 0, 0],
-            kick_time: 0.0,
+            kick_time: 3_000.0,
             fan_speed: 0.0,
+            _pad: [0, 0, 0],
         }
     }
 }
@@ -282,4 +282,8 @@ pub enum RoleType {
     Goalkeeper,
     /// The attacking kicker during kick-off
     KickoffKicker,
+    /// penalty kicker
+    PenaltyKicker,
+    /// freekicker
+    FreeKicker,
 }

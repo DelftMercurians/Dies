@@ -136,6 +136,7 @@ impl WorldTracker {
             let t_received = time.duration_since(&first_t_received);
             if let Some(last_t_received) = self.last_t_received {
                 self.dt_received = Some(t_received - last_t_received);
+                dies_core::debug_value("dt", t_received - last_t_received);
             }
             self.last_t_received = Some(t_received);
 
@@ -182,9 +183,9 @@ impl WorldTracker {
         }
     }
 
-    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg) {
+    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
         if let Some(player_tracker) = self.own_players_tracker.get_mut(&feedback.id) {
-            player_tracker.update_from_feedback(feedback);
+            player_tracker.update_from_feedback(feedback, time);
         }
     }
 
@@ -311,7 +312,7 @@ mod test {
         assert!(!tracker.is_init());
 
         tracker.update_from_vision(&packet_geom, WorldInstant::now_real());
-        tracker.update_from_feedback(&PlayerFeedbackMsg::empty(PlayerId::new(1)));
+        tracker.update_from_feedback(&PlayerFeedbackMsg::empty(PlayerId::new(1)), WorldInstant::now_real());
         assert!(!tracker.is_init());
 
         // Second detection frame

@@ -4,7 +4,7 @@ use dies_core::{find_intersection, Angle, Vector2, which_side_of_robot, get_tang
 
 use crate::{control::Velocity, PlayerControlInput};
 
-use super::{Skill, SkillCtx, SkillProgress, SkillResult};
+use super::{Skill, SkillCtx, SkillProgress};
 
 const DEFAULT_POS_TOLERANCE: f64 = 70.0;
 const DEFAULT_VEL_TOLERANCE: f64 = 30.0;
@@ -63,6 +63,7 @@ impl Skill for GoToPosition {
             input.with_yaw(heading);
         }
         if let (true, Some(ball)) = (self.with_ball, ctx.world.ball.as_ref()) {
+            input.with_dribbling(1.0);
             let ball_vel = ball.velocity.xy();
             let relative_velocity = ball_vel - ctx.player.velocity;
             if relative_velocity.norm() > DEFAULT_BALL_VEL_TOLERANCE {
@@ -71,6 +72,29 @@ impl Skill for GoToPosition {
             }
         }
 
+        SkillProgress::Continue(input)
+    }
+}
+
+pub struct Kick {
+    has_kicked: bool,
+}
+
+impl Kick {
+    pub fn new() -> Self {
+        Self { has_kicked: false }
+    }
+}
+
+impl Skill for Kick {
+    fn update(&mut self, _ctx: SkillCtx<'_>) -> SkillProgress {
+        if self.has_kicked {
+            return SkillProgress::success();
+        }
+
+        let mut input = PlayerControlInput::new();
+        input.with_kicker(crate::KickerControlInput::Kick);
+        self.has_kicked = true;
         SkillProgress::Continue(input)
     }
 }
@@ -121,6 +145,7 @@ pub struct FetchBall {
     initial_ball_direction: Option<Vector2>,
     last_good_heading: Option<Angle>,
     initial_ball_velocity: Option<Angle>,
+    breakbeam_ball_detected: f64,
 }
 
 impl FetchBall {
@@ -133,6 +158,7 @@ impl FetchBall {
             initial_ball_direction: None,
             last_good_heading: None,
             initial_ball_velocity: None,
+            breakbeam_ball_detected: 0.0,
         }
     }
 }
@@ -143,6 +169,7 @@ impl Skill for FetchBall {
             let mut input = PlayerControlInput::new();
             let ball_pos = ball.position.xy();
             let ball_speed = ball.velocity.xy().norm();
+            let relative_speed = (ball.velocity.xy() - ctx.player.velocity).norm();
             let player_pos = ctx.player.position;
             let inital_ball_direction = self
                 .initial_ball_direction
@@ -157,23 +184,30 @@ impl Skill for FetchBall {
             let ball_normal = Vector2::new(inital_ball_direction.y, -inital_ball_direction.x);
             let distance = (ball_pos - player_pos).norm();
 
-            if ctx.player.breakbeam_ball_detected {
-                return SkillProgress::success();
-            }
-
-            // let ball_angle = {
-            //     let angle: Angle = Angle::between_points(player_pos, ball_pos);
-            //     if distance > 50.0 {
-            //         self.last_good_heading = Some(angle);
-            //         angle
-            //     } else {
-            //         self.last_good_heading.unwrap_or(angle)
-            //     }
-            // };
-            let ball_angle = Angle::between_points(player_pos, ball_pos);
+            let ball_angle = {
+                let angle: Angle = Angle::between_points(player_pos, ball_pos);
+                if distance > 50.0 {
+                    self.last_good_heading = Some(angle);
+                    angle
+                } else {
+                    self.last_good_heading.unwrap_or(angle)
+                }
+            };
+            // let ball_angle = Angle::between_points(player_pos, ball_pos);
             input.with_yaw(ball_angle);
 
-            if ball_speed < 100.0 {
+            // let angle_diff = (ball_angle - ctx.player.yaw).radians().abs();
+            if ctx.player.breakbeam_ball_detected
+            {
+                self.breakbeam_ball_detected += ctx.world.dt;
+                if self.breakbeam_ball_detected > 0.5 {
+                    return SkillProgress::success();
+                }
+            } else {
+                self.breakbeam_ball_detected = 0.0;
+            }
+
+            if ball_speed < 500.0 {
                 // If the ball is too slow, just go to the ball
                 let target_pos = ball_pos + ball_angle * Vector2::new(-self.stop_distance, 0.0);
                 dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "STOPPED");
@@ -219,7 +253,7 @@ impl Skill for FetchBall {
 
             // this is meant to avoid touching the ball at high speeds and losing control
             // maybe this issue is not present in real life, it happens in the sim
-            if distance < self.dribbling_distance && ball_speed < 200.0 {
+            if distance < self.dribbling_distance && ball_speed < 500.0 {
                 input.with_dribbling(self.dribbling_speed);
                 // override the velocity inverse to the distance
                 // at distance 0, the velocity is 0

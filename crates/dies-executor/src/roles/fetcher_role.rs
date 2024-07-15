@@ -1,30 +1,40 @@
 use super::RoleCtx;
 use crate::{
-    roles::{
-        skills::{GoToPosition, FetchBall, Wait},
-        Role,
-    },
-    skill, PlayerControlInput,
+    invoke_skill, roles::{
+        skills::{FetchBall, GoToPosition, Kick},
+        Role, SkillProgress,
+    }, skill, PlayerControlInput
 };
-use dies_core::Vector2;
-use dies_protos::ssl_gc_api::Input;
+use dies_core::{Angle, Vector2};
 
-pub struct FetcherRole {
-}
+
+pub struct FetcherRole {}
 
 impl FetcherRole {
     pub fn new() -> Self {
-     Self {}
+        Self {}
     }
 }
 
 impl Role for FetcherRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        // wait for the kicker to kick
-        skill!(ctx, Wait::new_secs_f64(0.1));
-        
         skill!(ctx, FetchBall::new());
 
-        PlayerControlInput::new().with_dribbling(1.0).clone()
+        match invoke_skill!(
+            ctx,
+            GoToPosition::new(Vector2::new(0.0, 0.0))
+                .with_heading(Angle::from_degrees(0.0))
+                .with_ball()
+        ) {
+            SkillProgress::Continue(mut input) => {
+                input.with_kicker(crate::KickerControlInput::Arm);
+                return input;
+            }
+            SkillProgress::Done(_) => {}
+        }
+
+        skill!(ctx, Kick::new());
+
+        PlayerControlInput::new()
     }
 }

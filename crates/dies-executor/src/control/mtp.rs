@@ -116,10 +116,8 @@ impl MTP {
             direction * new_speed
         } else if current_speed < self.max_speed {
             // Acceleration phase
-            let target_v = self.max_speed;
-            let dv = target_v - current_speed;
-            let new_speed = current_speed + dv.min(self.max_accel * dt);
             dies_core::debug_string("p5.MTPMode", "Acceleration");
+            let new_speed = current_speed + self.max_accel * dt;
             direction * new_speed
         } else {
             // Cruise phase

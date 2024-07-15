@@ -4,7 +4,7 @@ use dies_core::{
 use std::f64::{consts::PI, EPSILON};
 
 // Constants
-const PLAYER_MARGIN: f64 = 20.0;
+const PLAYER_MARGIN: f64 = 30.0;
 const OVER_APPROX_C2S: f64 = 1.5;
 
 // Enum to represent different obstacle types
@@ -42,7 +42,7 @@ pub fn velocity_obstacle_update(
     // Consider other agents
     for other_player in players.iter() {
         if other_player.position != player.position {
-            let rvo_ba = compute_velocity_obstacle(&player, other_player, &vo_type, player_radius);
+            let rvo_ba = compute_velocity_obstacle(player, other_player, &vo_type, player_radius);
             rvo_ba_all.push(rvo_ba);
         }
     }
@@ -51,20 +51,20 @@ pub fn velocity_obstacle_update(
     for obstacle in obstacles {
         let rvo_ba = match obstacle {
             Obstacle::Circle { center, radius } => {
-                compute_obstacle_velocity_obstacle(&player, center, radius, player_radius)
+                compute_obstacle_velocity_obstacle(player, center, radius, player_radius)
             }
             Obstacle::Rectangle { min, max } => {
                 // Approximate rectangle with a circle
                 let center = Vector2::from((min + max) / 2.0);
                 let radius = (max.x - min.x).max(max.y - min.y) / 2.0;
-                compute_obstacle_velocity_obstacle(&player, &center, &radius, player_radius)
+                compute_obstacle_velocity_obstacle(player, &center, &radius, player_radius)
             }
         };
         rvo_ba_all.push(rvo_ba);
     }
 
     // Compute optimal velocity
-    intersect(&player, &desired_velocity, &rvo_ba_all)
+    intersect(player, desired_velocity, &rvo_ba_all)
 }
 
 // Compute velocity obstacle for agent-agent interaction
@@ -158,9 +158,9 @@ fn intersect(
     if is_velocity_suitable(&position, desired_velocity, velocity_obstacles) {
         debug_string(
             format!("{}-chosen-v", player.id),
-            format!("desired velocity"),
+            "desired velocity".to_string(),
         );
-        return desired_velocity.clone();
+        return *desired_velocity;
     } else {
         unsuitable_v.push(*desired_velocity);
     }
@@ -199,7 +199,9 @@ fn intersect(
     }
 
     // If no suitable velocity found, choose the "least bad" option
-    let least_bad = unsuitable_v
+    
+
+    unsuitable_v
         .into_iter()
         .min_by(|v1, v2| {
             let tc1 = time_to_collision(&position, v1, velocity_obstacles);
@@ -208,9 +210,7 @@ fn intersect(
             let cost2 = 0.2 / tc2 + (v2 - desired_velocity).norm();
             cost1.partial_cmp(&cost2).unwrap()
         })
-        .unwrap();
-
-    least_bad
+        .unwrap()
 }
 
 // Function to check if a velocity satisfies all constraints

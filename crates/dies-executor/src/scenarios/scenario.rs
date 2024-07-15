@@ -3,9 +3,12 @@ use std::{collections::HashSet, time::Duration};
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    Angle, BallPlacement, ExecutorSettings, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo,
-    Vector2, Vector3, WorldData, WorldInstant,
+    Angle, BallPlacement, ExecutorSettings, GameState, PlayerData, PlayerId, PlayerPlacement,
+    ScenarioInfo, Vector2, Vector3, WorldData,
 };
+use std::collections::HashMap;
+
+use dies_core::WorldInstant;
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{VisionClient, VisionClientConfig};
 use dies_world::WorldTracker;
@@ -28,19 +31,35 @@ pub struct ScenarioSetup {
     /// Yaw tolerance for players in rad
     yaw_tolerance: f64,
     /// Strategy to use.
-    strategy: Box<dyn Strategy>,
+    strategy: HashMap<GameState, Box<dyn Strategy>>,
 }
 
 impl ScenarioSetup {
-    pub fn new(strategy: impl Strategy + 'static) -> Self {
+    pub fn new(strategy: impl Strategy + 'static, state: Option<GameState>) -> Self {
+        let state = match state {
+            Some(state) => state,
+            None => GameState::Unknown,
+        };
+        let mut strategy_map = HashMap::new();
+        strategy_map.insert(state, Box::new(strategy) as Box<dyn Strategy>);
         Self {
             ball: BallPlacement::NoBall,
             own_players: Vec::new(),
             opp_players: Vec::new(),
             tolerance: 10.0,
             yaw_tolerance: 10.0f64.to_radians(),
-            strategy: Box::new(strategy),
+            strategy: strategy_map,
         }
+    }
+
+    pub fn add_strategy(
+        &mut self,
+        state: GameState,
+        strategy: impl Strategy + 'static,
+    ) -> &mut Self {
+        self.strategy
+            .insert(state, Box::new(strategy) as Box<dyn Strategy>);
+        self
     }
 
     /// Sets the ball to be at a specific position.
@@ -302,4 +321,52 @@ fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
         (rand::random::<f64>() - 0.5) * w,
         (rand::random::<f64>() - 0.5) * l,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dies_core::mock_world_data;
+    use dies_core::Angle;
+    use dies_core::BallData;
+    use dies_core::WorldData;
+
+    #[test]
+    fn test_scenario_setup_check_live() {
+        let setup = ScenarioSetup {
+            ball: BallPlacement::Position(Vector3::new(0.0, 0.0, 0.0)),
+            own_players: vec![PlayerPlacement {
+                position: Some(Vector2::new(100.0, 0.0)),
+                yaw: Some(Angle::from_degrees(0.0)),
+            }],
+            opp_players: vec![],
+            tolerance: 10.0,
+            yaw_tolerance: 10.0f64.to_radians(),
+            strategy: HashMap::new(),
+        };
+
+        let mut world = WorldData {
+            ball: None,
+            own_players: vec![PlayerData {
+                position: Vector2::new(0.0, 0.0),
+                velocity: Vector2::zeros(),
+                yaw: Angle::from_degrees(0.0),
+                ..PlayerData::new(PlayerId::new(0))
+            }],
+            opp_players: vec![],
+            ..mock_world_data()
+        };
+
+        assert!(!setup.check_live(world.clone()));
+
+        world.ball = Some(BallData {
+            timestamp: 0.0,
+            position: Vector3::zeros(),
+            velocity: Vector3::zeros(),
+            raw_position: vec![],
+        });
+        world.own_players[0].position = Vector2::new(91.0, 0.0);
+
+        assert!(setup.check_live(world.clone()));
+    }
 }

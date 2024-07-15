@@ -1,9 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+};
+use crate::{strategy::Strategy, PlayerControlInput};
 
 use crate::{
     roles::{RoleCtx, SkillState},
-    strategy::{Strategy, StrategyCtx},
-    PlayerControlInput,
+    strategy::StrategyCtx,
 };
 use super::{
     player_controller::PlayerController,
@@ -23,14 +25,14 @@ struct RoleState {
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
-    strategy: Box<dyn Strategy>,
+    strategy: HashMap<GameState, Box<dyn Strategy>>,
     role_states: HashMap<PlayerId, RoleState>,
     settings: ControllerSettings,
 }
 
 impl TeamController {
     /// Create a new team controller.
-    pub fn new(strategy: Box<dyn Strategy>, settings: &ControllerSettings) -> Self {
+    pub fn new(strategy: HashMap<GameState, Box<dyn Strategy>>, settings: &ControllerSettings) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             strategy,
@@ -60,12 +62,23 @@ impl TeamController {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
                     .insert(*id, PlayerController::new(*id, &self.settings));
+                if self.player_controllers.len() == 1 {
+                    self.player_controllers.get_mut(id).unwrap().set_gate_keeper();
+                }
             }
         }
+        let state = world_data.current_game_state.game_state;
+
+        let strategy = if let Some(strategy) = self.strategy.get_mut(&state) {
+            strategy
+        } else {
+            log::warn!("No strategy found for game state {:?}", state);
+            return;
+        };
 
         let strategy_ctx = StrategyCtx { world: &world_data };
-        self.strategy.update(strategy_ctx);
-        let roles = self.strategy.get_roles();
+        strategy.update(strategy_ctx);
+        let roles = strategy.get_roles();
         let mut inputs = roles
             .iter_mut()
             .fold(PlayerInputs::new(), |mut inputs, (id, role)| {
@@ -116,7 +129,7 @@ impl TeamController {
                         player_data,
                         &controller.target_velocity(),
                         all_players.as_slice(),
-                        &vec![],
+                        &[],
                         &world_data.player_model,
                         super::rvo::VelocityObstacleType::VO,
                     );
