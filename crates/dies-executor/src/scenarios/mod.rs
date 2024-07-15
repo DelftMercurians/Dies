@@ -6,10 +6,10 @@ use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
 use crate::{
-    roles::{test_role::TestRole, waller::Waller},
+    roles::{waller::Waller},
     strategy::AdHocStrategy,
 };
-use dies_core::{GameState, PlayerId, Vector2, Vector3};
+use dies_core::{GameState, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
