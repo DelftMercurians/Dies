@@ -9,7 +9,7 @@ import {
 } from "../bindings";
 
 const ROBOT_RADIUS = 0.08 * 1000;
-const BALL_RADIUS = 0.01 * 1000;
+const BALL_RADIUS = 0.043 * 1000;
 export const DEFAULT_FIELD_SIZE = [10400, 7400] as [number, number];
 export const CANVAS_PADDING = 20;
 
@@ -85,11 +85,11 @@ export class FieldRenderer {
         "blue",
         player.id === selectedPlayerId,
         manualControl.includes(player.id),
-        this.positionDisplayMode
-      )
+        this.positionDisplayMode,
+      ),
     );
     opp_players.forEach((player) =>
-      this.drawPlayer(player, "yellow", false, false, this.positionDisplayMode)
+      this.drawPlayer(player, "yellow", false, false, this.positionDisplayMode),
     );
 
     if (ball) {
@@ -103,7 +103,7 @@ export class FieldRenderer {
         this.positionDisplayMode === "both" ||
         this.positionDisplayMode === "raw"
       ) {
-        ball.raw_position.forEach(pos => this.drawBall(pos, "raw"));
+        ball.raw_position.forEach((pos) => this.drawBall(pos, "raw"));
       }
     }
 
@@ -161,7 +161,7 @@ export class FieldRenderer {
     selected: boolean,
     manualControl: boolean,
     positionDisplayMode: PositionDisplayMode,
-    opacity = 1
+    opacity = 1,
   ) {
     if (positionDisplayMode === "both") {
       this.drawPlayer(data, team, selected, manualControl, "filtered");
@@ -225,7 +225,7 @@ export class FieldRenderer {
 
   private drawBall(
     position: Vector2 | Vector3,
-    positionDisplayMode: PositionDisplayMode
+    positionDisplayMode: PositionDisplayMode,
   ) {
     const [x, y] = this.fieldToCanvas(position);
     const ballCanvasRadius = this.convertLength(BALL_RADIUS);

@@ -354,6 +354,7 @@ export type UiCommand =
 	player_id: PlayerId;
 	command: PlayerOverrideCommand;
 }}
+	| { type: "SimulatorCmd", data: SimulatorCmd }
 	| { type: "SetPause", data: boolean }
 	| { type: "StartScenario", data: {
 	scenario: ScenarioType;
@@ -406,6 +407,12 @@ export type DebugShape =
 	start: Vector2;
 	end: Vector2;
 	color: DebugColor;
+}};
+
+/** Command to modify the simulator state. */
+export type SimulatorCmd = 
+	| { type: "ApplyBallForce", data: {
+	force: Vector2;
 }};
 
 /** An override command for a player for manual control. */

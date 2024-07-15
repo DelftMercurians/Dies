@@ -299,12 +299,12 @@ export const useKeyboardControl = ({
   playerId,
   angularSpeedDegPerSec,
   speed,
-  mode = "global"
+  mode = "global",
 }: {
   playerId: number | null;
   speed: number;
   angularSpeedDegPerSec: number;
-  mode: "local" | "global"
+  mode: "local" | "global";
 }) => {
   const sendCommand = useSendCommand();
 
@@ -333,7 +333,8 @@ export const useKeyboardControl = ({
         data: {
           player_id: playerId,
           command: {
-            type: modeRef.current === "global" ? "GlobalVelocity" : "LocalVelocity",
+            type:
+              modeRef.current === "global" ? "GlobalVelocity" : "LocalVelocity",
             data: {
               velocity: [0, 0] as [number, number],
               angular_velocity: 0,
@@ -353,7 +354,7 @@ export const useKeyboardControl = ({
       if (vel_mag > 0) {
         velocity = velocity.map((v) => (v / vel_mag) * speedRef.current) as [
           number,
-          number
+          number,
         ];
       }
       command.data.command.data.velocity = velocity;

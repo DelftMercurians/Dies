@@ -87,8 +87,8 @@ impl Default for SimulationConfig {
             kicker_strength: 300000.0,
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
-            command_delay: 30.0 / 1000.0,
-            max_accel: 40_000.0,
+            command_delay: 10.0 / 1000.0,
+            max_accel: 80_000.0,
             max_vel: 6_000.0,
             max_ang_accel: 2.0 * 720.0f64.to_radians(),
             max_ang_vel: 720.0f64.to_radians(),
@@ -267,6 +267,13 @@ impl Simulation {
             wall_body_handle,
             &mut self.rigid_body_set,
         );
+    }
+
+    pub fn apply_force_to_ball(&mut self, force: Vector<f64>) {
+        if let Some(ball) = self.ball.as_ref() {
+            let ball_body = self.rigid_body_set.get_mut(ball._rigid_body_handle).unwrap();
+            ball_body.apply_impulse(force, true);
+        }
     }
 
     /// Pushes a PlayerCmd onto the execution queue with the time delay specified in

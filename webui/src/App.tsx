@@ -58,7 +58,10 @@ const App: React.FC = () => {
   const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
 
   const bsInfo = useBasestationInfo().data;
-  const allMotorsOk = Object.values(bsInfo?.players ?? {}).every((p: PlayerFeedbackMsg) => p.motor_statuses?.find((m) => m === "NoReply") === undefined);
+  const allMotorsOk = Object.values(bsInfo?.players ?? {}).every(
+    (p: PlayerFeedbackMsg) =>
+      p.motor_statuses?.find((m) => m === "NoReply") === undefined,
+  );
   useWarningSound(!allMotorsOk);
 
   if (!backendState) {
@@ -137,7 +140,7 @@ const App: React.FC = () => {
 
         <Select
           value={
-            runningScenario ? runningScenario : selectedScenario ?? undefined
+            runningScenario ? runningScenario : (selectedScenario ?? undefined)
           }
           onValueChange={(val) => setSelectedScenario(val)}
           disabled={!!runningScenario}
@@ -209,7 +212,7 @@ const App: React.FC = () => {
           className="h-full bg-slate-950 p-2"
           onCollapse={() =>
             setCollapsed((prev) =>
-              !prev.includes("left") ? [...prev, "left"] : prev
+              !prev.includes("left") ? [...prev, "left"] : prev,
             )
           }
           onExpand={() =>
@@ -271,7 +274,7 @@ const App: React.FC = () => {
           className=" bg-slate-950 flex flex-col"
           onCollapse={() =>
             setCollapsed((prev) =>
-              !prev.includes("right") ? [...prev, "right"] : prev
+              !prev.includes("right") ? [...prev, "right"] : prev,
             )
           }
           onExpand={() =>
@@ -294,11 +297,11 @@ const App: React.FC = () => {
           "bg-slate-800",
           executorStatus.type === "StartingScenario" && "bg-yellow-500",
           executorStatus.type === "RunningExecutor" &&
-          worldState.status === "connected" &&
-          "bg-green-500",
+            worldState.status === "connected" &&
+            "bg-green-500",
           (backendLoadingState === "error" ||
             executorStatus.type === "Failed") &&
-          "bg-red-500"
+            "bg-red-500",
         )}
       >
         {backendLoadingState === "error"

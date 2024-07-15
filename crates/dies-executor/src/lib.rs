@@ -4,8 +4,7 @@ use anyhow::Result;
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    WorldInstant, WorldUpdate,
+    ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, SimulatorCmd, Vector3, WorldInstant, WorldUpdate
 };
 use dies_logger::{log_referee, log_vision, log_world};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
@@ -302,6 +301,7 @@ impl Executor {
                     Some(msg) = self.command_rx.recv() => {
                         match msg {
                             ControlMsg::Stop => break,
+                            ControlMsg::SimulatorCmd(cmd) => self.handle_simulator_cmd(&mut simulator, cmd),
                             msg => self.handle_control_msg(msg)
                         }
                     }
@@ -386,6 +386,14 @@ impl Executor {
         Ok(())
     }
 
+    fn handle_simulator_cmd(&self, sim: &mut Simulation, cmd: SimulatorCmd) {
+        match cmd {
+            SimulatorCmd::ApplyBallForce { force } => {
+                sim.apply_force_to_ball(Vector3::new(force.x, force.y, 0.0));
+            }
+        }
+    }
+
     pub fn handle(&self) -> ExecutorHandle {
         ExecutorHandle {
             control_tx: self.command_tx.clone(),
@@ -420,7 +428,10 @@ impl Executor {
                     .update_controller_settings(&settings.controller_settings);
                 self.tracker.update_settings(&settings);
             }
-            ControlMsg::Stop => {}
+            ControlMsg::Stop => {},
+            ControlMsg::SimulatorCmd(_) => {
+                // This should be handled by the caller
+            }
         }
     }
 

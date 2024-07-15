@@ -80,6 +80,7 @@ impl ExecutorTask {
             UiCommand::OverrideCommand { player_id, command } => {
                 self.handle_executor_msg(ControlMsg::PlayerOverrideCommand(player_id, command))
             }
+            UiCommand::SimulatorCmd(cmd) => self.handle_executor_msg(ControlMsg::SimulatorCmd(cmd)),
             UiCommand::SetPause(pause) => self.handle_executor_msg(ControlMsg::SetPause(pause)),
             UiCommand::Stop => self.stop_executor().await,
             UiCommand::StartScenario { scenario } => {
