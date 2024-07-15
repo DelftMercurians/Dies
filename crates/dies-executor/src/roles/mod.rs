@@ -9,6 +9,7 @@ pub mod attacker;
 pub mod harasser;
 pub mod fetcher_role;
 pub mod kicker_role;
+pub mod dummy_role;
 
 use std::{cell::RefCell, collections::HashMap};
 

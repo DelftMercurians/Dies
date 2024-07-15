@@ -1,19 +1,22 @@
 #[deny(dead_code)]
 mod scenario;
 
+use std::f64::consts::PI;
+
 use crate::roles::attacker::Attacker;
 use crate::roles::harasser::Harasser;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
 use crate::{
-    roles::{waller::Waller},
+    roles::{test_role::TestRole, waller::Waller, fetcher_role::FetcherRole, kicker_role::KickerRole},
+    roles::skills::FetchBallWithHeading,
     strategy::AdHocStrategy,
 };
-use dies_core::{GameState, Vector2, Vector3};
+use dies_core::{Angle, GameState, PlayerId, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
-
+use crate::roles::dummy_role::DummyRole;
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
 fn empty_scenario() -> ScenarioSetup {
@@ -108,9 +111,76 @@ fn one_attacker() -> ScenarioSetup {
 
 fn three_attackers() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, 2000.0))));
-    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, -2000.0))));
-    strategy.add_role(Box::new(Attacker::new(Vector2::new(-200.0, 0.0))));
+    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(1000.0, 1000.0)])));
+
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    scenario.add_opp_player_at(Vector2::new(-500.0, 0.0));
+    // scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
+    // scenario.add_opp_player_at(Vector2::new(500.0, -500.0));
+    // scenario.add_opp_player_at(Vector2::new(-250.0, 750.0));
+
+    scenario
+}
+
+fn rvo_benchmark() -> ScenarioSetup {
+    // 6 players on a circle, each navigating to the opposite side
+    let mut strategy = AdHocStrategy::new();
+
+    let n = 6;
+    let radius = 1000.0;
+    let mut targets = Vec::new();
+    let mut players = Vec::new();
+    for i in 0..n {
+        let angle = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
+        let p = Vector2::new(radius * angle.cos(), radius * angle.sin());
+        targets.push(-p);
+        players.push(p);
+    }
+
+    for (i, target) in targets.into_iter().enumerate() {
+        strategy.add_role_with_id(
+            PlayerId::new(i as u32),
+            Box::new(TestRole::new(vec![target])),
+        );
+    }
+
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    for player in players {
+        scenario.add_own_player_at(player);
+    }
+
+    scenario
+}
+
+fn fetch_ball_test () -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role_with_id(PlayerId::new(0), Box::new(FetcherRole::new()));
+    strategy.add_role_with_id(PlayerId::new(1), Box::new(KickerRole::new()));
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario
+        .add_own_player_at(Vector2::new(-2500.0, -1000.0))
+        .add_own_player_at_with_yaw(Vector2::new(100.0, 0.0), Angle::from_radians(PI))
+        .add_ball_at(Vector3::new(0.0,0.0, 0.0));
+
+    scenario
+}
+
+fn fetch_ball_2 () -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    let skill = FetchBallWithHeading::new(Vector2::new(0.0, 0.0), Angle::from_degrees(90.0));
+    strategy.add_role_with_id(PlayerId::new(0), Box::new(DummyRole::new(Box::new(skill))));
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario
+        .add_own_player_at(Vector2::new(0.0, 2500.0))
+        .add_ball_at(Vector3::new(0.0,0.0, 0.0));
+
+    scenario
+}
+
+fn fetch_ball_test_live () -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role( Box::new(FetcherRole::new()));
     let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_ball()
@@ -201,13 +271,10 @@ scenarios! {
     empty_scenario,
     two_players_one_ball,
     one_waller_one_ball,
-    one_attacker,
-    three_attackers,
-    one_harasser_one_player_one_ball,
-    kickoff,
-    penalty_kick,
-    one_player,
-    free_kick
+    rvo_benchmark,
+    fetch_ball_test,
+    fetch_ball_test_live,
+    fetch_ball_2
 }
 
 #[cfg(test)]
