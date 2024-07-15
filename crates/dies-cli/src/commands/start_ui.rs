@@ -11,8 +11,6 @@ use tokio::sync::broadcast;
 
 use crate::cli::{BasestationProtocolVersion, SerialPort, VisionType};
 
-use super::select_serial_port;
-
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
 pub struct MainArgs {
@@ -70,7 +68,7 @@ impl MainArgs {
     ///
     /// If there is an issue selecting a serial port, an error message will be logged and `None` will be returned.
     pub async fn serial_config(&self) -> Option<BasestationClientConfig> {
-        select_serial_port(self)
+        self.serial_port.select()
             .await
             .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()
