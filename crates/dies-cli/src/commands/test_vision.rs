@@ -1,12 +1,10 @@
 use std::{
-    net::{Ipv4Addr, SocketAddr, UdpSocket},
-    str::FromStr,
+    net::{SocketAddr},
 };
 
 use anyhow::Result;
 use dies_ssl_client::VisionClientConfig;
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
-use socket2::{Domain, Protocol, Socket, Type};
 use tokio::time::Instant;
 
 use crate::cli::VisionType;

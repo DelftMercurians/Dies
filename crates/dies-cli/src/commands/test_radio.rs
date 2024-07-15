@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
 use dies_core::{PlayerCmd, PlayerId};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{Duration, Instant};
 
 use crate::cli::SerialPort;
 
