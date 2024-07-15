@@ -5,6 +5,7 @@ pub use goalkeeper::Goalkeeper;
 pub mod dribble_role;
 pub mod test_role;
 pub mod waller;
+pub mod harasser;
 pub mod fetcher_role;
 pub mod kicker_role;
 
