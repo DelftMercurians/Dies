@@ -1,7 +1,9 @@
+use std::net::SocketAddr;
 use std::{path::PathBuf, process::ExitCode};
 
 use crate::commands::start_ui::MainArgs;
 use crate::commands::test_radio::test_radio;
+use crate::commands::test_vision::test_vision;
 use crate::commands::{convert_logs::convert_log, start_ui::start_ui};
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -31,9 +33,17 @@ enum Command {
         sx: Option<f64>,
         #[clap(long)]
         sy: Option<f64>,
-        
+
         /// The IDs of the robots to test.
         ids: Vec<u32>,
+    },
+
+    #[clap(name = "test-vision")]
+    TestVision {
+        #[clap(short, long, default_value = "udp")]
+        vision: VisionType,
+        #[clap(long, default_value = "224.5.23.2:10006")]
+        vision_addr: SocketAddr,
     },
 }
 
@@ -62,11 +72,18 @@ impl Cli {
                 w,
                 sx,
                 sy,
-            }) => {
-                match test_radio(port, id, duration, w, sx, sy).await {
+            }) => match test_radio(port, id, duration, w, sx, sy).await {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(err) => {
+                    eprintln!("Error testing radio: {}", err);
+                    ExitCode::FAILURE
+                }
+            },
+            Some(Command::TestVision { vision, vision_addr }) => {
+                match test_vision(vision, vision_addr).await {
                     Ok(_) => ExitCode::SUCCESS,
                     Err(err) => {
-                        eprintln!("Error testing radio: {}", err);
+                        eprintln!("Error testing vision: {}", err);
                         ExitCode::FAILURE
                     }
                 }
