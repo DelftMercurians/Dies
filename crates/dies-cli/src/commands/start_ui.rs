@@ -38,6 +38,9 @@ pub struct MainArgs {
     #[clap(long, default_value = "224.5.23.2:10006")]
     pub vision_addr: SocketAddr,
 
+    #[clap(long)]
+    pub vision_interface: Option<String>,
+
     #[clap(long, default_value = "info")]
     pub log_level: String,
 
@@ -91,6 +94,7 @@ impl MainArgs {
             VisionType::Udp => Some(VisionClientConfig::Udp {
                 host: self.vision_addr.ip().to_string(),
                 port: self.vision_addr.port(),
+                interface: self.vision_interface.clone(),
             }),
         }
     }

@@ -1,4 +1,7 @@
-use std::{net::{Ipv4Addr, SocketAddr, UdpSocket}, str::FromStr};
+use std::{
+    net::{Ipv4Addr, SocketAddr, UdpSocket},
+    str::FromStr,
+};
 
 use anyhow::Result;
 use dies_ssl_client::VisionClientConfig;
@@ -15,7 +18,6 @@ pub async fn test_vision(vision: VisionType, vision_addr: SocketAddr) -> Result<
         println!("{:?}", itf);
     }
 
-    
     let host = "224.5.23.2";
     let port = 10006;
     let addr = format!("{}:{}", host, port).parse::<SocketAddr>()?;
@@ -24,7 +26,7 @@ pub async fn test_vision(vision: VisionType, vision_addr: SocketAddr) -> Result<
     socket
         .join_multicast_v4(
             &Ipv4Addr::from_str("224.5.23.2").unwrap(),
-            &Ipv4Addr::UNSPECIFIED,
+            &Ipv4Addr::from_str("192.168.1.110").unwrap(),
         )
         .expect("Could not join multicast group A");
 
