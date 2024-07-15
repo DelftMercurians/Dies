@@ -2,7 +2,7 @@ use std::{ time::Duration};
 
 use dies_core::{find_intersection, Angle, Vector2, which_side_of_robot, get_tangent_line_direction, perp};
 
-use crate::{control::Velocity, PlayerControlInput};
+use crate::{control::Velocity, roles::SkillResult, PlayerControlInput};
 
 use super::{Skill, SkillCtx, SkillProgress};
 
