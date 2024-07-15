@@ -1,5 +1,4 @@
-use dies_core::{Angle, FieldGeometry, Vector2, WorldData, PlayerData, BallData, PlayerId};
-use nalgebra::distance;
+use dies_core::{Angle, FieldGeometry, Vector2, WorldData, BallData, PlayerId};
 use super::RoleCtx;
 use crate::{roles::Role, PlayerControlInput, KickerControlInput};
 
@@ -26,18 +25,18 @@ impl Attacker {
 
     fn aim_at_goal(&self, player_pos: Vector2, world: &FieldGeometry) -> Angle {
         let opp_goal_center = Vector2::new(- world.field_length / 2.0, 0.0);
-        let angle = Angle::between_points(player_pos, opp_goal_center);
-        return angle;
+        
+        Angle::between_points(player_pos, opp_goal_center)
     }
 
     fn aim_at_player(&self, passer_pos: Vector2, reciever_pos: Vector2) -> Angle {
-        let angle = Angle::between_points(passer_pos, reciever_pos);
-        return angle;
+        
+        Angle::between_points(passer_pos, reciever_pos)
     }
 
     fn aim_at_ball(&self, player_pos: Vector2, ball_pos: Vector2) -> Angle {
-        let angle = Angle::between_points(player_pos, ball_pos);
-        return angle;
+        
+        Angle::between_points(player_pos, ball_pos)
     }
 
     fn closest_player_to_ball(&self, world: &WorldData, ball: &BallData) -> Option<PlayerId> {
@@ -50,7 +49,7 @@ impl Attacker {
                 closest_player_id = Some(player.id);
             }
         }
-        return closest_player_id;
+        closest_player_id
     }
 
     fn closest_player_to_passer(&self, world: &WorldData, passer_pos: Vector2, passer_id: PlayerId) -> Option<PlayerId> {
@@ -66,7 +65,7 @@ impl Attacker {
                 closest_player_id = Some(player.id);
             }
         }
-        return closest_player_id;
+        closest_player_id
     
     }
 }
@@ -76,7 +75,7 @@ impl Role for Attacker {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
             
             // Passer and Shooter only needs to be assigned once if not it creates many bugs
-            if self.passer_id == None {
+            if self.passer_id.is_none() {
                 self.passer_id = self.closest_player_to_ball(ctx.world, ball);
                 self.shooter_id = self.closest_player_to_passer(ctx.world, ctx.world.own_players.iter().find(|p| p.id == self.passer_id.unwrap()).unwrap().position, self.passer_id.unwrap());
             }
@@ -191,7 +190,7 @@ impl Role for Attacker {
             input.with_dribbling(1.0);
             input.with_position(self.position);
             input.with_yaw(self.aim_at_ball(ctx.player.position, ball.position.xy()));
-            return input;
+            input
             
         } else {
             PlayerControlInput::new()
