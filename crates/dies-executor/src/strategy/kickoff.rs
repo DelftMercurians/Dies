@@ -1,6 +1,5 @@
-use crate::roles::skills::GoToPosition;
+use crate::roles::skills::{FetchBall, GoToPosition, Kick};
 use crate::roles::RoleCtx;
-use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
 use dies_core::{Angle, GameState, PlayerId};
@@ -64,31 +63,21 @@ pub struct KickoffStrategy {
     position_generator: PositionGenerator,
 }
 
-pub struct Kicker {
-    move_to_ball: Task3Phase,
-    move_to_circle: Task3Phase,
-    kick: Task4Phase,
-}
+pub struct Kicker {}
 
 pub struct OtherPlayer {
-    move_to_half_field: Task3Phase,
     fixed_position: Vector2<f64>,
 }
 
 impl Kicker {
     pub fn new() -> Self {
-        Self {
-            move_to_ball: Task3Phase::new(),
-            kick: Task4Phase::new(),
-            move_to_circle: Task3Phase::new(),
-        }
+        Self {}
     }
 }
 
 impl OtherPlayer {
     pub fn new(position: Vector2<f64>) -> Self {
         Self {
-            move_to_half_field: Task3Phase::new(),
             fixed_position: position,
         }
     }
@@ -96,43 +85,31 @@ impl OtherPlayer {
 
 impl Role for Kicker {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        // let gamestate = ctx.world.current_game_state.game_state;
-        // let player_data = ctx.player;
-        // if gamestate == GameState::PrepareKickoff {
-        //     return self.move_to_circle.relocate(
-        //         player_data,
-        //         Vector2::new(-800.0, PI),
-        //         Angle::from_degrees(180.0),
-        //     );
-        // }
+        match ctx.world.current_game_state.game_state {
+            GameState::PrepareKickoff => {
+                skill!(
+                    ctx,
+                    GoToPosition::new(Vector2::new(-800.0, PI))
+                        .with_heading(Angle::from_degrees(180.0))
+                );
+            }
+            GameState::Kickoff => {
+                skill!(ctx, FetchBall::new());
+                skill!(ctx, Kick::new());
+            }
+            _ => {}
+        }
 
-        // if self.move_to_ball.is_accomplished() {
-        //     //kick
-        //     return self.kick.kick();
-        // } else if let Some(balldata) = ctx.world.ball.clone() {
-        //     let ball_pos_v2 = Vector2::new(balldata.position.x, balldata.position.y);
-        //     return self.move_to_ball.relocate(
-        //         player_data,
-        //         ball_pos_v2,
-        //         Angle::from_degrees(180.0),
-        //     );
-        // } else {
-        //     return PlayerControlInput::new();
-        // }
-
-        PlayerControlInput::default()
+        PlayerControlInput::new()
     }
 }
 
 impl Role for OtherPlayer {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        // log the player's position and the fixed position
-        // return self.move_to_half_field.relocate(
-        //     ctx.player,
-        //     self.fixed_position,
-        //     Angle::from_degrees(180.0),
-        // );
-        skill!(ctx, GoToPosition::new(self.fixed_position).with_heading(Angle::from_degrees(90.0)));
+        skill!(
+            ctx,
+            GoToPosition::new(self.fixed_position).with_heading(Angle::from_degrees(90.0))
+        );
 
         PlayerControlInput::new()
     }
@@ -202,7 +179,7 @@ impl Strategy for KickoffStrategy {
         // }
         // inputs
     }
-    
+
     fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>> {
         &mut self.roles
     }
