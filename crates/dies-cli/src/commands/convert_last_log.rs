@@ -20,6 +20,6 @@ pub fn convert_last_log() -> Result<()> {
         .max_by_key(|(modified, _)| *modified)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No log files found"))?;
     let output = PathBuf::from("log.json");
-    
+
     convert_log(&input, &output)
 }

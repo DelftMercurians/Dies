@@ -1,6 +1,4 @@
-use dies_core::{
-    debug_string, Angle, PlayerData, PlayerModel, Vector2
-};
+use dies_core::{debug_string, Angle, PlayerData, PlayerModel, Vector2};
 use std::f64::{consts::PI, EPSILON};
 
 // Constants
@@ -171,8 +169,7 @@ fn intersect(
     let max_radius = norm_v * 1.5; // Sample up to 1.5 times the desired velocity magnitude
 
     // Sample velocities and check if they satisfy all constraints
-    for theta in (0..angular_samples).map(|t| (t as f64 / angular_samples as f64) * 2.0 * PI - PI)
-    {
+    for theta in (0..angular_samples).map(|t| (t as f64 / angular_samples as f64) * 2.0 * PI - PI) {
         for rad in (1..radial_samples).map(|r| (r as f64 / radial_samples as f64) * max_radius) {
             let new_v = Vector2::new(rad * theta.cos(), rad * theta.sin());
             if is_velocity_suitable(&player.position, &new_v, velocity_obstacles) {
@@ -199,7 +196,6 @@ fn intersect(
     }
 
     // If no suitable velocity found, choose the "least bad" option
-    
 
     unsuitable_v
         .into_iter()

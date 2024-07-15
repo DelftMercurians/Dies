@@ -422,16 +422,10 @@ impl WorldData {
                     }
                 },
                 GameState::BallReplacement(_) => todo!(),
-                GameState::PreparePenalty => {
-                }
-                GameState::FreeKick => {
-
-                }
-                GameState::Penalty => {
-                }
-                GameState::PenaltyRun => {
-
-                }
+                GameState::PreparePenalty => {}
+                GameState::FreeKick => {}
+                GameState::Penalty => {}
+                GameState::PenaltyRun => {}
                 GameState::Run | GameState::Halt | GameState::Timeout | GameState::Unknown => {
                     // Nothing to do
                 }
@@ -515,13 +509,11 @@ pub fn mock_world_data() -> WorldData {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
 
-    
     #[test]
     fn test_ray_player_intersection() {
         let world = mock_world_data();

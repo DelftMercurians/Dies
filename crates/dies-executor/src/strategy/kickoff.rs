@@ -171,7 +171,9 @@ impl Strategy for KickoffStrategy {
                     log::info!("Adding player {} as the kicker", player_data.id);
                 } else {
                     log::info!("Adding player {} as normal role", player_data.id);
-                    e.insert(Box::new(OtherPlayer::new(self.position_generator.next().unwrap())));
+                    e.insert(Box::new(OtherPlayer::new(
+                        self.position_generator.next().unwrap(),
+                    )));
                 }
             }
         }

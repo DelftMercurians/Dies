@@ -141,10 +141,7 @@ impl BallTracker {
                             pos_v3.x, vel_v3.x, pos_v3.y, vel_v3.y, pos_v3.z, -vel_v3.z,
                         ));
                     }
-                    debug_value(
-                        "ball.speed",
-                        vel_v3.xy().norm()
-                    );
+                    debug_value("ball.speed", vel_v3.xy().norm());
                     debug_line(
                         "ball.vel",
                         pos_v3.xy(),

@@ -68,7 +68,8 @@ impl MainArgs {
     ///
     /// If there is an issue selecting a serial port, an error message will be logged and `None` will be returned.
     pub async fn serial_config(&self) -> Option<BasestationClientConfig> {
-        self.serial_port.select()
+        self.serial_port
+            .select()
             .await
             .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()

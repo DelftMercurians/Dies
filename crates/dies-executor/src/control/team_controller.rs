@@ -1,21 +1,16 @@
-use std::{
-    collections::{HashMap, HashSet},
-};
 use crate::{strategy::Strategy, PlayerControlInput};
+use std::collections::{HashMap, HashSet};
 
-use crate::{
-    roles::{RoleCtx, SkillState},
-    strategy::StrategyCtx,
-};
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     rvo::velocity_obstacle_update,
 };
-use dies_core::{
-    ControllerSettings,
-    GameState, PlayerId,
+use crate::{
+    roles::{RoleCtx, SkillState},
+    strategy::StrategyCtx,
 };
+use dies_core::{ControllerSettings, GameState, PlayerId};
 use dies_core::{PlayerCmd, WorldData};
 
 #[derive(Default)]
@@ -32,7 +27,10 @@ pub struct TeamController {
 
 impl TeamController {
     /// Create a new team controller.
-    pub fn new(strategy: HashMap<GameState, Box<dyn Strategy>>, settings: &ControllerSettings) -> Self {
+    pub fn new(
+        strategy: HashMap<GameState, Box<dyn Strategy>>,
+        settings: &ControllerSettings,
+    ) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             strategy,
@@ -63,7 +61,10 @@ impl TeamController {
                 self.player_controllers
                     .insert(*id, PlayerController::new(*id, &self.settings));
                 if self.player_controllers.len() == 1 {
-                    self.player_controllers.get_mut(id).unwrap().set_gate_keeper();
+                    self.player_controllers
+                        .get_mut(id)
+                        .unwrap()
+                        .set_gate_keeper();
                 }
             }
         }
@@ -188,4 +189,3 @@ fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
         })
         .collect()
 }
-

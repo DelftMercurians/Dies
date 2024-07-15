@@ -1,4 +1,6 @@
-use dies_core::{Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant};
+use dies_core::{
+    Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant,
+};
 use dies_protos::ssl_gc_referee_message::{referee, Referee};
 use dies_protos::{
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
@@ -273,7 +275,10 @@ impl Simulation {
 
     pub fn apply_force_to_ball(&mut self, force: Vector<f64>) {
         if let Some(ball) = self.ball.as_ref() {
-            let ball_body = self.rigid_body_set.get_mut(ball._rigid_body_handle).unwrap();
+            let ball_body = self
+                .rigid_body_set
+                .get_mut(ball._rigid_body_handle)
+                .unwrap();
             ball_body.apply_impulse(force, true);
         }
     }

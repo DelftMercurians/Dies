@@ -39,7 +39,7 @@ pub fn get_tangent_line_direction(
     circle_radius: f64,
     point: Vector2,
 ) -> (Angle, Angle) {
-    let direction:Vector2 = circle_center - point;
+    let direction: Vector2 = circle_center - point;
     let distance = direction.norm();
     let angle = Angle::from_radians(direction.y.atan2(direction.x));
     let v = Angle::from_radians((circle_radius / distance).asin());

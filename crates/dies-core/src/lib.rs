@@ -69,7 +69,5 @@ pub struct ScenarioInfo {
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub enum SimulatorCmd {
-    ApplyBallForce {
-        force: Vector2,
-    },
+    ApplyBallForce { force: Vector2 },
 }

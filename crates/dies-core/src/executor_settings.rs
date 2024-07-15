@@ -54,7 +54,7 @@ impl Default for ControllerSettings {
             angle_proportional_time_window: 0.0,
             angle_cutoff_distance: 0.03490658503988659,
             force_alpha: 10000.0,
-            force_beta: 2.0
+            force_beta: 2.0,
         }
     }
 }
@@ -90,7 +90,7 @@ impl Default for TrackerSettings {
             player_measurement_var: 0.01,
             player_yaw_lpf_alpha: 0.15,
             ball_unit_transition_var: 20.48,
-            ball_measurement_var: 0.01
+            ball_measurement_var: 0.01,
         }
     }
 }

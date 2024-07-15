@@ -1,13 +1,10 @@
+use super::RoleCtx;
 use dies_core::Angle;
 use dies_core::BallData;
-use nalgebra::Vector2;
-use super::RoleCtx;
 use dies_core::FieldGeometry;
+use nalgebra::Vector2;
 
-use crate::{
-    roles::Role,
-    PlayerControlInput,
-};
+use crate::{roles::Role, PlayerControlInput};
 
 pub struct Harasser {
     distance_behind_ball: f64,
@@ -15,7 +12,9 @@ pub struct Harasser {
 
 impl Harasser {
     pub fn new(distance_behind_ball: f64) -> Self {
-        Self { distance_behind_ball }
+        Self {
+            distance_behind_ball,
+        }
     }
 
     fn find_intersection(&self, ball: &BallData, world: &FieldGeometry) -> Vector2<f64> {
@@ -27,7 +26,7 @@ impl Harasser {
         let direction = (goal_center - ball_pos).normalize();
 
         let target_pos = ball_pos + direction * self.distance_behind_ball;
-        
+
         // Ensuring the target position is infront of the line between the ball and the goal center
         if (target_pos - goal_center).dot(&direction) < 0.0 {
             return target_pos;
@@ -35,7 +34,6 @@ impl Harasser {
 
         target_pos
     }
-
 }
 
 impl Role for Harasser {

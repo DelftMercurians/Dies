@@ -54,11 +54,17 @@ impl Task3Phase {
         }
         let new_status = match self.status {
             Status3::NoGoal => {
-                input.with_position(goal).with_yaw(yaw).with_dribbling(dribbling);
+                input
+                    .with_position(goal)
+                    .with_yaw(yaw)
+                    .with_dribbling(dribbling);
                 Status3::Ongoing
             }
             Status3::Ongoing => {
-                input.with_position(goal).with_yaw(yaw).with_dribbling(dribbling);
+                input
+                    .with_position(goal)
+                    .with_yaw(yaw)
+                    .with_dribbling(dribbling);
                 if (player_data.position - goal).norm() < 50.0
                     && (player_data.yaw - yaw).abs() < 0.1
                 {
@@ -76,9 +82,6 @@ impl Task3Phase {
 
         input
     }
-
-
-
 
     pub fn is_accomplished(&self) -> bool {
         match self.status {

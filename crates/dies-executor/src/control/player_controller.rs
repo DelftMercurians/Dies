@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use dies_core::{Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData};
+use dies_core::{
+    Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
+};
 
 use super::{
     mtp::MTP,
@@ -240,14 +242,12 @@ impl PlayerController {
             KickerControlInput::Arm => {
                 self.kicker = KickerState::Arming;
             }
-            KickerControlInput::Kick => {
-                match self.kicker {
-                    KickerState::Disarming | KickerState::Arming => {
-                        self.kicker = KickerState::Kicking(KICK_COUNT);
-                    }
-                    KickerState::Kicking(_) => {}
+            KickerControlInput::Kick => match self.kicker {
+                KickerState::Disarming | KickerState::Arming => {
+                    self.kicker = KickerState::Kicking(KICK_COUNT);
                 }
-            }
+                KickerState::Kicking(_) => {}
+            },
             KickerControlInput::Disarm | KickerControlInput::Idle => {
                 self.kicker = KickerState::Disarming;
             }

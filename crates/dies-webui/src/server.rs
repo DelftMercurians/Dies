@@ -189,7 +189,9 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         .await
         .expect("Shutting down basestation watcher task failed");
     web_task.await.expect("Shutting down server task failed");
-    debug_log_task.await.expect("Shutting down debug log task failed");
+    debug_log_task
+        .await
+        .expect("Shutting down debug log task failed");
 }
 
 async fn start_webserver(

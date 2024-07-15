@@ -1,10 +1,9 @@
+use dies_core::PlayerData;
 use dies_core::{Angle, BallData};
-use dies_core::{PlayerData};
 use nalgebra::Vector2;
 
 use crate::roles::{Role, RoleCtx};
 use crate::PlayerControlInput;
-
 
 pub struct Goalkeeper {}
 
@@ -74,14 +73,12 @@ impl Role for Goalkeeper {
             let player_y = player_data.position.y;
 
             if (player_y < ball_y && ball_vy < 0.0) || (player_y > ball_y && ball_vy > 0.0) {
-                
                 let target_pos: nalgebra::Matrix<
                     f64,
                     nalgebra::Const<2>,
                     nalgebra::Const<1>,
                     nalgebra::ArrayStorage<f64, 2, 1>,
-                > =
-                    self.find_intersection(player_data, ball, field_geom.goal_width);
+                > = self.find_intersection(player_data, ball, field_geom.goal_width);
 
                 let target_angle = Angle::between_points(player_data.position, ball.position.xy());
 

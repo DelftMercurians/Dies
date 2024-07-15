@@ -69,13 +69,15 @@ impl Cli {
                     ExitCode::FAILURE
                 }
             },
-            Some(Command::ConvertLast) => match crate::commands::convert_last_log::convert_last_log() {
-                Ok(_) => ExitCode::SUCCESS,
-                Err(err) => {
-                    eprintln!("Error converting logs: {}", err);
-                    ExitCode::FAILURE
+            Some(Command::ConvertLast) => {
+                match crate::commands::convert_last_log::convert_last_log() {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error converting logs: {}", err);
+                        ExitCode::FAILURE
+                    }
                 }
-            },
+            }
             Some(Command::TestRadio {
                 port,
                 duration,
@@ -90,15 +92,16 @@ impl Cli {
                     ExitCode::FAILURE
                 }
             },
-            Some(Command::TestVision { vision, vision_addr }) => {
-                match test_vision(vision, vision_addr).await {
-                    Ok(_) => ExitCode::SUCCESS,
-                    Err(err) => {
-                        eprintln!("Error testing vision: {}", err);
-                        ExitCode::FAILURE
-                    }
+            Some(Command::TestVision {
+                vision,
+                vision_addr,
+            }) => match test_vision(vision, vision_addr).await {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(err) => {
+                    eprintln!("Error testing vision: {}", err);
+                    ExitCode::FAILURE
                 }
-            }
+            },
             None => {
                 let args = MainArgs::parse();
                 match start_ui(args).await {

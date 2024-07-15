@@ -1,8 +1,8 @@
-use std::process::ExitCode;
 use cli::Cli;
+use std::process::ExitCode;
 
-mod commands;
 mod cli;
+mod commands;
 
 #[tokio::main]
 async fn main() -> ExitCode {

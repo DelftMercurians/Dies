@@ -312,7 +312,10 @@ mod test {
         assert!(!tracker.is_init());
 
         tracker.update_from_vision(&packet_geom, WorldInstant::now_real());
-        tracker.update_from_feedback(&PlayerFeedbackMsg::empty(PlayerId::new(1)), WorldInstant::now_real());
+        tracker.update_from_feedback(
+            &PlayerFeedbackMsg::empty(PlayerId::new(1)),
+            WorldInstant::now_real(),
+        );
         assert!(!tracker.is_init());
 
         // Second detection frame

@@ -1,12 +1,12 @@
+use crate::roles::Goalkeeper;
 use crate::roles::RoleCtx;
+use crate::strategy::kickoff::OtherPlayer;
 use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
-use crate::{PlayerControlInput};
+use crate::PlayerControlInput;
 use dies_core::{Angle, BallData, GameState, PlayerId, RoleType};
 use nalgebra::Vector2;
 use std::collections::HashMap;
-use crate::strategy::kickoff::{OtherPlayer};
-use crate::roles::Goalkeeper;
 
 use super::StrategyCtx;
 
@@ -16,16 +16,14 @@ pub struct PenaltyKickStrategy {
     gate_keeper_id: Option<PlayerId>,
     pos_interval: f64,
     pos_counter: u32,
-
 }
 
 pub struct Attacker {
     move_to_ball: Task3Phase,
     manipulating_ball: Task3Phase,
     kick: Task4Phase,
-    init_ball: Option<BallData>
+    init_ball: Option<BallData>,
 }
-
 
 impl Default for Attacker {
     fn default() -> Self {
@@ -44,7 +42,6 @@ impl Attacker {
     }
 }
 
-
 impl Role for Attacker {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         let gamestate = ctx.world.current_game_state.game_state;
@@ -53,37 +50,48 @@ impl Role for Attacker {
 
         if self.move_to_ball.is_accomplished() && gamestate == GameState::Penalty {
             //stage 3: kick
-            if self.manipulating_ball.is_accomplished(){
+            if self.manipulating_ball.is_accomplished() {
                 return self.kick.kick();
             }
-                //stage 2: dribbling
+            //stage 2: dribbling
             else {
                 // find the goal keeper
-                let goalkeeper_dir = world_data.opp_players.iter().find(|player|{
-                    let pos = player.position;
-                    pos.x >= 3500.0 && pos.x <= 4500.0 && pos.y >= -1000.0 && pos.y <= 1000.0
-                }).map(|player|
-                    Angle::between_points(player_data.position, player.position)
-                );
-                let target:Angle = goalkeeper_dir.map_or(Angle::from_radians(0.0), |dir| {
+                let goalkeeper_dir = world_data
+                    .opp_players
+                    .iter()
+                    .find(|player| {
+                        let pos = player.position;
+                        pos.x >= 3500.0 && pos.x <= 4500.0 && pos.y >= -1000.0 && pos.y <= 1000.0
+                    })
+                    .map(|player| Angle::between_points(player_data.position, player.position));
+                let target: Angle = goalkeeper_dir.map_or(Angle::from_radians(0.0), |dir| {
                     if dir.radians() > 0.0 {
-                        (Angle::between_points(  player_data.position, Vector2::new(4500.0, -1000.0)) + goalkeeper_dir.unwrap())/2.0
+                        (Angle::between_points(player_data.position, Vector2::new(4500.0, -1000.0))
+                            + goalkeeper_dir.unwrap())
+                            / 2.0
                     } else {
-                        (Angle::between_points(  player_data.position, Vector2::new(4500.0, 1000.0)) + goalkeeper_dir.unwrap())/2.0
+                        (Angle::between_points(player_data.position, Vector2::new(4500.0, 1000.0))
+                            + goalkeeper_dir.unwrap())
+                            / 2.0
                     }
                 });
-                return self.manipulating_ball.relocate(player_data, player_data.position, target, 1.0);
+                return self.manipulating_ball.relocate(
+                    player_data,
+                    player_data.position,
+                    target,
+                    1.0,
+                );
             }
         }
         // stage1: move to ball
         if let Some(ball) = &world_data.ball {
-
             if self.init_ball.is_none() {
                 self.init_ball = Some(ball.clone());
             }
             let ball_pos = self.init_ball.as_ref().unwrap().position;
-            let dir = Angle::between_points(player_data.position,ball_pos.xy());
-            self.move_to_ball.relocate(player_data, ball_pos.xy(), dir, 0.0)
+            let dir = Angle::between_points(player_data.position, ball_pos.xy());
+            self.move_to_ball
+                .relocate(player_data, ball_pos.xy(), dir, 0.0)
         } else {
             PlayerControlInput::new()
         }
@@ -92,7 +100,6 @@ impl Role for Attacker {
         RoleType::PenaltyKicker
     }
 }
-
 
 impl PenaltyKickStrategy {
     pub fn new(gate_keeper_id: Option<PlayerId>) -> Self {
@@ -124,7 +131,8 @@ impl Strategy for PenaltyKickStrategy {
             if let Some(gate_keeper_id) = self.gate_keeper_id {
                 if player_data.id == gate_keeper_id {
                     if !us_attacking {
-                        self.roles.insert(player_data.id, Box::new(Goalkeeper::new()));   
+                        self.roles
+                            .insert(player_data.id, Box::new(Goalkeeper::new()));
                     }
                     continue;
                 }
@@ -141,7 +149,7 @@ impl Strategy for PenaltyKickStrategy {
                     if self.pos_counter % 2 != 0 {
                         pos_y = -pos_y;
                     }
-                    e.insert(Box::new(OtherPlayer::new(Vector2::new(pos_x,pos_y))));
+                    e.insert(Box::new(OtherPlayer::new(Vector2::new(pos_x, pos_y))));
                 }
             }
         }
@@ -162,7 +170,7 @@ impl Strategy for PenaltyKickStrategy {
         // }
         // inputs
     }
-    
+
     fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>> {
         &mut self.roles
     }
