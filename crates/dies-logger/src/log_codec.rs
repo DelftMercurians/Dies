@@ -11,7 +11,7 @@ use std::{
 
 use protobuf::Message;
 
-use crate::{DataLog, DataLogRef};
+use crate::DataLog;
 
 // *GENERAL NOTE*: All log files use big-endian byte order for all integers.
 
@@ -102,7 +102,7 @@ impl LogFileWriter {
             LogMessage::Vision(vision) => self.write_vision(vision),
             LogMessage::Referee(referee) => self.write_referee(referee),
             LogMessage::Bytes(bytes) => self.write_bytes(bytes),
-            LogMessage::DiesData(data) => self.write_bytes(&bincode::serialize(&data)?),
+            LogMessage::DiesData(data) => self.write_bytes(&rmp_serde::to_vec_named(&data)?),
         }
     }
 
@@ -214,7 +214,7 @@ impl LogFile {
                     if let Ok(log_line) = LogLine::parse_from_bytes(&message_buf) {
                         LogMessage::DiesLog(log_line)
                     } else {
-                        match bincode::deserialize::<DataLog>(&message_buf) {
+                        match rmp_serde::from_slice::<DataLog>(&message_buf) {
                             Ok(data) => LogMessage::DiesData(data.into()),
                             Err(err) => {
                                 println!("Unknown message type, error: {}", err);
@@ -265,14 +265,12 @@ impl LogFile {
 #[cfg(test)]
 mod tests {
     use dies_core::{
-        Angle, DebugColor, DebugValue, FieldGeometry, GameState, GameStateData, PlayerData,
-        PlayerId, PlayerModel, SysStatus, Vector2, WorldData,
+        Angle, DebugValue, FieldGeometry, GameState, GameStateData, PlayerData, PlayerId,
+        PlayerModel, SysStatus, Vector2, WorldData,
     };
     use dies_protos::dies_log_line::LogLevel;
     use flate2::read::GzDecoder;
     use tempfile::NamedTempFile;
-
-    use crate::TestData;
 
     use super::*;
 
@@ -400,12 +398,14 @@ mod tests {
 
         let mut debug_map = std::collections::HashMap::new();
         debug_map.insert("test".to_string(), DebugValue::Number(10.0));
-        let messages = vec![DataLog::Test(TestData::A {
-            color: DebugColor::Red,
-        })];
+        let messages = vec![
+            DataLog::Debug(debug_map),
+            DataLog::World(setup_world_data()),
+        ];
         for message in &messages {
-            let data = bincode::serialize(&message).unwrap();
-            writer.write_bytes(&data).unwrap();
+            writer
+                .write_log_message(&LogMessage::DiesData(message.clone()))
+                .expect("Failed writing log message");
         }
 
         // Close writer

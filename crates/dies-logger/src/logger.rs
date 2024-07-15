@@ -6,12 +6,12 @@ use dies_protos::{
 };
 use log::{Log, Metadata, Record};
 use protobuf::{EnumOrUnknown, Message};
-use std::{borrow::Cow, path::PathBuf, sync::OnceLock, thread};
+use std::{path::PathBuf, sync::OnceLock, thread};
 use tokio::sync::mpsc;
 
 use crate::{
     log_codec::{LogFileWriter, LogMessage},
-    DataLogRef,
+    DataLog,
 };
 
 static PROTOBUF_LOGGER: OnceLock<AsyncProtobufLogger> = OnceLock::new();
@@ -55,21 +55,25 @@ pub fn log_referee(data: &Referee) {
     }
 }
 
-// pub fn log_world(data: &WorldData) {
-//     if let Some(logger) = PROTOBUF_LOGGER.get() {
-//         // We serialize the data here to avoid borrowing issues
-//         let data = bincode::serialize(&DataLogRef::World(Cow::Borrowed(data))).unwrap();
-//         let _ = logger.sender.send(WorkerMsg::Log(LogMessage::Bytes(data)));
-//     }
-// }
+pub fn log_world(data: &WorldData) {
+    if let Some(logger) = PROTOBUF_LOGGER.get() {
+        let _ = logger
+            .sender
+            .send(WorkerMsg::Log(LogMessage::DiesData(DataLog::World(
+                data.clone(),
+            ))));
+    }
+}
 
-// pub fn log_debug(data: &DebugMap) {
-//     if let Some(logger) = PROTOBUF_LOGGER.get() {
-//         println!("Logging debug data: {:?}", data);
-//         let data = bincode::serialize(&DataLogRef::Debug(Cow::Borrowed(data))).unwrap();
-//         let _ = logger.sender.send(WorkerMsg::Log(LogMessage::Bytes(data)));
-//     }
-// }
+pub fn log_debug(data: &DebugMap) {
+    if let Some(logger) = PROTOBUF_LOGGER.get() {
+        let _ = logger
+            .sender
+            .send(WorkerMsg::Log(LogMessage::DiesData(DataLog::Debug(
+                data.clone(),
+            ))));
+    }
+}
 
 pub fn log_bytes(bytes: &[u8]) {
     if let Some(logger) = PROTOBUF_LOGGER.get() {
@@ -120,7 +124,7 @@ impl AsyncProtobufLogger {
                         Ok(file) => {
                             println!("Logging to {}", file_path.display());
                             Some(file)
-                        },
+                        }
                         Err(e) => {
                             eprintln!("Failed to open log file: {}", e);
                             None

@@ -12,7 +12,7 @@ fn msg_to_json(msg: &dies_logger::TimestampedMessage) -> serde_json::Value {
         dies_logger::LogMessage::DiesData(data) => {
             map.insert(
                 "data".to_string(),
-                serde_json::to_value(&data.as_ref()).unwrap(),
+                serde_json::to_value(&data).unwrap(),
             );
         }
         dies_logger::LogMessage::DiesLog(_) => {}
