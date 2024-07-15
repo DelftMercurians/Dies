@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use dies_core::{
     find_intersection, get_tangent_line_direction, perp, which_side_of_robot, Angle, Vector2,
 };
@@ -108,15 +106,6 @@ pub struct Wait {
 }
 
 impl Wait {
-    /// Creates a new `WaitSkill` that waits for the given amount of time (starting
-    /// from the next frame)
-    pub fn new(amount: Duration) -> Self {
-        Self {
-            amount: amount.as_secs_f64(),
-            until: None,
-        }
-    }
-
     /// Creates a new `WaitSkill` that waits for the given amount of time in seconds
     /// (starting from the next frame)
     pub fn new_secs_f64(amount: f64) -> Self {
@@ -145,8 +134,6 @@ pub struct FetchBall {
     stop_distance: f64,
     max_relative_speed: f64,
     initial_ball_direction: Option<Vector2>,
-    last_good_heading: Option<Angle>,
-    initial_ball_velocity: Option<Angle>,
     breakbeam_ball_detected: f64,
 }
 
@@ -158,8 +145,6 @@ impl FetchBall {
             stop_distance: 200.0,
             max_relative_speed: 1000.0,
             initial_ball_direction: None,
-            last_good_heading: None,
-            initial_ball_velocity: None,
             breakbeam_ball_detected: 0.0,
         }
     }
@@ -171,37 +156,19 @@ impl Skill for FetchBall {
             let mut input = PlayerControlInput::new();
             let ball_pos = ball.position.xy();
             let ball_speed = ball.velocity.xy().norm();
-            let relative_speed = (ball.velocity.xy() - ctx.player.velocity).norm();
             let player_pos = ctx.player.position;
             let inital_ball_direction = self
                 .initial_ball_direction
                 .get_or_insert((ball_pos - player_pos).normalize());
-            let initial_ball_velocity = self.initial_ball_velocity.or_else(|| {
-                if ball.velocity.norm() > 10.0 {
-                    Some(Angle::from_vector(ball.velocity.xy()))
-                } else {
-                    None
-                }
-            });
             let ball_normal = Vector2::new(inital_ball_direction.y, -inital_ball_direction.x);
             let distance = (ball_pos - player_pos).norm();
 
-            let ball_angle = {
-                let angle: Angle = Angle::between_points(player_pos, ball_pos);
-                if distance > 50.0 {
-                    self.last_good_heading = Some(angle);
-                    angle
-                } else {
-                    self.last_good_heading.unwrap_or(angle)
-                }
-            };
-            // let ball_angle = Angle::between_points(player_pos, ball_pos);
+            let ball_angle = Angle::between_points(player_pos, ball_pos);
             input.with_yaw(ball_angle);
 
-            // let angle_diff = (ball_angle - ctx.player.yaw).radians().abs();
             if ctx.player.breakbeam_ball_detected {
                 self.breakbeam_ball_detected += ctx.world.dt;
-                if self.breakbeam_ball_detected > 0.5 {
+                if self.breakbeam_ball_detected > 0.2 {
                     return SkillProgress::success();
                 }
             } else {
@@ -211,7 +178,6 @@ impl Skill for FetchBall {
             if ball_speed < 500.0 {
                 // If the ball is too slow, just go to the ball
                 let target_pos = ball_pos + ball_angle * Vector2::new(-self.stop_distance, 0.0);
-                dies_core::debug_string(format!("p{}.BallState", ctx.player.id), "STOPPED");
                 input.with_position(target_pos);
             } else if ball_speed > 0.0 {
                 // If the ball is moving, try to intercept it
@@ -222,47 +188,17 @@ impl Skill for FetchBall {
                     ball.velocity.xy().normalize(),
                 );
 
-                //return the intersection if it is valid, otherwise return the ball position
+                // Move to the intersection point if it exists, otherwise go to the ball
                 if let Some(intersection) = intersection {
-                    dies_core::debug_cross(
-                        format!("p{}.BallIntersection", ctx.player.id),
-                        intersection,
-                        dies_core::DebugColor::Purple,
-                    );
-                    dies_core::debug_string(
-                        format!("p{}.BallState", ctx.player.id),
-                        format!("INTERCEPT, ballvel_norm is: {}", ball.velocity.norm()),
-                    );
-
                     input.with_position(intersection);
                 } else {
-                    dies_core::debug_string(
-                        format!("p{}.BallState", ctx.player.id),
-                        "cannot intercept, go to ball",
-                    );
-
                     input.with_position(ball_pos);
                 }
-                // input.with_yaw(
-                //     initial_ball_velocity
-                //         .unwrap_or(Angle::from_vector(inital_ball_direction.clone())),
-                // );
             }
 
-            // if we're close enough, use a PID to override the velocity
-            // commands of the position controller
-
-            // this is meant to avoid touching the ball at high speeds and losing control
-            // maybe this issue is not present in real life, it happens in the sim
+            // Once we're close enough, use a proptional control to approach the ball
             if distance < self.dribbling_distance && ball_speed < 500.0 {
                 input.with_dribbling(self.dribbling_speed);
-                // override the velocity inverse to the distance
-                // at distance 0, the velocity is 0
-                // at distance dribbling_distance, the velocity max_relative_speed
-                // dies_core::debug_string(
-                //     format!("p{}.BallState", ctx.player.id),
-                //     "overriding velocity",
-                // );
 
                 input.position = None;
                 input.velocity = Velocity::global(
@@ -274,7 +210,7 @@ impl Skill for FetchBall {
 
             SkillProgress::Continue(input)
         } else {
-            // wait for the ball to appear
+            // Wait for the ball to appear
             SkillProgress::Continue(PlayerControlInput::default())
         }
     }
@@ -297,15 +233,14 @@ impl FetchBallWithHeading {
 impl Skill for FetchBallWithHeading {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let player_data = ctx.player;
-        log::info!("player_data.position: {:?}", player_data.position);
         let world_data = ctx.world;
         let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius * 10.0;
-        let target_pos: Vector2 =
-            self.init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
-        dies_core::debug_value("p0.target_pos_x", target_pos.x);
-        dies_core::debug_value("p0.target_pos_y", target_pos.y);
+
+        let target_pos = self.init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
+
         if (player_data.position - target_pos).norm() < 100.0
-            && (player_data.yaw - self.target_heading).abs() < 0.1
+            && (player_data.yaw - self.target_heading).abs()
+                < ctx.world.player_model.dribbler_angle.radians() / 2.0
         {
             return SkillProgress::Done(SkillResult::Success);
         }
@@ -320,53 +255,48 @@ impl Skill for FetchBallWithHeading {
             let direct_target =
                 which_side_of_robot(self.target_heading, target_pos, player_data.position);
             if direct_target {
-                dies_core::debug_value("p0.target_pos_x", target_pos.x);
-                dies_core::debug_value("p0.target_pos_y", target_pos.y);
                 input
                     .with_position(target_pos)
                     .with_yaw(self.target_heading);
                 SkillProgress::Continue(input)
             } else {
-                let (dirA, dirB) = get_tangent_line_direction(
+                let (dir_a, dir_b) = get_tangent_line_direction(
                     ball.position.xy(),
                     ball_radius - 20.0,
                     player_data.position,
                 );
-                let target_posA = find_intersection(
+                let target_pos_a = find_intersection(
                     player_data.position,
-                    Angle::to_vector(&dirA),
+                    Angle::to_vector(&dir_a),
                     target_pos,
                     perp(self.target_heading.to_vector()),
                 );
-                let target_posB = find_intersection(
+                let target_pos_b = find_intersection(
                     player_data.position,
-                    Angle::to_vector(&dirB),
+                    Angle::to_vector(&dir_b),
                     target_pos,
                     perp(self.target_heading.to_vector()),
                 );
-                log::info!("target_posA: {:?}", target_posA);
-                log::info!("target_posB: {:?}", target_posB);
+
                 // pick the nearest point as the target
-                let mut indir_target_pos = if (target_posA.unwrap() - self.init_ball_pos).norm()
-                    < (target_posB.unwrap() - self.init_ball_pos).norm()
+                let mut indir_target_pos = if (target_pos_a.unwrap() - self.init_ball_pos).norm()
+                    < (target_pos_b.unwrap() - self.init_ball_pos).norm()
                 {
-                    target_posA.unwrap()
+                    target_pos_a.unwrap()
                 } else {
-                    target_posB.unwrap()
+                    target_pos_b.unwrap()
                 };
 
                 if indir_target_pos.x.is_nan() || indir_target_pos.y.is_nan() {
-                    let dirC = perp(player_data.position - ball.position.xy());
+                    let dir_c = perp(player_data.position - ball.position.xy());
                     indir_target_pos = find_intersection(
                         player_data.position,
-                        dirC,
+                        dir_c,
                         target_pos,
                         perp(self.target_heading.to_vector()),
                     )
                     .unwrap();
                 }
-                dies_core::debug_value("p0.target_pos_x", indir_target_pos.x);
-                dies_core::debug_value("p0.target_pos_y", indir_target_pos.y);
                 input
                     .with_position(indir_target_pos)
                     .with_yaw(self.target_heading);

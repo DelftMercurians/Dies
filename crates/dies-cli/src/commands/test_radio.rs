@@ -18,13 +18,13 @@ pub async fn test_radio(
         BasestationClientConfig::new(port, dies_basestation_client::BaseStationProtocol::V1);
     let mut bs_handle = BasestationHandle::spawn(bs_config)?;
 
-    println!("Starting radio test in 3 seconds...");
-    sleep(Duration::from_secs(1)).await;
-    println!("2...");
-    sleep(Duration::from_secs(1)).await;
-    println!("1...");
-    sleep(Duration::from_secs(1)).await;
-    println!("Starting radio test!");
+    // println!("Starting radio test in 3 seconds...");
+    // sleep(Duration::from_secs(1)).await;
+    // println!("2...");
+    // sleep(Duration::from_secs(1)).await;
+    // println!("1...");
+    // sleep(Duration::from_secs(1)).await;
+    // println!("Starting radio test!");
 
     let mut interval = tokio::time::interval(Duration::from_secs_f64(1.0 / 30.0));
     let start = Instant::now();
