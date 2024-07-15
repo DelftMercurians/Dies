@@ -6,6 +6,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use dies_core::{
     ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, SimulatorCmd, WorldUpdate,
 };
+use dies_protos::ssl_gc_referee_message::referee::Command;
 
 #[derive(Debug)]
 pub enum ControlMsg {
@@ -16,6 +17,9 @@ pub enum ControlMsg {
     PlayerOverrideCommand(PlayerId, PlayerOverrideCommand),
     SetPause(bool),
     UpdateSettings(ExecutorSettings),
+    GcCommand {
+        command: Command,
+    },
     SimulatorCmd(SimulatorCmd),
     Stop,
 }

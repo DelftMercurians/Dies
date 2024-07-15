@@ -359,6 +359,7 @@ export type UiCommand =
 	| { type: "StartScenario", data: {
 	scenario: ScenarioType;
 }}
+	| { type: "GcCommand", data: string }
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
@@ -458,6 +459,10 @@ export enum RoleType {
 	Goalkeeper = "Goalkeeper",
 	/** The attacking kicker during kick-off */
 	KickoffKicker = "KickoffKicker",
+	/** penalty kicker */
+	PenaltyKicker = "PenaltyKicker",
+	/** freekicker */
+	FreeKicker = "FreeKicker",
 }
 
 export type UiWorldState = 

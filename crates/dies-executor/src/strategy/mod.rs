@@ -1,8 +1,11 @@
 mod adhoc;
-
-pub use adhoc::AdHocStrategy;
+pub mod free_kick;
+pub mod kickoff;
+pub mod penalty_kick;
+mod task;
 
 use crate::roles::Role;
+pub use adhoc::AdHocStrategy;
 use dies_core::{PlayerId, WorldData};
 use std::collections::HashMap;
 

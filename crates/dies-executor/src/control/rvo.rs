@@ -4,7 +4,7 @@ use dies_core::{
 use std::f64::{consts::PI, EPSILON};
 
 // Constants
-const PLAYER_MARGIN: f64 = 20.0;
+const PLAYER_MARGIN: f64 = 30.0;
 const OVER_APPROX_C2S: f64 = 1.5;
 
 
@@ -37,7 +37,7 @@ pub fn velocity_obstacle_update(
     // Consider other agents
     for other_player in players.iter() {
         if other_player.position != player.position {
-            let rvo_ba = compute_velocity_obstacle(&player, other_player, &vo_type, player_radius);
+            let rvo_ba = compute_velocity_obstacle(player, other_player, &vo_type, player_radius);
             rvo_ba_all.push(rvo_ba);
         }
     }
@@ -46,7 +46,7 @@ pub fn velocity_obstacle_update(
     for obstacle in obstacles {
         let rvo_ba = match obstacle {
             Obstacle::Circle { center, radius } => {
-                compute_obstacle_velocity_obstacle(&player, center, radius, player_radius)
+                compute_obstacle_velocity_obstacle(player, center, radius, player_radius)
             }
             Obstacle::Rectangle { min, max } => {
                 // strange stuff i do to convert types?
@@ -59,7 +59,7 @@ pub fn velocity_obstacle_update(
     }
 
     // Compute optimal velocity
-    intersect(&player, &desired_velocity, &rvo_ba_all)
+    intersect(player, desired_velocity, &rvo_ba_all)
 }
 
 // Compute velocity obstacle for agent-obstacle interaction
@@ -224,10 +224,9 @@ fn intersect(
     if is_velocity_suitable(&position, desired_velocity, velocity_obstacles) {
         debug_string(
             format!("{}-chosen-v", player.id),
-            format!("desired velocity"),
+            "desired velocity".to_string(),
         );
-        println!("asdf");
-        return desired_velocity.clone();
+        return *desired_velocity;
     } else {
         unsuitable_v.push(*desired_velocity);
     }
@@ -238,8 +237,7 @@ fn intersect(
     let max_radius = norm_v * 1.5; // Sample up to 1.5 times the desired velocity magnitude
 
     // Sample velocities and check if they satisfy all constraints
-    for theta in (0..angular_samples).map(|t| (t as f64 / angular_samples as f64) * 2.0 * PI - PI)
-    {
+    for theta in (0..angular_samples).map(|t| (t as f64 / angular_samples as f64) * 2.0 * PI - PI) {
         for rad in (1..radial_samples).map(|r| (r as f64 / radial_samples as f64) * max_radius) {
             let new_v = Vector2::new(rad * theta.cos(), rad * theta.sin());
             if is_velocity_suitable(&player.position, &new_v, velocity_obstacles) {
@@ -268,7 +266,8 @@ fn intersect(
     println!("no suitable velocity is found");
 
     // If no suitable velocity found, choose the "least bad" option
-    let least_bad = unsuitable_v
+
+    unsuitable_v
         .into_iter()
         .min_by(|v1, v2| {
             let tc1 = time_to_collision(&position, v1, velocity_obstacles);
@@ -278,9 +277,7 @@ fn intersect(
             println!("{}", tc1);
             cost1.partial_cmp(&cost2).unwrap()
         })
-        .unwrap();
-
-    least_bad
+        .unwrap()
 }
 
 // Function to check if a velocity satisfies all constraints

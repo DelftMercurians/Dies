@@ -1,12 +1,13 @@
 use super::RoleCtx;
 use crate::{
-    invoke_skill, roles::{
-        skills::{FetchBall, GoToPosition, Kick, Wait},
+    invoke_skill,
+    roles::{
+        skills::{FetchBall, GoToPosition, Kick},
         Role, SkillProgress,
-    }, skill, PlayerControlInput
+    },
+    skill, PlayerControlInput,
 };
 use dies_core::{Angle, Vector2};
-
 
 pub struct FetcherRole {}
 

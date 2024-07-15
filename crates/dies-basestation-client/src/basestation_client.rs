@@ -143,6 +143,7 @@ impl BasestationHandle {
                             Connection::V1(monitor) => {
                                 let mut commands = [None; glue::MAX_NUM_ROBOTS];
                                 commands[robot_id] = Some(cmd.into());
+                                println!("Sending command {:?}", commands[robot_id]);
                                 resp.send(
                                     monitor
                                         .send(commands)
@@ -180,7 +181,7 @@ impl BasestationHandle {
                         match &mut connection {
                             Connection::V1(monitor) => {
                                 let mut commands = [None; glue::MAX_NUM_ROBOTS];
-                                commands[*id] = Some(cmd.clone().into());
+                                commands[*id] = Some(cmd.into());
                                 let _ = monitor
                                     .send(commands)
                                     .map_err(|err| log::error!("Error sending stop: {:?}", err));
@@ -201,7 +202,7 @@ impl BasestationHandle {
                             .enumerate()
                             .filter_map(|(id, msg)| match msg.primary_status() {
                                 Some(status) if !matches!(status, HG_Status::NO_REPLY) => {
-                                    all_ids.insert(id as usize);
+                                    all_ids.insert(id);
                                     let player_id = id_map
                                         .iter()
                                         .find_map(

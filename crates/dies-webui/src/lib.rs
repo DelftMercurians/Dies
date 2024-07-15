@@ -87,6 +87,7 @@ pub(crate) enum UiCommand {
     StartScenario {
         scenario: ScenarioType,
     },
+    GcCommand(String),
     Stop,
 }
 

@@ -282,4 +282,8 @@ pub enum RoleType {
     Goalkeeper,
     /// The attacking kicker during kick-off
     KickoffKicker,
+    /// penalty kicker
+    PenaltyKicker,
+    /// freekicker
+    FreeKicker,
 }

@@ -48,10 +48,9 @@ impl YawController {
                 -self.max_angular_acceleration,
                 self.max_angular_acceleration,
             );
-            let new_angular_velocity = (current_angular_velocity + acceleration * dt)
-                .clamp(-self.max_angular_velocity, self.max_angular_velocity);
 
-            new_angular_velocity
+            (current_angular_velocity + acceleration * dt)
+                .clamp(-self.max_angular_velocity, self.max_angular_velocity)
         } else {
             0.0
         }

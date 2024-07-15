@@ -14,11 +14,12 @@ nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
 rand = "0.8.5"
 serde = { version = "1.0.192", features = ["derive"] }
 typeshare = "1.0.3"
-glue = { git = "https://github.com/DelftMercurians/glue.git", rev = "1a6dd93475ae3450b78c7214a30a2f45b2ceefd7" }
+glue = { git = "https://github.com/DelftMercurians/glue.git", tag = "v0.4.0" }
 serde_json = "1.0.120"
 tokio = { version = "1.38.0", features = ["fs", "io-std", "rt", "sync"] }
 uuid = { version = "1.9.1", features = ["v4"] }
 dodgy_2d = { git = "https://github.com/DelftMercurians/dodgy.git", branch = "fix/perpendicular-velocity" }
+geo = "0.23"
 
 [dev-dependencies]
 approx = "0.5.1"
