@@ -15,7 +15,7 @@ import { ChevronUp, ChevronDown } from "lucide-react";
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 
-const Basestation: FC<{ className: string }> = ({ className }) => {
+const Basestation: FC<{ className: string; onSelectPlayer: (id: number) => void; }> = ({ className, onSelectPlayer }) => {
   const { data } = useBasestationInfo();
 
   if (!data) return null;
@@ -28,7 +28,7 @@ const Basestation: FC<{ className: string }> = ({ className }) => {
       <div className="grid grid-cols-1 gap-4">
         {playerEntries.length > 0 ? (
           playerEntries.map(([id, player]) => (
-            <PlayerStatus key={id} player={player} />
+            <PlayerStatus key={id} player={player} onClick={() => onSelectPlayer(player.id)} />
           ))
         ) : (
           <div className="text-center text-gray-400">No robots connected</div>
@@ -49,20 +49,19 @@ const StatusIndicator: FC<{
     <TooltipTrigger asChild>
       <div className="flex items-center space-x-2 cursor-help">
         <div
-          className={`w-2 h-2 rounded-full ${
-            status === SysStatus.Emergency
-              ? "bg-red-500"
-              : [
-                    SysStatus.Stop,
-                    SysStatus.NoReply,
-                    SysStatus.Overtemp,
-                    SysStatus.Armed,
-                  ].includes(status as SysStatus)
-                ? "bg-yellow-500"
-                : status === SysStatus.Ok
-                  ? "bg-green-500"
-                  : "bg-gray-500"
-          }`}
+          className={`w-2 h-2 rounded-full ${status === SysStatus.Emergency
+            ? "bg-red-500"
+            : [
+              SysStatus.Stop,
+              SysStatus.NoReply,
+              SysStatus.Overtemp,
+              SysStatus.Armed,
+            ].includes(status as SysStatus)
+              ? "bg-yellow-500"
+              : status === SysStatus.Ok
+                ? "bg-green-500"
+                : "bg-gray-500"
+            }`}
         />
         <span className="text-xs">{label}</span>
       </div>
@@ -80,7 +79,7 @@ const StatusIndicator: FC<{
   </Tooltip>
 );
 
-const PlayerStatus: FC<{ player: PlayerFeedbackMsg }> = ({ player }) => {
+const PlayerStatus: FC<{ player: PlayerFeedbackMsg; onClick: () => void; }> = ({ player, onClick }) => {
   const [isMotorsExpanded, setIsMotorsExpanded] = React.useState(false);
   const [isSensorExpanded, setIsSensorExpanded] = React.useState(false);
 
@@ -89,7 +88,7 @@ const PlayerStatus: FC<{ player: PlayerFeedbackMsg }> = ({ player }) => {
       <CardContent className="p-4">
         <div className="space-y-2">
           <div className="flex flex-row gap-6">
-            <h3 className="text-lg font-semibold">Robot {player.id}</h3>
+            <h3 onClick={onClick} className="text-lg font-semibold cursor-pointer">Robot {player.id}</h3>
             <StatusIndicator status={player.primary_status} label="Status" />
           </div>
 
