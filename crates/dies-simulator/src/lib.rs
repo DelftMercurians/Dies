@@ -190,7 +190,7 @@ pub struct Simulation {
     geometry_packet: SSL_WrapperPacket,
     referee_message: VecDeque<Referee>,
     feedback_interval: IntervalTrigger,
-    feedback_queue: Vec<PlayerFeedbackMsg>,
+    feedback_queue: VecDeque<PlayerFeedbackMsg>,
 }
 
 impl Simulation {
@@ -228,7 +228,7 @@ impl Simulation {
             geometry_packet,
             referee_message: VecDeque::new(),
             feedback_interval: IntervalTrigger::new(feedback_interval),
-            feedback_queue: Vec::new(),
+            feedback_queue: VecDeque::new(),
         };
 
         // Create the ground
@@ -328,7 +328,7 @@ impl Simulation {
     }
 
     pub fn feedback(&mut self) -> Option<PlayerFeedbackMsg> {
-        self.feedback_queue.pop()
+        self.feedback_queue.pop_front()
     }
 
     pub fn step(&mut self, dt: f64) {
@@ -382,17 +382,15 @@ impl Simulation {
                 let mut feedback = PlayerFeedbackMsg::empty(player.id);
                 feedback.breakbeam_ball_detected = Some(player.breakbeam);
                 self.feedback_queue
-                    .push(PlayerFeedbackMsg::empty(player.id));
+                    .push_back(feedback);
             }
 
             let mut is_kicking = false;
             if let Some(command) = commands_to_exec.get(&player.id) {
                 // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
                 // Angular velocity is in rad/s and +w means counter-clockwise
-                // To make things easier, we swap the x and y velocities so that they
-                // correspond to the simulator's frame
-                player.target_velocity = Vector::new(command.sx, command.sy, 0.0) * 1000.0; // m/s to mm/s
-                player.target_ang_velocity = command.w;
+                player.target_velocity = Vector::new(command.sx, -command.sy, 0.0) * 1000.0; // m/s to mm/s
+                player.target_ang_velocity = -command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
                 is_kicking = matches!(command.kicker_cmd, KickerCmd::Kick);

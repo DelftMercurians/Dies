@@ -3,7 +3,7 @@ use crate::{
     invoke_skill,
     roles::{
         skills::{FetchBall, GoToPosition, Kick},
-        Role, SkillProgress,
+        Role, SkillProgress, SkillResult,
     },
     skill, PlayerControlInput,
 };
@@ -19,19 +19,25 @@ impl FetcherRole {
 
 impl Role for FetcherRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        skill!(ctx, FetchBall::new());
-
-        match invoke_skill!(
-            ctx,
-            GoToPosition::new(Vector2::new(0.0, 0.0))
-                .with_heading(Angle::from_degrees(0.0))
-                .with_ball()
-        ) {
-            SkillProgress::Continue(mut input) => {
-                input.with_kicker(crate::KickerControlInput::Arm);
-                return input;
+        loop {
+            match skill!(ctx, FetchBall::new()) {
+                crate::roles::SkillResult::Success => {},
+                crate::roles::SkillResult::Failure => continue,
             }
-            SkillProgress::Done(_) => {}
+
+            match invoke_skill!(
+                ctx,
+                GoToPosition::new(Vector2::new(0.0, 0.0))
+                    .with_heading(Angle::from_degrees(0.0))
+                    .with_ball()
+            ) {
+                SkillProgress::Continue(mut input) => {
+                    input.with_kicker(crate::KickerControlInput::Arm);
+                    return input;
+                }
+                SkillProgress::Done(SkillResult::Failure) => continue,
+                SkillProgress::Done(SkillResult::Success) => break,
+            }
         }
 
         skill!(ctx, Kick::new());

@@ -1,25 +1,14 @@
 use dies_core::Angle;
 
-// Assuming the Angle type is in scope or in the same module
-
 pub struct YawController {
-    max_angular_velocity: f64,
-    max_angular_acceleration: f64,
     kp: f64,
     cutoff_distance: f64,
     target_yaw: Option<Angle>,
 }
 
 impl YawController {
-    pub fn new(
-        max_angular_velocity: f64,
-        max_angular_acceleration: f64,
-        kp: f64,
-        cutoff_distance: f64,
-    ) -> Self {
+    pub fn new(kp: f64, cutoff_distance: f64) -> Self {
         YawController {
-            max_angular_velocity,
-            max_angular_acceleration,
             cutoff_distance,
             kp,
             target_yaw: None,
@@ -30,7 +19,14 @@ impl YawController {
         self.target_yaw = Some(setpoint);
     }
 
-    pub fn update(&self, current_yaw: Angle, current_angular_velocity: f64, dt: f64) -> f64 {
+    pub fn update(
+        &self,
+        current_yaw: Angle,
+        current_angular_velocity: f64,
+        dt: f64,
+        max_angular_velocity: f64,
+        max_angular_acceleration: f64,
+    ) -> f64 {
         if let Some(target_yaw) = self.target_yaw {
             let error = target_yaw - current_yaw;
 
@@ -45,26 +41,18 @@ impl YawController {
             // Limit the desired angular velocity and acceleration
             let acceleration = (desired_angular_velocity - current_angular_velocity) / dt;
             let acceleration = acceleration.clamp(
-                -self.max_angular_acceleration,
-                self.max_angular_acceleration,
+                -max_angular_acceleration,
+                max_angular_acceleration,
             );
 
             (current_angular_velocity + acceleration * dt)
-                .clamp(-self.max_angular_velocity, self.max_angular_velocity)
+                .clamp(-max_angular_velocity, max_angular_velocity)
         } else {
             0.0
         }
     }
 
-    pub fn update_settings(
-        &mut self,
-        max_angular_velocity: f64,
-        max_angular_acceleration: f64,
-        kp: f64,
-        cutoff_distance: f64,
-    ) {
-        self.max_angular_velocity = max_angular_velocity;
-        self.max_angular_acceleration = max_angular_acceleration;
+    pub fn update_settings(&mut self, kp: f64, cutoff_distance: f64) {
         self.kp = kp;
         self.cutoff_distance = cutoff_distance;
     }
