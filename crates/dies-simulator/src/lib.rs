@@ -95,7 +95,7 @@ impl Default for SimulationConfig {
             max_ang_accel: 50.0 * 720.0f64.to_radians(),
             max_ang_vel: 0.5 * 720.0f64.to_radians(),
             velocity_treshold: 1.0,
-            angular_velocity_treshold: 0.1,
+            angular_velocity_treshold: 0.0,
             feedback_interval: 0.5,
 
             // FIELD GEOMRTY PARAMETERS
@@ -133,6 +133,7 @@ struct Player {
     target_velocity: Vector<f64>,
     target_ang_velocity: f64,
     current_dribble_speed: f64,
+    breakbeam: bool,
 }
 
 #[derive(Debug)]
@@ -378,6 +379,8 @@ impl Simulation {
             }
 
             if send_feedback {
+                let mut feedback = PlayerFeedbackMsg::empty(player.id);
+                feedback.breakbeam_ball_detected = Some(player.breakbeam);
                 self.feedback_queue
                     .push(PlayerFeedbackMsg::empty(player.id));
             }
@@ -423,21 +426,8 @@ impl Simulation {
             rigid_body.set_linvel(new_vel, true);
 
             let target_ang_vel = player.target_ang_velocity;
-            let ang_velocity = rigid_body.angvel().z;
-            let delta = (target_ang_vel - ang_velocity).abs();
-            let new_ang_vel = if delta > self.config.angular_velocity_treshold {
-                let dir = (target_ang_vel - ang_velocity).signum();
-                let new_ang_vel = ang_velocity + (dir * self.config.max_ang_accel * dt);
-                // Check for overshoot
-                if (target_ang_vel - new_ang_vel).abs() < self.config.angular_velocity_treshold {
-                    target_ang_vel
-                } else {
-                    new_ang_vel
-                }
-            } else {
-                target_ang_vel
-            };
-            let new_ang_vel = new_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);
+            let new_ang_vel =
+                target_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);
             rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
 
             // Check if the ball is in the dribbler
@@ -457,6 +447,7 @@ impl Simulation {
                     if distance < self.config.player_radius + self.config.dribbler_radius
                         && angle < self.config.dribbler_angle
                     {
+                        player.breakbeam = true;
                         if is_kicking {
                             let force = yaw * self.config.kicker_strength;
                             ball_body.add_force(force, true);
@@ -471,6 +462,8 @@ impl Simulation {
                             // dampen the ball's velocity
                             ball_body.set_linear_damping(self.config.ball_damping * 2.0);
                         }
+                    } else {
+                        player.breakbeam = false;
                     }
                 }
             }
@@ -655,6 +648,7 @@ impl SimulationBuilder {
             target_velocity: Vector::zeros(),
             target_ang_velocity: 0.0,
             current_dribble_speed: 0.0,
+            breakbeam: false,
         });
     }
 }

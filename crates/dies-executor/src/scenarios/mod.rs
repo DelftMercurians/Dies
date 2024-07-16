@@ -2,7 +2,9 @@
 mod scenario;
 
 use crate::roles::attacker::Attacker;
+use crate::roles::dummy_role::DummyRole;
 use crate::roles::harasser::Harasser;
+use crate::roles::skills::FetchBallWithHeading;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
@@ -16,7 +18,7 @@ use crate::{
     },
     strategy::AdHocStrategy,
 };
-use dies_core::{GameState, Vector2, Vector3};
+use dies_core::{GameState, Vector2, Vector3, Angle};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -108,15 +110,15 @@ fn test_role_multiple_targets() -> ScenarioSetup {
 
 fn three_attackers() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(TestRole::new(vec![Vector2::new(1000.0, 1000.0)])));
-
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, 2000.0))));
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, -2000.0))));
+    strategy.add_role(Box::new(Attacker::new(Vector2::new(-200.0, 0.0))));
     let mut scenario = ScenarioSetup::new(strategy, None);
-    scenario.add_own_player_at(Vector2::new(-1000.0, -1000.0));
-    scenario.add_opp_player_at(Vector2::new(-500.0, 0.0));
-    // scenario.add_opp_player_at(Vector2::new(0.0, 500.0));
-    // scenario.add_opp_player_at(Vector2::new(500.0, -500.0));
-    // scenario.add_opp_player_at(Vector2::new(-250.0, 750.0));
-
+    scenario
+        .add_ball()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player();
     scenario
 }
 
@@ -132,15 +134,15 @@ fn fetch_ball_test_live() -> ScenarioSetup {
     scenario
 }
 
-fn dribble() -> ScenarioSetup {
+fn fetch_ball_with_heading() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(DribbleRole::new()));
-
+    let skill = FetchBallWithHeading::new(Angle::from_degrees(90.0));
+    strategy.add_role(Box::new(DummyRole::new(Box::new(skill))));
     let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
-        .add_own_player_at(Vector2::new(-2000.0, -2000.0))
-        .add_ball();
-
+        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_own_player_at(Vector2::new(1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
 }
 
@@ -226,6 +228,7 @@ scenarios! {
     test_role_multiple_targets,
     dribble,
     fetch_ball_test_live,
+    fetch_ball_with_heading,
     free_kick,
     penalty_kick,
     kickoff,

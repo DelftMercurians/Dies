@@ -120,6 +120,12 @@ impl ScenarioSetup {
         }
     }
 
+    fn has_requirements(&self) -> bool {
+        !self.own_players.is_empty()
+            || !self.opp_players.is_empty()
+            || !matches!(self.ball, BallPlacement::NoBall)
+    }
+
     /// Create an executor in simulation mode from this setup.
     pub fn into_simulation(
         self,
@@ -163,26 +169,28 @@ impl ScenarioSetup {
         ssl_config: VisionClientConfig,
         bs_client: BasestationHandle,
     ) -> Result<Executor> {
-        // Wait for the setup check to succeed
-        let mut tracker = WorldTracker::new(&settings);
         let mut ssl_client = VisionClient::new(ssl_config.clone()).await?;
-        let mut check_interval = tokio::time::interval(LIVE_CHECK_INTERVAL);
-        let max_iterations = LIVE_CHECK_TIMEOUT.as_millis() / LIVE_CHECK_INTERVAL.as_millis();
-        let mut iterations = 0;
-        loop {
-            let packet = ssl_client.recv().await?;
-            tracker.update_from_vision(&packet, WorldInstant::now_real());
+        if self.has_requirements() {
+            // Wait for the setup check to succeed
+            let mut tracker = WorldTracker::new(&settings);
+            let mut check_interval = tokio::time::interval(LIVE_CHECK_INTERVAL);
+            let max_iterations = LIVE_CHECK_TIMEOUT.as_millis() / LIVE_CHECK_INTERVAL.as_millis();
+            let mut iterations = 0;
+            loop {
+                let packet = ssl_client.recv().await?;
+                tracker.update_from_vision(&packet, WorldInstant::now_real());
 
-            if self.check_live(tracker.get()) {
-                break;
+                if self.check_live(tracker.get()) {
+                    break;
+                }
+
+                iterations += 1;
+                if iterations >= max_iterations {
+                    bail!("Timeout while waiting for scenario to be live");
+                }
+
+                check_interval.tick().await;
             }
-
-            iterations += 1;
-            if iterations >= max_iterations {
-                bail!("Timeout while waiting for scenario to be live");
-            }
-
-            check_interval.tick().await;
         }
 
         Ok(Executor::new_live(

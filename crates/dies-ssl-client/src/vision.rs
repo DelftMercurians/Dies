@@ -10,7 +10,11 @@ pub enum VisionClientConfig {
     /// Receive messages from a TCP socket.
     Tcp { host: String, port: u16 },
     /// Receive messages from a UDP socket.
-    Udp { host: String, port: u16 },
+    Udp {
+        host: String,
+        port: u16,
+        interface: Option<String>,
+    },
 }
 
 /// Async client for SSL Vision.
@@ -25,7 +29,11 @@ impl VisionClient {
             VisionClientConfig::Tcp { host, port } => Transport::tcp(&host, port)
                 .await
                 .context("Failed to create TCP transport")?,
-            VisionClientConfig::Udp { host, port } => Transport::udp(&host, port)
+            VisionClientConfig::Udp {
+                host,
+                port,
+                interface,
+            } => Transport::udp(&host, port, interface)
                 .await
                 .context("Failed to create UDP transport")?,
         };

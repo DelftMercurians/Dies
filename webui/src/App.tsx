@@ -56,7 +56,7 @@ const App: React.FC = () => {
   const debugData = useDebugData();
   const tabListRef = useRef<HTMLDivElement>(null);
   const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
-  
+
   const GCcommands = [
     "HALT", "STOP", "NORMAL_START", "FORCE_START", "PREPARE_KICKOFF_YELLOW",
     "PREPARE_KICKOFF_BLUE", "PREPARE_PENALTY_YELLOW", "PREPARE_PENALTY_BLUE",
@@ -221,10 +221,10 @@ const App: React.FC = () => {
 
 
         <Select
-            value={
-              selectedCommand
-            }
-            onValueChange={(val) => handleCommandChange(val)}
+          value={
+            selectedCommand ?? undefined
+          }
+          onValueChange={(val) => handleCommandChange(val)}
         >
           <SelectTrigger className="w-64">
             <SelectValue placeholder="Select GC command" />
@@ -232,9 +232,9 @@ const App: React.FC = () => {
 
           <SelectContent>
             {GCcommands.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
-                </SelectItem>
+              <SelectItem key={c} value={c}>
+                {c}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -282,7 +282,7 @@ const App: React.FC = () => {
                 <SettingsEditor settingsKey="tracker_settings" />
               </TabsContent>
               <TabsContent value="basestation" asChild>
-                <Basestation className="h-full" />
+                <Basestation onSelectPlayer={(id) => setSelectedPlayerId(id)} className="h-full" />
               </TabsContent>
               <TabsContent value="debug" asChild>
                 <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
@@ -337,11 +337,11 @@ const App: React.FC = () => {
           "bg-slate-800",
           executorStatus.type === "StartingScenario" && "bg-yellow-500",
           executorStatus.type === "RunningExecutor" &&
-            worldState.status === "connected" &&
-            "bg-green-500",
+          worldState.status === "connected" &&
+          "bg-green-500",
           (backendLoadingState === "error" ||
             executorStatus.type === "Failed") &&
-            "bg-red-500",
+          "bg-red-500",
         )}
       >
         {backendLoadingState === "error"

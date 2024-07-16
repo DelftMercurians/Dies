@@ -143,7 +143,7 @@ impl FetchBall {
             dribbling_distance: 1000.0,
             dribbling_speed: 1.0,
             stop_distance: 200.0,
-            max_relative_speed: 1000.0,
+            max_relative_speed: 1500.0,
             initial_ball_direction: None,
             breakbeam_ball_detected: 0.0,
         }
@@ -217,14 +217,14 @@ impl Skill for FetchBall {
 }
 
 pub struct FetchBallWithHeading {
-    init_ball_pos: Vector2,
+    init_ball_pos: Option<Vector2>,
     target_heading: Angle,
 }
 
 impl FetchBallWithHeading {
-    pub fn new(init_ball_pos: Vector2, target_heading: Angle) -> Self {
+    pub fn new(target_heading: Angle) -> Self {
         Self {
-            init_ball_pos,
+            init_ball_pos: None,
             target_heading,
         }
     }
@@ -236,7 +236,14 @@ impl Skill for FetchBallWithHeading {
         let world_data = ctx.world;
         let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius * 10.0;
 
-        let target_pos = self.init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
+        let ball_pos = if let Some(ball) = world_data.ball.as_ref() {
+            ball.position.xy()
+        } else {
+            return SkillProgress::Continue(PlayerControlInput::default());
+        };
+        let init_ball_pos = self.init_ball_pos.get_or_insert(ball_pos);
+
+        let target_pos = *init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
 
         if (player_data.position - target_pos).norm() < 100.0
             && (player_data.yaw - self.target_heading).abs()
@@ -246,7 +253,7 @@ impl Skill for FetchBallWithHeading {
         }
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
-            let ball_distance = (ball.position.xy() - self.init_ball_pos).norm();
+            let ball_distance = (ball.position.xy() - *init_ball_pos).norm();
             if ball_distance >= 100.0 {
                 //ball movement
                 return SkillProgress::Done(SkillResult::Failure);
@@ -279,8 +286,8 @@ impl Skill for FetchBallWithHeading {
                 );
 
                 // pick the nearest point as the target
-                let mut indir_target_pos = if (target_pos_a.unwrap() - self.init_ball_pos).norm()
-                    < (target_pos_b.unwrap() - self.init_ball_pos).norm()
+                let mut indir_target_pos = if (target_pos_a.unwrap() - *init_ball_pos).norm()
+                    < (target_pos_b.unwrap() - *init_ball_pos).norm()
                 {
                     target_pos_a.unwrap()
                 } else {

@@ -96,20 +96,20 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
   const debugData = useDebugData();
   const playerDebugData = debugData
     ? (Object.entries(debugData)
-        .filter(
-          ([key, val]) =>
-            key.startsWith(`p${selectedPlayerId}`) && val.type !== "Shape",
-        )
-        .map(([key, val]) => [
-          key.slice(`p${selectedPlayerId}`.length + 1),
-          val,
-        ]) as PlayerDebugValues)
+      .filter(
+        ([key, val]) =>
+          key.startsWith(`p${selectedPlayerId}`) && val.type !== "Shape",
+      )
+      .map(([key, val]) => [
+        key.slice(`p${selectedPlayerId}`.length + 1),
+        val,
+      ]) as PlayerDebugValues)
     : [];
   const playerDebugMap = Object.fromEntries(
     playerDebugData.map(([k, v]) => [k, v.data]),
   );
 
-  if (world.status !== "connected" || typeof selectedPlayerId !== "number")
+  if (typeof selectedPlayerId !== "number")
     return (
       <div className="flex-1 flex flex-col gap-6 p-4 h-full w-full justify-center items-center">
         <h1 className="text-2xl font-bold mb-2 text-center text-slate-300">
@@ -118,11 +118,11 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
       </div>
     );
 
-  const selectedPlayer = world.data.own_players.find(
+  const selectedPlayer = world.status === "connected" ? world.data.own_players.find(
     (p) => p.id === selectedPlayerId,
-  );
-  if (!selectedPlayer)
-    return <div>Player with id {selectedPlayerId} not found</div>;
+  ) : null;
+  // if (!selectedPlayer)
+  //   return <div>Player with id {selectedPlayerId} not found</div>;
 
   const handleToggleManual = (val: boolean) => {
     sendCommand({
@@ -134,10 +134,10 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
     });
   };
 
-  const graphData: GraphData = {
+  const graphData: GraphData | null = selectedPlayer ? {
     player: selectedPlayer,
     playerDebug: playerDebugMap,
-  };
+  } : null;
 
   return (
     <div className="flex-1 flex flex-col gap-6 p-4 h-full overflow-auto">
@@ -174,7 +174,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
           </Button>
         </div>
 
-        {(activeGraph as string) === "custom" ? (
+        {(activeGraph as string) === "custom" && graphData ? (
           <div>
             <CodeEditor
               globals={graphData}
@@ -189,19 +189,20 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
           </div>
         ) : null}
 
-        <TimeSeriesChart
-          paused={graphPaused}
-          objectId={`${selectedPlayerId}${activeGraph}`}
-          newDataPoint={{ timestamp: selectedPlayer.timestamp, ...graphData }}
-          getData={(data) => {
-            let value =
-              activeGraph === "custom"
-                ? (customFunction?.(data) ?? 0)
-                : graphableValues[activeGraph](data);
-            return value;
-          }}
-          axisLabel={axisLabels[activeGraph]}
-        />
+        {graphData && selectedPlayer ?
+          (<TimeSeriesChart
+            paused={graphPaused}
+            objectId={`${selectedPlayerId}${activeGraph}`}
+            newDataPoint={{ timestamp: selectedPlayer.timestamp, ...graphData }}
+            getData={(data) => {
+              let value =
+                activeGraph === "custom"
+                  ? (customFunction?.(data) ?? 0)
+                  : graphableValues[activeGraph](data);
+              return value;
+            }}
+            axisLabel={axisLabels[activeGraph]}
+          />) : null}
       </div>
 
       <div>

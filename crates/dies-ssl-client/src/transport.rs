@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
+use network_interface::{NetworkInterface, NetworkInterfaceConfig};
 use socket2::{Domain, Protocol, Socket, Type};
 use std::{
     marker::PhantomData,
-    net::{Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
 use dies_protos::Message;
@@ -41,7 +42,32 @@ impl<I: Message, O> Transport<I, O> {
         })
     }
 
-    pub async fn udp(host: &str, port: u16) -> Result<Self> {
+    pub async fn udp(host: &str, port: u16, interface: Option<String>) -> Result<Self> {
+        let network_interfaces = NetworkInterface::show()?;
+        // Select eth* or en* interface
+        let interface = network_interfaces
+            .iter()
+            .find(|itf| {
+                if let Some(if_name) = interface.as_ref() {
+                    itf.name == *if_name
+                } else {
+                    itf.name.starts_with("eth") || itf.name.starts_with("en")
+                }
+            })
+            .ok_or(anyhow::anyhow!("No suitable network interface found"))?;
+        let if_ip = interface
+            .addr
+            .iter()
+            .map(|addr| addr.ip())
+            .find_map(|addr| match addr {
+                IpAddr::V4(v4) => Some(v4),
+                IpAddr::V6(_) => None,
+            })
+            .ok_or(anyhow::anyhow!(
+                "No IPv4 address found for network interface {}",
+                interface.name
+            ))?;
+
         let addr = format!("{}:{}", host, port).parse::<SocketAddr>()?;
         let raw_socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
             .context("Failed to create UDP socket")?;
@@ -49,15 +75,16 @@ impl<I: Message, O> Transport<I, O> {
         raw_socket.set_reuse_address(true)?;
 
         let multiaddr = host.parse::<Ipv4Addr>()?;
-        let interface = "0.0.0.0".parse::<Ipv4Addr>()?;
         raw_socket
-            .join_multicast_v4(&multiaddr, &interface)
+            .join_multicast_v4(&multiaddr, &if_ip)
             .context("Failed to join multicast group")?;
         raw_socket
             .bind(&addr.into())
             .context(format!("Failed to bind to {}", addr))?;
 
         let socket = UdpSocket::from_std(raw_socket.into())?;
+        println!("Created UDP socket bound to {} ({:?})", addr, socket);
+
         Ok(Self {
             transport_type: TransportType::Udp { socket },
             buf: vec![0u8; 2 * 1024],
