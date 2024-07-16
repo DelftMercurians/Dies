@@ -1,5 +1,5 @@
 use dies_core::{
-    Angle, FieldGeometry, KickerCmd, PlayerCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant,
+    Angle, FieldGeometry, RobotCmd, PlayerMoveCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant,
 };
 use dies_protos::ssl_gc_referee_message::{referee, Referee};
 use dies_protos::{
@@ -139,7 +139,7 @@ struct Player {
 #[derive(Debug)]
 struct TimedPlayerCmd {
     execute_time: f64,
-    player_cmd: PlayerCmd,
+    player_cmd: PlayerMoveCmd,
 }
 
 /// A complete simulator for testing strategies and robot control in silico.
@@ -286,7 +286,7 @@ impl Simulation {
 
     /// Pushes a PlayerCmd onto the execution queue with the time delay specified in
     /// the config
-    pub fn push_cmd(&mut self, cmd: PlayerCmd) {
+    pub fn push_cmd(&mut self, cmd: PlayerMoveCmd) {
         self.cmd_queue.push(TimedPlayerCmd {
             execute_time: self.current_time + self.config.command_delay,
             player_cmd: cmd,
@@ -294,7 +294,7 @@ impl Simulation {
     }
 
     /// Executes a PlayerCmd immediately.
-    pub fn execute_cmd(&mut self, cmd: PlayerCmd) {
+    pub fn execute_cmd(&mut self, cmd: PlayerMoveCmd) {
         self.cmd_queue.push(TimedPlayerCmd {
             execute_time: self.current_time,
             player_cmd: cmd,
@@ -393,7 +393,7 @@ impl Simulation {
                 player.target_ang_velocity = -command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
-                is_kicking = matches!(command.kicker_cmd, KickerCmd::Kick);
+                is_kicking = matches!(command.robot_cmd, RobotCmd::Kick);
             }
 
             let rigid_body = self

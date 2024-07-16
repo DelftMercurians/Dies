@@ -172,6 +172,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     (p) => p.id === playerTooltip?.playerId,
   );
 
+
+  const headingRef = useRef<number | null>(null);
   const handleContextMenu = (event: React.MouseEvent<HTMLElement>) => {
     if (!canvasRef.current || !contRef.current || !rendererRef.current) return;
 
@@ -190,7 +192,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           data: {
             position: contextMenuPosRef.current,
             arm_kick: false,
-            yaw: 0,
+            yaw: headingRef.current ?? 0,
             dribble_speed: 0,
           },
         },
@@ -203,6 +205,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     const pos1 = selectedPlayerData?.position ?? [0, 0];
     const pos2 = contextMenuPosRef.current;
     const angle = Math.atan2(pos2[1] - pos1[1], pos2[0] - pos1[0]);
+    headingRef.current = angle;
     sendCommand({
       type: "OverrideCommand",
       data: {

@@ -25,10 +25,10 @@ const MANUAL_OUTLINE = "#dc2626";
 const SELECTED_OUTLINE = "#ffffff";
 
 const DEBUG_COLORS: Record<DebugColor, string> = {
-  green: "#14b8a6",
-  red: "#dc2626",
-  orange: "#f97316",
-  purple: "#9333ea",
+  green: "#14b8a688",
+  red: "#dc262688",
+  orange: "#f9731688",
+  purple: "#9333ea88",
 };
 
 export type PositionDisplayMode = "raw" | "filtered" | "both";

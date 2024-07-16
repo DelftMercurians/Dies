@@ -152,11 +152,6 @@ impl Role for Attacker {
 
                 // Once the passer has the ball and it is in position it aims for the shooter
                 if distance(ctx.player.position, self.position) < 100.0 {
-                    dies_core::debug_cross(
-                        "ShooterPos",
-                        shooter_pos,
-                        dies_core::DebugColor::Purple,
-                    );
                     let target_angle = self.aim_at_player(passer_pos, shooter_pos);
                     input.with_yaw(target_angle);
                     input.with_dribbling(1.0);
@@ -173,7 +168,6 @@ impl Role for Attacker {
 
             // If the player is the shooter it aims at the ball and moves to its designated position
             if ctx.player.id == self.shooter_id.unwrap() {
-                dies_core::debug_cross("PasserPos", passer_pos, dies_core::DebugColor::Orange);
                 let target_angle = self.aim_at_ball(shooter_pos, ball.position.xy());
                 let dribble_speed = 1.0;
                 input.with_yaw(target_angle);
