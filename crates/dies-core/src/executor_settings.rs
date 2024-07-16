@@ -3,6 +3,8 @@ use std::{fs, path::Path};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
+use crate::{FieldGeometry, Vector2};
+
 /// Settings for the low-level controller.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
@@ -17,8 +19,6 @@ pub struct ControllerSettings {
     pub max_angular_velocity: f64,
     /// Maximum angular acceleration of the robot in rad/s².
     pub max_angular_acceleration: f64,
-    /// Maximum angular deceleration of the robot in rad/s².
-    pub max_angular_deceleration: f64,
     /// Proportional gain for the close-range position controller.
     pub position_kp: f64,
     /// Time until destination in which the proportional controller is used, in seconds.
@@ -27,34 +27,60 @@ pub struct ControllerSettings {
     pub position_cutoff_distance: f64,
     /// Proportional gain for the close-range angle controller.
     pub angle_kp: f64,
-    /// Time until destination in which the proportional controller is used, in seconds.
-    pub angle_proportional_time_window: f64,
     /// Distance used as threshold for the controller to prevent shaky behavior
     pub angle_cutoff_distance: f64,
-
-    /// Attractive force coefficient for players
-    pub force_alpha: f64,
-    /// Repulsive force coefficient for players
-    pub force_beta: f64,
 }
 
 impl Default for ControllerSettings {
     fn default() -> Self {
         Self {
             max_acceleration: 125000.0,
-            max_velocity: 2560.0,
-            max_deceleration: 2240.0,
-            max_angular_velocity: 34.90658503988659,
-            max_angular_acceleration: 34.90658503988659,
-            max_angular_deceleration: 22.368139693559325,
-            position_kp: 50_000.0,
-            position_proportional_time_window: 0.7,
+            max_velocity: 3120.0,
+            max_deceleration: 6340.0,
+            max_angular_velocity: 25.132741228718345,
+            max_angular_acceleration: 349.0658503988659,
+            position_kp: 50000.0,
+            position_proportional_time_window: 1.1,
             position_cutoff_distance: 70.0,
-            angle_kp: 2.0,
-            angle_proportional_time_window: 0.0,
+            angle_kp: 2.8,
             angle_cutoff_distance: 0.03490658503988659,
-            force_alpha: 10000.0,
-            force_beta: 2.0,
+        }
+    }
+}
+
+/// A field mask for the `WorldTracker`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[typeshare]
+pub struct FieldMask {
+    pub x_min: f64,
+    pub x_max: f64,
+    pub y_min: f64,
+    pub y_max: f64,
+}
+
+impl FieldMask {
+    pub fn contains(&self, x: f32, y: f32, field_geom: Option<&FieldGeometry>) -> bool {
+        if let Some(field_geom) = field_geom {
+            let x = x as f64;
+            let y = y as f64;
+            let x_min = field_geom.field_length / 2.0 * self.x_min;
+            let x_max = field_geom.field_length / 2.0 * self.x_max;
+            let y_min = field_geom.field_width / 2.0 * self.y_min;
+            let y_max = field_geom.field_width / 2.0 * self.y_max;
+            x >= x_min && x <= x_max && y >= y_min && y <= y_max
+        } else {
+            false
+        }
+    }
+}
+
+impl Default for FieldMask {
+    fn default() -> Self {
+        Self {
+            x_min: -1.0,
+            x_max: 1.0,
+            y_min: -1.0,
+            y_max: 1.0,
         }
     }
 }
@@ -67,6 +93,8 @@ pub struct TrackerSettings {
     pub is_blue: bool,
     /// The initial sign of the enemy goal's x coordinate in ssl-vision coordinates.
     pub initial_opp_goal_x: f64,
+
+    pub field_mask: FieldMask,
 
     /// Transition variance for the player Kalman filter.
     pub player_unit_transition_var: f64,
@@ -91,6 +119,7 @@ impl Default for TrackerSettings {
             player_yaw_lpf_alpha: 0.15,
             ball_unit_transition_var: 20.48,
             ball_measurement_var: 0.01,
+            field_mask: FieldMask::default(),
         }
     }
 }

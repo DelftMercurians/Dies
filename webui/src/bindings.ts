@@ -57,8 +57,6 @@ export interface ControllerSettings {
 	max_angular_velocity: number;
 	/** Maximum angular acceleration of the robot in rad/s². */
 	max_angular_acceleration: number;
-	/** Maximum angular deceleration of the robot in rad/s². */
-	max_angular_deceleration: number;
 	/** Proportional gain for the close-range position controller. */
 	position_kp: number;
 	/** Time until destination in which the proportional controller is used, in seconds. */
@@ -67,14 +65,16 @@ export interface ControllerSettings {
 	position_cutoff_distance: number;
 	/** Proportional gain for the close-range angle controller. */
 	angle_kp: number;
-	/** Time until destination in which the proportional controller is used, in seconds. */
-	angle_proportional_time_window: number;
 	/** Distance used as threshold for the controller to prevent shaky behavior */
 	angle_cutoff_distance: number;
-	/** Attractive force coefficient for players */
-	force_alpha: number;
-	/** Repulsive force coefficient for players */
-	force_beta: number;
+}
+
+/** A field mask for the `WorldTracker`. */
+export interface FieldMask {
+	x_min: number;
+	x_max: number;
+	y_min: number;
+	y_max: number;
 }
 
 /** Settings for the `WorldTracker`. */
@@ -83,6 +83,7 @@ export interface TrackerSettings {
 	is_blue: boolean;
 	/** The initial sign of the enemy goal's x coordinate in ssl-vision coordinates. */
 	initial_opp_goal_x: number;
+	field_mask: FieldMask;
 	/** Transition variance for the player Kalman filter. */
 	player_unit_transition_var: number;
 	/** Measurement variance for the player Kalman filter. */

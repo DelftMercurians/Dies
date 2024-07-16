@@ -125,12 +125,7 @@ fn three_attackers() -> ScenarioSetup {
 fn fetch_ball_test_live() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(FetcherRole::new()));
-    let mut scenario = ScenarioSetup::new(strategy, None);
-    scenario
-        .add_ball()
-        .add_own_player()
-        .add_own_player()
-        .add_own_player();
+    let scenario = ScenarioSetup::new(strategy, None);
     scenario
 }
 
@@ -139,10 +134,10 @@ fn fetch_ball_with_heading() -> ScenarioSetup {
     let skill = FetchBallWithHeading::new(Angle::from_degrees(90.0));
     strategy.add_role(Box::new(DummyRole::new(Box::new(skill))));
     let mut scenario = ScenarioSetup::new(strategy, None);
-    scenario
-        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
-        .add_own_player_at(Vector2::new(1000.0, 1000.0))
-        .add_own_player_at(Vector2::new(-1000.0, -1000.0));
+    // scenario.add_own_player();
+    // .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+    // .add_own_player_at(Vector2::new(1000.0, 1000.0))
+    // .add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
 }
 

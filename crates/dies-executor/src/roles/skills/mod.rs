@@ -64,12 +64,12 @@ impl Skill for GoToPosition {
         }
         if let (true, Some(ball)) = (self.with_ball, ctx.world.ball.as_ref()) {
             input.with_dribbling(1.0);
-            let ball_vel = ball.velocity.xy();
-            let relative_velocity = ball_vel - ctx.player.velocity;
-            if relative_velocity.norm() > DEFAULT_BALL_VEL_TOLERANCE {
-                let correction = relative_velocity * BALL_VEL_CORRECTION;
-                input.add_global_velocity(correction);
-            }
+            // let ball_vel = ball.velocity.xy();
+            // let relative_velocity = ball_vel - ctx.player.velocity;
+            // if relative_velocity.norm() > DEFAULT_BALL_VEL_TOLERANCE {
+            //     let correction = relative_velocity * BALL_VEL_CORRECTION;
+            //     input.add_global_velocity(correction);
+            // }
         }
 
         SkillProgress::Continue(input)
@@ -135,6 +135,7 @@ pub struct FetchBall {
     max_relative_speed: f64,
     initial_ball_direction: Option<Vector2>,
     breakbeam_ball_detected: f64,
+    last_good_heading: Option<Angle>,
 }
 
 impl FetchBall {
@@ -146,6 +147,7 @@ impl FetchBall {
             max_relative_speed: 1500.0,
             initial_ball_direction: None,
             breakbeam_ball_detected: 0.0,
+            last_good_heading: None,
         }
     }
 }
@@ -163,7 +165,15 @@ impl Skill for FetchBall {
             let ball_normal = Vector2::new(inital_ball_direction.y, -inital_ball_direction.x);
             let distance = (ball_pos - player_pos).norm();
 
-            let ball_angle = Angle::between_points(player_pos, ball_pos);
+            let ball_angle = {
+                let angle = Angle::between_points(player_pos, ball_pos);
+                if distance > 50.0 {
+                    self.last_good_heading = Some(angle);
+                    angle
+                } else {
+                    self.last_good_heading.unwrap_or(angle)
+                }
+            };
             input.with_yaw(ball_angle);
 
             if ctx.player.breakbeam_ball_detected {
@@ -196,10 +206,12 @@ impl Skill for FetchBall {
                 }
             }
 
+            if distance < self.dribbling_distance {
+                input.with_dribbling(self.dribbling_speed);
+            }
+
             // Once we're close enough, use a proptional control to approach the ball
             if distance < self.dribbling_distance && ball_speed < 500.0 {
-                input.with_dribbling(self.dribbling_speed);
-
                 input.position = None;
                 input.velocity = Velocity::global(
                     distance

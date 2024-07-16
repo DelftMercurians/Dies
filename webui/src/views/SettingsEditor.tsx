@@ -48,16 +48,9 @@ const fieldConfig: FieldConfig = {
       unit: "deg/s²",
       isAngle: true,
     },
-    max_angular_deceleration: {
-      min: 0,
-      max: 360 * 4,
-      unit: "deg/s²",
-      isAngle: true,
-    },
     position_kp: { min: 0, max: 10, unit: "" },
     position_proportional_time_window: { min: 0, max: 10, unit: "s" },
     angle_kp: { min: 0, max: 10, unit: "" },
-    angle_proportional_time_window: { min: 0, max: 10, unit: "s" },
     angle_cutoff_distance: { min: 0, max: 180, unit: "deg", isAngle: true },
     position_cutoff_distance: { min: 0, max: 2000, unit: "mm" },
   },
@@ -85,6 +78,60 @@ const fieldConfig: FieldConfig = {
     ball_measurement_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
     ball_unit_transition_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
     player_yaw_lpf_alpha: { min: 0, max: 1, step: 0.01 },
+    field_mask: {
+      customComponent: ({ value, onChange }) => (
+        <div className="w-full">
+          <div>X min</div>
+          <Slider
+            id="field_mask_x_min"
+            min={-1}
+            max={1}
+            step={0.01}
+            value={[value.x_min]}
+            onValueChange={([newValue]) =>
+              onChange({ ...value, x_min: newValue })
+            }
+            className="w-full flex-1 min-w-24"
+          />
+          <div>X max</div>
+          <Slider
+            id="field_mask_x_max"
+            min={-1}
+            max={1}
+            step={0.01}
+            value={[value.x_max]}
+            onValueChange={([newValue]) =>
+              onChange({ ...value, x_max: newValue })
+            }
+            className="w-full flex-1 min-w-24"
+          />
+          <div>Y min</div>
+          <Slider
+            id="field_mask_y_min"
+            min={-1}
+            max={1}
+            step={0.01}
+            value={[value.y_min]}
+            onValueChange={([newValue]) =>
+              onChange({ ...value, y_min: newValue })
+            }
+            className="w-full flex-1 min-w-24"
+          />
+          <div>Y max</div>
+          <Slider
+            id="field_mask_y_max"
+            min={-1}
+            max={1}
+            step={0.01}
+            value={[value.y_max]}
+            onValueChange={([newValue]) =>
+              onChange({ ...value, y_max: newValue })
+            }
+            className="w-full flex-1 min-w-24"
+          />
+        </div>
+      ),
+    },
   },
 };
 
@@ -181,7 +228,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
                         onChange={(e) =>
                           handleChange(
                             key as SettingsKey,
-                            parseFloat(e.target.value) as Value,
+                            parseFloat(e.target.value) as Value
                           )
                         }
                         className="w-24"

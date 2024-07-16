@@ -39,9 +39,6 @@ pub struct PlayerController {
     kicker: KickerState,
     /// Dribble speed normalized to \[0, 1\]
     dribble_speed: f64,
-
-    force_alpha: f64,
-    force_beta: f64,
 }
 
 impl PlayerController {
@@ -71,9 +68,6 @@ impl PlayerController {
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
             if_gate_keeper: false,
-
-            force_alpha: settings.force_alpha,
-            force_beta: settings.force_beta,
         };
         instance.update_settings(settings);
         instance
@@ -95,8 +89,6 @@ impl PlayerController {
             settings.angle_kp,
             settings.angle_cutoff_distance,
         );
-        self.force_alpha = settings.force_alpha;
-        self.force_beta = settings.force_beta;
     }
 
     /// Get the ID of the player.
@@ -119,8 +111,8 @@ impl PlayerController {
             id: self.id,
             // In the robot's local frame +sx means forward and +sy means right
             sx: self.target_velocity.x / 1000.0, // Convert to m/s
-            sy: self.target_velocity.y / 1000.0, // Convert to m/s
-            w: self.target_angular_velocity,
+            sy: -self.target_velocity.y / 1000.0, // Convert to m/s
+            w: -self.target_angular_velocity,
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
             kicker_cmd: KickerCmd::None,
         };
