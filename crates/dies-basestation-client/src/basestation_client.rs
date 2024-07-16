@@ -141,11 +141,9 @@ impl BasestationHandle {
                             as usize;
                         match &mut connection {
                             Connection::V1(monitor) => {
-                                let mut commands = [None; glue::MAX_NUM_ROBOTS];
-                                commands[robot_id] = Some(cmd.into());
                                 resp.send(
                                     monitor
-                                        .send(commands)
+                                        .send_single(cmd.id.as_u32() as u8, cmd.into())
                                         .map_err(|_| anyhow!("Failed to send command")),
                                 )
                                 .ok();
@@ -170,28 +168,25 @@ impl BasestationHandle {
                     Err(mpsc::error::TryRecvError::Empty) => {}
                 }
 
-                if last_cmd_time.elapsed().as_secs_f32() >= 1.0 {
-                    if last_cmd_time.elapsed().as_secs_f32() - 1.0 < 1.0 / 30.0 {
-                        log::warn!("Command timeout, sending stop to all robots");
-                    }
-
-                    for id in all_ids.iter() {
-                        let cmd = PlayerCmd::zero(PlayerId::new(*id as u32));
-                        match &mut connection {
-                            Connection::V1(monitor) => {
-                                let mut commands = [None; glue::MAX_NUM_ROBOTS];
-                                commands[*id] = Some(cmd.into());
-                                let _ = monitor
-                                    .send(commands)
-                                    .map_err(|err| log::error!("Error sending stop: {:?}", err));
-                            }
-                            Connection::V0(serial) => {
-                                let cmd_str = cmd.into_proto_v0_with_id(*id);
-                                serial.send(&cmd_str);
-                            }
-                        }
-                    }
-                }
+                // if last_cmd_time.elapsed().as_secs_f32() >= 1.0 {
+                //     if last_cmd_time.elapsed().as_secs_f32() - 1.0 < 1.0 / 30.0 {
+                //         log::warn!("Command timeout, sending stop to all robots");
+                //     }
+                //     for id in all_ids.iter() {
+                //         let cmd = PlayerCmd::zero(PlayerId::new(*id as u32));
+                //         match &mut connection {
+                //             Connection::V1(monitor) => {
+                //                 let _ = monitor
+                //                     .send_single(cmd.id.as_u32() as u8, cmd.into())
+                //                     .map_err(|err| log::error!("Error sending stop: {:?}", err));
+                //             }
+                //             Connection::V0(serial) => {
+                //                 let cmd_str = cmd.into_proto_v0_with_id(*id);
+                //                 serial.send(&cmd_str);
+                //             }
+                //         }
+                //     }
+                // }
 
                 // Receive feedback
                 if let Connection::V1(monitor) = &mut connection {

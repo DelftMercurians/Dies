@@ -160,6 +160,25 @@ impl PlayerTracker {
     }
 
     pub fn get(&self) -> Option<PlayerData> {
+        // If we have received feedback but not detection return some placeholder data
+        if let (None, Some(feedback)) = (self.last_detection.as_ref(), self.last_feedback) {
+            return Some(PlayerData {
+                id: self.id,
+                timestamp: 0.0,
+                position: Vector2::zeros(),
+                velocity: Vector2::zeros(),
+                yaw: Angle::default(),
+                angular_speed: 0.0,
+                raw_position: Vector2::zeros(),
+                raw_yaw: Angle::default(),
+                primary_status: feedback.primary_status,
+                kicker_cap_voltage: feedback.kicker_cap_voltage,
+                kicker_temp: feedback.kicker_temp,
+                pack_voltages: feedback.pack_voltages,
+                breakbeam_ball_detected: feedback.breakbeam_ball_detected.unwrap_or(false),
+            });
+        }
+
         self.last_detection.as_ref().map(|data| PlayerData {
             id: self.id,
             timestamp: data.timestamp,

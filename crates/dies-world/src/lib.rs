@@ -184,9 +184,11 @@ impl WorldTracker {
     }
 
     pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
-        if let Some(player_tracker) = self.own_players_tracker.get_mut(&feedback.id) {
-            player_tracker.update_from_feedback(feedback, time);
-        }
+        let tracker = self
+            .own_players_tracker
+            .entry(feedback.id)
+            .or_insert_with(|| PlayerTracker::new(feedback.id, &self.tracker_settings));
+        tracker.update_from_feedback(feedback, time);
     }
 
     /// Check if the world state is initialized.

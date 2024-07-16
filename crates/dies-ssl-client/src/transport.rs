@@ -100,7 +100,6 @@ impl<I: Message, O> Transport<I, O> {
                     .read(&mut self.buf)
                     .await
                     .context("Failed to read from TCP stream")?;
-                println!("Received {} bytes", amt);
                 let msg = I::parse_from_bytes(&self.buf[..amt])?;
                 Ok(msg)
             }
@@ -109,7 +108,6 @@ impl<I: Message, O> Transport<I, O> {
                     .recv_from(&mut self.buf)
                     .await
                     .context("Failed to receive data from UDP socket")?;
-                println!("Received {} bytes", len);
                 let msg = I::parse_from_bytes(&self.buf[..len])?;
                 Ok(msg)
             }
