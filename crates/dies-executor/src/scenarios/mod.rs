@@ -41,7 +41,7 @@ fn penalty_kick() -> ScenarioSetup {
     scenario.add_strategy(GameState::Penalty, PenaltyKickStrategy::new(None));
     scenario.add_strategy(GameState::PenaltyRun, PenaltyKickStrategy::new(None));
     scenario
-        .add_ball_at(Vector3::new(0.0, 300.0, 0.0))
+        .add_ball_at(Vector2::new(0.0, 300.0))
         .add_own_player_at(Vector2::new(-1000.0, 1000.0))
         .add_own_player_at(Vector2::new(-1000.0, -1000.0))
         .add_opp_player_at(Vector2::new(3500.0, 0.0));
@@ -51,7 +51,7 @@ fn penalty_kick() -> ScenarioSetup {
 fn kick_pass() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(TestStrat::new(), None);
     scenario
-        .add_ball_at(Vector3::new(-4000.0, 1500.0, 0.0))
+        .add_ball_at(Vector2::new(-4000.0, 1500.0))
         .add_own_player()
         .add_own_player();
     scenario
@@ -61,7 +61,7 @@ fn free_kick() -> ScenarioSetup {
     let strategy = FreeKickStrategy::new(None);
     let mut scenario = ScenarioSetup::new(strategy, Some(GameState::FreeKick));
     scenario
-        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_ball_at(Vector2::new(0.0, 0.0))
         .add_own_player_at(Vector2::new(1000.0, 1000.0))
         .add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
@@ -72,7 +72,7 @@ fn kickoff() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(strategy, Some(GameState::PrepareKickoff));
     scenario.add_strategy(GameState::Kickoff, KickoffStrategy::new(None));
     scenario
-        .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
+        .add_ball_at(Vector2::new(0.0, 0.0))
         .add_own_player_at(Vector2::new(-1000.0, 1000.0))
         .add_own_player_at(Vector2::new(-1000.0, -1000.0));
     scenario
@@ -95,7 +95,7 @@ fn need_to_cross_the_goal_area() -> ScenarioSetup {
     strategy.add_role(Box::new(Waller::new(0.0)));
     let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
-        .add_ball_at(Vector3::new(-4300.0, 3000.0, 0.0))
+        .add_ball_at(Vector2::new(-4300.0, 3000.0))
         .add_own_player_at(Vector2::new(-4000.0, -2000.0));
 
     scenario
@@ -106,7 +106,7 @@ fn need_to_cross_the_goal_area_alt() -> ScenarioSetup {
     strategy.add_role(Box::new(Waller::new(0.0)));
     let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
-        .add_ball_at(Vector3::new(-4500.0, -2950.0, 0.0))
+        .add_ball_at(Vector2::new(-4500.0, -2950.0))
         .add_own_player_at(Vector2::new(-3800.0, 500.0));
 
     scenario
@@ -142,7 +142,7 @@ fn fetch_ball_test_sim() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(strategy, None);
     scenario
         .add_own_player()
-        .add_ball_at(Vector3::new(-1000.0, -1000.0, 0.0));
+        .add_ball_at(Vector2::new(-1000.0, -1000.0));
     scenario
 }
 

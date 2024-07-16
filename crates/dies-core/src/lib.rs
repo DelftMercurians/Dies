@@ -44,7 +44,7 @@ pub struct PlayerPlacement {
 #[typeshare]
 pub enum BallPlacement {
     /// Ball is placed at a specific position.
-    Position(Vector3),
+    Position(Vector2),
     /// Ball is placed at any position.
     AnyPosition,
     /// No ball is required.

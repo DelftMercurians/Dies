@@ -1,5 +1,6 @@
 use dies_core::{
-    Angle, FieldGeometry, RobotCmd, PlayerMoveCmd, PlayerFeedbackMsg, PlayerId, Vector2, WorldInstant,
+    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, Vector2,
+    WorldInstant,
 };
 use dies_protos::ssl_gc_referee_message::{referee, Referee};
 use dies_protos::{
@@ -79,14 +80,14 @@ impl Default for SimulationConfig {
             // PHYSICAL CONSTANTS
             gravity: Vector::z() * -9.81 * 1000.0,
             ball_damping: 1.4,
-            vision_update_step: 1.0 / 40.0, // 6 ms
+            vision_update_step: 1.0 / 40.0,
 
             // ROBOT MODEL PARAMETERS
             player_radius: 80.0,
             player_height: 140.0,
             dribbler_radius: BALL_RADIUS + 60.0,
             dribbler_angle: PI / 6.0,
-            kicker_strength: 300000.0,
+            kicker_strength: 0.3,
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 10.0 / 1000.0,
@@ -381,8 +382,7 @@ impl Simulation {
             if send_feedback {
                 let mut feedback = PlayerFeedbackMsg::empty(player.id);
                 feedback.breakbeam_ball_detected = Some(player.breakbeam);
-                self.feedback_queue
-                    .push_back(feedback);
+                self.feedback_queue.push_back(feedback);
             }
 
             let mut is_kicking = false;
@@ -429,40 +429,36 @@ impl Simulation {
             rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
 
             // Check if the ball is in the dribbler
-            if player.current_dribble_speed > 0.0 || is_kicking {
-                let yaw = rigid_body.position().rotation * Vector::x();
-                let player_position = rigid_body.position().translation.vector;
-                let dribbler_position =
-                    player_position + yaw * (self.config.player_radius + BALL_RADIUS + 20.0);
-                let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
-
-                if let Some(ball_handle) = ball_handle {
-                    let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
-                    let ball_position = ball_body.position().translation.vector;
-                    let ball_dir = ball_position - player_position;
-                    let distance = ball_dir.norm();
-                    let angle = yaw.angle(&ball_dir);
-                    if distance < self.config.player_radius + self.config.dribbler_radius
-                        && angle < self.config.dribbler_angle
-                    {
-                        player.breakbeam = true;
-                        if is_kicking {
-                            let force = yaw * self.config.kicker_strength;
-                            ball_body.add_force(force, true);
-                            ball_body.set_linear_damping(self.config.ball_damping * 2.0);
-                        } else {
-                            let force = (player.current_dribble_speed
-                                * self.config.dribbler_strength)
-                                * (dribbler_position - ball_position);
-                            // clamp the force to the max force
-                            // let force = force.cap_magnitude(200.0);
-                            ball_body.add_force(force, true);
-                            // dampen the ball's velocity
-                            ball_body.set_linear_damping(self.config.ball_damping * 2.0);
-                        }
-                    } else {
-                        player.breakbeam = false;
+            let yaw = rigid_body.position().rotation * Vector::x();
+            let player_position = rigid_body.position().translation.vector;
+            let dribbler_position =
+                player_position + yaw * (self.config.player_radius + BALL_RADIUS + 20.0);
+            let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
+            if let Some(ball_handle) = ball_handle {
+                let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
+                let ball_position = ball_body.position().translation.vector;
+                let ball_dir = ball_position - player_position;
+                let distance = ball_dir.norm();
+                let angle = yaw.angle(&ball_dir);
+                if distance < self.config.player_radius + self.config.dribbler_radius
+                    && angle < self.config.dribbler_angle
+                {
+                    player.breakbeam = true;
+                    if is_kicking {
+                        let force = yaw * self.config.kicker_strength;
+                        ball_body.add_force(force, true);
+                        ball_body.set_linear_damping(self.config.ball_damping * 2.0);
+                    } else if player.current_dribble_speed > 0.0 {
+                        let force = (player.current_dribble_speed * self.config.dribbler_strength)
+                            * (ball_position - dribbler_position);
+                        // clamp the force to the max force
+                        // let force = force.cap_magnitude(200.0);
+                        ball_body.apply_impulse(force, true);
+                        // dampen the ball's velocity
+                        ball_body.set_linear_damping(self.config.ball_damping * 2.0);
                     }
+                } else {
+                    player.breakbeam = false;
                 }
             }
         }
@@ -584,6 +580,7 @@ impl SimulationBuilder {
         let ball_body = RigidBodyBuilder::dynamic()
             .can_sleep(false)
             .translation(position)
+            .locked_axes(LockedAxes::TRANSLATION_LOCKED_Z)
             .linear_damping(sim.config.ball_damping)
             .build();
         let ball_collider = ColliderBuilder::ball(BALL_RADIUS)

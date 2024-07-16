@@ -63,7 +63,7 @@ impl ScenarioSetup {
     }
 
     /// Sets the ball to be at a specific position.
-    pub fn add_ball_at(&mut self, ball: Vector3) -> &mut Self {
+    pub fn add_ball_at(&mut self, ball: Vector2) -> &mut Self {
         self.ball = BallPlacement::Position(ball);
         self
     }
@@ -138,11 +138,11 @@ impl ScenarioSetup {
 
         match self.ball {
             BallPlacement::Position(pos) => {
-                builder = builder.add_ball(pos);
+                builder = builder.add_ball(Vector3::new(pos.x, pos.y, 20.0));
             }
             BallPlacement::AnyPosition => {
                 let pos2 = random_pos(field_width, field_length);
-                builder = builder.add_ball(Vector3::new(pos2.x, pos2.y, 0.0));
+                builder = builder.add_ball(Vector3::new(pos2.x, pos2.y, 20.0));
             }
             BallPlacement::NoBall => {}
         }
@@ -206,7 +206,7 @@ impl ScenarioSetup {
         // Check ball
         match (&self.ball, world.ball) {
             (BallPlacement::Position(target), Some(ball)) => {
-                if (target - ball.position).norm() > self.tolerance {
+                if (target - ball.position.xy()).norm() > self.tolerance {
                     return false;
                 }
             }
@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn test_scenario_setup_check_live() {
         let setup = ScenarioSetup {
-            ball: BallPlacement::Position(Vector3::new(0.0, 0.0, 0.0)),
+            ball: BallPlacement::Position(Vector2::new(0.0, 0.0)),
             own_players: vec![PlayerPlacement {
                 position: Some(Vector2::new(100.0, 0.0)),
                 yaw: Some(Angle::from_degrees(0.0)),
