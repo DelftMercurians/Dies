@@ -80,4 +80,15 @@ impl Strategy for TestStrat {
         }
         None
     }
+
+    fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
+        if let Some(assignment) = self.assignment.as_mut() {
+            if player_id == assignment.passer_id {
+                return Some(&mut assignment.passer);
+            } else if player_id == assignment.receiver_id {
+                return Some(&mut assignment.receiver);
+            }
+        }
+        None
+    }
 }

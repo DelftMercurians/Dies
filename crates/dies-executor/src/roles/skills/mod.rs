@@ -350,6 +350,7 @@ impl Skill for ApproachBall {
                     * (ball_pos - player_pos).normalize(),
             );
             input.with_dribbling(1.0);
+
             SkillProgress::Continue(input)
         } else {
             SkillProgress::failure()

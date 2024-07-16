@@ -77,10 +77,22 @@ impl Strategy for AdHocStrategy {
             log::warn!("Not enough players to assign all roles");
         }
     }
-    
-    fn update_role(&mut self, player_id: PlayerId, ctx: crate::roles::RoleCtx) -> Option<crate::PlayerControlInput> {
+
+    fn update_role(
+        &mut self,
+        player_id: PlayerId,
+        ctx: crate::roles::RoleCtx,
+    ) -> Option<crate::PlayerControlInput> {
         if let Some(role) = self.roles.get_mut(&player_id) {
             Some(role.update(ctx))
+        } else {
+            None
+        }
+    }
+
+    fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
+        if let Some(role) = self.roles.get_mut(&player_id) {
+            Some(role.as_mut())
         } else {
             None
         }

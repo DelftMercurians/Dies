@@ -1,5 +1,8 @@
 use crate::{strategy::Strategy, PlayerControlInput};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+};
 
 use super::{
     player_controller::PlayerController,
@@ -77,17 +80,20 @@ impl TeamController {
 
         let strategy_ctx = StrategyCtx { world: &world_data };
         strategy.update(strategy_ctx);
+
+        let mut role_types = HashMap::new();
         let mut inputs =
             world_data
                 .own_players
                 .iter()
                 .fold(PlayerInputs::new(), |mut inputs, player_data| {
                     let id = player_data.id;
-                    let role_state = self.role_states.entry(id).or_default();
-                    let role_ctx =
-                    RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
-                    let new_input = strategy.update_role(id, role_ctx);
-                    if let Some(new_input) = new_input {
+                    if let Some(role) = strategy.get_role(id) {
+                        let role_state = self.role_states.entry(id).or_default();
+                        let role_ctx =
+                            RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
+                        let new_input = role.update(role_ctx);
+                        role_types.insert(id, role.role_type());
                         inputs.insert(id, new_input);
                     }
                     inputs
@@ -127,10 +133,7 @@ impl TeamController {
                         player_data,
                         &controller.target_velocity(),
                         all_players.as_slice(),
-                        &[Obstacle::Rectangle {
-                            min: Vector2::new(-10000.0, -1000.0),
-                            max: Vector2::new(-3500.0, 1000.0),
-                        }],
+                        &vec![],
                         &world_data.player_model,
                         super::rvo::VelocityObstacleType::VO,
                     );

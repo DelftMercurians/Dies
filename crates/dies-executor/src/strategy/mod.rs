@@ -1,12 +1,15 @@
 mod adhoc;
+pub mod attack_strat;
 pub mod free_kick;
 pub mod kickoff;
 pub mod penalty_kick;
 mod task;
 pub mod test_strat;
-pub mod attack_strat;
 
-use crate::{roles::{Role, RoleCtx}, PlayerControlInput, PlayerInputs};
+use crate::{
+    roles::{Role, RoleCtx},
+    PlayerControlInput, PlayerInputs,
+};
 pub use adhoc::AdHocStrategy;
 use dies_core::{PlayerId, WorldData};
 use std::collections::HashMap;
@@ -28,4 +31,6 @@ pub trait Strategy: Send {
     fn update(&mut self, ctx: StrategyCtx);
 
     fn update_role(&mut self, player_id: PlayerId, ctx: RoleCtx) -> Option<PlayerControlInput>;
+
+    fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role>;
 }

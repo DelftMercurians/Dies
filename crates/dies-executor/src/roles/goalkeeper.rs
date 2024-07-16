@@ -4,7 +4,7 @@ use nalgebra::Vector2;
 use crate::roles::{Role, RoleCtx};
 use crate::PlayerControlInput;
 
-const KEEPER_X_OFFSET: f64 = 150.0;
+const KEEPER_X_OFFSET: f64 = 350.0;
 
 pub struct Goalkeeper {}
 
@@ -76,17 +76,27 @@ impl Role for Goalkeeper {
             let target_angle = Angle::between_points(ctx.player.position, ball_pos);
 
             input.with_yaw(target_angle);
-            input.with_position(
+
+            let defence_width = 1.3 * (field_geom.penalty_area_width / 2.0);
+            let mut target = if ball.velocity.xy().norm() > 100.0 {
                 find_intersection(
                     Vector2::new(goalkeeper_x, 0.0),
                     Vector2::y(),
                     ball_pos,
                     ball.velocity.xy(),
                 )
-                .unwrap_or(Vector2::new(goalkeeper_x, ball.position.y)),
-            );
+                .unwrap_or(Vector2::new(goalkeeper_x, ball.position.y))
+            } else {
+                Vector2::new(goalkeeper_x, ball.position.y)
+            };
+            target.y = target.y.max(-defence_width).min(defence_width);
+            input.with_position(target);
         }
 
         input
+    }
+
+    fn role_type(&self) -> dies_core::RoleType {
+        dies_core::RoleType::Goalkeeper
     }
 }

@@ -45,8 +45,8 @@ pub enum RobotCmd {
     Reboot,
     Beep,
     Coast,
-    HeadingControl ,
-    YawRateControl ,
+    HeadingControl,
+    YawRateControl,
 }
 
 impl From<RobotCmd> for glue::Radio_RobotCommand {
@@ -71,10 +71,7 @@ impl From<RobotCmd> for glue::Radio_RobotCommand {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum PlayerCmd {
     Move(PlayerMoveCmd),
-    SetHeading {
-        id: PlayerId,
-        heading: f64,
-    },
+    SetHeading { id: PlayerId, heading: f64 },
 }
 
 impl PlayerCmd {
@@ -116,6 +113,10 @@ impl PlayerMoveCmd {
             robot_cmd: RobotCmd::None,
         }
     }
+
+    // pub fn is_zero(&self) -> bool {
+    //     self.sx == 0.0 && self.sy == 0.0 && self.w == 0.0 && self.dribble_speed == 0.0 && self.robot_cmd
+    // }
 
     pub fn into_proto_v0_with_id(self, with_id: usize) -> String {
         let extra = match self.robot_cmd {
