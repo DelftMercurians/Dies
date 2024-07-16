@@ -178,10 +178,10 @@ impl Skill for FetchBall {
             let ball_pos = ball.position.xy();
             let ball_speed = ball.velocity.xy().norm();
             let player_pos = ctx.player.position;
-            let inital_ball_direction = self
+            let initial_ball_direction = self
                 .initial_ball_direction
                 .get_or_insert((ball_pos - player_pos).normalize());
-            let ball_normal = Vector2::new(inital_ball_direction.y, -inital_ball_direction.x);
+            let ball_normal = Vector2::new(initial_ball_direction.y, -initial_ball_direction.x);
             let distance = (ball_pos - player_pos).norm();
 
             let ball_angle = {
@@ -230,11 +230,56 @@ impl Skill for FetchBall {
                     input.with_position(intersection);
                 } else {
                     input.with_position(ball_pos);
+            // if ball is fast and we are far away
+            // sample bunch of points on the ball ray, and see which 'segment'
+            // we are capable to reach in time. Then go to this segment.
+            // time to reach segment is simple: distance / normal speed - small discount
+            // time for ball to reach segment is technically the same formula, wow
+
+            // schedule of points: from 0 seconds to 2 seconds
+            let points_schedule = vec![
+                0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 1.0, 1.2, 1.5, 2.0,
+            ];
+
+            let friction_factor = 3.0;
+
+            let ball_points: Vec<Vector2> = points_schedule
+                        .iter()
+                        .map(|t| ball_pos + ball.velocity.xy() * (*t) * (1.0 - f64::min(1.0, (*t) / friction_factor)))
+                        .collect();
+
+
+            let mut intersection = ball_points[ball_points.len() - 1].clone();
+            for i in 0..ball_points.len() - 1 {
+                let a = ball_points[i].clone();
+                let b = ball_points[i + 1].clone();
+                let must_be_reached_before = points_schedule[i];
+                // now we have both segment points available, lets compute time_to_reach
+                let time_to_reach = f64::min(
+                    ctx.world.time_to_reach_point(ctx.player, a),
+                    ctx.world.time_to_reach_point(ctx.player, b)
+                );
+
+                if time_to_reach < must_be_reached_before {
+                    intersection = b;
+                    break;
                 }
             }
+            input.with_position(intersection);
+
 
             if distance < self.dribbling_distance {
                 input.with_dribbling(self.dribbling_speed);
+            }
+
+            // Once we're close enough, use a proptional control to approach the ball
+            if distance < self.dribbling_distance {
+                input.position = None;
+                // velocity is ball velocity + control
+                input.velocity = Velocity::global(
+                    (ball_speed * 0.8 + distance * (self.max_relative_speed / self.dribbling_distance))
+                        * (ball_pos - player_pos).normalize(),
+                );
             }
 
             SkillProgress::Continue(input)

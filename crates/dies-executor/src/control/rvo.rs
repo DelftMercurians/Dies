@@ -246,14 +246,20 @@ fn intersect(
         }
     }
 
-    // If suitable velocities exist, choose the one closest to the desired velocity
+    // If suitable velocities exist, choose the one closest to the desired velocity, that also has
+    // a similar magnitude (e.g. even if we have to move to the side, move with decent speed)
+    // technically, we want to choose the velocity that is going to bring as the fastest to the
+    // target, but we don't know what the target point is, since only the 'desired velocity' is
+    // available. So, this heuristic seems to be alright
     if !suitable_v.is_empty() {
         let best_v = suitable_v
             .into_iter()
             .min_by(|v1, v2| {
-                (v1 - desired_velocity)
-                    .norm()
-                    .partial_cmp(&(v2 - desired_velocity).norm())
+                let score1 = (v1 - desired_velocity).norm() + (v1.norm() - desired_velocity.norm()).abs() * 2.0;
+                let score2 = (v2 - desired_velocity).norm() + (v2.norm() - desired_velocity.norm()).abs() * 2.0;
+
+                score1
+                    .partial_cmp(&score2)
                     .unwrap()
             })
             .unwrap();

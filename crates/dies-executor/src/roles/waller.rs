@@ -41,16 +41,14 @@ impl Waller {
             // Intersect with the bottom boundary
             let t = (area_bottom_y - ball_pos.y) / direction.y;
             let x = ball_pos.x + t * direction.x;
-            if x <= area_right_x && x >= -half_length {
-                println!("bottom {}", x);
+            if x <= area_right_x && x >= -half_length && ball_pos.y < 0.0 {
                 return Vector2::new(x + self.offset, area_bottom_y);
             }
 
             // Intersect with the top boundary
             let t = (area_top_y - ball_pos.y) / direction.y;
             let x = ball_pos.x + t * direction.x;
-            if x <= area_right_x && x >= -half_length {
-                println!("top {}", x);
+            if x <= area_right_x && x >= -half_length && ball_pos.y > 0.0 {
                 return Vector2::new(x + self.offset, area_top_y);
             }
         }
@@ -58,9 +56,14 @@ impl Waller {
         // Intersect with the right boundary
         if direction.x != 0.0 {
             let t = (area_right_x - ball_pos.x) / direction.x;
-            let y = ball_pos.y + t * direction.y;
+            let mut y = ball_pos.y + t * direction.y;
+            if y + self.offset > world.penalty_area_width / 2.0 {
+                y = world.penalty_area_width / 2.0 - self.offset;
+            }
+            if y + self.offset < -world.penalty_area_width / 2.0 {
+                y = -world.penalty_area_width / 2.0 - self.offset;
+            }
             if y.abs() <= area_top_y {
-                println!("right");
                 return Vector2::new(area_right_x, y + self.offset);
             }
         }
