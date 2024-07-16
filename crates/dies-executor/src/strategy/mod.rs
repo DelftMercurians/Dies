@@ -3,8 +3,10 @@ pub mod free_kick;
 pub mod kickoff;
 pub mod penalty_kick;
 mod task;
+pub mod test_strat;
+pub mod attack_strat;
 
-use crate::roles::Role;
+use crate::{roles::{Role, RoleCtx}, PlayerControlInput, PlayerInputs};
 pub use adhoc::AdHocStrategy;
 use dies_core::{PlayerId, WorldData};
 use std::collections::HashMap;
@@ -25,6 +27,5 @@ pub trait Strategy: Send {
     /// by the team controller to produce player inputs.
     fn update(&mut self, ctx: StrategyCtx);
 
-    /// Get the roles assigned to players.
-    fn get_roles(&mut self) -> &mut HashMap<PlayerId, Box<dyn Role>>;
+    fn update_role(&mut self, player_id: PlayerId, ctx: RoleCtx) -> Option<PlayerControlInput>;
 }

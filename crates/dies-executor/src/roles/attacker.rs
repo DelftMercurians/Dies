@@ -1,4 +1,4 @@
-use super::RoleCtx;
+use super::{passer, RoleCtx};
 use crate::{
     roles::{skills::FetchBall, Role},
     skill, KickerControlInput, PlayerControlInput,
@@ -12,7 +12,7 @@ pub struct Attacker {
     passer_id: Option<PlayerId>,
     shooter_id: Option<PlayerId>,
     passer_kicked: bool,
-    starting_pos: Vector2,
+    starting_pos: Option<Vector2>,
 }
 
 impl Attacker {
@@ -20,7 +20,7 @@ impl Attacker {
     pub fn new(position: Vector2) -> Self {
         Self {
             position,
-            starting_pos: Vector2::new(0.0, 0.0),
+            starting_pos: None,
             passer_id: None,
             shooter_id: None,
             passer_kicked: false,
@@ -80,60 +80,74 @@ impl Role for Attacker {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
             // Passer and Shooter only needs to be assigned once if not it creates many bugs
-            if self.passer_id.is_none() {
-                self.passer_id = self.closest_player_to_ball(ctx.world, ball);
-                self.shooter_id = self.closest_player_to_passer(
-                    ctx.world,
-                    ctx.world
-                        .own_players
-                        .iter()
-                        .find(|p| p.id == self.passer_id.unwrap())
-                        .unwrap()
-                        .position,
-                    self.passer_id.unwrap(),
-                );
-            }
+            let (passer_id, shooter_id) =
+                if let (Some(passer), Some(shooter)) = (self.passer_id, self.shooter_id) {
+                    (passer, shooter)
+                } else {
+                    if let Some(passer) = self.closest_player_to_ball(ctx.world, ball) {
+                        let shooter = self.closest_player_to_passer(
+                            ctx.world,
+                            ctx.world
+                                .own_players
+                                .iter()
+                                .find(|p| p.id == passer)
+                                .unwrap()
+                                .position,
+                            passer,
+                        );
+                        if let Some(shooter) = shooter {
+                            self.passer_id = Some(passer);
+                            self.shooter_id = Some(shooter);
+                            (passer, shooter)
+                        } else {
+                            return PlayerControlInput::new();
+                        }
+                    } else {
+                        return PlayerControlInput::new();
+                    }
+                };
+
             // Getting the position of the passer and the shooter
             let passer_pos = ctx
                 .world
                 .own_players
                 .iter()
-                .find(|p| p.id == self.passer_id.unwrap())
+                .find(|p| p.id == passer_id)
                 .unwrap()
                 .position;
             let shooter_pos = ctx
                 .world
                 .own_players
                 .iter()
-                .find(|p| p.id == self.shooter_id.unwrap())
+                .find(|p| p.id == shooter_id)
                 .unwrap()
                 .position;
+
             let mut input = PlayerControlInput::new();
 
             // If the player moved more than 1m then it should look for another player to pass the ball
-            if distance(ctx.player.position, ball.position.xy()) < 500.0 {
-                if self.starting_pos == Vector2::new(0.0, 0.0) {
-                    self.starting_pos = ctx.player.position;
-                }
+            if ctx.player.breakbeam_ball_detected {
+                let starting_pos = *self.starting_pos.get_or_insert(ctx.player.position);
 
                 // dies_core::debug_string(format!("p{}", ctx.player.id))
 
-                if distance(self.starting_pos, ctx.player.position) >= 950.0 {
-                    println!("Moved more than 950 units");
+                if distance(starting_pos, ctx.player.position) >= 950.0 {
                     // input.with_position(ctx.player.position);
                     let target_angle = self.aim_at_player(ctx.player.position, shooter_pos);
                     input.with_yaw(target_angle);
                     input.with_dribbling(1.0);
                     if (target_angle - ctx.player.yaw).abs() < 0.1 {
                         input.with_kicker(KickerControlInput::Kick);
-                        self.starting_pos = Vector2::new(0.0, 0.0);
+                        self.starting_pos = None;
                     }
                     return input;
                 }
             }
 
             // If the player is the passer
-            if ctx.player.id == self.passer_id.unwrap() {
+            if ctx.player.id == passer_id {
+                dies_core::debug_string(format!("p{}.attackerState", ctx.player.id), "passer");
+
                 let target_pos = ball.position.xy();
                 let target_angle = self.aim_at_ball(ctx.player.position, target_pos);
                 let dribble_speed = 1.0;
@@ -158,7 +172,6 @@ impl Role for Attacker {
 
                     // If the passer is facing the shooter it passes the ball
                     if (target_angle - ctx.player.yaw).abs() < 0.1 {
-                        println!("Passing the ball");
                         self.passer_kicked = true;
                         input.with_kicker(KickerControlInput::Kick);
                     }
@@ -167,7 +180,9 @@ impl Role for Attacker {
             }
 
             // If the player is the shooter it aims at the ball and moves to its designated position
-            if ctx.player.id == self.shooter_id.unwrap() {
+            if ctx.player.id == shooter_id {
+                dies_core::debug_string(format!("p{}.attackerState", ctx.player.id), "shooter");
+
                 let target_angle = self.aim_at_ball(shooter_pos, ball.position.xy());
                 let dribble_speed = 1.0;
                 input.with_yaw(target_angle);
@@ -176,7 +191,6 @@ impl Role for Attacker {
                 // This should be changed to the parameter passer_has_kicked once it works!!
                 if distance(shooter_pos, ball.position.xy()) < 800.0 {
                     while distance(shooter_pos, ball.position.xy()) > 280.0 {
-                        println!("Moving to ball");
                         // Input to move to the ball and dribble.
                         input.with_position(ball.position.xy());
                         input.with_yaw(self.aim_at_ball(shooter_pos, ball.position.xy()));
@@ -195,7 +209,6 @@ impl Role for Attacker {
 
                     // If the shooter is facing the goal it kicks the ball
                     if (target_angle - ctx.player.yaw).abs() < 0.1 {
-                        println!("GOLLLLLLLLLLL");
                         input.with_kicker(KickerControlInput::Kick);
                     }
                     return input;

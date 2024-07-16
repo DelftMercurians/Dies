@@ -1,8 +1,9 @@
 use dies_core::{
-    find_intersection, get_tangent_line_direction, perp, which_side_of_robot, Angle, Vector2,
+    find_intersection, get_tangent_line_direction, perp, which_side_of_robot, Angle, SysStatus,
+    Vector2,
 };
 
-use crate::{control::Velocity, roles::SkillResult, PlayerControlInput};
+use crate::{control::Velocity, roles::SkillResult, KickerControlInput, PlayerControlInput};
 
 use super::{Skill, SkillCtx, SkillProgress};
 
@@ -99,10 +100,21 @@ impl Skill for Kick {
             return SkillProgress::success();
         }
 
+        let ready = match _ctx.player.kicker_status.as_ref() {
+            Some(SysStatus::Armed) => true,
+            Some(SysStatus::Ok) | Some(SysStatus::Standby) => false,
+            _ => return SkillProgress::failure(),
+        };
+
         let mut input = PlayerControlInput::new();
-        input.with_kicker(crate::KickerControlInput::Kick);
-        self.has_kicked = true;
-        SkillProgress::Continue(input)
+        if ready {
+            input.with_kicker(crate::KickerControlInput::Kick);
+            self.has_kicked = true;
+            SkillProgress::Continue(input)
+        } else {
+            input.kicker = KickerControlInput::Arm;
+            SkillProgress::Continue(input)
+        }
     }
 }
 

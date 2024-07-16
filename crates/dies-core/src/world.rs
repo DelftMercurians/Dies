@@ -166,6 +166,7 @@ pub struct PlayerData {
     /// Whether the breakbeam sensor detected a ball. Only available for own players.
     pub breakbeam_ball_detected: bool,
     pub imu_status: Option<SysStatus>,
+    pub kicker_status: Option<SysStatus>,
 }
 
 impl PlayerData {
@@ -185,6 +186,7 @@ impl PlayerData {
             pack_voltages: None,
             imu_status: None,
             breakbeam_ball_detected: false,
+            kicker_status: None,
         }
     }
 }
@@ -468,6 +470,7 @@ pub fn mock_world_data() -> WorldData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
+            kicker_status: Some(SysStatus::Standby),
         }],
         opp_players: vec![PlayerData {
             id: PlayerId::new(1),
@@ -484,6 +487,7 @@ pub fn mock_world_data() -> WorldData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
+            kicker_status: Some(SysStatus::Standby),
         }],
         field_geom: Some(FieldGeometry {
             field_length: 9000.0,

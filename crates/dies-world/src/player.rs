@@ -198,6 +198,7 @@ impl PlayerTracker {
                 .and_then(|f| f.breakbeam_ball_detected)
                 .unwrap_or(false),
             imu_status: self.last_feedback.and_then(|f| f.imu_status),
+            kicker_status: self.last_feedback.and_then(|f| f.kicker_status),
         })
     }
 }

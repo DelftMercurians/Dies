@@ -6,10 +6,10 @@ use super::{
     player_input::{KickerControlInput, PlayerInputs},
     rvo::velocity_obstacle_update,
 };
+use crate::roles::{RoleCtx, SkillState};
+use crate::strategy::StrategyCtx;
 use dies_core::{ControllerSettings, GameState, Obstacle, PlayerCmd, PlayerId, Vector2};
 use dies_core::{PlayerMoveCmd, WorldData};
-use crate::strategy::StrategyCtx;
-use crate::roles::{SkillState, RoleCtx};
 
 #[derive(Default)]
 struct RoleState {
@@ -77,22 +77,21 @@ impl TeamController {
 
         let strategy_ctx = StrategyCtx { world: &world_data };
         strategy.update(strategy_ctx);
-        let roles = strategy.get_roles();
-        let mut inputs = roles
-            .iter_mut()
-            .fold(PlayerInputs::new(), |mut inputs, (id, role)| {
-                let player_data = world_data
-                    .own_players
-                    .iter()
-                    .find(|p| p.id == *id)
-                    .expect("Player not found in world data");
-
-                let role_state = self.role_states.entry(*id).or_default();
-                let role_ctx = RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
-                let new_input = role.update(role_ctx);
-                inputs.insert(*id, new_input);
-                inputs
-            });
+        let mut inputs =
+            world_data
+                .own_players
+                .iter()
+                .fold(PlayerInputs::new(), |mut inputs, player_data| {
+                    let id = player_data.id;
+                    let role_state = self.role_states.entry(id).or_default();
+                    let role_ctx =
+                    RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
+                    let new_input = strategy.update_role(id, role_ctx);
+                    if let Some(new_input) = new_input {
+                        inputs.insert(id, new_input);
+                    }
+                    inputs
+                });
 
         // If in a stop state, override the inputs
         if world_data.current_game_state.game_state == GameState::Stop {
@@ -128,12 +127,10 @@ impl TeamController {
                         player_data,
                         &controller.target_velocity(),
                         all_players.as_slice(),
-                        &[
-                            Obstacle::Rectangle {
-                                min: Vector2::new(-10000.0, -1000.0),
-                                max: Vector2::new(-3500.0, 1000.0)
-                            }
-                        ],
+                        &[Obstacle::Rectangle {
+                            min: Vector2::new(-10000.0, -1000.0),
+                            max: Vector2::new(-3500.0, 1000.0),
+                        }],
                         &world_data.player_model,
                         super::rvo::VelocityObstacleType::VO,
                     );

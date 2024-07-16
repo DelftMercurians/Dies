@@ -261,8 +261,6 @@ fn intersect(
         return best_v;
     }
 
-    println!("no suitable velocity is found");
-
     // If no suitable velocity found, choose the "least bad" option
 
     unsuitable_v

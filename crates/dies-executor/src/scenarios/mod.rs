@@ -1,13 +1,15 @@
-#[deny(dead_code)]
 mod scenario;
 
 use crate::roles::attacker::Attacker;
 use crate::roles::dummy_role::DummyRole;
 use crate::roles::harasser::Harasser;
 use crate::roles::skills::FetchBallWithHeading;
+use crate::roles::Goalkeeper;
+use crate::strategy;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
+use crate::strategy::test_strat::TestStrat;
 use crate::{
     roles::{
         dribble_role::DribbleRole, fetcher_role::FetcherRole, kicker_role::KickerRole,
@@ -25,6 +27,14 @@ fn empty_scenario() -> ScenarioSetup {
     ScenarioSetup::new(AdHocStrategy::new(), None)
 }
 
+fn goalie_test() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Goalkeeper::new()));
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario.add_own_player();
+    scenario
+}
+
 fn penalty_kick() -> ScenarioSetup {
     let strategy = PenaltyKickStrategy::new(None);
     let mut scenario = ScenarioSetup::new(strategy, Some(GameState::PreparePenalty));
@@ -35,6 +45,15 @@ fn penalty_kick() -> ScenarioSetup {
         .add_own_player_at(Vector2::new(-1000.0, 1000.0))
         .add_own_player_at(Vector2::new(-1000.0, -1000.0))
         .add_opp_player_at(Vector2::new(3500.0, 0.0));
+    scenario
+}
+
+fn kick_pass() -> ScenarioSetup {
+    let mut scenario = ScenarioSetup::new(TestStrat::new(), None);
+    scenario
+        .add_ball_at(Vector3::zeros())
+        .add_own_player()
+        .add_own_player();
     scenario
 }
 
@@ -223,6 +242,8 @@ impl Serialize for ScenarioType {
 // **NOTE**: Add new scenarios here.
 scenarios! {
     empty_scenario,
+    goalie_test,
+    kick_pass,
     need_to_cross_the_goal_area,
     need_to_cross_the_goal_area_alt,
     test_role_multiple_targets,

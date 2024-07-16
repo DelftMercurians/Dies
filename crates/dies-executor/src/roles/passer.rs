@@ -1,68 +1,43 @@
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::Instant;
 
-use dies_core::PlayerId;
+use dies_core::{Angle, PlayerId};
 use dies_core::{PlayerData, WorldData};
 
+use crate::roles::skills::{FetchBallWithHeading, Kick};
 use crate::roles::Role;
-use crate::PlayerControlInput;
+use crate::{skill, PlayerControlInput};
 
-// pub(super) static PASSER_ID: PlayerId = PlayerId::new(0);
-// pub(super) static RECEIVER_ID: PlayerId = PlayerId::new(5);
+use super::RoleCtx;
 
 pub struct Passer {
-    timestamp: Instant,
-    is_armed: bool,
-    has_kicked: Arc<AtomicBool>,
+    has_passed: bool,
+    receiver_id: PlayerId,
+}
+
+impl Passer {
+    pub fn new(receiver_id: PlayerId) -> Self {
+        Self {
+            has_passed: false,
+            receiver_id,
+        }
+    }
+
+    pub fn has_passed(&self) -> bool {
+        self.has_passed
+    }
 }
 
 impl Role for Passer {
-    // assume for now that we stand close to the ball
-    // and we can kick it after a few seconds
+    fn update(&mut self, ctx: RoleCtx) -> PlayerControlInput {
+        let receiver = ctx.world.get_player(self.receiver_id).unwrap();
+        let heading = Angle::between_points(ctx.player.position, receiver.position);
 
-    fn update(&mut self, _player_data: &PlayerData, _world: &WorldData) -> PlayerControlInput {
-        let input = PlayerControlInput::new();
-        // let target_angle = self.angle_to_receiver(_player_data, _world);
-        // input.with_orientation(target_angle);
+        skill!(ctx, FetchBallWithHeading::new(heading));
+        skill!(ctx, Kick::new());
 
-        // if (self.timestamp.elapsed().as_secs() > 3) && !self.is_armed {
-        //     self.is_armed = true;
-        //     self.timestamp = Instant::now();
-        //     let kicker = crate::KickerControlInput::Arm;
+        self.has_passed = true;
 
-        //     println!("[PASSER]:Armed");
-        //     input.with_kicker(kicker);
-
-        //     return input;
-        // } else if self.timestamp.elapsed().as_secs() > 1
-        //     && self.is_armed
-        //     && !self.has_kicked.load(std::sync::atomic::Ordering::Relaxed)
-        // {
-        //     input.with_dribbling(0.0);
-
-        //     self.has_kicked
-        //         .store(true, std::sync::atomic::Ordering::Relaxed);
-        //     self.timestamp = Instant::now();
-
-        //     let kicker = crate::KickerControlInput::Kick;
-        //     input.with_kicker(kicker);
-
-        //     println!("[PASSER]: Kicked");
-
-        //     return input;
-        // } else if self.timestamp.elapsed().as_secs_f64() < 1.1
-        //     && self.has_kicked.load(std::sync::atomic::Ordering::Relaxed)
-        // {
-        //     // kick for 0.1 seconds
-
-        //     input.with_dribbling(0.0);
-        //     let kicker = crate::KickerControlInput::Kick;
-        //     input.with_kicker(kicker);
-
-        //     println!("[PASSER]: Kicked2");
-
-        //     return input;
-        // }
-        input
+        PlayerControlInput::default()
     }
 }

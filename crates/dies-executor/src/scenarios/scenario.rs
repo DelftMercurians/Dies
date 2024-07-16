@@ -170,28 +170,28 @@ impl ScenarioSetup {
         bs_client: BasestationHandle,
     ) -> Result<Executor> {
         let mut ssl_client = VisionClient::new(ssl_config.clone()).await?;
-        if self.has_requirements() {
-            // Wait for the setup check to succeed
-            let mut tracker = WorldTracker::new(&settings);
-            let mut check_interval = tokio::time::interval(LIVE_CHECK_INTERVAL);
-            let max_iterations = LIVE_CHECK_TIMEOUT.as_millis() / LIVE_CHECK_INTERVAL.as_millis();
-            let mut iterations = 0;
-            loop {
-                let packet = ssl_client.recv().await?;
-                tracker.update_from_vision(&packet, WorldInstant::now_real());
+        // if self.has_requirements() {
+        //     // Wait for the setup check to succeed
+        //     let mut tracker = WorldTracker::new(&settings);
+        //     let mut check_interval = tokio::time::interval(LIVE_CHECK_INTERVAL);
+        //     let max_iterations = LIVE_CHECK_TIMEOUT.as_millis() / LIVE_CHECK_INTERVAL.as_millis();
+        //     let mut iterations = 0;
+        //     loop {
+        //         let packet = ssl_client.recv().await?;
+        //         tracker.update_from_vision(&packet, WorldInstant::now_real());
 
-                if self.check_live(tracker.get()) {
-                    break;
-                }
+        //         if self.check_live(tracker.get()) {
+        //             break;
+        //         }
 
-                iterations += 1;
-                if iterations >= max_iterations {
-                    bail!("Timeout while waiting for scenario to be live");
-                }
+        //         iterations += 1;
+        //         if iterations >= max_iterations {
+        //             bail!("Timeout while waiting for scenario to be live");
+        //         }
 
-                check_interval.tick().await;
-            }
-        }
+        //         check_interval.tick().await;
+        //     }
+        // }
 
         Ok(Executor::new_live(
             settings,
@@ -372,6 +372,7 @@ mod tests {
             position: Vector3::zeros(),
             velocity: Vector3::zeros(),
             raw_position: vec![],
+            detected: true,
         });
         world.own_players[0].position = Vector2::new(91.0, 0.0);
 
