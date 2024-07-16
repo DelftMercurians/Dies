@@ -192,11 +192,19 @@ impl Skill for FetchBall {
                 self.breakbeam_ball_detected = 0.0;
             }
 
-            if ball_speed < 500.0 {
+            if (!ball.detected && distance < 300.0)
+                || (distance < self.dribbling_distance && ball_speed < 500.0)
+            {
+                input.velocity = Velocity::global(
+                    distance
+                        * (self.max_relative_speed / self.dribbling_distance)
+                        * (ball_pos - player_pos).normalize(),
+                );
+            } else if ball_speed < 500.0 {
                 // If the ball is too slow, just go to the ball
                 let target_pos = ball_pos + ball_angle * Vector2::new(-self.stop_distance, 0.0);
                 input.with_position(target_pos);
-            } else if ball_speed > 0.0 {
+            } else {
                 // If the ball is moving, try to intercept it
                 let intersection = find_intersection(
                     player_pos,
@@ -215,16 +223,6 @@ impl Skill for FetchBall {
 
             if distance < self.dribbling_distance {
                 input.with_dribbling(self.dribbling_speed);
-            }
-
-            // Once we're close enough, use a proptional control to approach the ball
-            if distance < self.dribbling_distance && ball_speed < 500.0 {
-                input.position = None;
-                input.velocity = Velocity::global(
-                    distance
-                        * (self.max_relative_speed / self.dribbling_distance)
-                        * (ball_pos - player_pos).normalize(),
-                );
             }
 
             SkillProgress::Continue(input)

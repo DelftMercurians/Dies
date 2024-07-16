@@ -118,6 +118,8 @@ pub struct BallData {
     pub raw_position: Vec<Vector3>,
     /// Velocity of the ball in mm/s, in dies coordinates
     pub velocity: Vector3,
+    /// Whether the ball is being detected
+    pub detected: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

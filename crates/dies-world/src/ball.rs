@@ -1,5 +1,5 @@
 use dies_core::{
-    debug_line, debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3,
+    debug_line, debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3, WorldInstant,
 };
 use nalgebra::{SVector, Vector6};
 
@@ -7,6 +7,8 @@ use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
 use crate::coord_utils::to_dies_coords3;
 use crate::filter::MaybeKalman;
+
+const DETECTION_TIMEOUT: f64 = 0.1;
 
 /// Stored data for the ball from the last update.
 ///
@@ -33,6 +35,8 @@ pub struct BallTracker {
 
     /// Result of the last vision update
     last_detection: Option<StoredData>,
+
+    detected: bool,
 }
 
 impl BallTracker {
@@ -46,6 +50,7 @@ impl BallTracker {
                 settings.ball_unit_transition_var,
                 settings.ball_measurement_var,
             ),
+            detected: false,
         }
     }
 
@@ -83,6 +88,8 @@ impl BallTracker {
         field_mask: &FieldMask,
         field_geom: Option<&FieldGeometry>,
     ) {
+        self.detected = false;
+        
         frame
             .balls
             .iter()
@@ -121,6 +128,7 @@ impl BallTracker {
                 velocity: Vector3::zeros(),
             });
 
+            self.detected = true;
             self.filter.init(
                 Vector6::new(
                     ball_measurements[0].0.x,
@@ -133,6 +141,9 @@ impl BallTracker {
                 current_time,
             );
         } else {
+            if ball_measurements.len() > 0 {
+                self.detected = true;
+            }
             for (pos, _is_noisy) in ball_measurements.iter() {
                 let pos_ov = SVector::<f64, 3>::new(pos.x, pos.y, pos.z);
                 let z = self
@@ -178,6 +189,7 @@ impl BallTracker {
                 .collect(),
             position: to_dies_coords3(data.position, self.play_dir_x),
             velocity: to_dies_coords3(data.velocity, self.play_dir_x),
+            detected: self.detected,
         })
     }
 }
