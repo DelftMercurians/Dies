@@ -226,7 +226,6 @@ scenarios! {
     need_to_cross_the_goal_area,
     need_to_cross_the_goal_area_alt,
     test_role_multiple_targets,
-    dribble,
     fetch_ball_test_live,
     fetch_ball_with_heading,
     free_kick,
