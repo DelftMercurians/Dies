@@ -1,5 +1,5 @@
 use dies_core::{
-    find_intersection, get_tangent_line_direction, perp, which_side_of_robot, Angle, Vector2,
+    find_intersection, get_tangent_line_direction, perp, which_side_of_robot, Angle, Vector2
 };
 
 use crate::{control::Velocity, roles::SkillResult, PlayerControlInput};
@@ -203,9 +203,11 @@ impl Skill for FetchBall {
                 0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 1.0, 1.2, 1.5, 2.0,
             ];
 
+            let friction_factor = 3.0;
+
             let ball_points: Vec<Vector2> = points_schedule
                         .iter()
-                        .map(|t| ball_pos + ball.velocity.xy() * (*t) * (1.0 - f64::min(1.0, (*t) / 3.0)))
+                        .map(|t| ball_pos + ball.velocity.xy() * (*t) * (1.0 - f64::min(1.0, (*t) / friction_factor)))
                         .collect();
 
 
@@ -216,9 +218,9 @@ impl Skill for FetchBall {
                 let must_be_reached_before = points_schedule[i];
                 // now we have both segment points available, lets compute time_to_reach
                 let time_to_reach = f64::min(
-                    (a - player_pos).norm() / 500.0,
-                    (b - player_pos).norm() / 500.0
-                ); // approximated for now lol
+                    ctx.world.time_to_reach_point(ctx.player, a),
+                    ctx.world.time_to_reach_point(ctx.player, b)
+                );
 
                 if time_to_reach < must_be_reached_before {
                     intersection = b;
