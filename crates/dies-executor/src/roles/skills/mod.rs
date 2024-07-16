@@ -68,7 +68,7 @@ impl Skill for GoToPosition {
             }
 
             input.with_dribbling(1.0);
-            input.with_acceleration_limit(500.0);
+            input.with_acceleration_limit(700.0);
             input.with_angular_acceleration_limit(360.0f64.to_radians());
 
             // let ball_vel = ball.velocity.xy();
