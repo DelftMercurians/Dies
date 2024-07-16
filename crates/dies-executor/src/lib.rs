@@ -4,7 +4,7 @@ use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     ExecutorInfo, ExecutorSettings, GameState, PlayerCmd, PlayerFeedbackMsg, PlayerId,
-    PlayerOverrideCommand, WorldUpdate,
+    PlayerMoveCmd, PlayerOverrideCommand, WorldUpdate,
 };
 use dies_core::{SimulatorCmd, Vector3, WorldInstant};
 use dies_logger::{log_referee, log_vision, log_world};
@@ -86,7 +86,6 @@ impl PlayerOverrideState {
                 arm_kick,
             } => PlayerControlInput {
                 velocity: Velocity::local(velocity),
-                angular_velocity,
                 dribbling_speed: dribble_speed,
                 kicker: if arm_kick {
                     KickerControlInput::Arm
@@ -102,7 +101,6 @@ impl PlayerOverrideState {
                 arm_kick,
             } => PlayerControlInput {
                 velocity: Velocity::global(velocity),
-                angular_velocity,
                 dribbling_speed: dribble_speed,
                 kicker: if arm_kick {
                     KickerControlInput::Arm
@@ -320,7 +318,9 @@ impl Executor {
                     }
                     _ = cmd_interval.tick() => {
                         for cmd in self.player_commands() {
-                            simulator.push_cmd(cmd);
+                            if let PlayerCmd::Move(cmd) = cmd {
+                                simulator.push_cmd(cmd);
+                            }
                         }
                     }
                 }

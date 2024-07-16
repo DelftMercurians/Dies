@@ -1,7 +1,11 @@
-use std::time::Duration;
+use std::{
+    f64::EPSILON,
+    time::{Duration, Instant},
+};
 
 use dies_core::{
-    Angle, ControllerSettings, KickerCmd, PlayerCmd, PlayerData, PlayerId, Vector2, WorldData,
+    Angle, ControllerSettings, PlayerCmd, PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus,
+    Vector2, WorldData,
 };
 
 use super::{
@@ -30,8 +34,8 @@ pub struct PlayerController {
 
     yaw_control: YawController,
     last_yaw: Angle,
-    /// Output angular velocity \[rad/s\]
-    target_angular_velocity: f64,
+    /// Output angular velocity or heading
+    target_z: f64,
 
     frame_misses: usize,
 
@@ -45,6 +49,9 @@ pub struct PlayerController {
     max_decel: f64,
     max_angular_velocity: f64,
     max_angular_acceleration: f64,
+
+    have_imu: bool,
+    heading_interval: IntervalTrigger,
 }
 
 impl PlayerController {
@@ -59,7 +66,7 @@ impl PlayerController {
 
             yaw_control: YawController::new(settings.angle_kp, settings.angle_cutoff_distance),
             last_yaw: Angle::from_radians(0.0),
-            target_angular_velocity: 0.0,
+            target_z: 0.0,
 
             frame_misses: 0,
             kicker: KickerState::Disarming,
@@ -71,6 +78,9 @@ impl PlayerController {
             max_decel: settings.max_deceleration,
             max_angular_velocity: settings.max_angular_velocity,
             max_angular_acceleration: settings.max_angular_acceleration,
+
+            have_imu: false,
+            heading_interval: IntervalTrigger::new(Duration::from_secs_f64(0.5)),
         };
         instance.update_settings(settings);
         instance
@@ -103,25 +113,36 @@ impl PlayerController {
 
     /// Get the current command for the player.
     pub fn command(&mut self) -> PlayerCmd {
-        let mut cmd = PlayerCmd {
+        if self.heading_interval.trigger() && self.have_imu {
+            return PlayerCmd::SetHeading {
+                id: self.id,
+                heading: -self.last_yaw.radians(),
+            };
+        }
+
+        let mut cmd = PlayerMoveCmd {
             id: self.id,
             // In the robot's local frame +sx means forward and +sy means right
             sx: self.target_velocity.x / 1000.0, // Convert to m/s
             sy: -self.target_velocity.y / 1000.0, // Convert to m/s
-            w: -self.target_angular_velocity,
+            w: -self.target_z,
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
-            kicker_cmd: KickerCmd::None,
+            robot_cmd: if self.have_imu {
+                RobotCmd::HeadingControl
+            } else {
+                RobotCmd::YawRateControl
+            },
         };
 
         match self.kicker {
             KickerState::Arming => {
-                cmd.kicker_cmd = KickerCmd::Arm;
+                cmd.robot_cmd = RobotCmd::Arm;
             }
             KickerState::Kicking(count) => {
                 if count == 0 {
                     self.kicker = KickerState::Disarming;
                 } else {
-                    cmd.kicker_cmd = KickerCmd::Kick;
+                    cmd.robot_cmd = RobotCmd::Kick;
                     self.kicker = KickerState::Kicking(count - 1);
                 }
             }
@@ -134,10 +155,10 @@ impl PlayerController {
         dies_core::debug_value(format!("p{}.dribble_speed", self.id), cmd.dribble_speed);
         dies_core::debug_string(
             format!("p{}.kicker_cmd", self.id),
-            format!("{:?}", cmd.kicker_cmd),
+            format!("{:?}", cmd.robot_cmd),
         );
 
-        cmd
+        PlayerCmd::Move(cmd)
     }
 
     /// Increment the missing frame count, stops the robot if it is too high.
@@ -146,7 +167,7 @@ impl PlayerController {
         if self.frame_misses > MISSING_FRAMES_THRESHOLD {
             log::warn!("Player {} has missing frames, stopping", self.id);
             self.target_velocity = Vector2::new(0.0, 0.0);
-            self.target_angular_velocity = 0.0;
+            self.target_z = 0.0;
         }
     }
 
@@ -158,6 +179,8 @@ impl PlayerController {
         input: &PlayerControlInput,
         dt: f64,
     ) {
+        self.have_imu = matches!(state.imu_status, Some(SysStatus::Ok));
+
         if is_about_to_collide(state, world, 3.0 * dt) {
             dies_core::debug_string(format!("p{}.collision", self.id), "true");
             // TODO: Too strict
@@ -195,12 +218,18 @@ impl PlayerController {
         self.target_velocity += local_vel;
 
         // Draw the velocity
-        // dies_core::debug_line(
-        //     format!("p{}.target_velocity", self.id),
-        //     self.last_pos,
-        //     self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
-        //     dies_core::DebugColor::Red,
-        // );
+        dies_core::debug_line(
+            format!("p{}.target_velocity", self.id),
+            self.last_pos,
+            self.last_pos
+                + self
+                    .last_yaw
+                    .rotate_vector(&self.target_velocity)
+                    .try_normalize(EPSILON)
+                    .unwrap_or(Vector2::zeros())
+                    * 50.0,
+            dies_core::DebugColor::Green,
+        );
         dies_core::debug_line(
             format!("p{}.velocity", self.id),
             self.last_pos,
@@ -208,34 +237,36 @@ impl PlayerController {
             dies_core::DebugColor::Red,
         );
 
-        self.target_angular_velocity = 0.0;
-        dies_core::debug_value(
-            format!("p{}.angular_speed", self.id),
-            state.angular_speed.to_degrees(),
-        );
         if let Some(yaw) = input.yaw {
             dies_core::debug_line(
                 format!("p{}.target_yaw_line", self.id),
                 self.last_pos,
-                self.last_pos + yaw.rotate_vector(&Vector2::new(200.0, 0.0)),
-                dies_core::DebugColor::Green,
+                self.last_pos + yaw.rotate_vector(&Vector2::new(30.0, 0.0)),
+                dies_core::DebugColor::Purple,
             );
 
-            self.yaw_control.set_setpoint(yaw);
-            let head_u = self.yaw_control.update(
-                self.last_yaw,
-                state.angular_speed,
-                dt,
-                input
-                    .angular_speed_limit
-                    .unwrap_or(self.max_angular_velocity),
-                input
-                    .angular_acceleration_limit
-                    .unwrap_or(self.max_angular_acceleration),
-            );
-            self.target_angular_velocity = head_u;
+            if self.have_imu {
+                dies_core::debug_string(format!("p{}.yaw_control", self.id), "heading");
+                self.target_z = yaw.radians();
+            } else {
+                dies_core::debug_string(format!("p{}.yaw_control", self.id), "yaw rate");
+                self.yaw_control.set_setpoint(yaw);
+                let head_u = self.yaw_control.update(
+                    self.last_yaw,
+                    state.angular_speed,
+                    dt,
+                    input
+                        .angular_speed_limit
+                        .unwrap_or(self.max_angular_velocity),
+                    input
+                        .angular_acceleration_limit
+                        .unwrap_or(self.max_angular_acceleration),
+                );
+                self.target_z = head_u;
+            }
+        } else {
+            self.target_z = 0.0;
         }
-        self.target_angular_velocity += input.angular_velocity;
 
         // Set dribbling speed
         self.dribble_speed = input.dribbling_speed;
@@ -296,4 +327,30 @@ fn is_about_to_collide(player: &PlayerData, world: &WorldData, time_horizon: f64
     }
 
     false
+}
+
+/// A struct that triggers an event periodically at a given interval.
+struct IntervalTrigger {
+    interval: Duration,
+    next_trigger: Instant,
+}
+
+impl IntervalTrigger {
+    /// Creates a new `Interval` with the given interval.
+    fn new(interval: Duration) -> Self {
+        Self {
+            interval,
+            next_trigger: Instant::now() + interval,
+        }
+    }
+
+    /// Returns true if the event should be triggered at the given time.
+    fn trigger(&mut self) -> bool {
+        if Instant::now() >= self.next_trigger {
+            self.next_trigger += self.interval;
+            true
+        } else {
+            false
+        }
+    }
 }

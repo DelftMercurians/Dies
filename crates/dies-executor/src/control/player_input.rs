@@ -120,8 +120,6 @@ pub struct PlayerControlInput {
     /// Target yaw. If `None` the player will just follow the given angula
     /// velocity
     pub yaw: Option<Angle>,
-    /// Target angular velocity. This is added to the output of the controller.
-    pub angular_velocity: f64,
     /// Dribbler speed normalised to \[0, 1\]
     pub dribbling_speed: f64,
     /// Kicker control input

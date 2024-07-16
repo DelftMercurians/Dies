@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context, Result};
 use glue::{HG_Status, Monitor, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
+use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, SysStatus};
 
 const MAX_MSG_FREQ: f64 = 200.0;
 const BASE_STATION_READ_FREQ: f64 = 100.0;
@@ -132,30 +132,38 @@ impl BasestationHandle {
             loop {
                 // Send commands
                 match cmd_rx.try_recv() {
-                    Ok(Message::PlayerCmd((cmd, resp))) => {
-                        last_cmd_time = Instant::now();
-                        let robot_id = id_map
-                            .get(&cmd.id)
-                            .copied()
-                            .unwrap_or_else(|| cmd.id.as_u32())
-                            as usize;
-                        match &mut connection {
-                            Connection::V1(monitor) => {
-                                resp.send(
-                                    monitor
-                                        .send_single(cmd.id.as_u32() as u8, cmd.into())
-                                        .map_err(|_| anyhow!("Failed to send command")),
-                                )
-                                .ok();
-                            }
-                            Connection::V0(serial) => {
-                                all_ids.insert(robot_id);
-                                let cmd_str = cmd.into_proto_v0_with_id(robot_id);
-                                serial.send(&cmd_str);
-                                resp.send(Ok(())).ok();
+                    Ok(Message::PlayerCmd((cmd, resp))) => match cmd {
+                        PlayerCmd::Move(cmd) => {
+                            let robot_id = id_map
+                                .get(&cmd.id)
+                                .copied()
+                                .unwrap_or_else(|| cmd.id.as_u32())
+                                as usize;
+                            match &mut connection {
+                                Connection::V1(monitor) => {
+                                    resp.send(
+                                        monitor
+                                            .send_single(cmd.id.as_u32() as u8, cmd.into())
+                                            .map_err(|_| anyhow!("Failed to send command")),
+                                    )
+                                    .ok();
+                                }
+                                Connection::V0(serial) => {
+                                    all_ids.insert(robot_id);
+                                    let cmd_str = cmd.into_proto_v0_with_id(robot_id);
+                                    serial.send(&cmd_str);
+                                    resp.send(Ok(())).ok();
+                                }
                             }
                         }
-                    }
+                        PlayerCmd::SetHeading { id, heading } => match &mut connection {
+                            Connection::V1(monitor) => {
+                                let _ =
+                                    monitor.set_current_heading(id.as_u32() as u8, heading as f32);
+                            }
+                            _ => todo!(),
+                        },
+                    },
                     Ok(Message::ChangeIdMap(new_id_map)) => {
                         id_map = new_id_map;
                     }

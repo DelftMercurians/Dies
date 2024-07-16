@@ -27,7 +27,7 @@ impl std::fmt::Display for PlayerId {
 
 /// A command to the kicker of a robot.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum KickerCmd {
+pub enum RobotCmd {
     /// Do nothing // TODO: What is this?
     None,
     /// Arm the kicker
@@ -42,18 +42,46 @@ pub enum KickerCmd {
     Chip,
     /// Power board off
     PowerBoardOff,
+    Reboot,
+    Beep,
+    Coast,
+    HeadingControl ,
+    YawRateControl ,
 }
 
-impl From<KickerCmd> for glue::Radio_RobotCommand {
-    fn from(val: KickerCmd) -> Self {
+impl From<RobotCmd> for glue::Radio_RobotCommand {
+    fn from(val: RobotCmd) -> Self {
         match val {
-            KickerCmd::None => glue::Radio_RobotCommand::NONE,
-            KickerCmd::Arm => glue::Radio_RobotCommand::ARM,
-            KickerCmd::Disarm => glue::Radio_RobotCommand::DISARM,
-            KickerCmd::Discharge => glue::Radio_RobotCommand::DISCHARGE,
-            KickerCmd::Kick => glue::Radio_RobotCommand::KICK,
-            KickerCmd::Chip => glue::Radio_RobotCommand::CHIP,
-            KickerCmd::PowerBoardOff => glue::Radio_RobotCommand::POWER_BOARD_OFF,
+            RobotCmd::None => glue::Radio_RobotCommand::NONE,
+            RobotCmd::Arm => glue::Radio_RobotCommand::ARM,
+            RobotCmd::Disarm => glue::Radio_RobotCommand::DISARM,
+            RobotCmd::Discharge => glue::Radio_RobotCommand::DISCHARGE,
+            RobotCmd::Kick => glue::Radio_RobotCommand::KICK,
+            RobotCmd::Chip => glue::Radio_RobotCommand::CHIP,
+            RobotCmd::PowerBoardOff => glue::Radio_RobotCommand::POWER_BOARD_OFF,
+            RobotCmd::Reboot => glue::Radio_RobotCommand::REBOOT,
+            RobotCmd::Beep => glue::Radio_RobotCommand::BEEP,
+            RobotCmd::Coast => glue::Radio_RobotCommand::COAST,
+            RobotCmd::HeadingControl => glue::Radio_RobotCommand::HEADING_CONTROL,
+            RobotCmd::YawRateControl => glue::Radio_RobotCommand::YAW_RATE_CONTROL,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum PlayerCmd {
+    Move(PlayerMoveCmd),
+    SetHeading {
+        id: PlayerId,
+        heading: f64,
+    },
+}
+
+impl PlayerCmd {
+    pub fn id(&self) -> PlayerId {
+        match self {
+            PlayerCmd::Move(cmd) => cmd.id,
+            PlayerCmd::SetHeading { id, .. } => *id,
         }
     }
 }
@@ -62,7 +90,7 @@ impl From<KickerCmd> for glue::Radio_RobotCommand {
 ///
 /// All values are relative to the robots local frame and are in meters.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct PlayerCmd {
+pub struct PlayerMoveCmd {
     /// The robot's ID
     pub id: PlayerId,
     /// The player's x (forward-backward, with `+` forward) velocity \[m/s]
@@ -74,30 +102,31 @@ pub struct PlayerCmd {
     /// The player's dribble speed
     pub dribble_speed: f64,
     /// Command to the kicker
-    pub kicker_cmd: KickerCmd,
+    pub robot_cmd: RobotCmd,
 }
 
-impl PlayerCmd {
-    pub fn zero(id: PlayerId) -> PlayerCmd {
-        PlayerCmd {
+impl PlayerMoveCmd {
+    pub fn zero(id: PlayerId) -> PlayerMoveCmd {
+        PlayerMoveCmd {
             id,
             sx: 0.0,
             sy: 0.0,
             w: 0.0,
             dribble_speed: 0.0,
-            kicker_cmd: KickerCmd::None,
+            robot_cmd: RobotCmd::None,
         }
     }
 
     pub fn into_proto_v0_with_id(self, with_id: usize) -> String {
-        let extra = match self.kicker_cmd {
-            KickerCmd::Arm => "A".to_string(),
-            KickerCmd::Disarm => "D".to_string(),
-            KickerCmd::Kick => "K".to_string(),
-            KickerCmd::Discharge => "".to_string(),
-            KickerCmd::None => "".to_string(),
-            KickerCmd::Chip => "".to_string(),
-            KickerCmd::PowerBoardOff => "".to_string(),
+        let extra = match self.robot_cmd {
+            RobotCmd::Arm => "A".to_string(),
+            RobotCmd::Disarm => "D".to_string(),
+            RobotCmd::Kick => "K".to_string(),
+            RobotCmd::Discharge => "".to_string(),
+            RobotCmd::None => "".to_string(),
+            RobotCmd::Chip => "".to_string(),
+            RobotCmd::PowerBoardOff => "".to_string(),
+            _ => "".to_string(),
         };
 
         format!(
@@ -107,8 +136,8 @@ impl PlayerCmd {
     }
 }
 
-impl From<PlayerCmd> for glue::Radio_Command {
-    fn from(val: PlayerCmd) -> Self {
+impl From<PlayerMoveCmd> for glue::Radio_Command {
+    fn from(val: PlayerMoveCmd) -> Self {
         glue::Radio_Command {
             speed: glue::HG_Pose {
                 x: val.sx as f32,
@@ -116,7 +145,7 @@ impl From<PlayerCmd> for glue::Radio_Command {
                 z: val.w as f32,
             },
             dribbler_speed: val.dribble_speed as f32,
-            robot_command: val.kicker_cmd.into(),
+            robot_command: val.robot_cmd.into(),
             kick_time: 3_000.0,
             fan_speed: 0.0,
             _pad: [0, 0, 0],

@@ -250,6 +250,7 @@ export interface PlayerData {
 	pack_voltages?: [number, number];
 	/** Whether the breakbeam sensor detected a ball. Only available for own players. */
 	breakbeam_ball_detected: boolean;
+	imu_status?: SysStatus;
 }
 
 /** A struct to store the ball state from a single frame. */

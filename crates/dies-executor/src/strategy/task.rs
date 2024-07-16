@@ -36,7 +36,6 @@ impl Task3Phase {
     ) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
         //log::info!("playerid: {:?}, Relocating to {:?}, current position: {:?}, self status: {:?}", player_data.id, goal, player_data.position,self.status);
-        dies_core::debug_cross("p0.cross", goal, DebugColor::Red);
         if player_data.id.as_u32() == 0 {
             dies_core::debug_string("p0.goal", format!("{}, {}", goal.x, goal.y));
             dies_core::debug_string(
