@@ -8,8 +8,17 @@ use crate::roles::skills::FetchBallWithHeading;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
-use crate::{roles::fetcher_role::FetcherRole, strategy::AdHocStrategy};
-use dies_core::{Angle, GameState, Vector2, Vector3};
+use crate::{
+    roles::{
+        dribble_role::DribbleRole,
+        test_role::TestRole,
+        waller::Waller,
+        fetcher_role::FetcherRole,
+        kicker_role::KickerRole
+    },
+    strategy::AdHocStrategy,
+};
+use dies_core::{GameState, Vector2, Vector3, Angle};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -65,7 +74,31 @@ fn one_harasser_one_player_one_ball() -> ScenarioSetup {
     scenario
 }
 
-fn one_attacker() -> ScenarioSetup {
+fn need_to_cross_the_goal_area() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Waller::new(0.0)));
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario
+        .add_ball_at(Vector3::new(-4300.0, 3000.0, 0.0))
+        .add_own_player_at(Vector2::new(-4000.0, -2000.0));
+
+    scenario
+}
+
+
+fn need_to_cross_the_goal_area_alt() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Waller::new(0.0)));
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario
+        .add_ball_at(Vector3::new(-4500.0, -2950.0, 0.0))
+        .add_own_player_at(Vector2::new(-3800.0, 500.0));
+
+    scenario
+}
+
+
+fn test_role_multiple_targets() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Attacker::new(Vector2::new(-800.0, -1000.0))));
     let mut scenario = ScenarioSetup::new(strategy, None);
@@ -187,16 +220,17 @@ impl Serialize for ScenarioType {
         serializer.serialize_str(self.name())
     }
 }
-
 // **NOTE**: Add new scenarios here.
 scenarios! {
     empty_scenario,
+    need_to_cross_the_goal_area,
+    need_to_cross_the_goal_area_alt,
+    test_role_multiple_targets,
     fetch_ball_test_live,
     fetch_ball_with_heading,
     free_kick,
     penalty_kick,
     kickoff,
-    one_attacker,
     one_harasser_one_player_one_ball,
     three_attackers
 }

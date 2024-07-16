@@ -6,12 +6,10 @@ use super::{
     player_input::{KickerControlInput, PlayerInputs},
     rvo::velocity_obstacle_update,
 };
-use crate::{
-    roles::{RoleCtx, SkillState},
-    strategy::StrategyCtx,
-};
-use dies_core::{ControllerSettings, GameState, PlayerId};
+use dies_core::{ControllerSettings, GameState, PlayerId, Obstacle, Vector2};
 use dies_core::{PlayerCmd, WorldData};
+use crate::strategy::StrategyCtx;
+use crate::roles::{SkillState, RoleCtx};
 
 #[derive(Default)]
 struct RoleState {

@@ -2,18 +2,23 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::time::Instant;
 
-use dodgy_2d::Obstacle;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
     find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry, RoleType,
-    SysStatus, Vector2, Vector3,
+    SysStatus, Vector2, Vector3
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 500.0;
 const PLAYER_RADIUS: f64 = 90.0;
 const DRIBBLER_ANGLE_DEG: f64 = 56.0;
+
+// Enum to represent different obstacle types
+pub enum Obstacle {
+    Circle { center: Vector2, radius: f64 },
+    Rectangle { min: Vector2, max: Vector2 },
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum WorldInstant {
@@ -316,6 +321,7 @@ impl WorldData {
             };
 
             // Check all four boundaries
+            /*
             check_boundary(
                 Vector2::new(-half_length, half_width),
                 Vector2::new(half_length, half_width),
@@ -332,6 +338,7 @@ impl WorldData {
                 Vector2::new(half_length, -half_width),
                 Vector2::new(half_length, half_width),
             );
+            */
         }
 
         closest_intersection.map(|(_, point)| point)
@@ -363,43 +370,35 @@ impl WorldData {
     pub fn get_obstacles_for_player(&self, role: RoleType) -> Vec<Obstacle> {
         if let Some(field_geom) = &self.field_geom {
             let field_boundary = {
-                let hl = field_geom.field_length as f32 / 2.0;
-                let hw = field_geom.field_width as f32 / 2.0;
-                Obstacle::Closed {
-                    vertices: vec![
-                        // Clockwise -> prevent leaving the field
-                        dodgy_2d::Vec2::new(-hl, -hw),
-                        dodgy_2d::Vec2::new(-hl, hw),
-                        dodgy_2d::Vec2::new(hl, hw),
-                        dodgy_2d::Vec2::new(hl, -hw),
-                    ],
+                let hl = field_geom.field_length as f64 / 2.0;
+                let hw = field_geom.field_width as f64 / 2.0;
+                Obstacle::Rectangle {
+                    min: Vector2::new(-hl, -hw),
+                    max: Vector2::new(hl, hw),
                 }
             };
             let mut obstacles = vec![field_boundary];
 
-            // // Add own defence area for non-keeper robots
-            // if role != RoleType::Goalkeeper {
-            //     let defence_area = create_bbox_from_rect(
-            //         Vector2::new(
-            //             -field_geom.field_length + field_geom.penalty_area_depth / 2.0,
-            //             0.0,
-            //         ),
-            //         field_geom.penalty_area_depth,
-            //         field_geom.penalty_area_width,
-            //     );
-            //     obstacles.push(defence_area);
-            // }
+            // Add own defence area for non-keeper robots
+            if role != RoleType::Goalkeeper {
+                let lower = Vector2::new(-field_geom.field_length / 2.0, -field_geom.penalty_area_width / 2.0);
+                let upper = Vector2::new(-field_geom.field_length / 2.0 + field_geom.penalty_area_depth / 2.0, field_geom.penalty_area_width / 2.0);
 
-            // // Add opponent defence area for all robots
-            // let defence_area = create_bbox_from_rect(
-            //     Vector2::new(
-            //         field_geom.field_length - field_geom.penalty_area_depth / 2.0,
-            //         0.0,
-            //     ),
-            //     field_geom.penalty_area_depth,
-            //     field_geom.penalty_area_width,
-            // );
-            // obstacles.push(defence_area);
+                let defence_area = Obstacle::Rectangle{
+                    min: lower,
+                    max: upper
+                };
+                obstacles.push(defence_area);
+            }
+
+            // Add opponent defence area for all robots
+            let lower = Vector2::new(field_geom.field_length / 2.0 - field_geom.penalty_area_depth / 2.0, -field_geom.penalty_area_width / 2.0);
+            let upper = Vector2::new(field_geom.field_length / 2.0, field_geom.penalty_area_width / 2.0);
+            let defence_area = Obstacle::Rectangle{
+                min: lower,
+                max: upper
+            };
+            obstacles.push(defence_area);
 
             match self.current_game_state.game_state {
                 GameState::Stop => {
@@ -439,17 +438,12 @@ impl WorldData {
 }
 
 fn create_bbox_from_circle(center: Vector2, radius: f64) -> Obstacle {
-    let hw = radius as f32 / 2.0;
-    let x = center.x as f32;
-    let y = center.y as f32;
-    Obstacle::Closed {
-        vertices: vec![
-            // Counter-clockwise -> prevent getting into the loop
-            dodgy_2d::Vec2::new(x - hw, y - hw),
-            dodgy_2d::Vec2::new(x + hw, y - hw),
-            dodgy_2d::Vec2::new(x + hw, y + hw),
-            dodgy_2d::Vec2::new(x - hw, y + hw),
-        ],
+    let hw = radius as f64 / 2.0;
+    let x = center.x as f64;
+    let y = center.y as f64;
+    Obstacle::Rectangle {
+        min: Vector2::new(x - hw, y - hw),
+        max: Vector2::new(x + hw, y + hw),
     }
 }
 
