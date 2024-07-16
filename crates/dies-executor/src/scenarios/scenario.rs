@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use dies_core::WorldInstant;
 use dies_simulator::{SimulationBuilder, SimulationConfig};
-use dies_ssl_client::{VisionClient, VisionClientConfig};
+use dies_ssl_client::{SslClientConfig, VisionClient};
 use dies_world::WorldTracker;
 
 use crate::{strategy::Strategy, Executor};
@@ -166,7 +166,7 @@ impl ScenarioSetup {
     pub async fn into_live(
         self,
         settings: ExecutorSettings,
-        ssl_config: VisionClientConfig,
+        ssl_config: SslClientConfig,
         bs_client: BasestationHandle,
     ) -> Result<Executor> {
         let mut ssl_client = VisionClient::new(ssl_config.clone()).await?;

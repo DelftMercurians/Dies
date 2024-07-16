@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
-use dies_ssl_client::VisionClientConfig;
+use dies_ssl_client::{ConnectionConfig, SslClientConfig};
 use dies_webui::{UiConfig, UiEnvironment};
 use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 
@@ -9,7 +9,7 @@ use dies_logger::AsyncProtobufLogger;
 use log::{LevelFilter, Log};
 use tokio::sync::broadcast;
 
-use crate::cli::{BasestationProtocolVersion, SerialPort, VisionType};
+use crate::cli::{BasestationProtocolVersion, SerialPort, ConnectionMode};
 
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
@@ -33,13 +33,16 @@ pub struct MainArgs {
     pub robot_ids: String,
 
     #[clap(long, default_value = "udp")]
-    pub vision: VisionType,
+    pub mode: ConnectionMode,
 
     #[clap(long, default_value = "224.5.23.2:10006")]
     pub vision_addr: SocketAddr,
 
+    #[clap(long, default_value = "224.5.23.1:10003")]
+    pub gc_addr: SocketAddr,
+
     #[clap(long)]
-    pub vision_interface: Option<String>,
+    pub interface: Option<String>,
 
     #[clap(long, default_value = "info")]
     pub log_level: String,
@@ -51,7 +54,7 @@ pub struct MainArgs {
 impl MainArgs {
     /// Converts the CLI arguments into a `UiConfig` object that can be used to start the web UI.
     pub async fn into_ui(self) -> Result<UiConfig> {
-        let environment = match (self.serial_config().await, self.vision_config()) {
+        let environment = match (self.serial_config().await, self.ssl_config()) {
             (Some(bs_config), Some(ssl_config)) => UiEnvironment::WithLive {
                 bs_handle: BasestationHandle::spawn(bs_config)?,
                 ssl_config,
@@ -84,18 +87,38 @@ impl MainArgs {
     }
 
     /// Configures the vision client based on the CLI arguments.
-    pub fn vision_config(&self) -> Option<VisionClientConfig> {
-        match self.vision {
-            VisionType::None => None,
-            VisionType::Tcp => Some(VisionClientConfig::Tcp {
+    pub fn ssl_config(&self) -> Option<SslClientConfig> {
+        let vision = match self.mode {
+            ConnectionMode::None => None,
+            ConnectionMode::Tcp => Some(ConnectionConfig::Tcp {
                 host: self.vision_addr.ip().to_string(),
                 port: self.vision_addr.port(),
             }),
-            VisionType::Udp => Some(VisionClientConfig::Udp {
+            ConnectionMode::Udp => Some(ConnectionConfig::Udp {
                 host: self.vision_addr.ip().to_string(),
                 port: self.vision_addr.port(),
-                interface: self.vision_interface.clone(),
+                interface: self.interface.clone(),
             }),
+        };
+        let gc = match self.mode {
+            ConnectionMode::None => None,
+            ConnectionMode::Tcp => Some(ConnectionConfig::Tcp {
+                host: self.gc_addr.ip().to_string(),
+                port: self.gc_addr.port(),
+            }),
+            ConnectionMode::Udp => Some(ConnectionConfig::Udp {
+                host: self.gc_addr.ip().to_string(),
+                port: self.gc_addr.port(),
+                interface: self.interface.clone(),
+            }),
+        };
+
+        match (vision, gc) {
+            (Some(vision), Some(gc)) => Some(SslClientConfig { vision, gc }),
+            _ => {
+                log::warn!("Invalid SSL configuration");
+                None
+            }
         }
     }
 

@@ -10,7 +10,7 @@ use dies_core::{SimulatorCmd, Vector3, WorldInstant};
 use dies_logger::{log_referee, log_vision, log_world};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 use dies_simulator::Simulation;
-use dies_ssl_client::VisionClient;
+use dies_ssl_client::{SslMessage, VisionClient};
 use dies_world::WorldTracker;
 use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
@@ -357,10 +357,13 @@ impl Executor {
                         msg => self.handle_control_msg(msg)
                     }
                 }
-                vision_msg = ssl_client.recv() => {
-                    match vision_msg {
-                        Ok(vision_msg) => {
+                ssl_msg = ssl_client.recv() => {
+                    match ssl_msg {
+                        Ok(SslMessage::Vision(vision_msg)) => {
                             self.update_from_vision_msg(vision_msg, WorldInstant::now_real());
+                        }
+                        Ok(SslMessage::Referee(gc_msg)) => {
+                            self.update_from_gc_msg(gc_msg);
                         }
                         Err(err) => {
                             log::error!("Failed to receive vision msg: {}", err);

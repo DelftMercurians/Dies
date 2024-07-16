@@ -1,17 +1,16 @@
-use std::{
-    net::{SocketAddr},
-};
+use std::net::SocketAddr;
 
 use anyhow::Result;
-use dies_ssl_client::VisionClientConfig;
+use dies_ssl_client::{ConnectionConfig, SslClientConfig};
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
 use tokio::time::Instant;
 
-use crate::cli::VisionType;
+use crate::cli::ConnectionMode;
 
 pub async fn test_vision(
-    vision: VisionType,
+    mode: ConnectionMode,
     vision_addr: SocketAddr,
+    gc_addr: SocketAddr,
     interface: Option<String>,
 ) -> Result<()> {
     env_logger::init();
@@ -22,29 +21,58 @@ pub async fn test_vision(
         println!(" - {}: {:?}", itf.name, itf.addr);
     }
 
-    let conf = match vision {
-        VisionType::None => None,
-        VisionType::Tcp => Some(VisionClientConfig::Tcp {
+    let vision_conf = match mode {
+        ConnectionMode::None => None,
+        ConnectionMode::Tcp => Some(ConnectionConfig::Tcp {
             host: vision_addr.ip().to_string(),
             port: vision_addr.port(),
         }),
-        VisionType::Udp => Some(VisionClientConfig::Udp {
+        ConnectionMode::Udp => Some(ConnectionConfig::Udp {
             host: vision_addr.ip().to_string(),
             port: vision_addr.port(),
-            interface,
+            interface: interface.clone(),
         }),
     }
     .ok_or(anyhow::anyhow!("Invalid vision configuration"))?;
 
-    let mut ssl_client = dies_ssl_client::VisionClient::new(conf).await?;
+    let gc_conf = match mode {
+        ConnectionMode::None => None,
+        ConnectionMode::Tcp => Some(ConnectionConfig::Tcp {
+            host: gc_addr.ip().to_string(),
+            port: gc_addr.port(),
+        }),
+        ConnectionMode::Udp => Some(ConnectionConfig::Udp {
+            host: gc_addr.ip().to_string(),
+            port: gc_addr.port(),
+            interface,
+        }),
+    }
+    .ok_or(anyhow::anyhow!("Invalid gc configuration"))?;
+
+    let mut ssl_client = dies_ssl_client::VisionClient::new(SslClientConfig {
+        vision: vision_conf,
+        gc: gc_conf,
+    })
+    .await?;
     println!("Starting vision client");
 
-    let start = Instant::now();
-    loop {
+    let mut received_gc = false;
+    let mut received_vision = false;
+    while !received_gc || !received_vision {
         let packet = ssl_client.recv().await?;
-        println!("Received packet: {:?}", packet);
-        if start.elapsed().as_secs() > 5 {
-            break;
+        match packet {
+            dies_ssl_client::SslMessage::Vision(_) => {
+                if !received_vision {
+                    println!("Received vision packet");
+                    received_vision = true;
+                }
+            }
+            dies_ssl_client::SslMessage::Referee(_) => {
+                if !received_gc {
+                    println!("Received GC packet");
+                    received_gc = true;
+                }
+            }
         }
     }
 

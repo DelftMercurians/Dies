@@ -6,7 +6,7 @@ use dies_core::{
     ScenarioInfo, SimulatorCmd, WorldData,
 };
 use dies_executor::scenarios::ScenarioType;
-use dies_ssl_client::VisionClientConfig;
+use dies_ssl_client::SslClientConfig;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
@@ -27,7 +27,7 @@ pub struct UiConfig {
 #[derive(Debug, Clone)]
 pub enum UiEnvironment {
     WithLive {
-        ssl_config: VisionClientConfig,
+        ssl_config: SslClientConfig,
         bs_handle: BasestationHandle,
     },
     SimulationOnly,

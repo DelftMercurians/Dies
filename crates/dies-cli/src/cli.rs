@@ -45,9 +45,11 @@ enum Command {
     #[clap(name = "test-vision")]
     TestVision {
         #[clap(short, long, default_value = "udp")]
-        mode: VisionType,
+        mode: ConnectionMode,
         #[clap(long, default_value = "224.5.23.2:10006")]
-        addr: SocketAddr,
+        vision_addr: SocketAddr,
+        #[clap(long, default_value = "224.5.23.1:10003")]
+        gc_addr: SocketAddr,
         #[clap(long)]
         interface: Option<String>,
     },
@@ -96,9 +98,10 @@ impl Cli {
             },
             Some(Command::TestVision {
                 mode,
-                addr,
+                vision_addr,
+                gc_addr,
                 interface,
-            }) => match test_vision(mode, addr, interface).await {
+            }) => match test_vision(mode, vision_addr, gc_addr, interface).await {
                 Ok(_) => ExitCode::SUCCESS,
                 Err(err) => {
                     eprintln!("Error testing vision: {}", err);
@@ -120,7 +123,7 @@ impl Cli {
 }
 
 #[derive(Debug, Clone, ValueEnum, Default)]
-pub enum VisionType {
+pub enum ConnectionMode {
     #[default]
     None,
     Tcp,
