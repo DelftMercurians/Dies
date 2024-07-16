@@ -229,12 +229,12 @@ macro_rules! invoke_skill {
 /// ```
 #[macro_export]
 macro_rules! skill {
-    ($ctx:ident, $key:tt, $skill:expr) => {
+    ($ctx:ident, $key:tt, $skill:expr) => {{
         match $crate::invoke_skill!($ctx, $key, $skill) {
             $crate::roles::SkillProgress::Continue(input) => return input,
             $crate::roles::SkillProgress::Done(result) => result,
         }
-    };
+    }};
     ($ctx:ident, $skill:expr) => {
         match $crate::invoke_skill!($ctx, $skill) {
             $crate::roles::SkillProgress::Continue(input) => return input,

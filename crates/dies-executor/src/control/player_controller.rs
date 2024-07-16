@@ -39,6 +39,12 @@ pub struct PlayerController {
     kicker: KickerState,
     /// Dribble speed normalized to \[0, 1\]
     dribble_speed: f64,
+
+    max_accel: f64,
+    max_speed: f64,
+    max_decel: f64,
+    max_angular_velocity: f64,
+    max_angular_acceleration: f64,
 }
 
 impl PlayerController {
@@ -47,20 +53,11 @@ impl PlayerController {
         let mut instance = Self {
             id,
 
-            position_mtp: MTP::new(
-                settings.max_acceleration,
-                settings.max_velocity,
-                settings.max_deceleration,
-            ),
+            position_mtp: MTP::new(),
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
-            yaw_control: YawController::new(
-                settings.max_angular_velocity,
-                settings.max_angular_acceleration,
-                settings.angle_kp,
-                settings.angle_cutoff_distance,
-            ),
+            yaw_control: YawController::new(settings.angle_kp, settings.angle_cutoff_distance),
             last_yaw: Angle::from_radians(0.0),
             target_angular_velocity: 0.0,
 
@@ -68,6 +65,12 @@ impl PlayerController {
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
             if_gate_keeper: false,
+
+            max_accel: settings.max_acceleration,
+            max_speed: settings.max_velocity,
+            max_decel: settings.max_deceleration,
+            max_angular_velocity: settings.max_angular_velocity,
+            max_angular_acceleration: settings.max_angular_acceleration,
         };
         instance.update_settings(settings);
         instance
@@ -76,19 +79,12 @@ impl PlayerController {
     /// Update the controller settings.
     pub fn update_settings(&mut self, settings: &ControllerSettings) {
         self.position_mtp.update_settings(
-            settings.max_acceleration,
-            settings.max_velocity,
-            settings.max_deceleration,
             settings.position_kp,
             Duration::from_secs_f64(settings.position_proportional_time_window),
             settings.position_cutoff_distance,
         );
-        self.yaw_control.update_settings(
-            settings.max_angular_velocity,
-            settings.max_angular_acceleration,
-            settings.angle_kp,
-            settings.angle_cutoff_distance,
-        );
+        self.yaw_control
+            .update_settings(settings.angle_kp, settings.angle_cutoff_distance);
     }
 
     /// Get the ID of the player.
@@ -182,7 +178,14 @@ impl PlayerController {
                 dies_core::DebugColor::Red,
             );
 
-            let pos_u = self.position_mtp.update(self.last_pos, state.velocity, dt);
+            let pos_u = self.position_mtp.update(
+                self.last_pos,
+                state.velocity,
+                dt,
+                input.acceleration_limit.unwrap_or(self.max_accel),
+                input.speed_limit.unwrap_or(self.max_speed),
+                input.acceleration_limit.unwrap_or(self.max_decel),
+            );
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
         } else {
@@ -219,9 +222,17 @@ impl PlayerController {
             );
 
             self.yaw_control.set_setpoint(yaw);
-            let head_u = self
-                .yaw_control
-                .update(self.last_yaw, state.angular_speed, dt);
+            let head_u = self.yaw_control.update(
+                self.last_yaw,
+                state.angular_speed,
+                dt,
+                input
+                    .angular_speed_limit
+                    .unwrap_or(self.max_angular_velocity),
+                input
+                    .angular_acceleration_limit
+                    .unwrap_or(self.max_angular_acceleration),
+            );
             self.target_angular_velocity = head_u;
         }
         self.target_angular_velocity += input.angular_velocity;

@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use dies_core::{
     Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2, WorldInstant,
 };
@@ -44,7 +46,7 @@ pub struct PlayerTracker {
 
     velocity_samples: Vec<Vector2>,
 
-    breakbeam_triggerd: Option<WorldInstant>,
+    breakbeam_triggered: Option<WorldInstant>,
 }
 
 impl PlayerTracker {
@@ -62,7 +64,7 @@ impl PlayerTracker {
             velocity_samples: Vec::new(),
             last_feedback: None,
             last_detection: None,
-            breakbeam_triggerd: None,
+            breakbeam_triggered: None,
         }
     }
 
@@ -133,17 +135,15 @@ impl PlayerTracker {
     }
 
     /// Update the tracker with feedback from the player.
-    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
+    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, _time: WorldInstant) {
         if feedback.id == self.id {
-            if feedback.breakbeam_ball_detected.unwrap_or(false) {
-                self.breakbeam_triggerd = Some(time);
-            } else if self
-                .breakbeam_triggerd
-                .map(|t| time.duration_since(&t) > 0.1)
-                .unwrap_or(false)
-            {
-                self.breakbeam_triggerd = None;
-            }
+            dies_core::debug_string(
+                format!("p{}.breakbeam", self.id),
+                feedback
+                    .breakbeam_ball_detected
+                    .unwrap_or(false)
+                    .to_string(),
+            );
             self.last_feedback = Some(*feedback);
         }
     }

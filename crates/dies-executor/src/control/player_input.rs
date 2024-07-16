@@ -126,6 +126,11 @@ pub struct PlayerControlInput {
     pub dribbling_speed: f64,
     /// Kicker control input
     pub kicker: KickerControlInput,
+
+    pub acceleration_limit: Option<f64>,
+    pub speed_limit: Option<f64>,
+    pub angular_acceleration_limit: Option<f64>,
+    pub angular_speed_limit: Option<f64>,
 }
 
 impl PlayerControlInput {
@@ -155,6 +160,26 @@ impl PlayerControlInput {
     /// Set the kicker control input.
     pub fn with_kicker(&mut self, kicker: KickerControlInput) -> &mut Self {
         self.kicker = kicker;
+        self
+    }
+
+    pub fn with_acceleration_limit(&mut self, limit: f64) -> &mut Self {
+        self.acceleration_limit = Some(limit);
+        self
+    }
+
+    pub fn with_speed_limit(&mut self, limit: f64) -> &mut Self {
+        self.speed_limit = Some(limit);
+        self
+    }
+
+    pub fn with_angular_acceleration_limit(&mut self, limit: f64) -> &mut Self {
+        self.angular_acceleration_limit = Some(limit);
+        self
+    }
+
+    pub fn with_angular_speed_limit(&mut self, limit: f64) -> &mut Self {
+        self.angular_speed_limit = Some(limit);
         self
     }
 

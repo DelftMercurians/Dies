@@ -10,15 +10,12 @@ use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
 use crate::{
     roles::{
-        dribble_role::DribbleRole,
-        test_role::TestRole,
-        waller::Waller,
-        fetcher_role::FetcherRole,
-        kicker_role::KickerRole
+        dribble_role::DribbleRole, fetcher_role::FetcherRole, kicker_role::KickerRole,
+        test_role::TestRole, waller::Waller,
     },
     strategy::AdHocStrategy,
 };
-use dies_core::{GameState, Vector2, Vector3, Angle};
+use dies_core::{Angle, GameState, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -85,7 +82,6 @@ fn need_to_cross_the_goal_area() -> ScenarioSetup {
     scenario
 }
 
-
 fn need_to_cross_the_goal_area_alt() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Waller::new(0.0)));
@@ -96,7 +92,6 @@ fn need_to_cross_the_goal_area_alt() -> ScenarioSetup {
 
     scenario
 }
-
 
 fn test_role_multiple_targets() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
@@ -119,6 +114,16 @@ fn three_attackers() -> ScenarioSetup {
         .add_own_player()
         .add_own_player()
         .add_own_player();
+    scenario
+}
+
+fn fetch_ball_test_sim() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(FetcherRole::new()));
+    let mut scenario = ScenarioSetup::new(strategy, None);
+    scenario
+        .add_own_player()
+        .add_ball_at(Vector3::new(-1000.0, -1000.0, 0.0));
     scenario
 }
 
@@ -221,6 +226,7 @@ scenarios! {
     need_to_cross_the_goal_area,
     need_to_cross_the_goal_area_alt,
     test_role_multiple_targets,
+    fetch_ball_test_sim,
     fetch_ball_test_live,
     fetch_ball_with_heading,
     free_kick,

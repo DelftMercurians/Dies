@@ -62,8 +62,15 @@ impl Skill for GoToPosition {
         if let Some(heading) = self.target_heading {
             input.with_yaw(heading);
         }
-        if let (true, Some(ball)) = (self.with_ball, ctx.world.ball.as_ref()) {
+        if let (true, Some(_)) = (self.with_ball, ctx.world.ball.as_ref()) {
+            if !ctx.player.breakbeam_ball_detected {
+                return SkillProgress::failure();
+            }
+
             input.with_dribbling(1.0);
+            input.with_acceleration_limit(500.0);
+            input.with_angular_acceleration_limit(360.0f64.to_radians());
+
             // let ball_vel = ball.velocity.xy();
             // let relative_velocity = ball_vel - ctx.player.velocity;
             // if relative_velocity.norm() > DEFAULT_BALL_VEL_TOLERANCE {
