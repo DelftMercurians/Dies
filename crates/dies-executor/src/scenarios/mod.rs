@@ -51,7 +51,7 @@ fn penalty_kick() -> ScenarioSetup {
 fn kick_pass() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(TestStrat::new(), None);
     scenario
-        .add_ball_at(Vector3::zeros())
+        .add_ball_at(Vector3::new(-4000.0, 1500.0, 0.0))
         .add_own_player()
         .add_own_player();
     scenario

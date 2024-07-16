@@ -152,7 +152,6 @@ pub struct FetchBall {
     dribbling_speed: f64,
     stop_distance: f64,
     max_relative_speed: f64,
-    initial_ball_direction: Option<Vector2>,
     breakbeam_ball_detected: f64,
     last_good_heading: Option<Angle>,
 }
@@ -164,7 +163,6 @@ impl FetchBall {
             dribbling_speed: 1.0,
             stop_distance: 200.0,
             max_relative_speed: 1500.0,
-            initial_ball_direction: None,
             breakbeam_ball_detected: 0.0,
             last_good_heading: None,
         }
@@ -178,10 +176,6 @@ impl Skill for FetchBall {
             let ball_pos = ball.position.xy();
             let ball_speed = ball.velocity.xy().norm();
             let player_pos = ctx.player.position;
-            let initial_ball_direction = self
-                .initial_ball_direction
-                .get_or_insert((ball_pos - player_pos).normalize());
-            let ball_normal = Vector2::new(initial_ball_direction.y, -initial_ball_direction.x);
             let distance = (ball_pos - player_pos).norm();
 
             let ball_angle = {
@@ -212,80 +206,153 @@ impl Skill for FetchBall {
                         * (self.max_relative_speed / self.dribbling_distance)
                         * (ball_pos - player_pos).normalize(),
                 );
-            } else if ball_speed < 500.0 {
+            } else if ball_speed < 250.0 {
                 // If the ball is too slow, just go to the ball
                 let target_pos = ball_pos + ball_angle * Vector2::new(-self.stop_distance, 0.0);
                 input.with_position(target_pos);
             } else {
-                // If the ball is moving, try to intercept it
-                let intersection = find_intersection(
-                    player_pos,
-                    ball_normal,
-                    ball_pos,
-                    ball.velocity.xy().normalize(),
-                );
+                // if ball is fast and we are far away
+                // sample bunch of points on the ball ray, and see which 'segment'
+                // we are capable to reach in time. Then go to this segment.
+                // time to reach segment is simple: distance / normal speed - small discount
+                // time for ball to reach segment is technically the same formula, wow
 
-                // Move to the intersection point if it exists, otherwise go to the ball
-                if let Some(intersection) = intersection {
-                    input.with_position(intersection);
-                } else {
-                    input.with_position(ball_pos);
-            // if ball is fast and we are far away
-            // sample bunch of points on the ball ray, and see which 'segment'
-            // we are capable to reach in time. Then go to this segment.
-            // time to reach segment is simple: distance / normal speed - small discount
-            // time for ball to reach segment is technically the same formula, wow
+                // schedule of points: from 0 seconds to 2 seconds
+                let points_schedule = vec![
+                    0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 1.0,
+                    1.2, 1.5, 2.0,
+                ];
 
-            // schedule of points: from 0 seconds to 2 seconds
-            let points_schedule = vec![
-                0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 1.0, 1.2, 1.5, 2.0,
-            ];
+                let friction_factor = 3.0;
 
-            let friction_factor = 3.0;
+                let ball_points: Vec<Vector2> = points_schedule
+                    .iter()
+                    .map(|t| {
+                        ball_pos
+                            + ball.velocity.xy()
+                                * (*t)
+                                * (1.0 - f64::min(1.0, (*t) / friction_factor))
+                    })
+                    .collect();
 
-            let ball_points: Vec<Vector2> = points_schedule
-                        .iter()
-                        .map(|t| ball_pos + ball.velocity.xy() * (*t) * (1.0 - f64::min(1.0, (*t) / friction_factor)))
-                        .collect();
+                let mut intersection = ball_points[ball_points.len() - 1].clone();
+                for i in 0..ball_points.len() - 1 {
+                    let a = ball_points[i].clone();
+                    let b = ball_points[i + 1].clone();
+                    let must_be_reached_before = points_schedule[i];
+                    // now we have both segment points available, lets compute time_to_reach
+                    let time_to_reach = f64::min(
+                        ctx.world.time_to_reach_point(ctx.player, a),
+                        ctx.world.time_to_reach_point(ctx.player, b),
+                    );
 
-
-            let mut intersection = ball_points[ball_points.len() - 1].clone();
-            for i in 0..ball_points.len() - 1 {
-                let a = ball_points[i].clone();
-                let b = ball_points[i + 1].clone();
-                let must_be_reached_before = points_schedule[i];
-                // now we have both segment points available, lets compute time_to_reach
-                let time_to_reach = f64::min(
-                    ctx.world.time_to_reach_point(ctx.player, a),
-                    ctx.world.time_to_reach_point(ctx.player, b)
-                );
-
-                if time_to_reach < must_be_reached_before {
-                    intersection = b;
-                    break;
+                    if time_to_reach < must_be_reached_before {
+                        intersection = b;
+                        break;
+                    }
                 }
-            }
-            input.with_position(intersection);
+                input.with_position(intersection);
 
+                if distance < self.dribbling_distance {
+                    input.with_dribbling(self.dribbling_speed);
+                }
 
-            if distance < self.dribbling_distance {
-                input.with_dribbling(self.dribbling_speed);
-            }
-
-            // Once we're close enough, use a proptional control to approach the ball
-            if distance < self.dribbling_distance {
-                input.position = None;
-                // velocity is ball velocity + control
-                input.velocity = Velocity::global(
-                    (ball_speed * 0.8 + distance * (self.max_relative_speed / self.dribbling_distance))
-                        * (ball_pos - player_pos).normalize(),
-                );
+                // Once we're close enough, use a proptional control to approach the ball
+                if distance < self.dribbling_distance {
+                    input.position = None;
+                    // velocity is ball velocity + control
+                    input.velocity = Velocity::global(
+                        (ball_speed * 0.8
+                            + distance * (self.max_relative_speed / self.dribbling_distance))
+                            * (ball_pos - player_pos).normalize(),
+                    );
+                }
             }
 
             SkillProgress::Continue(input)
         } else {
             // Wait for the ball to appear
             SkillProgress::Continue(PlayerControlInput::default())
+        }
+    }
+}
+
+// pub struct InterceptBall {
+//     intercept_line: Option<(Vector2, Vector2)>,
+// }
+
+// impl InterceptBall {
+//     pub fn new() -> Self {
+//         Self {
+//             intercept_line: None,
+//         }
+//     }
+// }
+
+// impl Skill for InterceptBall {
+//     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+//         if let Some(ball) = ctx.world.ball.as_ref() {
+//             let intercept_line = self
+//                 .intercept_line
+//                 .get_or_insert((ctx.player.position, perp(ball.velocity.xy())));
+
+//             if let Some(intersection) = find_intersection(
+//                 intercept_line.0,
+//                 intercept_line.1,
+//                 ball.position.xy(),
+//                 ball.velocity.xy(),
+//             ) {
+//                 let mut input = PlayerControlInput::new();
+
+//                 input.with_position(intersection);
+//                 input.with_yaw(Angle::between_points(
+//                     ctx.player.position,
+//                     ball.position.xy(),
+//                 ));
+
+//                 SkillProgress::Continue(input)
+//             } else {
+//                 SkillProgress::failure()
+//             }
+//         } else {
+//             SkillProgress::failure()
+//         }
+//     }
+// }
+
+pub struct ApproachBall {}
+
+impl ApproachBall {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Skill for ApproachBall {
+    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+        if ctx.player.breakbeam_ball_detected {
+            return SkillProgress::success();
+        }
+
+        if let Some(ball) = ctx.world.ball.as_ref() {
+            let ball_pos = ball.position.xy();
+            let player_pos = ctx.player.position;
+            let ball_speed = ball.velocity.xy().norm();
+            let distance = (ball_pos - player_pos).norm();
+
+            let max_relative_speed = 1500.0;
+            let dribbling_distance = 1000.0;
+
+            let mut input = PlayerControlInput::new();
+
+            input.velocity = Velocity::global(
+                (ball_speed * 0.8 + distance * (max_relative_speed / dribbling_distance))
+                    * (ball_pos - player_pos).normalize(),
+            );
+            input.with_dribbling(1.0);
+            SkillProgress::Continue(input)
+        } else {
+            SkillProgress::failure()
         }
     }
 }

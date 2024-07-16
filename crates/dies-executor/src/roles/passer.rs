@@ -4,7 +4,7 @@ use std::time::Instant;
 use dies_core::{Angle, PlayerId};
 use dies_core::{PlayerData, WorldData};
 
-use crate::roles::skills::{FetchBallWithHeading, Kick};
+use crate::roles::skills::{ApproachBall, FetchBallWithHeading, Kick};
 use crate::roles::Role;
 use crate::{skill, PlayerControlInput};
 
@@ -34,6 +34,7 @@ impl Role for Passer {
         let heading = Angle::between_points(ctx.player.position, receiver.position);
 
         skill!(ctx, FetchBallWithHeading::new(heading));
+        skill!(ctx, ApproachBall::new());
         skill!(ctx, Kick::new());
 
         self.has_passed = true;
