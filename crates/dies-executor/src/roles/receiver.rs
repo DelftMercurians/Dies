@@ -3,10 +3,12 @@ use std::sync::{atomic::AtomicBool, Arc};
 use dies_core::{PlayerData, PlayerId, WorldData};
 use nalgebra::Vector2;
 
-use crate::{roles::skills::{Face, FetchBall, GoToPosition}, skill, PlayerControlInput};
+use crate::{
+    roles::skills::{FetchBall, GoToPosition},
+    skill, PlayerControlInput,
+};
 
 use super::{Role, RoleCtx};
-
 
 pub struct Receiver {
     passer: PlayerId,
@@ -27,7 +29,6 @@ impl Receiver {
 }
 
 impl Role for Receiver {
-
     fn update(&mut self, ctx: RoleCtx) -> PlayerControlInput {
         if self.has_passer_kicked {
             skill!(ctx, FetchBall::new());
@@ -36,7 +37,7 @@ impl Role for Receiver {
         } else {
             skill!(ctx, Face::towards_own_player(self.passer));
         }
-        
+
         PlayerControlInput::default()
     }
 }

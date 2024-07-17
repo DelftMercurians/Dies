@@ -141,12 +141,6 @@ impl BasestationHandle {
                                 as usize;
                             match &mut connection {
                                 Connection::V1(monitor) => {
-                                    if matches!(cmd.robot_cmd, RobotCmd::Arm) {
-                                        println!("arming");
-                                    }
-                                    if matches!(cmd.robot_cmd, RobotCmd::Kick) {
-                                        println!("kicking");
-                                    }
                                     resp.send(
                                         monitor
                                             .send_single(cmd.id.as_u32() as u8, cmd.into())
