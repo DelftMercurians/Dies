@@ -19,6 +19,7 @@ impl Goalkeeper {
         ball: &BallData,
         goal_width: f64,
     ) -> Vector2<f64> {
+        Vector2::new(0.0, 0.0)/*
         // Find the goalkeeper's position
         let goalkeeper_pos = player_data.position;
 
@@ -58,7 +59,7 @@ impl Goalkeeper {
         println!("{}, {}", x_vertical, py_clamped);
 
         // Return the clamped intersection point
-        Vector2::new(x_vertical, py_clamped)
+        Vector2::new(x_vertical, py_clamped)*/
     }
 }
 
@@ -71,25 +72,31 @@ impl Role for Goalkeeper {
         {
             let ball_pos = ball.position.xy();
             let goalkeeper_x = -field_geom.field_length / 2.0 + KEEPER_X_OFFSET;
-            // if (player_y < ball_y && ball_vy < 0.0) || (player_y > ball_y && ball_vy > 0.0) {
 
             let target_angle = Angle::between_points(ctx.player.position, ball_pos);
 
             input.with_yaw(target_angle);
 
             let defence_width = 1.3 * (field_geom.penalty_area_width / 2.0);
-            let mut target = if ball.velocity.xy().norm() > 100.0 {
-                find_intersection(
+            let mut target = if ball.velocity.xy().norm() > 10.0 && ball.position.x < -2000.0 && ball.velocity.x < 50.0 {
+                let mut out = find_intersection(
                     Vector2::new(goalkeeper_x, 0.0),
                     Vector2::y(),
                     ball_pos,
                     ball.velocity.xy(),
                 )
-                .unwrap_or(Vector2::new(goalkeeper_x, ball.position.y))
+                .unwrap_or(Vector2::new(goalkeeper_x, ball.position.y));
+                // limit the delta by how much the ball is gonna move in a second or so
+                let limit = ball.velocity.y.abs() * 1.0;
+                out.y = out.y.min(ball.position.y + limit).max(ball.position.y - limit);
+                out
             } else {
                 Vector2::new(goalkeeper_x, ball.position.y)
             };
             target.y = target.y.max(-defence_width).min(defence_width);
+            // we want to bring the point closer to center based on the ball x position
+            let factor = 1.0 - f64::min(f64::max((ball.position.x + 2000.0) / 5000.0, 0.0), 1.0);
+            target.y = target.y * factor;
             input.with_position(target);
         }
 
