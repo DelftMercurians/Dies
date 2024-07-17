@@ -84,6 +84,28 @@ impl Skill for GoToPosition {
     }
 }
 
+pub struct Face {
+    heading: Angle,
+}
+
+impl Face {
+    pub fn new(heading: Angle) -> Self {
+        Self { heading }
+    }
+}
+
+impl Skill for Face {
+    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+        let mut input = PlayerControlInput::new();
+        input.with_yaw(self.heading);
+
+        if (ctx.player.yaw - self.heading).abs() < 5f64.to_radians() {
+            return SkillProgress::success();
+        }
+        SkillProgress::Continue(input)
+    }
+}
+
 pub struct Kick {
     has_kicked: usize,
 }
@@ -108,6 +130,9 @@ impl Skill for Kick {
         let mut input = PlayerControlInput::new();
         input.with_dribbling(1.0);
         if ready {
+            if !_ctx.player.breakbeam_ball_detected {
+                return SkillProgress::failure();
+            }
             input.with_kicker(crate::KickerControlInput::Kick);
             self.has_kicked -= 1;
             SkillProgress::Continue(input)
@@ -340,7 +365,7 @@ impl Skill for ApproachBall {
             let ball_speed = ball.velocity.xy().norm();
             let distance = (ball_pos - player_pos).norm();
 
-            let max_relative_speed = 1500.0;
+            let max_relative_speed = 800.0;
             let dribbling_distance = 1000.0;
 
             let mut input = PlayerControlInput::new();
