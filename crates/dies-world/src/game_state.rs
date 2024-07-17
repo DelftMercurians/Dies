@@ -48,6 +48,8 @@ impl GameStateTracker {
     pub fn update(&mut self, data: &Referee) -> GameState {
         let command = data.command();
 
+        println!("{}", self.game_state);
+
         self.game_state = match command {
             Command::HALT => GameState::Halt,
             Command::STOP => GameState::Stop,
@@ -65,7 +67,7 @@ impl GameStateTracker {
             Command::PREPARE_KICKOFF_BLUE => GameState::PrepareKickoff,
             Command::PREPARE_PENALTY_YELLOW => GameState::PreparePenalty,
             Command::PREPARE_PENALTY_BLUE => GameState::PreparePenalty,
-            Command::DIRECT_FREE_YELLOW | Command::DIRECT_FREE_BLUE => {
+            Command::DIRECT_FREE_YELLOW | Command::DIRECT_FREE_BLUE | Command::INDIRECT_FREE_BLUE | Command::INDIRECT_FREE_YELLOW => {
                 if self.game_state == GameState::Stop {
                     GameState::FreeKick
                 } else {

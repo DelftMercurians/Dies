@@ -116,7 +116,8 @@ impl Task4Phase {
                 Status4::Ongoing1
             }
             Status4::Ongoing1 => {
-                if self.timer.elapsed().as_secs() > 5 {
+                if self.timer.elapsed().as_secs() > 5 { // need short delay, otherwise we fail
+                                                        // penalty-style rule about 10s
                     res.with_kicker(KickerControlInput::Kick);
                     Status4::Ongoing2
                 } else {

@@ -48,31 +48,16 @@ impl Role for Attacker {
         let player_data = ctx.player;
         let world_data = ctx.world;
 
-        // find the ball
         if let Some(ball) = &world_data.ball {
             if self.init_ball.is_none() {
                 self.init_ball = Some(ball.clone());
             }
         }
+
+        // two stages: 1 - goto ball, 2 - dribble and kick together
         if self.move_to_ball.is_accomplished() && gamestate == GameState::Penalty {
-            //stage 3: kick
-            if self.manipulating_ball.is_accomplished() {
-                // find the ball
-                if let Some(ball) = &world_data.ball {
-                    if self.init_ball.is_none() {
-                        self.init_ball = Some(ball.clone());
-                    }
-                }
-                let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
-                println!("kicking in the ballls");
-                return self.kick.kick(
-                    PlayerControlInput::new()
-                        .with_position(ball_pos)
-                        .clone()
-                );
-            }
             //stage 2: dribbling
-            else {
+            if self.move_to_ball.is_accomplished() {
                 let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
 
                 // find the goal keeper
@@ -95,12 +80,13 @@ impl Role for Attacker {
                             / 2.0
                     }
                 });
-                return self.manipulating_ball.relocate(
-                    player_data,
-                    ball_pos.xy(),
-                    target,
-                    1.0,
-                    0.0
+                return self.kick.kick(
+                    PlayerControlInput::new()
+                        .with_position(ball_pos.xy())
+                        .with_yaw(target)
+                        .with_dribbling(1.0)
+                        .with_care(1.0)
+                        .clone()
                 );
             }
         }
@@ -110,7 +96,7 @@ impl Role for Attacker {
             let dir = Angle::between_points(player_data.position, ball_pos);
             let dist = (ball_pos - player_data.position).norm();
             let dirvec = (ball_pos - player_data.position) / dist;
-            let goto_pos = player_data.position + dirvec * (dist - 100.0);
+            let goto_pos = player_data.position + dirvec * (dist - 150.0);
             self.move_to_ball
                 .relocate(player_data, goto_pos, dir, 0.0, 0.5)
         } else {

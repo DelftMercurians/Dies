@@ -45,57 +45,65 @@ impl Role for FreeAttacker {
         let player_data = ctx.player;
         let world_data = ctx.world;
 
-        if self.move_to_ball.is_accomplished() {
-            //stage 3: kick
-            if self.manipulating_ball.is_accomplished() {
-                return self.kick.kick(PlayerControlInput::new().clone());
-            }
-            //stage 2: dribbling
-            else {
-                // find all possible dirs, it can directly shoot to the goal or pass to other player
-                let mut dirs: Vec<Angle> = vec![];
-                dirs.push(Angle::between_points(
-                    player_data.position,
-                    Vector2::new(4500.0, 0.0),
-                ));
-                for own_player in world_data.own_players.iter() {
-                    if own_player.id == player_data.id {
-                        continue;
-                    }
-                    dirs.push(Angle::between_points(
-                        player_data.position,
-                        own_player.position,
-                    ));
-                }
-                // find one that is closest to the current orientation
-
-                let mut target = Angle::from_radians(0.0);
-                let mut min_diff = player_data.yaw.radians().abs();
-                for dir in dirs {
-                    let diff = (dir - player_data.yaw).radians().abs();
-                    if diff < min_diff {
-                        min_diff = diff;
-                        target = dir;
-                    }
-                }
-                return self.manipulating_ball.relocate(
-                    player_data,
-                    player_data.position,
-                    target,
-                    1.0,
-                    1.0,
-                );
-            }
-        }
-        // stage1: move to ball
         if let Some(ball) = &world_data.ball {
             if self.init_ball.is_none() {
                 self.init_ball = Some(ball.clone());
             }
-            let ball_pos = self.init_ball.as_ref().unwrap().position;
-            let dir = Angle::between_points(ball_pos.xy(), player_data.position);
+        }
+        let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
+
+        if self.move_to_ball.is_accomplished() {
+                // find all possible dirs, it can directly shoot to the goal or pass to other player
+            let mut dirs: Vec<Angle> = vec![];
+            let goaldir = Angle::between_points(
+                player_data.position,
+                Vector2::new(4500.0, 0.0),
+            );
+            let our_goaldir = Angle::between_points(
+                player_data.position,
+                Vector2::new(-4500.0, 0.0),
+            );
+
+            dirs.push(goaldir);
+            for own_player in world_data.own_players.iter() {
+                if own_player.id == player_data.id {
+                    continue;
+                }
+                dirs.push(Angle::between_points(
+                    player_data.position,
+                    own_player.position,
+                ));
+            }
+            // find one that is closest to the current orientation
+            // give priority to shooting into general enemy goals direction
+
+            let mut target = Angle::from_radians(0.0);
+            let mut min_badness = player_data.yaw.radians().abs();
+            for dir in dirs {
+                let mut badness = (dir - player_data.yaw).radians().abs();
+                badness = badness - (dir - our_goaldir).radians().abs();
+                if badness < min_badness {
+                    min_badness = badness;
+                    target = dir;
+                }
+            }
+            return self.kick.kick(
+                PlayerControlInput::new()
+                    .with_position(ball_pos.xy())
+                    .with_yaw(target)
+                    .with_dribbling(1.0)
+                    .with_care(1.0) // extra care ;)
+                    .clone()
+            );
+        }
+        // stage1: move to ball
+        if let Some(_ball) = &world_data.ball {
+            let dir = Angle::between_points(player_data.position, ball_pos);
+            let dist = (ball_pos - player_data.position).norm();
+            let dirvec = (ball_pos - player_data.position) / dist;
+            let goto_pos = player_data.position + dirvec * (dist - 150.0);
             self.move_to_ball
-                .relocate(player_data, ball_pos.xy(), dir, 0.0, 1.0)
+                .relocate(player_data, goto_pos, dir, 0.0, 1.0)
         } else {
             PlayerControlInput::new()
         }

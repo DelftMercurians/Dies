@@ -279,6 +279,7 @@ impl PlayerController {
                     input
                         .angular_acceleration_limit
                         .unwrap_or(self.max_angular_acceleration),
+                    input.care
                 );
                 self.target_z = self.opp_goal_sign * head_u;
             }
