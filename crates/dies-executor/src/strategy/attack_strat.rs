@@ -27,17 +27,17 @@ impl Assignmmet {
     }
 }
 
-pub struct TestStrat {
+pub struct AttackStrat {
     assignment: Option<Assignmmet>,
 }
 
-impl TestStrat {
+impl AttackStrat {
     pub fn new() -> Self {
         Self { assignment: None }
     }
 }
 
-impl Strategy for TestStrat {
+impl Strategy for AttackStrat {
     fn update(&mut self, ctx: StrategyCtx) {
         let assignment = {
             if let Some(assignment) = self.assignment.as_mut() {
