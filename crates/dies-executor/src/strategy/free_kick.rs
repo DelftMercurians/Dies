@@ -1,10 +1,10 @@
+use crate::roles::skills::{ApproachBall, FetchBallWithHeading, Kick};
 use crate::roles::RoleCtx;
 use crate::strategy::kickoff::OtherPlayer;
 use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
-use crate::PlayerControlInput;
-use dies_core::{Angle, BallData, PlayerId, RoleType};
-use nalgebra::Vector2;
+use crate::{skill, PlayerControlInput};
+use dies_core::{Angle, BallData, PlayerData, PlayerId, RoleType, Vector2, WorldData};
 use std::collections::HashMap;
 
 use super::StrategyCtx;
@@ -17,9 +17,9 @@ pub struct FreeKickStrategy {
 
 pub struct FreeAttacker {
     move_to_ball: Task3Phase,
-    manipulating_ball: Task3Phase,
     kick: Task4Phase,
     init_ball: Option<BallData>,
+    target_direction: Option<Angle>,
 }
 
 impl Default for FreeAttacker {
@@ -32,81 +32,72 @@ impl FreeAttacker {
     pub fn new() -> Self {
         Self {
             move_to_ball: Task3Phase::new(),
-            manipulating_ball: Task3Phase::new(),
             kick: Task4Phase::new(),
             init_ball: None,
+            target_direction: None,
         }
+    }
+
+    fn find_best_direction(
+        &self,
+        ball_pos: Vector2,
+        player: &PlayerData,
+        world: &WorldData,
+    ) -> Angle {
+        let mut dirs: Vec<Angle> = vec![];
+        let goaldir = Angle::between_points(ball_pos, Vector2::new(4500.0, 0.0));
+        let our_goaldir = Angle::between_points(player.position, Vector2::new(-4500.0, 0.0));
+
+        dirs.push(goaldir);
+        for own_player in world.own_players.iter() {
+            if own_player.id == player.id {
+                continue;
+            }
+            dirs.push(Angle::between_points(player.position, own_player.position));
+        }
+        // find one that is closest to the current orientation
+        // give priority to shooting into general enemy goals direction
+
+        let mut target = Angle::from_radians(0.0);
+        let mut min_badness = player.yaw.radians().abs();
+        for dir in dirs {
+            let mut badness = (dir - player.yaw).radians().abs();
+            badness = badness - (dir - our_goaldir).radians().abs();
+            if badness < min_badness {
+                min_badness = badness;
+                target = dir;
+            }
+        }
+        target
     }
 }
 
 impl Role for FreeAttacker {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
-        let gamestate = ctx.world.current_game_state.game_state;
         let player_data = ctx.player;
         let world_data = ctx.world;
 
-        if let Some(ball) = &world_data.ball {
-            if self.init_ball.is_none() {
-                self.init_ball = Some(ball.clone());
-            }
-        }
+        let (ball, init_ball) = if let Some(ball) = &world_data.ball {
+            (ball, self.init_ball.get_or_insert(ball.clone()))
+        } else {
+            return PlayerControlInput::new();
+        };
         let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
 
-        if self.move_to_ball.is_accomplished() {
-                // find all possible dirs, it can directly shoot to the goal or pass to other player
-            let mut dirs: Vec<Angle> = vec![];
-            let goaldir = Angle::between_points(
-                player_data.position,
-                Vector2::new(4500.0, 0.0),
-            );
-            let our_goaldir = Angle::between_points(
-                player_data.position,
-                Vector2::new(-4500.0, 0.0),
-            );
-
-            dirs.push(goaldir);
-            for own_player in world_data.own_players.iter() {
-                if own_player.id == player_data.id {
-                    continue;
-                }
-                dirs.push(Angle::between_points(
-                    player_data.position,
-                    own_player.position,
-                ));
-            }
-            // find one that is closest to the current orientation
-            // give priority to shooting into general enemy goals direction
-
-            let mut target = Angle::from_radians(0.0);
-            let mut min_badness = player_data.yaw.radians().abs();
-            for dir in dirs {
-                let mut badness = (dir - player_data.yaw).radians().abs();
-                badness = badness - (dir - our_goaldir).radians().abs();
-                if badness < min_badness {
-                    min_badness = badness;
-                    target = dir;
-                }
-            }
-            return self.kick.kick(
-                PlayerControlInput::new()
-                    .with_position(ball_pos.xy())
-                    .with_yaw(target)
-                    .with_dribbling(1.0)
-                    .with_care(1.0) // extra care ;)
-                    .clone()
-            );
-        }
-        // stage1: move to ball
-        if let Some(_ball) = &world_data.ball {
-            let dir = Angle::between_points(player_data.position, ball_pos);
-            let dist = (ball_pos - player_data.position).norm();
-            let dirvec = (ball_pos - player_data.position) / dist;
-            let goto_pos = player_data.position + dirvec * (dist - 150.0);
-            self.move_to_ball
-                .relocate(player_data, goto_pos, dir, 0.0, 1.0)
+        let target = if let Some(target) = self.target_direction {
+            target
         } else {
-            PlayerControlInput::new()
-        }
+            let target = self.find_best_direction(ball_pos, player_data, world_data);
+            self.target_direction = Some(target);
+            target
+        };
+
+        skill!(ctx, FetchBallWithHeading::new(target));
+
+        skill!(ctx, ApproachBall::new());
+        skill!(ctx, Kick::new());
+
+        PlayerControlInput::new()
     }
     fn role_type(&self) -> RoleType {
         RoleType::FreeKicker

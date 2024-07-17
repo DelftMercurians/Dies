@@ -37,22 +37,6 @@ impl Task3Phase {
                            // (0 - inaccurate, 1 - careful)
     ) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
-        //log::info!("playerid: {:?}, Relocating to {:?}, current position: {:?}, self status: {:?}", player_data.id, goal, player_data.position,self.status);
-        if player_data.id.as_u32() == 0 {
-            dies_core::debug_string("p0.goal", format!("{}, {}", goal.x, goal.y));
-            dies_core::debug_string(
-                "p0.position",
-                format!("{}, {}", player_data.position.x, player_data.position.y),
-            );
-            dies_core::debug_string("p0.status", format!("{:?}", self.status));
-        } else {
-            dies_core::debug_string("p1.goal", format!("{}, {}", goal.x, goal.y));
-            dies_core::debug_string(
-                "p1.position",
-                format!("{}, {}", player_data.position.x, player_data.position.y),
-            );
-            dies_core::debug_string("p1.status", format!("{:?}", self.status));
-        }
         let new_status = match self.status {
             Status3::NoGoal => {
                 input

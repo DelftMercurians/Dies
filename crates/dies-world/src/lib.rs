@@ -273,6 +273,9 @@ impl WorldTracker {
                 &self.tracker_settings.field_mask,
                 self.field_geometry.as_ref(),
             );
+
+            self.game_state_tracker
+                .update_ball_movement_check(self.ball_tracker.get().as_ref());
         }
         if let Some(geometry) = data.geometry.as_ref() {
             // We don't expect the field geometry to change, so only update it once.
