@@ -9,7 +9,7 @@ use dies_logger::AsyncProtobufLogger;
 use log::{LevelFilter, Log};
 use tokio::sync::broadcast;
 
-use crate::cli::{BasestationProtocolVersion, SerialPort, ConnectionMode};
+use crate::cli::{BasestationProtocolVersion, ConnectionMode, SerialPort};
 
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
@@ -41,7 +41,7 @@ pub struct MainArgs {
     #[clap(long, default_value = "224.5.23.1:10003")]
     pub gc_addr: SocketAddr,
 
-    #[clap(long)]
+    #[clap(long, default_value = "enxf8e43ba77d03")]
     pub interface: Option<String>,
 
     #[clap(long, default_value = "info")]

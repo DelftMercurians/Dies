@@ -1,11 +1,11 @@
 use std::{
-    f64::EPSILON,
+    f64::{consts::PI, EPSILON},
     time::{Duration, Instant},
 };
 
 use dies_core::{
-    Angle, ControllerSettings, PlayerCmd, PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus,
-    Vector2, WorldData,
+    to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, PlayerCmd,
+    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2, WorldData,
 };
 
 use super::{
@@ -56,11 +56,17 @@ pub struct PlayerController {
     /// to yaw control, and if None we don't need to do anything.
     switch_heading: Option<bool>,
     heading_interval: IntervalTrigger,
+
+    opp_goal_sign: f64,
 }
 
 impl PlayerController {
+    pub fn set_opp_goal_sign(&mut self, opp_goal_sign: f64) {
+        self.opp_goal_sign = opp_goal_sign;
+    }
+
     /// Create a new player controller with the given ID.
-    pub fn new(id: PlayerId, settings: &ControllerSettings) -> Self {
+    pub fn new(id: PlayerId, settings: &ExecutorSettings) -> Self {
         let mut instance = Self {
             id,
 
@@ -68,7 +74,10 @@ impl PlayerController {
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
-            yaw_control: YawController::new(settings.angle_kp, settings.angle_cutoff_distance),
+            yaw_control: YawController::new(
+                settings.controller_settings.angle_kp,
+                settings.controller_settings.angle_cutoff_distance,
+            ),
             last_yaw: Angle::from_radians(0.0),
             target_z: 0.0,
 
@@ -77,18 +86,19 @@ impl PlayerController {
             dribble_speed: 0.0,
             if_gate_keeper: false,
 
-            max_accel: settings.max_acceleration,
-            max_speed: settings.max_velocity,
-            max_decel: settings.max_deceleration,
-            max_angular_velocity: settings.max_angular_velocity,
-            max_angular_acceleration: settings.max_angular_acceleration,
+            max_accel: settings.controller_settings.max_acceleration,
+            max_speed: settings.controller_settings.max_velocity,
+            max_decel: settings.controller_settings.max_deceleration,
+            max_angular_velocity: settings.controller_settings.max_angular_velocity,
+            max_angular_acceleration: settings.controller_settings.max_angular_acceleration,
 
             have_imu: false,
             has_target_heading: false,
             switch_heading: None,
             heading_interval: IntervalTrigger::new(Duration::from_secs_f64(0.5)),
+            opp_goal_sign: settings.tracker_settings.initial_opp_goal_x,
         };
-        instance.update_settings(settings);
+        instance.update_settings(&settings.controller_settings);
         instance
     }
 
@@ -114,7 +124,8 @@ impl PlayerController {
     }
 
     pub fn target_velocity(&self) -> Vector2 {
-        self.last_yaw.rotate_vector(&self.target_velocity)
+        self.last_yaw
+            .rotate_vector(&to_dies_coords2(self.target_velocity, self.opp_goal_sign))
     }
 
     /// Get the current command for the player.
@@ -122,7 +133,7 @@ impl PlayerController {
         if self.heading_interval.trigger() {
             return PlayerCmd::SetHeading {
                 id: self.id,
-                heading: -self.last_yaw.radians(),
+                heading: -to_dies_yaw(self.last_yaw, self.opp_goal_sign).radians(),
             };
         }
 
@@ -188,10 +199,6 @@ impl PlayerController {
 
         if is_about_to_collide(state, world, 3.0 * dt) {
             dies_core::debug_string(format!("p{}.collision", self.id), "true");
-            // TODO: Too strict
-            // self.target_velocity = Vector2::zeros();
-            // self.target_angular_velocity = 0.0;
-            // return;
         }
 
         // Calculate velocity using the MTP controller
@@ -257,7 +264,7 @@ impl PlayerController {
 
             if self.have_imu {
                 dies_core::debug_string(format!("p{}.yaw_control", self.id), "heading");
-                self.target_z = yaw.radians();
+                self.target_z = to_dies_yaw(yaw, self.opp_goal_sign).radians();
             } else {
                 dies_core::debug_string(format!("p{}.yaw_control", self.id), "yaw rate");
                 self.yaw_control.set_setpoint(yaw);
@@ -272,7 +279,7 @@ impl PlayerController {
                         .angular_acceleration_limit
                         .unwrap_or(self.max_angular_acceleration),
                 );
-                self.target_z = head_u;
+                self.target_z = self.opp_goal_sign * head_u;
             }
         } else {
             if self.has_target_heading {
@@ -306,7 +313,10 @@ impl PlayerController {
     }
 
     pub fn update_target_velocity_with_avoidance(&mut self, target_velocity: Vector2) {
-        self.target_velocity = self.last_yaw.inv().rotate_vector(&target_velocity);
+        self.target_velocity = to_dies_coords2(
+            self.last_yaw.inv().rotate_vector(&target_velocity),
+            self.opp_goal_sign,
+        );
         dies_core::debug_line(
             format!("p{}.target_velocity", self.id),
             self.last_pos,

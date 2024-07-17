@@ -12,7 +12,7 @@ pub fn to_dies_coords2(pos: Vector2, opp_goal_sign: f64) -> Vector2 {
 /// The yaw is rotated by 180 degrees if the goal is on the left.
 pub fn to_dies_yaw(yaw: Angle, opp_goal_sign: f64) -> Angle {
     if opp_goal_sign < 0.0 {
-        Angle::PI + yaw
+        Angle::PI - yaw
     } else {
         yaw
     }

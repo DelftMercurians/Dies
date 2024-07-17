@@ -11,7 +11,9 @@ use super::{
 };
 use crate::roles::{RoleCtx, SkillState};
 use crate::strategy::StrategyCtx;
-use dies_core::{ControllerSettings, GameState, Obstacle, PlayerCmd, PlayerId, Vector2};
+use dies_core::{
+    ControllerSettings, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerId, Vector2,
+};
 use dies_core::{PlayerMoveCmd, WorldData};
 
 #[derive(Default)]
@@ -23,15 +25,12 @@ pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     strategy: StrategyMap,
     role_states: HashMap<PlayerId, RoleState>,
-    settings: ControllerSettings,
+    settings: ExecutorSettings,
 }
 
 impl TeamController {
     /// Create a new team controller.
-    pub fn new(
-        strategy: StrategyMap,
-        settings: &ControllerSettings,
-    ) -> Self {
+    pub fn new(strategy: StrategyMap, settings: &ExecutorSettings) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             strategy,
@@ -42,9 +41,15 @@ impl TeamController {
         team
     }
 
-    pub fn update_controller_settings(&mut self, settings: &ControllerSettings) {
+    pub fn set_opp_goal_sign(&mut self, opp_goal_sign: f64) {
         for controller in self.player_controllers.values_mut() {
-            controller.update_settings(settings);
+            controller.set_opp_goal_sign(opp_goal_sign);
+        }
+    }
+
+    pub fn update_controller_settings(&mut self, settings: &ExecutorSettings) {
+        for controller in self.player_controllers.values_mut() {
+            controller.update_settings(&settings.controller_settings);
         }
         self.settings = settings.clone();
     }

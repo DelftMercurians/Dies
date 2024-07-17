@@ -197,7 +197,7 @@ impl Executor {
 
         Self {
             tracker: WorldTracker::new(&settings),
-            controller: TeamController::new(strategy, &settings.controller_settings),
+            controller: TeamController::new(strategy, &settings),
             gc_client: GcClient::new(),
             environment: Some(Environment::Live {
                 ssl_client,
@@ -225,7 +225,7 @@ impl Executor {
 
         Self {
             tracker: WorldTracker::new(&settings),
-            controller: TeamController::new(strategy, &settings.controller_settings),
+            controller: TeamController::new(strategy, &settings),
             gc_client: GcClient::new(),
             environment: Some(Environment::Simulation { simulator }),
             manual_override: HashMap::new(),
@@ -236,6 +236,11 @@ impl Executor {
             info_channel_rx,
             info_channel_tx,
         }
+    }
+
+    pub fn set_opp_goal_sign(&mut self, opp_goal_sign: f64) {
+        self.tracker.set_play_dir_x(opp_goal_sign);
+        self.controller.set_opp_goal_sign(opp_goal_sign);
     }
 
     /// Update the executor with a vision message.
@@ -458,8 +463,7 @@ impl Executor {
                 }
             }
             ControlMsg::UpdateSettings(settings) => {
-                self.controller
-                    .update_controller_settings(&settings.controller_settings);
+                self.controller.update_controller_settings(&settings);
                 self.tracker.update_settings(&settings);
             }
             ControlMsg::Stop => {}
