@@ -4,7 +4,7 @@ use dies_core::{PlayerData, PlayerId, WorldData};
 use nalgebra::Vector2;
 
 use crate::{
-    roles::skills::{FetchBall, GoToPosition},
+    roles::skills::{Face, FetchBall, GoToPosition},
     skill, PlayerControlInput,
 };
 
