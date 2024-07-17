@@ -128,10 +128,6 @@ impl PlayerController {
 
         // Priority list: 1. Kick, 2. Switch heading, 3. Anything else
         let robot_cmd = match (self.kicker, self.switch_heading) {
-            (KickerState::Kicking, _) => {
-                self.kicker = KickerState::Disarming;
-                RobotCmd::Kick
-            }
             (_, Some(heading)) => {
                 self.switch_heading = None;
                 if heading {
@@ -139,6 +135,10 @@ impl PlayerController {
                 } else {
                     RobotCmd::YawRateControl
                 }
+            }
+            (KickerState::Kicking, _) => {
+                self.kicker = KickerState::Disarming;
+                RobotCmd::Kick
             }
             (KickerState::Arming, None) => RobotCmd::Arm,
             (KickerState::Disarming, None) => RobotCmd::Disarm,
