@@ -396,7 +396,8 @@ impl Skill for ApproachBall {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let ball_pos = ball.position.xy();
             let player_pos = ctx.player.position;
-            if ctx.player.breakbeam_ball_detected && (ball_pos - player_pos).norm() < 100.0 {
+
+            if ctx.player.breakbeam_ball_detected && (ball_pos - player_pos).norm() < 150.0 {
                 return SkillProgress::success();
             }
             
