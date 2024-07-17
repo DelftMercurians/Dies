@@ -300,10 +300,14 @@ impl Skill for FetchBall {
                     let b = ball_points[i + 1].clone();
                     let must_be_reached_before = points_schedule[i];
                     // now we have both segment points available, lets compute time_to_reach
-                    let time_to_reach = f64::min(
+                    let mut time_to_reach = f64::min(
                         ctx.world.time_to_reach_point(ctx.player, a),
                         ctx.world.time_to_reach_point(ctx.player, b),
                     );
+                    // but this time is also kinda useless, mostly, so add 0.3 seconds
+                    // to compensate
+                    time_to_reach = time_to_reach * 1.2 + 0.1;
+
 
                     if time_to_reach < must_be_reached_before {
                         intersection = b;
