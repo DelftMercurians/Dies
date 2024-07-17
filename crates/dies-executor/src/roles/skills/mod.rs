@@ -85,31 +85,31 @@ impl Skill for GoToPosition {
 }
 
 pub struct Kick {
-    has_kicked: bool,
+    has_kicked: usize,
 }
 
 impl Kick {
     pub fn new() -> Self {
-        Self { has_kicked: false }
+        Self { has_kicked: 1 }
     }
 }
 
 impl Skill for Kick {
     fn update(&mut self, _ctx: SkillCtx<'_>) -> SkillProgress {
-        if self.has_kicked {
+        if self.has_kicked == 0 {
             return SkillProgress::success();
         }
 
         let ready = match _ctx.player.kicker_status.as_ref() {
             Some(SysStatus::Armed) => true,
-            Some(SysStatus::Ok) | Some(SysStatus::Standby) => false,
-            _ => return SkillProgress::failure(),
+            _ => false,
         };
 
         let mut input = PlayerControlInput::new();
+        input.with_dribbling(1.0);
         if ready {
             input.with_kicker(crate::KickerControlInput::Kick);
-            self.has_kicked = true;
+            self.has_kicked -= 1;
             SkillProgress::Continue(input)
         } else {
             input.kicker = KickerControlInput::Arm;
@@ -344,6 +344,9 @@ impl Skill for ApproachBall {
             let dribbling_distance = 1000.0;
 
             let mut input = PlayerControlInput::new();
+
+            let angle = Angle::between_points(player_pos, ball_pos);
+            input.with_yaw(angle);
 
             input.velocity = Velocity::global(
                 (ball_speed * 0.8 + distance * (max_relative_speed / dribbling_distance))

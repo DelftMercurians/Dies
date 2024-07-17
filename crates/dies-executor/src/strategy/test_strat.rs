@@ -42,7 +42,7 @@ impl Strategy for TestStrat {
         let assignment = {
             if let Some(assignment) = self.assignment.as_mut() {
                 assignment
-            } else {
+            } else if let Some(ball) = ctx.world.ball.as_ref() {
                 // Assign roles
                 let available_ids = ctx
                     .world
@@ -54,10 +54,19 @@ impl Strategy for TestStrat {
                     return;
                 }
                 self.assignment.get_or_insert_with(|| {
-                    let passer_id = available_ids[0];
-                    let receiver_id = available_ids[1];
-                    Assignmmet::new(passer_id, receiver_id)
+                    // Find available player closest to the ball
+                    let passer_id = available_ids
+                        .iter()
+                        .min_by_key(|id| {
+                            let player = ctx.world.get_player(**id).unwrap();
+                            (player.position - ball.position.xy()).norm() as i64
+                        })
+                        .unwrap();
+                    let receiver_id = available_ids.iter().find(|id| **id != *passer_id).unwrap();
+                    Assignmmet::new(*passer_id, *receiver_id)
                 })
+            } else {
+                return;
             }
         };
 

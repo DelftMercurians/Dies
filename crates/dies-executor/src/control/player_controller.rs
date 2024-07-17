@@ -16,12 +16,12 @@ use super::{
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 1_000.0;
-const KICK_COUNT: usize = 3;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum KickerState {
     Disarming,
     Arming,
-    Kicking(usize),
+    Kicking,
 }
 
 pub struct PlayerController {
@@ -51,6 +51,10 @@ pub struct PlayerController {
     max_angular_acceleration: f64,
 
     have_imu: bool,
+    has_target_heading: bool,
+    /// If Some(true) we need to switch to imu heading, if Some(false) we need to switch
+    /// to yaw control, and if None we don't need to do anything.
+    switch_heading: Option<bool>,
     heading_interval: IntervalTrigger,
 }
 
@@ -80,6 +84,8 @@ impl PlayerController {
             max_angular_acceleration: settings.max_angular_acceleration,
 
             have_imu: false,
+            has_target_heading: false,
+            switch_heading: None,
             heading_interval: IntervalTrigger::new(Duration::from_secs_f64(0.5)),
         };
         instance.update_settings(settings);
@@ -113,48 +119,47 @@ impl PlayerController {
 
     /// Get the current command for the player.
     pub fn command(&mut self) -> PlayerCmd {
-        if self.heading_interval.trigger() && self.have_imu {
+        if self.heading_interval.trigger() {
             return PlayerCmd::SetHeading {
                 id: self.id,
                 heading: -self.last_yaw.radians(),
             };
         }
 
-        let mut cmd = PlayerMoveCmd {
+        // Priority list: 1. Kick, 2. Switch heading, 3. Anything else
+        let robot_cmd = match (self.kicker, self.switch_heading) {
+            (KickerState::Kicking, _) => {
+                self.kicker = KickerState::Disarming;
+                RobotCmd::Kick
+            }
+            (_, Some(heading)) => {
+                self.switch_heading = None;
+                if heading {
+                    RobotCmd::HeadingControl
+                } else {
+                    RobotCmd::YawRateControl
+                }
+            }
+            (KickerState::Arming, None) => RobotCmd::Arm,
+            (KickerState::Disarming, None) => RobotCmd::Disarm,
+        };
+
+        let cmd = PlayerMoveCmd {
             id: self.id,
             // In the robot's local frame +sx means forward and +sy means right
             sx: self.target_velocity.x / 1000.0, // Convert to m/s
             sy: -self.target_velocity.y / 1000.0, // Convert to m/s
             w: -self.target_z,
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
-            robot_cmd: if self.have_imu {
-                RobotCmd::HeadingControl
-            } else {
-                RobotCmd::YawRateControl
-            },
+            robot_cmd,
         };
-
-        match self.kicker {
-            KickerState::Arming => {
-                cmd.robot_cmd = RobotCmd::Arm;
-            }
-            KickerState::Kicking(count) => {
-                if count == 0 {
-                    self.kicker = KickerState::Disarming;
-                } else {
-                    cmd.robot_cmd = RobotCmd::Kick;
-                    self.kicker = KickerState::Kicking(count - 1);
-                }
-            }
-            _ => {}
-        }
 
         dies_core::debug_value(format!("p{}.sx", self.id), cmd.sx);
         dies_core::debug_value(format!("p{}.sy", self.id), cmd.sy);
         dies_core::debug_value(format!("p{}.w", self.id), cmd.w);
         dies_core::debug_value(format!("p{}.dribble_speed", self.id), cmd.dribble_speed);
         dies_core::debug_string(
-            format!("p{}.kicker_cmd", self.id),
+            format!("p{}.robot_cmd", self.id),
             format!("{:?}", cmd.robot_cmd),
         );
 
@@ -238,6 +243,11 @@ impl PlayerController {
         );
 
         if let Some(yaw) = input.yaw {
+            if !self.has_target_heading {
+                self.has_target_heading = true;
+                self.switch_heading = Some(true);
+            }
+
             dies_core::debug_line(
                 format!("p{}.target_yaw_line", self.id),
                 self.last_pos,
@@ -265,6 +275,10 @@ impl PlayerController {
                 self.target_z = head_u;
             }
         } else {
+            if self.has_target_heading {
+                self.has_target_heading = false;
+                self.switch_heading = Some(false);
+            }
             self.target_z = 0.0;
         }
 
@@ -278,12 +292,15 @@ impl PlayerController {
             }
             KickerControlInput::Kick => match self.kicker {
                 KickerState::Disarming | KickerState::Arming => {
-                    self.kicker = KickerState::Kicking(KICK_COUNT);
+                    self.kicker = KickerState::Kicking;
                 }
-                KickerState::Kicking(_) => {}
+                KickerState::Kicking => {}
             },
             KickerControlInput::Disarm | KickerControlInput::Idle => {
-                self.kicker = KickerState::Disarming;
+                // Make sure kick goes through
+                if self.kicker != KickerState::Kicking {
+                    self.kicker = KickerState::Disarming;
+                }
             }
         }
     }

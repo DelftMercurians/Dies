@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context, Result};
 use glue::{HG_Status, Monitor, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, SysStatus};
+use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, RobotCmd, SysStatus};
 
 const MAX_MSG_FREQ: f64 = 200.0;
 const BASE_STATION_READ_FREQ: f64 = 100.0;
@@ -141,6 +141,12 @@ impl BasestationHandle {
                                 as usize;
                             match &mut connection {
                                 Connection::V1(monitor) => {
+                                    if matches!(cmd.robot_cmd, RobotCmd::Arm) {
+                                        println!("arming");
+                                    }
+                                    if matches!(cmd.robot_cmd, RobotCmd::Kick) {
+                                        println!("kicking");
+                                    }
                                     resp.send(
                                         monitor
                                             .send_single(cmd.id.as_u32() as u8, cmd.into())
