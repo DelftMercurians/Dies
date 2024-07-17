@@ -1,20 +1,22 @@
 use std::sync::{atomic::AtomicBool, Arc};
 
-use dies_core::{PlayerData, WorldData};
+use dies_core::{PlayerData, PlayerId, WorldData};
 use nalgebra::Vector2;
 
-use crate::{roles::skills::{FetchBall, GoToPosition}, skill, PlayerControlInput};
+use crate::{roles::skills::{Face, FetchBall, GoToPosition}, skill, PlayerControlInput};
 
 use super::{Role, RoleCtx};
 
 
 pub struct Receiver {
+    passer: PlayerId,
     has_passer_kicked: bool,
 }
 
 impl Receiver {
-    pub fn new() -> Self {
+    pub fn new(passer: PlayerId) -> Self {
         Self {
+            passer,
             has_passer_kicked: false,
         }
     }
@@ -31,6 +33,8 @@ impl Role for Receiver {
             skill!(ctx, FetchBall::new());
 
             skill!(ctx, GoToPosition::new(Vector2::new(0.0, 0.0)).with_ball());
+        } else {
+            skill!(ctx, Face::towards_own_player(self.passer));
         }
         
         PlayerControlInput::default()

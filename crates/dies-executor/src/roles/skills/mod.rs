@@ -336,48 +336,48 @@ impl Skill for FetchBall {
     }
 }
 
-// pub struct InterceptBall {
-//     intercept_line: Option<(Vector2, Vector2)>,
-// }
+pub struct InterceptBall {
+    intercept_line: Option<(Vector2, Vector2)>,
+}
 
-// impl InterceptBall {
-//     pub fn new() -> Self {
-//         Self {
-//             intercept_line: None,
-//         }
-//     }
-// }
+impl InterceptBall {
+    pub fn new() -> Self {
+        Self {
+            intercept_line: None,
+        }
+    }
+}
 
-// impl Skill for InterceptBall {
-//     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
-//         if let Some(ball) = ctx.world.ball.as_ref() {
-//             let intercept_line = self
-//                 .intercept_line
-//                 .get_or_insert((ctx.player.position, perp(ball.velocity.xy())));
+impl Skill for InterceptBall {
+    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+        if let Some(ball) = ctx.world.ball.as_ref() {
+            let intercept_line = self
+                .intercept_line
+                .get_or_insert((ctx.player.position, perp(ball.velocity.xy())));
 
-//             if let Some(intersection) = find_intersection(
-//                 intercept_line.0,
-//                 intercept_line.1,
-//                 ball.position.xy(),
-//                 ball.velocity.xy(),
-//             ) {
-//                 let mut input = PlayerControlInput::new();
+            if let Some(intersection) = find_intersection(
+                intercept_line.0,
+                intercept_line.1,
+                ball.position.xy(),
+                ball.velocity.xy(),
+            ) {
+                let mut input = PlayerControlInput::new();
 
-//                 input.with_position(intersection);
-//                 input.with_yaw(Angle::between_points(
-//                     ctx.player.position,
-//                     ball.position.xy(),
-//                 ));
+                input.with_position(intersection);
+                input.with_yaw(Angle::between_points(
+                    ctx.player.position,
+                    ball.position.xy(),
+                ));
 
-//                 SkillProgress::Continue(input)
-//             } else {
-//                 SkillProgress::failure()
-//             }
-//         } else {
-//             SkillProgress::failure()
-//         }
-//     }
-// }
+                SkillProgress::Continue(input)
+            } else {
+                SkillProgress::failure()
+            }
+        } else {
+            SkillProgress::failure()
+        }
+    }
+}
 
 pub struct ApproachBall {}
 
