@@ -58,7 +58,6 @@ impl MTP {
         let distance = displacement.magnitude();
 
         if distance < self.cutoff_distance {
-            println!("Sending cutoff");
 
             return Vector2::zeros();
         }
@@ -108,7 +107,6 @@ impl MTP {
             direction * new_speed
         } else {
             // Cruise phase
-            println!("cruising");
             dies_core::debug_string("p5.MTPMode", "Cruise");
             direction * max_speed
         }
