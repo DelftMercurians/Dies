@@ -1,11 +1,11 @@
 {
   "controller_settings": {
     "max_acceleration": 125000.0,
-    "max_velocity": 5800.0,
-    "max_deceleration": 6340.0,
+    "max_velocity": 10000.0,
+    "max_deceleration": 27610.0,
     "max_angular_velocity": 25.132741228718345,
     "max_angular_acceleration": 349.0658503988659,
-    "position_kp": 10000.0,
+    "position_kp": 1000000.0,
     "position_proportional_time_window": 1.2,
     "position_cutoff_distance": 70.0,
     "angle_kp": 2.8,
@@ -16,7 +16,7 @@
     "initial_opp_goal_x": 1.0,
     "field_mask": {
       "x_min": -1.0,
-      "x_max": 0.02,
+      "x_max": 1.0,
       "y_min": -1.0,
       "y_max": 1.0
     },

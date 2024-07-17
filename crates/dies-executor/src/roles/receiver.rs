@@ -4,11 +4,12 @@ use dies_core::{PlayerData, PlayerId, WorldData};
 use nalgebra::Vector2;
 
 use crate::{
-    roles::skills::{Face, FetchBall, GoToPosition},
+    invoke_skill,
+    roles::skills::{Face, FetchBall, GoToPosition, Kick},
     skill, PlayerControlInput,
 };
 
-use super::{Role, RoleCtx};
+use super::{Role, RoleCtx, SkillResult};
 
 pub struct Receiver {
     passer: PlayerId,
@@ -36,8 +37,19 @@ impl Role for Receiver {
                     crate::roles::SkillResult::Success => break,
                     _ => {}
                 }
+
+                match invoke_skill!(ctx, Face::towards_position(Vector2::new(4500.0, 0.0))) {
+                    crate::roles::SkillProgress::Continue(mut input) => {
+                        input.with_dribbling(1.0);
+                        return input;
+                    }
+                    _ => {}
+                }
+
+                if let SkillResult::Success = skill!(ctx, Kick::new()) {
+                    break;
+                }
             }
-            skill!(ctx, GoToPosition::new(Vector2::new(0.0, 0.0)).with_ball());
         } else {
             skill!(ctx, Face::towards_own_player(self.passer));
         }

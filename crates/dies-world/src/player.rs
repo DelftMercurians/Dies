@@ -165,26 +165,26 @@ impl PlayerTracker {
 
     pub fn get(&self) -> Option<PlayerData> {
         // If we have received feedback but not detection return some placeholder data
-        if let (None, Some(feedback)) = (self.last_detection.as_ref(), self.last_feedback) {
-            return Some(PlayerData {
-                id: self.id,
-                timestamp: 0.0,
-                position: Vector2::zeros(),
-                velocity: Vector2::zeros(),
-                yaw: Angle::default(),
-                angular_speed: 0.0,
-                raw_position: Vector2::zeros(),
-                raw_yaw: Angle::default(),
-                primary_status: feedback.primary_status,
-                kicker_cap_voltage: feedback.kicker_cap_voltage,
-                kicker_temp: feedback.kicker_temp,
-                pack_voltages: feedback.pack_voltages,
-                breakbeam_ball_detected: self.breakbeam_detections.iter().sum::<usize>()
-                    > BREAKBEAM_DETECTION_THRESHOLD,
-                imu_status: feedback.imu_status,
-                kicker_status: feedback.kicker_status,
-            });
-        }
+        // if let (None, Some(feedback)) = (self.last_detection.as_ref(), self.last_feedback) {
+        //     return Some(PlayerData {
+        //         id: self.id,
+        //         timestamp: 0.0,
+        //         position: Vector2::zeros(),
+        //         velocity: Vector2::zeros(),
+        //         yaw: Angle::default(),
+        //         angular_speed: 0.0,
+        //         raw_position: Vector2::zeros(),
+        //         raw_yaw: Angle::default(),
+        //         primary_status: feedback.primary_status,
+        //         kicker_cap_voltage: feedback.kicker_cap_voltage,
+        //         kicker_temp: feedback.kicker_temp,
+        //         pack_voltages: feedback.pack_voltages,
+        //         breakbeam_ball_detected: self.breakbeam_detections.iter().sum::<usize>()
+        //             > BREAKBEAM_DETECTION_THRESHOLD,
+        //         imu_status: feedback.imu_status,
+        //         kicker_status: feedback.kicker_status,
+        //     });
+        // }
 
         let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
         if let Some(_) = &self.last_feedback {

@@ -6,7 +6,7 @@ use dies_core::{PlayerData, WorldData};
 
 use crate::roles::skills::{ApproachBall, Face, FetchBallWithHeading, Kick};
 use crate::roles::{Role, SkillResult};
-use crate::{skill, PlayerControlInput};
+use crate::{invoke_skill, skill, PlayerControlInput};
 
 use super::RoleCtx;
 
@@ -36,6 +36,13 @@ impl Role for Passer {
 
         loop {
             skill!(ctx, ApproachBall::new());
+            match invoke_skill!(ctx, Face::towards_own_player(receiver.id)) {
+                crate::roles::SkillProgress::Continue(mut input) => {
+                    input.with_dribbling(1.0);
+                    return input;
+                }
+                _ => {}
+            }
             if let SkillResult::Success = skill!(ctx, Kick::new()) {
                 break;
             }

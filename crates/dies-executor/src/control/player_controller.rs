@@ -4,11 +4,16 @@ use std::{
 };
 
 use dies_core::{
-    to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2, WorldData
+    to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd,
+    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2, WorldData,
 };
 
 use super::{
-    mtp::MTP, player_input::{KickerControlInput, PlayerControlInput}, rvo::velocity_obstacle_update, yaw_control::YawController, Velocity
+    mtp::MTP,
+    player_input::{KickerControlInput, PlayerControlInput},
+    rvo::velocity_obstacle_update,
+    yaw_control::YawController,
+    Velocity,
 };
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
@@ -148,7 +153,7 @@ impl PlayerController {
                 RobotCmd::Kick
             }
             (KickerState::Arming, None) => RobotCmd::Arm,
-            (KickerState::Disarming, None) => RobotCmd::Disarm,
+            (KickerState::Disarming, None) => RobotCmd::Arm,
         };
 
         let target_velocity = to_dies_coords2(
@@ -253,7 +258,7 @@ impl PlayerController {
             } else {
                 vec![]
             };
-            
+
             self.target_velocity = velocity_obstacle_update(
                 state,
                 &self.target_velocity,

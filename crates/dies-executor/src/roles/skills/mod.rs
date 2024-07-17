@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use dies_core::{
     find_intersection, get_tangent_line_direction, perp, which_side_of_robot, Angle, PlayerId,
     SysStatus, Vector2,
@@ -141,27 +143,47 @@ impl Skill for Face {
 
 pub struct Kick {
     has_kicked: usize,
+    timer: Option<Instant>,
 }
 
 impl Kick {
     pub fn new() -> Self {
-        Self { has_kicked: 1 }
+        Self {
+            has_kicked: 1,
+            timer: None,
+        }
     }
 }
 
 impl Skill for Kick {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+        let mut input = PlayerControlInput::new();
+        input.with_dribbling(1.0);
+
         if self.has_kicked == 0 {
-            return SkillProgress::success();
+            let timer = self.timer.get_or_insert(Instant::now());
+            if timer.elapsed().as_secs_f64() > 0.35 {
+                if ctx
+                    .world
+                    .ball
+                    .as_ref()
+                    .map(|b| (b.position.xy() - ctx.player.position).norm() > 200.0)
+                    .unwrap_or(false)
+                {
+                    return SkillProgress::success();
+                } else {
+                    return SkillProgress::failure();
+                }
+            } else {
+                return SkillProgress::Continue(input);
+            }
         }
 
         let ready = match ctx.player.kicker_status.as_ref() {
-            Some(SysStatus::Armed) => true,
+            Some(SysStatus::Ready) => true,
             _ => false,
         };
 
-        let mut input = PlayerControlInput::new();
-        input.with_dribbling(1.0);
         if ready {
             println!("Kicking");
             if !ctx.player.breakbeam_ball_detected {
@@ -232,6 +254,8 @@ impl Skill for FetchBall {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
+            input.with_dribbling(self.dribbling_speed);
+
             let ball_pos = ball.position.xy();
             let ball_speed = ball.velocity.xy().norm();
             let player_pos = ctx.player.position;
@@ -307,7 +331,6 @@ impl Skill for FetchBall {
                     // but this time is also kinda useless, mostly, so add 0.3 seconds
                     // to compensate
                     time_to_reach = time_to_reach * 1.2 + 0.1;
-
 
                     if time_to_reach < must_be_reached_before {
                         intersection = b;
@@ -400,12 +423,12 @@ impl Skill for ApproachBall {
             if ctx.player.breakbeam_ball_detected && (ball_pos - player_pos).norm() < 150.0 {
                 return SkillProgress::success();
             }
-            
+
             let ball_speed = ball.velocity.xy().norm();
             let distance = (ball_pos - player_pos).norm();
 
             let mut input = PlayerControlInput::new();
-            if (ball_pos - player_pos).norm() > 90.0 && ball.detected {
+            if (ball_pos - player_pos).norm() > 50.0 && ball.detected {
                 input.with_yaw(Angle::between_points(player_pos, ball_pos));
             }
 
@@ -519,6 +542,7 @@ impl Skill for FetchBallWithHeading {
         let init_ball_pos = *init_ball_pos;
 
         let target_heading = if let Some(heading) = self.target_heading.heading(&ctx) {
+            // println!("Heading: {:?}", heading);
             heading
         } else {
             return SkillProgress::failure();
