@@ -12,6 +12,7 @@ use super::{
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
     yaw_control::YawController,
+    Velocity,
 };
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
@@ -124,8 +125,7 @@ impl PlayerController {
     }
 
     pub fn target_velocity(&self) -> Vector2 {
-        self.last_yaw
-            .rotate_vector(&to_dies_coords2(self.target_velocity, self.opp_goal_sign))
+        self.target_velocity
     }
 
     /// Get the current command for the player.
@@ -155,12 +155,17 @@ impl PlayerController {
             (KickerState::Disarming, None) => RobotCmd::Disarm,
         };
 
+        let target_velocity = to_dies_coords2(self.target_velocity, self.opp_goal_sign);
         let cmd = PlayerMoveCmd {
             id: self.id,
             // In the robot's local frame +sx means forward and +sy means right
-            sx: self.target_velocity.x / 1000.0, // Convert to m/s
-            sy: -self.target_velocity.y / 1000.0, // Convert to m/s
-            w: -self.target_z,
+            sx: target_velocity.x / 1000.0, // Convert to m/s
+            sy: -target_velocity.y / 1000.0, // Convert to m/s
+            w: if self.have_imu && self.has_target_heading {
+                -to_dies_yaw(Angle::from_radians(self.target_z), self.opp_goal_sign).radians()
+            } else {
+                -self.target_z * self.opp_goal_sign
+            },
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
             robot_cmd,
         };
@@ -222,27 +227,18 @@ impl PlayerController {
                 input.acceleration_limit.unwrap_or(self.max_decel),
                 input.care,
             );
-            let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
-            self.target_velocity = local_u;
+            // let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
+            self.target_velocity = pos_u;
         } else {
             dies_core::debug_remove(format!("p{}.control.target", self.id));
         }
-        let local_vel = input.velocity.to_local(self.last_yaw);
-        self.target_velocity += local_vel;
+        let add_vel = match input.velocity {
+            Velocity::Global(v) => v,
+            Velocity::Local(v) => self.last_yaw.rotate_vector(&v),
+        };
+        self.target_velocity += add_vel;
 
         // Draw the velocity
-        dies_core::debug_line(
-            format!("p{}.target_velocity", self.id),
-            self.last_pos,
-            self.last_pos
-                + self
-                    .last_yaw
-                    .rotate_vector(&self.target_velocity)
-                    .try_normalize(EPSILON)
-                    .unwrap_or(Vector2::zeros())
-                    * 50.0,
-            dies_core::DebugColor::Green,
-        );
         dies_core::debug_line(
             format!("p{}.velocity", self.id),
             self.last_pos,
@@ -265,7 +261,7 @@ impl PlayerController {
 
             if self.have_imu {
                 dies_core::debug_string(format!("p{}.yaw_control", self.id), "heading");
-                self.target_z = to_dies_yaw(yaw, self.opp_goal_sign).radians();
+                self.target_z = yaw.radians();
             } else {
                 dies_core::debug_string(format!("p{}.yaw_control", self.id), "yaw rate");
                 self.yaw_control.set_setpoint(yaw);
@@ -281,7 +277,7 @@ impl PlayerController {
                         .unwrap_or(self.max_angular_acceleration),
                     input.care
                 );
-                self.target_z = self.opp_goal_sign * head_u;
+                self.target_z = head_u;
             }
         } else {
             if self.has_target_heading {
@@ -315,14 +311,11 @@ impl PlayerController {
     }
 
     pub fn update_target_velocity_with_avoidance(&mut self, target_velocity: Vector2) {
-        self.target_velocity = to_dies_coords2(
-            self.last_yaw.inv().rotate_vector(&target_velocity),
-            self.opp_goal_sign,
-        );
+        self.target_velocity = target_velocity;
         dies_core::debug_line(
             format!("p{}.target_velocity", self.id),
             self.last_pos,
-            self.last_pos + self.last_yaw.rotate_vector(&self.target_velocity),
+            self.last_pos + self.target_velocity,
             dies_core::DebugColor::Green,
         );
     }
