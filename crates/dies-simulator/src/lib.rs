@@ -1,5 +1,5 @@
 use dies_core::{
-    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, Vector2,
+    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2,
     WorldInstant,
 };
 use dies_protos::ssl_gc_referee_message::{referee, Referee};
@@ -66,6 +66,8 @@ pub struct SimulationConfig {
     pub angular_velocity_treshold: f64,
     /// Interval for sending feedback packets in seconds
     pub feedback_interval: f64,
+    /// Whether the robot has an IMU and is capable of absolute orientation
+    pub has_imu: bool,
 
     // FIELD GEOMRTY PARAMETERS
     /// Field configuration
@@ -98,6 +100,7 @@ impl Default for SimulationConfig {
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.0,
             feedback_interval: 0.5,
+            has_imu: true,
 
             // FIELD GEOMRTY PARAMETERS
             field_geometry: FieldGeometry::default(),
@@ -132,9 +135,10 @@ struct Player {
     _collider_handle: ColliderHandle,
     last_cmd_time: f64,
     target_velocity: Vector<f64>,
-    target_ang_velocity: f64,
+    target_z: f64,
     current_dribble_speed: f64,
     breakbeam: bool,
+    heading_control: bool,
 }
 
 #[derive(Debug)]
@@ -382,7 +386,12 @@ impl Simulation {
             if send_feedback {
                 let mut feedback = PlayerFeedbackMsg::empty(player.id);
                 feedback.breakbeam_ball_detected = Some(player.breakbeam);
-                feedback.kicker_status = Some(dies_core::SysStatus::Armed);
+                feedback.kicker_status = Some(SysStatus::Armed);
+                feedback.imu_status = if self.config.has_imu {
+                    Some(SysStatus::Ready)
+                } else {
+                    Some(SysStatus::NotInstalled)
+                };
                 self.feedback_queue.push_back(feedback);
             }
 
@@ -391,10 +400,23 @@ impl Simulation {
                 // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
                 // Angular velocity is in rad/s and +w means counter-clockwise
                 player.target_velocity = Vector::new(command.sx, -command.sy, 0.0) * 1000.0; // m/s to mm/s
-                player.target_ang_velocity = -command.w;
+                player.target_z = -command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
                 is_kicking = matches!(command.robot_cmd, RobotCmd::Kick);
+
+                match command.robot_cmd {
+                    RobotCmd::Kick => {
+                        is_kicking = true;
+                    }
+                    RobotCmd::YawRateControl => {
+                        player.heading_control = false;
+                    }
+                    RobotCmd::HeadingControl => {
+                        player.heading_control = true;
+                    }
+                    _ => {}
+                }
             }
 
             let rigid_body = self
@@ -404,7 +426,7 @@ impl Simulation {
 
             if (self.current_time - player.last_cmd_time).abs() > self.config.player_cmd_timeout {
                 player.target_velocity = Vector::zeros();
-                player.target_ang_velocity = 0.0;
+                player.target_z = 0.0;
             }
 
             let velocity = rigid_body.linvel();
@@ -424,10 +446,24 @@ impl Simulation {
             let new_vel = new_vel.cap_magnitude(self.config.max_vel);
             rigid_body.set_linvel(new_vel, true);
 
-            let target_ang_vel = player.target_ang_velocity;
-            let new_ang_vel =
-                target_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);
-            rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
+            if player.heading_control {
+                // Move towards the target heading with config.max_ang_vel
+                let current_yaw = rigid_body.rotation().euler_angles().2;
+                let target_yaw = player.target_z;
+                let yaw_err = target_yaw - current_yaw;
+                let new_yaw = if yaw_err.abs() > 5f64.to_degrees() {
+                    let ang_vel = (yaw_err / dt).min(self.config.max_ang_vel / dt);
+                    current_yaw + ang_vel * dt
+                } else {
+                    target_yaw
+                };
+                rigid_body.set_rotation(Rotation::from_euler_angles(0.0, 0.0, new_yaw), true);
+            } else {
+                let target_ang_vel = player.target_z;
+                let new_ang_vel =
+                    target_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);
+                rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
+            }
 
             // Check if the ball is in the dribbler
             let yaw = rigid_body.position().rotation * Vector::x();
@@ -459,11 +495,14 @@ impl Simulation {
                         // ball_body.set_linear_damping(self.config.ball_damping * 2.0);
 
                         // Fix the bals position to the dribbler
-                        ball_body.set_position(Isometry::translation(
-                            dribbler_position.x,
-                            dribbler_position.y,
-                            dribbler_position.z,
-                        ), true);
+                        ball_body.set_position(
+                            Isometry::translation(
+                                dribbler_position.x,
+                                dribbler_position.y,
+                                dribbler_position.z,
+                            ),
+                            true,
+                        );
                     }
                 } else {
                     player.breakbeam = false;
@@ -649,9 +688,10 @@ impl SimulationBuilder {
             _collider_handle: collider_handle,
             last_cmd_time: 0.0,
             target_velocity: Vector::zeros(),
-            target_ang_velocity: 0.0,
+            target_z: 0.0,
             current_dribble_speed: 0.0,
             breakbeam: false,
+            heading_control: false,
         });
     }
 }

@@ -156,10 +156,9 @@ impl PlayerController {
             (KickerState::Disarming, None) => RobotCmd::Arm,
         };
 
-        let target_velocity = to_dies_coords2(
-            self.last_yaw.inv().rotate_vector(&self.target_velocity),
-            self.opp_goal_sign,
-        );
+        let target_velocity = to_dies_yaw(self.last_yaw, self.opp_goal_sign)
+            .inv()
+            .rotate_vector(&to_dies_coords2(self.target_velocity, self.opp_goal_sign));
 
         let cmd = PlayerMoveCmd {
             id: self.id,
@@ -207,7 +206,10 @@ impl PlayerController {
         is_manual_override: bool,
         all_players: &[&PlayerData],
     ) {
-        self.have_imu = matches!(state.imu_status, Some(SysStatus::Ok));
+        self.have_imu = matches!(
+            state.imu_status,
+            Some(SysStatus::Ok) | Some(SysStatus::Ready)
+        );
 
         if is_about_to_collide(state, world, 3.0 * dt) {
             dies_core::debug_string(format!("p{}.collision", self.id), "true");

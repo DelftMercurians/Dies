@@ -11,10 +11,19 @@ pub fn to_dies_coords2(pos: Vector2, opp_goal_sign: f64) -> Vector2 {
 ///
 /// The yaw is rotated by 180 degrees if the goal is on the left.
 pub fn to_dies_yaw(yaw: Angle, opp_goal_sign: f64) -> Angle {
-    if opp_goal_sign < 0.0 {
-        -yaw
-    } else {
+    //     if (angle >= 0)
+    //       return pi - angle
+    //    else
+    //       return -pi - angle
+    if opp_goal_sign > 0.0 {
         yaw
+    } else {
+        // Invert around y-axis
+        if yaw.radians() >= 0.0 {
+            Angle::from_radians(std::f64::consts::PI - yaw.radians())
+        } else {
+            Angle::from_radians(-std::f64::consts::PI - yaw.radians())
+        }
     }
 }
 
@@ -153,5 +162,26 @@ mod tests {
 
         let intersection = find_intersection(point1, direction1, point2, direction2);
         assert!(intersection.is_some());
+    }
+
+    #[test]
+    fn test_invert_angle() {
+        let tests = vec![
+            (0.0, 180.0),
+            (90.0, 90.0),
+            (-90.0, -90.0),
+            (180.0, 0.0),
+            (-180.0, 0.0),
+            (45.0, 135.0),
+            (-45.0, -135.0),
+            (135.0, 45.0),
+            (-135.0, -45.0),
+        ];
+
+        for (input, expected) in tests {
+            let angle = Angle::from_degrees(input);
+            let inverted = to_dies_yaw(angle, -1.0);
+            assert_relative_eq!(inverted.degrees(), expected, epsilon = 1e-10);
+        }
     }
 }
