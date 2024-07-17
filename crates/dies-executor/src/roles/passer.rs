@@ -31,10 +31,9 @@ impl Passer {
 impl Role for Passer {
     fn update(&mut self, ctx: RoleCtx) -> PlayerControlInput {
         let receiver = ctx.world.get_player(self.receiver_id).unwrap();
-        let heading = Angle::between_points(ctx.player.position, receiver.position);
 
-        skill!(ctx, FetchBallWithHeading::new(heading));
-        skill!(ctx, Face::new(heading));
+        skill!(ctx, FetchBallWithHeading::towards_own_player(receiver.id));
+        skill!(ctx, Face::towards_own_player(receiver.id));
 
         loop {
             skill!(ctx, ApproachBall::new());

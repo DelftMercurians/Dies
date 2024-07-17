@@ -1,6 +1,6 @@
 use dies_core::{
-    find_intersection, get_tangent_line_direction, perp, which_side_of_robot, Angle, SysStatus,
-    Vector2,
+    find_intersection, get_tangent_line_direction, perp, which_side_of_robot, Angle, PlayerId,
+    SysStatus, Vector2,
 };
 
 use crate::{control::Velocity, roles::SkillResult, KickerControlInput, PlayerControlInput};
@@ -63,6 +63,7 @@ impl Skill for GoToPosition {
         if let Some(heading) = self.target_heading {
             input.with_yaw(heading);
         }
+
         if let (true, Some(_)) = (self.with_ball, ctx.world.ball.as_ref()) {
             if !ctx.player.breakbeam_ball_detected {
                 return SkillProgress::failure();
@@ -85,21 +86,53 @@ impl Skill for GoToPosition {
 }
 
 pub struct Face {
-    heading: Angle,
+    heading: HeadingTarget,
 }
 
 impl Face {
     pub fn new(heading: Angle) -> Self {
-        Self { heading }
+        Self {
+            heading: HeadingTarget::Angle(heading),
+        }
+    }
+
+    pub fn towards_position(pos: Vector2) -> Self {
+        Self {
+            heading: HeadingTarget::Position(pos),
+        }
+    }
+
+    pub fn towards_own_player(id: PlayerId) -> Self {
+        Self {
+            heading: HeadingTarget::OwnPlayer(id),
+        }
+    }
+
+    pub fn towards_opp_player(id: PlayerId) -> Self {
+        Self {
+            heading: HeadingTarget::OppPlayer(id),
+        }
+    }
+
+    pub fn towards_ball() -> Self {
+        Self {
+            heading: HeadingTarget::Ball,
+        }
     }
 }
 
 impl Skill for Face {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let mut input = PlayerControlInput::new();
-        input.with_yaw(self.heading);
+        let heading = if let Some(heading) = self.heading.heading(&ctx) {
+            heading
+        } else {
+            return SkillProgress::failure();
+        };
 
-        if (ctx.player.yaw - self.heading).abs() < 5f64.to_radians() {
+        input.with_yaw(heading);
+
+        if (ctx.player.yaw - heading).abs() < 5f64.to_radians() {
             return SkillProgress::success();
         }
         SkillProgress::Continue(input)
@@ -117,12 +150,12 @@ impl Kick {
 }
 
 impl Skill for Kick {
-    fn update(&mut self, _ctx: SkillCtx<'_>) -> SkillProgress {
+    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if self.has_kicked == 0 {
             return SkillProgress::success();
         }
 
-        let ready = match _ctx.player.kicker_status.as_ref() {
+        let ready = match ctx.player.kicker_status.as_ref() {
             Some(SysStatus::Armed) => true,
             _ => false,
         };
@@ -130,7 +163,8 @@ impl Skill for Kick {
         let mut input = PlayerControlInput::new();
         input.with_dribbling(1.0);
         if ready {
-            if !_ctx.player.breakbeam_ball_detected {
+            println!("Kicking");
+            if !ctx.player.breakbeam_ball_detected {
                 return SkillProgress::failure();
             }
             input.with_kicker(crate::KickerControlInput::Kick);
@@ -365,10 +399,13 @@ impl Skill for ApproachBall {
             let ball_speed = ball.velocity.xy().norm();
             let distance = (ball_pos - player_pos).norm();
 
+            let mut input = PlayerControlInput::new();
+            if (ball_pos - player_pos).norm() > 90.0 && ball.detected {
+                input.with_yaw(Angle::between_points(player_pos, ball_pos));
+            }
+
             let max_relative_speed = 800.0;
             let dribbling_distance = 1000.0;
-
-            let mut input = PlayerControlInput::new();
 
             let angle = Angle::between_points(player_pos, ball_pos);
             input.with_yaw(angle);
@@ -386,16 +423,78 @@ impl Skill for ApproachBall {
     }
 }
 
+enum HeadingTarget {
+    Angle(Angle),
+    Ball,
+    Position(Vector2),
+    OwnPlayer(PlayerId),
+    OppPlayer(PlayerId),
+}
+
+impl HeadingTarget {
+    fn heading(&self, ctx: &SkillCtx) -> Option<Angle> {
+        match self {
+            HeadingTarget::Angle(angle) => Some(*angle),
+            HeadingTarget::Ball => {
+                if let Some(ball) = ctx.world.ball.as_ref() {
+                    Some(Angle::between_points(
+                        ctx.player.position,
+                        ball.position.xy(),
+                    ))
+                } else {
+                    None
+                }
+            }
+            HeadingTarget::Position(pos) => Some(Angle::between_points(ctx.player.position, *pos)),
+            HeadingTarget::OwnPlayer(id) => {
+                if let Some(player) = ctx.world.get_player(*id) {
+                    Some(Angle::between_points(ctx.player.position, player.position))
+                } else {
+                    None
+                }
+            }
+            HeadingTarget::OppPlayer(id) => {
+                if let Some(player) = ctx.world.get_player(*id) {
+                    Some(Angle::between_points(ctx.player.position, player.position))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
 pub struct FetchBallWithHeading {
     init_ball_pos: Option<Vector2>,
-    target_heading: Angle,
+    target_heading: HeadingTarget,
 }
 
 impl FetchBallWithHeading {
     pub fn new(target_heading: Angle) -> Self {
         Self {
             init_ball_pos: None,
-            target_heading,
+            target_heading: HeadingTarget::Angle(target_heading),
+        }
+    }
+
+    pub fn towards_position(pos: Vector2) -> Self {
+        Self {
+            init_ball_pos: None,
+            target_heading: HeadingTarget::Position(pos),
+        }
+    }
+
+    pub fn towards_own_player(id: PlayerId) -> Self {
+        Self {
+            init_ball_pos: None,
+            target_heading: HeadingTarget::OwnPlayer(id),
+        }
+    }
+
+    pub fn towards_opp_player(id: PlayerId) -> Self {
+        Self {
+            init_ball_pos: None,
+            target_heading: HeadingTarget::OppPlayer(id),
         }
     }
 }
@@ -413,10 +512,16 @@ impl Skill for FetchBallWithHeading {
         };
         let init_ball_pos = self.init_ball_pos.get_or_insert(ball_pos);
 
-        let target_pos = *init_ball_pos - Angle::to_vector(&self.target_heading) * ball_radius;
+        let target_heading = if let Some(heading) = self.target_heading.heading(&ctx) {
+            heading
+        } else {
+            return SkillProgress::failure();
+        };
+
+        let target_pos = *init_ball_pos - Angle::to_vector(&target_heading) * ball_radius;
 
         if (player_data.position - target_pos).norm() < 100.0
-            && (player_data.yaw - self.target_heading).abs()
+            && (player_data.yaw - target_heading).abs()
                 < ctx.world.player_model.dribbler_angle.radians() / 2.0
         {
             return SkillProgress::Done(SkillResult::Success);
@@ -430,11 +535,9 @@ impl Skill for FetchBallWithHeading {
             }
 
             let direct_target =
-                which_side_of_robot(self.target_heading, target_pos, player_data.position);
+                which_side_of_robot(target_heading, target_pos, player_data.position);
             if direct_target {
-                input
-                    .with_position(target_pos)
-                    .with_yaw(self.target_heading);
+                input.with_position(target_pos).with_yaw(target_heading);
                 SkillProgress::Continue(input)
             } else {
                 let (dir_a, dir_b) = get_tangent_line_direction(
@@ -446,13 +549,13 @@ impl Skill for FetchBallWithHeading {
                     player_data.position,
                     Angle::to_vector(&dir_a),
                     target_pos,
-                    perp(self.target_heading.to_vector()),
+                    perp(target_heading.to_vector()),
                 );
                 let target_pos_b = find_intersection(
                     player_data.position,
                     Angle::to_vector(&dir_b),
                     target_pos,
-                    perp(self.target_heading.to_vector()),
+                    perp(target_heading.to_vector()),
                 );
 
                 // pick the nearest point as the target
@@ -470,13 +573,13 @@ impl Skill for FetchBallWithHeading {
                         player_data.position,
                         dir_c,
                         target_pos,
-                        perp(self.target_heading.to_vector()),
+                        perp(target_heading.to_vector()),
                     )
                     .unwrap();
                 }
                 input
                     .with_position(indir_target_pos)
-                    .with_yaw(self.target_heading);
+                    .with_yaw(target_heading);
                 SkillProgress::Continue(input)
             }
         } else {

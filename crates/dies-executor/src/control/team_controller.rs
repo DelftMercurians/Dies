@@ -1,4 +1,4 @@
-use crate::{strategy::Strategy, PlayerControlInput};
+use crate::{strategy::Strategy, PlayerControlInput, StrategyMap};
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
@@ -21,7 +21,7 @@ struct RoleState {
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
-    strategy: HashMap<GameState, Box<dyn Strategy>>,
+    strategy: StrategyMap,
     role_states: HashMap<PlayerId, RoleState>,
     settings: ControllerSettings,
 }
@@ -29,7 +29,7 @@ pub struct TeamController {
 impl TeamController {
     /// Create a new team controller.
     pub fn new(
-        strategy: HashMap<GameState, Box<dyn Strategy>>,
+        strategy: StrategyMap,
         settings: &ControllerSettings,
     ) -> Self {
         let mut team = Self {
@@ -71,7 +71,7 @@ impl TeamController {
         }
         let state = world_data.current_game_state.game_state;
 
-        let strategy = if let Some(strategy) = self.strategy.get_mut(&state) {
+        let strategy = if let Some(strategy) = self.strategy.get_strategy(&state) {
             strategy
         } else {
             log::warn!("No strategy found for game state {:?}", state);

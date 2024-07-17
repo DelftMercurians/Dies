@@ -87,7 +87,7 @@ impl Default for SimulationConfig {
             player_height: 140.0,
             dribbler_radius: BALL_RADIUS + 60.0,
             dribbler_angle: PI / 6.0,
-            kicker_strength: 0.3,
+            kicker_strength: 30000.0,
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 10.0 / 1000.0,
@@ -382,6 +382,7 @@ impl Simulation {
             if send_feedback {
                 let mut feedback = PlayerFeedbackMsg::empty(player.id);
                 feedback.breakbeam_ball_detected = Some(player.breakbeam);
+                feedback.kicker_status = Some(dies_core::SysStatus::Armed);
                 self.feedback_queue.push_back(feedback);
             }
 
@@ -449,13 +450,20 @@ impl Simulation {
                         ball_body.add_force(force, true);
                         ball_body.set_linear_damping(self.config.ball_damping * 2.0);
                     } else if player.current_dribble_speed > 0.0 {
-                        let force = (player.current_dribble_speed * self.config.dribbler_strength)
-                            * (ball_position - dribbler_position);
-                        // clamp the force to the max force
-                        // let force = force.cap_magnitude(200.0);
-                        ball_body.apply_impulse(force, true);
-                        // dampen the ball's velocity
-                        ball_body.set_linear_damping(self.config.ball_damping * 2.0);
+                        // let force = (player.current_dribble_speed * self.config.dribbler_strength)
+                        //     * (dribbler_position - ball_position);
+                        // // clamp the force to the max force
+                        // // let force = force.cap_magnitude(200.0);
+                        // ball_body.apply_impulse(force, true);
+                        // // dampen the ball's velocity
+                        // ball_body.set_linear_damping(self.config.ball_damping * 2.0);
+
+                        // Fix the bals position to the dribbler
+                        ball_body.set_position(Isometry::translation(
+                            dribbler_position.x,
+                            dribbler_position.y,
+                            dribbler_position.z,
+                        ), true);
                     }
                 } else {
                     player.breakbeam = false;

@@ -36,7 +36,7 @@ pub struct BallTracker {
     /// Result of the last vision update
     last_detection: Option<StoredData>,
 
-    detected: bool,
+    misses: u32,
 }
 
 impl BallTracker {
@@ -50,7 +50,7 @@ impl BallTracker {
                 settings.ball_unit_transition_var,
                 settings.ball_measurement_var,
             ),
-            detected: false,
+            misses: 0,
         }
     }
 
@@ -88,8 +88,6 @@ impl BallTracker {
         field_mask: &FieldMask,
         field_geom: Option<&FieldGeometry>,
     ) {
-        self.detected = false;
-        
         frame
             .balls
             .iter()
@@ -114,8 +112,11 @@ impl BallTracker {
             .collect::<Vec<_>>();
 
         if ball_measurements.is_empty() {
+            self.misses += 1;
             return;
         }
+        self.misses = 0;
+
         ball_measurements.sort_by(|a, b| b.1.cmp(&a.1));
         let current_time = frame.t_capture();
 
@@ -128,7 +129,6 @@ impl BallTracker {
                 velocity: Vector3::zeros(),
             });
 
-            self.detected = true;
             self.filter.init(
                 Vector6::new(
                     ball_measurements[0].0.x,
@@ -141,9 +141,6 @@ impl BallTracker {
                 current_time,
             );
         } else {
-            if ball_measurements.len() > 0 {
-                self.detected = true;
-            }
             for (pos, _is_noisy) in ball_measurements.iter() {
                 let pos_ov = SVector::<f64, 3>::new(pos.x, pos.y, pos.z);
                 let z = self
@@ -189,7 +186,7 @@ impl BallTracker {
                 .collect(),
             position: to_dies_coords3(data.position, self.play_dir_x),
             velocity: to_dies_coords3(data.velocity, self.play_dir_x),
-            detected: self.detected,
+            detected: self.misses < 5,
         })
     }
 }

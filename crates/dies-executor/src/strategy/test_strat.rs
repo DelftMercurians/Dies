@@ -1,10 +1,7 @@
 use dies_core::PlayerId;
 
 use crate::roles::{
-    kicker_role::KickerRole,
-    passer::{self, Passer},
-    receiver::{self, Receiver},
-    Role,
+    kicker_role::KickerRole, passer::{self, Passer}, receiver::{self, Receiver}, waller::Waller, Role
 };
 
 use super::{Strategy, StrategyCtx};
@@ -14,15 +11,28 @@ struct Assignmmet {
     receiver_id: PlayerId,
     passer: Passer,
     receiver: Receiver,
+    waller1: Waller,
+    waller1_id: PlayerId,
+    waller2: Waller,
+    waller2_id: PlayerId,
 }
 
 impl Assignmmet {
-    fn new(passer_id: PlayerId, receiver_id: PlayerId) -> Self {
+    fn new(
+        passer_id: PlayerId,
+        receiver_id: PlayerId,
+        waller1_id: PlayerId,
+        waller2_id: PlayerId,
+    ) -> Self {
         Self {
             passer_id,
             receiver_id,
             passer: Passer::new(receiver_id),
             receiver: Receiver::new(),
+            waller1_id,
+            waller1: Waller::new(0.0),
+            waller2_id,
+            waller2: Waller::new(170.0),
         }
     }
 }
@@ -50,7 +60,7 @@ impl Strategy for TestStrat {
                     .iter()
                     .map(|player| player.id)
                     .collect::<Vec<_>>();
-                if available_ids.len() < 2 {
+                if available_ids.len() < 4 {
                     return;
                 }
                 self.assignment.get_or_insert_with(|| {
@@ -63,7 +73,9 @@ impl Strategy for TestStrat {
                         })
                         .unwrap();
                     let receiver_id = available_ids.iter().find(|id| **id != *passer_id).unwrap();
-                    Assignmmet::new(*passer_id, *receiver_id)
+                    let waller1_id = available_ids.iter().find(|id| **id != *passer_id && **id != *receiver_id).unwrap();
+                    let waller2_id = available_ids.iter().find(|id| **id != *passer_id && **id != *receiver_id && **id != *waller1_id).unwrap();
+                    Assignmmet::new(*passer_id, *receiver_id, *waller1_id, *waller2_id)
                 })
             } else {
                 return;
@@ -96,6 +108,10 @@ impl Strategy for TestStrat {
                 return Some(&mut assignment.passer);
             } else if player_id == assignment.receiver_id {
                 return Some(&mut assignment.receiver);
+            } else if player_id == assignment.waller1_id {
+                return Some(&mut assignment.waller1);
+            } else if player_id == assignment.waller2_id {
+                return Some(&mut assignment.waller2);
             }
         }
         None

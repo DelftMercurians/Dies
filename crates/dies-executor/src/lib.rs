@@ -4,7 +4,7 @@ use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     ExecutorInfo, ExecutorSettings, GameState, PlayerCmd, PlayerFeedbackMsg, PlayerId,
-    PlayerMoveCmd, PlayerOverrideCommand, WorldUpdate,
+    PlayerMoveCmd, PlayerOverrideCommand, StrategyGameStateMacther, WorldUpdate,
 };
 use dies_core::{SimulatorCmd, Vector3, WorldInstant};
 use dies_logger::{log_referee, log_vision, log_world};
@@ -29,6 +29,30 @@ use control::{TeamController, Velocity};
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30); // 30 Hz
+
+pub struct StrategyMap(Vec<(StrategyGameStateMacther, Box<dyn Strategy>)>);
+
+impl StrategyMap {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn insert(&mut self, matcher: StrategyGameStateMacther, strategy: Box<dyn Strategy>) {
+        self.0.push((matcher, strategy));
+    }
+
+    pub fn get_strategy(&mut self, state: &GameState) -> Option<&mut dyn Strategy> {
+        if let Some((_, strategy)) = self
+            .0
+            .iter_mut()
+            .find(|(matcher, _)| matcher.matches(state))
+        {
+            Some(strategy.as_mut())
+        } else {
+            None
+        }
+    }
+}
 
 enum Environment {
     Live {
@@ -162,7 +186,7 @@ pub struct Executor {
 impl Executor {
     pub fn new_live(
         settings: ExecutorSettings,
-        strategy: HashMap<GameState, Box<dyn Strategy>>,
+        strategy: StrategyMap,
         ssl_client: VisionClient,
         bs_client: BasestationHandle,
     ) -> Self {
@@ -191,7 +215,7 @@ impl Executor {
 
     pub fn new_simulation(
         settings: ExecutorSettings,
-        strategy: HashMap<GameState, Box<dyn Strategy>>,
+        strategy: StrategyMap,
         simulator: Simulation,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();

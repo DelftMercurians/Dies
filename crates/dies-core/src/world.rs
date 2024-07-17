@@ -1,4 +1,5 @@
-use std::fmt::Display;
+use std::collections::HashSet;
+use std::{default, fmt::Display};
 use std::hash::Hash;
 use std::time::Instant;
 
@@ -104,6 +105,36 @@ impl PartialEq for GameState {
 }
 
 impl Eq for GameState {}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum StrategyGameStateMacther {
+    #[default]
+    Any,
+    Specific(GameState),
+    AnyOf(HashSet<GameState>),
+}
+
+impl StrategyGameStateMacther {
+    pub fn matches(&self, state: &GameState) -> bool {
+        match self {
+            StrategyGameStateMacther::Any => true,
+            StrategyGameStateMacther::Specific(s) => s == state,
+            StrategyGameStateMacther::AnyOf(states) => states.contains(&state),
+        }
+    }
+
+    pub fn any() -> Self {
+        StrategyGameStateMacther::Any
+    }
+
+    pub fn specific(state: GameState) -> Self {
+        StrategyGameStateMacther::Specific(state)
+    }
+
+    pub fn any_of(states: &[GameState]) -> Self {
+        StrategyGameStateMacther::AnyOf(states.iter().cloned().collect())
+    }
+}
 
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]

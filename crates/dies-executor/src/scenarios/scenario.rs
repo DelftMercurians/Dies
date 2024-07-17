@@ -3,8 +3,7 @@ use std::{collections::HashSet, time::Duration};
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    Angle, BallPlacement, ExecutorSettings, GameState, PlayerData, PlayerId, PlayerPlacement,
-    ScenarioInfo, Vector2, Vector3, WorldData,
+    Angle, BallPlacement, ExecutorSettings, GameState, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo, StrategyGameStateMacther, Vector2, Vector3, WorldData
 };
 use std::collections::HashMap;
 
@@ -13,7 +12,7 @@ use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{SslClientConfig, VisionClient};
 use dies_world::WorldTracker;
 
-use crate::{strategy::Strategy, Executor};
+use crate::{strategy::Strategy, Executor, StrategyMap};
 
 const LIVE_CHECK_INTERVAL: Duration = Duration::from_millis(100);
 const LIVE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
@@ -31,16 +30,12 @@ pub struct ScenarioSetup {
     /// Yaw tolerance for players in rad
     yaw_tolerance: f64,
     /// Strategy to use.
-    strategy: HashMap<GameState, Box<dyn Strategy>>,
+    strategy: StrategyMap,
 }
 
 impl ScenarioSetup {
-    pub fn new(strategy: impl Strategy + 'static, state: Option<GameState>) -> Self {
-        let state = match state {
-            Some(state) => state,
-            None => GameState::Unknown,
-        };
-        let mut strategy_map = HashMap::new();
+    pub fn new(strategy: impl Strategy + 'static, state: StrategyGameStateMacther) -> Self {
+        let mut strategy_map = StrategyMap::new();
         strategy_map.insert(state, Box::new(strategy) as Box<dyn Strategy>);
         Self {
             ball: BallPlacement::NoBall,
@@ -54,7 +49,7 @@ impl ScenarioSetup {
 
     pub fn add_strategy(
         &mut self,
-        state: GameState,
+        state: StrategyGameStateMacther,
         strategy: impl Strategy + 'static,
     ) -> &mut Self {
         self.strategy
@@ -350,7 +345,7 @@ mod tests {
             opp_players: vec![],
             tolerance: 10.0,
             yaw_tolerance: 10.0f64.to_radians(),
-            strategy: HashMap::new(),
+            strategy: StrategyMap::new(),
         };
 
         let mut world = WorldData {
