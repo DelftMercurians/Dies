@@ -155,11 +155,15 @@ impl PlayerController {
             (KickerState::Disarming, None) => RobotCmd::Disarm,
         };
 
-        let target_velocity = to_dies_coords2(self.target_velocity, self.opp_goal_sign);
+        let target_velocity = to_dies_coords2(
+            self.last_yaw.inv().rotate_vector(&self.target_velocity),
+            self.opp_goal_sign,
+        );
+
         let cmd = PlayerMoveCmd {
             id: self.id,
             // In the robot's local frame +sx means forward and +sy means right
-            sx: target_velocity.x / 1000.0, // Convert to m/s
+            sx: target_velocity.x / 1000.0,  // Convert to m/s
             sy: -target_velocity.y / 1000.0, // Convert to m/s
             w: if self.have_imu && self.has_target_heading {
                 -to_dies_yaw(Angle::from_radians(self.target_z), self.opp_goal_sign).radians()
@@ -275,7 +279,7 @@ impl PlayerController {
                     input
                         .angular_acceleration_limit
                         .unwrap_or(self.max_angular_acceleration),
-                    input.care
+                    input.care,
                 );
                 self.target_z = head_u;
             }

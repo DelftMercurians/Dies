@@ -5,17 +5,17 @@
     "max_deceleration": 6340.0,
     "max_angular_velocity": 25.132741228718345,
     "max_angular_acceleration": 349.0658503988659,
-    "position_kp": 2.0,
-    "position_proportional_time_window": 1.0,
+    "position_kp": 100.0,
+    "position_proportional_time_window": 0.8,
     "position_cutoff_distance": 30.0,
     "angle_kp": 2.8,
     "angle_cutoff_distance": 0.03490658503988659
   },
   "tracker_settings": {
     "is_blue": true,
-    "initial_opp_goal_x": -1.0,
+    "initial_opp_goal_x": 1.0,
     "field_mask": {
-      "x_min": -0.01,
+      "x_min": -1.0,
       "x_max": 1.0,
       "y_min": -1.0,
       "y_max": 1.0
