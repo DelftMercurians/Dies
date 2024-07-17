@@ -1,4 +1,4 @@
-use crate::coord_utils::to_dies_coords2;
+use dies_core::to_dies_coords2;
 use crate::BallData;
 use dies_core::GameState;
 use dies_core::Vector2;

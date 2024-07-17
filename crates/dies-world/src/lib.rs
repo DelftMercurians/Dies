@@ -5,7 +5,6 @@ use dies_protos::ssl_gc_referee_message::Referee;
 use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 
 mod ball;
-mod coord_utils;
 mod filter;
 mod game_state;
 mod player;

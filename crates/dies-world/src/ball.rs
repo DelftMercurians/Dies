@@ -5,7 +5,7 @@ use nalgebra::{SVector, Vector6};
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
-use crate::coord_utils::to_dies_coords3;
+use dies_core::to_dies_coords3;
 use crate::filter::MaybeKalman;
 
 const DETECTION_TIMEOUT: f64 = 0.1;

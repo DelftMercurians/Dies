@@ -6,8 +6,9 @@ use dies_core::{
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
 
+use dies_core::{to_dies_coords2, to_dies_yaw};
+
 use crate::{
-    coord_utils::{to_dies_coords2, to_dies_yaw},
     filter::{AngleLowPassFilter, MaybeKalman},
 };
 
