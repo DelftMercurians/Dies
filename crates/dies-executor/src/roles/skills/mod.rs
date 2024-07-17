@@ -248,7 +248,7 @@ impl Skill for FetchBall {
             };
             input.with_yaw(ball_angle);
 
-            if ctx.player.breakbeam_ball_detected {
+            if ctx.player.breakbeam_ball_detected && distance < 100.0 {
                 self.breakbeam_ball_detected += ctx.world.dt;
                 if self.breakbeam_ball_detected > 0.2 {
                     return SkillProgress::success();
@@ -393,13 +393,13 @@ impl ApproachBall {
 
 impl Skill for ApproachBall {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
-        if ctx.player.breakbeam_ball_detected {
-            return SkillProgress::success();
-        }
-
         if let Some(ball) = ctx.world.ball.as_ref() {
             let ball_pos = ball.position.xy();
             let player_pos = ctx.player.position;
+            if ctx.player.breakbeam_ball_detected && (ball_pos - player_pos).norm() < 100.0 {
+                return SkillProgress::success();
+            }
+            
             let ball_speed = ball.velocity.xy().norm();
             let distance = (ball_pos - player_pos).norm();
 
@@ -515,6 +515,7 @@ impl Skill for FetchBallWithHeading {
             return SkillProgress::Continue(PlayerControlInput::default());
         };
         let init_ball_pos = self.init_ball_pos.get_or_insert(ball_pos);
+        let init_ball_pos = *init_ball_pos;
 
         let target_heading = if let Some(heading) = self.target_heading.heading(&ctx) {
             heading
@@ -522,7 +523,7 @@ impl Skill for FetchBallWithHeading {
             return SkillProgress::failure();
         };
 
-        let target_pos = *init_ball_pos - Angle::to_vector(&target_heading) * ball_radius;
+        let target_pos = init_ball_pos - Angle::to_vector(&target_heading) * ball_radius;
 
         if (player_data.position - target_pos).norm() < 100.0
             && (player_data.yaw - target_heading).abs()
@@ -532,60 +533,15 @@ impl Skill for FetchBallWithHeading {
         }
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
-            let ball_distance = (ball.position.xy() - *init_ball_pos).norm();
+            let ball_distance = (ball.position.xy() - init_ball_pos).norm();
             if ball_distance >= 100.0 {
                 //ball movement
                 return SkillProgress::Done(SkillResult::Failure);
             }
 
-            let direct_target =
-                which_side_of_robot(target_heading, target_pos, player_data.position);
-            if direct_target {
-                input.with_position(target_pos).with_yaw(target_heading);
-                SkillProgress::Continue(input)
-            } else {
-                let (dir_a, dir_b) = get_tangent_line_direction(
-                    ball.position.xy(),
-                    ball_radius - 20.0,
-                    player_data.position,
-                );
-                let target_pos_a = find_intersection(
-                    player_data.position,
-                    Angle::to_vector(&dir_a),
-                    target_pos,
-                    perp(target_heading.to_vector()),
-                );
-                let target_pos_b = find_intersection(
-                    player_data.position,
-                    Angle::to_vector(&dir_b),
-                    target_pos,
-                    perp(target_heading.to_vector()),
-                );
-
-                // pick the nearest point as the target
-                let mut indir_target_pos = if (target_pos_a.unwrap() - *init_ball_pos).norm()
-                    < (target_pos_b.unwrap() - *init_ball_pos).norm()
-                {
-                    target_pos_a.unwrap()
-                } else {
-                    target_pos_b.unwrap()
-                };
-
-                if indir_target_pos.x.is_nan() || indir_target_pos.y.is_nan() {
-                    let dir_c = perp(player_data.position - ball.position.xy());
-                    indir_target_pos = find_intersection(
-                        player_data.position,
-                        dir_c,
-                        target_pos,
-                        perp(target_heading.to_vector()),
-                    )
-                    .unwrap();
-                }
-                input
-                    .with_position(indir_target_pos)
-                    .with_yaw(target_heading);
-                SkillProgress::Continue(input)
-            }
+            input.with_position(target_pos).with_yaw(target_heading);
+            input.avoid_ball = true;
+            SkillProgress::Continue(input)
         } else {
             SkillProgress::Continue(PlayerControlInput::default())
         }

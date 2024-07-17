@@ -126,24 +126,13 @@ impl TeamController {
                 let id = controller.id();
                 let default_input = inputs.player(id);
                 let input = manual_override.get(&id).unwrap_or(&default_input);
-                controller.update(player_data, &world_data, input, world_data.dt);
 
                 let is_manual = manual_override
                     .get(&id)
                     .map(|i| !i.velocity.is_zero())
                     .unwrap_or(false);
+                controller.update(player_data, &world_data, input, world_data.dt, is_manual, &all_players);
 
-                if !is_manual {
-                    let vel = velocity_obstacle_update(
-                        player_data,
-                        &controller.target_velocity(),
-                        all_players.as_slice(),
-                        &vec![],
-                        &world_data.player_model,
-                        super::rvo::VelocityObstacleType::VO,
-                    );
-                    controller.update_target_velocity_with_avoidance(vel);
-                }
             } else {
                 controller.increment_frames_misses();
             }

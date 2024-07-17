@@ -4,15 +4,11 @@ use std::{
 };
 
 use dies_core::{
-    to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, PlayerCmd,
-    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2, WorldData,
+    to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2, WorldData
 };
 
 use super::{
-    mtp::MTP,
-    player_input::{KickerControlInput, PlayerControlInput},
-    yaw_control::YawController,
-    Velocity,
+    mtp::MTP, player_input::{KickerControlInput, PlayerControlInput}, rvo::velocity_obstacle_update, yaw_control::YawController, Velocity
 };
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
@@ -203,6 +199,8 @@ impl PlayerController {
         world: &WorldData,
         input: &PlayerControlInput,
         dt: f64,
+        is_manual_override: bool,
+        all_players: &[&PlayerData],
     ) {
         self.have_imu = matches!(state.imu_status, Some(SysStatus::Ok));
 
@@ -241,6 +239,30 @@ impl PlayerController {
             Velocity::Local(v) => self.last_yaw.rotate_vector(&v),
         };
         self.target_velocity += add_vel;
+
+        if !is_manual_override {
+            let obstacles = if input.avoid_ball {
+                if let Some(ball) = world.ball.as_ref() {
+                    vec![Obstacle::Circle {
+                        center: ball.position.xy(),
+                        radius: 50.0,
+                    }]
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            };
+            
+            self.target_velocity = velocity_obstacle_update(
+                state,
+                &self.target_velocity,
+                all_players,
+                obstacles.as_slice(),
+                &world.player_model,
+                super::rvo::VelocityObstacleType::VO,
+            );
+        }
 
         // Draw the velocity
         dies_core::debug_line(

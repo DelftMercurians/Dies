@@ -33,7 +33,6 @@ impl Role for Passer {
         let receiver = ctx.world.get_player(self.receiver_id).unwrap();
 
         skill!(ctx, FetchBallWithHeading::towards_own_player(receiver.id));
-        skill!(ctx, Face::towards_own_player(receiver.id));
 
         loop {
             skill!(ctx, ApproachBall::new());

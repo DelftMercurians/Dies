@@ -41,7 +41,7 @@ pub struct MainArgs {
     #[clap(long, default_value = "224.5.23.1:10003")]
     pub gc_addr: SocketAddr,
 
-    #[clap(long)]
+    #[clap(long, default_value = "enp4s0")]
     pub interface: Option<String>,
 
     #[clap(long, default_value = "info")]
