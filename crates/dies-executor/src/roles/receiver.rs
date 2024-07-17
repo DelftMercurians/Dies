@@ -31,8 +31,12 @@ impl Receiver {
 impl Role for Receiver {
     fn update(&mut self, ctx: RoleCtx) -> PlayerControlInput {
         if self.has_passer_kicked {
-            skill!(ctx, FetchBall::new());
-
+            loop {
+                match skill!(ctx, FetchBall::new()) {
+                    crate::roles::SkillResult::Success => break,
+                    _ => {}
+                }
+            }
             skill!(ctx, GoToPosition::new(Vector2::new(0.0, 0.0)).with_ball());
         } else {
             skill!(ctx, Face::towards_own_player(self.passer));

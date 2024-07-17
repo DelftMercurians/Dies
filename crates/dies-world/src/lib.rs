@@ -22,7 +22,7 @@ use dies_core::{
 use player::PlayerTracker;
 
 const IS_DIV_A: bool = false;
-const INITIAL_DETECT_TIMEOUT: f64 = 1.0;
+const INITIAL_DETECT_TIMEOUT: f64 = 4.0;
 
 /// A struct to track the world state.
 pub struct WorldTracker {
