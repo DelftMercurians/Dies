@@ -87,7 +87,7 @@ impl Default for SimulationConfig {
             player_height: 140.0,
             dribbler_radius: BALL_RADIUS + 60.0,
             dribbler_angle: PI / 6.0,
-            kicker_strength: 30000.0,
+            kicker_strength: 300000.0,
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 10.0 / 1000.0,

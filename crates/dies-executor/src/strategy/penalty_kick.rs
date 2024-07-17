@@ -48,19 +48,31 @@ impl Role for Attacker {
         let player_data = ctx.player;
         let world_data = ctx.world;
 
+        // find the ball
+        if let Some(ball) = &world_data.ball {
+            if self.init_ball.is_none() {
+                self.init_ball = Some(ball.clone());
+            }
+        }
         if self.move_to_ball.is_accomplished() && gamestate == GameState::Penalty {
             //stage 3: kick
             if self.manipulating_ball.is_accomplished() {
-                return self.kick.kick();
-            }
-            //stage 2: dribbling
-            else {
                 // find the ball
                 if let Some(ball) = &world_data.ball {
                     if self.init_ball.is_none() {
                         self.init_ball = Some(ball.clone());
                     }
                 }
+                let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
+                println!("kicking in the ballls");
+                return self.kick.kick(
+                    PlayerControlInput::new()
+                        .with_position(ball_pos)
+                        .clone()
+                );
+            }
+            //stage 2: dribbling
+            else {
                 let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
 
                 // find the goal keeper
@@ -93,10 +105,7 @@ impl Role for Attacker {
             }
         }
         // stage1: move to ball
-        if let Some(ball) = &world_data.ball {
-            if self.init_ball.is_none() {
-                self.init_ball = Some(ball.clone());
-            }
+        if let Some(_ball) = &world_data.ball {
             let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
             let dir = Angle::between_points(player_data.position, ball_pos);
             let dist = (ball_pos - player_data.position).norm();

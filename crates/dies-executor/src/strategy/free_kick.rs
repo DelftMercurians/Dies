@@ -48,7 +48,7 @@ impl Role for FreeAttacker {
         if self.move_to_ball.is_accomplished() {
             //stage 3: kick
             if self.manipulating_ball.is_accomplished() {
-                return self.kick.kick();
+                return self.kick.kick(PlayerControlInput::new().clone());
             }
             //stage 2: dribbling
             else {

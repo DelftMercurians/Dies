@@ -68,7 +68,7 @@ impl Task3Phase {
                     .with_yaw(yaw)
                     .with_dribbling(dribbling)
                     .with_care(carefullness);
-                if (player_data.position - goal).norm() < 30.0
+                if (player_data.position - goal).norm() < 50.0 // TODO: magic number, fix
                     && (player_data.yaw - yaw).abs() < 0.1
                 {
                     Status3::Accomplished
@@ -107,8 +107,8 @@ impl Task4Phase {
         }
     }
 
-    pub fn kick(&mut self) -> PlayerControlInput {
-        let mut res = PlayerControlInput::new();
+    pub fn kick(&mut self, base_control: PlayerControlInput) -> PlayerControlInput {
+        let mut res = base_control;
         let new_status = match self.status {
             Status4::NoGoal => {
                 self.timer = Instant::now();
@@ -116,7 +116,7 @@ impl Task4Phase {
                 Status4::Ongoing1
             }
             Status4::Ongoing1 => {
-                if self.timer.elapsed().as_secs() > 10 {
+                if self.timer.elapsed().as_secs() > 5 {
                     res.with_kicker(KickerControlInput::Kick);
                     Status4::Ongoing2
                 } else {
