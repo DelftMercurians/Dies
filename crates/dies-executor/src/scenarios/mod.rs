@@ -31,7 +31,7 @@ fn goalie_test() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Goalkeeper::new()));
     let mut scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
-    scenario.add_own_player();
+    scenario.add_ball().add_own_player();
     scenario
 }
 
@@ -61,7 +61,7 @@ fn kick_pass() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(TestStrat::new(), StrategyGameStateMacther::Any);
 
     scenario
-        .add_ball_at(Vector2::new(-4000.0, 1500.0))
+        .add_ball_at(Vector2::new(-1000.0, 1500.0))
         .add_own_player()
         .add_own_player()
         .add_own_player()

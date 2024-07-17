@@ -28,7 +28,7 @@ impl Assignmmet {
             passer_id,
             receiver_id,
             passer: Passer::new(receiver_id),
-            receiver: Receiver::new(),
+            receiver: Receiver::new(passer_id),
             waller1_id,
             waller1: Waller::new(0.0),
             waller2_id,

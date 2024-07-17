@@ -321,8 +321,8 @@ fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
     let w = field_width - 2.0 * (SIMULATION_FIELD_MARGIN * field_width);
     let l = field_length - 2.0 * (SIMULATION_FIELD_MARGIN * field_length);
     Vector2::new(
-        (rand::random::<f64>() - 0.5) * w,
         (rand::random::<f64>() - 0.5) * l,
+        (rand::random::<f64>() - 0.5) * w,
     )
 }
 

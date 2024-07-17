@@ -1,9 +1,10 @@
-use dies_core::{BallData, FieldGeometry, PlayerId, Vector2};
+use dies_core::{find_intersection, perp, BallData, FieldGeometry, PlayerId, Vector2};
 
 use super::RoleCtx;
 use crate::{roles::Role, PlayerControlInput};
 
 const MARGIN: f64 = 200.0;
+const CORNER_RADIUS: f64 = 200.0;
 
 /// A role that moves the player to the intersection of the ball's path with the goal
 /// line, acting as a wall to block the ball from reaching the goal.
@@ -37,34 +38,61 @@ impl Waller {
         let area_bottom_y = -area_top_y - MARGIN; // bottom boundary y-coordinate
         let area_right_x = -half_length + world.penalty_area_depth + MARGIN; // right boundary x-coordinate
 
-        if direction.y != 0.0 {
-            // Intersect with the bottom boundary
-            let t = (area_bottom_y - ball_pos.y) / direction.y;
-            let x = ball_pos.x + t * direction.x;
-            if x <= area_right_x && x >= -half_length && ball_pos.y < 0.0 {
-                return Vector2::new(x + self.offset, area_bottom_y);
-            }
+        let top_right = Vector2::new(area_right_x, area_top_y);
+        let bottom_right = Vector2::new(area_right_x, area_bottom_y);
 
-            // Intersect with the top boundary
-            let t = (area_top_y - ball_pos.y) / direction.y;
-            let x = ball_pos.x + t * direction.x;
-            if x <= area_right_x && x >= -half_length && ball_pos.y > 0.0 {
-                return Vector2::new(x + self.offset, area_top_y);
+        // Intersect with the right boundary
+        if let Some(intersection) = find_intersection(ball_pos, direction, top_right, Vector2::y())
+        {
+            if intersection.y <= area_top_y && intersection.y >= area_bottom_y {
+                // Check if it is a corner
+                let corner = if (intersection - top_right).norm() < CORNER_RADIUS {
+                    Some(top_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS)
+                } else if (intersection - bottom_right).norm() < CORNER_RADIUS {
+                    Some(bottom_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS)
+                } else {
+                    None
+                };
+                if let Some(c) = corner {
+                    let center = c + (intersection - c).normalize();
+                    dies_core::debug_cross("wallcenter", center, dies_core::DebugColor::Purple);
+                    return center + perp(intersection - c).normalize() * self.offset;
+                }
+                return intersection + Vector2::y() * self.offset;
             }
         }
 
-        // Intersect with the right boundary
-        if direction.x != 0.0 {
-            let t = (area_right_x - ball_pos.x) / direction.x;
-            let mut y = ball_pos.y + t * direction.y;
-            if y + self.offset > world.penalty_area_width / 2.0 {
-                y = world.penalty_area_width / 2.0 - self.offset;
+        if direction.y != 0.0 {
+            // Intersect with the bottom boundary
+            if let Some(intersection) =
+                find_intersection(ball_pos, direction, bottom_right, Vector2::x())
+            {
+                if intersection.x <= area_right_x && intersection.x >= -half_length {
+                    // Check if it is a corner
+                    if (intersection - bottom_right).norm() < CORNER_RADIUS {
+                        let c = bottom_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS;
+                        let center = c + (intersection - c).normalize();
+                        dies_core::debug_cross("wallcenter", center, dies_core::DebugColor::Purple);
+                        return center + perp(intersection - c).normalize() * self.offset;
+                    }
+                    return intersection + Vector2::x() * self.offset;
+                }
             }
-            if y + self.offset < -world.penalty_area_width / 2.0 {
-                y = -world.penalty_area_width / 2.0 - self.offset;
-            }
-            if y.abs() <= area_top_y {
-                return Vector2::new(area_right_x, y + self.offset);
+
+            // Intersect with the top boundary
+            if let Some(intersection) =
+                find_intersection(ball_pos, direction, top_right, Vector2::x())
+            {
+                if intersection.x <= area_right_x && intersection.x >= -half_length {
+                    // Check if it is a corner
+                    if (intersection - top_right).norm() < CORNER_RADIUS {
+                        let c = top_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS;
+                        let center = c + (intersection - c).normalize();
+                        dies_core::debug_cross("wallcenter", center, dies_core::DebugColor::Purple);
+                        return center + perp(intersection - c).normalize() * self.offset;
+                    }
+                    return intersection - Vector2::x() * self.offset;
+                }
             }
         }
 
