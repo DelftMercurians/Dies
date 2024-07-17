@@ -35,7 +35,7 @@ impl Waller {
 
         // Points redebuesenting the boundary of the goalkeeper area
         let area_top_y = world.penalty_area_width / 2.0 + MARGIN; // top boundary y-coordinate
-        let area_bottom_y = -area_top_y - MARGIN; // bottom boundary y-coordinate
+        let area_bottom_y = -world.penalty_area_width / 2.0 - MARGIN; // bottom boundary y-coordinate
         let area_right_x = -half_length + world.penalty_area_depth + MARGIN; // right boundary x-coordinate
 
         let top_right = Vector2::new(area_right_x, area_top_y);
@@ -49,16 +49,16 @@ impl Waller {
                 let corner = if (intersection - top_right).norm() < CORNER_RADIUS {
                     Some(top_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS)
                 } else if (intersection - bottom_right).norm() < CORNER_RADIUS {
-                    Some(bottom_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS)
+                    Some(bottom_right - Vector2::new(1.0, -1.0) * CORNER_RADIUS)
                 } else {
                     None
                 };
                 if let Some(c) = corner {
                     let center = c + (intersection - c).normalize();
                     dies_core::debug_cross("wallcenter", center, dies_core::DebugColor::Purple);
-                    return center + perp(intersection - c).normalize() * self.offset;
+                    return center;
                 }
-                return intersection + Vector2::y() * self.offset;
+                return intersection;
             }
         }
 
@@ -70,12 +70,11 @@ impl Waller {
                 if intersection.x <= area_right_x && intersection.x >= -half_length {
                     // Check if it is a corner
                     if (intersection - bottom_right).norm() < CORNER_RADIUS {
-                        let c = bottom_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS;
-                        let center = c + (intersection - c).normalize();
+                        let center = bottom_right - Vector2::new(1.0, -1.0) * CORNER_RADIUS;
                         dies_core::debug_cross("wallcenter", center, dies_core::DebugColor::Purple);
-                        return center + perp(intersection - c).normalize() * self.offset;
+                        return center;
                     }
-                    return intersection + Vector2::x() * self.offset;
+                    return intersection;
                 }
             }
 
@@ -86,12 +85,11 @@ impl Waller {
                 if intersection.x <= area_right_x && intersection.x >= -half_length {
                     // Check if it is a corner
                     if (intersection - top_right).norm() < CORNER_RADIUS {
-                        let c = top_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS;
-                        let center = c + (intersection - c).normalize();
+                        let center = top_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS;
                         dies_core::debug_cross("wallcenter", center, dies_core::DebugColor::Purple);
-                        return center + perp(intersection - c).normalize() * self.offset;
+                        return center;
                     }
-                    return intersection - Vector2::x() * self.offset;
+                    return intersection;
                 }
             }
         }
