@@ -33,6 +33,8 @@ impl Task3Phase {
         goal: Vector2<f64>,
         yaw: Angle,
         dribbling: f64,
+        carefullness: f64, // specify how accurately do we have to move
+                           // (0 - inaccurate, 1 - careful)
     ) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
         //log::info!("playerid: {:?}, Relocating to {:?}, current position: {:?}, self status: {:?}", player_data.id, goal, player_data.position,self.status);
@@ -56,15 +58,17 @@ impl Task3Phase {
                 input
                     .with_position(goal)
                     .with_yaw(yaw)
-                    .with_dribbling(dribbling);
+                    .with_dribbling(dribbling)
+                    .with_care(carefullness);
                 Status3::Ongoing
             }
             Status3::Ongoing => {
                 input
                     .with_position(goal)
                     .with_yaw(yaw)
-                    .with_dribbling(dribbling);
-                if (player_data.position - goal).norm() < 50.0
+                    .with_dribbling(dribbling)
+                    .with_care(carefullness);
+                if (player_data.position - goal).norm() < 30.0
                     && (player_data.yaw - yaw).abs() < 0.1
                 {
                     Status3::Accomplished
@@ -73,7 +77,7 @@ impl Task3Phase {
                 }
             }
             Status3::Accomplished => {
-                input.with_position(goal).with_yaw(yaw);
+                input.with_position(goal).with_yaw(yaw).with_care(carefullness);
                 Status3::Accomplished
             }
         };

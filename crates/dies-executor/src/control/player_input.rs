@@ -124,6 +124,9 @@ pub struct PlayerControlInput {
     pub dribbling_speed: f64,
     /// Kicker control input
     pub kicker: KickerControlInput,
+    /// How carefully do we wish to move (e.g. move further than the target)
+    /// 0 means 'as fast as possible', 1 means 'as careful as possible'
+    pub care: f64,
 
     pub acceleration_limit: Option<f64>,
     pub speed_limit: Option<f64>,
@@ -152,6 +155,11 @@ impl PlayerControlInput {
     /// Set the dribbling speed of the player.
     pub fn with_dribbling(&mut self, speed: f64) -> &mut Self {
         self.dribbling_speed = speed;
+        self
+    }
+
+    pub fn with_care(&mut self, care: f64) -> &mut Self {
+        self.care = care;
         self
     }
 

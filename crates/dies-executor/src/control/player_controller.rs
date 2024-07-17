@@ -213,6 +213,7 @@ impl PlayerController {
                 dies_core::DebugColor::Red,
             );
 
+            println!("logs from {}", self.id);
             let pos_u = self.position_mtp.update(
                 self.last_pos,
                 state.velocity,
@@ -220,9 +221,11 @@ impl PlayerController {
                 input.acceleration_limit.unwrap_or(self.max_accel),
                 input.speed_limit.unwrap_or(self.max_speed),
                 input.acceleration_limit.unwrap_or(self.max_decel),
+                input.care,
             );
             let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = local_u;
+            println!("{}: {} {}", self.id, pos_u.x, pos_u.y);
         } else {
             dies_core::debug_remove(format!("p{}.control.target", self.id));
         }

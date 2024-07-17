@@ -55,6 +55,14 @@ impl Role for Attacker {
             }
             //stage 2: dribbling
             else {
+                // find the ball
+                if let Some(ball) = &world_data.ball {
+                    if self.init_ball.is_none() {
+                        self.init_ball = Some(ball.clone());
+                    }
+                }
+                let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
+
                 // find the goal keeper
                 let goalkeeper_dir = world_data
                     .opp_players
@@ -77,9 +85,10 @@ impl Role for Attacker {
                 });
                 return self.manipulating_ball.relocate(
                     player_data,
-                    player_data.position,
+                    ball_pos.xy(),
                     target,
                     1.0,
+                    0.0
                 );
             }
         }
@@ -88,10 +97,13 @@ impl Role for Attacker {
             if self.init_ball.is_none() {
                 self.init_ball = Some(ball.clone());
             }
-            let ball_pos = self.init_ball.as_ref().unwrap().position;
-            let dir = Angle::between_points(player_data.position, ball_pos.xy());
+            let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
+            let dir = Angle::between_points(player_data.position, ball_pos);
+            let dist = (ball_pos - player_data.position).norm();
+            let dirvec = (ball_pos - player_data.position) / dist;
+            let goto_pos = player_data.position + dirvec * (dist - 100.0);
             self.move_to_ball
-                .relocate(player_data, ball_pos.xy(), dir, 0.0)
+                .relocate(player_data, goto_pos, dir, 0.0, 0.5)
         } else {
             PlayerControlInput::new()
         }

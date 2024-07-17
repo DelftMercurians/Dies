@@ -11,11 +11,11 @@ pub struct MTP {
 
 impl MTP {
     pub fn new() -> Self {
-        Self {
+        Self { // this parameters seemingly don't matter, since stuff is loaded from config
             setpoint: None,
             kp: 1.0,
             proportional_time_window: Duration::from_millis(700),
-            cutoff_distance: 0.,
+            cutoff_distance: 30.0
         }
     }
 
@@ -47,6 +47,7 @@ impl MTP {
         max_accel: f64,
         max_speed: f64,
         max_decel: f64,
+        carefullness: f64,
     ) -> Vector2 {
         let setpoint = match self.setpoint {
             Some(s) => s,
@@ -57,7 +58,7 @@ impl MTP {
         let distance = displacement.magnitude();
 
         if distance < self.cutoff_distance {
-            // println!("Sending cutoff");
+            println!("Sending cutoff");
 
             return Vector2::zeros();
         }
@@ -85,30 +86,20 @@ impl MTP {
         //     return -velocity + dv.cap_magnitude(self.max_decel * dt);
         // }
 
-        // Calculate deceleration distance based on current_speed and max_decel
-        let decel_distance = self.deceleration_window(velocity, max_decel);
-
-        let time_to_target = distance / current_speed;
+        let care_factor = carefullness * 0.7;
+        let time_to_target = distance / max_speed;
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
-            let proportional_velocity_magnitude = distance * self.kp;
+            let proportional_velocity_magnitude = f64::max(distance - self.cutoff_distance, 0.0) * (self.kp * (1.0 - care_factor)) + 100.0 * care_factor;
             let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
 
+            let mut v_control = dv_magnitude;
+            if v_control < 0.0 { // decelerate a lot faster than accelerate since inertia
+                v_control *= 5.0 * (1.0 + care_factor);
+            }
+
             dies_core::debug_string("p5.MTPMode", "Proportional");
-            let new_speed = current_speed + cap_magnitude(dv_magnitude, max_decel * dt);
-            direction * new_speed
-        } else if distance <= decel_distance && current_speed > 0.0 {
-            // Deceleration phase
-            let target_v = velocity
-                - (velocity * (1.0 / (velocity.magnitude() + f64::EPSILON)) * max_decel * dt);
-            let target_v = if (target_v * dt).magnitude() < distance {
-                direction * distance / dt
-            } else {
-                target_v
-            };
-            let dv_mag = target_v.magnitude() - velocity.magnitude();
-            dies_core::debug_string("p5.MTPMode", "Deceleration");
-            let new_speed = current_speed + dv_mag.min(max_accel * dt);
+            let new_speed = current_speed + cap_magnitude(v_control, max_decel * dt);
             direction * new_speed
         } else if current_speed < max_speed {
             // Acceleration phase
@@ -117,6 +108,7 @@ impl MTP {
             direction * new_speed
         } else {
             // Cruise phase
+            println!("cruising");
             dies_core::debug_string("p5.MTPMode", "Cruise");
             direction * max_speed
         }

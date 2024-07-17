@@ -83,6 +83,7 @@ impl Role for FreeAttacker {
                     player_data.position,
                     target,
                     1.0,
+                    1.0,
                 );
             }
         }
@@ -94,7 +95,7 @@ impl Role for FreeAttacker {
             let ball_pos = self.init_ball.as_ref().unwrap().position;
             let dir = Angle::between_points(ball_pos.xy(), player_data.position);
             self.move_to_ball
-                .relocate(player_data, ball_pos.xy(), dir, 0.0)
+                .relocate(player_data, ball_pos.xy(), dir, 0.0, 1.0)
         } else {
             PlayerControlInput::new()
         }
