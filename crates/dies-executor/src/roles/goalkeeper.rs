@@ -19,47 +19,47 @@ impl Goalkeeper {
         ball: &BallData,
         goal_width: f64,
     ) -> Vector2<f64> {
-        Vector2::new(0.0, 0.0)/*
-        // Find the goalkeeper's position
-        let goalkeeper_pos = player_data.position;
+        Vector2::new(0.0, 0.0) /*
+                               // Find the goalkeeper's position
+                               let goalkeeper_pos = player_data.position;
 
-        // Get the ball's current position and velocity
-        let ball_pos = ball.position;
-        let ball_vel = ball.velocity;
+                               // Get the ball's current position and velocity
+                               let ball_pos = ball.position;
+                               let ball_vel = ball.velocity;
 
-        // Calculate the second point based on the ball's trajectory
-        let second_point = ball_pos - ball_vel;
+                               // Calculate the second point based on the ball's trajectory
+                               let second_point = ball_pos - ball_vel;
 
-        // Coordinates of the ball's trajectory points
-        let x1 = ball_pos.x;
-        let y1 = ball_pos.y;
-        let x2 = second_point.x;
-        let y2 = second_point.y;
+                               // Coordinates of the ball's trajectory points
+                               let x1 = ball_pos.x;
+                               let y1 = ball_pos.y;
+                               let x2 = second_point.x;
+                               let y2 = second_point.y;
 
-        // Vertical line's x-coordinate is the goalkeeper's x-coordinate
-        // Maybe it would be better to get a static value so that it doesn't deviate over time...
-        let x_vertical = 0.0; // goalkeeper_pos.x;
+                               // Vertical line's x-coordinate is the goalkeeper's x-coordinate
+                               // Maybe it would be better to get a static value so that it doesn't deviate over time...
+                               let x_vertical = 0.0; // goalkeeper_pos.x;
 
-        // Handle the special case where the ball's trajectory is vertical
-        if x1 == x2 {
-            return Vector2::new(x_vertical, ball_pos.y);
-        }
+                               // Handle the special case where the ball's trajectory is vertical
+                               if x1 == x2 {
+                                   return Vector2::new(x_vertical, ball_pos.y);
+                               }
 
-        // Calculate the parameter t to find the y-coordinate at the intersection with the vertical line
-        let t = (x_vertical - x1) / (x2 - x1);
-        let py = y1 + t * (y2 - y1);
+                               // Calculate the parameter t to find the y-coordinate at the intersection with the vertical line
+                               let t = (x_vertical - x1) / (x2 - x1);
+                               let py = y1 + t * (y2 - y1);
 
-        // Calculate the min and max y-coordinates the goalkeeper can move to, constrained by the goal width
-        let y_min = goalkeeper_pos.y - goal_width / 2.0;
-        let y_max = goalkeeper_pos.y + goal_width / 2.0;
+                               // Calculate the min and max y-coordinates the goalkeeper can move to, constrained by the goal width
+                               let y_min = goalkeeper_pos.y - goal_width / 2.0;
+                               let y_max = goalkeeper_pos.y + goal_width / 2.0;
 
-        // Clamp the y-coordinate to ensure it stays within the goal width range
-        let py_clamped = py.max(y_min).min(y_max);
+                               // Clamp the y-coordinate to ensure it stays within the goal width range
+                               let py_clamped = py.max(y_min).min(y_max);
 
-        println!("{}, {}", x_vertical, py_clamped);
+                               println!("{}, {}", x_vertical, py_clamped);
 
-        // Return the clamped intersection point
-        Vector2::new(x_vertical, py_clamped)*/
+                               // Return the clamped intersection point
+                               Vector2::new(x_vertical, py_clamped)*/
     }
 }
 
@@ -77,8 +77,8 @@ impl Role for Goalkeeper {
 
             input.with_yaw(target_angle);
 
-            let defence_width = 1.3 * (field_geom.penalty_area_width / 2.0);
-            let mut target = if ball.velocity.xy().norm() > 10.0 && ball.position.x < -2000.0 && ball.velocity.x < 50.0 {
+            let defence_width = 1.3 * (field_geom.goal_width / 2.0);
+            let mut target = if ball.position.x < 0.0 && ball.velocity.x < 50.0 {
                 let mut out = find_intersection(
                     Vector2::new(goalkeeper_x, 0.0),
                     Vector2::y(),
@@ -88,7 +88,10 @@ impl Role for Goalkeeper {
                 .unwrap_or(Vector2::new(goalkeeper_x, ball.position.y));
                 // limit the delta by how much the ball is gonna move in a second or so
                 let limit = ball.velocity.y.abs() * 1.0;
-                out.y = out.y.min(ball.position.y + limit).max(ball.position.y - limit);
+                out.y = out
+                    .y
+                    .min(ball.position.y + limit)
+                    .max(ball.position.y - limit);
                 out
             } else {
                 Vector2::new(goalkeeper_x, ball.position.y)
