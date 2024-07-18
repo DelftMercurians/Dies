@@ -6,6 +6,7 @@ use std::{default, fmt::Display};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
+use crate::{distance_to_line, player, score_line_of_sight};
 use crate::{
     find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry, RoleType,
     SysStatus, Vector2, Vector3,
@@ -403,6 +404,30 @@ impl WorldData {
         } else {
             None
         }
+    }
+
+    pub fn get_best_kick_direction(&self, player_id: PlayerId) -> Angle {
+        let player = self.get_player(player_id).unwrap();
+        let mut score = 0.0;
+        let mut best_angle: Angle = Angle::default();
+        for theta in (-90..90).step_by(20) {
+            let angle = Angle::from_degrees(theta as f64);
+            let direction = player.position + angle.to_vector() * 1000.0;
+
+            let mut min_dist: f64 = 0.0;
+            for p in self.opp_players.iter() {
+                let dist = distance_to_line(player.position, direction, p.position);
+                if dist < min_dist {
+                    min_dist = dist;
+                }
+            }
+
+            if min_dist > score {
+                score = min_dist;
+                best_angle = angle;
+            }
+        }
+        best_angle
     }
 
     pub fn get_obstacles_for_player(&self, role: RoleType) -> Vec<Obstacle> {

@@ -1,4 +1,4 @@
-use crate::{Angle, Vector2, Vector3};
+use crate::{Angle, FieldGeometry, Vector2, Vector3, WorldData};
 
 /// Convert ssl-vision coordinates to dies coordinates.
 ///
@@ -86,6 +86,34 @@ pub fn get_tangent_line_direction(
 pub fn cross_product(v1: Vector2, v2: Vector2) -> f64 {
     v1.x * v2.y - v1.y * v2.x
 }
+
+pub fn distance_to_line(a: Vector2, b: Vector2, p: Vector2) -> f64 {
+    let n = (b - a).normalize();
+    let ap = p - a;
+    let proj = ap.dot(&n);
+    let proj = proj.max(0.0).min((b - a).norm());
+    (ap - proj * n).norm()
+}
+
+/// Compute a "badness" score for a line of sight between two points based on the minumum
+/// distance to the line of sight from the closest enemy player.
+///
+/// The score is higher if the line of sight is further from the enemy players.
+pub fn score_line_of_sight(
+    world: &WorldData,
+    from: Vector2,
+    to: Vector2,
+) -> f64 {
+    let mut min_distance = f64::MAX;
+    for player in world.opp_players.iter() {
+        let distance = distance_to_line(from, to, player.position);
+        if distance < min_distance {
+            min_distance = distance;
+        }
+    }
+    min_distance
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -92,7 +92,7 @@ impl Role for Kicker {
                 skill!(
                     ctx,
                     GoToPosition::new(Vector2::new(-800.0, PI))
-                        .with_heading(Angle::from_degrees(180.0))
+                        .with_heading(Angle::from_degrees(0.0))   
                 );
             }
             GameState::Kickoff => {
@@ -115,7 +115,7 @@ impl Role for OtherPlayer {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         skill!(
             ctx,
-            GoToPosition::new(self.fixed_position).with_heading(Angle::from_degrees(90.0))
+            GoToPosition::new(self.fixed_position).with_heading(Angle::from_degrees(90.0)).avoid_ball()
         );
 
         PlayerControlInput::new()

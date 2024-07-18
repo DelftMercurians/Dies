@@ -1,7 +1,6 @@
 use crate::roles::skills::{ApproachBall, FetchBallWithHeading, Kick};
 use crate::roles::RoleCtx;
 use crate::strategy::kickoff::OtherPlayer;
-use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
 use dies_core::{Angle, BallData, PlayerData, PlayerId, RoleType, Vector2, WorldData};
@@ -11,13 +10,11 @@ use super::StrategyCtx;
 
 pub struct FreeKickStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
-    has_attacker: bool,
+    kicker_id: Option<PlayerId>,
     gate_keeper_id: Option<PlayerId>,
 }
 
 pub struct FreeAttacker {
-    move_to_ball: Task3Phase,
-    kick: Task4Phase,
     init_ball: Option<BallData>,
     target_direction: Option<Angle>,
 }
@@ -31,8 +28,6 @@ impl Default for FreeAttacker {
 impl FreeAttacker {
     pub fn new() -> Self {
         Self {
-            move_to_ball: Task3Phase::new(),
-            kick: Task4Phase::new(),
             init_ball: None,
             target_direction: None,
         }
@@ -77,12 +72,12 @@ impl Role for FreeAttacker {
         let player_data = ctx.player;
         let world_data = ctx.world;
 
-        let (ball, init_ball) = if let Some(ball) = &world_data.ball {
+        let (_ball, init_ball) = if let Some(ball) = &world_data.ball {
             (ball, self.init_ball.get_or_insert(ball.clone()))
         } else {
             return PlayerControlInput::new();
         };
-        let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
+        let ball_pos = init_ball.position.xy();
 
         let target = if let Some(target) = self.target_direction {
             target
@@ -108,7 +103,7 @@ impl FreeKickStrategy {
     pub fn new(gate_keeper_id: Option<PlayerId>) -> Self {
         FreeKickStrategy {
             roles: HashMap::new(),
-            has_attacker: false,
+            kicker_id: None,
             gate_keeper_id,
         }
     }
@@ -123,48 +118,62 @@ impl FreeKickStrategy {
 }
 
 impl Strategy for FreeKickStrategy {
+    fn on_enter(&mut self, _ctx: StrategyCtx) {
+        // Clear roles
+        self.roles.clear();
+        self.kicker_id = None;
+    }
+
     fn update(&mut self, ctx: StrategyCtx) {
         let world = ctx.world;
         let us_attacking = world.current_game_state.us_operating;
+        if let Some(ball) = world.ball.as_ref() {
+            let kicker_id = if us_attacking {
+                Some(*self.kicker_id.get_or_insert_with(|| {
+                    let kicker_id = world
+                        .own_players
+                        .iter()
+                        .min_by_key(|p| {
+                            (ball.position.xy() - p.position).norm()
+                                as i64
+                        })
+                        .unwrap()
+                        .id;
+                    self.roles.insert(
+                        kicker_id,
+                        Box::new(FreeAttacker {
+                            init_ball: None,
+                            target_direction: None,
+                        }),
+                    );
+                    kicker_id
+                }))
+            } else {
+                None
+            };
 
-        // Assign roles to players
-        for player_data in world.own_players.iter() {
-            if let Some(gate_keeper_id) = self.gate_keeper_id {
-                continue;
-            }
-            if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
-                if us_attacking {
-                    if !self.has_attacker {
-                        log::info!("Attacker is created");
-                        self.has_attacker = true;
-                        e.insert(Box::new(FreeAttacker::new()));
-                    }
-                } else if let Some(ball) = &world.ball {
+            // Assign roles to players
+            for player_data in world.own_players.iter() {
+                if self.gate_keeper_id == Some(player_data.id) || kicker_id == Some(player_data.id)
+                {
+                    continue;
+                }
+
+                if let std::collections::hash_map::Entry::Vacant(e) =
+                    self.roles.entry(player_data.id)
+                {
                     let ball_pos = ball.position;
                     // get the disance between the ball and the player
                     let distance = (player_data.position - ball_pos.xy()).norm();
-                    if distance < 500.0 {
-                        log::info!("Player {} is moving out of the ball", player_data.id);
+                    if distance < 650.0 {
                         // get the target pos that is 500.0 away from the ball
                         let target = ball_pos.xy()
-                            + (player_data.position - ball_pos.xy()).normalize() * 500.0;
+                            + (player_data.position - ball_pos.xy()).normalize() * 650.0;
                         e.insert(Box::new(OtherPlayer::new(target)));
                     }
                 }
             }
         }
-
-        // let mut inputs = PlayerInputs::new();
-        // for (id, role) in self.roles.iter_mut() {
-        //     if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-        //         let player_data = player_data.clone();
-        //         let mut input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
-        //         inputs.insert(*id, input);
-        //     } else {
-        //         log::error!("No detetion data for player #{id} with active role");
-        //     }
-        // }
-        // inputs
     }
 
     fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {

@@ -10,6 +10,7 @@ use crate::strategy::attack_strat::PlayStrategy;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
+use crate::strategy::stop::StopStrategy;
 use crate::strategy::test_strat::TestStrat;
 use crate::{
     roles::{
@@ -33,21 +34,23 @@ fn play() -> ScenarioSetup {
     strat.defense.add_wallers(vec![PlayerId::new(2), PlayerId::new(1)]);
     strat.attack.add_attacker(PlayerId::new(3));
     // strat.attack.add_attacker(PlayerId::new(3));
-    let mut setup = ScenarioSetup::new(
-        strat,
-        StrategyGameStateMacther::Specific(GameState::Run),
+    let mut setup = ScenarioSetup::new(strat, StrategyGameStateMacther::Specific(GameState::Run));
+    setup.add_strategy(
+        StrategyGameStateMacther::Specific(GameState::Halt),
+        AdHocStrategy::new(),
     );
-    setup.add_strategy(StrategyGameStateMacther::Specific(GameState::Halt), AdHocStrategy::new());
     setup.add_strategy(
         StrategyGameStateMacther::Specific(GameState::FreeKick),
         FreeKickStrategy::new(None),
     );
     setup.add_strategy(
         StrategyGameStateMacther::Specific(GameState::Stop),
-        AdHocStrategy::new(),
+        StopStrategy::new(),
     );
     setup.add_strategy(
-        StrategyGameStateMacther::any_of(vec![GameState::Kickoff, GameState::PrepareKickoff].as_slice()),
+        StrategyGameStateMacther::any_of(
+            vec![GameState::Kickoff, GameState::PrepareKickoff].as_slice(),
+        ),
         KickoffStrategy::new(None),
     );
     setup
@@ -66,7 +69,7 @@ fn goalie_test() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Goalkeeper::new()));
     let mut scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
-    scenario.add_ball().add_own_player();
+    scenario.add_ball().add_own_player().add_own_player();
     scenario
 }
 
@@ -113,7 +116,8 @@ fn free_kick() -> ScenarioSetup {
     scenario
         .add_ball_at(Vector2::new(0.0, 0.0))
         .add_own_player_at(Vector2::new(1000.0, 1000.0))
-        .add_own_player_at(Vector2::new(-1000.0, -1000.0));
+        .add_own_player_at(Vector2::new(-100.0, 0.0))
+        .add_opp_player_at(Vector2::new(200.0, 200.0));
     scenario
 }
 
@@ -268,7 +272,6 @@ impl<'de> Deserialize<'de> for ScenarioType {
             .ok_or_else(|| serde::de::Error::custom(format!("Scenario '{}' not found", name)))
     }
 }
-
 
 impl Serialize for ScenarioType {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

@@ -22,6 +22,7 @@ pub struct GoToPosition {
     pos_tolerance: f64,
     velocity_tolerance: f64,
     with_ball: bool,
+    avoid_ball: bool,
 }
 
 impl GoToPosition {
@@ -33,6 +34,7 @@ impl GoToPosition {
             pos_tolerance: DEFAULT_POS_TOLERANCE,
             velocity_tolerance: DEFAULT_VEL_TOLERANCE,
             with_ball: false,
+            avoid_ball: false,
         }
     }
 
@@ -47,6 +49,11 @@ impl GoToPosition {
     /// player and the ball is below a certain threshold.
     pub fn with_ball(mut self) -> Self {
         self.with_ball = true;
+        self
+    }
+
+    pub fn avoid_ball(mut self) -> Self {
+        self.avoid_ball = true;
         self
     }
 }
@@ -66,14 +73,19 @@ impl Skill for GoToPosition {
             input.with_yaw(heading);
         }
 
-        if let (true, Some(_)) = (self.with_ball, ctx.world.ball.as_ref()) {
-            if !ctx.player.breakbeam_ball_detected {
-                return SkillProgress::failure();
-            }
+        if let Some(_) = ctx.world.ball.as_ref() {
+            if self.avoid_ball {
+                input.avoid_ball = true;
+            } else if self.with_ball {
+                if !ctx.player.breakbeam_ball_detected {
+                    return SkillProgress::failure();
+                }
 
-            input.with_dribbling(1.0);
-            input.with_acceleration_limit(700.0);
-            input.with_angular_acceleration_limit(360.0f64.to_radians());
+                input.with_dribbling(1.0);
+                input.with_acceleration_limit(700.0);
+                input.with_angular_acceleration_limit(180.0f64.to_radians());
+                input.with_angular_speed_limit(180.0f64.to_radians());
+            }
 
             // let ball_vel = ball.velocity.xy();
             // let relative_velocity = ball_vel - ctx.player.velocity;
@@ -89,35 +101,40 @@ impl Skill for GoToPosition {
 
 pub struct Face {
     heading: HeadingTarget,
+    with_ball: bool,
 }
 
 impl Face {
     pub fn new(heading: Angle) -> Self {
         Self {
+            with_ball: false,
             heading: HeadingTarget::Angle(heading),
         }
     }
 
     pub fn towards_position(pos: Vector2) -> Self {
         Self {
+            with_ball: false,
             heading: HeadingTarget::Position(pos),
         }
     }
 
     pub fn towards_own_player(id: PlayerId) -> Self {
         Self {
+            with_ball: false,
             heading: HeadingTarget::OwnPlayer(id),
         }
     }
 
     pub fn towards_ball() -> Self {
         Self {
+            with_ball: false,
             heading: HeadingTarget::Ball,
         }
     }
 
-    pub fn with_ball(&mut self) -> &mut Self {
-        self.heading = HeadingTarget::Ball;
+    pub fn with_ball(mut self) -> Self {
+        self.with_ball = true;
         self
     }
 }
@@ -133,6 +150,11 @@ impl Skill for Face {
 
         input.with_yaw(heading);
         input.with_care(1.0);
+        if self.with_ball {
+            input.with_dribbling(1.0);
+            input.with_angular_acceleration_limit(180.0f64.to_radians());
+            input.with_angular_speed_limit(180.0f64.to_radians());
+        }
 
         if (ctx.player.yaw - heading).abs() < 3f64.to_radians() {
             return SkillProgress::success();

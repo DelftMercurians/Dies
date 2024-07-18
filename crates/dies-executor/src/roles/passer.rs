@@ -36,7 +36,7 @@ impl Role for Passer {
 
         loop {
             skill!(ctx, ApproachBall::new());
-            match invoke_skill!(ctx, Face::towards_own_player(receiver.id)) {
+            match invoke_skill!(ctx, Face::towards_own_player(receiver.id).with_ball()) {
                 crate::roles::SkillProgress::Continue(mut input) => {
                     input.with_dribbling(1.0);
                     return input;

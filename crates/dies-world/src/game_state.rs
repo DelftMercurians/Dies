@@ -88,6 +88,8 @@ impl GameStateTracker {
             _ => self.game_state,
         };
 
+        dies_core::debug_string("game_state", format!("{}", self.game_state));
+
         self.operator_is_blue = match command {
             Command::PREPARE_KICKOFF_BLUE
             | Command::PREPARE_PENALTY_BLUE

@@ -175,7 +175,6 @@ impl WorldTracker {
             .update_ball_movement_check(self.ball_tracker.get().as_ref());
 
         let cur = self.game_state_tracker.update(data);
-        println!("Current game state: {:?}", cur);
         if cur == GameState::Kickoff || cur == GameState::FreeKick {
             let timeout = if IS_DIV_A { 10 } else { 5 };
             self.game_state_tracker

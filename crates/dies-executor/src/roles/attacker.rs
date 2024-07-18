@@ -123,10 +123,10 @@ impl Role for Attacker {
                     match skill!(ctx, FetchBall::new()) {
                         crate::roles::SkillResult::Success => {
                             if is_pos_valid(ball_pos, geom) {
-                                break AttackerState::Dribbling
+                                break AttackerState::Dribbling;
+                            } else {
                             }
-                            else {}
-                        },
+                        }
                         _ => {}
                     }
                     // if ball_dist > 1000.0 {
@@ -168,7 +168,7 @@ impl Role for Attacker {
                         println!("Lost ball, fetching");
                         break AttackerState::FetchingBall;
                     } else {
-                        match invoke_skill!(ctx, Face::towards_own_player(receiver)) {
+                        match invoke_skill!(ctx, Face::towards_own_player(receiver).with_ball()) {
                             crate::roles::SkillProgress::Continue(mut input) => {
                                 input.with_dribbling(1.0);
                                 return input;
@@ -190,11 +190,14 @@ impl Role for Attacker {
                         println!("Lost ball, fetching");
                         AttackerState::FetchingBall
                     } else {
-                        match invoke_skill!(ctx, Face::towards_position(Vector2::new(
-                                    4500.0,
-                                    f64::max(f64::min(ctx.player.position.y.abs(), 400.0), -400.0)))
-                            )
-                        {
+                        match invoke_skill!(
+                            ctx,
+                            Face::towards_position(Vector2::new(
+                                4500.0,
+                                f64::max(f64::min(ctx.player.position.y.abs(), 400.0), -400.0)
+                            ))
+                            .with_ball()
+                        ) {
                             crate::roles::SkillProgress::Continue(mut input) => {
                                 input.with_dribbling(1.0);
                                 return input;

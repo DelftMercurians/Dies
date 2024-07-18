@@ -5,6 +5,7 @@ pub mod kickoff;
 pub mod penalty_kick;
 mod task;
 pub mod test_strat;
+pub mod stop;
 
 use crate::{
     roles::{Role, RoleCtx},
