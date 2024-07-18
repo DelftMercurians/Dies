@@ -26,7 +26,8 @@ impl Waller {
         world: &FieldGeometry,
         player_id: PlayerId,
     ) -> Vector2 {
-        let ball_pos = ball.position.xy();
+        let ball_pos = ball.position.xy() + ball.velocity.xy() * 1.0; // fake it til you make it
+                                                                      // compensate for delay
         let half_length = world.field_length / 2.0;
         let goal_center = Vector2::new(-half_length, 0.0);
 
@@ -47,15 +48,14 @@ impl Waller {
             if intersection.y <= area_top_y && intersection.y >= area_bottom_y {
                 // Check if it is a corner
                 let corner = if (intersection - top_right).norm() < CORNER_RADIUS {
-                    Some(top_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS)
+                    Some(top_right - Vector2::new(0.6, 0.6) * CORNER_RADIUS)
                 } else if (intersection - bottom_right).norm() < CORNER_RADIUS {
-                    Some(bottom_right - Vector2::new(1.0, -1.0) * CORNER_RADIUS)
+                    Some(bottom_right - Vector2::new(0.6, -0.6) * CORNER_RADIUS)
                 } else {
                     None
                 };
                 if let Some(c) = corner {
                     let center = c + (intersection - c).normalize();
-                    dies_core::debug_cross("wallcenter", center, dies_core::DebugColor::Purple);
                     return center;
                 }
                 return intersection;
@@ -67,14 +67,14 @@ impl Waller {
             if let Some(intersection) =
                 find_intersection(ball_pos, direction, bottom_right, Vector2::x())
             {
-                if intersection.x <= area_right_x && intersection.x >= -half_length {
+                if intersection.x <= area_right_x && ball_pos.y < 0.0 {
                     // Check if it is a corner
                     if (intersection - bottom_right).norm() < CORNER_RADIUS {
-                        let center = bottom_right - Vector2::new(1.0, -1.0) * CORNER_RADIUS;
-                        dies_core::debug_cross("wallcenter", center, dies_core::DebugColor::Purple);
+                        let center = bottom_right - Vector2::new(0.6, -0.6) * CORNER_RADIUS;
                         return center;
                     }
-                    return intersection;
+                    let new_x = f64::max(intersection.x, -half_length);
+                    return Vector2::new(new_x, intersection.y);
                 }
             }
 
@@ -82,14 +82,14 @@ impl Waller {
             if let Some(intersection) =
                 find_intersection(ball_pos, direction, top_right, Vector2::x())
             {
-                if intersection.x <= area_right_x && intersection.x >= -half_length {
+                if intersection.x <= area_right_x && ball_pos.y > 0.0 {
                     // Check if it is a corner
                     if (intersection - top_right).norm() < CORNER_RADIUS {
-                        let center = top_right - Vector2::new(1.0, 1.0) * CORNER_RADIUS;
-                        dies_core::debug_cross("wallcenter", center, dies_core::DebugColor::Purple);
+                        let center = top_right - Vector2::new(0.6, 0.6) * CORNER_RADIUS;
                         return center;
                     }
-                    return intersection;
+                    let new_x = f64::max(intersection.x, -half_length);
+                    return Vector2::new(new_x, intersection.y);
                 }
             }
         }
