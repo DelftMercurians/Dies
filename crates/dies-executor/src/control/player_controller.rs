@@ -245,6 +245,9 @@ impl PlayerController {
             Velocity::Local(v) => self.last_yaw.rotate_vector(&v),
         };
         self.target_velocity += add_vel;
+        self.target_velocity = self
+            .target_velocity
+            .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
         if !is_manual_override {
             let obstacles = if input.avoid_ball {

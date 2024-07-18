@@ -65,6 +65,7 @@ fn play() -> ScenarioSetup {
         .add_own_player()
         .add_own_player()
         .add_own_player()
+        .add_own_player()
         .add_opp_player_at(Vector2::new(1000.0, 1000.0))
         .add_opp_player_at(Vector2::new(4500.0, 0.0))
         .add_opp_player_at(Vector2::new(1000.0, -1000.0));
@@ -178,7 +179,7 @@ fn need_to_cross_the_goal_area_alt() -> ScenarioSetup {
     strategy.add_role(Box::new(Waller::new(0.0)));
     let mut scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
     scenario
-        .add_ball_at(Vector2::new(-4500.0, -2950.0))
+        .add_ball_at(Vector2::new(-0.0, -0.0))
         .add_own_player_at(Vector2::new(-3800.0, 500.0));
 
     scenario

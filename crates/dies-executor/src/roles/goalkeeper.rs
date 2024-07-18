@@ -42,7 +42,7 @@ impl Role for Goalkeeper {
                 ctx.reset_skills();
                 let mut input = PlayerControlInput::new();
                 input.with_speed_limit(1300.0);
-                input.avoid_ball = true;
+                
                 if let Some(ball) = ctx.world.ball.as_ref() {
                     let ball_pos = ball.position.xy();
                     let dist = (ball_pos - ctx.player.position.xy()).norm();
