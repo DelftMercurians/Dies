@@ -36,6 +36,7 @@ fn play() -> ScenarioSetup {
         .defense
         .add_wallers(vec![PlayerId::new(2), PlayerId::new(1)]);
     strat.attack.add_attacker(PlayerId::new(5));
+    strat.attack.add_attacker(PlayerId::new(4));
     // strat.attack.add_attacker(PlayerId::new(4));
     let mut setup = ScenarioSetup::new(
         strat,
