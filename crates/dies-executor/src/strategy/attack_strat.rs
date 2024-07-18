@@ -126,7 +126,7 @@ impl Defense {
 
     pub fn add_wallers(&mut self, player_ids: Vec<PlayerId>) {
         let offsets = (0..player_ids.len())
-            .map(|i| if i % 2 == 0 { -100.0 } else { 100.0 })
+            .map(|i| if i % 2 == 0 { -95.0 } else { 95.0 })
             .collect::<Vec<_>>();
         for (id, offset) in player_ids.iter().zip(offsets) {
             self.wallers.push((*id, Waller::new(offset)));
