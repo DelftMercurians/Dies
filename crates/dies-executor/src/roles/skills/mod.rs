@@ -149,7 +149,7 @@ impl Skill for Face {
         };
 
         input.with_yaw(heading);
-        input.with_care(1.0);
+        input.with_care(0.8);
         if self.with_ball {
             input.with_dribbling(1.0);
             input.with_angular_acceleration_limit(180.0f64.to_radians());
@@ -532,7 +532,7 @@ impl Skill for FetchBallWithHeading {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let player_data = ctx.player;
         let world_data = ctx.world;
-        let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius * 10.0;
+        let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius * 8.0;
 
         let ball_pos = if let Some(ball) = world_data.ball.as_ref() {
             ball.position.xy()
@@ -553,14 +553,14 @@ impl Skill for FetchBallWithHeading {
 
         if (player_data.position - target_pos).norm() < 100.0
             && (player_data.yaw - target_heading).abs()
-                < ctx.world.player_model.dribbler_angle.radians() / 2.0
+                < 0.05 // this threshold should be changed only with real robots in sight
         {
             return SkillProgress::Done(SkillResult::Success);
         }
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
             let ball_distance = (ball.position.xy() - init_ball_pos).norm();
-            if ball_distance >= 100.0 {
+            if ball_distance >= 120.0 {
                 //ball movement
                 return SkillProgress::Done(SkillResult::Failure);
             }
