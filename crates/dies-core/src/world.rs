@@ -479,20 +479,20 @@ impl WorldData {
                 GameState::Stop => {
                     // Add obstacle to prevent getting close to the ball
                     if let Some(ball) = &self.ball {
-                        obstacles.push(create_bbox_from_circle(
-                            ball.position.xy(),
-                            STOP_BALL_AVOIDANCE_RADIUS,
-                        ));
+                        obstacles.push(Obstacle::Circle {
+                            center: ball.position.xy(),
+                            radius: STOP_BALL_AVOIDANCE_RADIUS,
+                        });
                     }
                 }
                 GameState::Kickoff | GameState::PrepareKickoff => match role {
                     RoleType::KickoffKicker => {}
                     _ => {
                         // Add center circle for non kicker robots
-                        obstacles.push(create_bbox_from_circle(
-                            Vector2::zeros(),
-                            field_geom.center_circle_radius,
-                        ));
+                        obstacles.push(Obstacle::Circle {
+                            center: Vector2::zeros(),
+                            radius: field_geom.center_circle_radius,
+                        });
                     }
                 },
                 GameState::BallReplacement(_) => todo!(),

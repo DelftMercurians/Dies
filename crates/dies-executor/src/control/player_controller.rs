@@ -250,7 +250,7 @@ impl PlayerController {
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
         if !is_manual_override {
-            let obstacles = if input.avoid_ball {
+            let mut obstacles = if input.avoid_ball {
                 if let Some(ball) = world.ball.as_ref() {
                     let mut obstacles = obstacles;
                     obstacles.push(Obstacle::Circle {
@@ -272,6 +272,7 @@ impl PlayerController {
                 obstacles.as_slice(),
                 &world.player_model,
                 super::rvo::VelocityObstacleType::VO,
+                input.avoid_robots,
             );
         }
 

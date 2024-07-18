@@ -134,12 +134,15 @@ pub struct PlayerControlInput {
     pub angular_speed_limit: Option<f64>,
 
     pub avoid_ball: bool,
+    pub avoid_robots: bool,
 }
 
 impl PlayerControlInput {
     /// Create a new instance of `PlayerControlInput`.
     pub fn new() -> Self {
-        Self::default()
+        let mut s = Self::default();
+        s.avoid_robots = true;
+        s
     }
 
     /// Set the target position of the player.
@@ -188,6 +191,11 @@ impl PlayerControlInput {
 
     pub fn with_angular_speed_limit(&mut self, limit: f64) -> &mut Self {
         self.angular_speed_limit = Some(limit);
+        self
+    }
+
+    pub fn ignore_robots(&mut self) -> &mut Self {
+        self.avoid_robots = true;
         self
     }
 

@@ -1,5 +1,5 @@
 use dies_core::{
-    find_intersection, perp, BallData, FieldGeometry, GameState, PlayerId, Vector2, WorldData,
+    find_intersection, perp, BallData, FieldGeometry, GameState, PlayerId, Vector2, WorldData, Angle,
 };
 
 use super::{attacker::AttackerSection, RoleCtx};
@@ -81,18 +81,6 @@ impl Waller {
             let shift = Vector2::new(0.0, self.offset);
             let intersection = raw_intersection - shift;
             if intersection.y <= area_top_y && intersection.y >= area_bottom_y {
-                // Check if it is a corner
-                let corner = if (intersection - top_right + shift).norm() < CORNER_RADIUS / 2.0 {
-                    Some(top_right - Vector2::new(0.6, 0.6) * CORNER_RADIUS)
-                } else if (intersection - bottom_right + shift).norm() < CORNER_RADIUS / 2.0 {
-                    Some(bottom_right - Vector2::new(0.6, -0.6) * CORNER_RADIUS)
-                } else {
-                    None
-                };
-                if let Some(c) = corner {
-                    let center = c + (intersection - c).normalize();
-                    return center;
-                }
                 return intersection;
             }
         }
@@ -174,6 +162,8 @@ impl Role for Waller {
                         .max(-geom.penalty_area_width / 2.0 - MARGIN)
                         .min(geom.penalty_area_width / 2.0 + MARGIN);
                     input.with_position(target_pos);
+                    input.ignore_robots();
+                    input.with_yaw(Angle::from_radians(0.0));
                     // input.with_yaw(Angle::between_points(
                     //     ctx.player.position,
                     //     ball.position.xy(),
