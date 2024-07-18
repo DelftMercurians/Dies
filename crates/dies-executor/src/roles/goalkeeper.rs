@@ -78,7 +78,7 @@ impl Role for Goalkeeper {
             input.with_yaw(target_angle);
 
             let defence_width = 1.3 * (field_geom.goal_width / 2.0);
-            let mut target = if ball.position.x < 0.0 && ball.velocity.x < 50.0 {
+            let mut target = if ball.position.x < 0.0 && ball.velocity.x < 0.0 {
                 let mut out = find_intersection(
                     Vector2::new(goalkeeper_x, 0.0),
                     Vector2::y(),
