@@ -1,10 +1,10 @@
 use std::f64::consts::FRAC_PI_2;
 
-use dies_core::Vector2;
 use dies_core::{
     find_intersection, score_line_of_sight, Angle, BallData, FieldGeometry, PlayerData, PlayerId,
     WorldData,
 };
+use dies_core::{GameState, Vector2};
 
 use crate::roles::skills::{ApproachBall, Face, FetchBallWithHeading, Kick};
 use crate::roles::{Role, RoleCtx, SkillResult};
@@ -13,14 +13,14 @@ use crate::{invoke_skill, skill, PlayerControlInput};
 const KEEPER_X_OFFSET: f64 = 250.0;
 
 pub struct Goalkeeper {
-    pub is_kicking: bool,
+    pub kicking_to: bool,
     pub defenders: Vec<PlayerId>,
 }
 
 impl Goalkeeper {
     pub fn new() -> Self {
         Self {
-            is_kicking: false,
+            kicking_to: false,
             defenders: Vec::new(),
         }
     }
@@ -33,10 +33,56 @@ impl Goalkeeper {
 impl Role for Goalkeeper {
     fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
-
         if let (Some(ball), Some(field_geom)) =
             (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref())
         {
+            let mut goalkeeper_x = -field_geom.field_length / 2.0 + KEEPER_X_OFFSET;
+
+            if ctx.world.current_game_state.game_state == GameState::Stop {
+                ctx.reset_skills();
+                let mut input = PlayerControlInput::new();
+                input.with_speed_limit(1300.0);
+                input.avoid_ball = true;
+                if let Some(ball) = ctx.world.ball.as_ref() {
+                    let ball_pos = ball.position.xy();
+                    let dist = (ball_pos - ctx.player.position.xy()).norm();
+                    if dist < 560.0 {
+                        // Move away from the ball
+                        let target = ball_pos.xy()
+                            + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
+                        input.with_position(target);
+                    }
+                }
+
+                let ball_pos = ball.position.xy();
+                let defence_width = 1.3 * (field_geom.goal_width / 2.0);
+                let mut target = if ball_pos.x < 0.0 && ball.velocity.x < 0.0 {
+                    let mut out = find_intersection(
+                        Vector2::new(goalkeeper_x, 0.0),
+                        Vector2::y(),
+                        ball_pos,
+                        ball.velocity.xy(),
+                    )
+                    .unwrap_or(Vector2::new(goalkeeper_x, ball_pos.y));
+                    // limit the delta by how much the ball is gonna move in a second or so
+                    let limit = ball.velocity.y.abs() * 2.0;
+                    out.y = out
+                        .y
+                        .min(ball.position.y + limit)
+                        .max(ball.position.y - limit);
+                    out
+                } else {
+                    Vector2::new(goalkeeper_x, ball_pos.y)
+                };
+                target.y = target.y.max(-defence_width).min(defence_width);
+                // we want to bring the point closer to center based on the ball x position
+                let factor = 1.0 - f64::min(f64::max((ball_pos.x + 2000.0) / 5000.0, 0.0), 1.0);
+                target.y = target.y * factor;
+                input.with_position(target);
+
+                return input;
+            }
+
             let ball_pos = ball.position.xy();
             let ball_in_defence = ball_pos.x
                 < (-field_geom.field_length / 2.0 + field_geom.penalty_area_depth)
@@ -44,13 +90,12 @@ impl Role for Goalkeeper {
             let ball_vel = ball.velocity.xy().norm();
 
             if !ball_in_defence || ball_vel > 100.0 {
-                if self.is_kicking {
-                    self.is_kicking = false;
+                if self.kicking_to {
+                    self.kicking_to = false;
                     ctx.reset_skills();
                 }
 
                 let ball_pos = ball.position.xy() + ball.velocity.xy() * 0.3;
-                let mut goalkeeper_x = -field_geom.field_length / 2.0 + KEEPER_X_OFFSET;
                 let delta = f64::max(f64::min(ctx.player.position.y.abs() / 5.0, 150.0), 0.0);
                 goalkeeper_x = goalkeeper_x - delta;
 
@@ -82,7 +127,7 @@ impl Role for Goalkeeper {
                 target.y = target.y * factor;
                 input.with_position(target);
             } else {
-                self.is_kicking = true;
+                self.kicking_to = true;
                 skill!(
                     ctx,
                     FetchBallWithHeading::towards_own_player(

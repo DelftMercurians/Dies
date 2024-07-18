@@ -2,6 +2,7 @@ use super::RoleCtx;
 use dies_core::Angle;
 use dies_core::BallData;
 use dies_core::FieldGeometry;
+use dies_core::GameState;
 use nalgebra::Vector2;
 
 use crate::{roles::Role, PlayerControlInput};
@@ -37,9 +38,28 @@ impl Harasser {
 }
 
 impl Role for Harasser {
-    fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+    fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
+        if ctx.world.current_game_state.game_state == GameState::Stop {
+            ctx.reset_skills();
+            let mut input = PlayerControlInput::new();
+            input.with_speed_limit(1300.0);
+            input.avoid_ball = true;
+            if let Some(ball) = ctx.world.ball.as_ref() {
+                let ball_pos = ball.position.xy();
+                let dist = (ball_pos - ctx.player.position.xy()).norm();
+                if dist < 560.0 {
+                    // Move away from the ball
+                    let target =
+                        ball_pos.xy() + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
+                    input.with_position(target);
+                }
+            }
+            return input;
+        }
+        
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
-            let target_pos = self.find_intersection(ball, geom);
+            let mut target_pos = self.find_intersection(ball, geom);
+            target_pos.x = target_pos.x.min(0.0);
             let mut input = PlayerControlInput::new();
             input.with_position(target_pos);
             input.with_yaw(Angle::between_points(

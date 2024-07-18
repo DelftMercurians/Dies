@@ -1,5 +1,5 @@
-use crate::roles::skills::{FetchBall, GoToPosition, Kick};
-use crate::roles::{Goalkeeper, RoleCtx};
+use crate::roles::skills::{ApproachBall, FetchBall, GoToPosition, Kick};
+use crate::roles::{Goalkeeper, RoleCtx, SkillResult};
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
 use dies_core::{Angle, GameState, PlayerId, RoleType};
@@ -97,8 +97,12 @@ impl Role for Kicker {
             }
             GameState::Kickoff => {
                 if self.us_attacking {
-                    skill!(ctx, FetchBall::new());
-                    skill!(ctx, Kick::new());
+                    loop {
+                        skill!(ctx, ApproachBall::new());
+                        if let SkillResult::Success = skill!(ctx, Kick::new()) {
+                            break;
+                        }
+                    }
                 }
             }
             _ => {}

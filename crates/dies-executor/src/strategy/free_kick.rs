@@ -1,5 +1,5 @@
 use crate::roles::skills::{ApproachBall, FetchBallWithHeading, Kick};
-use crate::roles::RoleCtx;
+use crate::roles::{Goalkeeper, RoleCtx, SkillResult};
 use crate::strategy::kickoff::OtherPlayer;
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
@@ -87,8 +87,12 @@ impl Role for FreeAttacker {
 
         skill!(ctx, FetchBallWithHeading::new(target));
 
-        skill!(ctx, ApproachBall::new());
-        skill!(ctx, Kick::new());
+        loop {
+            skill!(ctx, ApproachBall::new());
+            if let SkillResult::Success = skill!(ctx, Kick::new()) {
+                break;
+            }
+        }
 
         PlayerControlInput::new()
     }
@@ -135,6 +139,7 @@ impl Strategy for FreeKickStrategy {
                     let kicker_id = world
                         .own_players
                         .iter()
+                        .filter(|p| Some(p.id) != self.gate_keeper_id)
                         .min_by_key(|p| (ball.position.xy() - p.position).norm() as i64)
                         .unwrap()
                         .id;
@@ -153,6 +158,13 @@ impl Strategy for FreeKickStrategy {
 
             // Assign roles to players
             for player_data in world.own_players.iter() {
+                if kicker_id == Some(player_data.id) && !self.roles.contains_key(&player_data.id) {
+                    self.roles.insert(
+                        player_data.id,
+                        Box::new(Goalkeeper::new())
+                    );
+                    continue;
+                }
                 if self.gate_keeper_id == Some(player_data.id) || kicker_id == Some(player_data.id)
                 {
                     continue;
@@ -166,8 +178,14 @@ impl Strategy for FreeKickStrategy {
                     let distance = (player_data.position - ball_pos.xy()).norm();
                     if distance < 650.0 {
                         // get the target pos that is 500.0 away from the ball
-                        let target = ball_pos.xy()
+                        let mut target = ball_pos.xy()
                             + (player_data.position - ball_pos.xy()).normalize() * 650.0;
+
+                        if (target.y - world.field_geom.as_ref().unwrap().field_width / 2.0).abs()
+                            < 300.0
+                        {
+                            target.y = ball_pos.y + 650.0;
+                        } 
                         e.insert(Box::new(OtherPlayer::new(target)));
                     }
                 }

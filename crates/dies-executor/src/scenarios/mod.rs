@@ -30,30 +30,34 @@ fn empty_scenario() -> ScenarioSetup {
 }
 
 fn play() -> ScenarioSetup {
-    let mut strat = PlayStrategy::new(PlayerId::new(10));
-    // strat
-    //     .defense
-    //     .add_wallers(vec![PlayerId::new(2), PlayerId::new(1)]);
-    strat.attack.add_attacker(PlayerId::new(3));
-    // strat.attack.add_attacker(PlayerId::new(3));
-    let mut setup = ScenarioSetup::new(strat, StrategyGameStateMacther::Specific(GameState::Run));
+    let keeper = PlayerId::new(0);
+    let mut strat = PlayStrategy::new(keeper, PlayerId::new(4));
+    strat
+        .defense
+        .add_wallers(vec![PlayerId::new(2), PlayerId::new(1)]);
+    strat.attack.add_attacker(PlayerId::new(5));
+    // strat.attack.add_attacker(PlayerId::new(4));
+    let mut setup = ScenarioSetup::new(
+        strat,
+        StrategyGameStateMacther::any_of(vec![GameState::Run, GameState::Stop].as_slice()),
+    );
     setup.add_strategy(
         StrategyGameStateMacther::Specific(GameState::Halt),
         AdHocStrategy::new(),
     );
     setup.add_strategy(
         StrategyGameStateMacther::Specific(GameState::FreeKick),
-        FreeKickStrategy::new(None),
+        FreeKickStrategy::new(Some(keeper)),
     );
-    setup.add_strategy(
-        StrategyGameStateMacther::Specific(GameState::Stop),
-        StopStrategy::new(),
-    );
+    // setup.add_strategy(
+    //     StrategyGameStateMacther::Specific(GameState::Stop),
+    //     StopStrategy::new(),
+    // );
     setup.add_strategy(
         StrategyGameStateMacther::any_of(
             vec![GameState::Kickoff, GameState::PrepareKickoff].as_slice(),
         ),
-        KickoffStrategy::new(None),
+        KickoffStrategy::new(Some(keeper)),
     );
     setup
         .add_ball()

@@ -87,8 +87,26 @@ impl Attacker {
 
 impl Role for Attacker {
     fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
-        if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
+        let mut input = PlayerControlInput::new();
+        if ctx.world.current_game_state.game_state == GameState::Stop {
+            ctx.reset_skills();
             let mut input = PlayerControlInput::new();
+            input.with_speed_limit(1300.0);
+            input.avoid_ball = true;
+            if let Some(ball) = ctx.world.ball.as_ref() {
+                let ball_pos = ball.position.xy();
+                let dist = (ball_pos - ctx.player.position.xy()).norm();
+                if dist < 560.0 {
+                    // Move away from the ball
+                    let target =
+                        ball_pos.xy() + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
+                    input.with_position(target);
+                }
+            }
+            return input;
+        }
+
+        if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
 
             let ball_angle = Angle::between_points(ctx.player.position, ball.position.xy());
             let ball_pos = ball.position.xy();
@@ -120,6 +138,10 @@ impl Role for Attacker {
                     }
                 }
                 AttackerState::FetchingBall => loop {
+                    if ball.position.x < -3000.0 {
+                        break AttackerState::Positioning;
+                    }
+
                     match skill!(ctx, FetchBall::new()) {
                         crate::roles::SkillResult::Success => {
                             if is_pos_valid(ball_pos, geom) {
