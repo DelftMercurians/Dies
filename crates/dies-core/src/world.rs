@@ -407,24 +407,27 @@ impl WorldData {
 
     pub fn get_obstacles_for_player(&self, role: RoleType) -> Vec<Obstacle> {
         if let Some(field_geom) = &self.field_geom {
-            // let field_boundary = {
-            //     let hl = field_geom.field_length as f64 / 2.0;
-            //     let hw = field_geom.field_width as f64 / 2.0;
-            //     Obstacle::Rectangle {
-            //         min: Vector2::new(-hl, -hw),
-            //         max: Vector2::new(hl, hw),
-            //     }
-            // };
-            let mut obstacles = vec![];
+            let field_boundary = {
+                let hl = field_geom.field_length as f64 / 2.0;
+                let hw = field_geom.field_width as f64 / 2.0;
+                Obstacle::Rectangle {
+                    min: Vector2::new(
+                        -hl - field_geom.boundary_width,
+                        -hw - field_geom.boundary_width,
+                    ),
+                    max: Vector2::new(
+                        hl + field_geom.boundary_width,
+                        hw + field_geom.boundary_width,
+                    ),
+                }
+            };
+            let mut obstacles = vec![field_boundary];
 
             // Add own defence area for non-keeper robots
             if role != RoleType::Goalkeeper {
-                let lower = Vector2::new(
-                    -field_geom.field_length / 2.0,
-                    -field_geom.penalty_area_width / 2.0,
-                );
+                let lower = Vector2::new(-10_000.0, -field_geom.penalty_area_width / 2.0);
                 let upper = Vector2::new(
-                    -field_geom.field_length / 2.0 + field_geom.penalty_area_depth / 2.0,
+                    -field_geom.field_length / 2.0 + field_geom.penalty_area_depth + 50.0,
                     field_geom.penalty_area_width / 2.0,
                 );
 
@@ -437,13 +440,10 @@ impl WorldData {
 
             // Add opponent defence area for all robots
             let lower = Vector2::new(
-                field_geom.field_length / 2.0 - field_geom.penalty_area_depth / 2.0,
+                field_geom.field_length / 2.0 - field_geom.penalty_area_depth - 50.0,
                 -field_geom.penalty_area_width / 2.0,
             );
-            let upper = Vector2::new(
-                field_geom.field_length / 2.0,
-                field_geom.penalty_area_width / 2.0,
-            );
+            let upper = Vector2::new(10_0000.0, field_geom.penalty_area_width / 2.0);
             let defence_area = Obstacle::Rectangle {
                 min: lower,
                 max: upper,
