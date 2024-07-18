@@ -40,30 +40,31 @@ impl FreeAttacker {
         world: &WorldData,
     ) -> Angle {
         let mut dirs: Vec<Angle> = vec![];
-        let goaldir = Angle::between_points(ball_pos, Vector2::new(-4500.0, 0.0));
-        let our_goaldir = Angle::between_points(player.position, Vector2::new(4500.0, 0.0));
+        let goaldir = Angle::between_points(ball_pos, Vector2::new(4500.0, 0.0));
+        let our_goaldir = Angle::between_points(player.position, Vector2::new(-4500.0, 0.0));
+        Angle::between_points(player.position, Vector2::new(4500.0, 0.0))
 
-        dirs.push(goaldir);
-        for own_player in world.own_players.iter() {
-            if own_player.id == player.id {
-                continue;
-            }
-            dirs.push(Angle::between_points(player.position, own_player.position));
-        }
-        // find one that is closest to the current orientation
-        // give priority to shooting into general enemy goals direction
+        // dirs.push(goaldir);
+        // for own_player in world.own_players.iter() {
+        //     if own_player.id == player.id {
+        //         continue;
+        //     }
+        //     dirs.push(Angle::between_points(player.position, own_player.position));
+        // }
+        // // find one that is closest to the current orientation
+        // // give priority to shooting into general enemy goals direction
 
-        let mut target = Angle::from_radians(0.0);
-        let mut min_badness = player.yaw.radians().abs();
-        for dir in dirs {
-            let mut badness = (dir - player.yaw).radians().abs();
-            badness = badness - (dir - our_goaldir).radians().abs();
-            if badness < min_badness {
-                min_badness = badness;
-                target = dir;
-            }
-        }
-        target
+        // let mut target = Angle::from_radians(0.0);
+        // let mut min_badness = player.yaw.radians().abs();
+        // for dir in dirs {
+        //     let mut badness = (dir - player.yaw).radians().abs();
+        //     badness = badness - (dir - our_goaldir).radians().abs();
+        //     if badness < min_badness {
+        //         min_badness = badness;
+        //         target = dir;
+        //     }
+        // }
+        // target
     }
 }
 
@@ -137,10 +138,7 @@ impl Strategy for FreeKickStrategy {
                     let kicker_id = world
                         .own_players
                         .iter()
-                        .min_by_key(|p| {
-                            (ball.position.xy() - p.position).norm()
-                                as i64
-                        })
+                        .min_by_key(|p| (ball.position.xy() - p.position).norm() as i64)
                         .unwrap()
                         .id;
                     self.roles.insert(

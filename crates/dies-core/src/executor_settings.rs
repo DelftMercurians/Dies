@@ -63,10 +63,10 @@ impl FieldMask {
         if let Some(field_geom) = field_geom {
             let x = x as f64;
             let y = y as f64;
-            let x_min = field_geom.field_length / 2.0 * self.x_min;
-            let x_max = field_geom.field_length / 2.0 * self.x_max;
-            let y_min = field_geom.field_width / 2.0 * self.y_min;
-            let y_max = field_geom.field_width / 2.0 * self.y_max;
+            let x_min = (field_geom.field_length / 2.0 + field_geom.boundary_width) * self.x_min;
+            let x_max = (field_geom.field_length / 2.0 + field_geom.boundary_width) * self.x_max;
+            let y_min = (field_geom.field_width / 2.0 + field_geom.boundary_width) * self.y_min;
+            let y_max = (field_geom.field_width / 2.0 + field_geom.boundary_width) * self.y_max;
             x >= x_min && x <= x_max && y >= y_min && y <= y_max
         } else {
             false

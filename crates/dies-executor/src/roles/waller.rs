@@ -22,6 +22,7 @@ enum State {
 /// line, acting as a wall to block the ball from reaching the goal.
 pub struct Waller {
     state: State,
+    base_offset: f64,
     offset: f64,
 }
 
@@ -31,11 +32,20 @@ impl Waller {
         Self {
             state: State::Walling,
             offset,
+            base_offset: offset,
         }
     }
 
     pub fn fetch(&mut self) {
         // self.state = State::Shooting(())
+    }
+
+    pub fn goalie_shooting(&mut self, shooting: bool) {
+        if shooting {
+            self.offset = self.base_offset + 100.0 * self.base_offset.signum();
+        } else {
+            self.offset = self.base_offset;
+        }
     }
 
     /// Find the intersection point of the ball's path with the goal line and return the
