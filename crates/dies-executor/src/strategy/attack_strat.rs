@@ -147,16 +147,44 @@ impl PlayStrategy {
 
 impl Strategy for PlayStrategy {
     fn update(&mut self, ctx: StrategyCtx) {
-        for player in ctx.world.own_players.iter() {
-            if self.attack.attackers.iter().all(|(id, _)| *id != player.id) {
-                self.attack.add_attacker(player.id);
-            }
-        }
+        // let waller_ids = self
+        //     .defense
+        //     .wallers
+        //     .iter()
+        //     .map(|(id, _)| *id)
+        //     .collect::<Vec<_>>();
+        // let attacker_ids = self
+        //     .attack
+        //     .attackers
+        //     .iter()
+        //     .map(|(id, _)| *id)
+        //     .collect::<Vec<_>>();
+        // for player in ctx.world.own_players.iter() {
+        //     if player.id == self.defense.keeper_id
+        //         || waller_ids.contains(&player.id)
+        //         || attacker_ids.contains(&player.id)
+        //     {
+        //         continue;
+        //     }
+
+        //     if waller_ids.len() < 2 {
+        //         self.defense.add_wallers(player.id)
+        //     }player_ids
+        // }
 
         if let Some(ball) = ctx.world.ball.as_ref() {
             let ball_speed = ball.velocity.xy().norm();
             if ball_dist_to_closest_enemy(ctx.world) > 300.0
                 // && ball.position.x < 0.0
+                && ball_speed < 300.0
+                && !self.attack.we_have_ball()
+            {
+                self.attack.fetch_ball(&ctx);
+            }
+
+            if ball.position.x < -5000.0
+                // && ball.position.x < 0.0
+                && ball_speed < 300.0
                 && !self.attack.we_have_ball()
             {
                 self.attack.fetch_ball(&ctx);
@@ -191,6 +219,17 @@ fn ball_dist_to_closest_enemy(world: &WorldData) -> f64 {
     world
         .opp_players
         .iter()
+        .map(|p| (p.position - ball_pos).norm())
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(f64::MAX)
+}
+
+fn ball_dist_to_closest_waller(world: &WorldData, wallers: Vec<PlayerId>) -> f64 {
+    let ball_pos = world.ball.as_ref().unwrap().position.xy();
+    world
+        .own_players
+        .iter()
+        .filter(|p| wallers.contains(&p.id))
         .map(|p| (p.position - ball_pos).norm())
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or(f64::MAX)
