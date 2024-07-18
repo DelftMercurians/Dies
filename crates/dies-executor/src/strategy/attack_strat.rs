@@ -2,7 +2,8 @@ use dies_core::{PlayerId, WorldData};
 
 use crate::roles::{
     attacker::{Attacker, AttackerSection, AttackerState},
-    Role,
+    waller::Waller,
+    Goalkeeper, Role,
 };
 
 use super::{Strategy, StrategyCtx};
@@ -102,14 +103,22 @@ impl Attack {
     }
 }
 
+pub struct Defense {
+    keeper_id: PlayerId,
+    keeper: Goalkeeper,
+    wallers: Vec<(PlayerId, Waller)>,
+}
+
 pub struct PlayStrategy {
     attack: Attack,
+    defense: Defense,
 }
 
 impl PlayStrategy {
     pub fn new() -> Self {
         Self {
             attack: Attack::new(),
+            defense,
         }
     }
 }
@@ -123,19 +132,35 @@ impl Strategy for PlayStrategy {
         }
 
         if let Some(ball) = ctx.world.ball.as_ref() {
+            let ball_speed = ball.velocity.xy().norm();
             if ball_dist_to_closest_enemy(ctx.world) > 300.0
                 && ball.position.x < 0.0
                 && !self.attack.we_have_ball()
             {
                 self.attack.fetch_ball(&ctx);
             }
+
+            // if ball.position.x > 0.0
+            //     && ball_dist_to_closest_enemy(world) > 150.0
+            //     && ball_speed < 300.0
+            // {}
         }
 
         self.attack.update(ctx);
     }
 
     fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
-        self.attack.get_role(player_id)
+        self.attack.get_role(player_id).or_else(|| {
+            if player_id == self.defense.keeper_id {
+                Some(&mut self.defense.keeper)
+            } else {
+                self.defense
+                    .wallers
+                    .iter_mut()
+                    .find_map(|(id, role)| if *id == player_id { Some(role) } else { None })
+                    .map(|role| role as &mut dyn Role)
+            }
+        })
     }
 }
 

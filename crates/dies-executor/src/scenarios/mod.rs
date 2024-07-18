@@ -141,11 +141,13 @@ fn one_harasser_one_player_one_ball() -> ScenarioSetup {
 
 fn need_to_cross_the_goal_area() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(Waller::new(0.0)));
+    strategy.add_role(Box::new(Waller::new(-70.0)));
+    strategy.add_role(Box::new(Waller::new(70.0)));
     let mut scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
     scenario
         .add_ball_at(Vector2::new(-4300.0, 3000.0))
-        .add_own_player_at(Vector2::new(-4000.0, -2000.0));
+        .add_own_player_at(Vector2::new(-4000.0, -2000.0))
+        .add_own_player_at(Vector2::new(4000.0, -2000.0));
 
     scenario
 }
