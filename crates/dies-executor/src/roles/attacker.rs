@@ -9,7 +9,9 @@ use crate::{
     },
     skill, KickerControlInput, PlayerControlInput,
 };
-use dies_core::{Angle, BallData, FieldGeometry, PlayerId, Vector2, WorldData, PlayerData, GameState};
+use dies_core::{
+    Angle, BallData, FieldGeometry, GameState, PlayerData, PlayerId, Vector2, WorldData,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttackerSection {
@@ -73,6 +75,10 @@ impl Attacker {
         self.next_state = Some(AttackerState::FetchingBall);
     }
 
+    pub fn start_positioning(&mut self) {
+        self.next_state = Some(AttackerState::Positioning);
+    }
+
     pub fn has_ball(&self) -> bool {
         matches!(
             self.state,
@@ -107,11 +113,14 @@ impl Role for Attacker {
         }
 
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
-
             let ball_angle = Angle::between_points(ctx.player.position, ball.position.xy());
             let ball_pos = ball.position.xy();
             let ball_dist = distance(ctx.player.position, ball_pos);
             let ball_speed = ball.velocity.norm();
+            let goal_pos = Vector2::new(
+                4500.0,
+                f64::max(f64::min(ctx.player.position.y, 400.0), -400.0),
+            );
 
             if let Some(next_state) = self.next_state.take() {
                 self.state = next_state;
@@ -163,7 +172,16 @@ impl Role for Attacker {
                     if distance(starting_pos, ctx.player.position) > 600.0 {
                         println!("Dribbling too far, passing");
                         if let Some(receiver) = best_receiver {
-                            if best_score > 50.0 {
+                            if score_line_of_sight(
+                                &ctx.world,
+                                ctx.player.position,
+                                goal_pos,
+                                geom,
+                                &ctx.player,
+                            ) > 100.0
+                            {
+                                AttackerState::Shooting
+                            } else if best_score > 50.0 {
                                 AttackerState::Passing(receiver)
                             } else if ctx.player.position.x > 1000.0 {
                                 AttackerState::Shooting
@@ -216,7 +234,7 @@ impl Role for Attacker {
                             ctx,
                             Face::towards_position(Vector2::new(
                                 4500.0,
-                                f64::max(f64::min(ctx.player.position.y, 300.0), -300.0)
+                                f64::max(f64::min(ctx.player.position.y, 400.0), -400.0)
                             ))
                             .with_ball()
                         ) {
@@ -320,14 +338,14 @@ fn find_best_striker_position(
                     .map(|b| b.position.xy())
                     .unwrap_or_default(),
                 field,
-                player
+                player,
             );
             let goal_score = score_line_of_sight(
                 world,
                 position,
                 Vector2::new(field.field_length / 2.0, 0.0),
                 field,
-                player
+                player,
             );
             let goal_dist_score =
                 1.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
@@ -347,7 +365,7 @@ fn find_best_passer_position(
     max_radius: f64,
     world: &WorldData,
     field: &FieldGeometry,
-    player: &PlayerData
+    player: &PlayerData,
 ) -> (Vector2, Option<PlayerId>, f64) {
     let mut best_position = Vector2::new(0.0, 0.0);
     let mut best_score = 0.0;
@@ -385,7 +403,7 @@ fn find_best_passer_position(
                 position,
                 Vector2::new(field.field_length / 2.0, 0.0),
                 field,
-                player
+                player,
             );
             if let Some((striker_id, score)) = striker_score {
                 let score = score + goal_score;
@@ -433,7 +451,10 @@ fn score_line_of_sight(
     if to.x > 3800.0 {
         min_distance = 0.0;
     }
-    min_distance - (from.y.abs() / 4.0).max(40.0) - (from.x.abs() / 4.0).max(40.0) - (player.position - from).magnitude()
+    min_distance
+        - (from.y.abs() / 4.0).max(40.0)
+        - (from.x.abs() / 4.0).max(40.0)
+        - (player.position - from).magnitude()
 }
 
 fn distance_to_line(a: Vector2, b: Vector2, p: Vector2) -> f64 {

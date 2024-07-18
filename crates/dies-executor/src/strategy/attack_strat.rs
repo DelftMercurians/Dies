@@ -57,8 +57,13 @@ impl Attack {
 
     fn fetch_ball(&mut self, ctx: &StrategyCtx) {
         if self.we_fetching_ball() {
-            return;
+            for attacker in self.attackers.iter_mut() {
+                if !attacker.1.fetching_ball() {
+                    attacker.1.start_positioning();
+                }
+            }
         }
+
         // find closest player to the ball
         if let Some(ball) = ctx.world.ball.as_ref() {
             let attacker_ids = self.attackers.iter().map(|(id, _)| *id).collect::<Vec<_>>();
@@ -187,9 +192,20 @@ impl Strategy for PlayStrategy {
         self.defense
             .wallers
             .iter_mut()
-            .for_each(|w| w.1.goalie_shooting(self.defense.keeper.kicking_to));
+            .for_each(|w| w.1.goalie_shooting(self.defense.keeper.kicking_to.is_some()));
 
         if let Some(ball) = ctx.world.ball.as_ref() {
+            if let Some(id) = self.defense.keeper.kicking_to {
+                if let Some((_, attacker)) = self
+                    .attack
+                    .attackers
+                    .iter_mut()
+                    .find(|(i, _)| *i == id)
+                {
+                    attacker.receive();
+                }
+            }
+
             let ball_speed = ball.velocity.xy().norm();
             if ball_dist_to_closest_enemy(ctx.world) > 300.0
                 // && ball.position.x < 0.0
@@ -211,7 +227,7 @@ impl Strategy for PlayStrategy {
             //     && ball_dist_to_closest_enemy(world) > 150.0
             //     && ball_speed < 300.0
             // {}
-    }
+        }
 
         self.attack.update(ctx);
     }

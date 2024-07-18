@@ -73,6 +73,50 @@ fn play() -> ScenarioSetup {
     setup
 }
 
+fn play_test() -> ScenarioSetup {
+    let keeper = PlayerId::new(0);
+    let mut strat = PlayStrategy::new(keeper, PlayerId::new(4));
+    strat
+        .defense
+        .add_wallers(vec![PlayerId::new(2), PlayerId::new(1)]);
+    strat.attack.add_attacker(PlayerId::new(3));
+    // strat.attack.add_attacker(PlayerId::new(5));
+
+    let mut setup = ScenarioSetup::new(
+        strat,
+        StrategyGameStateMacther::any_of(vec![GameState::Run, GameState::Stop].as_slice()),
+    );
+    setup.add_strategy(
+        StrategyGameStateMacther::Specific(GameState::Halt),
+        AdHocStrategy::new(),
+    );
+    setup.add_strategy(
+        StrategyGameStateMacther::Specific(GameState::FreeKick),
+        FreeKickStrategy::new(Some(keeper)),
+    );
+    setup.add_strategy(
+        StrategyGameStateMacther::Specific(GameState::BallReplacement(Vector2::zeros())),
+        StopStrategy::new(),
+    );
+    setup.add_strategy(
+        StrategyGameStateMacther::any_of(
+            vec![GameState::Kickoff, GameState::PrepareKickoff].as_slice(),
+        ),
+        KickoffStrategy::new(Some(keeper)),
+    );
+    setup
+        .add_ball()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player()
+        .add_opp_player_at(Vector2::new(1000.0, 1000.0))
+        .add_opp_player_at(Vector2::new(4500.0, 0.0))
+        .add_opp_player_at(Vector2::new(1000.0, -1000.0));
+    setup
+}
+
 fn goalie_test() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(Goalkeeper::new()));
@@ -293,6 +337,7 @@ impl Serialize for ScenarioType {
 scenarios! {
     play,
     empty_scenario,
+    play_test,
     goalie_test,
     kick_pass,
     need_to_cross_the_goal_area,

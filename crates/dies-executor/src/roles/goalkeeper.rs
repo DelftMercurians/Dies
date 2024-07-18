@@ -13,14 +13,14 @@ use crate::{invoke_skill, skill, PlayerControlInput};
 const KEEPER_X_OFFSET: f64 = 250.0;
 
 pub struct Goalkeeper {
-    pub kicking_to: bool,
+    pub kicking_to: Option<PlayerId>,
     pub defenders: Vec<PlayerId>,
 }
 
 impl Goalkeeper {
     pub fn new() -> Self {
         Self {
-            kicking_to: false,
+            kicking_to: None,
             defenders: Vec::new(),
         }
     }
@@ -89,12 +89,23 @@ impl Role for Goalkeeper {
                 && ball_pos.y.abs() < field_geom.penalty_area_width / 2.0;
             let ball_vel = ball.velocity.xy().norm();
 
-            if !ball_in_defence || ball_vel > 100.0 {
-                if self.kicking_to {
-                    self.kicking_to = false;
-                    ctx.reset_skills();
-                }
+            if self.kicking_to.is_none() && ball_in_defence && ball_vel < 100.0 {
+                self.kicking_to = Some(
+                    find_best_angle(
+                        ctx.player.id,
+                        ctx.player.position,
+                        ctx.world,
+                        &self.defenders,
+                    )
+                    .unwrap_or(ctx.world.own_players[0].id),
+                );
+                ctx.reset_skills();
+            } else if self.kicking_to.is_some() && !ball_in_defence {
+                self.kicking_to = None;
+                ctx.reset_skills();
+            }
 
+            if self.kicking_to.is_none() {
                 let ball_pos = ball.position.xy() + ball.velocity.xy() * 0.3;
                 let delta = f64::max(f64::min(ctx.player.position.y.abs() / 5.0, 150.0), 0.0);
                 goalkeeper_x = goalkeeper_x - delta;
@@ -126,35 +137,11 @@ impl Role for Goalkeeper {
                 let factor = 1.0 - f64::min(f64::max((ball_pos.x + 2000.0) / 5000.0, 0.0), 1.0);
                 target.y = target.y * factor;
                 input.with_position(target);
-            } else {
-                self.kicking_to = true;
-                skill!(
-                    ctx,
-                    FetchBallWithHeading::towards_own_player(
-                        find_best_angle(
-                            ctx.player.id,
-                            ctx.player.position,
-                            ctx.world,
-                            &self.defenders
-                        )
-                        .unwrap_or(ctx.world.own_players[0].id)
-                    )
-                );
+            } else if let Some(kicking_to) = self.kicking_to {
+                skill!(ctx, FetchBallWithHeading::towards_own_player(kicking_to));
                 loop {
                     skill!(ctx, ApproachBall::new());
-                    match invoke_skill!(
-                        ctx,
-                        Face::towards_own_player(
-                            find_best_angle(
-                                ctx.player.id,
-                                ctx.player.position,
-                                ctx.world,
-                                &self.defenders
-                            )
-                            .unwrap_or(ctx.world.own_players[0].id)
-                        )
-                        .with_ball()
-                    ) {
+                    match invoke_skill!(ctx, Face::towards_own_player(kicking_to).with_ball()) {
                         crate::roles::SkillProgress::Continue(mut input) => {
                             input.with_dribbling(1.0);
                             return input;

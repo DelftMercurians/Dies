@@ -28,7 +28,7 @@ pub struct GameStateTracker {
 impl GameStateTracker {
     pub fn new(initial_play_dir_x: f64) -> GameStateTracker {
         GameStateTracker {
-            game_state: GameState::Unknown,
+            game_state: GameState::Halt,
             prev_state: GameState::Unknown,
             new_state_movement: GameState::Unknown,
             new_state_timeout: GameState::Unknown,

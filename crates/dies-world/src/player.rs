@@ -10,7 +10,7 @@ use dies_core::{to_dies_coords2, to_dies_yaw};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
 
-const BREAKBEAM_WINDOW: usize = 400;
+const BREAKBEAM_WINDOW: usize = 150;
 const BREAKBEAM_DETECTION_THRESHOLD: usize = 0;
 const OFF_FIELD_TIMEOUT: f64 = 2.0;
 

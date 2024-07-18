@@ -12,7 +12,7 @@
     "angle_cutoff_distance": 0.03490658503988659
   },
   "tracker_settings": {
-    "is_blue": true,
+    "is_blue": false,
     "initial_opp_goal_x": 1.0,
     "field_mask": {
       "x_min": -1.0,
