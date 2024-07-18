@@ -19,7 +19,7 @@ impl Attack {
         }
     }
 
-    fn add_attacker(&mut self, player_id: PlayerId) {
+    pub fn add_attacker(&mut self, player_id: PlayerId) {
         let sections = self
             .attackers
             .iter()
@@ -132,8 +132,8 @@ impl Defense {
 }
 
 pub struct PlayStrategy {
-    attack: Attack,
-    defense: Defense,
+    pub attack: Attack,
+    pub defense: Defense,
 }
 
 impl PlayStrategy {

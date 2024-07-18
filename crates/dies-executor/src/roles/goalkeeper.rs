@@ -4,7 +4,7 @@ use nalgebra::Vector2;
 use crate::roles::{Role, RoleCtx};
 use crate::PlayerControlInput;
 
-const KEEPER_X_OFFSET: f64 = 350.0;
+const KEEPER_X_OFFSET: f64 = 250.0;
 
 pub struct Goalkeeper {}
 
