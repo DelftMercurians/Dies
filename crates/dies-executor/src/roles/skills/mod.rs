@@ -110,12 +110,6 @@ impl Face {
         }
     }
 
-    pub fn towards_opp_player(id: PlayerId) -> Self {
-        Self {
-            heading: HeadingTarget::OppPlayer(id),
-        }
-    }
-
     pub fn towards_ball() -> Self {
         Self {
             heading: HeadingTarget::Ball,
@@ -435,9 +429,6 @@ impl Skill for ApproachBall {
             let max_relative_speed = 800.0;
             let dribbling_distance = 1000.0;
 
-            let angle = Angle::between_points(player_pos, ball_pos);
-            input.with_yaw(angle);
-
             input.velocity = Velocity::global(
                 (ball_speed * 0.8 + distance * (max_relative_speed / dribbling_distance))
                     * (ball_pos - player_pos).normalize(),
@@ -456,7 +447,6 @@ enum HeadingTarget {
     Ball,
     Position(Vector2),
     OwnPlayer(PlayerId),
-    OppPlayer(PlayerId),
 }
 
 impl HeadingTarget {
@@ -475,13 +465,6 @@ impl HeadingTarget {
             }
             HeadingTarget::Position(pos) => Some(Angle::between_points(ctx.player.position, *pos)),
             HeadingTarget::OwnPlayer(id) => {
-                if let Some(player) = ctx.world.get_player(*id) {
-                    Some(Angle::between_points(ctx.player.position, player.position))
-                } else {
-                    None
-                }
-            }
-            HeadingTarget::OppPlayer(id) => {
                 if let Some(player) = ctx.world.get_player(*id) {
                     Some(Angle::between_points(ctx.player.position, player.position))
                 } else {
@@ -516,13 +499,6 @@ impl FetchBallWithHeading {
         Self {
             init_ball_pos: None,
             target_heading: HeadingTarget::OwnPlayer(id),
-        }
-    }
-
-    pub fn towards_opp_player(id: PlayerId) -> Self {
-        Self {
-            init_ball_pos: None,
-            target_heading: HeadingTarget::OppPlayer(id),
         }
     }
 }

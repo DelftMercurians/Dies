@@ -10,3 +10,4 @@ dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 serde = { version = "1.0.192", features = ["derive"] }
 rapier3d-f64 = { version = "0.18.0", features = ["enhanced-determinism"] }
+rand = "0.8.5"

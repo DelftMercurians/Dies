@@ -8,12 +8,12 @@
     "position_kp": 1000000.0,
     "position_proportional_time_window": 1.2,
     "position_cutoff_distance": 70.0,
-    "angle_kp": 2.8,
+    "angle_kp": 0.9,
     "angle_cutoff_distance": 0.03490658503988659
   },
   "tracker_settings": {
     "is_blue": true,
-    "initial_opp_goal_x": -1.0,
+    "initial_opp_goal_x": 1.0,
     "field_mask": {
       "x_min": -1.0,
       "x_max": 1.0,

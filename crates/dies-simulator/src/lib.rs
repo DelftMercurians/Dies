@@ -92,7 +92,7 @@ impl Default for SimulationConfig {
             kicker_strength: 300000.0,
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
-            command_delay: 10.0 / 1000.0,
+            command_delay: 30.0 / 1000.0,
             max_accel: 105000.0,
             max_vel: 2000.0,
             max_ang_accel: 50.0 * 720.0f64.to_radians(),
@@ -386,7 +386,7 @@ impl Simulation {
             if send_feedback {
                 let mut feedback = PlayerFeedbackMsg::empty(player.id);
                 feedback.breakbeam_ball_detected = Some(player.breakbeam);
-                feedback.kicker_status = Some(SysStatus::Armed);
+                feedback.kicker_status = Some(SysStatus::Ready);
                 feedback.imu_status = if self.config.has_imu {
                     Some(SysStatus::Ready)
                 } else {
@@ -541,7 +541,18 @@ impl Simulation {
         for player in self.players.iter() {
             let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
             let position = rigid_body.position().translation.vector;
+            // Add high frequency noise to the position
+            // let position = position
+            //     + Vector::new(
+            //         (rand::random::<f64>() - 0.5) * 5.0,
+            //         (rand::random::<f64>() - 0.5) * 5.0,
+            //         0.0,
+            //     );
+
             let yaw = rigid_body.rotation().euler_angles().2;
+            // Add high frequency noise to the yaw
+            // let yaw = yaw + ((rand::random::<f64>() - 0.5) * 4f64).to_radians();
+
             let mut robot = SSL_DetectionRobot::new();
             robot.set_robot_id(player.id.as_u32());
             robot.set_x(position.x as f32);

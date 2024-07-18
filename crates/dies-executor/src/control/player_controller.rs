@@ -191,8 +191,6 @@ impl PlayerController {
         self.frame_misses += 1;
         if self.frame_misses > MISSING_FRAMES_THRESHOLD {
             log::warn!("Player {} has missing frames, stopping", self.id);
-            self.target_velocity = Vector2::new(0.0, 0.0);
-            self.target_z = 0.0;
         }
     }
 
@@ -206,10 +204,10 @@ impl PlayerController {
         is_manual_override: bool,
         all_players: &[&PlayerData],
     ) {
-        self.have_imu = matches!(
-            state.imu_status,
-            Some(SysStatus::Ok) | Some(SysStatus::Ready)
-        );
+        self.have_imu = false; // matches!(
+                               //     state.imu_status,
+                               //     Some(SysStatus::Ok) | Some(SysStatus::Ready)
+                               // );
 
         if is_about_to_collide(state, world, 3.0 * dt) {
             dies_core::debug_string(format!("p{}.collision", self.id), "true");
@@ -308,7 +306,7 @@ impl PlayerController {
                     input
                         .angular_acceleration_limit
                         .unwrap_or(self.max_angular_acceleration),
-                    input.care,
+                    // input.care,
                 );
                 self.target_z = head_u;
             }

@@ -722,6 +722,7 @@ version = "0.1.0"
 dependencies = [
  "dies-core",
  "dies-protos",
+ "rand",
  "rapier3d-f64",
  "serde",
 ]

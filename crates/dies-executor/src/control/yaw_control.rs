@@ -26,7 +26,6 @@ impl YawController {
         dt: f64,
         max_angular_velocity: f64,
         max_angular_acceleration: f64,
-        carefullness: f64,
     ) -> f64 {
         if let Some(target_yaw) = self.target_yaw {
             let error = target_yaw - current_yaw;
@@ -37,14 +36,12 @@ impl YawController {
             }
 
             // Calculate the desired angular velocity
-            let desired_angular_velocity = self.kp * error.radians() * (1.0 - carefullness * 0.8) + error.radians().signum() * 0.1;
+            let desired_angular_velocity = self.kp * error.radians();
 
             // Limit the desired angular velocity and acceleration
             let acceleration = (desired_angular_velocity - current_angular_velocity) / dt;
-            let acceleration = acceleration.clamp(
-                -max_angular_acceleration,
-                max_angular_acceleration,
-            );
+            let acceleration =
+                acceleration.clamp(-max_angular_acceleration, max_angular_acceleration);
 
             (current_angular_velocity + acceleration * dt)
                 .clamp(-max_angular_velocity, max_angular_velocity)
