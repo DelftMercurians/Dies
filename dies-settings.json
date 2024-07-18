@@ -8,7 +8,7 @@
     "position_kp": 1000000.0,
     "position_proportional_time_window": 1.2,
     "position_cutoff_distance": 70.0,
-    "angle_kp": 0.9,
+    "angle_kp": 2.8,
     "angle_cutoff_distance": 0.03490658503988659
   },
   "tracker_settings": {

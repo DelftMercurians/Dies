@@ -459,6 +459,7 @@ impl Simulation {
                 };
                 rigid_body.set_rotation(Rotation::from_euler_angles(0.0, 0.0, new_yaw), true);
             } else {
+                println!("Player: {:?}, target_z: {:?}", player.id, player.target_z);
                 let target_ang_vel = player.target_z;
                 let new_ang_vel =
                     target_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);

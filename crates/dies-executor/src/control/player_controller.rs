@@ -140,7 +140,7 @@ impl PlayerController {
 
         // Priority list: 1. Kick, 2. Switch heading, 3. Anything else
         let robot_cmd = match (self.kicker, self.switch_heading) {
-            (_, Some(heading)) => {
+            (_, Some(heading)) if self.have_imu => {
                 self.switch_heading = None;
                 if heading {
                     RobotCmd::HeadingControl
@@ -153,7 +153,7 @@ impl PlayerController {
                 RobotCmd::Kick
             }
             (KickerState::Arming, None) => RobotCmd::Arm,
-            (KickerState::Disarming, None) => RobotCmd::Arm,
+            _ => RobotCmd::Arm,
         };
 
         let target_velocity = to_dies_yaw(self.last_yaw, self.opp_goal_sign)
