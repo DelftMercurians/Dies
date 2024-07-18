@@ -29,18 +29,27 @@ fn empty_scenario() -> ScenarioSetup {
 }
 
 fn play() -> ScenarioSetup {
+    let mut strat = PlayStrategy::new(PlayerId::new(0));
+    strat.defense.add_wallers(vec![PlayerId::new(4), PlayerId::new(2)]);
+    strat.attack.add_attacker(PlayerId::new(5));
+    // strat.attack.add_attacker(PlayerId::new(3));
     let mut setup = ScenarioSetup::new(
-        PlayStrategy::new(PlayerId::new(4)),
-        StrategyGameStateMacther::Any,
+        strat,
+        StrategyGameStateMacther::Specific(GameState::Run),
     );
-    // setup.add_strategy(
-    //     StrategyGameStateMacther::Specific(GameState::FreeKick),
-    //     FreeKickStrategy::new(None),
-    // );
-    // setup.add_strategy(
-    //     StrategyGameStateMacther::Specific(GameState::Kickoff),
-    //     KickoffStrategy::new(None),
-    // );
+    setup.add_strategy(StrategyGameStateMacther::Specific(GameState::Halt), AdHocStrategy::new());
+    setup.add_strategy(
+        StrategyGameStateMacther::Specific(GameState::FreeKick),
+        FreeKickStrategy::new(None),
+    );
+    setup.add_strategy(
+        StrategyGameStateMacther::Specific(GameState::Stop),
+        AdHocStrategy::new(),
+    );
+    setup.add_strategy(
+        StrategyGameStateMacther::any_of(vec![GameState::Kickoff, GameState::PrepareKickoff].as_slice()),
+        KickoffStrategy::new(None),
+    );
     setup
         .add_ball()
         .add_own_player()
@@ -259,6 +268,7 @@ impl<'de> Deserialize<'de> for ScenarioType {
     }
 }
 
+
 impl Serialize for ScenarioType {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -269,6 +279,7 @@ impl Serialize for ScenarioType {
 }
 // **NOTE**: Add new scenarios here.
 scenarios! {
+    play,
     empty_scenario,
     goalie_test,
     kick_pass,

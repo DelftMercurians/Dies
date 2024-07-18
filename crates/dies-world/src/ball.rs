@@ -96,7 +96,7 @@ impl BallTracker {
         let mut ball_measurements = frame
             .balls
             .iter()
-            .filter(|ball| field_mask.contains(ball.x(), ball.y(), field_geom))
+            // .filter(|ball| field_mask.contains(ball.x(), ball.y(), field_geom))
             .filter(|ball| !ball.has_confidence() || ball.confidence() > 0.6)
             .map(|ball| {
                 (
