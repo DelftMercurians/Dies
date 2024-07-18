@@ -400,7 +400,7 @@ export const useKeyboardControl = ({
             },
           },
         } satisfies UiCommand;
-        sendCommand(command as UiCommand);
+        // sendCommand(command as UiCommand);
       }
       if (kickRef.current) {
         console.log("kick");
@@ -417,7 +417,7 @@ export const useKeyboardControl = ({
             },
           },
         } satisfies UiCommand;
-        sendCommand(command as UiCommand);
+        // sendCommand(command as UiCommand);
       }
     }, 1000 / 30);
 

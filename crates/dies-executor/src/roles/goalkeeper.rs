@@ -34,9 +34,12 @@ impl Role for Goalkeeper {
     fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
         if let (Some(ball), Some(field_geom)) =
-            (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref())
+        (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref())
         {
+            let defence_width = 1.3 * (field_geom.goal_width / 2.0);
+            let ball_pos = ball.position.xy();
             let mut goalkeeper_x = -field_geom.field_length / 2.0 + KEEPER_X_OFFSET;
+            let fallback_y = ball_pos.y.min(defence_width).max(-defence_width);
 
             if ctx.world.current_game_state.game_state == GameState::Stop {
                 ctx.reset_skills();
@@ -54,8 +57,6 @@ impl Role for Goalkeeper {
                     }
                 }
 
-                let ball_pos = ball.position.xy();
-                let defence_width = 1.3 * (field_geom.goal_width / 2.0);
                 let mut target = if ball_pos.x < 0.0 && ball.velocity.x < 0.0 {
                     let mut out = find_intersection(
                         Vector2::new(goalkeeper_x, 0.0),
@@ -72,7 +73,7 @@ impl Role for Goalkeeper {
                         .max(ball.position.y - limit);
                     out
                 } else {
-                    Vector2::new(goalkeeper_x, ball_pos.y)
+                    Vector2::new(goalkeeper_x, fallback_y)
                 };
                 target.y = target.y.max(-defence_width).min(defence_width);
                 // we want to bring the point closer to center based on the ball x position
@@ -130,7 +131,7 @@ impl Role for Goalkeeper {
                         .max(ball.position.y - limit);
                     out
                 } else {
-                    Vector2::new(goalkeeper_x, ball_pos.y)
+                    Vector2::new(goalkeeper_x, fallback_y)
                 };
                 target.y = target.y.max(-defence_width).min(defence_width);
                 // we want to bring the point closer to center based on the ball x position
