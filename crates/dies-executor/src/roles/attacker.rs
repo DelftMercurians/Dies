@@ -121,7 +121,12 @@ impl Role for Attacker {
                 }
                 AttackerState::FetchingBall => loop {
                     match skill!(ctx, FetchBall::new()) {
-                        crate::roles::SkillResult::Success => break AttackerState::Dribbling,
+                        crate::roles::SkillResult::Success => {
+                            if is_pos_valid(ball_pos, geom) {
+                                break AttackerState::Dribbling
+                            }
+                            else {}
+                        },
                         _ => {}
                     }
                     // if ball_dist > 1000.0 {
@@ -132,8 +137,8 @@ impl Role for Attacker {
                     let starting_pos = *self.dribbling_start.get_or_insert(ctx.player.position);
 
                     let (best_pos, best_receiver, best_score) =
-                        find_best_passer_position(starting_pos, 1000.0, ctx.world, geom);
-                    if distance(starting_pos, ctx.player.position) > 900.0 {
+                        find_best_passer_position(starting_pos, 700.0, ctx.world, geom);
+                    if distance(starting_pos, ctx.player.position) > 500.0 {
                         println!("Dribbling too far, passing");
                         if let Some(receiver) = best_receiver {
                             if best_score > 50.0 {
@@ -185,7 +190,10 @@ impl Role for Attacker {
                         println!("Lost ball, fetching");
                         AttackerState::FetchingBall
                     } else {
-                        match invoke_skill!(ctx, Face::towards_position(Vector2::new(4500.0, 0.0)))
+                        match invoke_skill!(ctx, Face::towards_position(Vector2::new(
+                                    4500.0,
+                                    f64::max(f64::min(ctx.player.position.y.abs(), 400.0), -400.0)))
+                            )
                         {
                             crate::roles::SkillProgress::Continue(mut input) => {
                                 input.with_dribbling(1.0);

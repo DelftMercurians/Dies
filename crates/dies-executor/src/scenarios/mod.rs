@@ -30,8 +30,8 @@ fn empty_scenario() -> ScenarioSetup {
 
 fn play() -> ScenarioSetup {
     let mut strat = PlayStrategy::new(PlayerId::new(0));
-    strat.defense.add_wallers(vec![PlayerId::new(4), PlayerId::new(2)]);
-    strat.attack.add_attacker(PlayerId::new(5));
+    strat.defense.add_wallers(vec![PlayerId::new(2), PlayerId::new(1)]);
+    strat.attack.add_attacker(PlayerId::new(3));
     // strat.attack.add_attacker(PlayerId::new(3));
     let mut setup = ScenarioSetup::new(
         strat,
@@ -52,6 +52,7 @@ fn play() -> ScenarioSetup {
     );
     setup
         .add_ball()
+        .add_own_player()
         .add_own_player()
         .add_own_player()
         .add_own_player()

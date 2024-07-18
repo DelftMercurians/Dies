@@ -309,7 +309,7 @@ impl PlayerController {
                     input
                         .angular_acceleration_limit
                         .unwrap_or(self.max_angular_acceleration),
-                    // input.care,
+                    input.care,
                 );
                 self.target_z = head_u;
             }

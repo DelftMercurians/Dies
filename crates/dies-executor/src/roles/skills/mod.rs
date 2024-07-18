@@ -132,6 +132,7 @@ impl Skill for Face {
         };
 
         input.with_yaw(heading);
+        input.with_care(1.0);
 
         if (ctx.player.yaw - heading).abs() < 3f64.to_radians() {
             return SkillProgress::success();

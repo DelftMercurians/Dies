@@ -85,7 +85,7 @@ impl MTP {
         //     return -velocity + dv.cap_magnitude(self.max_decel * dt);
         // }
 
-        let care_factor = carefullness * 0.7;
+        let care_factor = carefullness * 0.2;
         let time_to_target = distance / max_speed;
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control

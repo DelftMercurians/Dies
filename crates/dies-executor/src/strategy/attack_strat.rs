@@ -71,11 +71,10 @@ impl Attack {
                     let player_pos = player.position;
                     let diff = player_pos - ball_pos;
                     diff.norm_squared() as i64
-                })
-                .map(|player| player.id);
-            if let Some(player_id) = closest_player {
+                });
+            if let Some(active_attacker) = closest_player {
                 if let Some((_, attacker)) =
-                    self.attackers.iter_mut().find(|(id, _)| *id == player_id)
+                    self.attackers.iter_mut().find(|(id, _)| *id == active_attacker.id)
                 {
                     attacker.receive();
                 }

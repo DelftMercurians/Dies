@@ -3,7 +3,7 @@
     "max_acceleration": 125000.0,
     "max_velocity": 10000.0,
     "max_deceleration": 27610.0,
-    "max_angular_velocity": 25.132741228718345,
+    "max_angular_velocity": 5.0,
     "max_angular_acceleration": 349.0658503988659,
     "position_kp": 1.9,
     "position_proportional_time_window": 2.2,

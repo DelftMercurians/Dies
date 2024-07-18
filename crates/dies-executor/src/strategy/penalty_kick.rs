@@ -85,7 +85,6 @@ impl Role for Attacker {
                         .with_position(ball_pos.xy())
                         .with_yaw(target)
                         .with_dribbling(1.0)
-                        .with_care(1.0)
                         .clone(),
                 );
             }
