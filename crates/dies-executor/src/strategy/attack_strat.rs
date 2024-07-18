@@ -2,6 +2,7 @@ use dies_core::{PlayerId, WorldData};
 
 use crate::roles::{
     attacker::{Attacker, AttackerSection, AttackerState},
+    harasser::Harasser,
     waller::Waller,
     Goalkeeper, Role,
 };
@@ -108,14 +109,18 @@ pub struct Defense {
     keeper_id: PlayerId,
     keeper: Goalkeeper,
     wallers: Vec<(PlayerId, Waller)>,
+    harasser: Harasser,
+    harasser_id: PlayerId,
 }
 
 impl Defense {
-    pub fn new(keeper_id: PlayerId) -> Self {
+    pub fn new(keeper_id: PlayerId, harrasser: PlayerId) -> Self {
         Self {
             keeper_id,
             keeper: Goalkeeper::new(),
             wallers: Vec::new(),
+            harasser_id: harrasser,
+            harasser: Harasser::new(70.0),
         }
     }
 
@@ -141,10 +146,10 @@ pub struct PlayStrategy {
 }
 
 impl PlayStrategy {
-    pub fn new(keeper_id: PlayerId) -> Self {
+    pub fn new(keeper_id: PlayerId, harasser: PlayerId) -> Self {
         Self {
             attack: Attack::new(),
-            defense: Defense::new(keeper_id),
+            defense: Defense::new(keeper_id, harasser),
         }
     }
 }
@@ -183,7 +188,7 @@ impl Strategy for PlayStrategy {
         self.defense
             .wallers
             .iter_mut()
-            .for_each(|w| w.1.goalie_shooting(self.defense.keeper.is_kicking));
+            .for_each(|w| w.1.goalie_shooting(self.defense.keeper.kicking_to));
 
         if let Some(ball) = ctx.world.ball.as_ref() {
             let ball_speed = ball.velocity.xy().norm();
@@ -207,7 +212,7 @@ impl Strategy for PlayStrategy {
             //     && ball_dist_to_closest_enemy(world) > 150.0
             //     && ball_speed < 300.0
             // {}
-        }
+    }
 
         self.attack.update(ctx);
     }
@@ -217,11 +222,15 @@ impl Strategy for PlayStrategy {
             if player_id == self.defense.keeper_id {
                 Some(&mut self.defense.keeper)
             } else {
-                self.defense
-                    .wallers
-                    .iter_mut()
-                    .find_map(|(id, role)| if *id == player_id { Some(role) } else { None })
-                    .map(|role| role as &mut dyn Role)
+                if self.defense.harasser_id == player_id {
+                    Some(&mut self.defense.harasser)
+                } else {
+                    self.defense
+                        .wallers
+                        .iter_mut()
+                        .find_map(|(id, role)| if *id == player_id { Some(role) } else { None })
+                        .map(|role| role as &mut dyn Role)
+                }
             }
         })
     }
