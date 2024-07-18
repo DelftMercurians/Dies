@@ -13,12 +13,20 @@ use crate::{invoke_skill, skill, PlayerControlInput};
 const KEEPER_X_OFFSET: f64 = 250.0;
 
 pub struct Goalkeeper {
-    is_kicking: bool,
+    pub is_kicking: bool,
+    pub defenders: Vec<PlayerId>,
 }
 
 impl Goalkeeper {
     pub fn new() -> Self {
-        Self { is_kicking: false }
+        Self {
+            is_kicking: false,
+            defenders: Vec::new(),
+        }
+    }
+
+    pub fn set_defenders(&mut self, defenders: Vec<PlayerId>) {
+        self.defenders = defenders;
     }
 }
 
@@ -78,8 +86,13 @@ impl Role for Goalkeeper {
                 skill!(
                     ctx,
                     FetchBallWithHeading::towards_own_player(
-                        find_best_angle(ctx.player.id, ctx.player.position, ctx.world)
-                            .unwrap_or(ctx.world.own_players[0].id)
+                        find_best_angle(
+                            ctx.player.id,
+                            ctx.player.position,
+                            ctx.world,
+                            &self.defenders
+                        )
+                        .unwrap_or(ctx.world.own_players[0].id)
                     )
                 );
                 loop {
@@ -87,8 +100,13 @@ impl Role for Goalkeeper {
                     match invoke_skill!(
                         ctx,
                         Face::towards_own_player(
-                            find_best_angle(ctx.player.id, ctx.player.position, ctx.world)
-                                .unwrap_or(ctx.world.own_players[0].id)
+                            find_best_angle(
+                                ctx.player.id,
+                                ctx.player.position,
+                                ctx.world,
+                                &self.defenders
+                            )
+                            .unwrap_or(ctx.world.own_players[0].id)
                         )
                         .with_ball()
                     ) {
@@ -113,11 +131,16 @@ impl Role for Goalkeeper {
     }
 }
 
-fn find_best_angle(id: PlayerId, starting_pos: Vector2, world: &WorldData) -> Option<PlayerId> {
+fn find_best_angle(
+    id: PlayerId,
+    starting_pos: Vector2,
+    world: &WorldData,
+    exclude: &Vec<PlayerId>,
+) -> Option<PlayerId> {
     let targets = world
         .own_players
         .iter()
-        .filter(|p| p.position.x < 0.0 && p.id != id)
+        .filter(|p| p.position.x < 0.0 && p.id != id && !exclude.contains(&p.id))
         .collect::<Vec<_>>();
 
     let best_target = targets

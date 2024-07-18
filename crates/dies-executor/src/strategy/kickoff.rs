@@ -1,5 +1,5 @@
 use crate::roles::skills::{FetchBall, GoToPosition, Kick};
-use crate::roles::RoleCtx;
+use crate::roles::{Goalkeeper, RoleCtx};
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
 use dies_core::{Angle, GameState, PlayerId, RoleType};
@@ -59,7 +59,7 @@ impl Iterator for PositionGenerator {
 pub struct KickoffStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
     has_kicker: bool,
-    gate_keeper_id: Option<PlayerId>,
+    keeper_id: Option<PlayerId>,
     position_generator: PositionGenerator,
 }
 
@@ -92,7 +92,7 @@ impl Role for Kicker {
                 skill!(
                     ctx,
                     GoToPosition::new(Vector2::new(-800.0, PI))
-                        .with_heading(Angle::from_degrees(0.0))   
+                        .with_heading(Angle::from_degrees(0.0))
                 );
             }
             GameState::Kickoff => {
@@ -115,7 +115,9 @@ impl Role for OtherPlayer {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         skill!(
             ctx,
-            GoToPosition::new(self.fixed_position).with_heading(Angle::from_degrees(90.0)).avoid_ball()
+            GoToPosition::new(self.fixed_position)
+                .with_heading(Angle::from_degrees(90.0))
+                .avoid_ball()
         );
 
         PlayerControlInput::new()
@@ -127,11 +129,11 @@ impl Role for OtherPlayer {
 }
 
 impl KickoffStrategy {
-    pub fn new(gate_keeper_id: Option<PlayerId>) -> Self {
+    pub fn new(keeper_id: Option<PlayerId>) -> Self {
         KickoffStrategy {
             roles: HashMap::new(),
             has_kicker: false,
-            gate_keeper_id,
+            keeper_id,
             position_generator: PositionGenerator::new(-1000.0),
         }
     }
@@ -141,7 +143,7 @@ impl KickoffStrategy {
     }
 
     pub fn set_gate_keeper(&mut self, id: PlayerId) {
-        self.gate_keeper_id = Some(id);
+        self.keeper_id = Some(id);
     }
 }
 
@@ -162,8 +164,10 @@ impl Strategy for KickoffStrategy {
         let us_attacking = world.current_game_state.us_operating;
         // Assign roles to players
         for player_data in world.own_players.iter() {
-            if let Some(gate_keeper_id) = self.gate_keeper_id {
+            if let Some(gate_keeper_id) = self.keeper_id {
                 if player_data.id == gate_keeper_id {
+                    self.roles
+                        .insert(player_data.id, Box::new(Goalkeeper::new()));
                     continue;
                 }
             }

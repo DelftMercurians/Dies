@@ -212,14 +212,14 @@ impl WorldTracker {
 
             // Blue players
             for player in data.detection.robots_blue.iter() {
-                // let in_mask = self.tracker_settings.field_mask.contains(
-                //     player.x(),
-                //     player.y(),
-                //     self.field_geometry.as_ref(),
-                // );
-                // if !in_mask {
-                //     continue;
-                // }
+                let in_mask = self.tracker_settings.field_mask.contains(
+                    player.x(),
+                    player.y(),
+                    self.field_geometry.as_ref(),
+                );
+                if !in_mask {
+                    continue;
+                }
 
                 let id = PlayerId::new(player.robot_id());
                 let tracker = if let Some(tracker) = blue_trackers.get_mut(&id) {
@@ -240,14 +240,14 @@ impl WorldTracker {
 
             // Yellow players
             for player in data.detection.robots_yellow.iter() {
-                // let in_mask = self.tracker_settings.field_mask.contains(
-                //     player.x(),
-                //     player.y(),
-                //     self.field_geometry.as_ref(),
-                // );
-                // if !in_mask {
-                //     continue;
-                // }
+                let in_mask = self.tracker_settings.field_mask.contains(
+                    player.x(),
+                    player.y(),
+                    self.field_geometry.as_ref(),
+                );
+                if !in_mask {
+                    continue;
+                }
 
                 let id = PlayerId::new(player.robot_id());
                 let tracker = if let Some(tracker) = yellow_tracker.get_mut(&id) {

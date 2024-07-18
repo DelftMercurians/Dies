@@ -13,7 +13,6 @@ pub struct Attack {
 }
 
 impl Attack {
-    
     pub fn new() -> Self {
         Self {
             attackers: Vec::new(),
@@ -74,8 +73,10 @@ impl Attack {
                     diff.norm_squared() as i64
                 });
             if let Some(active_attacker) = closest_player {
-                if let Some((_, attacker)) =
-                    self.attackers.iter_mut().find(|(id, _)| *id == active_attacker.id)
+                if let Some((_, attacker)) = self
+                    .attackers
+                    .iter_mut()
+                    .find(|(id, _)| *id == active_attacker.id)
                 {
                     attacker.receive();
                 }
@@ -128,7 +129,10 @@ impl Defense {
         }
     }
 
-    pub fn update(&mut self, ctx: StrategyCtx) {}
+    pub fn update(&mut self, ctx: StrategyCtx) {
+        self.keeper
+            .set_defenders(self.wallers.iter().map(|w| w.0).collect());
+    }
 }
 
 pub struct PlayStrategy {
@@ -175,6 +179,11 @@ impl Strategy for PlayStrategy {
         //         self.defense.add_wallers(player.id)
         //     }player_ids
         // }
+
+        self.defense
+            .wallers
+            .iter_mut()
+            .for_each(|w| w.1.goalie_shooting(self.defense.keeper.is_kicking));
 
         if let Some(ball) = ctx.world.ball.as_ref() {
             let ball_speed = ball.velocity.xy().norm();

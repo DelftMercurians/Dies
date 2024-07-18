@@ -1,12 +1,13 @@
 use dies_core::{
-    debug_line, debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3, WorldInstant,
+    debug_line, debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3,
+    WorldInstant,
 };
 use nalgebra::{SVector, Vector6};
 
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 
-use dies_core::to_dies_coords3;
 use crate::filter::MaybeKalman;
+use dies_core::to_dies_coords3;
 
 const DETECTION_TIMEOUT: f64 = 0.1;
 
@@ -96,7 +97,7 @@ impl BallTracker {
         let mut ball_measurements = frame
             .balls
             .iter()
-            // .filter(|ball| field_mask.contains(ball.x(), ball.y(), field_geom))
+            .filter(|ball| field_mask.contains(ball.x(), ball.y(), field_geom))
             .filter(|ball| !ball.has_confidence() || ball.confidence() > 0.6)
             .map(|ball| {
                 (
