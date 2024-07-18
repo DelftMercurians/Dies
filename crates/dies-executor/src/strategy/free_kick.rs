@@ -39,7 +39,7 @@ impl FreeAttacker {
         player: &PlayerData,
         world: &WorldData,
     ) -> Angle {
-        Angle::between_points(player.position, Vector2::new(4500.0, 300.0 * player.position.y.signum()))
+        Angle::between_points(player.position, Vector2::new(4500.0, 100.0 * player.position.y.signum()))
 
         // dirs.push(goaldir);
         // for own_player in world.own_players.iter() {

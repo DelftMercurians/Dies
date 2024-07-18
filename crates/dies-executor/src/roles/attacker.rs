@@ -9,7 +9,7 @@ use crate::{
     },
     skill, KickerControlInput, PlayerControlInput,
 };
-use dies_core::{Angle, BallData, FieldGeometry, PlayerId, Vector2, WorldData};
+use dies_core::{Angle, BallData, FieldGeometry, PlayerId, Vector2, WorldData, PlayerData};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttackerSection {
@@ -107,7 +107,7 @@ impl Role for Attacker {
                 AttackerState::Positioning => {
                     // Positioning ourselves to best receive the ball
                     let target_pos = self.position_cache.get_or_insert_with(|| {
-                        find_best_striker_position(ctx.world, &self.section, geom)
+                        find_best_striker_position(ctx.world, &self.section, geom, ctx.player)
                     });
                     input.with_position(target_pos);
                     input.with_yaw(ball_angle);
@@ -137,8 +137,8 @@ impl Role for Attacker {
                     let starting_pos = *self.dribbling_start.get_or_insert(ctx.player.position);
 
                     let (best_pos, best_receiver, best_score) =
-                        find_best_passer_position(starting_pos, 700.0, ctx.world, geom);
-                    if distance(starting_pos, ctx.player.position) > 500.0 {
+                        find_best_passer_position(starting_pos, 600.0, ctx.world, geom, ctx.player);
+                    if distance(starting_pos, ctx.player.position) > 600.0 {
                         println!("Dribbling too far, passing");
                         if let Some(receiver) = best_receiver {
                             if best_score > 50.0 {
@@ -194,7 +194,7 @@ impl Role for Attacker {
                             ctx,
                             Face::towards_position(Vector2::new(
                                 4500.0,
-                                f64::max(f64::min(ctx.player.position.y.abs(), 200.0), -200.0)
+                                f64::max(f64::min(ctx.player.position.y, 300.0), -300.0)
                             ))
                             .with_ball()
                         ) {
@@ -273,6 +273,7 @@ fn find_best_striker_position(
     world: &WorldData,
     section: &AttackerSection,
     field: &FieldGeometry,
+    player: &PlayerData,
 ) -> Vector2 {
     let (min_y, max_y) = section.y_bounds(field);
     let min_x = 100.0;
@@ -297,12 +298,14 @@ fn find_best_striker_position(
                     .map(|b| b.position.xy())
                     .unwrap_or_default(),
                 field,
+                player
             );
             let goal_score = score_line_of_sight(
                 world,
                 position,
                 Vector2::new(field.field_length / 2.0, 0.0),
                 field,
+                player
             );
             let goal_dist_score =
                 1.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
@@ -322,6 +325,7 @@ fn find_best_passer_position(
     max_radius: f64,
     world: &WorldData,
     field: &FieldGeometry,
+    player: &PlayerData
 ) -> (Vector2, Option<PlayerId>, f64) {
     let mut best_position = Vector2::new(0.0, 0.0);
     let mut best_score = 0.0;
@@ -350,7 +354,7 @@ fn find_best_passer_position(
                 .map(|p| {
                     (
                         p.id,
-                        score_line_of_sight(world, position, p.position, field),
+                        score_line_of_sight(world, position, p.position, field, player),
                     )
                 })
                 .max_by_key(|&x| x.1 as i64);
@@ -359,6 +363,7 @@ fn find_best_passer_position(
                 position,
                 Vector2::new(field.field_length / 2.0, 0.0),
                 field,
+                player
             );
             if let Some((striker_id, score)) = striker_score {
                 let score = score + goal_score;
@@ -394,6 +399,7 @@ fn score_line_of_sight(
     from: Vector2,
     to: Vector2,
     field: &FieldGeometry,
+    player: &PlayerData,
 ) -> f64 {
     let mut min_distance = f64::MAX;
     for player in world.opp_players.iter() {
@@ -402,7 +408,10 @@ fn score_line_of_sight(
             min_distance = distance;
         }
     }
-    min_distance
+    if to.x > 3800.0 {
+        min_distance = 0.0;
+    }
+    min_distance - (from.y.abs() / 4.0).max(40.0) - (from.x.abs() / 4.0).max(40.0) - (player.position - from).magnitude()
 }
 
 fn distance_to_line(a: Vector2, b: Vector2, p: Vector2) -> f64 {

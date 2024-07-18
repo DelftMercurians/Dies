@@ -553,7 +553,7 @@ impl Skill for FetchBallWithHeading {
 
         if (player_data.position - target_pos).norm() < 100.0
             && (player_data.yaw - target_heading).abs()
-                < 0.05 // this threshold should be changed only with real robots in sight
+                < 0.2 // this threshold should be changed only with real robots in sight
         {
             return SkillProgress::Done(SkillResult::Success);
         }
