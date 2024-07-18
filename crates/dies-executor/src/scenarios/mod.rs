@@ -18,7 +18,7 @@ use crate::{
     },
     strategy::AdHocStrategy,
 };
-use dies_core::{Angle, GameState, StrategyGameStateMacther, Vector2, Vector3};
+use dies_core::{Angle, GameState, PlayerId, StrategyGameStateMacther, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -27,24 +27,20 @@ use serde::{Deserialize, Serialize};
 fn empty_scenario() -> ScenarioSetup {
     ScenarioSetup::new(AdHocStrategy::new(), StrategyGameStateMacther::Any)
 }
-/*
+
 fn play() -> ScenarioSetup {
-    // TODO: epnalty area
-    // TODO: goalie limits
-    // TODO:
-    /*
     let mut setup = ScenarioSetup::new(
-        PlayStrategy::new(),
-        StrategyGameStateMacther::Specific(GameState::Run),
+        PlayStrategy::new(PlayerId::new(4)),
+        StrategyGameStateMacther::Any,
     );
-    setup.add_strategy(
-        StrategyGameStateMacther::Specific(GameState::FreeKick),
-        FreeKickStrategy::new(None),
-    );
-    setup.add_strategy(
-        StrategyGameStateMacther::Specific(GameState::Kickoff),
-        KickoffStrategy::new(None),
-    );
+    // setup.add_strategy(
+    //     StrategyGameStateMacther::Specific(GameState::FreeKick),
+    //     FreeKickStrategy::new(None),
+    // );
+    // setup.add_strategy(
+    //     StrategyGameStateMacther::Specific(GameState::Kickoff),
+    //     KickoffStrategy::new(None),
+    // );
     setup
         .add_ball()
         .add_own_player()
@@ -54,9 +50,7 @@ fn play() -> ScenarioSetup {
         .add_opp_player_at(Vector2::new(4500.0, 0.0))
         .add_opp_player_at(Vector2::new(1000.0, -1000.0));
     setup
-    */
 }
-*/
 
 fn goalie_test() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();

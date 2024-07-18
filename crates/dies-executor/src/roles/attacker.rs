@@ -124,9 +124,9 @@ impl Role for Attacker {
                         crate::roles::SkillResult::Success => break AttackerState::Dribbling,
                         _ => {}
                     }
-                    if ball_dist > 1000.0 {
-                        break AttackerState::Positioning;
-                    }
+                    // if ball_dist > 1000.0 {
+                    //     break AttackerState::Positioning;
+                    // }
                 },
                 AttackerState::Dribbling => {
                     let starting_pos = *self.dribbling_start.get_or_insert(ctx.player.position);
@@ -147,41 +147,57 @@ impl Role for Attacker {
                             AttackerState::Shooting
                         }
                     } else {
-                        match skill!(ctx, GoToPosition::new(best_pos).with_ball()) {
-                            crate::roles::SkillResult::Success => AttackerState::Shooting,
-                            _ => AttackerState::Dribbling,
+                        if !ctx.player.breakbeam_ball_detected {
+                            println!("Lost ball, fetching");
+                            AttackerState::FetchingBall
+                        } else {
+                            match skill!(ctx, GoToPosition::new(best_pos).with_ball()) {
+                                crate::roles::SkillResult::Success => AttackerState::Shooting,
+                                _ => AttackerState::Dribbling,
+                            }
                         }
                     }
                 }
                 AttackerState::Passing(receiver) => loop {
-                    match invoke_skill!(ctx, Face::towards_own_player(receiver)) {
-                        crate::roles::SkillProgress::Continue(mut input) => {
-                            input.with_dribbling(1.0);
-                            return input;
+                    if !ctx.player.breakbeam_ball_detected {
+                        println!("Lost ball, fetching");
+                        break AttackerState::FetchingBall;
+                    } else {
+                        match invoke_skill!(ctx, Face::towards_own_player(receiver)) {
+                            crate::roles::SkillProgress::Continue(mut input) => {
+                                input.with_dribbling(1.0);
+                                return input;
+                            }
+                            _ => {}
                         }
-                        _ => {}
-                    }
-                    if let SkillResult::Success = skill!(ctx, Kick::new()) {
-                        self.has_passed_to_receiver = Some(receiver);
-                        break AttackerState::Positioning;
-                    }
-                    match skill!(ctx, ApproachBall::new()) {
-                        crate::roles::SkillResult::Success => continue,
-                        _ => break AttackerState::Positioning,
+                        if let SkillResult::Success = skill!(ctx, Kick::new()) {
+                            self.has_passed_to_receiver = Some(receiver);
+                            break AttackerState::Positioning;
+                        }
+                        match skill!(ctx, ApproachBall::new()) {
+                            crate::roles::SkillResult::Success => continue,
+                            _ => break AttackerState::Positioning,
+                        }
                     }
                 },
                 AttackerState::Shooting => {
-                    match invoke_skill!(ctx, Face::towards_position(Vector2::new(4500.0, 0.0))) {
-                        crate::roles::SkillProgress::Continue(mut input) => {
-                            input.with_dribbling(1.0);
-                            return input;
-                        }
-                        _ => {}
-                    }
-                    if let SkillResult::Success = skill!(ctx, Kick::new()) {
-                        AttackerState::Positioning
+                    if !ctx.player.breakbeam_ball_detected {
+                        println!("Lost ball, fetching");
+                        AttackerState::FetchingBall
                     } else {
-                        AttackerState::Shooting
+                        match invoke_skill!(ctx, Face::towards_position(Vector2::new(4500.0, 0.0)))
+                        {
+                            crate::roles::SkillProgress::Continue(mut input) => {
+                                input.with_dribbling(1.0);
+                                return input;
+                            }
+                            _ => {}
+                        }
+                        if let SkillResult::Success = skill!(ctx, Kick::new()) {
+                            AttackerState::Positioning
+                        } else {
+                            AttackerState::Shooting
+                        }
                     }
                 }
             };

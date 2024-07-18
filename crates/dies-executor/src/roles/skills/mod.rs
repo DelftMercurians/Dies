@@ -115,6 +115,11 @@ impl Face {
             heading: HeadingTarget::Ball,
         }
     }
+
+    pub fn with_ball(&mut self) -> &mut Self {
+        self.heading = HeadingTarget::Ball;
+        self
+    }
 }
 
 impl Skill for Face {
@@ -156,7 +161,7 @@ impl Skill for Kick {
 
         if self.has_kicked == 0 {
             let timer = self.timer.get_or_insert(Instant::now());
-            if timer.elapsed().as_secs_f64() > 0.35 {
+            if timer.elapsed().as_secs_f64() > 0.1 {
                 if ctx
                     .world
                     .ball

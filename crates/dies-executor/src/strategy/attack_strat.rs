@@ -109,22 +109,42 @@ pub struct Defense {
     wallers: Vec<(PlayerId, Waller)>,
 }
 
+impl Defense {
+    pub fn new(keeper_id: PlayerId) -> Self {
+        Self {
+            keeper_id,
+            keeper: Goalkeeper::new(),
+            wallers: Vec::new(),
+        }
+    }
+
+    pub fn add_wallers(&mut self, player_ids: Vec<PlayerId>) {
+        // -50, 50, -100, 100, etc
+        let offsets = (0..player_ids.len())
+            .map(|i| if i % 2 == 0 { -50.0 } else { 50.0 })
+            .collect::<Vec<_>>();
+        for (id, offset) in player_ids.iter().zip(offsets) {
+            self.wallers.push((*id, Waller::new(offset)));
+        }
+    }
+
+    pub fn update(&mut self, ctx: StrategyCtx) {}
+}
+
 pub struct PlayStrategy {
     attack: Attack,
     defense: Defense,
 }
 
-/*
 impl PlayStrategy {
-    pub fn new() -> Self {
+    pub fn new(keeper_id: PlayerId) -> Self {
         Self {
             attack: Attack::new(),
-            defense: Defense::new(),
+            defense: Defense::new(keeper_id),
         }
     }
 }
 
-*/
 impl Strategy for PlayStrategy {
     fn update(&mut self, ctx: StrategyCtx) {
         for player in ctx.world.own_players.iter() {
@@ -136,7 +156,7 @@ impl Strategy for PlayStrategy {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let ball_speed = ball.velocity.xy().norm();
             if ball_dist_to_closest_enemy(ctx.world) > 300.0
-                && ball.position.x < 0.0
+                // && ball.position.x < 0.0
                 && !self.attack.we_have_ball()
             {
                 self.attack.fetch_ball(&ctx);
