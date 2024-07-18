@@ -152,6 +152,7 @@ impl TeamController {
 
                 let role_type = role_types.get(&id).cloned().unwrap_or_default();
                 let obsacles = world_data.get_obstacles_for_player(role_type);
+
                 controller.update(
                     player_data,
                     &world_data,

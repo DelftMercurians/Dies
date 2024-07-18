@@ -30,6 +30,7 @@ pub fn velocity_obstacle_update(
     obstacles: &[Obstacle],
     model: &PlayerModel,
     vo_type: VelocityObstacleType,
+    avoid_robots: bool,
 ) -> Vector2 {
     let player_radius = model.radius + PLAYER_MARGIN;
     let mut rvo_ba_all = Vec::new();
@@ -37,8 +38,10 @@ pub fn velocity_obstacle_update(
     // Consider other agents
     for other_player in players.iter() {
         if other_player.position != player.position {
-            let rvo_ba = compute_velocity_obstacle(player, other_player, &vo_type, player_radius);
-            rvo_ba_all.push(rvo_ba);
+            if !avoid_robots {
+                let rvo_ba = compute_velocity_obstacle(player, other_player, &vo_type, player_radius * 0.5);
+                rvo_ba_all.push(rvo_ba);
+            };
         }
     }
 
