@@ -43,13 +43,15 @@ impl Waller {
         let bottom_right = Vector2::new(area_right_x, area_bottom_y);
 
         // Intersect with the right boundary
-        if let Some(intersection) = find_intersection(ball_pos, direction, top_right, Vector2::y())
+        if let Some(raw_intersection) = find_intersection(ball_pos, direction, top_right, Vector2::y())
         {
+            let shift = Vector2::new(0.0, self.offset);
+            let intersection = raw_intersection - shift;
             if intersection.y <= area_top_y && intersection.y >= area_bottom_y {
                 // Check if it is a corner
-                let corner = if (intersection - top_right).norm() < CORNER_RADIUS {
+                let corner = if (intersection - top_right + shift).norm() < CORNER_RADIUS / 2.0 {
                     Some(top_right - Vector2::new(0.6, 0.6) * CORNER_RADIUS)
-                } else if (intersection - bottom_right).norm() < CORNER_RADIUS {
+                } else if (intersection - bottom_right + shift).norm() < CORNER_RADIUS / 2.0 {
                     Some(bottom_right - Vector2::new(0.6, -0.6) * CORNER_RADIUS)
                 } else {
                     None
@@ -64,30 +66,24 @@ impl Waller {
 
         if direction.y != 0.0 {
             // Intersect with the bottom boundary
-            if let Some(intersection) =
+            if let Some(raw_intersection) =
                 find_intersection(ball_pos, direction, bottom_right, Vector2::x())
             {
+                let shift = Vector2::new(self.offset, 0.0);
+                let intersection = raw_intersection - shift;
                 if intersection.x <= area_right_x && ball_pos.y < 0.0 {
-                    // Check if it is a corner
-                    if (intersection - bottom_right).norm() < CORNER_RADIUS {
-                        let center = bottom_right - Vector2::new(0.6, -0.6) * CORNER_RADIUS;
-                        return center;
-                    }
                     let new_x = f64::max(intersection.x, -half_length);
                     return Vector2::new(new_x, intersection.y);
                 }
             }
 
             // Intersect with the top boundary
-            if let Some(intersection) =
+            if let Some(raw_intersection) =
                 find_intersection(ball_pos, direction, top_right, Vector2::x())
             {
+                let shift = Vector2::new(-self.offset, 0.0);
+                let intersection = raw_intersection - shift;
                 if intersection.x <= area_right_x && ball_pos.y > 0.0 {
-                    // Check if it is a corner
-                    if (intersection - top_right).norm() < CORNER_RADIUS {
-                        let center = top_right - Vector2::new(0.6, 0.6) * CORNER_RADIUS;
-                        return center;
-                    }
                     let new_x = f64::max(intersection.x, -half_length);
                     return Vector2::new(new_x, intersection.y);
                 }
@@ -102,8 +98,9 @@ impl Waller {
 impl Role for Waller {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
-            let target_pos = self.find_intersection(ball, geom, ctx.player.id);
+            let mut target_pos = self.find_intersection(ball, geom, ctx.player.id);
             let mut input = PlayerControlInput::new();
+            target_pos.y = target_pos.y.max(-geom.penalty_area_width / 2.0-MARGIN).min(geom.penalty_area_width/2.0 + MARGIN);
             input.with_position(target_pos);
             // input.with_yaw(Angle::between_points(
             //     ctx.player.position,

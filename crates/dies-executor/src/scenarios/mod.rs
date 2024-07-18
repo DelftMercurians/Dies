@@ -27,11 +27,12 @@ use serde::{Deserialize, Serialize};
 fn empty_scenario() -> ScenarioSetup {
     ScenarioSetup::new(AdHocStrategy::new(), StrategyGameStateMacther::Any)
 }
-
+/*
 fn play() -> ScenarioSetup {
     // TODO: epnalty area
     // TODO: goalie limits
     // TODO:
+    /*
     let mut setup = ScenarioSetup::new(
         PlayStrategy::new(),
         StrategyGameStateMacther::Specific(GameState::Run),
@@ -53,7 +54,9 @@ fn play() -> ScenarioSetup {
         .add_opp_player_at(Vector2::new(4500.0, 0.0))
         .add_opp_player_at(Vector2::new(1000.0, -1000.0));
     setup
+    */
 }
+*/
 
 fn goalie_test() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
@@ -141,13 +144,17 @@ fn one_harasser_one_player_one_ball() -> ScenarioSetup {
 
 fn need_to_cross_the_goal_area() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(Waller::new(-70.0)));
-    strategy.add_role(Box::new(Waller::new(70.0)));
+    strategy.add_role(Box::new(Waller::new(-240.0)));
+    strategy.add_role(Box::new(Waller::new(-80.0)));
+    strategy.add_role(Box::new(Waller::new(80.0)));
+    strategy.add_role(Box::new(Waller::new(240.0)));
     let mut scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
     scenario
         .add_ball_at(Vector2::new(-4300.0, 3000.0))
         .add_own_player_at(Vector2::new(-4000.0, -2000.0))
-        .add_own_player_at(Vector2::new(4000.0, -2000.0));
+        .add_own_player_at(Vector2::new(4000.0, -2000.0))
+        .add_own_player_at(Vector2::new(3000.0, -2000.0))
+        .add_own_player_at(Vector2::new(2000.0, -2000.0));
 
     scenario
 }
@@ -269,7 +276,6 @@ impl Serialize for ScenarioType {
 // **NOTE**: Add new scenarios here.
 scenarios! {
     empty_scenario,
-    play,
     goalie_test,
     kick_pass,
     need_to_cross_the_goal_area,

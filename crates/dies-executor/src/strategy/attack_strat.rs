@@ -114,15 +114,17 @@ pub struct PlayStrategy {
     defense: Defense,
 }
 
+/*
 impl PlayStrategy {
     pub fn new() -> Self {
         Self {
             attack: Attack::new(),
-            defense,
+            defense: Defense::new(),
         }
     }
 }
 
+*/
 impl Strategy for PlayStrategy {
     fn update(&mut self, ctx: StrategyCtx) {
         for player in ctx.world.own_players.iter() {
