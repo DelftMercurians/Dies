@@ -128,6 +128,10 @@ impl PenaltyKickStrategy {
 }
 
 impl Strategy for PenaltyKickStrategy {
+    fn name(&self) -> &'static str {
+        "PenaltyKick"
+    }
+
     fn update(&mut self, ctx: StrategyCtx) {
         let world = ctx.world;
         let us_attacking = world.current_game_state.us_operating;

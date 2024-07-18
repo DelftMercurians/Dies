@@ -146,8 +146,13 @@ impl KickoffStrategy {
 }
 
 impl Strategy for KickoffStrategy {
+    fn name(&self) -> &'static str {
+        "Kickoff"
+    }
+
     fn on_enter(&mut self, _ctx: StrategyCtx) {
         // Clear roles
+        self.has_kicker = false;
         self.roles.clear();
     }
 

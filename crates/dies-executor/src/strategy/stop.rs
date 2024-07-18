@@ -44,6 +44,10 @@ impl StopStrategy {
 }
 
 impl Strategy for StopStrategy {
+    fn name(&self) -> &'static str {
+        "Stop"
+    }
+
     fn update(&mut self, ctx: super::StrategyCtx) {
         for p in ctx.world.own_players.iter() {
             if !self.roles.contains_key(&p.id) {

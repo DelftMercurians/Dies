@@ -118,6 +118,10 @@ impl FreeKickStrategy {
 }
 
 impl Strategy for FreeKickStrategy {
+    fn name(&self) -> &'static str {
+        "FreeKick"
+    }
+
     fn on_enter(&mut self, _ctx: StrategyCtx) {
         // Clear roles
         self.roles.clear();

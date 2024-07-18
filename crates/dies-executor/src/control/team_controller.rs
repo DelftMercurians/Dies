@@ -24,6 +24,7 @@ struct RoleState {
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     strategy: StrategyMap,
+    active_strat: Option<String>,
     role_states: HashMap<PlayerId, RoleState>,
     settings: ExecutorSettings,
 }
@@ -36,6 +37,7 @@ impl TeamController {
             strategy,
             role_states: HashMap::new(),
             settings: settings.clone(),
+            active_strat: None,
         };
         team.update_controller_settings(settings);
         team
@@ -77,6 +79,13 @@ impl TeamController {
         let state = world_data.current_game_state.game_state;
 
         let strategy = if let Some(strategy) = self.strategy.get_strategy(&state) {
+            let name = strategy.name().to_owned();
+            dies_core::debug_string("active_strat", &name);
+            if self.active_strat.as_ref() != Some(&name) {
+                log::info!("Switching to strategy: {}", name);
+                self.active_strat = Some(name);
+                strategy.on_enter(StrategyCtx { world: &world_data });
+            }
             strategy
         } else {
             log::warn!("No strategy found for game state {:?}", state);

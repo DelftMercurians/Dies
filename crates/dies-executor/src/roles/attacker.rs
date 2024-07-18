@@ -194,7 +194,7 @@ impl Role for Attacker {
                             ctx,
                             Face::towards_position(Vector2::new(
                                 4500.0,
-                                f64::max(f64::min(ctx.player.position.y.abs(), 400.0), -400.0)
+                                f64::max(f64::min(ctx.player.position.y.abs(), 200.0), -200.0)
                             ))
                             .with_ball()
                         ) {

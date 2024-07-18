@@ -57,6 +57,10 @@ impl AdHocStrategy {
 }
 
 impl Strategy for AdHocStrategy {
+    fn name(&self) -> &'static str {
+        "AdHoc"
+    }
+
     fn on_enter(&mut self, _ctx: StrategyCtx) {
         // Clear roles
         self.roles.clear();

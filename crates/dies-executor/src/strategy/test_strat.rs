@@ -52,6 +52,10 @@ impl TestStrat {
 }
 
 impl Strategy for TestStrat {
+    fn name(&self) -> &'static str {
+        "Test"
+    }
+
     fn update(&mut self, ctx: StrategyCtx) {
         let assignment = {
             if let Some(assignment) = self.assignment.as_mut() {

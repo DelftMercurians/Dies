@@ -13,6 +13,7 @@ pub struct Attack {
 }
 
 impl Attack {
+    
     pub fn new() -> Self {
         Self {
             attackers: Vec::new(),
@@ -145,6 +146,10 @@ impl PlayStrategy {
 }
 
 impl Strategy for PlayStrategy {
+    fn name(&self) -> &'static str {
+        "Play"
+    }
+
     fn update(&mut self, ctx: StrategyCtx) {
         // let waller_ids = self
         //     .defense
