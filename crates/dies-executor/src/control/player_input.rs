@@ -134,6 +134,8 @@ pub struct PlayerControlInput {
     pub angular_speed_limit: Option<f64>,
 
     pub avoid_ball: bool,
+
+    pub fan_speed: f64,
 }
 
 impl PlayerControlInput {

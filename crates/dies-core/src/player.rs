@@ -100,6 +100,7 @@ pub struct PlayerMoveCmd {
     pub dribble_speed: f64,
     /// Command to the kicker
     pub robot_cmd: RobotCmd,
+    pub fan_speed: f64,
 }
 
 impl PlayerMoveCmd {
@@ -111,6 +112,7 @@ impl PlayerMoveCmd {
             w: 0.0,
             dribble_speed: 0.0,
             robot_cmd: RobotCmd::None,
+            fan_speed: 0.0,
         }
     }
 
@@ -148,7 +150,7 @@ impl From<PlayerMoveCmd> for glue::Radio_Command {
             dribbler_speed: val.dribble_speed as f32,
             robot_command: val.robot_cmd.into(),
             kick_time: 5_000.0,
-            fan_speed: 0.0,
+            fan_speed: val.fan_speed as f32,
             _pad: [0, 0, 0],
         }
     }
@@ -190,6 +192,8 @@ pub enum PlayerOverrideCommand {
     Kick { speed: f64 },
     /// Discharge the kicker safely
     DischargeKicker,
+
+    SetFanSpeed { speed: f64 },
 }
 
 impl PlayerOverrideCommand {
@@ -201,6 +205,7 @@ impl PlayerOverrideCommand {
             PlayerOverrideCommand::Stop => 0.0,
             PlayerOverrideCommand::Kick { .. } => 0.0,
             PlayerOverrideCommand::DischargeKicker => 0.0,
+            PlayerOverrideCommand::SetFanSpeed { .. } => 0.0,
         }
     }
 
@@ -212,6 +217,7 @@ impl PlayerOverrideCommand {
             PlayerOverrideCommand::Stop => false,
             PlayerOverrideCommand::Kick { .. } => false,
             PlayerOverrideCommand::DischargeKicker => false,
+            PlayerOverrideCommand::SetFanSpeed { .. } => false,
         }
     }
 }

@@ -165,7 +165,7 @@ export interface PlayerPlacement {
 /** Setup for the ball in a scenario. */
 export type BallPlacement = 
 	/** Ball is placed at a specific position. */
-	| { type: "Position", data: Vector3 }
+	| { type: "Position", data: Vector2 }
 	/** Ball is placed at any position. */
 	| { type: "AnyPosition",  }
 	/** No ball is required. */
@@ -251,6 +251,7 @@ export interface PlayerData {
 	/** Whether the breakbeam sensor detected a ball. Only available for own players. */
 	breakbeam_ball_detected: boolean;
 	imu_status?: SysStatus;
+	kicker_status?: SysStatus;
 }
 
 /** A struct to store the ball state from a single frame. */
@@ -266,6 +267,8 @@ export interface BallData {
 	raw_position: Vector3[];
 	/** Velocity of the ball in mm/s, in dies coordinates */
 	velocity: Vector3;
+	/** Whether the ball is being detected */
+	detected: boolean;
 }
 
 /** The game state, as reported by the referee. */
@@ -451,7 +454,10 @@ export type PlayerOverrideCommand =
 	speed: number;
 }}
 	/** Discharge the kicker safely */
-	| { type: "DischargeKicker",  };
+	| { type: "DischargeKicker",  }
+	| { type: "SetFanSpeed", data: {
+	speed: number;
+}};
 
 /** Role of a player according to the game rules. These are mainly for rule-compliance. */
 export enum RoleType {

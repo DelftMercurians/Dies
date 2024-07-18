@@ -60,6 +60,8 @@ pub struct PlayerController {
     heading_interval: IntervalTrigger,
 
     opp_goal_sign: f64,
+
+    fan_speed: f64,
 }
 
 impl PlayerController {
@@ -99,6 +101,8 @@ impl PlayerController {
             switch_heading: None,
             heading_interval: IntervalTrigger::new(Duration::from_secs_f64(0.5)),
             opp_goal_sign: settings.tracker_settings.initial_opp_goal_x,
+
+            fan_speed: 0.0,
         };
         instance.update_settings(&settings.controller_settings);
         instance
@@ -171,6 +175,7 @@ impl PlayerController {
                 -self.target_z * self.opp_goal_sign
             },
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
+            fan_speed: self.fan_speed,
             robot_cmd,
         };
 
@@ -213,6 +218,9 @@ impl PlayerController {
         if is_about_to_collide(state, world, 3.0 * dt) {
             dies_core::debug_string(format!("p{}.collision", self.id), "true");
         }
+
+        self.fan_speed = input.fan_speed;
+        dies_core::debug_value(format!("p{}.fan_speed", self.id), self.fan_speed);
 
         // Calculate velocity using the MTP controller
         self.last_yaw = state.raw_yaw;

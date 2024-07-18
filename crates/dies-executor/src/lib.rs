@@ -141,6 +141,10 @@ impl PlayerOverrideState {
                 kicker: KickerControlInput::Disarm,
                 ..Default::default()
             },
+            PlayerOverrideCommand::SetFanSpeed { speed } => PlayerControlInput {
+                fan_speed: speed,
+                ..Default::default()
+            },
         };
 
         // Advance the frame counter

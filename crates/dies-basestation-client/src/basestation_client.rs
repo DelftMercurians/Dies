@@ -141,9 +141,10 @@ impl BasestationHandle {
                                 as usize;
                             match &mut connection {
                                 Connection::V1(monitor) => {
+                                    let glue_cmd: glue::Radio_Command = cmd.into();
                                     resp.send(
                                         monitor
-                                            .send_single(cmd.id.as_u32() as u8, cmd.into())
+                                            .send_single(cmd.id.as_u32() as u8, glue_cmd)
                                             .map_err(|_| anyhow!("Failed to send command")),
                                     )
                                     .ok();

@@ -25,6 +25,7 @@ import { FC, useState } from "react";
 import CodeEditor from "./CodeEditor";
 import HierarchicalList from "./HierarchicalList";
 import TimeSeriesChart from "./TimeSeriesChart";
+import { Slider } from "@/components/ui/slider";
 
 interface PlayerSidebarProps {
   selectedPlayerId: number | null;
@@ -82,6 +83,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
   const [keyboardMode, setKeyboardMode] = useState<"local" | "global">(
     "global",
   );
+  const [fanSpeed, setFanSpeed] = useState(0);
 
   const manualControl =
     typeof selectedPlayerId === "number" &&
@@ -91,6 +93,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
     speed,
     angularSpeedDegPerSec,
     mode: keyboardMode,
+    fanSpeed,
   });
 
   const debugData = useDebugData();
@@ -276,6 +279,17 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
               }
             />
             <div>deg/s</div>
+          </div>
+
+          <div className="flex flex-row gap-2 items-center">
+            <div>Fan Speed</div>
+            <Slider
+              min={0}
+              max={100}
+              value={[fanSpeed]}
+              onValueChange={([newValue]) =>setFanSpeed(newValue)}
+            />
+            <div>mm/s</div>
           </div>
 
           <div className="flex justify-center">

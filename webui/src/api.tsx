@@ -300,11 +300,13 @@ export const useKeyboardControl = ({
   angularSpeedDegPerSec,
   speed,
   mode = "global",
+  fanSpeed
 }: {
   playerId: number | null;
   speed: number;
   angularSpeedDegPerSec: number;
   mode: "local" | "global";
+  fanSpeed: number;
 }) => {
   const sendCommand = useSendCommand();
 
@@ -314,6 +316,8 @@ export const useKeyboardControl = ({
   angularSpeedRef.current = angularSpeedDegPerSec;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const fanSpeedRef = useRef(fanSpeed);
+  fanSpeedRef.current = fanSpeed;
   useEffect(() => {
     if (playerId === null) return;
     const pressedKeys = new Set<string>();
@@ -372,6 +376,22 @@ export const useKeyboardControl = ({
       command.data.command.data.dribble_speed = dribble_speed;
 
       if (vel_mag > 0 || angular_velocity !== 0 || dribble_speed > 0) {
+        sendCommand(command as UiCommand);
+      }
+
+      if (fanSpeed) {
+        const command = {
+          type: "OverrideCommand",
+          data: {
+            player_id: playerId,
+            command: {
+              type: "SetFanSpeed",
+              data: {
+                speed: fanSpeedRef.current,
+              },
+            },
+          },
+        } satisfies UiCommand;
         sendCommand(command as UiCommand);
       }
     }, 1000 / 30);
