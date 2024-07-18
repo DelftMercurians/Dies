@@ -46,7 +46,7 @@ impl Waller {
         world: &FieldGeometry,
         player_id: PlayerId,
     ) -> Vector2 {
-        let ball_pos = ball.position.xy() + ball.velocity.xy() * 1.0; // fake it til you make it
+        let ball_pos = ball.position.xy() + ball.velocity.xy() * 0.3; // fake it til you make it
                                                                       // compensate for delay
         let half_length = world.field_length / 2.0;
         let goal_center = Vector2::new(-half_length, 0.0);
@@ -112,7 +112,13 @@ impl Waller {
         }
 
         // Default fallback to ball position (should not happen in normal cases)
-        Vector2::new(area_right_x, ball_pos.y)
+        Vector2::new(area_right_x,
+                     f64::min(
+                        f64::max(
+                            ball_pos.y, -world.penalty_area_width / 2.0 - MARGIN * 2.0
+                        ),
+                        world.penalty_area_width / 2.0 + MARGIN * 2.0)
+                     )
     }
 }
 
