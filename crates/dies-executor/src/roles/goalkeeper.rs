@@ -89,7 +89,7 @@ impl Role for Goalkeeper {
                 && ball_pos.y.abs() < field_geom.penalty_area_width / 2.0;
             let ball_vel = ball.velocity.xy().norm();
 
-            if !ball_in_defence || ball_vel > 30.0 {
+            if !ball_in_defence || ball_vel > 100.0 {
                 if self.kicking_to {
                     self.kicking_to = false;
                     ctx.reset_skills();
