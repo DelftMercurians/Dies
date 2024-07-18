@@ -237,6 +237,10 @@ impl WorldTracker {
                     tracker.update(t_capture, player);
                 }
             }
+            // Check for missed players
+            for (_, tracker) in blue_trackers.iter_mut() {
+                tracker.check_is_gone(t_capture);
+            }
 
             // Yellow players
             for player in data.detection.robots_yellow.iter() {
@@ -264,6 +268,10 @@ impl WorldTracker {
                 if let Some(tracker) = tracker {
                     tracker.update(t_capture, player);
                 }
+            }
+            // Check for missed players
+            for (_, tracker) in yellow_tracker.iter_mut() {
+                tracker.check_is_gone(t_capture);
             }
 
             // Update ball
@@ -325,6 +333,9 @@ impl WorldTracker {
 
         let mut own_players = Vec::new();
         for player_tracker in self.own_players_tracker.values() {
+            if player_tracker.is_gone {
+                continue;
+            }
             if let Some(player_data) = player_tracker.get() {
                 own_players.push(player_data);
             }
@@ -332,6 +343,9 @@ impl WorldTracker {
 
         let mut opp_players = Vec::new();
         for player_tracker in self.opp_players_tracker.values() {
+            if player_tracker.is_gone {
+                continue;
+            }
             if let Some(player_data) = player_tracker.get() {
                 opp_players.push(player_data);
             }

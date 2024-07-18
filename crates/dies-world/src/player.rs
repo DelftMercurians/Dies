@@ -14,6 +14,7 @@ use crate::{
 
 const BREAKBEAM_WINDOW: usize = 200;
 const BREAKBEAM_DETECTION_THRESHOLD: usize = 0;
+const OFF_FIELD_TIMEOUT: f64 = 2.0;
 
 /// Stored data for a player from the last update.
 ///
@@ -52,6 +53,9 @@ pub struct PlayerTracker {
 
     /// How many positive breakbeam detections have been received in the past
     breakbeam_detections: VecDeque<usize>,
+
+    pub is_gone: bool,
+    reappaerance_time: Option<f64>,
 }
 
 impl PlayerTracker {
@@ -70,6 +74,8 @@ impl PlayerTracker {
             last_feedback: None,
             last_detection: None,
             breakbeam_detections: VecDeque::with_capacity(BREAKBEAM_WINDOW),
+            is_gone: false,
+            reappaerance_time: None,
         }
     }
 
@@ -80,6 +86,21 @@ impl PlayerTracker {
     /// Set the sign of the enemy goal's x coordinate in ssl-vision coordinates.
     pub fn set_play_dir_x(&mut self, play_dir_x: f64) {
         self.play_dir_x = play_dir_x;
+    }
+
+    pub fn check_is_gone(&mut self, time: f64) {
+        if let Some(last_detection) = &self.last_detection {
+            let elapsed = time - last_detection.timestamp;
+            if elapsed >= OFF_FIELD_TIMEOUT {
+                self.is_gone = true;
+            } else if self.is_gone {
+                let reappaerance_time = self.reappaerance_time.get_or_insert(time);
+                if time - *reappaerance_time >= OFF_FIELD_TIMEOUT {
+                    self.is_gone = false;
+                    self.reappaerance_time = None;
+                }
+            }
+        }
     }
 
     /// Update the tracker with a new frame.

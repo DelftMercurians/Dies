@@ -182,10 +182,16 @@ impl Strategy for FreeKickStrategy {
                             + (player_data.position - ball_pos.xy()).normalize() * 650.0;
 
                         if (target.y - world.field_geom.as_ref().unwrap().field_width / 2.0).abs()
-                            < 300.0
+                            < 600.0
                         {
                             target.y = ball_pos.y + 650.0;
-                        } 
+                        }
+                        if (target.x - world.field_geom.as_ref().unwrap().field_length / 2.0).abs()
+                            < 600.0
+                        {
+                            target.x = ball_pos.x + 650.0;
+                        }
+
                         e.insert(Box::new(OtherPlayer::new(target)));
                     }
                 }
