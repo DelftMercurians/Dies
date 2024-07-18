@@ -131,8 +131,18 @@ impl TeamController {
                     .get(&id)
                     .map(|i| !i.velocity.is_zero())
                     .unwrap_or(false);
-                controller.update(player_data, &world_data, input, world_data.dt, is_manual, &all_players);
 
+                let role_type = role_types.get(&id).cloned().unwrap_or_default();
+                let obsacles = world_data.get_obstacles_for_player(role_type);
+                controller.update(
+                    player_data,
+                    &world_data,
+                    input,
+                    world_data.dt,
+                    is_manual,
+                    obsacles,
+                    &all_players,
+                );
             } else {
                 controller.increment_frames_misses();
             }

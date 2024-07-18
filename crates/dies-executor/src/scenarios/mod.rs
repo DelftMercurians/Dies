@@ -29,7 +29,21 @@ fn empty_scenario() -> ScenarioSetup {
 }
 
 fn play() -> ScenarioSetup {
-    let mut setup = ScenarioSetup::new(PlayStrategy::new(), StrategyGameStateMacther::Any);
+    // TODO: epnalty area
+    // TODO: goalie limits
+    // TODO:
+    let mut setup = ScenarioSetup::new(
+        PlayStrategy::new(),
+        StrategyGameStateMacther::Specific(GameState::Run),
+    );
+    setup.add_strategy(
+        StrategyGameStateMacther::Specific(GameState::FreeKick),
+        FreeKickStrategy::new(None),
+    );
+    setup.add_strategy(
+        StrategyGameStateMacther::Specific(GameState::Kickoff),
+        KickoffStrategy::new(None),
+    );
     setup
         .add_ball()
         .add_own_player()

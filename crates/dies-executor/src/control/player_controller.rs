@@ -202,6 +202,7 @@ impl PlayerController {
         input: &PlayerControlInput,
         dt: f64,
         is_manual_override: bool,
+        obstacles: Vec<Obstacle>,
         all_players: &[&PlayerData],
     ) {
         self.have_imu = false; // matches!(
@@ -248,15 +249,17 @@ impl PlayerController {
         if !is_manual_override {
             let obstacles = if input.avoid_ball {
                 if let Some(ball) = world.ball.as_ref() {
-                    vec![Obstacle::Circle {
+                    let mut obstacles = obstacles;
+                    obstacles.push(Obstacle::Circle {
                         center: ball.position.xy(),
                         radius: 50.0,
-                    }]
+                    });
+                    obstacles
                 } else {
-                    vec![]
+                    obstacles
                 }
             } else {
-                vec![]
+                obstacles
             };
 
             self.target_velocity = velocity_obstacle_update(
