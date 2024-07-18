@@ -4,7 +4,7 @@ use nalgebra::Vector2;
 use crate::roles::{Role, RoleCtx};
 use crate::PlayerControlInput;
 
-const KEEPER_X_OFFSET: f64 = 350.0;
+const KEEPER_X_OFFSET: f64 = 250.0;
 
 pub struct Goalkeeper {}
 
@@ -70,35 +70,36 @@ impl Role for Goalkeeper {
         if let (Some(ball), Some(field_geom)) =
             (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref())
         {
-            let ball_pos = ball.position.xy();
-            let goalkeeper_x = -field_geom.field_length / 2.0 + KEEPER_X_OFFSET;
+            let ball_pos = ball.position.xy() + ball.velocity.xy() * 0.3;
+            let mut goalkeeper_x = -field_geom.field_length / 2.0 + KEEPER_X_OFFSET;
+            let delta = f64::max(f64::min(ctx.player.position.y.abs() / 5.0, 150.0), 0.0);
+            goalkeeper_x = goalkeeper_x - delta;
 
             let target_angle = Angle::between_points(ctx.player.position, ball_pos);
-
             input.with_yaw(target_angle);
 
             let defence_width = 1.3 * (field_geom.goal_width / 2.0);
-            let mut target = if ball.position.x < 0.0 && ball.velocity.x < 0.0 {
+            let mut target = if ball_pos.x < 0.0 && ball.velocity.x < 0.0 {
                 let mut out = find_intersection(
                     Vector2::new(goalkeeper_x, 0.0),
                     Vector2::y(),
                     ball_pos,
                     ball.velocity.xy(),
                 )
-                .unwrap_or(Vector2::new(goalkeeper_x, ball.position.y));
+                .unwrap_or(Vector2::new(goalkeeper_x, ball_pos.y));
                 // limit the delta by how much the ball is gonna move in a second or so
-                let limit = ball.velocity.y.abs() * 1.0;
+                let limit = ball.velocity.y.abs() * 2.0;
                 out.y = out
                     .y
                     .min(ball.position.y + limit)
                     .max(ball.position.y - limit);
                 out
             } else {
-                Vector2::new(goalkeeper_x, ball.position.y)
+                Vector2::new(goalkeeper_x, ball_pos.y)
             };
             target.y = target.y.max(-defence_width).min(defence_width);
             // we want to bring the point closer to center based on the ball x position
-            let factor = 1.0 - f64::min(f64::max((ball.position.x + 2000.0) / 5000.0, 0.0), 1.0);
+            let factor = 1.0 - f64::min(f64::max((ball_pos.x + 2000.0) / 5000.0, 0.0), 1.0);
             target.y = target.y * factor;
             input.with_position(target);
         }
