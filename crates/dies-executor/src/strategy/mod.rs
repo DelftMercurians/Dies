@@ -30,7 +30,5 @@ pub trait Strategy: Send {
     /// by the team controller to produce player inputs.
     fn update(&mut self, ctx: StrategyCtx);
 
-    fn update_role(&mut self, player_id: PlayerId, ctx: RoleCtx) -> Option<PlayerControlInput>;
-
     fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role>;
 }

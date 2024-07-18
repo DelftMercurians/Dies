@@ -1,224 +1,196 @@
-use super::{passer, RoleCtx};
+use std::f64::consts::FRAC_PI_2;
+
+use super::{passer, receiver, RoleCtx, SkillResult};
 use crate::{
-    roles::{skills::FetchBall, Role},
+    invoke_skill,
+    roles::{
+        skills::{ApproachBall, Face, FetchBall, GoToPosition, Kick},
+        Role,
+    },
     skill, KickerControlInput, PlayerControlInput,
 };
 use dies_core::{Angle, BallData, FieldGeometry, PlayerId, Vector2, WorldData};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttackerSection {
+    Mid,
+    Left,
+    Right,
+}
+
+impl AttackerSection {
+    pub fn y_bounds(&self, field: &FieldGeometry) -> (f64, f64) {
+        match self {
+            AttackerSection::Mid => (-field.field_width / 6.0, field.field_width / 6.0),
+            AttackerSection::Left => (-field.field_width / 2.0 + 200.0, -200.0),
+            AttackerSection::Right => (200.0, field.field_width / 2.0 - 200.0),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttackerState {
+    Positioning,
+    FetchingBall,
+    Dribbling,
+    Passing(PlayerId),
+    Shooting,
+}
+
 /// A role that moves the player to the intersection of the ball's path with the goal
 /// line, acting as a wall to block the ball from reaching the goal.
 pub struct Attacker {
-    position: Vector2,
-    passer_id: Option<PlayerId>,
-    shooter_id: Option<PlayerId>,
-    passer_kicked: bool,
-    starting_pos: Option<Vector2>,
+    section: AttackerSection,
+    state: AttackerState,
+    next_state: Option<AttackerState>,
+    dribbling_start: Option<Vector2>,
+    position_cache: PositionCache,
+    has_passed_to_receiver: Option<PlayerId>,
 }
 
 impl Attacker {
     /// Create a new Waller role with the given offset from the intersection point.
-    pub fn new(position: Vector2) -> Self {
+    pub fn new(initial_state: AttackerState, section: AttackerSection) -> Self {
         Self {
-            position,
-            starting_pos: None,
-            passer_id: None,
-            shooter_id: None,
-            passer_kicked: false,
+            section,
+            state: initial_state,
+            next_state: None,
+            dribbling_start: None,
+            position_cache: PositionCache::new(10),
+            has_passed_to_receiver: None,
         }
     }
 
-    fn aim_at_goal(&self, player_pos: Vector2, world: &FieldGeometry) -> Angle {
-        let opp_goal_center = Vector2::new(-world.field_length / 2.0, 0.0);
-
-        Angle::between_points(player_pos, opp_goal_center)
+    pub fn section(&self) -> AttackerSection {
+        self.section
     }
 
-    fn aim_at_player(&self, passer_pos: Vector2, reciever_pos: Vector2) -> Angle {
-        Angle::between_points(passer_pos, reciever_pos)
+    pub fn passed_to_receiver(&mut self) -> Option<PlayerId> {
+        self.has_passed_to_receiver.take()
     }
 
-    fn aim_at_ball(&self, player_pos: Vector2, ball_pos: Vector2) -> Angle {
-        Angle::between_points(player_pos, ball_pos)
+    pub fn receive(&mut self) {
+        self.next_state = Some(AttackerState::FetchingBall);
     }
 
-    fn closest_player_to_ball(&self, world: &WorldData, ball: &BallData) -> Option<PlayerId> {
-        let mut min_distance = f64::MAX;
-        let mut closest_player_id = None;
-        for player in world.own_players.iter() {
-            let distance = distance(player.position, ball.position.xy());
-            if distance < min_distance {
-                min_distance = distance;
-                closest_player_id = Some(player.id);
-            }
-        }
-        closest_player_id
+    pub fn has_ball(&self) -> bool {
+        matches!(
+            self.state,
+            AttackerState::Dribbling | AttackerState::Passing(_) | AttackerState::Shooting
+        )
     }
 
-    fn closest_player_to_passer(
-        &self,
-        world: &WorldData,
-        passer_pos: Vector2,
-        passer_id: PlayerId,
-    ) -> Option<PlayerId> {
-        let mut min_distance = f64::MAX;
-        let mut closest_player_id = None;
-        for player in world.own_players.iter() {
-            if player.id == passer_id {
-                continue;
-            }
-            let distance = distance(player.position, passer_pos);
-            if distance < min_distance {
-                min_distance = distance;
-                closest_player_id = Some(player.id);
-            }
-        }
-        closest_player_id
+    pub fn fetching_ball(&self) -> bool {
+        matches!(self.state, AttackerState::FetchingBall)
     }
 }
 
 impl Role for Attacker {
-    fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
+    fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
-            // Passer and Shooter only needs to be assigned once if not it creates many bugs
-            let (passer_id, shooter_id) =
-                if let (Some(passer), Some(shooter)) = (self.passer_id, self.shooter_id) {
-                    (passer, shooter)
-                } else {
-                    if let Some(passer) = self.closest_player_to_ball(ctx.world, ball) {
-                        let shooter = self.closest_player_to_passer(
-                            ctx.world,
-                            ctx.world
-                                .own_players
-                                .iter()
-                                .find(|p| p.id == passer)
-                                .unwrap()
-                                .position,
-                            passer,
-                        );
-                        if let Some(shooter) = shooter {
-                            self.passer_id = Some(passer);
-                            self.shooter_id = Some(shooter);
-                            (passer, shooter)
-                        } else {
-                            return PlayerControlInput::new();
-                        }
-                    } else {
-                        return PlayerControlInput::new();
-                    }
-                };
-
-            // Getting the position of the passer and the shooter
-            let passer_pos = ctx
-                .world
-                .own_players
-                .iter()
-                .find(|p| p.id == passer_id)
-                .unwrap()
-                .position;
-            let shooter_pos = ctx
-                .world
-                .own_players
-                .iter()
-                .find(|p| p.id == shooter_id)
-                .unwrap()
-                .position;
-
             let mut input = PlayerControlInput::new();
 
-            // If the player moved more than 1m then it should look for another player to pass the ball
-            if ctx.player.breakbeam_ball_detected {
-                let starting_pos = *self.starting_pos.get_or_insert(ctx.player.position);
+            let ball_angle = Angle::between_points(ctx.player.position, ball.position.xy());
+            let ball_pos = ball.position.xy();
+            let ball_dist = distance(ctx.player.position, ball_pos);
+            let ball_speed = ball.velocity.norm();
 
-                // dies_core::debug_string(format!("p{}", ctx.player.id))
-
-                if distance(starting_pos, ctx.player.position) >= 950.0 {
-                    // input.with_position(ctx.player.position);
-                    let target_angle = self.aim_at_player(ctx.player.position, shooter_pos);
-                    input.with_yaw(target_angle);
-                    input.with_dribbling(1.0);
-                    if (target_angle - ctx.player.yaw).abs() < 0.1 {
-                        input.with_kicker(KickerControlInput::Kick);
-                        self.starting_pos = None;
-                    }
-                    return input;
-                }
+            if let Some(next_state) = self.next_state.take() {
+                self.state = next_state;
+                self.dribbling_start = None;
+                self.has_passed_to_receiver = None;
+                self.position_cache.reset();
+                ctx.reset_skills();
             }
 
-            // If the player is the passer
-            if ctx.player.id == passer_id {
-                dies_core::debug_string(format!("p{}.attackerState", ctx.player.id), "passer");
+            let new_state = match self.state {
+                AttackerState::Positioning => {
+                    // Positioning ourselves to best receive the ball
+                    let target_pos = self.position_cache.get_or_insert_with(|| {
+                        find_best_striker_position(ctx.world, &self.section, geom)
+                    });
+                    input.with_position(target_pos);
+                    input.with_yaw(ball_angle);
 
-                let target_pos = ball.position.xy();
-                let target_angle = self.aim_at_ball(ctx.player.position, target_pos);
-                let dribble_speed = 1.0;
-
-                // When the ball is close to the shooter, the passer moves back to its position (to make sure it doesn't endlessly follow the ball)
-                if distance(shooter_pos, ball.position.xy()) < 600.0 {
-                    input.with_position(self.position);
-                    input.with_dribbling(0.0);
-                    return input;
-                }
-
-                // If the ball is far from the passer, the passer moves to the ball and arms the kicker ready to pass
-                if distance(ctx.player.position, ball.position.xy()) > 280.0 {
-                    skill!(ctx, FetchBall::new());
-                }
-
-                // Once the passer has the ball and it is in position it aims for the shooter
-                if distance(ctx.player.position, self.position) < 100.0 {
-                    let target_angle = self.aim_at_player(passer_pos, shooter_pos);
-                    input.with_yaw(target_angle);
-                    input.with_dribbling(1.0);
-
-                    // If the passer is facing the shooter it passes the ball
-                    if (target_angle - ctx.player.yaw).abs() < 0.1 {
-                        self.passer_kicked = true;
-                        input.with_kicker(KickerControlInput::Kick);
+                    // If the ball is close and slow enough, start fetching it
+                    if ball_dist < 300.0 && ball_speed < 300.0 {
+                        AttackerState::FetchingBall
+                    } else {
+                        AttackerState::Positioning
                     }
-                    return input;
                 }
+                AttackerState::FetchingBall => loop {
+                    match skill!(ctx, FetchBall::new()) {
+                        crate::roles::SkillResult::Success => break AttackerState::Dribbling,
+                        _ => {}
+                    }
+                    if ball_dist > 1000.0 {
+                        break AttackerState::Positioning;
+                    }
+                },
+                AttackerState::Dribbling => {
+                    let starting_pos = *self.dribbling_start.get_or_insert(ctx.player.position);
+
+                    let (best_pos, best_receiver, best_score) =
+                        find_best_passer_position(starting_pos, 1000.0, ctx.world, geom);
+                    if distance(starting_pos, ctx.player.position) > 900.0 {
+                        println!("Dribbling too far, passing");
+                        if let Some(receiver) = best_receiver {
+                            if best_score > 50.0 {
+                                AttackerState::Passing(receiver)
+                            } else if ctx.player.position.x > 1000.0 {
+                                AttackerState::Shooting
+                            } else {
+                                AttackerState::Passing(receiver)
+                            }
+                        } else {
+                            AttackerState::Shooting
+                        }
+                    } else {
+                        match skill!(ctx, GoToPosition::new(best_pos).with_ball()) {
+                            crate::roles::SkillResult::Success => AttackerState::Shooting,
+                            _ => AttackerState::Dribbling,
+                        }
+                    }
+                }
+                AttackerState::Passing(receiver) => loop {
+                    match invoke_skill!(ctx, Face::towards_own_player(receiver)) {
+                        crate::roles::SkillProgress::Continue(mut input) => {
+                            input.with_dribbling(1.0);
+                            return input;
+                        }
+                        _ => {}
+                    }
+                    if let SkillResult::Success = skill!(ctx, Kick::new()) {
+                        self.has_passed_to_receiver = Some(receiver);
+                        break AttackerState::Positioning;
+                    }
+                    match skill!(ctx, ApproachBall::new()) {
+                        crate::roles::SkillResult::Success => continue,
+                        _ => break AttackerState::Positioning,
+                    }
+                },
+                AttackerState::Shooting => {
+                    match invoke_skill!(ctx, Face::towards_position(Vector2::new(4500.0, 0.0))) {
+                        crate::roles::SkillProgress::Continue(mut input) => {
+                            input.with_dribbling(1.0);
+                            return input;
+                        }
+                        _ => {}
+                    }
+                    if let SkillResult::Success = skill!(ctx, Kick::new()) {
+                        AttackerState::Positioning
+                    } else {
+                        AttackerState::Shooting
+                    }
+                }
+            };
+
+            if new_state != self.state {
+                println!("Attacker: {:?} -> {:?}", self.state, new_state);
+                self.next_state = Some(new_state);
             }
 
-            // If the player is the shooter it aims at the ball and moves to its designated position
-            if ctx.player.id == shooter_id {
-                dies_core::debug_string(format!("p{}.attackerState", ctx.player.id), "shooter");
-
-                let target_angle = self.aim_at_ball(shooter_pos, ball.position.xy());
-                let dribble_speed = 1.0;
-                input.with_yaw(target_angle);
-                input.with_dribbling(dribble_speed);
-                // If the shooter is close to the ball (meaning the passer passed the ball), it moves toward the ball to "catch" it
-                // This should be changed to the parameter passer_has_kicked once it works!!
-                if distance(shooter_pos, ball.position.xy()) < 800.0 {
-                    while distance(shooter_pos, ball.position.xy()) > 280.0 {
-                        // Input to move to the ball and dribble.
-                        input.with_position(ball.position.xy());
-                        input.with_yaw(self.aim_at_ball(shooter_pos, ball.position.xy()));
-                        input.with_dribbling(dribble_speed);
-                        input.with_kicker(KickerControlInput::Arm);
-                        return input;
-                    }
-                }
-                // If the shooter has the ball, is in the designated spot it faces the goal
-                if distance(shooter_pos, self.position) < 100.0
-                    && distance(shooter_pos, ball.position.xy()) < 280.0
-                {
-                    let target_angle = self.aim_at_goal(shooter_pos, geom);
-                    input.with_yaw(target_angle);
-                    input.with_dribbling(1.0);
-
-                    // If the shooter is facing the goal it kicks the ball
-                    if (target_angle - ctx.player.yaw).abs() < 0.1 {
-                        input.with_kicker(KickerControlInput::Kick);
-                    }
-                    return input;
-                }
-            }
-
-            // This is the default input for all players, going to their designated position and facing the ball
-            input.with_dribbling(1.0);
-            input.with_position(self.position);
-            input.with_yaw(self.aim_at_ball(ctx.player.position, ball.position.xy()));
             input
         } else {
             PlayerControlInput::new()
@@ -226,7 +198,190 @@ impl Role for Attacker {
     }
 }
 
+/// A cache that holds a position and a counter that is incremented every time the position is
+/// accessed. The position is refreshed every `refresh_interval` accesses.
+struct PositionCache {
+    position: Option<Vector2>,
+    counter: u32,
+    refresh_interval: u32,
+}
+
+impl PositionCache {
+    fn new(refresh_interval: u32) -> Self {
+        Self {
+            position: None,
+            counter: 0,
+            refresh_interval,
+        }
+    }
+
+    fn get_or_insert_with(&mut self, f: impl FnOnce() -> Vector2) -> Vector2 {
+        self.counter += 1;
+        if let Some(position) = self.position {
+            if self.counter >= self.refresh_interval {
+                self.counter = 0;
+                self.position = Some(f());
+            }
+            position
+        } else {
+            let pos = f();
+            self.position = Some(pos);
+            pos
+        }
+    }
+
+    fn reset(&mut self) {
+        self.position = None;
+        self.counter = 0;
+    }
+}
+
 /// Calculate the distance between two points.
 fn distance(a: Vector2, b: Vector2) -> f64 {
     (a - b).norm()
+}
+
+/// Find a position with the best line of sight to the goal withing the given section.
+fn find_best_striker_position(
+    world: &WorldData,
+    section: &AttackerSection,
+    field: &FieldGeometry,
+) -> Vector2 {
+    let (min_y, max_y) = section.y_bounds(field);
+    let min_x = 100.0;
+    let max_x = field.field_length / 2.0 - 100.0;
+
+    let mut best_position = Vector2::new(0.0, 0.0);
+    let mut best_score = 0.0;
+
+    for x in (min_x as i32..max_x as i32).step_by(20) {
+        for y in (min_y as i32..max_y as i32).step_by(20) {
+            let position = Vector2::new(x as f64, y as f64);
+            if !is_pos_valid(position, field) {
+                continue;
+            }
+
+            let ball_score = score_line_of_sight(
+                world,
+                position,
+                world
+                    .ball
+                    .as_ref()
+                    .map(|b| b.position.xy())
+                    .unwrap_or_default(),
+                field,
+            );
+            let goal_score = score_line_of_sight(
+                world,
+                position,
+                Vector2::new(field.field_length / 2.0, 0.0),
+                field,
+            );
+            let goal_dist_score =
+                1.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
+            let score = ball_score + goal_score + goal_dist_score;
+            if score > best_score {
+                best_score = score;
+                best_position = position;
+            }
+        }
+    }
+
+    best_position
+}
+
+fn find_best_passer_position(
+    starting_pos: Vector2,
+    max_radius: f64,
+    world: &WorldData,
+    field: &FieldGeometry,
+) -> (Vector2, Option<PlayerId>, f64) {
+    let mut best_position = Vector2::new(0.0, 0.0);
+    let mut best_score = 0.0;
+    let mut best_striker = None;
+
+    let attackers = world
+        .own_players
+        .iter()
+        .filter(|p| p.position.x > 0.0)
+        .collect::<Vec<_>>();
+
+    let min_theta = -FRAC_PI_2;
+    let max_theta = FRAC_PI_2;
+    for theta in (min_theta as i32..max_theta as i32).step_by(10) {
+        let theta = theta as f64;
+        for radius in (0..max_radius as i32).step_by(20) {
+            let x = starting_pos.x + (radius as f64) * theta.cos();
+            let y = starting_pos.y + (radius as f64) * theta.sin();
+            let position = Vector2::new(x, y);
+            if !is_pos_valid(position, field) {
+                continue;
+            }
+
+            let striker_score = attackers
+                .iter()
+                .map(|p| {
+                    (
+                        p.id,
+                        score_line_of_sight(world, position, p.position, field),
+                    )
+                })
+                .max_by_key(|&x| x.1 as i64);
+            let goal_score = score_line_of_sight(
+                world,
+                position,
+                Vector2::new(field.field_length / 2.0, 0.0),
+                field,
+            );
+            if let Some((striker_id, score)) = striker_score {
+                let score = score + goal_score;
+                if score > best_score {
+                    best_score = score;
+                    best_position = position;
+                    best_striker = Some(striker_id);
+                }
+            }
+        }
+    }
+
+    (best_position, best_striker, best_score)
+}
+
+fn is_pos_valid(pos: Vector2, field: &FieldGeometry) -> bool {
+    const MARGIN: f64 = 100.0;
+    // check if pos inside penalty area
+    if pos.x.abs() > field.field_length / 2.0 - field.penalty_area_depth - MARGIN
+        && pos.y.abs() < field.penalty_area_width / 2.0 + MARGIN
+    {
+        return false;
+    }
+    true
+}
+
+/// Compute a "badness" score for a line of sight between two points based on the minumum
+/// distance to the line of sight from the closest enemy player.
+///
+/// The score is higher if the line of sight is further from the enemy players.
+fn score_line_of_sight(
+    world: &WorldData,
+    from: Vector2,
+    to: Vector2,
+    field: &FieldGeometry,
+) -> f64 {
+    let mut min_distance = f64::MAX;
+    for player in world.opp_players.iter() {
+        let distance = distance_to_line(from, to, player.position);
+        if distance < min_distance {
+            min_distance = distance;
+        }
+    }
+    min_distance
+}
+
+fn distance_to_line(a: Vector2, b: Vector2, p: Vector2) -> f64 {
+    let n = (b - a).normalize();
+    let ap = p - a;
+    let proj = ap.dot(&n);
+    let proj = proj.max(0.0).min((b - a).norm());
+    (ap - proj * n).norm()
 }

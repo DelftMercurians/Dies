@@ -101,21 +101,6 @@ impl Strategy for TestStrat {
         }
     }
 
-    fn update_role(
-        &mut self,
-        player_id: PlayerId,
-        ctx: crate::roles::RoleCtx,
-    ) -> Option<crate::PlayerControlInput> {
-        if let Some(assignment) = self.assignment.as_mut() {
-            if player_id == assignment.passer_id {
-                return Some(assignment.passer.update(ctx));
-            } else if player_id == assignment.receiver_id {
-                return Some(assignment.receiver.update(ctx));
-            }
-        }
-        None
-    }
-
     fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
         if let Some(assignment) = self.assignment.as_mut() {
             if player_id == assignment.passer_id {

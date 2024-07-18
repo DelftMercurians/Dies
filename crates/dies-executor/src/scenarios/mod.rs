@@ -6,6 +6,7 @@ use crate::roles::harasser::Harasser;
 use crate::roles::skills::FetchBallWithHeading;
 use crate::roles::Goalkeeper;
 use crate::strategy;
+use crate::strategy::attack_strat::PlayStrategy;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
@@ -25,6 +26,19 @@ use serde::{Deserialize, Serialize};
 
 fn empty_scenario() -> ScenarioSetup {
     ScenarioSetup::new(AdHocStrategy::new(), StrategyGameStateMacther::Any)
+}
+
+fn play() -> ScenarioSetup {
+    let mut setup = ScenarioSetup::new(PlayStrategy::new(), StrategyGameStateMacther::Any);
+    setup
+        .add_ball()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player()
+        .add_opp_player_at(Vector2::new(1000.0, 1000.0))
+        .add_opp_player_at(Vector2::new(4500.0, 0.0))
+        .add_opp_player_at(Vector2::new(1000.0, -1000.0));
+    setup
 }
 
 fn goalie_test() -> ScenarioSetup {
@@ -130,30 +144,6 @@ fn need_to_cross_the_goal_area_alt() -> ScenarioSetup {
         .add_ball_at(Vector2::new(-4500.0, -2950.0))
         .add_own_player_at(Vector2::new(-3800.0, 500.0));
 
-    scenario
-}
-
-fn test_role_multiple_targets() -> ScenarioSetup {
-    let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(Attacker::new(Vector2::new(-800.0, -1000.0))));
-    let mut scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
-    scenario
-        .add_ball()
-        .add_own_player_at(Vector2::new(1000.0, 1000.0));
-    scenario
-}
-
-fn three_attackers() -> ScenarioSetup {
-    let mut strategy = AdHocStrategy::new();
-    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, 2000.0))));
-    strategy.add_role(Box::new(Attacker::new(Vector2::new(-2400.0, -2000.0))));
-    strategy.add_role(Box::new(Attacker::new(Vector2::new(-200.0, 0.0))));
-    let mut scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
-    scenario
-        .add_ball()
-        .add_own_player()
-        .add_own_player()
-        .add_own_player();
     scenario
 }
 
@@ -263,19 +253,18 @@ impl Serialize for ScenarioType {
 // **NOTE**: Add new scenarios here.
 scenarios! {
     empty_scenario,
+    play,
     goalie_test,
     kick_pass,
     need_to_cross_the_goal_area,
     need_to_cross_the_goal_area_alt,
-    test_role_multiple_targets,
     fetch_ball_test_sim,
     fetch_ball_test_live,
     fetch_ball_with_heading,
     free_kick,
     penalty_kick,
     kickoff,
-    one_harasser_one_player_one_ball,
-    three_attackers
+    one_harasser_one_player_one_ball
 }
 
 #[cfg(test)]
