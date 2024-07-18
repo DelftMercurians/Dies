@@ -84,6 +84,9 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
     "global",
   );
   const [fanSpeed, setFanSpeed] = useState(0);
+  const [kickSpeed, setKickSpeed] = useState(0);
+  const [kick, setKick] = useState(false);
+
 
   const manualControl =
     typeof selectedPlayerId === "number" &&
@@ -94,6 +97,8 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
     angularSpeedDegPerSec,
     mode: keyboardMode,
     fanSpeed,
+    kickSpeed,
+    kick
   });
 
   const debugData = useDebugData();
@@ -289,7 +294,30 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
               value={[fanSpeed]}
               onValueChange={([newValue]) =>setFanSpeed(newValue)}
             />
+            <div>%</div>
+          </div>
+
+          <div className="flex flex-row gap-2 items-center">
+            <div>Kick Speed</div>
+            <Input
+              type="number"
+              min="0"
+              max="10000"
+              value={kickSpeed}
+              onChange={(e) => setKickSpeed(parseInt(e.target.value))}
+            />
             <div>mm/s</div>
+          </div>
+
+          <div className="flex flex-row gap-2 items-center">
+            <div>Kick</div>
+            <Button
+              onClick={() => {
+                setKick(true)
+                setTimeout(() => setKick(false), 1000 / 10)
+              }
+            }
+            />
           </div>
 
           <div className="flex justify-center">

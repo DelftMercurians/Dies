@@ -300,13 +300,17 @@ export const useKeyboardControl = ({
   angularSpeedDegPerSec,
   speed,
   mode = "global",
-  fanSpeed
+  fanSpeed,
+  kickSpeed,
+  kick
 }: {
   playerId: number | null;
   speed: number;
   angularSpeedDegPerSec: number;
   mode: "local" | "global";
   fanSpeed: number;
+  kickSpeed: number;
+  kick: boolean;
 }) => {
   const sendCommand = useSendCommand();
 
@@ -318,6 +322,10 @@ export const useKeyboardControl = ({
   modeRef.current = mode;
   const fanSpeedRef = useRef(fanSpeed);
   fanSpeedRef.current = fanSpeed;
+  const kickRef = useRef(kick);
+  kickRef.current = kick;
+  const kickSpeedRef = useRef(kickSpeed);
+  kickSpeedRef.current = kickSpeed;
   useEffect(() => {
     if (playerId === null) return;
     const pressedKeys = new Set<string>();
@@ -388,6 +396,23 @@ export const useKeyboardControl = ({
               type: "SetFanSpeed",
               data: {
                 speed: fanSpeedRef.current,
+              },
+            },
+          },
+        } satisfies UiCommand;
+        sendCommand(command as UiCommand);
+      }
+      if (kickRef.current) {
+        console.log("kick");
+        // kickRef.current = false; // doesn't work :/
+        const command = {
+          type: "OverrideCommand",
+          data: {
+            player_id: playerId,
+            command: {
+              type: "Kick",
+              data: {
+                speed: kickSpeedRef.current,
               },
             },
           },

@@ -135,7 +135,8 @@ pub struct PlayerControlInput {
 
     pub avoid_ball: bool,
 
-    pub fan_speed: f64,
+    pub fan_speed: Option<f64>,
+    pub kick_speed: Option<f64>,
 }
 
 impl PlayerControlInput {

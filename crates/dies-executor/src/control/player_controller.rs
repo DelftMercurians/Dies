@@ -62,6 +62,7 @@ pub struct PlayerController {
     opp_goal_sign: f64,
 
     fan_speed: f64,
+    kick_speed: f64,
 }
 
 impl PlayerController {
@@ -103,6 +104,7 @@ impl PlayerController {
             opp_goal_sign: settings.tracker_settings.initial_opp_goal_x,
 
             fan_speed: 0.0,
+            kick_speed: 0.0,
         };
         instance.update_settings(&settings.controller_settings);
         instance
@@ -176,6 +178,7 @@ impl PlayerController {
             },
             dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
             fan_speed: self.fan_speed,
+            kick_speed: self.kick_speed,
             robot_cmd,
         };
 
@@ -219,7 +222,13 @@ impl PlayerController {
             dies_core::debug_string(format!("p{}.collision", self.id), "true");
         }
 
-        self.fan_speed = input.fan_speed;
+        if let Some(fan_speed) = input.fan_speed {
+            self.fan_speed = fan_speed;
+        }
+        if let Some(kick_speed) = input.kick_speed {
+            self.kick_speed = kick_speed;
+        }
+
         dies_core::debug_value(format!("p{}.fan_speed", self.id), self.fan_speed);
 
         // Calculate velocity using the MTP controller
