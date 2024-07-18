@@ -163,11 +163,10 @@ impl Role for Waller {
                         .min(geom.penalty_area_width / 2.0 + MARGIN);
                     input.with_position(target_pos);
                     input.ignore_robots();
-                    input.with_yaw(Angle::from_radians(0.0));
-                    // input.with_yaw(Angle::between_points(
-                    //     ctx.player.position,
-                    //     ball.position.xy(),
-                    // ));
+                    input.with_yaw(Angle::between_points(
+                        Vector2::new(-4500.0, 0.0),
+                        ctx.player.position
+                    ));
                     input
                 }
                 State::Shooting(receiver_id) => {
