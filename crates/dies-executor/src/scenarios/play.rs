@@ -25,8 +25,11 @@ use serde::{Deserialize, Serialize};
 
 pub fn play() -> ScenarioSetup {
     let assign = |mut player_ids: Vec<PlayerId>| {
+        log::info!("Assigning roles for play scenario, players: {:?}", player_ids);
+
         let mut map = StrategyMap::new();
-        if player_ids.len() == 0 {
+        let num_players = player_ids.len();
+        if num_players == 0 {
             return map;
         }
 
@@ -43,7 +46,7 @@ pub fn play() -> ScenarioSetup {
         );
 
         let mut play = PlayStrategy::new(keeper);
-        if player_ids.len() == 1 {
+        if num_players == 1 {
             map.insert(
                 StrategyGameStateMacther::any_of(vec![GameState::Run, GameState::Stop].as_slice()),
                 play,
@@ -52,7 +55,7 @@ pub fn play() -> ScenarioSetup {
         }
 
         let waller1 = player_ids.pop().unwrap();
-        if player_ids.len() == 2 {
+        if num_players == 2 {
             play.defense.add_wallers(vec![waller1]);
             map.insert(
                 StrategyGameStateMacther::any_of(vec![GameState::Run, GameState::Stop].as_slice()),
@@ -63,7 +66,7 @@ pub fn play() -> ScenarioSetup {
 
         let waller2 = player_ids.pop().unwrap();
         play.defense.add_wallers(vec![waller1, waller2]);
-        if player_ids.len() == 3 {
+        if num_players == 3 {
             map.insert(
                 StrategyGameStateMacther::any_of(vec![GameState::Run, GameState::Stop].as_slice()),
                 play,
@@ -73,7 +76,7 @@ pub fn play() -> ScenarioSetup {
 
         let harasser = player_ids.pop().unwrap();
         play.defense.add_harasser(harasser);
-        if player_ids.len() == 4 {
+        if num_players == 4 {
             map.insert(
                 StrategyGameStateMacther::any_of(vec![GameState::Run, GameState::Stop].as_slice()),
                 play,
@@ -83,7 +86,7 @@ pub fn play() -> ScenarioSetup {
 
         let attacker1 = player_ids.pop().unwrap();
         play.attack.add_attacker(attacker1);
-        if player_ids.len() == 5 {
+        if num_players == 5 {
             map.insert(
                 StrategyGameStateMacther::any_of(vec![GameState::Run, GameState::Stop].as_slice()),
                 play,

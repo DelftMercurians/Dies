@@ -1,4 +1,5 @@
 use dies_core::to_dies_coords2;
+use crate::ball;
 use crate::BallData;
 use dies_core::GameState;
 use dies_core::Vector2;
@@ -57,7 +58,7 @@ impl GameStateTracker {
                 } else if self.game_state == GameState::PreparePenalty {
                     GameState::Penalty
                 } else {
-                    self.game_state
+                    GameState::Run
                 }
             }
             Command::FORCE_START => GameState::Run,
@@ -150,7 +151,7 @@ impl GameStateTracker {
         } else {
             let distance = (ball_data.unwrap().position - p).norm();
             let velocity = ball_data.unwrap().velocity.norm();
-            if distance > 100.0 && velocity > 5000.0 {
+            if distance > 500.0 && velocity > 5000.0 {
                 self.game_state = self.new_state_movement;
                 self.is_outdated = true;
             }

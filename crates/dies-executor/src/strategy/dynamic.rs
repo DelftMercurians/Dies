@@ -49,10 +49,12 @@ where
         });
 
         let game_state = ctx.world.current_game_state.game_state;
+        self.last_game_state = game_state;
         let strategy = strategy_map
             .get_strategy(&game_state)
             .unwrap_or_else(|| &mut self.adhoc_strategy);
         if strategy.name() != self.active_strategy {
+            log::info!("Switching to strategy: {}", strategy.name());
             self.active_strategy = strategy.name().to_owned();
             strategy.on_enter(ctx.clone());
         }

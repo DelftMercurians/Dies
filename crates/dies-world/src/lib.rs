@@ -173,15 +173,19 @@ impl WorldTracker {
         self.game_state_tracker
             .update_ball_movement_check(self.ball_tracker.get().as_ref());
 
-        let cur = self.game_state_tracker.update(data);
-        if cur == GameState::Kickoff || cur == GameState::FreeKick {
-            let timeout = if IS_DIV_A { 10 } else { 5 };
-            self.game_state_tracker
-                .start_ball_movement_check(self.ball_tracker.get().unwrap().position, timeout);
-        }
-        if cur == GameState::Penalty {
-            self.game_state_tracker
-                .start_ball_movement_check(self.ball_tracker.get().unwrap().position, 10);
+        if let Some(ball) = self.ball_tracker.get() {
+            let cur = self.game_state_tracker.update(data);
+            if cur == GameState::Kickoff || cur == GameState::FreeKick {
+                let timeout = if IS_DIV_A { 10 } else { 5 };
+                self.game_state_tracker
+                    .start_ball_movement_check(ball.position, timeout);
+            }
+            if cur == GameState::Penalty {
+                self.game_state_tracker
+                    .start_ball_movement_check(ball.position, 10);
+            }
+        } else {
+            log::error!("Ball not detected, cannot update game state");
         }
     }
 

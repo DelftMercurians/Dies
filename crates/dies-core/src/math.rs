@@ -68,6 +68,7 @@ pub fn which_side_of_robot(heading: Angle, target_pos: Vector2, robot_pos: Vecto
     let heading_v_tangent = perp(heading_v);
     cross_product(heading_v_tangent, robot_pos - target_pos) >= -10.0
 }
+
 /// given a circle and a point, return the two tangent line directions
 pub fn get_tangent_line_direction(
     circle_center: Vector2,

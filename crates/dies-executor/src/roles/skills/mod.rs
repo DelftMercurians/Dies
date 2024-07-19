@@ -568,7 +568,6 @@ impl Skill for FetchBallWithHeading {
         };
 
         let target_pos = init_ball_pos - Angle::to_vector(&target_heading) * ball_radius;
-
         if (player_data.position - target_pos).norm() < 20.0
             && (player_data.yaw - target_heading).abs() < 0.2
         // this threshold should be changed only with real robots in sight
@@ -585,7 +584,12 @@ impl Skill for FetchBallWithHeading {
             }
 
             input.with_position(target_pos).with_yaw(target_heading);
-            input.avoid_ball = true;
+
+            // check if bal is between player and target
+            let can_move_directly =
+                which_side_of_robot(target_heading, target_pos, player_data.position);
+            input.avoid_ball = !can_move_directly;
+
             // input.care = 0.7;
             SkillProgress::Continue(input)
         } else {
