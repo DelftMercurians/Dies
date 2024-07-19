@@ -21,7 +21,6 @@ use super::StrategyCtx;
 pub struct PenaltyKickStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
     has_attacker: bool,
-    gate_keeper_id: Option<PlayerId>,
     pos_interval: f64,
     pos_counter: u32,
 }
@@ -122,22 +121,13 @@ impl Role for Attacker {
 }
 
 impl PenaltyKickStrategy {
-    pub fn new(gate_keeper_id: Option<PlayerId>) -> Self {
+    pub fn new() -> Self {
         PenaltyKickStrategy {
             roles: HashMap::new(),
             has_attacker: false,
-            gate_keeper_id,
             pos_counter: 0,
             pos_interval: 500.0,
         }
-    }
-
-    pub fn add_role_with_id(&mut self, id: PlayerId, role: Box<dyn Role>) {
-        self.roles.insert(id, role);
-    }
-
-    pub fn set_gate_keeper(&mut self, id: PlayerId) {
-        self.gate_keeper_id = Some(id);
     }
 }
 
@@ -151,39 +141,36 @@ impl Strategy for PenaltyKickStrategy {
         self.has_attacker = false;
         self.pos_counter = 0;
 
-        // Assign attacker role
-        for player in ctx.world.own_players.iter() {
-            if let Some(gate_keeper_id) = self.gate_keeper_id {
-                println!("assigning {} as gate keeper", gate_keeper_id);
-                self.roles
-                    .insert(gate_keeper_id, Box::new(Goalkeeper::new()));
-            }
-            if !self.has_attacker && ctx.world.current_game_state.us_operating {
-                println!("assigning {} as attacker", player.id);
-                self.has_attacker = true;
-                self.roles.insert(player.id, Box::new(Attacker::new()));
-            } else {
-                println!("assigning {} as other player", player.id);
-                self.roles.insert(
-                    player.id,
-                    Box::new(OtherPlayer::new(Vector2::new(
-                        200.0 + (player.id.as_u32() as f64 * ctx.world.player_model.radius + 50.0),
-                        -ctx.world
-                            .field_geom
-                            .as_ref()
-                            .map(|g| g.field_width / 2.0)
-                            .unwrap_or(-3000.0),
-                    ))),
-                );
-            }
+        let mut player_ids = ctx
+            .world
+            .own_players
+            .iter()
+            .map(|p| p.id)
+            .collect::<Vec<PlayerId>>();
+        player_ids.sort(); // increasing order, we take the last player as the attacker
+
+        if let Some(id) = player_ids.pop() {
+            self.roles.insert(id, Box::new(Attacker::new()));
         }
 
+        if let Some(id) = player_ids.get(0) {
+            self.roles.insert(*id, Box::new(Goalkeeper::new()));
+            player_ids.remove(0);
+        }
+
+        for id in player_ids {
+            // line up the players at x =
+            let geom = ctx.world.field_geom.clone().unwrap_or_default();
+            let fl = geom.field_length / 2.0;
+            let pw = geom.penalty_area_width / 2.0;
+            let pos = Vector2::new(-fl, pw - id.as_u32() as f64 * 100.0);
+            self.roles.insert(id, Box::new(OtherPlayer::new(pos)));
+        }
     }
 
     fn update(&mut self, ctx: StrategyCtx) {}
 
     fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
-        
         if let Some(role) = self.roles.get_mut(&player_id) {
             Some(role.as_mut())
         } else {

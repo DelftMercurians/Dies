@@ -9,7 +9,6 @@ use crate::roles::harasser::Harasser;
 use crate::roles::skills::FetchBallWithHeading;
 use crate::roles::{waller, Goalkeeper};
 use crate::strategy::attack_strat::PlayStrategy;
-use crate::strategy::dynamic::DynamicStrategy;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
@@ -64,7 +63,7 @@ fn play_static() -> ScenarioSetup {
         StrategyGameStateMacther::any_of(
             vec![GameState::Kickoff, GameState::PrepareKickoff].as_slice(),
         ),
-        KickoffStrategy::new(keeper, attacker2, vec![waller1, waller2]),
+        KickoffStrategy::new(),
     );
 
     setup
@@ -100,7 +99,7 @@ fn goalie_test() -> ScenarioSetup {
 }
 
 fn penalty_kick() -> ScenarioSetup {
-    let strategy = PenaltyKickStrategy::new(None);
+    let strategy = PenaltyKickStrategy::new();
     let mut scenario = ScenarioSetup::new(
         strategy,
         StrategyGameStateMacther::any_of(
@@ -146,7 +145,7 @@ fn free_kick() -> ScenarioSetup {
         .add_own_player_at(Vector2::new(1000.0, 1000.0))
         .add_own_player_at(Vector2::new(-100.0, 0.0))
         .add_opp_player_at(Vector2::new(200.0, 200.0))
-        .add_own_player_at(Vector2::new(    -200.0, 2600.0))
+        .add_own_player_at(Vector2::new(-200.0, 2600.0))
         .add_own_player_at(Vector2::new(-500.0, 600.0))
         .add_opp_player_at(Vector2::new(-800.0, -300.0))
         .add_own_player_at(Vector2::new(0.0, 2000.0))

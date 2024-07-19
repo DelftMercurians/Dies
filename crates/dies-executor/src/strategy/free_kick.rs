@@ -1,22 +1,18 @@
 use crate::roles::skills::{ApproachBall, FetchBallWithHeading, Kick};
-use crate::roles::{Goalkeeper, RoleCtx, SkillResult};
+use crate::roles::{RoleCtx, SkillResult};
 use crate::strategy::kickoff::OtherPlayer;
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
-use dies_core::{
-    Angle, BallData, FieldGeometry, PlayerData, PlayerId, RoleType, Vector2, WorldData,
-};
-use nalgebra::{Rotation2, SMatrix, SquareMatrix};
+use dies_core::{Angle, BallData, PlayerData, PlayerId, RoleType, Vector2, WorldData};
 // use num_traits::float::Float;
 use std::collections::HashMap;
-use std::fmt::format;
 
 use super::StrategyCtx;
 
 pub struct FreeKickStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
     kicker_id: Option<PlayerId>,
-    gate_keeper_id: Option<PlayerId>,
+    keeper_id: Option<PlayerId>,
 }
 
 pub struct FreeAttacker {
@@ -88,11 +84,11 @@ impl Role for FreeAttacker {
 }
 
 impl FreeKickStrategy {
-    pub fn new(gate_keeper_id: Option<PlayerId>) -> Self {
+    pub fn new(keeper_id: Option<PlayerId>) -> Self {
         FreeKickStrategy {
             roles: HashMap::new(),
             kicker_id: None,
-            gate_keeper_id,
+            keeper_id,
         }
     }
 
@@ -101,7 +97,7 @@ impl FreeKickStrategy {
     }
 
     pub fn set_gate_keeper(&mut self, id: PlayerId) {
-        self.gate_keeper_id = Some(id);
+        self.keeper_id = Some(id);
     }
 }
 
@@ -115,7 +111,10 @@ impl Strategy for FreeKickStrategy {
         self.roles.clear();
         self.kicker_id = None;
 
-        log::info!("Entering FreeKick strategy, game state: {:?}", ctx.world.current_game_state);
+        log::info!(
+            "Entering FreeKick strategy, game state: {:?}",
+            ctx.world.current_game_state
+        );
 
         // Assign player closest to the ball as kicker
         // if we are attacking
@@ -124,7 +123,7 @@ impl Strategy for FreeKickStrategy {
                 .world
                 .own_players
                 .iter()
-                .filter(|p| Some(p.id) != self.gate_keeper_id)
+                .filter(|p| Some(p.id) != self.keeper_id)
                 .min_by_key(|p| {
                     let ball_pos = ctx.world.ball.as_ref().unwrap().position.xy();
                     let diff = p.position - ball_pos;
@@ -132,7 +131,7 @@ impl Strategy for FreeKickStrategy {
                 });
             if let Some(kicker) = kicker {
                 self.kicker_id = Some(kicker.id);
-                println!("assigning {} as kicker", kicker.id);
+                log::info!("assigning {} as kicker", kicker.id);
                 self.roles.insert(
                     kicker.id,
                     Box::new(FreeAttacker {
@@ -147,7 +146,10 @@ impl Strategy for FreeKickStrategy {
 
         // Assign roles to players
         for player_data in ctx.world.own_players.iter() {
-            if self.gate_keeper_id == Some(player_data.id) {
+            if self.keeper_id == Some(player_data.id) {
+                continue;
+            }
+            if self.kicker_id == Some(player_data.id) {
                 continue;
             }
 

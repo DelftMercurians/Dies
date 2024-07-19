@@ -81,18 +81,12 @@ impl Role for OtherPlayer {
 
 pub struct KickoffStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
-    keeper_id: PlayerId,
-    attacker_id: PlayerId,
-    waller_ids: Vec<PlayerId>,
 }
 
 impl KickoffStrategy {
-    pub fn new(keeper_id: PlayerId, attacker_id: PlayerId, waller_ids: Vec<PlayerId>) -> Self {
+    pub fn new() -> Self {
         KickoffStrategy {
             roles: HashMap::new(),
-            keeper_id,
-            attacker_id,
-            waller_ids,
         }
     }
 }
@@ -106,39 +100,65 @@ impl Strategy for KickoffStrategy {
         // Clear roles
         self.roles.clear();
 
-        // Assign roles
-        self.roles
-            .insert(self.keeper_id, Box::new(Goalkeeper::new()));
+        let mut player_ids = ctx
+            .world
+            .own_players
+            .iter()
+            .map(|p| p.id)
+            .collect::<Vec<_>>();
+        player_ids.sort();
+        player_ids.reverse();
 
-        let mut waller_idx = 0;
+        if player_ids.len() == 1 {
+            // Just one player, make him the kicker
+            self.roles.insert(
+                player_ids.pop().unwrap(),
+                Box::new(Kicker::new(ctx.world.current_game_state.us_operating)),
+            );
+            return;
+        }
+
+        // 0 -> goalkeeper
+        if let Some(id) = player_ids.pop() {
+            self.roles.insert(id, Box::new(Goalkeeper::new()));
+        }
+
+        // 5 -> Kicker
+        if let Some(id) = player_ids.get(0) {
+            self.roles.insert(
+                id.clone(),
+                Box::new(Kicker::new(ctx.world.current_game_state.us_operating)),
+            );
+            player_ids.remove(0);
+        }
+
+        // 1 -> Waller
+        if let Some(id) = player_ids.pop() {
+            self.roles.insert(id, Box::new(Waller::new_with_index(0)));
+        }
+
+        // 2 -> Waller
+        if let Some(id) = player_ids.pop() {
+            self.roles.insert(id, Box::new(Waller::new_with_index(1)));
+        }
+
+        // 3+ -> Other players
         let mut other_positions = vec![
+            Vector2::new(-1500.0, 400.0),
+            Vector2::new(-1500.0, 400.0),
             Vector2::new(-2000.0, 0.0),
-            Vector2::new(-2500.0, 0.0),
-            Vector2::new(-3000.0, 0.0),
         ];
-        for player in ctx.world.own_players.iter() {
-            if player.id == self.attacker_id {
-                self.roles.insert(
-                    player.id,
-                    Box::new(Kicker::new(ctx.world.current_game_state.us_operating)),
-                );
-            } else if self.waller_ids.contains(&player.id) {
-                self.roles
-                    .insert(player.id, Box::new(Waller::new_with_index(waller_idx)));
-                waller_idx += 1;
-            } else if player.id != self.keeper_id {
-                self.roles.insert(
-                    player.id,
-                    Box::new(OtherPlayer::new(
-                        other_positions.pop().unwrap_or(Vector2::new(-3500.0, 0.0)),
-                    )),
-                );
-            }
+        for id in player_ids {
+            self.roles.insert(
+                id,
+                Box::new(OtherPlayer::new(
+                    other_positions.pop().unwrap_or(Vector2::new(-3500.0, 0.0)),
+                )),
+            );
         }
     }
 
-    fn update(&mut self, ctx: StrategyCtx) {
-    }
+    fn update(&mut self, ctx: StrategyCtx) {}
 
     fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
         if let Some(role) = self.roles.get_mut(&player_id) {

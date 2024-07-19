@@ -1,31 +1,20 @@
 use super::scenario::ScenarioSetup;
 
-use crate::roles::attacker::{self, Attacker};
-use crate::roles::dummy_role::DummyRole;
-use crate::roles::harasser::Harasser;
-use crate::roles::skills::FetchBallWithHeading;
-use crate::roles::{waller, Goalkeeper};
 use crate::strategy::attack_strat::PlayStrategy;
 use crate::strategy::dynamic::DynamicStrategy;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
-use crate::strategy::stop::StopStrategy;
-use crate::strategy::test_strat::TestStrat;
-use crate::{
-    roles::{
-        dribble_role::DribbleRole, fetcher_role::FetcherRole, kicker_role::KickerRole,
-        test_role::TestRole, waller::Waller,
-    },
-    strategy::AdHocStrategy,
-};
-use crate::{strategy, StrategyMap};
-use dies_core::{Angle, GameState, PlayerId, StrategyGameStateMacther, Vector2, Vector3};
-use serde::{Deserialize, Serialize};
+use crate::strategy::AdHocStrategy;
+use crate::StrategyMap;
+use dies_core::{GameState, PlayerId, StrategyGameStateMacther};
 
 pub fn play() -> ScenarioSetup {
     let assign = |mut player_ids: Vec<PlayerId>| {
-        log::info!("Assigning roles for play scenario, players: {:?}", player_ids);
+        log::info!(
+            "Assigning roles for play scenario, players: {:?}",
+            player_ids
+        );
 
         let mut map = StrategyMap::new();
         let num_players = player_ids.len();
@@ -43,6 +32,23 @@ pub fn play() -> ScenarioSetup {
         map.insert(
             StrategyGameStateMacther::Specific(GameState::FreeKick),
             FreeKickStrategy::new(Some(keeper)),
+        );
+        map.insert(
+            StrategyGameStateMacther::any_of(
+                vec![GameState::Kickoff, GameState::PrepareKickoff].as_slice(),
+            ),
+            KickoffStrategy::new(),
+        );
+        map.insert(
+            StrategyGameStateMacther::any_of(
+                vec![
+                    GameState::Penalty,
+                    GameState::PreparePenalty,
+                    GameState::PenaltyRun,
+                ]
+                .as_slice(),
+            ),
+            PenaltyKickStrategy::new(),
         );
 
         let mut play = PlayStrategy::new(keeper);
@@ -106,5 +112,13 @@ pub fn play() -> ScenarioSetup {
 
     let strat = DynamicStrategy::new(assign);
     let mut scenario = ScenarioSetup::new(strat, StrategyGameStateMacther::Any);
+    scenario
+        .add_ball()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player()
+        .add_own_player();
     scenario
 }
