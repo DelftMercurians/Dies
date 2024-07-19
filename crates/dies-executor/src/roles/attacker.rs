@@ -145,7 +145,7 @@ impl Role for Attacker {
                     input.with_yaw(ball_angle);
 
                     // If the ball is close and slow enough, start fetching it
-                    if ball_speed < 300.0 {
+                    if ball_speed < 300.0 && ball.position.x > 200.0 {
                         AttackerState::FetchingBall
                     } else {
                         AttackerState::Positioning
