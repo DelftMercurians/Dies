@@ -453,7 +453,6 @@ fn score_line_of_sight(
     if to.x > 3800.0 {
         min_distance = 0.0;
     }
-    println!("{}", min_distance);
     min_distance - (from.y.abs() / 4.0).max(40.0) - (from.x.abs() / 4.0).max(40.0) - (player.position - from).magnitude().max(100.0)
 }
 

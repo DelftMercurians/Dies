@@ -37,12 +37,12 @@ fn play() -> ScenarioSetup {
     let waller1 = PlayerId::new(2);
     let waller2 = PlayerId::new(3);
     let attacker1 = PlayerId::new(4);
-    let attacker2 = PlayerId::new(5);
+    // let attacker2 = PlayerId::new(5);
 
     let mut strat = PlayStrategy::new(keeper, harasser);
     strat.defense.add_wallers(vec![waller1, waller2]);
     strat.attack.add_attacker(attacker1);
-    strat.attack.add_attacker(attacker2);
+    // strat.attack.add_attacker(attacker2);
 
     let mut setup = ScenarioSetup::new(
         strat,
@@ -70,6 +70,7 @@ fn play() -> ScenarioSetup {
         .add_own_player()
         .add_own_player()
         .add_own_player()
+        // .add_own_player()
         .add_opp_player_at(Vector2::new(1000.0, 1000.0))
         .add_opp_player_at(Vector2::new(4500.0, 0.0))
         .add_opp_player_at(Vector2::new(1000.0, -1000.0));
