@@ -272,7 +272,7 @@ impl PlayerController {
                     let mut obstacles = obstacles;
                     obstacles.push(Obstacle::Circle {
                         center: ball.position.xy(),
-                        radius: 50.0,
+                        radius: 150.0,
                     });
                     obstacles
                 } else {

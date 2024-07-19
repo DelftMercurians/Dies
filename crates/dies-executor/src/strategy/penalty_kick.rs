@@ -62,18 +62,20 @@ impl Role for Attacker {
             }
         }
 
-        skill!(
-            ctx,
-            FetchBallWithHeading::towards_position(Vector2::new(4500.0, 0.0))
-        );
-
-        if gamestate == GameState::Penalty || gamestate == GameState::PenaltyRun {
-            let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
-
+        if gamestate == GameState::PreparePenalty {
             skill!(
                 ctx,
-                GoToPosition::new(Vector2::new(ball_pos.x + 1000.0, ball_pos.y))
+                FetchBallWithHeading::towards_position(Vector2::new(4500.0, 0.0))
             );
+
+            return PlayerControlInput::new();
+        } else if gamestate == GameState::PenaltyRun || gamestate == GameState::Penalty {
+            let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
+
+            // skill!(
+            //     ctx,
+            //     GoToPosition::new(Vector2::new(ball_pos.x + 1000.0, ball_pos.y))
+            // );
 
             // find the goal keeper
             let goalkeeper_dir = world_data
@@ -81,16 +83,16 @@ impl Role for Attacker {
                 .iter()
                 .find(|player| {
                     let pos = player.position;
-                    pos.x >= 3500.0 && pos.x <= 4500.0 && pos.y >= -1000.0 && pos.y <= 1000.0
+                    pos.x >= 3000.0 && pos.y >= -1000.0 && pos.y <= 1000.0
                 })
                 .map(|player| Angle::between_points(player_data.position, player.position));
             let target: Angle = goalkeeper_dir.map_or(Angle::from_radians(0.0), |dir| {
                 if dir.radians() > 0.0 {
-                    (Angle::between_points(player_data.position, Vector2::new(4500.0, -1000.0))
+                    (Angle::between_points(player_data.position, Vector2::new(4500.0, 350.0))
                         + goalkeeper_dir.unwrap())
                         / 2.0
                 } else {
-                    (Angle::between_points(player_data.position, Vector2::new(4500.0, 1000.0))
+                    (Angle::between_points(player_data.position, Vector2::new(4500.0, -350.0))
                         + goalkeeper_dir.unwrap())
                         / 2.0
                 }
@@ -110,10 +112,9 @@ impl Role for Attacker {
                     break;
                 }
             }
-            PlayerControlInput::new()
-        } else {
-            PlayerControlInput::new()
         }
+
+        PlayerControlInput::new()
     }
     fn role_type(&self) -> RoleType {
         RoleType::PenaltyKicker
@@ -145,56 +146,44 @@ impl Strategy for PenaltyKickStrategy {
         "PenaltyKick"
     }
 
-    fn update(&mut self, ctx: StrategyCtx) {
-        let world = ctx.world;
-        let us_attacking = world.current_game_state.us_operating;
+    fn on_enter(&mut self, ctx: StrategyCtx) {
+        self.roles.clear();
+        self.has_attacker = false;
+        self.pos_counter = 0;
 
-        // Assign roles to players
-        for player_data in world.own_players.iter() {
+        // Assign attacker role
+        for player in ctx.world.own_players.iter() {
             if let Some(gate_keeper_id) = self.gate_keeper_id {
-                if player_data.id == gate_keeper_id {
-                    if !us_attacking {
-                        self.roles
-                            .insert(player_data.id, Box::new(Goalkeeper::new()));
-                    }
-                    continue;
-                }
+                println!("assigning {} as gate keeper", gate_keeper_id);
+                self.roles
+                    .insert(gate_keeper_id, Box::new(Goalkeeper::new()));
             }
-            if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
-                if us_attacking && !self.has_attacker {
-                    self.has_attacker = true;
-                    e.insert(Box::new(Attacker::new()));
-                } else if let Some(ball) = &world.ball {
-                    let ball_pos = ball.position;
-                    let pos_x = ball_pos.x + if us_attacking { -1000.0 } else { 1000.0 };
-                    self.pos_counter += 1;
-                    let mut pos_y = (self.pos_counter / 2) as f64 * self.pos_interval;
-                    if self.pos_counter % 2 != 0 {
-                        pos_y = -pos_y;
-                    }
-                    e.insert(Box::new(OtherPlayer::new(Vector2::new(pos_x, pos_y))));
-                }
+            if !self.has_attacker && ctx.world.current_game_state.us_operating {
+                println!("assigning {} as attacker", player.id);
+                self.has_attacker = true;
+                self.roles.insert(player.id, Box::new(Attacker::new()));
+            } else {
+                println!("assigning {} as other player", player.id);
+                self.roles.insert(
+                    player.id,
+                    Box::new(OtherPlayer::new(Vector2::new(
+                        200.0 + (player.id.as_u32() as f64 * ctx.world.player_model.radius + 50.0),
+                        -ctx.world
+                            .field_geom
+                            .as_ref()
+                            .map(|g| g.field_width / 2.0)
+                            .unwrap_or(-3000.0),
+                    ))),
+                );
             }
         }
 
-        // let mut inputs = PlayerInputs::new();
-        // for (id, role) in self.roles.iter_mut() {
-        //     if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-        //         let player_data = player_data.clone();
-
-        //         let mut input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
-        //         if world.current_game_state.game_state != PenaltyRun && self.gate_keeper_id.map_or(false, |id| id == player_data.id) {
-        //             input = PlayerControlInput::new();
-        //         }
-        //         inputs.insert(*id, input);
-        //     } else {
-        //         log::error!("No detetion data for player #{id} with active role");
-        //     }
-        // }
-        // inputs
     }
 
+    fn update(&mut self, ctx: StrategyCtx) {}
+
     fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
+        
         if let Some(role) = self.roles.get_mut(&player_id) {
             Some(role.as_mut())
         } else {

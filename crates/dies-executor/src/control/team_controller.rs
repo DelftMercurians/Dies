@@ -19,6 +19,8 @@ use dies_core::{
 };
 use dies_core::{PlayerMoveCmd, WorldData};
 
+const ACTIVATION_TIME: f64 = 0.7;
+
 #[derive(Default)]
 struct RoleState {
     skill_map: HashMap<String, SkillState>,
@@ -30,7 +32,8 @@ pub struct TeamController {
     active_strat: Option<String>,
     role_states: HashMap<PlayerId, RoleState>,
     settings: ExecutorSettings,
-    halt: AdHocStrategy
+    halt: AdHocStrategy,
+    start_time: std::time::Instant,
 }
 
 impl TeamController {
@@ -42,7 +45,8 @@ impl TeamController {
             role_states: HashMap::new(),
             settings: settings.clone(),
             active_strat: None,
-            halt: AdHocStrategy::new()
+            halt: AdHocStrategy::new(),
+            start_time: std::time::Instant::now(),
         };
         team.update_controller_settings(settings);
         team
@@ -81,8 +85,13 @@ impl TeamController {
                 }
             }
         }
-        let state = world_data.current_game_state.game_state;
 
+        if self.start_time.elapsed().as_secs_f64() < ACTIVATION_TIME {
+            println!("detected_ids: {:?}", detected_ids);
+            return;
+        }
+
+        let state = world_data.current_game_state.game_state;
         let strategy = if matches!(world_data.current_game_state.game_state, GameState::BallReplacement(_)) {
             &mut self.halt
         } else {
@@ -96,7 +105,6 @@ impl TeamController {
                 }
                 strategy
             } else {
-                log::warn!("No strategy found for game state {:?}", state);
                 return;
             }
         };

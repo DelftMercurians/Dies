@@ -244,10 +244,11 @@ impl WorldTracker {
                 }
 
                 let id = PlayerId::new(player.robot_id());
-                let tracker = self.opp_players_tracker.get_mut(&id);
-                if let Some(tracker) = tracker {
-                    tracker.update(t_capture, player);
-                }
+                let tracker = self
+                    .opp_players_tracker
+                    .entry(id)
+                    .or_insert_with(|| PlayerTracker::new(id, &self.tracker_settings));
+                tracker.update(t_capture, player);
             }
             // Check for missed players
             for (_, tracker) in self.opp_players_tracker.iter_mut() {

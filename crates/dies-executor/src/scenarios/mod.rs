@@ -3,7 +3,6 @@ mod scenario;
 
 use std::vec;
 
-use play::play;
 use crate::roles::attacker::{self, Attacker};
 use crate::roles::dummy_role::DummyRole;
 use crate::roles::harasser::Harasser;
@@ -25,6 +24,7 @@ use crate::{
 };
 use crate::{strategy, StrategyMap};
 use dies_core::{Angle, GameState, PlayerId, StrategyGameStateMacther, Vector2, Vector3};
+use play::play;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
 
@@ -103,15 +103,14 @@ fn penalty_kick() -> ScenarioSetup {
     let strategy = PenaltyKickStrategy::new(None);
     let mut scenario = ScenarioSetup::new(
         strategy,
-        StrategyGameStateMacther::Specific(GameState::PreparePenalty),
-    );
-    scenario.add_strategy(
-        StrategyGameStateMacther::Specific(GameState::Penalty),
-        PenaltyKickStrategy::new(None),
-    );
-    scenario.add_strategy(
-        StrategyGameStateMacther::Specific(GameState::PenaltyRun),
-        PenaltyKickStrategy::new(None),
+        StrategyGameStateMacther::any_of(
+            vec![
+                GameState::PreparePenalty,
+                GameState::Penalty,
+                GameState::PenaltyRun,
+            ]
+            .as_slice(),
+        ),
     );
     scenario
         .add_ball_at(Vector2::new(0.0, 300.0))

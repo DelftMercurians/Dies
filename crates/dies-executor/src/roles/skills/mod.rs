@@ -162,7 +162,7 @@ impl Skill for Face {
             input.with_angular_speed_limit(180.0f64.to_radians());
         }
 
-        if (ctx.player.yaw - heading).abs() < 0.5 {
+        if (ctx.player.yaw - heading).abs() < 0.1 {
             return SkillProgress::success();
         }
         SkillProgress::Continue(input)
@@ -195,7 +195,7 @@ impl Skill for Kick {
                     .world
                     .ball
                     .as_ref()
-                    .map(|b| (b.position.xy() - ctx.player.position).norm() > 200.0)
+                    .map(|b| b.detected && (b.position.xy() - ctx.player.position).norm() > 200.0)
                     .unwrap_or(false)
                 {
                     return SkillProgress::success();
@@ -214,7 +214,14 @@ impl Skill for Kick {
 
         if ready {
             println!("Kicking");
-            if !ctx.player.breakbeam_ball_detected {
+            if !ctx.player.breakbeam_ball_detected
+                && (ctx
+                    .world
+                    .ball
+                    .as_ref()
+                    .map(|b| b.detected && ((b.position.xy() - ctx.player.position).norm() < 200.0))
+                    .unwrap_or(false))
+            {
                 return SkillProgress::failure();
             }
             input.with_kicker(crate::KickerControlInput::Kick);
@@ -443,7 +450,14 @@ impl Skill for ApproachBall {
             let ball_pos = ball.position.xy();
             let player_pos = ctx.player.position;
 
-            if ctx.player.breakbeam_ball_detected {
+            if ctx.player.breakbeam_ball_detected
+                && ctx
+                    .world
+                    .ball
+                    .as_ref()
+                    .map(|b| b.detected && ((b.position.xy() - ctx.player.position).norm() < 200.0))
+                    .unwrap_or(true)
+            {
                 return SkillProgress::success();
             }
 
@@ -536,7 +550,7 @@ impl Skill for FetchBallWithHeading {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let player_data = ctx.player;
         let world_data = ctx.world;
-        let ball_radius = world_data.field_geom.as_ref().unwrap().ball_radius * 8.0;
+        let ball_radius = 150.0;
 
         let ball_pos = if let Some(ball) = world_data.ball.as_ref() {
             ball.position.xy()
@@ -555,12 +569,13 @@ impl Skill for FetchBallWithHeading {
 
         let target_pos = init_ball_pos - Angle::to_vector(&target_heading) * ball_radius;
 
-        if (player_data.position - target_pos).norm() < 100.0
-            && (player_data.yaw - target_heading).abs() < 0.5
+        if (player_data.position - target_pos).norm() < 20.0
+            && (player_data.yaw - target_heading).abs() < 0.2
         // this threshold should be changed only with real robots in sight
         {
             return SkillProgress::Done(SkillResult::Success);
         }
+
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
             let ball_distance = (ball.position.xy() - init_ball_pos).norm();
@@ -571,6 +586,7 @@ impl Skill for FetchBallWithHeading {
 
             input.with_position(target_pos).with_yaw(target_heading);
             input.avoid_ball = true;
+            // input.care = 0.7;
             SkillProgress::Continue(input)
         } else {
             SkillProgress::Continue(PlayerControlInput::default())
