@@ -165,11 +165,17 @@ fn free_kick() -> ScenarioSetup {
         strategy,
         StrategyGameStateMacther::Specific(GameState::FreeKick),
     );
+
+    // besides the ball and the 4 players,
+    // add another 4 random players
     scenario
         .add_ball_at(Vector2::new(0.0, 0.0))
         .add_own_player_at(Vector2::new(1000.0, 1000.0))
         .add_own_player_at(Vector2::new(-100.0, 0.0))
-        .add_opp_player_at(Vector2::new(200.0, 200.0));
+        .add_opp_player_at(Vector2::new(200.0, 200.0))
+        .add_own_player_at(Vector2::new(    -600.0, 0.0))
+        .add_own_player_at(Vector2::new(-500.0, 600.0))
+        .add_opp_player_at(Vector2::new(-800.0, -300.0));
     scenario
 }
 

@@ -4,6 +4,8 @@ use crate::strategy::kickoff::OtherPlayer;
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
 use dies_core::{Angle, BallData, PlayerData, PlayerId, RoleType, Vector2, WorldData};
+use nalgebra::{Rotation2, SMatrix, SquareMatrix};
+// use num_traits::float::Float;
 use std::collections::HashMap;
 
 use super::StrategyCtx;
@@ -178,8 +180,72 @@ impl Strategy for FreeKickStrategy {
                     let distance = (player_data.position - ball_pos.xy()).norm();
                     if distance < 650.0 {
                         // get the target pos that is 500.0 away from the ball
+                        // in the same direction between the robot and the ball
+                        // and resampling further if they have a collision with other players                        
+
                         let mut target = ball_pos.xy()
                             + (player_data.position - ball_pos.xy()).normalize() * 650.0;
+                        
+                        // create a vector with the positions of all the players from the ctx
+                        // ctx.world.own_players
+
+                        let player_diameter = 90.0;
+                        let mut extra_spacing = player_diameter;
+
+                        let mut collision = true;
+                        let mut all_players = ctx.world.own_players.clone();
+                        let mut opp_players = ctx.world.opp_players.clone();
+
+
+
+                        // let all_players = own_players.append(opp_players.as_mut());
+                        all_players.append(opp_players.as_mut());
+
+                        // create a big list of different positions at different angles
+                        let spacings = vec![extra_spacing * 0.0, extra_spacing * 1.0, extra_spacing * 2.0, extra_spacing * 3.0];
+
+                        // then a list of angles in degrees
+                        let angles = vec![0.0, 30.0, -30.0, 90.0, -90.0];
+
+                        for ang in angles.iter() {
+                            for space in spacings.iter() {
+                                // compute the target with this angle and spacing
+
+                                // rotation matrix
+                                // let rot_mat = SMatrix::<f64, 2, 2>::new(ang.cos() as f64, -ang.sin() as f64, ang.sin() as f64, ang.cos() as f64);
+                                // let rot_mat = SquareMatrix::new()
+                                // let rot_matrix = Rotation2::new(ang);
+                                
+                                let mut original_direction = (player_data.position - ball_pos.xy()).normalize().clone();
+                                
+                                let angle_t = Angle::from_degrees(*ang) - Angle::from_vector(original_direction);
+
+                                target = ball_pos.xy() + angle_t.rotate_vector(&original_direction) * (650.0 + space);
+
+                                // with this specific configuration then check for all the players
+                                collision = false;
+                                for other_player in all_players.iter() {
+                                    if other_player.id == player_data.id {
+                                        continue;
+                                    }
+    
+                                    let distance = (other_player.position - target).norm();
+                                    
+                                    if distance < player_diameter {
+                                        // then this target is not valid
+                                        // skip and test the next one
+
+                                        collision = true;
+                                        break;
+                                    }
+                                }
+
+                                if !collision {
+                                    // if no collision was found, we have a good target
+                                    break; 
+                                }
+                            }
+                        }
 
                         if (target.y - world.field_geom.as_ref().unwrap().field_width / 2.0).abs()
                             < 600.0
