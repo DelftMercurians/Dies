@@ -37,8 +37,8 @@ impl StrategyMap {
         Self(Vec::new())
     }
 
-    pub fn insert(&mut self, matcher: StrategyGameStateMacther, strategy: Box<dyn Strategy>) {
-        self.0.push((matcher, strategy));
+    pub fn insert(&mut self, matcher: StrategyGameStateMacther, strategy: impl Strategy + 'static) {
+        self.0.push((matcher, Box::new(strategy)));
     }
 
     pub fn get_strategy(&mut self, state: &GameState) -> Option<&mut dyn Strategy> {

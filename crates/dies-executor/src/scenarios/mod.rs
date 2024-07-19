@@ -1,14 +1,16 @@
+mod play;
 mod scenario;
 
 use std::vec;
 
-use crate::roles::attacker::Attacker;
+use play::play;
+use crate::roles::attacker::{self, Attacker};
 use crate::roles::dummy_role::DummyRole;
 use crate::roles::harasser::Harasser;
 use crate::roles::skills::FetchBallWithHeading;
-use crate::roles::Goalkeeper;
-use crate::strategy;
+use crate::roles::{waller, Goalkeeper};
 use crate::strategy::attack_strat::PlayStrategy;
+use crate::strategy::dynamic::DynamicStrategy;
 use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
@@ -21,6 +23,7 @@ use crate::{
     },
     strategy::AdHocStrategy,
 };
+use crate::{strategy, StrategyMap};
 use dies_core::{Angle, GameState, PlayerId, StrategyGameStateMacther, Vector2, Vector3};
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
@@ -31,7 +34,7 @@ fn empty_scenario() -> ScenarioSetup {
     ScenarioSetup::new(AdHocStrategy::new(), StrategyGameStateMacther::Any)
 }
 
-fn play() -> ScenarioSetup {
+fn play_static() -> ScenarioSetup {
     let keeper = PlayerId::new(0);
     let harasser = PlayerId::new(1);
     let waller1 = PlayerId::new(2);
@@ -39,7 +42,8 @@ fn play() -> ScenarioSetup {
     // let attacker1 = PlayerId::new(4);
     let attacker2 = PlayerId::new(5);
 
-    let mut strat = PlayStrategy::new(keeper, harasser);
+    let mut strat = PlayStrategy::new(keeper);
+    strat.defense.add_harasser(harasser);
     strat.defense.add_wallers(vec![waller1, waller2]);
     // strat.attack.add_attacker(attacker1);
     strat.attack.add_attacker(attacker2);
