@@ -142,12 +142,10 @@ impl PlayerOverrideState {
                 kicker: KickerControlInput::Disarm,
                 ..Default::default()
             },
-            PlayerOverrideCommand::SetFanSpeed { speed } => {
-                PlayerControlInput {
-                    fan_speed: Some(speed),
-                    ..Default::default()
-                }
-            }
+            PlayerOverrideCommand::SetFanSpeed { speed } => PlayerControlInput {
+                fan_speed: Some(speed),
+                ..Default::default()
+            },
         };
 
         // Advance the frame counter
@@ -402,7 +400,7 @@ impl Executor {
                             self.update_from_gc_msg(gc_msg);
                         }
                         Err(err) => {
-                            log::error!("Failed to receive vision msg: {}", err);
+                            log::error!("Failed to receive vision/gc msg: {}", err);
                         }
                     }
                 }
