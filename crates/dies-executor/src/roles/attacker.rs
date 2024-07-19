@@ -333,18 +333,15 @@ fn find_best_striker_position(
                 3_000_000.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
             let mut ball_dist = 0.0;
             if let Some(ball) = world.ball.as_ref() {
-                ball_dist = (ball.position.xy() - player.position).norm();
+                ball_dist = (ball.position.xy() + ball.velocity.xy() * 0.5 - position).norm();
             }
-            let score = ball_score * 0.5 + goal_score + goal_dist_score - ball_dist * 100.0;
-            println!("{} {}: {} {} {}", position.x, position.y, ball_score, goal_score, goal_dist_score);
+            let score = ball_score * 0.5 + goal_score + goal_dist_score - ball_dist * 20.0;
             if score > best_score {
                 best_score = score;
                 best_position = position;
             }
         }
     }
-
-    println!("----");
 
     best_position
 }
@@ -440,6 +437,7 @@ fn score_line_of_sight(
     if to.x > 3800.0 {
         min_distance = 0.0;
     }
+    println!("{}", min_distance);
     min_distance - (from.y.abs() / 4.0).max(40.0) - (from.x.abs() / 4.0).max(40.0) - (player.position - from).magnitude().max(100.0)
 }
 
