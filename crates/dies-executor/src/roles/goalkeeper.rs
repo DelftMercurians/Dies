@@ -1,8 +1,7 @@
 use std::f64::consts::FRAC_PI_2;
 
 use dies_core::{
-    find_intersection, score_line_of_sight, Angle, BallData, FieldGeometry, PlayerData, PlayerId,
-    WorldData,
+    find_intersection, is_pos_in_field, score_line_of_sight, Angle, BallData, FieldGeometry, PlayerData, PlayerId, WorldData
 };
 use dies_core::{GameState, Vector2};
 
@@ -51,8 +50,17 @@ impl Role for Goalkeeper {
                     let dist = (ball_pos - ctx.player.position.xy()).norm();
                     if dist < 560.0 {
                         // Move away from the ball
-                        let target = ball_pos.xy()
+                        let mut target = ball_pos.xy()
                             + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
+                        let field = ctx.world.field_geom.as_ref().unwrap();
+                        if !is_pos_in_field(target, field) {
+                            let min_distance = 650.0;
+                            let min_theta = -120;
+                            let max_theta = 120;
+                            let max_radius = 1000;
+                            
+                            target = dies_core::nearest_safe_pos(ball_pos, min_distance, ctx.player.position.xy(), min_theta, max_theta, max_radius, field);
+                        }
                         input.with_position(target);
                     }
                 }
