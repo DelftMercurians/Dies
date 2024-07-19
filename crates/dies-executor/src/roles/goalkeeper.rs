@@ -52,7 +52,7 @@ impl Role for Goalkeeper {
                         // Move away from the ball
                         let mut target = ball_pos.xy()
                             + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
-                        let field = ctx.world.field_geom.as_ref().unwrap();
+                        let field = field_geom;
                         if !is_pos_in_field(target, field) {
                             let min_distance = 650.0;
                             let min_theta = -120;

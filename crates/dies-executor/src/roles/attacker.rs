@@ -101,7 +101,7 @@ impl Role for Attacker {
             let mut input = PlayerControlInput::new();
             input.with_speed_limit(1300.0);
             input.avoid_ball = true;
-            if let Some(ball) = ctx.world.ball.as_ref() {
+            if let (Some(ball), Some(field)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
                 let ball_pos = ball.position.xy();
                 let dist = (ball_pos - ctx.player.position.xy()).norm();
                 let min_distance = 600.0;
@@ -112,7 +112,7 @@ impl Role for Attacker {
                     let min_theta = -120;
                     let max_theta = 120;
                     let max_radius = 1000;
-                    let field = ctx.world.field_geom.as_ref().unwrap();
+                    // let field = ctx.world.field_geom.as_ref().unwrap();
                     
                     let target = dies_core::nearest_safe_pos(ball_pos, min_distance, ctx.player.position.xy(), min_theta, max_theta, max_radius, field);
                     input.with_position(target);

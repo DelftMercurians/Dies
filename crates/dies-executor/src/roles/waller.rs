@@ -163,7 +163,7 @@ impl Role for Waller {
                         let min_theta = -120;
                         let max_theta = 120;
                         let max_radius = 1000;
-                        let field = ctx.world.field_geom.as_ref().unwrap();
+                        let field = geom;
                         
                         let target = dies_core::nearest_safe_pos(ball_pos, min_distance, ctx.player.position.xy(), min_theta, max_theta, max_radius, field);
                         input.with_position(target);
