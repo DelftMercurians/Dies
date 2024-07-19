@@ -644,6 +644,7 @@ dependencies = [
  "env_logger",
  "log",
  "network-interface",
+ "protobuf-json-mapping",
  "serde_json",
  "socket2",
  "tokio",
@@ -1770,6 +1771,17 @@ dependencies = [
  "protobuf-parse",
  "regex",
  "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "protobuf-json-mapping"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "781abbf9eedba12bd3496bc019d24d2f683adc2b5291d8d0acb39dbddc7c2a02"
+dependencies = [
+ "protobuf",
+ "protobuf-support",
  "thiserror",
 ]
 
