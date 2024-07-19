@@ -21,7 +21,6 @@ use dies_core::{
 use player::PlayerTracker;
 
 const IS_DIV_A: bool = false;
-const INITIAL_DETECT_TIMEOUT: f64 = 4.0;
 
 /// A struct to track the world state.
 pub struct WorldTracker {
@@ -203,15 +202,12 @@ impl WorldTracker {
             let first_t_capture = *self.first_t_capture.get_or_insert(t_capture);
             self.last_t_capture = Some(t_capture - first_t_capture);
 
-            // Update players
-            let (blue_trackers, yellow_tracker) = if self.is_blue {
-                (&mut self.own_players_tracker, &mut self.opp_players_tracker)
+            let own_players = if self.is_blue {
+                &frame.robots_blue
             } else {
-                (&mut self.opp_players_tracker, &mut self.own_players_tracker)
+                &frame.robots_yellow
             };
-
-            // Blue players
-            for player in data.detection.robots_blue.iter() {
+            for player in own_players {
                 let in_mask = self.tracker_settings.field_mask.contains(
                     player.x(),
                     player.y(),
@@ -222,28 +218,22 @@ impl WorldTracker {
                 }
 
                 let id = PlayerId::new(player.robot_id());
-                let tracker = if let Some(tracker) = blue_trackers.get_mut(&id) {
-                    Some(tracker)
-                } else {
-                    if t_received < INITIAL_DETECT_TIMEOUT {
-                        let tracker = PlayerTracker::new(id, &self.tracker_settings);
-                        blue_trackers.insert(id, tracker);
-                        blue_trackers.get_mut(&id)
-                    } else {
-                        None
-                    }
-                };
+                let tracker = self.own_players_tracker.get_mut(&id);
                 if let Some(tracker) = tracker {
                     tracker.update(t_capture, player);
                 }
             }
             // Check for missed players
-            for (_, tracker) in blue_trackers.iter_mut() {
-                tracker.check_is_gone(t_capture);
+            for (_, tracker) in self.own_players_tracker.iter_mut() {
+                tracker.check_is_gone(t_capture, time);
             }
 
-            // Yellow players
-            for player in data.detection.robots_yellow.iter() {
+            let opp_players = if self.is_blue {
+                &frame.robots_yellow
+            } else {
+                &frame.robots_blue
+            };
+            for player in opp_players {
                 let in_mask = self.tracker_settings.field_mask.contains(
                     player.x(),
                     player.y(),
@@ -254,24 +244,14 @@ impl WorldTracker {
                 }
 
                 let id = PlayerId::new(player.robot_id());
-                let tracker = if let Some(tracker) = yellow_tracker.get_mut(&id) {
-                    Some(tracker)
-                } else {
-                    if t_received < INITIAL_DETECT_TIMEOUT {
-                        let tracker = PlayerTracker::new(id, &self.tracker_settings);
-                        yellow_tracker.insert(id, tracker);
-                        yellow_tracker.get_mut(&id)
-                    } else {
-                        None
-                    }
-                };
+                let tracker = self.opp_players_tracker.get_mut(&id);
                 if let Some(tracker) = tracker {
                     tracker.update(t_capture, player);
                 }
             }
             // Check for missed players
-            for (_, tracker) in yellow_tracker.iter_mut() {
-                tracker.check_is_gone(t_capture);
+            for (_, tracker) in self.opp_players_tracker.iter_mut() {
+                tracker.check_is_gone(t_capture, time);
             }
 
             // Update ball

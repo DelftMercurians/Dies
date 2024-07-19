@@ -380,10 +380,10 @@ fn find_best_passer_position(
         .filter(|p| p.position.x > 0.0)
         .collect::<Vec<_>>();
 
-    let min_theta = -FRAC_PI_2;
-    let max_theta = FRAC_PI_2;
-    for theta in (min_theta as i32..max_theta as i32).step_by(10) {
-        let theta = theta as f64;
+    let min_theta = -90;
+    let max_theta = 90;
+    for theta in (min_theta..max_theta).step_by(10) {
+        let theta = (theta as f64).to_radians();
         for radius in (0..max_radius as i32).step_by(20) {
             let x = starting_pos.x + (radius as f64) * theta.cos();
             let y = starting_pos.y + (radius as f64) * theta.sin();
@@ -454,7 +454,10 @@ fn score_line_of_sight(
     if to.x > 3800.0 {
         min_distance = 0.0;
     }
-    min_distance - (from.y.abs() / 4.0).max(40.0) - (from.x.abs() / 4.0).max(40.0) - (player.position - from).magnitude().max(100.0)
+    min_distance
+        - (from.y.abs() / 4.0).max(40.0)
+        - (from.x.abs() / 4.0).max(40.0)
+        - (player.position - from).magnitude().max(100.0)
 }
 
 fn distance_to_line(a: Vector2, b: Vector2, p: Vector2) -> f64 {

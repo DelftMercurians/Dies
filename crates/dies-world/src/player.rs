@@ -44,6 +44,7 @@ pub struct PlayerTracker {
 
     /// Last feedback received from the player
     last_feedback: Option<PlayerFeedbackMsg>,
+    last_feedback_time: Option<WorldInstant>,
     /// The result of the last vision update
     last_detection: Option<StoredData>,
 
@@ -74,6 +75,7 @@ impl PlayerTracker {
             breakbeam_detections: VecDeque::with_capacity(BREAKBEAM_WINDOW),
             is_gone: false,
             reappaerance_time: None,
+            last_feedback_time: None,
         }
     }
 
@@ -86,11 +88,23 @@ impl PlayerTracker {
         self.play_dir_x = play_dir_x;
     }
 
-    pub fn check_is_gone(&mut self, time: f64) {
+    pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant) {
         if let Some(last_detection) = &self.last_detection {
             let elapsed = time - last_detection.timestamp;
             if elapsed >= OFF_FIELD_TIMEOUT {
                 self.is_gone = true;
+            } else if self.is_gone {
+                let reappaerance_time = self.reappaerance_time.get_or_insert(time);
+                if time - *reappaerance_time >= OFF_FIELD_TIMEOUT {
+                    self.is_gone = false;
+                    self.reappaerance_time = None;
+                }
+            }
+        }
+        if let Some(last_feedback) = &self.last_feedback_time {
+            if world_time.duration_since(last_feedback) > OFF_FIELD_TIMEOUT {
+                self.is_gone = false;
+                self.reappaerance_time = None;
             } else if self.is_gone {
                 let reappaerance_time = self.reappaerance_time.get_or_insert(time);
                 if time - *reappaerance_time >= OFF_FIELD_TIMEOUT {
@@ -159,8 +173,9 @@ impl PlayerTracker {
     }
 
     /// Update the tracker with feedback from the player.
-    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, _time: WorldInstant) {
+    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
         if feedback.id == self.id {
+            self.last_feedback_time = Some(time);
             if let Some(breakbeam) = feedback.breakbeam_ball_detected {
                 dies_core::debug_string(
                     format!("p{}.breakbeam_value", self.id),
@@ -189,31 +204,31 @@ impl PlayerTracker {
 
     pub fn get(&self) -> Option<PlayerData> {
         // If we have received feedback but not detection return some placeholder data
-        if let (None, Some(feedback)) = (self.last_detection.as_ref(), self.last_feedback) {
-            let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
-            if let Some(_) = &self.last_feedback {
-                dies_core::debug_value(format!("p{}.breakbeam", self.id), breakbeam_count as f64);
-            }
+        // if let (None, Some(feedback)) = (self.last_detection.as_ref(), self.last_feedback) {
+        //     let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
+        //     if let Some(_) = &self.last_feedback {
+        //         dies_core::debug_value(format!("p{}.breakbeam", self.id), breakbeam_count as f64);
+        //     }
 
-            return Some(PlayerData {
-                id: self.id,
-                timestamp: 0.0,
-                position: Vector2::zeros(),
-                velocity: Vector2::zeros(),
-                yaw: Angle::default(),
-                angular_speed: 0.0,
-                raw_position: Vector2::zeros(),
-                raw_yaw: Angle::default(),
-                primary_status: feedback.primary_status,
-                kicker_cap_voltage: feedback.kicker_cap_voltage,
-                kicker_temp: feedback.kicker_temp,
-                pack_voltages: feedback.pack_voltages,
-                breakbeam_ball_detected: self.breakbeam_detections.iter().sum::<usize>()
-                    > BREAKBEAM_DETECTION_THRESHOLD,
-                imu_status: feedback.imu_status,
-                kicker_status: feedback.kicker_status,
-            });
-        }
+        //     return Some(PlayerData {
+        //         id: self.id,
+        //         timestamp: 0.0,
+        //         position: Vector2::zeros(),
+        //         velocity: Vector2::zeros(),
+        //         yaw: Angle::default(),
+        //         angular_speed: 0.0,
+        //         raw_position: Vector2::zeros(),
+        //         raw_yaw: Angle::default(),
+        //         primary_status: feedback.primary_status,
+        //         kicker_cap_voltage: feedback.kicker_cap_voltage,
+        //         kicker_temp: feedback.kicker_temp,
+        //         pack_voltages: feedback.pack_voltages,
+        //         breakbeam_ball_detected: self.breakbeam_detections.iter().sum::<usize>()
+        //             > BREAKBEAM_DETECTION_THRESHOLD,
+        //         imu_status: feedback.imu_status,
+        //         kicker_status: feedback.kicker_status,
+        //     });
+        // }
 
         let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
         if let Some(_) = &self.last_feedback {
