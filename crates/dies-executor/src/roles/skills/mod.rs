@@ -158,11 +158,11 @@ impl Skill for Face {
         input.with_care(0.7); // this compensates for flakiness of with_ball
         if self.with_ball {
             input.with_dribbling(1.0);
-            input.with_angular_acceleration_limit(180.0f64.to_radians());
+            input.with_angular_acceleration_limit(240.0f64.to_radians());
             input.with_angular_speed_limit(180.0f64.to_radians());
         }
 
-        if (ctx.player.yaw - heading).abs() < 3f64.to_radians() {
+        if (ctx.player.yaw - heading).abs() < 20f64.to_radians() {
             return SkillProgress::success();
         }
         SkillProgress::Continue(input)
@@ -557,7 +557,7 @@ impl Skill for FetchBallWithHeading {
 
         if (player_data.position - target_pos).norm() < 100.0
             && (player_data.yaw - target_heading).abs()
-                < 0.2 // this threshold should be changed only with real robots in sight
+                < 0.5 // this threshold should be changed only with real robots in sight
         {
             return SkillProgress::Done(SkillResult::Success);
         }

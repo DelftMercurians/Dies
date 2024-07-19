@@ -145,7 +145,7 @@ impl Role for Attacker {
                     input.with_yaw(ball_angle);
 
                     // If the ball is close and slow enough, start fetching it
-                    if ball_speed < 300.0 && ball_dist < 250.0 {
+                    if ball_speed < 500.0 {
                         AttackerState::FetchingBall
                     } else {
                         AttackerState::Positioning
@@ -165,6 +165,8 @@ impl Role for Attacker {
                     }
                 },
                 AttackerState::Dribbling => {
+                    AttackerState::Shooting
+                    /*
                     let starting_pos = *self.dribbling_start.get_or_insert(ctx.player.position);
 
                     let (best_pos, best_receiver, best_score) =
@@ -202,6 +204,7 @@ impl Role for Attacker {
                             }
                         }
                     }
+                    */
                 }
                 // AttackerState::Passing(receiver) => loop {
                 //     if !ctx.player.breakbeam_ball_detected {
@@ -226,7 +229,8 @@ impl Role for Attacker {
                 //     }
                 // },
                 AttackerState::Shooting | AttackerState::Passing(_) => {
-                    if !ctx.player.breakbeam_ball_detected {
+                    let ball = ctx.world.ball.as_ref().unwrap();
+                    if !ctx.player.breakbeam_ball_detected || (ball.position.xy() - ctx.player.position).norm() > 300.0 {
                         println!("Lost ball, fetching");
                         AttackerState::FetchingBall
                     } else {
@@ -247,7 +251,7 @@ impl Role for Attacker {
                         if let SkillResult::Success = skill!(ctx, Kick::new()) {
                             AttackerState::Positioning
                         } else {
-                            AttackerState::Shooting
+                            AttackerState::FetchingBall
                         }
                     }
                 }
@@ -328,17 +332,6 @@ fn find_best_striker_position(
                 continue;
             }
 
-            let ball_score = score_line_of_sight(
-                world,
-                position,
-                world
-                    .ball
-                    .as_ref()
-                    .map(|b| b.position.xy())
-                    .unwrap_or_default(),
-                field,
-                player,
-            );
             let goal_score = score_line_of_sight(
                 world,
                 position,
@@ -346,14 +339,17 @@ fn find_best_striker_position(
                 field,
                 player,
             );
-            let goal_dist_score =
-                3_000_000.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
+            let goal_dist_score = 3_000_000.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
+
             let mut ball_dist = 0.0;
             if let Some(ball) = world.ball.as_ref() {
-                ball_dist = (ball.position.xy() + ball.velocity.xy() * 0.5 - position).norm();
+                let balldir = ball.velocity.xy().normalize();
+                let ballvel = ball.velocity.xy().magnitude().min(600.0);
+                ball_dist = (ball.position.xy() + balldir * ballvel * 0.5 - position).norm();
             }
-            let score = ball_score * 0.5 + goal_score + goal_dist_score - ball_dist * 20.0;
+            let score = goal_score + goal_dist_score - ball_dist * 0.2;
             if score > best_score {
+                println!("{} {} {}", goal_score, goal_dist_score, ball_dist);
                 best_score = score;
                 best_position = position;
             }
@@ -457,7 +453,7 @@ fn score_line_of_sight(
     min_distance
         - (from.y.abs() / 4.0).max(40.0)
         - (from.x.abs() / 4.0).max(40.0)
-        - (player.position - from).magnitude().max(100.0)
+        - (player.position - from).magnitude().max(50.0)
 }
 
 fn distance_to_line(a: Vector2, b: Vector2, p: Vector2) -> f64 {

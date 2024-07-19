@@ -31,6 +31,10 @@ impl YawController {
         if let Some(target_yaw) = self.target_yaw {
             let error = target_yaw - current_yaw;
 
+            if error.radians().abs() < self.cutoff_distance {
+                return 0.0;
+            }
+
             // Calculate the desired angular velocity
             let desired_angular_velocity = self.kp * error.radians();
             let acc = max_angular_acceleration * (1.0 - carefullness * 0.5);
