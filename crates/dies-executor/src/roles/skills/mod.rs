@@ -142,6 +142,12 @@ impl Face {
 impl Skill for Face {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let mut input = PlayerControlInput::new();
+        if let Some(ball) = ctx.world.ball.as_ref() {
+            let balldist = (ball.position.xy() - ctx.player.position).magnitude();
+            if self.with_ball && balldist > 250.0 {
+                return SkillProgress::failure();
+            }
+        }
         let heading = if let Some(heading) = self.heading.heading(&ctx) {
             heading
         } else {
@@ -149,11 +155,11 @@ impl Skill for Face {
         };
 
         input.with_yaw(heading);
-        input.with_care(0.8);
+        input.with_care(0.7); // this compensates for flakiness of with_ball
         if self.with_ball {
             input.with_dribbling(1.0);
-            input.with_angular_acceleration_limit(180.0f64.to_radians());
-            input.with_angular_speed_limit(180.0f64.to_radians());
+            input.with_angular_acceleration_limit(240.0f64.to_radians());
+            input.with_angular_speed_limit(240.0f64.to_radians());
         }
 
         if (ctx.player.yaw - heading).abs() < 3f64.to_radians() {

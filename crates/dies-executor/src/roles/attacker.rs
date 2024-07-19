@@ -302,10 +302,10 @@ fn find_best_striker_position(
     let max_x = field.field_length / 2.0 - 100.0;
 
     let mut best_position = Vector2::new(0.0, 0.0);
-    let mut best_score = 0.0;
+    let mut best_score = -1e10;
 
-    for x in (min_x as i32..max_x as i32).step_by(20) {
-        for y in (min_y as i32..max_y as i32).step_by(20) {
+    for x in (min_x as i32..max_x as i32).step_by(200) {
+        for y in (min_y as i32..max_y as i32).step_by(200) {
             let position = Vector2::new(x as f64, y as f64);
             if !is_pos_valid(position, field) {
                 continue;
@@ -330,14 +330,21 @@ fn find_best_striker_position(
                 player
             );
             let goal_dist_score =
-                1.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
-            let score = ball_score + goal_score + goal_dist_score;
+                3_000_000.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
+            let mut ball_dist = 0.0;
+            if let Some(ball) = world.ball.as_ref() {
+                ball_dist = (ball.position.xy() - player.position).norm();
+            }
+            let score = ball_score * 0.5 + goal_score + goal_dist_score - ball_dist * 100.0;
+            println!("{} {}: {} {} {}", position.x, position.y, ball_score, goal_score, goal_dist_score);
             if score > best_score {
                 best_score = score;
                 best_position = position;
             }
         }
     }
+
+    println!("----");
 
     best_position
 }
@@ -433,7 +440,7 @@ fn score_line_of_sight(
     if to.x > 3800.0 {
         min_distance = 0.0;
     }
-    min_distance - (from.y.abs() / 4.0).max(40.0) - (from.x.abs() / 4.0).max(40.0) - (player.position - from).magnitude()
+    min_distance - (from.y.abs() / 4.0).max(40.0) - (from.x.abs() / 4.0).max(40.0) - (player.position - from).magnitude().max(100.0)
 }
 
 fn distance_to_line(a: Vector2, b: Vector2, p: Vector2) -> f64 {
