@@ -49,6 +49,12 @@ pub struct MainArgs {
 
     #[clap(long, default_value = "logs")]
     pub log_directory: String,
+
+    #[clap(long, default_value = "none")]
+    pub start_scenario: String,
+
+    #[clap(long, default_value = "simulation")]
+    pub ui_mode: String,
 }
 
 impl MainArgs {
@@ -66,6 +72,14 @@ impl MainArgs {
             settings_file: self.settings_file,
             environment,
             port: self.webui_port,
+            start_scenario: Some(self.start_scenario),
+            start_mode: match self.ui_mode.as_str() {
+                "simulation" => dies_webui::UiMode::Simulation,
+                "live" => dies_webui::UiMode::Live,
+                _ => {
+                    bail!("Invalid UI mode: {}", self.ui_mode);
+                }
+            },
         })
     }
 

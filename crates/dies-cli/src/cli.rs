@@ -64,51 +64,9 @@ pub struct Cli {
 
 impl Cli {
     pub async fn start() -> ExitCode {
-        let cli = Cli::parse();
-        match cli.command {
-            Some(Command::Convert { input, output }) => match convert_log(&input, &output) {
-                Ok(_) => ExitCode::SUCCESS,
-                Err(err) => {
-                    eprintln!("Error converting logs: {}", err);
-                    ExitCode::FAILURE
-                }
-            },
-            Some(Command::ConvertLast) => {
-                match crate::commands::convert_last_log::convert_last_log() {
-                    Ok(_) => ExitCode::SUCCESS,
-                    Err(err) => {
-                        eprintln!("Error converting logs: {}", err);
-                        ExitCode::FAILURE
-                    }
-                }
-            }
-            Some(Command::TestRadio {
-                port,
-                duration,
-                ids: id,
-                w,
-                sx,
-                sy,
-            }) => match test_radio(port, id, duration, w, sx, sy).await {
-                Ok(_) => ExitCode::SUCCESS,
-                Err(err) => {
-                    eprintln!("Error testing radio: {}", err);
-                    ExitCode::FAILURE
-                }
-            },
-            Some(Command::TestVision {
-                mode,
-                vision_addr,
-                gc_addr,
-                interface,
-            }) => match test_vision(mode, vision_addr, gc_addr, interface).await {
-                Ok(_) => ExitCode::SUCCESS,
-                Err(err) => {
-                    eprintln!("Error testing vision: {}", err);
-                    ExitCode::FAILURE
-                }
-            },
-            None => {
+        let cli = Cli::try_parse();
+        match cli {
+            Err(err) => {
                 let args = MainArgs::parse();
                 match start_ui(args).await {
                     Ok(_) => ExitCode::SUCCESS,
@@ -118,6 +76,54 @@ impl Cli {
                     }
                 }
             }
+            Ok(args) => match args.command {
+                Some(Command::Convert { input, output }) => match convert_log(&input, &output) {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error converting logs: {}", err);
+                        ExitCode::FAILURE
+                    }
+                },
+                Some(Command::ConvertLast) => {
+                    match crate::commands::convert_last_log::convert_last_log() {
+                        Ok(_) => ExitCode::SUCCESS,
+                        Err(err) => {
+                            eprintln!("Error converting logs: {}", err);
+                            ExitCode::FAILURE
+                        }
+                    }
+                }
+                Some(Command::TestRadio {
+                    port,
+                    duration,
+                    ids: id,
+                    w,
+                    sx,
+                    sy,
+                }) => match test_radio(port, id, duration, w, sx, sy).await {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error testing radio: {}", err);
+                        ExitCode::FAILURE
+                    }
+                },
+                Some(Command::TestVision {
+                    mode,
+                    vision_addr,
+                    gc_addr,
+                    interface,
+                }) => match test_vision(mode, vision_addr, gc_addr, interface).await {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error testing vision: {}", err);
+                        ExitCode::FAILURE
+                    }
+                },
+                None => {
+                    eprintln!("No command specified");
+                    ExitCode::FAILURE
+                }
+            },
         }
     }
 }

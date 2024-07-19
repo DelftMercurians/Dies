@@ -43,6 +43,7 @@ pub struct ServerState {
 impl ServerState {
     pub fn new(
         is_live_available: bool,
+        initial_ui_mode: UiMode,
         settings_file: PathBuf,
         debug_sub: DebugSubscriber,
         update_rx: watch::Receiver<Option<WorldUpdate>>,
@@ -55,7 +56,7 @@ impl ServerState {
             cmd_tx,
             debug_sub,
             basestation_feedback: RwLock::new(HashMap::new()),
-            ui_mode: RwLock::new(UiMode::Simulation),
+            ui_mode: RwLock::new(initial_ui_mode),
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
             executor_settings: RwLock::new(ExecutorSettings::load_or_insert(&settings_file)),
@@ -127,10 +128,15 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     let debug_sub: DebugSubscriber = DebugSubscriber::spawn();
     let state = Arc::new(ServerState::new(
         config.is_live_available(),
+        if config.is_live_available() {
+            UiMode::Live
+        } else {
+            UiMode::Simulation
+        },
         config.settings_file,
         debug_sub.clone(),
         update_rx,
-        cmd_tx,
+        cmd_tx.clone(),
         id_map_tx,
     ));
 
@@ -180,6 +186,12 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     // Start the web server
     let web_task =
         tokio::spawn(async move { start_webserver(config.port, state, shutdown_rx).await });
+
+    if let Some(scenario) = config.start_scenario {
+        if let Some(scenario) = dies_executor::scenarios::ScenarioType::get_by_name(&scenario) {
+            let _ = cmd_tx.send(UiCommand::StartScenario { scenario });
+        }
+    }
 
     // Graceful shutdown
     executor_task

@@ -22,6 +22,8 @@ pub struct UiConfig {
     pub port: u16,
     pub settings_file: PathBuf,
     pub environment: UiEnvironment,
+    pub start_mode: UiMode,
+    pub start_scenario: Option<String>,
 }
 
 #[derive(Debug, Clone)]
