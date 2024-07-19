@@ -169,13 +169,18 @@ fn free_kick() -> ScenarioSetup {
     // besides the ball and the 4 players,
     // add another 4 random players
     scenario
-        .add_ball_at(Vector2::new(0.0, 0.0))
+        .add_ball_at(Vector2::new(0.0, 2600.0))
         .add_own_player_at(Vector2::new(1000.0, 1000.0))
         .add_own_player_at(Vector2::new(-100.0, 0.0))
         .add_opp_player_at(Vector2::new(200.0, 200.0))
-        .add_own_player_at(Vector2::new(    -600.0, 0.0))
+        .add_own_player_at(Vector2::new(    -200.0, 2600.0))
         .add_own_player_at(Vector2::new(-500.0, 600.0))
-        .add_opp_player_at(Vector2::new(-800.0, -300.0));
+        .add_opp_player_at(Vector2::new(-800.0, -300.0))
+        .add_own_player_at(Vector2::new(0.0, 2000.0))
+        .add_opp_player_at(Vector2::new(300.0, 2300.0))
+        .add_own_player_at(Vector2::new(100.0, 2700.0))
+        .add_opp_player_at(Vector2::new(-400.0, 2900.0))
+        .add_own_player_at(Vector2::new(0.0, 2900.0));
     scenario
 }
 
