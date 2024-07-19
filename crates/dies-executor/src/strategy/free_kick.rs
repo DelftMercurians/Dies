@@ -3,8 +3,11 @@ use crate::roles::{Goalkeeper, RoleCtx, SkillResult};
 use crate::strategy::kickoff::OtherPlayer;
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
-use dies_core::{Angle, BallData, PlayerData, PlayerId, RoleType, Vector2, WorldData};
+use dies_core::{Angle, BallData, PlayerData, PlayerId, RoleType, Vector2, FieldGeometry, WorldData};
+use nalgebra::{Rotation2, SMatrix, SquareMatrix};
+// use num_traits::float::Float;
 use std::collections::HashMap;
+use std::fmt::format;
 
 use super::StrategyCtx;
 
@@ -133,7 +136,8 @@ impl Strategy for FreeKickStrategy {
     fn update(&mut self, ctx: StrategyCtx) {
         let world = ctx.world;
         let us_attacking = world.current_game_state.us_operating;
-        if let Some(ball) = world.ball.as_ref() {
+        
+        if let (Some(ball), Some(field)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
             let kicker_id = if us_attacking {
                 Some(*self.kicker_id.get_or_insert_with(|| {
                     let kicker_id = world
@@ -178,20 +182,121 @@ impl Strategy for FreeKickStrategy {
                     let distance = (player_data.position - ball_pos.xy()).norm();
                     if distance < 650.0 {
                         // get the target pos that is 500.0 away from the ball
+                        // in the same direction between the robot and the ball
+                        // and resampling further if they have a collision with other players                        
+
                         let mut target = ball_pos.xy()
                             + (player_data.position - ball_pos.xy()).normalize() * 650.0;
+                        
+                        // create a vector with the positions of all the players from the ctx
+                        // ctx.world.own_players
 
-                        if (target.y - world.field_geom.as_ref().unwrap().field_width / 2.0).abs()
-                            < 600.0
-                        {
-                            target.y = ball_pos.y + 650.0;
-                        }
-                        if (target.x - world.field_geom.as_ref().unwrap().field_length / 2.0).abs()
-                            < 600.0
-                        {
-                            target.x = ball_pos.x + 650.0;
-                        }
+                        // let player_diameter = 90.0;
+                        // let mut extra_spacing = player_diameter;
 
+                        // let mut collision = true;
+                        // let mut all_players = ctx.world.own_players.clone();
+                        // let mut opp_players = ctx.world.opp_players.clone();
+
+
+
+                        // // let all_players = own_players.append(opp_players.as_mut());
+                        // all_players.append(opp_players.as_mut());
+
+                        // // create a big list of different positions at different angles
+                        // let spacings = vec![extra_spacing * 0.0, extra_spacing * 1.0, extra_spacing * 2.0, extra_spacing * 3.0];
+
+                        // // then a list of angles in degrees
+                        // let angles = vec![0.0, 30.0, -30.0, 90.0, -90.0];
+
+                        // for ang in angles.iter() {
+                        //     for space in spacings.iter() {
+                        //         // compute the target with this angle and spacing
+
+                        //         // rotation matrix
+                        //         // let rot_mat = SMatrix::<f64, 2, 2>::new(ang.cos() as f64, -ang.sin() as f64, ang.sin() as f64, ang.cos() as f64);
+                        //         // let rot_mat = SquareMatrix::new()
+                        //         // let rot_matrix = Rotation2::new(ang);
+                                
+                        //         let mut original_direction = (player_data.position - ball_pos.xy()).normalize().clone();
+                                
+                        //         let angle_t = Angle::from_degrees(*ang) - Angle::from_vector(original_direction);
+
+                        //         target = ball_pos.xy() + angle_t.rotate_vector(&original_direction) * (650.0 + space);
+
+                        //         // with this specific configuration then check for all the players
+                        //         collision = false;
+                        //         for other_player in all_players.iter() {
+                        //             if other_player.id == player_data.id {
+                        //                 continue;
+                        //             }
+    
+                        //             let distance = (other_player.position - target).norm();
+                                    
+                        //             if distance < player_diameter {
+                        //                 // then this target is not valid
+                        //                 // skip and test the next one
+
+                        //                 collision = true;
+                        //                 break;
+                        //             }
+                        //         }
+
+                        //         if !collision {
+                        //             // if no collision was found, we have a good target
+                        //             break; 
+                        //         }
+                        //     }
+                        // }
+
+                        // if (target.y - world.field_geom.as_ref().unwrap().field_width / 2.0).abs()
+                        //     < 600.0
+                        // {
+                        //     target.y = ball_pos.y + 650.0;
+                        // }
+                        // if (target.x - world.field_geom.as_ref().unwrap().field_length / 2.0).abs()
+                        //     < 600.0
+                        // {
+                        //     target.x = ball_pos.x + 650.0;
+                        // }
+
+                        let min_theta = -120;
+                        let max_theta = 120;
+                        let max_radius = 1000;
+                        let min_distance = 700.0;
+                        // let original_direction = (player_data.position - ball_pos.xy()).normalize().clone();
+                        let mut i = 0;
+                        target = dies_core::nearest_safe_pos(ball_pos.xy(), min_distance, player_data.position, min_theta, max_theta, max_radius, field);
+                        dies_core::debug_line(format!("p{}.line_ball", player_data.id), Vector2::new(ball_pos.x, ball_pos.y), player_data.position, dies_core::DebugColor::Red);
+                        
+                        dies_core::debug_string(format!("p{}.FinalTarget", player_data.id), target.to_string());
+                        dies_core::debug_line(format!("p{}.line_final_target", player_data.id), Vector2::new(ball_pos.x, ball_pos.y), target, dies_core::DebugColor::Orange);
+
+                        // for theta in (min_theta as i32..max_theta as i32).step_by(10) {
+                        //     let theta = (theta as f64).to_radians();
+                        //     let theta_line = Angle::from_vector(original_direction).radians();
+                            
+                        //     for radius in (0..max_radius as i32).step_by(20) {
+
+                        //         let x = ball_pos.x + (min_distance + radius as f64) * (theta + theta_line).cos();
+                        //         let y = ball_pos.y + (min_distance + radius as f64) * (theta + theta_line).sin();
+                        //         let position = Vector2::new(x, y);
+                                
+                        //         i = i + 1;
+                        //         if is_pos_in_field(position, field) {
+                        //             // dies_core::debug_cross(format!("p{}.CheckingPos{}",player_data.id , i), position, dies_core::DebugColor::Purple);
+                        //             // dies_core::debug_string(format!("p{}.FinalTarget", player_data.id), position.to_string());
+                        //             // dies_core::debug_line(format!("p{}.line_final_target", player_data.id), Vector2::new(ball_pos.x, ball_pos.y), target, dies_core::DebugColor::Orange);
+
+                        //             target = position;
+                        //             break;
+                        //         } else {
+                        //             dies_core::debug_cross(format!("p{}.CheckingPos{}",player_data.id , i), position, dies_core::DebugColor::Orange);
+                        //         }
+                        //     }
+                        // }
+                        // dies_core::debug_string("field.length", field.field_length.to_string());
+                        // dies_core::debug_string("field.width", field.field_width.to_string());
                         e.insert(Box::new(OtherPlayer::new(target)));
                     }
                 }
@@ -207,3 +312,45 @@ impl Strategy for FreeKickStrategy {
         }
     }
 }
+
+// fn nearest_safe_pos(avoding_point : Vector2, min_distance : f64, initial_pos: Vector2, min_theta :i32, max_theta:i32, max_radius: i32, field: &FieldGeometry) -> Vector2 {
+//     let mut i = 0;
+//     let mut target = Vector2::new(0.0, 0.0);
+
+//     // create a vector between avoiding_point and initial_pos
+//     let original_direction = (initial_pos - avoding_point).normalize().clone();
+
+//     for theta in (min_theta as i32..max_theta as i32).step_by(10) {
+//         let theta = (theta as f64).to_radians();
+//         let theta_line = Angle::from_vector(original_direction).radians();
+        
+//         for radius in (0..max_radius as i32).step_by(20) {
+
+//             let x = avoding_point.x + (min_distance + radius as f64) * (theta + theta_line).cos();
+//             let y = avoding_point.y + (min_distance + radius as f64) * (theta + theta_line).sin();
+//             let position = Vector2::new(x, y);
+            
+//             i = i + 1;
+//             if is_pos_in_field(position, field) {
+//                 // dies_core::debug_cross(format!("p{}.CheckingPos{}",player_data.id , i), position, dies_core::DebugColor::Purple);
+//                 // dies_core::debug_string(format!("p{}.FinalTarget", player_data.id), position.to_string());
+//                 // dies_core::debug_line(format!("p{}.line_final_target", player_data.id), Vector2::new(ball_pos.x, ball_pos.y), target, dies_core::DebugColor::Orange);
+
+//                 return position;
+//             } 
+//         }
+//     }
+//     initial_pos
+// }
+
+// fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
+//     const MARGIN: f64 = 100.0;
+//     // check if pos outside field
+//     if pos.x.abs() > field.field_length / 2.0  - MARGIN
+//         || pos.y.abs() > field.field_width / 2.0 - MARGIN
+//     {
+//         return false;
+//     }
+    
+//     true
+// }
