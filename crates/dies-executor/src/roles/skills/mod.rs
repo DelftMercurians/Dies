@@ -162,7 +162,7 @@ impl Skill for Face {
             input.with_angular_speed_limit(180.0f64.to_radians());
         }
 
-        if (ctx.player.yaw - heading).abs() < 20f64.to_radians() {
+        if (ctx.player.yaw - heading).abs() < 0.5 {
             return SkillProgress::success();
         }
         SkillProgress::Continue(input)
@@ -443,7 +443,7 @@ impl Skill for ApproachBall {
             let ball_pos = ball.position.xy();
             let player_pos = ctx.player.position;
 
-            if ctx.player.breakbeam_ball_detected && (ball_pos - player_pos).norm() < 150.0 {
+            if ctx.player.breakbeam_ball_detected {
                 return SkillProgress::success();
             }
 
@@ -556,8 +556,8 @@ impl Skill for FetchBallWithHeading {
         let target_pos = init_ball_pos - Angle::to_vector(&target_heading) * ball_radius;
 
         if (player_data.position - target_pos).norm() < 100.0
-            && (player_data.yaw - target_heading).abs()
-                < 0.5 // this threshold should be changed only with real robots in sight
+            && (player_data.yaw - target_heading).abs() < 0.5
+        // this threshold should be changed only with real robots in sight
         {
             return SkillProgress::Done(SkillResult::Success);
         }

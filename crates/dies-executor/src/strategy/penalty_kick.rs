@@ -1,5 +1,13 @@
+use crate::invoke_skill;
+use crate::roles::skills::ApproachBall;
+use crate::roles::skills::Face;
+use crate::roles::skills::FetchBallWithHeading;
+use crate::roles::skills::GoToPosition;
+use crate::roles::skills::Kick;
 use crate::roles::Goalkeeper;
 use crate::roles::RoleCtx;
+use crate::roles::SkillResult;
+use crate::skill;
 use crate::strategy::kickoff::OtherPlayer;
 use crate::strategy::task::{Task3Phase, Task4Phase};
 use crate::strategy::{Role, Strategy};
@@ -54,50 +62,55 @@ impl Role for Attacker {
             }
         }
 
-        // two stages: 1 - goto ball, 2 - dribble and kick together
-        if self.move_to_ball.is_accomplished() && gamestate == GameState::Penalty {
-            //stage 2: dribbling
-            if self.move_to_ball.is_accomplished() {
-                let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
+        skill!(
+            ctx,
+            FetchBallWithHeading::towards_position(Vector2::new(4500.0, 0.0))
+        );
 
-                // find the goal keeper
-                let goalkeeper_dir = world_data
-                    .opp_players
-                    .iter()
-                    .find(|player| {
-                        let pos = player.position;
-                        pos.x >= 3500.0 && pos.x <= 4500.0 && pos.y >= -1000.0 && pos.y <= 1000.0
-                    })
-                    .map(|player| Angle::between_points(player_data.position, player.position));
-                let target: Angle = goalkeeper_dir.map_or(Angle::from_radians(0.0), |dir| {
-                    if dir.radians() > 0.0 {
-                        (Angle::between_points(player_data.position, Vector2::new(4500.0, -1000.0))
-                            + goalkeeper_dir.unwrap())
-                            / 2.0
-                    } else {
-                        (Angle::between_points(player_data.position, Vector2::new(4500.0, 1000.0))
-                            + goalkeeper_dir.unwrap())
-                            / 2.0
-                    }
-                });
-                return self.kick.kick(
-                    PlayerControlInput::new()
-                        .with_position(ball_pos.xy())
-                        .with_yaw(target)
-                        .with_dribbling(1.0)
-                        .clone(),
-                );
-            }
-        }
-        // stage1: move to ball
-        if let Some(_ball) = &world_data.ball {
+        if gamestate == GameState::Penalty || gamestate == GameState::PenaltyRun {
             let ball_pos = self.init_ball.as_ref().unwrap().position.xy();
-            let dir = Angle::between_points(player_data.position, ball_pos);
-            let dist = (ball_pos - player_data.position).norm();
-            let dirvec = (ball_pos - player_data.position) / dist;
-            let goto_pos = player_data.position + dirvec * (dist - 150.0);
-            self.move_to_ball
-                .relocate(player_data, goto_pos, dir, 0.0, 0.5)
+
+            skill!(
+                ctx,
+                GoToPosition::new(Vector2::new(ball_pos.x + 1000.0, ball_pos.y))
+            );
+
+            // find the goal keeper
+            let goalkeeper_dir = world_data
+                .opp_players
+                .iter()
+                .find(|player| {
+                    let pos = player.position;
+                    pos.x >= 3500.0 && pos.x <= 4500.0 && pos.y >= -1000.0 && pos.y <= 1000.0
+                })
+                .map(|player| Angle::between_points(player_data.position, player.position));
+            let target: Angle = goalkeeper_dir.map_or(Angle::from_radians(0.0), |dir| {
+                if dir.radians() > 0.0 {
+                    (Angle::between_points(player_data.position, Vector2::new(4500.0, -1000.0))
+                        + goalkeeper_dir.unwrap())
+                        / 2.0
+                } else {
+                    (Angle::between_points(player_data.position, Vector2::new(4500.0, 1000.0))
+                        + goalkeeper_dir.unwrap())
+                        / 2.0
+                }
+            });
+
+            loop {
+                skill!(ctx, ApproachBall::new());
+                match invoke_skill!(ctx, Face::new(target).with_ball()) {
+                    crate::roles::SkillProgress::Continue(mut input) => {
+                        input.with_dribbling(1.0);
+                        return input;
+                    }
+                    _ => {}
+                }
+
+                if let SkillResult::Success = skill!(ctx, Kick::new()) {
+                    break;
+                }
+            }
+            PlayerControlInput::new()
         } else {
             PlayerControlInput::new()
         }
