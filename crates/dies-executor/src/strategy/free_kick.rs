@@ -264,7 +264,7 @@ impl Strategy for FreeKickStrategy {
                         let max_theta = 120;
                         let max_radius = 1000;
                         let min_distance = 700.0;
-                        let original_direction = (player_data.position - ball_pos.xy()).normalize().clone();
+                        // let original_direction = (player_data.position - ball_pos.xy()).normalize().clone();
                         let mut i = 0;
                         target = nearest_safe_pos(ball_pos.xy(), min_distance, player_data.position, min_theta, max_theta, max_radius, field);
                         dies_core::debug_line(format!("p{}.line_ball", player_data.id), Vector2::new(ball_pos.x, ball_pos.y), player_data.position, dies_core::DebugColor::Red);
@@ -340,7 +340,7 @@ fn nearest_safe_pos(avoding_point : Vector2, min_distance : f64, initial_pos: Ve
             } 
         }
     }
-    target
+    initial_pos
 }
 
 fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
