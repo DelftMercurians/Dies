@@ -9,8 +9,8 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, RobotCmd, SysStatus};
 
-const MAX_MSG_FREQ: f64 = 100.0;
-const BASE_STATION_READ_FREQ: f64 = 50.0;
+const MAX_MSG_FREQ: f64 = 200.0;
+const BASE_STATION_READ_FREQ: f64 = 100.0;
 
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].

@@ -11,7 +11,7 @@ use dies_core::{to_dies_coords2, to_dies_yaw};
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
 
 const BREAKBEAM_WINDOW: usize = 100;
-const BREAKBEAM_DETECTION_THRESHOLD: usize = 0;
+const BREAKBEAM_DETECTION_THRESHOLD: usize = 5;
 const OFF_FIELD_TIMEOUT: f64 = 2.0;
 
 /// Stored data for a player from the last update.

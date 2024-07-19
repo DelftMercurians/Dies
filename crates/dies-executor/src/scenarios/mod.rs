@@ -36,12 +36,12 @@ fn play() -> ScenarioSetup {
     let harasser = PlayerId::new(1);
     let waller1 = PlayerId::new(2);
     let waller2 = PlayerId::new(3);
-    let attacker1 = PlayerId::new(4);
+    // let attacker1 = PlayerId::new(4);
     let attacker2 = PlayerId::new(5);
 
     let mut strat = PlayStrategy::new(keeper, harasser);
     strat.defense.add_wallers(vec![waller1, waller2]);
-    strat.attack.add_attacker(attacker1);
+    // strat.attack.add_attacker(attacker1);
     strat.attack.add_attacker(attacker2);
 
     let mut setup = ScenarioSetup::new(
@@ -60,7 +60,7 @@ fn play() -> ScenarioSetup {
         StrategyGameStateMacther::any_of(
             vec![GameState::Kickoff, GameState::PrepareKickoff].as_slice(),
         ),
-        KickoffStrategy::new(keeper, attacker1, vec![waller1, waller2]),
+        KickoffStrategy::new(keeper, attacker2, vec![waller1, waller2]),
     );
 
     setup

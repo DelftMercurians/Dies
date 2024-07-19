@@ -10,5 +10,12 @@ async fn main() -> ExitCode {
 
     println!("Dies CLI v{}", env!("CARGO_PKG_VERSION"));
 
-    Cli::start().await
+    let res = tokio::spawn(async {
+        Cli::start().await
+    });
+
+    match res.await {
+        Err(_) => ExitCode::FAILURE,
+        Ok(code) => code,
+    }
 }

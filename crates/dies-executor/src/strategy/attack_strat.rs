@@ -194,11 +194,19 @@ impl Strategy for PlayStrategy {
             .attack
             .attackers
             .iter()
-            .map(|(id, _)| ctx.world.get_player(*id).unwrap().position)
+            .map(|(id, _)| {
+                ctx.world
+                    .get_player(*id)
+                    .map(|p| p.position.xy())
+                    .unwrap_or_default()
+            })
             .collect::<Vec<_>>();
-        self.defense
-            .harasser
-            .set_shooting_target(attacker_positions[0]);
+
+        if let Some(pos) = attacker_positions.get(0) {
+            self.defense
+                .harasser
+                .set_shooting_target(*pos);
+        }
 
         if let Some(ball) = ctx.world.ball.as_ref() {
             if let Some(id) = self.defense.keeper.kicking_to {

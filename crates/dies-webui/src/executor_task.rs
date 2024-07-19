@@ -138,7 +138,7 @@ impl ExecutorTask {
             let sim_config = self.sim_config.clone();
             let server_state = Arc::clone(&self.server_state);
             let update_tx = self.update_tx.clone();
-            tokio::spawn(async move {
+            let res = tokio::spawn(async move {
                 let log_file_name = {
                     let time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
                     format!("dies-{time}.log")
@@ -198,6 +198,16 @@ impl ExecutorTask {
                 }
 
                 dies_logger::log_close();
+            });
+
+            tokio::spawn(async {
+                match res.await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        log::error!("Executor task failed: {}", err);
+                        std::process::exit(1);
+                    }
+                }
             })
         };
 

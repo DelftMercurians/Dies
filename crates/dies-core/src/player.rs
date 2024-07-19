@@ -155,7 +155,7 @@ impl From<PlayerMoveCmd> for glue::Radio_Command {
             },
             dribbler_speed: val.dribble_speed as f32,
             robot_command: val.robot_cmd.into(),
-            kick_time: val.kick_speed as f32,
+            kick_time: 5_000.0,
             fan_speed: 0.0,//val.fan_speed as f32,
             _pad: [0, 0, 0],
         }

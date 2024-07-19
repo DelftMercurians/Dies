@@ -89,7 +89,7 @@ impl Role for Harasser {
                     }
 
                     let mut target_pos = self.find_intersection(ball, geom);
-                    target_pos.x = target_pos.x.min(-200.0);
+                    target_pos.x = target_pos.x.min(-500.0);
                     let mut input = PlayerControlInput::new();
                     input.with_position(target_pos);
                     input.with_yaw(Angle::between_points(
@@ -102,7 +102,7 @@ impl Role for Harasser {
                 }
             }
             State::Shooting => {
-                if ctx.player.position.x > 0.0 {
+                if ctx.player.position.x > -500.0 {
                     ctx.reset_skills();
                     self.state = State::Harassing;
                     return PlayerControlInput::new();

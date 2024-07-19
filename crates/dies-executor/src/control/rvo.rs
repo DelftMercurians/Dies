@@ -39,7 +39,7 @@ pub fn velocity_obstacle_update(
     for other_player in players.iter() {
         if other_player.position != player.position {
             if !avoid_robots {
-                let rvo_ba = compute_velocity_obstacle(player, other_player, &vo_type, player_radius * 0.8);
+                let rvo_ba = compute_velocity_obstacle(player, other_player, &vo_type, player_radius * 1.0);
                 rvo_ba_all.push(rvo_ba);
             };
         }
