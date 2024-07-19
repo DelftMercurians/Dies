@@ -14,7 +14,7 @@ nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
 rand = "0.8.5"
 serde = { version = "1.0.192", features = ["derive"] }
 typeshare = "1.0.3"
-glue = { git = "https://github.com/DelftMercurians/glue.git", tag = "v0.5.0" }
+glue = { git = "https://github.com/DelftMercurians/glue.git", tag = "v0.5.1" }
 serde_json = "1.0.120"
 tokio = { version = "1.38.0", features = ["fs", "io-std", "rt", "sync"] }
 uuid = { version = "1.9.1", features = ["v4"] }

@@ -28,21 +28,21 @@ pub async fn test_radio(
             break;
         }
 
-        // for id in ids.iter() {
-        //     let mut cmd = PlayerMoveCmd::zero(PlayerId::new(*id));
-        //     if let Some(w) = w {
-        //         cmd.w = w;
-        //     }
-        //     if let Some(sx) = sx {
-        //         cmd.sx = sx;
-        //     }
-        //     if let Some(sy) = sy {
-        //         cmd.sy = sy;
-        //     }
+        for id in ids.iter() {
+            let mut cmd = PlayerMoveCmd::zero(PlayerId::new(*id));
+            if let Some(w) = w {
+                cmd.w = w;
+            }
+            if let Some(sx) = sx {
+                cmd.sx = sx;
+            }
+            if let Some(sy) = sy {
+                cmd.sy = sy;
+            }
 
-        //     println!("Sending {:?}", cmd);
-        //     bs_handle.send_no_wait(cmd);
-        // }
+            println!("Sending {:?}", cmd);
+            bs_handle.send_no_wait(dies_core::PlayerCmd::Move(cmd));
+        }
     }
 
     Ok(())
