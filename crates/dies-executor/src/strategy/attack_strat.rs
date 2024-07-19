@@ -114,18 +114,16 @@ pub struct Defense {
     keeper_id: PlayerId,
     keeper: Goalkeeper,
     wallers: Vec<(PlayerId, Waller)>,
-    harasser: Harasser,
-    harasser_id: PlayerId,
+    harasser: Option<(PlayerId, Harasser)>,
 }
 
 impl Defense {
-    pub fn new(keeper_id: PlayerId, harrasser: PlayerId) -> Self {
+    pub fn new(keeper_id: PlayerId) -> Self {
         Self {
             keeper_id,
             keeper: Goalkeeper::new(),
             wallers: Vec::new(),
-            harasser_id: harrasser,
-            harasser: Harasser::new(70.0),
+            harasser: None,
         }
     }
 
@@ -135,7 +133,11 @@ impl Defense {
         }
     }
 
-    pub fn update(&mut self, ctx: StrategyCtx) {
+    pub fn add_harasser(&mut self, player_id: PlayerId) {
+        self.harasser = Some((player_id, Harasser::new(120.0)));
+    }
+
+    pub fn update(&mut self, _ctx: StrategyCtx) {
         self.keeper
             .set_defenders(self.wallers.iter().map(|w| w.0).collect());
     }
@@ -147,10 +149,10 @@ pub struct PlayStrategy {
 }
 
 impl PlayStrategy {
-    pub fn new(keeper_id: PlayerId, harasser: PlayerId) -> Self {
+    pub fn new(keeper_id: PlayerId) -> Self {
         Self {
             attack: Attack::new(),
-            defense: Defense::new(keeper_id, harasser),
+            defense: Defense::new(keeper_id),
         }
     }
 }
@@ -190,22 +192,22 @@ impl Strategy for PlayStrategy {
             w.1.goalie_shooting(self.defense.keeper.kicking_to.is_some())
         });
 
-        let attacker_positions = self
-            .attack
-            .attackers
-            .iter()
-            .map(|(id, _)| {
-                ctx.world
-                    .get_player(*id)
-                    .map(|p| p.position.xy())
-                    .unwrap_or_default()
-            })
-            .collect::<Vec<_>>();
+        if let Some((_, harasser)) = self.defense.harasser.as_mut() {
+            let attacker_positions = self
+                .attack
+                .attackers
+                .iter()
+                .map(|(id, _)| {
+                    ctx.world
+                        .get_player(*id)
+                        .map(|p| p.position.xy())
+                        .unwrap_or_default()
+                })
+                .collect::<Vec<_>>();
 
-        if let Some(pos) = attacker_positions.get(0) {
-            self.defense
-                .harasser
-                .set_shooting_target(*pos);
+            if let Some(pos) = attacker_positions.get(0) {
+                harasser.set_shooting_target(*pos);
+            }
         }
 
         if let Some(ball) = ctx.world.ball.as_ref() {
@@ -235,8 +237,8 @@ impl Strategy for PlayStrategy {
             if player_id == self.defense.keeper_id {
                 Some(&mut self.defense.keeper)
             } else {
-                if self.defense.harasser_id == player_id {
-                    Some(&mut self.defense.harasser)
+                if self.defense.harasser.as_ref().map(|(id, _)| *id) == Some(player_id) {
+                    self.defense.harasser.as_mut().map(|(_, role)| role as &mut dyn Role)
                 } else {
                     self.defense
                         .wallers

@@ -36,7 +36,7 @@ pub struct ScenarioSetup {
 impl ScenarioSetup {
     pub fn new(strategy: impl Strategy + 'static, state: StrategyGameStateMacther) -> Self {
         let mut strategy_map = StrategyMap::new();
-        strategy_map.insert(state, Box::new(strategy) as Box<dyn Strategy>);
+        strategy_map.insert(state, strategy);
         Self {
             ball: BallPlacement::NoBall,
             own_players: Vec::new(),
@@ -53,7 +53,7 @@ impl ScenarioSetup {
         strategy: impl Strategy + 'static,
     ) -> &mut Self {
         self.strategy
-            .insert(state, Box::new(strategy) as Box<dyn Strategy>);
+            .insert(state, strategy);
         self
     }
 

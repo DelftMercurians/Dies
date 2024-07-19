@@ -6,6 +6,7 @@ pub mod penalty_kick;
 mod task;
 pub mod test_strat;
 pub mod stop;
+pub mod dynamic;
 
 use crate::{
     roles::{Role, RoleCtx},
@@ -15,6 +16,7 @@ pub use adhoc::AdHocStrategy;
 use dies_core::{PlayerId, WorldData};
 use std::collections::HashMap;
 
+#[derive(Clone)]
 pub struct StrategyCtx<'a> {
     pub world: &'a WorldData,
 }

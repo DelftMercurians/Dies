@@ -5,7 +5,7 @@ use crate::Angle;
 
 use super::Vector2;
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[typeshare(serialized_as = "u32")]
 pub struct PlayerId(u32);
 
