@@ -266,7 +266,7 @@ impl Strategy for FreeKickStrategy {
                         let min_distance = 700.0;
                         // let original_direction = (player_data.position - ball_pos.xy()).normalize().clone();
                         let mut i = 0;
-                        target = nearest_safe_pos(ball_pos.xy(), min_distance, player_data.position, min_theta, max_theta, max_radius, field);
+                        target = dies_core::nearest_safe_pos(ball_pos.xy(), min_distance, player_data.position, min_theta, max_theta, max_radius, field);
                         dies_core::debug_line(format!("p{}.line_ball", player_data.id), Vector2::new(ball_pos.x, ball_pos.y), player_data.position, dies_core::DebugColor::Red);
                         
                         dies_core::debug_string(format!("p{}.FinalTarget", player_data.id), target.to_string());
@@ -313,44 +313,44 @@ impl Strategy for FreeKickStrategy {
     }
 }
 
-fn nearest_safe_pos(avoding_point : Vector2, min_distance : f64, initial_pos: Vector2, min_theta :i32, max_theta:i32, max_radius: i32, field: &FieldGeometry) -> Vector2 {
-    let mut i = 0;
-    let mut target = Vector2::new(0.0, 0.0);
+// fn nearest_safe_pos(avoding_point : Vector2, min_distance : f64, initial_pos: Vector2, min_theta :i32, max_theta:i32, max_radius: i32, field: &FieldGeometry) -> Vector2 {
+//     let mut i = 0;
+//     let mut target = Vector2::new(0.0, 0.0);
 
-    // create a vector between avoiding_point and initial_pos
-    let original_direction = (initial_pos - avoding_point).normalize().clone();
+//     // create a vector between avoiding_point and initial_pos
+//     let original_direction = (initial_pos - avoding_point).normalize().clone();
 
-    for theta in (min_theta as i32..max_theta as i32).step_by(10) {
-        let theta = (theta as f64).to_radians();
-        let theta_line = Angle::from_vector(original_direction).radians();
+//     for theta in (min_theta as i32..max_theta as i32).step_by(10) {
+//         let theta = (theta as f64).to_radians();
+//         let theta_line = Angle::from_vector(original_direction).radians();
         
-        for radius in (0..max_radius as i32).step_by(20) {
+//         for radius in (0..max_radius as i32).step_by(20) {
 
-            let x = avoding_point.x + (min_distance + radius as f64) * (theta + theta_line).cos();
-            let y = avoding_point.y + (min_distance + radius as f64) * (theta + theta_line).sin();
-            let position = Vector2::new(x, y);
+//             let x = avoding_point.x + (min_distance + radius as f64) * (theta + theta_line).cos();
+//             let y = avoding_point.y + (min_distance + radius as f64) * (theta + theta_line).sin();
+//             let position = Vector2::new(x, y);
             
-            i = i + 1;
-            if is_pos_in_field(position, field) {
-                // dies_core::debug_cross(format!("p{}.CheckingPos{}",player_data.id , i), position, dies_core::DebugColor::Purple);
-                // dies_core::debug_string(format!("p{}.FinalTarget", player_data.id), position.to_string());
-                // dies_core::debug_line(format!("p{}.line_final_target", player_data.id), Vector2::new(ball_pos.x, ball_pos.y), target, dies_core::DebugColor::Orange);
+//             i = i + 1;
+//             if is_pos_in_field(position, field) {
+//                 // dies_core::debug_cross(format!("p{}.CheckingPos{}",player_data.id , i), position, dies_core::DebugColor::Purple);
+//                 // dies_core::debug_string(format!("p{}.FinalTarget", player_data.id), position.to_string());
+//                 // dies_core::debug_line(format!("p{}.line_final_target", player_data.id), Vector2::new(ball_pos.x, ball_pos.y), target, dies_core::DebugColor::Orange);
 
-                return position;
-            } 
-        }
-    }
-    initial_pos
-}
+//                 return position;
+//             } 
+//         }
+//     }
+//     initial_pos
+// }
 
-fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
-    const MARGIN: f64 = 100.0;
-    // check if pos outside field
-    if pos.x.abs() > field.field_length / 2.0  - MARGIN
-        || pos.y.abs() > field.field_width / 2.0 - MARGIN
-    {
-        return false;
-    }
+// fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
+//     const MARGIN: f64 = 100.0;
+//     // check if pos outside field
+//     if pos.x.abs() > field.field_length / 2.0  - MARGIN
+//         || pos.y.abs() > field.field_width / 2.0 - MARGIN
+//     {
+//         return false;
+//     }
     
-    true
-}
+//     true
+// }
