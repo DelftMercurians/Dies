@@ -495,7 +495,7 @@ impl WorldData {
                         });
                     }
                 },
-                GameState::BallReplacement(_) => todo!(),
+                GameState::BallReplacement(_) => {},
                 GameState::PreparePenalty => {}
                 GameState::FreeKick => {}
                 GameState::Penalty => {}

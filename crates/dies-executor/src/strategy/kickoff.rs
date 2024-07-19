@@ -1,4 +1,5 @@
 use crate::roles::skills::{ApproachBall, FetchBall, GoToPosition, Kick};
+use crate::roles::waller::Waller;
 use crate::roles::{Goalkeeper, RoleCtx, SkillResult};
 use crate::strategy::{Role, Strategy};
 use crate::{skill, PlayerControlInput};
@@ -8,60 +9,6 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use super::StrategyCtx;
-
-/// A generator for creating a sequence of 2D positions.
-///
-/// This struct generates positions in a specific pattern, alternating between
-/// moving right and moving up/down, with increasing vertical distances.
-#[derive(Debug)]
-struct PositionGenerator {
-    /// The base distance used for position calculations.
-    d: f64,
-    /// The current x-coordinate.
-    x: f64,
-    /// The current y-coordinate.
-    y: f64,
-    /// The current vertical direction (1.0 for up, -1.0 for down).
-    direction: f64,
-    /// The current count of generated positions.
-    count: u32,
-}
-
-impl PositionGenerator {
-    /// Create a new position generator with the given base distance.
-    fn new(d: f64) -> Self {
-        Self {
-            d,
-            x: d,
-            y: 0.0,
-            direction: 1.0,
-            count: 1,
-        }
-    }
-}
-
-impl Iterator for PositionGenerator {
-    type Item = Vector2<f64>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.count += 1;
-        if self.count % 2 == 0 {
-            self.x += self.d;
-            self.direction = 1.0;
-        } else {
-            self.direction *= -1.0;
-        }
-        self.y = self.direction * ((self.count as f64 / 2.0) + 1.0) * self.d;
-        Some(Vector2::new(self.x, self.y))
-    }
-}
-
-pub struct KickoffStrategy {
-    roles: HashMap<PlayerId, Box<dyn Role>>,
-    has_kicker: bool,
-    keeper_id: Option<PlayerId>,
-    position_generator: PositionGenerator,
-}
 
 pub struct Kicker {
     us_attacking: bool,
@@ -132,22 +79,21 @@ impl Role for OtherPlayer {
     }
 }
 
+pub struct KickoffStrategy {
+    roles: HashMap<PlayerId, Box<dyn Role>>,
+    keeper_id: PlayerId,
+    attacker_id: PlayerId,
+    waller_ids: Vec<PlayerId>,
+}
+
 impl KickoffStrategy {
-    pub fn new(keeper_id: Option<PlayerId>) -> Self {
+    pub fn new(keeper_id: PlayerId, attacker_id: PlayerId, waller_ids: Vec<PlayerId>) -> Self {
         KickoffStrategy {
             roles: HashMap::new(),
-            has_kicker: false,
             keeper_id,
-            position_generator: PositionGenerator::new(-1000.0),
+            attacker_id,
+            waller_ids,
         }
-    }
-
-    pub fn add_role_with_id(&mut self, id: PlayerId, role: Box<dyn Role>) {
-        self.roles.insert(id, role);
-    }
-
-    pub fn set_gate_keeper(&mut self, id: PlayerId) {
-        self.keeper_id = Some(id);
     }
 }
 
@@ -156,51 +102,42 @@ impl Strategy for KickoffStrategy {
         "Kickoff"
     }
 
-    fn on_enter(&mut self, _ctx: StrategyCtx) {
+    fn on_enter(&mut self, ctx: StrategyCtx) {
         // Clear roles
-        self.has_kicker = false;
         self.roles.clear();
+
+        // Assign roles
+        self.roles
+            .insert(self.keeper_id, Box::new(Goalkeeper::new()));
+
+        let mut waller_idx = 0;
+        let mut other_positions = vec![
+            Vector2::new(-2000.0, 0.0),
+            Vector2::new(-2500.0, 0.0),
+            Vector2::new(-3000.0, 0.0),
+        ];
+        for player in ctx.world.own_players.iter() {
+            if player.id == self.attacker_id {
+                self.roles.insert(
+                    player.id,
+                    Box::new(Kicker::new(ctx.world.current_game_state.us_operating)),
+                );
+            } else if self.waller_ids.contains(&player.id) {
+                self.roles
+                    .insert(player.id, Box::new(Waller::new_with_index(waller_idx)));
+                waller_idx += 1;
+            } else if player.id != self.keeper_id {
+                self.roles.insert(
+                    player.id,
+                    Box::new(OtherPlayer::new(
+                        other_positions.pop().unwrap_or(Vector2::new(-3500.0, 0.0)),
+                    )),
+                );
+            }
+        }
     }
 
     fn update(&mut self, ctx: StrategyCtx) {
-        let world = ctx.world;
-
-        let us_attacking = world.current_game_state.us_operating;
-        // Assign roles to players
-        for player_data in world.own_players.iter() {
-            if let Some(gate_keeper_id) = self.keeper_id {
-                if player_data.id == gate_keeper_id {
-                    self.roles
-                        .insert(player_data.id, Box::new(Goalkeeper::new()));
-                    continue;
-                }
-            }
-            if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
-                if !self.has_kicker {
-                    self.has_kicker = true;
-                    e.insert(Box::new(Kicker::new(us_attacking)));
-                    log::info!("Adding player {} as the kicker", player_data.id);
-                } else {
-                    log::info!("Adding player {} as normal role", player_data.id);
-                    e.insert(Box::new(OtherPlayer::new(
-                        self.position_generator.next().unwrap(),
-                    )));
-                }
-            }
-        }
-
-        // let mut inputs = PlayerInputs::new();
-        // for (id, role) in self.roles.iter_mut() {
-        //     if let Some(player_data) = world.own_players.iter().find(|p| p.id == *id) {
-        //         let player_data = player_data.clone();
-
-        //         let input = role.update(RoleCtx::new(&player_data, world, &mut HashMap::new()));
-        //         inputs.insert(*id, input);
-        //     } else {
-        //         log::error!("No detetion data for player #{id} with active role");
-        //     }
-        // }
-        // inputs
     }
 
     fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {

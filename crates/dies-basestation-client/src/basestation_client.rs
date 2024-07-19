@@ -9,8 +9,8 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, RobotCmd, SysStatus};
 
-const MAX_MSG_FREQ: f64 = 200.0;
-const BASE_STATION_READ_FREQ: f64 = 100.0;
+const MAX_MSG_FREQ: f64 = 100.0;
+const BASE_STATION_READ_FREQ: f64 = 50.0;
 
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
@@ -122,7 +122,7 @@ impl BasestationHandle {
             }
         };
 
-        tokio::task::spawn_blocking(move || {
+        let result = tokio::task::spawn_blocking(move || {
             let mut last_send = std::time::Instant::now();
             let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
             let mut id_map = config.robot_id_map;
@@ -162,7 +162,7 @@ impl BasestationHandle {
                                 let _ =
                                     monitor.set_current_heading(id.as_u32() as u8, heading as f32);
                             }
-                            _ => todo!(),
+                            _ => {},
                         },
                     },
                     Ok(Message::ChangeIdMap(new_id_map)) => {
@@ -251,6 +251,14 @@ impl BasestationHandle {
                 } else {
                     std::thread::sleep(Duration::from_secs_f64(1.0 / MAX_MSG_FREQ));
                 }
+            }
+        });
+
+        tokio::spawn(async move {
+            let result = result.await;
+            if let Err(e) = result {
+                log::error!("Error in basestation client: {:?}", e);
+                std::process::exit(1);
             }
         });
 

@@ -72,7 +72,9 @@ impl Attacker {
     }
 
     pub fn receive(&mut self) {
-        self.next_state = Some(AttackerState::FetchingBall);
+        if matches!(self.state, AttackerState::Positioning) {
+            self.next_state = Some(AttackerState::FetchingBall);
+        }
     }
 
     pub fn start_positioning(&mut self) {
@@ -87,7 +89,7 @@ impl Attacker {
     }
 
     pub fn fetching_ball(&self) -> bool {
-        matches!(self.state, AttackerState::FetchingBall)
+        !matches!(self.state, AttackerState::Positioning)
     }
 }
 
@@ -123,11 +125,14 @@ impl Role for Attacker {
             );
 
             if let Some(next_state) = self.next_state.take() {
-                self.state = next_state;
-                self.dribbling_start = None;
-                self.has_passed_to_receiver = None;
-                self.position_cache.reset();
-                ctx.reset_skills();
+                if next_state != self.state {
+                    println!("Attacker: {:?} -> {:?}", self.state, next_state);
+                    self.state = next_state;
+                    self.dribbling_start = None;
+                    self.has_passed_to_receiver = None;
+                    self.position_cache.reset();
+                    ctx.reset_skills();
+                }
             }
 
             let new_state = match self.state {
@@ -147,22 +152,16 @@ impl Role for Attacker {
                     }
                 }
                 AttackerState::FetchingBall => loop {
-                    if ball.position.x < -3000.0 {
+                    if ball.position.x < -1000.0 {
                         break AttackerState::Positioning;
                     }
 
                     match skill!(ctx, FetchBall::new()) {
                         crate::roles::SkillResult::Success => {
-                            if is_pos_valid(ball_pos, geom) {
-                                break AttackerState::Dribbling;
-                            } else {
-                            }
+                            break AttackerState::Dribbling;
                         }
                         _ => {}
                     }
-                    // if ball_dist > 1000.0 {
-                    //     break AttackerState::Positioning;
-                    // }
                 },
                 AttackerState::Dribbling => {
                     let starting_pos = *self.dribbling_start.get_or_insert(ctx.player.position);
@@ -254,7 +253,6 @@ impl Role for Attacker {
             };
 
             if new_state != self.state {
-                println!("Attacker: {:?} -> {:?}", self.state, new_state);
                 self.next_state = Some(new_state);
             }
 

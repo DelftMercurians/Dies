@@ -48,7 +48,7 @@ impl Attack {
             .find_map(|(_, attacker)| attacker.passed_to_receiver());
         if let Some(receiver) = receiver {
             if let Some((_, receiver)) = self.attackers.iter_mut().find(|(id, _)| *id == receiver) {
-                receiver.receive();
+                // receiver.receive();
             } else {
                 log::error!("Receiver not found: {:?}", receiver);
             }
@@ -130,11 +130,8 @@ impl Defense {
     }
 
     pub fn add_wallers(&mut self, player_ids: Vec<PlayerId>) {
-        let offsets = (0..player_ids.len())
-            .map(|i| if i % 2 == 0 { -95.0 } else { 95.0 })
-            .collect::<Vec<_>>();
-        for (id, offset) in player_ids.iter().zip(offsets) {
-            self.wallers.push((*id, Waller::new(offset)));
+        for (idx, id) in player_ids.iter().enumerate() {
+            self.wallers.push((*id, Waller::new_with_index(idx)));
         }
     }
 
@@ -189,18 +186,24 @@ impl Strategy for PlayStrategy {
         //     }player_ids
         // }
 
+        self.defense.wallers.iter_mut().for_each(|w| {
+            w.1.goalie_shooting(self.defense.keeper.kicking_to.is_some())
+        });
+
+        let attacker_positions = self
+            .attack
+            .attackers
+            .iter()
+            .map(|(id, _)| ctx.world.get_player(*id).unwrap().position)
+            .collect::<Vec<_>>();
         self.defense
-            .wallers
-            .iter_mut()
-            .for_each(|w| w.1.goalie_shooting(self.defense.keeper.kicking_to.is_some()));
+            .harasser
+            .set_shooting_target(attacker_positions[0]);
 
         if let Some(ball) = ctx.world.ball.as_ref() {
             if let Some(id) = self.defense.keeper.kicking_to {
-                if let Some((_, attacker)) = self
-                    .attack
-                    .attackers
-                    .iter_mut()
-                    .find(|(i, _)| *i == id)
+                if let Some((_, attacker)) =
+                    self.attack.attackers.iter_mut().find(|(i, _)| *i == id)
                 {
                     attacker.receive();
                 }
@@ -208,25 +211,12 @@ impl Strategy for PlayStrategy {
 
             let ball_speed = ball.velocity.xy().norm();
             if ball_dist_to_closest_enemy(ctx.world) > 300.0
-                // && ball.position.x < 0.0
+                && ball.position.x < 0.0
                 && ball_speed < 300.0
                 && !self.attack.we_have_ball()
             {
                 self.attack.fetch_ball(&ctx);
             }
-
-            if ball.position.x < -5000.0
-                // && ball.position.x < 0.0
-                && ball_speed < 300.0
-                && !self.attack.we_have_ball()
-            {
-                self.attack.fetch_ball(&ctx);
-            }
-
-            // if ball.position.x > 0.0
-            //     && ball_dist_to_closest_enemy(world) > 150.0
-            //     && ball_speed < 300.0
-            // {}
         }
 
         self.attack.update(ctx);

@@ -29,6 +29,17 @@ pub struct Waller {
 }
 
 impl Waller {
+    pub fn new_with_index(index: usize) -> Self {
+        let spacing: f64 = 80.0;
+        let offset = spacing * ((index / 2) + 1) as f64 * if index % 2 == 0 { 1.0 } else { -1.0 };
+        dbg!(offset);
+        Self {
+            state: State::Walling,
+            offset,
+            base_offset: offset,
+        }
+    }
+
     /// Create a new Waller role with the given offset from the intersection point.
     pub fn new(offset: f64) -> Self {
         Self {

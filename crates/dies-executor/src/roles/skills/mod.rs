@@ -300,10 +300,8 @@ impl Skill for FetchBall {
             };
             input.with_yaw(ball_angle);
 
-            if ctx.player.breakbeam_ball_detected && distance < 150.0 {
+            if ctx.player.breakbeam_ball_detected && distance < 200.0 {
                 return SkillProgress::success();
-            } else {
-                self.breakbeam_ball_detected = 0.0;
             }
 
             if (!ball.detected && distance < 300.0)
