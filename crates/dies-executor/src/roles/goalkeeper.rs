@@ -15,6 +15,7 @@ const KEEPER_X_OFFSET: f64 = 250.0;
 pub struct Goalkeeper {
     pub kicking_to: Option<PlayerId>,
     pub defenders: Vec<PlayerId>,
+    pub penalty: bool,
 }
 
 impl Goalkeeper {
@@ -22,11 +23,17 @@ impl Goalkeeper {
         Self {
             kicking_to: None,
             defenders: Vec::new(),
+            penalty: false,
         }
     }
 
     pub fn set_defenders(&mut self, defenders: Vec<PlayerId>) {
         self.defenders = defenders;
+    }
+
+    pub fn with_penalty(mut self) -> Self {
+        self.penalty = true;
+        self
     }
 }
 
@@ -129,7 +136,11 @@ impl Role for Goalkeeper {
             if self.kicking_to.is_none() {
                 let ball_pos = ball.position.xy() + ball.velocity.xy() * 0.3;
                 let delta = f64::max(f64::min(ctx.player.position.y.abs() / 5.0, 150.0), 0.0);
-                goalkeeper_x = goalkeeper_x - delta;
+                goalkeeper_x = if !self.penalty {
+                    goalkeeper_x - delta
+                } else {
+                    -field_geom.field_length / 2.0
+                };
 
                 let target_angle = Angle::between_points(ctx.player.position, ball_pos);
                 input.with_yaw(target_angle);

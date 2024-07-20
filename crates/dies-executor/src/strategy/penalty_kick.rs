@@ -157,7 +157,8 @@ impl Strategy for PenaltyKickStrategy {
         }
 
         if let Some(id) = player_ids.get(0) {
-            self.roles.insert(*id, Box::new(Goalkeeper::new()));
+            self.roles
+                .insert(*id, Box::new(Goalkeeper::new().with_penalty()));
             player_ids.remove(0);
         }
 
@@ -168,7 +169,7 @@ impl Strategy for PenaltyKickStrategy {
             let pw = geom.penalty_area_width / 2.0;
             let pos = Vector2::new(
                 if us_attacking { -fl } else { fl },
-                pw - id.as_u32() as f64 * 300.0,
+                2000.0 + pw - id.as_u32() as f64 * 300.0,
             );
             self.roles.insert(id, Box::new(OtherPlayer::new(pos)));
         }
