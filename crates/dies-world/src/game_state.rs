@@ -1,6 +1,6 @@
-use dies_core::to_dies_coords2;
 use crate::ball;
 use crate::BallData;
+use dies_core::to_dies_coords2;
 use dies_core::GameState;
 use dies_core::Vector2;
 use dies_core::Vector3;
@@ -24,6 +24,7 @@ pub struct GameStateTracker {
     is_outdated: bool,
     operator_is_blue: Option<bool>,
     play_dir_x: f64,
+    last_cmd: Option<Command>,
 }
 
 impl GameStateTracker {
@@ -39,6 +40,7 @@ impl GameStateTracker {
             is_outdated: true,
             operator_is_blue: None,
             play_dir_x: initial_play_dir_x,
+            last_cmd: None,
         }
     }
 
@@ -48,6 +50,14 @@ impl GameStateTracker {
 
     pub fn update(&mut self, data: &Referee) -> GameState {
         let command = data.command();
+
+        if self.last_cmd == Some(command) {
+            return self.game_state;
+        }
+        println!("Referee command: {:?}", command);
+        self.last_cmd = Some(command);
+
+        let last_game_state = self.game_state;
 
         self.game_state = match command {
             Command::HALT => GameState::Halt,
@@ -89,7 +99,11 @@ impl GameStateTracker {
             _ => self.game_state,
         };
 
-        dies_core::debug_string("game_state", format!("{}", self.game_state));
+        if last_game_state != self.game_state {
+            println!("Game state {:?} -> {:?}", last_game_state, self.game_state);
+        }
+
+        dies_core::debug_string("last_cmd", format!("{:?}", command));
 
         self.operator_is_blue = match command {
             Command::PREPARE_KICKOFF_BLUE
@@ -161,6 +175,8 @@ impl GameStateTracker {
     }
 
     pub fn get(&self) -> GameState {
+        dies_core::debug_string("game_state", format!("{}", self.game_state));
+
         // Convert to dies coordinates
         match self.game_state {
             GameState::BallReplacement(pos) => {
