@@ -60,7 +60,10 @@ impl Harasser {
 
 impl Role for Harasser {
     fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
-        if ctx.world.current_game_state.game_state == GameState::Stop {
+        if matches!(
+            ctx.world.current_game_state.game_state,
+            GameState::Stop | GameState::BallReplacement(_)
+        ) {
             ctx.reset_skills();
             let mut input = PlayerControlInput::new();
             input.with_speed_limit(1300.0);
@@ -101,10 +104,12 @@ impl Role for Harasser {
                     target_pos.x = target_pos.x.min(-500.0);
                     let mut input = PlayerControlInput::new();
                     input.with_position(target_pos);
-                    input.with_yaw(Angle::between_points(
-                        ctx.player.position,
-                        ball.position.xy(),
-                    ));
+                    if (ball.position.xy() - ctx.player.position).norm() > 80.0 {
+                        input.with_yaw(Angle::between_points(
+                            ctx.player.position,
+                            ball.position.xy(),
+                        ));
+                    }
                     input
                 } else {
                     PlayerControlInput::new()

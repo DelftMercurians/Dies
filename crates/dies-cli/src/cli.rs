@@ -1,13 +1,14 @@
 use std::net::SocketAddr;
 use std::{path::PathBuf, process::ExitCode};
 
-use crate::commands::start_ui::MainArgs;
 use crate::commands::test_radio::test_radio;
 use crate::commands::test_vision::test_vision;
 use crate::commands::{convert_logs::convert_log, start_ui::start_ui};
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use dies_basestation_client::list_serial_ports;
+use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
+use dies_ssl_client::{ConnectionConfig, SslClientConfig};
+use dies_webui::{UiConfig, UiEnvironment};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[derive(Debug, Clone, Subcommand)]
@@ -26,9 +27,6 @@ enum Command {
 
     #[clap(name = "test-radio")]
     TestRadio {
-        #[clap(short, long, default_value = "auto")]
-        port: SerialPort,
-
         #[clap(long, default_value = "3.0")]
         duration: f64,
         #[clap(long)]
@@ -43,16 +41,7 @@ enum Command {
     },
 
     #[clap(name = "test-vision")]
-    TestVision {
-        #[clap(short, long, default_value = "udp")]
-        mode: ConnectionMode,
-        #[clap(long, default_value = "224.5.23.2:10006")]
-        vision_addr: SocketAddr,
-        #[clap(long, default_value = "224.5.23.1:10003")]
-        gc_addr: SocketAddr,
-        #[clap(long)]
-        interface: Option<String>,
-    },
+    TestVision,
 }
 
 #[derive(Debug, Parser)]
@@ -60,80 +49,184 @@ enum Command {
 pub struct Cli {
     #[clap(subcommand)]
     command: Option<Command>,
+
+    #[clap(long, short = 'f', default_value = "dies-settings.json")]
+    pub settings_file: PathBuf,
+
+    #[clap(long, default_value = "auto", default_missing_value = "auto")]
+    pub serial_port: SerialPort,
+
+    #[clap(long, default_value = "v1")]
+    pub protocol: BasestationProtocolVersion,
+
+    #[clap(long, default_value = "5555")]
+    pub webui_port: u16,
+
+    #[clap(long, default_value = "false")]
+    pub disable_python: bool,
+
+    #[clap(long, default_value = "")]
+    pub robot_ids: String,
+
+    #[clap(long, default_value = "udp")]
+    pub mode: ConnectionMode,
+
+    #[clap(long, default_value = "224.5.23.2:10006")]
+    pub vision_addr: SocketAddr,
+
+    #[clap(long, default_value = "224.5.23.1:10003")]
+    pub gc_addr: SocketAddr,
+
+    #[clap(long, default_value = "enxf8e43ba77d03")]
+    pub interface: Option<String>,
+
+    #[clap(long, default_value = "info")]
+    pub log_level: String,
+
+    #[clap(long, default_value = "logs")]
+    pub log_directory: String,
+
+    #[clap(long, default_value = "none")]
+    pub start_scenario: String,
+
+    #[clap(long, default_value = "simulation")]
+    pub ui_mode: String,
 }
 
 impl Cli {
-    pub async fn start() -> ExitCode {
-        let args = MainArgs::parse();
-        match start_ui(args).await {
-            Ok(_) => ExitCode::SUCCESS,
-            Err(err) => {
-                eprintln!("Error in UI: {}", err);
-                ExitCode::FAILURE
+    pub async fn start(self) -> ExitCode {
+        match self.command {
+            None => match start_ui(self).await {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(err) => {
+                    eprintln!("Error in UI: {}", err);
+                    ExitCode::FAILURE
+                }
+            },
+            Some(Command::Convert { input, output }) => match convert_log(&input, &output) {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(err) => {
+                    eprintln!("Error converting logs: {}", err);
+                    ExitCode::FAILURE
+                }
+            },
+            Some(Command::ConvertLast) => {
+                match crate::commands::convert_last_log::convert_last_log() {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error converting logs: {}", err);
+                        ExitCode::FAILURE
+                    }
+                }
             }
+            Some(Command::TestRadio {
+                duration,
+                ids: id,
+                w,
+                sx,
+                sy,
+            }) => match test_radio(self.serial_port, id, duration, w, sx, sy).await {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(err) => {
+                    eprintln!("Error testing radio: {}", err);
+                    ExitCode::FAILURE
+                }
+            },
+            Some(Command::TestVision) => {
+                match test_vision(self.mode, self.vision_addr, self.gc_addr, self.interface).await {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error testing vision: {}", err);
+                        ExitCode::FAILURE
+                    }
+                }
+            }
+        }
+    }
+
+    /// Converts the CLI arguments into a `UiConfig` object that can be used to start the web UI.
+    pub async fn into_ui(self) -> Result<UiConfig> {
+        let environment = match (self.serial_config().await, self.ssl_config()) {
+            (Some(bs_config), Some(ssl_config)) => UiEnvironment::WithLive {
+                bs_handle: BasestationHandle::spawn(bs_config)?,
+                ssl_config,
+            },
+            _ => UiEnvironment::SimulationOnly,
         };
-        return ExitCode::SUCCESS;
-        // match cli {
-            // Err(err) => {
-            //     println!("{}", err);
-            //     let args = MainArgs::parse();
-            //     match start_ui(args).await {
-            //         Ok(_) => ExitCode::SUCCESS,
-            //         Err(err) => {
-            //             eprintln!("Error in UI: {}", err);
-            //             ExitCode::FAILURE
-            //         }
-            //     }
-            // }
-            // Ok(args) => match args.command {
-            //     Some(Command::Convert { input, output }) => match convert_log(&input, &output) {
-            //         Ok(_) => ExitCode::SUCCESS,
-            //         Err(err) => {
-            //             eprintln!("Error converting logs: {}", err);
-            //             ExitCode::FAILURE
-            //         }
-            //     },
-            //     Some(Command::ConvertLast) => {
-            //         match crate::commands::convert_last_log::convert_last_log() {
-            //             Ok(_) => ExitCode::SUCCESS,
-            //             Err(err) => {
-            //                 eprintln!("Error converting logs: {}", err);
-            //                 ExitCode::FAILURE
-            //             }
-            //         }
-            //     }
-            //     Some(Command::TestRadio {
-            //         port,
-            //         duration,
-            //         ids: id,
-            //         w,
-            //         sx,
-            //         sy,
-            //     }) => match test_radio(port, id, duration, w, sx, sy).await {
-            //         Ok(_) => ExitCode::SUCCESS,
-            //         Err(err) => {
-            //             eprintln!("Error testing radio: {}", err);
-            //             ExitCode::FAILURE
-            //         }
-            //     },
-            //     Some(Command::TestVision {
-            //         mode,
-            //         vision_addr,
-            //         gc_addr,
-            //         interface,
-            //     }) => match test_vision(mode, vision_addr, gc_addr, interface).await {
-            //         Ok(_) => ExitCode::SUCCESS,
-            //         Err(err) => {
-            //             eprintln!("Error testing vision: {}", err);
-            //             ExitCode::FAILURE
-            //         }
-            //     },
-            //     None => {
-            //         eprintln!("No command specified");
-            //         ExitCode::FAILURE
-            //     }
-            // },
-        // }
+
+        Ok(UiConfig {
+            settings_file: self.settings_file,
+            environment,
+            port: self.webui_port,
+            start_scenario: Some(self.start_scenario),
+            start_mode: match self.ui_mode.as_str() {
+                "simulation" => dies_webui::UiMode::Simulation,
+                "live" => dies_webui::UiMode::Live,
+                _ => {
+                    bail!("Invalid UI mode: {}", self.ui_mode);
+                }
+            },
+        })
+    }
+
+    /// Configures the serial client based on the CLI arguments. This function may prompt the user
+    /// to choose a port if multiple ports are available and the `serial_port` argument is set to "auto".
+    ///
+    /// If there is an issue selecting a serial port, an error message will be logged and `None` will be returned.
+    pub async fn serial_config(&self) -> Option<BasestationClientConfig> {
+        self.serial_port
+            .select()
+            .await
+            .map_err(|err| log::warn!("Failed to setup serial: {}", err))
+            .ok()
+            .map(|port| {
+                let mut config = BasestationClientConfig::new(port, self.protocol.into());
+                config.set_robot_id_map_from_string(&self.robot_ids);
+                config
+            })
+    }
+
+    /// Configures the vision client based on the CLI arguments.
+    pub fn ssl_config(&self) -> Option<SslClientConfig> {
+        let vision = match self.mode {
+            ConnectionMode::None => None,
+            ConnectionMode::Tcp => Some(ConnectionConfig::Tcp {
+                host: self.vision_addr.ip().to_string(),
+                port: self.vision_addr.port(),
+            }),
+            ConnectionMode::Udp => Some(ConnectionConfig::Udp {
+                host: self.vision_addr.ip().to_string(),
+                port: self.vision_addr.port(),
+                interface: self.interface.clone(),
+            }),
+        };
+        let gc = match self.mode {
+            ConnectionMode::None => None,
+            ConnectionMode::Tcp => Some(ConnectionConfig::Tcp {
+                host: self.gc_addr.ip().to_string(),
+                port: self.gc_addr.port(),
+            }),
+            ConnectionMode::Udp => Some(ConnectionConfig::Udp {
+                host: self.gc_addr.ip().to_string(),
+                port: self.gc_addr.port(),
+                interface: self.interface.clone(),
+            }),
+        };
+
+        match (vision, gc) {
+            (Some(vision), Some(gc)) => Some(SslClientConfig { vision, gc }),
+            _ => {
+                log::warn!("Invalid SSL configuration");
+                None
+            }
+        }
+    }
+
+    /// Returns the path to the log directory, making sure it exists. Defaults to "logs" in the current directory.
+    pub async fn ensure_log_dir_path(&self) -> Result<PathBuf> {
+        let path = PathBuf::from(&self.log_directory);
+        tokio::fs::create_dir_all(&path).await?;
+        Ok(path)
     }
 }
 

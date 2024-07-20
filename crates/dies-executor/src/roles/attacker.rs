@@ -96,7 +96,10 @@ impl Attacker {
 impl Role for Attacker {
     fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
         let mut input = PlayerControlInput::new();
-        if ctx.world.current_game_state.game_state == GameState::Stop {
+        if matches!(
+            ctx.world.current_game_state.game_state,
+            GameState::Stop | GameState::BallReplacement(_)
+        ) {
             ctx.reset_skills();
             let mut input = PlayerControlInput::new();
             input.with_speed_limit(1300.0);
@@ -351,7 +354,6 @@ fn find_best_striker_position(
             }
             let score = goal_score + goal_dist_score - ball_dist * 0.2;
             if score > best_score {
-                println!("{} {} {}", goal_score, goal_dist_score, ball_dist);
                 best_score = score;
                 best_position = position;
             }

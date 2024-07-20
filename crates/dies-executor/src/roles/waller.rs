@@ -136,9 +136,12 @@ impl Waller {
 impl Role for Waller {
     fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
-            if ctx.world.current_game_state.game_state == GameState::Stop {
+
+            if matches!(
+                ctx.world.current_game_state.game_state,
+                GameState::Stop | GameState::BallReplacement(_)
+            ) {
                 ctx.reset_skills();
-                let mut input = PlayerControlInput::new();
 
                 let mut target_pos = self.find_intersection(ball, geom, ctx.player.id);
                 let mut input = PlayerControlInput::new();
@@ -156,10 +159,6 @@ impl Role for Waller {
                     let min_distance = 600.0;
                     if dist < min_distance {
                         // Move away from the ball
-                        // let target =
-                        //     ball_pos.xy() + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
-                        
-                        // use the function to take the field limits into account
                         let min_theta = -120;
                         let max_theta = 120;
                         let max_radius = 1000;
@@ -184,8 +183,8 @@ impl Role for Waller {
                     input.with_position(target_pos);
                     input.ignore_robots();
                     input.with_yaw(Angle::between_points(
-                        Vector2::new(-4500.0, 0.0),
-                        ctx.player.position
+                        ctx.player.position,
+                        ball.position.xy(),
                     ));
                     input
                 }

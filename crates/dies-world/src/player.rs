@@ -92,7 +92,9 @@ impl PlayerTracker {
         if let Some(last_detection) = &self.last_detection {
             let elapsed = time - last_detection.timestamp;
             if elapsed >= OFF_FIELD_TIMEOUT {
-                log::info!("Player {} is gone", self.id);
+                if !self.is_gone {
+                    log::info!("Player {} is gone", self.id);
+                }
                 self.is_gone = true;
             } else if self.is_gone {
                 let reappaerance_time = self.reappaerance_time.get_or_insert(time);
@@ -105,7 +107,9 @@ impl PlayerTracker {
         }
         if let Some(last_feedback) = &self.last_feedback_time {
             if world_time.duration_since(last_feedback) > OFF_FIELD_TIMEOUT {
-                log::info!("Player {} is gone (feedback)", self.id);
+                if !self.is_gone {
+                    log::info!("Player {} is gone (feedback)", self.id);
+                }
                 self.is_gone = true;
                 self.reappaerance_time = None;
             } else if self.is_gone {

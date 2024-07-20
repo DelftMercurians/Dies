@@ -220,9 +220,8 @@ impl Strategy for PlayStrategy {
             }
 
             let ball_speed = ball.velocity.xy().norm();
-            if ball_dist_to_closest_enemy(ctx.world) > 300.0
-                && ball.position.x < 0.0
-                && ball_speed < 300.0
+            if ball.position.x > 0.0
+                && ball_speed < 500.0
                 && !self.attack.we_have_ball()
             {
                 self.attack.fetch_ball(&ctx);

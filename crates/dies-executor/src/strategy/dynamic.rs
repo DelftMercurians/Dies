@@ -26,7 +26,7 @@ where
             player_ids: Vec::new(),
             adhoc_strategy: AdHocStrategy::new(),
             active_strategy: String::new(),
-            last_game_state: GameState::Stop,
+            last_game_state: GameState::Halt,
         }
     }
 }

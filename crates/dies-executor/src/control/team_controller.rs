@@ -15,11 +15,12 @@ use super::{
 use crate::roles::{RoleCtx, SkillState};
 use crate::strategy::StrategyCtx;
 use dies_core::{
-    ControllerSettings, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerId, Vector2,
+    BallPlacement, ControllerSettings, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerId,
+    Vector2,
 };
 use dies_core::{PlayerMoveCmd, WorldData};
 
-const ACTIVATION_TIME: f64 = 0.7;
+const ACTIVATION_TIME: f64 = 0.2;
 
 #[derive(Default)]
 struct RoleState {
@@ -92,7 +93,10 @@ impl TeamController {
         }
 
         let state = world_data.current_game_state.game_state;
-        let strategy = if matches!(world_data.current_game_state.game_state, GameState::BallReplacement(_)) {
+        let strategy = if matches!(
+            world_data.current_game_state.game_state,
+            GameState::BallReplacement(_)
+        ) {
             &mut self.halt
         } else {
             if let Some(strategy) = self.strategy.get_strategy(&state) {
@@ -131,7 +135,10 @@ impl TeamController {
                 });
 
         // If in a stop state, override the inputs
-        if world_data.current_game_state.game_state == GameState::Stop {
+        if matches!(
+            world_data.current_game_state.game_state,
+            GameState::Stop | GameState::BallReplacement(_)
+        ) {
             inputs = stop_override(&world_data, inputs);
         }
 
@@ -200,18 +207,67 @@ fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
 
             let mut new_input = input.clone();
 
-            // Cap speed at 1.5m/s
-            new_input.velocity = input.velocity.cap_magnitude(1.5);
+            new_input.with_speed_limit(1300.0);
+            new_input.avoid_ball = true;
+            if let (Some(ball), Some(field)) =
+                (world_data.ball.as_ref(), world_data.field_geom.as_ref())
+            {
+                let ball_pos = ball.position.xy();
+                let dist = (ball_pos - player_data.position).norm();
+                let min_distance = 700.0;
+                if dist < min_distance {
+                    // Move away from the ball
+                    // let target =
+                    //     ball_pos.xy() + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
+                    let min_theta = -120;
+                    let max_theta = 120;
+                    let max_radius = 1000;
+                    // let field = ctx.world.field_geom.as_ref().unwrap();
 
-            // If the player is less than 500mm from the ball, set the goal to the point 500mm away
-            // from the ball, in the opposite direction of the ball's speed.
-            if let (Some(ball_pos), Some(ball_vel)) = (ball_pos, ball_vel) {
-                let dist = (player_data.position - ball_pos).norm();
-                if dist < 500.0 {
-                    let goal = ball_pos - ball_vel.normalize() * 500.0;
-                    new_input.position = Some(goal);
+                    let target = dies_core::nearest_safe_pos(
+                        ball_pos,
+                        min_distance,
+                        player_data.position.xy(),
+                        min_theta,
+                        max_theta,
+                        max_radius,
+                        field,
+                    );
+                    new_input.with_position(target);
+                }
+
+                if let GameState::BallReplacement(pos) = world_data.current_game_state.game_state {
+                    let dist = (pos - player_data.position).norm();
+                    let min_distance = 700.0;
+                    if dist < min_distance {
+                        let min_theta = -120;
+                        let max_theta = 120;
+                        let max_radius = 1000;
+                        // let field = ctx.world.field_geom.as_ref().unwrap();
+
+                        let target = dies_core::nearest_safe_pos(
+                            ball_pos,
+                            min_distance,
+                            player_data.position.xy(),
+                            min_theta,
+                            max_theta,
+                            max_radius,
+                            field,
+                        );
+                        new_input.with_position(target);
+                    }
                 }
             }
+
+            // // If the player is less than 500mm from the ball, set the goal to the point 500mm away
+            // // from the ball, in the opposite direction of the ball's speed.
+            // if let (Some(ball_pos), Some(ball_vel)) = (ball_pos, ball_vel) {
+            //     let dist = (player_data.position - ball_pos).norm();
+            //     if dist < 500.0 {
+            //         let goal = ball_pos - ball_vel.normalize() * 500.0;
+            //         new_input.position = Some(goal);
+            //     }
+            // }
 
             // Stop dribbler
             new_input.dribbling_speed = 0.0;

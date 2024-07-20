@@ -527,6 +527,7 @@ pub fn nearest_safe_pos(avoding_point : Vector2, min_distance : f64, initial_pos
     // create a vector between avoiding_point and initial_pos
     let original_direction = (initial_pos - avoding_point).normalize().clone();
 
+    let mut best_pos = initial_pos;
     for theta in (min_theta as i32..max_theta as i32).step_by(10) {
         let theta = (theta as f64).to_radians();
         let theta_line = Angle::from_vector(original_direction).radians();
@@ -539,12 +540,14 @@ pub fn nearest_safe_pos(avoding_point : Vector2, min_distance : f64, initial_pos
             
             i = i + 1;
             if is_pos_in_field(position, field) {
-
-                return position;
+                if (position - initial_pos).norm() < (best_pos - initial_pos).norm() {
+                    best_pos = position;
+                }
             } 
         }
     }
-    initial_pos
+    
+    best_pos
 }
 
 pub fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
@@ -701,5 +704,10 @@ mod tests {
         let intersection = result.unwrap();
         assert_relative_eq!(intersection.x, -4500.0, epsilon = 1.0);
         assert_relative_eq!(intersection.y, -4500.0, epsilon = 1.0);
+    }
+
+    #[test]
+    fn test_ball_placement_equals() {
+        assert!(GameState::BallReplacement(Vector2::zeros()) == GameState::BallReplacement(Vector2::x()))
     }
 }

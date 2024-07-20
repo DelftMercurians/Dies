@@ -49,7 +49,14 @@ fn play_static() -> ScenarioSetup {
 
     let mut setup = ScenarioSetup::new(
         strat,
-        StrategyGameStateMacther::any_of(vec![GameState::Run, GameState::Stop].as_slice()),
+        StrategyGameStateMacther::any_of(
+            vec![
+                GameState::Run,
+                GameState::Stop,
+                GameState::BallReplacement(Vector2::zeros()),
+            ]
+            .as_slice(),
+        ),
     );
     setup.add_strategy(
         StrategyGameStateMacther::Specific(GameState::Halt),

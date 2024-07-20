@@ -40,7 +40,10 @@ impl Role for Goalkeeper {
             let mut goalkeeper_x = -field_geom.field_length / 2.0 + KEEPER_X_OFFSET;
             let fallback_y = ball_pos.y.min(defence_width).max(-defence_width);
 
-            if ctx.world.current_game_state.game_state == GameState::Stop {
+            if matches!(
+                ctx.world.current_game_state.game_state,
+                GameState::Stop | GameState::BallReplacement(_)
+            )  {
                 ctx.reset_skills();
                 let mut input = PlayerControlInput::new();
                 input.with_speed_limit(1300.0);
