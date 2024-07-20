@@ -118,7 +118,8 @@ impl PlayerTracker {
         self.rolling_vision = self.rolling_vision * factor + vision_val * (1.0 - factor);
         self.rolling_control = self.rolling_control * factor + control_val * (1.0 - factor);
 
-        println!("{} {}", self.rolling_vision, self.rolling_control);
+        dies_core::debug_string("rolling vision ", format!("{}", self.rolling_vision));
+        dies_core::debug_string("rolling control ", format!("{}", self.rolling_control));
 
         if self.rolling_control < 0.2 && self.rolling_vision < 0.2 {
             self.is_gone = true;
