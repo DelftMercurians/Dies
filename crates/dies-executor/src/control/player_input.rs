@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use dies_core::{Angle, PlayerId, Vector2};
+use dies_core::{Angle, PlayerId, RoleType, Vector2};
 
 /// A collection of player inputs.
 pub struct PlayerInputs {
@@ -142,6 +142,8 @@ pub struct PlayerControlInput {
     pub fan_speed: Option<f64>,
     pub kick_speed: Option<f64>,
     pub avoid_robots: bool,
+
+    pub role_type: RoleType,
 }
 
 impl PlayerControlInput {

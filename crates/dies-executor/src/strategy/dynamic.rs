@@ -61,7 +61,7 @@ where
         strategy.update(ctx);
     }
 
-    fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
+    fn get_role(&mut self, player_id: PlayerId, ctx: StrategyCtx) -> Option<&mut dyn Role> {
         let strategy_map = self.strategies.get_or_insert_with(|| {
             (self.strategy_fn)(self.player_ids.clone())
         });

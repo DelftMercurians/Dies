@@ -16,7 +16,7 @@ use crate::roles::{RoleCtx, SkillState};
 use crate::strategy::StrategyCtx;
 use dies_core::{
     distance_to_line, BallPlacement, ControllerSettings, ExecutorSettings, GameState, Obstacle,
-    PlayerCmd, PlayerId, Vector2,
+    PlayerCmd, PlayerId, RoleType, Vector2,
 };
 use dies_core::{PlayerMoveCmd, WorldData};
 
@@ -123,12 +123,14 @@ impl TeamController {
                 .iter()
                 .fold(PlayerInputs::new(), |mut inputs, player_data| {
                     let id = player_data.id;
-                    if let Some(role) = strategy.get_role(id) {
+                    let strategy_ctx = StrategyCtx { world: &world_data };
+                    if let Some(role) = strategy.get_role(id, strategy_ctx) {
                         let role_state = self.role_states.entry(id).or_default();
                         let role_ctx =
                             RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
-                        let new_input = role.update(role_ctx);
-                        role_types.insert(id, role.role_type());
+                        let mut new_input = role.update(role_ctx);
+                        new_input.role_type = role.role_type();
+                        role_types.insert(id, new_input.role_type);
                         inputs.insert(id, new_input);
                     } else {
                         inputs.insert(id, PlayerControlInput::new());
@@ -141,7 +143,7 @@ impl TeamController {
             world_data.current_game_state.game_state,
             GameState::Stop | GameState::BallReplacement(_)
         ) {
-            inputs = stop_override(&world_data, inputs);
+            inputs = comply(&world_data, inputs);
         }
 
         let all_players = world_data
@@ -195,42 +197,47 @@ impl TeamController {
 }
 
 /// Override the inputs to comply with the stop state.
-fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
-    let ball_pos = world_data.ball.as_ref().map(|b| b.position.xy());
-    let ball_vel = world_data.ball.as_ref().map(|b| b.velocity.xy());
-    inputs
-        .iter()
-        .map(|(id, input)| {
-            let player_data = world_data
-                .own_players
-                .iter()
-                .find(|p| p.id == *id)
-                .expect("Player not found in world data");
+fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
+    if let (Some(ball), Some(field)) = (world_data.ball.as_ref(), world_data.field_geom.as_ref()) {
+        let game_state = world_data.current_game_state.game_state;
+        let ball_pos = ball.position.xy();
 
-            let mut new_input = input.clone();
+        inputs
+            .iter()
+            .map(|(id, input)| {
+                let player_data = world_data
+                    .own_players
+                    .iter()
+                    .find(|p| p.id == *id)
+                    .expect("Player not found in world data");
 
-            new_input.with_speed_limit(1300.0);
-            new_input.avoid_ball = true;
-            if let (Some(ball), Some(field)) =
-                (world_data.ball.as_ref(), world_data.field_geom.as_ref())
-            {
-                let ball_pos = ball.position.xy();
-                // let dist: f64 = (ball_pos - player_data.position).norm();
-                let min_distance = 800.0;
-                let max_radius = 4000;
-                // if dist < min_distance {
-                let target = dies_core::nearest_safe_pos(
-                    dies_core::Avoid::Circle { center: ball_pos },
-                    800.0,
-                    player_data.position,
-                    input.position.unwrap_or(player_data.position),
-                    max_radius,
-                    field,
-                );
-                new_input.with_position(target);
-                // }
+                let mut new_input = input.clone();
 
-                if let GameState::BallReplacement(pos) = world_data.current_game_state.game_state {
+                if game_state == GameState::Stop
+                    || (game_state == GameState::FreeKick
+                        && input.role_type != RoleType::FreeKicker)
+                {
+                    if game_state == GameState::Stop {
+                        new_input.with_speed_limit(1300.0);
+                        new_input.avoid_ball = true;
+                        new_input.dribbling_speed = 0.0;
+                        new_input.kicker = KickerControlInput::Disarm;
+                    }
+                    
+                    let min_distance = 800.0;
+                    let max_radius = 4000;
+                    let target = dies_core::nearest_safe_pos(
+                        dies_core::Avoid::Circle { center: ball_pos },
+                        min_distance,
+                        player_data.position,
+                        input.position.unwrap_or(player_data.position),
+                        max_radius,
+                        field,
+                    );
+                    new_input.with_position(target);
+                }
+
+                if let GameState::BallReplacement(pos) = game_state {
                     let line_start = ball_pos;
                     let line_end = pos;
                     dies_core::debug_line(
@@ -245,8 +252,8 @@ fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
                         dies_core::DebugColor::Orange,
                     );
 
-                    // let dist = distance_to_line(line_start, line_end, player_data.position);
-                    // if dist < min_distance {
+                    let min_distance = 800.0;
+                    let max_radius = 4000;
                     let target = dies_core::nearest_safe_pos(
                         dies_core::Avoid::Line {
                             start: line_start,
@@ -259,30 +266,15 @@ fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
                         field,
                     );
                     new_input.with_position(target);
-                    // }
                 } else {
                     dies_core::debug_remove("ball_placement");
                     dies_core::debug_remove("ball_placement_target");
                 }
-            }
 
-            // // If the player is less than 500mm from the ball, set the goal to the point 500mm away
-            // // from the ball, in the opposite direction of the ball's speed.
-            // if let (Some(ball_pos), Some(ball_vel)) = (ball_pos, ball_vel) {
-            //     let dist = (player_data.position - ball_pos).norm();
-            //     if dist < 500.0 {
-            //         let goal = ball_pos - ball_vel.normalize() * 500.0;
-            //         new_input.position = Some(goal);
-            //     }
-            // }
-
-            // Stop dribbler
-            new_input.dribbling_speed = 0.0;
-
-            // Disable kick
-            new_input.kicker = KickerControlInput::Disarm;
-
-            (*id, new_input)
-        })
-        .collect()
+                (*id, new_input)
+            })
+            .collect()
+    } else {
+        inputs
+    }
 }

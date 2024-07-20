@@ -82,7 +82,7 @@ impl Strategy for AdHocStrategy {
         }
     }
 
-    fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
+    fn get_role(&mut self, player_id: PlayerId, ctx: StrategyCtx) -> Option<&mut dyn Role> {
         if let Some(role) = self.roles.get_mut(&player_id) {
             Some(role.as_mut())
         } else {

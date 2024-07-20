@@ -1,4 +1,4 @@
-use dies_core::{PlayerId, WorldData};
+use dies_core::{GameState, PlayerId, Vector2, WorldData};
 
 use crate::roles::{
     attacker::{Attacker, AttackerSection, AttackerState},
@@ -7,7 +7,7 @@ use crate::roles::{
     Goalkeeper, Role,
 };
 
-use super::{Strategy, StrategyCtx};
+use super::{free_kick::FreeAttacker, Strategy, StrategyCtx};
 
 pub struct Attack {
     attackers: Vec<(PlayerId, Attacker)>,
@@ -102,7 +102,7 @@ impl Attack {
             .any(|(_, attacker)| attacker.fetching_ball())
     }
 
-    fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
+    fn get_role(&mut self, player_id: PlayerId, ctx: StrategyCtx) -> Option<&mut dyn Role> {
         self.attackers
             .iter_mut()
             .find_map(|(id, role)| if *id == player_id { Some(role) } else { None })
@@ -146,6 +146,8 @@ impl Defense {
 pub struct PlayStrategy {
     pub attack: Attack,
     pub defense: Defense,
+    last_game_state: dies_core::GameState,
+    free_kick_attacker: Option<(PlayerId, FreeAttacker)>,
 }
 
 impl PlayStrategy {
@@ -153,7 +155,85 @@ impl PlayStrategy {
         Self {
             attack: Attack::new(),
             defense: Defense::new(keeper_id),
+            last_game_state: dies_core::GameState::Halt,
+            free_kick_attacker: None,
         }
+    }
+
+    fn get_player_for_kick(&self, ctx: StrategyCtx) -> PlayerId {
+        let wallers = self
+            .defense
+            .wallers
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>();
+        let harasser = self.defense.harasser.as_ref().map(|(id, _)| *id);
+        let attackers = self
+            .attack
+            .attackers
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>();
+        let keeper = self.defense.keeper_id;
+        if let Some(ball) = ctx.world.ball.as_ref() {
+            if ball.position.x < 0.0 {
+                // Try harrassers first
+                if let Some(harasser) = harasser {
+                    return harasser;
+                }
+
+                // Try attackers
+                let closest_attacker = self.attack.attackers.iter().min_by_key(|(id, _)| {
+                    ctx.world
+                        .get_player(*id)
+                        .map(|p| (p.position - ball.position.xy()).norm())
+                        .unwrap_or(f64::MAX) as i64
+                });
+                if let Some((id, _)) = closest_attacker {
+                    return *id;
+                }
+
+                // Try wallers
+                let closest_waller = self.defense.wallers.iter().min_by_key(|(id, _)| {
+                    ctx.world
+                        .get_player(*id)
+                        .map(|p| (p.position - ball.position.xy()).norm())
+                        .unwrap_or(f64::MAX) as i64
+                });
+                if let Some((id, _)) = closest_waller {
+                    return *id;
+                }
+            } else {
+                // Try attackers
+                let closest_attacker = self.attack.attackers.iter().min_by_key(|(id, _)| {
+                    ctx.world
+                        .get_player(*id)
+                        .map(|p| (p.position - ball.position.xy()).norm())
+                        .unwrap_or(f64::MAX) as i64
+                });
+                if let Some((id, _)) = closest_attacker {
+                    return *id;
+                }
+
+                // Try harrassers
+                if let Some(harasser) = harasser {
+                    return harasser;
+                }
+
+                // Try wallers
+                let closest_waller = self.defense.wallers.iter().min_by_key(|(id, _)| {
+                    ctx.world
+                        .get_player(*id)
+                        .map(|p| (p.position - ball.position.xy()).norm())
+                        .unwrap_or(f64::MAX) as i64
+                });
+                if let Some((id, _)) = closest_waller {
+                    return *id;
+                }
+            }
+        }
+
+        keeper
     }
 }
 
@@ -163,31 +243,29 @@ impl Strategy for PlayStrategy {
     }
 
     fn update(&mut self, ctx: StrategyCtx) {
-        // let waller_ids = self
-        //     .defense
-        //     .wallers
-        //     .iter()
-        //     .map(|(id, _)| *id)
-        //     .collect::<Vec<_>>();
-        // let attacker_ids = self
-        //     .attack
-        //     .attackers
-        //     .iter()
-        //     .map(|(id, _)| *id)
-        //     .collect::<Vec<_>>();
-        // for player in ctx.world.own_players.iter() {
-        //     if player.id == self.defense.keeper_id
-        //         || waller_ids.contains(&player.id)
-        //         || attacker_ids.contains(&player.id)
-        //     {
-        //         continue;
-        //     }
+        let game_state = ctx.world.current_game_state.game_state;
 
-        //     if waller_ids.len() < 2 {
-        //         self.defense.add_wallers(player.id)
-        //     }player_ids
-        // }
+        // Free kick
+        if matches!(game_state, GameState::FreeKick) {
+            if self.last_game_state != GameState::FreeKick {
+                // Switch to free kick strategy
+                let kicker = self.get_player_for_kick(ctx.clone());
+                self.free_kick_attacker = Some((kicker, FreeAttacker::new()));
+            }
+        }
 
+        // Play
+        if matches!(
+            game_state,
+            GameState::Run | GameState::Stop | GameState::BallReplacement(_)
+        ) {
+            if !matches!(
+                self.last_game_state,
+                GameState::Run | GameState::Stop | GameState::BallReplacement(_)
+            ) {
+                self.free_kick_attacker = None;
+            }
+        }
         self.defense.wallers.iter_mut().for_each(|w| {
             w.1.goalie_shooting(self.defense.keeper.kicking_to.is_some())
         });
@@ -220,33 +298,50 @@ impl Strategy for PlayStrategy {
             }
 
             let ball_speed = ball.velocity.xy().norm();
-            if ball.position.x > 0.0
-                && ball_speed < 500.0
-                && !self.attack.we_have_ball()
-            {
+            if ball.position.x > 0.0 && ball_speed < 500.0 && !self.attack.we_have_ball() {
                 self.attack.fetch_ball(&ctx);
             }
         }
 
         self.attack.update(ctx);
+
+        self.last_game_state = game_state;
     }
 
-    fn get_role(&mut self, player_id: PlayerId) -> Option<&mut dyn Role> {
-        self.attack.get_role(player_id).or_else(|| {
-            if player_id == self.defense.keeper_id {
-                Some(&mut self.defense.keeper)
-            } else {
-                if self.defense.harasser.as_ref().map(|(id, _)| *id) == Some(player_id) {
-                    self.defense.harasser.as_mut().map(|(_, role)| role as &mut dyn Role)
+    fn get_role(&mut self, player_id: PlayerId, ctx: StrategyCtx) -> Option<&mut dyn Role> {
+        let game_state = ctx.world.current_game_state.game_state;
+
+        match game_state {
+            dies_core::GameState::FreeKick => {
+                if let Some((id, role)) = self.free_kick_attacker.as_mut() {
+                    if *id == player_id {
+                        Some(role as &mut dyn Role)
+                    } else {
+                        None
+                    }
                 } else {
-                    self.defense
-                        .wallers
-                        .iter_mut()
-                        .find_map(|(id, role)| if *id == player_id { Some(role) } else { None })
-                        .map(|role| role as &mut dyn Role)
+                    None
                 }
             }
-        })
+            _ => self.attack.get_role(player_id, ctx).or_else(|| {
+                if player_id == self.defense.keeper_id {
+                    Some(&mut self.defense.keeper)
+                } else {
+                    if self.defense.harasser.as_ref().map(|(id, _)| *id) == Some(player_id) {
+                        self.defense
+                            .harasser
+                            .as_mut()
+                            .map(|(_, role)| role as &mut dyn Role)
+                    } else {
+                        self.defense
+                            .wallers
+                            .iter_mut()
+                            .find_map(|(id, role)| if *id == player_id { Some(role) } else { None })
+                            .map(|role| role as &mut dyn Role)
+                    }
+                }
+            }),
+        }
     }
 }
 

@@ -27,12 +27,12 @@ pub fn play() -> ScenarioSetup {
         let keeper = player_ids.pop().unwrap();
         log::info!("Keeper: {:?}", keeper);
         map.insert(
-            StrategyGameStateMacther::Specific(GameState::Halt),
+            StrategyGameStateMacther::any_of(vec![
+                GameState::Halt,
+                GameState::Timeout,
+                GameState::Unknown,
+            ].as_slice()),
             AdHocStrategy::new(),
-        );
-        map.insert(
-            StrategyGameStateMacther::Specific(GameState::FreeKick),
-            FreeKickStrategy::new(Some(keeper)),
         );
         map.insert(
             StrategyGameStateMacther::any_of(
@@ -57,6 +57,7 @@ pub fn play() -> ScenarioSetup {
             GameState::Run,
             GameState::Stop,
             GameState::BallReplacement(Vector2::zeros()),
+            GameState::FreeKick,
         ];
         if num_players == 1 {
             map.insert(StrategyGameStateMacther::any_of(states.as_slice()), play);
