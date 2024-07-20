@@ -90,7 +90,7 @@ impl GameStateTracker {
                     self.game_state
                 }
             }
-            _ => self.game_state,
+            Command::GOAL_YELLOW | Command::GOAL_BLUE => self.game_state,
         };
 
         if last_game_state != self.game_state {

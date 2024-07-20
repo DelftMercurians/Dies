@@ -735,4 +735,12 @@ mod tests {
                 == GameState::BallReplacement(Vector2::x())
         )
     }
+
+    #[test]
+    fn test_ball_placement_matches() {
+        assert!(
+            StrategyGameStateMacther::any_of(vec![GameState::BallReplacement(Vector2::zeros())].as_slice())
+                .matches(&GameState::BallReplacement(Vector2::x()))
+        )
+    }
 }

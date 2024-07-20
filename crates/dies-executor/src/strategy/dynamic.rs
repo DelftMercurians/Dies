@@ -52,7 +52,10 @@ where
         self.last_game_state = game_state;
         let strategy = strategy_map
             .get_strategy(&game_state)
-            .unwrap_or_else(|| &mut self.adhoc_strategy);
+            .unwrap_or_else(|| {
+                // println!("No strategy found for game state: {:?}", game_state);
+                &mut self.adhoc_strategy
+            });
         if strategy.name() != self.active_strategy {
             log::info!("Switching to strategy: {}", strategy.name());
             self.active_strategy = strategy.name().to_owned();
@@ -67,7 +70,7 @@ where
         });
 
         let strategy = strategy_map
-            .get_strategy(&self.last_game_state)
+            .get_strategy(&ctx.world.current_game_state.game_state)
             .unwrap_or_else(|| &mut self.adhoc_strategy);
         strategy.get_role(player_id, ctx)
     }

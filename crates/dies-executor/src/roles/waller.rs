@@ -136,44 +136,9 @@ impl Waller {
 impl Role for Waller {
     fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
-
-            // if matches!(
-            //     ctx.world.current_game_state.game_state,
-            //     GameState::Stop | GameState::BallReplacement(_)
-            // ) {
-            //     ctx.reset_skills();
-
-            //     let mut target_pos = self.find_intersection(ball, geom, ctx.player.id);
-            //     let mut input = PlayerControlInput::new();
-            //     target_pos.y = target_pos
-            //         .y
-            //         .max(-geom.penalty_area_width / 2.0 - MARGIN)
-            //         .min(geom.penalty_area_width / 2.0 + MARGIN);
-            //     input.with_position(target_pos);
-
-            //     input.with_speed_limit(1300.0);
-            //     input.avoid_ball = true;
-            //     if let Some(ball) = ctx.world.ball.as_ref() {
-            //         let ball_pos = ball.position.xy();
-            //         let dist = (ball_pos - ctx.player.position.xy()).norm();
-            //         let min_distance = 600.0;
-            //         if dist < min_distance {
-            //             // Move away from the ball
-            //             let min_theta = -120;
-            //             let max_theta = 120;
-            //             let max_radius = 1000;
-            //             let field = geom;
-                        
-            //             let target = dies_core::nearest_safe_pos(ball_pos, min_distance, ctx.player.position.xy(), min_theta, max_theta, max_radius, field);
-            //             input.with_position(target);
-            //         }
-            //     }
-
-            //     return input;
-            // }
-
             match self.state {
                 State::Walling => {
+                    dies_core::debug_string(format!("p{}.waller_mode", ctx.player.id), "walling");
                     let mut target_pos = self.find_intersection(ball, geom, ctx.player.id);
                     let mut input = PlayerControlInput::new();
                     target_pos.y = target_pos
@@ -189,6 +154,7 @@ impl Role for Waller {
                     input
                 }
                 State::Shooting(receiver_id) => {
+                    dies_core::debug_string(format!("p{}.waller_mode", ctx.player.id), "shooting");
                     skill!(ctx, FetchBallWithHeading::towards_own_player(receiver_id));
 
                     loop {

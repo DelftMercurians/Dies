@@ -246,10 +246,11 @@ impl Strategy for PlayStrategy {
         let game_state = ctx.world.current_game_state.game_state;
 
         // Free kick
-        if matches!(game_state, GameState::FreeKick) {
-            if self.last_game_state != GameState::FreeKick {
+        if matches!(game_state, GameState::FreeKick) && ctx.world.current_game_state.us_operating {
+            if self.last_game_state != GameState::FreeKick || self.free_kick_attacker.is_none() {
                 // Switch to free kick strategy
                 let kicker = self.get_player_for_kick(ctx.clone());
+                log::info!("Free kick attacker: {:?}", kicker);
                 self.free_kick_attacker = Some((kicker, FreeAttacker::new()));
             }
         }
@@ -259,51 +260,47 @@ impl Strategy for PlayStrategy {
             game_state,
             GameState::Run | GameState::Stop | GameState::BallReplacement(_)
         ) {
-            if !matches!(
-                self.last_game_state,
-                GameState::Run | GameState::Stop | GameState::BallReplacement(_)
-            ) {
-                self.free_kick_attacker = None;
-            }
-        }
-        self.defense.wallers.iter_mut().for_each(|w| {
-            w.1.goalie_shooting(self.defense.keeper.kicking_to.is_some())
-        });
+            self.free_kick_attacker = None;
 
-        if let Some((_, harasser)) = self.defense.harasser.as_mut() {
-            let attacker_positions = self
-                .attack
-                .attackers
-                .iter()
-                .map(|(id, _)| {
-                    ctx.world
-                        .get_player(*id)
-                        .map(|p| p.position.xy())
-                        .unwrap_or_default()
-                })
-                .collect::<Vec<_>>();
+            self.defense.wallers.iter_mut().for_each(|w| {
+                w.1.goalie_shooting(self.defense.keeper.kicking_to.is_some())
+            });
 
-            if let Some(pos) = attacker_positions.get(0) {
-                harasser.set_shooting_target(*pos);
-            }
-        }
+            if let Some((_, harasser)) = self.defense.harasser.as_mut() {
+                let attacker_positions = self
+                    .attack
+                    .attackers
+                    .iter()
+                    .map(|(id, _)| {
+                        ctx.world
+                            .get_player(*id)
+                            .map(|p| p.position.xy())
+                            .unwrap_or_default()
+                    })
+                    .collect::<Vec<_>>();
 
-        if let Some(ball) = ctx.world.ball.as_ref() {
-            if let Some(id) = self.defense.keeper.kicking_to {
-                if let Some((_, attacker)) =
-                    self.attack.attackers.iter_mut().find(|(i, _)| *i == id)
-                {
-                    attacker.receive();
+                if let Some(pos) = attacker_positions.get(0) {
+                    harasser.set_shooting_target(*pos);
                 }
             }
 
-            let ball_speed = ball.velocity.xy().norm();
-            if ball.position.x > 0.0 && ball_speed < 500.0 && !self.attack.we_have_ball() {
-                self.attack.fetch_ball(&ctx);
-            }
-        }
+            if let Some(ball) = ctx.world.ball.as_ref() {
+                if let Some(id) = self.defense.keeper.kicking_to {
+                    if let Some((_, attacker)) =
+                        self.attack.attackers.iter_mut().find(|(i, _)| *i == id)
+                    {
+                        attacker.receive();
+                    }
+                }
 
-        self.attack.update(ctx);
+                let ball_speed = ball.velocity.xy().norm();
+                if ball.position.x > 0.0 && ball_speed < 500.0 && !self.attack.we_have_ball() {
+                    self.attack.fetch_ball(&ctx);
+                }
+            }
+
+            self.attack.update(ctx);
+        }
 
         self.last_game_state = game_state;
     }
@@ -317,9 +314,10 @@ impl Strategy for PlayStrategy {
                     .free_kick_attacker
                     .as_ref()
                     .map(|(id, _)| *id == player_id)
-                    .unwrap_or(false) =>
+                    .unwrap_or(false)
+                    && ctx.world.current_game_state.us_operating =>
             {
-                if let Some((id, role)) = self.free_kick_attacker.as_mut() {
+                if let Some((_, role)) = self.free_kick_attacker.as_mut() {
                     Some(role as &mut dyn Role)
                 } else {
                     None

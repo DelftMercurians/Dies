@@ -36,7 +36,7 @@ impl<I: Message, O> Transport<I, O> {
         ))?;
         Ok(Self {
             transport_type: TransportType::Tcp { stream },
-            buf: vec![0u8; 8 * 1024],
+            buf: vec![0u8; 16 * 1024],
             incoming_msg_type: PhantomData,
             outgoing_msg_type: PhantomData,
         })
