@@ -210,8 +210,12 @@ impl BasestationHandle {
                         let feedback = robots
                             .iter()
                             .enumerate()
-                            .filter_map(|(id, msg)| match msg.primary_status() {
-                                Some(status) if !matches!(status, HG_Status::NO_REPLY) => {
+                            .filter_map(|(id, msg)| {
+                                if msg
+                                    .time_since_status_lf_update()
+                                    .unwrap_or(Duration::from_secs(600))
+                                    < Duration::from_millis(600)
+                                {
                                     all_ids.insert(id);
                                     let player_id = id_map
                                         .iter()
@@ -239,8 +243,9 @@ impl BasestationHandle {
                                         breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
                                         pack_voltages: msg.pack_voltages(),
                                     })
+                                } else {
+                                    None
                                 }
-                                _ => None,
                             })
                             .collect::<Vec<_>>();
 
