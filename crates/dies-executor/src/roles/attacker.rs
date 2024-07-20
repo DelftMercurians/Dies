@@ -12,6 +12,7 @@ use crate::{
 use dies_core::{
     Angle, BallData, FieldGeometry, GameState, PlayerData, PlayerId, Vector2, WorldData,
 };
+use nalgebra::ComplexField;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttackerSection {
@@ -134,6 +135,26 @@ impl Role for Attacker {
                     if ball.position.x < -1000.0 {
                         break AttackerState::Positioning;
                     }
+                    let nearest_own_player = ctx
+                        .world
+                        .own_players
+                        .iter()
+                        .filter(|p| p.id != ctx.player.id)
+                        .min_by_key(|p| {
+                            (p.position.xy() - ball.position.xy()).norm_squared() as i64
+                        });
+                    if let Some(nearest_own_player) = nearest_own_player {
+                        if (ctx.player.position - nearest_own_player.position.xy()).norm() < 500.0 {
+                            break AttackerState::Positioning;
+                        }
+                    }
+
+                    if ball.position.y.abs() < geom.penalty_area_width / 2.0
+                        && ball.position.x
+                            > (geom.field_length / 2.0 - geom.penalty_area_depth - 50.0)
+                    {
+                        break AttackerState::Positioning;
+                    }
 
                     match skill!(ctx, FetchBall::new()) {
                         crate::roles::SkillResult::Success => {
@@ -208,18 +229,39 @@ impl Role for Attacker {
                 // },
                 AttackerState::Shooting | AttackerState::Passing(_) => {
                     let ball = ctx.world.ball.as_ref().unwrap();
-                    if !ctx.player.breakbeam_ball_detected || (ball.position.xy() - ctx.player.position).norm() > 300.0 {
+
+                    if !ctx.player.breakbeam_ball_detected
+                        || (ball.position.xy() - ctx.player.position).norm() > 300.0
+                    {
                         println!("Lost ball, fetching");
                         AttackerState::FetchingBall
                     } else {
-                        match invoke_skill!(
-                            ctx,
-                            Face::towards_position(Vector2::new(
-                                4500.0,
-                                f64::max(f64::min(ctx.player.position.y, 400.0), -400.0)
-                            ))
-                            .with_ball()
-                        ) {
+                        let closest_enemy = ctx.world.opp_players.iter().min_by_key(|p| {
+                            (p.position - ctx.player.position).norm_squared() as i64
+                        });
+                        let mut target = Vector2::new(
+                            4500.0,
+                            f64::max(f64::min(ctx.player.position.y, -400.0), 400.0),
+                        );
+                        if let Some(closest_enemy) = closest_enemy {
+                            if (closest_enemy.position - ctx.player.position).norm() < 300.0 {
+                                let nearest_own_player = ctx
+                                    .world
+                                    .own_players
+                                    .iter()
+                                    .filter(|p| p.id != ctx.player.id)
+                                    .min_by_key(|p| {
+                                        (p.position.xy() - ball.position.xy()).norm_squared() as i64
+                                    });
+                                if let Some(nearest_own_player) = nearest_own_player {
+                                    if nearest_own_player.position.x > 0.0 {
+                                        target = nearest_own_player.position.xy();
+                                    }
+                                }
+                            }
+                        }
+
+                        match invoke_skill!(ctx, Face::towards_position(target).with_ball()) {
                             crate::roles::SkillProgress::Continue(mut input) => {
                                 input.with_dribbling(1.0);
                                 return input;
@@ -317,7 +359,8 @@ fn find_best_striker_position(
                 field,
                 player,
             );
-            let goal_dist_score = 3_000_000.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
+            let goal_dist_score =
+                3_000_000.0 / (position - Vector2::new(field.field_length / 2.0, 0.0)).norm();
 
             let mut ball_dist = 0.0;
             if let Some(ball) = world.ball.as_ref() {

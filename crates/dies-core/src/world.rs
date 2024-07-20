@@ -541,23 +541,29 @@ pub fn nearest_safe_pos(
     avoding_point: Avoid,
     min_distance: f64,
     initial_pos: Vector2,
+    target_pos: Vector2,
     max_radius: i32,
     field: &FieldGeometry,
 ) -> Vector2 {
-    let mut best_pos = initial_pos;
+    let mut best_pos = Vector2::new(f64::INFINITY, f64::INFINITY);
     let mut found_better = false;
     let min_theta = 0;
     let max_theta = 360;
+    let mut i = 0;
     for theta in (min_theta as i32..max_theta as i32).step_by(10) {
-        let theta = Angle::from_radians(theta as f64);
+        let theta = Angle::from_degrees(theta as f64);
         for radius in (0..max_radius as i32).step_by(50) {
-            let position =  initial_pos + theta.to_vector() * (min_distance + radius as f64);
+            let position =  initial_pos + theta.to_vector() * (radius as f64);
             if is_pos_in_field(position, field) && avoding_point.distance_to(position) > min_distance {
-                if (position - initial_pos).norm() < (best_pos - initial_pos).norm() {
+                if (position - target_pos).norm() < (best_pos - target_pos).norm() {
+                    // crate::debug_cross(format!("{i}"), position, crate::DebugColor::Green);
                     best_pos = position;
                     found_better = true;
                 }
+            } else {
+                // crate::debug_cross(format!("{i}"), position, crate::DebugColor::Red);
             }
+            i += 1;
         }
     }
     if !found_better {

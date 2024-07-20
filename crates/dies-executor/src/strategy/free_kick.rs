@@ -1,8 +1,8 @@
-use crate::roles::skills::{ApproachBall, FetchBallWithHeading, Kick};
+use crate::roles::skills::{ApproachBall, Face, FetchBallWithHeading, Kick};
 use crate::roles::{RoleCtx, SkillResult};
 use crate::strategy::kickoff::OtherPlayer;
 use crate::strategy::{Role, Strategy};
-use crate::{skill, PlayerControlInput};
+use crate::{invoke_skill, skill, PlayerControlInput};
 use dies_core::{Angle, BallData, PlayerData, PlayerId, RoleType, Vector2, WorldData};
 // use num_traits::float::Float;
 use std::collections::HashMap;
@@ -71,6 +71,17 @@ impl Role for FreeAttacker {
 
         loop {
             skill!(ctx, ApproachBall::new());
+            let target = Vector2::new(
+                4500.0,
+                f64::max(f64::min(ctx.player.position.y, -400.0), 400.0),
+            );
+            match invoke_skill!(ctx, Face::towards_position(target).with_ball()) {
+                crate::roles::SkillProgress::Continue(mut input) => {
+                    input.with_dribbling(1.0);
+                    return input;
+                }
+                _ => {}
+            }
             if let SkillResult::Success = skill!(ctx, Kick::new()) {
                 break;
             }
@@ -156,12 +167,14 @@ impl Strategy for FreeKickStrategy {
             if let std::collections::hash_map::Entry::Vacant(e) = self.roles.entry(player_data.id) {
                 let ball_pos = ctx.world.ball.as_ref().unwrap().position.xy();
                 let distance = (player_data.position - ball_pos).norm();
+
                 if distance < 650.0 {
                     let max_radius = 1000;
                     let min_distance = 700.0;
                     let target = dies_core::nearest_safe_pos(
                         dies_core::Avoid::Circle { center: ball_pos },
                         min_distance,
+                        player_data.position,
                         player_data.position,
                         max_radius,
                         &ctx.world.field_geom.clone().unwrap_or_default(),

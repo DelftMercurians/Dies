@@ -15,7 +15,8 @@ use super::{
 use crate::roles::{RoleCtx, SkillState};
 use crate::strategy::StrategyCtx;
 use dies_core::{
-    distance_to_line, BallPlacement, ControllerSettings, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerId, Vector2
+    distance_to_line, BallPlacement, ControllerSettings, ExecutorSettings, GameState, Obstacle,
+    PlayerCmd, PlayerId, Vector2,
 };
 use dies_core::{PlayerMoveCmd, WorldData};
 
@@ -129,6 +130,8 @@ impl TeamController {
                         let new_input = role.update(role_ctx);
                         role_types.insert(id, role.role_type());
                         inputs.insert(id, new_input);
+                    } else {
+                        inputs.insert(id, PlayerControlInput::new());
                     }
                     inputs
                 });
@@ -212,34 +215,54 @@ fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
                 (world_data.ball.as_ref(), world_data.field_geom.as_ref())
             {
                 let ball_pos = ball.position.xy();
-                let dist = (ball_pos - player_data.position).norm();
+                // let dist: f64 = (ball_pos - player_data.position).norm();
                 let min_distance = 800.0;
-                let max_radius = 2000;
-                if dist < min_distance {
-                    let target = dies_core::nearest_safe_pos(
-                        dies_core::Avoid::Circle { center: ball_pos},
-                        min_distance,
-                        player_data.position,
-                        max_radius,
-                        field,
-                    );
-                    new_input.with_position(target);
-                }
+                let max_radius = 4000;
+                // if dist < min_distance {
+                let target = dies_core::nearest_safe_pos(
+                    dies_core::Avoid::Circle { center: ball_pos },
+                    800.0,
+                    player_data.position,
+                    input.position.unwrap_or(player_data.position),
+                    max_radius,
+                    field,
+                );
+                new_input.with_position(target);
+                // }
 
                 if let GameState::BallReplacement(pos) = world_data.current_game_state.game_state {
                     let line_start = ball_pos;
                     let line_end = pos;
-                    let dist = distance_to_line(line_start, line_end, player_data.position);
-                    if dist < min_distance {
-                        let target = dies_core::nearest_safe_pos(
-                            dies_core::Avoid::Line { start: line_start, end: line_end },
-                            min_distance,
-                            player_data.position.xy(),
-                            max_radius,
-                            field,
-                        );
-                        new_input.with_position(target);
-                    }
+                    dies_core::debug_line(
+                        "ball_placement",
+                        line_start,
+                        line_end,
+                        dies_core::DebugColor::Orange,
+                    );
+                    dies_core::debug_cross(
+                        "ball_placement_target",
+                        pos,
+                        dies_core::DebugColor::Orange,
+                    );
+
+                    // let dist = distance_to_line(line_start, line_end, player_data.position);
+                    // if dist < min_distance {
+                    let target = dies_core::nearest_safe_pos(
+                        dies_core::Avoid::Line {
+                            start: line_start,
+                            end: line_end,
+                        },
+                        min_distance,
+                        player_data.position,
+                        input.position.unwrap_or(player_data.position),
+                        max_radius,
+                        field,
+                    );
+                    new_input.with_position(target);
+                    // }
+                } else {
+                    dies_core::debug_remove("ball_placement");
+                    dies_core::debug_remove("ball_placement_target");
                 }
             }
 

@@ -59,59 +59,41 @@ pub fn play() -> ScenarioSetup {
             GameState::BallReplacement(Vector2::zeros()),
         ];
         if num_players == 1 {
-            map.insert(
-                StrategyGameStateMacther::any_of(states.as_slice()),
-                play,
-            );
+            map.insert(StrategyGameStateMacther::any_of(states.as_slice()), play);
             return map;
         }
 
         let waller1 = player_ids.pop().unwrap();
         if num_players == 2 {
             play.defense.add_wallers(vec![waller1]);
-            map.insert(
-                StrategyGameStateMacther::any_of(states.as_slice()),
-                play,
-            );
-            return map;
-        }
-
-        let waller2 = player_ids.pop().unwrap();
-        play.defense.add_wallers(vec![waller1, waller2]);
-        if num_players == 3 {
-            map.insert(
-                StrategyGameStateMacther::any_of(states.as_slice()),
-                play,
-            );
+            map.insert(StrategyGameStateMacther::any_of(states.as_slice()), play);
             return map;
         }
 
         let harasser = player_ids.pop().unwrap();
         play.defense.add_harasser(harasser);
+        if num_players == 3 {
+            map.insert(StrategyGameStateMacther::any_of(states.as_slice()), play);
+            return map;
+        }
+
+        let waller2 = player_ids.pop().unwrap();
+        play.defense.add_wallers(vec![waller1, waller2]);
         if num_players == 4 {
-            map.insert(
-                StrategyGameStateMacther::any_of(states.as_slice()),
-                play,
-            );
+            map.insert(StrategyGameStateMacther::any_of(states.as_slice()), play);
             return map;
         }
 
         let attacker1 = player_ids.pop().unwrap();
         play.attack.add_attacker(attacker1);
         if num_players == 5 {
-            map.insert(
-                StrategyGameStateMacther::any_of(states.as_slice()),
-                play,
-            );
+            map.insert(StrategyGameStateMacther::any_of(states.as_slice()), play);
             return map;
         }
 
         let attacker2 = player_ids.pop().unwrap();
         play.attack.add_attacker(attacker2);
-        map.insert(
-            StrategyGameStateMacther::any_of(states.as_slice()),
-            play,
-        );
+        map.insert(StrategyGameStateMacther::any_of(states.as_slice()), play);
 
         map
     };

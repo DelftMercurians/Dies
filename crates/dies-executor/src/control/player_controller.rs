@@ -137,6 +137,10 @@ impl PlayerController {
 
     /// Get the current command for the player.
     pub fn command(&mut self) -> PlayerCmd {
+        if self.frame_misses > MISSING_FRAMES_THRESHOLD {
+            return PlayerCmd::Move(PlayerMoveCmd::zero(self.id));
+        }
+
         if self.heading_interval.trigger() {
             return PlayerCmd::SetHeading {
                 id: self.id,
@@ -213,6 +217,7 @@ impl PlayerController {
         obstacles: Vec<Obstacle>,
         all_players: &[&PlayerData],
     ) {
+        self.frame_misses = 0;
         self.have_imu = false; // matches!(
                                //     state.imu_status,
                                //     Some(SysStatus::Ok) | Some(SysStatus::Ready)

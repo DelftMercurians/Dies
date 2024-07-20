@@ -43,6 +43,10 @@ impl PlayerInputs {
     pub fn insert(&mut self, id: PlayerId, input: PlayerControlInput) {
         self.inputs.insert(id, input);
     }
+
+    pub fn len(&self) -> usize {
+        self.inputs.len()
+    }
 }
 
 impl IntoIterator for PlayerInputs {

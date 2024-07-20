@@ -54,7 +54,8 @@ pub struct PlayerTracker {
     breakbeam_detections: VecDeque<usize>,
 
     pub is_gone: bool,
-    reappaerance_time: Option<f64>,
+    fb_reappaerance_time: Option<f64>,
+    det_reappaerance_time: Option<f64>,
 }
 
 impl PlayerTracker {
@@ -74,7 +75,8 @@ impl PlayerTracker {
             last_detection: None,
             breakbeam_detections: VecDeque::with_capacity(BREAKBEAM_WINDOW),
             is_gone: false,
-            reappaerance_time: None,
+            fb_reappaerance_time: None,
+            det_reappaerance_time: None,
             last_feedback_time: None,
         }
     }
@@ -89,35 +91,39 @@ impl PlayerTracker {
     }
 
     pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant) {
-        if let Some(last_detection) = &self.last_detection {
-            let elapsed = time - last_detection.timestamp;
-            if elapsed >= OFF_FIELD_TIMEOUT {
-                if !self.is_gone {
-                    log::info!("Player {} is gone", self.id);
-                }
-                self.is_gone = true;
-            } else if self.is_gone {
-                let reappaerance_time = self.reappaerance_time.get_or_insert(time);
-                if time - *reappaerance_time >= OFF_FIELD_TIMEOUT {
-                    log::info!("Player {} reappeared", self.id);
-                    self.is_gone = false;
-                    self.reappaerance_time = None;
-                }
-            }
-        }
+        // if let Some(last_detection) = &self.last_detection {
+        //     let elapsed = time - last_detection.timestamp;
+        //     if elapsed >= OFF_FIELD_TIMEOUT {
+        //         if !self.is_gone {
+        //             log::info!("Player {} is gone", self.id);
+        //         }
+        //         self.is_gone = true;
+        //     } else if self.is_gone {
+        //         let reappaerance_time = self.det_reappaerance_time.get_or_insert(time);
+        //         if time - *reappaerance_time >= OFF_FIELD_TIMEOUT {
+        //             log::info!("Player {} reappeared", self.id);
+        //             self.is_gone = false;
+        //             self.det_reappaerance_time = None;
+        //         }
+        //     }
+        // }
         if let Some(last_feedback) = &self.last_feedback_time {
             if world_time.duration_since(last_feedback) > OFF_FIELD_TIMEOUT {
                 if !self.is_gone {
                     log::info!("Player {} is gone (feedback)", self.id);
                 }
                 self.is_gone = true;
-                self.reappaerance_time = None;
+                self.fb_reappaerance_time = None;
             } else if self.is_gone {
-                let reappaerance_time = self.reappaerance_time.get_or_insert(time);
+                let reappaerance_time = self.fb_reappaerance_time.get_or_insert(time);
                 if time - *reappaerance_time >= OFF_FIELD_TIMEOUT {
-                    log::info!("Player {} reappeared (feedback)", self.id);
-                    self.is_gone = false;
-                    self.reappaerance_time = None;
+                    if let Some(last_detection) = &self.last_detection {
+                        if time - last_detection.timestamp >= OFF_FIELD_TIMEOUT {
+                            log::info!("Player {} reappeared (feedback)", self.id);
+                            self.is_gone = false;
+                            self.fb_reappaerance_time = None;
+                        }
+                    }
                 }
             }
         }

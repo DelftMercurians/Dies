@@ -10,7 +10,7 @@
       "request": "launch",
       "program": "${workspaceRoot}/target/debug/dies-cli",
       "miDebuggerPath": "${env:HOME}/.cargo/bin/rust-gdb",
-      "args": [],
+      "args": ["--interface", "enp4s0"],
       "cwd": "${workspaceRoot}",
       "setupCommands": [
         {

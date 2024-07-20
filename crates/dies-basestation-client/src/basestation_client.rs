@@ -162,7 +162,7 @@ impl BasestationHandle {
                                 let _ =
                                     monitor.set_current_heading(id.as_u32() as u8, heading as f32);
                             }
-                            _ => {},
+                            _ => {}
                         },
                     },
                     Ok(Message::ChangeIdMap(new_id_map)) => {
@@ -199,6 +199,13 @@ impl BasestationHandle {
 
                 // Receive feedback
                 if let Connection::V1(monitor) = &mut connection {
+                    if !monitor.is_connected() {
+                        panic!(
+                            "Base station disconnected: {:?}",
+                            monitor.has_error().unwrap()
+                        );
+                    }
+
                     if let Some(robots) = monitor.get_robots() {
                         let feedback = robots
                             .iter()

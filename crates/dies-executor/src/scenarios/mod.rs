@@ -33,46 +33,12 @@ fn empty_scenario() -> ScenarioSetup {
     ScenarioSetup::new(AdHocStrategy::new(), StrategyGameStateMacther::Any)
 }
 
-fn play_static() -> ScenarioSetup {
-    let keeper = PlayerId::new(0);
-    let harasser = PlayerId::new(1);
-    let waller1 = PlayerId::new(2);
-    let waller2 = PlayerId::new(3);
-    // let attacker1 = PlayerId::new(4);
-    let attacker2 = PlayerId::new(5);
+fn attack() -> ScenarioSetup {
+    let mut strat = PlayStrategy::new(PlayerId::new(11));
+    strat.attack.add_attacker(PlayerId::new(0));
+    strat.attack.add_attacker(PlayerId::new(1));
 
-    let mut strat = PlayStrategy::new(keeper);
-    strat.defense.add_harasser(harasser);
-    strat.defense.add_wallers(vec![waller1, waller2]);
-    // strat.attack.add_attacker(attacker1);
-    strat.attack.add_attacker(attacker2);
-
-    let mut setup = ScenarioSetup::new(
-        strat,
-        StrategyGameStateMacther::any_of(
-            vec![
-                GameState::Run,
-                GameState::Stop,
-                GameState::BallReplacement(Vector2::zeros()),
-            ]
-            .as_slice(),
-        ),
-    );
-    setup.add_strategy(
-        StrategyGameStateMacther::Specific(GameState::Halt),
-        AdHocStrategy::new(),
-    );
-    setup.add_strategy(
-        StrategyGameStateMacther::Specific(GameState::FreeKick),
-        FreeKickStrategy::new(Some(keeper)),
-    );
-    setup.add_strategy(
-        StrategyGameStateMacther::any_of(
-            vec![GameState::Kickoff, GameState::PrepareKickoff].as_slice(),
-        ),
-        KickoffStrategy::new(),
-    );
-
+    let mut setup = ScenarioSetup::new(strat, StrategyGameStateMacther::any());
     setup
         .add_ball()
         .add_own_player()
@@ -325,6 +291,7 @@ impl Serialize for ScenarioType {
 }
 // **NOTE**: Add new scenarios here.
 scenarios! {
+    attack,
     play,
     empty_scenario,
     goalie_test,
