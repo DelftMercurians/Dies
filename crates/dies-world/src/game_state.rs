@@ -79,13 +79,7 @@ impl GameStateTracker {
             Command::DIRECT_FREE_YELLOW
             | Command::DIRECT_FREE_BLUE
             | Command::INDIRECT_FREE_BLUE
-            | Command::INDIRECT_FREE_YELLOW => {
-                if self.game_state == GameState::Stop {
-                    GameState::FreeKick
-                } else {
-                    self.game_state
-                }
-            }
+            | Command::INDIRECT_FREE_YELLOW => GameState::FreeKick,
             Command::TIMEOUT_YELLOW => GameState::Timeout,
             Command::TIMEOUT_BLUE => GameState::Timeout,
             Command::BALL_PLACEMENT_YELLOW | Command::BALL_PLACEMENT_BLUE => {
