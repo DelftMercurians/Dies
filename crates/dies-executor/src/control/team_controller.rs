@@ -15,8 +15,7 @@ use super::{
 use crate::roles::{RoleCtx, SkillState};
 use crate::strategy::StrategyCtx;
 use dies_core::{
-    BallPlacement, ControllerSettings, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerId,
-    Vector2,
+    distance_to_line, BallPlacement, ControllerSettings, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerId, Vector2
 };
 use dies_core::{PlayerMoveCmd, WorldData};
 
@@ -214,22 +213,13 @@ fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
             {
                 let ball_pos = ball.position.xy();
                 let dist = (ball_pos - player_data.position).norm();
-                let min_distance = 700.0;
+                let min_distance = 800.0;
+                let max_radius = 2000;
                 if dist < min_distance {
-                    // Move away from the ball
-                    // let target =
-                    //     ball_pos.xy() + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
-                    let min_theta = -120;
-                    let max_theta = 120;
-                    let max_radius = 1000;
-                    // let field = ctx.world.field_geom.as_ref().unwrap();
-
                     let target = dies_core::nearest_safe_pos(
-                        ball_pos,
+                        dies_core::Avoid::Circle { center: ball_pos},
                         min_distance,
-                        player_data.position.xy(),
-                        min_theta,
-                        max_theta,
+                        player_data.position,
                         max_radius,
                         field,
                     );
@@ -237,20 +227,14 @@ fn stop_override(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
                 }
 
                 if let GameState::BallReplacement(pos) = world_data.current_game_state.game_state {
-                    let dist = (pos - player_data.position).norm();
-                    let min_distance = 700.0;
+                    let line_start = ball_pos;
+                    let line_end = pos;
+                    let dist = distance_to_line(line_start, line_end, player_data.position);
                     if dist < min_distance {
-                        let min_theta = -120;
-                        let max_theta = 120;
-                        let max_radius = 1000;
-                        // let field = ctx.world.field_geom.as_ref().unwrap();
-
                         let target = dies_core::nearest_safe_pos(
-                            ball_pos,
+                            dies_core::Avoid::Line { start: line_start, end: line_end },
                             min_distance,
                             player_data.position.xy(),
-                            min_theta,
-                            max_theta,
                             max_radius,
                             field,
                         );

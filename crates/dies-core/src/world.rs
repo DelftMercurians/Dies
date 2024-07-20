@@ -12,7 +12,7 @@ use crate::{
     SysStatus, Vector2, Vector3,
 };
 
-const STOP_BALL_AVOIDANCE_RADIUS: f64 = 500.0;
+const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
 const PLAYER_RADIUS: f64 = 90.0;
 const DRIBBLER_ANGLE_DEG: f64 = 56.0;
 
@@ -495,7 +495,7 @@ impl WorldData {
                         });
                     }
                 },
-                GameState::BallReplacement(_) => {},
+                GameState::BallReplacement(_) => {}
                 GameState::PreparePenalty => {}
                 GameState::FreeKick => {}
                 GameState::Penalty => {}
@@ -522,46 +522,62 @@ fn create_bbox_from_circle(center: Vector2, radius: f64) -> Obstacle {
     }
 }
 
-pub fn nearest_safe_pos(avoding_point : Vector2, min_distance : f64, initial_pos: Vector2, min_theta :i32, max_theta:i32, max_radius: i32, field: &FieldGeometry) -> Vector2 {
-    let mut i = 0;
-    // create a vector between avoiding_point and initial_pos
-    let original_direction = (initial_pos - avoding_point).normalize().clone();
+#[derive(Debug, Clone)]
+pub enum Avoid {
+    Line { start: Vector2, end: Vector2 },
+    Circle { center: Vector2 },
+}
 
-    let mut best_pos = initial_pos;
-    for theta in (min_theta as i32..max_theta as i32).step_by(10) {
-        let theta = (theta as f64).to_radians();
-        let theta_line = Angle::from_vector(original_direction).radians();
-        
-        for radius in (0..max_radius as i32).step_by(20) {
-
-            let x = avoding_point.x + (min_distance + radius as f64) * (theta + theta_line).cos();
-            let y = avoding_point.y + (min_distance + radius as f64) * (theta + theta_line).sin();
-            let position = Vector2::new(x, y);
-            
-            i = i + 1;
-            if is_pos_in_field(position, field) {
-                if (position - initial_pos).norm() < (best_pos - initial_pos).norm() {
-                    best_pos = position;
-                }
-            } 
+impl Avoid {
+    fn distance_to(&self, pos: Vector2) -> f64 {
+        match self {
+            Avoid::Line { start, end } => distance_to_line(*start, *end, pos),
+            Avoid::Circle { center } => (center - pos).norm(),
         }
     }
-    
+}
+
+pub fn nearest_safe_pos(
+    avoding_point: Avoid,
+    min_distance: f64,
+    initial_pos: Vector2,
+    max_radius: i32,
+    field: &FieldGeometry,
+) -> Vector2 {
+    let mut best_pos = initial_pos;
+    let mut found_better = false;
+    let min_theta = 0;
+    let max_theta = 360;
+    for theta in (min_theta as i32..max_theta as i32).step_by(10) {
+        let theta = Angle::from_radians(theta as f64);
+        for radius in (0..max_radius as i32).step_by(50) {
+            let position =  initial_pos + theta.to_vector() * (min_distance + radius as f64);
+            if is_pos_in_field(position, field) && avoding_point.distance_to(position) > min_distance {
+                if (position - initial_pos).norm() < (best_pos - initial_pos).norm() {
+                    best_pos = position;
+                    found_better = true;
+                }
+            }
+        }
+    }
+    if !found_better {
+        log::warn!("Could not find a safe position from {initial_pos}, avoiding {avoding_point:?}");
+    }
+
     best_pos
 }
 
 pub fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
     const MARGIN: f64 = 100.0;
     // check if pos outside field
-    if pos.x.abs() > field.field_length / 2.0  - MARGIN
+    if pos.x.abs() > field.field_length / 2.0 - MARGIN
         || pos.y.abs() > field.field_width / 2.0 - MARGIN
     {
         return false;
     }
-    
+
     true
 }
-
 
 pub fn mock_world_data() -> WorldData {
     WorldData {
@@ -708,6 +724,9 @@ mod tests {
 
     #[test]
     fn test_ball_placement_equals() {
-        assert!(GameState::BallReplacement(Vector2::zeros()) == GameState::BallReplacement(Vector2::x()))
+        assert!(
+            GameState::BallReplacement(Vector2::zeros())
+                == GameState::BallReplacement(Vector2::x())
+        )
     }
 }

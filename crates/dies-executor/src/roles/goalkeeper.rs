@@ -40,33 +40,33 @@ impl Role for Goalkeeper {
             let mut goalkeeper_x = -field_geom.field_length / 2.0 + KEEPER_X_OFFSET;
             let fallback_y = ball_pos.y.min(defence_width).max(-defence_width);
 
-            if matches!(
-                ctx.world.current_game_state.game_state,
-                GameState::Stop | GameState::BallReplacement(_)
-            )  {
-                ctx.reset_skills();
-                let mut input = PlayerControlInput::new();
-                input.with_speed_limit(1300.0);
+            // if matches!(
+            //     ctx.world.current_game_state.game_state,
+            //     GameState::Stop | GameState::BallReplacement(_)
+            // )  {
+            //     ctx.reset_skills();
+            //     let mut input = PlayerControlInput::new();
+            //     input.with_speed_limit(1300.0);
 
-                if let Some(ball) = ctx.world.ball.as_ref() {
-                    let ball_pos = ball.position.xy();
-                    let dist = (ball_pos - ctx.player.position.xy()).norm();
-                    if dist < 560.0 {
-                        // Move away from the ball
-                        let mut target = ball_pos.xy()
-                            + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
-                        let field = field_geom;
-                        if !is_pos_in_field(target, field) {
-                            let min_distance = 650.0;
-                            let min_theta = -120;
-                            let max_theta = 120;
-                            let max_radius = 1000;
+            //     if let Some(ball) = ctx.world.ball.as_ref() {
+            //         let ball_pos = ball.position.xy();
+            //         let dist = (ball_pos - ctx.player.position.xy()).norm();
+            //         if dist < 560.0 {
+            //             // Move away from the ball
+            //             let mut target = ball_pos.xy()
+            //                 + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
+            //             let field = field_geom;
+            //             if !is_pos_in_field(target, field) {
+            //                 let min_distance = 650.0;
+            //                 let min_theta = -120;
+            //                 let max_theta = 120;
+            //                 let max_radius = 1000;
                             
-                            target = dies_core::nearest_safe_pos(ball_pos, min_distance, ctx.player.position.xy(), min_theta, max_theta, max_radius, field);
-                        }
-                        input.with_position(target);
-                    }
-                }
+            //                 target = dies_core::nearest_safe_pos(ball_pos, min_distance, ctx.player.position.xy(), min_theta, max_theta, max_radius, field);
+            //             }
+            //             input.with_position(target);
+            //         }
+            //     }
 
                 let mut target = if ball_pos.x < 0.0 && ball.velocity.x < 0.0 {
                     let mut out = find_intersection(
