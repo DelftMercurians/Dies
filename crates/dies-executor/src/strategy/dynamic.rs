@@ -69,7 +69,7 @@ where
         let strategy = strategy_map
             .get_strategy(&self.last_game_state)
             .unwrap_or_else(|| &mut self.adhoc_strategy);
-        strategy.get_role(player_id)
+        strategy.get_role(player_id, ctx)
     }
 
     fn name(&self) -> &'static str {

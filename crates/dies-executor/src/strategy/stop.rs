@@ -4,7 +4,7 @@ use dies_core::PlayerId;
 
 use crate::roles::Role;
 
-use super::Strategy;
+use super::{Strategy, StrategyCtx};
 
 struct StopRole {}
 
