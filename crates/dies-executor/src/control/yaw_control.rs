@@ -41,8 +41,7 @@ impl YawController {
             let vel = max_angular_velocity * (1.0 - carefullness * 0.8);
 
             // Limit the desired angular velocity and acceleration
-            let acceleration = (desired_angular_velocity - current_angular_velocity) / dt
-                .clamp(-acc, acc);
+            let acceleration = (desired_angular_velocity - current_angular_velocity) / dt;//.clamp(-acc, acc);
 
             (current_angular_velocity + acceleration * dt)
                 .clamp(-vel, vel)
