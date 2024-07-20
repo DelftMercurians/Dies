@@ -120,14 +120,6 @@ pub fn play() -> ScenarioSetup {
     let mut scenario = ScenarioSetup::new(strat, StrategyGameStateMacther::Any);
 
     scenario
-        .add_own_player()
-        .add_own_player()
-        .add_own_player()
-        .add_own_player()
-        .add_own_player()
-        .add_ball();
-
-    scenario
         .add_ball()
         .add_own_player()
         .add_own_player()
