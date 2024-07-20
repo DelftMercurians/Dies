@@ -157,16 +157,12 @@ impl Strategy for FreeKickStrategy {
                 let ball_pos = ctx.world.ball.as_ref().unwrap().position.xy();
                 let distance = (player_data.position - ball_pos).norm();
                 if distance < 650.0 {
-                    let min_theta = -120;
-                    let max_theta = 120;
                     let max_radius = 1000;
                     let min_distance = 700.0;
                     let target = dies_core::nearest_safe_pos(
-                        ball_pos.xy(),
+                        dies_core::Avoid::Circle { center: ball_pos },
                         min_distance,
                         player_data.position,
-                        min_theta,
-                        max_theta,
                         max_radius,
                         &ctx.world.field_geom.clone().unwrap_or_default(),
                     );
