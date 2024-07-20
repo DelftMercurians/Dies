@@ -312,13 +312,15 @@ impl Strategy for PlayStrategy {
         let game_state = ctx.world.current_game_state.game_state;
 
         match game_state {
-            dies_core::GameState::FreeKick => {
+            dies_core::GameState::FreeKick
+                if self
+                    .free_kick_attacker
+                    .as_ref()
+                    .map(|(id, _)| *id == player_id)
+                    .unwrap_or(false) =>
+            {
                 if let Some((id, role)) = self.free_kick_attacker.as_mut() {
-                    if *id == player_id {
-                        Some(role as &mut dyn Role)
-                    } else {
-                        None
-                    }
+                    Some(role as &mut dyn Role)
                 } else {
                     None
                 }

@@ -98,21 +98,26 @@ impl PlayerTracker {
         let vision_val = if let Some(last_detection) = &self.last_detection {
             let vision_val = if time - last_detection.timestamp < 0.2 {
                 1.0
-            } else { 0.0 };
+            } else {
+                0.0
+            };
 
             vision_val
-        }
-        else { 0.0 };
+        } else {
+            0.0
+        };
 
         let control_val = if let Some(last_feedback) = &self.last_feedback_time {
             let control_val = if world_time.duration_since(last_feedback) < 0.5 {
                 1.0
-            }
-            else { 0.0 };
+            } else {
+                0.0
+            };
 
             control_val
-        }
-        else { 0.0 };
+        } else {
+            0.0
+        };
 
         let factor = 0.96;
         self.rolling_vision = self.rolling_vision * factor + vision_val * (1.0 - factor);
@@ -127,42 +132,6 @@ impl PlayerTracker {
         if self.rolling_control > 0.8 || self.rolling_vision > 0.8 {
             self.is_gone = false;
         }
-        // if let Some(last_detection) = &self.last_detection {
-        //     let elapsed = time - last_detection.timestamp;
-        //     if elapsed >= OFF_FIELD_TIMEOUT {
-        //         if !self.is_gone {
-        //             log::info!("Player {} is gone", self.id);
-        //         }
-        //         self.is_gone = true;
-        //     } else if self.is_gone {
-        //         let reappaerance_time = self.det_reappaerance_time.get_or_insert(time);
-        //         if time - *reappaerance_time >= OFF_FIELD_TIMEOUT {
-        //             log::info!("Player {} reappeared", self.id);
-        //             self.is_gone = false;
-        //             self.det_reappaerance_time = None;
-        //         }
-        //     }
-        // }
-        /*if let Some(last_feedback) = &self.last_feedback_time {
-            if world_time.duration_since(last_feedback) > OFF_FIELD_TIMEOUT {
-                if !self.is_gone {
-                    log::info!("Player {} is gone (feedback)", self.id);
-                }
-                self.is_gone = true;
-                self.fb_reappaerance_time = None;
-            } else if self.is_gone {
-                let reappaerance_time = self.fb_reappaerance_time.get_or_insert(time);
-                if time - *reappaerance_time >= OFF_FIELD_TIMEOUT {
-                    if let Some(last_detection) = &self.last_detection {
-                        if time - last_detection.timestamp >= OFF_FIELD_TIMEOUT {
-                            log::info!("Player {} reappeared (feedback)", self.id);
-                            self.is_gone = false;
-                            self.fb_reappaerance_time = None;
-                        }
-                    }
-                }
-            }
-        }*/
     }
 
     /// Update the tracker with a new frame.
