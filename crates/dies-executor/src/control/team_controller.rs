@@ -141,7 +141,7 @@ impl TeamController {
         // If in a stop state, override the inputs
         if matches!(
             world_data.current_game_state.game_state,
-            GameState::Stop | GameState::BallReplacement(_)
+            GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
         ) {
             inputs = comply(&world_data, inputs);
         }
@@ -217,9 +217,10 @@ fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
                     || (game_state == GameState::FreeKick
                         && input.role_type != RoleType::FreeKicker)
                 {
+                    new_input.avoid_robots = false;
+                    new_input.avoid_ball = false;
                     if game_state == GameState::Stop {
                         new_input.with_speed_limit(1300.0);
-                        new_input.avoid_ball = true;
                         new_input.dribbling_speed = 0.0;
                         new_input.kicker = KickerControlInput::Disarm;
                     }

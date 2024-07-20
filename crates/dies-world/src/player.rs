@@ -94,7 +94,30 @@ impl PlayerTracker {
         self.play_dir_x = play_dir_x;
     }
 
-    pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant) {
+    pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant, own: bool) {
+        if !own {
+            let vision_val = if let Some(last_detection) = &self.last_detection {
+                let vision_val = if time - last_detection.timestamp < 0.2 {
+                    1.0
+                } else {
+                    0.0
+                };
+
+                vision_val
+            } else {
+                0.0
+            };
+            self.rolling_vision = self.rolling_vision * 0.95 + vision_val * (1.0 - 0.95);
+            if self.rolling_vision < 0.2 {
+                self.is_gone = true;
+            }
+            if self.rolling_vision > 0.8 {
+                self.is_gone = false;
+            }
+
+            return;
+        }
+
         let vision_val = if let Some(last_detection) = &self.last_detection {
             let vision_val = if time - last_detection.timestamp < 0.2 {
                 1.0

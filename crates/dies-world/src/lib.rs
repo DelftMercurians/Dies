@@ -228,7 +228,7 @@ impl WorldTracker {
             }
             // Check for missed players
             for (_, tracker) in self.own_players_tracker.iter_mut() {
-                tracker.check_is_gone(t_capture, time);
+                tracker.check_is_gone(t_capture, time, true);
             }
 
             let opp_players = if self.is_blue {
@@ -255,7 +255,7 @@ impl WorldTracker {
             }
             // Check for missed players
             for (_, tracker) in self.opp_players_tracker.iter_mut() {
-                tracker.check_is_gone(t_capture, time);
+                tracker.check_is_gone(t_capture, time, false);
             }
 
             // Update ball
