@@ -1,20 +1,16 @@
 mod adhoc;
 pub mod attack_strat;
+pub mod dynamic;
 pub mod free_kick;
 pub mod kickoff;
 pub mod penalty_kick;
+pub mod stop;
 mod task;
 pub mod test_strat;
-pub mod stop;
-pub mod dynamic;
 
-use crate::{
-    roles::{Role, RoleCtx},
-    PlayerControlInput, PlayerInputs,
-};
+use crate::roles::Role;
 pub use adhoc::AdHocStrategy;
 use dies_core::{PlayerId, WorldData};
-use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct StrategyCtx<'a> {

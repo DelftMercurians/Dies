@@ -1,17 +1,11 @@
 use anyhow::{bail, Result};
-use clap::Parser;
-use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
-use dies_ssl_client::{ConnectionConfig, SslClientConfig};
-use dies_webui::{UiConfig, UiEnvironment};
-use std::{net::SocketAddr, path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 use dies_logger::AsyncProtobufLogger;
 use log::{LevelFilter, Log};
 use tokio::sync::broadcast;
 
 use crate::cli::Cli;
-
-
 
 pub async fn start_ui(args: Cli) -> Result<()> {
     // Set up logging

@@ -2,7 +2,6 @@ use crate::invoke_skill;
 use crate::roles::skills::ApproachBall;
 use crate::roles::skills::Face;
 use crate::roles::skills::FetchBallWithHeading;
-use crate::roles::skills::GoToPosition;
 use crate::roles::skills::Kick;
 use crate::roles::Goalkeeper;
 use crate::roles::RoleCtx;
@@ -120,6 +119,12 @@ impl Role for Attacker {
     }
 }
 
+impl Default for PenaltyKickStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PenaltyKickStrategy {
     pub fn new() -> Self {
         PenaltyKickStrategy {
@@ -156,7 +161,7 @@ impl Strategy for PenaltyKickStrategy {
             }
         }
 
-        if let Some(id) = player_ids.get(0) {
+        if let Some(id) = player_ids.first() {
             self.roles
                 .insert(*id, Box::new(Goalkeeper::new().with_penalty()));
             player_ids.remove(0);

@@ -1,12 +1,9 @@
-use dies_core::{
-    debug_string, Angle, PlayerData, PlayerModel, Vector2, Obstacle
-};
+use dies_core::{debug_string, Angle, Obstacle, PlayerData, PlayerModel, Vector2};
 use std::f64::{consts::PI, EPSILON};
 
 // Constants
 const PLAYER_MARGIN: f64 = 30.0;
 const OVER_APPROX_C2S: f64 = 1.5;
-
 
 /// The type of VO algorithm to use
 #[derive(Clone, Copy)]
@@ -37,11 +34,10 @@ pub fn velocity_obstacle_update(
 
     // Consider other agents
     for other_player in players.iter() {
-        if other_player.position != player.position {
-            if !avoid_robots {
-                let rvo_ba = compute_velocity_obstacle(player, other_player, &vo_type, player_radius * 1.0);
-                rvo_ba_all.push(rvo_ba);
-            };
+        if other_player.position != player.position && !avoid_robots {
+            let rvo_ba =
+                compute_velocity_obstacle(player, other_player, &vo_type, player_radius * 1.0);
+            rvo_ba_all.push(rvo_ba);
         }
     }
 
@@ -55,7 +51,7 @@ pub fn velocity_obstacle_update(
                 // strange stuff i do to convert types?
                 let lower = Vector2::from(min + min) / 2.0;
                 let upper = Vector2::from(max + max) / 2.0;
-                compute_obstacle_velocity_obstacle_rect(&player, &lower, &upper, player_radius)
+                compute_obstacle_velocity_obstacle_rect(player, &lower, &upper, player_radius)
             }
         };
         rvo_ba_all.push(rvo_ba);
@@ -77,7 +73,6 @@ fn compute_obstacle_velocity_obstacle_rect(
     let upper = *obstacle_max;
     let corner_lu = Vector2::new(lower.x, upper.y);
     let corner_ul = Vector2::new(upper.x, lower.y);
-
 
     // angles to each of the box corners
     let theta_1 = (lower - pa).y.atan2((lower - pa).x);
@@ -101,7 +96,6 @@ fn compute_obstacle_velocity_obstacle_rect(
                 lowest_angle = lower_angle;
                 uppest_angle = upper_angle;
             }
-
         }
     }
 
@@ -117,10 +111,7 @@ fn compute_obstacle_velocity_obstacle_rect(
     // the objects, so i will just hardcode ignoring the obstacle
     // if we are inside of it :(
 
-    if (lower.x <= pa.x) &&
-            (pa.x <= upper.x) &&
-            (lower.y <= pa.y) &&
-            (pa.y <= upper.y) {
+    if (lower.x <= pa.x) && (pa.x <= upper.x) && (lower.y <= pa.y) && (pa.y <= upper.y) {
         theta_low = 0.0;
         theta_high = 0.0;
     }
@@ -258,12 +249,12 @@ fn intersect(
         let best_v = suitable_v
             .into_iter()
             .min_by(|v1, v2| {
-                let score1 = (v1 - desired_velocity).norm() + (v1.norm() - desired_velocity.norm()).abs() * 2.0;
-                let score2 = (v2 - desired_velocity).norm() + (v2.norm() - desired_velocity.norm()).abs() * 2.0;
+                let score1 = (v1 - desired_velocity).norm()
+                    + (v1.norm() - desired_velocity.norm()).abs() * 2.0;
+                let score2 = (v2 - desired_velocity).norm()
+                    + (v2.norm() - desired_velocity.norm()).abs() * 2.0;
 
-                score1
-                    .partial_cmp(&score2)
-                    .unwrap()
+                score1.partial_cmp(&score2).unwrap()
             })
             .unwrap();
 
@@ -305,7 +296,7 @@ fn time_to_collision(
     velocity: &Vector2,
     velocity_obstacles: &[VelocityObstacle],
 ) -> f64 {
-    let mut out = velocity_obstacles
+    let out = velocity_obstacles
         .iter()
         .filter_map(|vo| {
             let dif = velocity + position - vo.translated_center;
@@ -329,8 +320,7 @@ fn time_to_collision(
 
     if out.is_nan() {
         f64::INFINITY
-    }
-    else {
+    } else {
         out
     }
 }

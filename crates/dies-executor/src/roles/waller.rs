@@ -1,8 +1,6 @@
-use dies_core::{
-    find_intersection, perp, BallData, FieldGeometry, GameState, PlayerId, Vector2, WorldData, Angle,
-};
+use dies_core::{find_intersection, Angle, BallData, FieldGeometry, PlayerId, Vector2, WorldData};
 
-use super::{attacker::AttackerSection, RoleCtx};
+use super::RoleCtx;
 use crate::{
     invoke_skill,
     roles::{
@@ -123,18 +121,18 @@ impl Waller {
         }
 
         // Default fallback to ball position (should not happen in normal cases)
-        Vector2::new(area_right_x,
-                     f64::min(
-                        f64::max(
-                            ball_pos.y, -world.penalty_area_width / 2.0 - MARGIN * 2.0
-                        ),
-                        world.penalty_area_width / 2.0 + MARGIN * 2.0)
-                     )
+        Vector2::new(
+            area_right_x,
+            f64::min(
+                f64::max(ball_pos.y, -world.penalty_area_width / 2.0 - MARGIN * 2.0),
+                world.penalty_area_width / 2.0 + MARGIN * 2.0,
+            ),
+        )
     }
 }
 
 impl Role for Waller {
-    fn update(&mut self, mut ctx: RoleCtx<'_>) -> PlayerControlInput {
+    fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let (Some(ball), Some(geom)) = (ctx.world.ball.as_ref(), ctx.world.field_geom.as_ref()) {
             match self.state {
                 State::Walling => {

@@ -1,8 +1,7 @@
 use std::time::Instant;
 
 use dies_core::{
-    find_intersection, get_tangent_line_direction, perp, which_side_of_robot, Angle, PlayerId,
-    SysStatus, Vector2,
+    find_intersection, perp, which_side_of_robot, Angle, PlayerId, SysStatus, Vector2,
 };
 
 use crate::{control::Velocity, roles::SkillResult, KickerControlInput, PlayerControlInput};
@@ -73,7 +72,7 @@ impl Skill for GoToPosition {
             input.with_yaw(heading);
         }
 
-        if let Some(_) = ctx.world.ball.as_ref() {
+        if ctx.world.ball.as_ref().is_some() {
             if self.avoid_ball {
                 input.avoid_ball = true;
             } else if self.with_ball {
@@ -331,7 +330,7 @@ impl Skill for FetchBall {
                 // time for ball to reach segment is technically the same formula, wow
 
                 // schedule of points: from 0 seconds to 2 seconds
-                let points_schedule = vec![
+                let points_schedule = [
                     0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 1.0,
                     1.2, 1.5, 2.0,
                 ];
@@ -348,10 +347,10 @@ impl Skill for FetchBall {
                     })
                     .collect();
 
-                let mut intersection = ball_points[ball_points.len() - 1].clone();
+                let mut intersection = ball_points[ball_points.len() - 1];
                 for i in 0..ball_points.len() - 1 {
-                    let a = ball_points[i].clone();
-                    let b = ball_points[i + 1].clone();
+                    let a = ball_points[i];
+                    let b = ball_points[i + 1];
                     let must_be_reached_before = points_schedule[i];
                     // now we have both segment points available, lets compute time_to_reach
                     let mut time_to_reach = f64::min(
@@ -496,24 +495,16 @@ impl HeadingTarget {
     fn heading(&self, ctx: &SkillCtx) -> Option<Angle> {
         match self {
             HeadingTarget::Angle(angle) => Some(*angle),
-            HeadingTarget::Ball => {
-                if let Some(ball) = ctx.world.ball.as_ref() {
-                    Some(Angle::between_points(
-                        ctx.player.position,
-                        ball.position.xy(),
-                    ))
-                } else {
-                    None
-                }
-            }
+            HeadingTarget::Ball => ctx
+                .world
+                .ball
+                .as_ref()
+                .map(|ball| Angle::between_points(ctx.player.position, ball.position.xy())),
             HeadingTarget::Position(pos) => Some(Angle::between_points(ctx.player.position, *pos)),
-            HeadingTarget::OwnPlayer(id) => {
-                if let Some(player) = ctx.world.get_player(*id) {
-                    Some(Angle::between_points(ctx.player.position, player.position))
-                } else {
-                    None
-                }
-            }
+            HeadingTarget::OwnPlayer(id) => ctx
+                .world
+                .get_player(*id)
+                .map(|player| Angle::between_points(ctx.player.position, player.position)),
         }
     }
 }

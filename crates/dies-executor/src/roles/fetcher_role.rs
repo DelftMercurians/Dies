@@ -21,7 +21,7 @@ impl Role for FetcherRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         loop {
             match skill!(ctx, FetchBall::new()) {
-                crate::roles::SkillResult::Success => {},
+                crate::roles::SkillResult::Success => {}
                 crate::roles::SkillResult::Failure => continue,
             }
 

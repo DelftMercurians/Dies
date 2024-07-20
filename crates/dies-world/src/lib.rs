@@ -101,7 +101,7 @@ impl WorldTracker {
                 y_max,
             } = &self.tracker_settings.field_mask;
             dies_core::debug_line(
-                format!("mask.x_min"),
+                "mask.x_min".to_string(),
                 Vector2::new(
                     geom.field_length / 2.0 * x_min,
                     geom.field_width / 2.0 * y_min,
@@ -113,7 +113,7 @@ impl WorldTracker {
                 dies_core::DebugColor::Green,
             );
             dies_core::debug_line(
-                format!("mask.x_max"),
+                "mask.x_max".to_string(),
                 Vector2::new(
                     geom.field_length / 2.0 * x_max,
                     geom.field_width / 2.0 * y_min,
@@ -125,7 +125,7 @@ impl WorldTracker {
                 dies_core::DebugColor::Green,
             );
             dies_core::debug_line(
-                format!("mask.y_min"),
+                "mask.y_min".to_string(),
                 Vector2::new(
                     geom.field_length / 2.0 * x_min,
                     geom.field_width / 2.0 * y_min,
@@ -137,7 +137,7 @@ impl WorldTracker {
                 dies_core::DebugColor::Green,
             );
             dies_core::debug_line(
-                format!("mask.y_max"),
+                "mask.y_max".to_string(),
                 Vector2::new(
                     geom.field_length / 2.0 * x_min,
                     geom.field_width / 2.0 * y_max,

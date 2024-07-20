@@ -97,13 +97,11 @@ impl PlayerTracker {
     pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant, own: bool) {
         if !own {
             let vision_val = if let Some(last_detection) = &self.last_detection {
-                let vision_val = if time - last_detection.timestamp < 0.2 {
+                if time - last_detection.timestamp < 0.2 {
                     1.0
                 } else {
                     0.0
-                };
-
-                vision_val
+                }
             } else {
                 0.0
             };
@@ -119,25 +117,21 @@ impl PlayerTracker {
         }
 
         let vision_val = if let Some(last_detection) = &self.last_detection {
-            let vision_val = if time - last_detection.timestamp < 0.2 {
+            if time - last_detection.timestamp < 0.2 {
                 1.0
             } else {
                 0.0
-            };
-
-            vision_val
+            }
         } else {
             0.0
         };
 
         let control_val = if let Some(last_feedback) = &self.last_feedback_time {
-            let control_val = if world_time.duration_since(last_feedback) < 0.5 {
+            if world_time.duration_since(last_feedback) < 0.5 {
                 1.0
             } else {
                 0.0
-            };
-
-            control_val
+            }
         } else {
             0.0
         };
@@ -281,7 +275,7 @@ impl PlayerTracker {
         // }
 
         let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
-        if let Some(_) = &self.last_feedback {
+        if self.last_feedback.is_some() {
             dies_core::debug_value(format!("p{}.breakbeam", self.id), breakbeam_count as f64);
         }
 

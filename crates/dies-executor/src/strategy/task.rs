@@ -1,5 +1,5 @@
 use crate::{KickerControlInput, PlayerControlInput};
-use dies_core::{Angle, DebugColor, PlayerData};
+use dies_core::{Angle, PlayerData};
 use nalgebra::Vector2;
 use tokio::time::Instant;
 #[derive(Clone, Debug, PartialEq, Copy)]
@@ -61,7 +61,10 @@ impl Task3Phase {
                 }
             }
             Status3::Accomplished => {
-                input.with_position(goal).with_yaw(yaw).with_care(carefullness);
+                input
+                    .with_position(goal)
+                    .with_yaw(yaw)
+                    .with_care(carefullness);
                 Status3::Accomplished
             }
         };
@@ -100,8 +103,9 @@ impl Task4Phase {
                 Status4::Ongoing1
             }
             Status4::Ongoing1 => {
-                if self.timer.elapsed().as_secs() > 5 { // need short delay, otherwise we fail
-                                                        // penalty-style rule about 10s
+                if self.timer.elapsed().as_secs() > 5 {
+                    // need short delay, otherwise we fail
+                    // penalty-style rule about 10s
                     res.with_kicker(KickerControlInput::Kick);
                     Status4::Ongoing2
                 } else {

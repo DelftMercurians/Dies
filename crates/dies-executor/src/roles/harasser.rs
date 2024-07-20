@@ -2,9 +2,8 @@ use super::RoleCtx;
 use dies_core::Angle;
 use dies_core::BallData;
 use dies_core::FieldGeometry;
-use dies_core::GameState;
+use dies_core::Vector2;
 use dies_core::WorldData;
-use dies_core::{PlayerId, Vector2};
 
 use crate::invoke_skill;
 use crate::roles::skills::ApproachBall;
@@ -76,13 +75,13 @@ impl Role for Harasser {
         //             // Move away from the ball
         //             // let target =
         //             //     ball_pos.xy() + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
-                    
+
         //             // use the function to take the field limits into account
         //             let min_theta = -120;
         //             let max_theta = 120;
         //             let max_radius = 1000;
         //             // let field = ctx.world.field_geom.as_ref().unwrap();
-                    
+
         //             let target = dies_core::nearest_safe_pos(ball_pos, min_distance, ctx.player.position.xy(), min_theta, max_theta, max_radius, field);
         //             input.with_position(target);
         //         }
@@ -122,10 +121,16 @@ impl Role for Harasser {
                     return PlayerControlInput::new();
                 }
 
-                skill!(ctx, FetchBallWithHeading::towards_position(self.shooting_target));
+                skill!(
+                    ctx,
+                    FetchBallWithHeading::towards_position(self.shooting_target)
+                );
                 loop {
                     skill!(ctx, ApproachBall::new());
-                    match invoke_skill!(ctx, Face::towards_position(self.shooting_target).with_ball()) {
+                    match invoke_skill!(
+                        ctx,
+                        Face::towards_position(self.shooting_target).with_ball()
+                    ) {
                         crate::roles::SkillProgress::Continue(mut input) => {
                             input.with_dribbling(1.0);
                             return input;
@@ -139,11 +144,10 @@ impl Role for Harasser {
                 ctx.reset_skills();
                 self.state = State::Harassing;
                 PlayerControlInput::new()
-            },
+            }
         }
     }
 }
-
 
 fn ball_dist_to_closest_enemy(world: &WorldData) -> f64 {
     let ball_pos = world.ball.as_ref().unwrap().position.xy();

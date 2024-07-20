@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::{FieldGeometry, Vector2};
+use crate::FieldGeometry;
 
 /// Settings for the low-level controller.
 #[derive(Clone, Debug, Serialize, Deserialize)]

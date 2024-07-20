@@ -1,17 +1,13 @@
-use std::f64::consts::FRAC_PI_2;
-
-use super::{passer, receiver, RoleCtx, SkillResult};
+use super::{RoleCtx, SkillResult};
 use crate::{
     invoke_skill,
     roles::{
-        skills::{ApproachBall, Face, FetchBall, GoToPosition, Kick},
+        skills::{Face, FetchBall, Kick},
         Role,
     },
-    skill, KickerControlInput, PlayerControlInput,
+    skill, PlayerControlInput,
 };
-use dies_core::{
-    Angle, BallData, FieldGeometry, GameState, PlayerData, PlayerId, Vector2, WorldData,
-};
+use dies_core::{Angle, FieldGeometry, PlayerData, PlayerId, Vector2, WorldData};
 use nalgebra::ComplexField;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

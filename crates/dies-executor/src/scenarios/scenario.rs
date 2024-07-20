@@ -1,16 +1,14 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::{collections::HashSet, time::Duration};
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    Angle, BallPlacement, ExecutorSettings, GameState, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo, StrategyGameStateMacther, Vector2, Vector3, WorldData
+    Angle, BallPlacement, ExecutorSettings, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo,
+    StrategyGameStateMacther, Vector2, Vector3, WorldData,
 };
-use std::collections::HashMap;
 
-use dies_core::WorldInstant;
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{SslClientConfig, VisionClient};
-use dies_world::WorldTracker;
 
 use crate::{strategy::Strategy, Executor, StrategyMap};
 
@@ -52,8 +50,7 @@ impl ScenarioSetup {
         state: StrategyGameStateMacther,
         strategy: impl Strategy + 'static,
     ) -> &mut Self {
-        self.strategy
-            .insert(state, strategy);
+        self.strategy.insert(state, strategy);
         self
     }
 
@@ -164,7 +161,7 @@ impl ScenarioSetup {
         ssl_config: SslClientConfig,
         bs_client: BasestationHandle,
     ) -> Result<Executor> {
-        let mut ssl_client = VisionClient::new(ssl_config.clone()).await?;
+        let ssl_client = VisionClient::new(ssl_config.clone()).await?;
         // if self.has_requirements() {
         //     // Wait for the setup check to succeed
         //     let mut tracker = WorldTracker::new(&settings);

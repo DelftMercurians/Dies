@@ -1,4 +1,4 @@
-use dies_core::{GameState, PlayerId, Vector2, WorldData};
+use dies_core::{GameState, PlayerId, WorldData};
 
 use crate::roles::{
     attacker::{Attacker, AttackerSection, AttackerState},
@@ -11,6 +11,12 @@ use super::{free_kick::FreeAttacker, Strategy, StrategyCtx};
 
 pub struct Attack {
     attackers: Vec<(PlayerId, Attacker)>,
+}
+
+impl Default for Attack {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Attack {
@@ -246,13 +252,14 @@ impl Strategy for PlayStrategy {
         let game_state = ctx.world.current_game_state.game_state;
 
         // Free kick
-        if matches!(game_state, GameState::FreeKick) && ctx.world.current_game_state.us_operating {
-            if self.last_game_state != GameState::FreeKick || self.free_kick_attacker.is_none() {
-                // Switch to free kick strategy
-                let kicker = self.get_player_for_kick(ctx.clone());
-                log::info!("Free kick attacker: {:?}", kicker);
-                self.free_kick_attacker = Some((kicker, FreeAttacker::new()));
-            }
+        if matches!(game_state, GameState::FreeKick)
+            && ctx.world.current_game_state.us_operating
+            && (self.last_game_state != GameState::FreeKick || self.free_kick_attacker.is_none())
+        {
+            // Switch to free kick strategy
+            let kicker = self.get_player_for_kick(ctx.clone());
+            log::info!("Free kick attacker: {:?}", kicker);
+            self.free_kick_attacker = Some((kicker, FreeAttacker::new()));
         }
 
         // Play
@@ -279,7 +286,7 @@ impl Strategy for PlayStrategy {
                     })
                     .collect::<Vec<_>>();
 
-                if let Some(pos) = attacker_positions.get(0) {
+                if let Some(pos) = attacker_positions.first() {
                     harasser.set_shooting_target(*pos);
                 }
             }
@@ -326,19 +333,17 @@ impl Strategy for PlayStrategy {
             _ => self.attack.get_role(player_id, ctx).or_else(|| {
                 if player_id == self.defense.keeper_id {
                     Some(&mut self.defense.keeper)
+                } else if self.defense.harasser.as_ref().map(|(id, _)| *id) == Some(player_id) {
+                    self.defense
+                        .harasser
+                        .as_mut()
+                        .map(|(_, role)| role as &mut dyn Role)
                 } else {
-                    if self.defense.harasser.as_ref().map(|(id, _)| *id) == Some(player_id) {
-                        self.defense
-                            .harasser
-                            .as_mut()
-                            .map(|(_, role)| role as &mut dyn Role)
-                    } else {
-                        self.defense
-                            .wallers
-                            .iter_mut()
-                            .find_map(|(id, role)| if *id == player_id { Some(role) } else { None })
-                            .map(|role| role as &mut dyn Role)
-                    }
+                    self.defense
+                        .wallers
+                        .iter_mut()
+                        .find_map(|(id, role)| if *id == player_id { Some(role) } else { None })
+                        .map(|role| role as &mut dyn Role)
                 }
             }),
         }

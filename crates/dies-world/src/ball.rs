@@ -1,6 +1,5 @@
 use dies_core::{
     debug_line, debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3,
-    WorldInstant,
 };
 use nalgebra::{SVector, Vector6};
 

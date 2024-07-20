@@ -1,12 +1,12 @@
 use std::collections::HashSet;
+use std::fmt::Display;
 use std::hash::Hash;
 use std::time::Instant;
-use std::{default, fmt::Display};
 
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::{distance_to_line, player, score_line_of_sight};
+use crate::distance_to_line;
 use crate::{
     find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry, RoleType,
     SysStatus, Vector2, Vector3,
@@ -121,7 +121,7 @@ impl StrategyGameStateMacther {
         match self {
             StrategyGameStateMacther::Any => true,
             StrategyGameStateMacther::Specific(s) => s == state,
-            StrategyGameStateMacther::AnyOf(states) => states.contains(&state),
+            StrategyGameStateMacther::AnyOf(states) => states.contains(state),
         }
     }
 
@@ -351,7 +351,7 @@ impl WorldData {
             let half_length = field_geom.field_length / 2.0;
             let half_width = field_geom.field_width / 2.0;
 
-            let mut check_boundary = |p1: Vector2, p2: Vector2| {
+            let check_boundary = |p1: Vector2, p2: Vector2| {
                 let v1 = p2 - p1;
                 if let Some(intersection) = find_intersection(p1, v1, start, direction) {
                     let t = (intersection - start).dot(&normalized_direction);
@@ -433,8 +433,8 @@ impl WorldData {
     pub fn get_obstacles_for_player(&self, role: RoleType) -> Vec<Obstacle> {
         if let Some(field_geom) = &self.field_geom {
             let field_boundary = {
-                let hl = field_geom.field_length as f64 / 2.0;
-                let hw = field_geom.field_width as f64 / 2.0;
+                let hl = field_geom.field_length / 2.0;
+                let hw = field_geom.field_width / 2.0;
                 Obstacle::Rectangle {
                     min: Vector2::new(
                         -hl - field_geom.boundary_width,
@@ -513,9 +513,9 @@ impl WorldData {
 }
 
 fn create_bbox_from_circle(center: Vector2, radius: f64) -> Obstacle {
-    let hw = radius as f64 / 2.0;
-    let x = center.x as f64;
-    let y = center.y as f64;
+    let hw = radius / 2.0;
+    let x = center.x;
+    let y = center.y;
     Obstacle::Rectangle {
         min: Vector2::new(x - hw, y - hw),
         max: Vector2::new(x + hw, y + hw),
@@ -550,11 +550,13 @@ pub fn nearest_safe_pos(
     let min_theta = 0;
     let max_theta = 360;
     let mut i = 0;
-    for theta in (min_theta as i32..max_theta as i32).step_by(10) {
+    for theta in (min_theta..max_theta).step_by(10) {
         let theta = Angle::from_degrees(theta as f64);
-        for radius in (0..max_radius as i32).step_by(50) {
-            let position =  initial_pos + theta.to_vector() * (radius as f64);
-            if is_pos_in_field(position, field) && avoding_point.distance_to(position) > min_distance {
+        for radius in (0..max_radius).step_by(50) {
+            let position = initial_pos + theta.to_vector() * (radius as f64);
+            if is_pos_in_field(position, field)
+                && avoding_point.distance_to(position) > min_distance
+            {
                 if (position - target_pos).norm() < (best_pos - target_pos).norm() {
                     // crate::debug_cross(format!("{i}"), position, crate::DebugColor::Green);
                     best_pos = position;
@@ -738,9 +740,9 @@ mod tests {
 
     #[test]
     fn test_ball_placement_matches() {
-        assert!(
-            StrategyGameStateMacther::any_of(vec![GameState::BallReplacement(Vector2::zeros())].as_slice())
-                .matches(&GameState::BallReplacement(Vector2::x()))
+        assert!(StrategyGameStateMacther::any_of(
+            vec![GameState::BallReplacement(Vector2::zeros())].as_slice()
         )
+        .matches(&GameState::BallReplacement(Vector2::x())))
     }
 }

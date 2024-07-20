@@ -2,7 +2,6 @@ use super::scenario::ScenarioSetup;
 
 use crate::strategy::attack_strat::PlayStrategy;
 use crate::strategy::dynamic::DynamicStrategy;
-use crate::strategy::free_kick::FreeKickStrategy;
 use crate::strategy::kickoff::KickoffStrategy;
 use crate::strategy::penalty_kick::PenaltyKickStrategy;
 use crate::strategy::AdHocStrategy;
@@ -27,11 +26,9 @@ pub fn play() -> ScenarioSetup {
         let keeper = player_ids.pop().unwrap();
         log::info!("Keeper: {:?}", keeper);
         map.insert(
-            StrategyGameStateMacther::any_of(vec![
-                GameState::Halt,
-                GameState::Timeout,
-                GameState::Unknown,
-            ].as_slice()),
+            StrategyGameStateMacther::any_of(
+                vec![GameState::Halt, GameState::Timeout, GameState::Unknown].as_slice(),
+            ),
             AdHocStrategy::new(),
         );
         map.insert(

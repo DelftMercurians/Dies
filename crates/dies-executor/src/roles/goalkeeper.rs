@@ -1,10 +1,5 @@
-use std::f64::consts::FRAC_PI_2;
-
-use dies_core::{
-    find_intersection, is_pos_in_field, score_line_of_sight, Angle, BallData, FieldGeometry,
-    PlayerData, PlayerId, WorldData,
-};
-use dies_core::{GameState, Vector2};
+use dies_core::Vector2;
+use dies_core::{find_intersection, score_line_of_sight, Angle, PlayerId, WorldData};
 
 use crate::roles::skills::{ApproachBall, Face, FetchBallWithHeading, Kick};
 use crate::roles::{Role, RoleCtx, SkillResult};
@@ -167,7 +162,7 @@ impl Role for Goalkeeper {
                 target.y = target.y.max(-defence_width).min(defence_width);
                 // we want to bring the point closer to center based on the ball x position
                 let factor = 1.0 - f64::min(f64::max((ball_pos.x + 2000.0) / 5000.0, 0.0), 1.0);
-                target.y = target.y * factor;
+                target.y *= factor;
                 input.with_position(target);
             } else if let Some(kicking_to) = self.kicking_to {
                 skill!(ctx, FetchBallWithHeading::towards_own_player(kicking_to));

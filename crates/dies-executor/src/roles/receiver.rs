@@ -1,11 +1,9 @@
-use std::sync::{atomic::AtomicBool, Arc};
-
-use dies_core::{PlayerData, PlayerId, WorldData};
+use dies_core::PlayerId;
 use nalgebra::Vector2;
 
 use crate::{
     invoke_skill,
-    roles::skills::{Face, FetchBall, GoToPosition, Kick},
+    roles::skills::{Face, FetchBall, Kick},
     skill, PlayerControlInput,
 };
 

@@ -1,11 +1,8 @@
-use std::{
-    f64::{consts::PI, EPSILON},
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use dies_core::{
     to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd,
-    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2, WorldData,
+    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, Vector2, WorldData,
 };
 
 use super::{
@@ -272,7 +269,7 @@ impl PlayerController {
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
         if !is_manual_override {
-            let mut obstacles = if input.avoid_ball {
+            let obstacles = if input.avoid_ball {
                 if let Some(ball) = world.ball.as_ref() {
                     let mut obstacles = obstacles;
                     obstacles.push(Obstacle::Circle {

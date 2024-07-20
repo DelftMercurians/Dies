@@ -4,7 +4,7 @@ use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     ExecutorInfo, ExecutorSettings, GameState, PlayerCmd, PlayerFeedbackMsg, PlayerId,
-    PlayerMoveCmd, PlayerOverrideCommand, StrategyGameStateMacther, WorldUpdate,
+    PlayerOverrideCommand, StrategyGameStateMacther, WorldUpdate,
 };
 use dies_core::{SimulatorCmd, Vector3, WorldInstant};
 use dies_logger::{log_referee, log_vision, log_world};
@@ -31,6 +31,12 @@ const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30); // 30 Hz
 
 pub struct StrategyMap(Vec<(StrategyGameStateMacther, Box<dyn Strategy>)>);
+
+impl Default for StrategyMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl StrategyMap {
     pub fn new() -> Self {

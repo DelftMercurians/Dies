@@ -2,23 +2,16 @@ use crate::{
     strategy::{AdHocStrategy, Strategy},
     PlayerControlInput, StrategyMap,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-};
+use std::collections::{HashMap, HashSet};
 
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
-    rvo::velocity_obstacle_update,
 };
 use crate::roles::{RoleCtx, SkillState};
 use crate::strategy::StrategyCtx;
-use dies_core::{
-    distance_to_line, BallPlacement, ControllerSettings, ExecutorSettings, GameState, Obstacle,
-    PlayerCmd, PlayerId, RoleType, Vector2,
-};
-use dies_core::{PlayerMoveCmd, WorldData};
+use dies_core::WorldData;
+use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType};
 
 const ACTIVATION_TIME: f64 = 0.2;
 
@@ -98,19 +91,17 @@ impl TeamController {
             GameState::BallReplacement(_)
         ) {
             &mut self.halt
-        } else {
-            if let Some(strategy) = self.strategy.get_strategy(&state) {
-                let name = strategy.name().to_owned();
-                dies_core::debug_string("active_strat", &name);
-                if self.active_strat.as_ref() != Some(&name) {
-                    log::info!("Switching to strategy: {}", name);
-                    self.active_strat = Some(name);
-                    strategy.on_enter(StrategyCtx { world: &world_data });
-                }
-                strategy
-            } else {
-                return;
+        } else if let Some(strategy) = self.strategy.get_strategy(&state) {
+            let name = strategy.name().to_owned();
+            dies_core::debug_string("active_strat", &name);
+            if self.active_strat.as_ref() != Some(&name) {
+                log::info!("Switching to strategy: {}", name);
+                self.active_strat = Some(name);
+                strategy.on_enter(StrategyCtx { world: &world_data });
             }
+            strategy
+        } else {
+            return;
         };
 
         let strategy_ctx = StrategyCtx { world: &world_data };
@@ -224,7 +215,7 @@ fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
                         new_input.dribbling_speed = 0.0;
                         new_input.kicker = KickerControlInput::Disarm;
                     }
-                    
+
                     let min_distance = 800.0;
                     let max_radius = 4000;
                     let target = dies_core::nearest_safe_pos(
