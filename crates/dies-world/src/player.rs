@@ -56,6 +56,8 @@ pub struct PlayerTracker {
     pub is_gone: bool,
     fb_reappaerance_time: Option<f64>,
     det_reappaerance_time: Option<f64>,
+    rolling_control: f64,
+    rolling_vision: f64,
 }
 
 impl PlayerTracker {
@@ -78,6 +80,8 @@ impl PlayerTracker {
             fb_reappaerance_time: None,
             det_reappaerance_time: None,
             last_feedback_time: None,
+            rolling_vision: 0.0,
+            rolling_control: 0.0,
         }
     }
 
@@ -91,6 +95,37 @@ impl PlayerTracker {
     }
 
     pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant) {
+        let vision_val = if let Some(last_detection) = &self.last_detection {
+            let vision_val = if time - last_detection.timestamp < 0.2 {
+                1.0
+            } else { 0.0 };
+
+            vision_val
+        }
+        else { 0.0 };
+
+        let control_val = if let Some(last_feedback) = &self.last_feedback_time {
+            let control_val = if world_time.duration_since(last_feedback) < 0.5 {
+                1.0
+            }
+            else { 0.0 };
+
+            control_val
+        }
+        else { 0.0 };
+
+        let factor = 0.96;
+        self.rolling_vision = self.rolling_vision * factor + vision_val * (1.0 - factor);
+        self.rolling_control = self.rolling_control * factor + control_val * (1.0 - factor);
+
+        println!("{} {}", self.rolling_vision, self.rolling_control);
+
+        if self.rolling_control < 0.2 && self.rolling_vision < 0.2 {
+            self.is_gone = true;
+        }
+        if self.rolling_control > 0.8 || self.rolling_vision > 0.8 {
+            self.is_gone = false;
+        }
         // if let Some(last_detection) = &self.last_detection {
         //     let elapsed = time - last_detection.timestamp;
         //     if elapsed >= OFF_FIELD_TIMEOUT {
@@ -107,7 +142,7 @@ impl PlayerTracker {
         //         }
         //     }
         // }
-        if let Some(last_feedback) = &self.last_feedback_time {
+        /*if let Some(last_feedback) = &self.last_feedback_time {
             if world_time.duration_since(last_feedback) > OFF_FIELD_TIMEOUT {
                 if !self.is_gone {
                     log::info!("Player {} is gone (feedback)", self.id);
@@ -126,7 +161,7 @@ impl PlayerTracker {
                     }
                 }
             }
-        }
+        }*/
     }
 
     /// Update the tracker with a new frame.
