@@ -140,6 +140,7 @@ impl Strategy for PenaltyKickStrategy {
         self.roles.clear();
         self.has_attacker = false;
         self.pos_counter = 0;
+        let us_attacking = ctx.world.current_game_state.us_operating;
 
         let mut player_ids = ctx
             .world
@@ -149,8 +150,10 @@ impl Strategy for PenaltyKickStrategy {
             .collect::<Vec<PlayerId>>();
         player_ids.sort(); // increasing order, we take the last player as the attacker
 
-        if let Some(id) = player_ids.pop() {
-            self.roles.insert(id, Box::new(Attacker::new()));
+        if us_attacking {
+            if let Some(id) = player_ids.pop() {
+                self.roles.insert(id, Box::new(Attacker::new()));
+            }
         }
 
         if let Some(id) = player_ids.get(0) {
@@ -163,7 +166,10 @@ impl Strategy for PenaltyKickStrategy {
             let geom = ctx.world.field_geom.clone().unwrap_or_default();
             let fl = geom.field_length / 2.0;
             let pw = geom.penalty_area_width / 2.0;
-            let pos = Vector2::new(-fl, pw - id.as_u32() as f64 * 100.0);
+            let pos = Vector2::new(
+                if us_attacking { -fl } else { fl },
+                pw - id.as_u32() as f64 * 300.0,
+            );
             self.roles.insert(id, Box::new(OtherPlayer::new(pos)));
         }
     }
