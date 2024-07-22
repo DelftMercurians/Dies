@@ -3,22 +3,21 @@ mod scenario;
 
 use std::vec;
 
-use crate::roles::dummy_role::DummyRole;
-use crate::roles::harasser::Harasser;
-use crate::roles::skills::FetchBallWithHeading;
-use crate::roles::Goalkeeper;
-use crate::strategy::attack_strat::PlayStrategy;
-use crate::strategy::free_kick::FreeKickStrategy;
-use crate::strategy::penalty_kick::PenaltyKickStrategy;
-use crate::strategy::test_strat::TestStrat;
-use crate::{
-    roles::{fetcher_role::FetcherRole, waller::Waller},
-    strategy::AdHocStrategy,
-};
 use dies_core::{Angle, GameState, PlayerId, StrategyGameStateMacther, Vector2};
 use play::play;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    roles::{
+        dummy_role::DummyRole, fetcher_role::FetcherRole, harasser::Harasser,
+        skills::FetchBallWithHeading, waller::Waller, Goalkeeper,
+    },
+    strategy::{
+        attack_strat::PlayStrategy, free_kick::FreeKickStrategy, penalty_kick::PenaltyKickStrategy,
+        test_strat::TestStrat, AdHocStrategy,
+    },
+};
 
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 

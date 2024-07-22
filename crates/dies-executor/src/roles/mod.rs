@@ -15,8 +15,9 @@ pub mod waller;
 
 use std::{cell::RefCell, collections::HashMap};
 
-use crate::control::PlayerControlInput;
 use dies_core::{PlayerData, RoleType, WorldData};
+
+use crate::control::PlayerControlInput;
 
 pub struct RoleCtx<'a> {
     pub player: &'a PlayerData,

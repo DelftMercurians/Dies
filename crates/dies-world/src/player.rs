@@ -1,12 +1,11 @@
 use std::collections::VecDeque;
 
 use dies_core::{
-    Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2, WorldInstant,
+    to_dies_coords2, to_dies_yaw, Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings,
+    Vector2, WorldInstant,
 };
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
-
-use dies_core::{to_dies_coords2, to_dies_yaw};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
 

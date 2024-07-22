@@ -1,18 +1,14 @@
-use super::RoleCtx;
-use dies_core::Angle;
-use dies_core::BallData;
-use dies_core::FieldGeometry;
-use dies_core::Vector2;
-use dies_core::WorldData;
+use dies_core::{Angle, BallData, FieldGeometry, Vector2, WorldData};
 
-use crate::invoke_skill;
-use crate::roles::skills::ApproachBall;
-use crate::roles::skills::Face;
-use crate::roles::skills::FetchBallWithHeading;
-use crate::roles::skills::Kick;
-use crate::roles::SkillResult;
-use crate::skill;
-use crate::{roles::Role, PlayerControlInput};
+use super::RoleCtx;
+use crate::{
+    invoke_skill,
+    roles::{
+        skills::{ApproachBall, Face, FetchBallWithHeading, Kick},
+        Role, SkillResult,
+    },
+    skill, PlayerControlInput,
+};
 
 enum State {
     Harassing,

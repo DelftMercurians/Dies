@@ -2,9 +2,8 @@ use std::collections::HashSet;
 
 use dies_core::{GameState, PlayerId};
 
-use crate::{roles::Role, StrategyMap};
-
 use super::{AdHocStrategy, Strategy, StrategyCtx};
+use crate::{roles::Role, StrategyMap};
 
 pub struct DynamicStrategy<F: Fn(Vec<PlayerId>) -> StrategyMap> {
     active_strategy: String,

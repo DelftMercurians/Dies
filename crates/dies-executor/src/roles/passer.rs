@@ -1,10 +1,14 @@
 use dies_core::PlayerId;
 
-use crate::roles::skills::{ApproachBall, Face, FetchBallWithHeading, Kick};
-use crate::roles::{Role, SkillResult};
-use crate::{invoke_skill, skill, PlayerControlInput};
-
 use super::RoleCtx;
+use crate::{
+    invoke_skill,
+    roles::{
+        skills::{ApproachBall, Face, FetchBallWithHeading, Kick},
+        Role, SkillResult,
+    },
+    skill, PlayerControlInput,
+};
 
 pub struct Passer {
     has_passed: bool,

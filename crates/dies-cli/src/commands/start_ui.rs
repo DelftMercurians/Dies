@@ -1,6 +1,6 @@
-use anyhow::{bail, Result};
 use std::str::FromStr;
 
+use anyhow::{bail, Result};
 use dies_logger::AsyncProtobufLogger;
 use log::{LevelFilter, Log};
 use tokio::sync::broadcast;

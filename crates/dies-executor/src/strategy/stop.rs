@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use dies_core::PlayerId;
 
-use crate::roles::Role;
-
 use super::{Strategy, StrategyCtx};
+use crate::roles::Role;
 
 struct StopRole {}
 

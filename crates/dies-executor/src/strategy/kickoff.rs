@@ -1,14 +1,19 @@
-use crate::roles::skills::{ApproachBall, GoToPosition, Kick};
-use crate::roles::waller::Waller;
-use crate::roles::{Goalkeeper, RoleCtx, SkillResult};
-use crate::strategy::{Role, Strategy};
-use crate::{skill, PlayerControlInput};
+use std::{collections::HashMap, f64::consts::PI};
+
 use dies_core::{Angle, GameState, PlayerId, RoleType};
 use nalgebra::Vector2;
-use std::collections::HashMap;
-use std::f64::consts::PI;
 
 use super::StrategyCtx;
+use crate::{
+    roles::{
+        skills::{ApproachBall, GoToPosition, Kick},
+        waller::Waller,
+        Goalkeeper, RoleCtx, SkillResult,
+    },
+    skill,
+    strategy::{Role, Strategy},
+    PlayerControlInput,
+};
 
 pub struct Kicker {
     us_attacking: bool,

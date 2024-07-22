@@ -1,7 +1,8 @@
-use crate::{KickerControlInput, PlayerControlInput};
 use dies_core::{Angle, PlayerData};
 use nalgebra::Vector2;
 use tokio::time::Instant;
+
+use crate::{KickerControlInput, PlayerControlInput};
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum Status3 {
     NoGoal,

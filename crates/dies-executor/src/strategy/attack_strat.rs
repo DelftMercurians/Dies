@@ -1,13 +1,12 @@
 use dies_core::{GameState, PlayerId, WorldData};
 
+use super::{free_kick::FreeAttacker, Strategy, StrategyCtx};
 use crate::roles::{
     attacker::{Attacker, AttackerSection, AttackerState},
     harasser::Harasser,
     waller::Waller,
     Goalkeeper, Role,
 };
-
-use super::{free_kick::FreeAttacker, Strategy, StrategyCtx};
 
 pub struct Attack {
     attackers: Vec<(PlayerId, Attacker)>,

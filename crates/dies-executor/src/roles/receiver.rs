@@ -1,13 +1,12 @@
 use dies_core::PlayerId;
 use nalgebra::Vector2;
 
+use super::{Role, RoleCtx, SkillResult};
 use crate::{
     invoke_skill,
     roles::skills::{Face, FetchBall, Kick},
     skill, PlayerControlInput,
 };
-
-use super::{Role, RoleCtx, SkillResult};
 
 pub struct Receiver {
     passer: PlayerId,

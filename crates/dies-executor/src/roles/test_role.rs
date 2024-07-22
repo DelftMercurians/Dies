@@ -1,8 +1,9 @@
 use std::time::Instant;
 
+use dies_core::Vector2;
+
 use super::RoleCtx;
 use crate::{roles::Role, PlayerControlInput};
-use dies_core::Vector2;
 
 pub struct TestRole {
     targets: Vec<Vector2>,

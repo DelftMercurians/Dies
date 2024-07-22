@@ -1,18 +1,22 @@
-use axum::extract::ws::{Message, WebSocket};
-use axum::extract::WebSocketUpgrade;
-use axum::extract::{Json, State};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use std::sync::Arc;
+
+use axum::{
+    extract::{
+        ws::{Message, WebSocket},
+        Json, State, WebSocketUpgrade,
+    },
+    http::StatusCode,
+    response::IntoResponse,
+};
 use dies_core::{DebugMap, DebugSubscriber, WorldUpdate};
 use dies_executor::scenarios::ScenarioType;
 use futures::StreamExt;
-use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 
-use crate::{server::ServerState, UiCommand, UiMode};
 use crate::{
-    BasestationResponse, ExecutorInfoResponse, ExecutorSettingsResponse, GetDebugMapResponse,
-    PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, UiStatus, UiWorldState, WsMessage,
+    server::ServerState, BasestationResponse, ExecutorInfoResponse, ExecutorSettingsResponse,
+    GetDebugMapResponse, PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, UiCommand,
+    UiMode, UiStatus, UiWorldState, WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {

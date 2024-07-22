@@ -8,9 +8,10 @@ pub mod stop;
 mod task;
 pub mod test_strat;
 
-use crate::roles::Role;
 pub use adhoc::AdHocStrategy;
 use dies_core::{PlayerId, WorldData};
+
+use crate::roles::Role;
 
 #[derive(Clone)]
 pub struct StrategyCtx<'a> {

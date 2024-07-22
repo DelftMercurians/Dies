@@ -1,3 +1,6 @@
+use dies_core::{Angle, FieldGeometry, PlayerData, PlayerId, Vector2, WorldData};
+use nalgebra::ComplexField;
+
 use super::{RoleCtx, SkillResult};
 use crate::{
     invoke_skill,
@@ -7,8 +10,6 @@ use crate::{
     },
     skill, PlayerControlInput,
 };
-use dies_core::{Angle, FieldGeometry, PlayerData, PlayerId, Vector2, WorldData};
-use nalgebra::ComplexField;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttackerSection {

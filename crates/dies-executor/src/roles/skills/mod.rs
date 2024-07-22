@@ -4,9 +4,8 @@ use dies_core::{
     find_intersection, perp, which_side_of_robot, Angle, PlayerId, SysStatus, Vector2,
 };
 
-use crate::{control::Velocity, roles::SkillResult, KickerControlInput, PlayerControlInput};
-
 use super::{Skill, SkillCtx, SkillProgress};
+use crate::{control::Velocity, roles::SkillResult, KickerControlInput, PlayerControlInput};
 
 const DEFAULT_POS_TOLERANCE: f64 = 70.0;
 const DEFAULT_VEL_TOLERANCE: f64 = 30.0;

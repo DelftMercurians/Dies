@@ -1,8 +1,7 @@
 use dies_core::PlayerId;
 
-use crate::roles::{passer::Passer, receiver::Receiver, Role};
-
 use super::{Strategy, StrategyCtx};
+use crate::roles::{passer::Passer, receiver::Receiver, Role};
 
 struct Assignmmet {
     passer_id: PlayerId,

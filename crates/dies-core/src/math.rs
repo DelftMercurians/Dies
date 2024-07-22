@@ -113,8 +113,9 @@ pub fn score_line_of_sight(world: &WorldData, from: Vector2, to: Vector2) -> f64
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use approx::assert_relative_eq;
+
+    use super::*;
     #[test]
     fn test_which_side_of_robot() {
         let heading = Angle::from_degrees(90.0);

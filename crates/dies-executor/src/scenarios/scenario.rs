@@ -1,12 +1,11 @@
-use anyhow::Result;
 use std::{collections::HashSet, time::Duration};
 
+use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     Angle, BallPlacement, ExecutorSettings, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo,
     StrategyGameStateMacther, Vector2, Vector3, WorldData,
 };
-
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{SslClientConfig, VisionClient};
 
@@ -325,11 +324,9 @@ fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
 
 #[cfg(test)]
 mod tests {
+    use dies_core::{mock_world_data, Angle, BallData, WorldData};
+
     use super::*;
-    use dies_core::mock_world_data;
-    use dies_core::Angle;
-    use dies_core::BallData;
-    use dies_core::WorldData;
 
     #[test]
     fn test_scenario_setup_check_live() {

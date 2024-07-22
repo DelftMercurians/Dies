@@ -1,12 +1,11 @@
 use dies_core::{
-    debug_line, debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3,
+    debug_line, debug_value, to_dies_coords3, BallData, FieldGeometry, FieldMask, TrackerSettings,
+    Vector3,
 };
+use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 use nalgebra::{SVector, Vector6};
 
-use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
-
 use crate::filter::MaybeKalman;
-use dies_core::to_dies_coords3;
 
 const DETECTION_TIMEOUT: f64 = 0.1;
 

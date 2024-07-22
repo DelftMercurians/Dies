@@ -1,15 +1,12 @@
 use std::collections::HashMap;
 
-use dies_protos::ssl_gc_referee_message::Referee;
-
-use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
+use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 
 mod ball;
 mod filter;
 mod game_state;
 mod player;
 
-use crate::game_state::GameStateTracker;
 use ball::BallTracker;
 pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
@@ -19,6 +16,8 @@ use dies_core::{
     TrackerSettings, Vector2, WorldData, WorldInstant,
 };
 use player::PlayerTracker;
+
+use crate::game_state::GameStateTracker;
 
 const IS_DIV_A: bool = false;
 

@@ -1,15 +1,11 @@
-use std::collections::HashSet;
-use std::fmt::Display;
-use std::hash::Hash;
-use std::time::Instant;
+use std::{collections::HashSet, fmt::Display, hash::Hash, time::Instant};
 
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::distance_to_line;
 use crate::{
-    find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry, RoleType,
-    SysStatus, Vector2, Vector3,
+    distance_to_line, find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry,
+    RoleType, SysStatus, Vector2, Vector3,
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
@@ -649,8 +645,9 @@ pub fn mock_world_data() -> WorldData {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use approx::assert_relative_eq;
+
+    use super::*;
 
     #[test]
     fn test_ray_player_intersection() {

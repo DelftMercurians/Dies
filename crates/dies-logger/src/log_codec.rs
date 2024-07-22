@@ -1,7 +1,3 @@
-use anyhow::{bail, Context, Result};
-use dies_protos::{
-    dies_log_line::LogLine, ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket,
-};
 use std::{
     fs::File,
     io::{BufWriter, Read, Write},
@@ -9,6 +5,10 @@ use std::{
     time::Instant,
 };
 
+use anyhow::{bail, Context, Result};
+use dies_protos::{
+    dies_log_line::LogLine, ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket,
+};
 use protobuf::Message;
 
 use crate::DataLog;

@@ -1,6 +1,7 @@
+use std::fmt::Debug;
+
 use na::SMatrix;
 use nalgebra as na;
-use std::fmt::Debug;
 
 /// Create a block diagonal matrix from two 2x2 matrix
 fn block_diag(a: &SMatrix<f64, 2, 2>) -> SMatrix<f64, 4, 4> {

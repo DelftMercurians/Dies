@@ -1,9 +1,13 @@
-use dies_core::Vector2;
-use dies_core::{find_intersection, score_line_of_sight, Angle, PlayerId, WorldData};
+use dies_core::{find_intersection, score_line_of_sight, Angle, PlayerId, Vector2, WorldData};
 
-use crate::roles::skills::{ApproachBall, Face, FetchBallWithHeading, Kick};
-use crate::roles::{Role, RoleCtx, SkillResult};
-use crate::{invoke_skill, skill, PlayerControlInput};
+use crate::{
+    invoke_skill,
+    roles::{
+        skills::{ApproachBall, Face, FetchBallWithHeading, Kick},
+        Role, RoleCtx, SkillResult,
+    },
+    skill, PlayerControlInput,
+};
 
 const KEEPER_X_OFFSET: f64 = 250.0;
 

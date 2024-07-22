@@ -1,17 +1,16 @@
-use crate::{
-    strategy::{AdHocStrategy, Strategy},
-    PlayerControlInput, StrategyMap,
-};
 use std::collections::{HashMap, HashSet};
+
+use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, WorldData};
 
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
-use crate::roles::{RoleCtx, SkillState};
-use crate::strategy::StrategyCtx;
-use dies_core::WorldData;
-use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType};
+use crate::{
+    roles::{RoleCtx, SkillState},
+    strategy::{AdHocStrategy, Strategy, StrategyCtx},
+    PlayerControlInput, StrategyMap,
+};
 
 const ACTIVATION_TIME: f64 = 0.2;
 

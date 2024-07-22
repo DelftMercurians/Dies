@@ -1,5 +1,6 @@
-use anyhow::{bail, Result};
 use std::{env, path::PathBuf};
+
+use anyhow::{bail, Result};
 
 lazy_static::lazy_static! {
     static ref WORKSPACE_ROOT: PathBuf = try_find_workspace_root().expect("Could not find workspace root");

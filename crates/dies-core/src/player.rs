@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::Angle;
-
 use super::Vector2;
+use crate::Angle;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[typeshare(serialized_as = "u32")]

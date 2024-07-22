@@ -1,3 +1,5 @@
+use dies_core::{Angle, Vector2};
+
 use super::RoleCtx;
 use crate::{
     roles::{
@@ -6,7 +8,6 @@ use crate::{
     },
     skill, PlayerControlInput,
 };
-use dies_core::{Angle, Vector2};
 
 pub struct DribbleRole {}
 

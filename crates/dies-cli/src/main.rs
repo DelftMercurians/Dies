@@ -1,6 +1,7 @@
+use std::process::ExitCode;
+
 use clap::Parser;
 use cli::Cli;
-use std::process::ExitCode;
 
 mod cli;
 mod commands;

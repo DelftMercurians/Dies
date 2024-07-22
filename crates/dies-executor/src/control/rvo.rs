@@ -1,5 +1,6 @@
-use dies_core::{debug_string, Angle, Obstacle, PlayerData, PlayerModel, Vector2};
 use std::f64::{consts::PI, EPSILON};
+
+use dies_core::{debug_string, Angle, Obstacle, PlayerData, PlayerModel, Vector2};
 
 // Constants
 const PLAYER_MARGIN: f64 = 30.0;

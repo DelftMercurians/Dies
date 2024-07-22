@@ -1,12 +1,13 @@
-use super::scenario::ScenarioSetup;
-
-use crate::strategy::attack_strat::PlayStrategy;
-use crate::strategy::dynamic::DynamicStrategy;
-use crate::strategy::kickoff::KickoffStrategy;
-use crate::strategy::penalty_kick::PenaltyKickStrategy;
-use crate::strategy::AdHocStrategy;
-use crate::StrategyMap;
 use dies_core::{GameState, PlayerId, StrategyGameStateMacther, Vector2};
+
+use super::scenario::ScenarioSetup;
+use crate::{
+    strategy::{
+        attack_strat::PlayStrategy, dynamic::DynamicStrategy, kickoff::KickoffStrategy,
+        penalty_kick::PenaltyKickStrategy, AdHocStrategy,
+    },
+    StrategyMap,
+};
 
 pub fn play() -> ScenarioSetup {
     let assign = |mut player_ids: Vec<PlayerId>| {
