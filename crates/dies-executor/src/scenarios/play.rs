@@ -27,11 +27,9 @@ pub fn play() -> ScenarioSetup {
         let keeper = player_ids.pop().unwrap();
         log::info!("Keeper: {:?}", keeper);
         map.insert(
-            StrategyGameStateMacther::any_of(vec![
-                GameState::Halt,
-                GameState::Timeout,
-                GameState::Unknown,
-            ].as_slice()),
+            StrategyGameStateMacther::any_of(
+                vec![GameState::Halt, GameState::Timeout, GameState::Unknown].as_slice(),
+            ),
             AdHocStrategy::new(),
         );
         map.insert(
@@ -78,15 +76,15 @@ pub fn play() -> ScenarioSetup {
             return map;
         }
 
-        let waller2 = player_ids.pop().unwrap();
-        play.defense.add_wallers(vec![waller1, waller2]);
+        let attacker1 = player_ids.pop().unwrap();
+        play.attack.add_attacker(attacker1);
         if num_players == 4 {
             map.insert(StrategyGameStateMacther::any_of(states.as_slice()), play);
             return map;
         }
 
-        let attacker1 = player_ids.pop().unwrap();
-        play.attack.add_attacker(attacker1);
+        let waller2 = player_ids.pop().unwrap();
+        play.defense.add_wallers(vec![waller1, waller2]);
         if num_players == 5 {
             map.insert(StrategyGameStateMacther::any_of(states.as_slice()), play);
             return map;
