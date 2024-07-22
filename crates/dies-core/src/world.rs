@@ -508,7 +508,6 @@ impl WorldData {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub enum Avoid {
     Line { start: Vector2, end: Vector2 },

@@ -22,6 +22,17 @@ pub struct GoToPosition {
 }
 
 impl GoToPosition {
+    pub fn new(target_pos: Vector2) -> Self {
+        Self {
+            target_pos,
+            target_heading: None,
+            target_velocity: Vector2::zeros(),
+            pos_tolerance: DEFAULT_POS_TOLERANCE,
+            velocity_tolerance: DEFAULT_VEL_TOLERANCE,
+            with_ball: false,
+            avoid_ball: false,
+        }
+    }
 
     pub fn with_heading(mut self, heading: Angle) -> Self {
         self.target_heading = Some(heading);
@@ -110,7 +121,6 @@ impl Face {
             heading: HeadingTarget::OwnPlayer(id),
         }
     }
-
 
     pub fn with_ball(mut self) -> Self {
         self.with_ball = true;

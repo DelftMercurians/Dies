@@ -19,7 +19,6 @@ use player::PlayerTracker;
 
 use crate::game_state::GameStateTracker;
 
-
 /// A struct to track the world state.
 pub struct WorldTracker {
     /// Whether our team color is blue

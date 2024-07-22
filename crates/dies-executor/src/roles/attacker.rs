@@ -376,7 +376,6 @@ fn find_best_striker_position(
     best_position
 }
 
-
 fn is_pos_valid(pos: Vector2, field: &FieldGeometry) -> bool {
     const MARGIN: f64 = 100.0;
     // check if pos inside penalty area

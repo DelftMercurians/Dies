@@ -11,7 +11,6 @@ use crate::{
 
 pub struct DribbleRole {}
 
-
 impl Role for DribbleRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         if let Some(ball) = ctx.world.ball.as_ref() {

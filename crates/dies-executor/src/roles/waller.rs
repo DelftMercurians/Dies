@@ -175,7 +175,6 @@ impl Role for Waller {
     }
 }
 
-
 // /// Find a position with the best line of sight to the goal withing the given section.
 // fn find_best_striker_position(world: &WorldData, field: &FieldGeometry) -> Vector2 {
 //     let (min_y, max_y) = section.y_bounds(field);
@@ -277,6 +276,3 @@ impl Role for Waller {
 
 //     (best_position, best_striker, best_score)
 // }
-
-
-

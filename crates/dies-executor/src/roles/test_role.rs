@@ -12,7 +12,6 @@ pub struct TestRole {
     current_target: usize,
 }
 
-
 impl Role for TestRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         if self.current_target >= self.targets.len() {

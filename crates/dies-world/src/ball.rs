@@ -7,7 +7,6 @@ use nalgebra::{SVector, Vector6};
 
 use crate::filter::MaybeKalman;
 
-
 /// Stored data for the ball from the last update.
 ///
 /// This type contains **vision coordinates**, meaning the x axis is unchanged -- it may point towards our or the enemy goal.
