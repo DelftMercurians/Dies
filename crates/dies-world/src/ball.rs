@@ -7,7 +7,6 @@ use nalgebra::{SVector, Vector6};
 
 use crate::filter::MaybeKalman;
 
-const DETECTION_TIMEOUT: f64 = 0.1;
 
 /// Stored data for the ball from the last update.
 ///

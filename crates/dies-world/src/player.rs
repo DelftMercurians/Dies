@@ -11,7 +11,6 @@ use crate::filter::{AngleLowPassFilter, MaybeKalman};
 
 const BREAKBEAM_WINDOW: usize = 100;
 const BREAKBEAM_DETECTION_THRESHOLD: usize = 5;
-const OFF_FIELD_TIMEOUT: f64 = 2.0;
 
 /// Stored data for a player from the last update.
 ///

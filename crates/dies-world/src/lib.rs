@@ -19,7 +19,6 @@ use player::PlayerTracker;
 
 use crate::game_state::GameStateTracker;
 
-const IS_DIV_A: bool = false;
 
 /// A struct to track the world state.
 pub struct WorldTracker {

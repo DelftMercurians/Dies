@@ -349,23 +349,4 @@ impl Strategy for PlayStrategy {
     }
 }
 
-fn ball_dist_to_closest_enemy(world: &WorldData) -> f64 {
-    let ball_pos = world.ball.as_ref().unwrap().position.xy();
-    world
-        .opp_players
-        .iter()
-        .map(|p| (p.position - ball_pos).norm())
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or(f64::MAX)
-}
 
-fn ball_dist_to_closest_waller(world: &WorldData, wallers: Vec<PlayerId>) -> f64 {
-    let ball_pos = world.ball.as_ref().unwrap().position.xy();
-    world
-        .own_players
-        .iter()
-        .filter(|p| wallers.contains(&p.id))
-        .map(|p| (p.position - ball_pos).norm())
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or(f64::MAX)
-}

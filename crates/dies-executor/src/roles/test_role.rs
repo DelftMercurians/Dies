@@ -12,16 +12,6 @@ pub struct TestRole {
     current_target: usize,
 }
 
-impl TestRole {
-    pub fn new(targets: Vec<Vector2>) -> Self {
-        Self {
-            targets,
-            start_time: None,
-            predicted_time: None,
-            current_target: 0,
-        }
-    }
-}
 
 impl Role for TestRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {

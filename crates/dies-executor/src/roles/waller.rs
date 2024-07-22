@@ -11,7 +11,6 @@ use crate::{
 };
 
 const MARGIN: f64 = 200.0;
-const CORNER_RADIUS: f64 = 200.0;
 
 enum State {
     Walling,
@@ -176,10 +175,6 @@ impl Role for Waller {
     }
 }
 
-/// Calculate the distance between two points.
-fn distance(a: Vector2, b: Vector2) -> f64 {
-    (a - b).norm()
-}
 
 // /// Find a position with the best line of sight to the goal withing the given section.
 // fn find_best_striker_position(world: &WorldData, field: &FieldGeometry) -> Vector2 {
@@ -283,41 +278,5 @@ fn distance(a: Vector2, b: Vector2) -> f64 {
 //     (best_position, best_striker, best_score)
 // }
 
-fn is_pos_valid(pos: Vector2, field: &FieldGeometry) -> bool {
-    const MARGIN: f64 = 100.0;
-    // check if pos inside penalty area
-    if pos.x.abs() > field.field_length / 2.0 - field.penalty_area_depth - MARGIN
-        && pos.y.abs() < field.penalty_area_width / 2.0 + MARGIN
-    {
-        return false;
-    }
-    true
-}
 
-/// Compute a "badness" score for a line of sight between two points based on the minumum
-/// distance to the line of sight from the closest enemy player.
-///
-/// The score is higher if the line of sight is further from the enemy players.
-fn score_line_of_sight(
-    world: &WorldData,
-    from: Vector2,
-    to: Vector2,
-    field: &FieldGeometry,
-) -> f64 {
-    let mut min_distance = f64::MAX;
-    for player in world.opp_players.iter() {
-        let distance = distance_to_line(from, to, player.position);
-        if distance < min_distance {
-            min_distance = distance;
-        }
-    }
-    min_distance
-}
 
-fn distance_to_line(a: Vector2, b: Vector2, p: Vector2) -> f64 {
-    let n = (b - a).normalize();
-    let ap = p - a;
-    let proj = ap.dot(&n);
-    let proj = proj.max(0.0).min((b - a).norm());
-    (ap - proj * n).norm()
-}

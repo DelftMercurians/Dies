@@ -11,11 +11,6 @@ use crate::{
 
 pub struct DribbleRole {}
 
-impl DribbleRole {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
 
 impl Role for DribbleRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {

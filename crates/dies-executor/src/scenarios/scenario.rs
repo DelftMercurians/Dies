@@ -11,8 +11,6 @@ use dies_ssl_client::{SslClientConfig, VisionClient};
 
 use crate::{strategy::Strategy, Executor, StrategyMap};
 
-const LIVE_CHECK_INTERVAL: Duration = Duration::from_millis(100);
-const LIVE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const SIMULATION_FIELD_MARGIN: f64 = 0.1;
 
 pub struct ScenarioSetup {
@@ -264,54 +262,6 @@ fn player_into_simulation(
     (position, yaw)
 }
 
-/// Check whether there is a player that can be used to fill this slot.
-fn find_player(
-    placement: &PlayerPlacement,
-    available_ids: &HashSet<PlayerId>,
-    players: &Vec<PlayerData>,
-    tolerance: f64,
-    yaw_tolerance: f64,
-) -> Option<PlayerId> {
-    let id = if let Some(target) = placement.position {
-        let mut closest_player = None;
-        let mut closest_distance = f64::INFINITY;
-        for player in players.iter() {
-            if available_ids.contains(&player.id) {
-                let distance = (player.position - target).norm();
-                if distance < closest_distance {
-                    closest_distance = distance;
-                    closest_player = Some(player.id);
-                }
-            }
-        }
-        closest_player
-    } else {
-        available_ids.iter().next().copied()
-    };
-
-    if let Some(player) = id.and_then(|id| players.iter().find(|p| p.id == id)) {
-        match placement.position {
-            Some(target) => {
-                if (player.position - target).norm() > tolerance {
-                    return None;
-                }
-            }
-            None => {}
-        }
-
-        match placement.yaw {
-            Some(target) => {
-                if (player.yaw - target).radians().abs() > yaw_tolerance {
-                    return None;
-                }
-            }
-            None => {}
-        }
-        id
-    } else {
-        None
-    }
-}
 
 fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
     let w = field_width - 2.0 * (SIMULATION_FIELD_MARGIN * field_width);

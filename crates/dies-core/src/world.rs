@@ -508,15 +508,6 @@ impl WorldData {
     }
 }
 
-fn create_bbox_from_circle(center: Vector2, radius: f64) -> Obstacle {
-    let hw = radius / 2.0;
-    let x = center.x;
-    let y = center.y;
-    Obstacle::Rectangle {
-        min: Vector2::new(x - hw, y - hw),
-        max: Vector2::new(x + hw, y + hw),
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum Avoid {

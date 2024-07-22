@@ -9,8 +9,6 @@ use crate::{control::Velocity, roles::SkillResult, KickerControlInput, PlayerCon
 
 const DEFAULT_POS_TOLERANCE: f64 = 70.0;
 const DEFAULT_VEL_TOLERANCE: f64 = 30.0;
-const DEFAULT_BALL_VEL_TOLERANCE: f64 = 30.0;
-const BALL_VEL_CORRECTION: f64 = 0.5;
 
 /// A skill that makes the player go to a specific position
 pub struct GoToPosition {
@@ -24,17 +22,6 @@ pub struct GoToPosition {
 }
 
 impl GoToPosition {
-    pub fn new(target: Vector2) -> Self {
-        Self {
-            target_pos: target,
-            target_heading: None,
-            target_velocity: Vector2::zeros(),
-            pos_tolerance: DEFAULT_POS_TOLERANCE,
-            velocity_tolerance: DEFAULT_VEL_TOLERANCE,
-            with_ball: false,
-            avoid_ball: false,
-        }
-    }
 
     pub fn with_heading(mut self, heading: Angle) -> Self {
         self.target_heading = Some(heading);
@@ -124,12 +111,6 @@ impl Face {
         }
     }
 
-    pub fn towards_ball() -> Self {
-        Self {
-            with_ball: false,
-            heading: HeadingTarget::Ball,
-        }
-    }
 
     pub fn with_ball(mut self) -> Self {
         self.with_ball = true;
