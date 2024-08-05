@@ -1,9 +1,9 @@
-use super::Strategy;
-use super::StrategyCtx;
-use crate::roles::Role;
+use std::collections::{hash_map::Entry, HashMap};
+
 use dies_core::PlayerId;
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+
+use super::{Strategy, StrategyCtx};
+use crate::roles::Role;
 
 /// A strategy that assigns roles to players based on a predefined list. Useful for
 /// testing.

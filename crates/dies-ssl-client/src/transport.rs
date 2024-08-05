@@ -1,12 +1,12 @@
-use anyhow::{Context, Result};
-use network_interface::{NetworkInterface, NetworkInterfaceConfig};
-use socket2::{Domain, Protocol, Socket, Type};
 use std::{
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
+use anyhow::{Context, Result};
 use dies_protos::Message;
+use network_interface::{NetworkInterface, NetworkInterfaceConfig};
+use socket2::{Domain, Protocol, Socket, Type};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, UdpSocket},

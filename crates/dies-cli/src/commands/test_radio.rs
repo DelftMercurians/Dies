@@ -1,6 +1,6 @@
 use anyhow::Result;
 use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
-use dies_core::{PlayerMoveCmd, PlayerId};
+use dies_core::{PlayerId, PlayerMoveCmd};
 use tokio::time::{Duration, Instant};
 
 use crate::cli::SerialPort;

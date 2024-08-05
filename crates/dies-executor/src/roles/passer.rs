@@ -1,14 +1,14 @@
-use std::sync::{atomic::AtomicBool, Arc};
-use std::time::Instant;
-
-use dies_core::{Angle, PlayerId};
-use dies_core::{PlayerData, WorldData};
-
-use crate::roles::skills::{ApproachBall, Face, FetchBallWithHeading, Kick};
-use crate::roles::{Role, SkillResult};
-use crate::{invoke_skill, skill, PlayerControlInput};
+use dies_core::PlayerId;
 
 use super::RoleCtx;
+use crate::{
+    invoke_skill,
+    roles::{
+        skills::{ApproachBall, Face, FetchBallWithHeading, Kick},
+        Role, SkillResult,
+    },
+    skill, PlayerControlInput,
+};
 
 pub struct Passer {
     has_passed: bool,

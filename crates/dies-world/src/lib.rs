@@ -1,15 +1,12 @@
 use std::collections::HashMap;
 
-use dies_protos::ssl_gc_referee_message::Referee;
-
-use dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
+use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
 
 mod ball;
 mod filter;
 mod game_state;
 mod player;
 
-use crate::game_state::GameStateTracker;
 use ball::BallTracker;
 pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
@@ -20,7 +17,7 @@ use dies_core::{
 };
 use player::PlayerTracker;
 
-const IS_DIV_A: bool = false;
+use crate::game_state::GameStateTracker;
 
 /// A struct to track the world state.
 pub struct WorldTracker {
@@ -101,7 +98,7 @@ impl WorldTracker {
                 y_max,
             } = &self.tracker_settings.field_mask;
             dies_core::debug_line(
-                format!("mask.x_min"),
+                "mask.x_min".to_string(),
                 Vector2::new(
                     geom.field_length / 2.0 * x_min,
                     geom.field_width / 2.0 * y_min,
@@ -113,7 +110,7 @@ impl WorldTracker {
                 dies_core::DebugColor::Green,
             );
             dies_core::debug_line(
-                format!("mask.x_max"),
+                "mask.x_max".to_string(),
                 Vector2::new(
                     geom.field_length / 2.0 * x_max,
                     geom.field_width / 2.0 * y_min,
@@ -125,7 +122,7 @@ impl WorldTracker {
                 dies_core::DebugColor::Green,
             );
             dies_core::debug_line(
-                format!("mask.y_min"),
+                "mask.y_min".to_string(),
                 Vector2::new(
                     geom.field_length / 2.0 * x_min,
                     geom.field_width / 2.0 * y_min,
@@ -137,7 +134,7 @@ impl WorldTracker {
                 dies_core::DebugColor::Green,
             );
             dies_core::debug_line(
-                format!("mask.y_max"),
+                "mask.y_max".to_string(),
                 Vector2::new(
                     geom.field_length / 2.0 * x_min,
                     geom.field_width / 2.0 * y_max,

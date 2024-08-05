@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::Angle;
-
 use super::Vector2;
+use crate::Angle;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[typeshare(serialized_as = "u32")]
@@ -156,7 +155,7 @@ impl From<PlayerMoveCmd> for glue::Radio_Command {
             dribbler_speed: val.dribble_speed as f32,
             robot_command: val.robot_cmd.into(),
             kick_time: 5_000.0,
-            fan_speed: 0.0,//val.fan_speed as f32,
+            fan_speed: 0.0, //val.fan_speed as f32,
             _pad: [0, 0, 0],
         }
     }
@@ -195,11 +194,15 @@ pub enum PlayerOverrideCommand {
         arm_kick: bool,
     },
     /// Engage the kicker
-    Kick { speed: f64 },
+    Kick {
+        speed: f64,
+    },
     /// Discharge the kicker safely
     DischargeKicker,
 
-    SetFanSpeed { speed: f64 },
+    SetFanSpeed {
+        speed: f64,
+    },
 }
 
 impl PlayerOverrideCommand {

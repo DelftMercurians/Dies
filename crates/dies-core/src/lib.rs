@@ -16,10 +16,9 @@ pub use executor_settings::*;
 pub use geom::*;
 pub use math::*;
 pub use player::*;
-pub use world::*;
-
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
+pub use world::*;
 
 pub type VisionMsg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 pub type GcRefereeMsg = dies_protos::ssl_gc_referee_message::Referee;

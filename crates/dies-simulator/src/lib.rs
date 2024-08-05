@@ -1,9 +1,14 @@
+use std::{
+    collections::{HashMap, VecDeque},
+    f64::consts::PI,
+};
+
 use dies_core::{
     Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2,
     WorldInstant,
 };
-use dies_protos::ssl_gc_referee_message::{referee, Referee};
 use dies_protos::{
+    ssl_gc_referee_message::{referee, Referee},
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
         SSL_FieldCircularArc, SSL_FieldLineSegment, SSL_GeometryData, SSL_GeometryFieldSize,
@@ -12,8 +17,6 @@ use dies_protos::{
 };
 use rapier3d_f64::prelude::*;
 use serde::Serialize;
-use std::collections::VecDeque;
-use std::{collections::HashMap, f64::consts::PI};
 use utils::IntervalTrigger;
 
 mod utils;

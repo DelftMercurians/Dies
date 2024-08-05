@@ -180,10 +180,11 @@ fn wrap_angle(angle: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::PI;
+
     use approx::assert_relative_eq;
 
     use super::*;
-    use std::f64::consts::PI;
 
     #[test]
     fn test_wrap_angle() {

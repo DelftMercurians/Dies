@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 use anyhow::Result;
 use dies_ssl_client::{ConnectionConfig, SslClientConfig};
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
-use tokio::time::Instant;
 
 use crate::cli::ConnectionMode;
 

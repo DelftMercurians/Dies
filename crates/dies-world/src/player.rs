@@ -1,18 +1,16 @@
 use std::collections::VecDeque;
 
 use dies_core::{
-    Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2, WorldInstant,
+    to_dies_coords2, to_dies_yaw, Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings,
+    Vector2, WorldInstant,
 };
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
-
-use dies_core::{to_dies_coords2, to_dies_yaw};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
 
 const BREAKBEAM_WINDOW: usize = 100;
 const BREAKBEAM_DETECTION_THRESHOLD: usize = 5;
-const OFF_FIELD_TIMEOUT: f64 = 2.0;
 
 /// Stored data for a player from the last update.
 ///
@@ -97,13 +95,11 @@ impl PlayerTracker {
     pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant, own: bool) {
         if !own {
             let vision_val = if let Some(last_detection) = &self.last_detection {
-                let vision_val = if time - last_detection.timestamp < 0.2 {
+                if time - last_detection.timestamp < 0.2 {
                     1.0
                 } else {
                     0.0
-                };
-
-                vision_val
+                }
             } else {
                 0.0
             };
@@ -119,25 +115,21 @@ impl PlayerTracker {
         }
 
         let vision_val = if let Some(last_detection) = &self.last_detection {
-            let vision_val = if time - last_detection.timestamp < 0.2 {
+            if time - last_detection.timestamp < 0.2 {
                 1.0
             } else {
                 0.0
-            };
-
-            vision_val
+            }
         } else {
             0.0
         };
 
         let control_val = if let Some(last_feedback) = &self.last_feedback_time {
-            let control_val = if world_time.duration_since(last_feedback) < 0.5 {
+            if world_time.duration_since(last_feedback) < 0.5 {
                 1.0
             } else {
                 0.0
-            };
-
-            control_val
+            }
         } else {
             0.0
         };
@@ -281,7 +273,7 @@ impl PlayerTracker {
         // }
 
         let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
-        if let Some(_) = &self.last_feedback {
+        if self.last_feedback.is_some() {
             dies_core::debug_value(format!("p{}.breakbeam", self.id), breakbeam_count as f64);
         }
 

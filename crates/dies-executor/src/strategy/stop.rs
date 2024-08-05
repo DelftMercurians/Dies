@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use dies_core::PlayerId;
 
-use crate::roles::Role;
-
 use super::{Strategy, StrategyCtx};
+use crate::roles::Role;
 
 struct StopRole {}
 
@@ -22,8 +21,8 @@ impl Role for StopRole {
             let dist = (ball_pos - ctx.player.position.xy()).norm();
             if dist < 560.0 {
                 // Move away from the ball
-                let target = ball_pos.xy()
-                            + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
+                let target =
+                    ball_pos.xy() + (ctx.player.position - ball_pos.xy()).normalize() * 650.0;
                 input.with_position(target);
             }
         }
@@ -33,6 +32,12 @@ impl Role for StopRole {
 
 pub struct StopStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
+}
+
+impl Default for StopStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StopStrategy {
@@ -50,9 +55,9 @@ impl Strategy for StopStrategy {
 
     fn update(&mut self, ctx: super::StrategyCtx) {
         for p in ctx.world.own_players.iter() {
-            if !self.roles.contains_key(&p.id) {
-                self.roles.insert(p.id, Box::new(StopRole {}));
-            }
+            self.roles
+                .entry(p.id)
+                .or_insert_with(|| Box::new(StopRole {}));
         }
     }
 

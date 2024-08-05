@@ -1,18 +1,15 @@
-use std::f64::consts::FRAC_PI_2;
+use dies_core::{Angle, FieldGeometry, PlayerData, PlayerId, Vector2, WorldData};
+use nalgebra::ComplexField;
 
-use super::{passer, receiver, RoleCtx, SkillResult};
+use super::{RoleCtx, SkillResult};
 use crate::{
     invoke_skill,
     roles::{
-        skills::{ApproachBall, Face, FetchBall, GoToPosition, Kick},
+        skills::{Face, FetchBall, Kick},
         Role,
     },
-    skill, KickerControlInput, PlayerControlInput,
+    skill, PlayerControlInput,
 };
-use dies_core::{
-    Angle, BallData, FieldGeometry, GameState, PlayerData, PlayerId, Vector2, WorldData,
-};
-use nalgebra::ComplexField;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttackerSection {
@@ -377,65 +374,6 @@ fn find_best_striker_position(
     }
 
     best_position
-}
-
-fn find_best_passer_position(
-    starting_pos: Vector2,
-    max_radius: f64,
-    world: &WorldData,
-    field: &FieldGeometry,
-    player: &PlayerData,
-) -> (Vector2, Option<PlayerId>, f64) {
-    let mut best_position = Vector2::new(0.0, 0.0);
-    let mut best_score = 0.0;
-    let mut best_striker = None;
-
-    let attackers = world
-        .own_players
-        .iter()
-        .filter(|p| p.position.x > 0.0)
-        .collect::<Vec<_>>();
-
-    let min_theta = -90;
-    let max_theta = 90;
-    for theta in (min_theta..max_theta).step_by(10) {
-        let theta = (theta as f64).to_radians();
-        for radius in (0..max_radius as i32).step_by(20) {
-            let x = starting_pos.x + (radius as f64) * theta.cos();
-            let y = starting_pos.y + (radius as f64) * theta.sin();
-            let position = Vector2::new(x, y);
-            if !is_pos_valid(position, field) {
-                continue;
-            }
-
-            let striker_score = attackers
-                .iter()
-                .map(|p| {
-                    (
-                        p.id,
-                        score_line_of_sight(world, position, p.position, field, player),
-                    )
-                })
-                .max_by_key(|&x| x.1 as i64);
-            let goal_score = score_line_of_sight(
-                world,
-                position,
-                Vector2::new(field.field_length / 2.0, 0.0),
-                field,
-                player,
-            );
-            if let Some((striker_id, score)) = striker_score {
-                let score = score + goal_score;
-                if score > best_score {
-                    best_score = score;
-                    best_position = position;
-                    best_striker = Some(striker_id);
-                }
-            }
-        }
-    }
-
-    (best_position, best_striker, best_score)
 }
 
 fn is_pos_valid(pos: Vector2, field: &FieldGeometry) -> bool {

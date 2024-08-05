@@ -1,13 +1,19 @@
-use crate::roles::skills::{ApproachBall, Face, FetchBallWithHeading, Kick};
-use crate::roles::{RoleCtx, SkillResult};
-use crate::strategy::kickoff::OtherPlayer;
-use crate::strategy::{Role, Strategy};
-use crate::{invoke_skill, skill, PlayerControlInput};
-use dies_core::{Angle, BallData, PlayerData, PlayerId, RoleType, Vector2, WorldData};
 // use num_traits::float::Float;
 use std::collections::HashMap;
 
+use dies_core::{Angle, BallData, PlayerData, PlayerId, RoleType, Vector2, WorldData};
+
 use super::StrategyCtx;
+use crate::{
+    invoke_skill,
+    roles::{
+        skills::{ApproachBall, Face, FetchBallWithHeading, Kick},
+        RoleCtx, SkillResult,
+    },
+    skill,
+    strategy::{kickoff::OtherPlayer, Role, Strategy},
+    PlayerControlInput,
+};
 
 pub struct FreeKickStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,

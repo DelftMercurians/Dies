@@ -1,22 +1,23 @@
-use crate::invoke_skill;
-use crate::roles::skills::ApproachBall;
-use crate::roles::skills::Face;
-use crate::roles::skills::FetchBallWithHeading;
-use crate::roles::skills::GoToPosition;
-use crate::roles::skills::Kick;
-use crate::roles::Goalkeeper;
-use crate::roles::RoleCtx;
-use crate::roles::SkillResult;
-use crate::skill;
-use crate::strategy::kickoff::OtherPlayer;
-use crate::strategy::task::{Task3Phase, Task4Phase};
-use crate::strategy::{Role, Strategy};
-use crate::PlayerControlInput;
-use dies_core::{Angle, BallData, GameState, PlayerId, RoleType};
-use nalgebra::Vector2;
 use std::collections::HashMap;
 
+use dies_core::{Angle, BallData, GameState, PlayerId, RoleType};
+use nalgebra::Vector2;
+
 use super::StrategyCtx;
+use crate::{
+    invoke_skill,
+    roles::{
+        skills::{ApproachBall, Face, FetchBallWithHeading, Kick},
+        Goalkeeper, RoleCtx, SkillResult,
+    },
+    skill,
+    strategy::{
+        kickoff::OtherPlayer,
+        task::{Task3Phase, Task4Phase},
+        Role, Strategy,
+    },
+    PlayerControlInput,
+};
 
 pub struct PenaltyKickStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
@@ -120,6 +121,12 @@ impl Role for Attacker {
     }
 }
 
+impl Default for PenaltyKickStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PenaltyKickStrategy {
     pub fn new() -> Self {
         PenaltyKickStrategy {
@@ -156,7 +163,7 @@ impl Strategy for PenaltyKickStrategy {
             }
         }
 
-        if let Some(id) = player_ids.get(0) {
+        if let Some(id) = player_ids.first() {
             self.roles
                 .insert(*id, Box::new(Goalkeeper::new().with_penalty()));
             player_ids.remove(0);

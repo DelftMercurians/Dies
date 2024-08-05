@@ -1,3 +1,5 @@
+use std::{path::PathBuf, sync::OnceLock, thread};
+
 use dies_core::{DebugMap, WorldData};
 use dies_protos::{
     dies_log_line::{LogLevel, LogLine},
@@ -6,7 +8,6 @@ use dies_protos::{
 };
 use log::{Log, Metadata, Record};
 use protobuf::{EnumOrUnknown, Message};
-use std::{path::PathBuf, sync::OnceLock, thread};
 use tokio::sync::mpsc;
 
 use crate::{

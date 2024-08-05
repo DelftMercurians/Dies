@@ -2,21 +2,22 @@ pub mod skills;
 
 mod goalkeeper;
 pub use goalkeeper::Goalkeeper;
-pub mod passer;
-pub mod receiver;
 pub mod attacker;
 pub mod dribble_role;
 pub mod dummy_role;
 pub mod fetcher_role;
 pub mod harasser;
+pub mod kicker_role;
+pub mod passer;
+pub mod receiver;
 pub mod test_role;
 pub mod waller;
-pub mod kicker_role;
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap};
+
+use dies_core::{PlayerData, RoleType, WorldData};
 
 use crate::control::PlayerControlInput;
-use dies_core::{PlayerData, RoleType, WorldData};
 
 pub struct RoleCtx<'a> {
     pub player: &'a PlayerData,

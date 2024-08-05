@@ -1,14 +1,7 @@
 use dies_core::PlayerId;
 
-use crate::roles::{
-    kicker_role::KickerRole,
-    passer::{self, Passer},
-    receiver::{self, Receiver},
-    waller::Waller,
-    Role,
-};
-
 use super::{Strategy, StrategyCtx};
+use crate::roles::{passer::Passer, receiver::Receiver, Role};
 
 struct Assignmmet {
     passer_id: PlayerId,
@@ -43,6 +36,12 @@ impl Assignmmet {
 
 pub struct TestStrat {
     assignment: Option<Assignmmet>,
+}
+
+impl Default for TestStrat {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TestStrat {

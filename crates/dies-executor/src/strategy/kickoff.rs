@@ -1,14 +1,19 @@
-use crate::roles::skills::{ApproachBall, FetchBall, GoToPosition, Kick};
-use crate::roles::waller::Waller;
-use crate::roles::{Goalkeeper, RoleCtx, SkillResult};
-use crate::strategy::{Role, Strategy};
-use crate::{skill, PlayerControlInput};
+use std::{collections::HashMap, f64::consts::PI};
+
 use dies_core::{Angle, GameState, PlayerId, RoleType};
 use nalgebra::Vector2;
-use std::collections::HashMap;
-use std::f64::consts::PI;
 
 use super::StrategyCtx;
+use crate::{
+    roles::{
+        skills::{ApproachBall, GoToPosition, Kick},
+        waller::Waller,
+        Goalkeeper, RoleCtx, SkillResult,
+    },
+    skill,
+    strategy::{Role, Strategy},
+    PlayerControlInput,
+};
 
 pub struct Kicker {
     us_attacking: bool,
@@ -83,6 +88,12 @@ pub struct KickoffStrategy {
     roles: HashMap<PlayerId, Box<dyn Role>>,
 }
 
+impl Default for KickoffStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KickoffStrategy {
     pub fn new() -> Self {
         KickoffStrategy {
@@ -124,9 +135,9 @@ impl Strategy for KickoffStrategy {
         }
 
         // 5 -> Kicker
-        if let Some(id) = player_ids.get(0) {
+        if let Some(id) = player_ids.first() {
             self.roles.insert(
-                id.clone(),
+                *id,
                 Box::new(Kicker::new(ctx.world.current_game_state.us_operating)),
             );
             player_ids.remove(0);

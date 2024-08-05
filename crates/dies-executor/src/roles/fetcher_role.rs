@@ -1,3 +1,5 @@
+use dies_core::{Angle, Vector2};
+
 use super::RoleCtx;
 use crate::{
     invoke_skill,
@@ -7,7 +9,6 @@ use crate::{
     },
     skill, PlayerControlInput,
 };
-use dies_core::{Angle, Vector2};
 
 pub struct FetcherRole {}
 
@@ -21,7 +22,7 @@ impl Role for FetcherRole {
     fn update(&mut self, ctx: RoleCtx<'_>) -> PlayerControlInput {
         loop {
             match skill!(ctx, FetchBall::new()) {
-                crate::roles::SkillResult::Success => {},
+                crate::roles::SkillResult::Success => {}
                 crate::roles::SkillResult::Failure => continue,
             }
 

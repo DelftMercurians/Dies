@@ -1,6 +1,7 @@
+use std::process::ExitCode;
+
 use clap::Parser;
 use cli::Cli;
-use std::process::ExitCode;
 
 mod cli;
 mod commands;
@@ -11,9 +12,7 @@ async fn main() -> ExitCode {
 
     println!("Dies CLI v{}", env!("CARGO_PKG_VERSION"));
 
-    let res = tokio::spawn(async {
-        Cli::parse().start().await
-    });
+    let res = tokio::spawn(async { Cli::parse().start().await });
 
     match res.await {
         Err(_) => ExitCode::FAILURE,

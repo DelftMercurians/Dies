@@ -1,25 +1,15 @@
 use std::time::Instant;
 
+use dies_core::Vector2;
+
 use super::RoleCtx;
 use crate::{roles::Role, PlayerControlInput};
-use dies_core::Vector2;
 
 pub struct TestRole {
     targets: Vec<Vector2>,
     start_time: Option<Instant>,
     predicted_time: Option<f64>,
     current_target: usize,
-}
-
-impl TestRole {
-    pub fn new(targets: Vec<Vector2>) -> Self {
-        Self {
-            targets,
-            start_time: None,
-            predicted_time: None,
-            current_target: 0,
-        }
-    }
 }
 
 impl Role for TestRole {

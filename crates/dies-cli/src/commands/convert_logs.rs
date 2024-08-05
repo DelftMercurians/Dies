@@ -1,7 +1,10 @@
+use std::{
+    io::{BufWriter, Write},
+    path::Path,
+};
+
 use anyhow::Context;
 use dies_logger::LogFile;
-use std::io::{BufWriter, Write};
-use std::path::Path;
 
 fn msg_to_json(msg: &dies_logger::TimestampedMessage) -> serde_json::Value {
     let mut map = serde_json::Map::new();

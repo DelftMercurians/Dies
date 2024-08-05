@@ -646,7 +646,6 @@ dependencies = [
  "network-interface",
  "protobuf-json-mapping",
  "serde_json",
- "socket2",
  "tokio",
 ]
 
@@ -657,7 +656,6 @@ dependencies = [
  "anyhow",
  "approx",
  "dies-protos",
- "dodgy_2d",
  "glue",
  "lazy_static",
  "log",
@@ -723,7 +721,6 @@ version = "0.1.0"
 dependencies = [
  "dies-core",
  "dies-protos",
- "rand",
  "rapier3d-f64",
  "serde",
 ]
@@ -784,14 +781,6 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
-]
-
-[[package]]
-name = "dodgy_2d"
-version = "0.5.1"
-source = "git+https://github.com/DelftMercurians/dodgy.git?branch=fix/perpendicular-velocity#c3743857e2d021248f4f222b3d135d5847431358"
-dependencies = [
- "glam",
 ]
 
 [[package]]
@@ -991,12 +980,6 @@ name = "gimli"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40ecd4077b5ae9fd2e9e169b102c6c330d0605168eb0e8bf79952b256dbefffd"
-
-[[package]]
-name = "glam"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "779ae4bf7e8421cf91c0b3b64e7e8b40b862fba4d393f59150042de7c4965a94"
 
 [[package]]
 name = "glob"

@@ -1,12 +1,9 @@
-use crate::ball;
-use crate::BallData;
-use dies_core::to_dies_coords2;
-use dies_core::GameState;
-use dies_core::Vector2;
-use dies_core::Vector3;
-use dies_protos::ssl_gc_referee_message::referee::Command;
-use dies_protos::ssl_gc_referee_message::Referee;
 use std::time::Instant;
+
+use dies_core::{to_dies_coords2, GameState, Vector2, Vector3};
+use dies_protos::ssl_gc_referee_message::{referee::Command, Referee};
+
+use crate::BallData;
 
 #[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
@@ -183,12 +180,13 @@ impl GameStateTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::game_state::GameState::Stop;
     use dies_protos::{
         ssl_gc_referee_message::referee::{Command::FORCE_START, Point},
         MessageField,
     };
+
+    use super::*;
+    use crate::game_state::GameState::Stop;
 
     fn referee_msg(command: Command) -> Referee {
         let mut msg = Referee::new();

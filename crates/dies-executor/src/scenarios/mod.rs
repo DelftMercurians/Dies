@@ -3,29 +3,21 @@ mod scenario;
 
 use std::vec;
 
-use crate::roles::attacker::{self, Attacker};
-use crate::roles::dummy_role::DummyRole;
-use crate::roles::harasser::Harasser;
-use crate::roles::skills::FetchBallWithHeading;
-use crate::roles::{waller, Goalkeeper};
-use crate::strategy::attack_strat::PlayStrategy;
-use crate::strategy::free_kick::FreeKickStrategy;
-use crate::strategy::kickoff::KickoffStrategy;
-use crate::strategy::penalty_kick::PenaltyKickStrategy;
-use crate::strategy::stop::StopStrategy;
-use crate::strategy::test_strat::TestStrat;
-use crate::{
-    roles::{
-        dribble_role::DribbleRole, fetcher_role::FetcherRole, kicker_role::KickerRole,
-        test_role::TestRole, waller::Waller,
-    },
-    strategy::AdHocStrategy,
-};
-use crate::{strategy, StrategyMap};
-use dies_core::{Angle, GameState, PlayerId, StrategyGameStateMacther, Vector2, Vector3};
+use dies_core::{Angle, GameState, PlayerId, StrategyGameStateMacther, Vector2};
 use play::play;
 use scenario::ScenarioSetup;
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    roles::{
+        dummy_role::DummyRole, fetcher_role::FetcherRole, harasser::Harasser,
+        skills::FetchBallWithHeading, waller::Waller, Goalkeeper,
+    },
+    strategy::{
+        attack_strat::PlayStrategy, free_kick::FreeKickStrategy, penalty_kick::PenaltyKickStrategy,
+        test_strat::TestStrat, AdHocStrategy,
+    },
+};
 
 // **NOTE**: Add all new scenarios to the `scenarios!` macro at the end of this file.
 
@@ -59,8 +51,7 @@ fn defense_test() -> ScenarioSetup {
     strat.add_role(Box::new(Waller::new_with_index(0)));
     strat.add_role(Box::new(Waller::new_with_index(1)));
 
-    let mut scenario = ScenarioSetup::new(strat, StrategyGameStateMacther::Any);
-    scenario
+    ScenarioSetup::new(strat, StrategyGameStateMacther::Any)
 }
 
 fn goalie_test() -> ScenarioSetup {
@@ -199,20 +190,20 @@ fn fetch_ball_test_sim() -> ScenarioSetup {
 fn fetch_ball_test_live() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     strategy.add_role(Box::new(FetcherRole::new()));
-    let scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
-    scenario
+
+    ScenarioSetup::new(strategy, StrategyGameStateMacther::Any)
 }
 
 fn fetch_ball_with_heading() -> ScenarioSetup {
     let mut strategy = AdHocStrategy::new();
     let skill = FetchBallWithHeading::new(Angle::from_degrees(90.0));
     strategy.add_role(Box::new(DummyRole::new(Box::new(skill))));
-    let scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
+
     // scenario.add_own_player();
     // .add_ball_at(Vector3::new(0.0, 0.0, 0.0))
     // .add_own_player_at(Vector2::new(1000.0, 1000.0))
     // .add_own_player_at(Vector2::new(-1000.0, -1000.0));
-    scenario
+    ScenarioSetup::new(strategy, StrategyGameStateMacther::Any)
 }
 
 /// Creates a lookup table for scenarios as a global constant.

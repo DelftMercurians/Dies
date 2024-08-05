@@ -4,10 +4,9 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
-use glue::{HG_Status, Monitor, Serial};
+use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
+use glue::{Monitor, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
-
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, RobotCmd, SysStatus};
 
 const MAX_MSG_FREQ: f64 = 200.0;
 const BASE_STATION_READ_FREQ: f64 = 100.0;
@@ -127,7 +126,7 @@ impl BasestationHandle {
             let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
             let mut id_map = config.robot_id_map;
 
-            let mut last_cmd_time = Instant::now();
+            let last_cmd_time = Instant::now();
             let mut all_ids = HashSet::new();
             loop {
                 // Send commands

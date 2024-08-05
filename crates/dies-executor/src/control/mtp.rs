@@ -11,11 +11,12 @@ pub struct MTP {
 
 impl MTP {
     pub fn new() -> Self {
-        Self { // this parameters seemingly don't matter, since stuff is loaded from config
+        Self {
+            // this parameters seemingly don't matter, since stuff is loaded from config
             setpoint: None,
             kp: 1.0,
             proportional_time_window: Duration::from_millis(700),
-            cutoff_distance: 30.0
+            cutoff_distance: 30.0,
         }
     }
 
@@ -58,7 +59,6 @@ impl MTP {
         let distance = displacement.magnitude();
 
         if distance < self.cutoff_distance {
-
             return Vector2::zeros();
         }
 
@@ -89,11 +89,14 @@ impl MTP {
         let time_to_target = distance / max_speed;
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
-            let proportional_velocity_magnitude = f64::max(distance - self.cutoff_distance, 0.0) * (self.kp * (1.0 - care_factor)) + 100.0 * care_factor;
+            let proportional_velocity_magnitude = f64::max(distance - self.cutoff_distance, 0.0)
+                * (self.kp * (1.0 - care_factor))
+                + 100.0 * care_factor;
             let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
 
             let mut v_control = dv_magnitude;
-            if v_control < 0.0 { // decelerate a lot faster than accelerate since inertia
+            if v_control < 0.0 {
+                // decelerate a lot faster than accelerate since inertia
                 v_control *= 5.0 * (1.0 + care_factor);
             }
 
