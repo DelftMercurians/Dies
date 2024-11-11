@@ -245,7 +245,7 @@ impl Simulation {
             .translation(Vector::new(0.0, 0.0, -GROUND_THICKNESS / 2.0))
             .build();
         let ground_collider =
-            ColliderBuilder::cuboid(field_width / 2.0, field_length / 2.0, GROUND_THICKNESS)
+            ColliderBuilder::cuboid(field_length / 2.0, field_width / 2.0, GROUND_THICKNESS)
                 .build();
         let ground_body_handle = simulation.rigid_body_set.insert(ground_body);
         simulation.collider_set.insert_with_parent(
