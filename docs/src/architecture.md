@@ -26,17 +26,20 @@ The behavior of the players is determined by the `TeamController`. This in turn 
 `Role`s can in turn use _skills_ to perform common reusable and composable tasks, such as moving to a position, or kicking the ball.
 
 ```mermaid
-graph TD
-Executor <--> BasestationClient
-    Executor <--> SSLClient
-    World --> Executor
-    Executor --> TeamController
-    SSLClient --> World
-    TeamController --> PlayerController
-    TeamController --> Strategy
-    Strategy --> Role
-    Role --> Skill
-    PlayerController <--> Role
+flowchart LR
+    SSL[SSL Client] -- Vision + Referee Data --> Executor
+    BS[Basestation Client] <-- Robot Commands/Feedback --> Executor
+    Executor -- Data from environment  --> World
+    World -- Filtered Data --> Executor
+    Executor -- World Data --> Team[Team Controller]
+    Team -- Player Commands --> Executor
+    Team <-- World Data/Player Commands --> Strategy[Strategy]
+    Strategy --> Role1[Role]
+    Strategy --> Role2[Role]
+    Strategy --> Role3[Role]
+    Team <--> Player1[Player Controller]
+    Team <--> Player2[Player Controller]
+    Team <--> Player3[Player Controller]
 ```
 
 ## Crates

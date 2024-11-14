@@ -22,14 +22,6 @@ You'll need the following dependencies on your system:
 
 To run Dies locally, simply use `cargo run -- <options>`.
 
-If you are connected to the team VPN, you can run your local copy of Dies on the server. For now, this will only work on Linux. First of all make sure you have `ssh` and `rsync` and that your public key is added to the server. Then, you can run the following command:
-
-```sh
-./run.sh <options>
-```
-
-_Note:_ If you have large files in the repository that you wouldn't like to upload to the server, add their names to `.rsyncignore`.
-
 ### Debugging hanging issues
 
 If you are experiencing hanging issues, you can use `tokio-console` to see the state of running tasks. To do this, you need to install `tokio-console`:
