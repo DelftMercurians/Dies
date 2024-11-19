@@ -118,12 +118,12 @@ impl Default for Velocity {
 pub struct PlayerControlInput {
     /// Target position. If `None`, the player will just follow the given velocity
     pub position: Option<Vector2>,
-    /// Target velocity. This is added to the output of the position
-    /// controller.
+    /// Target velocity. This is added to the output of the position controller.
     pub velocity: Velocity,
-    /// Target yaw. If `None` the player will just follow the given angula
-    /// velocity
+    /// Target yaw. If `None` the player will just follow the given angular velocity
     pub yaw: Option<Angle>,
+    /// Target angular velocity. This is added to the output of the yaw
+    pub angular_velocity: Option<f64>,
     /// Dribbler speed normalised to \[0, 1\]
     pub dribbling_speed: f64,
     /// Kicker control input

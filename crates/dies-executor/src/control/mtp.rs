@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use dies_core::Vector2;
 
+/// Minimum Time Path
 pub struct MTP {
     setpoint: Option<Vector2>,
     kp: f64,

@@ -33,7 +33,8 @@ pub struct PlayerController {
 
     yaw_control: YawController,
     last_yaw: Angle,
-    /// Output angular velocity or heading
+    // ToDo enum instead of target_z for 2 things
+    /// Output angular velocity (has_target_headis == false || has_imu == false) or heading
     target_z: f64,
 
     frame_misses: usize,
@@ -342,6 +343,16 @@ impl PlayerController {
                 self.switch_heading = Some(false);
             }
             self.target_z = 0.0;
+        }
+        
+        // Set angular velocity
+        if self.has_target_heading == false || self.have_imu == false {
+            match input.angular_velocity {
+                Some(angular_velocity) => { self.target_z = angular_velocity; }
+                None => { self.target_z = 0.0; }
+            }
+        } else {
+            // ToDo
         }
 
         // Set dribbling speed

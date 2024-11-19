@@ -1,6 +1,7 @@
 use dies_core::Angle;
 
 pub struct YawController {
+    /// Proportional gain
     kp: f64,
     cutoff_distance: f64,
     target_yaw: Option<Angle>,

@@ -56,6 +56,7 @@ impl ExecutorHandle {
             .ok()
     }
 
+    // messages are handeled in the executor run_rt_live
     pub fn send(&self, msg: ControlMsg) {
         self.control_tx
             .send(msg)
