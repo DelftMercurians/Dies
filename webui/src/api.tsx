@@ -383,6 +383,22 @@ export const useKeyboardControl = ({
       }
       command.data.command.data.dribble_speed = dribble_speed;
 
+      if (pressedKeys.has("c")) {
+        const command = {
+          type: "OverrideCommand",
+          data: {
+            player_id: playerId,
+            command: {
+              type: "Kick",
+              data: {
+                speed: kickSpeedRef.current,
+              },
+            },
+          },
+        } satisfies UiCommand;
+        sendCommand(command as UiCommand);
+      } 
+
       if (vel_mag > 0 || angular_velocity !== 0 || dribble_speed > 0) {
         sendCommand(command as UiCommand);
       }

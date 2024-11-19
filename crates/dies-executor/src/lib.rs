@@ -116,6 +116,7 @@ impl PlayerOverrideState {
                 arm_kick,
             } => PlayerControlInput {
                 velocity: Velocity::local(velocity),
+                angular_velocity: Some(angular_velocity),
                 dribbling_speed: dribble_speed,
                 kicker: if arm_kick {
                     KickerControlInput::Arm
@@ -131,6 +132,7 @@ impl PlayerOverrideState {
                 arm_kick,
             } => PlayerControlInput {
                 velocity: Velocity::global(velocity),
+                angular_velocity: Some(angular_velocity),
                 dribbling_speed: dribble_speed,
                 kicker: if arm_kick {
                     KickerControlInput::Arm
