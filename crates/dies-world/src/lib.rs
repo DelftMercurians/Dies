@@ -13,21 +13,21 @@ pub use dies_core::{
 };
 use dies_core::{
     ExecutorSettings, FieldMask, GameState, PlayerFeedbackMsg, PlayerId, PlayerModel,
-    TrackerSettings, Vector2, WorldData, WorldInstant,
+    TrackerSettings, Vector2, VisionMsg, WorldData, WorldInstant,
 };
 use player::PlayerTracker;
 
 use crate::game_state::GameStateTracker;
 
+enum GameUpdate {
+    Vision(VisionMsg),
+    Gc(Referee),
+}
+
 /// A struct to track the world state.
 pub struct WorldTracker {
-    /// Whether our team color is blue
-    is_blue: bool,
-    /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
-    /// converting coordinates.
-    play_dir_x: f64,
-    own_players_tracker: HashMap<PlayerId, PlayerTracker>,
-    opp_players_tracker: HashMap<PlayerId, PlayerTracker>,
+    blue_players_tracker: HashMap<PlayerId, PlayerTracker>,
+    yellow_players_tracker: HashMap<PlayerId, PlayerTracker>,
     ball_tracker: BallTracker,
     game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
@@ -51,10 +51,8 @@ impl WorldTracker {
     /// Create a new world tracker from a config.
     pub fn new(settings: &ExecutorSettings) -> Self {
         Self {
-            is_blue: settings.tracker_settings.is_blue,
-            play_dir_x: settings.tracker_settings.initial_opp_goal_x,
-            own_players_tracker: HashMap::new(),
-            opp_players_tracker: HashMap::new(),
+            blue_players_tracker: HashMap::new(),
+            yellow_players_tracker: HashMap::new(),
             ball_tracker: BallTracker::new(&settings.tracker_settings),
             game_state_tracker: GameStateTracker::new(settings.tracker_settings.initial_opp_goal_x),
             field_geometry: None,
@@ -68,105 +66,16 @@ impl WorldTracker {
         }
     }
 
-    pub fn update_settings(&mut self, settings: &ExecutorSettings) {
-        let tracker_settings = &settings.tracker_settings;
-        assert_eq!(
-            tracker_settings.initial_opp_goal_x, self.play_dir_x,
-            "Changing the initial opponent goal x coordinate is not supported"
-        );
-        assert_eq!(
-            tracker_settings.is_blue, self.is_blue,
-            "Changing the team color is not supported"
-        );
-
-        self.player_model = settings.into();
-        self.tracker_settings = tracker_settings.clone();
-        for player_tracker in self.own_players_tracker.values_mut() {
-            player_tracker.update_settings(tracker_settings);
+    /// Update the world state from a vision or referee message.
+    pub fn update(&mut self, update: GameUpdate, time: WorldInstant) {
+        match update {
+            GameUpdate::Vision(data) => self.update_from_vision(&data, time),
+            GameUpdate::Gc(data) => self.update_from_referee(&data),
         }
-        for player_tracker in self.opp_players_tracker.values_mut() {
-            player_tracker.update_settings(tracker_settings);
-        }
-        self.ball_tracker.update_settings(tracker_settings);
-
-        // Log the field mask lines
-        if let Some(geom) = self.field_geometry.as_ref() {
-            let FieldMask {
-                x_min,
-                x_max,
-                y_min,
-                y_max,
-            } = &self.tracker_settings.field_mask;
-            dies_core::debug_line(
-                "mask.x_min".to_string(),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_min,
-                    geom.field_width / 2.0 * y_min,
-                ),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_min,
-                    geom.field_width / 2.0 * y_max,
-                ),
-                dies_core::DebugColor::Green,
-            );
-            dies_core::debug_line(
-                "mask.x_max".to_string(),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_max,
-                    geom.field_width / 2.0 * y_min,
-                ),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_max,
-                    geom.field_width / 2.0 * y_max,
-                ),
-                dies_core::DebugColor::Green,
-            );
-            dies_core::debug_line(
-                "mask.y_min".to_string(),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_min,
-                    geom.field_width / 2.0 * y_min,
-                ),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_max,
-                    geom.field_width / 2.0 * y_min,
-                ),
-                dies_core::DebugColor::Green,
-            );
-            dies_core::debug_line(
-                "mask.y_max".to_string(),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_min,
-                    geom.field_width / 2.0 * y_max,
-                ),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_max,
-                    geom.field_width / 2.0 * y_max,
-                ),
-                dies_core::DebugColor::Green,
-            );
-        }
-    }
-
-    /// Update the sign of the enemy goal's x coordinate (in ssl-vision coordinates).
-    pub fn set_play_dir_x(&mut self, sign: f64) {
-        self.play_dir_x = sign.signum();
-        self.ball_tracker.set_play_dir_x(self.play_dir_x);
-        self.game_state_tracker.set_play_dir_x(self.play_dir_x);
-        for player_tracker in self.own_players_tracker.values_mut() {
-            player_tracker.set_play_dir_x(self.play_dir_x);
-        }
-        for player_tracker in self.opp_players_tracker.values_mut() {
-            player_tracker.set_play_dir_x(self.play_dir_x);
-        }
-    }
-
-    pub fn get_play_dir_x(&self) -> f64 {
-        self.play_dir_x
     }
 
     /// Update the world state from a referee message.
-    pub fn update_from_referee(&mut self, data: &Referee) {
+    fn update_from_referee(&mut self, data: &Referee) {
         self.game_state_tracker
             .update_ball_movement_check(self.ball_tracker.get().as_ref());
 
@@ -186,7 +95,7 @@ impl WorldTracker {
     }
 
     /// Update the world state from a vision message.
-    pub fn update_from_vision(&mut self, data: &SSL_WrapperPacket, time: WorldInstant) {
+    fn update_from_vision(&mut self, data: &SSL_WrapperPacket, time: WorldInstant) {
         if let Some(frame) = data.detection.as_ref() {
             // Update t_received
             let first_t_received = *self.first_t_received.get_or_insert(time);
@@ -202,12 +111,7 @@ impl WorldTracker {
             let first_t_capture = *self.first_t_capture.get_or_insert(t_capture);
             self.last_t_capture = Some(t_capture - first_t_capture);
 
-            let own_players = if self.is_blue {
-                &frame.robots_blue
-            } else {
-                &frame.robots_yellow
-            };
-            for player in own_players {
+            for player in &frame.robots_blue {
                 let in_mask = self.tracker_settings.field_mask.contains(
                     player.x(),
                     player.y(),
@@ -218,22 +122,17 @@ impl WorldTracker {
                 }
 
                 let id = PlayerId::new(player.robot_id());
-                let tracker = self.own_players_tracker.get_mut(&id);
+                let tracker = self.blue_players_tracker.get_mut(&id);
                 if let Some(tracker) = tracker {
                     tracker.update(t_capture, player);
                 }
             }
             // Check for missed players
-            for (_, tracker) in self.own_players_tracker.iter_mut() {
+            for (_, tracker) in self.blue_players_tracker.iter_mut() {
                 tracker.check_is_gone(t_capture, time, true);
             }
 
-            let opp_players = if self.is_blue {
-                &frame.robots_yellow
-            } else {
-                &frame.robots_blue
-            };
-            for player in opp_players {
+            for player in &frame.robots_yellow {
                 let in_mask = self.tracker_settings.field_mask.contains(
                     player.x(),
                     player.y(),
@@ -245,13 +144,13 @@ impl WorldTracker {
 
                 let id = PlayerId::new(player.robot_id());
                 let tracker = self
-                    .opp_players_tracker
+                    .yellow_players_tracker
                     .entry(id)
                     .or_insert_with(|| PlayerTracker::new(id, &self.tracker_settings));
                 tracker.update(t_capture, player);
             }
             // Check for missed players
-            for (_, tracker) in self.opp_players_tracker.iter_mut() {
+            for (_, tracker) in self.yellow_players_tracker.iter_mut() {
                 tracker.check_is_gone(t_capture, time, false);
             }
 
@@ -267,11 +166,9 @@ impl WorldTracker {
         }
         if let Some(geometry) = data.geometry.as_ref() {
             // We don't expect the field geometry to change, so only update it once.
-            if self.field_geometry.is_some() {
-                return;
+            if self.field_geometry.is_none() {
+                self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
             }
-
-            self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
         }
     }
 
