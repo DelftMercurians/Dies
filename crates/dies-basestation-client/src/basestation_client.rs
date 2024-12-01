@@ -5,8 +5,10 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
-use glue::{Monitor, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
+
+#[cfg(feature = "glue")]
+use glue::{Monitor, Serial};
 
 const MAX_MSG_FREQ: f64 = 200.0;
 const BASE_STATION_READ_FREQ: f64 = 100.0;
@@ -14,7 +16,10 @@ const BASE_STATION_READ_FREQ: f64 = 100.0;
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
 pub fn list_serial_ports() -> Vec<String> {
+    #[cfg(feature = "glue")]
     Serial::list_ports(true)
+    #[cfg(not(feature = "glue"))]
+    vec![]
 }
 
 /// Protocol version for the base station communication.
@@ -76,13 +81,17 @@ impl Default for BasestationClientConfig {
             #[cfg(not(target_os = "windows"))]
             port_name: "/dev/ttyACM0".to_string(),
             robot_id_map: HashMap::new(),
+            #[cfg(feature = "glue")]
             protocol: BaseStationProtocol::V1,
+            #[cfg(not(feature = "glue"))]
+            protocol: BaseStationProtocol::V0,
         }
     }
 }
 
 enum Connection {
     V0(Serial),
+    #[cfg(feature = "glue")]
     V1(Monitor),
 }
 
@@ -112,12 +121,17 @@ impl BasestationHandle {
                 let serial = Serial::new(&port_name)?;
                 Connection::V0(serial)
             }
+            #[cfg(feature = "glue")]
             BaseStationProtocol::V1 => {
                 let monitor = Monitor::start();
                 monitor
                     .connect_to(&port_name)
                     .map_err(|_| anyhow!("Failed to connect to base station"))?;
                 Connection::V1(monitor)
+            }
+            #[cfg(not(glue))]
+            BaseStationProtocol::V1 => {
+                return Err(anyhow!("Glue protocol not enabled"));
             }
         };
 
@@ -197,6 +211,7 @@ impl BasestationHandle {
                 // }
 
                 // Receive feedback
+                #[cfg(feature = "glue")]
                 if let Connection::V1(monitor) = &mut connection {
                     if !monitor.is_connected() {
                         panic!(

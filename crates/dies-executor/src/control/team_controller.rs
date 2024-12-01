@@ -12,8 +12,6 @@ use crate::{
     PlayerControlInput, StrategyMap,
 };
 
-const ACTIVATION_TIME: f64 = 0.2;
-
 #[derive(Default)]
 struct RoleState {
     skill_map: HashMap<String, SkillState>,
@@ -21,12 +19,8 @@ struct RoleState {
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
-    strategy: StrategyMap,
-    active_strat: Option<String>,
-    role_states: HashMap<PlayerId, RoleState>,
     settings: ExecutorSettings,
     halt: AdHocStrategy,
-    start_time: std::time::Instant,
 }
 
 impl TeamController {
@@ -34,12 +28,8 @@ impl TeamController {
     pub fn new(strategy: StrategyMap, settings: &ExecutorSettings) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
-            strategy,
-            role_states: HashMap::new(),
             settings: settings.clone(),
-            active_strat: None,
             halt: AdHocStrategy::new(),
-            start_time: std::time::Instant::now(),
         };
         team.update_controller_settings(settings);
         team
@@ -79,54 +69,7 @@ impl TeamController {
             }
         }
 
-        if self.start_time.elapsed().as_secs_f64() < ACTIVATION_TIME {
-            println!("detected_ids: {:?}", detected_ids);
-            return;
-        }
-
         let state = world_data.current_game_state.game_state;
-        let strategy = if matches!(
-            world_data.current_game_state.game_state,
-            GameState::BallReplacement(_)
-        ) {
-            &mut self.halt
-        } else if let Some(strategy) = self.strategy.get_strategy(&state) {
-            let name = strategy.name().to_owned();
-            dies_core::debug_string("active_strat", &name);
-            if self.active_strat.as_ref() != Some(&name) {
-                log::info!("Switching to strategy: {}", name);
-                self.active_strat = Some(name);
-                strategy.on_enter(StrategyCtx { world: &world_data });
-            }
-            strategy
-        } else {
-            return;
-        };
-
-        let strategy_ctx = StrategyCtx { world: &world_data };
-        strategy.update(strategy_ctx);
-
-        let mut role_types = HashMap::new();
-        let mut inputs =
-            world_data
-                .own_players
-                .iter()
-                .fold(PlayerInputs::new(), |mut inputs, player_data| {
-                    let id = player_data.id;
-                    let strategy_ctx = StrategyCtx { world: &world_data };
-                    if let Some(role) = strategy.get_role(id, strategy_ctx) {
-                        let role_state = self.role_states.entry(id).or_default();
-                        let role_ctx =
-                            RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
-                        let mut new_input = role.update(role_ctx);
-                        new_input.role_type = role.role_type();
-                        role_types.insert(id, new_input.role_type);
-                        inputs.insert(id, new_input);
-                    } else {
-                        inputs.insert(id, PlayerControlInput::new());
-                    }
-                    inputs
-                });
 
         // If in a stop state, override the inputs
         if matches!(
@@ -172,7 +115,7 @@ impl TeamController {
                     &all_players,
                 );
             } else {
-                controller.increment_frames_misses();
+                controller.increment_frames_missed();
             }
         }
     }

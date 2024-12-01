@@ -196,7 +196,7 @@ impl PlayerController {
     }
 
     /// Increment the missing frame count, stops the robot if it is too high.
-    pub fn increment_frames_misses(&mut self) {
+    pub fn increment_frames_missed(&mut self) {
         self.frame_misses += 1;
         // if self.frame_misses > MISSING_FRAMES_THRESHOLD {
         //     log::warn!("Player {} has missing frames, stopping", self.id);

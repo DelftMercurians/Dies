@@ -48,6 +48,7 @@ pub enum RobotCmd {
     YawRateControl,
 }
 
+#[cfg(feature = "glue")]
 impl From<RobotCmd> for glue::Radio_RobotCommand {
     fn from(val: RobotCmd) -> Self {
         match val {
@@ -140,6 +141,7 @@ impl PlayerMoveCmd {
     }
 }
 
+#[cfg(feature = "glue")]
 impl From<PlayerMoveCmd> for glue::Radio_Command {
     fn from(val: PlayerMoveCmd) -> Self {
         // if val.id == PlayerId::new(1) {
@@ -250,11 +252,13 @@ pub enum SysStatus {
 }
 
 impl SysStatus {
+    #[cfg(feature = "glue")]
     pub fn from_option(value: Option<glue::HG_Status>) -> Option<Self> {
         value.map(Into::into)
     }
 }
 
+#[cfg(feature = "glue")]
 impl From<glue::HG_Status> for SysStatus {
     fn from(val: glue::HG_Status) -> Self {
         match val {
