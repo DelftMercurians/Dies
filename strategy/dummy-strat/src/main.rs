@@ -1,8 +1,9 @@
+use dummy_strat::{StrategyInput, StrategyOutput};
 use interprocess::local_socket::{
 	tokio::{prelude::*, Stream}, GenericFilePath, GenericNamespaced
 };
 use tokio::{
-	io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+	io::{AsyncReadExt, AsyncWriteExt, BufReader},
 	try_join,
 };
 
@@ -24,14 +25,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (recver, mut sender) = conn.split();
     let mut recver = BufReader::new(recver);
 
-    // Allocate a sizeable buffer for receiving. This size should be enough and should be easy to
-    // find for the allocator.
-    let mut buffer = String::with_capacity(128);
+    // Allocate a sizeable buffer for receiving. This size should be enough and easy to allocate.
+    let mut buffer = Vec::new(); // Use a byte buffer for receiving serialized data
 
-    // Describe the send operation as writing our whole string.
-    let send = sender.write_all(b"Hello from client!\n");
-    // Describe the receive operation as receiving until a newline into our buffer.
-    let recv = recver.read_line(&mut buffer);
+    // Create a StrategyOutput instance to send
+    let strategy_output = StrategyOutput {
+        message: String::from("Hello from client!"),
+    };
+
+    // Serialize StrategyOutput to JSON
+    let serialized_output = serde_json::to_vec(&strategy_output).expect("Failed to serialize output");
+
+    // Describe the send operation as sending the serialized StrategyOutput
+    let send = sender.write_all(&serialized_output);
+
+    // Describe the receive operation as receiving the serialized StrategyInput
+    let recv = recver.read_to_end(&mut buffer);
 
     // Concurrently perform both operations.
     try_join!(send, recv)?;
@@ -39,7 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Close the connection a bit earlier than you'd think we would. Nice practice!
     drop((recver, sender));
 
-    // Display the results when we're done!
-    println!("Server answered: {}", buffer.trim());
+    // Deserialize the received data into StrategyInput
+    let strategy_input: StrategyInput = serde_json::from_slice(&buffer).expect("Failed to deserialize input");
+
+    // Produce output after receiving the input from server
+    println!("Server sent: {}", strategy_input.message);
     Ok(())
 }
