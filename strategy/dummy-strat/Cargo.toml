@@ -1,6 +1,14 @@
 [package]
 name = "dummy-strat"
 version = "0.1.0"
-edition.workspace = true
+edition = "2021"
+
+[[bin]]
+name = "strategy"
+path = "src/main.rs"
 
 [dependencies]
+interprocess = { version = "2.2.2", features = ["tokio"] }
+tokio = { version = "1.41.1", features = ["full"] }
+
+# cargo run --package dummy-strat
