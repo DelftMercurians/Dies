@@ -2,14 +2,14 @@ use interprocess::local_socket::{
     tokio::{prelude::*, Stream},
     GenericNamespaced, ListenerOptions,
 };
+use serde_json::{self};
 use std::io;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader},
     try_join,
 };
-use serde_json::{self};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StrategyInput {
@@ -21,16 +21,14 @@ pub struct StrategyOutput {
     pub message: String,
 }
 
-
 pub async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
     // Describe the things we do when we've got a connection ready.
     async fn handle_conn(conn: Stream) -> io::Result<()> {
         let mut recver = BufReader::new(&conn);
         let mut sender = &conn;
 
-        // Allocate a sizeable buffer for receiving. This size should be big enough and easy to
-        // find for the allocator.
-        let mut buffer = Vec::new(); // Use a byte buffer for receiving serialized data
+        // Allocate a buffer with a fixed size of 128 bytes
+        let mut buffer = vec![0u8; 1024]; // 128-byte buffer
 
         // Create a StrategyInput instance to send
         let strategy_input = StrategyInput {
@@ -44,7 +42,7 @@ pub async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
         // Describe the send operation as sending the serialized StrategyInput
         let send = sender.write_all(&serialized_input);
         // Describe the receive operation as receiving a line into our big buffer.
-        let recv = recver.read_to_end(&mut buffer);
+        let recv = recver.read(&mut buffer);
 
         // Run both operations concurrently.
         try_join!(recv, send)?;
