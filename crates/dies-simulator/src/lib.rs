@@ -4,8 +4,8 @@ use std::{
 };
 
 use dies_core::{
-    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2,
-    WorldInstant,
+    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotMainboardCmd, SysStatus,
+    Vector2,
 };
 use dies_protos::{
     ssl_gc_referee_message::{referee, Referee},
@@ -15,6 +15,7 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
+use dies_world::world::WorldInstant;
 use rapier3d_f64::prelude::*;
 use serde::Serialize;
 use utils::IntervalTrigger;
@@ -406,16 +407,16 @@ impl Simulation {
                 player.target_z = -command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
-                is_kicking = matches!(command.robot_cmd, RobotCmd::Kick);
+                is_kicking = matches!(command.robot_cmd, RobotMainboardCmd::Kick);
 
                 match command.robot_cmd {
-                    RobotCmd::Kick => {
+                    RobotMainboardCmd::Kick => {
                         is_kicking = true;
                     }
-                    RobotCmd::YawRateControl => {
+                    RobotMainboardCmd::YawRateControl => {
                         player.heading_control = false;
                     }
-                    RobotCmd::HeadingControl => {
+                    RobotMainboardCmd::HeadingControl => {
                         player.heading_control = true;
                     }
                     _ => {}

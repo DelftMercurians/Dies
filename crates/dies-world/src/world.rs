@@ -1,7 +1,6 @@
 use std::{collections::HashSet, fmt::Display, hash::Hash, time::Instant};
 
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
 
 use crate::{
     distance_to_line, find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry,
@@ -45,16 +44,9 @@ impl WorldInstant {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
-pub struct WorldUpdate {
-    pub world_data: WorldData,
-}
-
 /// The game state, as reported by the referee.
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub enum GameState {
     #[default]
     Unknown,
@@ -104,39 +96,8 @@ impl PartialEq for GameState {
 
 impl Eq for GameState {}
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum StrategyGameStateMacther {
-    #[default]
-    Any,
-    Specific(GameState),
-    AnyOf(HashSet<GameState>),
-}
-
-impl StrategyGameStateMacther {
-    pub fn matches(&self, state: &GameState) -> bool {
-        match self {
-            StrategyGameStateMacther::Any => true,
-            StrategyGameStateMacther::Specific(s) => s == state,
-            StrategyGameStateMacther::AnyOf(states) => states.contains(state),
-        }
-    }
-
-    pub fn any() -> Self {
-        StrategyGameStateMacther::Any
-    }
-
-    pub fn specific(state: GameState) -> Self {
-        StrategyGameStateMacther::Specific(state)
-    }
-
-    pub fn any_of(states: &[GameState]) -> Self {
-        StrategyGameStateMacther::AnyOf(states.iter().cloned().collect())
-    }
-}
-
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
 pub struct BallData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
     /// seconds). This is the time that ssl-vision received the frame.
@@ -152,7 +113,6 @@ pub struct BallData {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[typeshare]
 pub struct GameStateData {
     /// The state of current game
     pub game_state: GameState,
@@ -163,7 +123,6 @@ pub struct GameStateData {
 
 /// A struct to store the player state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
 pub struct PlayerData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
     /// seconds). This is the time that ssl-vision received the frame.
@@ -250,8 +209,7 @@ pub enum BallPrediction {
 
 /// A struct to store the world state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
-pub struct WorldData {
+pub struct WorldFrame {
     /// Timestamp of the frame, in seconds. This timestamp is relative to the time the
     /// world tracking was started.
     pub t_received: f64,
@@ -268,7 +226,7 @@ pub struct WorldData {
     pub player_model: PlayerModel,
 }
 
-impl WorldData {
+impl WorldFrame {
     pub fn get_player(&self, id: PlayerId) -> Option<&PlayerData> {
         self.own_players.iter().find(|p| p.id == id)
     }
@@ -573,8 +531,8 @@ pub fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
     true
 }
 
-pub fn mock_world_data() -> WorldData {
-    WorldData {
+pub fn mock_world_data() -> WorldFrame {
+    WorldFrame {
         own_players: vec![PlayerData {
             id: PlayerId::new(0),
             position: Vector2::new(1000.0, 1000.0),

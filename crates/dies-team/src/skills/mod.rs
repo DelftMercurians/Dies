@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use dies_core::{
     find_intersection, perp, which_side_of_robot, Angle, PlayerData, PlayerId, SysStatus, Vector2,
-    WorldData,
+    WorldFrame,
 };
 use serde::{Deserialize, Serialize};
 
@@ -13,11 +13,11 @@ const DEFAULT_VEL_TOLERANCE: f64 = 30.0;
 
 pub struct SkillCtx<'a> {
     pub player: &'a PlayerData,
-    pub world: &'a WorldData,
+    pub world: &'a WorldFrame,
 }
 
 impl SkillCtx<'_> {
-    pub fn new<'a>(player: &'a PlayerData, world: &'a WorldData) -> SkillCtx<'a> {
+    pub fn new<'a>(player: &'a PlayerData, world: &'a WorldFrame) -> SkillCtx<'a> {
         SkillCtx { player, world }
     }
 }

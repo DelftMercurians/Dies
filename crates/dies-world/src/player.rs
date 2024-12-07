@@ -2,12 +2,13 @@ use std::collections::VecDeque;
 
 use dies_core::{
     to_dies_coords2, to_dies_yaw, Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings,
-    Vector2, WorldInstant,
+    Vector2,
 };
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
+use crate::world::WorldInstant;
 
 const BREAKBEAM_WINDOW: usize = 100;
 const BREAKBEAM_DETECTION_THRESHOLD: usize = 5;

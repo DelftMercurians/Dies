@@ -10,6 +10,7 @@ dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 log = "0.4.22"
 nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
+serde = { version = "1.0.215", features = ["derive"] }
 
 [dev-dependencies]
 approx = "0.5.1"

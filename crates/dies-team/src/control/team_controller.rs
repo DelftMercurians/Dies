@@ -1,15 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
-use dies_core::{
-    Angle, ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, Vector2, WorldData,
-};
+use dies_core::{Angle, ExecutorSettings, PlayerCmd, PlayerId, RoleType, Vector2};
 use serde::{Deserialize, Serialize};
-
+use dies_protos::ssl_gc_state::GameState;
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
-use crate::{skills::SkillType, PlayerControlInput};
+use crate::{skills::SkillType, Obstacle, PlayerControlInput};
+use dies_world::WorldFrame;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TeamCommand {
@@ -83,7 +82,7 @@ impl TeamController {
     /// Update the controllers with the current state of the players.
     pub fn update(
         &mut self,
-        world_data: WorldData,
+        world_data: WorldFrame,
         manual_override: HashMap<PlayerId, PlayerControlInput>,
     ) {
         // Ensure there is a player controller for every ID
@@ -138,7 +137,7 @@ impl TeamController {
 }
 
 /// Override the inputs to comply with the stop state.
-fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
+fn comply(world_data: &WorldFrame, inputs: PlayerInputs) -> PlayerInputs {
     if let (Some(ball), Some(field)) = (world_data.ball.as_ref(), world_data.field_geom.as_ref()) {
         let game_state = world_data.current_game_state.game_state;
         let ball_pos = ball.position.xy();
@@ -168,8 +167,8 @@ fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
 
                     let min_distance = 800.0;
                     let max_radius = 4000;
-                    let target = dies_core::nearest_safe_pos(
-                        dies_core::Avoid::Circle { center: ball_pos },
+                    let target = nearest_safe_pos(
+                        crate::Avoid::Circle { center: ball_pos },
                         min_distance,
                         player_data.position,
                         input.position.unwrap_or(player_data.position),
@@ -196,8 +195,8 @@ fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
 
                     let min_distance = 800.0;
                     let max_radius = 4000;
-                    let target = dies_core::nearest_safe_pos(
-                        dies_core::Avoid::Line {
+                    let target = ::nearest_safe_pos(
+                        crate::Avoid::Line {
                             start: line_start,
                             end: line_end,
                         },
@@ -218,5 +217,86 @@ fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
             .collect()
     } else {
         inputs
+    }
+}
+
+fn get_obstacles_for_player(world: &WorldFrame, role: RoleType) -> Vec<Obstacle> {
+    if let Some(field_geom) = world.field_geom {
+        let field_boundary = {
+            let hl = field_geom.field_length / 2.0;
+            let hw = field_geom.field_width / 2.0;
+            Obstacle::Rectangle {
+                min: Vector2::new(
+                    -hl - field_geom.boundary_width,
+                    -hw - field_geom.boundary_width,
+                ),
+                max: Vector2::new(
+                    hl + field_geom.boundary_width,
+                    hw + field_geom.boundary_width,
+                ),
+            }
+        };
+        let mut obstacles = vec![field_boundary];
+
+        // Add own defence area for non-keeper robots
+        if role != RoleType::Goalkeeper {
+            let lower = Vector2::new(-10_000.0, -field_geom.penalty_area_width / 2.0);
+            let upper = Vector2::new(
+                -field_geom.field_length / 2.0 + field_geom.penalty_area_depth + 50.0,
+                field_geom.penalty_area_width / 2.0,
+            );
+
+            let defence_area = Obstacle::Rectangle {
+                min: lower,
+                max: upper,
+            };
+            obstacles.push(defence_area);
+        }
+
+        // Add opponent defence area for all robots
+        let lower = Vector2::new(
+            field_geom.field_length / 2.0 - field_geom.penalty_area_depth - 50.0,
+            -field_geom.penalty_area_width / 2.0,
+        );
+        let upper = Vector2::new(10_0000.0, field_geom.penalty_area_width / 2.0);
+        let defence_area = Obstacle::Rectangle {
+            min: lower,
+            max: upper,
+        };
+        obstacles.push(defence_area);
+
+        match self.current_game_state.game_state {
+            GameState::Stop => {
+                // Add obstacle to prevent getting close to the ball
+                if let Some(ball) = &self.ball {
+                    obstacles.push(Obstacle::Circle {
+                        center: ball.position.xy(),
+                        radius: STOP_BALL_AVOIDANCE_RADIUS,
+                    });
+                }
+            }
+            GameState::Kickoff | GameState::PrepareKickoff => match role {
+                RoleType::KickoffKicker => {}
+                _ => {
+                    // Add center circle for non kicker robots
+                    obstacles.push(Obstacle::Circle {
+                        center: Vector2::zeros(),
+                        radius: field_geom.center_circle_radius,
+                    });
+                }
+            },
+            GameState::BallReplacement(_) => {}
+            GameState::PreparePenalty => {}
+            GameState::FreeKick => {}
+            GameState::Penalty => {}
+            GameState::PenaltyRun => {}
+            GameState::Run | GameState::Halt | GameState::Timeout | GameState::Unknown => {
+                // Nothing to do
+            }
+        };
+
+        obstacles
+    } else {
+        vec![]
     }
 }

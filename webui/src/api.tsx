@@ -18,7 +18,7 @@ import {
   UiMode,
   UiStatus,
   UiCommand,
-  WorldData,
+  WorldFrame,
   PostUiModeBody,
   PostUiCommandBody,
   UiWorldState,
@@ -42,7 +42,7 @@ export type Status =
 export type WorldStatus =
   | { status: "none" }
   | { status: "loading" }
-  | { status: "connected"; data: WorldData };
+  | { status: "connected"; data: WorldFrame };
 
 const queryClient = new QueryClient();
 const WsConnectedContext = createContext(false);
@@ -302,7 +302,7 @@ export const useKeyboardControl = ({
   mode = "global",
   fanSpeed,
   kickSpeed,
-  kick
+  kick,
 }: {
   playerId: number | null;
   speed: number;
@@ -366,7 +366,7 @@ export const useKeyboardControl = ({
       if (vel_mag > 0) {
         velocity = velocity.map((v) => (v / vel_mag) * speedRef.current) as [
           number,
-          number,
+          number
         ];
       }
       command.data.command.data.velocity = velocity;
@@ -431,7 +431,7 @@ export const useKeyboardControl = ({
   }, [playerId]);
 };
 
-export const WorldDataProvider: FC<PropsWithChildren> = ({ children }) => {
+export const WorldFrameProvider: FC<PropsWithChildren> = ({ children }) => {
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     addWsConnectedListener(setConnected);

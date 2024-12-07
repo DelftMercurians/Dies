@@ -5,19 +5,24 @@ use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_Wrapp
 mod ball;
 mod filter;
 mod game_state;
+pub mod geom;
 mod player;
+mod world;
 
-use ball::BallTracker;
-pub use dies_core::{
-    BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
-};
-use dies_core::{
-    ExecutorSettings, FieldMask, GameState, PlayerFeedbackMsg, PlayerId, PlayerModel,
-    TrackerSettings, Vector2, WorldData, WorldInstant,
-};
-use player::PlayerTracker;
+pub use world::*;
 
 use crate::game_state::GameStateTracker;
+use ball::BallTracker;
+use dies_core::{
+    ExecutorSettings, FieldMask, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2,
+};
+pub use dies_core::{FieldCircularArc, FieldGeometry, FieldLineSegment};
+use player::PlayerTracker;
+use serde::{Deserialize, Serialize};
+use typeshare_annotation::typeshare;
+use world::{PlayerModel, WorldInstant};
+
+pub use world::*;
 
 /// A struct to track the world state.
 pub struct WorldTracker {
@@ -305,7 +310,7 @@ impl WorldTracker {
     ///
     /// Returns `None` if the world state is not initialized (see
     /// [`WorldTracker::is_init`]).
-    pub fn get(&mut self) -> WorldData {
+    pub fn get(&mut self) -> WorldFrame {
         let field_geom = if let Some(v) = &self.field_geometry {
             Some(v)
         } else {
@@ -341,7 +346,7 @@ impl WorldTracker {
             },
         };
 
-        WorldData {
+        WorldFrame {
             dt: self.dt_received.unwrap_or(0.0),
             t_capture: self.last_t_capture.unwrap_or(0.0),
             t_received: self.last_t_received.unwrap_or(0.0),
@@ -603,3 +608,79 @@ impl WorldTracker {
 //         assert_eq!(tracker.game_state_tracker.get(), GameState::Stop);
 //     }
 // }
+
+/// A field mask for the `WorldTracker`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[typeshare]
+pub struct FieldMask {
+    pub x_min: f64,
+    pub x_max: f64,
+    pub y_min: f64,
+    pub y_max: f64,
+}
+
+impl FieldMask {
+    pub fn contains(&self, x: f32, y: f32, field_geom: Option<&FieldGeometry>) -> bool {
+        if let Some(field_geom) = field_geom {
+            let x = x as f64;
+            let y = y as f64;
+            let x_min = (field_geom.field_length / 2.0 + field_geom.boundary_width) * self.x_min;
+            let x_max = (field_geom.field_length / 2.0 + field_geom.boundary_width) * self.x_max;
+            let y_min = (field_geom.field_width / 2.0 + field_geom.boundary_width) * self.y_min;
+            let y_max = (field_geom.field_width / 2.0 + field_geom.boundary_width) * self.y_max;
+            x >= x_min && x <= x_max && y >= y_min && y <= y_max
+        } else {
+            false
+        }
+    }
+}
+
+impl Default for FieldMask {
+    fn default() -> Self {
+        Self {
+            x_min: -1.0,
+            x_max: 1.0,
+            y_min: -1.0,
+            y_max: 1.0,
+        }
+    }
+}
+
+/// Settings for the `WorldTracker`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[typeshare]
+pub struct TrackerSettings {
+    /// Whether our team color is blue
+    pub is_blue: bool,
+    /// The initial sign of the enemy goal's x coordinate in ssl-vision coordinates.
+    pub initial_opp_goal_x: f64,
+
+    pub field_mask: FieldMask,
+
+    /// Transition variance for the player Kalman filter.
+    pub player_unit_transition_var: f64,
+    /// Measurement variance for the player Kalman filter.
+    pub player_measurement_var: f64,
+    /// Smoothinfg factor for the yaw LPF
+    pub player_yaw_lpf_alpha: f64,
+
+    /// Transition variance for the ball Kalman filter.
+    pub ball_unit_transition_var: f64,
+    /// Measurement variance for the ball Kalman filter.
+    pub ball_measurement_var: f64,
+}
+
+impl Default for TrackerSettings {
+    fn default() -> Self {
+        Self {
+            is_blue: true,
+            initial_opp_goal_x: 1.0,
+            player_unit_transition_var: 95.75,
+            player_measurement_var: 0.01,
+            player_yaw_lpf_alpha: 0.15,
+            ball_unit_transition_var: 20.48,
+            ball_measurement_var: 0.01,
+            field_mask: FieldMask::default(),
+        }
+    }
+}

@@ -10,6 +10,7 @@ members = [
     "crates/dies-webui",
     "crates/dies-world",
     "crates/dies-logger",
+    "crates/dies-webui-common",
     "strategy/dummy-strat",
 ]
 package.edition = "2021"

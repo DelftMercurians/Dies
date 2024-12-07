@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    ScenarioInfo, SimulatorCmd, WorldData,
+    ScenarioInfo, SimulatorCmd, WorldFrame,
 };
 use dies_ssl_client::SslClientConfig;
 use dies_team::scenarios::ScenarioType;
@@ -14,6 +14,7 @@ mod executor_task;
 mod interactive_main_loop;
 mod routes;
 mod server;
+mod ui_common;
 
 pub use server::start;
 
@@ -118,7 +119,7 @@ pub(crate) struct PostUiModeBody {
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum UiWorldState {
-    Loaded(WorldData),
+    Loaded(WorldFrame),
     None,
 }
 
@@ -126,7 +127,7 @@ pub(crate) enum UiWorldState {
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum WsMessage<'a> {
-    WorldUpdate(&'a WorldData),
+    WorldUpdate(&'a WorldFrame),
     Debug(&'a DebugMap),
 }
 

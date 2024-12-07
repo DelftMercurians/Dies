@@ -24,10 +24,10 @@ impl std::fmt::Display for PlayerId {
     }
 }
 
-/// A command to the kicker of a robot.
+/// A command directly to the mainboard of a robot.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum RobotCmd {
-    /// Do nothing // TODO: What is this?
+pub enum RobotMainboardCmd {
+    /// Do nothing
     None,
     /// Arm the kicker
     Arm,
@@ -41,29 +41,34 @@ pub enum RobotCmd {
     Chip,
     /// Power board off
     PowerBoardOff,
+    /// Reboot the robot
     Reboot,
+    /// Beep the buzzer
     Beep,
+    /// Coast the motors
     Coast,
+    /// Control the heading of the robot
     HeadingControl,
+    /// Control the yaw rate of the robot
     YawRateControl,
 }
 
 #[cfg(feature = "glue")]
-impl From<RobotCmd> for glue::Radio_RobotCommand {
-    fn from(val: RobotCmd) -> Self {
+impl From<RobotMainboardCmd> for glue::Radio_RobotCommand {
+    fn from(val: RobotMainboardCmd) -> Self {
         match val {
-            RobotCmd::None => glue::Radio_RobotCommand::NONE,
-            RobotCmd::Arm => glue::Radio_RobotCommand::ARM,
-            RobotCmd::Disarm => glue::Radio_RobotCommand::DISARM,
-            RobotCmd::Discharge => glue::Radio_RobotCommand::DISCHARGE,
-            RobotCmd::Kick => glue::Radio_RobotCommand::KICK,
-            RobotCmd::Chip => glue::Radio_RobotCommand::CHIP,
-            RobotCmd::PowerBoardOff => glue::Radio_RobotCommand::POWER_BOARD_OFF,
-            RobotCmd::Reboot => glue::Radio_RobotCommand::REBOOT,
-            RobotCmd::Beep => glue::Radio_RobotCommand::BEEP,
-            RobotCmd::Coast => glue::Radio_RobotCommand::COAST,
-            RobotCmd::HeadingControl => glue::Radio_RobotCommand::HEADING_CONTROL,
-            RobotCmd::YawRateControl => glue::Radio_RobotCommand::YAW_RATE_CONTROL,
+            RobotMainboardCmd::None => glue::Radio_RobotCommand::NONE,
+            RobotMainboardCmd::Arm => glue::Radio_RobotCommand::ARM,
+            RobotMainboardCmd::Disarm => glue::Radio_RobotCommand::DISARM,
+            RobotMainboardCmd::Discharge => glue::Radio_RobotCommand::DISCHARGE,
+            RobotMainboardCmd::Kick => glue::Radio_RobotCommand::KICK,
+            RobotMainboardCmd::Chip => glue::Radio_RobotCommand::CHIP,
+            RobotMainboardCmd::PowerBoardOff => glue::Radio_RobotCommand::POWER_BOARD_OFF,
+            RobotMainboardCmd::Reboot => glue::Radio_RobotCommand::REBOOT,
+            RobotMainboardCmd::Beep => glue::Radio_RobotCommand::BEEP,
+            RobotMainboardCmd::Coast => glue::Radio_RobotCommand::COAST,
+            RobotMainboardCmd::HeadingControl => glue::Radio_RobotCommand::HEADING_CONTROL,
+            RobotMainboardCmd::YawRateControl => glue::Radio_RobotCommand::YAW_RATE_CONTROL,
         }
     }
 }
@@ -98,8 +103,8 @@ pub struct PlayerMoveCmd {
     pub w: f64,
     /// The player's dribble speed
     pub dribble_speed: f64,
-    /// Command to the kicker
-    pub robot_cmd: RobotCmd,
+    /// Command to the robot's mainboard
+    pub robot_cmd: RobotMainboardCmd,
     pub fan_speed: f64,
     pub kick_speed: f64,
 }
@@ -112,7 +117,7 @@ impl PlayerMoveCmd {
             sy: 0.0,
             w: 0.0,
             dribble_speed: 0.0,
-            robot_cmd: RobotCmd::None,
+            robot_cmd: RobotMainboardCmd::None,
             fan_speed: 0.0,
             kick_speed: 0.0,
         }
@@ -124,13 +129,13 @@ impl PlayerMoveCmd {
 
     pub fn into_proto_v0_with_id(self, with_id: usize) -> String {
         let extra = match self.robot_cmd {
-            RobotCmd::Arm => "A".to_string(),
-            RobotCmd::Disarm => "D".to_string(),
-            RobotCmd::Kick => "K".to_string(),
-            RobotCmd::Discharge => "".to_string(),
-            RobotCmd::None => "".to_string(),
-            RobotCmd::Chip => "".to_string(),
-            RobotCmd::PowerBoardOff => "".to_string(),
+            RobotMainboardCmd::Arm => "A".to_string(),
+            RobotMainboardCmd::Disarm => "D".to_string(),
+            RobotMainboardCmd::Kick => "K".to_string(),
+            RobotMainboardCmd::Discharge => "".to_string(),
+            RobotMainboardCmd::None => "".to_string(),
+            RobotMainboardCmd::Chip => "".to_string(),
+            RobotMainboardCmd::PowerBoardOff => "".to_string(),
             _ => "".to_string(),
         };
 

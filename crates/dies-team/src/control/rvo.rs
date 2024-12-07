@@ -1,6 +1,8 @@
 use std::f64::{consts::PI, EPSILON};
 
-use dies_core::{debug_string, Angle, Obstacle, PlayerData, PlayerModel, Vector2};
+use dies_core::{debug_string, Angle, PlayerData, Vector2};
+use dies_world::PlayerModel;
+use crate::Obstacle;
 
 // Constants
 const PLAYER_MARGIN: f64 = 30.0;

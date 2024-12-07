@@ -6,7 +6,7 @@
     - VisionMsg
     - RefereeMsg
   - BsClient
-    - RobotCmd
+    - RobotMainboardCmd
     - RobotFeedback
   - Tracker
     - PlayerTracker

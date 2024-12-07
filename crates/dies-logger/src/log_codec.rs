@@ -264,11 +264,11 @@ impl LogFile {
 
 #[cfg(test)]
 mod tests {
-    use dies_core::{mock_world_data, DebugValue};
+    use dies_core::DebugValue;
     use dies_protos::dies_log_line::LogLevel;
     use flate2::read::GzDecoder;
     use tempfile::NamedTempFile;
-
+    use dies_world::world::mock_world_data;
     use super::*;
 
     const TEST_FILE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/test.log.gz"));

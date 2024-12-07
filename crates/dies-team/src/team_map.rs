@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use dies_core::{
-    ExecutorSettings, PlayerCmd, PlayerId, PlayerOverrideCommand, VisionMsg, WorldInstant,
+    ExecutorSettings, PlayerCmd, PlayerId, PlayerOverrideCommand, VisionMsg,
 };
 use dies_protos::ssl_gc_referee_message::Referee;
+use dies_world::world::WorldInstant;
 use dies_world::WorldTracker;
 
 use crate::{control::TeamController, strategy_instance::StrategyInstance};

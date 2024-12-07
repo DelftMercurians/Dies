@@ -2,13 +2,11 @@ use std::f64::consts::PI;
 
 use dies_protos::ssl_vision_geometry::SSL_GeometryFieldSize;
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
 
 use crate::Vector2;
 
 /// A single field arc -- eg. the center circle
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
 pub struct FieldCircularArc {
     /// Readable name of the arc
     pub name: String,
@@ -39,7 +37,6 @@ impl FieldCircularArc {
 
 /// A single field line segment
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
 pub struct FieldLineSegment {
     /// Readable name of the line segment
     pub name: String,
@@ -64,7 +61,6 @@ impl FieldLineSegment {
 
 /// The field geometry.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
 pub struct FieldGeometry {
     /// Field length (distance between goal lines) in mm
     pub field_length: f64,

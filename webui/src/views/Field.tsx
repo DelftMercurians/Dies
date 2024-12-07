@@ -6,7 +6,7 @@ import {
   useStatus,
   useWorldState,
 } from "../api";
-import { Vector2, WorldData } from "../bindings";
+import { Vector2, WorldFrame } from "../bindings";
 import { useResizeObserver } from "@/lib/useResizeObserver";
 import {
   CANVAS_PADDING,
@@ -48,13 +48,13 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const rendererRef = useRef<FieldRenderer | null>(null);
   const [mouseField, setMouseField] = useState<Vector2>([0, 0]);
   const [playerTooltip, setPlayerTooltip] = useState<PlayerTooltip | null>(
-    null,
+    null
   );
   const contextMenuPosRef = useRef([0, 0] as [number, number]);
 
   const manualControl = useExecutorInfo()?.manual_controlled_players ?? [];
   const world = useWorldState();
-  const worldData = world.status === "connected" ? world.data : null;
+  const WorldFrame = world.status === "connected" ? world.data : null;
   const sendCommand = useSendCommand();
 
   const { data: backendState } = useStatus();
@@ -62,8 +62,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 
   const mouseFieldRef = useRef(mouseField);
   mouseFieldRef.current = mouseField;
-  const ballRef = useRef(worldData?.ball);
-  ballRef.current = worldData?.ball;
+  const ballRef = useRef(WorldFrame?.ball);
+  ballRef.current = WorldFrame?.ball;
   const [ballToMouse, setBallToMouse] = useState<boolean>(false);
   useEffect(() => {
     if (ballToMouse && ballRef.current?.raw_position) {
@@ -93,9 +93,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     ref: contRef,
   });
   const { canvasWidth, canvasHeight } = useCanvasSize(
-    worldData,
+    WorldFrame,
     contWidth,
-    contHeight,
+    contHeight
   );
 
   useEffect(() => {
@@ -109,11 +109,11 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       rendererRef.current.setDebugData(debugMap);
     }
     rendererRef.current.setPositionDisplayMode(positionDisplayMode);
-    rendererRef.current.setWorldData(worldData);
+    rendererRef.current.setWorldFrame(WorldFrame);
     rendererRef.current.render(selectedPlayerId, manualControl);
   }, [
     debugMap,
-    worldData,
+    WorldFrame,
     canvasWidth,
     canvasHeight,
     manualControl,
@@ -122,7 +122,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   ]);
 
   const selectedPlayerData =
-    worldData?.own_players.find((p) => p.id === selectedPlayerId) ?? null;
+    WorldFrame?.own_players.find((p) => p.id === selectedPlayerId) ?? null;
 
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -139,7 +139,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         onSelectPlayer(clickedPlayer);
       }
     },
-    [onSelectPlayer],
+    [onSelectPlayer]
   );
 
   const handleMouseMove = useCallback(
@@ -166,12 +166,11 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         setPlayerTooltip(null);
       }
     },
-    [],
+    []
   );
-  const playerTooltipData = worldData?.own_players.find(
-    (p) => p.id === playerTooltip?.playerId,
+  const playerTooltipData = WorldFrame?.own_players.find(
+    (p) => p.id === playerTooltip?.playerId
   );
-
 
   const headingRef = useRef<number | null>(null);
   const handleContextMenu = (event: React.MouseEvent<HTMLElement>) => {
@@ -250,8 +249,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
                 val.length === 2
                   ? setPositionDisplayMode("both")
                   : val.length === 1
-                    ? setPositionDisplayMode(val[0] as PositionDisplayMode)
-                    : undefined
+                  ? setPositionDisplayMode(val[0] as PositionDisplayMode)
+                  : undefined
               }
               className="border border-gray-500 rounded-lg"
             >
@@ -273,7 +272,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           <div
             className={cn(
               "mb-2",
-              selectedPlayerId === playerTooltip.playerId && "font-bold",
+              selectedPlayerId === playerTooltip.playerId && "font-bold"
             )}
           >
             Player #{playerTooltip.playerId}
@@ -346,14 +345,14 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 export default Field;
 
 function useCanvasSize(
-  worldData: WorldData | null,
+  WorldFrame: WorldFrame | null,
   contWidth: number,
-  contHeight: number,
+  contHeight: number
 ): { canvasWidth: number; canvasHeight: number } {
   const fieldSize = [
-    (worldData?.field_geom?.field_length ?? DEFAULT_FIELD_SIZE[0]) +
+    (WorldFrame?.field_geom?.field_length ?? DEFAULT_FIELD_SIZE[0]) +
       2 * CANVAS_PADDING,
-    (worldData?.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1]) +
+    (WorldFrame?.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1]) +
       2 * CANVAS_PADDING,
   ];
   const availableWidth = contWidth - 2 * CONT_PADDING_PX;

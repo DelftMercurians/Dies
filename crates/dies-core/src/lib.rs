@@ -1,24 +1,18 @@
 mod angle;
 mod debug_info;
 mod executor_info;
-mod executor_settings;
-mod geom;
 mod math;
 mod player;
-mod world;
 
 pub mod workspace_utils;
 
 pub use angle::*;
 pub use debug_info::*;
 pub use executor_info::*;
-pub use executor_settings::*;
-pub use geom::*;
 pub use math::*;
 pub use player::*;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
-pub use world::*;
 
 pub type VisionMsg = dies_protos::ssl_vision_wrapper::SSL_WrapperPacket;
 pub type GcRefereeMsg = dies_protos::ssl_gc_referee_message::Referee;

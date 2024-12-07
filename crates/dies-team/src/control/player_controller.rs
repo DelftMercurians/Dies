@@ -1,11 +1,11 @@
 use std::time::{Duration, Instant};
 
-use dies_core::{
-    to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd,
-    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, Vector2, WorldData,
-};
-
 use crate::skills::{SkillCtx, SkillProgress, SkillState, SkillType};
+use crate::Obstacle;
+use dies_core::{
+    to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, PlayerCmd,
+    PlayerData, PlayerId, PlayerMoveCmd, RobotMainboardCmd, Vector2, WorldFrame,
+};
 
 use super::{
     mtp::MTP,
@@ -145,17 +145,17 @@ impl PlayerController {
             (_, Some(heading)) if self.have_imu => {
                 self.switch_heading = None;
                 if heading {
-                    RobotCmd::HeadingControl
+                    RobotMainboardCmd::HeadingControl
                 } else {
-                    RobotCmd::YawRateControl
+                    RobotMainboardCmd::YawRateControl
                 }
             }
             (KickerState::Kicking, _) => {
                 self.kicker = KickerState::Disarming;
-                RobotCmd::Kick
+                RobotMainboardCmd::Kick
             }
-            (KickerState::Arming, None) => RobotCmd::Arm,
-            _ => RobotCmd::Arm,
+            (KickerState::Arming, None) => RobotMainboardCmd::Arm,
+            _ => RobotMainboardCmd::Arm,
         };
 
         let target_velocity = to_dies_yaw(self.last_yaw, self.opp_goal_sign)
@@ -206,7 +206,7 @@ impl PlayerController {
     pub fn update(
         &mut self,
         state: &PlayerData,
-        world: &WorldData,
+        world: &WorldFrame,
         dt: f64,
         manual_input: Option<&PlayerControlInput>,
         obstacles: Vec<Obstacle>,
@@ -387,7 +387,7 @@ impl PlayerController {
     }
 }
 
-fn is_about_to_collide(player: &PlayerData, world: &WorldData, time_horizon: f64) -> bool {
+fn is_about_to_collide(player: &PlayerData, world: &WorldFrame, time_horizon: f64) -> bool {
     // Check if the player is about to collide with any other player
     for other in world.own_players.iter().chain(world.opp_players.iter()) {
         if player.position == other.position {

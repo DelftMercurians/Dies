@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::OnceLock, thread};
 
-use dies_core::{DebugMap, WorldData};
+use dies_core::{DebugMap, WorldFrame};
 use dies_protos::{
     dies_log_line::{LogLevel, LogLine},
     ssl_gc_referee_message::Referee,
@@ -56,7 +56,7 @@ pub fn log_referee(data: &Referee) {
     }
 }
 
-pub fn log_world(data: &WorldData) {
+pub fn log_world(data: &WorldFrame) {
     if let Some(logger) = PROTOBUF_LOGGER.get() {
         let _ = logger
             .sender
