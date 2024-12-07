@@ -90,11 +90,11 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         }
         let transition_matrix = self.transition_matrix.create_matrix(dt);
         let process_noise = self.process_noise.create_matrix(dt);
-        let mut x = &transition_matrix * &self.x;
+        let mut x = transition_matrix * self.x;
         if let Some(control) = &self.control {
             x += control.create_matrix(dt);
         }
-        let r = z - &self.transformation_matrix * &x;
+        let r = z - self.transformation_matrix * x;
         if use_gate && !self.gating(r.clone_owned()) {
             return Option::from(x);
         }
@@ -107,21 +107,21 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         dies_core::debug_value("kalman.measurement_var", self.measurement_noise[(0, 0)]);
 
         let posteriori_covariance =
-            &transition_matrix * &self.posteriori_covariance * &transition_matrix.transpose()
-                + &process_noise * self.var;
-        let innovation_covariance = &self.transformation_matrix
-            * &posteriori_covariance
-            * &self.transformation_matrix.transpose()
-            + &self.measurement_noise;
-        let kalman_gain = &posteriori_covariance
-            * &self.transformation_matrix.transpose()
+            transition_matrix * self.posteriori_covariance * transition_matrix.transpose()
+                + process_noise * self.var;
+        let innovation_covariance = self.transformation_matrix
+            * posteriori_covariance
+            * self.transformation_matrix.transpose()
+            + self.measurement_noise;
+        let kalman_gain = posteriori_covariance
+            * self.transformation_matrix.transpose()
             * innovation_covariance
                 .try_inverse()
                 .unwrap_or(SMatrix::<f64, OS, OS>::zeros());
 
-        self.x = x + &kalman_gain * r;
-        self.posteriori_covariance = &posteriori_covariance
-            - &kalman_gain * &self.transformation_matrix * &posteriori_covariance;
+        self.x = x + kalman_gain * r;
+        self.posteriori_covariance = posteriori_covariance
+            - kalman_gain * self.transformation_matrix * posteriori_covariance;
         self.t = newt;
         Some(self.x)
     }

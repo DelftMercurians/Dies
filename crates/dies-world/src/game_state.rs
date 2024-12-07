@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use dies_core::{to_dies_coords2, Vector2, Vector3};
+use dies_core::{Vector2, Vector3};
 use dies_protos::ssl_gc_referee_message::{referee::Command, Referee};
 
 use crate::{BallFrame, GameState, GameStateType, Team};

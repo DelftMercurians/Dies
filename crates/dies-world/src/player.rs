@@ -43,8 +43,6 @@ pub struct PlayerTracker {
     breakbeam_detections: VecDeque<usize>,
 
     pub is_gone: bool,
-    fb_reappearance_time: Option<f64>,
-    det_reappearance_time: Option<f64>,
     rolling_control: f64,
     rolling_vision: f64,
 }
@@ -66,8 +64,6 @@ impl PlayerTracker {
             last_detection: None,
             breakbeam_detections: VecDeque::with_capacity(BREAKBEAM_WINDOW),
             is_gone: false,
-            fb_reappearance_time: None,
-            det_reappearance_time: None,
             last_feedback_time: None,
             rolling_vision: 0.0,
             rolling_control: 0.0,
@@ -147,7 +143,6 @@ impl PlayerTracker {
     pub fn update(&mut self, t_capture: f64, player: &SSL_DetectionRobot) {
         let raw_position = Vector2::new(player.x() as f64, player.y() as f64);
         let raw_yaw_f64 = player.orientation() as f64;
-        let raw_yaw = Angle::from_radians(raw_yaw_f64);
         let yaw = Angle::from_radians(self.yaw_filter.update(raw_yaw_f64));
 
         match &mut self.filter {
@@ -169,7 +164,7 @@ impl PlayerTracker {
                     last_data.position = na::convert(Vector2::new(x[0], x[2]));
                     last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
                     last_data.angular_speed = (yaw - last_data.yaw).radians()
-                        / (t_capture - last_data.timestamp + std::f64::EPSILON);
+                        / (t_capture - last_data.timestamp + f64::EPSILON);
                     last_data.yaw = yaw;
                     last_data.timestamp = t_capture;
 

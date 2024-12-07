@@ -82,13 +82,6 @@ impl BallTracker {
             })
             .collect::<Vec<(Vector3, bool)>>();
 
-        // Store raw positions for visualization
-        let measured_positions = ball_measurements
-            .iter()
-            .map(|(pos, _)| pos)
-            .cloned()
-            .collect::<Vec<_>>();
-
         // Handle case with no valid measurements
         if ball_measurements.is_empty() {
             self.misses += 1;

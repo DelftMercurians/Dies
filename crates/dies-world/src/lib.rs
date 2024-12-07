@@ -71,16 +71,15 @@ impl WorldTracker {
         match team {
             Team::Blue => {
                 self.blue_controlled.insert(id);
-                if !self.blue_players.contains_key(&id) {
-                    self.blue_players
-                        .insert(id, PlayerTracker::new(id, &self.tracker_settings, true));
+                if let std::collections::hash_map::Entry::Vacant(e) = self.blue_players.entry(id) {
+                    e.insert(PlayerTracker::new(id, &self.tracker_settings, true));
                 }
             }
             Team::Yellow => {
                 self.yellow_controlled.insert(id);
-                if !self.yellow_players.contains_key(&id) {
-                    self.yellow_players
-                        .insert(id, PlayerTracker::new(id, &self.tracker_settings, true));
+                if let std::collections::hash_map::Entry::Vacant(e) = self.yellow_players.entry(id)
+                {
+                    e.insert(PlayerTracker::new(id, &self.tracker_settings, true));
                 }
             }
         }
@@ -134,7 +133,54 @@ impl WorldTracker {
                 ),
                 dies_core::DebugColor::Green,
             );
-            // ... similar debug lines for other boundaries ...
+            dies_core::debug_line(
+                "mask.x_max".to_string(),
+                Vector2::new(
+                    geom.field_length / 2.0 * x_max,
+                    geom.field_width / 2.0 * y_min,
+                ),
+                Vector2::new(
+                    geom.field_length / 2.0 * x_max,
+                    geom.field_width / 2.0 * y_max,
+                ),
+                dies_core::DebugColor::Green,
+            );
+            dies_core::debug_line(
+                "mask.y_min".to_string(),
+                Vector2::new(
+                    geom.field_length / 2.0 * x_min,
+                    geom.field_width / 2.0 * y_min,
+                ),
+                Vector2::new(
+                    geom.field_length / 2.0 * x_max,
+                    geom.field_width / 2.0 * y_min,
+                ),
+                dies_core::DebugColor::Green,
+            );
+            dies_core::debug_line(
+                "mask.y_max".to_string(),
+                Vector2::new(
+                    geom.field_length / 2.0 * x_min,
+                    geom.field_width / 2.0 * y_max,
+                ),
+                Vector2::new(
+                    geom.field_length / 2.0 * x_max,
+                    geom.field_width / 2.0 * y_max,
+                ),
+                dies_core::DebugColor::Green,
+            );
+            dies_core::debug_line(
+                "mask.x_min".to_string(),
+                Vector2::new(
+                    geom.field_length / 2.0 * x_min,
+                    geom.field_width / 2.0 * y_min,
+                ),
+                Vector2::new(
+                    geom.field_length / 2.0 * x_max,
+                    geom.field_width / 2.0 * y_max,
+                ),
+                dies_core::DebugColor::Green,
+            );
         }
     }
 
@@ -232,12 +278,13 @@ impl WorldTracker {
             }
 
             let id = PlayerId::new(player.robot_id());
-            if !players_map.contains_key(&id) {
+            if let std::collections::hash_map::Entry::Vacant(e) = players_map.entry(id) {
                 // Create new tracker for previously unseen player
-                players_map.insert(
+                e.insert(PlayerTracker::new(
                     id,
-                    PlayerTracker::new(id, &self.tracker_settings, controlled_set.contains(&id)),
-                );
+                    &self.tracker_settings,
+                    controlled_set.contains(&id),
+                ));
             }
 
             if let Some(tracker) = players_map.get_mut(&id) {
