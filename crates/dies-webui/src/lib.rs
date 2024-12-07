@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 mod executor_task;
+mod interactive_main_loop;
 mod routes;
 mod server;
 
