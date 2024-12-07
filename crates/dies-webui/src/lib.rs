@@ -5,8 +5,8 @@ use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
     ScenarioInfo, SimulatorCmd, WorldData,
 };
-use dies_executor::scenarios::ScenarioType;
 use dies_ssl_client::SslClientConfig;
+use dies_team::scenarios::ScenarioType;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 

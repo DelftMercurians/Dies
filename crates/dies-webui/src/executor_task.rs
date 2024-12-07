@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use dies_core::WorldUpdate;
-use dies_executor::{scenarios::ScenarioType, ControlMsg, ExecutorHandle};
 use dies_protos::ssl_gc_referee_message::referee::Command;
 use dies_simulator::SimulationConfig;
+use dies_team::{scenarios::ScenarioType, ControlMsg, ExecutorHandle};
 use tokio::{
     sync::{broadcast, oneshot, watch},
     task::JoinHandle,

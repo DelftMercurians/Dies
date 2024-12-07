@@ -680,27 +680,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dies-executor"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "approx",
- "dies-basestation-client",
- "dies-core",
- "dies-logger",
- "dies-protos",
- "dies-simulator",
- "dies-ssl-client",
- "dies-world",
- "log",
- "nalgebra",
- "paste",
- "rand",
- "serde",
- "tokio",
-]
-
-[[package]]
 name = "dies-logger"
 version = "0.1.0"
 dependencies = [
@@ -748,6 +727,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "dies-team"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "approx",
+ "dies-basestation-client",
+ "dies-core",
+ "dies-logger",
+ "dies-protos",
+ "dies-simulator",
+ "dies-ssl-client",
+ "dies-world",
+ "log",
+ "nalgebra",
+ "paste",
+ "rand",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "dies-webui"
 version = "0.1.0"
 dependencies = [
@@ -756,11 +756,11 @@ dependencies = [
  "chrono",
  "dies-basestation-client",
  "dies-core",
- "dies-executor",
  "dies-logger",
  "dies-protos",
  "dies-simulator",
  "dies-ssl-client",
+ "dies-team",
  "futures",
  "log",
  "serde",

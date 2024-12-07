@@ -9,7 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 use dies_core::{DebugMap, DebugSubscriber, WorldUpdate};
-use dies_executor::scenarios::ScenarioType;
+use dies_team::scenarios::ScenarioType;
 use futures::StreamExt;
 use tokio::sync::{broadcast, watch};
 

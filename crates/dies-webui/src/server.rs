@@ -16,7 +16,7 @@ use axum::{
 use dies_core::{
     DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, WorldUpdate,
 };
-use dies_executor::{ControlMsg, ExecutorHandle};
+use dies_team::{ControlMsg, ExecutorHandle};
 use tokio::sync::{broadcast, mpsc, watch};
 use tower_http::services::ServeDir;
 use tower_layer::Layer;
@@ -189,7 +189,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         tokio::spawn(async move { start_webserver(config.port, state, shutdown_rx).await });
 
     if let Some(scenario) = config.start_scenario {
-        if let Some(scenario) = dies_executor::scenarios::ScenarioType::get_by_name(&scenario) {
+        if let Some(scenario) = dies_team::scenarios::ScenarioType::get_by_name(&scenario) {
             let _ = cmd_tx.send(UiCommand::StartScenario { scenario });
         }
     }

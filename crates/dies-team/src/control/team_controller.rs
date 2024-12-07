@@ -1,12 +1,30 @@
 use std::collections::{HashMap, HashSet};
 
-use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, WorldData};
+use dies_core::{
+    Angle, ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, Vector2, WorldData,
+};
+use serde::{Deserialize, Serialize};
 
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
-use crate::PlayerControlInput;
+use crate::{skills::SkillType, PlayerControlInput};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TeamCommand {
+    Move {
+        id: PlayerId,
+        target: Vector2,
+        yaw: Option<Angle>,
+    },
+    ApproachBall {
+        id: PlayerId,
+    },
+    Kick {
+        id: PlayerId,
+    },
+}
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
@@ -37,6 +55,31 @@ impl TeamController {
         self.settings = settings.clone();
     }
 
+    pub fn handle_team_command(&mut self, cmd: TeamCommand) {
+        match cmd {
+            TeamCommand::Move { id, target, yaw } => {
+                if let Some(controller) = self.player_controllers.get_mut(&id) {
+                    controller.activate_skill(SkillType::GoToPosition {
+                        target_pos: target,
+                        target_heading: yaw,
+                        with_ball: false,
+                        avoid_ball: false,
+                    });
+                }
+            }
+            TeamCommand::ApproachBall { id } => {
+                if let Some(controller) = self.player_controllers.get_mut(&id) {
+                    controller.activate_skill(SkillType::ApproachBall);
+                }
+            }
+            TeamCommand::Kick { id } => {
+                if let Some(controller) = self.player_controllers.get_mut(&id) {
+                    controller.activate_skill(SkillType::Kick);
+                }
+            }
+        }
+    }
+
     /// Update the controllers with the current state of the players.
     pub fn update(
         &mut self,
@@ -51,17 +94,6 @@ impl TeamController {
                     .insert(*id, PlayerController::new(*id, &self.settings));
             }
         }
-
-        let state = world_data.current_game_state.game_state;
-
-        // let mut inputs = PlayerInputs::new();
-        // // If in a stop state, override the inputs
-        // if matches!(
-        //     world_data.current_game_state.game_state,
-        //     GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
-        // ) {
-        //     inputs = comply(&world_data, inputs);
-        // }
 
         let all_players = world_data
             .own_players

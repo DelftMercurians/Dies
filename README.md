@@ -72,7 +72,7 @@ You can also pass the `--web-build` flag to `./run.sh` for the same effect (you 
 Dies is split into several crates, each with a specific purpose:
 
 - ![`dies-core`](./crates/dies-core): Contains the most widely used types and traits. Should be kept slim.
-- ![`dies-executor`](./crates/dies-executor): Contains the `Executor`, `TeamController`, `PlayerController`, `Role`, and `Strategy` types.
+- ![`dies-team`](./crates/dies-team): Contains the `Executor`, `TeamController`, `PlayerController`, `Role`, and `Strategy` types.
 - ![`dies-basestation-client`](./crates/dies-basestation-client): Contains the `BasestationClient` type.
 - ![`dies-ssl-client`](./crates/dies-ssl-client): Contains the `SSLClient` type.
 - ![`dies-protos`](./crates/dies-protos): Contains the protobuf definitions used for communication with the game controller and vision.
