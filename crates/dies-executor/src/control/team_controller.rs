@@ -71,6 +71,7 @@ impl TeamController {
 
         let state = world_data.current_game_state.game_state;
 
+        let mut inputs = PlayerInputs::new();
         // If in a stop state, override the inputs
         if matches!(
             world_data.current_game_state.game_state,
@@ -102,7 +103,7 @@ impl TeamController {
                     .map(|i| !i.velocity.is_zero())
                     .unwrap_or(false);
 
-                let role_type = role_types.get(&id).cloned().unwrap_or_default();
+                let role_type = Default::default(); //role_types.get(&id).cloned().unwrap_or_default();
                 let obsacles = world_data.get_obstacles_for_player(role_type);
 
                 controller.update(

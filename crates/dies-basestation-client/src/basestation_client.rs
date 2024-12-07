@@ -15,11 +15,31 @@ const BASE_STATION_READ_FREQ: f64 = 100.0;
 
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
+#[cfg(feature = "glue")]
 pub fn list_serial_ports() -> Vec<String> {
-    #[cfg(feature = "glue")]
     Serial::list_ports(true)
-    #[cfg(not(feature = "glue"))]
+}
+
+#[cfg(not(feature = "glue"))]
+pub fn list_serial_ports() -> Vec<String> {
     vec![]
+}
+
+#[cfg(not(feature = "glue"))]
+struct Serial {
+    port: Box<dyn serialport::SerialPort>,
+}
+
+#[cfg(not(feature = "glue"))]
+impl Serial {
+    fn new(port_name: &str) -> anyhow::Result<Self> {
+        let port = serialport::new(port_name, 11520).open()?;
+        Ok(Self { port })
+    }
+
+    fn send(&mut self, data: &str) {
+        let _ = self.port.write_all(data.as_bytes());
+    }
 }
 
 /// Protocol version for the base station communication.
@@ -153,6 +173,7 @@ impl BasestationHandle {
                                 .unwrap_or_else(|| cmd.id.as_u32())
                                 as usize;
                             match &mut connection {
+                                #[cfg(feature = "glue")]
                                 Connection::V1(monitor) => {
                                     let glue_cmd: glue::Radio_Command = cmd.into();
                                     resp.send(
@@ -171,6 +192,7 @@ impl BasestationHandle {
                             }
                         }
                         PlayerCmd::SetHeading { id, heading } => match &mut connection {
+                            #[cfg(feature = "glue")]
                             Connection::V1(monitor) => {
                                 let _ =
                                     monitor.set_current_heading(id.as_u32() as u8, heading as f32);
@@ -182,6 +204,7 @@ impl BasestationHandle {
                         id_map = new_id_map;
                     }
                     Err(mpsc::error::TryRecvError::Disconnected) => {
+                        #[cfg(feature = "glue")]
                         if let Connection::V1(monitor) = connection {
                             monitor.stop();
                         }

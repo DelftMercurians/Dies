@@ -2,7 +2,7 @@ use dies_core::PlayerOverrideCommand;
 
 use crate::{control::Velocity, KickerControlInput, PlayerControlInput};
 
-struct PlayerOverrideState {
+pub struct PlayerOverrideState {
     frame_counter: u32,
     current_command: PlayerOverrideCommand,
 }

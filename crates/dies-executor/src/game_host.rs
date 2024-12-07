@@ -54,9 +54,9 @@ impl Team {
     fn update(&mut self, update: GameUpdate, time: WorldInstant) {
         match self {
             Team::Controlled(team) => {
-                team.tracker.update(update, time);
+                // team.tracker.update(update, time);
                 team.controller.update(team.tracker.get(), HashMap::new());
-                team.strategy.send_update(team.tracker.get());
+                // team.strategy.send_update(team.tracker.get());
             }
             Team::Uncontrolled => {}
         }
@@ -65,7 +65,7 @@ impl Team {
     fn override_player(&mut self, player_id: PlayerId, cmd: PlayerOverrideCommand) {
         match self {
             Team::Controlled(controlled) => {
-                controlled.controller.override_player(player_id, cmd);
+                // controlled.controller.override_player(player_id, cmd);
             }
             Team::Uncontrolled => {}
         }
@@ -102,8 +102,8 @@ pub struct TeamMap {
 
 impl TeamMap {
     pub fn update(&mut self, update: GameUpdate, time: WorldInstant) {
-        self.blue.update(update, time);
-        self.yellow.update(update, time);
+        // self.blue.update(update, time);
+        // self.yellow.update(update, time);
     }
 
     pub fn override_player(&mut self, player_id: PlayerId, cmd: PlayerOverrideCommand) {
