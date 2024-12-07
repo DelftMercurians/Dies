@@ -1,14 +1,176 @@
 use std::time::Instant;
 
 use dies_core::{
-    find_intersection, perp, which_side_of_robot, Angle, PlayerId, SysStatus, Vector2,
+    find_intersection, perp, which_side_of_robot, Angle, PlayerData, PlayerId, SysStatus, Vector2,
+    WorldData,
 };
+use serde::{Deserialize, Serialize};
 
-use super::{Skill, SkillCtx, SkillProgress};
-use crate::{control::Velocity, roles::SkillResult, KickerControlInput, PlayerControlInput};
+use crate::{control::Velocity, KickerControlInput, PlayerControlInput};
 
 const DEFAULT_POS_TOLERANCE: f64 = 70.0;
 const DEFAULT_VEL_TOLERANCE: f64 = 30.0;
+
+pub struct SkillCtx<'a> {
+    pub player: &'a PlayerData,
+    pub world: &'a WorldData,
+}
+
+impl SkillCtx<'_> {
+    pub fn new<'a>(player: &'a PlayerData, world: &'a WorldData) -> SkillCtx<'a> {
+        SkillCtx { player, world }
+    }
+}
+
+/// The result of a skill execution
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillResult {
+    Success,
+    Failure,
+}
+
+/// The state of a skill execution
+pub enum SkillState {
+    InProgress(ActiveSkill),
+    Done(SkillResult),
+}
+
+impl SkillState {
+    /// Updates the skill state
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+        match self {
+            SkillState::InProgress(skill) => match skill.update(ctx) {
+                SkillProgress::Done(result) => {
+                    *self = SkillState::Done(result);
+                    SkillProgress::Done(result)
+                }
+                SkillProgress::Continue(input) => SkillProgress::Continue(input),
+            },
+            SkillState::Done(result) => SkillProgress::Done(*result),
+        }
+    }
+}
+
+impl Into<SkillState> for SkillType {
+    fn into(self) -> SkillState {
+        SkillState::InProgress(self.into())
+    }
+}
+
+/// The progress of a skill execution
+#[derive(Debug)]
+pub enum SkillProgress {
+    Continue(PlayerControlInput),
+    Done(SkillResult),
+}
+
+impl SkillProgress {
+    /// Creates a new `SkillProgress` with a `Success` result
+    pub fn success() -> SkillProgress {
+        SkillProgress::Done(SkillResult::Success)
+    }
+
+    /// Creates a new `SkillProgress` with a `Failure` result
+    pub fn failure() -> SkillProgress {
+        SkillProgress::Done(SkillResult::Failure)
+    }
+
+    pub fn map_input<F>(self, f: F) -> SkillProgress
+    where
+        F: FnOnce(PlayerControlInput) -> PlayerControlInput,
+    {
+        match self {
+            SkillProgress::Continue(input) => SkillProgress::Continue(f(input)),
+            SkillProgress::Done(result) => SkillProgress::Done(result),
+        }
+    }
+}
+
+pub enum SkillType {
+    GoToPosition {
+        target_pos: Vector2,
+        target_heading: Option<Angle>,
+        with_ball: bool,
+        avoid_ball: bool,
+    },
+    Face {
+        heading: HeadingTarget,
+        with_ball: bool,
+    },
+    Kick,
+    Wait(f64),
+    FetchBall,
+    InterceptBall,
+    ApproachBall,
+}
+
+impl Into<ActiveSkill> for SkillType {
+    fn into(self) -> ActiveSkill {
+        match self {
+            SkillType::GoToPosition {
+                target_pos,
+                target_heading,
+                with_ball,
+                avoid_ball,
+            } => ActiveSkill::GoToPosition(GoToPosition {
+                target_pos,
+                target_heading,
+                target_velocity: Vector2::zeros(),
+                pos_tolerance: DEFAULT_POS_TOLERANCE,
+                velocity_tolerance: DEFAULT_VEL_TOLERANCE,
+                with_ball,
+                avoid_ball,
+            }),
+            SkillType::Face { heading, with_ball } => {
+                ActiveSkill::Face(Face { heading, with_ball })
+            }
+            SkillType::Kick => ActiveSkill::Kick(Kick {
+                has_kicked: 1,
+                timer: None,
+            }),
+            SkillType::Wait(amount) => ActiveSkill::Wait(Wait {
+                amount,
+                until: None,
+            }),
+            SkillType::FetchBall => ActiveSkill::FetchBall(FetchBall {
+                dribbling_distance: 1000.0,
+                dribbling_speed: 1.0,
+                stop_distance: 200.0,
+                max_relative_speed: 1500.0,
+                breakbeam_ball_detected: 0.0,
+                last_good_heading: None,
+            }),
+            SkillType::InterceptBall => ActiveSkill::InterceptBall(InterceptBall {
+                intercept_line: None,
+            }),
+            SkillType::ApproachBall => ActiveSkill::ApproachBall(ApproachBall {}),
+        }
+    }
+}
+
+pub enum ActiveSkill {
+    GoToPosition(GoToPosition),
+    Face(Face),
+    Kick(Kick),
+    Wait(Wait),
+    FetchBall(FetchBall),
+    InterceptBall(InterceptBall),
+    ApproachBall(ApproachBall),
+}
+
+impl ActiveSkill {
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+        match self {
+            ActiveSkill::GoToPosition(skill) => skill.update(ctx),
+            ActiveSkill::Face(skill) => skill.update(ctx),
+            ActiveSkill::Kick(skill) => skill.update(ctx),
+            ActiveSkill::Wait(skill) => skill.update(ctx),
+            ActiveSkill::FetchBall(skill) => skill.update(ctx),
+            ActiveSkill::InterceptBall(skill) => skill.update(ctx),
+            ActiveSkill::ApproachBall(skill) => skill.update(ctx),
+        }
+    }
+}
 
 /// A skill that makes the player go to a specific position
 pub struct GoToPosition {
@@ -52,9 +214,7 @@ impl GoToPosition {
         self.avoid_ball = true;
         self
     }
-}
 
-impl Skill for GoToPosition {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let position = ctx.player.position;
         let distance = (self.target_pos - position).norm();
@@ -126,9 +286,7 @@ impl Face {
         self.with_ball = true;
         self
     }
-}
 
-impl Skill for Face {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let mut input = PlayerControlInput::new();
         if let Some(ball) = ctx.world.ball.as_ref() {
@@ -170,9 +328,7 @@ impl Kick {
             timer: None,
         }
     }
-}
 
-impl Skill for Kick {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let mut input = PlayerControlInput::new();
         input.with_dribbling(1.0);
@@ -238,9 +394,7 @@ impl Wait {
             until: None,
         }
     }
-}
 
-impl Skill for Wait {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let until = *self.until.get_or_insert(ctx.world.t_received + self.amount);
         if ctx.world.t_received >= until {
@@ -272,9 +426,7 @@ impl FetchBall {
             last_good_heading: None,
         }
     }
-}
 
-impl Skill for FetchBall {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
@@ -392,9 +544,7 @@ impl InterceptBall {
             intercept_line: None,
         }
     }
-}
 
-impl Skill for InterceptBall {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let intercept_line = self
@@ -431,9 +581,7 @@ impl ApproachBall {
     pub fn new() -> Self {
         Self {}
     }
-}
 
-impl Skill for ApproachBall {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let ball_pos = ball.position.xy();
@@ -474,7 +622,8 @@ impl Skill for ApproachBall {
     }
 }
 
-enum HeadingTarget {
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum HeadingTarget {
     Angle(Angle),
     Ball,
     Position(Vector2),
@@ -525,9 +674,7 @@ impl FetchBallWithHeading {
             target_heading: HeadingTarget::OwnPlayer(id),
         }
     }
-}
 
-impl Skill for FetchBallWithHeading {
     fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let player_data = ctx.player;
         let world_data = ctx.world;

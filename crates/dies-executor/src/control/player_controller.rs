@@ -5,6 +5,8 @@ use dies_core::{
     PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, Vector2, WorldData,
 };
 
+use crate::skills::{SkillCtx, SkillProgress, SkillState, SkillType};
+
 use super::{
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
@@ -27,7 +29,6 @@ pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP,
     last_pos: Vector2,
-    if_gate_keeper: bool,
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
 
@@ -60,6 +61,8 @@ pub struct PlayerController {
 
     fan_speed: f64,
     kick_speed: f64,
+
+    active_skill: Option<SkillState>,
 }
 
 impl PlayerController {
@@ -86,7 +89,6 @@ impl PlayerController {
             frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
-            if_gate_keeper: false,
 
             max_accel: settings.controller_settings.max_acceleration,
             max_speed: settings.controller_settings.max_velocity,
@@ -102,6 +104,8 @@ impl PlayerController {
 
             fan_speed: 0.0,
             kick_speed: 0.0,
+
+            active_skill: None,
         };
         instance.update_settings(&settings.controller_settings);
         instance
@@ -121,15 +125,6 @@ impl PlayerController {
     /// Get the ID of the player.
     pub fn id(&self) -> PlayerId {
         self.id
-    }
-
-    /// set the player as the gate keeper
-    pub fn set_gate_keeper(&mut self) {
-        self.if_gate_keeper = true;
-    }
-
-    pub fn target_velocity(&self) -> Vector2 {
-        self.target_velocity
     }
 
     /// Get the current command for the player.
@@ -203,14 +198,17 @@ impl PlayerController {
         // }
     }
 
+    pub fn activate_skill(&mut self, skill: SkillType) {
+        self.active_skill = Some(skill.into());
+    }
+
     /// Update the controller with the current state of the player.
     pub fn update(
         &mut self,
         state: &PlayerData,
         world: &WorldData,
-        input: &PlayerControlInput,
         dt: f64,
-        is_manual_override: bool,
+        manual_input: Option<&PlayerControlInput>,
         obstacles: Vec<Obstacle>,
         all_players: &[&PlayerData],
     ) {
@@ -223,6 +221,17 @@ impl PlayerController {
         if is_about_to_collide(state, world, 3.0 * dt) {
             dies_core::debug_string(format!("p{}.collision", self.id), "true");
         }
+
+        let input = manual_input
+            .cloned()
+            .or(self.active_skill.as_mut().and_then(|s| {
+                let ctx = SkillCtx::new(state, world);
+                match s.update(ctx) {
+                    SkillProgress::Continue(input) => Some(input),
+                    SkillProgress::Done(_) => None,
+                }
+            }))
+            .unwrap_or_default();
 
         if let Some(fan_speed) = input.fan_speed {
             self.fan_speed = fan_speed;
@@ -268,7 +277,7 @@ impl PlayerController {
             .target_velocity
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
-        if !is_manual_override {
+        if manual_input.is_none() {
             let obstacles = if input.avoid_ball {
                 if let Some(ball) = world.ball.as_ref() {
                     let mut obstacles = obstacles;

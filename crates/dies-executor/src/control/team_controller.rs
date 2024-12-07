@@ -6,30 +6,19 @@ use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
-use crate::{
-    roles::{RoleCtx, SkillState},
-    strategy::{AdHocStrategy, Strategy, StrategyCtx},
-    PlayerControlInput, StrategyMap,
-};
-
-#[derive(Default)]
-struct RoleState {
-    skill_map: HashMap<String, SkillState>,
-}
+use crate::PlayerControlInput;
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
-    halt: AdHocStrategy,
 }
 
 impl TeamController {
     /// Create a new team controller.
-    pub fn new(strategy: StrategyMap, settings: &ExecutorSettings) -> Self {
+    pub fn new(settings: &ExecutorSettings) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
-            halt: AdHocStrategy::new(),
         };
         team.update_controller_settings(settings);
         team
@@ -60,25 +49,19 @@ impl TeamController {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
                     .insert(*id, PlayerController::new(*id, &self.settings));
-                if self.player_controllers.len() == 1 {
-                    self.player_controllers
-                        .get_mut(id)
-                        .unwrap()
-                        .set_gate_keeper();
-                }
             }
         }
 
         let state = world_data.current_game_state.game_state;
 
-        let mut inputs = PlayerInputs::new();
-        // If in a stop state, override the inputs
-        if matches!(
-            world_data.current_game_state.game_state,
-            GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
-        ) {
-            inputs = comply(&world_data, inputs);
-        }
+        // let mut inputs = PlayerInputs::new();
+        // // If in a stop state, override the inputs
+        // if matches!(
+        //     world_data.current_game_state.game_state,
+        //     GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
+        // ) {
+        //     inputs = comply(&world_data, inputs);
+        // }
 
         let all_players = world_data
             .own_players
@@ -95,13 +78,6 @@ impl TeamController {
 
             if let Some(player_data) = player_data {
                 let id = controller.id();
-                let default_input = inputs.player(id);
-                let input = manual_override.get(&id).unwrap_or(&default_input);
-
-                let is_manual = manual_override
-                    .get(&id)
-                    .map(|i| !i.velocity.is_zero())
-                    .unwrap_or(false);
 
                 let role_type = Default::default(); //role_types.get(&id).cloned().unwrap_or_default();
                 let obsacles = world_data.get_obstacles_for_player(role_type);
@@ -109,9 +85,8 @@ impl TeamController {
                 controller.update(
                     player_data,
                     &world_data,
-                    input,
                     world_data.dt,
-                    is_manual,
+                    manual_override.get(&id),
                     obsacles,
                     &all_players,
                 );
