@@ -1,9 +1,9 @@
 use std::time::Instant;
 
-use dies_core::{to_dies_coords2, GameState, Vector2, Vector3};
+use dies_core::{to_dies_coords2, Vector2, Vector3};
 use dies_protos::ssl_gc_referee_message::{referee::Command, Referee};
 
-use crate::BallData;
+use crate::{BallData, GameState, GameStateData, Team};
 
 #[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
@@ -19,13 +19,12 @@ pub struct GameStateTracker {
     start: Instant,
     timeout: u64,
     is_outdated: bool,
-    operator_is_blue: Option<bool>,
-    play_dir_x: f64,
+    operating_team: Option<Team>,
     last_cmd: Option<Command>,
 }
 
 impl GameStateTracker {
-    pub fn new(initial_play_dir_x: f64) -> GameStateTracker {
+    pub fn new() -> GameStateTracker {
         GameStateTracker {
             game_state: GameState::Halt,
             prev_state: GameState::Unknown,
@@ -35,14 +34,9 @@ impl GameStateTracker {
             start: Instant::now(),
             timeout: 0,
             is_outdated: true,
-            operator_is_blue: None,
-            play_dir_x: initial_play_dir_x,
+            operating_team: None,
             last_cmd: None,
         }
-    }
-
-    pub fn set_play_dir_x(&mut self, play_dir_x: f64) {
-        self.play_dir_x = play_dir_x;
     }
 
     pub fn update(&mut self, data: &Referee) -> GameState {
@@ -96,31 +90,27 @@ impl GameStateTracker {
 
         dies_core::debug_string("last_cmd", format!("{:?}", command));
 
-        self.operator_is_blue = match command {
+        self.operating_team = match command {
             Command::PREPARE_KICKOFF_BLUE
             | Command::PREPARE_PENALTY_BLUE
             | Command::DIRECT_FREE_BLUE
-            | Command::BALL_PLACEMENT_BLUE => Some(true),
+            | Command::BALL_PLACEMENT_BLUE => Some(Team::Blue),
             Command::PREPARE_KICKOFF_YELLOW
             | Command::PREPARE_PENALTY_YELLOW
             | Command::DIRECT_FREE_YELLOW
-            | Command::BALL_PLACEMENT_YELLOW => Some(false),
-            _ => self.operator_is_blue,
+            | Command::BALL_PLACEMENT_YELLOW => Some(Team::Yellow),
+            _ => self.operating_team,
         };
 
         // Reset
         match self.game_state {
             GameState::Halt | GameState::Stop | GameState::Timeout | GameState::Run => {
-                self.operator_is_blue = None
+                self.operating_team = None
             }
             _ => (),
         }
 
         self.game_state
-    }
-
-    pub fn get_operator_is_blue(&self) -> Option<bool> {
-        self.operator_is_blue
     }
 
     pub fn start_ball_movement_check(&mut self, ball_pos: Vector3, timeout: u64) {
@@ -165,15 +155,12 @@ impl GameStateTracker {
         self.game_state
     }
 
-    pub fn get(&self) -> GameState {
+    pub fn get(&self) -> GameStateData {
         dies_core::debug_string("game_state", format!("{}", self.game_state));
 
-        // Convert to dies coordinates
-        match self.game_state {
-            GameState::BallReplacement(pos) => {
-                GameState::BallReplacement(to_dies_coords2(pos, self.play_dir_x))
-            }
-            _ => self.game_state,
+        GameStateData {
+            game_state: self.game_state,
+            operating_team: self.operating_team,
         }
     }
 }
@@ -211,78 +198,50 @@ mod tests {
 
     #[test]
     fn test_new_game_state_tracker() {
-        let tracker = GameStateTracker::new(1.0);
-        assert_eq!(tracker.get(), GameState::Unknown);
+        let tracker = GameStateTracker::new();
+        assert_eq!(tracker.get().game_state, GameState::Halt);
     }
 
     #[test]
     fn test_normal_update() {
-        let mut tracker = GameStateTracker::new(1.0);
+        let mut tracker = GameStateTracker::new();
         tracker.update(&referee_msg(Command::HALT));
-        assert_eq!(tracker.get(), GameState::Halt);
+        assert_eq!(tracker.get().game_state, GameState::Halt);
         tracker.update(&referee_msg(Command::STOP));
-        assert_eq!(tracker.get(), Stop);
+        assert_eq!(tracker.get().game_state, Stop);
         tracker.update(&referee_msg(FORCE_START));
-        assert_eq!(tracker.get(), GameState::Run);
+        assert_eq!(tracker.get().game_state, GameState::Run);
         tracker.update(&referee_msg(Command::PREPARE_KICKOFF_BLUE));
-        assert_eq!(tracker.get(), GameState::PrepareKickoff);
+        assert_eq!(tracker.get().game_state, GameState::PrepareKickoff);
         tracker.update(&referee_msg(Command::PREPARE_PENALTY_BLUE));
-        assert_eq!(tracker.get(), GameState::PreparePenalty);
+        assert_eq!(tracker.get().game_state, GameState::PreparePenalty);
         tracker.update(&referee_msg(Command::TIMEOUT_BLUE));
-        assert_eq!(tracker.get(), GameState::Timeout);
+        assert_eq!(tracker.get().game_state, GameState::Timeout);
         tracker.update(&referee_msg_with_pos(
             Command::BALL_PLACEMENT_BLUE,
             Vector2::new(0.0, 0.0),
         ));
         assert_eq!(
-            tracker.get(),
+            tracker.get().game_state,
             GameState::BallReplacement(Vector2::new(0.0, 0.0))
         );
     }
 
     #[test]
     fn test_only_once_update() {
-        let mut tracker = GameStateTracker::new(1.0);
+        let mut tracker = GameStateTracker::new();
         tracker.update(&referee_msg(Command::PREPARE_KICKOFF_YELLOW));
-        assert_eq!(tracker.get(), GameState::PrepareKickoff);
+        assert_eq!(tracker.get().game_state, GameState::PrepareKickoff);
         tracker.update(&referee_msg(Command::NORMAL_START));
-        assert_eq!(tracker.get(), GameState::Kickoff);
+        assert_eq!(tracker.get().game_state, GameState::Kickoff);
         tracker.update(&referee_msg(Command::NORMAL_START));
-        assert_eq!(tracker.get(), GameState::Kickoff);
+        assert_eq!(tracker.get().game_state, GameState::Kickoff);
 
         tracker.update(&referee_msg(Command::STOP));
-        assert_eq!(tracker.get(), Stop);
+        assert_eq!(tracker.get().game_state, Stop);
         tracker.update(&referee_msg(Command::DIRECT_FREE_BLUE));
-        assert_eq!(tracker.get(), GameState::FreeKick);
+        assert_eq!(tracker.get().game_state, GameState::FreeKick);
         tracker.update(&referee_msg(Command::DIRECT_FREE_BLUE));
-        assert_eq!(tracker.get(), GameState::FreeKick);
-    }
-
-    #[test]
-    fn test_x_flip() {
-        let mut tracker = GameStateTracker::new(-1.0);
-        tracker.update(&referee_msg(Command::HALT));
-        assert_eq!(tracker.get(), GameState::Halt);
-        tracker.update(&referee_msg(Command::STOP));
-        assert_eq!(tracker.get(), Stop);
-        tracker.update(&referee_msg(FORCE_START));
-        assert_eq!(tracker.get(), GameState::Run);
-        tracker.update(&referee_msg(Command::PREPARE_KICKOFF_BLUE));
-        assert_eq!(tracker.get(), GameState::PrepareKickoff);
-        tracker.update(&referee_msg(Command::PREPARE_PENALTY_BLUE));
-        assert_eq!(tracker.get(), GameState::PreparePenalty);
-        tracker.update(&referee_msg(Command::TIMEOUT_BLUE));
-        assert_eq!(tracker.get(), GameState::Timeout);
-        tracker.update(&referee_msg_with_pos(
-            Command::BALL_PLACEMENT_BLUE,
-            Vector2::new(1.0, 0.0),
-        ));
-
-        tracker.set_play_dir_x(-1.0);
-
-        assert_eq!(
-            tracker.get(),
-            GameState::BallReplacement(Vector2::new(-1.0, 0.0))
-        );
+        assert_eq!(tracker.get().game_state, GameState::FreeKick);
     }
 }

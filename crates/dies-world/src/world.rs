@@ -1,11 +1,9 @@
 use std::{collections::HashSet, fmt::Display, hash::Hash, time::Instant};
 
+use dies_core::{Angle, PlayerId, RoleType, SysStatus, Vector2, Vector3};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    distance_to_line, find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry,
-    RoleType, SysStatus, Vector2, Vector3,
-};
+use crate::FieldGeometry;
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
 const PLAYER_RADIUS: f64 = 90.0;
@@ -96,62 +94,51 @@ impl PartialEq for GameState {
 
 impl Eq for GameState {}
 
-/// A struct to store the ball state from a single frame.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BallData {
-    /// Unix timestamp of the recorded frame from which this data was extracted (in
-    /// seconds). This is the time that ssl-vision received the frame.
-    pub timestamp: f64,
-    /// Position of the ball filtered by us, in mm, in dies coordinates
-    pub position: Vector3,
-    /// Raw position as reported by vision
-    pub raw_position: Vec<Vector3>,
-    /// Velocity of the ball in mm/s, in dies coordinates
-    pub velocity: Vector3,
-    /// Whether the ball is being detected
-    pub detected: bool,
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct GameStateData {
     /// The state of current game
     pub game_state: GameState,
-    /// If we are the main party currently performing tasks in the state.
-    /// true for symmetric states(halt stop run timout)
-    pub us_operating: bool,
+    /// The team (if any) currently operating in asymmetric states
+    pub operating_team: Option<Team>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Team {
+    Blue,
+    Yellow,
 }
 
 /// A struct to store the player state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PlayerData {
-    /// Unix timestamp of the recorded frame from which this data was extracted (in
-    /// seconds). This is the time that ssl-vision received the frame.
+    /// Unix timestamp of the recorded frame from which this data was extracted
     pub timestamp: f64,
     /// The player's unique id
     pub id: PlayerId,
     /// Unfiltered position as reported by vision
     pub raw_position: Vector2,
-    /// Position of the player filtered by us in mm, in dies coordinates
+    /// Position of the player filtered by us in mm
     pub position: Vector2,
-    /// Velocity of the player in mm/s, in dies coordinates
+    /// Velocity of the player in mm/s
     pub velocity: Vector2,
-    /// Yaw of the player, in radians, (`-pi`, `pi`), where `0` is the positive
-    /// x direction, and `pi/2` is the positive y direction.
+    /// Yaw of the player, in radians, (-pi, pi)
     pub yaw: Angle,
     /// Unfiltered yaw as reported by vision
     pub raw_yaw: Angle,
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f64,
 
-    /// The overall status of the robot. Only available for own players.
+    /// Whether this player is controlled (receives feedback)
+    pub is_controlled: bool,
+    /// The overall status of the robot. Only available for controlled players.
     pub primary_status: Option<SysStatus>,
-    /// The voltage of the kicker capacitor (in V). Only available for own players.
+    /// The voltage of the kicker capacitor (in V). Only available for controlled players.
     pub kicker_cap_voltage: Option<f32>,
-    /// The temperature of the kicker. Only available for own players.
+    /// The temperature of the kicker. Only available for controlled players.
     pub kicker_temp: Option<f32>,
-    /// The voltages of the battery packs. Only available for own players.
+    /// The voltages of the battery packs. Only available for controlled players.
     pub pack_voltages: Option<[f32; 2]>,
-    /// Whether the breakbeam sensor detected a ball. Only available for own players.
+    /// Whether the breakbeam sensor detected a ball. Only available for controlled players.
     pub breakbeam_ball_detected: bool,
     pub imu_status: Option<SysStatus>,
     pub kicker_status: Option<SysStatus>,
@@ -168,6 +155,7 @@ impl PlayerData {
             yaw: Angle::default(),
             raw_yaw: Angle::default(),
             angular_speed: 0.0,
+            is_controlled: false,
             primary_status: None,
             kicker_cap_voltage: None,
             kicker_temp: None,
@@ -178,28 +166,20 @@ impl PlayerData {
         }
     }
 }
-
+/// A struct to store the ball state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct PlayerModel {
-    pub radius: f64,
-    pub dribbler_angle: Angle,
-    pub max_speed: f64,
-    pub max_acceleration: f64,
-    pub max_angular_speed: f64,
-    pub max_angular_acceleration: f64,
-}
-
-impl From<&ExecutorSettings> for PlayerModel {
-    fn from(val: &ExecutorSettings) -> Self {
-        PlayerModel {
-            radius: PLAYER_RADIUS,
-            dribbler_angle: Angle::from_degrees(DRIBBLER_ANGLE_DEG),
-            max_speed: val.controller_settings.max_velocity,
-            max_acceleration: val.controller_settings.max_acceleration,
-            max_angular_speed: val.controller_settings.max_angular_velocity,
-            max_angular_acceleration: val.controller_settings.max_angular_acceleration,
-        }
-    }
+pub struct BallData {
+    /// Unix timestamp of the recorded frame from which this data was extracted (in
+    /// seconds). This is the time that ssl-vision received the frame.
+    pub timestamp: f64,
+    /// Position of the ball filtered by us, in mm, in dies coordinates
+    pub position: Vector3,
+    /// Raw position as reported by vision
+    pub raw_position: Vec<Vector3>,
+    /// Velocity of the ball in mm/s, in dies coordinates
+    pub velocity: Vector3,
+    /// Whether the ball is being detected
+    pub detected: bool,
 }
 
 pub enum BallPrediction {
@@ -210,180 +190,20 @@ pub enum BallPrediction {
 /// A struct to store the world state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WorldFrame {
-    /// Timestamp of the frame, in seconds. This timestamp is relative to the time the
-    /// world tracking was started.
+    /// Timestamp of the frame, in seconds relative to tracking start
     pub t_received: f64,
-    /// Recording timestamp of the frame, in seconds, as reported by vision. This
-    /// timestamp is relative to the time the first image was captured.
+    /// Recording timestamp of the frame from vision, in seconds
     pub t_capture: f64,
     /// The time since the last frame was received, in seconds
     pub dt: f64,
-    pub own_players: Vec<PlayerData>,
-    pub opp_players: Vec<PlayerData>,
+    pub blue_team: Vec<PlayerData>,
+    pub yellow_team: Vec<PlayerData>,
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameStateData,
-    pub player_model: PlayerModel,
 }
 
 impl WorldFrame {
-    pub fn get_player(&self, id: PlayerId) -> Option<&PlayerData> {
-        self.own_players.iter().find(|p| p.id == id)
-    }
-
-    pub fn players_within_radius(&self, pos: Vector2, radius: f64) -> Vec<&PlayerData> {
-        self.own_players
-            .iter()
-            .chain(self.opp_players.iter())
-            .filter(|p| (p.position.xy() - pos).norm() < radius)
-            .collect()
-    }
-
-    /// Compute the approximate time it will take for the player to reach the target point
-    pub fn time_to_reach_point(&self, player: &PlayerData, target: Vector2) -> f64 {
-        let max_speed = self.player_model.max_speed;
-        let max_acceleration = self.player_model.max_acceleration;
-        let current_speed = player.velocity.norm();
-        let dist = (target - player.position.xy()).norm();
-
-        // Acceleration phase
-        let t1 = (max_speed - current_speed) / max_acceleration;
-        let d1 = current_speed * t1 + 0.5 * max_acceleration * t1.powi(2);
-
-        // Deceleration phase
-        let t3 = max_speed / max_acceleration;
-        let d3 = 0.5 * max_speed * t3;
-
-        // Constant speed phase
-        let d2 = dist - d1 - d3;
-
-        if d2 > 0.0 {
-            // The robot reaches max speed
-            let t2 = d2 / max_speed;
-            t1 + t2 + t3
-        } else {
-            // The robot doesn't reach max speed
-            // Calculate time considering both acceleration and deceleration
-            let v_peak = (max_acceleration * dist).sqrt();
-            let t_acc = (v_peak - current_speed) / max_acceleration;
-            let t_dec = v_peak / max_acceleration;
-            t_acc + t_dec
-        }
-    }
-
-    /// Cast a ray from the start point in the given direction and return the intersection point with the first
-    /// player or wall that it.
-    pub fn cast_ray(&self, start: Vector2, direction: Vector2) -> Option<Vector2> {
-        let normalized_direction = direction.normalize();
-        let mut closest_intersection: Option<(f64, Vector2)> = None;
-
-        let update_closest = |closest: &mut Option<(f64, Vector2)>, t: f64, point: Vector2| {
-            if t > 0.0 && (closest.is_none() || t < closest.unwrap().0) {
-                *closest = Some((t, point));
-            }
-        };
-
-        // Check intersections with players
-        for player in self.own_players.iter().chain(self.opp_players.iter()) {
-            let oc = start - player.position.xy();
-            let a = normalized_direction.dot(&normalized_direction);
-            let b = 2.0 * oc.dot(&normalized_direction);
-            let c = oc.dot(&oc) - self.player_model.radius * self.player_model.radius;
-            let discriminant = b * b - 4.0 * a * c;
-
-            if discriminant >= 0.0 {
-                let t = (-b - discriminant.sqrt()) / (2.0 * a);
-                if t > 0.0 {
-                    let intersection_point = start + normalized_direction * t;
-                    update_closest(&mut closest_intersection, t, intersection_point);
-                }
-            }
-        }
-
-        // Check intersections with field boundaries
-        if let Some(field_geom) = &self.field_geom {
-            let half_length = field_geom.field_length / 2.0;
-            let half_width = field_geom.field_width / 2.0;
-
-            let check_boundary = |p1: Vector2, p2: Vector2| {
-                let v1 = p2 - p1;
-                if let Some(intersection) = find_intersection(p1, v1, start, direction) {
-                    let t = (intersection - start).dot(&normalized_direction);
-                    update_closest(&mut closest_intersection, t, intersection);
-                }
-            };
-
-            // Check all four boundaries
-            /*
-            check_boundary(
-                Vector2::new(-half_length, half_width),
-                Vector2::new(half_length, half_width),
-            );
-            check_boundary(
-                Vector2::new(-half_length, -half_width),
-                Vector2::new(half_length, -half_width),
-            );
-            check_boundary(
-                Vector2::new(-half_length, -half_width),
-                Vector2::new(-half_length, half_width),
-            );
-            check_boundary(
-                Vector2::new(half_length, -half_width),
-                Vector2::new(half_length, half_width),
-            );
-            */
-        }
-
-        closest_intersection.map(|(_, point)| point)
-    }
-
-    /// Predict the position of the ball at time `t` seconds in the future assuming it
-    /// moves in a straight line.
-    pub fn predict_ball_position(&self, t: f64) -> Option<BallPrediction> {
-        if let Some(ball) = &self.ball {
-            let current_pos = ball.position.xy();
-            let dp = ball.velocity.xy() * t;
-            let distance = dp.norm();
-            let pred_pos = ball.position.xy() + dp;
-
-            if let Some(intersection) = self.cast_ray(current_pos, dp) {
-                if (intersection - current_pos).norm() < distance {
-                    Some(BallPrediction::Collision(intersection))
-                } else {
-                    Some(BallPrediction::Linear(pred_pos))
-                }
-            } else {
-                Some(BallPrediction::Linear(pred_pos))
-            }
-        } else {
-            None
-        }
-    }
-
-    pub fn get_best_kick_direction(&self, player_id: PlayerId) -> Angle {
-        let player = self.get_player(player_id).unwrap();
-        let mut score = 0.0;
-        let mut best_angle: Angle = Angle::default();
-        for theta in (-90..90).step_by(20) {
-            let angle = Angle::from_degrees(theta as f64);
-            let direction = player.position + angle.to_vector() * 1000.0;
-
-            let mut min_dist: f64 = 0.0;
-            for p in self.opp_players.iter() {
-                let dist = distance_to_line(player.position, direction, p.position);
-                if dist < min_dist {
-                    min_dist = dist;
-                }
-            }
-
-            if min_dist > score {
-                score = min_dist;
-                best_angle = angle;
-            }
-        }
-        best_angle
-    }
-
     pub fn get_obstacles_for_player(&self, role: RoleType) -> Vec<Obstacle> {
         if let Some(field_geom) = &self.field_geom {
             let field_boundary = {
@@ -481,6 +301,22 @@ impl Avoid {
     }
 }
 
+fn distance_to_line(start: Vector2, end: Vector2, pos: Vector2) -> f64 {
+    let line = end - start;
+    let line_norm = line.norm();
+    let line_dir = line / line_norm;
+    let pos_dir = pos - start;
+    let proj = pos_dir.dot(&line_dir);
+    if proj < 0.0 {
+        (pos - start).norm()
+    } else if proj > line_norm {
+        (pos - end).norm()
+    } else {
+        let proj_vec = line_dir * proj;
+        (pos_dir - proj_vec).norm()
+    }
+}
+
 pub fn nearest_safe_pos(
     avoding_point: Avoid,
     min_distance: f64,
@@ -533,7 +369,7 @@ pub fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
 
 pub fn mock_world_data() -> WorldFrame {
     WorldFrame {
-        own_players: vec![PlayerData {
+        blue_team: vec![PlayerData {
             id: PlayerId::new(0),
             position: Vector2::new(1000.0, 1000.0),
             timestamp: 0.0,
@@ -542,6 +378,7 @@ pub fn mock_world_data() -> WorldFrame {
             yaw: Angle::default(),
             raw_yaw: Angle::default(),
             angular_speed: 0.0,
+            is_controlled: true,
             primary_status: Some(SysStatus::Ready),
             kicker_cap_voltage: Some(0.0),
             kicker_temp: Some(0.0),
@@ -550,7 +387,7 @@ pub fn mock_world_data() -> WorldFrame {
             imu_status: Some(SysStatus::Ready),
             kicker_status: Some(SysStatus::Standby),
         }],
-        opp_players: vec![PlayerData {
+        yellow_team: vec![PlayerData {
             id: PlayerId::new(1),
             position: Vector2::new(-1000.0, -1000.0),
             timestamp: 0.0,
@@ -559,135 +396,27 @@ pub fn mock_world_data() -> WorldFrame {
             yaw: Angle::default(),
             raw_yaw: Angle::default(),
             angular_speed: 0.0,
-            primary_status: Some(SysStatus::Ready),
-            kicker_cap_voltage: Some(0.0),
-            kicker_temp: Some(0.0),
-            pack_voltages: Some([0.0, 0.0]),
+            is_controlled: false,
+            primary_status: None,
+            kicker_cap_voltage: None,
+            kicker_temp: None,
+            pack_voltages: None,
             breakbeam_ball_detected: false,
-            imu_status: Some(SysStatus::Ready),
-            kicker_status: Some(SysStatus::Standby),
+            imu_status: None,
+            kicker_status: None,
         }],
         field_geom: Some(FieldGeometry {
             field_length: 9000.0,
             field_width: 6000.0,
             ..Default::default()
         }),
-        player_model: PlayerModel {
-            radius: 90.0,
-            dribbler_angle: Angle::from_degrees(56.0),
-            max_speed: 1000.0,
-            max_acceleration: 1000.0,
-            max_angular_speed: 1000.0,
-            max_angular_acceleration: 1000.0,
-        },
         t_received: 0.0,
         t_capture: 0.0,
         dt: 1.0,
         ball: None,
         current_game_state: GameStateData {
             game_state: GameState::Run,
-            us_operating: true,
+            operating_team: None,
         },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use approx::assert_relative_eq;
-
-    use super::*;
-
-    #[test]
-    fn test_ray_player_intersection() {
-        let world = mock_world_data();
-        let start = Vector2::new(0.0, 0.0);
-        let direction = Vector2::new(1.0, 1.0);
-
-        let result = world.cast_ray(start, direction);
-        assert!(result.is_some());
-        let intersection = result.unwrap();
-        assert_relative_eq!(intersection.x, 955.0, epsilon = 1.0);
-        assert_relative_eq!(intersection.y, 955.0, epsilon = 1.0);
-    }
-
-    #[test]
-    fn test_ray_wall_intersection() {
-        let world = mock_world_data();
-        let start = Vector2::new(0.0, 0.0);
-        let direction = Vector2::new(1.0, 0.0);
-
-        let result = world.cast_ray(start, direction);
-        assert!(result.is_some());
-        let intersection = result.unwrap();
-        assert_relative_eq!(intersection.x, 4500.0, epsilon = 1.0);
-        assert_relative_eq!(intersection.y, 0.0, epsilon = 1.0);
-    }
-
-    #[test]
-    fn test_no_intersection() {
-        let world = mock_world_data();
-        let start = Vector2::new(0.0, 0.0);
-        let direction = Vector2::new(0.0, 1.0);
-
-        let result = world.cast_ray(start, direction);
-        assert!(result.is_some());
-        let intersection = result.unwrap();
-        assert_relative_eq!(intersection.x, 0.0, epsilon = 1.0);
-        assert_relative_eq!(intersection.y, 3000.0, epsilon = 1.0);
-    }
-
-    #[test]
-    fn test_ray_origin_inside_player() {
-        let world = mock_world_data();
-        let start = Vector2::new(1000.0, 1000.0); // Inside the player
-        let direction = Vector2::new(1.0, 0.0);
-
-        let result = world.cast_ray(start, direction);
-        assert!(result.is_some());
-        let intersection = result.unwrap();
-        assert_relative_eq!(intersection.x, 1090.0, epsilon = 1.0);
-        assert_relative_eq!(intersection.y, 1000.0, epsilon = 1.0);
-    }
-
-    #[test]
-    fn test_ray_parallel_to_wall() {
-        let world = mock_world_data();
-        let start = Vector2::new(0.0, 3000.0);
-        let direction = Vector2::new(1.0, 0.0);
-
-        let result = world.cast_ray(start, direction);
-        assert!(result.is_some());
-        let intersection = result.unwrap();
-        assert_relative_eq!(intersection.x, 4500.0, epsilon = 1.0);
-        assert_relative_eq!(intersection.y, 3000.0, epsilon = 1.0);
-    }
-
-    #[test]
-    fn test_ray_away_from_everything() {
-        let world = mock_world_data();
-        let start = Vector2::new(0.0, 0.0);
-        let direction = Vector2::new(-1.0, -1.0);
-
-        let result = world.cast_ray(start, direction);
-        assert!(result.is_some());
-        let intersection = result.unwrap();
-        assert_relative_eq!(intersection.x, -4500.0, epsilon = 1.0);
-        assert_relative_eq!(intersection.y, -4500.0, epsilon = 1.0);
-    }
-
-    #[test]
-    fn test_ball_placement_equals() {
-        assert!(
-            GameState::BallReplacement(Vector2::zeros())
-                == GameState::BallReplacement(Vector2::x())
-        )
-    }
-
-    #[test]
-    fn test_ball_placement_matches() {
-        assert!(StrategyGameStateMacther::any_of(
-            vec![GameState::BallReplacement(Vector2::zeros())].as_slice()
-        )
-        .matches(&GameState::BallReplacement(Vector2::x())))
     }
 }
