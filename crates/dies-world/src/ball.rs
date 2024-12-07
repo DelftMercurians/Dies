@@ -2,13 +2,15 @@ use dies_core::{debug_line, debug_value, Vector3};
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 use nalgebra::{SVector, Vector6};
 
-use crate::{filter::MaybeKalman, geom::FieldGeometry, BallData, FieldMask, TrackerSettings};
+use crate::{
+    filter::MaybeKalman, geom::FieldGeometry, tracker_settings::FieldMask,
+    tracker_settings::TrackerSettings, BallFrame,
+};
 
 /// Stored data for the ball from the last update.
 #[derive(Debug)]
 struct StoredData {
     timestamp: f64,
-    raw_position: Vec<Vector3>,
     position: Vector3,
     velocity: Vector3,
 }
@@ -103,7 +105,6 @@ impl BallTracker {
             self.last_detection = Some(StoredData {
                 timestamp: current_time,
                 position: ball_measurements[0].0,
-                raw_position: measured_positions,
                 velocity: Vector3::zeros(),
             });
 
@@ -155,23 +156,16 @@ impl BallTracker {
                 self.last_detection = Some(StoredData {
                     timestamp: current_time,
                     position: pos_v3,
-                    raw_position: Vec::with_capacity(0),
                     velocity: vel_v3,
                 });
             }
         }
-
-        // Update raw positions for visualization
-        if let Some(detection) = &mut self.last_detection {
-            detection.raw_position = measured_positions;
-        }
     }
 
     /// Get the current ball state
-    pub fn get(&self) -> Option<BallData> {
-        self.last_detection.as_ref().map(|data| BallData {
+    pub fn get(&self) -> Option<BallFrame> {
+        self.last_detection.as_ref().map(|data| BallFrame {
             timestamp: data.timestamp,
-            raw_position: data.raw_position.clone(),
             position: data.position,
             velocity: data.velocity,
             detected: self.misses < 5,
@@ -233,7 +227,6 @@ mod tests {
         );
 
         let ball_data = tracker.get().unwrap();
-        assert_eq!(ball_data.raw_position[0], Vector3::new(1.0, 2.0, 0.0));
         assert_eq!(ball_data.velocity.xy(), Vector2::zeros()); // Should have zero velocity
     }
 

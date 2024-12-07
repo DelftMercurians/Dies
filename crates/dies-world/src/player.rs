@@ -5,7 +5,7 @@ use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
-use crate::{world::WorldInstant, PlayerData, TrackerSettings};
+use crate::{tracker_settings::TrackerSettings, world::WorldInstant, PlayerFrame};
 
 const BREAKBEAM_WINDOW: usize = 100;
 const BREAKBEAM_DETECTION_THRESHOLD: usize = 5;
@@ -13,11 +13,9 @@ const BREAKBEAM_DETECTION_THRESHOLD: usize = 5;
 /// Stored data for a player from the last update.
 struct StoredData {
     timestamp: f64,
-    raw_position: Vector2,
     position: Vector2,
     velocity: Vector2,
     yaw: Angle,
-    raw_yaw: Angle,
     angular_speed: f64,
 }
 
@@ -161,22 +159,18 @@ impl PlayerTracker {
                     } else {
                         self.last_detection = Some(StoredData {
                             timestamp: t_capture,
-                            raw_position,
                             position: na::convert(Vector2::new(x[0], x[2])),
                             velocity: na::convert(Vector2::new(x[1], x[3])),
                             yaw,
-                            raw_yaw,
                             angular_speed: 0.0,
                         });
                         self.last_detection.as_mut().unwrap()
                     };
-                    last_data.raw_position = raw_position;
                     last_data.position = na::convert(Vector2::new(x[0], x[2]));
                     last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
                     last_data.angular_speed = (yaw - last_data.yaw).radians()
                         / (t_capture - last_data.timestamp + std::f64::EPSILON);
                     last_data.yaw = yaw;
-                    last_data.raw_yaw = raw_yaw;
                     last_data.timestamp = t_capture;
 
                     if self.velocity_samples.len() < 10 {
@@ -233,21 +227,19 @@ impl PlayerTracker {
             .update_settings(settings.player_yaw_lpf_alpha);
     }
 
-    pub fn get(&self) -> Option<PlayerData> {
+    pub fn get(&self) -> Option<PlayerFrame> {
         let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
         if self.last_feedback.is_some() {
             dies_core::debug_value(format!("p{}.breakbeam", self.id), breakbeam_count as f64);
         }
 
-        self.last_detection.as_ref().map(|data| PlayerData {
+        self.last_detection.as_ref().map(|data| PlayerFrame {
             id: self.id,
             timestamp: data.timestamp,
             position: data.position,
             velocity: data.velocity,
             yaw: data.yaw,
             angular_speed: data.angular_speed,
-            raw_position: data.raw_position,
-            raw_yaw: data.raw_yaw,
             is_controlled: self.is_controlled,
             primary_status: self.last_feedback.and_then(|f| f.primary_status),
             kicker_cap_voltage: self.last_feedback.and_then(|f| f.kicker_cap_voltage),
