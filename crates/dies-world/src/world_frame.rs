@@ -131,20 +131,8 @@ pub struct PlayerFrame {
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f64,
 
-    /// Whether this player is controlled (receives feedback)
-    pub is_controlled: bool,
-    /// The overall status of the robot. Only available for controlled players.
-    pub primary_status: Option<SysStatus>,
-    /// The voltage of the kicker capacitor (in V). Only available for controlled players.
-    pub kicker_cap_voltage: Option<f32>,
-    /// The temperature of the kicker. Only available for controlled players.
-    pub kicker_temp: Option<f32>,
-    /// The voltages of the battery packs. Only available for controlled players.
-    pub pack_voltages: Option<[f32; 2]>,
-    /// Whether the breakbeam sensor detected a ball. Only available for controlled players.
-    pub breakbeam_ball_detected: bool,
-    pub imu_status: Option<SysStatus>,
-    pub kicker_status: Option<SysStatus>,
+    /// Feedback from the player, if it is controlled
+    pub feedback: PlayerFeedback,
 }
 
 impl PlayerFrame {
@@ -156,17 +144,34 @@ impl PlayerFrame {
             velocity: Vector2::zeros(),
             yaw: Angle::default(),
             angular_speed: 0.0,
-            is_controlled: false,
-            primary_status: None,
-            kicker_cap_voltage: None,
-            kicker_temp: None,
-            pack_voltages: None,
-            imu_status: None,
-            breakbeam_ball_detected: false,
-            kicker_status: None,
+            feedback: PlayerFeedback::NotControlled,
         }
     }
 }
+
+/// The feedback that the player receives from the world, if it is controlled.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum PlayerFeedback {
+    NotControlled,
+    NotReceived,
+    Controlled {
+        /// The overall status of the robot.
+        primary_status: Option<SysStatus>,
+        /// The voltage of the kicker capacitor (in V).
+        kicker_cap_voltage: Option<f32>,
+        /// The temperature of the kicker.
+        kicker_temp: Option<f32>,
+        /// The voltages of the battery packs.
+        pack_voltages: Option<[f32; 2]>,
+        /// Whether the breakbeam sensor detected a ball.
+        breakbeam_ball_detected: bool,
+        /// The status of the IMU.
+        imu_status: Option<SysStatus>,
+        /// The status of the kicker.
+        kicker_status: Option<SysStatus>,
+    },
+}
+
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BallFrame {
@@ -191,14 +196,7 @@ pub fn mock_world_frame() -> WorldFrame {
             velocity: Vector2::zeros(),
             yaw: Angle::default(),
             angular_speed: 0.0,
-            is_controlled: true,
-            primary_status: Some(SysStatus::Ready),
-            kicker_cap_voltage: Some(0.0),
-            kicker_temp: Some(0.0),
-            pack_voltages: Some([0.0, 0.0]),
-            breakbeam_ball_detected: false,
-            imu_status: Some(SysStatus::Ready),
-            kicker_status: Some(SysStatus::Standby),
+            feedback: PlayerFeedback::NotControlled,
         }],
         yellow_team: vec![PlayerFrame {
             id: PlayerId::new(1),
@@ -207,14 +205,7 @@ pub fn mock_world_frame() -> WorldFrame {
             velocity: Vector2::zeros(),
             yaw: Angle::default(),
             angular_speed: 0.0,
-            is_controlled: false,
-            primary_status: None,
-            kicker_cap_voltage: None,
-            kicker_temp: None,
-            pack_voltages: None,
-            breakbeam_ball_detected: false,
-            imu_status: None,
-            kicker_status: None,
+            feedback: PlayerFeedback::NotControlled,
         }],
         field_geom: Some(FieldGeometry {
             field_length: 9000.0,

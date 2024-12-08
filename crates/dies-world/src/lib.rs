@@ -11,10 +11,10 @@ mod game_state;
 pub mod geom;
 mod player;
 mod tracker_settings;
-mod world;
+mod world_frame;
 
 use tracker_settings::{FieldMask, TrackerSettings};
-pub use world::*;
+pub use world_frame::*;
 
 use crate::game_state::GameStateTracker;
 use ball::BallTracker;

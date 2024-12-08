@@ -5,7 +5,8 @@ use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
-use crate::{tracker_settings::TrackerSettings, world::WorldInstant, PlayerFrame};
+use crate::PlayerFeedback;
+use crate::{tracker_settings::TrackerSettings, world_frame::WorldInstant, PlayerFrame};
 
 const BREAKBEAM_WINDOW: usize = 100;
 const BREAKBEAM_DETECTION_THRESHOLD: usize = 5;
@@ -235,14 +236,23 @@ impl PlayerTracker {
             velocity: data.velocity,
             yaw: data.yaw,
             angular_speed: data.angular_speed,
-            is_controlled: self.is_controlled,
-            primary_status: self.last_feedback.and_then(|f| f.primary_status),
-            kicker_cap_voltage: self.last_feedback.and_then(|f| f.kicker_cap_voltage),
-            kicker_temp: self.last_feedback.and_then(|f| f.kicker_temp),
-            pack_voltages: self.last_feedback.and_then(|f| f.pack_voltages),
-            breakbeam_ball_detected: breakbeam_count > BREAKBEAM_DETECTION_THRESHOLD,
-            imu_status: self.last_feedback.and_then(|f| f.imu_status),
-            kicker_status: self.last_feedback.and_then(|f| f.kicker_status),
+            feedback: if self.is_controlled {
+                if let Some(feedback) = &self.last_feedback {
+                    PlayerFeedback::Controlled {
+                        primary_status: feedback.primary_status,
+                        kicker_cap_voltage: feedback.kicker_cap_voltage,
+                        kicker_temp: feedback.kicker_temp,
+                        pack_voltages: feedback.pack_voltages,
+                        breakbeam_ball_detected: breakbeam_count > BREAKBEAM_DETECTION_THRESHOLD,
+                        imu_status: feedback.imu_status,
+                        kicker_status: feedback.kicker_status,
+                    }
+                } else {
+                    PlayerFeedback::NotReceived
+                }
+            } else {
+                PlayerFeedback::NotControlled
+            },
         })
     }
 }
@@ -277,7 +287,7 @@ mod test {
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id.as_u32(), 1);
-        assert!(!data.is_controlled);
+        assert!(matches!(data.feedback, PlayerFeedback::NotControlled));
         assert_eq!(data.position, Vector2::new(100.0, 200.0));
     }
 
@@ -301,7 +311,7 @@ mod test {
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id.as_u32(), 1);
-        assert!(data.is_controlled);
+        assert!(matches!(data.feedback, PlayerFeedback::Controlled { .. }));
         assert_eq!(data.position, Vector2::new(100.0, 200.0));
     }
 
