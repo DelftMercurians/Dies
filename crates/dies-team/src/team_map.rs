@@ -1,21 +1,13 @@
 use std::collections::HashMap;
 
-use dies_core::{
-    ExecutorSettings, PlayerCmd, PlayerId, PlayerOverrideCommand, VisionMsg,
-};
+use dies_core::{ExecutorSettings, PlayerCmd, PlayerId, PlayerOverrideCommand, VisionMsg};
 use dies_protos::ssl_gc_referee_message::Referee;
-use dies_world::world::WorldInstant;
 use dies_world::WorldTracker;
+use dies_world::{world::WorldInstant, WorldFrame};
 
 use crate::{control::TeamController, strategy_instance::StrategyInstance};
 
-enum GameUpdate {
-    Vision(VisionMsg),
-    Gc(Referee),
-}
-
 pub struct ControlledTeam {
-    tracker: WorldTracker,
     controller: TeamController,
     strategy: StrategyInstance,
 }
@@ -26,7 +18,7 @@ enum Team {
 }
 
 impl Team {
-    fn update(&mut self, update: &GameUpdate, time: WorldInstant) {
+    fn update(&mut self, update: &WorldFrame, time: WorldInstant) {
         let _ = update;
         match self {
             Team::Controlled(team) => {
@@ -82,7 +74,6 @@ impl TeamMap {
         let blue = match config.blue {
             TeamConfig::Controlled { strategy } => {
                 let mut team = ControlledTeam {
-                    tracker: WorldTracker::new(settings),
                     controller: TeamController::new(settings),
                     strategy,
                 };
@@ -100,7 +91,6 @@ impl TeamMap {
         let yellow = match config.yellow {
             TeamConfig::Controlled { strategy } => {
                 let mut team = ControlledTeam {
-                    tracker: WorldTracker::new(settings),
                     controller: TeamController::new(settings),
                     strategy,
                 };

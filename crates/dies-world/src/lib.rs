@@ -24,13 +24,13 @@ use player::PlayerTracker;
 
 /// A struct to track the world state.
 pub struct WorldTracker {
-    /// Maps indicating which players are controlled for each team
-    blue_controlled: HashSet<PlayerId>,
-    yellow_controlled: HashSet<PlayerId>,
-
     /// Player trackers for each team
     blue_players: HashMap<PlayerId, PlayerTracker>,
+    blue_controlled: bool,
     yellow_players: HashMap<PlayerId, PlayerTracker>,
+    yellow_controlled: bool,
+
+    side_assignment: SideAssignment,
 
     ball_tracker: BallTracker,
     game_state_tracker: GameStateTracker,
@@ -48,10 +48,11 @@ pub struct WorldTracker {
 
 impl WorldTracker {
     /// Create a new world tracker from settings.
-    pub fn new(settings: &TrackerSettings) -> Self {
+    pub fn new(initial_side_assignment: SideAssignment, settings: &TrackerSettings) -> Self {
         Self {
-            blue_controlled: HashSet::new(),
-            yellow_controlled: HashSet::new(),
+            blue_controlled: false,
+            yellow_controlled: false,
+            side_assignment: initial_side_assignment,
             blue_players: HashMap::new(),
             yellow_players: HashMap::new(),
             ball_tracker: BallTracker::new(settings),
@@ -66,36 +67,24 @@ impl WorldTracker {
         }
     }
 
-    /// Add a controlled player to be tracked
-    pub fn add_controlled_player(&mut self, team: Team, id: PlayerId) {
-        match team {
-            Team::Blue => {
-                self.blue_controlled.insert(id);
-                if let std::collections::hash_map::Entry::Vacant(e) = self.blue_players.entry(id) {
-                    e.insert(PlayerTracker::new(id, &self.tracker_settings, true));
-                }
-            }
-            Team::Yellow => {
-                self.yellow_controlled.insert(id);
-                if let std::collections::hash_map::Entry::Vacant(e) = self.yellow_players.entry(id)
-                {
-                    e.insert(PlayerTracker::new(id, &self.tracker_settings, true));
-                }
-            }
-        }
+    pub fn reset(&mut self) {
+        self.blue_players.clear();
+        self.yellow_players.clear();
+        self.ball_tracker = BallTracker::new(&self.tracker_settings);
+        self.game_state_tracker = GameStateTracker::new();
+        self.field_geometry = None;
+        self.first_t_received = None;
+        self.last_t_received = None;
+        self.dt_received = None;
+        self.first_t_capture = None;
+        self.last_t_capture = None;
     }
 
-    /// Remove a controlled player
-    pub fn remove_controlled_player(&mut self, team: Team, id: PlayerId) {
-        match team {
-            Team::Blue => {
-                self.blue_controlled.remove(&id);
-                self.blue_players.remove(&id);
-            }
-            Team::Yellow => {
-                self.yellow_controlled.remove(&id);
-                self.yellow_players.remove(&id);
-            }
+    pub fn set_controlled(&mut self, blue: bool, yellow: bool) {
+        if self.blue_controlled != blue || self.yellow_controlled != yellow {
+            self.blue_controlled = blue;
+            self.yellow_controlled = yellow;
+            self.reset();
         }
     }
 
@@ -186,6 +175,16 @@ impl WorldTracker {
 
     /// Update the world state from a referee message.
     pub fn update_from_referee(&mut self, data: &Referee) {
+        // Look for side assignment changes
+        let blue_on_positive = data.blue_team_on_positive_half();
+        if blue_on_positive && self.side_assignment != SideAssignment::BluePositive {
+            self.side_assignment = SideAssignment::BluePositive;
+            log::info!("Blue team on positive half");
+        } else if !blue_on_positive && self.side_assignment != SideAssignment::YellowPositive {
+            self.side_assignment = SideAssignment::YellowPositive;
+            log::info!("Yellow team on positive half");
+        }
+
         self.game_state_tracker
             .update_ball_movement_check(self.ball_tracker.get().as_ref());
 
@@ -261,9 +260,9 @@ impl WorldTracker {
     ) where
         I: Iterator<Item = &'a SSL_DetectionRobot>,
     {
-        let (players_map, controlled_set) = match team {
-            Team::Blue => (&mut self.blue_players, &self.blue_controlled),
-            Team::Yellow => (&mut self.yellow_players, &self.yellow_controlled),
+        let (players_map, is_controlled) = match team {
+            Team::Blue => (&mut self.blue_players, self.blue_controlled),
+            Team::Yellow => (&mut self.yellow_players, self.yellow_controlled),
         };
 
         // Update detected players
@@ -283,7 +282,7 @@ impl WorldTracker {
                 e.insert(PlayerTracker::new(
                     id,
                     &self.tracker_settings,
-                    controlled_set.contains(&id),
+                    is_controlled,
                 ));
             }
 
@@ -305,17 +304,22 @@ impl WorldTracker {
         team: Team,
         time: WorldInstant,
     ) {
-        let (players_map, controlled_set) = match team {
-            Team::Blue => (&mut self.blue_players, &self.blue_controlled),
-            Team::Yellow => (&mut self.yellow_players, &self.yellow_controlled),
+        let (players_map, is_controlled) = match team {
+            Team::Blue => (&mut self.blue_players, self.blue_controlled),
+            Team::Yellow => (&mut self.yellow_players, self.yellow_controlled),
         };
 
         // Only process feedback for controlled players
-        if controlled_set.contains(&feedback.id) {
+        if is_controlled {
             let tracker = players_map
                 .entry(feedback.id)
                 .or_insert_with(|| PlayerTracker::new(feedback.id, &self.tracker_settings, true));
             tracker.update_from_feedback(feedback, time);
+        } else {
+            log::warn!(
+                "Received feedback for uncontrolled player: {:?}",
+                feedback.id
+            );
         }
     }
 
@@ -359,6 +363,7 @@ impl WorldTracker {
             ball: self.ball_tracker.get(),
             field_geom: self.field_geometry.clone(),
             current_game_state: self.game_state_tracker.get(),
+            side_assignment: self.side_assignment,
         }
     }
 }

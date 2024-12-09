@@ -65,6 +65,7 @@ impl InteractiveMainLoop {
                     shutdown_rx,
                     ssl_client: None,
                     bs_client: None,
+                    teams: None,
                 };
                 main_loop.run().await;
             })
