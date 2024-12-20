@@ -22,10 +22,28 @@ pub struct WorldFrame {
     pub side_assignment: SideAssignment,
 }
 
+impl WorldFrame {
+    pub fn get_team(&self, team: Team) -> &Vec<PlayerFrame> {
+        match team {
+            Team::Blue => &self.blue_team,
+            Team::Yellow => &self.yellow_team,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Team {
     Blue,
     Yellow,
+}
+
+impl Team {
+    pub fn opponent(&self) -> Team {
+        match self {
+            Team::Blue => Team::Yellow,
+            Team::Yellow => Team::Blue,
+        }
+    }
 }
 
 /// The side the two teams are assigned to.

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use dies_protos::{
     ssl_gc_referee_message::Referee, ssl_vision_detection::SSL_DetectionRobot,
