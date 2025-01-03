@@ -1,12 +1,15 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
-use dies_core::{ColoredPlayerId, PlayerId, RobotCmd, RobotFeedback, SysStatus, TeamColor, VecMap};
+use dies_core::{ColoredPlayerId, RobotCmd, RobotFeedback, SysStatus, TeamColor};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use glue::{Monitor, Serial};
 
-use crate::{glue::convert_cmd, robot_router::RobotRouter};
+use crate::{
+    glue_convert::{convert_cmd, convert_sys_status, convert_sys_status_opt},
+    robot_router::RobotRouter,
+};
 
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
@@ -49,7 +52,7 @@ pub enum BasestationConnectionStatus {
 
 struct BasestationClient {
     cmd_rx: mpsc::UnboundedReceiver<Message>,
-    feedback_tx: broadcast::Sender<RobotFeedback>,
+    feedback_tx: broadcast::Sender<Vec<(ColoredPlayerId, RobotFeedback)>>,
     monitor: Option<Monitor>,
     connection_status: BasestationConnectionStatus,
     robot_router: RobotRouter,
@@ -59,7 +62,8 @@ struct BasestationClient {
 impl BasestationClient {
     fn spawn(config: BasestationClientConfig) -> BasestationHandle {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-        let (feedback_tx, feedback_rx) = broadcast::channel(16);
+        let (feedback_tx, feedback_rx) =
+            broadcast::channel::<Vec<(ColoredPlayerId, RobotFeedback)>>(16);
 
         let client = Self {
             cmd_rx,
@@ -120,20 +124,52 @@ impl BasestationClient {
 
             // Handle feedback from monitor
             if let Some(monitor) = &mut self.monitor {
-                if let Ok(feedback) = monitor.get_robots() {
+                if let Some(feedback) = monitor.get_robots() {
                     // Update robot IDs from feedback
-                    let robot_ids: Vec<_> = feedback.iter().map(|f| f.robot_id).collect();
-                    self.robot_router.update_robot_ids(robot_ids);
+                    let active_robot_ids: Vec<_> = feedback
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, r)| {
+                            if matches!(r.primary_status(), Some(glue::HG_Status::OK)) {
+                                Some(i as u32)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    self.robot_router.update_robot_ids(active_robot_ids);
 
                     // Send feedback
                     let feedback = feedback
                         .into_iter()
-                        .map(|f| {
-                            let mut feedback = crate::glue::convert_feedback(f);
-                            feedback.id = self.robot_router.get_by_robot_id(f.robot_id);
-                            feedback
+                        .enumerate()
+                        .map(|(i, f)| {
+                            // Convert feedback
+                            let robot_feedback = RobotFeedback {
+                                primary_status: convert_sys_status_opt(f.primary_status()),
+                                kicker_status: convert_sys_status_opt(f.kicker_status()),
+                                imu_status: convert_sys_status_opt(f.imu_status()),
+                                fan_status: convert_sys_status_opt(f.fan_status()),
+                                kicker_cap_voltage: f.kicker_cap_voltage(),
+                                kicker_temp: f.kicker_temperature(),
+                                motor_statuses: f.motor_statuses().map(|m| {
+                                    let mut statuses = [SysStatus::NotInstalled; 5];
+                                    for (i, s) in statuses.iter_mut().enumerate() {
+                                        *s = convert_sys_status(m[i]);
+                                    }
+                                    statuses
+                                }),
+                                motor_speeds: f.motor_speeds(),
+                                motor_temps: f.motor_temperatures(),
+                                breakbeam_ball_detected: f.breakbeam_ball_detected(),
+                                breakbeam_sensor_ok: f.breakbeam_sensor_ok(),
+                                pack_voltages: f.pack_voltages(),
+                            };
+                            let colored_id = self.robot_router.get_by_robot_id(i as u32);
+                            (colored_id, robot_feedback)
                         })
                         .collect::<Vec<_>>();
+
                     self.feedback_tx.send(feedback).ok();
                 }
             }
@@ -156,9 +192,12 @@ impl BasestationClient {
                 self.connection_status = BasestationConnectionStatus::Connected(port.to_string());
                 self.monitor = Some(monitor);
             }
-            Err(e) => {
-                log::error!("Failed to connect to port {}: {}", port, e);
-                self.connection_status = BasestationConnectionStatus::Error(e.to_string());
+            Err(_) => {
+                log::error!("Failed to connect to port {}", port);
+                self.connection_status = BasestationConnectionStatus::Error(format!(
+                    "Failed to connect to port {}",
+                    port
+                ));
             }
         }
     }
@@ -166,7 +205,7 @@ impl BasestationClient {
     fn send_cmd(&mut self, id: ColoredPlayerId, cmd: RobotCmd) {
         if let Some(monitor) = self.monitor.as_mut() {
             let robot_id = self.robot_router.get_by_player_id(id);
-            monitor.send_single(robot_id, convert_cmd(cmd));
+            monitor.send_single(robot_id as u8, convert_cmd(cmd));
         }
     }
 }
@@ -175,7 +214,7 @@ impl BasestationClient {
 #[derive(Debug)]
 pub struct BasestationHandle {
     cmd_tx: mpsc::UnboundedSender<Message>,
-    feedback_rx: broadcast::Receiver<RobotFeedback>,
+    feedback_rx: broadcast::Receiver<Vec<(ColoredPlayerId, RobotFeedback)>>,
 }
 
 impl BasestationHandle {
@@ -222,7 +261,7 @@ impl BasestationHandle {
     }
 
     /// Receive feedback from robots.
-    pub async fn recv_feedback(&mut self) -> Result<RobotFeedback> {
+    pub async fn recv_feedback(&mut self) -> Result<Vec<(ColoredPlayerId, RobotFeedback)>> {
         self.feedback_rx
             .recv()
             .await

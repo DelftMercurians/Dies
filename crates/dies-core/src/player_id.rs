@@ -21,7 +21,7 @@ impl std::fmt::Display for PlayerId {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
-pub struct ColoredPlayerId(TeamColor, PlayerId);
+pub struct ColoredPlayerId(pub TeamColor, pub PlayerId);
 
 impl ColoredPlayerId {
     pub fn new(team: TeamColor, id: PlayerId) -> Self {

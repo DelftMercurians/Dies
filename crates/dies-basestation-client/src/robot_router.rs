@@ -44,12 +44,12 @@ impl RobotRouter {
         self.id_map.iter().map(|(k, v)| (*k, *v)).collect()
     }
 
-    pub(crate) fn get_by_player_id(&self, (team, id): ColoredPlayerId) -> u32 {
+    pub(crate) fn get_by_player_id(&self, player_id: ColoredPlayerId) -> u32 {
         self.id_map
             .iter()
-            .find(|(_, &player_id)| player_id == Some((team, id)))
+            .find(|(_, map_player_id)| map_player_id.map(|id| id == player_id).unwrap_or(false))
             .map(|(robot_id, _)| *robot_id)
-            .unwrap_or(id.as_u32())
+            .unwrap_or(player_id.1.as_u32())
     }
 
     pub(crate) fn get_by_robot_id(&self, rid: u32) -> ColoredPlayerId {
@@ -57,7 +57,10 @@ impl RobotRouter {
             .get(&rid)
             .copied()
             .flatten()
-            .unwrap_or((self.default_team_color, PlayerId::new(rid)))
+            .unwrap_or(ColoredPlayerId::new(
+                self.default_team_color,
+                PlayerId::new(rid),
+            ))
     }
 }
 
@@ -70,72 +73,76 @@ mod tests {
     }
 
     #[test]
-    fn test_add_robot_id() {
-        let mut router = create_test_router();
-
-        // Add a new robot
-        router.add_robot_id(1);
-        assert_eq!(router.id_map.len(), 1);
-        assert_eq!(router.id_map.get(&1), Some(&None));
-
-        // Add same robot again - should not duplicate
-        router.add_robot_id(1);
-        assert_eq!(router.id_map.len(), 1);
-    }
-
-    #[test]
     fn test_set_id_map() {
         let mut router = create_test_router();
 
-        // Initial mapping
         let initial_map = vec![
-            (1, Some((TeamColor::Blue, PlayerId::new(1)))),
-            (2, Some((TeamColor::Yellow, PlayerId::new(2)))),
+            (
+                1,
+                Some(ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(1))),
+            ),
+            (
+                2,
+                Some(ColoredPlayerId::new(TeamColor::Yellow, PlayerId::new(2))),
+            ),
         ];
         router.set_id_map(initial_map);
         assert_eq!(router.id_map.len(), 2);
 
-        // Update with new mapping
         let new_map = vec![
-            (2, Some((TeamColor::Blue, PlayerId::new(2)))), // Update existing
-            (3, Some((TeamColor::Yellow, PlayerId::new(3)))), // Add new
+            (
+                2,
+                Some(ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(2))),
+            ),
+            (
+                3,
+                Some(ColoredPlayerId::new(TeamColor::Yellow, PlayerId::new(3))),
+            ),
         ];
         router.set_id_map(new_map);
         assert_eq!(router.id_map.len(), 3);
 
-        // Verify the updates
         assert_eq!(
             router.id_map.get(&2),
-            Some(&Some((TeamColor::Blue, PlayerId::new(2))))
+            Some(&Some(ColoredPlayerId::new(
+                TeamColor::Blue,
+                PlayerId::new(2)
+            )))
         );
     }
 
     #[test]
     fn test_id_map() {
         let mut router = create_test_router();
-        let test_map = vec![(1, Some((TeamColor::Blue, PlayerId::new(1)))), (2, None)];
+        let test_map = vec![
+            (
+                1,
+                Some(ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(1))),
+            ),
+            (2, None),
+        ];
         router.set_id_map(test_map.clone());
 
         let returned_map = router.id_map();
         assert_eq!(returned_map.len(), 2);
-        assert!(returned_map.contains(&(1, Some((TeamColor::Blue, PlayerId::new(1))))));
+        assert!(returned_map.contains(&(
+            1,
+            Some(ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(1)))
+        )));
         assert!(returned_map.contains(&(2, None)));
     }
 
     #[test]
     fn test_get_by_player_id() {
         let mut router = create_test_router();
-        let player_id = (TeamColor::Blue, PlayerId::new(5));
+        let player_id = ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(5));
 
-        // Test with empty map - should return player ID as robot ID
         assert_eq!(router.get_by_player_id(player_id), 5);
 
-        // Test with mapped ID
         router.set_id_map(vec![(10, Some(player_id))]);
         assert_eq!(router.get_by_player_id(player_id), 10);
 
-        // Test with unmapped player ID
-        let unmapped_id = (TeamColor::Yellow, PlayerId::new(7));
+        let unmapped_id = ColoredPlayerId::new(TeamColor::Yellow, PlayerId::new(7));
         assert_eq!(router.get_by_player_id(unmapped_id), 7);
     }
 
@@ -143,20 +150,20 @@ mod tests {
     fn test_get_by_robot_id() {
         let mut router = create_test_router();
 
-        // Test unmapped robot ID - should return default team color
         let result = router.get_by_robot_id(1);
-        assert_eq!(result, (TeamColor::Yellow, PlayerId::new(1)));
+        assert_eq!(
+            result,
+            ColoredPlayerId::new(TeamColor::Yellow, PlayerId::new(1))
+        );
 
-        // Test mapped robot ID
-        let mapped_player = (TeamColor::Blue, PlayerId::new(5));
+        let mapped_player = ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(5));
         router.set_id_map(vec![(1, Some(mapped_player))]);
         assert_eq!(router.get_by_robot_id(1), mapped_player);
 
-        // Test robot ID with None mapping
         router.set_id_map(vec![(2, None)]);
         assert_eq!(
             router.get_by_robot_id(2),
-            (TeamColor::Yellow, PlayerId::new(2))
+            ColoredPlayerId::new(TeamColor::Yellow, PlayerId::new(2))
         );
     }
 
@@ -164,30 +171,37 @@ mod tests {
     fn test_complex_routing_scenario() {
         let mut router = create_test_router();
 
-        // Set up a complex mapping
         let initial_map = vec![
-            (1, Some((TeamColor::Blue, PlayerId::new(3)))),
-            (2, Some((TeamColor::Yellow, PlayerId::new(1)))),
+            (
+                1,
+                Some(ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(3))),
+            ),
+            (
+                2,
+                Some(ColoredPlayerId::new(TeamColor::Yellow, PlayerId::new(1))),
+            ),
             (3, None),
-            (4, Some((TeamColor::Blue, PlayerId::new(2)))),
+            (
+                4,
+                Some(ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(2))),
+            ),
         ];
         router.set_id_map(initial_map);
 
-        // Test various routing scenarios
         assert_eq!(
             router.get_by_robot_id(1),
-            (TeamColor::Blue, PlayerId::new(3))
+            ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(3))
         );
         assert_eq!(
             router.get_by_robot_id(3),
-            (TeamColor::Yellow, PlayerId::new(3))
+            ColoredPlayerId::new(TeamColor::Yellow, PlayerId::new(3))
         );
         assert_eq!(
-            router.get_by_player_id((TeamColor::Blue, PlayerId::new(3))),
+            router.get_by_player_id(ColoredPlayerId::new(TeamColor::Blue, PlayerId::new(3))),
             1
         );
         assert_eq!(
-            router.get_by_player_id((TeamColor::Yellow, PlayerId::new(1))),
+            router.get_by_player_id(ColoredPlayerId::new(TeamColor::Yellow, PlayerId::new(1))),
             2
         );
     }

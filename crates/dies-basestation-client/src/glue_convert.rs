@@ -1,4 +1,4 @@
-use dies_core::{RobotCmd, RobotFeedback, RobotMainboardCmd};
+use dies_core::{RobotCmd, RobotFeedback, RobotMainboardCmd, RobotMoveCmd, SysStatus};
 
 pub(crate) fn convert_cmd(cmd: RobotCmd) -> glue::Radio_Command {
     match cmd {
@@ -15,27 +15,25 @@ pub(crate) fn convert_cmd(cmd: RobotCmd) -> glue::Radio_Command {
     }
 }
 
-pub(crate) fn convert_feedback(feedback: glue::Radio_Feedback) -> RobotFeedback {
-    RobotFeedback {
-        primary_status: Some(SysStatus::from(feedback.primary_status)),
-        kicker_status: Some(SysStatus::from(feedback.kicker_status)),
-        imu_status: Some(SysStatus::from(feedback.imu_status)),
-        fan_status: Some(SysStatus::from(feedback.fan_status)),
-        kicker_cap_voltage: Some(feedback.kicker_cap_voltage),
-        kicker_temp: Some(feedback.kicker_temp),
-        motor_statuses: Some([
-            SysStatus::from(feedback.motor_statuses[0]),
-            SysStatus::from(feedback.motor_statuses[1]),
-            SysStatus::from(feedback.motor_statuses[2]),
-            SysStatus::from(feedback.motor_statuses[3]),
-            SysStatus::from(feedback.motor_statuses[4]),
-        ]),
-        motor_speeds: Some(feedback.motor_speeds),
-        motor_temps: Some(feedback.motor_temps),
-        breakbeam_ball_detected: Some(feedback.breakbeam_ball_detected),
-        breakbeam_sensor_ok: Some(feedback.breakbeam_sensor_ok),
-        pack_voltages: Some(feedback.pack_voltages),
+pub(crate) fn convert_sys_status(status: glue::HG_Status) -> SysStatus {
+    match status {
+        glue::HG_Status::EMERGENCY => SysStatus::Emergency,
+        glue::HG_Status::OK => SysStatus::Ok,
+        glue::HG_Status::READY => SysStatus::Ready,
+        glue::HG_Status::STOP => SysStatus::Stop,
+        glue::HG_Status::STARTING => SysStatus::Starting,
+        glue::HG_Status::OVERTEMP => SysStatus::Overtemp,
+        glue::HG_Status::NO_REPLY => SysStatus::NoReply,
+        glue::HG_Status::ARMED => SysStatus::Armed,
+        glue::HG_Status::DISARMED => SysStatus::Disarmed,
+        glue::HG_Status::SAFE => SysStatus::Safe,
+        glue::HG_Status::NOT_INSTALLED => SysStatus::NotInstalled,
+        glue::HG_Status::STANDBY => SysStatus::Standby,
     }
+}
+
+pub(crate) fn convert_sys_status_opt(status: Option<glue::HG_Status>) -> Option<SysStatus> {
+    status.map(|status| convert_sys_status(status))
 }
 
 fn convert_mainboard_cmd(cmd: RobotMainboardCmd) -> glue::Radio_RobotCommand {
@@ -55,7 +53,7 @@ fn convert_mainboard_cmd(cmd: RobotMainboardCmd) -> glue::Radio_RobotCommand {
     }
 }
 
-fn convert_pose(cmd: MoveCmd) -> glue::HG_Pose {
+fn convert_pose(cmd: RobotMoveCmd) -> glue::HG_Pose {
     glue::HG_Pose {
         x: cmd.sx as f32,
         y: cmd.sy as f32,

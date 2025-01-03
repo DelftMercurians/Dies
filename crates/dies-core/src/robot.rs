@@ -56,7 +56,7 @@ pub enum RobotMainboardCmd {
 }
 
 /// A message from one of our robots to the AI
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, Default)]
 pub struct RobotFeedback {
     pub primary_status: Option<SysStatus>,
     pub kicker_status: Option<SysStatus>,
