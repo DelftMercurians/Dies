@@ -4,7 +4,7 @@ use std::{
 };
 
 use dies_core::{
-    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotMainboardCmd, SysStatus,
+    Angle, FieldGeometry, RobotFeedback, PlayerId, RobotMainboardCmd, RobotMoveCmd, SysStatus,
     Vector2,
 };
 use dies_protos::{
@@ -148,7 +148,7 @@ struct Player {
 #[derive(Debug)]
 struct TimedPlayerCmd {
     execute_time: f64,
-    player_cmd: PlayerMoveCmd,
+    player_cmd: RobotMoveCmd,
 }
 
 /// A complete simulator for testing strategies and robot control in silico.
@@ -199,7 +199,7 @@ pub struct Simulation {
     geometry_packet: SSL_WrapperPacket,
     referee_message: VecDeque<Referee>,
     feedback_interval: IntervalTrigger,
-    feedback_queue: VecDeque<PlayerFeedbackMsg>,
+    feedback_queue: VecDeque<RobotFeedback>,
 }
 
 impl Simulation {
@@ -295,7 +295,7 @@ impl Simulation {
 
     /// Pushes a PlayerCmd onto the execution queue with the time delay specified in
     /// the config
-    pub fn push_cmd(&mut self, cmd: PlayerMoveCmd) {
+    pub fn push_cmd(&mut self, cmd: RobotMoveCmd) {
         self.cmd_queue.push(TimedPlayerCmd {
             execute_time: self.current_time + self.config.command_delay,
             player_cmd: cmd,
@@ -303,7 +303,7 @@ impl Simulation {
     }
 
     /// Executes a PlayerCmd immediately.
-    pub fn execute_cmd(&mut self, cmd: PlayerMoveCmd) {
+    pub fn execute_cmd(&mut self, cmd: RobotMoveCmd) {
         self.cmd_queue.push(TimedPlayerCmd {
             execute_time: self.current_time,
             player_cmd: cmd,
@@ -336,7 +336,7 @@ impl Simulation {
         }
     }
 
-    pub fn feedback(&mut self) -> Option<PlayerFeedbackMsg> {
+    pub fn feedback(&mut self) -> Option<RobotFeedback> {
         self.feedback_queue.pop_front()
     }
 
@@ -388,7 +388,7 @@ impl Simulation {
             }
 
             if send_feedback {
-                let mut feedback = PlayerFeedbackMsg::empty(player.id);
+                let mut feedback = RobotFeedback::empty(player.id);
                 feedback.breakbeam_ball_detected = Some(player.breakbeam);
                 feedback.kicker_status = Some(SysStatus::Ready);
                 feedback.imu_status = if self.config.has_imu {

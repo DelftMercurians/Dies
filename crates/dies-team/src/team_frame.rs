@@ -91,7 +91,7 @@ mod tests {
         // Game state
         assert!(matches!(
             team_frame.current_game_state.game_state,
-            GameStateType::BallReplacement(pos) if pos == Vector2::new(1500.0, 750.0)
+            GameStateType::BallPlacement(pos) if pos == Vector2::new(1500.0, 750.0)
         ));
         assert!(team_frame.current_game_state.us_operating);
     }
@@ -124,7 +124,7 @@ mod tests {
         // Game state
         assert!(matches!(
             team_frame.current_game_state.game_state,
-            GameStateType::BallReplacement(pos) if pos == Vector2::new(-1500.0, 750.0)
+            GameStateType::BallPlacement(pos) if pos == Vector2::new(-1500.0, 750.0)
         ));
         assert!(!team_frame.current_game_state.us_operating);
     }
@@ -180,14 +180,14 @@ mod tests {
         // Test ball placement transformation
         let placement_pos = Vector2::new(1000.0, 500.0);
         let state = GameState {
-            game_state: GameStateType::BallReplacement(placement_pos),
+            game_state: GameStateType::BallPlacement(placement_pos),
             operating_team: Some(Team::Blue),
         };
         let result = side.transform_game_state(&state);
-        if let GameStateType::BallReplacement(transformed_pos) = result.game_state {
+        if let GameStateType::BallPlacement(transformed_pos) = result.game_state {
             assert_eq!(transformed_pos, Vector2::new(-1000.0, 500.0));
         } else {
-            panic!("Expected BallReplacement state");
+            panic!("Expected BallPlacement state");
         }
         assert!(!result.us_operating);
     }

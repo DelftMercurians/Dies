@@ -1,6 +1,6 @@
 use anyhow::Result;
 use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
-use dies_core::{PlayerId, PlayerMoveCmd};
+use dies_core::{PlayerId, RobotMoveCmd};
 use tokio::time::{Duration, Instant};
 
 use crate::cli::SerialPort;
@@ -29,7 +29,7 @@ pub async fn test_radio(
         }
 
         for id in ids.iter() {
-            let mut cmd = PlayerMoveCmd::zero(PlayerId::new(*id));
+            let mut cmd = RobotMoveCmd::zero(PlayerId::new(*id));
             if let Some(w) = w {
                 cmd.w = w;
             }

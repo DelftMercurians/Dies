@@ -18,7 +18,7 @@ pub use world_frame::*;
 
 use crate::game_state::GameStateTracker;
 use ball::BallTracker;
-use dies_core::{PlayerFeedbackMsg, PlayerId, Vector2};
+use dies_core::{RobotFeedback, PlayerId, Vector2};
 pub use geom::{FieldCircularArc, FieldGeometry, FieldLineSegment};
 use player::PlayerTracker;
 
@@ -300,7 +300,7 @@ impl WorldTracker {
     /// Update player feedback for controlled robots
     pub fn update_from_feedback(
         &mut self,
-        feedback: &PlayerFeedbackMsg,
+        feedback: &RobotFeedback,
         team: Team,
         time: WorldInstant,
     ) {

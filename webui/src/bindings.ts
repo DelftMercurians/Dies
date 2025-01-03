@@ -278,7 +278,7 @@ export type GameState =
   | { type: "Timeout" }
   | { type: "Stop" }
   | { type: "PrepareKickoff" }
-  | { type: "BallReplacement"; data: Vector2 }
+  | { type: "BallPlacement"; data: Vector2 }
   | { type: "PreparePenalty" }
   | { type: "Kickoff" }
   | { type: "FreeKick" }

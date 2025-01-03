@@ -4,7 +4,7 @@ use crate::skills::{SkillCtx, SkillProgress, SkillState, SkillType};
 use crate::Obstacle;
 use dies_core::{
     to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, PlayerCmd,
-    PlayerData, PlayerId, PlayerMoveCmd, RobotMainboardCmd, Vector2, WorldFrame,
+    PlayerData, PlayerId, RobotMainboardCmd, RobotMoveCmd, Vector2, WorldFrame,
 };
 
 use super::{
@@ -130,7 +130,7 @@ impl PlayerController {
     /// Get the current command for the player.
     pub fn command(&mut self) -> PlayerCmd {
         if self.frame_misses > MISSING_FRAMES_THRESHOLD {
-            return PlayerCmd::Move(PlayerMoveCmd::zero(self.id));
+            return PlayerCmd::Move(RobotMoveCmd::zero(self.id));
         }
 
         if self.heading_interval.trigger() {
@@ -162,7 +162,7 @@ impl PlayerController {
             .inv()
             .rotate_vector(&to_dies_coords2(self.target_velocity, self.opp_goal_sign));
 
-        let cmd = PlayerMoveCmd {
+        let cmd = RobotMoveCmd {
             id: self.id,
             // In the robot's local frame +sx means forward and +sy means right
             sx: target_velocity.x / 1000.0,  // Convert to m/s

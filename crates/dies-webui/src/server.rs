@@ -14,7 +14,7 @@ use axum::{
     Router,
 };
 use dies_core::{
-    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, WorldUpdate,
+    DebugSubscriber, ExecutorInfo, ExecutorSettings, RobotFeedback, PlayerId, WorldUpdate,
 };
 use dies_team::{ControlMsg, ExecutorHandle};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -30,7 +30,7 @@ pub struct ServerState {
     pub is_live_available: bool,
     pub update_rx: watch::Receiver<Option<WorldUpdate>>,
     pub debug_sub: DebugSubscriber,
-    pub basestation_feedback: RwLock<HashMap<PlayerId, PlayerFeedbackMsg>>,
+    pub basestation_feedback: RwLock<HashMap<PlayerId, RobotFeedback>>,
     pub cmd_tx: broadcast::Sender<UiCommand>,
     pub ui_mode: RwLock<UiMode>,
     pub executor_status: RwLock<ExecutorStatus>,

@@ -69,7 +69,7 @@ pub fn get_obstacles_for_player(&self, role: RoleType) -> Vec<Obstacle> {
                     });
                 }
             },
-            GameState::BallReplacement(_) => {}
+            GameState::BallPlacement(_) => {}
             GameState::PreparePenalty => {}
             GameState::FreeKick => {}
             GameState::Penalty => {}

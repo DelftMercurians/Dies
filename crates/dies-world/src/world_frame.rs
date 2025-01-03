@@ -110,7 +110,7 @@ pub enum GameStateType {
     Timeout,
     Stop,
     PrepareKickoff,
-    BallReplacement(Vector2),
+    BallPlacement(Vector2),
     PreparePenalty,
     Kickoff,
     FreeKick,
@@ -127,7 +127,7 @@ impl Display for GameStateType {
             GameStateType::Timeout => "Timeout".to_string(),
             GameStateType::Stop => "Stop".to_string(),
             GameStateType::PrepareKickoff => "PrepareKickoff".to_string(),
-            GameStateType::BallReplacement(_) => "BallReplacement".to_string(),
+            GameStateType::BallPlacement(_) => "BallPlacement".to_string(),
             GameStateType::PreparePenalty => "PreparePenalty".to_string(),
             GameStateType::Kickoff => "Kickoff".to_string(),
             GameStateType::FreeKick => "FreeKick".to_string(),
@@ -163,21 +163,16 @@ pub struct GameState {
 /// A struct to store the player state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PlayerFrame {
-    /// Unix timestamp of the recorded frame from which this data was extracted
-    pub timestamp: f64,
     /// The player's unique id
     pub id: PlayerId,
-    /// Unfiltered position as reported by vision
     /// Position of the player filtered by us in mm
     pub position: Vector2,
     /// Velocity of the player in mm/s
     pub velocity: Vector2,
     /// Yaw of the player, in radians, (-pi, pi)
     pub yaw: Angle,
-    /// Unfiltered yaw as reported by vision
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f64,
-
     /// Feedback from the player, if it is controlled
     pub feedback: PlayerFeedback,
 }
@@ -185,7 +180,6 @@ pub struct PlayerFrame {
 impl PlayerFrame {
     pub fn new(id: PlayerId) -> Self {
         Self {
-            timestamp: 0.0,
             id,
             position: Vector2::zeros(),
             velocity: Vector2::zeros(),
@@ -222,12 +216,8 @@ pub enum PlayerFeedback {
 /// A struct to store the ball state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BallFrame {
-    /// Unix timestamp of the recorded frame from which this data was extracted (in
-    /// seconds). This is the time that ssl-vision received the frame.
-    pub timestamp: f64,
     /// Position of the ball filtered by us, in mm, in dies coordinates
     pub position: Vector3,
-    /// Raw position as reported by vision
     /// Velocity of the ball in mm/s, in dies coordinates
     pub velocity: Vector3,
     /// Whether the ball is being detected
@@ -239,7 +229,6 @@ pub fn mock_world_frame() -> WorldFrame {
         blue_team: vec![PlayerFrame {
             id: PlayerId::new(0),
             position: Vector2::new(1000.0, 1000.0),
-            timestamp: 0.0,
             velocity: Vector2::zeros(),
             yaw: Angle::default(),
             angular_speed: 0.0,
@@ -248,7 +237,6 @@ pub fn mock_world_frame() -> WorldFrame {
         yellow_team: vec![PlayerFrame {
             id: PlayerId::new(1),
             position: Vector2::new(-1000.0, -1000.0),
-            timestamp: 0.0,
             velocity: Vector2::zeros(),
             yaw: Angle::default(),
             angular_speed: 0.0,

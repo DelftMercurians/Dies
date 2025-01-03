@@ -94,8 +94,8 @@ impl SideTransform {
 
     pub fn transform_game_state(&self, state: &GameState) -> TeamGameState {
         let transformed_state = match state.game_state {
-            GameStateType::BallReplacement(v) => {
-                GameStateType::BallReplacement(self.transform_vector2(v))
+            GameStateType::BallPlacement(v) => {
+                GameStateType::BallPlacement(self.transform_vector2(v))
             }
             GameStateType::Unknown
             | GameStateType::Halt

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use dies_core::PlayerFeedbackMsg;
+use dies_core::RobotFeedback;
 use dies_ssl_client::{SslMessage, VisionClient};
 use std::sync::{Arc, RwLock};
 
@@ -114,7 +114,7 @@ impl InteractiveMainLoop {
         };
     }
 
-    fn handle_bs(&mut self, msg: Result<PlayerFeedbackMsg>) {
+    fn handle_bs(&mut self, msg: Result<RobotFeedback>) {
         let msg = match msg {
             Ok(msg) => msg,
             Err(err) => {
@@ -133,7 +133,7 @@ async fn recv_ssl(ssl_client: Option<&mut VisionClient>) -> Option<Result<SslMes
     }
 }
 
-async fn recv_bs(bs_client: Option<&mut BasestationHandle>) -> Option<Result<PlayerFeedbackMsg>> {
+async fn recv_bs(bs_client: Option<&mut BasestationHandle>) -> Option<Result<RobotFeedback>> {
     if let Some(handle) = bs_client {
         Some(handle.recv().await)
     } else {

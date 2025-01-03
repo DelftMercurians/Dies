@@ -1,4 +1,4 @@
-use dies_core::{PlayerFeedbackMsg, VisionMsg, WorldFrame};
+use dies_core::{RobotFeedback, VisionMsg, WorldFrame};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 

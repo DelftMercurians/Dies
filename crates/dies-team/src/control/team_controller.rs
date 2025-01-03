@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
-use dies_core::{Angle, ExecutorSettings, PlayerCmd, PlayerId, RoleType, Vector2};
-use serde::{Deserialize, Serialize};
-use dies_protos::ssl_gc_state::GameState;
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
 use crate::{skills::SkillType, Obstacle, PlayerControlInput};
+use dies_core::{Angle, ExecutorSettings, PlayerCmd, PlayerId, RoleType, Vector2};
+use dies_protos::ssl_gc_state::GameState;
 use dies_world::WorldFrame;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TeamCommand {
@@ -178,7 +178,7 @@ fn comply(world_data: &WorldFrame, inputs: PlayerInputs) -> PlayerInputs {
                     new_input.with_position(target);
                 }
 
-                if let GameState::BallReplacement(pos) = game_state {
+                if let GameState::BallPlacement(pos) = game_state {
                     let line_start = ball_pos;
                     let line_end = pos;
                     dies_core::debug_line(
@@ -285,7 +285,7 @@ fn get_obstacles_for_player(world: &WorldFrame, role: RoleType) -> Vec<Obstacle>
                     });
                 }
             },
-            GameState::BallReplacement(_) => {}
+            GameState::BallPlacement(_) => {}
             GameState::PreparePenalty => {}
             GameState::FreeKick => {}
             GameState::Penalty => {}

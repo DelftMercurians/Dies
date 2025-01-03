@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use dies_core::{Angle, PlayerFeedbackMsg, PlayerId, Vector2};
+use dies_core::{Angle, RobotFeedback, PlayerId, Vector2};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
 
@@ -33,7 +33,7 @@ pub struct PlayerTracker {
     yaw_filter: AngleLowPassFilter,
 
     /// Last feedback received from the player (if controlled)
-    last_feedback: Option<PlayerFeedbackMsg>,
+    last_feedback: Option<RobotFeedback>,
     last_feedback_time: Option<WorldInstant>,
     /// The result of the last vision update
     last_detection: Option<StoredData>,
@@ -192,7 +192,7 @@ impl PlayerTracker {
     }
 
     /// Update the tracker with feedback from the player.
-    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
+    pub fn update_from_feedback(&mut self, feedback: &RobotFeedback, time: WorldInstant) {
         if !self.is_controlled || feedback.id != self.id {
             return;
         }
@@ -305,7 +305,7 @@ mod test {
         tracker.update(1.0, &player);
 
         // Feedback update
-        let mut feedback = PlayerFeedbackMsg::empty(PlayerId::new(1));
+        let mut feedback = RobotFeedback::empty(PlayerId::new(1));
         feedback.primary_status = Some(dies_core::SysStatus::Ready);
         tracker.update_from_feedback(&feedback, WorldInstant::simulated(1.0));
 

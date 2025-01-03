@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
+    DebugMap, ExecutorInfo, ExecutorSettings, RobotFeedback, PlayerId, PlayerOverrideCommand,
     ScenarioInfo, SimulatorCmd, WorldFrame,
 };
 use dies_ssl_client::SslClientConfig;
@@ -152,5 +152,5 @@ pub(crate) struct PostExecutorSettingsBody {
 #[derive(Debug, Clone, Serialize)]
 #[typeshare]
 pub(crate) struct BasestationResponse {
-    pub(crate) players: HashMap<PlayerId, PlayerFeedbackMsg>,
+    pub(crate) players: HashMap<PlayerId, RobotFeedback>,
 }

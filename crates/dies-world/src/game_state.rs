@@ -7,13 +7,13 @@ use crate::{BallFrame, GameState, GameStateType, Team};
 
 #[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
-    /// **NOTE**: The position in `BallReplacement` is in vision coordinates -- the x axis may point in either direction.
+    /// **NOTE**: The position in `BallPlacement` is in vision coordinates -- the x axis may point in either direction.
     game_state: GameStateType,
-    /// **NOTE**: The position in `BallReplacement` is in vision coordinates -- the x axis may point in either direction.
+    /// **NOTE**: The position in `BallPlacement` is in vision coordinates -- the x axis may point in either direction.
     prev_state: GameStateType,
-    /// **NOTE**: The position in `BallReplacement` is in vision coordinates -- the x axis may point in either direction.
+    /// **NOTE**: The position in `BallPlacement` is in vision coordinates -- the x axis may point in either direction.
     new_state_movement: GameStateType,
-    /// **NOTE**: The position in `BallReplacement` is in vision coordinates -- the x axis may point in either direction.
+    /// **NOTE**: The position in `BallPlacement` is in vision coordinates -- the x axis may point in either direction.
     new_state_timeout: GameStateType,
     init_ball_pos: Vector3,
     start: Instant,
@@ -75,7 +75,7 @@ impl GameStateTracker {
             Command::TIMEOUT_BLUE => GameStateType::Timeout,
             Command::BALL_PLACEMENT_YELLOW | Command::BALL_PLACEMENT_BLUE => {
                 if let Some(pos) = data.designated_position.as_ref() {
-                    GameStateType::BallReplacement(Vector2::new(pos.x() as f64, pos.y() as f64))
+                    GameStateType::BallPlacement(Vector2::new(pos.x() as f64, pos.y() as f64))
                 } else {
                     log::error!("No position for ball placement");
                     self.game_state
@@ -224,7 +224,7 @@ mod tests {
         ));
         assert_eq!(
             tracker.get().game_state,
-            GameStateType::BallReplacement(Vector2::new(0.0, 0.0))
+            GameStateType::BallPlacement(Vector2::new(0.0, 0.0))
         );
     }
 

@@ -1,4 +1,4 @@
-use dies_core::{PlayerFeedbackMsg, VisionMsg};
+use dies_core::{RobotFeedback, VisionMsg};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
