@@ -1,4 +1,3 @@
-mod debug;
 mod field_geometry;
 mod math;
 mod player_id;
@@ -6,7 +5,7 @@ mod robot;
 mod vec_map;
 mod world_frame;
 
-pub use debug::*;
+pub use dies_debug::*;
 pub use field_geometry::*;
 pub use math::*;
 pub use player_id::*;

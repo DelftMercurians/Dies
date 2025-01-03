@@ -10,6 +10,7 @@ anyhow = "1.0.75"
 nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
 rand = "0.8.5"
 serde = { version = "1.0.192", features = ["derive"] }
+dies-debug = { path = "../dies-debug" }
 
 [dev-dependencies]
 approx = "0.5.1"

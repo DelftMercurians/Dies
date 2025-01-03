@@ -11,7 +11,7 @@ members = [
     "crates/dies-world",
     "crates/dies-logger",
     "crates/dies-webui-common",
-    "strategy/dummy-strat",
+    "strategy/dummy-strat", "crates/dies-debug",
 ]
 package.edition = "2021"
 resolver = "2"

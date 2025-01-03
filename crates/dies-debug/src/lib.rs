@@ -3,11 +3,10 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
+use dies_core::Vector2;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Notify};
 use typeshare::typeshare;
-
-use crate::Vector2;
 
 static DEBUG_MESSAGES: OnceLock<mpsc::UnboundedSender<UpdateMsg>> = OnceLock::new();
 
@@ -213,7 +212,8 @@ pub fn debug_string(key: impl Into<String>, value: impl Into<String>) {
 /// # Examples
 ///
 /// ```rust
-/// # use dies_core::{dbg_draw, Vector2, DebugColor};
+/// # use dies_debug::{dbg_draw, DebugColor};
+/// # use dies_core::Vector2;
 /// dbg_draw!("test", cross, Vector2::new(0.0, 0.0));
 ///
 /// let id = 1;
@@ -241,61 +241,61 @@ pub fn debug_string(key: impl Into<String>, value: impl Into<String>) {
 macro_rules! dbg_draw {
     // Pattern for cross with default color
     (($($key:tt)+), cross, $pos:expr) => {
-        dies_core::debug_cross(format!($($key)+), $pos, dies_core::DebugColor::default())
+        dies_debug::debug_cross(format!($($key)+), $pos, dies_debug::DebugColor::default())
     };
     ($key:tt, cross, $pos:expr) => {
-        dies_core::debug_cross($key, $pos, dies_core::DebugColor::default())
+        dies_debug::debug_cross($key, $pos, dies_debug::DebugColor::default())
     };
 
     // Pattern for cross with specified color
     (($($key:tt)+), cross, $pos:expr, $color:expr) => {
-        dies_core::debug_cross(format!($($key)+), $pos, $color)
+        dies_debug::debug_cross(format!($($key)+), $pos, $color)
     };
     ($key:tt, cross, $pos:expr, $color:expr) => {
-        dies_core::debug_cross($key, $pos, $color)
+        dies_debug::debug_cross($key, $pos, $color)
     };
 
     // Pattern for line with default color
     (($($key:tt)+), line, $v1:expr, $v2:expr) => {
-        dies_core::debug_line(format!($($key)+), $v1, $v2, dies_core::DebugColor::default())
+        dies_debug::debug_line(format!($($key)+), $v1, $v2, dies_debug::DebugColor::default())
     };
     ($key:tt, line, $v1:expr, $v2:expr) => {
-        dies_core::debug_line($key, $v1, $v2, dies_core::DebugColor::default())
+        dies_debug::debug_line($key, $v1, $v2, dies_debug::DebugColor::default())
     };
 
     // Pattern for line with specified color
     (($($key:tt)+), line, $v1:expr, $v2:expr, $color:expr) => {
-        dies_core::debug_line(format!($($key)+), $v1, $v2, $color)
+        dies_debug::debug_line(format!($($key)+), $v1, $v2, $color)
     };
     ($key:tt, line, $v1:expr, $v2:expr, $color:expr) => {
-        dies_core::debug_line($key, $v1, $v2, $color)
+        dies_debug::debug_line($key, $v1, $v2, $color)
     };
 
     // Pattern for filled circle
     (($($key:tt)+), circle_fill, $center:expr, $radius:expr, $fill:expr) => {
-        dies_core::debug_circle_fill(format!($($key)+), $center, $radius, $fill)
+        dies_debug::debug_circle_fill(format!($($key)+), $center, $radius, $fill)
     };
     ($key:tt, circle_fill, $center:expr, $radius:expr, $fill:expr) => {
-        dies_core::debug_circle_fill($key, $center, $radius, $fill)
+        dies_debug::debug_circle_fill($key, $center, $radius, $fill)
     };
     (($($key:tt)+), circle_fill, $center:expr, $radius:expr) => {
-        dies_core::debug_circle_fill(format!($($key)+), $center, $radius, dies_core::DebugColor::default())
+        dies_debug::debug_circle_fill(format!($($key)+), $center, $radius, dies_debug::DebugColor::default())
     };
     ($key:tt, circle_fill, $center:expr, $radius:expr) => {
-        dies_core::debug_circle_fill($key, $center, $radius, dies_core::DebugColor::default())
+        dies_debug::debug_circle_fill($key, $center, $radius, dies_debug::DebugColor::default())
     };
 
     // Pattern for hollow circle
     (($($key:tt)+), circle_stroke, $center:expr, $radius:expr, $stroke:expr) => {
-        dies_core::debug_circle_stroke(format!($($key)+), $center, $radius, $stroke)
+        dies_debug::debug_circle_stroke(format!($($key)+), $center, $radius, $stroke)
     };
     ($key:tt, circle_stroke, $center:expr, $radius:expr, $stroke:expr) => {
-        dies_core::debug_circle_stroke($key, $center, $radius, $stroke)
+        dies_debug::debug_circle_stroke($key, $center, $radius, $stroke)
     };
     (($($key:tt)+), circle_stroke, $center:expr, $radius:expr) => {
-        dies_core::debug_circle_stroke(format!($($key)+), $center, $radius, dies_core::DebugColor::default())
+        dies_debug::debug_circle_stroke(format!($($key)+), $center, $radius, dies_debug::DebugColor::default())
     };
     ($key:tt, circle_stroke, $center:expr, $radius:expr) => {
-        dies_core::debug_circle_stroke($key, $center, $radius, dies_core::DebugColor::default())
+        dies_debug::debug_circle_stroke($key, $center, $radius, dies_debug::DebugColor::default())
     };
 }

@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    DebugMap, ExecutorInfo, ExecutorSettings, RobotFeedback, PlayerId, PlayerOverrideCommand,
+    DebugMap, ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, RobotFeedback,
     ScenarioInfo, SimulatorCmd, WorldFrame,
 };
 use dies_ssl_client::SslClientConfig;
@@ -10,11 +10,11 @@ use dies_team::scenarios::ScenarioType;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
+mod api;
 mod executor_task;
 mod interactive_main_loop;
 mod routes;
 mod server;
-mod ui_common;
 
 pub use server::start;
 

@@ -1,4 +1,4 @@
-use dies_core::{RobotFeedback, VisionMsg};
+use dies_core::RobotFeedback;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -13,8 +13,8 @@ pub struct GameSetup {}
 pub enum UiPushMsg {
     World(WorldFrame),
     // Vision(VisionMsg),
-    // Basestation(PlayerFeedbackMsg),
-    Debug,
+    Basestation(RobotFeedback),
+    Debug(String),
     StrategyConsoleLine(String),
 }
 

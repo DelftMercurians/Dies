@@ -672,6 +672,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dies-debug"
+version = "0.1.0"
+dependencies = [
+ "dies-core",
+ "serde",
+ "tokio",
+ "typeshare",
+]
+
+[[package]]
 name = "dies-logger"
 version = "0.1.0"
 dependencies = [

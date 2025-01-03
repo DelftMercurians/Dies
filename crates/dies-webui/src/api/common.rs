@@ -1,26 +1,26 @@
-use dies_core::{RobotFeedback, VisionMsg, WorldFrame};
+use dies_core::RobotFeedback;
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct GameSetup {}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 /// Message pushed from the server to the UI
 pub enum UiPushMsg {
     World(WorldFrame),
     // Vision(VisionMsg),
-    // Basestation(PlayerFeedbackMsg),
-    Debug,
+    Basestation(RobotFeedback),
+    Debug(String),
     StrategyConsoleLine(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 /// Command sent from the UI to the server
 pub enum UiCmd {
     StartGame(GameSetup),
@@ -31,25 +31,25 @@ pub enum UiCmd {
     ConnectBasestation,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum GameStatus {
     Stopped,
     Running,
     Paused,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub enum ConnectionStatus {
     None,
     Connected,
     Error { error: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct UiState {
     game_status: GameStatus,
     vision_status: ConnectionStatus,
