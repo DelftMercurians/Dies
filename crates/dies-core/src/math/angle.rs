@@ -1,7 +1,6 @@
 use std::f64::consts::PI;
 
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
 
 use crate::Vector2;
 
@@ -16,7 +15,6 @@ use crate::Vector2;
 /// assert_eq!(c.degrees(), 135.0);
 /// ```
 #[derive(Debug, Clone, Copy, PartialOrd, Serialize, Deserialize)]
-#[typeshare(serialized_as = "f64")]
 pub struct Angle(f64);
 
 impl Angle {

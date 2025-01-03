@@ -1,341 +1,232 @@
-use std::{
-    collections::{HashMap, HashSet},
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
+use dies_core::{ColoredPlayerId, PlayerId, RobotCmd, RobotFeedback, SysStatus, TeamColor, VecMap};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-#[cfg(feature = "glue")]
 use glue::{Monitor, Serial};
 
-const MAX_MSG_FREQ: f64 = 200.0;
-const BASE_STATION_READ_FREQ: f64 = 100.0;
+use crate::{glue::convert_cmd, robot_router::RobotRouter};
 
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
-#[cfg(feature = "glue")]
 pub fn list_serial_ports() -> Vec<String> {
     Serial::list_ports(true)
-}
-
-#[cfg(not(feature = "glue"))]
-pub fn list_serial_ports() -> Vec<String> {
-    vec![]
-}
-
-#[cfg(not(feature = "glue"))]
-struct Serial {
-    port: Box<dyn serialport::SerialPort>,
-}
-
-#[cfg(not(feature = "glue"))]
-impl Serial {
-    fn new(port_name: &str) -> anyhow::Result<Self> {
-        let port = serialport::new(port_name, 11520).open()?;
-        Ok(Self { port })
-    }
-
-    fn send(&mut self, data: &str) {
-        let _ = self.port.write_all(data.as_bytes());
-    }
-}
-
-/// Protocol version for the base station communication.
-#[derive(Debug, Clone)]
-pub enum BaseStationProtocol {
-    V0,
-    V1,
 }
 
 #[derive(Debug, Clone)]
 /// Configuration for the serial client.
 pub struct BasestationClientConfig {
-    /// The name of the serial port. Use [`list_serial_ports`] to get a list of
-    /// available ports.
-    port_name: String,
-    /// Map of player IDs to robot ids
-    robot_id_map: HashMap<PlayerId, u32>,
-    /// Protocol version
-    protocol: BaseStationProtocol,
-}
-
-impl BasestationClientConfig {
-    pub fn new(port: String, protocol: BaseStationProtocol) -> Self {
-        BasestationClientConfig {
-            port_name: port,
-            robot_id_map: HashMap::new(),
-            protocol,
-        }
-    }
-
-    pub fn set_robot_id_map_from_string(&mut self, map: &str) {
-        // Parse string "<id1>:<id1>;..."
-        self.robot_id_map = map
-            .split(';')
-            .filter(|s| !s.is_empty())
-            .map(|s| {
-                let mut parts = s.split(':');
-                let player_id = parts
-                    .next()
-                    .expect("Failed to parse player id")
-                    .parse::<u32>()
-                    .expect("Failed to parse player id");
-                let robot_id = parts
-                    .next()
-                    .expect("Failed to parse robot id")
-                    .parse::<u32>()
-                    .expect("Failed to parse robot id");
-                (PlayerId::new(player_id), robot_id)
-            })
-            .collect();
-    }
+    /// The initial team color to use for populating the robot router
+    default_team_color: TeamColor,
+    /// The maximum message frequency in Hz
+    max_msg_freq: f64,
 }
 
 impl Default for BasestationClientConfig {
     fn default() -> Self {
         Self {
-            #[cfg(target_os = "windows")]
-            port_name: "COM3".to_string(),
-            #[cfg(not(target_os = "windows"))]
-            port_name: "/dev/ttyACM0".to_string(),
-            robot_id_map: HashMap::new(),
-            #[cfg(feature = "glue")]
-            protocol: BaseStationProtocol::V1,
-            #[cfg(not(feature = "glue"))]
-            protocol: BaseStationProtocol::V0,
+            default_team_color: TeamColor::Blue,
+            max_msg_freq: 60.0,
         }
     }
 }
 
-enum Connection {
-    V0(Serial),
-    #[cfg(feature = "glue")]
-    V1(Monitor),
+enum Message {
+    RobotCmd((ColoredPlayerId, RobotCmd, oneshot::Sender<Result<()>>)),
+    SetPort(String),
+    GetConnectionStatus(oneshot::Sender<BasestationConnectionStatus>),
+    SetIdMap(Vec<(u32, Option<ColoredPlayerId>)>),
+    GetIdMap(oneshot::Sender<Vec<(u32, Option<ColoredPlayerId>)>>),
 }
 
-enum Message {
-    PlayerCmd((PlayerCmd, oneshot::Sender<Result<()>>)),
-    ChangeIdMap(HashMap<PlayerId, u32>),
+#[derive(Debug, Clone)]
+pub enum BasestationConnectionStatus {
+    Connected(String),
+    Disconnected,
+    Error(String),
+}
+
+struct BasestationClient {
+    cmd_rx: mpsc::UnboundedReceiver<Message>,
+    feedback_tx: broadcast::Sender<RobotFeedback>,
+    monitor: Option<Monitor>,
+    connection_status: BasestationConnectionStatus,
+    robot_router: RobotRouter,
+    max_msg_freq: f64,
+}
+
+impl BasestationClient {
+    fn spawn(config: BasestationClientConfig) -> BasestationHandle {
+        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+        let (feedback_tx, feedback_rx) = broadcast::channel(16);
+
+        let client = Self {
+            cmd_rx,
+            feedback_tx: feedback_tx.clone(),
+            monitor: None,
+            connection_status: BasestationConnectionStatus::Disconnected,
+            robot_router: RobotRouter::new(config.default_team_color),
+            max_msg_freq: config.max_msg_freq,
+        };
+
+        tokio::task::spawn_blocking(move || client.run());
+
+        BasestationHandle {
+            cmd_tx,
+            feedback_rx,
+        }
+    }
+
+    fn run(mut self) {
+        // Attempt to connect to the first port
+        if let Some(port) = list_serial_ports().first() {
+            self.connect(port);
+        }
+
+        let mut last_ts = Instant::now();
+        let interval = Duration::from_secs_f64(1.0 / self.max_msg_freq);
+        loop {
+            // Handle messages
+            match self.cmd_rx.try_recv() {
+                Ok(Message::SetPort(port)) => {
+                    if let Some(monitor) = self.monitor.take() {
+                        monitor.stop();
+                    }
+                    self.connect(&port);
+                }
+                Ok(Message::RobotCmd((id, cmd, tx))) => {
+                    self.send_cmd(id, cmd);
+                    tx.send(Ok(())).ok();
+                }
+                Ok(Message::SetIdMap(id_map)) => {
+                    self.robot_router.set_id_map(id_map);
+                }
+                Ok(Message::GetConnectionStatus(sender)) => {
+                    sender.send(self.connection_status.clone()).ok();
+                }
+                Ok(Message::GetIdMap(sender)) => {
+                    sender.send(self.robot_router.id_map()).ok();
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    log::info!("Shutting down basestation client");
+                    if let Some(monitor) = self.monitor.take() {
+                        monitor.stop();
+                    }
+                    break;
+                }
+                Err(_) => {}
+            }
+
+            // Handle feedback from monitor
+            if let Some(monitor) = &mut self.monitor {
+                if let Ok(feedback) = monitor.get_robots() {
+                    // Update robot IDs from feedback
+                    let robot_ids: Vec<_> = feedback.iter().map(|f| f.robot_id).collect();
+                    self.robot_router.update_robot_ids(robot_ids);
+
+                    // Send feedback
+                    let feedback = feedback
+                        .into_iter()
+                        .map(|f| {
+                            let mut feedback = crate::glue::convert_feedback(f);
+                            feedback.id = self.robot_router.get_by_robot_id(f.robot_id);
+                            feedback
+                        })
+                        .collect::<Vec<_>>();
+                    self.feedback_tx.send(feedback).ok();
+                }
+            }
+
+            // Sleep
+            let elapsed = last_ts.elapsed();
+            last_ts = Instant::now();
+            if elapsed < interval {
+                std::thread::sleep(interval - elapsed);
+            } else {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }
+
+    fn connect(&mut self, port: &str) {
+        let monitor = Monitor::start();
+        match monitor.connect_to(&port) {
+            Ok(_) => {
+                self.connection_status = BasestationConnectionStatus::Connected(port.to_string());
+                self.monitor = Some(monitor);
+            }
+            Err(e) => {
+                log::error!("Failed to connect to port {}: {}", port, e);
+                self.connection_status = BasestationConnectionStatus::Error(e.to_string());
+            }
+        }
+    }
+
+    fn send_cmd(&mut self, id: ColoredPlayerId, cmd: RobotCmd) {
+        if let Some(monitor) = self.monitor.as_mut() {
+            let robot_id = self.robot_router.get_by_player_id(id);
+            monitor.send_single(robot_id, convert_cmd(cmd));
+        }
+    }
 }
 
 /// Async client for the serial port.
 #[derive(Debug)]
 pub struct BasestationHandle {
     cmd_tx: mpsc::UnboundedSender<Message>,
-    info_rx: broadcast::Receiver<PlayerFeedbackMsg>,
+    feedback_rx: broadcast::Receiver<RobotFeedback>,
 }
 
 impl BasestationHandle {
-    /// Spawn a new basestation client in a new thread.
-    pub fn spawn(config: BasestationClientConfig) -> Result<Self> {
-        let BasestationClientConfig { port_name, .. } = config;
-
-        // Launch a blocking thread for writing to the serial port
-        let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Message>();
-        let (info_tx, info_rx) = broadcast::channel::<PlayerFeedbackMsg>(16);
-
-        let mut connection = match config.protocol {
-            BaseStationProtocol::V0 => {
-                let serial = Serial::new(&port_name)?;
-                Connection::V0(serial)
-            }
-            #[cfg(feature = "glue")]
-            BaseStationProtocol::V1 => {
-                let monitor = Monitor::start();
-                monitor
-                    .connect_to(&port_name)
-                    .map_err(|_| anyhow!("Failed to connect to base station"))?;
-                Connection::V1(monitor)
-            }
-            #[cfg(not(glue))]
-            BaseStationProtocol::V1 => {
-                return Err(anyhow!("Glue protocol not enabled"));
-            }
-        };
-
-        let result = tokio::task::spawn_blocking(move || {
-            let mut last_send = std::time::Instant::now();
-            let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
-            let mut id_map = config.robot_id_map;
-
-            let last_cmd_time = Instant::now();
-            let mut all_ids = HashSet::new();
-            loop {
-                // Send commands
-                match cmd_rx.try_recv() {
-                    Ok(Message::PlayerCmd((cmd, resp))) => match cmd {
-                        PlayerCmd::Move(cmd) => {
-                            let robot_id = id_map
-                                .get(&cmd.id)
-                                .copied()
-                                .unwrap_or_else(|| cmd.id.as_u32())
-                                as usize;
-                            match &mut connection {
-                                #[cfg(feature = "glue")]
-                                Connection::V1(monitor) => {
-                                    let glue_cmd: glue::Radio_Command = cmd.into();
-                                    resp.send(
-                                        monitor
-                                            .send_single(cmd.id.as_u32() as u8, glue_cmd)
-                                            .map_err(|_| anyhow!("Failed to send command")),
-                                    )
-                                    .ok();
-                                }
-                                Connection::V0(serial) => {
-                                    all_ids.insert(robot_id);
-                                    let cmd_str = cmd.into_proto_v0_with_id(robot_id);
-                                    serial.send(&cmd_str);
-                                    resp.send(Ok(())).ok();
-                                }
-                            }
-                        }
-                        PlayerCmd::SetHeading { id, heading } => match &mut connection {
-                            #[cfg(feature = "glue")]
-                            Connection::V1(monitor) => {
-                                let _ =
-                                    monitor.set_current_heading(id.as_u32() as u8, heading as f32);
-                            }
-                            _ => {}
-                        },
-                    },
-                    Ok(Message::ChangeIdMap(new_id_map)) => {
-                        id_map = new_id_map;
-                    }
-                    Err(mpsc::error::TryRecvError::Disconnected) => {
-                        #[cfg(feature = "glue")]
-                        if let Connection::V1(monitor) = connection {
-                            monitor.stop();
-                        }
-                        break;
-                    }
-                    Err(mpsc::error::TryRecvError::Empty) => {}
-                }
-
-                // if last_cmd_time.elapsed().as_secs_f32() >= 1.0 {
-                //     if last_cmd_time.elapsed().as_secs_f32() - 1.0 < 1.0 / 30.0 {
-                //         log::warn!("Command timeout, sending stop to all robots");
-                //     }
-                //     for id in all_ids.iter() {
-                //         let cmd = PlayerCmd::zero(PlayerId::new(*id as u32));
-                //         match &mut connection {
-                //             Connection::V1(monitor) => {
-                //                 let _ = monitor
-                //                     .send_single(cmd.id.as_u32() as u8, cmd.into())
-                //                     .map_err(|err| log::error!("Error sending stop: {:?}", err));
-                //             }
-                //             Connection::V0(serial) => {
-                //                 let cmd_str = cmd.into_proto_v0_with_id(*id);
-                //                 serial.send(&cmd_str);
-                //             }
-                //         }
-                //     }
-                // }
-
-                // Receive feedback
-                #[cfg(feature = "glue")]
-                if let Connection::V1(monitor) = &mut connection {
-                    if !monitor.is_connected() {
-                        panic!(
-                            "Base station disconnected: {:?}",
-                            monitor.has_error().unwrap()
-                        );
-                    }
-
-                    if let Some(robots) = monitor.get_robots() {
-                        let feedback = robots
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(id, msg)| {
-                                if msg
-                                    .time_since_status_lf_update()
-                                    .unwrap_or(Duration::from_secs(600))
-                                    < Duration::from_millis(600)
-                                {
-                                    all_ids.insert(id);
-                                    let player_id = id_map
-                                        .iter()
-                                        .find_map(
-                                            |(k, v)| if *v == id as u32 { Some(*k) } else { None },
-                                        )
-                                        .unwrap_or_else(|| PlayerId::new(id as u32));
-
-                                    Some(PlayerFeedbackMsg {
-                                        id: player_id,
-                                        primary_status: SysStatus::from_option(
-                                            msg.primary_status(),
-                                        ),
-                                        kicker_status: SysStatus::from_option(msg.kicker_status()),
-                                        imu_status: SysStatus::from_option(msg.imu_status()),
-                                        fan_status: SysStatus::from_option(msg.fan_status()),
-                                        kicker_cap_voltage: msg.kicker_cap_voltage(),
-                                        kicker_temp: msg.kicker_temperature(),
-                                        motor_statuses: msg
-                                            .motor_statuses()
-                                            .map(|v| v.map(Into::into)),
-                                        motor_speeds: msg.motor_speeds(),
-                                        motor_temps: msg.motor_temperatures(),
-                                        breakbeam_ball_detected: msg.breakbeam_ball_detected(),
-                                        breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
-                                        pack_voltages: msg.pack_voltages(),
-                                    })
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        for msg in feedback {
-                            info_tx.send(msg).ok();
-                        }
-                    }
-                }
-
-                // Sleep
-                let elapsed = last_send.elapsed();
-                last_send = std::time::Instant::now();
-                if elapsed < interval {
-                    std::thread::sleep(interval - elapsed);
-                } else {
-                    std::thread::sleep(Duration::from_secs_f64(1.0 / MAX_MSG_FREQ));
-                }
-            }
-        });
-
-        tokio::spawn(async move {
-            let result = result.await;
-            if let Err(e) = result {
-                log::error!("Error in basestation client: {:?}", e);
-                std::process::exit(1);
-            }
-        });
-
-        Ok(Self { cmd_tx, info_rx })
+    /// Create a new basestation client with the given configuration.
+    pub fn new(config: BasestationClientConfig) -> Self {
+        BasestationClient::spawn(config)
     }
 
-    /// Send a message to the serial port.
-    pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
+    /// Send a command to a robot.
+    pub async fn send_cmd(&self, id: ColoredPlayerId, cmd: RobotCmd) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
-            .send(Message::PlayerCmd((msg, tx)))
-            .context("Failed to send message to serial port")?;
+            .send(Message::RobotCmd((id, cmd, tx)))
+            .context("Failed to send command")?;
         rx.await?
     }
 
-    pub fn send_no_wait(&mut self, msg: PlayerCmd) {
-        let (tx, _) = oneshot::channel();
-        self.cmd_tx.send(Message::PlayerCmd((msg, tx))).ok();
-    }
-
     /// Update the id map
-    pub fn update_id_map(&mut self, id_map: HashMap<PlayerId, u32>) {
-        self.cmd_tx.send(Message::ChangeIdMap(id_map)).ok();
+    pub fn update_id_map(&self, id_map: Vec<(u32, Option<ColoredPlayerId>)>) {
+        self.cmd_tx.send(Message::SetIdMap(id_map)).ok();
     }
 
-    /// Receive a message from the serial port.
-    pub async fn recv(&mut self) -> Result<PlayerFeedbackMsg> {
-        self.info_rx.recv().await.map_err(|e| e.into())
+    /// Get the current connection status
+    pub async fn get_connection_status(&self) -> Result<BasestationConnectionStatus> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(Message::GetConnectionStatus(tx))
+            .context("Failed to get connection status")?;
+        Ok(rx.await?)
+    }
+
+    /// Get the current id map
+    pub async fn get_id_map(&self) -> Result<Vec<(u32, Option<ColoredPlayerId>)>> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(Message::GetIdMap(tx))
+            .context("Failed to get id map")?;
+        Ok(rx.await?)
+    }
+
+    /// Set the port to connect to
+    pub fn set_port(&self, port: String) {
+        self.cmd_tx.send(Message::SetPort(port)).ok();
+    }
+
+    /// Receive feedback from robots.
+    pub async fn recv_feedback(&mut self) -> Result<RobotFeedback> {
+        self.feedback_rx
+            .recv()
+            .await
+            .map_err(|e| anyhow!(e.to_string()))
     }
 }
 
@@ -343,7 +234,7 @@ impl Clone for BasestationHandle {
     fn clone(&self) -> Self {
         Self {
             cmd_tx: self.cmd_tx.clone(),
-            info_rx: self.info_rx.resubscribe(),
+            feedback_rx: self.feedback_rx.resubscribe(),
         }
     }
 }
