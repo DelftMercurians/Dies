@@ -1,7 +1,7 @@
 use std::f64::{consts::PI, EPSILON};
 
 use dies_core::{debug_string, Angle, PlayerData, Vector2};
-use dies_world::PlayerModel;
+use dies_tracker::PlayerModel;
 use crate::Obstacle;
 
 // Constants

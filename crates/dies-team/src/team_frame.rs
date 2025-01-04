@@ -1,9 +1,6 @@
-use dies_core::{Angle, Vector2, Vector3};
+use dies_core::{BallFrame, GameStateType, PlayerFrame, TeamColor, WorldFrame};
 
-use crate::{
-    utils::SideTransform, BallFrame, GameState, GameStateType, PlayerFrame, SideAssignment, Team,
-    WorldFrame,
-};
+use crate::utils::SideTransform;
 
 /// World state from a single frame, transformed to a specific team's perspective.
 ///
@@ -13,14 +10,14 @@ use crate::{
 pub struct TeamFrame {
     /// The time since the last frame was received, in seconds
     pub dt: f64,
-    pub own_team: Vec<PlayerFrame>,
-    pub opp_team: Vec<PlayerFrame>,
+    pub own_players: Vec<PlayerFrame>,
+    pub opp_players: Vec<PlayerFrame>,
     pub ball: Option<BallFrame>,
-    pub current_game_state: TeamGameState,
+    pub game_state: TeamGameState,
 }
 
 impl TeamFrame {
-    pub fn from_world_frame(world_frame: &WorldFrame, team: Team) -> Self {
+    pub fn from_world_frame(world_frame: &WorldFrame, team: TeamColor) -> Self {
         let side = SideTransform::new(team, world_frame.side_assignment);
         let own_team = world_frame
             .get_team(team)
@@ -36,10 +33,10 @@ impl TeamFrame {
         let ball = world_frame.ball.as_ref().map(|b| side.transform_ball(b));
         Self {
             dt: world_frame.dt,
-            own_team,
-            opp_team,
+            own_players: own_team,
+            opp_players: opp_team,
             ball,
-            current_game_state: side.transform_game_state(&world_frame.current_game_state),
+            game_state: side.transform_game_state(&world_frame.game_state),
         }
     }
 }
@@ -52,7 +49,9 @@ pub struct TeamGameState {
 
 #[cfg(test)]
 mod tests {
-    use crate::mock_world_frame;
+    use dies_core::{
+        mock_world_frame, Angle, GameStateInfo, GameStateType, SideAssignment, Vector2, Vector3,
+    };
 
     use super::*;
     use std::f64::consts::PI;
@@ -67,17 +66,17 @@ mod tests {
     fn test_blue_team_standard_orientation() {
         // Test when blue attacks positive x (standard orientation)
         let world_frame = create_test_world_frame(SideAssignment::BluePositive);
-        let team_frame = TeamFrame::from_world_frame(&world_frame, Team::Blue);
+        let team_frame = TeamFrame::from_world_frame(&world_frame, TeamColor::Blue);
 
         // Own team (blue) positions and orientations should be unchanged
-        let own_player = &team_frame.own_team[0];
+        let own_player = &team_frame.own_players[0];
         assert_eq!(own_player.position, Vector2::new(2000.0, 1000.0));
         assert_eq!(own_player.velocity, Vector2::new(1000.0, 500.0));
         assert_eq!(own_player.yaw.radians(), PI / 4.0);
         assert_eq!(own_player.angular_speed, 2.0);
 
         // Opponent team (yellow) positions and orientations should be unchanged
-        let opp_player = &team_frame.opp_team[0];
+        let opp_player = &team_frame.opp_players[0];
         assert_eq!(opp_player.position, Vector2::new(-2000.0, -1000.0));
         assert_eq!(opp_player.velocity, Vector2::new(-1000.0, -500.0));
         assert_eq!(opp_player.yaw.radians(), -PI / 4.0);
@@ -90,27 +89,27 @@ mod tests {
 
         // Game state
         assert!(matches!(
-            team_frame.current_game_state.game_state,
+            team_frame.game_state.game_state,
             GameStateType::BallPlacement(pos) if pos == Vector2::new(1500.0, 750.0)
         ));
-        assert!(team_frame.current_game_state.us_operating);
+        assert!(team_frame.game_state.us_operating);
     }
 
     #[test]
     fn test_yellow_team_flipped_orientation() {
         // Test when blue attacks positive x (yellow needs transformation)
         let world_frame = create_test_world_frame(SideAssignment::BluePositive);
-        let team_frame = TeamFrame::from_world_frame(&world_frame, Team::Yellow);
+        let team_frame = TeamFrame::from_world_frame(&world_frame, TeamColor::Yellow);
 
         // Own team (yellow) positions and orientations should be flipped
-        let own_player = &team_frame.own_team[0];
+        let own_player = &team_frame.own_players[0];
         assert_eq!(own_player.position, Vector2::new(2000.0, 1000.0)); // Flipped from -2000.0
         assert_eq!(own_player.velocity, Vector2::new(1000.0, 500.0)); // Flipped from -1000.0
         assert_eq!(own_player.yaw.radians(), PI - (-PI / 4.0)); // Flipped around y-axis
         assert_eq!(own_player.angular_speed, 2.0); // Sign flipped from -2.0
 
         // Opponent team (blue) positions and orientations should be flipped
-        let opp_player = &team_frame.opp_team[0];
+        let opp_player = &team_frame.opp_players[0];
         assert_eq!(opp_player.position, Vector2::new(-2000.0, -1000.0)); // Flipped from 2000.0
         assert_eq!(opp_player.velocity, Vector2::new(-1000.0, -500.0)); // Flipped from 1000.0
         assert_eq!(opp_player.yaw.radians(), PI - (PI / 4.0)); // Flipped around y-axis
@@ -123,15 +122,15 @@ mod tests {
 
         // Game state
         assert!(matches!(
-            team_frame.current_game_state.game_state,
+            team_frame.game_state.game_state,
             GameStateType::BallPlacement(pos) if pos == Vector2::new(-1500.0, 750.0)
         ));
-        assert!(!team_frame.current_game_state.us_operating);
+        assert!(!team_frame.game_state.us_operating);
     }
 
     #[test]
     fn test_angle_transformations() {
-        let side = SideTransform::new(Team::Yellow, SideAssignment::BluePositive);
+        let side = SideTransform::new(TeamColor::Yellow, SideAssignment::BluePositive);
 
         // Test all quadrants
         let angles = vec![
@@ -157,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_game_state_transformations() {
-        let side = SideTransform::new(Team::Yellow, SideAssignment::BluePositive);
+        let side = SideTransform::new(TeamColor::Yellow, SideAssignment::BluePositive);
 
         // Test symmetric states (shouldn't change except for operating team)
         let symmetric_states = vec![
@@ -168,8 +167,8 @@ mod tests {
         ];
 
         for state_type in symmetric_states {
-            let state = GameState {
-                game_state: state_type,
+            let state = GameStateInfo {
+                state_type,
                 operating_team: None,
             };
             let result = side.transform_game_state(&state);
@@ -179,9 +178,9 @@ mod tests {
 
         // Test ball placement transformation
         let placement_pos = Vector2::new(1000.0, 500.0);
-        let state = GameState {
-            game_state: GameStateType::BallPlacement(placement_pos),
-            operating_team: Some(Team::Blue),
+        let state = GameStateInfo {
+            state_type: GameStateType::BallPlacement(placement_pos),
+            operating_team: Some(TeamColor::Blue),
         };
         let result = side.transform_game_state(&state);
         if let GameStateType::BallPlacement(transformed_pos) = result.game_state {

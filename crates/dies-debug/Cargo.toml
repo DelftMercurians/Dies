@@ -8,7 +8,7 @@ name = "dies_debug"
 path = "src/lib.rs"
 
 [dependencies]
-dies-core = { path = "../dies-core" }
+nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
 serde = { version = "1.0.192", features = ["derive"] }
 tokio = { version = "1.0", features = ["sync", "rt"] }
 typeshare = "1.0.1"

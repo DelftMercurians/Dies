@@ -9,7 +9,7 @@ anyhow = "1.0.75"
 dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-basestation-client = { version = "0.1.0", path = "../dies-basestation-client" }
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
-dies-world = { version = "0.1.0", path = "../dies-world" }
+dies-tracker = { version = "0.1.0", path = "../dies-tracker" }
 dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 log = "0.4.21"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }

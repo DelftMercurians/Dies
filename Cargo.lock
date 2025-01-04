@@ -124,6 +124,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
+
+[[package]]
 name = "arrayvec"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -666,6 +672,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "approx",
+ "dies-debug",
  "nalgebra",
  "rand",
  "serde",
@@ -675,7 +682,7 @@ dependencies = [
 name = "dies-debug"
 version = "0.1.0"
 dependencies = [
- "dies-core",
+ "nalgebra",
  "serde",
  "tokio",
  "typeshare",
@@ -740,13 +747,28 @@ dependencies = [
  "dies-protos",
  "dies-simulator",
  "dies-ssl-client",
- "dies-world",
+ "dies-tracker",
  "log",
  "nalgebra",
  "paste",
  "rand",
  "serde",
  "tokio",
+]
+
+[[package]]
+name = "dies-tracker"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "arc-swap",
+ "dies-core",
+ "dies-protos",
+ "log",
+ "nalgebra",
+ "rand",
+ "rand_distr",
+ "serde",
 ]
 
 [[package]]
@@ -763,7 +785,6 @@ dependencies = [
  "dies-simulator",
  "dies-ssl-client",
  "dies-team",
- "dies-webui-common",
  "futures",
  "log",
  "serde",
@@ -772,29 +793,6 @@ dependencies = [
  "tower-http",
  "tower-layer",
  "typeshare",
-]
-
-[[package]]
-name = "dies-webui-common"
-version = "0.1.0"
-dependencies = [
- "dies-core",
- "serde",
- "ts-rs",
-]
-
-[[package]]
-name = "dies-world"
-version = "0.1.0"
-dependencies = [
- "approx",
- "dies-core",
- "dies-protos",
- "log",
- "nalgebra",
- "rand",
- "rand_distr",
- "serde",
 ]
 
 [[package]]
@@ -1530,7 +1528,7 @@ checksum = "433419f898328beca4f2c6c73a1b52540658d92b0a99f0269330457e0fd998d5"
 dependencies = [
  "cc",
  "libc",
- "thiserror 1.0.62",
+ "thiserror",
  "winapi",
 ]
 
@@ -1767,7 +1765,7 @@ checksum = "df67496db1a89596beaced1579212e9b7c53c22dca1d9745de00ead76573d514"
 dependencies = [
  "once_cell",
  "protobuf-support",
- "thiserror 1.0.62",
+ "thiserror",
 ]
 
 [[package]]
@@ -1782,7 +1780,7 @@ dependencies = [
  "protobuf-parse",
  "regex",
  "tempfile",
- "thiserror 1.0.62",
+ "thiserror",
 ]
 
 [[package]]
@@ -1793,7 +1791,7 @@ checksum = "781abbf9eedba12bd3496bc019d24d2f683adc2b5291d8d0acb39dbddc7c2a02"
 dependencies = [
  "protobuf",
  "protobuf-support",
- "thiserror 1.0.62",
+ "thiserror",
 ]
 
 [[package]]
@@ -1808,7 +1806,7 @@ dependencies = [
  "protobuf",
  "protobuf-support",
  "tempfile",
- "thiserror 1.0.62",
+ "thiserror",
  "which",
 ]
 
@@ -1818,7 +1816,7 @@ version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70e2d30ab1878b2e72d1e2fc23ff5517799c9929e2cf81a8516f9f4dcf2b9cf3"
 dependencies = [
- "thiserror 1.0.62",
+ "thiserror",
 ]
 
 [[package]]
@@ -2279,30 +2277,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "termcolor"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
-dependencies = [
- "winapi-util",
-]
-
-[[package]]
 name = "thiserror"
 version = "1.0.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2675633b1499176c2dff06b0856a27976a8f9d436737b4cf4f312d4d91d8bbb"
 dependencies = [
- "thiserror-impl 1.0.62",
-]
-
-[[package]]
-name = "thiserror"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f49a1853cf82743e3b7950f77e0f4d622ca36cf4317cba00c767838bac8d490"
-dependencies = [
- "thiserror-impl 2.0.4",
+ "thiserror-impl",
 ]
 
 [[package]]
@@ -2310,17 +2290,6 @@ name = "thiserror-impl"
 version = "1.0.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d20468752b09f49e909e55a5d338caa8bedf615594e9d80bc4c565d30faf798c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.90",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8381894bb3efe0c4acac3ded651301ceee58a15d47c2e34885ed1908ad667061"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2567,29 +2536,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
-name = "ts-rs"
-version = "10.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e640d9b0964e9d39df633548591090ab92f7a4567bc31d3891af23471a3365c6"
-dependencies = [
- "lazy_static",
- "thiserror 2.0.4",
- "ts-rs-macros",
-]
-
-[[package]]
-name = "ts-rs-macros"
-version = "10.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e9d8656589772eeec2cf7a8264d9cda40fb28b9bc53118ceb9e8c07f8f38730"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.90",
- "termcolor",
-]
-
-[[package]]
 name = "tungstenite"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2603,7 +2549,7 @@ dependencies = [
  "log",
  "rand",
  "sha1",
- "thiserror 1.0.62",
+ "thiserror",
  "url",
  "utf-8",
 ]
@@ -2642,7 +2588,7 @@ version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c878a167baa8afd137494101a688ef8c67125089ff2249284bd2b5f9bfedb815"
 dependencies = [
- "thiserror 1.0.62",
+ "thiserror",
 ]
 
 [[package]]
@@ -2816,15 +2762,6 @@ name = "winapi-i686-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
-
-[[package]]
-name = "winapi-util"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
-dependencies = [
- "windows-sys 0.52.0",
-]
 
 [[package]]
 name = "winapi-x86_64-pc-windows-gnu"

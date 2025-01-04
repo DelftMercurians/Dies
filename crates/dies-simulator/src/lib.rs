@@ -4,8 +4,8 @@ use std::{
 };
 
 use dies_core::{
-    Angle, FieldGeometry, RobotFeedback, PlayerId, RobotMainboardCmd, RobotMoveCmd, SysStatus,
-    Vector2,
+    Angle, ColoredPlayerId, FieldGeometry, PlayerId, RobotCmd, RobotFeedback, RobotMainboardCmd,
+    RobotMoveCmd, SysStatus, TeamColor, Vector2,
 };
 use dies_protos::{
     ssl_gc_referee_message::{referee, Referee},
@@ -15,7 +15,6 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
-use dies_world::world::WorldInstant;
 use rapier3d_f64::prelude::*;
 use serde::Serialize;
 use utils::IntervalTrigger;
@@ -133,8 +132,7 @@ struct Ball {
 
 #[derive(Debug)]
 struct Player {
-    id: PlayerId,
-    is_own: bool,
+    id: ColoredPlayerId,
     rigid_body_handle: RigidBodyHandle,
     _collider_handle: ColliderHandle,
     last_cmd_time: f64,
@@ -148,7 +146,8 @@ struct Player {
 #[derive(Debug)]
 struct TimedPlayerCmd {
     execute_time: f64,
-    player_cmd: RobotMoveCmd,
+    id: ColoredPlayerId,
+    player_cmd: RobotCmd,
 }
 
 /// A complete simulator for testing strategies and robot control in silico.
@@ -203,7 +202,7 @@ pub struct Simulation {
 }
 
 impl Simulation {
-    /// Createa a new instance of [`Simulation`]. After creation, the simulation is
+    /// Create a a new instance of [`Simulation`]. After creation, the simulation is
     /// empty and needs to be populated with players and a ball. It is better to use
     /// [`SimulationBuilder`] to create a new simulation and add players and a ball.
     pub fn new(config: SimulationConfig) -> Simulation {
@@ -263,10 +262,6 @@ impl Simulation {
         simulation
     }
 
-    pub fn time(&self) -> WorldInstant {
-        WorldInstant::Simulated(self.current_time)
-    }
-
     fn add_wall(&mut self, x: f64, y: f64, width: f64, height: f64) {
         let wall_body = RigidBodyBuilder::fixed()
             .translation(Vector::new(x, y, 0.0))
@@ -295,16 +290,18 @@ impl Simulation {
 
     /// Pushes a PlayerCmd onto the execution queue with the time delay specified in
     /// the config
-    pub fn push_cmd(&mut self, cmd: RobotMoveCmd) {
+    pub fn push_cmd(&mut self, id: ColoredPlayerId, cmd: RobotCmd) {
         self.cmd_queue.push(TimedPlayerCmd {
+            id,
             execute_time: self.current_time + self.config.command_delay,
             player_cmd: cmd,
         });
     }
 
     /// Executes a PlayerCmd immediately.
-    pub fn execute_cmd(&mut self, cmd: RobotMoveCmd) {
+    pub fn execute_cmd(&mut self, id: ColoredPlayerId, cmd: RobotCmd) {
         self.cmd_queue.push(TimedPlayerCmd {
+            id,
             execute_time: self.current_time,
             player_cmd: cmd,
         });
@@ -351,7 +348,14 @@ impl Simulation {
             let mut to_exec = HashMap::new();
             self.cmd_queue.retain(|cmd| {
                 if cmd.execute_time <= self.current_time {
-                    to_exec.insert(cmd.player_cmd.id, cmd.player_cmd);
+                    match cmd.player_cmd {
+                        RobotCmd::Move(move_cmd) => {
+                            to_exec.insert(cmd.id, move_cmd);
+                        }
+                        RobotCmd::SetHeadingReference { .. } => {
+                            // Handle heading reference command
+                        }
+                    }
                     false
                 } else {
                     true
@@ -377,18 +381,15 @@ impl Simulation {
         // Update players
         let send_feedback = self.feedback_interval.trigger(self.current_time);
         for player in self.players.iter_mut() {
-            if !player.is_own {
-                let rigid_body = self
-                    .rigid_body_set
-                    .get_mut(player.rigid_body_handle)
-                    .unwrap();
-                rigid_body.set_linvel(Vector::zeros(), false);
-                rigid_body.set_angvel(Vector::zeros(), false);
-                continue;
-            }
+            let rigid_body = self
+                .rigid_body_set
+                .get_mut(player.rigid_body_handle)
+                .unwrap();
+            rigid_body.set_linvel(Vector::zeros(), false);
+            rigid_body.set_angvel(Vector::zeros(), false);
 
             if send_feedback {
-                let mut feedback = RobotFeedback::empty(player.id);
+                let mut feedback = RobotFeedback::default();
                 feedback.breakbeam_ball_detected = Some(player.breakbeam);
                 feedback.kicker_status = Some(SysStatus::Ready);
                 feedback.imu_status = if self.config.has_imu {
@@ -407,9 +408,9 @@ impl Simulation {
                 player.target_z = -command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
-                is_kicking = matches!(command.robot_cmd, RobotMainboardCmd::Kick);
+                is_kicking = matches!(command.mainboard_cmd, RobotMainboardCmd::Kick);
 
-                match command.robot_cmd {
+                match command.mainboard_cmd {
                     RobotMainboardCmd::Kick => {
                         is_kicking = true;
                     }
@@ -421,16 +422,6 @@ impl Simulation {
                     }
                     _ => {}
                 }
-            }
-
-            let rigid_body = self
-                .rigid_body_set
-                .get_mut(player.rigid_body_handle)
-                .unwrap();
-
-            if (self.current_time - player.last_cmd_time).abs() > self.config.player_cmd_timeout {
-                player.target_velocity = Vector::zeros();
-                player.target_z = 0.0;
             }
 
             let velocity = rigid_body.linvel();
@@ -558,17 +549,17 @@ impl Simulation {
             // let yaw = yaw + ((rand::random::<f64>() - 0.5) * 4f64).to_radians();
 
             let mut robot = SSL_DetectionRobot::new();
-            robot.set_robot_id(player.id.as_u32());
+            robot.set_robot_id(player.id.1.as_u32());
             robot.set_x(position.x as f32);
             robot.set_y(position.y as f32);
             robot.set_pixel_x(0.0);
             robot.set_pixel_y(0.0);
             robot.set_orientation(yaw as f32);
             robot.set_confidence(1.0);
-            if player.is_own {
-                detection.robots_blue.push(robot);
-            } else {
-                detection.robots_yellow.push(robot);
+
+            match player.id.0 {
+                TeamColor::Blue => detection.robots_blue.push(robot),
+                TeamColor::Yellow => detection.robots_yellow.push(robot),
             }
         }
 
@@ -601,39 +592,66 @@ impl Default for Simulation {
 
 pub struct SimulationBuilder {
     sim: Simulation,
-    last_own_id: u32,
-    last_opp_id: u32,
 }
 
 impl SimulationBuilder {
     pub fn new(config: SimulationConfig) -> Self {
         SimulationBuilder {
             sim: Simulation::new(config),
-            last_own_id: 0,
-            last_opp_id: 0,
         }
     }
 
-    pub fn add_own_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
-        self.add_player(id, true, position, yaw);
+    pub fn add_player(
+        mut self,
+        team: TeamColor,
+        id: PlayerId,
+        position: Vector2,
+        yaw: Angle,
+    ) -> Self {
+        let colored_id = ColoredPlayerId::new(team, id);
+        self.add_player_internal(colored_id, position, yaw);
         self
     }
 
-    pub fn add_opp_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
-        self.add_player(id, false, position, yaw);
-        self
-    }
+    fn add_player_internal(&mut self, id: ColoredPlayerId, position: Vector2, yaw: Angle) {
+        let sim = &mut self.sim;
 
-    pub fn add_own_player(mut self, position: Vector2, yaw: Angle) -> Self {
-        self.add_player(self.last_own_id, true, position, yaw);
-        self.last_own_id += 1;
-        self
-    }
+        // Players have fixed z position - their bottom surface 1mm above the ground
+        let player_radius = sim.config.player_radius;
+        let player_height = sim.config.player_height;
+        let position = Vector::new(position.x, position.y, (player_height / 2.0) + 1.0);
+        let rigid_body = RigidBodyBuilder::dynamic()
+            .translation(position)
+            .rotation(Vector::z() * yaw.radians())
+            .locked_axes(
+                LockedAxes::TRANSLATION_LOCKED_Z
+                    | LockedAxes::ROTATION_LOCKED_X
+                    | LockedAxes::ROTATION_LOCKED_Y,
+            )
+            .build();
+        let collider = ColliderBuilder::cylinder(player_height / 2.0, player_radius)
+            .rotation(Vector::x() * std::f64::consts::FRAC_PI_2)
+            .restitution(0.0)
+            .restitution_combine_rule(CoefficientCombineRule::Min)
+            .build();
+        let rigid_body_handle = sim.rigid_body_set.insert(rigid_body);
+        let collider_handle = sim.collider_set.insert_with_parent(
+            collider,
+            rigid_body_handle,
+            &mut sim.rigid_body_set,
+        );
 
-    pub fn add_opp_player(mut self, position: Vector2, yaw: Angle) -> Self {
-        self.add_player(self.last_opp_id, false, position, yaw);
-        self.last_opp_id += 1;
-        self
+        sim.players.push(Player {
+            id,
+            rigid_body_handle,
+            _collider_handle: collider_handle,
+            last_cmd_time: 0.0,
+            target_velocity: Vector::zeros(),
+            target_z: 0.0,
+            current_dribble_speed: 0.0,
+            breakbeam: false,
+            heading_control: false,
+        });
     }
 
     pub fn add_ball(mut self, position: Vector<f64>) -> Self {
@@ -666,48 +684,6 @@ impl SimulationBuilder {
 
     pub fn build(self) -> Simulation {
         self.sim
-    }
-
-    fn add_player(&mut self, id: u32, is_own: bool, position: Vector2, yaw: Angle) {
-        let sim = &mut self.sim;
-
-        // Players have fixed z position - their bottom surface 1mm above the ground
-        let player_radius = sim.config.player_radius;
-        let player_height = sim.config.player_height;
-        let position = Vector::new(position.x, position.y, (player_height / 2.0) + 1.0);
-        let rigid_body = RigidBodyBuilder::dynamic()
-            .translation(position)
-            .rotation(Vector::z() * yaw.radians())
-            .locked_axes(
-                LockedAxes::TRANSLATION_LOCKED_Z
-                    | LockedAxes::ROTATION_LOCKED_X
-                    | LockedAxes::ROTATION_LOCKED_Y,
-            )
-            .build();
-        let collider = ColliderBuilder::cylinder(player_height / 2.0, player_radius)
-            .rotation(Vector::x() * std::f64::consts::FRAC_PI_2)
-            .restitution(0.0)
-            .restitution_combine_rule(CoefficientCombineRule::Min)
-            .build();
-        let rigid_body_handle = sim.rigid_body_set.insert(rigid_body);
-        let collider_handle = sim.collider_set.insert_with_parent(
-            collider,
-            rigid_body_handle,
-            &mut sim.rigid_body_set,
-        );
-
-        sim.players.push(Player {
-            id: PlayerId::new(id),
-            is_own,
-            rigid_body_handle,
-            _collider_handle: collider_handle,
-            last_cmd_time: 0.0,
-            target_velocity: Vector::zeros(),
-            target_z: 0.0,
-            current_dribble_speed: 0.0,
-            breakbeam: false,
-            heading_control: false,
-        });
     }
 }
 

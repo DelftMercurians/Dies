@@ -77,6 +77,6 @@ Dies is split into several crates, each with a specific purpose:
 - ![`dies-ssl-client`](./crates/dies-ssl-client): Contains the `SSLClient` type.
 - ![`dies-protos`](./crates/dies-protos): Contains the protobuf definitions used for communication with the game controller and vision.
 - ![`dies-simulator`](./crates/dies-simulator): Contains the `Simulator` type, which can be used to replace the `SSLClient` and `BasestationClient` with a simulator for testing.
-- ![`dies-world`](./crates/dies-world): Contains the `World` type, which is used to represent the state of the game world, as well as filters and processors for incoming data.
+- ![`dies-tracker`](./crates/dies-tracker): Contains the `World` type, which is used to represent the state of the game world, as well as filters and processors for incoming data.
 - ![`dies-webui`](./crates/dies-webui): Contains the backend for the web interface, which can be used to monitor and control the AI. The frotend is in the `webui` directory.
 - ![`dies-cli`](./crates/dies-cli): Contains the command line interface for running the AI. This is the main entry point for the framework.

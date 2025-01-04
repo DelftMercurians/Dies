@@ -314,7 +314,7 @@ export interface WorldFrame {
   opp_players: PlayerData[];
   ball?: BallData;
   field_geom?: FieldGeometry;
-  current_game_state: GameStateData;
+  game_state: GameStateData;
   player_model: PlayerModel;
 }
 

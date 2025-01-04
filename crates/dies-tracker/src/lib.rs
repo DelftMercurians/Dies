@@ -8,27 +8,36 @@ use dies_protos::{
 mod ball;
 mod filter;
 mod game_state;
-pub mod geom;
+mod geom;
 mod player;
+mod tracker_frame;
 mod tracker_settings;
-mod world_frame;
 
+use geom::FromProtobuf;
 use tracker_settings::{FieldMask, TrackerSettings};
-pub use world_frame::*;
 
 use crate::game_state::GameStateTracker;
 use ball::BallTracker;
-use dies_core::{RobotFeedback, PlayerId, Vector2};
-pub use geom::{FieldCircularArc, FieldGeometry, FieldLineSegment};
+use dies_core::{
+    ColoredPlayerId, DiesInstant, FieldGeometry, GameStateType, PlayerId, RobotFeedback,
+    SideAssignment, TeamColor, VecMap, Vector2, WorldFrame,
+};
 use player::PlayerTracker;
+
+pub struct ControlHint {
+    pub role_type: RoleType,
+    pub current_control_input: Option,
+}
 
 /// A struct to track the world state.
 pub struct WorldTracker {
-    /// Player trackers for each team
+    // Player trackers for each team
     blue_players: HashMap<PlayerId, PlayerTracker>,
     blue_controlled: bool,
+    blue_control_hints: VecMap<PlayerId, ControlHint>,
     yellow_players: HashMap<PlayerId, PlayerTracker>,
     yellow_controlled: bool,
+    yellow_control_hints: VecMap<PlayerId, ControlHint>,
 
     side_assignment: SideAssignment,
 
@@ -36,12 +45,12 @@ pub struct WorldTracker {
     game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
 
-    /// Time tracking for frame synchronization
-    first_t_received: Option<WorldInstant>,
-    last_t_received: Option<f64>,
+    // Time tracking for frame synchronization
+    /// The timestamp of the last received frame - this is when the tracker received
+    /// the frame.
+    last_timestamp: Option<DiesInstant>,
+    /// The time difference between the last received frame and the previous frame.
     dt_received: Option<f64>,
-    first_t_capture: Option<f64>,
-    last_t_capture: Option<f64>,
 
     tracker_settings: TrackerSettings,
 }
@@ -58,11 +67,8 @@ impl WorldTracker {
             ball_tracker: BallTracker::new(settings),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
-            first_t_received: None,
-            last_t_received: None,
             dt_received: None,
-            first_t_capture: None,
-            last_t_capture: None,
+            last_timestamp: None,
             tracker_settings: settings.clone(),
         }
     }
@@ -73,11 +79,8 @@ impl WorldTracker {
         self.ball_tracker = BallTracker::new(&self.tracker_settings);
         self.game_state_tracker = GameStateTracker::new();
         self.field_geometry = None;
-        self.first_t_received = None;
-        self.last_t_received = None;
+        self.last_timestamp = None;
         self.dt_received = None;
-        self.first_t_capture = None;
-        self.last_t_capture = None;
     }
 
     pub fn set_controlled(&mut self, blue: bool, yellow: bool) {
@@ -208,27 +211,23 @@ impl WorldTracker {
     }
 
     /// Update the world state from a vision message.
-    pub fn update_from_vision(&mut self, data: &SSL_WrapperPacket, time: WorldInstant) {
+    pub fn update_from_vision(&mut self, data: &SSL_WrapperPacket, time: DiesInstant) {
         if let Some(frame) = data.detection.as_ref() {
             // Update timing information
-            let first_t_received = *self.first_t_received.get_or_insert(time);
-            let t_received = time.duration_since(&first_t_received);
-
-            if let Some(last_t_received) = self.last_t_received {
-                self.dt_received = Some(t_received - last_t_received);
-                dies_core::debug_value("dt", t_received - last_t_received);
-            }
-            self.last_t_received = Some(t_received);
-
+            self.dt_received = self.last_timestamp.map(|t| time.duration_since(&t));
+            self.last_timestamp = Some(time);
             let t_capture = frame.t_capture();
-            let first_t_capture = *self.first_t_capture.get_or_insert(t_capture);
-            self.last_t_capture = Some(t_capture - first_t_capture);
 
             // Update blue team players
-            self.update_team_players(frame.robots_blue.iter(), Team::Blue, t_capture, time);
+            self.update_team_players(frame.robots_blue.iter(), TeamColor::Blue, t_capture, time);
 
             // Update yellow team players
-            self.update_team_players(frame.robots_yellow.iter(), Team::Yellow, t_capture, time);
+            self.update_team_players(
+                frame.robots_yellow.iter(),
+                TeamColor::Yellow,
+                t_capture,
+                time,
+            );
 
             // Update ball
             self.ball_tracker.update(
@@ -254,15 +253,15 @@ impl WorldTracker {
     fn update_team_players<'a, I>(
         &mut self,
         players: I,
-        team: Team,
+        team: TeamColor,
         t_capture: f64,
-        time: WorldInstant,
+        time: DiesInstant,
     ) where
         I: Iterator<Item = &'a SSL_DetectionRobot>,
     {
         let (players_map, is_controlled) = match team {
-            Team::Blue => (&mut self.blue_players, self.blue_controlled),
-            Team::Yellow => (&mut self.yellow_players, self.yellow_controlled),
+            TeamColor::Blue => (&mut self.blue_players, self.blue_controlled),
+            TeamColor::Yellow => (&mut self.yellow_players, self.yellow_controlled),
         };
 
         // Update detected players
@@ -300,26 +299,23 @@ impl WorldTracker {
     /// Update player feedback for controlled robots
     pub fn update_from_feedback(
         &mut self,
+        ColoredPlayerId(team, player_id): ColoredPlayerId,
         feedback: &RobotFeedback,
-        team: Team,
-        time: WorldInstant,
+        time: DiesInstant,
     ) {
         let (players_map, is_controlled) = match team {
-            Team::Blue => (&mut self.blue_players, self.blue_controlled),
-            Team::Yellow => (&mut self.yellow_players, self.yellow_controlled),
+            TeamColor::Blue => (&mut self.blue_players, self.blue_controlled),
+            TeamColor::Yellow => (&mut self.yellow_players, self.yellow_controlled),
         };
 
         // Only process feedback for controlled players
         if is_controlled {
             let tracker = players_map
-                .entry(feedback.id)
-                .or_insert_with(|| PlayerTracker::new(feedback.id, &self.tracker_settings, true));
+                .entry(player_id)
+                .or_insert_with(|| PlayerTracker::new(player_id, &self.tracker_settings, true));
             tracker.update_from_feedback(feedback, time);
         } else {
-            log::warn!(
-                "Received feedback for uncontrolled player: {:?}",
-                feedback.id
-            );
+            log::warn!("Received feedback for uncontrolled player: {:?}", player_id);
         }
     }
 
@@ -356,13 +352,11 @@ impl WorldTracker {
 
         WorldFrame {
             dt: self.dt_received.unwrap_or(0.0),
-            t_capture: self.last_t_capture.unwrap_or(0.0),
-            t_received: self.last_t_received.unwrap_or(0.0),
+            timestamp: self.last_timestamp.unwrap_or_default(),
             blue_team,
             yellow_team,
             ball: self.ball_tracker.get(),
-            field_geom: self.field_geometry.clone(),
-            current_game_state: self.game_state_tracker.get(),
+            game_state: self.game_state_tracker.get(),
             side_assignment: self.side_assignment,
         }
     }

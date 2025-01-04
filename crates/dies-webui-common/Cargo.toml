@@ -1,9 +1,0 @@
-[package]
-name = "dies-webui-common"
-version = "0.1.0"
-edition.workspace = true
-
-[dependencies]
-dies-core = { version = "0.1.0", path = "../dies-core" }
-serde = "1.0.215"
-ts-rs = "10.1.0"

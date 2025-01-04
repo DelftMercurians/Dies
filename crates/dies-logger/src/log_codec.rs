@@ -264,12 +264,11 @@ impl LogFile {
 
 #[cfg(test)]
 mod tests {
-    use dies_core::DebugValue;
+    use super::*;
+    use dies_core::{mock_world_frame, DebugValue};
     use dies_protos::dies_log_line::LogLevel;
     use flate2::read::GzDecoder;
     use tempfile::NamedTempFile;
-    use dies_world::world::mock_world_data;
-    use super::*;
 
     const TEST_FILE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/test.log.gz"));
 
@@ -395,7 +394,10 @@ mod tests {
 
         let mut debug_map = std::collections::HashMap::new();
         debug_map.insert("test".to_string(), DebugValue::Number(10.0));
-        let messages = vec![DataLog::Debug(debug_map), DataLog::World(mock_world_data())];
+        let messages = vec![
+            DataLog::Debug(debug_map),
+            DataLog::World(mock_world_frame()),
+        ];
         for message in &messages {
             writer
                 .write_log_message(&LogMessage::DiesData(message.clone()))

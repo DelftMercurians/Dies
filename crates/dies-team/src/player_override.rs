@@ -1,8 +1,51 @@
-use dies_core::PlayerOverrideCommand;
+use dies_core::{Angle, Vector2};
+use serde::{Deserialize, Serialize};
 
 use crate::{control::Velocity, KickerControlInput, PlayerControlInput};
 
-pub struct PlayerOverrideState {
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(tag = "type", content = "data")]
+pub enum PlayerOverrideCommand {
+    /// Do nothing
+    #[default]
+    Stop,
+    /// Move the robot to a globel position and yaw
+    MoveTo {
+        position: Vector2,
+        yaw: Angle,
+        /// Dribbler speed normalised to \[0, 1\]
+        dribble_speed: f64,
+        arm_kick: bool,
+    },
+    /// Move the robot with velocity in local frame
+    LocalVelocity {
+        velocity: Vector2,
+        angular_velocity: f64,
+        /// Dribbler speed normalised to \[0, 1\]
+        dribble_speed: f64,
+        arm_kick: bool,
+    },
+    /// Move the robot with velocity in global frame
+    GlobalVelocity {
+        velocity: Vector2,
+        angular_velocity: f64,
+        /// Dribbler speed normalised to \[0, 1\]
+        dribble_speed: f64,
+        arm_kick: bool,
+    },
+    /// Engage the kicker
+    Kick {
+        speed: f64,
+    },
+    /// Discharge the kicker safely
+    DischargeKicker,
+
+    SetFanSpeed {
+        speed: f64,
+    },
+}
+
+pub(crate) struct PlayerOverrideState {
     frame_counter: u32,
     current_command: PlayerOverrideCommand,
 }
@@ -10,19 +53,19 @@ pub struct PlayerOverrideState {
 impl PlayerOverrideState {
     const VELOCITY_TIMEOUT: u32 = 5;
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             frame_counter: 0,
             current_command: PlayerOverrideCommand::Stop,
         }
     }
 
-    pub fn set_cmd(&mut self, cmd: PlayerOverrideCommand) {
+    pub(crate) fn set_cmd(&mut self, cmd: PlayerOverrideCommand) {
         self.current_command = cmd;
         self.frame_counter = 0;
     }
 
-    pub fn advance(&mut self) -> PlayerControlInput {
+    pub(crate) fn advance(&mut self) -> PlayerControlInput {
         let input = match self.current_command {
             PlayerOverrideCommand::Stop => PlayerControlInput::new(),
             PlayerOverrideCommand::MoveTo {

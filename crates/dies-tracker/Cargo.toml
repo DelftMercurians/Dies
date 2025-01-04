@@ -1,11 +1,12 @@
 [package]
-name = "dies-world"
+name = "dies-tracker"
 version = "0.1.0"
 edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+arc-swap = "1.7.1"
 dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 log = "0.4.22"

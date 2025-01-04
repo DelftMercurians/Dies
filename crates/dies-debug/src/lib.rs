@@ -3,10 +3,11 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
-use dies_core::Vector2;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Notify};
 use typeshare::typeshare;
+
+type Vector2 = nalgebra::Vector2<f64>;
 
 static DEBUG_MESSAGES: OnceLock<mpsc::UnboundedSender<UpdateMsg>> = OnceLock::new();
 

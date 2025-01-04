@@ -27,4 +27,12 @@ impl ColoredPlayerId {
     pub fn new(team: TeamColor, id: PlayerId) -> Self {
         Self(team, id)
     }
+
+    pub fn id(&self) -> PlayerId {
+        self.1
+    }
+
+    pub fn team(&self) -> TeamColor {
+        self.0
+    }
 }

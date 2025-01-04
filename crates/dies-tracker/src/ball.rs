@@ -1,11 +1,8 @@
-use dies_core::{debug_line, debug_value, Vector3};
+use dies_core::{debug_line, debug_value, BallFrame, FieldGeometry, Vector3};
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 use nalgebra::{SVector, Vector6};
 
-use crate::{
-    filter::MaybeKalman, geom::FieldGeometry, tracker_settings::FieldMask,
-    tracker_settings::TrackerSettings, BallFrame,
-};
+use crate::{filter::MaybeKalman, tracker_settings::FieldMask, tracker_settings::TrackerSettings};
 
 /// Stored data for the ball from the last update.
 #[derive(Debug)]
@@ -158,7 +155,6 @@ impl BallTracker {
     /// Get the current ball state
     pub fn get(&self) -> Option<BallFrame> {
         self.last_detection.as_ref().map(|data| BallFrame {
-            timestamp: data.timestamp,
             position: data.position,
             velocity: data.velocity,
             detected: self.misses < 5,

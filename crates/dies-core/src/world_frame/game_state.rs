@@ -59,9 +59,9 @@ impl PartialEq for GameStateType {
 impl Eq for GameStateType {}
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct GameState {
+pub struct GameStateInfo {
     /// The state of current game
-    pub game_state: GameStateType,
+    pub state_type: GameStateType,
     /// The team (if any) currently operating in asymmetric states
     pub operating_team: Option<TeamColor>,
 }

@@ -205,7 +205,7 @@ impl BasestationClient {
     fn send_cmd(&mut self, id: ColoredPlayerId, cmd: RobotCmd) {
         if let Some(monitor) = self.monitor.as_mut() {
             let robot_id = self.robot_router.get_by_player_id(id);
-            monitor.send_single(robot_id as u8, convert_cmd(cmd));
+            monitor.send_single(robot_id as u8, convert_cmd(cmd)).ok();
         }
     }
 }

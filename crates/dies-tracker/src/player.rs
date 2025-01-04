@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 
-use dies_core::{Angle, RobotFeedback, PlayerId, Vector2};
+use dies_core::{
+    Angle, DiesInstant, PlayerFeedback, PlayerFrame, PlayerId, RobotFeedback, Vector2,
+};
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
-use crate::PlayerFeedback;
-use crate::{tracker_settings::TrackerSettings, world_frame::WorldInstant, PlayerFrame};
+use crate::tracker_settings::TrackerSettings;
 
 const BREAKBEAM_WINDOW: usize = 100;
 const BREAKBEAM_DETECTION_THRESHOLD: usize = 5;
@@ -34,7 +35,7 @@ pub struct PlayerTracker {
 
     /// Last feedback received from the player (if controlled)
     last_feedback: Option<RobotFeedback>,
-    last_feedback_time: Option<WorldInstant>,
+    last_feedback_time: Option<DiesInstant>,
     /// The result of the last vision update
     last_detection: Option<StoredData>,
 
@@ -75,7 +76,7 @@ impl PlayerTracker {
         self.last_detection.is_some()
     }
 
-    pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant) {
+    pub fn check_is_gone(&mut self, time: f64, world_time: DiesInstant) {
         if !self.is_controlled {
             let vision_val = if let Some(last_detection) = &self.last_detection {
                 if time - last_detection.timestamp < 0.2 {
@@ -192,8 +193,8 @@ impl PlayerTracker {
     }
 
     /// Update the tracker with feedback from the player.
-    pub fn update_from_feedback(&mut self, feedback: &RobotFeedback, time: WorldInstant) {
-        if !self.is_controlled || feedback.id != self.id {
+    pub fn update_from_feedback(&mut self, feedback: &RobotFeedback, time: DiesInstant) {
+        if !self.is_controlled {
             return;
         }
 
@@ -231,7 +232,6 @@ impl PlayerTracker {
 
         self.last_detection.as_ref().map(|data| PlayerFrame {
             id: self.id,
-            timestamp: data.timestamp,
             position: data.position,
             velocity: data.velocity,
             yaw: data.yaw,
@@ -305,9 +305,9 @@ mod test {
         tracker.update(1.0, &player);
 
         // Feedback update
-        let mut feedback = RobotFeedback::empty(PlayerId::new(1));
+        let mut feedback = RobotFeedback::default();
         feedback.primary_status = Some(dies_core::SysStatus::Ready);
-        tracker.update_from_feedback(&feedback, WorldInstant::simulated(1.0));
+        tracker.update_from_feedback(&feedback, DiesInstant::test_value(1.0));
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id.as_u32(), 1);

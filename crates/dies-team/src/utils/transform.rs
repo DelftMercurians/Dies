@@ -1,12 +1,19 @@
+use dies_core::{
+    Angle, BallFrame, GameStateInfo, GameStateType, PlayerFrame, SideAssignment, TeamColor,
+    Vector2, Vector3,
+};
+
+use crate::team_frame::TeamGameState;
+
 /// Describes the side of the field a team is assigned to.
 #[derive(Debug, Clone, Copy)]
 pub struct SideTransform {
-    team: Team,
+    team: TeamColor,
     side_assignment: SideAssignment,
 }
 
 impl SideTransform {
-    pub fn new(team: Team, side_assignment: SideAssignment) -> Self {
+    pub fn new(team: TeamColor, side_assignment: SideAssignment) -> Self {
         Self {
             team,
             side_assignment,
@@ -18,8 +25,8 @@ impl SideTransform {
     /// All x coordinates need to be mutiplied by this value to convert from the team's side to the
     pub fn x_sign(&self) -> f64 {
         match self.team {
-            Team::Blue => self.side_assignment.yellow_goal_side(),
-            Team::Yellow => self.side_assignment.blue_goal_side(),
+            TeamColor::Blue => self.side_assignment.yellow_goal_side(),
+            TeamColor::Yellow => self.side_assignment.blue_goal_side(),
         }
     }
 
@@ -73,7 +80,6 @@ impl SideTransform {
 
     pub fn transform_player(&self, p: &PlayerFrame) -> PlayerFrame {
         PlayerFrame {
-            timestamp: p.timestamp,
             id: p.id,
             position: self.transform_vector2(p.position),
             velocity: self.transform_vector2(p.velocity),
@@ -85,15 +91,14 @@ impl SideTransform {
 
     pub fn transform_ball(&self, b: &BallFrame) -> BallFrame {
         BallFrame {
-            timestamp: b.timestamp,
             position: self.transform_vector3(b.position),
             velocity: self.transform_vector3(b.velocity),
             detected: b.detected,
         }
     }
 
-    pub fn transform_game_state(&self, state: &GameState) -> TeamGameState {
-        let transformed_state = match state.game_state {
+    pub fn transform_game_state(&self, state: &GameStateInfo) -> TeamGameState {
+        let transformed_state = match state.state_type {
             GameStateType::BallPlacement(v) => {
                 GameStateType::BallPlacement(self.transform_vector2(v))
             }
@@ -107,7 +112,7 @@ impl SideTransform {
             | GameStateType::FreeKick
             | GameStateType::Penalty
             | GameStateType::PenaltyRun
-            | GameStateType::Run => state.game_state,
+            | GameStateType::Run => state.state_type,
         };
         TeamGameState {
             game_state: transformed_state,

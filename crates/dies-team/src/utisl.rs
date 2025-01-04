@@ -49,7 +49,7 @@ pub fn get_obstacles_for_player(&self, role: RoleType) -> Vec<Obstacle> {
         };
         obstacles.push(defence_area);
 
-        match self.current_game_state.game_state {
+        match self.game_state.game_state {
             GameState::Stop => {
                 // Add obstacle to prevent getting close to the ball
                 if let Some(ball) = &self.ball {

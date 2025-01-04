@@ -4,10 +4,9 @@ use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
 };
-use crate::{skills::SkillType, Obstacle, PlayerControlInput};
-use dies_core::{Angle, ExecutorSettings, PlayerCmd, PlayerId, RoleType, Vector2};
+use crate::{skills::SkillType, team_frame::TeamFrame, Obstacle, PlayerControlInput};
+use dies_core::{Angle, PlayerId, RobotCmd, Vector2, WorldFrame};
 use dies_protos::ssl_gc_state::GameState;
-use dies_world::WorldFrame;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,11 +81,11 @@ impl TeamController {
     /// Update the controllers with the current state of the players.
     pub fn update(
         &mut self,
-        world_data: WorldFrame,
+        team_frame: TeamFrame,
         manual_override: HashMap<PlayerId, PlayerControlInput>,
     ) {
         // Ensure there is a player controller for every ID
-        let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
+        let detected_ids: HashSet<_> = team_frame.own_players.iter().map(|p| p.id).collect();
         for id in detected_ids.iter() {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
@@ -94,15 +93,15 @@ impl TeamController {
             }
         }
 
-        let all_players = world_data
+        let all_players = team_frame
             .own_players
             .iter()
-            .chain(world_data.opp_players.iter())
+            .chain(team_frame.opp_players.iter())
             .collect::<Vec<_>>();
 
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
-            let player_data = world_data
+            let player_data = team_frame
                 .own_players
                 .iter()
                 .find(|p| p.id == controller.id());
@@ -111,12 +110,12 @@ impl TeamController {
                 let id = controller.id();
 
                 let role_type = Default::default(); //role_types.get(&id).cloned().unwrap_or_default();
-                let obsacles = world_data.get_obstacles_for_player(role_type);
+                let obsacles = team_frame.get_obstacles_for_player(role_type);
 
                 controller.update(
                     player_data,
-                    &world_data,
-                    world_data.dt,
+                    &team_frame,
+                    team_frame.dt,
                     manual_override.get(&id),
                     obsacles,
                     &all_players,
@@ -128,24 +127,24 @@ impl TeamController {
     }
 
     /// Get the currently active commands for the players.
-    pub fn commands(&mut self) -> Vec<PlayerCmd> {
+    pub fn commands(&mut self) -> Vec<(PlayerId, RobotCmd)> {
         self.player_controllers
-            .values_mut()
-            .map(|c| c.command())
+            .iter()
+            .map(|(id, controller)| (id, controller.command()))
             .collect()
     }
 }
 
 /// Override the inputs to comply with the stop state.
-fn comply(world_data: &WorldFrame, inputs: PlayerInputs) -> PlayerInputs {
-    if let (Some(ball), Some(field)) = (world_data.ball.as_ref(), world_data.field_geom.as_ref()) {
-        let game_state = world_data.current_game_state.game_state;
+fn comply(team_frame: &TeamFrame, inputs: PlayerInputs) -> PlayerInputs {
+    if let (Some(ball), Some(field)) = (team_frame.ball.as_ref(), team_frame.field_geom.as_ref()) {
+        let game_state = team_frame.game_state.game_state;
         let ball_pos = ball.position.xy();
 
         inputs
             .iter()
             .map(|(id, input)| {
-                let player_data = world_data
+                let player_data = team_frame
                     .own_players
                     .iter()
                     .find(|p| p.id == *id)
@@ -265,7 +264,7 @@ fn get_obstacles_for_player(world: &WorldFrame, role: RoleType) -> Vec<Obstacle>
         };
         obstacles.push(defence_area);
 
-        match self.current_game_state.game_state {
+        match self.game_state.game_state {
             GameState::Stop => {
                 // Add obstacle to prevent getting close to the ball
                 if let Some(ball) = &self.ball {
