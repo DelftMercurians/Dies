@@ -41,7 +41,7 @@ enum Command {
     },
 
     #[clap(name = "test-vision")]
-    TestVision,
+    TestVision
 }
 
 #[derive(Debug, Parser)]
@@ -77,7 +77,8 @@ pub struct Cli {
     #[clap(long, default_value = "224.5.23.1:10003")]
     pub gc_addr: SocketAddr,
 
-    #[clap(long, default_value = "enxf8e43ba77d03")]
+    // current interface enp3s0f1 |  previous interface enxf8e43ba77d03
+    #[clap(long, default_value = "enp3s0f1")]
     pub interface: Option<String>,
 
     #[clap(long, default_value = "info")]
@@ -137,6 +138,11 @@ impl Cli {
                     Ok(_) => ExitCode::SUCCESS,
                     Err(err) => {
                         eprintln!("Error testing vision: {}", err);
+                        // eprintln!("Mode: {}", self.mode);
+                        eprintln!("vision_addr: {}", self.vision_addr);
+                        eprintln!("gc_addr: {}", self.gc_addr);
+                        // eprintln!("interface: {}", self.interface);
+
                         ExitCode::FAILURE
                     }
                 }
