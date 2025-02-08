@@ -1,21 +1,23 @@
+mod context;
 mod field_geometry;
+mod frame;
 mod math;
 mod player_id;
 mod robot;
+mod settings;
 mod vec_map;
-mod views;
-mod world_frame;
 
 // TODO: get rid of this
 pub use dies_debug::*;
 
+pub use context::*;
 pub use field_geometry::*;
+pub use frame::*;
 pub use math::*;
 pub use player_id::*;
 pub use robot::*;
+pub use settings::*;
 pub use vec_map::*;
-pub use views::*;
-pub use world_frame::*;
 
 pub type Scalar = f64;
 pub type Vector2 = nalgebra::Vector2<Scalar>;

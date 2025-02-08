@@ -86,11 +86,12 @@ pub struct FieldGeometry {
     pub ball_radius: f64,
 }
 
-impl Default for FieldGeometry {
-    fn default() -> Self {
-        // Division B constants
-        // Sourced from https://github.com/DelftMercurians/ssl-vision/blob/fd7b426df1b19a183ed2a6bdad7d7448ad1a9832/src/shared/util/field_default_constants.h#L50-L66
-        // and https://github.com/DelftMercurians/ssl-vision/blob/fd7b426df1b19a183ed2a6bdad7d7448ad1a9832/src/shared/util/field.cpp#L681
+impl FieldGeometry {
+    /// Create a default `FieldGeometry` for Division B
+    ///
+    /// Sourced from [ssl-vision/default_constants.h](https://github.com/DelftMercurians/ssl-vision/blob/fd7b426df1b19a183ed2a6bdad7d7448ad1a9832/src/shared/util/field_default_constants.h#L50-L66)
+    /// and [ssl-vision/field.cpp](https://github.com/DelftMercurians/ssl-vision/blob/fd7b426df1b19a183ed2a6bdad7d7448ad1a9832/src/shared/util/field.cpp#L681).
+    pub fn division_b() -> Self {
         let field_length = 9000.0f64;
         let field_width = 6000.0f64;
         let goal_width = 1000.0f64;

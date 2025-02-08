@@ -1,3 +1,12 @@
+//! This module defines the contract between the basestation/simulator and the rest
+//! of the framework.
+//!
+//! The `RobotCmd` enum is the command sent from the basestation/simulator to the
+//! robot.
+//!
+//! The `RobotFeedback` struct is the feedback sent from the robot to the
+//! basestation/simulator.
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

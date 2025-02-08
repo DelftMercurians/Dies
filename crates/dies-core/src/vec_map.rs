@@ -6,13 +6,6 @@ use std::iter::FromIterator;
 /// the keys don't necessarily implement `Hash`, or where the overhead of hash-based
 /// lookup would be greater than linear search.
 ///
-/// # Performance characteristics
-///
-/// - Lookup: O(n)
-/// - Insertion: O(n)
-/// - Removal: O(n)
-/// - Space complexity: O(n)
-///
 /// # When to use VecMap
 ///
 /// - When you have a small number of elements (n ≈ 10 or less)

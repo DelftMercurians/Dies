@@ -11,7 +11,7 @@ members = [
     "crates/dies-tracker",
     "crates/dies-logger",
     "crates/dies-debug",
-    "strategy/dummy-strat",
+    "strategy/dummy-strat", "crates/dies-settings", "crates/dies-macros",
 ]
 package.edition = "2021"
 resolver = "2"
