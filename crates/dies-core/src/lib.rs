@@ -5,6 +5,7 @@ mod math;
 mod player_id;
 mod robot;
 mod settings;
+mod debug;
 mod vec_map;
 
 // TODO: get rid of this
@@ -22,3 +23,9 @@ pub use vec_map::*;
 pub type Scalar = f64;
 pub type Vector2 = nalgebra::Vector2<Scalar>;
 pub type Vector3 = nalgebra::Vector3<Scalar>;
+
+mod test{
+    fn test() {
+        let ctx = 
+    }
+}

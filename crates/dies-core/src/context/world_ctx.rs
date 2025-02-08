@@ -1,5 +1,23 @@
 use crate::{PlayerFrame, TeamColor, Vector2, WorldFrame};
 
+pub struct WorldCtx {
+    world: Arc<WorldFrame>,
+}
+
+impl WorldCtx {
+    pub fn new(world: WorldFrame) -> Self {
+        Self {
+            world: Arc::new(world),
+        }
+    }
+}
+
+impl WorldView for WorldCtx {
+    fn world_frame(&self) -> &WorldFrame {
+        &self.world
+    }
+}
+
 pub trait WorldView {
     /// Get a reference to the current world frame.
     fn world_frame(&self) -> &WorldFrame;

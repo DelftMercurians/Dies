@@ -7,7 +7,7 @@ pub enum TeamColor {
 }
 
 impl TeamColor {
-    pub fn opponent(&self) -> TeamColor {
+    pub fn opposite(&self) -> TeamColor {
         match self {
             TeamColor::Blue => TeamColor::Yellow,
             TeamColor::Yellow => TeamColor::Blue,
