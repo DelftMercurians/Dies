@@ -10,8 +10,7 @@ members = [
     "crates/dies-webui",
     "crates/dies-tracker",
     "crates/dies-logger",
-    "crates/dies-debug",
-    "strategy/dummy-strat", "crates/dies-settings", "crates/dies-macros",
+    "strategy/dummy-strat",
 ]
 package.edition = "2021"
 resolver = "2"

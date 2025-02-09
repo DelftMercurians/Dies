@@ -4,7 +4,7 @@ use crate::Vector2;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum DebugColor {
+pub enum DebugColor {
     #[default]
     Red,
     Green,
@@ -14,7 +14,7 @@ pub(super) enum DebugColor {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
-pub(super) enum DebugShape {
+pub enum DebugShape {
     Cross {
         center: Vector2,
         color: DebugColor,
@@ -34,7 +34,7 @@ pub(super) enum DebugShape {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
-pub(super) enum DebugValue {
+pub enum DebugValue {
     Shape(DebugShape),
     Number(f64),
     String(String),

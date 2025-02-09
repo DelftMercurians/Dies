@@ -5,7 +5,7 @@ use std::{
 
 use dies_core::{
     Angle, ColoredPlayerId, FieldGeometry, PlayerId, RobotCmd, RobotFeedback, RobotMainboardCmd,
-    RobotMoveCmd, SysStatus, TeamColor, Vector2,
+    SysStatus, TeamColor, Vector2,
 };
 use dies_protos::{
     ssl_gc_referee_message::{referee, Referee},

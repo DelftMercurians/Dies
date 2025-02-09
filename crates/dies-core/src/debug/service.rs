@@ -134,13 +134,13 @@ impl DebugService {
         if is_prefix(self.active_prefixes.load_full().as_ref(), key) {
             match value.as_ref() {
                 Some(value) => {
-                    self.tx.send(DebugUpdate::Insert {
+                    let _ = self.tx.send(DebugUpdate::Insert {
                         key: key.to_string(),
                         value: value.clone(),
                     });
                 }
                 None => {
-                    self.tx.send(DebugUpdate::Clear {
+                    let _ = self.tx.send(DebugUpdate::Clear {
                         key: key.to_string(),
                     });
                 }

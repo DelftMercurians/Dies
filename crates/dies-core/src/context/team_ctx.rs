@@ -1,33 +1,52 @@
-use std::sync::Arc;
-
 use crate::{PlayerFrame, TeamColor, Vector2, WorldFrame};
 
-use super::WorldView;
+use super::{
+    base::{BaseContext, BaseCtx},
+    WorldView,
+};
 
+#[derive(Clone)]
 pub struct TeamCtx {
-    world: Arc<WorldFrame>,
+    base: BaseCtx,
     color: TeamColor,
 }
 
 impl TeamCtx {
-    pub fn new(world: Arc<WorldFrame>, color: TeamColor) -> Self {
-        Self { world, color }
+    pub fn new(base: BaseCtx, color: TeamColor) -> Self {
+        Self { base, color }
     }
 }
 
 impl WorldView for TeamCtx {
     fn world_frame(&self) -> &WorldFrame {
-        &self.world
+        &self.base.world_frame()
+    }
+}
+
+impl BaseContext for TeamCtx {
+    fn settings_manager(&self) -> &crate::SettingsHandle {
+        self.base.settings_manager()
+    }
+
+    fn dbg_send(&self, key: &str, value: Option<crate::debug::DebugValue>) {
+        self.base.dbg_send(key, value)
+    }
+
+    fn dbg_scoped(&self, subkey: &str) -> Self {
+        Self {
+            base: self.base.dbg_scoped(subkey),
+            color: self.color,
+        }
     }
 }
 
 impl TeamView for TeamCtx {
     fn own_players(&self) -> &Vec<PlayerFrame> {
-        &self.world.get_team(self.color)
+        &self.world_frame().get_team(self.color)
     }
 
     fn opp_players(&self) -> &Vec<PlayerFrame> {
-        &self.world.get_team(self.color.opposite())
+        &self.world_frame().get_team(self.color.opposite())
     }
 }
 
