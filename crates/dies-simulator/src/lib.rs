@@ -313,6 +313,7 @@ impl Simulation {
         self.last_detection_packet.take()
     }
 
+    // TODO: add a way to set the referee command
     pub fn update_referee_command(&mut self, command: referee::Command) {
         let mut msg = Referee::new();
         msg.set_command(command);
@@ -340,6 +341,9 @@ impl Simulation {
     }
 
     pub fn step(&mut self, dt: f64) {
+        // Update the game controller state
+        SimulationBuilder::game_controller().action();
+
         // Create detection update if it's time
         if self.detection_interval.trigger(self.current_time) {
             self.new_detection_packet();
@@ -602,6 +606,7 @@ pub struct SimulationBuilder {
     sim: Simulation,
     last_own_id: u32,
     last_opp_id: u32,
+    game_controller: SimilationController,
 }
 
 impl SimulationBuilder {
@@ -610,6 +615,7 @@ impl SimulationBuilder {
             sim: Simulation::new(config),
             last_own_id: 0,
             last_opp_id: 0,
+            game_controller: SimilationController::default(),
         }
     }
 
@@ -714,6 +720,102 @@ impl Default for SimulationBuilder {
     fn default() -> Self {
         SimulationBuilder::new(SimulationConfig::default())
     }
+}
+
+// TODO: implement the simulation controller
+pub enum SimilationController {
+    StartGame,
+    Stop,
+    PrepareKickOff,
+    Run,
+    FreeKick,
+}
+
+impl SimilationController {
+    pub fn default() -> Self {
+        SimilationController::StartGame
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            // Start game directly to stop
+            SimilationController::StartGame => SimilationController::Stop,
+            
+            // After 1s, Stop goes to PrepareKickOff
+            SimilationController::Stop => {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                SimilationController::PrepareKickOff
+            },
+
+            // If detect teams in position, go to Run
+            SimilationController::PrepareKickOff => {
+                if Self::normal_start() {
+                    SimilationController::Run
+                } else {
+                    SimilationController::PrepareKickOff
+                }
+            },
+
+            SimilationController::Run => {
+                // If detect ball out of field, go to FreeKick
+                // else if detect goal, go to PrepareKickOff
+                if Self::rule_out() {
+                    SimilationController::FreeKick
+                } else if Self::goal() {
+                    SimilationController::PrepareKickOff
+                } else {
+                    SimilationController::Run
+                }
+            }
+
+            SimilationController::FreeKick => {
+                // If detect ball is kicked or timeout, go to run
+                // else if detect ball close to player, go to Stop
+                if Self::close_ball() {
+                    SimilationController::Stop
+                } else if Self::time_out() || Self::kicked() {
+                    SimilationController::Run
+                } else {
+                    SimilationController::FreeKick
+                }
+            },
+        }
+    }
+
+    pub fn normal_start() -> bool {
+        return true;
+    }
+
+    pub fn rule_out() -> bool {
+        return true;
+    }
+
+    pub fn goal() -> bool {
+        return true;
+    }
+
+    pub fn kicked() -> bool {
+        return true;
+    }
+
+    pub fn time_out() -> bool {
+        return true;
+    }
+
+    pub fn close_ball() -> bool {
+        return true;
+    }
+
+    pub fn action(&self) {
+        match self {
+            SimilationController::StartGame => println!("Starting game"),
+            SimilationController::Stop => println!("Stopping game"),
+            SimilationController::PrepareKickOff => println!("Preparing kick off"),
+            SimilationController::Run => println!("Running"),
+            SimilationController::FreeKick => println!("Free kick"),
+        }
+    }
+
 }
 
 fn geometry(config: &FieldGeometry) -> SSL_WrapperPacket {
