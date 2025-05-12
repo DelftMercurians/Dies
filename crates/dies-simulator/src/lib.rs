@@ -199,6 +199,7 @@ pub struct Simulation {
     referee_message: VecDeque<Referee>,
     feedback_interval: IntervalTrigger,
     feedback_queue: VecDeque<PlayerFeedbackMsg>,
+    game_controller: SimilationController,
 }
 
 impl Simulation {
@@ -237,6 +238,7 @@ impl Simulation {
             referee_message: VecDeque::new(),
             feedback_interval: IntervalTrigger::new(feedback_interval),
             feedback_queue: VecDeque::new(),
+            game_controller: SimilationController::default(),
         };
 
         // Create the ground
@@ -342,7 +344,8 @@ impl Simulation {
 
     pub fn step(&mut self, dt: f64) {
         // Update the game controller state
-        SimulationBuilder::game_controller().action();
+        self.game_controller.action();
+        self.game_controller = self.game_controller.next();
 
         // Create detection update if it's time
         if self.detection_interval.trigger(self.current_time) {
@@ -606,7 +609,6 @@ pub struct SimulationBuilder {
     sim: Simulation,
     last_own_id: u32,
     last_opp_id: u32,
-    game_controller: SimilationController,
 }
 
 impl SimulationBuilder {
@@ -615,7 +617,6 @@ impl SimulationBuilder {
             sim: Simulation::new(config),
             last_own_id: 0,
             last_opp_id: 0,
-            game_controller: SimilationController::default(),
         }
     }
 
