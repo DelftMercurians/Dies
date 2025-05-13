@@ -392,7 +392,7 @@ impl Simulation {
                 self.free_kick_start_time = 0.0; // Reset free kick time
                 if self.ball_out() {
                     // TODO: add logic for detecting who kicked out the ball
-                    // TODO: check the corresponding referee command
+                    // TODO: find the free kick position when the ball goes out of bounds
                     if self.team_flag {
                         self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
                     } else {
@@ -438,6 +438,7 @@ impl Simulation {
     }
 
     fn normal_start(&mut self) -> bool {
+        // TODO: Set the designated_position to global variable and uptate it when ball out of boundary(in free kick)
         // Detect the ball's placement
         let mut designated_position:Isometry<Real> = Isometry::translation(0.0, 0.0, 0.0);
         let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
@@ -450,9 +451,10 @@ impl Simulation {
             if (ball_position - designated_position.translation.vector).norm() < 1000.0
             && ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
             && ball_position.y.abs() < self.config.field_geometry.field_width / 2.0
-            && ball_position.x.abs() > (self.config.field_geometry.penalty_area_depth + 700.0)
-            && ball_position.y.abs() > (self.config.field_geometry.penalty_area_width + 700.0)
-            && ball_body.linvel().norm() < 0.1
+            // TODO: The ball is at least 0.7m away from any defense area. (It should be arc near the corner)
+            // && !(ball_position.x.abs() < (self.config.field_geometry.penalty_area_depth + 700.0)
+            // || ball_position.y.abs() < (self.config.field_geometry.penalty_area_width + 700.0))
+            && ball_body.linvel().norm() < 0.001
             {
                 println!("Ball in designated position, no need to move");
                 designated_position.translation.vector = ball_position;
@@ -485,7 +487,7 @@ impl Simulation {
             }
             // Check if the player is in the own half
             if player.is_own {
-                //TODO: if is_own, regard the player as the right team
+                // TODO: if is_own, regard the player as the right team
                 if player_position.x < 0.0 || player_position.x > self.config.field_geometry.field_length / 2.0 {
                     println!("Player {} is out of bounds in x axis", player.id);
                     return false;
@@ -502,6 +504,7 @@ impl Simulation {
 
     fn ball_out(&mut self) -> bool {
         // TODO: Set free kick position, now use center as default
+        // TODO: (Maybe) Record the history of the ball's position and check the last position, do linear interpolation between the one out side the boundary and the one before that
         let free_kick_position = Isometry::translation(0.0, 0.0, 0.0);
         let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
         if let Some(ball_handle) = ball_handle {
@@ -524,19 +527,31 @@ impl Simulation {
     }
 
     fn goal(&mut self) -> bool {
+        let designated_position:Isometry<Real> = Isometry::translation(0.0, 0.0, 0.0);
         let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
         if let Some(ball_handle) = ball_handle {
             let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
             let ball_position = ball_body.position().translation.vector;
             
-            let goal_height = 15.0;
+            let goal_height = 150.0;
             // Check if the ball is in the goal
+            // TODO: Consider the ball's size (center position + radius)
             if  ball_position.x.abs() > self.config.field_geometry.field_length / 2.0
             && ball_position.x.abs() < self.config.field_geometry.field_length / 2.0 + self.config.field_geometry.goal_depth
             && ball_position.y.abs() < self.config.field_geometry.goal_width / 2.0
             && ball_position.z < goal_height
             {
-                println!("Ball in goal, setting to free kick position");
+                // Set which team scored
+                if ball_position.x > 0.0 {
+                    self.team_flag = false;
+                } else {
+                    self.team_flag = true;
+                }
+                println!("Team {} goal, setting to kick off position" , if self.team_flag { "yellow" } else { "blue" });
+
+                // Reset the ball's position to the kick off position (center)
+                ball_body.set_position(designated_position, true);
+                ball_body.set_linvel(Vector::zeros(), true);
                 return true;
             }
         }
