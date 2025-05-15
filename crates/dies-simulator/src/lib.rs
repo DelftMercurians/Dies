@@ -113,17 +113,18 @@ impl Default for SimulationConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GameState {
+pub enum SimulationGameState {
     StartGame,
     Stop,
+    // TODO: Add kick_start_time inside the state
     PrepareKickOff,
     Run,
     FreeKick,
 }
 
-impl GameState {
+impl SimulationGameState {
     pub fn default() -> Self {
-        GameState::StartGame
+        SimulationGameState::StartGame
     }
 }
 
@@ -214,7 +215,7 @@ pub struct Simulation {
     referee_message: VecDeque<Referee>,
     feedback_interval: IntervalTrigger,
     feedback_queue: VecDeque<PlayerFeedbackMsg>,
-    game_state: GameState,
+    game_state: SimulationGameState,
     team_flag: bool,
     ball_is_kicked: bool,
     free_kick_start_time: f64,
@@ -256,7 +257,7 @@ impl Simulation {
             referee_message: VecDeque::new(),
             feedback_interval: IntervalTrigger::new(feedback_interval),
             feedback_queue: VecDeque::new(),
-            game_state: GameState::default(),
+            game_state: SimulationGameState::default(),
             team_flag: true,
             ball_is_kicked: false,
             free_kick_start_time: 0.0,
@@ -367,27 +368,28 @@ impl Simulation {
 
     pub fn update_game_state(&mut self) {
         match self.game_state {
-            GameState::StartGame => {
+            SimulationGameState::StartGame => {
                 println!("In start game");
                 self.update_referee_command(referee::Command::STOP);
-                self.game_state = GameState::Stop;
+                self.game_state = SimulationGameState::Stop;
             }
-            GameState::Stop => {
+            SimulationGameState::Stop => {
                 println!("In stop");
                 self.free_kick_start_time = 0.0; // Reset free kick time
+                // TODO: Change the thread sleep to a timer
                 std::thread::sleep(std::time::Duration::from_secs(1));
                 self.update_referee_command(referee::Command::PREPARE_KICKOFF_YELLOW);
                 self.update_referee_command(referee::Command::PREPARE_KICKOFF_BLUE);
-                self.game_state = GameState::PrepareKickOff;
+                self.game_state = SimulationGameState::PrepareKickOff;
             }
-            GameState::PrepareKickOff => {
+            SimulationGameState::PrepareKickOff => {
                 println!("In prepare kick off");
                 if self.normal_start() {
                     self.update_referee_command(referee::Command::NORMAL_START);
-                    self.game_state = GameState::Run;
+                    self.game_state = SimulationGameState::Run;
                 }
             }
-            GameState::Run => {
+            SimulationGameState::Run => {
                 println!("run");
                 self.free_kick_start_time = 0.0; // Reset free kick time
                 if self.ball_out() {
@@ -398,17 +400,17 @@ impl Simulation {
                     } else {
                         self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
                     }
-                    self.game_state = GameState::FreeKick;
+                    self.game_state = SimulationGameState::FreeKick;
                 } else if self.goal() {
                     if self.team_flag {
                         self.update_referee_command(referee::Command::GOAL_YELLOW);
                     } else {
                         self.update_referee_command(referee::Command::GOAL_BLUE);
                     }
-                    self.game_state = GameState::PrepareKickOff;
+                    self.game_state = SimulationGameState::PrepareKickOff;
                 }
             }
-            GameState::FreeKick => {
+            SimulationGameState::FreeKick => {
                 println!("Free kick");
                 // Ensure free kick time is set only once under this state
                 if self.free_kick_start_time == 0.0 {
@@ -416,14 +418,14 @@ impl Simulation {
                 }
                 if self.players_too_close_to_ball() {
                     self.update_referee_command(referee::Command::STOP);
-                    self.game_state = GameState::Stop;
+                    self.game_state = SimulationGameState::Stop;
                 } else if self.free_kick_time_exceeded() {
                     if self.team_flag {
                         self.update_referee_command(referee::Command::TIMEOUT_YELLOW);
                     } else {
                         self.update_referee_command(referee::Command::TIMEOUT_BLUE);
                     }
-                    self.game_state = GameState::Run;
+                    self.game_state = SimulationGameState::Run;
                 } else if self.kicked() {
                     // TODO: check the corresponding referee commands
                     if self.team_flag {
@@ -431,7 +433,7 @@ impl Simulation {
                     } else {
                         self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
                     }
-                    self.game_state = GameState::Run;
+                    self.game_state = SimulationGameState::Run;
                 }
             }
         }
