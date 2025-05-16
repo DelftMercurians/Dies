@@ -17,11 +17,13 @@ pub use handle::{ControlMsg, ExecutorHandle};
 use strategy::Strategy;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
+mod behavior_tree;
 mod control;
 mod gc_client;
 mod handle;
 mod roles;
 pub mod scenarios;
+mod script_host;
 pub mod strategy;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
