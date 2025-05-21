@@ -117,7 +117,7 @@ pub enum SimulationGameState {
     StartGame,
     Stop {stop_timer: Timer},
     PrepareKickOff,
-    Run {},
+    Run {wait_timer: Timer},
     FreeKick { kick_timer: Timer, ball_is_kicked: bool }, // Set timer inside the state
 }
 
@@ -244,6 +244,7 @@ pub struct Simulation {
     feedback_queue: VecDeque<PlayerFeedbackMsg>,
     game_state: SimulationGameState,
     team_flag: bool,
+    designated_ball_position: Vector<f64>,
 }
 
 impl Simulation {
@@ -284,6 +285,7 @@ impl Simulation {
             feedback_queue: VecDeque::new(),
             game_state: SimulationGameState::default(),
             team_flag: true,
+            designated_ball_position: Vector::new(0.0, 0.0, 0.0),
         };
 
         // Create the ground
@@ -360,7 +362,6 @@ impl Simulation {
         self.last_detection_packet.take()
     }
 
-    // TODO: add a way to set the referee command
     pub fn update_referee_command(&mut self, command: referee::Command) {
         let mut msg = Referee::new();
         msg.set_command(command);
@@ -413,14 +414,14 @@ impl Simulation {
                 println!("In prepare kick off");
                 if self.kickoff_ready() {
                     self.update_referee_command(referee::Command::NORMAL_START);
-                    self.game_state = SimulationGameState::Run{};
+                    self.game_state = SimulationGameState::Run{wait_timer: Timer::new(0.2)};
                 }
             }
-            SimulationGameState::Run{} => {
+            SimulationGameState::Run{..} => {
                 println!("run");
                 if self.ball_out() {
                     // TODO: add logic for detecting who kicked out the ball
-                    // TODO: find the free kick position when the ball goes out of bounds
+                    // DONE: find the free kick position when the ball goes out of bounds
                     if self.team_flag {
                         self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
                     } else {
@@ -463,14 +464,14 @@ impl Simulation {
                         } else {
                             self.update_referee_command(referee::Command::TIMEOUT_BLUE);
                         }
-                        self.game_state = SimulationGameState::Run{};
+                        self.game_state = SimulationGameState::Run{wait_timer: Timer::new(0.2)};
                     } else if is_ball_kicked {
                         if self.team_flag {
                             self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
                         } else {
                             self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
                         }
-                        self.game_state = SimulationGameState::Run{};
+                        self.game_state = SimulationGameState::Run{wait_timer: Timer::new(0.2)};
                     }
                 } 
             }
@@ -478,9 +479,7 @@ impl Simulation {
     }
 
     fn kickoff_ready(&mut self) -> bool {
-        // TODO: Set the designated_position to global variable and uptate it when ball out of boundary(in free kick)
         // Detect the ball's placement
-        let mut designated_position: Vector<f64> = Vector::new(0.0, 0.0, 0.0);
         let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
         if let Some(ball_handle) = ball_handle {
             let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
@@ -488,7 +487,7 @@ impl Simulation {
 
             // Check if the ball is close to the designated position & inside the field & 0.7m away from
             // the defense area & stationary
-            if (ball_position - designated_position).norm() < 1000.0
+            if (ball_position - self.designated_ball_position).norm() < 1000.0
             && ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
             && ball_position.y.abs() < self.config.field_geometry.field_width / 2.0
             // TODO: The ball is at least 0.7m away from any defense area. (It should be arc near the corner)
@@ -497,14 +496,13 @@ impl Simulation {
             && ball_body.linvel().norm() < 0.001
             {
                 println!("Ball in designated position, no need to move");
-                designated_position= ball_position;
             } else {
                 // Reset the ball's position to the designated position
                 println!("Ball not in designated position, moving to designated position");
                 ball_body.set_position(Isometry::translation(
-                    designated_position.x,
-                    designated_position.y,
-                    designated_position.z,
+                    self.designated_ball_position.x,
+                    self.designated_ball_position.y,
+                    self.designated_ball_position.z,
                 ), true);
                 ball_body.set_linvel(Vector::zeros(), true);
             }
@@ -518,7 +516,7 @@ impl Simulation {
                 .unwrap();
             let player_position = rigid_body.position().translation.vector;
             // Check if the player is close to the ball
-            if (player_position - designated_position).norm() < 500.0
+            if (player_position - self.designated_ball_position).norm() < 500.0
             {
                 println!("Player {} is too close to the ball", player.id);
                 return false;
@@ -546,9 +544,8 @@ impl Simulation {
     }
 
     fn ball_out(&mut self) -> bool {
-        // TODO: Set free kick position, now use center as default
-        // TODO: (Maybe) Record the history of the ball's position and check the last position, do linear interpolation between the one out side the boundary and the one before that
-        let free_kick_position: Vector<f64> = Vector::new(0.0, 0.0, 0.0);
+        // DONE: Set free kick position, whose default position is center and will be updated when ball out of boundary 
+        // DONE: Record the history of the ball's position and check the last position, do linear interpolation between the one out side the boundary and the one before that
         let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
         if let Some(ball_handle) = ball_handle {
             let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
@@ -557,13 +554,31 @@ impl Simulation {
             if ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
             && ball_position.y.abs() < self.config.field_geometry.field_width / 2.0
             {
+                // Get the ball's current velocity as Vector3
+                let ball_velocity: Vector<f64> = *ball_body.linvel();
+                let next_ball_position = ball_position + ball_velocity * self.integration_parameters.dt;
+                if next_ball_position.x.abs() > self.config.field_geometry.field_length / 2.0 
+                || next_ball_position.y.abs() > self.config.field_geometry.field_width / 2.0
+                {
+                    // In next frame, Ball is out of bounds
+                    // Do linear interpolation to find the free kick position
+                    self.designated_ball_position = ball_position + (next_ball_position - ball_position) * 0.5;
+                }
                 return false;
             } else {
+                // Wait a few frames before resetting the ball's position (default: 0.2s)
+                if let SimulationGameState::Run { wait_timer } = &mut self.game_state {
+                    if wait_timer.tick(self.integration_parameters.dt) {
+                        // Reset the timer
+                        wait_timer.reset();
+                    }
+                }
+
                 // Reset the ball's position to the free kick position
                 ball_body.set_position(Isometry::translation(
-                    free_kick_position.x,
-                    free_kick_position.y,
-                    free_kick_position.z,
+                    self.designated_ball_position.x,
+                    self.designated_ball_position.y,
+                    self.designated_ball_position.z,
                 ), true);
                 ball_body.set_linvel(Vector::zeros(), true);
                 println!("Ball out of bounds, setting to free kick position");
@@ -574,7 +589,6 @@ impl Simulation {
     }
 
     fn goal(&mut self) -> bool {
-        let designated_position:Vector<f64> = Vector::new(0.0, 0.0, 0.0);
         let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
         if let Some(ball_handle) = ball_handle {
             let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
@@ -596,11 +610,19 @@ impl Simulation {
                 }
                 println!("Team {} goal, setting to kick off position" , if self.team_flag { "yellow" } else { "blue" });
 
+                // Wait a few frames before resetting the ball's position (default: 0.2s)
+                if let SimulationGameState::Run { wait_timer } = &mut self.game_state {
+                    if wait_timer.tick(self.integration_parameters.dt) {
+                        // Reset the timer
+                        wait_timer.reset();
+                    }
+                }
+
                 // Reset the ball's position to the kick off position (center)
                 ball_body.set_position(Isometry::translation(
-                    designated_position.x,
-                    designated_position.y,
-                    designated_position.z,
+                    0.0,
+                    0.0,
+                    0.0,
                 ), true);
                 ball_body.set_linvel(Vector::zeros(), true);
                 return true;
