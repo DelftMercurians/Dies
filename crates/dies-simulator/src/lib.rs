@@ -125,6 +125,49 @@ impl SimulationGameState {
     pub fn default() -> Self {
         SimulationGameState::StartGame
     }
+
+    pub fn println(&self) {
+        match self {
+            SimulationGameState::StartGame => println!("Start game"),
+            SimulationGameState::Stop { .. } => println!("Stop"),
+            SimulationGameState::PrepareKickOff => println!("Prepare kick off"),
+            SimulationGameState::Run { .. } => println!("Run"),
+            SimulationGameState::FreeKick { .. } => println!("Free kick"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum RefereeMessage {
+    RobotTooCloseToOpponentDefenseArea, //8.4.1
+    BoundaryCrossing, //8.4.1
+    DefenderTooCloseToBall{player:u32}, //8.4.3
+    BallPlacementInterference, //8.4.3
+    RobotOutOfField{player:u32},
+    TimeOut,
+}
+
+impl RefereeMessage {
+    pub fn new(referee_message_type: RefereeMessage) -> Self {
+        referee_message_type.display();
+        referee_message_type
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            RefereeMessage::RobotTooCloseToOpponentDefenseArea => "Robot too close to opponent defense area".to_string(),
+            RefereeMessage::BoundaryCrossing => "Boundary crossing".to_string(),
+            RefereeMessage::DefenderTooCloseToBall{player} => format!("Defender {} too close to ball", player),
+            RefereeMessage::TimeOut => "Time out".to_string(),
+            RefereeMessage::BallPlacementInterference => "Ball placement interference".to_string(),
+            RefereeMessage::RobotOutOfField{player} => format!("Robot {} out of field", player),
+        }
+    }
+
+    pub fn display(&self) {
+        // TODO: add UI display
+        println!("{}", self.to_string());
+    }    
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -243,7 +286,7 @@ pub struct Simulation {
     feedback_interval: IntervalTrigger,
     feedback_queue: VecDeque<PlayerFeedbackMsg>,
     game_state: SimulationGameState,
-    team_flag: bool,
+    team_color: bool,
     designated_ball_position: Vector<f64>,
 }
 
@@ -284,7 +327,7 @@ impl Simulation {
             feedback_interval: IntervalTrigger::new(feedback_interval),
             feedback_queue: VecDeque::new(),
             game_state: SimulationGameState::default(),
-            team_flag: true,
+            team_color: true,
             designated_ball_position: Vector::new(0.0, 0.0, 0.0),
         };
 
@@ -391,56 +434,50 @@ impl Simulation {
     }
 
     pub fn update_game_state(&mut self) {
+        self.game_state.println();
         match self.game_state {
             SimulationGameState::StartGame => {
-                println!("In start game");
                 self.update_referee_command(referee::Command::STOP);
                 self.game_state = SimulationGameState::Stop{stop_timer: Timer::new(1.0)};
             }
             SimulationGameState::Stop{..} => {
-                println!("In stop");
                 if let SimulationGameState::Stop{stop_timer} = &mut self.game_state {
-                    // Check if the timer has expired
+                    // Wait for 1s before starting the game
                     if stop_timer.tick(self.integration_parameters.dt) {
                         // Reset the timer
                         stop_timer.reset();
-                        self.update_referee_command(referee::Command::PREPARE_KICKOFF_YELLOW);
                         self.update_referee_command(referee::Command::PREPARE_KICKOFF_BLUE);
                         self.game_state = SimulationGameState::PrepareKickOff {};
                     }
                 }
             }
             SimulationGameState::PrepareKickOff{} => {
-                println!("In prepare kick off");
                 if self.kickoff_ready() {
                     self.update_referee_command(referee::Command::NORMAL_START);
                     self.game_state = SimulationGameState::Run{wait_timer: Timer::new(0.2)};
                 }
             }
             SimulationGameState::Run{..} => {
-                println!("run");
                 if self.ball_out() {
                     // TODO: add logic for detecting who kicked out the ball
                     // DONE: find the free kick position when the ball goes out of bounds
-                    if self.team_flag {
-                        self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
-                    } else {
+                    if self.team_color {
                         self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
+                    } else {
+                        self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
                     }
                     let kick_timer = Timer::new(10.0);
                     self.game_state = SimulationGameState::FreeKick{kick_timer, ball_is_kicked: false};
                 } else if self.goal() {
-                    if self.team_flag {
-                        self.update_referee_command(referee::Command::GOAL_YELLOW);
-                    } else {
+                    if self.team_color {
                         self.update_referee_command(referee::Command::GOAL_BLUE);
+                    } else {
+                        self.update_referee_command(referee::Command::GOAL_YELLOW);
                     }
                     self.game_state = SimulationGameState::PrepareKickOff;
                 }
             }
             SimulationGameState::FreeKick { .. } => {
-                println!("Free kick");
-
                 // Immutable borrow ends here
                 let is_player_too_close = {
                     self.players_too_close_to_ball()
@@ -450,7 +487,7 @@ impl Simulation {
                     let is_free_kick_time_exceeded = kick_timer.tick(self.integration_parameters.dt);
                     let is_ball_kicked = *ball_is_kicked;
 
-                    // Only reset the timer after all mut borrows are done
+                    // Only reset the timer when changing the state
                     if is_player_too_close || is_free_kick_time_exceeded || is_ball_kicked {
                         kick_timer.reset();
                     }
@@ -459,17 +496,17 @@ impl Simulation {
                         self.update_referee_command(referee::Command::STOP);
                         self.game_state = SimulationGameState::Stop{stop_timer: Timer::new(1.0)};
                     } else if is_free_kick_time_exceeded {
-                        if self.team_flag {
-                            self.update_referee_command(referee::Command::TIMEOUT_YELLOW);
-                        } else {
+                        if self.team_color {
                             self.update_referee_command(referee::Command::TIMEOUT_BLUE);
+                        } else {
+                            self.update_referee_command(referee::Command::TIMEOUT_YELLOW);
                         }
                         self.game_state = SimulationGameState::Run{wait_timer: Timer::new(0.2)};
                     } else if is_ball_kicked {
-                        if self.team_flag {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
-                        } else {
+                        if self.team_color {
                             self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
+                        } else {
+                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
                         }
                         self.game_state = SimulationGameState::Run{wait_timer: Timer::new(0.2)};
                     }
@@ -485,8 +522,7 @@ impl Simulation {
             let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
             let ball_position = ball_body.position().translation.vector;
 
-            // Check if the ball is close to the designated position & inside the field & 0.7m away from
-            // the defense area & stationary
+            // Check if the ball is close to the designated position & inside the field & 0.7m away from the defense area & stationary
             if (ball_position - self.designated_ball_position).norm() < 1000.0
             && ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
             && ball_position.y.abs() < self.config.field_geometry.field_width / 2.0
@@ -498,7 +534,7 @@ impl Simulation {
                 println!("Ball in designated position, no need to move");
             } else {
                 // Reset the ball's position to the designated position
-                println!("Ball not in designated position, moving to designated position");
+                let _rm = RefereeMessage::new(RefereeMessage::BallPlacementInterference);
                 ball_body.set_position(Isometry::translation(
                     self.designated_ball_position.x,
                     self.designated_ball_position.y,
@@ -518,34 +554,29 @@ impl Simulation {
             // Check if the player is close to the ball
             if (player_position - self.designated_ball_position).norm() < 500.0
             {
-                println!("Player {} is too close to the ball", player.id);
+                let _rm = RefereeMessage::new(RefereeMessage::DefenderTooCloseToBall{player: player.id.as_u32()});
                 return false;
             }
             // Check if the player is inside the field
             if player_position.y.abs() > self.config.field_geometry.field_width / 2.0 {
-                println!("Player {} is out of bounds in y axis", player.id);
+                let _rm = RefereeMessage::new(RefereeMessage::RobotOutOfField{player: player.id.as_u32()});
                 return false;
             }
-            // Check if the player is in the own half
-            if player.is_own {
-                // TODO: if is_own, regard the player as the right team
-                if player_position.x < 0.0 || player_position.x > self.config.field_geometry.field_length / 2.0 {
-                    println!("Player {} is out of bounds in x axis", player.id);
-                    return false;
-                }
+            // Check if the player is in the own half, default to the left side(blue team on the left)
+            let out_of_field = if player.is_own {
+                player_position.x > 0.0 || player_position.x < -self.config.field_geometry.field_length / 2.0
             } else {
-                if player_position.x > 0.0 ||player_position.x < -self.config.field_geometry.field_length / 2.0 {
-                    println!("Player {} is out of bounds in x axis", player.id);
-                    return false;
-                }
+                player_position.x < 0.0 || player_position.x > self.config.field_geometry.field_length / 2.0
+            };
+            if out_of_field {
+                let _rm = RefereeMessage::new(RefereeMessage::RobotOutOfField{player: player.id.as_u32()});
+                return false;
             }
         }
         true
     }
 
     fn ball_out(&mut self) -> bool {
-        // DONE: Set free kick position, whose default position is center and will be updated when ball out of boundary 
-        // DONE: Record the history of the ball's position and check the last position, do linear interpolation between the one out side the boundary and the one before that
         let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
         if let Some(ball_handle) = ball_handle {
             let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
@@ -554,22 +585,23 @@ impl Simulation {
             if ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
             && ball_position.y.abs() < self.config.field_geometry.field_width / 2.0
             {
-                // Get the ball's current velocity as Vector3
-                let ball_velocity: Vector<f64> = *ball_body.linvel();
+                let ball_velocity: Vector<f64> = *ball_body.linvel(); // ball's current velocity as Vector3
                 let next_ball_position = ball_position + ball_velocity * self.integration_parameters.dt;
                 if next_ball_position.x.abs() > self.config.field_geometry.field_length / 2.0 
                 || next_ball_position.y.abs() > self.config.field_geometry.field_width / 2.0
                 {
-                    // In next frame, Ball is out of bounds
+                    // In next frame, Ball will be out of bounds
                     // Do linear interpolation to find the free kick position
                     self.designated_ball_position = ball_position + (next_ball_position - ball_position) * 0.5;
                 }
                 return false;
             } else {
+                // Send referee message
+                let _rm:RefereeMessage = RefereeMessage::new(RefereeMessage::BoundaryCrossing);
+
                 // Wait a few frames before resetting the ball's position (default: 0.2s)
                 if let SimulationGameState::Run { wait_timer } = &mut self.game_state {
                     if wait_timer.tick(self.integration_parameters.dt) {
-                        // Reset the timer
                         wait_timer.reset();
                     }
                 }
@@ -581,7 +613,6 @@ impl Simulation {
                     self.designated_ball_position.z,
                 ), true);
                 ball_body.set_linvel(Vector::zeros(), true);
-                println!("Ball out of bounds, setting to free kick position");
                 return true;
             }
         }
@@ -604,16 +635,15 @@ impl Simulation {
             {
                 // Set which team scored
                 if ball_position.x > 0.0 {
-                    self.team_flag = false;
+                    self.team_color = true; // Ball is in the blue goal(right side)
                 } else {
-                    self.team_flag = true;
+                    self.team_color = false;
                 }
-                println!("Team {} goal, setting to kick off position" , if self.team_flag { "yellow" } else { "blue" });
+                println!("Team {} goal, setting to kick off position" , if self.team_color { "blue" } else { "yellow" });
 
                 // Wait a few frames before resetting the ball's position (default: 0.2s)
                 if let SimulationGameState::Run { wait_timer } = &mut self.game_state {
                     if wait_timer.tick(self.integration_parameters.dt) {
-                        // Reset the timer
                         wait_timer.reset();
                     }
                 }
@@ -639,7 +669,7 @@ impl Simulation {
 
             for player in self.players.iter() {
                 // Only detect defenders from another team
-                if self.team_flag && player.is_own || !self.team_flag && !player.is_own {
+                if self.team_color && player.is_own || !self.team_color && !player.is_own {
                     continue;
                 }
                 let rigid_body = self
@@ -649,7 +679,7 @@ impl Simulation {
                 let player_position = rigid_body.position().translation.vector;
                 // Check if the player is close to the ball
                 if (player_position - ball_position).norm() < 500.0 {
-                    println!("Player {} is too close to the ball", player.id);
+                    let _rm = RefereeMessage::new(RefereeMessage::DefenderTooCloseToBall{player: player.id.as_u32()});
                     return true;
                 }
             }
