@@ -112,14 +112,13 @@ impl Default for SimulationConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum SimulationGameState {
     StartGame,
-    Stop,
-    // TODO: Add kick_start_time inside the state
+    Stop {stop_timer: Timer},
     PrepareKickOff,
-    Run,
-    FreeKick,
+    Run {},
+    FreeKick { kick_timer: Timer, ball_is_kicked: bool }, // Set timer inside the state
 }
 
 impl SimulationGameState {
@@ -138,6 +137,34 @@ pub struct SimulationState {
 pub struct SimulationPlayerState {
     position: Vector2,
     yaw: Angle,
+}
+
+# [derive(Debug, Clone, Copy)]
+pub struct Timer{
+    counter: f64,
+    duration: f64, // in seconds
+}
+
+impl Timer {
+    pub fn new(duration: f64) -> Self {
+        Timer {
+            counter: 0.0,
+            duration: duration,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.counter = 0.0;
+    }
+
+    pub fn tick(&mut self, dt: f64) -> bool{
+        self.counter += dt;
+        if self.counter >= self.duration {
+            self.reset();
+            return true;
+        }
+        return false;
+    }
 }
 
 #[derive(Debug)]
@@ -217,8 +244,6 @@ pub struct Simulation {
     feedback_queue: VecDeque<PlayerFeedbackMsg>,
     game_state: SimulationGameState,
     team_flag: bool,
-    ball_is_kicked: bool,
-    free_kick_start_time: f64,
 }
 
 impl Simulation {
@@ -259,8 +284,6 @@ impl Simulation {
             feedback_queue: VecDeque::new(),
             game_state: SimulationGameState::default(),
             team_flag: true,
-            ball_is_kicked: false,
-            free_kick_start_time: 0.0,
         };
 
         // Create the ground
@@ -371,27 +394,30 @@ impl Simulation {
             SimulationGameState::StartGame => {
                 println!("In start game");
                 self.update_referee_command(referee::Command::STOP);
-                self.game_state = SimulationGameState::Stop;
+                self.game_state = SimulationGameState::Stop{stop_timer: Timer::new(1.0)};
             }
-            SimulationGameState::Stop => {
+            SimulationGameState::Stop{..} => {
                 println!("In stop");
-                self.free_kick_start_time = 0.0; // Reset free kick time
-                // TODO: Change the thread sleep to a timer
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                self.update_referee_command(referee::Command::PREPARE_KICKOFF_YELLOW);
-                self.update_referee_command(referee::Command::PREPARE_KICKOFF_BLUE);
-                self.game_state = SimulationGameState::PrepareKickOff;
+                if let SimulationGameState::Stop{stop_timer} = &mut self.game_state {
+                    // Check if the timer has expired
+                    if stop_timer.tick(self.integration_parameters.dt) {
+                        // Reset the timer
+                        stop_timer.reset();
+                        self.update_referee_command(referee::Command::PREPARE_KICKOFF_YELLOW);
+                        self.update_referee_command(referee::Command::PREPARE_KICKOFF_BLUE);
+                        self.game_state = SimulationGameState::PrepareKickOff {};
+                    }
+                }
             }
-            SimulationGameState::PrepareKickOff => {
+            SimulationGameState::PrepareKickOff{} => {
                 println!("In prepare kick off");
                 if self.normal_start() {
                     self.update_referee_command(referee::Command::NORMAL_START);
-                    self.game_state = SimulationGameState::Run;
+                    self.game_state = SimulationGameState::Run{};
                 }
             }
-            SimulationGameState::Run => {
+            SimulationGameState::Run{} => {
                 println!("run");
-                self.free_kick_start_time = 0.0; // Reset free kick time
                 if self.ball_out() {
                     // TODO: add logic for detecting who kicked out the ball
                     // TODO: find the free kick position when the ball goes out of bounds
@@ -400,7 +426,8 @@ impl Simulation {
                     } else {
                         self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
                     }
-                    self.game_state = SimulationGameState::FreeKick;
+                    let kick_timer = Timer::new(10.0);
+                    self.game_state = SimulationGameState::FreeKick{kick_timer, ball_is_kicked: false};
                 } else if self.goal() {
                     if self.team_flag {
                         self.update_referee_command(referee::Command::GOAL_YELLOW);
@@ -410,31 +437,42 @@ impl Simulation {
                     self.game_state = SimulationGameState::PrepareKickOff;
                 }
             }
-            SimulationGameState::FreeKick => {
+            SimulationGameState::FreeKick { .. } => {
                 println!("Free kick");
-                // Ensure free kick time is set only once under this state
-                if self.free_kick_start_time == 0.0 {
-                    self.free_kick_start_time = self.current_time;
-                }
-                if self.players_too_close_to_ball() {
-                    self.update_referee_command(referee::Command::STOP);
-                    self.game_state = SimulationGameState::Stop;
-                } else if self.free_kick_time_exceeded() {
-                    if self.team_flag {
-                        self.update_referee_command(referee::Command::TIMEOUT_YELLOW);
-                    } else {
-                        self.update_referee_command(referee::Command::TIMEOUT_BLUE);
+
+                // Immutable borrow ends here
+                let is_player_too_close = {
+                    self.players_too_close_to_ball()
+                };
+
+                if let SimulationGameState::FreeKick { kick_timer, ball_is_kicked } = &mut self.game_state {
+                    let is_free_kick_time_exceeded = kick_timer.tick(self.integration_parameters.dt);
+                    let is_ball_kicked = *ball_is_kicked;
+
+                    // Only reset the timer after all mut borrows are done
+                    if is_player_too_close || is_free_kick_time_exceeded || is_ball_kicked {
+                        kick_timer.reset();
                     }
-                    self.game_state = SimulationGameState::Run;
-                } else if self.kicked() {
-                    // TODO: check the corresponding referee commands
-                    if self.team_flag {
-                        self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
-                    } else {
-                        self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
+
+                    if is_player_too_close { 
+                        self.update_referee_command(referee::Command::STOP);
+                        self.game_state = SimulationGameState::Stop{stop_timer: Timer::new(1.0)};
+                    } else if is_free_kick_time_exceeded {
+                        if self.team_flag {
+                            self.update_referee_command(referee::Command::TIMEOUT_YELLOW);
+                        } else {
+                            self.update_referee_command(referee::Command::TIMEOUT_BLUE);
+                        }
+                        self.game_state = SimulationGameState::Run{};
+                    } else if is_ball_kicked {
+                        if self.team_flag {
+                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
+                        } else {
+                            self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
+                        }
+                        self.game_state = SimulationGameState::Run{};
                     }
-                    self.game_state = SimulationGameState::Run;
-                }
+                } 
             }
         }
     }
@@ -560,50 +598,30 @@ impl Simulation {
         false
     }
 
-    fn kicked(&mut self) -> bool {
-        if self.ball_is_kicked{
-            self.ball_is_kicked = false;
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    fn players_too_close_to_ball(&mut self) -> bool {
-        let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
+    fn players_too_close_to_ball(&self) -> bool {
+        let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
         if let Some(ball_handle) = ball_handle {
-            let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
+            let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
             let ball_position = ball_body.position().translation.vector;
-            
-            for player in self.players.iter_mut() {
+
+            for player in self.players.iter() {
                 // Only detect defenders from another team
                 if self.team_flag && player.is_own || !self.team_flag && !player.is_own {
                     continue;
                 }
                 let rigid_body = self
                     .rigid_body_set
-                    .get_mut(player.rigid_body_handle)
+                    .get(player.rigid_body_handle)
                     .unwrap();
                 let player_position = rigid_body.position().translation.vector;
                 // Check if the player is close to the ball
-                if (player_position - ball_position).norm() < 500.0
-                {
+                if (player_position - ball_position).norm() < 500.0 {
                     println!("Player {} is too close to the ball", player.id);
                     return true;
                 }
             }
         }
         false
-    }
-
-    fn free_kick_time_exceeded(&mut self) -> bool {
-        const FREE_KICK_MAX_DURATION: f64 = 10.0;
-        if self.current_time - self.free_kick_start_time > FREE_KICK_MAX_DURATION {
-            self.free_kick_start_time = 0.0;
-            return true;
-        } else {
-            return false;
-        }
     }
 
     pub fn step(&mut self, dt: f64) {
@@ -758,7 +776,10 @@ impl Simulation {
                         let force = yaw * self.config.kicker_strength;
                         ball_body.add_force(force, true);
                         ball_body.set_linear_damping(self.config.ball_damping * 2.0);
-                        self.ball_is_kicked = true;
+                        // Set the ball_is_kicked to true
+                        if let SimulationGameState::FreeKick {kick_timer,  ball_is_kicked } = &mut self.game_state {
+                            *ball_is_kicked = true;
+                        }
                     } else if player.current_dribble_speed > 0.0 {
                         // let force = (player.current_dribble_speed * self.config.dribbler_strength)
                         //     * (dribbler_position - ball_position);
