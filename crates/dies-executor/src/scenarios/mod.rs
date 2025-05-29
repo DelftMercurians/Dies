@@ -206,6 +206,21 @@ fn fetch_ball_with_heading() -> ScenarioSetup {
     ScenarioSetup::new(strategy, StrategyGameStateMacther::Any)
 }
 
+fn std_start() -> ScenarioSetup {
+    let mut strategy = AdHocStrategy::new();
+    strategy.add_role(Box::new(Waller::new(0.0)));
+    let mut scenario = ScenarioSetup::new(strategy, StrategyGameStateMacther::Any);
+    scenario
+        .add_ball_at(Vector2::new(0.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-1000.0, 0.0))
+        .add_own_player_at(Vector2::new(-1000.0, -1000.0))
+        .add_own_player_at(Vector2::new(-2000.0, 1000.0))
+        .add_own_player_at(Vector2::new(-2000.0, 0.0))
+        .add_own_player_at(Vector2::new(-2000.0, -1000.0));
+    scenario
+}
+
 /// Creates a lookup table for scenarios as a global constant.
 macro_rules! scenarios {
     ($($scen:ident),+) => {
@@ -284,6 +299,7 @@ impl Serialize for ScenarioType {
 scenarios! {
     attack,
     play,
+    std_start,
     empty_scenario,
     goalie_test,
     defense_test,

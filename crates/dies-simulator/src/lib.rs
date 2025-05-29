@@ -122,17 +122,27 @@ pub enum SimulationGameState {
 }
 
 impl SimulationGameState {
+    pub fn equal(&self, other: &Self) -> bool {
+        match (self, other) {
+            (SimulationGameState::StartGame, SimulationGameState::StartGame) => true,
+            (SimulationGameState::Stop { .. }, SimulationGameState::Stop { .. }) => true,
+            (SimulationGameState::PrepareKickOff, SimulationGameState::PrepareKickOff) => true,
+            (SimulationGameState::Run { .. }, SimulationGameState::Run { .. }) => true,
+            (SimulationGameState::FreeKick { .. }, SimulationGameState::FreeKick { .. }) => true,
+            _ => false,
+        }
+    }
     pub fn default() -> Self {
         SimulationGameState::StartGame
     }
 
-    pub fn println(&self) {
+    pub fn println(&self, &time: &f64) {
         match self {
-            SimulationGameState::StartGame => println!("Start game"),
-            SimulationGameState::Stop { .. } => println!("Stop"),
-            SimulationGameState::PrepareKickOff => println!("Prepare kick off"),
-            SimulationGameState::Run { .. } => println!("Run"),
-            SimulationGameState::FreeKick { .. } => println!("Free kick"),
+            SimulationGameState::StartGame => println!("Automatic Command: Start game at time {:.3}", time),
+            SimulationGameState::Stop { .. } => println!("Automatic Command: Stop at time {:.3}", time),
+            SimulationGameState::PrepareKickOff => println!("Automatic Command: Prepare kick off at time {:.3}", time),
+            SimulationGameState::Run { .. } => println!("Automatic Command: Run at time {:.3}", time),
+            SimulationGameState::FreeKick { .. } => println!("Automatic Command: Free kick at time {:.3}", time),
         }
     }
 }
@@ -149,7 +159,7 @@ pub enum RefereeMessage {
 
 impl RefereeMessage {
     pub fn new(referee_message_type: RefereeMessage) -> Self {
-        referee_message_type.display();
+        // referee_message_type.display();
         referee_message_type
     }
 
@@ -434,7 +444,23 @@ impl Simulation {
     }
 
     pub fn update_game_state(&mut self) {
-        self.game_state.println();
+        // Only print when the state changes
+        static mut LAST_STATE: Option<SimulationGameState> = None;
+        let should_print = unsafe {
+            match LAST_STATE {
+                //  Some is part of the Option enum, which is used to represent a value 
+                // that can be either present (Some(value)) or absent (None).
+                Some(last) if self.game_state.equal(&last) => false,
+                _ => {
+                    LAST_STATE = Some(self.game_state);
+                    true
+                }
+            }
+        };
+        if should_print {
+            self.game_state.println(&self.current_time);
+        }
+
         match self.game_state {
             SimulationGameState::StartGame => {
                 self.update_referee_command(referee::Command::STOP);
@@ -531,10 +557,18 @@ impl Simulation {
             // || ball_position.y.abs() < (self.config.field_geometry.penalty_area_width + 700.0))
             && ball_body.linvel().norm() < 0.001
             {
-                println!("Ball in designated position, no need to move");
+                // Only print once when the ball reaches the designated position
+                static mut PRINTED_ONCE: bool = false;
+                unsafe {
+                    if !PRINTED_ONCE {
+                        println!("Ball in designated position, no need to move");
+                        PRINTED_ONCE = true;
+                    }
+                }
             } else {
                 // Reset the ball's position to the designated position
-                let _rm = RefereeMessage::new(RefereeMessage::BallPlacementInterference);
+                // Only print once when ball placement interference is detected
+                let _rm = RefereeMessage::new(RefereeMessage::BallPlacementInterference);        
                 ball_body.set_position(Isometry::translation(
                     self.designated_ball_position.x,
                     self.designated_ball_position.y,
@@ -582,14 +616,16 @@ impl Simulation {
             let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
             let ball_position = ball_body.position().translation.vector;
 
-            if ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
-            && ball_position.y.abs() < self.config.field_geometry.field_width / 2.0
+            let test_boundary:f64 = 400.0;
+            if ball_position.x.abs() < self.config.field_geometry.field_length / 2.0 - test_boundary
+            && ball_position.y.abs() < self.config.field_geometry.field_width / 2.0 - test_boundary
             {
                 let ball_velocity: Vector<f64> = *ball_body.linvel(); // ball's current velocity as Vector3
                 let next_ball_position = ball_position + ball_velocity * self.integration_parameters.dt;
-                if next_ball_position.x.abs() > self.config.field_geometry.field_length / 2.0 
-                || next_ball_position.y.abs() > self.config.field_geometry.field_width / 2.0
+                if next_ball_position.x.abs() > self.config.field_geometry.field_length / 2.0 - test_boundary
+                || next_ball_position.y.abs() > self.config.field_geometry.field_width / 2.0 - test_boundary
                 {
+                    println!("Ball out of bounds at position: {:?}", next_ball_position);
                     // In next frame, Ball will be out of bounds
                     // Do linear interpolation to find the free kick position
                     self.designated_ball_position = ball_position + (next_ball_position - ball_position) * 0.5;
@@ -623,13 +659,14 @@ impl Simulation {
         let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
         if let Some(ball_handle) = ball_handle {
             let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
-            let ball_position = ball_body.position().translation.vector;
+            let ball_position = ball_body.position().translation.vector; // Center of the ball
             
             let goal_height = 150.0;
             // Check if the ball is in the goal
             // TODO: Consider the ball's size (center position + radius)
-            if  ball_position.x.abs() > self.config.field_geometry.field_length / 2.0
-            && ball_position.x.abs() < self.config.field_geometry.field_length / 2.0 + self.config.field_geometry.goal_depth
+            // Field length: 9000, Field width: 6000, goal_depth: 180, goal_width: 1000
+            if  ball_position.x.abs() > self.config.field_geometry.field_length / 2.0 - self.config.field_geometry.goal_depth
+            && ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
             && ball_position.y.abs() < self.config.field_geometry.goal_width / 2.0
             && ball_position.z < goal_height
             {
