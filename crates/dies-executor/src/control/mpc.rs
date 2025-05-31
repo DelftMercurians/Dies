@@ -67,7 +67,7 @@ impl MPCController {
 
             // Add the mpc_jax directory to Python path
             let sys_path = sys.getattr("path")?;
-            sys_path.call_method1("insert", (0, "crates/dies-executor/src/control"))?;
+            sys_path.call_method1("insert", (0, "."))?;
 
             // Import the mpc_jax module
             let mpc_module = PyModule::import_bound(py, "mpc_jax")?;
