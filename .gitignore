@@ -8,6 +8,7 @@
 *.njsproj
 *.sln
 *.sw?
+.claude/*
 
 
 /target

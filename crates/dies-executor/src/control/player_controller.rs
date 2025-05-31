@@ -266,7 +266,10 @@ impl PlayerController {
                     input.speed_limit.unwrap_or(self.max_speed)
                 );
                 self.target_velocity = pos_u;
+                
+                // Debug output with player ID format
                 dies_core::debug_string(format!("p{}.controller", self.id), "MPC");
+                dies_core::debug_value(format!("p{}.mpc.duration_ms", self.id), self.position_mpc.last_solve_time_ms());
             } else {
                 // Use MTP controller
                 self.position_mtp.set_setpoint(pos_target);
