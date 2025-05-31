@@ -6,6 +6,7 @@ use dies_core::{
 };
 
 use super::{
+    mpc::MPCController,
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
     rvo::velocity_obstacle_update,
@@ -26,6 +27,8 @@ enum KickerState {
 pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP,
+    position_mpc: MPCController,
+    use_mpc: bool,
     last_pos: Vector2,
     if_gate_keeper: bool,
     /// Output velocity \[mm/s\]
@@ -74,6 +77,8 @@ impl PlayerController {
             id,
 
             position_mtp: MTP::new(),
+            position_mpc: MPCController::new(),
+            use_mpc: true, // Default to using MPC
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
@@ -127,6 +132,11 @@ impl PlayerController {
     /// set the player as the gate keeper
     pub fn set_gate_keeper(&mut self) {
         self.if_gate_keeper = true;
+    }
+
+    /// Toggle between MPC and MTP controllers
+    pub fn set_use_mpc(&mut self, use_mpc: bool) {
+        self.use_mpc = use_mpc;
     }
 
     pub fn target_velocity(&self) -> Vector2 {
@@ -234,29 +244,44 @@ impl PlayerController {
 
         dies_core::debug_value(format!("p{}.fan_speed", self.id), self.fan_speed);
 
-        // Calculate velocity using the MTP controller
+        // Calculate velocity using MPC or MTP controller
         self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
         self.target_velocity = Vector2::zeros();
         if let Some(pos_target) = input.position {
-            self.position_mtp.set_setpoint(pos_target);
             dies_core::debug_cross(
                 format!("p{}.control.target", self.id),
                 pos_target,
                 dies_core::DebugColor::Red,
             );
 
-            let pos_u = self.position_mtp.update(
-                self.last_pos,
-                state.velocity,
-                dt,
-                input.acceleration_limit.unwrap_or(self.max_accel),
-                input.speed_limit.unwrap_or(self.max_speed),
-                input.acceleration_limit.unwrap_or(self.max_decel),
-                input.care,
-            );
-            // let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
-            self.target_velocity = pos_u;
+            if self.use_mpc {
+                // Use MPC controller
+                self.position_mpc.set_target(pos_target);
+                self.position_mpc.set_field_bounds(world);
+                self.position_mpc.update_obstacles_from_world(world, self.id);
+                let pos_u = self.position_mpc.compute_control(
+                    self.last_pos,
+                    state.velocity,
+                    input.speed_limit.unwrap_or(self.max_speed)
+                );
+                self.target_velocity = pos_u;
+                dies_core::debug_string(format!("p{}.controller", self.id), "MPC");
+            } else {
+                // Use MTP controller
+                self.position_mtp.set_setpoint(pos_target);
+                let pos_u = self.position_mtp.update(
+                    self.last_pos,
+                    state.velocity,
+                    dt,
+                    input.acceleration_limit.unwrap_or(self.max_accel),
+                    input.speed_limit.unwrap_or(self.max_speed),
+                    input.acceleration_limit.unwrap_or(self.max_decel),
+                    input.care,
+                );
+                self.target_velocity = pos_u;
+                dies_core::debug_string(format!("p{}.controller", self.id), "MTP");
+            }
         } else {
             dies_core::debug_remove(format!("p{}.control.target", self.id));
         }
@@ -269,6 +294,7 @@ impl PlayerController {
             .target_velocity
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
+        /*
         if !is_manual_override {
             let obstacles = if input.avoid_ball {
                 if let Some(ball) = world.ball.as_ref() {
@@ -294,7 +320,10 @@ impl PlayerController {
                 super::rvo::VelocityObstacleType::VO,
                 input.avoid_robots,
             );
+
+            println!("Obstacle avoiding trickery wtf??")
         }
+        */
 
         // Draw the velocity
         dies_core::debug_line(
@@ -344,7 +373,7 @@ impl PlayerController {
             }
             self.target_z = 0.0;
         }
-        
+
         // Set angular velocity
         if self.has_target_heading == false || self.have_imu == false {
             match input.angular_velocity {
