@@ -107,7 +107,6 @@ impl Role for Attacker {
 
             if let Some(next_state) = self.next_state.take() {
                 if next_state != self.state {
-                    println!("Attacker: {:?} -> {:?}", self.state, next_state);
                     self.state = next_state;
                     self.dribbling_start = None;
                     self.has_passed_to_receiver = None;

@@ -215,10 +215,6 @@ fn intersect(
 
     // Check if the desired velocity satisfies all constraints
     if is_velocity_suitable(&position, desired_velocity, velocity_obstacles) {
-        debug_string(
-            format!("{}-chosen-v", player.id),
-            "desired velocity".to_string(),
-        );
         return *desired_velocity;
     } else {
         unsuitable_v.push(*desired_velocity);
