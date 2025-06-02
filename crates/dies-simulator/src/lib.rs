@@ -337,6 +337,7 @@ pub struct Simulation {
     game_state: SimulationGameState,
     team_color: bool,
     designated_ball_position: Vector<f64>,
+    last_touch_info: Option<(PlayerId, bool)>,
 }
 
 impl Simulation {
@@ -378,6 +379,7 @@ impl Simulation {
             game_state: SimulationGameState::default(),
             team_color: true,
             designated_ball_position: Vector::new(0.0, 0.0, 0.0),
+            last_touch_info: None,
         };
 
         // Create the ground
@@ -529,9 +531,13 @@ impl Simulation {
                     }
                     self.game_state = SimulationGameState::PrepareKickOff;
                 } else if self.ball_out() {
-                    // TODO: add logic for detecting who kicked out the ball
-                    // DONE: find the free kick position when the ball goes out of bounds
-                    if self.team_color {
+                    let kicked_by_own_team =
+                        if let Some((_kicker_id, is_own_kicker)) = self.last_touch_info {
+                            is_own_kicker
+                        } else {
+                            false
+                        };
+                    if kicked_by_own_team {
                         self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
                     } else {
                         self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
@@ -805,6 +811,38 @@ impl Simulation {
     }
 
     pub fn step(&mut self, dt: f64) {
+        // Update last touch info
+        if matches!(self.game_state, SimulationGameState::Run { .. }) {
+            if let Some(ball_handle) = self.ball.as_ref().map(|b| b._rigid_body_handle) {
+                let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
+                let ball_position = ball_body.position().translation.vector;
+                let touch_threshold = self.config.player_radius + BALL_RADIUS + 5.0;
+
+                // Find the closest player touching the ball in this step
+                let mut closest_touching_player: Option<(PlayerId, bool, f64)> = None;
+
+                for player in self.players.iter() {
+                    let player_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
+                    let player_position = player_body.position().translation.vector;
+                    let distance = (player_position - ball_position).norm();
+
+                    if distance < touch_threshold {
+                        if closest_touching_player.is_none()
+                            || distance < closest_touching_player.unwrap().2
+                        {
+                            closest_touching_player = Some((player.id, player.is_own, distance));
+                        }
+                    }
+                }
+
+                if let Some((id, is_own, _)) = closest_touching_player {
+                    self.last_touch_info = Some((id, is_own));
+                }
+            }
+        } else {
+            self.last_touch_info = None;
+        }
+
         // Update the game state
         self.update_game_state();
 
