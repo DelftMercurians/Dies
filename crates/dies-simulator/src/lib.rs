@@ -583,14 +583,14 @@ impl Simulation {
                     if is_player_too_close {
                         // The rules say this is a non-stopping foul, but for our purposes this makes sense
                         dies_core::debug_string(
-                            "RefereeMessage.PlayerTooCloseToBall",
+                            "RefereeMessage",
                             RefereeMessage::PlayerTooCloseToBall.to_string(),
                         );
                         self.update_referee_command(referee::Command::STOP);
                         self.game_state = SimulationGameState::stop();
                     } else if is_free_kick_time_exceeded {
                         dies_core::debug_string(
-                            "RefereeMessage.FreekickTimeExceeded",
+                            "RefereeMessage",
                             RefereeMessage::FreekickTimeExceeded.to_string(),
                         );
                         self.game_state = SimulationGameState::run();
@@ -647,18 +647,20 @@ impl Simulation {
                 .get_mut(player.rigid_body_handle)
                 .unwrap();
             let player_position = rigid_body.position().translation.vector;
-            let debug_key = format!("RefereeMessage.player {:}", player.id.as_u32());
             // Check if the player is close to the ball
             if (player_position - self.designated_ball_position).norm() < 500.0 {
                 dies_core::debug_string(
-                    &debug_key,
-                    RefereeMessage::DefenderTooCloseToBall.to_string(),
+                    "RefereeMessage",
+                    format!("Defender {} too close to ball", player.id.as_u32()),
                 );
                 return false;
             }
             // Check if the player is inside the field
             if player_position.y.abs() > self.config.field_geometry.field_width / 2.0 {
-                dies_core::debug_string(&debug_key, RefereeMessage::RobotOutOfField.to_string());
+                dies_core::debug_string(
+                    "RefereeMessage",
+                    format!("Player {} out of field", player.id.as_u32()),
+                );
                 return false;
             }
             // Check if the player is in the own half, default to the left side(blue team on the left)
@@ -670,7 +672,10 @@ impl Simulation {
                     || player_position.x > self.config.field_geometry.field_length / 2.0
             };
             if out_of_field {
-                dies_core::debug_string(debug_key, RefereeMessage::RobotOutOfField.to_string());
+                dies_core::debug_string(
+                    "RefereeMessage",
+                    format!("Player {} out of field", player.id.as_u32()),
+                );
                 return false;
             }
         }
@@ -708,8 +713,8 @@ impl Simulation {
                 return false;
             } else {
                 dies_core::debug_string(
-                    "RefereeMessage.Ball",
-                    RefereeMessage::BoundaryCrossing.to_string(),
+                    "RefereeMessage",
+                    format!("Ball out of bounds at position: {:?}", ball_position),
                 );
                 // Wait a few frames before resetting the ball's position (default: 0.2s)
                 if let SimulationGameState::Run { wait_timer, .. } = &mut self.game_state {
@@ -794,8 +799,8 @@ impl Simulation {
                 // Check if the player is close to the ball
                 if (player_position - ball_position).norm() < 500.0 {
                     dies_core::debug_string(
-                        &format!("RefereeMessage.player {:}", player.id.as_u32()),
-                        RefereeMessage::DefenderTooCloseToBall.to_string(),
+                        "RefereeMessage",
+                        format!("Defender {} too close to ball", player.id.as_u32()),
                     );
                     return true;
                 }
