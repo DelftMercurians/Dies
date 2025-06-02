@@ -614,12 +614,9 @@ impl Simulation {
 
             // Check if the ball is close to the designated position & inside the field & 0.7m away from the defense area & stationary
             if (ball_position - self.designated_ball_position).norm() < 1000.0
-            && ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
-            && ball_position.y.abs() < self.config.field_geometry.field_width / 2.0
-            // TODO: The ball is at least 0.7m away from any defense area. (It should be arc near the corner)
-            // && !(ball_position.x.abs() < (self.config.field_geometry.penalty_area_depth + 700.0)
-            // || ball_position.y.abs() < (self.config.field_geometry.penalty_area_width + 700.0))
-            && ball_body.linvel().norm() < 0.001
+                && ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
+                && ball_position.y.abs() < self.config.field_geometry.field_width / 2.0
+                && ball_body.linvel().norm() < 0.001
             {
                 dies_core::debug_string(
                     "RefereeMessage.ball",
@@ -744,9 +741,6 @@ impl Simulation {
             let ball_position = ball_body.position().translation.vector; // Center of the ball
 
             let goal_height = 150.0;
-            // Check if the ball is in the goal
-            // TODO: Consider the ball's size (center position + radius)
-            // Field length: 9000, Field width: 6000, goal_depth: 180, goal_width: 1000
             if ball_position.x.abs()
                 > self.config.field_geometry.field_length / 2.0
                     - self.config.field_geometry.goal_depth
