@@ -120,15 +120,49 @@ pub enum SimulationGameState {
     Stop {
         stop_timer: Timer,
     },
+    StopAndForceStart {
+        stop_timer: Timer,
+    },
     PrepareKickOff,
     Run {
         wait_timer: Timer,
+        no_progress_timer: Timer,
+        last_ball_position: Option<Vector2>,
     },
     FreeKick {
         kick_timer: Timer,
         ball_is_kicked: bool,
     }, // Set timer inside the state
     Null,
+}
+
+impl SimulationGameState {
+    fn run() -> Self {
+        SimulationGameState::Run {
+            wait_timer: Timer::new(0.2),
+            no_progress_timer: Timer::new(10.0),
+            last_ball_position: None,
+        }
+    }
+
+    fn stop() -> Self {
+        SimulationGameState::Stop {
+            stop_timer: Timer::new(1.0),
+        }
+    }
+
+    fn stop_and_force_start() -> Self {
+        SimulationGameState::StopAndForceStart {
+            stop_timer: Timer::new(1.0),
+        }
+    }
+
+    fn free_kick() -> Self {
+        SimulationGameState::FreeKick {
+            kick_timer: Timer::new(10.0),
+            ball_is_kicked: false,
+        }
+    }
 }
 
 impl PartialEq for SimulationGameState {
@@ -149,6 +183,7 @@ impl fmt::Display for SimulationGameState {
         match self {
             SimulationGameState::StartGame => write!(f, "Start game"),
             SimulationGameState::Stop { .. } => write!(f, "Stop"),
+            SimulationGameState::StopAndForceStart { .. } => write!(f, "Stop and force start"),
             SimulationGameState::PrepareKickOff => write!(f, "Prepare kick off"),
             SimulationGameState::Run { .. } => write!(f, "Run"),
             SimulationGameState::FreeKick { .. } => write!(f, "Free kick"),
@@ -164,7 +199,8 @@ pub enum RefereeMessage {
     DefenderTooCloseToBall,             //8.4.3
     BallPlacementInterference,          //8.4.3
     RobotOutOfField,
-    TimeOut,
+    FreekickTimeExceeded,
+    PlayerTooCloseToBall,
 }
 
 impl fmt::Display for RefereeMessage {
@@ -175,9 +211,10 @@ impl fmt::Display for RefereeMessage {
             }
             RefereeMessage::BoundaryCrossing => write!(f, "Boundary crossing"),
             RefereeMessage::DefenderTooCloseToBall => write!(f, "Defender too close to ball"),
-            RefereeMessage::TimeOut => write!(f, "Time out"),
+            RefereeMessage::FreekickTimeExceeded => write!(f, "Free kick time exceeded"),
             RefereeMessage::BallPlacementInterference => write!(f, "Ball placement interference"),
             RefereeMessage::RobotOutOfField => write!(f, "Robot out of field"),
+            RefereeMessage::PlayerTooCloseToBall => write!(f, "Player too close to ball"),
         }
     }
 }
@@ -449,9 +486,7 @@ impl Simulation {
         match self.game_state {
             SimulationGameState::StartGame => {
                 self.update_referee_command(referee::Command::STOP);
-                self.game_state = SimulationGameState::Stop {
-                    stop_timer: Timer::new(1.0),
-                };
+                self.game_state = SimulationGameState::stop();
             }
             SimulationGameState::Stop { .. } => {
                 if let SimulationGameState::Stop { stop_timer } = &mut self.game_state {
@@ -464,15 +499,28 @@ impl Simulation {
                     }
                 }
             }
+            SimulationGameState::StopAndForceStart { .. } => {
+                if let SimulationGameState::Stop { stop_timer } = &mut self.game_state {
+                    // Wait for 1s before starting the game
+                    if stop_timer.tick(self.integration_parameters.dt) {
+                        // Reset the timer
+                        stop_timer.reset();
+                        self.update_referee_command(referee::Command::FORCE_START);
+                        self.game_state = SimulationGameState::run();
+                    }
+                }
+            }
             SimulationGameState::PrepareKickOff {} => {
                 if self.kickoff_ready() {
                     self.update_referee_command(referee::Command::NORMAL_START);
-                    self.game_state = SimulationGameState::Run {
-                        wait_timer: Timer::new(0.2),
-                    };
+                    self.game_state = SimulationGameState::run();
                 }
             }
-            SimulationGameState::Run { .. } => {
+            SimulationGameState::Run {
+                mut no_progress_timer,
+                last_ball_position,
+                ..
+            } => {
                 if self.goal() {
                     if self.team_color {
                         self.update_referee_command(referee::Command::GOAL_BLUE);
@@ -488,11 +536,24 @@ impl Simulation {
                     } else {
                         self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
                     }
-                    let kick_timer = Timer::new(10.0);
-                    self.game_state = SimulationGameState::FreeKick {
-                        kick_timer,
-                        ball_is_kicked: false,
-                    };
+                    self.game_state = SimulationGameState::free_kick();
+                } else {
+                    // Check for no progress
+                    let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
+                    if let Some(ball_handle) = ball_handle {
+                        let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
+                        let ball_position = ball_body.position().translation.vector.xy();
+                        let last_ball_position_unwrapped =
+                            last_ball_position.as_ref().unwrap_or(&ball_position);
+                        if (ball_position - last_ball_position_unwrapped).norm() < 10.0 {
+                            if no_progress_timer.tick(self.integration_parameters.dt) {
+                                self.update_referee_command(referee::Command::STOP);
+                                self.game_state = SimulationGameState::stop_and_force_start();
+                            }
+                        } else {
+                            self.game_state = SimulationGameState::run();
+                        }
+                    }
                 }
             }
             SimulationGameState::FreeKick { .. } => {
@@ -514,32 +575,21 @@ impl Simulation {
                     }
 
                     if is_player_too_close {
-                        self.update_referee_command(referee::Command::STOP);
-                        self.game_state = SimulationGameState::Stop {
-                            stop_timer: Timer::new(1.0),
-                        };
-                    } else if is_free_kick_time_exceeded {
-                        if self.team_color {
-                            self.update_referee_command(referee::Command::TIMEOUT_BLUE);
-                        } else {
-                            self.update_referee_command(referee::Command::TIMEOUT_YELLOW);
-                        }
+                        // The rules say this is a non-stopping foul, but for our purposes this makes sense
                         dies_core::debug_string(
-                            "RefereeMessage.TimeOut",
-                            RefereeMessage::TimeOut.to_string(),
+                            "RefereeMessage.PlayerTooCloseToBall",
+                            RefereeMessage::PlayerTooCloseToBall.to_string(),
                         );
-                        self.game_state = SimulationGameState::Run {
-                            wait_timer: Timer::new(0.2),
-                        };
+                        self.update_referee_command(referee::Command::STOP);
+                        self.game_state = SimulationGameState::stop();
+                    } else if is_free_kick_time_exceeded {
+                        dies_core::debug_string(
+                            "RefereeMessage.FreekickTimeExceeded",
+                            RefereeMessage::FreekickTimeExceeded.to_string(),
+                        );
+                        self.game_state = SimulationGameState::run();
                     } else if is_ball_kicked {
-                        if self.team_color {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
-                        } else {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
-                        }
-                        self.game_state = SimulationGameState::Run {
-                            wait_timer: Timer::new(0.2),
-                        };
+                        self.game_state = SimulationGameState::run();
                     }
                 }
             }
@@ -659,7 +709,7 @@ impl Simulation {
                     RefereeMessage::BoundaryCrossing.to_string(),
                 );
                 // Wait a few frames before resetting the ball's position (default: 0.2s)
-                if let SimulationGameState::Run { wait_timer } = &mut self.game_state {
+                if let SimulationGameState::Run { wait_timer, .. } = &mut self.game_state {
                     if wait_timer.tick(self.integration_parameters.dt) {
                         wait_timer.reset();
                     }
@@ -713,7 +763,7 @@ impl Simulation {
                 );
 
                 // Wait a few frames before resetting the ball's position (default: 0.2s)
-                if let SimulationGameState::Run { wait_timer } = &mut self.game_state {
+                if let SimulationGameState::Run { wait_timer, .. } = &mut self.game_state {
                     if wait_timer.tick(self.integration_parameters.dt) {
                         wait_timer.reset();
                     }
