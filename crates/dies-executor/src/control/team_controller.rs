@@ -7,39 +7,30 @@ use super::{
     player_input::{KickerControlInput, PlayerInputs},
 };
 use crate::{
-    roles::{RoleCtx, SkillState},
-    strategy::{AdHocStrategy, Strategy, StrategyCtx},
-    PlayerControlInput, StrategyMap,
+    behavior_tree::{BehaviorNode, RobotSituation, TeamContext},
+    PlayerControlInput,
 };
 
 const ACTIVATION_TIME: f64 = 0.2;
 
-#[derive(Default)]
-struct RoleState {
-    skill_map: HashMap<String, SkillState>,
-}
-
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
-    strategy: StrategyMap,
-    active_strat: Option<String>,
-    role_states: HashMap<PlayerId, RoleState>,
     settings: ExecutorSettings,
-    halt: AdHocStrategy,
     start_time: std::time::Instant,
+    player_behavior_trees: HashMap<PlayerId, Box<dyn BehaviorNode>>,
+    team_context: TeamContext,
 }
 
 impl TeamController {
     /// Create a new team controller.
-    pub fn new(strategy: StrategyMap, settings: &ExecutorSettings) -> Self {
+    pub fn new(settings: &ExecutorSettings) -> Self {
+        let team_context = TeamContext::new();
         let mut team = Self {
             player_controllers: HashMap::new(),
-            strategy,
-            role_states: HashMap::new(),
             settings: settings.clone(),
-            active_strat: None,
-            halt: AdHocStrategy::new(),
             start_time: std::time::Instant::now(),
+            player_behavior_trees: HashMap::new(),
+            team_context,
         };
         team.update_controller_settings(settings);
         team
@@ -84,57 +75,64 @@ impl TeamController {
             return;
         }
 
-        let state = world_data.current_game_state.game_state;
-        let strategy = if matches!(
-            world_data.current_game_state.game_state,
-            GameState::BallReplacement(_)
-        ) {
-            &mut self.halt
-        } else if let Some(strategy) = self.strategy.get_strategy(&state) {
-            let name = strategy.name().to_owned();
-            dies_core::debug_string("active_strat", &name);
-            if self.active_strat.as_ref() != Some(&name) {
-                log::info!("Switching to strategy: {}", name);
-                self.active_strat = Some(name);
-                strategy.on_enter(StrategyCtx { world: &world_data });
-            }
-            strategy
-        } else {
-            return;
-        };
+        // Reset team context (e.g., clear semaphores)
+        self.team_context.clear_semaphores();
 
-        let strategy_ctx = StrategyCtx { world: &world_data };
-        strategy.update(strategy_ctx);
+        let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
 
-        let mut role_types = HashMap::new();
-        let mut inputs =
-            world_data
-                .own_players
-                .iter()
-                .fold(PlayerInputs::new(), |mut inputs, player_data| {
-                    let id = player_data.id;
-                    let strategy_ctx = StrategyCtx { world: &world_data };
-                    if let Some(role) = strategy.get_role(id, strategy_ctx) {
-                        let role_state = self.role_states.entry(id).or_default();
-                        let role_ctx =
-                            RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
-                        let mut new_input = role.update(role_ctx);
-                        new_input.role_type = role.role_type();
-                        role_types.insert(id, new_input.role_type);
-                        inputs.insert(id, new_input);
-                    } else {
-                        inputs.insert(id, PlayerControlInput::new());
-                    }
-                    inputs
+        for player_data in &world_data.own_players {
+            let player_id = player_data.id;
+
+            // Get or build the behavior tree for the player
+            // For now, let's use a placeholder builder if a BT doesn't exist.
+            // In a real scenario, BTs would be built/assigned based on game state, player roles, etc.
+            let player_bt = self
+                .player_behavior_trees
+                .entry(player_id)
+                .or_insert_with(|| {
+                    build_player_bt(player_id, &world_data, &self.settings) // Placeholder
                 });
 
+            // Create RobotSituation
+            // The viz_path_prefix should be meaningful, e.g., "player_X_bt"
+            let viz_path_prefix = format!("p{}", player_id);
+            let mut robot_situation =
+                RobotSituation::new(player_id, &world_data, &self.team_context, viz_path_prefix);
+
+            // Tick the behavior tree
+            let (_status, player_input_opt) = player_bt.tick(&mut robot_situation);
+            let mut player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
+
+            // Ensure role_type is set, if not already by BT.
+            // This is important for `comply` and `get_obstacles_for_player`.
+            // A more sophisticated BT would set this.
+            if player_input.role_type == RoleType::Player {
+                // Default to Player, or decide based on player_id (e.g. goalie)
+                if player_id == PlayerId::new(0) {
+                    // Assuming goalie might be ID 0
+                    player_input.role_type = RoleType::Goalkeeper;
+                } else {
+                    player_input.role_type = RoleType::Player;
+                }
+            }
+
+            player_inputs_map.insert(player_id, player_input);
+        }
+
+        let mut inputs_for_comply = PlayerInputs::new();
+        for (id, input) in player_inputs_map.iter() {
+            inputs_for_comply.insert(*id, input.clone());
+        }
+
         // If in a stop state, override the inputs
-        if matches!(
+        let final_player_inputs = if matches!(
             world_data.current_game_state.game_state,
             GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
         ) {
-            inputs = comply(&world_data, inputs);
-        }
+            comply(&world_data, inputs_for_comply)
+        } else {
+            inputs_for_comply
+        };
 
         let all_players = world_data
             .own_players
@@ -151,21 +149,21 @@ impl TeamController {
 
             if let Some(player_data) = player_data {
                 let id = controller.id();
-                let default_input = inputs.player(id);
-                let input = manual_override.get(&id).unwrap_or(&default_input);
+                let default_input = final_player_inputs.player(id);
+                let input_to_use = manual_override.get(&id).unwrap_or(&default_input);
 
                 let is_manual = manual_override
                     .get(&id)
                     .map(|i| !i.velocity.is_zero())
                     .unwrap_or(false);
 
-                let role_type = role_types.get(&id).cloned().unwrap_or_default();
+                let role_type = input_to_use.role_type;
                 let obsacles = world_data.get_obstacles_for_player(role_type);
 
                 controller.update(
                     player_data,
                     &world_data,
-                    input,
+                    input_to_use,
                     world_data.dt,
                     is_manual,
                     obsacles,
@@ -184,6 +182,30 @@ impl TeamController {
             .map(|c| c.command())
             .collect()
     }
+}
+
+// Placeholder function for building behavior trees (Task 5.4)
+// In a real implementation, this would create complex trees based on strategy, roles, etc.
+fn build_player_bt(
+    _player_id: PlayerId,
+    _world: &WorldData,
+    _settings: &ExecutorSettings,
+) -> Box<dyn BehaviorNode> {
+    use crate::behavior_tree::{ActionNode, SelectNode, SequenceNode};
+    use crate::roles::skills::GoToPosition; // Example skill
+    use dies_core::Vector2;
+
+    // Example: A simple BT that makes the player go to (0,0)
+    // More complex logic would be needed here.
+    // For instance, different BTs for goalie vs. field player.
+    let go_to_origin = ActionNode::new(
+        Box::new(GoToPosition::new(Vector2::new(0.0, 0.0))),
+        Some("GoToOrigin".to_string()),
+    );
+    Box::new(SelectNode::new(
+        vec![Box::new(go_to_origin)],
+        Some("RootSelect".to_string()),
+    ))
 }
 
 /// Override the inputs to comply with the stop state.
