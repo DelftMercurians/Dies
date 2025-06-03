@@ -10,6 +10,9 @@ from jax import grad, jit, value_and_grad
 import numpy as np
 import optax
 import os
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+from tqdm import tqdm
 
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
 
@@ -21,13 +24,12 @@ jax.config.update(
 )
 
 # MPC Parameters
-PREDICTION_HORIZON = 20
-CONTROL_HORIZON = 18
-DT = 0.1
+PREDICTION_HORIZON = 50
+DT = 0.05
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 200
+MAX_ITERATIONS = 100
 
 
 def euler_step(pos: jnp.ndarray, vel: jnp.ndarray, dt: float) -> jnp.ndarray:
@@ -51,7 +53,7 @@ def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray) -> float:
     penalty_radius_sq = COLLISION_PENALTY_RADIUS**2
     penalties = penalty_radius_sq / (distances_sq + 1.0)
 
-    return jnp.sum(penalties)
+    return jnp.sum(penalties) * 1e3
 
 
 def boundary_cost(pos: jnp.ndarray, field_bounds: jnp.ndarray | None) -> float:
@@ -96,19 +98,6 @@ def mpc_cost_function(
     field_bounds: jnp.ndarray | None,
     max_vel: float,
 ) -> float:
-    """
-    Complete MPC cost function.
-
-    Args:
-        control_sequence: Control inputs [vx0, vy0, vx1, vy1, ...] shape (2*control_horizon,)
-        initial_pos: Starting position [x, y]
-        initial_vel: Starting velocity [vx, vy]
-        target_pos: Target position [x, y]
-        obstacles: Obstacle positions shape (n_obstacles, 2)
-        field_bounds: Field boundaries [min_x, max_x, min_y, max_y] or None
-        max_vel: Maximum velocity constraint
-    """
-
     # Simulate forward over prediction horizon
     def _scan_fn(carry, control):  # control is velocity here
         pos, current_cost = carry
@@ -153,7 +142,7 @@ def solve_mpc_jax(
     learning_rate: float,
 ) -> jnp.ndarray:
     # Initialize control sequence
-    control_sequence = jnp.tile(initial_vel, (CONTROL_HORIZON, 1))
+    control_sequence = jnp.tile(initial_vel, (PREDICTION_HORIZON, 1))
     control_sequence = jax.vmap(lambda vel: clip_vel(vel, max_vel))(control_sequence)
 
     # Initialize Adam optimizer
@@ -191,7 +180,7 @@ def solve_mpc_jax(
     )
 
     # Return first control input
-    return final_control[0]
+    return final_control
 
 
 solve_mpc_jitted = jax.jit(solve_mpc_jax, static_argnames=("max_iterations",))
@@ -247,6 +236,113 @@ def test_simple_case():
     return optimal_control
 
 
+def visualize_mpc_debug(
+    initial_pos: np.ndarray,
+    target_pos: np.ndarray,
+    obstacles: np.ndarray,
+    field_bounds: np.ndarray,
+    max_vel: float,
+    resolution: int = 50,
+) -> None:
+    """
+    Visualize MPC debugging information with cost heatmap.
+
+    Args:
+        initial_pos: Starting position [x, y]
+        target_pos: Target position [x, y]
+        obstacles: Obstacle positions shape (n_obstacles, 2)
+        field_bounds: Field boundaries [min_x, max_x, min_y, max_y]
+        max_vel: Maximum velocity constraint
+        resolution: Resolution of the grid for visualization
+    """
+    # Create a grid for visualization
+    min_x, max_x, min_y, max_y = field_bounds
+    x_range = np.linspace(min_x, max_x, resolution)
+    y_range = np.linspace(min_y, max_y, resolution)
+    X, Y = np.meshgrid(x_range, y_range)
+
+    # Prepare arrays for cost
+    costs = np.zeros((resolution, resolution))
+
+    # Initial velocity (zero for this visualization)
+    initial_vel = np.zeros(2)
+
+    # Simplified cost function that only evaluates at a single position
+    def position_cost(pos):
+        # Convert to JAX array
+        pos_jax = jnp.array(pos)
+
+        # Calculate individual costs
+        dist_cost = distance_cost(pos_jax, jnp.array(target_pos)) * 10.0
+        coll_cost = collision_cost(pos_jax, jnp.array(obstacles)) * 1000.0
+        bound_cost = boundary_cost(pos_jax, jnp.array(field_bounds))
+
+        return dist_cost + coll_cost + bound_cost
+
+    # Compute costs for each grid point
+    for i in tqdm(range(resolution)):
+        for j in range(resolution):
+            pos = np.array([X[i, j], Y[i, j]])
+
+            # Calculate cost
+            costs[i, j] = position_cost(pos)
+
+    # Compute MPC trajectory
+    trajectory_positions = [initial_pos]
+    current_pos = initial_pos
+    current_vel = initial_vel
+
+    # Simulate 20 steps of MPC
+    all_controls = solve_mpc(
+        current_pos, current_vel, target_pos, obstacles, field_bounds, max_vel
+    )
+    for i in range(len(all_controls)):
+        control = all_controls[i]
+        current_pos = current_pos + control * DT
+
+        trajectory_positions.append(current_pos)
+
+    # Convert trajectory to array
+    trajectory = np.array(trajectory_positions)
+
+    # Create the figure
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Cost heatmap
+    im = ax.imshow(
+        costs,
+        extent=[min_x, max_x, min_y, max_y],
+        origin="lower",
+        cmap="viridis",
+        aspect="auto",
+    )
+    fig.colorbar(im, ax=ax, label="Cost")
+
+    ax.plot(initial_pos[0], initial_pos[1], "bs", markersize=8, label="Start")
+    ax.plot(target_pos[0], target_pos[1], "g*", markersize=12, label="Target")
+    ax.plot(trajectory[:, 0], trajectory[:, 1], "w-", linewidth=2, label="MPC Path")
+
+    # Add legend and labels
+    ax.set_title("MPC Cost Heatmap")
+    ax.set_xlabel("X position")
+    ax.set_ylabel("Y position")
+    ax.legend()
+
+    plt.tight_layout()
+    plt.savefig("mpc_debug_visualization.png")
+    print("Visualization saved to 'mpc_debug_visualization.png'")
+
+
 if __name__ == "__main__":
     result = test_simple_case()
+
+    # Run visualization with the simple test case
+    initial_pos = np.array([0.0, 0.0])
+    target_pos = np.array([1000.0, 500.0])
+    obstacles = np.array([[500.0, 250.0]])
+    field_bounds = np.array([-2000.0, 2000.0, -1000.0, 1000.0])
+    max_vel = 2000.0
+
+    visualize_mpc_debug(initial_pos, target_pos, obstacles, field_bounds, max_vel)
+
     print("JAX MPC test completed successfully!")
