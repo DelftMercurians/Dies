@@ -9,7 +9,6 @@ import jax.numpy as jnp
 from jax import grad, jit, value_and_grad
 import numpy as np
 import optax
-from typing import Tuple, Optional
 import os
 
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
@@ -55,7 +54,7 @@ def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray) -> float:
     return jnp.sum(penalties)
 
 
-def boundary_cost(pos: jnp.ndarray, field_bounds: Optional[jnp.ndarray]) -> float:
+def boundary_cost(pos: jnp.ndarray, field_bounds: jnp.ndarray | None) -> float:
     """Compute field boundary violation cost."""
     if field_bounds is None:
         return 0.0
@@ -94,7 +93,7 @@ def mpc_cost_function(
     initial_vel: jnp.ndarray,
     target_pos: jnp.ndarray,
     obstacles: jnp.ndarray,
-    field_bounds: Optional[jnp.ndarray],
+    field_bounds: jnp.ndarray | None,
     max_vel: float,
 ) -> float:
     """
@@ -109,63 +108,53 @@ def mpc_cost_function(
         field_bounds: Field boundaries [min_x, max_x, min_y, max_y] or None
         max_vel: Maximum velocity constraint
     """
-    total_cost = 0.0
-    pos = initial_pos
 
     # Simulate forward over prediction horizon
-    for k in range(PREDICTION_HORIZON):
-        # Get control input for this timestep
-        control_idx = min(k, CONTROL_HORIZON - 1) * 2
-        if k < CONTROL_HORIZON:
-            vel = control_sequence[control_idx : control_idx + 2]
-        else:
-            vel = jnp.array([0.0, 0.0])
-
+    def _scan_fn(carry, control):  # control is velocity here
+        pos, current_cost = carry
         # Euler integration
-        pos = euler_step(pos, vel, DT)
+        pos = euler_step(pos, control, DT)
 
         # Add costs
-        total_cost += distance_cost(pos, target_pos) * 10.0
-        total_cost += collision_cost(pos, obstacles) * 1000.0
-        total_cost += boundary_cost(pos, field_bounds)
+        current_cost += distance_cost(pos, target_pos) * 10.0
+        current_cost += collision_cost(pos, obstacles) * 1000.0
+        current_cost += boundary_cost(pos, field_bounds)
 
         # Control effort penalty (only for actual control inputs)
-        if k < CONTROL_HORIZON:
-            total_cost += control_effort_cost(vel)
-            total_cost += velocity_constraint_cost(vel, max_vel)
+        current_cost += control_effort_cost(control)
+        current_cost += velocity_constraint_cost(control, max_vel)
+        return (pos, current_cost), None
+
+    (_, total_cost), _ = jax.lax.scan(
+        _scan_fn, init=(initial_pos, 0.0), xs=control_sequence, unroll=3
+    )
 
     return total_cost
 
 
-# JIT compile the cost function and its gradient for speed
 mpc_cost_jit = jit(mpc_cost_function)
 mpc_grad_jit = jit(jax.value_and_grad(mpc_cost_function, argnums=0))
 
 
-def clip_velocity_preserve_direction(vel: jnp.ndarray, max_vel: float) -> jnp.ndarray:
+def clip_vel(vel: jnp.ndarray, max_vel: float) -> jnp.ndarray:
     """Clip velocity while preserving direction by scaling down if needed."""
     speed = jnp.linalg.norm(vel)
     return jnp.where(speed > max_vel, vel * (max_vel / speed), vel)
 
 
-@jax.jit
-def solve_mpc(
+def solve_mpc_jax(
     initial_pos: jnp.ndarray,
     initial_vel: jnp.ndarray,
     target_pos: jnp.ndarray,
     obstacles: jnp.ndarray,
-    field_bounds: Optional[jnp.ndarray],
+    field_bounds: jnp.ndarray | None,
     max_vel: float,
-    max_iterations: int = MAX_ITERATIONS,
-    learning_rate: float = 50.0,
+    max_iterations: int,
+    learning_rate: float,
 ) -> jnp.ndarray:
     # Initialize control sequence
-    control_sequence = jnp.tile(initial_vel, CONTROL_HORIZON)
-    # Apply direction-preserving velocity clipping using vmap
-    control_sequence = control_sequence.reshape(-1, 2)
-    control_sequence = jax.vmap(
-        lambda vel: clip_velocity_preserve_direction(vel, max_vel)
-    )(control_sequence).flatten()
+    control_sequence = jnp.tile(initial_vel, (CONTROL_HORIZON, 1))
+    control_sequence = jax.vmap(lambda vel: clip_vel(vel, max_vel))(control_sequence)
 
     # Initialize Adam optimizer
     optimizer = optax.adam(learning_rate, b1=0.8, b2=0.95)
@@ -189,15 +178,11 @@ def solve_mpc(
         updates, opt_state = optimizer.update(grad_val, opt_state)
         control_seq = optax.apply_updates(control_seq, updates)
 
-        # Enforce velocity constraints with direction preservation
-        control_seq = control_seq.reshape(-1, 2)
-        control_seq = jax.vmap(
-            lambda vel: clip_velocity_preserve_direction(vel, max_vel)
-        )(control_seq).flatten()
+        control_seq = jax.vmap(lambda vel: clip_vel(vel, max_vel))(control_seq)
 
         return (control_seq, opt_state), cost
 
-    (final_control_sequence, _), costs = jax.lax.scan(
+    (final_control, _), costs = jax.lax.scan(
         optimization_step,
         (control_sequence, opt_state),
         None,
@@ -206,7 +191,34 @@ def solve_mpc(
     )
 
     # Return first control input
-    return final_control_sequence[:2]
+    return final_control[0]
+
+
+solve_mpc_jitted = jax.jit(solve_mpc_jax, static_argnames=("max_iterations",))
+
+
+def solve_mpc(
+    initial_pos: np.ndarray,
+    initial_vel: np.ndarray,
+    target_pos: np.ndarray,
+    obstacles: np.ndarray,
+    field_bounds: np.ndarray | None,
+    max_vel: float,
+    max_iterations: int = MAX_ITERATIONS,
+    learning_rate: float = 50.0,
+) -> np.ndarray:
+    return np.array(
+        solve_mpc_jitted(
+            jnp.asarray(initial_pos),
+            jnp.asarray(initial_vel),
+            jnp.asarray(target_pos),
+            jnp.asarray(obstacles),
+            jnp.asarray(field_bounds) if field_bounds is not None else None,
+            max_vel,
+            max_iterations,
+            learning_rate,
+        ),
+    )
 
 
 def test_simple_case():

@@ -18,6 +18,7 @@ node_modules/
 *.npy
 .venv
 *.egg-info
+mpc_jax/*.egg-info
 
 docs/book
 docs/src/api
