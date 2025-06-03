@@ -189,10 +189,8 @@ impl PlayStrategy {
 
                 // Try attackers
                 let closest_attacker = self.attack.attackers.iter().min_by_key(|(id, _)| {
-                    ctx.world
-                        .get_player(*id)
-                        .map(|p| (p.position - ball.position.xy()).norm())
-                        .unwrap_or(f64::MAX) as i64
+                    let player = ctx.world.get_player(*id);
+                    (player.position - ball.position.xy()).norm() as i64
                 });
                 if let Some((id, _)) = closest_attacker {
                     return *id;
@@ -200,10 +198,8 @@ impl PlayStrategy {
 
                 // Try wallers
                 let closest_waller = self.defense.wallers.iter().min_by_key(|(id, _)| {
-                    ctx.world
-                        .get_player(*id)
-                        .map(|p| (p.position - ball.position.xy()).norm())
-                        .unwrap_or(f64::MAX) as i64
+                    let player = ctx.world.get_player(*id);
+                    (player.position - ball.position.xy()).norm() as i64
                 });
                 if let Some((id, _)) = closest_waller {
                     return *id;
@@ -211,10 +207,8 @@ impl PlayStrategy {
             } else {
                 // Try attackers
                 let closest_attacker = self.attack.attackers.iter().min_by_key(|(id, _)| {
-                    ctx.world
-                        .get_player(*id)
-                        .map(|p| (p.position - ball.position.xy()).norm())
-                        .unwrap_or(f64::MAX) as i64
+                    let player = ctx.world.get_player(*id);
+                    (player.position - ball.position.xy()).norm() as i64
                 });
                 if let Some((id, _)) = closest_attacker {
                     return *id;
@@ -227,10 +221,8 @@ impl PlayStrategy {
 
                 // Try wallers
                 let closest_waller = self.defense.wallers.iter().min_by_key(|(id, _)| {
-                    ctx.world
-                        .get_player(*id)
-                        .map(|p| (p.position - ball.position.xy()).norm())
-                        .unwrap_or(f64::MAX) as i64
+                    let player = ctx.world.get_player(*id);
+                    (player.position - ball.position.xy()).norm() as i64
                 });
                 if let Some((id, _)) = closest_waller {
                     return *id;
@@ -278,10 +270,8 @@ impl Strategy for PlayStrategy {
                     .attackers
                     .iter()
                     .map(|(id, _)| {
-                        ctx.world
-                            .get_player(*id)
-                            .map(|p| p.position.xy())
-                            .unwrap_or_default()
+                        let player = ctx.world.get_player(*id);
+                        player.position.xy()
                     })
                     .collect::<Vec<_>>();
 

@@ -491,10 +491,10 @@ impl HeadingTarget {
                 .as_ref()
                 .map(|ball| Angle::between_points(ctx.player.position, ball.position.xy())),
             HeadingTarget::Position(pos) => Some(Angle::between_points(ctx.player.position, *pos)),
-            HeadingTarget::OwnPlayer(id) => ctx
-                .world
-                .get_player(*id)
-                .map(|player| Angle::between_points(ctx.player.position, player.position)),
+            HeadingTarget::OwnPlayer(id) => {
+                let player = ctx.world.get_player(*id);
+                Some(Angle::between_points(ctx.player.position, player.position))
+            }
         }
     }
 }

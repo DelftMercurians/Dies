@@ -30,7 +30,7 @@ impl Passer {
 
 impl Role for Passer {
     fn update(&mut self, ctx: RoleCtx) -> PlayerControlInput {
-        let receiver = ctx.world.get_player(self.receiver_id).unwrap();
+        let receiver = ctx.world.get_player(self.receiver_id);
 
         skill!(ctx, FetchBallWithHeading::towards_own_player(receiver.id));
 

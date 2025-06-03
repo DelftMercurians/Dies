@@ -75,7 +75,7 @@ impl Strategy for TestStrat {
                     let passer_id = available_ids
                         .iter()
                         .min_by_key(|id| {
-                            let player = ctx.world.get_player(**id).unwrap();
+                            let player = ctx.world.get_player(**id);
                             (player.position - ball.position.xy()).norm() as i64
                         })
                         .unwrap();
