@@ -642,7 +642,7 @@ pub struct ScoringSelectNode {
 
 impl ScoringSelectNode {
     pub fn new(
-        children_with_scorers_boxed: Vec<(BehaviorNode, Box<dyn Fn(&RobotSituation) -> f64>)>,
+        children_with_scorers_boxed: Vec<(BehaviorNode, Arc<dyn Fn(&RobotSituation) -> f64>)>,
         hysteresis_margin: f64,
         description: Option<String>,
     ) -> Self {

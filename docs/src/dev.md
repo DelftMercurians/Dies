@@ -57,7 +57,7 @@ Throughout the codebase, the [`anyhow`](https://docs.rs/anyhow/latest/anyhow/) c
 
 Logging is really important for Dies, as it is the only way to debug issues that occured during a match. Logs should contain all the information needed to replay matches, including all the data we receive from the vision system, the world state, and the commands we send to the robots.
 
-Dies uses the [`tracing`](https://docs.rs/tracing/latest/tracing/) crate for logging. The following log levels should be used:
+Dies uses the [`log`](https://docs.rs/log/latest/log/) crate for logging. The following log levels should be used:
 
 - `error`: should be used only for fatal errors, which cause the executor to stop, ie. errors should only be logged in the executor
 - `warn`: should be used for unexpected events or recoverable errors, which do not cause the executor to stop and do not get propagated up

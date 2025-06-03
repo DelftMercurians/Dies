@@ -11,6 +11,7 @@ const DEFAULT_POS_TOLERANCE: f64 = 70.0;
 const DEFAULT_VEL_TOLERANCE: f64 = 30.0;
 
 /// A skill that makes the player go to a specific position
+#[derive(Clone)]
 pub struct GoToPosition {
     target_pos: Vector2,
     target_heading: Option<Angle>,
@@ -95,6 +96,7 @@ impl GoToPosition {
     }
 }
 
+#[derive(Clone)]
 pub struct Face {
     heading: HeadingTarget,
     with_ball: bool,
@@ -158,6 +160,7 @@ impl Face {
     }
 }
 
+#[derive(Clone)]
 pub struct Kick {
     has_kicked: usize,
     timer: Option<Instant>,
@@ -224,6 +227,7 @@ impl Kick {
 }
 
 /// A skill that just waits for a certain amount of time
+#[derive(Clone)]
 pub struct Wait {
     amount: f64,
     until: Option<f64>,
@@ -252,6 +256,7 @@ impl Wait {
 }
 
 /// A skill that fetches the ball
+#[derive(Clone)]
 pub struct FetchBall {
     dribbling_distance: f64,
     dribbling_speed: f64,
@@ -382,6 +387,7 @@ impl FetchBall {
     }
 }
 
+#[derive(Clone)]
 pub struct InterceptBall {
     intercept_line: Option<(Vector2, Vector2)>,
 }
@@ -425,6 +431,7 @@ impl InterceptBall {
     }
 }
 
+#[derive(Clone)]
 pub struct ApproachBall {}
 
 impl ApproachBall {
@@ -474,6 +481,7 @@ impl ApproachBall {
     }
 }
 
+#[derive(Clone)]
 enum HeadingTarget {
     Angle(Angle),
     Ball,
@@ -499,6 +507,7 @@ impl HeadingTarget {
     }
 }
 
+#[derive(Clone)]
 pub struct FetchBallWithHeading {
     init_ball_pos: Option<Vector2>,
     target_heading: HeadingTarget,

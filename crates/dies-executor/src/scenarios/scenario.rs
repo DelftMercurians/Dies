@@ -1,15 +1,15 @@
-use std::{collections::HashSet, time::Duration};
+use std::collections::HashSet;
 
 use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     Angle, BallPlacement, ExecutorSettings, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo,
-    StrategyGameStateMacther, Vector2, Vector3, WorldData,
+    Vector2, Vector3, WorldData,
 };
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{SslClientConfig, VisionClient};
 
-use crate::{strategy::Strategy, Executor, StrategyMap};
+use crate::Executor;
 
 const SIMULATION_FIELD_MARGIN: f64 = 0.1;
 
@@ -24,31 +24,17 @@ pub struct ScenarioSetup {
     tolerance: f64,
     /// Yaw tolerance for players in rad
     yaw_tolerance: f64,
-    /// Strategy to use.
-    strategy: StrategyMap,
 }
 
 impl ScenarioSetup {
-    pub fn new(strategy: impl Strategy + 'static, state: StrategyGameStateMacther) -> Self {
-        let mut strategy_map = StrategyMap::new();
-        strategy_map.insert(state, strategy);
+    pub fn new() -> Self {
         Self {
             ball: BallPlacement::NoBall,
             own_players: Vec::new(),
             opp_players: Vec::new(),
             tolerance: 10.0,
             yaw_tolerance: 10.0f64.to_radians(),
-            strategy: strategy_map,
         }
-    }
-
-    pub fn add_strategy(
-        &mut self,
-        state: StrategyGameStateMacther,
-        strategy: impl Strategy + 'static,
-    ) -> &mut Self {
-        self.strategy.insert(state, strategy);
-        self
     }
 
     /// Sets the ball to be at a specific position.
@@ -148,7 +134,7 @@ impl ScenarioSetup {
 
         let sim = builder.build();
 
-        Executor::new_simulation(settings, self.strategy, sim)
+        Executor::new_simulation(settings, sim)
     }
 
     /// Create an executor in live mode from this setup.
@@ -182,12 +168,7 @@ impl ScenarioSetup {
         //     }
         // }
 
-        Ok(Executor::new_live(
-            settings,
-            self.strategy,
-            ssl_client,
-            bs_client,
-        ))
+        Ok(Executor::new_live(settings, ssl_client, bs_client))
     }
 
     /// Check whether the current world state matches the scenario setup.
@@ -337,7 +318,6 @@ mod tests {
             opp_players: vec![],
             tolerance: 10.0,
             yaw_tolerance: 10.0f64.to_radians(),
-            strategy: StrategyMap::new(),
         };
 
         let mut world = WorldData {

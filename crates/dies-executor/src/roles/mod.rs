@@ -3,7 +3,9 @@ pub mod skills;
 use crate::control::PlayerControlInput;
 use dies_core::{PlayerData, WorldData};
 
-use skills::{Face, FetchBall, GoToPosition, Kick, Wait};
+use skills::{
+    ApproachBall, Face, FetchBall, FetchBallWithHeading, GoToPosition, InterceptBall, Kick, Wait,
+};
 
 #[derive(Clone)]
 pub enum Skill {
@@ -12,6 +14,9 @@ pub enum Skill {
     Kick(Kick),
     Wait(Wait),
     FetchBall(FetchBall),
+    InterceptBall(InterceptBall),
+    ApproachBall(ApproachBall),
+    FetchBallWithHeading(FetchBallWithHeading),
 }
 
 impl Skill {
@@ -22,6 +27,9 @@ impl Skill {
             Skill::Kick(skill) => skill.update(ctx),
             Skill::Wait(skill) => skill.update(ctx),
             Skill::FetchBall(skill) => skill.update(ctx),
+            Skill::InterceptBall(skill) => skill.update(ctx),
+            Skill::ApproachBall(skill) => skill.update(ctx),
+            Skill::FetchBallWithHeading(skill) => skill.update(ctx),
         }
     }
 }

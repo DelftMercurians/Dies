@@ -3,9 +3,8 @@ use std::{collections::HashMap, time::Duration};
 use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    ExecutorInfo, ExecutorSettings, GameState, PlayerCmd, PlayerFeedbackMsg, PlayerId,
-    PlayerOverrideCommand, SimulatorCmd, StrategyGameStateMacther, Vector3, WorldInstant,
-    WorldUpdate,
+    ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
+    SimulatorCmd, Vector3, WorldInstant, WorldUpdate,
 };
 use dies_logger::{log_referee, log_vision, log_world};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
@@ -23,7 +22,6 @@ mod handle;
 mod roles;
 pub mod scenarios;
 mod script_host;
-pub mod strategy;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
