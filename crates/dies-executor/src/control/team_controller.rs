@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, WorldData};
+use rhai::{Engine, AST};
+use std::sync::Arc;
 
 use super::{
     player_controller::PlayerController,
@@ -11,26 +13,96 @@ use crate::{
     PlayerControlInput,
 };
 
+use crate::behavior_tree::rhai_integration::{
+    rhai_action_node, rhai_goto_skill, rhai_select_node, rhai_sequence_node, RhaiBehaviorNode,
+    RhaiSkill,
+};
+
 const ACTIVATION_TIME: f64 = 0.2;
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
     start_time: std::time::Instant,
-    player_behavior_trees: HashMap<PlayerId, Box<dyn BehaviorNode>>,
+    player_behavior_trees: HashMap<PlayerId, BehaviorNode>,
     team_context: TeamContext,
+    rhai_engine: Arc<Engine>,
+    rhai_ast: Option<Arc<AST>>, // To store the AST of a loaded script
 }
 
 impl TeamController {
     /// Create a new team controller.
     pub fn new(settings: &ExecutorSettings) -> Self {
         let team_context = TeamContext::new();
+        let mut engine = Engine::new();
+
+        // Task 1.2.1: Redirect Rhai's print() output to log::info!
+        engine.on_print(|text| log::info!("[RHAI SCRIPT] {}", text));
+
+        // Task 1.2.2: Redirect Rhai's debug() output to log::debug!
+        engine.on_debug(|text, source, pos| {
+            let src_info = source.map_or_else(String::new, |s| format!(" in '{}'", s));
+            let pos_info = if pos.is_none() {
+                String::new()
+            } else {
+                format!(" @ {}", pos)
+            };
+            log::debug!("[RHAI SCRIPT DEBUG]{}{}: {}", src_info, pos_info, text);
+        });
+
+        // Register custom types and functions
+        // Task 1.3.3: Register RhaiBehaviorNode with the Rhai Engine
+        engine.register_type_with_name::<RhaiBehaviorNode>("BehaviorNode");
+
+        // Task 1.4.2: Register rhai_select_node with the Rhai Engine as "Select"
+        engine.register_fn("Select", rhai_select_node);
+
+        // Task 1.5.2: Register rhai_sequence_node with the Rhai Engine as "Sequence"
+        engine.register_fn("Sequence", rhai_sequence_node);
+
+        // Task 1.6.1 (registration part): Register RhaiSkill
+        engine.register_type_with_name::<RhaiSkill>("RhaiSkill");
+
+        // Task 1.6.3: Register skill constructor functions
+        engine.register_fn("GoToPositionSkill", rhai_goto_skill);
+
+        // Task 1.6.5: Register rhai_action_node with the Rhai Engine as "Action"
+        engine.register_fn("Action", rhai_action_node);
+
+        // Task 1.1.3: Basic script loading for testing (example)
+        // We'll load a test script here. The actual script for BTs will be handled later.
+        let test_script_path = "crates/dies-executor/src/test_scripts/test_script.rhai";
+        let mut ast: Option<Arc<AST>> = None;
+        match engine.compile_file(test_script_path.into()) {
+            Ok(compiled_ast) => {
+                log::info!(
+                    "Successfully compiled test Rhai script: {}",
+                    test_script_path
+                );
+                // Example of running a function from the test script if needed for early testing
+                // if let Err(e) = engine.call_fn::<()>(&mut Scope::new(), &compiled_ast, "hello_world", ()) {
+                //     log::error!("Error calling 'hello_world' in test script: {:?}", e);
+                // }
+                ast = Some(Arc::new(compiled_ast));
+            }
+            Err(e) => {
+                // Task 1.1.4: Error handling for Rhai script compilation
+                log::error!(
+                    "Failed to compile Rhai script '{}': {:?}",
+                    test_script_path,
+                    e
+                );
+            }
+        }
+
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             start_time: std::time::Instant::now(),
             player_behavior_trees: HashMap::new(),
             team_context,
+            rhai_engine: Arc::new(engine),
+            rhai_ast: ast,
         };
         team.update_controller_settings(settings);
         team
@@ -190,8 +262,8 @@ fn build_player_bt(
     _player_id: PlayerId,
     _world: &WorldData,
     _settings: &ExecutorSettings,
-) -> Box<dyn BehaviorNode> {
-    use crate::behavior_tree::{ActionNode, SelectNode, SequenceNode};
+) -> BehaviorNode {
+    use crate::behavior_tree::{ActionNode, SelectNode};
     use crate::roles::skills::GoToPosition; // Example skill
     use dies_core::Vector2;
 
@@ -202,10 +274,7 @@ fn build_player_bt(
         Box::new(GoToPosition::new(Vector2::new(0.0, 0.0))),
         Some("GoToOrigin".to_string()),
     );
-    Box::new(SelectNode::new(
-        vec![Box::new(go_to_origin)],
-        Some("RootSelect".to_string()),
-    ))
+    SelectNode::new(vec![Box::new(go_to_origin)], Some("RootSelect".to_string()))
 }
 
 /// Override the inputs to comply with the stop state.

@@ -4,7 +4,7 @@ use dies_core::{
     find_intersection, perp, which_side_of_robot, Angle, PlayerId, SysStatus, Vector2,
 };
 
-use super::{Skill, SkillCtx, SkillProgress};
+use super::{SkillCtx, SkillProgress};
 use crate::{control::Velocity, roles::SkillResult, KickerControlInput, PlayerControlInput};
 
 const DEFAULT_POS_TOLERANCE: f64 = 70.0;
@@ -54,8 +54,8 @@ impl GoToPosition {
     }
 }
 
-impl Skill for GoToPosition {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+impl GoToPosition {
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let position = ctx.player.position;
         let distance = (self.target_pos - position).norm();
         let dv = (self.target_velocity - ctx.player.velocity).norm();
@@ -128,8 +128,8 @@ impl Face {
     }
 }
 
-impl Skill for Face {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+impl Face {
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let mut input = PlayerControlInput::new();
         if let Some(ball) = ctx.world.ball.as_ref() {
             let balldist = (ball.position.xy() - ctx.player.position).magnitude();
@@ -172,8 +172,8 @@ impl Kick {
     }
 }
 
-impl Skill for Kick {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+impl Kick {
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let mut input = PlayerControlInput::new();
         input.with_dribbling(1.0);
 
@@ -240,8 +240,8 @@ impl Wait {
     }
 }
 
-impl Skill for Wait {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+impl Wait {
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let until = *self.until.get_or_insert(ctx.world.t_received + self.amount);
         if ctx.world.t_received >= until {
             SkillProgress::success()
@@ -274,8 +274,8 @@ impl FetchBall {
     }
 }
 
-impl Skill for FetchBall {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+impl FetchBall {
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
             input.with_dribbling(self.dribbling_speed);
@@ -394,8 +394,8 @@ impl InterceptBall {
     }
 }
 
-impl Skill for InterceptBall {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+impl InterceptBall {
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let intercept_line = self
                 .intercept_line
@@ -433,8 +433,8 @@ impl ApproachBall {
     }
 }
 
-impl Skill for ApproachBall {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+impl ApproachBall {
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let ball_pos = ball.position.xy();
             let player_pos = ctx.player.position;
@@ -527,8 +527,8 @@ impl FetchBallWithHeading {
     }
 }
 
-impl Skill for FetchBallWithHeading {
-    fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
+impl FetchBallWithHeading {
+    pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let player_data = ctx.player;
         let world_data = ctx.world;
         let ball_radius = 150.0;
