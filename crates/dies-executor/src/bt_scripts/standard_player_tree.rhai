@@ -13,7 +13,7 @@ fn ball_is_close_condition(s) {
     let dy = s.player.pos_y - s.ball.pos_y;
     let dist_sq = dx*dx + dy*dy;
     // print("RHAI: Ball distance squared: " + dist_sq + " for player " + s.player_id);
-    return dist_sq < (0.5 * 0.5); // Example: 0.5 meters
+    return dist_sq < (500.0 * 500.0);
 }
 
 fn score_offensive_position(s) {
@@ -41,8 +41,8 @@ fn build_player_bt(player_id_str) {
 
     // Define some skills (using the globally registered skill constructors)
     let go_to_origin_skill = GoToPositionSkill(0.0, 0.0);
-    let go_to_positive_skill = GoToPositionSkill(1.0, 1.0);
-    let go_to_negative_skill = GoToPositionSkill(-1.0, -1.0);
+    let go_to_positive_skill = GoToPositionSkill(1000.0, 1000.0);
+    let go_to_negative_skill = GoToPositionSkill(-1000.0, -1000.0);
 
     // Build the tree
     let tree = Select([

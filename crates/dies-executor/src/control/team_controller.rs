@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::RwLock,
+};
 
 use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, WorldData};
 use rhai::{Engine, Scope, AST};
@@ -25,84 +28,89 @@ use crate::behavior_tree::rhai_integration::{
 
 const ACTIVATION_TIME: f64 = 0.2;
 
+fn create_engine() -> Engine {
+    let mut engine = Engine::new_raw();
+
+    engine.on_print(|text| log::info!("[RHAI SCRIPT] {}", text));
+
+    engine.on_debug(|text, source, pos| {
+        let src_info = source.map_or_else(String::new, |s| format!(" in '{}'", s));
+        let pos_info = if pos.is_none() {
+            String::new()
+        } else {
+            format!(" @ {}", pos)
+        };
+        log::debug!("[RHAI SCRIPT DEBUG]{}{}: {}", src_info, pos_info, text);
+    });
+
+    engine.register_type_with_name::<RhaiBehaviorNode>("BehaviorNode");
+
+    engine.register_fn("Select", rhai_select_node);
+
+    engine.register_fn("Sequence", rhai_sequence_node);
+
+    engine.register_type_with_name::<RhaiSkill>("RhaiSkill");
+
+    engine.register_fn("GoToPositionSkill", rhai_goto_skill);
+
+    engine.register_fn("FaceAngleSkill", rhai_face_angle_skill);
+    engine.register_fn("FaceTowardsPositionSkill", rhai_face_towards_position_skill);
+    engine.register_fn(
+        "FaceTowardsOwnPlayerSkill",
+        rhai_face_towards_own_player_skill,
+    );
+    engine.register_fn("KickSkill", rhai_kick_skill);
+    engine.register_fn("WaitSkill", rhai_wait_skill);
+    engine.register_fn("FetchBallSkill", rhai_fetch_ball_skill);
+    engine.register_fn("InterceptBallSkill", rhai_intercept_ball_skill);
+    engine.register_fn("ApproachBallSkill", rhai_approach_ball_skill);
+    engine.register_fn(
+        "FetchBallWithHeadingAngleSkill",
+        rhai_fetch_ball_with_heading_angle_skill,
+    );
+    engine.register_fn(
+        "FetchBallWithHeadingPositionSkill",
+        rhai_fetch_ball_with_heading_position_skill,
+    );
+    engine.register_fn(
+        "FetchBallWithHeadingPlayerSkill",
+        rhai_fetch_ball_with_heading_player_skill,
+    );
+
+    engine.register_fn("Action", rhai_action_node);
+
+    engine.register_fn("Guard", rhai_guard_constructor);
+
+    engine.register_fn("ScoringSelect", rhai_scoring_select_node);
+
+    engine.register_fn("Semaphore", rhai_semaphore_node);
+    engine
+}
+
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
     start_time: std::time::Instant,
     player_behavior_trees: HashMap<PlayerId, BehaviorNode>,
     team_context: TeamContext,
-    rhai_engine: Arc<Engine>,
-    rhai_ast: Option<Arc<AST>>,
+    // rhai_engine: Arc<RwLock<Engine>>,
+    rhai_ast: Option<Arc<RwLock<AST>>>,
 }
 
 impl TeamController {
     pub fn new(settings: &ExecutorSettings) -> Self {
         let team_context = TeamContext::new();
-        let mut engine = Engine::new();
-
-        engine.on_print(|text| log::info!("[RHAI SCRIPT] {}", text));
-
-        engine.on_debug(|text, source, pos| {
-            let src_info = source.map_or_else(String::new, |s| format!(" in '{}'", s));
-            let pos_info = if pos.is_none() {
-                String::new()
-            } else {
-                format!(" @ {}", pos)
-            };
-            log::debug!("[RHAI SCRIPT DEBUG]{}{}: {}", src_info, pos_info, text);
-        });
-
-        engine.register_type_with_name::<RhaiBehaviorNode>("BehaviorNode");
-
-        engine.register_fn("Select", rhai_select_node);
-
-        engine.register_fn("Sequence", rhai_sequence_node);
-
-        engine.register_type_with_name::<RhaiSkill>("RhaiSkill");
-
-        engine.register_fn("GoToPositionSkill", rhai_goto_skill);
-
-        engine.register_fn("FaceAngleSkill", rhai_face_angle_skill);
-        engine.register_fn("FaceTowardsPositionSkill", rhai_face_towards_position_skill);
-        engine.register_fn(
-            "FaceTowardsOwnPlayerSkill",
-            rhai_face_towards_own_player_skill,
-        );
-        engine.register_fn("KickSkill", rhai_kick_skill);
-        engine.register_fn("WaitSkill", rhai_wait_skill);
-        engine.register_fn("FetchBallSkill", rhai_fetch_ball_skill);
-        engine.register_fn("InterceptBallSkill", rhai_intercept_ball_skill);
-        engine.register_fn("ApproachBallSkill", rhai_approach_ball_skill);
-        engine.register_fn(
-            "FetchBallWithHeadingAngleSkill",
-            rhai_fetch_ball_with_heading_angle_skill,
-        );
-        engine.register_fn(
-            "FetchBallWithHeadingPositionSkill",
-            rhai_fetch_ball_with_heading_position_skill,
-        );
-        engine.register_fn(
-            "FetchBallWithHeadingPlayerSkill",
-            rhai_fetch_ball_with_heading_player_skill,
-        );
-
-        engine.register_fn("Action", rhai_action_node);
-
-        engine.register_fn("Guard", rhai_guard_constructor);
-
-        engine.register_fn("ScoringSelect", rhai_scoring_select_node);
-
-        engine.register_fn("Semaphore", rhai_semaphore_node);
 
         let main_bt_script_path = "crates/dies-executor/src/bt_scripts/standard_player_tree.rhai";
-        let mut main_ast: Option<Arc<AST>> = None;
+        let mut main_ast: Option<Arc<RwLock<AST>>> = None;
+        let engine = create_engine();
         match engine.compile_file(main_bt_script_path.into()) {
             Ok(compiled_ast) => {
                 log::info!(
                     "Successfully compiled main BT Rhai script: {}",
                     main_bt_script_path
                 );
-                main_ast = Some(Arc::new(compiled_ast));
+                main_ast = Some(Arc::new(RwLock::new(compiled_ast)));
             }
             Err(e) => {
                 log::error!(
@@ -119,7 +127,7 @@ impl TeamController {
             start_time: std::time::Instant::now(),
             player_behavior_trees: HashMap::new(),
             team_context,
-            rhai_engine: Arc::new(engine),
+            // rhai_engine: Arc::new(RwLock::new(engine)),
             rhai_ast: main_ast,
         };
         team.update_controller_settings(settings);
@@ -175,9 +183,11 @@ impl TeamController {
                     let mut scope = Scope::new();
                     let player_id_str = player_id.to_string();
                     log::debug!("Attempting to build BT for player {} from Rhai script.", player_id_str);
-                    match self.rhai_engine.call_fn::<RhaiBehaviorNode>(
+                    let engine = create_engine();
+                    let ast = ast.read().unwrap();
+                    match engine.call_fn::<RhaiBehaviorNode>(
                         &mut scope,
-                        ast,
+                        &ast,
                         "build_player_bt",
                         (player_id_str.clone(),),
                     ) {
