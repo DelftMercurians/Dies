@@ -1,9 +1,6 @@
 use crate::control::PlayerControlInput;
 use crate::roles::{Skill, SkillCtx, SkillProgress, SkillResult};
-use dies_core::{
-    Angle, ExecutorSettings, GameState, GameStateData, PlayerData, PlayerId, PlayerModel, Vector2,
-    WorldData,
-};
+use dies_core::{debug_tree_node, PlayerData, PlayerId, WorldData};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -15,6 +12,17 @@ pub enum BehaviorStatus {
     Running,
 }
 
+// Helper for creating safe ID fragments
+fn sanitize_id_fragment(text: &str) -> String {
+    text.chars()
+        .filter_map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' => Some(c.to_ascii_lowercase()),
+            ' ' | '_' | '-' => Some('_'),
+            _ => None, // Skip other characters
+        })
+        .collect::<String>()
+}
+
 // Robot Situation
 // This struct will hold the context for a single robot's decision-making.
 pub struct RobotSituation<'a> {
@@ -22,7 +30,7 @@ pub struct RobotSituation<'a> {
     pub world: &'a WorldData,
     pub player_data: &'a PlayerData,
     pub team_context: &'a TeamContext, // Added for Phase 2
-                                       // Add more derived or pre-calculated data as needed for efficiency or convenience
+    pub viz_path_prefix: String,       // Added for Phase 4: Visualization
 }
 
 impl<'a> RobotSituation<'a> {
@@ -30,13 +38,15 @@ impl<'a> RobotSituation<'a> {
         player_id: PlayerId,
         world: &'a WorldData,
         team_context: &'a TeamContext, // Added for Phase 2
+        viz_path_prefix: String,       // Added for Phase 4: Visualization
     ) -> Self {
         let player_data = world.get_player(player_id);
         Self {
             player_id,
             world,
             player_data,
-            team_context, // Added for Phase 2
+            team_context,    // Added for Phase 2
+            viz_path_prefix, // Added for Phase 4: Visualization
         }
     }
 
@@ -88,24 +98,34 @@ pub trait BehaviorNode {
         situation: &mut RobotSituation,
     ) -> (BehaviorStatus, Option<PlayerControlInput>);
     fn description(&self) -> String;
+    fn get_node_id_fragment(&self) -> String;
+    fn get_full_node_id(&self, current_path_prefix: &str) -> String {
+        let fragment = self.get_node_id_fragment();
+        if current_path_prefix.is_empty() {
+            fragment
+        } else {
+            format!("{}/{}", current_path_prefix, fragment)
+        }
+    }
+    fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String>;
     // fn reset(&mut self); // Optional: For nodes that need explicit reset
-    // fn get_unique_id(&self) -> String; // For Phase 4: Visualization
-    // fn get_children_unique_ids(&self) -> Vec<String>; // For Phase 4: Visualization
 }
 
 // Select Node (Selector / Fallback)
 // Tries children in priority order until one succeeds or is running.
 pub struct SelectNode {
     children: Vec<Box<dyn BehaviorNode>>,
-    description: String,
-    // No need for current_child_index for a typical stateless selector that always re-evaluates from the start
+    description_text: String,
+    node_id_fragment: String,
 }
 
 impl SelectNode {
     pub fn new(children: Vec<Box<dyn BehaviorNode>>, description: Option<String>) -> Self {
+        let desc = description.unwrap_or_else(|| "Select".to_string());
         Self {
             children,
-            description: description.unwrap_or_else(|| "Select".to_string()),
+            node_id_fragment: sanitize_id_fragment(&desc),
+            description_text: desc,
         }
     }
 }
@@ -115,28 +135,52 @@ impl BehaviorNode for SelectNode {
         &mut self,
         situation: &mut RobotSituation,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
+        let mut final_status = BehaviorStatus::Failure;
+        let mut final_input: Option<PlayerControlInput> = None;
+
         for child in self.children.iter_mut() {
             match child.tick(situation) {
                 (BehaviorStatus::Success, input_opt) => {
-                    return (BehaviorStatus::Success, input_opt)
+                    final_status = BehaviorStatus::Success;
+                    final_input = input_opt;
+                    break;
                 }
                 (BehaviorStatus::Running, input_opt) => {
-                    return (BehaviorStatus::Running, input_opt)
+                    final_status = BehaviorStatus::Running;
+                    final_input = input_opt;
+                    break;
                 }
-                (BehaviorStatus::Failure, _) => continue, // Try next child
+                (BehaviorStatus::Failure, _) => continue,
             }
         }
-        (BehaviorStatus::Failure, None) // All children failed
+
+        let is_active =
+            final_status == BehaviorStatus::Running || final_status == BehaviorStatus::Success;
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&situation.viz_path_prefix),
+            is_active,
+        );
+        (final_status, final_input)
     }
 
     fn description(&self) -> String {
-        let child_descs = self
-            .children
+        self.description_text.clone()
+    }
+
+    fn get_node_id_fragment(&self) -> String {
+        self.node_id_fragment.clone()
+    }
+
+    fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
+        let self_full_id = self.get_full_node_id(current_path_prefix);
+        self.children
             .iter()
-            .map(|c| c.description())
-            .collect::<Vec<_>>()
-            .join(" OR ");
-        format!("{}: ({})", self.description, child_descs)
+            .map(|c| c.get_full_node_id(&self_full_id))
+            .collect()
     }
 }
 
@@ -144,15 +188,18 @@ impl BehaviorNode for SelectNode {
 // Executes children in order. All must succeed for the sequence to succeed.
 pub struct SequenceNode {
     children: Vec<Box<dyn BehaviorNode>>,
-    description: String,
+    description_text: String,
+    node_id_fragment: String,
     current_child_index: usize, // To remember which child to tick next if one is Running
 }
 
 impl SequenceNode {
     pub fn new(children: Vec<Box<dyn BehaviorNode>>, description: Option<String>) -> Self {
+        let desc = description.unwrap_or_else(|| "Sequence".to_string());
         Self {
             children,
-            description: description.unwrap_or_else(|| "Sequence".to_string()),
+            node_id_fragment: sanitize_id_fragment(&desc),
+            description_text: desc,
             current_child_index: 0,
         }
     }
@@ -163,35 +210,64 @@ impl BehaviorNode for SequenceNode {
         &mut self,
         situation: &mut RobotSituation,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let mut last_input_on_success: Option<PlayerControlInput> = None;
+
         while self.current_child_index < self.children.len() {
             match self.children[self.current_child_index].tick(situation) {
                 (BehaviorStatus::Success, input_opt) => {
                     self.current_child_index += 1;
-                    last_input_on_success = input_opt;
+                    last_input_on_success = input_opt; // Potentially store this from the last succeeding child
                 }
                 (BehaviorStatus::Running, input_opt) => {
+                    debug_tree_node(
+                        format!("bt.p{}.{}", situation.player_id, node_full_id),
+                        self.description(),
+                        node_full_id.clone(),
+                        self.get_child_node_ids(&situation.viz_path_prefix),
+                        true, // Active if running
+                    );
                     return (BehaviorStatus::Running, input_opt);
                 }
                 (BehaviorStatus::Failure, _input_opt) => {
-                    // Assuming None for Failure as per ActionNode example
                     self.current_child_index = 0; // Reset for next time
+                    debug_tree_node(
+                        format!("bt.p{}.{}", situation.player_id, node_full_id),
+                        self.description(),
+                        node_full_id.clone(),
+                        self.get_child_node_ids(&situation.viz_path_prefix),
+                        false, // Not active if failed
+                    );
                     return (BehaviorStatus::Failure, None);
                 }
             }
         }
-        self.current_child_index = 0; // Reset for next time
+
+        self.current_child_index = 0; // Reset for next full run
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&situation.viz_path_prefix),
+            true,
+        );
         (BehaviorStatus::Success, last_input_on_success)
     }
 
     fn description(&self) -> String {
-        let child_descs = self
-            .children
+        self.description_text.clone()
+    }
+
+    fn get_node_id_fragment(&self) -> String {
+        self.node_id_fragment.clone()
+    }
+
+    fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
+        let self_full_id = self.get_full_node_id(current_path_prefix);
+        self.children
             .iter()
-            .map(|c| c.description())
-            .collect::<Vec<_>>()
-            .join(" THEN ");
-        format!("{}: ({})", self.description, child_descs)
+            .map(|c| c.get_full_node_id(&self_full_id))
+            .collect()
     }
 }
 
@@ -200,7 +276,8 @@ impl BehaviorNode for SequenceNode {
 pub struct GuardNode {
     condition: Situation,
     child: Box<dyn BehaviorNode>,
-    description_override: Option<String>, // Allows custom description for the guard itself
+    description_text: String,
+    node_id_fragment: String,
 }
 
 impl GuardNode {
@@ -209,10 +286,18 @@ impl GuardNode {
         child: Box<dyn BehaviorNode>,
         description_override: Option<String>,
     ) -> Self {
+        let desc = description_override.unwrap_or_else(|| {
+            format!(
+                "Guard_If_{}_Then_{}",
+                sanitize_id_fragment(&condition.description),
+                child.get_node_id_fragment()
+            )
+        });
         Self {
             condition,
             child,
-            description_override,
+            node_id_fragment: sanitize_id_fragment(&desc),
+            description_text: desc,
         }
     }
 }
@@ -222,22 +307,40 @@ impl BehaviorNode for GuardNode {
         &mut self,
         situation: &mut RobotSituation,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
-        if self.condition.check(situation) {
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
+        let (status, input) = if self.condition.check(situation) {
             self.child.tick(situation)
         } else {
-            (BehaviorStatus::Failure, None) // Condition not met
-        }
+            (BehaviorStatus::Failure, None)
+        };
+
+        let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&situation.viz_path_prefix),
+            is_active && self.condition.check(situation), // Active if condition met and child is active
+        );
+        (status, input)
     }
 
     fn description(&self) -> String {
-        if let Some(ref d) = self.description_override {
-            return d.clone();
-        }
+        // Use stored description_text which might be an override or a generated one.
         format!(
             "IF ({}) THEN ({})",
             self.condition.description,
             self.child.description()
         )
+    }
+
+    fn get_node_id_fragment(&self) -> String {
+        self.node_id_fragment.clone()
+    }
+
+    fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
+        let self_full_id = self.get_full_node_id(current_path_prefix);
+        vec![self.child.get_full_node_id(&self_full_id)]
     }
 }
 
@@ -245,19 +348,17 @@ impl BehaviorNode for GuardNode {
 // Executes a skill and translates its progress to behavior status and player control input.
 pub struct ActionNode {
     skill: Box<dyn Skill>,
-    description: String,
-    // unique_id: String, // For Phase 4: Visualization
+    description_text: String,
+    node_id_fragment: String,
 }
 
 impl ActionNode {
-    pub fn new(
-        skill: Box<dyn Skill>,
-        description: Option<String>, /*, unique_id: String*/
-    ) -> Self {
+    pub fn new(skill: Box<dyn Skill>, description: Option<String>) -> Self {
+        let desc = description.unwrap_or_else(|| format!("Action")); // TODO: Add skill name
         Self {
             skill,
-            description: description.unwrap_or_else(|| "Action: <Unnamed Skill>".to_string()),
-            // unique_id,
+            node_id_fragment: sanitize_id_fragment(&desc),
+            description_text: desc,
         }
     }
 }
@@ -267,22 +368,39 @@ impl BehaviorNode for ActionNode {
         &mut self,
         situation: &mut RobotSituation,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
-        // Create SkillCtx from RobotSituation
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let skill_ctx = SkillCtx {
             player: situation.player_data,
             world: situation.world,
         };
 
-        // Call the skill's update method and translate SkillProgress
-        match self.skill.update(skill_ctx) {
+        let (status, input) = match self.skill.update(skill_ctx) {
             SkillProgress::Continue(input) => (BehaviorStatus::Running, Some(input)),
             SkillProgress::Done(SkillResult::Success) => (BehaviorStatus::Success, None),
             SkillProgress::Done(SkillResult::Failure) => (BehaviorStatus::Failure, None),
-        }
+        };
+
+        let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&situation.viz_path_prefix), // empty vec
+            is_active,
+        );
+        (status, input)
     }
 
     fn description(&self) -> String {
-        self.description.clone()
+        self.description_text.clone()
+    }
+
+    fn get_node_id_fragment(&self) -> String {
+        self.node_id_fragment.clone()
+    }
+
+    fn get_child_node_ids(&self, _current_path_prefix: &str) -> Vec<String> {
+        vec![] // Action nodes are leaves
     }
 }
 
@@ -355,13 +473,11 @@ impl Default for TeamContext {
 // Limits concurrent execution of its child based on a team-wide semaphore.
 pub struct SemaphoreNode {
     child: Box<dyn BehaviorNode>,
-    semaphore_id: String,
+    semaphore_id_str: String, // Renamed to avoid conflict with id method
     max_count: usize,
-    description: String,
-    // Tracks if this node instance successfully acquired the semaphore for the current player
-    // during a 'Running' state of its child.
+    description_text: String,
+    node_id_fragment: String,
     player_id_holding_via_this_node: Option<PlayerId>,
-    // unique_id: String, // For Phase 4: Visualization
 }
 
 impl SemaphoreNode {
@@ -370,15 +486,15 @@ impl SemaphoreNode {
         semaphore_id: String,
         max_count: usize,
         description: Option<String>,
-        // unique_id: String, // For Phase 4
     ) -> Self {
+        let desc = description.unwrap_or_else(|| format!("Semaphore_{}", semaphore_id));
         Self {
             child,
-            semaphore_id: semaphore_id.clone(),
+            semaphore_id_str: semaphore_id,
             max_count,
-            description: description.unwrap_or_else(|| format!("Semaphore({})", semaphore_id)),
+            node_id_fragment: sanitize_id_fragment(&desc),
+            description_text: desc,
             player_id_holding_via_this_node: None,
-            // unique_id,
         }
     }
 }
@@ -388,60 +504,73 @@ impl BehaviorNode for SemaphoreNode {
         &mut self,
         situation: &mut RobotSituation,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let player_id = situation.player_id;
+        let mut result_status = BehaviorStatus::Failure;
+        let mut result_input: Option<PlayerControlInput> = None;
 
-        // Check if this node instance was already holding the semaphore for this player
-        if self.player_id_holding_via_this_node == Some(player_id) {
+        let acquired_semaphore = if self.player_id_holding_via_this_node == Some(player_id) {
+            true // Already holding
+        } else {
+            // Try to acquire
+            if situation.team_context.try_acquire_semaphore(
+                &self.semaphore_id_str,
+                self.max_count,
+                player_id,
+            ) {
+                self.player_id_holding_via_this_node = Some(player_id);
+                true
+            } else {
+                false // Failed to acquire
+            }
+        };
+
+        if acquired_semaphore {
             let (child_status, child_input) = self.child.tick(situation);
+            result_status = child_status;
+            result_input = child_input;
+
             match child_status {
                 BehaviorStatus::Success | BehaviorStatus::Failure => {
                     situation
                         .team_context
-                        .release_semaphore(&self.semaphore_id, player_id);
+                        .release_semaphore(&self.semaphore_id_str, player_id);
                     self.player_id_holding_via_this_node = None;
                 }
                 BehaviorStatus::Running => {
-                    // Still running, keep holding
+                    // Keep holding
                 }
             }
-            return (child_status, child_input);
-        }
-
-        // If not already holding, try to acquire
-        if situation.team_context.try_acquire_semaphore(
-            &self.semaphore_id,
-            self.max_count,
-            player_id,
-        ) {
-            self.player_id_holding_via_this_node = Some(player_id); // Acquired
-            let (child_status, child_input) = self.child.tick(situation);
-
-            match child_status {
-                BehaviorStatus::Success | BehaviorStatus::Failure => {
-                    // Child finished, release semaphore
-                    situation
-                        .team_context
-                        .release_semaphore(&self.semaphore_id, player_id);
-                    self.player_id_holding_via_this_node = None;
-                }
-                BehaviorStatus::Running => {
-                    // Child is running, semaphore remains held by this node for this player
-                }
-            }
-            (child_status, child_input)
         } else {
             // Failed to acquire semaphore
-            (BehaviorStatus::Failure, None)
+            result_status = BehaviorStatus::Failure;
+            result_input = None;
         }
+
+        let is_active = result_status == BehaviorStatus::Running
+            || (result_status == BehaviorStatus::Success && acquired_semaphore);
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&situation.viz_path_prefix),
+            is_active,
+        );
+        (result_status, result_input)
     }
 
     fn description(&self) -> String {
-        format!("{} [Child: {}]", self.description, self.child.description())
+        self.description_text.clone()
     }
 
-    // get_unique_id and get_children_unique_ids for Phase 4
-    // fn get_unique_id(&self) -> String { self.unique_id.clone() }
-    // fn get_children_unique_ids(&self) -> Vec<String> { vec![self.child.get_unique_id()] }
+    fn get_node_id_fragment(&self) -> String {
+        self.node_id_fragment.clone()
+    }
+
+    fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
+        let self_full_id = self.get_full_node_id(current_path_prefix);
+        vec![self.child.get_full_node_id(&self_full_id)]
+    }
 }
 
 // Note: Drop trait for SemaphoreNode to auto-release is not implemented here.
@@ -455,10 +584,10 @@ impl BehaviorNode for SemaphoreNode {
 pub struct ScoringSelectNode {
     children_with_scorers: Vec<(Box<dyn BehaviorNode>, Box<dyn Fn(&RobotSituation) -> f64>)>,
     hysteresis_margin: f64,
-    description: String,
+    description_text: String,
+    node_id_fragment: String,
     current_best_child_index: Option<usize>,
     current_best_child_score: f64,
-    // unique_id: String, // For Phase 4: Visualization
 }
 
 impl ScoringSelectNode {
@@ -466,15 +595,15 @@ impl ScoringSelectNode {
         children_with_scorers: Vec<(Box<dyn BehaviorNode>, Box<dyn Fn(&RobotSituation) -> f64>)>,
         hysteresis_margin: f64,
         description: Option<String>,
-        // unique_id: String, // For Phase 4
     ) -> Self {
+        let desc = description.unwrap_or_else(|| "ScoringSelect".to_string());
         Self {
             children_with_scorers,
             hysteresis_margin,
-            description: description.unwrap_or_else(|| "ScoringSelect".to_string()),
+            node_id_fragment: sanitize_id_fragment(&desc),
+            description_text: desc,
             current_best_child_index: None,
             current_best_child_score: f64::NEG_INFINITY,
-            // unique_id,
         }
     }
 }
@@ -484,14 +613,23 @@ impl BehaviorNode for ScoringSelectNode {
         &mut self,
         situation: &mut RobotSituation,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
+
         if self.children_with_scorers.is_empty() {
+            debug_tree_node(
+                format!("bt.p{}.{}", situation.player_id, node_full_id),
+                self.description(),
+                node_full_id.clone(),
+                vec![],
+                false, // Not active if no children
+            );
             return (BehaviorStatus::Failure, None);
         }
 
         let mut new_highest_score = f64::NEG_INFINITY;
         let mut new_best_child_candidate_index = 0;
-
         let mut scores = Vec::with_capacity(self.children_with_scorers.len());
+
         for (i, (_, scorer)) in self.children_with_scorers.iter().enumerate() {
             let score = scorer(situation);
             scores.push(score);
@@ -502,25 +640,21 @@ impl BehaviorNode for ScoringSelectNode {
         }
 
         let final_child_to_tick_idx: usize;
-
         if let Some(active_child_idx) = self.current_best_child_index {
-            // A child was previously selected and presumably running.
-            let score_of_active_child = scores[active_child_idx]; // Its current score
-
+            let score_of_active_child = scores[active_child_idx];
             if score_of_active_child >= new_highest_score - self.hysteresis_margin {
-                // Stick with the current child
                 final_child_to_tick_idx = active_child_idx;
             } else {
-                // Switch to the new best candidate
                 final_child_to_tick_idx = new_best_child_candidate_index;
-                self.current_best_child_index = Some(new_best_child_candidate_index);
-                self.current_best_child_score = new_highest_score;
             }
         } else {
-            // No child was previously selected (first tick, or previous child completed)
             final_child_to_tick_idx = new_best_child_candidate_index;
-            self.current_best_child_index = Some(new_best_child_candidate_index);
-            self.current_best_child_score = new_highest_score;
+        }
+
+        // Update state *before* ticking child, if selection changes or is made first time
+        if self.current_best_child_index != Some(final_child_to_tick_idx) {
+            self.current_best_child_index = Some(final_child_to_tick_idx);
+            self.current_best_child_score = scores[final_child_to_tick_idx]; // Store the score that led to its selection
         }
 
         let (child_node, _) = &mut self.children_with_scorers[final_child_to_tick_idx];
@@ -528,32 +662,39 @@ impl BehaviorNode for ScoringSelectNode {
 
         match status {
             BehaviorStatus::Success | BehaviorStatus::Failure => {
-                // If the child succeeded or failed, it's no longer the active running child.
-                // Reset to force re-evaluation without hysteresis bias from this child.
                 self.current_best_child_index = None;
-                // Resetting score as well, though it's mainly the index that drives logic.
                 self.current_best_child_score = f64::NEG_INFINITY;
             }
             BehaviorStatus::Running => {
-                // Child is still running, keep current_best_child_index pointing to it.
-                // The score self.current_best_child_score is the score that *selected* it.
-                // It's not updated while it's running, only when a new selection is made.
+                // current_best_child_index and current_best_child_score remain to reflect the running child
             }
         }
+
+        let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(), // Or a more detailed one including active child
+            node_full_id.clone(),
+            self.get_child_node_ids(&situation.viz_path_prefix),
+            is_active,
+        );
         (status, input)
     }
 
     fn description(&self) -> String {
-        // You might want to enhance this description, e.g., by including child count or active child.
-        // For now, just using the provided or default description.
-        format!(
-            "{}{}",
-            self.description,
-            if let Some(idx) = self.current_best_child_index {
-                format!(" (Active: Index {})", idx)
-            } else {
-                "".to_string()
-            }
-        )
+        // Consider adding active child info to description if useful for debugging.
+        self.description_text.clone()
+    }
+
+    fn get_node_id_fragment(&self) -> String {
+        self.node_id_fragment.clone()
+    }
+
+    fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
+        let self_full_id = self.get_full_node_id(current_path_prefix);
+        self.children_with_scorers
+            .iter()
+            .map(|(c, _)| c.get_full_node_id(&self_full_id))
+            .collect()
     }
 }
