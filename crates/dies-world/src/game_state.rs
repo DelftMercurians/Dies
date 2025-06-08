@@ -1,31 +1,30 @@
 use std::time::Instant;
 
-use dies_core::{to_dies_coords2, GameState, Vector2, Vector3};
+use dies_core::{GameState, Vector2, Vector3};
 use dies_protos::ssl_gc_referee_message::{referee::Command, Referee};
 
 use crate::BallData;
 
 #[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
-    /// **NOTE**: The position in `BallReplacement` is in vision coordinates -- the x axis may point in either direction.
+    /// Game state in vision coordinates
     game_state: GameState,
-    /// **NOTE**: The position in `BallReplacement` is in vision coordinates -- the x axis may point in either direction.
+    /// Previous game state in vision coordinates  
     prev_state: GameState,
-    /// **NOTE**: The position in `BallReplacement` is in vision coordinates -- the x axis may point in either direction.
+    /// New state on ball movement in vision coordinates
     new_state_movement: GameState,
-    /// **NOTE**: The position in `BallReplacement` is in vision coordinates -- the x axis may point in either direction.
+    /// New state on timeout in vision coordinates
     new_state_timeout: GameState,
     init_ball_pos: Vector3,
     start: Instant,
     timeout: u64,
     is_outdated: bool,
     operator_is_blue: Option<bool>,
-    play_dir_x: f64,
     last_cmd: Option<Command>,
 }
 
 impl GameStateTracker {
-    pub fn new(initial_play_dir_x: f64) -> GameStateTracker {
+    pub fn new() -> GameStateTracker {
         GameStateTracker {
             game_state: GameState::Halt,
             prev_state: GameState::Unknown,
@@ -36,13 +35,8 @@ impl GameStateTracker {
             timeout: 0,
             is_outdated: true,
             operator_is_blue: None,
-            play_dir_x: initial_play_dir_x,
             last_cmd: None,
         }
-    }
-
-    pub fn set_play_dir_x(&mut self, play_dir_x: f64) {
-        self.play_dir_x = play_dir_x;
     }
 
     pub fn update(&mut self, data: &Referee) -> GameState {
@@ -167,14 +161,8 @@ impl GameStateTracker {
 
     pub fn get(&self) -> GameState {
         dies_core::debug_string("game_state", format!("{}", self.game_state));
-
-        // Convert to dies coordinates
-        match self.game_state {
-            GameState::BallReplacement(pos) => {
-                GameState::BallReplacement(to_dies_coords2(pos, self.play_dir_x))
-            }
-            _ => self.game_state,
-        }
+        // Return raw game state without coordinate transformation
+        self.game_state
     }
 }
 
@@ -211,13 +199,13 @@ mod tests {
 
     #[test]
     fn test_new_game_state_tracker() {
-        let tracker = GameStateTracker::new(1.0);
+        let tracker = GameStateTracker::new();
         assert_eq!(tracker.get(), GameState::Unknown);
     }
 
     #[test]
     fn test_normal_update() {
-        let mut tracker = GameStateTracker::new(1.0);
+        let mut tracker = GameStateTracker::new();
         tracker.update(&referee_msg(Command::HALT));
         assert_eq!(tracker.get(), GameState::Halt);
         tracker.update(&referee_msg(Command::STOP));
@@ -242,7 +230,7 @@ mod tests {
 
     #[test]
     fn test_only_once_update() {
-        let mut tracker = GameStateTracker::new(1.0);
+        let mut tracker = GameStateTracker::new();
         tracker.update(&referee_msg(Command::PREPARE_KICKOFF_YELLOW));
         assert_eq!(tracker.get(), GameState::PrepareKickoff);
         tracker.update(&referee_msg(Command::NORMAL_START));
@@ -260,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_x_flip() {
-        let mut tracker = GameStateTracker::new(-1.0);
+        let mut tracker = GameStateTracker::new();
         tracker.update(&referee_msg(Command::HALT));
         assert_eq!(tracker.get(), GameState::Halt);
         tracker.update(&referee_msg(Command::STOP));
@@ -278,11 +266,9 @@ mod tests {
             Vector2::new(1.0, 0.0),
         ));
 
-        tracker.set_play_dir_x(-1.0);
-
         assert_eq!(
             tracker.get(),
-            GameState::BallReplacement(Vector2::new(-1.0, 0.0))
+            GameState::BallReplacement(Vector2::new(1.0, 0.0))
         );
     }
 }

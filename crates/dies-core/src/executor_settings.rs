@@ -89,11 +89,6 @@ impl Default for FieldMask {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
 pub struct TrackerSettings {
-    /// Whether our team color is blue
-    pub is_blue: bool,
-    /// The initial sign of the enemy goal's x coordinate in ssl-vision coordinates.
-    pub initial_opp_goal_x: f64,
-
     pub field_mask: FieldMask,
 
     /// Transition variance for the player Kalman filter.
@@ -112,8 +107,6 @@ pub struct TrackerSettings {
 impl Default for TrackerSettings {
     fn default() -> Self {
         Self {
-            is_blue: true,
-            initial_opp_goal_x: 1.0,
             player_unit_transition_var: 95.75,
             player_measurement_var: 0.01,
             player_yaw_lpf_alpha: 0.15,
@@ -125,7 +118,7 @@ impl Default for TrackerSettings {
 }
 
 /// Settings for the executor.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
 pub struct ExecutorSettings {
     pub controller_settings: ControllerSettings,
@@ -163,6 +156,15 @@ impl ExecutorSettings {
         if let Err(err) = tokio::fs::write(path, serde_json::to_string_pretty(self).unwrap()).await
         {
             log::error!("Failed to write executor settings: {}", err);
+        }
+    }
+}
+
+impl Default for ExecutorSettings {
+    fn default() -> Self {
+        Self {
+            controller_settings: ControllerSettings::default(),
+            tracker_settings: TrackerSettings::default(),
         }
     }
 }
