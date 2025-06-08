@@ -28,65 +28,6 @@ use crate::behavior_tree::rhai_integration::{
 
 const ACTIVATION_TIME: f64 = 0.2;
 
-fn create_engine() -> Engine {
-    let mut engine = Engine::new_raw();
-
-    engine.on_print(|text| log::info!("[RHAI SCRIPT] {}", text));
-
-    engine.on_debug(|text, source, pos| {
-        let src_info = source.map_or_else(String::new, |s| format!(" in '{}'", s));
-        let pos_info = if pos.is_none() {
-            String::new()
-        } else {
-            format!(" @ {}", pos)
-        };
-        log::debug!("[RHAI SCRIPT DEBUG]{}{}: {}", src_info, pos_info, text);
-    });
-
-    engine.register_type_with_name::<RhaiBehaviorNode>("BehaviorNode");
-
-    engine.register_fn("Select", rhai_select_node);
-
-    engine.register_fn("Sequence", rhai_sequence_node);
-
-    engine.register_type_with_name::<RhaiSkill>("RhaiSkill");
-
-    engine.register_fn("GoToPositionSkill", rhai_goto_skill);
-
-    engine.register_fn("FaceAngleSkill", rhai_face_angle_skill);
-    engine.register_fn("FaceTowardsPositionSkill", rhai_face_towards_position_skill);
-    engine.register_fn(
-        "FaceTowardsOwnPlayerSkill",
-        rhai_face_towards_own_player_skill,
-    );
-    engine.register_fn("KickSkill", rhai_kick_skill);
-    engine.register_fn("WaitSkill", rhai_wait_skill);
-    engine.register_fn("FetchBallSkill", rhai_fetch_ball_skill);
-    engine.register_fn("InterceptBallSkill", rhai_intercept_ball_skill);
-    engine.register_fn("ApproachBallSkill", rhai_approach_ball_skill);
-    engine.register_fn(
-        "FetchBallWithHeadingAngleSkill",
-        rhai_fetch_ball_with_heading_angle_skill,
-    );
-    engine.register_fn(
-        "FetchBallWithHeadingPositionSkill",
-        rhai_fetch_ball_with_heading_position_skill,
-    );
-    engine.register_fn(
-        "FetchBallWithHeadingPlayerSkill",
-        rhai_fetch_ball_with_heading_player_skill,
-    );
-
-    engine.register_fn("Action", rhai_action_node);
-
-    engine.register_fn("Guard", rhai_guard_constructor);
-
-    engine.register_fn("ScoringSelect", rhai_scoring_select_node);
-
-    engine.register_fn("Semaphore", rhai_semaphore_node);
-    engine
-}
-
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,

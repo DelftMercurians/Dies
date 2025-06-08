@@ -1,15 +1,12 @@
 use rhai::plugin::*;
 use rhai::{
-    Array, Dynamic, Engine, EvalAltResult, FnPtr, Map, NativeCallContext, Position, Scope, AST,
+    Array, CustomType, Dynamic, Engine, EvalAltResult, FnPtr, Map, NativeCallContext, Position,
+    Scope, TypeBuilder, AST,
 };
 use std::sync::Arc;
 
-// Imports from the current crate
-use crate::behavior_tree::rhai_integration::{
-    create_rhai_situation_view, RhaiBehaviorNode, RhaiSkill,
-};
 use crate::behavior_tree::{
-    ActionNode, BehaviorNode as BehaviorNodeTypeEnum, GuardNode, RobotSituation, ScoringSelectNode,
+    ActionNode, BehaviorNode as BehaviorNodeTypeEnum, BehaviorNode, GuardNode, ScoringSelectNode,
     SelectNode, SemaphoreNode, SequenceNode, Situation,
 };
 use crate::roles::skills::{
@@ -21,8 +18,28 @@ use crate::roles::skills::{
 use crate::roles::Skill as SkillEnum;
 use dies_core::{Angle, PlayerId, Vector2 as CoreVector2};
 
+#[derive(Clone)]
+pub struct RhaiSkill(pub SkillEnum);
+
+impl CustomType for RhaiSkill {
+    fn build(mut builder: TypeBuilder<Self>) {
+        builder.with_name("RhaiSkill");
+    }
+}
+
+#[derive(Clone)]
+pub struct RhaiBehaviorNode(pub BehaviorNode);
+
+impl CustomType for RhaiBehaviorNode {
+    fn build(mut builder: TypeBuilder<Self>) {
+        builder.with_name("BehaviorNode");
+    }
+}
+
 #[export_module]
 pub mod bt_rhai_plugin {
+    use crate::behavior_tree::BtCallback;
+
     use super::*; // Make imports from outer scope available
 
     // TYPE ALIASES
@@ -89,9 +106,20 @@ pub mod bt_rhai_plugin {
         child_node: BehaviorNode,
         cond_description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let situation = Situation::new(context.ast(), context.engine());
+        let callback_fn_name = condition_fn_ptr.fn_name().to_string();
+        let description =
+            cond_description.unwrap_or_else(|| format!("RhaiCond:{}", callback_fn_name));
+        let situation = Situation::new_fn(
+            BtCallback::new_rhai(&context, condition_fn_ptr),
+            &description,
+        );
+        let guard_desc_override = Some(format!(
+            "Guard_If_{}_Then_{}",
+            description,
+            child_node.0.description()
+        ));
         Ok(RhaiBehaviorNode(BehaviorNodeTypeEnum::Guard(
-            GuardNode::new(actual_situation, child_node.0, guard_desc_override),
+            GuardNode::new(situation, child_node.0, guard_desc_override),
         )))
     }
 
@@ -119,19 +147,14 @@ pub mod bt_rhai_plugin {
         hysteresis_margin: f64,
         description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let engine_ref = context.engine();
-        let ast_ref = context.ast();
-
-        let mut rust_children_scorers: Vec<(
-            BehaviorNodeTypeEnum,
-            Arc<dyn Fn(&RobotSituation) -> f64 + Send + Sync>,
-        )> = Vec::new();
+        let mut rust_children_scorers: Vec<(BehaviorNodeTypeEnum, BtCallback<f64>)> = Vec::new();
 
         for item_dyn in children_scorers_dyn {
+            let name = item_dyn.type_name().to_string();
             let item_map = item_dyn.try_cast::<Map>().ok_or_else(|| {
                 Box::new(EvalAltResult::ErrorMismatchDataType(
                     "Expected map for child_scorer item".to_string(),
-                    item_dyn.type_name().into(),
+                    name.into(),
                     Position::NONE,
                 ))
             })?;
@@ -162,27 +185,9 @@ pub mod bt_rhai_plugin {
                     })?;
 
             let scorer_fn_ptr = scorer_fn_ptr_dyn.clone().cast::<FnPtr>();
-            let callback_fn_name = scorer_fn_ptr.fn_name().to_string();
-            let static_callback_fn_name = callback_fn_name.clone();
-
-            // Similar Engine/AST context issue as GuardNode for the scorer closures.
-            let scorer_closure = Arc::new(move |rs: &RobotSituation| -> f64 {
-                // Placeholder due to context issue
-                log::warn!(
-                    "Rhai scorer '{}' not executed: Engine/AST context not available to closure in plugin. Returning NEG_INFINITY.",
-                    static_callback_fn_name
-                );
-                f64::NEG_INFINITY
-            });
-            rust_children_scorers.push((node_wrapper.0, scorer_closure));
+            let scorer_callback = BtCallback::new_rhai(&context, scorer_fn_ptr);
+            rust_children_scorers.push((node_wrapper.0, scorer_callback));
         }
-        // Note: The ScoringSelectNode in mod.rs might need update to accept Vec<(BehaviorNodeTypeEnum, Arc<dyn Fn...>)>
-        // Currently it takes Vec<(BehaviorNode, RhaiFunction)>.
-        // For now, this will create the closures but the main ScoringSelectNode::new might not use them as expected
-        // depending on its current implementation.
-        // The existing rhai_integration::rhai_scoring_select_node passes an empty vec.
-        // For consistency with that (if ScoringSelectNode expects it), we might pass empty.
-        // However, this code attempts to build the closures.
         Ok(RhaiBehaviorNode(BehaviorNodeTypeEnum::ScoringSelect(
             ScoringSelectNode::new(rust_children_scorers, hysteresis_margin, description),
         )))

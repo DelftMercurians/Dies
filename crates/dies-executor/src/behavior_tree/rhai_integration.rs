@@ -1,59 +1,76 @@
-use crate::behavior_tree::{
-    ActionNode, BehaviorNode, GuardNode, RobotSituation, ScoringSelectNode, SelectNode,
+#![allow(deprecated)]
+
+use super::{
+    ActionNode, BehaviorNode, BtCallback, GuardNode, RobotSituation, ScoringSelectNode, SelectNode,
     SemaphoreNode, SequenceNode, Situation,
 };
-use crate::roles::skills::GoToPosition;
-use crate::roles::Skill;
+use crate::roles::{skills::GoToPosition, Skill};
 use anyhow::Result;
 use dies_core::Vector2;
 use rhai::{
-    Array, CustomType, Dynamic, Engine, EvalAltResult, FnPtr, FuncArgs, Map, NativeCallContext,
-    Position, Scope, TypeBuilder, Variant, AST,
+    Array, CustomType, Dynamic, Engine, EvalAltResult, FnPtr, Map, NativeCallContext, Position,
+    Scope, TypeBuilder, Variant,
 };
-use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct RhaiFunction<TArgs, TRet> {
-    call_ctx: NativeCallContext<'static>,
-    fn_ptr: FnPtr,
-    _args: PhantomData<TArgs>,
-    _ret: PhantomData<TRet>,
-}
+fn create_engine(file_path: &str) -> Result<Engine> {
+    let mut engine = Engine::new_raw();
 
-impl<TArgs, TRet> RhaiFunction<TArgs, TRet>
-where
-    TArgs: FuncArgs,
-    TRet: Clone + Variant,
-{
-    pub fn new(call_ctx: NativeCallContext<'static>, fn_ptr: FnPtr) -> Self {
-        Self {
-            call_ctx,
-            fn_ptr,
-            _args: PhantomData,
-            _ret: PhantomData,
-        }
-    }
+    engine.on_print(|text| log::info!("[RHAI SCRIPT] {}", text));
 
-    pub fn call(&self, args: TArgs) -> Result<TRet> {
-        self.fn_ptr
-            .call_within_context::<TRet>(&self.call_ctx, args)
-            .map_err(anyhow::Error::new)
-    }
-}
+    engine.on_debug(|text, source, pos| {
+        let src_info = source.map_or_else(String::new, |s| format!(" in '{}'", s));
+        let pos_info = if pos.is_none() {
+            String::new()
+        } else {
+            format!(" @ {}", pos)
+        };
+        log::debug!("[RHAI SCRIPT DEBUG]{}{}: {}", src_info, pos_info, text);
+    });
 
-#[derive(Clone)]
-pub struct RhaiCtx {
-    engine: Arc<Engine>,
-    ast: Arc<AST>,
-}
+    // engine.register_type_with_name::<RhaiBehaviorNode>("BehaviorNode");
 
-#[derive(Clone)]
-pub struct RhaiBehaviorNode(pub BehaviorNode);
+    engine.register_fn("Select", |call_ctx: NativeCallContext| call_ctx.engine());
 
-impl CustomType for RhaiBehaviorNode {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder.with_name("BehaviorNode");
-    }
+    engine.register_fn("Sequence", rhai_sequence_node);
+
+    engine.register_type_with_name::<RhaiSkill>("RhaiSkill");
+
+    engine.register_fn("GoToPositionSkill", rhai_goto_skill);
+
+    engine.register_fn("FaceAngleSkill", rhai_face_angle_skill);
+    engine.register_fn("FaceTowardsPositionSkill", rhai_face_towards_position_skill);
+    engine.register_fn(
+        "FaceTowardsOwnPlayerSkill",
+        rhai_face_towards_own_player_skill,
+    );
+    engine.register_fn("KickSkill", rhai_kick_skill);
+    engine.register_fn("WaitSkill", rhai_wait_skill);
+    engine.register_fn("FetchBallSkill", rhai_fetch_ball_skill);
+    engine.register_fn("InterceptBallSkill", rhai_intercept_ball_skill);
+    engine.register_fn("ApproachBallSkill", rhai_approach_ball_skill);
+    engine.register_fn(
+        "FetchBallWithHeadingAngleSkill",
+        rhai_fetch_ball_with_heading_angle_skill,
+    );
+    engine.register_fn(
+        "FetchBallWithHeadingPositionSkill",
+        rhai_fetch_ball_with_heading_position_skill,
+    );
+    engine.register_fn(
+        "FetchBallWithHeadingPlayerSkill",
+        rhai_fetch_ball_with_heading_player_skill,
+    );
+
+    engine.register_fn("Action", rhai_action_node);
+
+    engine.register_fn("Guard", rhai_guard_constructor);
+
+    engine.register_fn("ScoringSelect", rhai_scoring_select_node);
+
+    engine.register_fn("Semaphore", rhai_semaphore_node);
+
+    Ok(engine)
 }
 
 pub fn create_rhai_situation_view(rs: &RobotSituation, _engine: &Engine) -> Dynamic {
@@ -67,8 +84,8 @@ pub fn create_rhai_situation_view(rs: &RobotSituation, _engine: &Engine) -> Dyna
         map.insert("ball".into(), Dynamic::from(ball_map));
     }
     let mut player_map = Map::new();
-    player_map.insert("pos_x".into(), Dynamic::from(rs.player_data.position.x));
-    player_map.insert("pos_y".into(), Dynamic::from(rs.player_data.position.y));
+    player_map.insert("pos_x".into(), Dynamic::from(rs.player_data().position.x));
+    player_map.insert("pos_y".into(), Dynamic::from(rs.player_data().position.y));
     map.insert("player".into(), Dynamic::from(player_map));
     Dynamic::from(map)
 }
@@ -115,15 +132,6 @@ pub fn rhai_sequence_node(
         rust_children,
         description,
     ))))
-}
-
-#[derive(Clone)]
-pub struct RhaiSkill(pub Skill);
-
-impl CustomType for RhaiSkill {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder.with_name("RhaiSkill");
-    }
 }
 
 pub fn rhai_goto_skill(
@@ -193,7 +201,7 @@ pub fn rhai_action_node(
 }
 
 pub fn rhai_guard_constructor(
-    context: RhaiCtx,
+    context: NativeCallContext,
     condition_fn_ptr: FnPtr,
     child_dyn: RhaiBehaviorNode,
     cond_description: Option<String>,
@@ -203,29 +211,8 @@ pub fn rhai_guard_constructor(
 
     let engine = context.engine.clone();
     let ast = context.ast.clone();
-    let actual_situation = Situation::new(
-        move |rs: &RobotSituation| -> bool {
-            false
-            // let situation_view_dyn = create_rhai_situation_view(rs, &engine);
-            // match engine.call_fn::<bool>(
-            //     &mut Scope::new(),
-            //     &ast,
-            //     &callback_fn_name,
-            //     (situation_view_dyn,),
-            // ) {
-            //     Ok(r) => r,
-            //     Err(e) => {
-            //         log::error!(
-            //             "Error executing Rhai condition \'{}\': {:?}",
-            //             callback_fn_name,
-            //             e
-            //         );
-            //         false
-            //     }
-            // }
-        },
-        &description,
-    );
+    let callback = BtCallback::<bool>::new_rhai(context, condition_fn_ptr);
+    let situation = Situation::new_fn(callback, &description);
 
     let child_node = child_dyn.0;
     let guard_desc_override = Some(format!(
@@ -235,7 +222,7 @@ pub fn rhai_guard_constructor(
     ));
 
     Ok(RhaiBehaviorNode(BehaviorNode::Guard(GuardNode::new(
-        actual_situation,
+        situation,
         child_node,
         guard_desc_override,
     ))))
