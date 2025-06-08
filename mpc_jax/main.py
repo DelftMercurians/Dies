@@ -20,22 +20,24 @@ jax.config.update(
     "jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir"
 )
 
+# jax.config.update("jax_disable_jit", True)
+
+
 # MPC Parameters
-PREDICTION_HORIZON = 50
+PREDICTION_HORIZON = 100
 DT = 0.05
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 100
+MAX_ITERATIONS = 200
 
 
 def euler_step(pos: jnp.ndarray, vel: jnp.ndarray, dt: float) -> jnp.ndarray:
     return pos + vel * dt
 
 
-def distance_cost(pos: jnp.ndarray, target: jnp.ndarray) -> float:
-    diff = pos - target
-    return jnp.sum(diff**2)
+def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float) -> float:
+    return jnp.sum((pos - target) ** 2) * 1e-5 * (time_from_now + 0.1)
 
 
 def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray) -> float:
@@ -48,35 +50,24 @@ def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray) -> float:
         distance = jnp.sqrt(jnp.sum(diff**2))
 
         # Define safety thresholds
-        min_safe_distance = 2.0 * ROBOT_RADIUS
-        no_cost_distance = 3.0 * ROBOT_RADIUS
+        min_safe_distance = 2.5 * ROBOT_RADIUS
+        no_cost_distance = 4.0 * ROBOT_RADIUS
 
+        # try to avoid certain collision hard
+        danger_zone = distance <= min_safe_distance
+        normalized_distance = jnp.clip(distance / min_safe_distance, 0, 1)
+        danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 10
+
+        # try to avoid even getting close to the opponent
         in_decay_zone = jnp.logical_and(
             distance > min_safe_distance, distance <= no_cost_distance
         )
-
-        # Normalized distance in the transition zone (0 at min_safe, 1 at no_cost)
         normalized_distance = jnp.clip(
             (distance - min_safe_distance) / (no_cost_distance - min_safe_distance),
             0,
             1,
         )
-
-        # Smooth transition using cubic function: 2t^3 - 3t^2 + 1, where t is normalized_distance
-        # This gives a smooth S-curve that starts at 1 and ends at 0
-        smooth_factor = jnp.where(
-            in_decay_zone,
-            1.0 - (2.0 * normalized_distance**3 - 3.0 * normalized_distance**2 + 1.0),
-            0.0,
-        )
-
-        danger_zone = distance <= min_safe_distance
-        danger_factor = jnp.where(
-            danger_zone,
-            (min_safe_distance / (distance + 0.1))
-            ** 2,  # Add small constant to avoid division by zero
-            0.0,
-        )
+        smooth_factor = jnp.where(in_decay_zone, 1 - normalized_distance, 0.0)
 
         penalties = smooth_factor + danger_factor
 
@@ -124,23 +115,25 @@ def mpc_cost_function(
     max_vel: float,
 ) -> float:
     # Simulate forward over prediction horizon
+
     def _scan_fn(carry, control):  # control is velocity here
-        pos, current_cost = carry
+        pos, current_cost, time = carry
         # Euler integration
         pos = euler_step(pos, control, DT)
+        time = time + DT
 
-        # Add costs
-        current_cost += distance_cost(pos, target_pos) * 10.0
-        current_cost += collision_cost(pos, obstacles) * 1000
-        current_cost += boundary_cost(pos, field_bounds)
+        d_cost = distance_cost(pos, target_pos, time)
+        c_cost = collision_cost(pos, obstacles)
+        b_cost = boundary_cost(pos, field_bounds)
 
-        # Control effort penalty (only for actual control inputs)
-        current_cost += control_effort_cost(control)
-        current_cost += velocity_constraint_cost(control, max_vel)
-        return (pos, current_cost), None
+        ce_cost = control_effort_cost(control)
+        vc_cost = velocity_constraint_cost(control, max_vel)
 
-    (_, total_cost), _ = jax.lax.scan(
-        _scan_fn, init=(initial_pos, 0.0), xs=control_sequence, unroll=3
+        current_cost += d_cost + c_cost + b_cost + ce_cost + vc_cost
+        return (pos, current_cost, time), None
+
+    (_, total_cost, _), _ = jax.lax.scan(
+        _scan_fn, init=(initial_pos, 0.0, 0.0), xs=control_sequence
     )
 
     return total_cost
@@ -200,7 +193,6 @@ def solve_mpc_jax(
         (control_sequence, opt_state),
         None,
         length=max_iterations,
-        unroll=2,
     )
 
     # Return first control input
@@ -243,20 +235,15 @@ def test_simple_case():
     target_pos = np.array([1000.0, 500.0])  # 1m forward, 0.5m right
     obstacles = np.array([[500.0, 250.0]])  # One obstacle in the way
     field_bounds = np.array([-2000.0, 2000.0, -1000.0, 1000.0])  # 4m x 2m field
-    max_vel = 2000.0  # 2 m/s
+    max_vel = 4000.0  # 2 m/s
 
     # Solve MPC
     optimal_control = solve_mpc(
         initial_pos, initial_vel, target_pos, obstacles, field_bounds, max_vel
     )
 
-    print(f"Initial position: {initial_pos}")
-    print(f"Target position: {target_pos}")
-    print(f"Obstacles: {obstacles}")
-    print(f"Optimal control: {optimal_control}")
-    print(f"Control magnitude: {np.linalg.norm(optimal_control):.2f}")
-
-    return optimal_control
+    print(f"Control magnitude: {np.linalg.norm(optimal_control[0]):.2f}")
+    return optimal_control[0]
 
 
 def visualize_mpc_debug(
@@ -266,6 +253,7 @@ def visualize_mpc_debug(
     field_bounds: np.ndarray,
     max_vel: float,
     resolution: int = 50,
+    log_scale: bool = False,
 ) -> None:
     # Create a grid for visualization
     min_x, max_x, min_y, max_y = field_bounds
@@ -273,31 +261,32 @@ def visualize_mpc_debug(
     y_range = np.linspace(min_y, max_y, resolution)
     X, Y = np.meshgrid(x_range, y_range)
 
-    # Prepare arrays for cost
-    costs = np.zeros((resolution, resolution))
+    # Create position grid as a flat array of [x, y] positions
+    positions = np.stack([X.flatten(), Y.flatten()], axis=-1)
 
     # Initial velocity (zero for this visualization)
     initial_vel = np.zeros(2)
 
-    # Simplified cost function that only evaluates at a single position
-    def position_cost(pos):
-        # Convert to JAX array
-        pos_jax = jnp.array(pos)
+    # Vectorized cost function that evaluates at multiple positions
+    @jax.jit
+    def position_cost_vmap(positions, target, obstacles, field_bounds):
+        dist_costs = jax.vmap(lambda p: distance_cost(p, target, 0))(positions)
+        coll_costs = jax.vmap(lambda p: collision_cost(p, obstacles))(positions)
+        bound_costs = jax.vmap(lambda p: boundary_cost(p, field_bounds))(positions)
 
-        # Calculate individual costs
-        dist_cost = distance_cost(pos_jax, jnp.array(target_pos)) * 10.0
-        coll_cost = collision_cost(pos_jax, jnp.array(obstacles)) * 1000.0
-        bound_cost = boundary_cost(pos_jax, jnp.array(field_bounds))
+        return dist_costs + coll_costs + bound_costs
 
-        return dist_cost + coll_cost + bound_cost
+    # Compute costs for all grid points in parallel
+    print("Computing costs with jitted vmap...")
+    positions_jax = jnp.array(positions)
+    target_jax = jnp.array(target_pos)
+    obstacles_jax = jnp.array(obstacles)
+    field_bounds_jax = jnp.array(field_bounds)
 
-    # Compute costs for each grid point
-    for i in tqdm(range(resolution)):
-        for j in range(resolution):
-            pos = np.array([X[i, j], Y[i, j]])
-
-            # Calculate cost
-            costs[i, j] = position_cost(pos)
+    costs_flat = np.array(
+        position_cost_vmap(positions_jax, target_jax, obstacles_jax, field_bounds_jax)
+    )
+    costs = costs_flat.reshape(resolution, resolution)
 
     # Compute MPC trajectory
     trajectory_positions = [initial_pos]
@@ -317,18 +306,27 @@ def visualize_mpc_debug(
     # Convert trajectory to array
     trajectory = np.array(trajectory_positions)
 
-    # Create the figure
-    fig, ax = plt.subplots(figsize=(10, 8))
+    # Create the figure with aspect ratio matching the field dimensions
+    aspect_ratio = (max_x - min_x) / (max_y - min_y)
+    fig_width = 12
+    fig_height = fig_width / aspect_ratio
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    # Apply log scale to costs if requested
+    plot_data = np.log1p(costs) if log_scale else costs
 
     # Cost heatmap
     im = ax.imshow(
-        costs,
+        plot_data,
         extent=[min_x, max_x, min_y, max_y],
         origin="lower",
         cmap="viridis",
         aspect="auto",
     )
-    fig.colorbar(im, ax=ax, label="Cost")
+
+    # Add colorbar with appropriate label
+    colorbar_label = "Cost (log scale)" if log_scale else "Cost"
+    fig.colorbar(im, ax=ax, label=colorbar_label)
 
     ax.plot(initial_pos[0], initial_pos[1], "bs", markersize=8, label="Start")
     ax.plot(target_pos[0], target_pos[1], "g*", markersize=12, label="Target")
@@ -346,44 +344,52 @@ def visualize_mpc_debug(
 
 
 def plot_collision_cost(
-    obstacles: np.ndarray,
     resolution: int = 100,
-    x_range: tuple = (-2000, 2000),
-    y_range: tuple = (-1000, 1000),
+    x_range: tuple = (-500, 500),
+    y_range: tuple = (-500, 500),
+    log_scale: bool = False,
 ) -> None:
-    """
-    Plot the collision cost function while varying position.
-
-    Args:
-        obstacles: Array of obstacle positions
-        resolution: Grid resolution for visualization
-        x_range: Range of x positions to evaluate
-        y_range: Range of y positions to evaluate
-    """
-    # Create a grid for visualization
     x_vals = np.linspace(x_range[0], x_range[1], resolution)
     y_vals = np.linspace(y_range[0], y_range[1], resolution)
     X, Y = np.meshgrid(x_vals, y_vals)
-    costs = np.zeros((resolution, resolution))
 
-    # Compute collision costs for each grid point
-    for i in tqdm(range(resolution)):
-        for j in range(resolution):
-            pos = np.array([X[i, j], Y[j, i]])
-            costs[j, i] = collision_cost(jnp.array(pos), jnp.array(obstacles))
+    # Note: The original had a transposition issue with indices [i,j] vs [j,i]
+    # We'll fix that in the reshaping step
+    positions = np.stack([X.T.flatten(), Y.T.flatten()], axis=-1)
 
-    # Create figure
-    fig, ax = plt.subplots(figsize=(10, 8))
+    # Convert to JAX arrays
+    obstacles = jnp.zeros([1, 2])
+    positions_jax = jnp.array(positions)
+
+    # Define and jit the vectorized collision cost function
+    @jax.jit
+    def collision_cost_vmap(positions, obstacles):
+        return jax.vmap(lambda pos: collision_cost(pos, obstacles))(positions)
+
+    # Vectorized collision cost computation
+    print("Computing collision costs with jitted vmap...")
+    costs_flat = np.array(collision_cost_vmap(positions_jax, obstacles))
+
+    # Reshape to grid, preserving the original orientation
+    costs = costs_flat.reshape(resolution, resolution)
+
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    # Apply log scale if requested
+    plot_data = np.log1p(costs) if log_scale else costs
 
     # Plot heatmap
     im = ax.imshow(
-        costs,
+        plot_data,
         extent=[x_range[0], x_range[1], y_range[0], y_range[1]],
         origin="lower",
         cmap="viridis",
         aspect="auto",
     )
-    fig.colorbar(im, ax=ax, label="Collision Cost")
+
+    # Add colorbar with appropriate label
+    colorbar_label = "Collision Cost (log scale)" if log_scale else "Collision Cost"
+    fig.colorbar(im, ax=ax, label=colorbar_label)
 
     # Add labels
     ax.set_title("Collision Cost Function Visualization")
@@ -396,18 +402,30 @@ def plot_collision_cost(
 
 
 if __name__ == "__main__":
+    # Set to True to use log scale for the cost plots
+    USE_LOG_SCALE = False
+
     result = test_simple_case()
 
     # Run visualization with the simple test case
-    initial_pos = np.array([0.0, 0.0])
-    target_pos = np.array([1000.0, 500.0])
+    initial_pos = np.array([-300.0, 0.0])
+    target_pos = np.array([700.0, 500.0])
     obstacles = np.array([[500.0, 250.0]])
-    field_bounds = np.array([-2000.0, 2000.0, -1000.0, 1000.0])
+    field_bounds = np.array([-1000.0, 1000.0, -1000.0, 1000.0])
     max_vel = 2000.0
 
-    visualize_mpc_debug(initial_pos, target_pos, obstacles, field_bounds, max_vel)
+    # Generate visualizations with proper aspect ratio and optional log scale
+    print(f"Generating visualizations with log_scale={USE_LOG_SCALE}")
+    visualize_mpc_debug(
+        initial_pos,
+        target_pos,
+        obstacles,
+        field_bounds,
+        max_vel,
+        log_scale=USE_LOG_SCALE,
+    )
 
     # Plot the collision cost function separately
-    plot_collision_cost(obstacles, resolution=50)
+    plot_collision_cost(resolution=50, log_scale=USE_LOG_SCALE)
 
     print("JAX MPC test completed successfully!")
