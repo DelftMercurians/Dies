@@ -2,7 +2,7 @@ mod log_codec;
 mod logger;
 mod playback;
 
-use dies_core::{DebugColor, DebugMap, DebugShape, TeamData};
+use dies_core::{DebugColor, DebugMap, DebugShape, TeamData, WorldData};
 pub use log_codec::*;
 pub use logger::*;
 pub use playback::*;
@@ -17,6 +17,6 @@ pub(crate) enum TestData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DataLog {
-    World(TeamData),
+    World(WorldData),
     Debug(DebugMap),
 }

@@ -20,6 +20,11 @@ pub enum ControlMsg {
         command: Command,
     },
     SimulatorCmd(SimulatorCmd),
+    /// Control which teams are active
+    SetActiveTeams {
+        blue_active: bool,
+        yellow_active: bool,
+    },
     Stop,
 }
 

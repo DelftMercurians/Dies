@@ -49,7 +49,7 @@ impl WorldInstant {
 #[derive(Debug, Clone, Serialize)]
 #[typeshare]
 pub struct WorldUpdate {
-    pub world_data: TeamData,
+    pub world_data: WorldData,
 }
 
 /// The game state, as reported by the referee.
@@ -587,7 +587,56 @@ pub fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
     true
 }
 
-pub fn mock_world_data() -> TeamData {
+pub fn mock_world_data() -> WorldData {
+    WorldData {
+        t_received: 0.0,
+        t_capture: 0.0,
+        dt: 1.0,
+        blue_team: vec![PlayerData {
+            id: PlayerId::new(0),
+            position: Vector2::new(1000.0, 1000.0),
+            timestamp: 0.0,
+            raw_position: Vector2::new(1000.0, 1000.0),
+            velocity: Vector2::zeros(),
+            yaw: Angle::default(),
+            raw_yaw: Angle::default(),
+            angular_speed: 0.0,
+            primary_status: Some(SysStatus::Ready),
+            kicker_cap_voltage: Some(0.0),
+            kicker_temp: Some(0.0),
+            pack_voltages: Some([0.0, 0.0]),
+            breakbeam_ball_detected: false,
+            imu_status: Some(SysStatus::Ready),
+            kicker_status: Some(SysStatus::Standby),
+        }],
+        yellow_team: vec![PlayerData {
+            id: PlayerId::new(1),
+            position: Vector2::new(-1000.0, -1000.0),
+            timestamp: 0.0,
+            raw_position: Vector2::new(-1000.0, -1000.0),
+            velocity: Vector2::zeros(),
+            yaw: Angle::default(),
+            raw_yaw: Angle::default(),
+            angular_speed: 0.0,
+            primary_status: Some(SysStatus::Ready),
+            kicker_cap_voltage: Some(0.0),
+            kicker_temp: Some(0.0),
+            pack_voltages: Some([0.0, 0.0]),
+            breakbeam_ball_detected: false,
+            imu_status: Some(SysStatus::Ready),
+            kicker_status: Some(SysStatus::Standby),
+        }],
+        field_geom: Default::default(),
+        ball: None,
+        game_state: RawGameStateData {
+            game_state: GameState::Run,
+            operating_team: TeamColor::Blue,
+        },
+        side_assignment: SideAssignment::YellowOnPositive,
+    }
+}
+
+pub fn mock_team_data() -> TeamData {
     TeamData {
         own_players: vec![PlayerData {
             id: PlayerId::new(0),
@@ -647,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_ray_player_intersection() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(1.0, 1.0);
 
@@ -660,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_ray_wall_intersection() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(1.0, 0.0);
 
@@ -673,7 +722,7 @@ mod tests {
 
     #[test]
     fn test_no_intersection() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(0.0, 1.0);
 
@@ -686,7 +735,7 @@ mod tests {
 
     #[test]
     fn test_ray_origin_inside_player() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(1000.0, 1000.0); // Inside the player
         let direction = Vector2::new(1.0, 0.0);
 
@@ -699,7 +748,7 @@ mod tests {
 
     #[test]
     fn test_ray_parallel_to_wall() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 3000.0);
         let direction = Vector2::new(1.0, 0.0);
 
@@ -712,7 +761,7 @@ mod tests {
 
     #[test]
     fn test_ray_away_from_everything() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(-1.0, -1.0);
 
