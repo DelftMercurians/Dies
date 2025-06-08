@@ -1,6 +1,27 @@
 # Skills (Action Nodes)
 
-Skills are the leaf nodes of a behavior tree that perform concrete actions. In our system, calling a skill function in Rhai creates an `ActionNode`.
+Skills are the leaf nodes of a behavior tree that perform concrete actions. In our system, calling a skill function in Rhai creates an `ActionNode`, which is a type of `BehaviorNode`.
+
+## Dynamic Arguments
+
+Many skills accept **dynamic arguments**. This means that instead of providing a fixed, static value, you can provide a callback function. This function will be executed by the behavior tree on each tick to determine the value for that argument dynamically.
+
+A callback function always receives the `RobotSituation` object (usually named `s`) as its only parameter, giving you access to the full world state to make decisions.
+
+**Example:**
+
+```rust
+// Static argument
+GoToPosition(vec2(100.0, 200.0))
+
+// Dynamic argument using a callback
+fn get_ball_pos(s) {
+    return s.world.ball.position;
+}
+GoToPosition(get_ball_pos)
+```
+
+This allows for creating highly reactive and flexible behaviors.
 
 ---
 
@@ -9,21 +30,47 @@ Skills are the leaf nodes of a behavior tree that perform concrete actions. In o
 Moves the robot to a target position.
 
 **Syntax:**
-`GoToPosition(x: Float, y: Float, [options: Map], [description: String]) -> BehaviorNode`
+`GoToPosition(target: Vec2 | FnPtr, [options: Map], [description: String]) -> BehaviorNode`
 
 **Parameters:**
 
-- `x`, `y`: The target coordinates.
-- `options` (optional): A map with the following keys:
-  - `heading` (Float): The final heading of the robot in radians.
-  - `with_ball` (Bool): If `true`, the robot will try to keep the ball while moving.
-  - `avoid_ball` (Bool): If `true`, the robot will actively try to avoid the ball while moving.
+- `target`: The target position. Can be a static `Vec2` (created with `vec2(x, y)`) or a callback function that returns a `Vec2`.
+- `options` (optional): A map with optional parameters. Any of these can also be dynamic callbacks.
+  - `heading` (Float | FnPtr): The final heading of the robot in radians.
+  - `with_ball` (Bool | FnPtr): If `true`, the robot will try to keep the ball while moving.
+  - `avoid_ball` (Bool | FnPtr): If `true`, the robot will actively try to avoid the ball while moving.
 - `description` (optional): A string description for debugging.
 
-**Example:**
+**Example (Static):**
 
 ```rust
-GoToPosition(0.0, 0.0, #{ heading: 1.57, with_ball: true }, "Go to center with ball")
+// Go to a fixed position with a fixed heading.
+GoToPosition(
+    vec2(0.0, 0.0),
+    #{ heading: 1.57, with_ball: true },
+    "Go to center with ball"
+)
+```
+
+**Example (Dynamic):**
+
+```rust
+fn get_ball_pos(s) {
+    return s.world.ball.position;
+}
+
+fn get_heading_towards_goal(s) {
+    let goal_pos = vec2(6000.0, 0.0);
+    // Assumes a 'angle_to' helper exists
+    return s.player.position.angle_to(goal_pos);
+}
+
+// Go towards the ball, while always facing the opponent's goal.
+GoToPosition(
+    get_ball_pos,
+    #{ heading: get_heading_towards_goal, avoid_ball: false },
+    "Follow ball while facing goal"
+)
 ```
 
 ---
@@ -33,13 +80,13 @@ GoToPosition(0.0, 0.0, #{ heading: 1.57, with_ball: true }, "Go to center with b
 Rotates the robot to face a specific angle.
 
 **Syntax:**
-`FaceAngle(angle_rad: Float, [options: Map], [description: String]) -> BehaviorNode`
+`FaceAngle(angle: Float | FnPtr, [options: Map], [description: String]) -> BehaviorNode`
 
 **Parameters:**
 
-- `angle_rad`: The target angle in radians.
+- `angle`: The target angle in radians. Can be a static `Float` or a callback function that returns a `Float`.
 - `options` (optional): A map with the following keys:
-  - `with_ball` (Bool): If `true`, the robot will try to keep the ball while turning.
+  - `with_ball` (Bool | FnPtr): If `true`, the robot will try to keep the ball while turning.
 - `description` (optional): A string description for debugging.
 
 ---
@@ -49,12 +96,12 @@ Rotates the robot to face a specific angle.
 Rotates the robot to face a specific world position.
 
 **Syntax:**
-`FaceTowardsPosition(x: Float, y: Float, [options: Map], [description: String]) -> BehaviorNode`
+`FaceTowardsPosition(target: Vec2 | FnPtr, [options: Map], [description: String]) -> BehaviorNode`
 
 **Parameters:**
 
-- `x`, `y`: The coordinates of the target position to face.
-- `options` (optional): A map with `with_ball` (Bool).
+- `target`: The target position to face. Can be a static `Vec2` or a callback function that returns a `Vec2`.
+- `options` (optional): A map with `with_ball` (Bool | FnPtr).
 - `description` (optional): A string description for debugging.
 
 ---

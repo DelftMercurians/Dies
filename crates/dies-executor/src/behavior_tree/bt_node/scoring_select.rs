@@ -1,3 +1,6 @@
+use dies_core::debug_tree_node;
+use rhai::Engine;
+
 use super::{
     super::bt_callback::BtCallback,
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -35,71 +38,71 @@ impl ScoringSelectNode {
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
+        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
 
-        // if self.children_with_scorers.is_empty() {
-        //     debug_tree_node(
-        //         format!("bt.p{}.{}", situation.player_id, node_full_id),
-        //         self.description(),
-        //         node_full_id.clone(),
-        //         vec![],
-        //         false,
-        //     );
-        //     return (BehaviorStatus::Failure, None);
-        // }
+        if self.children_with_scorers.is_empty() {
+            debug_tree_node(
+                format!("bt.p{}.{}", situation.player_id, node_full_id),
+                self.description(),
+                node_full_id.clone(),
+                vec![],
+                false,
+            );
+            return (BehaviorStatus::Failure, None);
+        }
 
-        // let mut new_highest_score = f64::NEG_INFINITY;
-        // let mut new_best_child_candidate_index = 0;
-        // let mut scores = Vec::with_capacity(self.children_with_scorers.len());
+        let mut new_highest_score = f64::NEG_INFINITY;
+        let mut new_best_child_candidate_index = 0;
+        let mut scores = Vec::with_capacity(self.children_with_scorers.len());
 
-        // for (i, (_, scorer)) in self.children_with_scorers.iter().enumerate() {
-        //     let score = scorer(situation);
-        //     scores.push(score);
-        //     if score > new_highest_score {
-        //         new_highest_score = score;
-        //         new_best_child_candidate_index = i;
-        //     }
-        // }
+        for (i, (_, scorer)) in self.children_with_scorers.iter().enumerate() {
+            let score = scorer.call(situation, engine).unwrap_or(f64::NEG_INFINITY);
+            scores.push(score);
+            if score > new_highest_score {
+                new_highest_score = score;
+                new_best_child_candidate_index = i;
+            }
+        }
 
-        // let final_child_to_tick_idx: usize;
-        // if let Some(active_child_idx) = self.current_best_child_index {
-        //     let score_of_active_child = scores[active_child_idx];
-        //     if score_of_active_child >= new_highest_score - self.hysteresis_margin {
-        //         final_child_to_tick_idx = active_child_idx;
-        //     } else {
-        //         final_child_to_tick_idx = new_best_child_candidate_index;
-        //     }
-        // } else {
-        //     final_child_to_tick_idx = new_best_child_candidate_index;
-        // }
+        let final_child_to_tick_idx: usize;
+        if let Some(active_child_idx) = self.current_best_child_index {
+            let score_of_active_child = scores[active_child_idx];
+            if score_of_active_child >= new_highest_score - self.hysteresis_margin {
+                final_child_to_tick_idx = active_child_idx;
+            } else {
+                final_child_to_tick_idx = new_best_child_candidate_index;
+            }
+        } else {
+            final_child_to_tick_idx = new_best_child_candidate_index;
+        }
 
-        // if self.current_best_child_index != Some(final_child_to_tick_idx) {
-        //     self.current_best_child_index = Some(final_child_to_tick_idx);
-        //     self.current_best_child_score = scores[final_child_to_tick_idx];
-        // }
+        if self.current_best_child_index != Some(final_child_to_tick_idx) {
+            self.current_best_child_index = Some(final_child_to_tick_idx);
+            self.current_best_child_score = scores[final_child_to_tick_idx];
+        }
 
-        // let (child_node, _) = &mut self.children_with_scorers[final_child_to_tick_idx];
-        // let (status, input) = child_node.tick(situation);
+        let (child_node, _) = &mut self.children_with_scorers[final_child_to_tick_idx];
+        let (status, input) = child_node.tick(situation, engine);
 
-        // match status {
-        //     BehaviorStatus::Success | BehaviorStatus::Failure => {
-        //         self.current_best_child_index = None;
-        //         self.current_best_child_score = f64::NEG_INFINITY;
-        //     }
-        //     BehaviorStatus::Running => {}
-        // }
+        match status {
+            BehaviorStatus::Success | BehaviorStatus::Failure => {
+                self.current_best_child_index = None;
+                self.current_best_child_score = f64::NEG_INFINITY;
+            }
+            BehaviorStatus::Running => {}
+        }
 
-        // let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
-        // debug_tree_node(
-        //     format!("bt.p{}.{}", situation.player_id, node_full_id),
-        //     self.description(),
-        //     node_full_id.clone(),
-        //     self.get_child_node_ids(&node_full_id),
-        //     is_active,
-        // );
-        // (status, input)
-        Default::default()
+        let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&node_full_id),
+            is_active,
+        );
+        (status, input)
     }
 
     pub fn description(&self) -> String {
@@ -121,10 +124,9 @@ impl ScoringSelectNode {
 
     pub fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
         let self_full_id = self.get_full_node_id(current_path_prefix);
-        Default::default()
-        // self.children_with_scorers
-        //     .iter()
-        //     .map(|(c, _)| c.get_full_node_id(&self_full_id))
-        //     .collect()
+        self.children_with_scorers
+            .iter()
+            .map(|(c, _)| c.get_full_node_id(&self_full_id))
+            .collect()
     }
 }

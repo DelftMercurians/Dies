@@ -1,4 +1,5 @@
 use dies_core::debug_tree_node;
+use rhai::Engine;
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -26,13 +27,14 @@ impl SelectNode {
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
+        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let mut final_status = BehaviorStatus::Failure;
         let mut final_input: Option<PlayerControlInput> = None;
 
         for child in self.children.iter_mut() {
-            match child.tick(situation) {
+            match child.tick(situation, engine) {
                 (BehaviorStatus::Success, input_opt) => {
                     final_status = BehaviorStatus::Success;
                     final_input = input_opt;

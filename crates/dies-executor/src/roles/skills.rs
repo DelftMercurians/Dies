@@ -205,7 +205,6 @@ impl Kick {
         };
 
         if ready {
-            println!("Kicking");
             if !ctx.player.breakbeam_ball_detected
                 && (ctx
                     .world

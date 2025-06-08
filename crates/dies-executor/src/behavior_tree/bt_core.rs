@@ -1,4 +1,5 @@
 use dies_core::{PlayerData, PlayerId, WorldData};
+use rhai::Engine;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -15,8 +16,9 @@ impl BehaviorTree {
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
+        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
-        self.root_node.tick(situation)
+        self.root_node.tick(situation, engine)
     }
 }
 

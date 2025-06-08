@@ -1,5 +1,6 @@
 use super::bt_callback::BtCallback;
 use super::bt_core::RobotSituation;
+use rhai::Engine;
 
 #[derive(Clone)]
 enum SituationCondition {
@@ -10,12 +11,16 @@ enum SituationCondition {
 }
 
 impl SituationCondition {
-    pub fn check(&self, situation: &RobotSituation) -> bool {
+    pub fn check(&self, situation: &RobotSituation, engine: &Engine) -> bool {
         match self {
-            SituationCondition::Fn(f) => f.call(situation).unwrap_or(false),
-            SituationCondition::And(a, b) => a.check(situation) && b.check(situation),
-            SituationCondition::Or(a, b) => a.check(situation) || b.check(situation),
-            SituationCondition::Not(a) => !a.check(situation),
+            SituationCondition::Fn(f) => f.call(situation, engine).unwrap_or(false),
+            SituationCondition::And(a, b) => {
+                a.check(situation, engine) && b.check(situation, engine)
+            }
+            SituationCondition::Or(a, b) => {
+                a.check(situation, engine) || b.check(situation, engine)
+            }
+            SituationCondition::Not(a) => !a.check(situation, engine),
         }
     }
 }
@@ -34,8 +39,8 @@ impl Situation {
         }
     }
 
-    pub fn check(&self, situation: &RobotSituation) -> bool {
-        self.condition.check(situation)
+    pub fn check(&self, situation: &RobotSituation, engine: &Engine) -> bool {
+        self.condition.check(situation, engine)
     }
 
     pub fn and(self, other: Situation) -> Self {

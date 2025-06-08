@@ -1,43 +1,16 @@
 use rhai::plugin::*;
-use rhai::{
-    Array, CustomType, EvalAltResult, FnPtr, Map, NativeCallContext, Position, TypeBuilder,
-};
+use rhai::{Array, EvalAltResult, FnPtr, Map, NativeCallContext, Position};
 
 use crate::behavior_tree::{
-    ActionNode, BehaviorNode as BehaviorNodeTypeEnum, BehaviorNode, GuardNode, ScoringSelectNode,
-    SelectNode, SemaphoreNode, SequenceNode, Situation,
+    ActionNode, BehaviorNode as BehaviorNodeTypeEnum, GuardNode, ScoringSelectNode, SelectNode,
+    SemaphoreNode, SequenceNode, Situation,
 };
-use crate::roles::skills::{
-    ApproachBall as ApproachBallSkillInstance, Face as FaceSkillInstance,
-    FetchBall as FetchBallSkillInstance, FetchBallWithHeading as FetchBallWithHeadingSkillInstance,
-    GoToPosition as GoToPositionSkillInstance, InterceptBall as InterceptBallSkillInstance,
-    Kick as KickSkillInstance, Wait as WaitSkillInstance,
-};
-use crate::roles::Skill as SkillEnum;
-use dies_core::{Angle, PlayerId, Vector2 as CoreVector2};
-
-#[allow(dead_code)]
-#[derive(Clone)]
-pub struct RhaiSkill(pub SkillEnum);
-
-impl CustomType for RhaiSkill {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder.with_name("RhaiSkill");
-    }
-}
-
-#[derive(Clone)]
-pub struct RhaiBehaviorNode(pub BehaviorNode);
-
-impl CustomType for RhaiBehaviorNode {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder.with_name("BehaviorNode");
-    }
-}
+use dies_core::{PlayerId, Vector2 as CoreVector2};
 
 #[export_module]
 pub mod bt_rhai_plugin {
-    use crate::behavior_tree::BtCallback;
+    use crate::behavior_tree::rhai_types::RhaiBehaviorNode;
+    use crate::behavior_tree::{Argument, BtCallback, FaceTarget, HeadingTarget, SkillDefinition};
 
     use super::*;
 
@@ -47,7 +20,7 @@ pub mod bt_rhai_plugin {
     // PLAYER ID HELPERS
     #[rhai_fn(name = "to_string")]
     /// Returns the string representation of the player id.
-    pub fn to_string(id: PlayerId) -> String {
+    pub fn to_string(id: &mut PlayerId) -> String {
         id.to_string()
     }
 
@@ -55,7 +28,7 @@ pub mod bt_rhai_plugin {
     /// Returns a float between 0 and 1 based on the player id.
     /// This is used to ensure that the same player id always produces the same hash.
     /// This can be used to induce different behavior for different players.
-    pub fn hash(id: PlayerId) -> f64 {
+    pub fn hash(id: &mut PlayerId) -> f64 {
         // Fast hash by multiplying by a large prime and taking fractional part
         (id.as_u32() as f64 * 0.6180339887498949) % 1.0
     }
@@ -271,537 +244,440 @@ pub mod bt_rhai_plugin {
         )))
     }
 
-    // Helper to create ActionNode from SkillEnum
-    fn skill_to_action_node(
-        skill_enum: SkillEnum,
-        description: Option<&str>,
-        skill_name_for_auto_desc: &str,
+    fn to_action_node(
+        skill_def: SkillDefinition,
+        description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let final_description = match description {
-            Some(desc) => desc.to_string(),
-            None => format!("Action_{}", skill_name_for_auto_desc),
-        };
         Ok(RhaiBehaviorNode(BehaviorNodeTypeEnum::Action(
-            ActionNode::new(skill_enum, Some(final_description)),
+            ActionNode::new(skill_def, description),
         )))
     }
 
     // SKILL CONSTRUCTORS (returning Action Nodes)
-    // GoToPosition overloads for default parameter simulation
     #[rhai_fn(name = "GoToPosition", return_raw)]
-    pub fn goto_action_full(
-        x: f64,
-        y: f64,
-        options: Map,
-        action_description: &str,
+    pub fn goto_action(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        goto_action_with_options_impl(x, y, options, Some(action_description))
+        goto_action_impl(context, target, None, None)
     }
 
     #[rhai_fn(name = "GoToPosition", return_raw)]
     pub fn goto_action_with_options(
-        x: f64,
-        y: f64,
+        context: NativeCallContext,
+        target: rhai::Dynamic,
         options: Map,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        goto_action_with_options_impl(x, y, options, None)
+        goto_action_impl(context, target, Some(options), None)
     }
 
     #[rhai_fn(name = "GoToPosition", return_raw)]
     pub fn goto_action_with_description(
-        x: f64,
-        y: f64,
-        action_description: &str,
+        context: NativeCallContext,
+        target: rhai::Dynamic,
+        description: &str,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        goto_action_basic_impl(x, y, Some(action_description))
+        goto_action_impl(context, target, None, Some(description.to_string()))
     }
 
     #[rhai_fn(name = "GoToPosition", return_raw)]
-    pub fn goto_action_basic(x: f64, y: f64) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        goto_action_basic_impl(x, y, None)
-    }
-
-    // Implementation functions for GoToPosition
-    fn goto_action_with_options_impl(
-        x: f64,
-        y: f64,
+    pub fn goto_action_with_options_and_description(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
         options: Map,
-        action_description: Option<&str>,
+        description: &str,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let mut skill_instance = GoToPositionSkillInstance::new(CoreVector2::new(x, y));
-        if let Some(heading_dyn) = options.get("heading") {
-            if let Some(heading_f64) = heading_dyn.as_float().ok() {
-                skill_instance = skill_instance.with_heading(Angle::from_radians(heading_f64));
-            } else {
-                return Err(Box::new(EvalAltResult::ErrorMismatchDataType(
-                    "Expected float for heading".to_string(),
-                    heading_dyn.type_name().into(),
-                    Position::NONE,
-                )));
-            }
-        }
-        if let Some(with_ball_dyn) = options.get("with_ball") {
-            if let Some(with_ball_bool) = with_ball_dyn.as_bool().ok() {
-                if with_ball_bool {
-                    skill_instance = skill_instance.with_ball();
-                }
-            } else {
-                return Err(Box::new(EvalAltResult::ErrorMismatchDataType(
-                    "Expected bool for with_ball".to_string(),
-                    with_ball_dyn.type_name().into(),
-                    Position::NONE,
-                )));
-            }
-        }
-        if let Some(avoid_ball_dyn) = options.get("avoid_ball") {
-            if let Some(avoid_ball_bool) = avoid_ball_dyn.as_bool().ok() {
-                if avoid_ball_bool {
-                    skill_instance = skill_instance.avoid_ball();
-                }
-            } else {
-                return Err(Box::new(EvalAltResult::ErrorMismatchDataType(
-                    "Expected bool for avoid_ball".to_string(),
-                    avoid_ball_dyn.type_name().into(),
-                    Position::NONE,
-                )));
-            }
-        }
-        skill_to_action_node(
-            SkillEnum::GoToPosition(skill_instance),
-            action_description,
-            "GoToPosition",
+        goto_action_impl(
+            context,
+            target,
+            Some(options),
+            Some(description.to_string()),
         )
     }
 
-    fn goto_action_basic_impl(
-        x: f64,
-        y: f64,
-        action_description: Option<&str>,
+    fn goto_action_impl(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
+        options: Option<Map>,
+        description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance = GoToPositionSkillInstance::new(CoreVector2::new(x, y));
-        skill_to_action_node(
-            SkillEnum::GoToPosition(skill_instance),
-            action_description,
-            "GoToPosition",
-        )
+        let target_pos = Argument::from_rhai(target, &context)?;
+
+        let mut heading_arg = None;
+        let mut with_ball_arg = Argument::Static(false);
+        let mut avoid_ball_arg = Argument::Static(false);
+
+        if let Some(options_map) = options {
+            if let Some(heading_dyn) = options_map.get("heading") {
+                heading_arg = Some(Argument::from_rhai(heading_dyn.clone(), &context)?);
+            }
+            if let Some(with_ball_dyn) = options_map.get("with_ball") {
+                with_ball_arg = Argument::from_rhai(with_ball_dyn.clone(), &context)?;
+            }
+            if let Some(avoid_ball_dyn) = options_map.get("avoid_ball") {
+                avoid_ball_arg = Argument::from_rhai(avoid_ball_dyn.clone(), &context)?;
+            }
+        }
+
+        let skill_def = SkillDefinition::GoToPosition {
+            target_pos,
+            target_heading: heading_arg,
+            with_ball: with_ball_arg,
+            avoid_ball: avoid_ball_arg,
+            // Using reasonable defaults for unexposed parameters
+            target_velocity: Argument::Static(CoreVector2::zeros()),
+            pos_tolerance: Argument::Static(10.0),
+            velocity_tolerance: Argument::Static(10.0),
+        };
+
+        to_action_node(skill_def, description)
     }
 
-    // FaceAngle overloads for default parameter simulation
     #[rhai_fn(name = "FaceAngle", return_raw)]
-    pub fn face_angle_action_full(
-        angle_rad: f64,
-        options: Map,
-        action_description: &str,
+    pub fn face_angle_action(
+        context: NativeCallContext,
+        angle_rad: rhai::Dynamic,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_angle_action_with_options_impl(angle_rad, options, Some(action_description))
+        face_angle_action_impl(context, angle_rad, None, None)
     }
 
     #[rhai_fn(name = "FaceAngle", return_raw)]
     pub fn face_angle_action_with_options(
-        angle_rad: f64,
+        context: NativeCallContext,
+        angle_rad: rhai::Dynamic,
         options: Map,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_angle_action_with_options_impl(angle_rad, options, None)
+        face_angle_action_impl(context, angle_rad, Some(options), None)
     }
 
     #[rhai_fn(name = "FaceAngle", return_raw)]
     pub fn face_angle_action_with_description(
-        angle_rad: f64,
-        action_description: &str,
+        context: NativeCallContext,
+        angle_rad: rhai::Dynamic,
+        description: &str,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_angle_action_basic_impl(angle_rad, Some(action_description))
+        face_angle_action_impl(context, angle_rad, None, Some(description.to_string()))
     }
 
     #[rhai_fn(name = "FaceAngle", return_raw)]
-    pub fn face_angle_action_basic(angle_rad: f64) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_angle_action_basic_impl(angle_rad, None)
+    pub fn face_angle_action_with_options_and_description(
+        context: NativeCallContext,
+        angle_rad: rhai::Dynamic,
+        options: Map,
+        description: &str,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        face_angle_action_impl(
+            context,
+            angle_rad,
+            Some(options),
+            Some(description.to_string()),
+        )
     }
 
-    // Implementation functions for FaceAngle
-    fn face_angle_action_with_options_impl(
-        angle_rad: f64,
-        options: Map,
-        action_description: Option<&str>,
+    fn face_angle_action_impl(
+        context: NativeCallContext,
+        angle_rad: rhai::Dynamic,
+        options: Option<Map>,
+        description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let mut skill_instance = FaceSkillInstance::new(Angle::from_radians(angle_rad));
-        if let Some(with_ball_dyn) = options.get("with_ball") {
-            if let Some(with_ball_bool) = with_ball_dyn.as_bool().ok() {
-                if with_ball_bool {
-                    skill_instance = skill_instance.with_ball();
-                }
+        let angle_arg = Argument::from_rhai(angle_rad, &context)?;
+        let mut with_ball_arg = Argument::Static(false);
+
+        if let Some(options_map) = options {
+            if let Some(with_ball_dyn) = options_map.get("with_ball") {
+                with_ball_arg = Argument::from_rhai(with_ball_dyn.clone(), &context)?;
             }
         }
-        skill_to_action_node(
-            SkillEnum::Face(skill_instance),
-            action_description,
-            "FaceAngle",
+
+        let skill_def = SkillDefinition::Face {
+            target: FaceTarget::Angle(angle_arg),
+            with_ball: with_ball_arg,
+        };
+        to_action_node(skill_def, description)
+    }
+
+    #[rhai_fn(name = "FaceTowardsPosition", return_raw)]
+    pub fn face_pos_action(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        face_pos_action_impl(context, target, None, None)
+    }
+
+    #[rhai_fn(name = "FaceTowardsPosition", return_raw)]
+    pub fn face_pos_action_with_options(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
+        options: Map,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        face_pos_action_impl(context, target, Some(options), None)
+    }
+
+    #[rhai_fn(name = "FaceTowardsPosition", return_raw)]
+    pub fn face_pos_action_with_description(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
+        description: &str,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        face_pos_action_impl(context, target, None, Some(description.to_string()))
+    }
+
+    #[rhai_fn(name = "FaceTowardsPosition", return_raw)]
+    pub fn face_pos_action_with_options_and_description(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
+        options: Map,
+        description: &str,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        face_pos_action_impl(
+            context,
+            target,
+            Some(options),
+            Some(description.to_string()),
         )
     }
 
-    fn face_angle_action_basic_impl(
-        angle_rad: f64,
-        action_description: Option<&str>,
+    fn face_pos_action_impl(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
+        options: Option<Map>,
+        description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance = FaceSkillInstance::new(Angle::from_radians(angle_rad));
-        skill_to_action_node(
-            SkillEnum::Face(skill_instance),
-            action_description,
-            "FaceAngle",
-        )
-    }
+        let target_arg = Argument::from_rhai(target, &context)?;
+        let mut with_ball_arg = Argument::Static(false);
 
-    // FaceTowardsPosition overloads for default parameter simulation
-    #[rhai_fn(name = "FaceTowardsPosition", return_raw)]
-    pub fn face_towards_position_action_full(
-        x: f64,
-        y: f64,
-        options: Map,
-        action_description: &str,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_towards_position_action_with_options_impl(x, y, options, Some(action_description))
-    }
-
-    #[rhai_fn(name = "FaceTowardsPosition", return_raw)]
-    pub fn face_towards_position_action_with_options(
-        x: f64,
-        y: f64,
-        options: Map,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_towards_position_action_with_options_impl(x, y, options, None)
-    }
-
-    #[rhai_fn(name = "FaceTowardsPosition", return_raw)]
-    pub fn face_towards_position_action_with_description(
-        x: f64,
-        y: f64,
-        action_description: &str,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_towards_position_action_basic_impl(x, y, Some(action_description))
-    }
-
-    #[rhai_fn(name = "FaceTowardsPosition", return_raw)]
-    pub fn face_towards_position_action_basic(
-        x: f64,
-        y: f64,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_towards_position_action_basic_impl(x, y, None)
-    }
-
-    // Implementation functions for FaceTowardsPosition
-    fn face_towards_position_action_with_options_impl(
-        x: f64,
-        y: f64,
-        options: Map,
-        action_description: Option<&str>,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let mut skill_instance = FaceSkillInstance::towards_position(CoreVector2::new(x, y));
-        if let Some(with_ball_dyn) = options.get("with_ball") {
-            if let Some(with_ball_bool) = with_ball_dyn.as_bool().ok() {
-                if with_ball_bool {
-                    skill_instance = skill_instance.with_ball();
-                }
+        if let Some(options_map) = options {
+            if let Some(with_ball_dyn) = options_map.get("with_ball") {
+                with_ball_arg = Argument::from_rhai(with_ball_dyn.clone(), &context)?;
             }
         }
-        skill_to_action_node(
-            SkillEnum::Face(skill_instance),
-            action_description,
-            "FaceTowardsPosition",
-        )
+
+        let skill_def = SkillDefinition::Face {
+            target: FaceTarget::Position(target_arg),
+            with_ball: with_ball_arg,
+        };
+        to_action_node(skill_def, description)
     }
 
-    fn face_towards_position_action_basic_impl(
-        x: f64,
-        y: f64,
-        action_description: Option<&str>,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance = FaceSkillInstance::towards_position(CoreVector2::new(x, y));
-        skill_to_action_node(
-            SkillEnum::Face(skill_instance),
-            action_description,
-            "FaceTowardsPosition",
-        )
-    }
-
-    // FaceTowardsOwnPlayer overloads for default parameter simulation
     #[rhai_fn(name = "FaceTowardsOwnPlayer", return_raw)]
-    pub fn face_towards_own_player_action_full(
-        player_id: i64,
-        options: Map,
-        action_description: &str,
+    pub fn face_player_action(
+        context: NativeCallContext,
+        player_id: rhai::Dynamic,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_towards_own_player_action_with_options_impl(
+        face_player_action_impl(context, player_id, None, None)
+    }
+
+    #[rhai_fn(name = "FaceTowardsOwnPlayer", return_raw)]
+    pub fn face_player_action_with_options(
+        context: NativeCallContext,
+        player_id: rhai::Dynamic,
+        options: Map,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        face_player_action_impl(context, player_id, Some(options), None)
+    }
+
+    #[rhai_fn(name = "FaceTowardsOwnPlayer", return_raw)]
+    pub fn face_player_action_with_description(
+        context: NativeCallContext,
+        player_id: rhai::Dynamic,
+        description: &str,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        face_player_action_impl(context, player_id, None, Some(description.to_string()))
+    }
+
+    #[rhai_fn(name = "FaceTowardsOwnPlayer", return_raw)]
+    pub fn face_player_action_with_options_and_description(
+        context: NativeCallContext,
+        player_id: rhai::Dynamic,
+        options: Map,
+        description: &str,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        face_player_action_impl(
+            context,
             player_id,
-            options,
-            Some(action_description),
+            Some(options),
+            Some(description.to_string()),
         )
     }
 
-    #[rhai_fn(name = "FaceTowardsOwnPlayer", return_raw)]
-    pub fn face_towards_own_player_action_with_options(
-        player_id: i64,
-        options: Map,
+    fn face_player_action_impl(
+        context: NativeCallContext,
+        player_id: rhai::Dynamic,
+        options: Option<Map>,
+        description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_towards_own_player_action_with_options_impl(player_id, options, None)
-    }
+        let player_id_arg = Argument::from_rhai(player_id, &context)?;
+        let mut with_ball_arg = Argument::Static(false);
 
-    #[rhai_fn(name = "FaceTowardsOwnPlayer", return_raw)]
-    pub fn face_towards_own_player_action_with_description(
-        player_id: i64,
-        action_description: &str,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_towards_own_player_action_basic_impl(player_id, Some(action_description))
-    }
-
-    #[rhai_fn(name = "FaceTowardsOwnPlayer", return_raw)]
-    pub fn face_towards_own_player_action_basic(
-        player_id: i64,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        face_towards_own_player_action_basic_impl(player_id, None)
-    }
-
-    // Implementation functions for FaceTowardsOwnPlayer
-    fn face_towards_own_player_action_with_options_impl(
-        player_id: i64,
-        options: Map,
-        action_description: Option<&str>,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let id = PlayerId::new(player_id as u32);
-        let mut skill_instance = FaceSkillInstance::towards_own_player(id);
-        if let Some(with_ball_dyn) = options.get("with_ball") {
-            if let Some(with_ball_bool) = with_ball_dyn.as_bool().ok() {
-                if with_ball_bool {
-                    skill_instance = skill_instance.with_ball();
-                }
+        if let Some(options_map) = options {
+            if let Some(with_ball_dyn) = options_map.get("with_ball") {
+                with_ball_arg = Argument::from_rhai(with_ball_dyn.clone(), &context)?;
             }
         }
-        skill_to_action_node(
-            SkillEnum::Face(skill_instance),
-            action_description,
-            "FaceTowardsOwnPlayer",
-        )
+
+        let skill_def = SkillDefinition::Face {
+            target: FaceTarget::OwnPlayer(player_id_arg),
+            with_ball: with_ball_arg,
+        };
+        to_action_node(skill_def, description)
     }
 
-    fn face_towards_own_player_action_basic_impl(
-        player_id: i64,
-        action_description: Option<&str>,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let id = PlayerId::new(player_id as u32);
-        let skill_instance = FaceSkillInstance::towards_own_player(id);
-        skill_to_action_node(
-            SkillEnum::Face(skill_instance),
-            action_description,
-            "FaceTowardsOwnPlayer",
-        )
-    }
-
-    // Kick overloads for default parameter simulation
     #[rhai_fn(name = "Kick", return_raw)]
-    pub fn kick_action_with_description(
-        action_description: &str,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        kick_action_impl(Some(action_description))
+    pub fn kick_action(description: &str) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        to_action_node(SkillDefinition::Kick, Some(description.to_string()))
     }
 
     #[rhai_fn(name = "Kick", return_raw)]
     pub fn kick_action_basic() -> Result<BehaviorNode, Box<EvalAltResult>> {
-        kick_action_impl(None)
+        to_action_node(SkillDefinition::Kick, None)
     }
 
-    // Implementation function for Kick
-    fn kick_action_impl(
-        action_description: Option<&str>,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance = KickSkillInstance::new();
-        skill_to_action_node(SkillEnum::Kick(skill_instance), action_description, "Kick")
-    }
-
-    // Wait overloads for default parameter simulation
     #[rhai_fn(name = "Wait", return_raw)]
-    pub fn wait_action_with_description(
-        duration_secs: f64,
-        action_description: &str,
+    pub fn wait_action(
+        context: NativeCallContext,
+        duration_secs: rhai::Dynamic,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        wait_action_impl(duration_secs, Some(action_description))
+        wait_action_impl(context, duration_secs, None)
     }
 
     #[rhai_fn(name = "Wait", return_raw)]
-    pub fn wait_action_basic(duration_secs: f64) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        wait_action_impl(duration_secs, None)
+    pub fn wait_action_with_description(
+        context: NativeCallContext,
+        duration_secs: rhai::Dynamic,
+        description: &str,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        wait_action_impl(context, duration_secs, Some(description.to_string()))
     }
 
-    // Implementation function for Wait
     fn wait_action_impl(
-        duration_secs: f64,
-        action_description: Option<&str>,
+        context: NativeCallContext,
+        duration_secs: rhai::Dynamic,
+        description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance = WaitSkillInstance::new_secs_f64(duration_secs);
-        skill_to_action_node(SkillEnum::Wait(skill_instance), action_description, "Wait")
+        let duration_arg = Argument::from_rhai(duration_secs, &context)?;
+        let skill_def = SkillDefinition::Wait {
+            duration_secs: duration_arg,
+        };
+        to_action_node(skill_def, description)
     }
 
-    // FetchBall overloads for default parameter simulation
     #[rhai_fn(name = "FetchBall", return_raw)]
-    pub fn fetch_ball_action_with_description(
-        action_description: &str,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        fetch_ball_action_impl(Some(action_description))
+    pub fn fetch_ball_action(description: &str) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        to_action_node(SkillDefinition::FetchBall, Some(description.to_string()))
     }
 
     #[rhai_fn(name = "FetchBall", return_raw)]
     pub fn fetch_ball_action_basic() -> Result<BehaviorNode, Box<EvalAltResult>> {
-        fetch_ball_action_impl(None)
+        to_action_node(SkillDefinition::FetchBall, None)
     }
 
-    // Implementation function for FetchBall
-    fn fetch_ball_action_impl(
-        action_description: Option<&str>,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance = FetchBallSkillInstance::new();
-        skill_to_action_node(
-            SkillEnum::FetchBall(skill_instance),
-            action_description,
-            "FetchBall",
-        )
-    }
-
-    // InterceptBall overloads for default parameter simulation
     #[rhai_fn(name = "InterceptBall", return_raw)]
-    pub fn intercept_ball_action_with_description(
-        action_description: &str,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        intercept_ball_action_impl(Some(action_description))
+    pub fn intercept_ball_action(description: &str) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        to_action_node(
+            SkillDefinition::InterceptBall,
+            Some(description.to_string()),
+        )
     }
 
     #[rhai_fn(name = "InterceptBall", return_raw)]
     pub fn intercept_ball_action_basic() -> Result<BehaviorNode, Box<EvalAltResult>> {
-        intercept_ball_action_impl(None)
+        to_action_node(SkillDefinition::InterceptBall, None)
     }
 
-    // Implementation function for InterceptBall
-    fn intercept_ball_action_impl(
-        action_description: Option<&str>,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance = InterceptBallSkillInstance::new();
-        skill_to_action_node(
-            SkillEnum::InterceptBall(skill_instance),
-            action_description,
-            "InterceptBall",
-        )
-    }
-
-    // ApproachBall overloads for default parameter simulation
     #[rhai_fn(name = "ApproachBall", return_raw)]
-    pub fn approach_ball_action_with_description(
-        action_description: &str,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        approach_ball_action_impl(Some(action_description))
+    pub fn approach_ball_action(description: &str) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        to_action_node(SkillDefinition::ApproachBall, Some(description.to_string()))
     }
 
     #[rhai_fn(name = "ApproachBall", return_raw)]
     pub fn approach_ball_action_basic() -> Result<BehaviorNode, Box<EvalAltResult>> {
-        approach_ball_action_impl(None)
+        to_action_node(SkillDefinition::ApproachBall, None)
     }
 
-    // Implementation function for ApproachBall
-    fn approach_ball_action_impl(
-        action_description: Option<&str>,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance = ApproachBallSkillInstance::new();
-        skill_to_action_node(
-            SkillEnum::ApproachBall(skill_instance),
-            action_description,
-            "ApproachBall",
-        )
-    }
-
-    // FetchBallWithHeadingAngle overloads for default parameter simulation
     #[rhai_fn(name = "FetchBallWithHeadingAngle", return_raw)]
-    pub fn fetch_ball_with_heading_angle_action_with_description(
-        angle_rad: f64,
-        action_description: &str,
+    pub fn fetch_ball_with_heading_angle_action(
+        context: NativeCallContext,
+        angle_rad: rhai::Dynamic,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        fetch_ball_with_heading_angle_action_impl(angle_rad, Some(action_description))
+        fetch_ball_with_heading_angle_impl(context, angle_rad, None)
     }
 
     #[rhai_fn(name = "FetchBallWithHeadingAngle", return_raw)]
-    pub fn fetch_ball_with_heading_angle_action_basic(
-        angle_rad: f64,
+    pub fn fetch_ball_with_heading_angle_action_with_description(
+        context: NativeCallContext,
+        angle_rad: rhai::Dynamic,
+        description: &str,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        fetch_ball_with_heading_angle_action_impl(angle_rad, None)
+        fetch_ball_with_heading_angle_impl(context, angle_rad, Some(description.to_string()))
     }
 
-    // Implementation function for FetchBallWithHeadingAngle
-    fn fetch_ball_with_heading_angle_action_impl(
-        angle_rad: f64,
-        action_description: Option<&str>,
+    fn fetch_ball_with_heading_angle_impl(
+        context: NativeCallContext,
+        angle_rad: rhai::Dynamic,
+        description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance = FetchBallWithHeadingSkillInstance::new(Angle::from_radians(angle_rad));
-        skill_to_action_node(
-            SkillEnum::FetchBallWithHeading(skill_instance),
-            action_description,
-            "FetchBallWithHeadingAngle",
-        )
-    }
-
-    // FetchBallWithHeadingPosition overloads for default parameter simulation
-    #[rhai_fn(name = "FetchBallWithHeadingPosition", return_raw)]
-    pub fn fetch_ball_with_heading_position_action_with_description(
-        x: f64,
-        y: f64,
-        action_description: &str,
-    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        fetch_ball_with_heading_position_action_impl(x, y, Some(action_description))
+        let angle_arg = Argument::from_rhai(angle_rad, &context)?;
+        let skill_def = SkillDefinition::FetchBallWithHeading {
+            target: HeadingTarget::Angle(angle_arg),
+        };
+        to_action_node(skill_def, description)
     }
 
     #[rhai_fn(name = "FetchBallWithHeadingPosition", return_raw)]
-    pub fn fetch_ball_with_heading_position_action_basic(
-        x: f64,
-        y: f64,
+    pub fn fetch_ball_with_heading_pos_action(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        fetch_ball_with_heading_position_action_impl(x, y, None)
+        fetch_ball_with_heading_pos_impl(context, target, None)
     }
 
-    // Implementation function for FetchBallWithHeadingPosition
-    fn fetch_ball_with_heading_position_action_impl(
-        x: f64,
-        y: f64,
-        action_description: Option<&str>,
+    #[rhai_fn(name = "FetchBallWithHeadingPosition", return_raw)]
+    pub fn fetch_ball_with_heading_pos_action_with_description(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
+        description: &str,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let skill_instance =
-            FetchBallWithHeadingSkillInstance::towards_position(CoreVector2::new(x, y));
-        skill_to_action_node(
-            SkillEnum::FetchBallWithHeading(skill_instance),
-            action_description,
-            "FetchBallWithHeadingPosition",
-        )
+        fetch_ball_with_heading_pos_impl(context, target, Some(description.to_string()))
     }
 
-    // FetchBallWithHeadingPlayer overloads for default parameter simulation
+    fn fetch_ball_with_heading_pos_impl(
+        context: NativeCallContext,
+        target: rhai::Dynamic,
+        description: Option<String>,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        let target_arg = Argument::from_rhai(target, &context)?;
+        let skill_def = SkillDefinition::FetchBallWithHeading {
+            target: HeadingTarget::Position(target_arg),
+        };
+        to_action_node(skill_def, description)
+    }
+
     #[rhai_fn(name = "FetchBallWithHeadingPlayer", return_raw)]
-    pub fn fetch_ball_with_heading_player_action_with_description(
-        player_id: i64,
-        action_description: &str,
+    pub fn fetch_ball_with_heading_player_action(
+        context: NativeCallContext,
+        player_id: rhai::Dynamic,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        fetch_ball_with_heading_player_action_impl(player_id, Some(action_description))
+        fetch_ball_with_heading_player_impl(context, player_id, None)
     }
 
     #[rhai_fn(name = "FetchBallWithHeadingPlayer", return_raw)]
-    pub fn fetch_ball_with_heading_player_action_basic(
-        player_id: i64,
+    pub fn fetch_ball_with_heading_player_action_with_description(
+        context: NativeCallContext,
+        player_id: rhai::Dynamic,
+        description: &str,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        fetch_ball_with_heading_player_action_impl(player_id, None)
+        fetch_ball_with_heading_player_impl(context, player_id, Some(description.to_string()))
     }
 
-    // Implementation function for FetchBallWithHeadingPlayer
-    fn fetch_ball_with_heading_player_action_impl(
-        player_id: i64,
-        action_description: Option<&str>,
+    fn fetch_ball_with_heading_player_impl(
+        context: NativeCallContext,
+        player_id: rhai::Dynamic,
+        description: Option<String>,
     ) -> Result<BehaviorNode, Box<EvalAltResult>> {
-        let id = PlayerId::new(player_id as u32);
-        let skill_instance = FetchBallWithHeadingSkillInstance::towards_own_player(id);
-        skill_to_action_node(
-            SkillEnum::FetchBallWithHeading(skill_instance),
-            action_description,
-            "FetchBallWithHeadingPlayer",
-        )
+        let player_id_arg = Argument::from_rhai(player_id, &context)?;
+        let skill_def = SkillDefinition::FetchBallWithHeading {
+            target: HeadingTarget::OwnPlayer(player_id_arg),
+        };
+        to_action_node(skill_def, description)
     }
 }

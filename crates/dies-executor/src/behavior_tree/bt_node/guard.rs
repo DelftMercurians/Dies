@@ -1,4 +1,5 @@
 use dies_core::debug_tree_node;
+use rhai::Engine;
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -39,10 +40,11 @@ impl GuardNode {
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
+        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
-        let (status, input) = if self.condition.check(situation) {
-            self.child.tick(situation)
+        let (status, input) = if self.condition.check(situation, engine) {
+            self.child.tick(situation, engine)
         } else {
             (BehaviorStatus::Failure, None)
         };
@@ -53,7 +55,7 @@ impl GuardNode {
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&node_full_id),
-            is_active && self.condition.check(situation),
+            is_active && self.condition.check(situation, engine),
         );
         (status, input)
     }

@@ -1,4 +1,5 @@
 use dies_core::{debug_tree_node, PlayerId};
+use rhai::Engine;
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -37,6 +38,7 @@ impl SemaphoreNode {
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
+        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let player_id = situation.player_id;
@@ -59,7 +61,7 @@ impl SemaphoreNode {
         };
 
         if acquired_semaphore {
-            let (child_status, child_input) = self.child.tick(situation);
+            let (child_status, child_input) = self.child.tick(situation, engine);
             result_status = child_status;
             result_input = child_input;
 

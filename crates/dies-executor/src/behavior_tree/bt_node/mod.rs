@@ -1,5 +1,6 @@
 use super::bt_core::{BehaviorStatus, RobotSituation};
 use crate::control::PlayerControlInput;
+use rhai::Engine;
 
 mod action;
 mod guard;
@@ -9,7 +10,7 @@ mod select;
 mod semaphore;
 mod sequence;
 
-pub use action::ActionNode;
+pub use action::*;
 pub use guard::GuardNode;
 pub use noop::NoopNode;
 pub use scoring_select::ScoringSelectNode;
@@ -32,14 +33,15 @@ impl BehaviorNode {
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
+        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         match self {
-            BehaviorNode::Select(node) => node.tick(situation),
-            BehaviorNode::Sequence(node) => node.tick(situation),
-            BehaviorNode::Guard(node) => node.tick(situation),
-            BehaviorNode::Action(node) => node.tick(situation),
-            BehaviorNode::Semaphore(node) => node.tick(situation),
-            BehaviorNode::ScoringSelect(node) => node.tick(situation),
+            BehaviorNode::Select(node) => node.tick(situation, engine),
+            BehaviorNode::Sequence(node) => node.tick(situation, engine),
+            BehaviorNode::Guard(node) => node.tick(situation, engine),
+            BehaviorNode::Action(node) => node.tick(situation, engine),
+            BehaviorNode::Semaphore(node) => node.tick(situation, engine),
+            BehaviorNode::ScoringSelect(node) => node.tick(situation, engine),
             BehaviorNode::Noop(_) => (BehaviorStatus::Success, None),
         }
     }

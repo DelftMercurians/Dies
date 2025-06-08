@@ -1,4 +1,5 @@
 use dies_core::debug_tree_node;
+use rhai::Engine;
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -28,12 +29,13 @@ impl SequenceNode {
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
+        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let mut last_input_on_success: Option<PlayerControlInput> = None;
 
         while self.current_child_index < self.children.len() {
-            match self.children[self.current_child_index].tick(situation) {
+            match self.children[self.current_child_index].tick(situation, engine) {
                 (BehaviorStatus::Success, input_opt) => {
                     self.current_child_index += 1;
                     last_input_on_success = input_opt;

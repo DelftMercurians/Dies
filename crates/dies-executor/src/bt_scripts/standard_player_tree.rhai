@@ -1,88 +1,85 @@
-fn has_ball_condition(s) {
-    // s is the RhaiRobotSituationView (a map)
-    // print("RHAI: Checking has_ball_condition: " + s.has_ball);
-    return s.has_ball;
-}
-
-fn ball_is_close_condition(s) {
-    if s.ball == () { // Check if ball data is nil
-        // print("RHAI: Ball data not available in ball_is_close_condition");
-        return false;
+// Callbacks for dynamic arguments
+fn get_ball_pos(s) {
+    // s is RobotSituation
+    // Note: The ball can be None (represented as '()' in Rhai).
+    if s.world.ball == () {
+        throw "Ball information not available in get_ball_pos.";
     }
-    let dx = s.player.pos_x - s.ball.pos_x;
-    let dy = s.player.pos_y - s.ball.pos_y;
-    let dist_sq = dx*dx + dy*dy;
-    // print("RHAI: Ball distance squared: " + dist_sq + " for player " + s.player_id);
-    return dist_sq < (500.0 * 500.0);
+    return s.world.ball.position;
 }
 
-fn score_offensive_position(s) {
-    // Dummy scorer, higher score is better
-    // print("RHAI: Scoring offensive position for player " + s.player_id);
-    if s.ball != () {
-        // A simple score: closer to the ball is better. Max score 100.
-        let dx = s.player.pos_x - s.ball.pos_x;
-        let dy = s.player.pos_y - s.ball.pos_y;
-        let dist = (dx*dx + dy*dy).sqrt();
-        return 100.0 - dist * 10.0; // Scale distance effect
+fn get_heading_to_ball(s) {
+    if s.world.ball == () {
+        throw "Ball information not available in get_heading_to_ball.";
     }
-    return 0.0;
+    let player_pos = s.player().position;
+    let ball_pos = s.world.ball.position;
+    let dx = ball_pos.x - player_pos.x;
+    let dy = ball_pos.y - player_pos.y;
+    return dy.atan(dx);
 }
 
-fn score_defensive_position(s) {
-    // Dummy scorer
-    // print("RHAI: Scoring defensive position for player " + s.player_id);
-    // Example: prefer player's x position to be positive, max score 50 + player.pos_x
-    return 50.0 + s.player.pos_x;
+fn get_supporter_pos(s) {
+    if s.world.ball == () {
+        throw "Ball information not available in get_supporter_pos.";
+    }
+    let ball_pos = s.world.ball.position;
+    // Position self 2 meters behind the ball, relative to the center line.
+    return vec2(ball_pos.x - 2000.0, ball_pos.y);
+}
+
+fn i_have_ball(s) {
+    return s.has_ball();
 }
 
 fn build_player_bt(player_id) {
-    let player_id_str = player_id.to_string();
+    let opponent_goal = vec2(6000.0, 0.0);
+    let own_goal = vec2(-6000.0, 0.0);
 
-    // Define some skills (using the globally registered skill constructors)
-    let go_to_origin_skill = GoToPosition(0.0, 0.0);
-    let go_to_positive_skill = GoToPosition(1000.0, 1000.0);
-    let go_to_negative_skill = GoToPosition(-1000.0, -1000.0);
+    // Attacker behavior: get the ball and shoot
+    let attacker_behavior = Sequence([
+        FetchBall("Get Ball"),
+        Guard(i_have_ball, 
+            FaceTowardsPosition(opponent_goal, #{}, "Face Opponent Goal"),
+            "Have ball?"
+        ),
+        Kick("Shoot!")
+    ], "Attacker Sequence");
 
-    // Build the tree
-    // let tree = Select([
-    //     // Sequence 1: If player has the ball, try to go to (1,1)
-    //     Sequence([
-    //         Guard(has_ball_condition, go_to_positive_skill, "Cond_HasBall"),
-    //         go_to_positive_skill
-    //     ], "Seq_HandleBall"),
+    // Supporter behavior: stay behind the ball, ready to receive a pass or take over.
+    // Uses a dynamic target for GoToPosition and a dynamic heading.
+    let supporter_behavior = GoToPosition(
+        get_supporter_pos, 
+        #{ heading: get_heading_to_ball },
+        "Support Attacker"
+    );
 
-    //     // Sequence 2: If ball is close (but not possessed), go to (-1,-1) to intercept
-    //     Sequence([
-    //         Guard(ball_is_close_condition, go_to_negative_skill, "Cond_BallClose"),
-    //     ], "Seq_GetCloseBall"),
+    // Defender behavior: stay near own goal. Position is varied by player ID to avoid clumping.
+    let defender_y = (hash_float(player_id) - 0.5) * 4000.0; // spread between -2000 and 2000
+    let defender_pos = vec2(own_goal.x + 1500.0, defender_y);
+    let defender_behavior = GoToPosition(
+        defender_pos,
+        #{ heading: 0.0 }, // Face center
+        "Defend"
+    );
 
-    //     // ScoringSelect Node: Choose between two tactical positions based on scores
-    //     ScoringSelect(
-    //         [
-    //             #{ node: go_to_positive_skill, scorer: score_offensive_position },
-    //             #{ node: go_to_negative_skill, scorer: score_defensive_position }
-    //         ],
-    //         10.0, // Hysteresis margin (scores are roughly in 0-100 range)
-    //         "Scoring_StrategicPos"
-    //     ),
-        
-    //     // Semaphore example: Only one player can attempt to go to origin via this semaphore
-    //     Semaphore(
-    //         go_to_origin_skill,
-    //         "unique_origin_task", // Semaphore ID string
-    //         1, // Max count (integer)
-    //         "Sem_GoToOrigin"
-    //     ),
-
-    //     // Fallback: Go to origin by default if nothing else runs or succeeds
-    //     go_to_origin_skill
-    // ], "RootSelect_Player_" + player_id_str);
-    let tree = Sequence([
-        go_to_origin_skill,
-        go_to_positive_skill,
-        go_to_negative_skill,
-    ], "RootSelect_Player_" + player_id_str);
+    // Main tree with role assignment using Semaphores
+    let tree = Select([
+        Semaphore(
+            attacker_behavior,
+            "attacker_role",
+            1, // Only one attacker
+            "Try Attacker Role"
+        ),
+        Semaphore(
+            supporter_behavior,
+            "supporter_role",
+            1, // Only one supporter
+            "Try Supporter Role"
+        ),
+        // Everyone else becomes a defender
+        defender_behavior
+    ], "Player Roles");
 
     return tree;
 } 

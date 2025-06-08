@@ -79,6 +79,8 @@ impl TeamController {
 
         let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
 
+        let engine = self.script_host.engine();
+        let engine_guard = engine.read().unwrap();
         for player_data in &world_data.own_players {
             let player_id = player_data.id;
 
@@ -101,7 +103,7 @@ impl TeamController {
                 viz_path_prefix,
             );
 
-            let (_status, player_input_opt) = player_bt.tick(&mut robot_situation);
+            let (_status, player_input_opt) = player_bt.tick(&mut robot_situation, &engine_guard);
             let mut player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
 
             if player_input.role_type == RoleType::Player {

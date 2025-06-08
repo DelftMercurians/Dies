@@ -4,7 +4,7 @@ use super::bt_core::RobotSituation;
 use anyhow::Result;
 use rhai::{Engine, FnPtr, FuncArgs, NativeCallContext, NativeCallContextStore, Variant};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum BtCallback<TRet> {
     Native(fn(&RobotSituation) -> TRet),
     Rhai(RhaiFunction),
@@ -22,11 +22,11 @@ where
         Self::Rhai(RhaiFunction::new(call_ctx, fn_ptr))
     }
 
-    pub fn call<'a>(&self, situation: &RobotSituation) -> Result<TRet> {
+    pub fn call<'a>(&self, situation: &RobotSituation, engine: &Engine) -> Result<TRet> {
         match self {
             BtCallback::Native(f) => Ok(f(situation)),
             BtCallback::Rhai(f) => {
-                let result = f.call::<(RobotSituation,), TRet>((situation.clone(),))?;
+                let result = f.call::<(RobotSituation,), TRet>(engine, (situation.clone(),))?;
                 Ok(result)
             }
         }
@@ -47,14 +47,19 @@ impl RhaiFunction {
         }
     }
 
-    pub fn call<TArgs, TRet>(&self, args: TArgs) -> Result<TRet>
+    pub fn call<TArgs, TRet>(&self, engine: &Engine, args: TArgs) -> Result<TRet>
     where
         TArgs: FuncArgs,
         TRet: Clone + Variant,
     {
-        let engine = Engine::new_raw();
         self.fn_ptr
-            .call_within_context::<TRet>(&self.call_ctx.create_context(&engine), args)
+            .call_within_context::<TRet>(&self.call_ctx.create_context(engine), args)
             .map_err(anyhow::Error::new)
+    }
+}
+
+impl std::fmt::Debug for RhaiFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RhaiFunction({})", self.fn_ptr.fn_name())
     }
 }
