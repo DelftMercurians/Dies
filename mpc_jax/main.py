@@ -42,58 +42,48 @@ def distance_cost(pos: jnp.ndarray, target: jnp.ndarray) -> float:
 
 
 def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray) -> float:
-    """
-    Compute collision cost treating each obstacle as another robot.
-    
-    Cost is applied as follows:
-    - If distance > 3*ROBOT_RADIUS: No cost (safe zone)
-    - If 2*ROBOT_RADIUS < distance <= 3*ROBOT_RADIUS: Smoothly increasing cost as we get closer
-    - If distance <= 2*ROBOT_RADIUS: High cost (danger zone - robots would collide)
-    
-    Args:
-        pos: Current position [x, y]
-        obstacles: Obstacle positions shape (n_obstacles, 2)
-    """
     if obstacles.shape[0] == 0:
         return 0.0
 
     # Compute distances to all obstacles
     diffs = pos[None, :] - obstacles  # Shape: (n_obstacles, 2)
     distances = jnp.sqrt(jnp.sum(diffs**2, axis=1))  # Euclidean distance
-    
+
     # Define safety thresholds
     min_safe_distance = 2.0 * ROBOT_RADIUS  # Minimum safe distance (two robot radii)
-    no_cost_distance = 3.0 * ROBOT_RADIUS   # Distance beyond which there's no cost
-    
+    no_cost_distance = 3.0 * ROBOT_RADIUS  # Distance beyond which there's no cost
+
     # Calculate penalty in transition zone (smoothly interpolate between min_safe and no_cost)
     # For distances in [min_safe, no_cost], the penalty should decrease from 1 to 0
     transition_zone = jnp.logical_and(
-        distances > min_safe_distance,
-        distances <= no_cost_distance
+        distances > min_safe_distance, distances <= no_cost_distance
     )
-    
+
     # Normalized distance in the transition zone (0 at min_safe, 1 at no_cost)
-    normalized_distance = (distances - min_safe_distance) / (no_cost_distance - min_safe_distance)
-    
+    normalized_distance = (distances - min_safe_distance) / (
+        no_cost_distance - min_safe_distance
+    )
+
     # Smooth transition using cubic function: 2t^3 - 3t^2 + 1, where t is normalized_distance
     # This gives a smooth S-curve that starts at 1 and ends at 0
     smooth_factor = jnp.where(
         transition_zone,
         1.0 - (2.0 * normalized_distance**3 - 3.0 * normalized_distance**2 + 1.0),
-        0.0
+        0.0,
     )
-    
+
     # High cost for being too close (within min_safe_distance)
     danger_zone = distances <= min_safe_distance
     danger_factor = jnp.where(
         danger_zone,
-        (min_safe_distance / (distances + 0.1))**2,  # Add small constant to avoid division by zero
-        0.0
+        (min_safe_distance / (distances + 0.1))
+        ** 2,  # Add small constant to avoid division by zero
+        0.0,
     )
-    
+
     # Combine both costs
     penalties = smooth_factor + danger_factor
-    
+
     return jnp.sum(penalties) * 1e4  # Scale factor for overall collision cost
 
 
