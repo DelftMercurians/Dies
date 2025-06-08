@@ -5,6 +5,7 @@ mod executor_settings;
 mod geom;
 mod math;
 mod player;
+mod sides;
 mod world;
 
 pub mod workspace_utils;
@@ -17,6 +18,7 @@ pub use geom::*;
 pub use math::*;
 pub use player::*;
 use serde::{Deserialize, Serialize};
+pub use sides::*;
 use typeshare::typeshare;
 pub use world::*;
 

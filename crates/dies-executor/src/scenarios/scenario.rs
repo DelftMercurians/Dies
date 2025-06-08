@@ -4,7 +4,7 @@ use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     Angle, BallPlacement, ExecutorSettings, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo,
-    Vector2, Vector3, WorldData,
+    Vector2, Vector3, TeamData,
 };
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{SslClientConfig, VisionClient};
@@ -172,7 +172,7 @@ impl ScenarioSetup {
     }
 
     /// Check whether the current world state matches the scenario setup.
-    fn check_live(&self, world: WorldData) -> bool {
+    fn check_live(&self, world: TeamData) -> bool {
         // Check ball
         match (&self.ball, world.ball) {
             (BallPlacement::Position(target), Some(ball)) => {
@@ -303,7 +303,7 @@ fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
 
 #[cfg(test)]
 mod tests {
-    use dies_core::{mock_world_data, Angle, BallData, WorldData};
+    use dies_core::{mock_world_data, Angle, BallData, TeamData};
 
     use super::*;
 
@@ -320,7 +320,7 @@ mod tests {
             yaw_tolerance: 10.0f64.to_radians(),
         };
 
-        let mut world = WorldData {
+        let mut world = TeamData {
             ball: None,
             own_players: vec![PlayerData {
                 position: Vector2::new(0.0, 0.0),

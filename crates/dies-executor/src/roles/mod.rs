@@ -1,7 +1,7 @@
 pub mod skills;
 
 use crate::control::PlayerControlInput;
-use dies_core::{PlayerData, WorldData};
+use dies_core::{PlayerData, TeamData};
 
 use skills::{
     ApproachBall, Face, FetchBall, FetchBallWithHeading, GoToPosition, InterceptBall, Kick, Wait,
@@ -36,7 +36,7 @@ impl Skill {
 
 pub struct SkillCtx<'a> {
     pub player: &'a PlayerData,
-    pub world: &'a WorldData,
+    pub world: &'a TeamData,
 }
 
 /// The result of a skill execution

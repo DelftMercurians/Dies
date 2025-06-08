@@ -1,4 +1,4 @@
-use dies_core::{PlayerData, PlayerId, WorldData};
+use dies_core::{PlayerData, PlayerId, TeamData};
 use rhai::Engine;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -101,7 +101,7 @@ pub enum BehaviorStatus {
 #[derive(Clone)]
 pub struct RobotSituation {
     pub player_id: PlayerId,
-    pub world: Arc<WorldData>,
+    pub world: Arc<TeamData>,
     pub team_context: TeamContext,
     pub viz_path_prefix: String,
 }
@@ -109,7 +109,7 @@ pub struct RobotSituation {
 impl RobotSituation {
     pub fn new(
         player_id: PlayerId,
-        world: Arc<WorldData>,
+        world: Arc<TeamData>,
         team_context: TeamContext,
         viz_path_prefix: String,
     ) -> Self {

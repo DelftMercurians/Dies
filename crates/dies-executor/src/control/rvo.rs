@@ -1,10 +1,11 @@
 use std::f64::{consts::PI, EPSILON};
 
-use dies_core::{debug_string, Angle, Obstacle, PlayerData, PlayerModel, Vector2};
+use dies_core::{Angle, Obstacle, PlayerData, Vector2};
 
 // Constants
 const PLAYER_MARGIN: f64 = 30.0;
 const OVER_APPROX_C2S: f64 = 1.5;
+const PLAYER_RADIUS: f64 = 90.0;
 
 /// The type of VO algorithm to use
 #[derive(Clone, Copy)]
@@ -26,11 +27,10 @@ pub fn velocity_obstacle_update(
     desired_velocity: &Vector2,
     players: &[&PlayerData],
     obstacles: &[Obstacle],
-    model: &PlayerModel,
     vo_type: VelocityObstacleType,
     avoid_robots: bool,
 ) -> Vector2 {
-    let player_radius = model.radius + PLAYER_MARGIN;
+    let player_radius = PLAYER_RADIUS + PLAYER_MARGIN;
     let mut rvo_ba_all = Vec::new();
 
     // Consider other agents

@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use dies_core::{
     to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd,
-    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, Vector2, WorldData,
+    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, TeamData, Vector2,
 };
 
 use super::{
@@ -208,7 +208,7 @@ impl PlayerController {
     pub fn update(
         &mut self,
         state: &PlayerData,
-        world: &WorldData,
+        world: &TeamData,
         input: &PlayerControlInput,
         dt: f64,
         is_manual_override: bool,
@@ -290,7 +290,6 @@ impl PlayerController {
                 &self.target_velocity,
                 all_players,
                 obstacles.as_slice(),
-                &world.player_model,
                 super::rvo::VelocityObstacleType::VO,
                 input.avoid_robots,
             );
@@ -393,7 +392,7 @@ impl PlayerController {
     }
 }
 
-fn is_about_to_collide(player: &PlayerData, world: &WorldData, time_horizon: f64) -> bool {
+fn is_about_to_collide(player: &PlayerData, world: &TeamData, time_horizon: f64) -> bool {
     // Check if the player is about to collide with any other player
     for other in world.own_players.iter().chain(world.opp_players.iter()) {
         if player.position == other.position {

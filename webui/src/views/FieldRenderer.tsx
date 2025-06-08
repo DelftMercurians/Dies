@@ -5,7 +5,7 @@ import {
   PlayerData,
   Vector2,
   Vector3,
-  WorldData,
+  TeamData,
 } from "../bindings";
 
 const ROBOT_RADIUS = 0.08 * 1000;
@@ -36,7 +36,7 @@ export type PositionDisplayMode = "raw" | "filtered" | "both";
 export class FieldRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private worldData: WorldData | null = null;
+  private teamData: TeamData | null = null;
   private debugShapes: DebugShape[] = [];
   private fieldSize: [number, number] = DEFAULT_FIELD_SIZE;
   private positionDisplayMode: PositionDisplayMode = "filtered";
@@ -46,12 +46,12 @@ export class FieldRenderer {
     this.ctx = canvas.getContext("2d")!;
   }
 
-  setWorldData(worldData: WorldData | null) {
-    this.worldData = worldData;
-    if (worldData) {
+  setTeamData(teamData: TeamData | null) {
+    this.teamData = teamData;
+    if (teamData) {
       this.fieldSize = [
-        worldData.field_geom?.field_length ?? DEFAULT_FIELD_SIZE[0],
-        worldData.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1],
+        teamData.field_geom?.field_length ?? DEFAULT_FIELD_SIZE[0],
+        teamData.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1],
       ];
     }
   }
@@ -74,8 +74,8 @@ export class FieldRenderer {
 
   render(selectedPlayerId: number | null, manualControl: number[]) {
     this.clear();
-    if (!this.worldData) return;
-    const { own_players, opp_players, ball } = this.worldData;
+    if (!this.teamData) return;
+    const { own_players, opp_players, ball } = this.teamData;
 
     this.drawFieldLines();
 
@@ -85,11 +85,11 @@ export class FieldRenderer {
         "blue",
         player.id === selectedPlayerId,
         manualControl.includes(player.id),
-        this.positionDisplayMode,
-      ),
+        this.positionDisplayMode
+      )
     );
     opp_players.forEach((player) =>
-      this.drawPlayer(player, "yellow", false, false, this.positionDisplayMode),
+      this.drawPlayer(player, "yellow", false, false, this.positionDisplayMode)
     );
 
     if (ball) {
@@ -141,10 +141,10 @@ export class FieldRenderer {
   }
 
   private drawFieldLines() {
-    if (!this.worldData?.field_geom?.line_segments) return;
+    if (!this.teamData?.field_geom?.line_segments) return;
 
     this.ctx.lineWidth = 1;
-    this.worldData.field_geom.line_segments.forEach(({ p1, p2 }) => {
+    this.teamData.field_geom.line_segments.forEach(({ p1, p2 }) => {
       const [x1, y1] = this.fieldToCanvas(p1);
       const [x2, y2] = this.fieldToCanvas(p2);
       this.ctx.strokeStyle = FIELD_LINE;
@@ -161,7 +161,7 @@ export class FieldRenderer {
     selected: boolean,
     manualControl: boolean,
     positionDisplayMode: PositionDisplayMode,
-    opacity = 1,
+    opacity = 1
   ) {
     if (positionDisplayMode === "both") {
       this.drawPlayer(data, team, selected, manualControl, "filtered");
@@ -175,8 +175,8 @@ export class FieldRenderer {
           ? BLUE_ROBOT_RAW
           : BLUE_ROBOT_FILTERED
         : positionDisplayMode === "raw"
-          ? YELLOW_ROBOT_RAW
-          : YELLOW_ROBOT_FILTERED;
+        ? YELLOW_ROBOT_RAW
+        : YELLOW_ROBOT_FILTERED;
 
     const serverPos =
       positionDisplayMode === "raw" ? data.raw_position : data.position;
@@ -225,7 +225,7 @@ export class FieldRenderer {
 
   private drawBall(
     position: Vector2 | Vector3,
-    positionDisplayMode: PositionDisplayMode,
+    positionDisplayMode: PositionDisplayMode
   ) {
     const [x, y] = this.fieldToCanvas(position);
     const ballCanvasRadius = this.convertLength(BALL_RADIUS);
@@ -277,9 +277,9 @@ export class FieldRenderer {
   }
 
   getPlayerAt(x: number, y: number): number | null {
-    if (!this.worldData) return null;
+    if (!this.teamData) return null;
 
-    const { own_players, ball } = this.worldData;
+    const { own_players, ball } = this.teamData;
     for (const player of own_players) {
       const [playerX, playerY] =
         this.positionDisplayMode === "raw"

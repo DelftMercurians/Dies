@@ -12,8 +12,8 @@ pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
 };
 use dies_core::{
-    ExecutorSettings, FieldMask, GameState, PlayerFeedbackMsg, PlayerId, PlayerModel,
-    TrackerSettings, Vector2, WorldData, WorldInstant,
+    ExecutorSettings, FieldMask, GameState, PlayerFeedbackMsg, PlayerId, TeamData, TrackerSettings,
+    Vector2, WorldInstant,
 };
 use player::PlayerTracker;
 
@@ -44,7 +44,6 @@ pub struct WorldTracker {
     /// `first_t_capture`
     last_t_capture: Option<f64>,
     tracker_settings: TrackerSettings,
-    player_model: PlayerModel,
 }
 
 impl WorldTracker {
@@ -64,7 +63,6 @@ impl WorldTracker {
             first_t_capture: None,
             last_t_capture: None,
             tracker_settings: settings.tracker_settings.clone(),
-            player_model: settings.into(),
         }
     }
 
@@ -79,7 +77,6 @@ impl WorldTracker {
             "Changing the team color is not supported"
         );
 
-        self.player_model = settings.into();
         self.tracker_settings = tracker_settings.clone();
         for player_tracker in self.own_players_tracker.values_mut() {
             player_tracker.update_settings(tracker_settings);
@@ -305,7 +302,7 @@ impl WorldTracker {
     ///
     /// Returns `None` if the world state is not initialized (see
     /// [`WorldTracker::is_init`]).
-    pub fn get(&mut self) -> WorldData {
+    pub fn get(&mut self) -> TeamData {
         let field_geom = if let Some(v) = &self.field_geometry {
             Some(v)
         } else {
@@ -341,7 +338,7 @@ impl WorldTracker {
             },
         };
 
-        WorldData {
+        TeamData {
             dt: self.dt_received.unwrap_or(0.0),
             t_capture: self.last_t_capture.unwrap_or(0.0),
             t_received: self.last_t_received.unwrap_or(0.0),
@@ -350,7 +347,6 @@ impl WorldTracker {
             ball: self.ball_tracker.get(),
             field_geom: field_geom.cloned(),
             current_game_state: game_state,
-            player_model: self.player_model.clone(),
         }
     }
 }

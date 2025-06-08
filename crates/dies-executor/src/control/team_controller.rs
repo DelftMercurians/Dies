@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, WorldData};
+use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, TeamData};
 use std::sync::Arc;
 
 use super::{
@@ -53,7 +53,7 @@ impl TeamController {
 
     pub fn update(
         &mut self,
-        world_data: WorldData,
+        world_data: TeamData,
         manual_override: HashMap<PlayerId, PlayerControlInput>,
     ) {
         let world_data = Arc::new(world_data);
@@ -177,7 +177,7 @@ impl TeamController {
     }
 }
 
-fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
+fn comply(world_data: &TeamData, inputs: PlayerInputs) -> PlayerInputs {
     if let (Some(ball), Some(field)) = (world_data.ball.as_ref(), world_data.field_geom.as_ref()) {
         let game_state = world_data.current_game_state.game_state;
         let ball_pos = ball.position.xy();

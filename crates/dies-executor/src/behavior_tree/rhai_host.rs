@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use dies_core::{Angle, BallData, PlayerData, PlayerId, Vector2, Vector3, WorldData};
+use dies_core::{Angle, BallData, PlayerData, PlayerId, Vector2, Vector3, TeamData};
 use rhai::{exported_module, Dynamic, Engine, Scope, AST};
 
 use crate::behavior_tree::{bt_rhai_plugin, BehaviorTree, RobotSituation};
@@ -72,18 +72,18 @@ fn create_engine() -> Engine {
         .register_get("player_id", |rs: &mut RobotSituation| rs.player_id);
 
     engine
-        .register_type_with_name::<Arc<WorldData>>("World")
-        .register_get("ball", |wd: &mut Arc<WorldData>| {
+        .register_type_with_name::<Arc<TeamData>>("World")
+        .register_get("ball", |wd: &mut Arc<TeamData>| {
             if let Some(ball) = &wd.ball {
                 Dynamic::from(ball.clone())
             } else {
                 Dynamic::from(())
             }
         })
-        .register_get("own_players", |wd: &mut Arc<WorldData>| {
+        .register_get("own_players", |wd: &mut Arc<TeamData>| {
             wd.own_players.clone()
         })
-        .register_get("opp_players", |wd: &mut Arc<WorldData>| {
+        .register_get("opp_players", |wd: &mut Arc<TeamData>| {
             wd.opp_players.clone()
         });
 
