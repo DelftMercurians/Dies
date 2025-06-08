@@ -18,7 +18,7 @@ dies-logger = { version = "0.1.0", path = "../dies-logger" }
 paste = "1.0.15"
 rand = "0.8.5"
 serde = "1.0.203"
-rhai = { version = "1.21.0", features = [] }
+rhai = { version = "1.21.0", features = ["sync", "internals"] }
 
 [dev-dependencies]
 approx = "0.5.1"

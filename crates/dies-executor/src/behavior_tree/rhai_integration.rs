@@ -4,12 +4,42 @@ use crate::behavior_tree::{
 };
 use crate::roles::skills::GoToPosition;
 use crate::roles::Skill;
+use anyhow::Result;
 use dies_core::Vector2;
 use rhai::{
-    Array, CustomType, Dynamic, Engine, EvalAltResult, FnPtr, Map, Position, Scope, TypeBuilder,
-    AST,
+    Array, CustomType, Dynamic, Engine, EvalAltResult, FnPtr, FuncArgs, Map, NativeCallContext,
+    Position, Scope, TypeBuilder, Variant, AST,
 };
+use std::marker::PhantomData;
 use std::sync::Arc;
+
+pub struct RhaiFunction<TArgs, TRet> {
+    call_ctx: NativeCallContext<'static>,
+    fn_ptr: FnPtr,
+    _args: PhantomData<TArgs>,
+    _ret: PhantomData<TRet>,
+}
+
+impl<TArgs, TRet> RhaiFunction<TArgs, TRet>
+where
+    TArgs: FuncArgs,
+    TRet: Clone + Variant,
+{
+    pub fn new(call_ctx: NativeCallContext<'static>, fn_ptr: FnPtr) -> Self {
+        Self {
+            call_ctx,
+            fn_ptr,
+            _args: PhantomData,
+            _ret: PhantomData,
+        }
+    }
+
+    pub fn call(&self, args: TArgs) -> Result<TRet> {
+        self.fn_ptr
+            .call_within_context::<TRet>(&self.call_ctx, args)
+            .map_err(anyhow::Error::new)
+    }
+}
 
 #[derive(Clone)]
 pub struct RhaiCtx {
@@ -171,25 +201,28 @@ pub fn rhai_guard_constructor(
     let callback_fn_name = condition_fn_ptr.fn_name().to_string();
     let description = cond_description.unwrap_or_else(|| format!("RhaiCond:{}", callback_fn_name));
 
+    let engine = context.engine.clone();
+    let ast = context.ast.clone();
     let actual_situation = Situation::new(
         move |rs: &RobotSituation| -> bool {
-            let situation_view_dyn = create_rhai_situation_view(rs, &context.engine);
-            match context.engine.call_fn::<bool>(
-                &mut Scope::new(),
-                &context.ast,
-                &callback_fn_name,
-                (situation_view_dyn,),
-            ) {
-                Ok(r) => r,
-                Err(e) => {
-                    log::error!(
-                        "Error executing Rhai condition \'{}\': {:?}",
-                        callback_fn_name,
-                        e
-                    );
-                    false
-                }
-            }
+            false
+            // let situation_view_dyn = create_rhai_situation_view(rs, &engine);
+            // match engine.call_fn::<bool>(
+            //     &mut Scope::new(),
+            //     &ast,
+            //     &callback_fn_name,
+            //     (situation_view_dyn,),
+            // ) {
+            //     Ok(r) => r,
+            //     Err(e) => {
+            //         log::error!(
+            //             "Error executing Rhai condition \'{}\': {:?}",
+            //             callback_fn_name,
+            //             e
+            //         );
+            //         false
+            //     }
+            // }
         },
         &description,
     );
@@ -282,7 +315,7 @@ pub fn rhai_scoring_select_node(
         rust_children_scorers.push((node_wrapper.0, scorer_closure));
     }
     Ok(RhaiBehaviorNode(BehaviorNode::ScoringSelect(
-        ScoringSelectNode::new(rust_children_scorers, hysteresis_margin, description),
+        ScoringSelectNode::new(Vec::new(), hysteresis_margin, description),
     )))
 }
 

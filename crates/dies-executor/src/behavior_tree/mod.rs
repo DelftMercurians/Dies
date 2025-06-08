@@ -1,15 +1,36 @@
+use crate::behavior_tree::rhai_integration::RhaiFunction;
 use crate::control::PlayerControlInput;
 use crate::roles::{Skill, SkillCtx, SkillProgress, SkillResult};
+use anyhow::{anyhow, Result};
 use dies_core::{debug_tree_node, PlayerData, PlayerId, WorldData};
+use rhai::{Engine, FuncArgs, Scope, Variant, AST};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::marker::PhantomData;
+use std::sync::{Arc, Mutex, RwLock};
 
 pub mod rhai_integration;
+mod rhai_plugin;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone)]
+pub enum BtCallback<'a, TRet> {
+    Native(fn(RobotSituation<'a>) -> TRet),
+    Rhai(RhaiFunction<(RobotSituation<'a>,), TRet>),
+}
+
+impl<'a, TRet> BtCallback<'a, TRet> {
+    pub fn call(&self, situation: RobotSituation) -> f64 {
+        match self {
+            BtCallback::Native(f) => f(situation),
+            BtCallback::Rhai(f) => f.call(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BehaviorStatus {
     Success,
     Failure,
+    #[default]
     Running,
 }
 
@@ -124,20 +145,25 @@ impl<'a> RobotSituation<'a> {
 
 #[derive(Clone)]
 pub struct Situation {
-    condition: Arc<dyn Fn(&RobotSituation) -> bool>,
+    // condition: Arc<dyn Fn(&RobotSituation) -> bool + Send + Sync>,
+    condition: BtCallback,
     description: String,
 }
 
 impl Situation {
-    pub fn new(condition: impl Fn(&RobotSituation) -> bool + 'static, description: &str) -> Self {
+    pub fn new(
+        condition: impl Fn(&RobotSituation) -> bool + 'static + Send + Sync,
+        description: &str,
+    ) -> Self {
         Self {
-            condition: Arc::new(condition),
+            // condition: Arc::new(condition),
             description: description.to_string(),
         }
     }
 
     pub fn check(&self, situation: &RobotSituation) -> bool {
-        (self.condition)(situation)
+        // (self.condition)(situation)
+        false
     }
 
     pub fn and(self, other: Situation) -> Self {
@@ -630,9 +656,19 @@ impl SemaphoreNode {
     }
 }
 
+impl<TArgs, TRet> Clone for RhaiFunction<TArgs, TRet> {
+    fn clone(&self) -> Self {
+        Self {
+            ast: Arc::clone(&self.ast),
+            engine: Arc::clone(&self.engine),
+            fn_name: self.fn_name.clone(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ScoringSelectNode {
-    children_with_scorers: Vec<(BehaviorNode, Arc<dyn Fn(&RobotSituation) -> f64>)>,
+    children_with_scorers: Vec<(BehaviorNode, RhaiFunction)>,
     hysteresis_margin: f64,
     description_text: String,
     node_id_fragment: String,
@@ -642,16 +678,11 @@ pub struct ScoringSelectNode {
 
 impl ScoringSelectNode {
     pub fn new(
-        children_with_scorers_boxed: Vec<(BehaviorNode, Arc<dyn Fn(&RobotSituation) -> f64>)>,
+        children_with_scorers: Vec<(BehaviorNode, RhaiFunction)>,
         hysteresis_margin: f64,
         description: Option<String>,
     ) -> Self {
         let desc = description.unwrap_or_else(|| "ScoringSelect".to_string());
-        let children_with_scorers = children_with_scorers_boxed
-            .into_iter()
-            .map(|(node, scorer_box)| (node, Arc::from(scorer_box)))
-            .collect();
-
         Self {
             children_with_scorers,
             hysteresis_margin,
@@ -668,67 +699,68 @@ impl ScoringSelectNode {
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
 
-        if self.children_with_scorers.is_empty() {
-            debug_tree_node(
-                format!("bt.p{}.{}", situation.player_id, node_full_id),
-                self.description(),
-                node_full_id.clone(),
-                vec![],
-                false,
-            );
-            return (BehaviorStatus::Failure, None);
-        }
+        // if self.children_with_scorers.is_empty() {
+        //     debug_tree_node(
+        //         format!("bt.p{}.{}", situation.player_id, node_full_id),
+        //         self.description(),
+        //         node_full_id.clone(),
+        //         vec![],
+        //         false,
+        //     );
+        //     return (BehaviorStatus::Failure, None);
+        // }
 
-        let mut new_highest_score = f64::NEG_INFINITY;
-        let mut new_best_child_candidate_index = 0;
-        let mut scores = Vec::with_capacity(self.children_with_scorers.len());
+        // let mut new_highest_score = f64::NEG_INFINITY;
+        // let mut new_best_child_candidate_index = 0;
+        // let mut scores = Vec::with_capacity(self.children_with_scorers.len());
 
-        for (i, (_, scorer)) in self.children_with_scorers.iter().enumerate() {
-            let score = scorer(situation);
-            scores.push(score);
-            if score > new_highest_score {
-                new_highest_score = score;
-                new_best_child_candidate_index = i;
-            }
-        }
+        // for (i, (_, scorer)) in self.children_with_scorers.iter().enumerate() {
+        //     let score = scorer(situation);
+        //     scores.push(score);
+        //     if score > new_highest_score {
+        //         new_highest_score = score;
+        //         new_best_child_candidate_index = i;
+        //     }
+        // }
 
-        let final_child_to_tick_idx: usize;
-        if let Some(active_child_idx) = self.current_best_child_index {
-            let score_of_active_child = scores[active_child_idx];
-            if score_of_active_child >= new_highest_score - self.hysteresis_margin {
-                final_child_to_tick_idx = active_child_idx;
-            } else {
-                final_child_to_tick_idx = new_best_child_candidate_index;
-            }
-        } else {
-            final_child_to_tick_idx = new_best_child_candidate_index;
-        }
+        // let final_child_to_tick_idx: usize;
+        // if let Some(active_child_idx) = self.current_best_child_index {
+        //     let score_of_active_child = scores[active_child_idx];
+        //     if score_of_active_child >= new_highest_score - self.hysteresis_margin {
+        //         final_child_to_tick_idx = active_child_idx;
+        //     } else {
+        //         final_child_to_tick_idx = new_best_child_candidate_index;
+        //     }
+        // } else {
+        //     final_child_to_tick_idx = new_best_child_candidate_index;
+        // }
 
-        if self.current_best_child_index != Some(final_child_to_tick_idx) {
-            self.current_best_child_index = Some(final_child_to_tick_idx);
-            self.current_best_child_score = scores[final_child_to_tick_idx];
-        }
+        // if self.current_best_child_index != Some(final_child_to_tick_idx) {
+        //     self.current_best_child_index = Some(final_child_to_tick_idx);
+        //     self.current_best_child_score = scores[final_child_to_tick_idx];
+        // }
 
-        let (child_node, _) = &mut self.children_with_scorers[final_child_to_tick_idx];
-        let (status, input) = child_node.tick(situation);
+        // let (child_node, _) = &mut self.children_with_scorers[final_child_to_tick_idx];
+        // let (status, input) = child_node.tick(situation);
 
-        match status {
-            BehaviorStatus::Success | BehaviorStatus::Failure => {
-                self.current_best_child_index = None;
-                self.current_best_child_score = f64::NEG_INFINITY;
-            }
-            BehaviorStatus::Running => {}
-        }
+        // match status {
+        //     BehaviorStatus::Success | BehaviorStatus::Failure => {
+        //         self.current_best_child_index = None;
+        //         self.current_best_child_score = f64::NEG_INFINITY;
+        //     }
+        //     BehaviorStatus::Running => {}
+        // }
 
-        let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
-        debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
-            self.description(),
-            node_full_id.clone(),
-            self.get_child_node_ids(&node_full_id),
-            is_active,
-        );
-        (status, input)
+        // let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
+        // debug_tree_node(
+        //     format!("bt.p{}.{}", situation.player_id, node_full_id),
+        //     self.description(),
+        //     node_full_id.clone(),
+        //     self.get_child_node_ids(&node_full_id),
+        //     is_active,
+        // );
+        // (status, input)
+        Default::default()
     }
 
     pub fn description(&self) -> String {
@@ -750,9 +782,10 @@ impl ScoringSelectNode {
 
     pub fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
         let self_full_id = self.get_full_node_id(current_path_prefix);
-        self.children_with_scorers
-            .iter()
-            .map(|(c, _)| c.get_full_node_id(&self_full_id))
-            .collect()
+        Default::default()
+        // self.children_with_scorers
+        //     .iter()
+        //     .map(|(c, _)| c.get_full_node_id(&self_full_id))
+        //     .collect()
     }
 }

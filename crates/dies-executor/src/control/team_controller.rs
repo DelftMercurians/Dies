@@ -94,7 +94,7 @@ pub struct TeamController {
     player_behavior_trees: HashMap<PlayerId, BehaviorNode>,
     team_context: TeamContext,
     // rhai_engine: Arc<RwLock<Engine>>,
-    rhai_ast: Option<Arc<RwLock<AST>>>,
+    // rhai_ast: Option<Arc<RwLock<AST>>>,
 }
 
 impl TeamController {
@@ -128,7 +128,7 @@ impl TeamController {
             player_behavior_trees: HashMap::new(),
             team_context,
             // rhai_engine: Arc::new(RwLock::new(engine)),
-            rhai_ast: main_ast,
+            // rhai_ast: main_ast,
         };
         team.update_controller_settings(settings);
         team
@@ -179,40 +179,50 @@ impl TeamController {
             let player_id = player_data.id;
 
             let player_bt = self.player_behavior_trees.entry(player_id).or_insert_with(|| {
-                if let Some(ast) = &self.rhai_ast {
-                    let mut scope = Scope::new();
-                    let player_id_str = player_id.to_string();
-                    log::debug!("Attempting to build BT for player {} from Rhai script.", player_id_str);
-                    let engine = create_engine();
-                    let ast = ast.read().unwrap();
-                    match engine.call_fn::<RhaiBehaviorNode>(
-                        &mut scope,
-                        &ast,
-                        "build_player_bt",
-                        (player_id_str.clone(),),
-                    ) {
-                        Ok(rhai_node) => {
-                            log::info!(
-                                "Successfully built BT for player {} from Rhai script.",
-                                player_id_str
-                            );
-                            rhai_node.0
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to build BT for player {} from Rhai script: {:?}. Falling back to default Rust BT.",
-                                player_id_str,
-                                e
-                            );
-                            build_player_bt(player_id, &world_data, &self.settings)
-                        }
+                let engine = create_engine();
+                let main_bt_script_path = "crates/dies-executor/src/bt_scripts/standard_player_tree.rhai";
+                let ast = match engine.compile_file(main_bt_script_path.into()) {
+                    Ok(compiled_ast) => {
+                        log::info!(
+                            "Successfully compiled main BT Rhai script: {}",
+                            main_bt_script_path
+                        );
+                        Arc::new(RwLock::new(compiled_ast))
                     }
-                } else {
-                    log::warn!(
-                        "Main Rhai BT script AST not available for player {}. Falling back to default Rust BT.",
-                        player_id
-                    );
-                    build_player_bt(player_id, &world_data, &self.settings)
+                    Err(e) => {
+                        log::error!(
+                            "Failed to compile main BT Rhai script '{}': {:?}",
+                            main_bt_script_path,
+                            e
+                        );
+                        return build_player_bt(player_id);
+                    }
+                };
+                let mut scope = Scope::new();
+                let player_id_str = player_id.to_string();
+                log::debug!("Attempting to build BT for player {} from Rhai script.", player_id_str);
+                let ast = ast.read().unwrap();
+                match engine.call_fn::<RhaiBehaviorNode>(
+                    &mut scope,
+                    &ast,
+                    "build_player_bt",
+                    (player_id_str.clone(),),
+                ) {
+                    Ok(rhai_node) => {
+                        log::info!(
+                            "Successfully built BT for player {} from Rhai script.",
+                            player_id_str
+                        );
+                        rhai_node.0
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Failed to build BT for player {} from Rhai script: {:?}. Falling back to default Rust BT.",
+                            player_id_str,
+                            e
+                        );
+                        build_player_bt(player_id)
+                    }
                 }
             });
 
@@ -296,11 +306,7 @@ impl TeamController {
     }
 }
 
-fn build_player_bt(
-    _player_id: PlayerId,
-    _world: &WorldData,
-    _settings: &ExecutorSettings,
-) -> BehaviorNode {
+fn build_player_bt(_player_id: PlayerId) -> BehaviorNode {
     use crate::behavior_tree::{ActionNode, SelectNode};
     use crate::roles::skills::GoToPosition;
     use dies_core::Vector2;

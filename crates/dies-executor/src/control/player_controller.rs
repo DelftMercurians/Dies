@@ -344,12 +344,16 @@ impl PlayerController {
             }
             self.target_z = 0.0;
         }
-        
+
         // Set angular velocity
         if self.has_target_heading == false || self.have_imu == false {
             match input.angular_velocity {
-                Some(angular_velocity) => { self.target_z = angular_velocity; }
-                None => { self.target_z = 0.0; }
+                Some(angular_velocity) => {
+                    self.target_z = angular_velocity;
+                }
+                None => {
+                    self.target_z = 0.0;
+                }
             }
         } else {
             // ToDo

@@ -2199,6 +2199,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "no-std-compat"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b93853da6d84c2e3c7d730d6473e8817692dd89be387eb01b94d7f108ecb5b8c"
+dependencies = [
+ "spin 0.5.2",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2671,6 +2680,7 @@ dependencies = [
  "ahash",
  "bitflags 2.6.0",
  "instant",
+ "no-std-compat",
  "num-traits",
  "once_cell",
  "rhai_codegen",
@@ -2700,7 +2710,7 @@ dependencies = [
  "cfg-if",
  "getrandom",
  "libc",
- "spin",
+ "spin 0.9.8",
  "untrusted",
  "windows-sys 0.52.0",
 ]
@@ -2716,7 +2726,7 @@ dependencies = [
  "derivative",
  "futures",
  "slotmap",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -3085,6 +3095,12 @@ dependencies = [
  "robust",
  "smallvec",
 ]
+
+[[package]]
+name = "spin"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "spin"
