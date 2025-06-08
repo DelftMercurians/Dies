@@ -24,7 +24,7 @@ jax.config.update(
 
 
 # MPC Parameters
-PREDICTION_HORIZON = 100
+PREDICTION_HORIZON = 50
 DT = 0.05
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
@@ -37,7 +37,12 @@ def euler_step(pos: jnp.ndarray, vel: jnp.ndarray, dt: float) -> jnp.ndarray:
 
 
 def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float) -> float:
-    return jnp.sum((pos - target) ** 2) * 1e-5 * (time_from_now + 0.1)
+    dist = jnp.sqrt(jnp.sum((pos - target) ** 2))
+    return jnp.clip(
+        dist * 2e-2 * (time_from_now + 0.1),
+        0,
+        100,
+    )
 
 
 def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray) -> float:
@@ -328,9 +333,42 @@ def visualize_mpc_debug(
     colorbar_label = "Cost (log scale)" if log_scale else "Cost"
     fig.colorbar(im, ax=ax, label=colorbar_label)
 
-    ax.plot(initial_pos[0], initial_pos[1], "bs", markersize=8, label="Start")
-    ax.plot(target_pos[0], target_pos[1], "g*", markersize=12, label="Target")
-    ax.plot(trajectory[:, 0], trajectory[:, 1], "w-", linewidth=2, label="MPC Path")
+    ax.plot(initial_pos[0], initial_pos[1], "bs", markersize=16, label="Start")
+    ax.plot(target_pos[0], target_pos[1], "g*", markersize=20, label="Target")
+
+    # Plot trajectory
+    ax.plot(
+        trajectory[:, 0],
+        trajectory[:, 1],
+        "w-",
+        linewidth=1,
+        label="MPC Path",
+    )
+
+    # Add time markers every 0.5 seconds
+    if len(trajectory) > 1:
+        time_marker_interval = 0.5  # seconds
+        marker_step = int(time_marker_interval / DT)  # convert to trajectory steps
+
+        for i in range(0, len(trajectory), marker_step):
+            if i < len(trajectory):
+                ax.plot(
+                    trajectory[i, 0],
+                    trajectory[i, 1],
+                    "o",
+                    color="cyan",
+                    markersize=6,
+                )
+
+    # Add legend entry for time markers
+    ax.plot(
+        [],
+        [],
+        "o",
+        color="cyan",
+        markersize=6,
+        label="0.5s markers",
+    )
 
     # Add legend and labels
     ax.set_title("MPC Cost Heatmap")
