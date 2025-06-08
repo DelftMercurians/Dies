@@ -46,8 +46,18 @@ pub mod bt_rhai_plugin {
 
     // PLAYER ID HELPERS
     #[rhai_fn(name = "to_string")]
+    /// Returns the string representation of the player id.
     pub fn to_string(id: PlayerId) -> String {
         id.to_string()
+    }
+
+    #[rhai_fn(name = "hash_float")]
+    /// Returns a float between 0 and 1 based on the player id.
+    /// This is used to ensure that the same player id always produces the same hash.
+    /// This can be used to induce different behavior for different players.
+    pub fn hash(id: PlayerId) -> f64 {
+        // Fast hash by multiplying by a large prime and taking fractional part
+        (id.as_u32() as f64 * 0.6180339887498949) % 1.0
     }
 
     // VECTOR2 HELPERS
