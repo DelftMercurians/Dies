@@ -8,6 +8,8 @@ import optax
 import os
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+from matplotlib.animation import FuncAnimation
+import matplotlib.patches as patches
 from tqdm import tqdm
 import functools as ft
 
@@ -24,7 +26,7 @@ jax.config.update(
 
 
 # MPC Parameters
-PREDICTION_HORIZON = 50
+PREDICTION_HORIZON = 100
 DT = 0.05
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
@@ -61,7 +63,7 @@ def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray) -> float:
         # try to avoid certain collision hard
         danger_zone = distance <= min_safe_distance
         normalized_distance = jnp.clip(distance / min_safe_distance, 0, 1)
-        danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 10
+        danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 20
 
         # try to avoid even getting close to the opponent
         in_decay_zone = jnp.logical_and(
@@ -439,6 +441,105 @@ def plot_collision_cost(
     print("Collision cost visualization saved to 'collision_cost_visualization.png'")
 
 
+def animate_moving_obstacle():
+    """Create an animation of the MPC debug plot with moving second obstacle."""
+    # Animation parameters
+    num_frames = 10
+
+    # Fixed setup
+    initial_pos = np.array([-300.0, 0.0])
+    target_pos = np.array([700.0, 500.0])
+    field_bounds = np.array([-1000.0, 1000.0, -1000.0, 1000.0])
+    max_vel = 2000.0
+
+    # First obstacle is stationary
+    obstacle1 = np.array([500.0, 250.0])
+
+    # Second obstacle moves between [400, 800] and [400, 400]
+    y_start, y_end = 800.0, 400.0
+
+    # Pre-compute all obstacle positions and trajectories for better performance
+    print("Pre-computing trajectories for animation...")
+    all_obstacles = []
+    all_trajectories = []
+
+    for frame in tqdm(range(num_frames), desc="Computing frames"):
+        # Calculate second obstacle position
+        t = frame / (num_frames - 1)  # 0 to 1
+        y_pos = y_start + (y_end - y_start) * t
+        obstacle2 = np.array([400.0, y_pos])
+        obstacles = np.array([obstacle1, obstacle2])
+        all_obstacles.append(obstacles)
+
+        # Compute trajectory for this frame
+        trajectory_positions = [initial_pos]
+        current_pos = initial_pos
+        current_vel = np.zeros(2)
+
+        all_controls = solve_mpc(
+            current_pos, current_vel, target_pos, obstacles, field_bounds, max_vel
+        )
+
+        for i in range(len(all_controls)):
+            control = all_controls[i]
+            current_pos = current_pos + control * DT
+            trajectory_positions.append(current_pos)
+
+        all_trajectories.append(np.array(trajectory_positions))
+
+    # Create static plot elements once
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    # Pre-create circle patches for obstacles to reuse
+    obstacle_circles = []
+    for i in range(2):  # We have 2 obstacles
+        circle = Circle((0, 0), ROBOT_RADIUS, color="black", alpha=0.5, fill=True)
+        ax.add_patch(circle)
+        obstacle_circles.append(circle)
+
+    # Create line objects for trajectory to update more efficiently
+    (trajectory_line,) = ax.plot([], [], "r-", linewidth=2, label="MPC Path")
+    (start_marker,) = ax.plot(
+        initial_pos[0], initial_pos[1], "bs", markersize=16, label="Start"
+    )
+    (target_marker,) = ax.plot(
+        target_pos[0], target_pos[1], "g*", markersize=20, label="Target"
+    )
+
+    # Set static properties once
+    min_x, max_x, min_y, max_y = field_bounds
+    ax.set_xlim(min_x, max_x)
+    ax.set_ylim(min_y, max_y)
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
+    ax.set_xlabel("X position (mm)")
+    ax.set_ylabel("Y position (mm)")
+    ax.legend()
+
+    def animate(frame):
+        # Update obstacle positions
+        obstacles = all_obstacles[frame]
+        for i, obstacle in enumerate(obstacles):
+            obstacle_circles[i].center = obstacle
+
+        # Update trajectory
+        trajectory = all_trajectories[frame]
+        trajectory_line.set_data(trajectory[:, 0], trajectory[:, 1])
+
+        # Update title
+        ax.set_title(f"MPC with Moving Obstacle (Frame {frame+1}/{num_frames})")
+
+        return [trajectory_line] + obstacle_circles + [start_marker, target_marker]
+
+    anim = FuncAnimation(
+        fig, animate, frames=num_frames, interval=200, repeat=True, blit=True
+    )
+    print("Saving the animation...")
+    anim.save("mpc_moving_obstacle.gif", writer="pillow", fps=5)
+    print("Animation saved to 'mpc_moving_obstacle.gif'")
+    plt.close()
+
+
 if __name__ == "__main__":
     # Set to True to use log scale for the cost plots
     USE_LOG_SCALE = False
@@ -448,7 +549,7 @@ if __name__ == "__main__":
     # Run visualization with the simple test case
     initial_pos = np.array([-300.0, 0.0])
     target_pos = np.array([700.0, 500.0])
-    obstacles = np.array([[500.0, 250.0]])
+    obstacles = np.array([[500.0, 250.0], [400, 600]])
     field_bounds = np.array([-1000.0, 1000.0, -1000.0, 1000.0])
     max_vel = 2000.0
 
@@ -465,5 +566,8 @@ if __name__ == "__main__":
 
     # Plot the collision cost function separately
     plot_collision_cost(resolution=50, log_scale=USE_LOG_SCALE)
+
+    # Create animation of moving obstacle
+    animate_moving_obstacle()
 
     print("JAX MPC test completed successfully!")
