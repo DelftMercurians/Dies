@@ -39,10 +39,11 @@ import Field from "./views/Field";
 import PlayerSidebar from "./views/PlayerSidebar";
 import SettingsEditor from "./views/SettingsEditor";
 import Basestation from "./views/Basestation";
+import TeamOverview from "./views/TeamOverview";
 import HierarchicalList from "./views/HierarchicalList";
 import { PlayerFeedbackMsg } from "./bindings";
 
-type Panel = "left" | "right";
+type Panel = "left" | "right" | "left-bottom";
 
 const App: React.FC = () => {
   const scenarios = useScenarios() ?? [];
@@ -52,10 +53,7 @@ const App: React.FC = () => {
   const { mutate: setMode, status: setModeStatus } = useSetMode();
   const sendCommand = useSendCommand();
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
-  const [collapsed, setCollapsed] = useState<Panel[]>([]);
-  const debugData = useDebugData();
-  const tabListRef = useRef<HTMLDivElement>(null);
-  const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
+  const [collapsed, setCollapsed] = useState<Panel[]>(["left-bottom"]);
 
   const GCcommands = [
     "HALT",
@@ -266,43 +264,75 @@ const App: React.FC = () => {
           }
         >
           {!collapsed.includes("left") ? (
-            <Tabs
-              size="sm"
-              defaultValue="controller"
-              className="h-full w-full flex flex-col gap-2"
-              orientation={isTabListOverflowing ? "vertical" : "horizontal"}
-            >
-              <TabsList
-                ref={tabListRef}
-                className="w-full data-[orientation=vertical]:flex-col data-[orientation=vertical]:h-auto data-[orientation=vertical]:w-auto"
+            <ResizablePanelGroup direction="vertical">
+              <ResizablePanel defaultSize={70}>
+                <Tabs
+                  size="sm"
+                  defaultValue="team_overview"
+                  className="h-full w-full flex flex-col gap-2 p-2"
+                >
+                  <TabsList>
+                    <TabsTrigger value="team_overview">Team</TabsTrigger>
+                    <TabsTrigger value="basestation">Basestation</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="team_overview" className="flex-1">
+                    <TeamOverview
+                      onSelectPlayer={setSelectedPlayerId}
+                      selectedPlayerId={selectedPlayerId}
+                      className="h-full"
+                    />
+                  </TabsContent>
+                  <TabsContent value="basestation" asChild>
+                    <Basestation
+                      onSelectPlayer={(id) => setSelectedPlayerId(id)}
+                      className="h-full"
+                    />
+                  </TabsContent>
+                </Tabs>
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel
+                defaultSize={5}
+                collapsible
+                collapsedSize={5}
+                onCollapse={() =>
+                  setCollapsed((prev) =>
+                    !prev.includes("left-bottom")
+                      ? [...prev, "left-bottom"]
+                      : prev
+                  )
+                }
+                onExpand={() =>
+                  setCollapsed((prev) =>
+                    prev.filter((v) => v !== "left-bottom")
+                  )
+                }
               >
-                <TabsTrigger value="controller">Controller</TabsTrigger>
-                <TabsTrigger value="tracker">Tracker</TabsTrigger>
-                <TabsTrigger value="basestation">Basestation</TabsTrigger>
-                <TabsTrigger value="debug">Debug Values</TabsTrigger>
-              </TabsList>
+                {!collapsed.includes("left-bottom") ? (
+                  <Tabs
+                    size="sm"
+                    defaultValue="controller"
+                    className="h-full w-full flex flex-col gap-2 p-2"
+                  >
+                    <TabsList className="w-full">
+                      <TabsTrigger value="controller">Controller</TabsTrigger>
+                      <TabsTrigger value="tracker">Tracker</TabsTrigger>
+                    </TabsList>
 
-              <TabsContent value="controller" asChild>
-                <SettingsEditor settingsKey="controller_settings" />
-              </TabsContent>
-              <TabsContent value="tracker" asChild>
-                <SettingsEditor settingsKey="tracker_settings" />
-              </TabsContent>
-              <TabsContent value="basestation" asChild>
-                <Basestation
-                  onSelectPlayer={(id) => setSelectedPlayerId(id)}
-                  className="h-full"
-                />
-              </TabsContent>
-              <TabsContent value="debug" asChild>
-                <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
-                  <HierarchicalList
-                    data={debugData ? Object.entries(debugData) : []}
-                    className="h-full"
-                  />
-                </div>
-              </TabsContent>
-            </Tabs>
+                    <TabsContent value="controller" asChild>
+                      <SettingsEditor settingsKey="controller_settings" />
+                    </TabsContent>
+                    <TabsContent value="tracker" asChild>
+                      <SettingsEditor settingsKey="tracker_settings" />
+                    </TabsContent>
+                  </Tabs>
+                ) : (
+                  <div className="text-center text-slate-400 p-2 text-sm">
+                    Settings
+                  </div>
+                )}
+              </ResizablePanel>
+            </ResizablePanelGroup>
           ) : null}
         </ResizablePanel>
         <ResizableHandle withHandle />

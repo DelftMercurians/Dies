@@ -121,10 +121,13 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 
   if (typeof selectedPlayerId !== "number")
     return (
-      <div className="flex-1 flex flex-col gap-6 p-4 h-full w-full justify-center items-center">
+      <div className="flex-1 flex flex-col gap-6 p-4 h-full w-full">
         <h1 className="text-2xl font-bold mb-2 text-center text-slate-300">
           Select a player by clicking
         </h1>
+        <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
+          <HierarchicalList data={debugData ? Object.entries(debugData) : []} />
+        </div>
       </div>
     );
 
@@ -167,6 +170,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
         <TabsList className="mx-4 mt-2">
           <TabsTrigger value="info">Info</TabsTrigger>
           <TabsTrigger value="bt">Behavior Tree</TabsTrigger>
+          <TabsTrigger value="debug">Debug</TabsTrigger>
         </TabsList>
         <TabsContent value="info" className="flex-1 overflow-y-auto">
           <div className="flex flex-col gap-6 p-4">
@@ -233,7 +237,9 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
             </div>
 
             <div>
-              <h2 className="text-lg font-semibold mb-2">Debug Data</h2>
+              <h2 className="text-lg font-semibold mb-2">
+                Player Specific Debug Data
+              </h2>
               <div className="bg-slate-800 p-2 rounded-xl max-h-[50vh] overflow-auto">
                 <HierarchicalList data={playerDebugData} />
               </div>
@@ -380,6 +386,13 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
             selectedPlayerId={selectedPlayerId}
             className="h-full p-4"
           />
+        </TabsContent>
+        <TabsContent value="debug" className="flex-1 overflow-y-auto p-2">
+          <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
+            <HierarchicalList
+              data={debugData ? Object.entries(debugData) : []}
+            />
+          </div>
         </TabsContent>
       </Tabs>
     </div>
