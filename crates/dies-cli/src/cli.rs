@@ -41,7 +41,7 @@ enum Command {
     },
 
     #[clap(name = "test-vision")]
-    TestVision
+    TestVision,
 }
 
 #[derive(Debug, Parser)]

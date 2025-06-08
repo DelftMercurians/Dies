@@ -269,8 +269,8 @@ pub struct WorldData {
 }
 
 impl WorldData {
-    pub fn get_player(&self, id: PlayerId) -> Option<&PlayerData> {
-        self.own_players.iter().find(|p| p.id == id)
+    pub fn get_player(&self, id: PlayerId) -> &PlayerData {
+        self.own_players.iter().find(|p| p.id == id).unwrap()
     }
 
     pub fn players_within_radius(&self, pos: Vector2, radius: f64) -> Vec<&PlayerData> {
@@ -403,7 +403,7 @@ impl WorldData {
     }
 
     pub fn get_best_kick_direction(&self, player_id: PlayerId) -> Angle {
-        let player = self.get_player(player_id).unwrap();
+        let player = self.get_player(player_id);
         let mut score = 0.0;
         let mut best_angle: Angle = Angle::default();
         for theta in (-90..90).step_by(20) {

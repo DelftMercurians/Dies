@@ -3,9 +3,8 @@ use std::{collections::HashMap, time::Duration};
 use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    ExecutorInfo, ExecutorSettings, GameState, PlayerCmd, PlayerFeedbackMsg, PlayerId,
-    PlayerOverrideCommand, SimulatorCmd, StrategyGameStateMacther, Vector3, WorldInstant,
-    WorldUpdate,
+    ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
+    SimulatorCmd, Vector3, WorldInstant, WorldUpdate,
 };
 use dies_logger::{log_referee, log_vision, log_world};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
@@ -14,51 +13,21 @@ use dies_ssl_client::{SslMessage, VisionClient};
 use dies_world::WorldTracker;
 use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
-use strategy::Strategy;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
+mod behavior_tree;
 mod control;
 mod gc_client;
 mod handle;
 mod roles;
 pub mod scenarios;
-pub mod strategy;
+mod script_host;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30); // 30 Hz
-
-pub struct StrategyMap(Vec<(StrategyGameStateMacther, Box<dyn Strategy>)>);
-
-impl Default for StrategyMap {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl StrategyMap {
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    pub fn insert(&mut self, matcher: StrategyGameStateMacther, strategy: impl Strategy + 'static) {
-        self.0.push((matcher, Box::new(strategy)));
-    }
-
-    pub fn get_strategy(&mut self, state: &GameState) -> Option<&mut dyn Strategy> {
-        if let Some((_, strategy)) = self
-            .0
-            .iter_mut()
-            .find(|(matcher, _)| matcher.matches(state))
-        {
-            Some(strategy.as_mut())
-        } else {
-            None
-        }
-    }
-}
 
 enum Environment {
     Live {
@@ -199,7 +168,6 @@ pub struct Executor {
 impl Executor {
     pub fn new_live(
         settings: ExecutorSettings,
-        strategy: StrategyMap,
         ssl_client: VisionClient,
         bs_client: BasestationHandle,
     ) -> Self {
@@ -210,7 +178,7 @@ impl Executor {
 
         Self {
             tracker: WorldTracker::new(&settings),
-            controller: TeamController::new(strategy, &settings),
+            controller: TeamController::new(&settings),
             gc_client: GcClient::new(),
             environment: Some(Environment::Live {
                 ssl_client,
@@ -226,11 +194,7 @@ impl Executor {
         }
     }
 
-    pub fn new_simulation(
-        settings: ExecutorSettings,
-        strategy: StrategyMap,
-        simulator: Simulation,
-    ) -> Self {
+    pub fn new_simulation(settings: ExecutorSettings, simulator: Simulation) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
@@ -238,7 +202,7 @@ impl Executor {
 
         Self {
             tracker: WorldTracker::new(&settings),
-            controller: TeamController::new(strategy, &settings),
+            controller: TeamController::new(&settings),
             gc_client: GcClient::new(),
             environment: Some(Environment::Simulation { simulator }),
             manual_override: HashMap::new(),

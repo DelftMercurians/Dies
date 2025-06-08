@@ -5,8 +5,16 @@
 - [Setting Up](./setting_up.md)
 - [Developer Guide](./dev.md)
 - [Architecture Overview](./architecture.md)
-- [Strategy Overivew](./strategy.md)
 
-# Using Dies
+# Strategy & Scripting
 
-- [User Guide]()
+- [Introduction to Behavior Trees](behavior-tree/behavior_trees.md)
+- [Scripting with Rhai](behavior-tree/rhai_scripting.md)
+- [Getting Started: Your First BT](behavior-tree/getting_started.md)
+
+# Strategy API Reference
+
+- [Overview](behavior-tree/reference/index.md)
+- [Behavior Nodes](behavior-tree/reference/nodes.md)
+- [Skills (Action Nodes)](behavior-tree/reference/skills.md)
+- [Helpers & The Situation Object](behavior-tree/reference/helpers.md)
