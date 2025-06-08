@@ -75,8 +75,6 @@ impl TeamController {
             return;
         }
 
-        self.team_context.clear_semaphores();
-
         let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
 
         let engine = self.script_host.engine();
