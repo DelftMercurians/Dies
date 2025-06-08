@@ -5,7 +5,7 @@ script_runner = "@shell"
 script = '''
 typeshare . --lang=typescript --output-file=webui/src/bindings.ts
 printf "export type Vector2 = [number, number];\nexport type Vector3 = [number, number, number];\nexport type ScenarioType = string;" >> webui/src/bindings.ts
-sed -i 's/data?: undefined//g' webui/src/bindings.ts
+sed -i.bak 's/data?: undefined//g' webui/src/bindings.ts && rm webui/src/bindings.ts.bak
 cd webui
 npm run build
 '''

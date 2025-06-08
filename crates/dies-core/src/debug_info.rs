@@ -55,8 +55,6 @@ pub enum DebugShape {
 pub enum DebugValue {
     Shape(DebugShape),
     Number(f64),
-    Vec2((f64, f64)),
-    Vec3((f64, f64, f64)),
     String(String),
 }
 
