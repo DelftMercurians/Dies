@@ -72,7 +72,6 @@ impl TeamController {
         }
 
         if self.start_time.elapsed().as_secs_f64() < ACTIVATION_TIME {
-            println!("detected_ids: {:?}", detected_ids);
             return;
         }
 
