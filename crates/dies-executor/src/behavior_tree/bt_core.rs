@@ -18,6 +18,10 @@ impl BehaviorTree {
         situation: &mut RobotSituation,
         engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
+        // First, generate debug info for the entire tree structure
+        self.root_node.debug_all_nodes(situation, engine);
+
+        // Then tick the tree normally
         self.root_node.tick(situation, engine)
     }
 }

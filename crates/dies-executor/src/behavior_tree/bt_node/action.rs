@@ -77,6 +77,31 @@ impl ActionNode {
         }
     }
 
+    pub fn debug_all_nodes(&self, situation: &RobotSituation, _engine: &Engine) {
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
+        let skill_info = match &self.skill_def {
+            SkillDefinition::GoToPosition { .. } => "GoToPosition",
+            SkillDefinition::Face { .. } => "Face",
+            SkillDefinition::Kick => "Kick",
+            SkillDefinition::Wait { .. } => "Wait",
+            SkillDefinition::FetchBall => "FetchBall",
+            SkillDefinition::FetchBallWithHeading { .. } => "FetchBallWithHeading",
+            SkillDefinition::ApproachBall => "ApproachBall",
+            SkillDefinition::InterceptBall => "InterceptBall",
+        };
+        let internal_state = self.active_skill.as_ref().map(|_| "Active".to_string());
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&node_full_id),
+            false, // We don't know if it's active without ticking
+            "Action",
+            internal_state,
+            Some(skill_info.to_string()),
+        );
+    }
+
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
@@ -211,12 +236,30 @@ impl ActionNode {
         }
 
         let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
+        let skill_info = match &self.skill_def {
+            SkillDefinition::GoToPosition { .. } => "GoToPosition",
+            SkillDefinition::Face { .. } => "Face",
+            SkillDefinition::Kick => "Kick",
+            SkillDefinition::Wait { .. } => "Wait",
+            SkillDefinition::FetchBall => "FetchBall",
+            SkillDefinition::FetchBallWithHeading { .. } => "FetchBallWithHeading",
+            SkillDefinition::ApproachBall => "ApproachBall",
+            SkillDefinition::InterceptBall => "InterceptBall",
+        };
+        let internal_state = if self.active_skill.is_some() {
+            Some(format!("Running {}", skill_info))
+        } else {
+            Some("Idle".to_string())
+        };
         debug_tree_node(
             format!("bt.p{}.{}", situation.player_id, node_full_id),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&node_full_id),
             is_active,
+            "Action",
+            internal_state,
+            Some(skill_info.to_string()),
         );
         (status, input)
     }

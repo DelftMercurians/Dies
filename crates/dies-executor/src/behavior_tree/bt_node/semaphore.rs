@@ -35,6 +35,25 @@ impl SemaphoreNode {
         }
     }
 
+    pub fn debug_all_nodes(&self, situation: &RobotSituation, engine: &Engine) {
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&situation.viz_path_prefix),
+            false, // We don't know if it's active without ticking
+            "Semaphore",
+            Some(format!("Max: {}", self.max_count)),
+            Some(format!("ID: {}", self.semaphore_id_str)),
+        );
+
+        // Debug the child node
+        let mut child_situation = situation.clone();
+        child_situation.viz_path_prefix = node_full_id.clone();
+        self.child.debug_all_nodes(&child_situation, engine);
+    }
+
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
@@ -61,7 +80,9 @@ impl SemaphoreNode {
         };
 
         if acquired_semaphore {
-            let (child_status, child_input) = self.child.tick(situation, engine);
+            let mut child_situation = situation.clone();
+            child_situation.viz_path_prefix = node_full_id.clone();
+            let (child_status, child_input) = self.child.tick(&mut child_situation, engine);
             result_status = child_status;
             result_input = child_input;
 
@@ -81,12 +102,20 @@ impl SemaphoreNode {
 
         let is_active = result_status == BehaviorStatus::Running
             || (result_status == BehaviorStatus::Success && acquired_semaphore);
+        let semaphore_state = if acquired_semaphore {
+            "Acquired"
+        } else {
+            "Waiting"
+        };
         debug_tree_node(
             format!("bt.p{}.{}", situation.player_id, node_full_id),
             self.description(),
             node_full_id.clone(),
-            self.get_child_node_ids(&node_full_id),
+            self.get_child_node_ids(&situation.viz_path_prefix),
             is_active,
+            "Semaphore",
+            Some(format!("{} (Max: {})", semaphore_state, self.max_count)),
+            Some(format!("ID: {}", self.semaphore_id_str)),
         );
         (result_status, result_input)
     }

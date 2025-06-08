@@ -26,6 +26,31 @@ impl SequenceNode {
         }
     }
 
+    pub fn debug_all_nodes(&self, situation: &RobotSituation, engine: &Engine) {
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&situation.viz_path_prefix),
+            false, // We don't know if it's active without ticking
+            "Sequence",
+            Some(format!(
+                "{}/{} children",
+                self.current_child_index,
+                self.children.len()
+            )),
+            Some("All must succeed in order".to_string()),
+        );
+
+        // Debug all child nodes
+        let mut child_situation = situation.clone();
+        child_situation.viz_path_prefix = node_full_id.clone();
+        for child in &self.children {
+            child.debug_all_nodes(&child_situation, engine);
+        }
+    }
+
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
@@ -34,8 +59,11 @@ impl SequenceNode {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let mut last_input_on_success: Option<PlayerControlInput> = None;
 
+        let mut child_situation = situation.clone();
+        child_situation.viz_path_prefix = node_full_id.clone();
+
         while self.current_child_index < self.children.len() {
-            match self.children[self.current_child_index].tick(situation, engine) {
+            match self.children[self.current_child_index].tick(&mut child_situation, engine) {
                 (BehaviorStatus::Success, input_opt) => {
                     self.current_child_index += 1;
                     last_input_on_success = input_opt;
@@ -45,8 +73,15 @@ impl SequenceNode {
                         format!("bt.p{}.{}", situation.player_id, node_full_id),
                         self.description(),
                         node_full_id.clone(),
-                        self.get_child_node_ids(&node_full_id),
+                        self.get_child_node_ids(&situation.viz_path_prefix),
                         true,
+                        "Sequence",
+                        Some(format!(
+                            "{}/{} children",
+                            self.current_child_index + 1,
+                            self.children.len()
+                        )),
+                        Some("All must succeed in order".to_string()),
                     );
                     return (BehaviorStatus::Running, input_opt);
                 }
@@ -56,8 +91,15 @@ impl SequenceNode {
                         format!("bt.p{}.{}", situation.player_id, node_full_id),
                         self.description(),
                         node_full_id.clone(),
-                        self.get_child_node_ids(&node_full_id),
+                        self.get_child_node_ids(&situation.viz_path_prefix),
                         false,
+                        "Sequence",
+                        Some(format!(
+                            "Failed at {}/{}",
+                            self.current_child_index + 1,
+                            self.children.len()
+                        )),
+                        Some("All must succeed in order".to_string()),
                     );
                     return (BehaviorStatus::Failure, None);
                 }
@@ -69,8 +111,15 @@ impl SequenceNode {
             format!("bt.p{}.{}", situation.player_id, node_full_id),
             self.description(),
             node_full_id.clone(),
-            self.get_child_node_ids(&node_full_id),
+            self.get_child_node_ids(&situation.viz_path_prefix),
             true,
+            "Sequence",
+            Some(format!(
+                "All {}/{} completed",
+                self.children.len(),
+                self.children.len()
+            )),
+            Some("All must succeed in order".to_string()),
         );
         (BehaviorStatus::Success, last_input_on_success)
     }

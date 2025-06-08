@@ -46,6 +46,9 @@ pub enum DebugShape {
         id: String,
         children_ids: Vec<String>,
         is_active: bool,
+        node_type: String,
+        internal_state: Option<String>,
+        additional_info: Option<String>,
     },
 }
 
@@ -210,6 +213,9 @@ pub fn debug_tree_node(
     id: impl Into<String>,
     children_ids: impl Into<Vec<String>>,
     is_active: bool,
+    node_type: impl Into<String>,
+    internal_state: Option<String>,
+    additional_info: Option<String>,
 ) {
     debug_record(
         key.into(),
@@ -218,6 +224,9 @@ pub fn debug_tree_node(
             id: id.into(),
             children_ids: children_ids.into(),
             is_active,
+            node_type: node_type.into(),
+            internal_state,
+            additional_info,
         }),
     );
 }

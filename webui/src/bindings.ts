@@ -419,6 +419,9 @@ export type DebugShape =
 	id: string;
 	children_ids: string[];
 	is_active: boolean;
+	node_type: string;
+	internal_state?: string;
+	additional_info?: string;
 }};
 
 /** An override command for a player for manual control. */

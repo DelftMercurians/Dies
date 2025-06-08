@@ -58,10 +58,23 @@ const App: React.FC = () => {
   const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
 
   const GCcommands = [
-    "HALT", "STOP", "NORMAL_START", "FORCE_START", "PREPARE_KICKOFF_YELLOW",
-    "PREPARE_KICKOFF_BLUE", "PREPARE_PENALTY_YELLOW", "PREPARE_PENALTY_BLUE",
-    "DIRECT_FREE_YELLOW", "DIRECT_FREE_BLUE", "INDIRECT_FREE_YELLOW", "INDIRECT_FREE_BLUE",
-    "TIMEOUT_YELLOW", "TIMEOUT_BLUE", "GOAL_YELLOW", "GOAL_BLUE", "BALL_PLACEMENT_YELLOW",
+    "HALT",
+    "STOP",
+    "NORMAL_START",
+    "FORCE_START",
+    "PREPARE_KICKOFF_YELLOW",
+    "PREPARE_KICKOFF_BLUE",
+    "PREPARE_PENALTY_YELLOW",
+    "PREPARE_PENALTY_BLUE",
+    "DIRECT_FREE_YELLOW",
+    "DIRECT_FREE_BLUE",
+    "INDIRECT_FREE_YELLOW",
+    "INDIRECT_FREE_BLUE",
+    "TIMEOUT_YELLOW",
+    "TIMEOUT_BLUE",
+    "GOAL_YELLOW",
+    "GOAL_BLUE",
+    "BALL_PLACEMENT_YELLOW",
     "BALL_PLACEMENT_BLUE",
   ];
 
@@ -69,7 +82,7 @@ const App: React.FC = () => {
   const bsInfo = useBasestationInfo().data;
   const allMotorsOk = Object.values(bsInfo?.players ?? {}).every(
     (p: PlayerFeedbackMsg) =>
-      p.motor_statuses?.find((m) => m === "NoReply") === undefined,
+      p.motor_statuses?.find((m) => m === "NoReply") === undefined
   );
   useWarningSound(!allMotorsOk);
 
@@ -113,9 +126,9 @@ const App: React.FC = () => {
     setSelectedCommand(val);
     sendCommand({
       type: "GcCommand",
-      data: val
-    })
-  }
+      data: val,
+    });
+  };
   const runningScenario =
     executorStatus.type === "RunningExecutor"
       ? executorStatus.data.scenario
@@ -152,12 +165,11 @@ const App: React.FC = () => {
               <Radio />
             </ToggleGroupItem>
           </SimpleTooltip>
-
         </ToggleGroup>
 
         <Select
           value={
-            runningScenario ? runningScenario : (selectedScenario ?? undefined)
+            runningScenario ? runningScenario : selectedScenario ?? undefined
           }
           onValueChange={(val) => setSelectedScenario(val)}
           disabled={!!runningScenario}
@@ -219,11 +231,8 @@ const App: React.FC = () => {
           </SimpleTooltip>
         </ToggleGroup>
 
-
         <Select
-          value={
-            selectedCommand ?? undefined
-          }
+          value={selectedCommand ?? undefined}
           onValueChange={(val) => handleCommandChange(val)}
         >
           <SelectTrigger className="w-64">
@@ -238,10 +247,7 @@ const App: React.FC = () => {
             ))}
           </SelectContent>
         </Select>
-
       </div>
-
-
 
       {/* Main content */}
       <ResizablePanelGroup autoSaveId="main-layout" direction="horizontal">
@@ -252,7 +258,7 @@ const App: React.FC = () => {
           className="h-full bg-slate-950 p-2"
           onCollapse={() =>
             setCollapsed((prev) =>
-              !prev.includes("left") ? [...prev, "left"] : prev,
+              !prev.includes("left") ? [...prev, "left"] : prev
             )
           }
           onExpand={() =>
@@ -261,6 +267,7 @@ const App: React.FC = () => {
         >
           {!collapsed.includes("left") ? (
             <Tabs
+              size="sm"
               defaultValue="controller"
               className="h-full w-full flex flex-col gap-2"
               orientation={isTabListOverflowing ? "vertical" : "horizontal"}
@@ -282,7 +289,10 @@ const App: React.FC = () => {
                 <SettingsEditor settingsKey="tracker_settings" />
               </TabsContent>
               <TabsContent value="basestation" asChild>
-                <Basestation onSelectPlayer={(id) => setSelectedPlayerId(id)} className="h-full" />
+                <Basestation
+                  onSelectPlayer={(id) => setSelectedPlayerId(id)}
+                  className="h-full"
+                />
               </TabsContent>
               <TabsContent value="debug" asChild>
                 <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
@@ -314,7 +324,7 @@ const App: React.FC = () => {
           className=" bg-slate-950 flex flex-col"
           onCollapse={() =>
             setCollapsed((prev) =>
-              !prev.includes("right") ? [...prev, "right"] : prev,
+              !prev.includes("right") ? [...prev, "right"] : prev
             )
           }
           onExpand={() =>
@@ -337,22 +347,22 @@ const App: React.FC = () => {
           "bg-slate-800",
           executorStatus.type === "StartingScenario" && "bg-yellow-500",
           executorStatus.type === "RunningExecutor" &&
-          worldState.status === "connected" &&
-          "bg-green-500",
+            worldState.status === "connected" &&
+            "bg-green-500",
           (backendLoadingState === "error" ||
             executorStatus.type === "Failed") &&
-          "bg-red-500",
+            "bg-red-500"
         )}
       >
         {backendLoadingState === "error"
           ? "Failed to connect to backend"
           : executorStatus.type === "Failed"
-            ? "Executor failed"
-            : executorStatus.type === "RunningExecutor"
-              ? "Running"
-              : executorStatus.type === "StartingScenario"
-                ? "Starting scenario"
-                : "Idle"}
+          ? "Executor failed"
+          : executorStatus.type === "RunningExecutor"
+          ? "Running"
+          : executorStatus.type === "StartingScenario"
+          ? "Starting scenario"
+          : "Idle"}
       </div>
     </main>
   );

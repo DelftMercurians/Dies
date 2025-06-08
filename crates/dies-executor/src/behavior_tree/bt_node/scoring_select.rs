@@ -35,6 +35,27 @@ impl ScoringSelectNode {
         }
     }
 
+    pub fn debug_all_nodes(&self, situation: &RobotSituation, engine: &Engine) {
+        let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
+        debug_tree_node(
+            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            self.description(),
+            node_full_id.clone(),
+            self.get_child_node_ids(&situation.viz_path_prefix),
+            false, // We don't know if it's active without ticking
+            "ScoringSelect",
+            Some(format!("{} options", self.children_with_scorers.len())),
+            Some(format!("Hysteresis: {:.2}", self.hysteresis_margin)),
+        );
+
+        // Debug all child nodes
+        let mut child_situation = situation.clone();
+        child_situation.viz_path_prefix = node_full_id.clone();
+        for (child, _) in &self.children_with_scorers {
+            child.debug_all_nodes(&child_situation, engine);
+        }
+    }
+
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
@@ -49,6 +70,9 @@ impl ScoringSelectNode {
                 node_full_id.clone(),
                 vec![],
                 false,
+                "ScoringSelect",
+                Some("Empty".to_string()),
+                Some("No children".to_string()),
             );
             return (BehaviorStatus::Failure, None);
         }
@@ -84,7 +108,9 @@ impl ScoringSelectNode {
         }
 
         let (child_node, _) = &mut self.children_with_scorers[final_child_to_tick_idx];
-        let (status, input) = child_node.tick(situation, engine);
+        let mut child_situation = situation.clone();
+        child_situation.viz_path_prefix = node_full_id.clone();
+        let (status, input) = child_node.tick(&mut child_situation, engine);
 
         match status {
             BehaviorStatus::Success | BehaviorStatus::Failure => {
@@ -95,12 +121,19 @@ impl ScoringSelectNode {
         }
 
         let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
+        let selected_info = format!(
+            "Selected: {} (Score: {:.2})",
+            final_child_to_tick_idx, scores[final_child_to_tick_idx]
+        );
         debug_tree_node(
             format!("bt.p{}.{}", situation.player_id, node_full_id),
             self.description(),
             node_full_id.clone(),
-            self.get_child_node_ids(&node_full_id),
+            self.get_child_node_ids(&situation.viz_path_prefix),
             is_active,
+            "ScoringSelect",
+            Some(selected_info),
+            Some(format!("Hysteresis: {:.2}", self.hysteresis_margin)),
         );
         (status, input)
     }

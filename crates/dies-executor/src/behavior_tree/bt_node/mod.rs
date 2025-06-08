@@ -46,6 +46,20 @@ impl BehaviorNode {
         }
     }
 
+    pub fn debug_all_nodes(&self, situation: &RobotSituation, engine: &Engine) {
+        match self {
+            BehaviorNode::Select(node) => node.debug_all_nodes(situation, engine),
+            BehaviorNode::Sequence(node) => node.debug_all_nodes(situation, engine),
+            BehaviorNode::Guard(node) => node.debug_all_nodes(situation, engine),
+            BehaviorNode::Action(node) => node.debug_all_nodes(situation, engine),
+            BehaviorNode::Semaphore(node) => node.debug_all_nodes(situation, engine),
+            BehaviorNode::ScoringSelect(node) => node.debug_all_nodes(situation, engine),
+            BehaviorNode::Noop(_) => {
+                // Noop nodes don't have structure to debug
+            }
+        }
+    }
+
     pub fn description(&self) -> String {
         match self {
             BehaviorNode::Select(node) => node.description(),
