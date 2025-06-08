@@ -106,3 +106,35 @@ fn build_player_bt(player_id) {
 ```
 
 This function is called for each robot, and it is expected to return a `BehaviorNode` which serves as the root of that robot's behavior tree.
+
+## Rust vs. Rhai: Where to Write Logic?
+
+A key design principle of the Dies behavior system is the separation of concerns between Rust and Rhai. Here's a guideline for what code belongs where:
+
+### What to write in Rust (Skills)
+
+Rust is used to implement the fundamental "building blocks" of robot behavior. These are called **Skills**. A skill should be:
+
+- **Atomic**: It should represent a single, clear action (e.g., `Kick`, `FetchBall`, `GoToPosition`).
+- **Reusable**: It should be generic enough to be used in many different contexts within the behavior tree.
+- **Self-contained**: It should manage its own state (e.g., tracking whether a `GoToPosition` action is complete).
+- **Parameterized**: It should be configurable via arguments (e.g., the target for `GoToPosition`).
+
+Examples of good skills implemented in Rust are `Kick`, `FetchBall`, and `GoToPosition`. They are exposed to Rhai as functions that create Action Nodes.
+
+### What to write in Rhai (Strategy)
+
+Rhai is used to compose these building blocks into complex, high-level strategies. The Rhai script defines the "brain" of the robot by wiring skills together using behavior tree nodes like `Sequence`, `Select`, and `Guard`. Your Rhai script should focus on:
+
+- **Decision-making**: Using `Select` and `Guard` nodes to choose the right action based on the game state (`RobotSituation`).
+- **Orchestration**: Using `Sequence` to define a series of actions to achieve a goal.
+- **Team Coordination**: Using `Semaphore` to coordinate behavior between multiple robots.
+- **Dynamic Behavior**: Using callbacks to dynamically provide arguments to skills based on real-time world data.
+
+The `standard_player_tree.rhai` script is a perfect example of this. It doesn't implement the _how_ of moving or kicking, but it defines the _when_ and _why_: _when_ to be an attacker, _when_ to support, what defines those roles, and how to transition between them.
+
+### The Core Idea
+
+> **Simple, reusable skills go into Rust. Complex, high-level behavior goes into Rhai.**
+
+This separation allows strategists to rapidly iterate on high-level tactics in Rhai without needing to recompile the entire Rust application. Meanwhile, the core skills can be implemented and optimized in performant, reliable Rust code.
