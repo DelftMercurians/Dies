@@ -2,6 +2,36 @@ use dies_core::{PlayerData, PlayerId, WorldData};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
+use crate::PlayerControlInput;
+
+use super::{BehaviorNode, NoopNode};
+
+#[derive(Clone)]
+pub struct BehaviorTree {
+    root_node: BehaviorNode,
+}
+
+impl BehaviorTree {
+    pub fn tick(
+        &mut self,
+        situation: &mut RobotSituation,
+    ) -> (BehaviorStatus, Option<PlayerControlInput>) {
+        self.root_node.tick(situation)
+    }
+}
+
+impl BehaviorTree {
+    pub fn new(root_node: BehaviorNode) -> Self {
+        Self { root_node }
+    }
+}
+
+impl Default for BehaviorTree {
+    fn default() -> Self {
+        Self::new(BehaviorNode::Noop(NoopNode::new()))
+    }
+}
+
 #[derive(Clone)]
 pub struct TeamContext {
     semaphores: Arc<RwLock<HashMap<String, (usize, HashSet<PlayerId>)>>>,
@@ -66,7 +96,7 @@ pub enum BehaviorStatus {
 pub struct RobotSituation {
     pub player_id: PlayerId,
     pub world: Arc<WorldData>,
-    pub team_context: Arc<TeamContext>,
+    pub team_context: TeamContext,
     pub viz_path_prefix: String,
 }
 
@@ -74,7 +104,7 @@ impl RobotSituation {
     pub fn new(
         player_id: PlayerId,
         world: Arc<WorldData>,
-        team_context: Arc<TeamContext>,
+        team_context: TeamContext,
         viz_path_prefix: String,
     ) -> Self {
         Self {

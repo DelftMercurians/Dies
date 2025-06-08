@@ -1,10 +1,6 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::RwLock,
-};
+use std::collections::{HashMap, HashSet};
 
 use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, WorldData};
-use rhai::{Engine, Scope, AST};
 use std::sync::Arc;
 
 use super::{
@@ -12,18 +8,8 @@ use super::{
     player_input::{KickerControlInput, PlayerInputs},
 };
 use crate::{
-    behavior_tree::{BehaviorNode, RobotSituation, TeamContext},
-    roles::Skill,
+    behavior_tree::{BehaviorTree, RhaiHost, RobotSituation, TeamContext},
     PlayerControlInput,
-};
-
-use crate::behavior_tree::rhai_integration::{
-    rhai_action_node, rhai_approach_ball_skill, rhai_face_angle_skill,
-    rhai_face_towards_own_player_skill, rhai_face_towards_position_skill, rhai_fetch_ball_skill,
-    rhai_fetch_ball_with_heading_angle_skill, rhai_fetch_ball_with_heading_player_skill,
-    rhai_fetch_ball_with_heading_position_skill, rhai_goto_skill, rhai_guard_constructor,
-    rhai_intercept_ball_skill, rhai_kick_skill, rhai_scoring_select_node, rhai_select_node,
-    rhai_semaphore_node, rhai_sequence_node, rhai_wait_skill, RhaiBehaviorNode, RhaiSkill,
 };
 
 const ACTIVATION_TIME: f64 = 0.2;
@@ -32,44 +18,21 @@ pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
     start_time: std::time::Instant,
-    player_behavior_trees: HashMap<PlayerId, BehaviorNode>,
+    player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
     team_context: TeamContext,
-    // rhai_engine: Arc<RwLock<Engine>>,
-    // rhai_ast: Option<Arc<RwLock<AST>>>,
+    script_host: RhaiHost,
 }
 
 impl TeamController {
     pub fn new(settings: &ExecutorSettings) -> Self {
-        let team_context = TeamContext::new();
-
         let main_bt_script_path = "crates/dies-executor/src/bt_scripts/standard_player_tree.rhai";
-        let mut main_ast: Option<Arc<RwLock<AST>>> = None;
-        let engine = create_engine();
-        match engine.compile_file(main_bt_script_path.into()) {
-            Ok(compiled_ast) => {
-                log::info!(
-                    "Successfully compiled main BT Rhai script: {}",
-                    main_bt_script_path
-                );
-                main_ast = Some(Arc::new(RwLock::new(compiled_ast)));
-            }
-            Err(e) => {
-                log::error!(
-                    "Failed to compile main BT Rhai script '{}': {:?}",
-                    main_bt_script_path,
-                    e
-                );
-            }
-        }
-
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             start_time: std::time::Instant::now(),
             player_behavior_trees: HashMap::new(),
-            team_context,
-            // rhai_engine: Arc::new(RwLock::new(engine)),
-            // rhai_ast: main_ast,
+            team_context: TeamContext::new(),
+            script_host: RhaiHost::new(main_bt_script_path),
         };
         team.update_controller_settings(settings);
         team
@@ -93,6 +56,7 @@ impl TeamController {
         world_data: WorldData,
         manual_override: HashMap<PlayerId, PlayerControlInput>,
     ) {
+        let world_data = Arc::new(world_data);
         let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
         for id in detected_ids.iter() {
             if !self.player_controllers.contains_key(id) {
@@ -119,57 +83,24 @@ impl TeamController {
         for player_data in &world_data.own_players {
             let player_id = player_data.id;
 
-            let player_bt = self.player_behavior_trees.entry(player_id).or_insert_with(|| {
-                let engine = create_engine();
-                let main_bt_script_path = "crates/dies-executor/src/bt_scripts/standard_player_tree.rhai";
-                let ast = match engine.compile_file(main_bt_script_path.into()) {
-                    Ok(compiled_ast) => {
-                        log::info!(
-                            "Successfully compiled main BT Rhai script: {}",
-                            main_bt_script_path
-                        );
-                        Arc::new(RwLock::new(compiled_ast))
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to compile main BT Rhai script '{}': {:?}",
-                            main_bt_script_path,
-                            e
-                        );
-                        return build_player_bt(player_id);
-                    }
-                };
-                let mut scope = Scope::new();
-                let player_id_str = player_id.to_string();
-                log::debug!("Attempting to build BT for player {} from Rhai script.", player_id_str);
-                let ast = ast.read().unwrap();
-                match engine.call_fn::<RhaiBehaviorNode>(
-                    &mut scope,
-                    &ast,
-                    "build_player_bt",
-                    (player_id_str.clone(),),
-                ) {
-                    Ok(rhai_node) => {
-                        log::info!(
-                            "Successfully built BT for player {} from Rhai script.",
-                            player_id_str
-                        );
-                        rhai_node.0
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to build BT for player {} from Rhai script: {:?}. Falling back to default Rust BT.",
-                            player_id_str,
-                            e
-                        );
-                        build_player_bt(player_id)
-                    }
-                }
-            });
+            let player_bt =
+                self.player_behavior_trees
+                    .entry(player_id)
+                    .or_insert_with(|| match self.script_host.build_player_bt(player_id) {
+                        Ok(bt) => bt,
+                        Err(e) => {
+                            log::error!("Failed to build player BT: {:?}", e);
+                            BehaviorTree::default()
+                        }
+                    });
 
             let viz_path_prefix = format!("p{}", player_id);
-            let mut robot_situation =
-                RobotSituation::new(player_id, &world_data, &self.team_context, viz_path_prefix);
+            let mut robot_situation = RobotSituation::new(
+                player_id,
+                world_data.clone(),
+                self.team_context.clone(),
+                viz_path_prefix,
+            );
 
             let (_status, player_input_opt) = player_bt.tick(&mut robot_situation);
             let mut player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
@@ -245,21 +176,6 @@ impl TeamController {
             .map(|c| c.command())
             .collect()
     }
-}
-
-fn build_player_bt(_player_id: PlayerId) -> BehaviorNode {
-    use crate::behavior_tree::{ActionNode, SelectNode};
-    use crate::roles::skills::GoToPosition;
-    use dies_core::Vector2;
-
-    let go_to_origin = ActionNode::new(
-        Skill::GoToPosition(GoToPosition::new(Vector2::new(0.0, 0.0))),
-        Some("GoToOrigin".to_string()),
-    );
-    BehaviorNode::Select(SelectNode::new(
-        vec![BehaviorNode::Action(go_to_origin)],
-        Some("RootSelect".to_string()),
-    ))
 }
 
 fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {

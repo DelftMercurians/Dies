@@ -36,49 +36,53 @@ fn score_defensive_position(s) {
     return 50.0 + s.player.pos_x;
 }
 
-fn build_player_bt(player_id_str) {
-    print("RHAI: Building BT for player: " + player_id_str);
+fn build_player_bt(player_id) {
+    let player_id_str = player_id.to_string();
 
     // Define some skills (using the globally registered skill constructors)
-    let go_to_origin_skill = GoToPositionSkill(0.0, 0.0);
-    let go_to_positive_skill = GoToPositionSkill(1000.0, 1000.0);
-    let go_to_negative_skill = GoToPositionSkill(-1000.0, -1000.0);
+    let go_to_origin_skill = GoToPosition(0.0, 0.0);
+    let go_to_positive_skill = GoToPosition(1000.0, 1000.0);
+    let go_to_negative_skill = GoToPosition(-1000.0, -1000.0);
 
     // Build the tree
-    let tree = Select([
-        // Sequence 1: If player has the ball, try to go to (1,1)
-        Sequence([
-            Guard(has_ball_condition, Action(go_to_positive_skill, "Action_GoPositiveWithBall"), "Cond_HasBall"),
-            Action(go_to_positive_skill, "Action_StillGoPositiveAfterHavingBall")
-        ], "Seq_HandleBall"),
+    // let tree = Select([
+    //     // Sequence 1: If player has the ball, try to go to (1,1)
+    //     Sequence([
+    //         Guard(has_ball_condition, go_to_positive_skill, "Cond_HasBall"),
+    //         go_to_positive_skill
+    //     ], "Seq_HandleBall"),
 
-        // Sequence 2: If ball is close (but not possessed), go to (-1,-1) to intercept
-        Sequence([
-            Guard(ball_is_close_condition, Action(go_to_negative_skill, "Action_GoNegativeForCloseBall"), "Cond_BallClose"),
-        ], "Seq_GetCloseBall"),
+    //     // Sequence 2: If ball is close (but not possessed), go to (-1,-1) to intercept
+    //     Sequence([
+    //         Guard(ball_is_close_condition, go_to_negative_skill, "Cond_BallClose"),
+    //     ], "Seq_GetCloseBall"),
 
-        // ScoringSelect Node: Choose between two tactical positions based on scores
-        ScoringSelect(
-            [
-                #{ node: Action(go_to_positive_skill, "Action_OffensivePos"), scorer: score_offensive_position },
-                #{ node: Action(go_to_negative_skill, "Action_DefensivePos"), scorer: score_defensive_position }
-            ],
-            10.0, // Hysteresis margin (scores are roughly in 0-100 range)
-            "Scoring_StrategicPos"
-        ),
+    //     // ScoringSelect Node: Choose between two tactical positions based on scores
+    //     ScoringSelect(
+    //         [
+    //             #{ node: go_to_positive_skill, scorer: score_offensive_position },
+    //             #{ node: go_to_negative_skill, scorer: score_defensive_position }
+    //         ],
+    //         10.0, // Hysteresis margin (scores are roughly in 0-100 range)
+    //         "Scoring_StrategicPos"
+    //     ),
         
-        // Semaphore example: Only one player can attempt to go to origin via this semaphore
-        Semaphore(
-            Action(go_to_origin_skill, "Action_GoToOriginGuardedBySemaphore"),
-            "unique_origin_task", // Semaphore ID string
-            1, // Max count (integer)
-            "Sem_GoToOrigin"
-        ),
+    //     // Semaphore example: Only one player can attempt to go to origin via this semaphore
+    //     Semaphore(
+    //         go_to_origin_skill,
+    //         "unique_origin_task", // Semaphore ID string
+    //         1, // Max count (integer)
+    //         "Sem_GoToOrigin"
+    //     ),
 
-        // Fallback: Go to origin by default if nothing else runs or succeeds
-        Action(go_to_origin_skill, "Action_FallbackGoToOrigin")
+    //     // Fallback: Go to origin by default if nothing else runs or succeeds
+    //     go_to_origin_skill
+    // ], "RootSelect_Player_" + player_id_str);
+    let tree = Sequence([
+        go_to_origin_skill,
+        go_to_positive_skill,
+        go_to_negative_skill,
     ], "RootSelect_Player_" + player_id_str);
 
-    print("RHAI: BT construction complete for player: " + player_id_str);
     return tree;
 } 

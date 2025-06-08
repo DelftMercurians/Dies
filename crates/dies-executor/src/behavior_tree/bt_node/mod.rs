@@ -3,6 +3,7 @@ use crate::control::PlayerControlInput;
 
 mod action;
 mod guard;
+mod noop;
 mod scoring_select;
 mod select;
 mod semaphore;
@@ -10,6 +11,7 @@ mod sequence;
 
 pub use action::ActionNode;
 pub use guard::GuardNode;
+pub use noop::NoopNode;
 pub use scoring_select::ScoringSelectNode;
 pub use select::SelectNode;
 pub use semaphore::SemaphoreNode;
@@ -23,6 +25,7 @@ pub enum BehaviorNode {
     Action(ActionNode),
     Semaphore(SemaphoreNode),
     ScoringSelect(ScoringSelectNode),
+    Noop(NoopNode),
 }
 
 impl BehaviorNode {
@@ -37,6 +40,7 @@ impl BehaviorNode {
             BehaviorNode::Action(node) => node.tick(situation),
             BehaviorNode::Semaphore(node) => node.tick(situation),
             BehaviorNode::ScoringSelect(node) => node.tick(situation),
+            BehaviorNode::Noop(_) => (BehaviorStatus::Success, None),
         }
     }
 
@@ -48,6 +52,7 @@ impl BehaviorNode {
             BehaviorNode::Action(node) => node.description(),
             BehaviorNode::Semaphore(node) => node.description(),
             BehaviorNode::ScoringSelect(node) => node.description(),
+            BehaviorNode::Noop(_) => "Noop".to_string(),
         }
     }
 
@@ -59,6 +64,7 @@ impl BehaviorNode {
             BehaviorNode::Action(node) => node.get_node_id_fragment(),
             BehaviorNode::Semaphore(node) => node.get_node_id_fragment(),
             BehaviorNode::ScoringSelect(node) => node.get_node_id_fragment(),
+            BehaviorNode::Noop(_) => "Noop".to_string(),
         }
     }
 
@@ -79,6 +85,7 @@ impl BehaviorNode {
             BehaviorNode::Action(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Semaphore(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::ScoringSelect(node) => node.get_child_node_ids(current_path_prefix),
+            BehaviorNode::Noop(_) => vec![],
         }
     }
 }
