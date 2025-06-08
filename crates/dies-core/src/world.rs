@@ -512,6 +512,7 @@ impl WorldData {
 pub enum Avoid {
     Line { start: Vector2, end: Vector2 },
     Circle { center: Vector2 },
+    Rectangle {top_left: Vector2, bottom_right: Vector2}
 }
 
 impl Avoid {
@@ -519,6 +520,33 @@ impl Avoid {
         match self {
             Avoid::Line { start, end } => distance_to_line(*start, *end, pos),
             Avoid::Circle { center } => (center - pos).norm(),
+            Avoid::Rectangle { top_left, bottom_right } => {
+                let x = pos.x;
+                let y = pos.y;
+                let left = top_left.x;
+                let right = bottom_right.x;
+                let top = top_left.y;
+                let bottom = bottom_right.y;
+
+                let dx = if x < left {
+                    left - x
+                } else if x > right {
+                    x - right
+                } else {
+                    0.0
+                };
+
+                let dy = if y < top {
+                    top - y
+                } else if y > bottom {
+                    y - bottom
+                } else {
+                    0.0
+                };
+                // If inside the rectangle, dis = 0
+
+                return (dx.powi(2) + dy.powi(2)).sqrt()
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, WorldData};
+use dies_core::{Avoid, ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, Vector2, WorldData};
+use nalgebra::Vector;
 
 use super::{
     player_controller::PlayerController,
@@ -203,6 +204,35 @@ fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
 
                 let mut new_input = input.clone();
 
+                // Check if only goal keeper are inside the defense area
+                let player_pos = player_data.position.xy();
+                if player_pos.x.abs() > 3500.0 && player_pos.x.abs() < 4500.0 && player_pos.y.abs() < 1000.0 {
+                    if input.role_type != RoleType::Goalkeeper {
+                        dies_core::debug_string(
+                            "TeamController",
+                            format!("Player {} should not be in the defense area", player_data.id.as_u32()),
+                        );
+
+                        let min_distance = 800.0;
+                        let max_radius = 4000;
+                        let mut top_left = Vector2::new(-4500.0, 1000.0);
+                        let mut bottom_right = Vector2::new(-3500.0, -1000.0);
+                        if player_pos.x > 0.0 { 
+                            top_left.x = 3500.0;
+                            bottom_right.x = 4500.0;
+                        };
+                        let target = dies_core::nearest_safe_pos(
+                            Avoid::Rectangle { top_left: (top_left), bottom_right: (bottom_right) },
+                            min_distance,
+                            player_pos,
+                            input.position.unwrap_or(player_data.position),
+                            max_radius,
+                            field
+                        );
+                        new_input.with_position(target);
+                    }
+                }
+
                 if game_state == GameState::Stop
                     || (game_state == GameState::FreeKick
                         && input.role_type != RoleType::FreeKicker)
@@ -227,6 +257,36 @@ fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
                     );
                     new_input.with_position(target);
                 }
+
+                
+                // Check if the defending players keep distance from the ball in free kick state
+                if game_state == GameState::FreeKick
+                    && !world_data.current_game_state.us_operating
+                {
+                    let distance_to_ball: f64 = (player_pos - ball_pos).norm();
+                    if distance_to_ball < 500.0 {
+                        dies_core::debug_string(
+                            "TeamController",
+                            format!(
+                                "Player {} is too close to the ball in free kick state",
+                                player_data.id.as_u32()
+                            ),
+                        );
+
+                    let min_distance = 800.0;
+                    let max_radius = 4000;
+                    let target = dies_core::nearest_safe_pos(
+                        dies_core::Avoid::Circle { center: ball_pos },
+                        min_distance,
+                        player_data.position,
+                        input.position.unwrap_or(player_data.position),
+                        max_radius,
+                        field,
+                    );
+                        new_input.with_position(target);
+                    }
+                }
+
 
                 if let GameState::BallReplacement(pos) = game_state {
                     let line_start = ball_pos;
