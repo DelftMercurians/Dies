@@ -53,7 +53,7 @@ impl TeamColor {
 ///
 /// In RoboCup SSL, the field coordinate system is fixed, but teams can be
 /// assigned to defend either side. This enum tracks that assignment.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[typeshare]
 pub enum SideAssignment {
     /// Blue team defends the positive x side (+x goal)

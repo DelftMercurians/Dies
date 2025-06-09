@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    ScenarioInfo, SimulatorCmd, TeamColor, WorldData,
+    ScenarioInfo, SimulatorCmd, TeamId, WorldData,
 };
 use dies_executor::scenarios::ScenarioType;
 use dies_ssl_client::SslClientConfig;
@@ -77,10 +77,12 @@ pub(crate) struct UiStatus {
 #[typeshare]
 pub(crate) enum UiCommand {
     SetManualOverride {
+        team_id: TeamId,
         player_id: PlayerId,
         manual_override: bool,
     },
     OverrideCommand {
+        team_id: TeamId,
         player_id: PlayerId,
         command: PlayerOverrideCommand,
     },
@@ -122,7 +124,7 @@ pub(crate) struct PostUiModeBody {
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum UiWorldState {
-    Loaded(TeamData),
+    Loaded(WorldData),
     None,
 }
 
@@ -130,7 +132,7 @@ pub(crate) enum UiWorldState {
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum WsMessage<'a> {
-    WorldUpdate(&'a TeamData),
+    WorldUpdate(&'a WorldData),
     Debug(&'a DebugMap),
 }
 

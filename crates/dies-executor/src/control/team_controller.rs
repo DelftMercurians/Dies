@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
-use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, TeamData};
+use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, TeamData, TeamId};
 use std::sync::Arc;
 
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
+    team_context::TeamContext,
 };
 use crate::{
-    behavior_tree::{BehaviorTree, RhaiHost, RobotSituation, TeamContext},
+    behavior_tree::{BehaviorTree, BtContext, RhaiHost, RobotSituation},
     PlayerControlInput,
 };
 
@@ -20,28 +21,24 @@ pub struct TeamController {
     start_time: std::time::Instant,
     player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
     team_context: TeamContext,
+    bt_context: BtContext,
     script_host: RhaiHost,
 }
 
 impl TeamController {
-    pub fn new(settings: &ExecutorSettings) -> Self {
+    pub fn new(team_id: TeamId, settings: &ExecutorSettings) -> Self {
         let main_bt_script_path = "crates/dies-executor/src/bt_scripts/standard_player_tree.rhai";
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             start_time: std::time::Instant::now(),
             player_behavior_trees: HashMap::new(),
-            team_context: TeamContext::new(),
+            team_context: TeamContext::new(team_id),
+            bt_context: BtContext::new(),
             script_host: RhaiHost::new(main_bt_script_path),
         };
         team.update_controller_settings(settings);
         team
-    }
-
-    pub fn set_opp_goal_sign(&mut self, opp_goal_sign: f64) {
-        for controller in self.player_controllers.values_mut() {
-            controller.set_opp_goal_sign(opp_goal_sign);
-        }
     }
 
     pub fn update_controller_settings(&mut self, settings: &ExecutorSettings) {
@@ -97,7 +94,7 @@ impl TeamController {
             let mut robot_situation = RobotSituation::new(
                 player_id,
                 world_data.clone(),
-                self.team_context.clone(),
+                self.bt_context.clone(),
                 viz_path_prefix,
             );
 
@@ -124,7 +121,7 @@ impl TeamController {
             world_data.current_game_state.game_state,
             GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
         ) {
-            comply(&world_data, inputs_for_comply)
+            comply(&world_data, inputs_for_comply, &self.team_context)
         } else {
             inputs_for_comply
         };
@@ -143,6 +140,7 @@ impl TeamController {
 
             if let Some(player_data) = player_data {
                 let id = controller.id();
+                let player_context = self.team_context.player_context(id);
                 let default_input = final_player_inputs.player(id);
                 let input_to_use = manual_override.get(&id).unwrap_or(&default_input);
 
@@ -162,6 +160,7 @@ impl TeamController {
                     is_manual,
                     obsacles,
                     &all_players,
+                    &player_context,
                 );
             } else {
                 controller.increment_frames_misses();
@@ -172,12 +171,15 @@ impl TeamController {
     pub fn commands(&mut self) -> Vec<PlayerCmd> {
         self.player_controllers
             .values_mut()
-            .map(|c| c.command())
+            .map(|c| {
+                let player_context = self.team_context.player_context(c.id());
+                c.command(&player_context)
+            })
             .collect()
     }
 }
 
-fn comply(world_data: &TeamData, inputs: PlayerInputs) -> PlayerInputs {
+fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContext) -> PlayerInputs {
     if let (Some(ball), Some(field)) = (world_data.ball.as_ref(), world_data.field_geom.as_ref()) {
         let game_state = world_data.current_game_state.game_state;
         let ball_pos = ball.position.xy();
@@ -221,13 +223,13 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs) -> PlayerInputs {
                 if let GameState::BallReplacement(pos) = game_state {
                     let line_start = ball_pos;
                     let line_end = pos;
-                    dies_core::debug_line(
+                    team_context.debug_line_colored(
                         "ball_placement",
                         line_start,
                         line_end,
                         dies_core::DebugColor::Orange,
                     );
-                    dies_core::debug_cross(
+                    team_context.debug_cross_colored(
                         "ball_placement_target",
                         pos,
                         dies_core::DebugColor::Orange,
@@ -248,8 +250,8 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs) -> PlayerInputs {
                     );
                     new_input.with_position(target);
                 } else {
-                    dies_core::debug_remove("ball_placement");
-                    dies_core::debug_remove("ball_placement_target");
+                    team_context.debug_remove("ball_placement");
+                    team_context.debug_remove("ball_placement_target");
                 }
 
                 (*id, new_input)
