@@ -4,8 +4,8 @@ use std::{
 };
 
 use dies_core::{
-    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus, Vector2,
-    WorldInstant,
+    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus,
+    TeamConfiguration, TeamId, TeamInfo, Vector2, WorldInstant,
 };
 use dies_protos::{
     ssl_gc_referee_message::{referee, Referee},
@@ -78,10 +78,25 @@ pub struct SimulationConfig {
     pub field_geometry: FieldGeometry,
     /// Interval for sending geometry packets
     pub geometry_interval: f64,
+
+    // TEAM CONFIGURATION
+    /// Team configuration for self-play support
+    pub team_configuration: TeamConfiguration,
+    /// Which teams are controlled/simulated by the AI
+    pub controlled_teams: std::collections::HashSet<TeamId>,
 }
 
 impl Default for SimulationConfig {
     fn default() -> Self {
+        // Create default team configuration for backwards compatibility
+        let blue_team = TeamInfo::new_with_name("Blue Team");
+        let yellow_team = TeamInfo::new_with_name("Yellow Team");
+        let team_configuration = TeamConfiguration::new(blue_team.clone(), yellow_team);
+
+        // By default, only control blue team for backwards compatibility
+        let mut controlled_teams = std::collections::HashSet::new();
+        controlled_teams.insert(blue_team.id);
+
         SimulationConfig {
             // PHYSICAL CONSTANTS
             gravity: Vector::z() * -9.81 * 1000.0,
@@ -109,6 +124,10 @@ impl Default for SimulationConfig {
             // FIELD GEOMRTY PARAMETERS
             field_geometry: FieldGeometry::default(),
             geometry_interval: 3.0,
+
+            // TEAM CONFIGURATION
+            team_configuration,
+            controlled_teams,
         }
     }
 }
@@ -268,7 +287,7 @@ struct Ball {
 #[derive(Debug)]
 struct Player {
     id: PlayerId,
-    is_own: bool,
+    team_id: TeamId,
     rigid_body_handle: RigidBodyHandle,
     _collider_handle: ColliderHandle,
     last_cmd_time: f64,
@@ -335,9 +354,8 @@ pub struct Simulation {
     feedback_interval: IntervalTrigger,
     feedback_queue: VecDeque<PlayerFeedbackMsg>,
     game_state: SimulationGameState,
-    team_color: bool,
     designated_ball_position: Vector<f64>,
-    last_touch_info: Option<(PlayerId, bool)>,
+    last_touch_info: Option<(PlayerId, TeamId)>,
 }
 
 impl Simulation {
@@ -377,7 +395,6 @@ impl Simulation {
             feedback_interval: IntervalTrigger::new(feedback_interval),
             feedback_queue: VecDeque::new(),
             game_state: SimulationGameState::default(),
-            team_color: true,
             designated_ball_position: Vector::new(0.0, 0.0, 0.0),
             last_touch_info: None,
         };
@@ -407,6 +424,31 @@ impl Simulation {
 
     pub fn time(&self) -> WorldInstant {
         WorldInstant::Simulated(self.current_time)
+    }
+
+    /// Get the team configuration
+    pub fn team_configuration(&self) -> &TeamConfiguration {
+        &self.config.team_configuration
+    }
+
+    /// Set the team configuration
+    pub fn set_team_configuration(&mut self, config: TeamConfiguration) {
+        self.config.team_configuration = config;
+    }
+
+    /// Get the controlled teams
+    pub fn controlled_teams(&self) -> &std::collections::HashSet<TeamId> {
+        &self.config.controlled_teams
+    }
+
+    /// Set which teams are controlled by the simulation
+    pub fn set_controlled_teams(&mut self, teams: std::collections::HashSet<TeamId>) {
+        self.config.controlled_teams = teams;
+    }
+
+    /// Check if a team is controlled
+    pub fn is_team_controlled(&self, team_id: TeamId) -> bool {
+        self.config.controlled_teams.contains(&team_id)
     }
 
     fn add_wall(&mut self, x: f64, y: f64, width: f64, height: f64) {
@@ -524,23 +566,26 @@ impl Simulation {
                 ..
             } => {
                 if self.goal() {
-                    if self.team_color {
-                        self.update_referee_command(referee::Command::GOAL_BLUE);
-                    } else {
-                        self.update_referee_command(referee::Command::GOAL_YELLOW);
-                    }
+                    // For team-agnostic simulation, we can determine goal commands based on ball position
+                    // or use a neutral approach. For now, we'll alternate or use a default.
+                    self.update_referee_command(referee::Command::GOAL_BLUE);
                     self.game_state = SimulationGameState::PrepareKickOff;
                 } else if self.ball_out() {
-                    let kicked_by_own_team =
-                        if let Some((_kicker_id, is_own_kicker)) = self.last_touch_info {
-                            is_own_kicker
+                    // For team-agnostic simulation, we can determine which team gets the free kick
+                    // based on last touch info, or default to a neutral decision
+                    if let Some((_kicker_id, kicker_team_id)) = self.last_touch_info {
+                        let blue_team_id = self
+                            .config
+                            .team_configuration
+                            .get_team_id(dies_core::TeamColor::Blue);
+                        if kicker_team_id == blue_team_id {
+                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
                         } else {
-                            false
-                        };
-                    if kicked_by_own_team {
-                        self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
+                            self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
+                        }
                     } else {
-                        self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
+                        // Default to blue team's free kick if no touch info available
+                        self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
                     }
                     self.game_state = SimulationGameState::free_kick();
                 } else {
@@ -548,10 +593,10 @@ impl Simulation {
                     let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
                     if let Some(ball_handle) = ball_handle {
                         let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
-                        let ball_position = ball_body.position().translation.vector.xy();
+                        let ball_position_2d = ball_body.position().translation.vector.xy();
                         let last_ball_position_unwrapped =
-                            last_ball_position.as_ref().unwrap_or(&ball_position);
-                        if (ball_position - last_ball_position_unwrapped).norm() < 10.0 {
+                            last_ball_position.as_ref().unwrap_or(&ball_position_2d);
+                        if (ball_position_2d - last_ball_position_unwrapped).norm() < 10.0 {
                             if no_progress_timer.tick(self.integration_parameters.dt) {
                                 self.update_referee_command(referee::Command::STOP);
                                 self.game_state = SimulationGameState::stop_and_force_start();
@@ -641,6 +686,11 @@ impl Simulation {
         }
 
         // Check if all team players in position
+        let blue_team_id = self
+            .config
+            .team_configuration
+            .get_team_id(dies_core::TeamColor::Blue);
+
         for player in self.players.iter_mut() {
             let rigid_body = self
                 .rigid_body_set
@@ -664,7 +714,7 @@ impl Simulation {
                 return false;
             }
             // Check if the player is in the own half, default to the left side(blue team on the left)
-            let out_of_field = if player.is_own {
+            let out_of_field = if player.team_id == blue_team_id {
                 player_position.x > 0.0
                     || player_position.x < -self.config.field_geometry.field_length / 2.0
             } else {
@@ -753,18 +803,15 @@ impl Simulation {
                 && ball_position.y.abs() < self.config.field_geometry.goal_width / 2.0
                 && ball_position.z < goal_height
             {
-                // Set which team scored
-                if ball_position.x > 0.0 {
-                    self.team_color = true; // Ball is in the blue goal(right side)
+                // Log which side scored
+                let scoring_side = if ball_position.x > 0.0 {
+                    "positive x side (blue goal)"
                 } else {
-                    self.team_color = false;
-                }
+                    "negative x side (yellow goal)"
+                };
                 dies_core::debug_string(
                     "RefereeMessage.Goal",
-                    &format!(
-                        "Goal scored by team: {}",
-                        if self.team_color { "blue" } else { "yellow" }
-                    ),
+                    &format!("Goal scored at {}", scoring_side),
                 );
 
                 // Wait a few frames before resetting the ball's position (default: 0.2s)
@@ -789,18 +836,15 @@ impl Simulation {
             let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
             let ball_position = ball_body.position().translation.vector;
 
+            // Check all players regardless of team - referee decisions should be team-neutral
             for player in self.players.iter() {
-                // Only detect defenders from another team
-                if self.team_color && player.is_own || !self.team_color && !player.is_own {
-                    continue;
-                }
                 let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
                 let player_position = rigid_body.position().translation.vector;
                 // Check if the player is close to the ball
                 if (player_position - ball_position).norm() < 500.0 {
                     dies_core::debug_string(
                         "RefereeMessage",
-                        format!("Defender {} too close to ball", player.id.as_u32()),
+                        format!("Player {} too close to ball", player.id.as_u32()),
                     );
                     return true;
                 }
@@ -818,7 +862,7 @@ impl Simulation {
                 let touch_threshold = self.config.player_radius + BALL_RADIUS + 5.0;
 
                 // Find the closest player touching the ball in this step
-                let mut closest_touching_player: Option<(PlayerId, bool, f64)> = None;
+                let mut closest_touching_player: Option<(PlayerId, TeamId, f64)> = None;
 
                 for player in self.players.iter() {
                     let player_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
@@ -829,13 +873,13 @@ impl Simulation {
                         if closest_touching_player.is_none()
                             || distance < closest_touching_player.unwrap().2
                         {
-                            closest_touching_player = Some((player.id, player.is_own, distance));
+                            closest_touching_player = Some((player.id, player.team_id, distance));
                         }
                     }
                 }
 
-                if let Some((id, is_own, _)) = closest_touching_player {
-                    self.last_touch_info = Some((id, is_own));
+                if let Some((id, team_id, _)) = closest_touching_player {
+                    self.last_touch_info = Some((id, team_id));
                 }
             }
         } else {
@@ -881,7 +925,8 @@ impl Simulation {
         // Update players
         let send_feedback = self.feedback_interval.trigger(self.current_time);
         for player in self.players.iter_mut() {
-            if !player.is_own {
+            // Only update players from controlled teams
+            if !self.config.controlled_teams.contains(&player.team_id) {
                 let rigid_body = self
                     .rigid_body_set
                     .get_mut(player.rigid_body_handle)
@@ -1051,6 +1096,11 @@ impl Simulation {
         detection.set_t_sent(self.current_time);
         detection.set_camera_id(1);
 
+        let blue_team_id = self
+            .config
+            .team_configuration
+            .get_team_id(dies_core::TeamColor::Blue);
+
         // Players
         for player in self.players.iter() {
             let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
@@ -1075,7 +1125,7 @@ impl Simulation {
             robot.set_pixel_y(0.0);
             robot.set_orientation(yaw as f32);
             robot.set_confidence(1.0);
-            if player.is_own {
+            if player.team_id == blue_team_id {
                 detection.robots_blue.push(robot);
             } else {
                 detection.robots_yellow.push(robot);
@@ -1125,24 +1175,68 @@ impl SimulationBuilder {
     }
 
     pub fn add_own_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
-        self.add_player(id, true, position, yaw);
+        let blue_team_id = self
+            .sim
+            .config
+            .team_configuration
+            .get_team_id(dies_core::TeamColor::Blue);
+        self.add_player(id, blue_team_id, position, yaw);
         self
     }
 
     pub fn add_opp_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
-        self.add_player(id, false, position, yaw);
+        let yellow_team_id = self
+            .sim
+            .config
+            .team_configuration
+            .get_team_id(dies_core::TeamColor::Yellow);
+        self.add_player(id, yellow_team_id, position, yaw);
         self
     }
 
     pub fn add_own_player(mut self, position: Vector2, yaw: Angle) -> Self {
-        self.add_player(self.last_own_id, true, position, yaw);
+        let blue_team_id = self
+            .sim
+            .config
+            .team_configuration
+            .get_team_id(dies_core::TeamColor::Blue);
+        self.add_player(self.last_own_id, blue_team_id, position, yaw);
         self.last_own_id += 1;
         self
     }
 
     pub fn add_opp_player(mut self, position: Vector2, yaw: Angle) -> Self {
-        self.add_player(self.last_opp_id, false, position, yaw);
+        let yellow_team_id = self
+            .sim
+            .config
+            .team_configuration
+            .get_team_id(dies_core::TeamColor::Yellow);
+        self.add_player(self.last_opp_id, yellow_team_id, position, yaw);
         self.last_opp_id += 1;
+        self
+    }
+
+    /// Add a player for a specific team by team ID
+    pub fn add_player_for_team(
+        mut self,
+        team_id: TeamId,
+        id: u32,
+        position: Vector2,
+        yaw: Angle,
+    ) -> Self {
+        self.add_player(id, team_id, position, yaw);
+        self
+    }
+
+    /// Set the team configuration for the simulation
+    pub fn with_team_configuration(mut self, config: TeamConfiguration) -> Self {
+        self.sim.config.team_configuration = config;
+        self
+    }
+
+    /// Set which teams should be controlled by the simulation
+    pub fn with_controlled_teams(mut self, teams: std::collections::HashSet<TeamId>) -> Self {
+        self.sim.config.controlled_teams = teams;
         self
     }
 
@@ -1178,7 +1272,7 @@ impl SimulationBuilder {
         self.sim
     }
 
-    fn add_player(&mut self, id: u32, is_own: bool, position: Vector2, yaw: Angle) {
+    fn add_player(&mut self, id: u32, team_id: TeamId, position: Vector2, yaw: Angle) {
         let sim = &mut self.sim;
 
         // Players have fixed z position - their bottom surface 1mm above the ground
@@ -1208,7 +1302,7 @@ impl SimulationBuilder {
 
         sim.players.push(Player {
             id: PlayerId::new(id),
-            is_own,
+            team_id,
             rigid_body_handle,
             _collider_handle: collider_handle,
             last_cmd_time: 0.0,
