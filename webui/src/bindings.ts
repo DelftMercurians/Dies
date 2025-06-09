@@ -338,10 +338,12 @@ export interface PostExecutorSettingsBody {
 /** A command from the frontend to the backend. */
 export type UiCommand = 
 	| { type: "SetManualOverride", data: {
+	team_id: TeamId;
 	player_id: PlayerId;
 	manual_override: boolean;
 }}
 	| { type: "OverrideCommand", data: {
+	team_id: TeamId;
 	player_id: PlayerId;
 	command: PlayerOverrideCommand;
 }}
@@ -355,6 +357,14 @@ export type UiCommand =
 	| { type: "SetActiveTeams", data: {
 	blue_active: boolean;
 	yellow_active: boolean;
+}}
+	/** Set the primary team for UI display */
+	| { type: "SetPrimaryTeam", data: {
+	team_id: TeamId;
+}}
+	/** Update team configuration */
+	| { type: "UpdateTeamConfiguration", data: {
+	config: TeamConfiguration;
 }}
 	| { type: "Stop",  };
 
@@ -578,11 +588,11 @@ export type SimulatorCmd =
 }};
 
 export type UiWorldState = 
-	| { type: "Loaded", data: TeamData }
+	| { type: "Loaded", data: WorldData }
 	| { type: "None",  };
 
 export type WsMessage = 
-	| { type: "WorldUpdate", data: TeamData }
+	| { type: "WorldUpdate", data: WorldData }
 	| { type: "Debug", data: DebugMap };
 
 export type Vector2 = [number, number];

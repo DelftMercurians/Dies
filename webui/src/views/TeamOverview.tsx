@@ -1,4 +1,9 @@
-import { useBasestationInfo, useExecutorInfo, useWorldState } from "@/api";
+import {
+  useBasestationInfo,
+  useExecutorInfo,
+  useWorldState,
+  isPlayerManuallyControlled,
+} from "@/api";
 import { PlayerData, PlayerFeedbackMsg } from "@/bindings";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -40,9 +45,10 @@ const TeamOverview: FC<TeamOverviewProps> = ({
           {sorted_players.length > 0 ? (
             sorted_players.map((player) => {
               const basestationData = bsInfo?.players[player.id];
-              const isManual =
-                executorInfo?.manual_controlled_players.includes(player.id) ??
-                false;
+              const isManual = isPlayerManuallyControlled(
+                player.id,
+                executorInfo?.manual_controlled_players ?? []
+              );
               const isSelected = player.id === selectedPlayerId;
 
               return (

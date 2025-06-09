@@ -4,6 +4,7 @@ import {
   useKeyboardControl,
   useSendCommand,
   useWorldState,
+  isPlayerManuallyControlled,
 } from "@/api";
 import * as math from "mathjs";
 import { DebugValue, PlayerData } from "@/bindings";
@@ -92,7 +93,10 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 
   const manualControl =
     typeof selectedPlayerId === "number" &&
-    executorInfo?.manual_controlled_players.includes(selectedPlayerId);
+    isPlayerManuallyControlled(
+      selectedPlayerId,
+      executorInfo?.manual_controlled_players ?? []
+    );
   useKeyboardControl({
     playerId: manualControl && keyboardControl ? selectedPlayerId : null,
     speed,
@@ -137,9 +141,11 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
       : null;
 
   const handleToggleManual = (val: boolean) => {
+    const defaultTeamId = 1; // TODO: Get from primary team selection
     sendCommand({
       type: "SetManualOverride",
       data: {
+        team_id: defaultTeamId,
         player_id: selectedPlayerId,
         manual_override: val,
       },

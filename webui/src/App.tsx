@@ -17,6 +17,8 @@ import {
   useSetMode,
   useStatus,
   useWorldState,
+  useExecutorInfo,
+  useRawWorldData,
 } from "./api";
 import logo from "./assets/mercury-logo.svg";
 import { Button } from "./components/ui/button";
@@ -42,41 +44,25 @@ import Basestation from "./views/Basestation";
 import TeamOverview from "./views/TeamOverview";
 import HierarchicalList from "./views/HierarchicalList";
 import { PlayerFeedbackMsg } from "./bindings";
+import TeamSettingsDialog from "./components/TeamSettingsDialog";
+import GameControllerPanel from "./components/GameControllerPanel";
+import PrimaryTeamSelector from "./components/PrimaryTeamSelector";
+import { TeamColor } from "./bindings";
 
-type Panel = "left" | "right" | "left-bottom";
+type Panel = "left" | "right" | "left-bottom" | "game-controller";
 
 const App: React.FC = () => {
   const scenarios = useScenarios() ?? [];
   const [selectedScenario, setSelectedScenario] = useState<null | string>(null);
   const { data: backendState, status: backendLoadingState } = useStatus();
   const worldState = useWorldState();
+  const rawWorldData = useRawWorldData();
   const { mutate: setMode, status: setModeStatus } = useSetMode();
   const sendCommand = useSendCommand();
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState<Panel[]>(["left-bottom"]);
+  const executorInfo = useExecutorInfo();
 
-  const GCcommands = [
-    "HALT",
-    "STOP",
-    "NORMAL_START",
-    "FORCE_START",
-    "PREPARE_KICKOFF_YELLOW",
-    "PREPARE_KICKOFF_BLUE",
-    "PREPARE_PENALTY_YELLOW",
-    "PREPARE_PENALTY_BLUE",
-    "DIRECT_FREE_YELLOW",
-    "DIRECT_FREE_BLUE",
-    "INDIRECT_FREE_YELLOW",
-    "INDIRECT_FREE_BLUE",
-    "TIMEOUT_YELLOW",
-    "TIMEOUT_BLUE",
-    "GOAL_YELLOW",
-    "GOAL_BLUE",
-    "BALL_PLACEMENT_YELLOW",
-    "BALL_PLACEMENT_BLUE",
-  ];
-
-  const [selectedCommand, setSelectedCommand] = useState<null | string>("HALT");
   const bsInfo = useBasestationInfo().data;
   const allMotorsOk = Object.values(bsInfo?.players ?? {}).every(
     (p: PlayerFeedbackMsg) =>
@@ -120,17 +106,20 @@ const App: React.FC = () => {
       toast.error(`Unhandled state ${val}`);
     }
   };
-  const handleCommandChange = (val: string) => {
-    setSelectedCommand(val);
-    sendCommand({
-      type: "GcCommand",
-      data: val,
-    });
-  };
+
   const runningScenario =
     executorStatus.type === "RunningExecutor"
       ? executorStatus.data.scenario
       : null;
+
+  // Get team configuration from world state (this will need to be updated when backend supports it)
+  const teamConfig = undefined; // TODO: Get from world state when implemented
+  const sideAssignment = rawWorldData?.side_assignment;
+  const primaryTeamId = undefined; // TODO: Get from executor info when implemented
+  const blueActive =
+    executorInfo?.active_teams.includes(TeamColor.Blue) ?? false;
+  const yellowActive =
+    executorInfo?.active_teams.includes(TeamColor.Yellow) ?? false;
 
   return (
     <main className="w-full h-full flex flex-col bg-background bg-slate-100">
@@ -142,7 +131,6 @@ const App: React.FC = () => {
           type="single"
           value={uiMode}
           onValueChange={setMode}
-          // disabled={setModeStatus === "pending"}
           className="border border-gray-500 rounded-lg"
         >
           <SimpleTooltip title="Simulation">
@@ -229,26 +217,52 @@ const App: React.FC = () => {
           </SimpleTooltip>
         </ToggleGroup>
 
-        <Select
-          value={selectedCommand ?? undefined}
-          onValueChange={(val) => handleCommandChange(val)}
-        >
-          <SelectTrigger className="w-64">
-            <SelectValue placeholder="Select GC command" />
-          </SelectTrigger>
-
-          <SelectContent>
-            {GCcommands.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Team Configuration */}
+        <div className="flex items-center gap-4">
+          <TeamSettingsDialog
+            currentConfig={teamConfig}
+            currentSideAssignment={sideAssignment}
+            blueActive={blueActive}
+            yellowActive={yellowActive}
+          />
+          <PrimaryTeamSelector
+            currentConfig={teamConfig}
+            primaryTeamId={primaryTeamId}
+          />
+        </div>
       </div>
 
       {/* Main content */}
       <ResizablePanelGroup autoSaveId="main-layout" direction="horizontal">
+        {/* Game Controller Panel */}
+        <ResizablePanel
+          defaultSize={15}
+          minSize={12}
+          maxSize={25}
+          collapsible
+          className="h-full bg-slate-950 p-2"
+          onCollapse={() =>
+            setCollapsed((prev) =>
+              !prev.includes("game-controller")
+                ? [...prev, "game-controller"]
+                : prev
+            )
+          }
+          onExpand={() =>
+            setCollapsed((prev) => prev.filter((v) => v !== "game-controller"))
+          }
+        >
+          {!collapsed.includes("game-controller") ? (
+            <GameControllerPanel />
+          ) : (
+            <div className="text-center text-slate-400 p-2 text-sm transform -rotate-90">
+              Game Controller
+            </div>
+          )}
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+
+        {/* Team Overview Panel */}
         <ResizablePanel
           defaultSize={20}
           minSize={10}

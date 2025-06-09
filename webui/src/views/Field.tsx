@@ -5,6 +5,7 @@ import {
   useSendCommand,
   useStatus,
   useWorldState,
+  extractPlayerId,
 } from "../api";
 import { Vector2, TeamData } from "../bindings";
 import { useResizeObserver } from "@/lib/useResizeObserver";
@@ -52,7 +53,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   );
   const contextMenuPosRef = useRef([0, 0] as [number, number]);
 
-  const manualControl = useExecutorInfo()?.manual_controlled_players ?? [];
+  const executorInfo = useExecutorInfo();
+  const manualControlledPlayerIds =
+    executorInfo?.manual_controlled_players.map(extractPlayerId) ?? [];
   const world = useWorldState();
   const teamData = world.status === "connected" ? world.data : null;
   const sendCommand = useSendCommand();
@@ -110,13 +113,13 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     }
     rendererRef.current.setPositionDisplayMode(positionDisplayMode);
     rendererRef.current.setTeamData(teamData);
-    rendererRef.current.render(selectedPlayerId, manualControl);
+    rendererRef.current.render(selectedPlayerId, manualControlledPlayerIds);
   }, [
     debugMap,
     teamData,
     canvasWidth,
     canvasHeight,
-    manualControl,
+    manualControlledPlayerIds,
     positionDisplayMode,
     selectedPlayerId,
   ]);
@@ -182,10 +185,12 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     contextMenuPosRef.current = rendererRef.current.canvasToField([x, y]);
   };
   const handleTargetPosition = () => {
+    const defaultTeamId = 1; // TODO: Get from primary team selection
     sendCommand({
       type: "OverrideCommand",
       data: {
-        player_id: manualControl[0],
+        team_id: defaultTeamId,
+        player_id: manualControlledPlayerIds[0],
         command: {
           type: "MoveTo",
           data: {
@@ -200,6 +205,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   };
 
   const handleTargetHeading = () => {
+    const defaultTeamId = 1; // TODO: Get from primary team selection
     // compute yaw
     const pos1 = selectedPlayerData?.position ?? [0, 0];
     const pos2 = contextMenuPosRef.current;
@@ -208,7 +214,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     sendCommand({
       type: "OverrideCommand",
       data: {
-        player_id: manualControl[0],
+        team_id: defaultTeamId,
+        player_id: manualControlledPlayerIds[0],
         command: {
           type: "MoveTo",
           data: {
@@ -320,7 +327,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         </ContextMenuTrigger>
 
         <ContextMenuContent>
-          {manualControl.length === 1 ? (
+          {manualControlledPlayerIds.length === 1 ? (
             <>
               <ContextMenuItem onClick={handleTargetPosition}>
                 Set target position

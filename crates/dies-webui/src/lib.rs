@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    ScenarioInfo, SimulatorCmd, TeamId, WorldData,
+    ScenarioInfo, SimulatorCmd, TeamConfiguration, TeamId, WorldData,
 };
 use dies_executor::scenarios::ScenarioType;
 use dies_ssl_client::SslClientConfig;
@@ -96,6 +96,14 @@ pub(crate) enum UiCommand {
     SetActiveTeams {
         blue_active: bool,
         yellow_active: bool,
+    },
+    /// Set the primary team for UI display
+    SetPrimaryTeam {
+        team_id: TeamId,
+    },
+    /// Update team configuration
+    UpdateTeamConfiguration {
+        config: TeamConfiguration,
     },
     Stop,
 }
