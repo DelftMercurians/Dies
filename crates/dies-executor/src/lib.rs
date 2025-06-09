@@ -59,22 +59,62 @@ impl TeamMap {
     }
 
     fn activate_team(&mut self, team_id: TeamId, settings: &ExecutorSettings) {
+        log::info!("activate_team called with team_id: {}", team_id);
+        log::info!(
+            "team_a: {} ({}), team_b: {} ({})",
+            self.team_a.0,
+            if self.team_a.1.is_some() {
+                "active"
+            } else {
+                "inactive"
+            },
+            self.team_b.0,
+            if self.team_b.1.is_some() {
+                "active"
+            } else {
+                "inactive"
+            }
+        );
+
         if team_id == self.team_a.0 {
             if self.team_a.1.is_none() {
+                log::info!("Activating team_a controller for team_id: {}", team_id);
                 self.team_a.1 = Some(TeamController::new(team_id, settings));
+            } else {
+                log::info!("Team_a controller already active for team_id: {}", team_id);
             }
         } else if team_id == self.team_b.0 {
             if self.team_b.1.is_none() {
+                log::info!("Activating team_b controller for team_id: {}", team_id);
                 self.team_b.1 = Some(TeamController::new(team_id, settings));
+            } else {
+                log::info!("Team_b controller already active for team_id: {}", team_id);
             }
+        } else {
+            log::warn!(
+                "activate_team called with unknown team_id: {} (team_a: {}, team_b: {})",
+                team_id,
+                self.team_a.0,
+                self.team_b.0
+            );
         }
     }
 
     fn deactivate_team(&mut self, team_id: TeamId) {
+        log::info!("deactivate_team called with team_id: {}", team_id);
         if team_id == self.team_a.0 {
+            log::info!("Deactivating team_a controller for team_id: {}", team_id);
             self.team_a.1 = None;
         } else if team_id == self.team_b.0 {
+            log::info!("Deactivating team_b controller for team_id: {}", team_id);
             self.team_b.1 = None;
+        } else {
+            log::warn!(
+                "deactivate_team called with unknown team_id: {} (team_a: {}, team_b: {})",
+                team_id,
+                self.team_a.0,
+                self.team_b.0
+            );
         }
     }
 
@@ -85,6 +125,40 @@ impl TeamMap {
         if let Some(controller) = &mut self.team_b.1 {
             controller.update_controller_settings(settings);
         }
+    }
+
+    /// Update the team configuration
+    fn update_team_configuration(&mut self, new_config: TeamConfiguration) {
+        // Check if team IDs changed and recreate controllers if needed
+        let old_team_a_id = self.team_a.0;
+        let old_team_b_id = self.team_b.0;
+
+        let new_team_a_id = new_config.get_team_id(TeamColor::Blue);
+        let new_team_b_id = new_config.get_team_id(TeamColor::Yellow);
+
+        // Update team IDs
+        self.team_a.0 = new_team_a_id;
+        self.team_b.0 = new_team_b_id;
+
+        // If team IDs changed, deactivate old controllers (they'll be recreated as needed)
+        if old_team_a_id != new_team_a_id && self.team_a.1.is_some() {
+            log::info!(
+                "Team A ID changed from {} to {}, deactivating controller",
+                old_team_a_id,
+                new_team_a_id
+            );
+            self.team_a.1 = None;
+        }
+        if old_team_b_id != new_team_b_id && self.team_b.1.is_some() {
+            log::info!(
+                "Team B ID changed from {} to {}, deactivating controller",
+                old_team_b_id,
+                new_team_b_id
+            );
+            self.team_b.1 = None;
+        }
+
+        self.team_configuration = new_config;
     }
 
     /// Get all player commands from active controllers
@@ -114,12 +188,17 @@ impl TeamMap {
     /// Get list of active team colors
     fn active_teams(&self) -> Vec<TeamColor> {
         let mut teams = Vec::new();
+
+        // Check if team_a is active and get its color
         if self.team_a.1.is_some() {
-            teams.push(TeamColor::Blue);
+            teams.push(self.team_configuration.get_team_color(self.team_a.0));
         }
+
+        // Check if team_b is active and get its color
         if self.team_b.1.is_some() {
-            teams.push(TeamColor::Yellow);
+            teams.push(self.team_configuration.get_team_color(self.team_b.0));
         }
+
         teams
     }
 
@@ -294,6 +373,7 @@ pub struct Executor {
     info_channel_rx: mpsc::UnboundedReceiver<oneshot::Sender<ExecutorInfo>>,
     info_channel_tx: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
     settings: ExecutorSettings,
+    primary_team_id: Option<TeamId>,
 }
 
 impl Executor {
@@ -333,6 +413,7 @@ impl Executor {
             info_channel_rx,
             info_channel_tx,
             settings,
+            primary_team_id: Some(team_a_id),
         }
     }
 
@@ -365,6 +446,7 @@ impl Executor {
             info_channel_rx,
             info_channel_tx,
             settings,
+            primary_team_id: Some(team_a_id),
         }
     }
 
@@ -412,6 +494,8 @@ impl Executor {
                 })
                 .collect(),
             active_teams: self.team_controllers.active_teams(),
+            team_configuration: self.team_controllers.team_configuration.clone(),
+            primary_team_id: self.primary_team_id,
         }
     }
 
@@ -609,51 +693,58 @@ impl Executor {
                 blue_active,
                 yellow_active,
             } => {
+                log::info!(
+                    "SetActiveTeams received: blue_active={}, yellow_active={}",
+                    blue_active,
+                    yellow_active
+                );
+
+                // Find which team IDs correspond to blue and yellow colors
+                let blue_team_id = self
+                    .team_controllers
+                    .team_configuration
+                    .get_team_id(TeamColor::Blue);
+                let yellow_team_id = self
+                    .team_controllers
+                    .team_configuration
+                    .get_team_id(TeamColor::Yellow);
+
+                log::info!(
+                    "Resolved team IDs: blue_team_id={}, yellow_team_id={}",
+                    blue_team_id,
+                    yellow_team_id
+                );
+
                 if blue_active {
-                    self.team_controllers.activate_team(
-                        self.team_controllers
-                            .team_configuration
-                            .get_team_id(TeamColor::Blue),
-                        &self.settings,
-                    );
+                    log::info!("Activating blue team ({})", blue_team_id);
+                    self.team_controllers
+                        .activate_team(blue_team_id, &self.settings);
                 } else {
-                    self.team_controllers.deactivate_team(
-                        self.team_controllers
-                            .team_configuration
-                            .get_team_id(TeamColor::Blue),
-                    );
+                    log::info!("Deactivating blue team ({})", blue_team_id);
+                    self.team_controllers.deactivate_team(blue_team_id);
                 }
+
                 if yellow_active {
-                    self.team_controllers.activate_team(
-                        self.team_controllers
-                            .team_configuration
-                            .get_team_id(TeamColor::Yellow),
-                        &self.settings,
-                    );
+                    log::info!("Activating yellow team ({})", yellow_team_id);
+                    self.team_controllers
+                        .activate_team(yellow_team_id, &self.settings);
                 } else {
-                    self.team_controllers.deactivate_team(
-                        self.team_controllers
-                            .team_configuration
-                            .get_team_id(TeamColor::Yellow),
-                    );
+                    log::info!("Deactivating yellow team ({})", yellow_team_id);
+                    self.team_controllers.deactivate_team(yellow_team_id);
                 }
             }
             ControlMsg::SetSideAssignment(side_assignment) => {
                 self.team_controllers.side_assignment = side_assignment;
             }
-            ControlMsg::SetTeamConfiguration {
-                team_a_name,
-                team_a_color,
-                team_b_name,
-                ..
-            } => {
-                let team_a = TeamInfo::new_with_name(&team_a_name);
-                let team_b = TeamInfo::new_with_name(&team_b_name);
-                self.team_controllers.team_configuration = if team_a_color == TeamColor::Blue {
-                    TeamConfiguration::new(team_a, team_b)
-                } else {
-                    TeamConfiguration::new(team_b, team_a)
-                };
+            ControlMsg::SetPrimaryTeam { team_id } => {
+                log::info!("Setting primary team to: {:?}", team_id);
+                self.primary_team_id = Some(team_id);
+            }
+            ControlMsg::UpdateTeamConfiguration { config } => {
+                log::info!("Updating team configuration: {:?}", config);
+                self.team_controllers
+                    .update_team_configuration(config.clone());
+                self.tracker.update_team_configuration(config);
             }
             ControlMsg::Stop => {}
             ControlMsg::GcCommand { .. } | ControlMsg::SimulatorCmd(_) => {

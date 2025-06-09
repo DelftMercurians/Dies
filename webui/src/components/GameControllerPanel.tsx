@@ -188,48 +188,47 @@ const GameControllerPanel: React.FC = () => {
   return (
     <div className="h-full flex flex-col">
       <Card className="flex-1">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Game Controller</CardTitle>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Game Controller</CardTitle>
           {lastCommand && (
-            <Badge variant="outline" className="w-fit">
+            <Badge variant="outline" className="w-fit text-xs">
               Last: {lastCommand.replace(/_/g, " ")}
             </Badge>
           )}
         </CardHeader>
-        <CardContent className="space-y-4 overflow-y-auto">
-          {Object.entries(commandGroups).map(([groupName, commands]) => (
-            <div key={groupName} className="space-y-2">
-              <h4 className="text-sm font-medium text-muted-foreground">
-                {groupName}
-              </h4>
-              <div className="grid grid-cols-1 gap-2">
-                {commands.map((cmd) => {
-                  const Icon = cmd.icon;
-                  return (
-                    <Button
-                      key={cmd.command}
-                      variant={getButtonVariant(cmd)}
-                      size="sm"
-                      className={`justify-start h-auto p-3 ${getButtonClassName(
-                        cmd
-                      )}`}
-                      onClick={() => sendGcCommand(cmd.command)}
-                      title={cmd.description}
-                    >
-                      <Icon className="h-4 w-4 mr-2 flex-shrink-0" />
-                      <div className="text-left flex-1">
-                        <div className="font-medium">{cmd.label}</div>
-                        <div className="text-xs opacity-75 truncate">
-                          {cmd.description}
-                        </div>
-                      </div>
-                    </Button>
-                  );
-                })}
+        <CardContent className="space-y-3 overflow-y-auto p-3">
+          {Object.entries(commandGroups).map(
+            ([groupName, commands], groupIndex) => (
+              <div key={groupName} className="space-y-1.5">
+                <h4 className="text-xs font-medium text-muted-foreground">
+                  {groupName}
+                </h4>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {commands.map((cmd) => {
+                    const Icon = cmd.icon;
+                    return (
+                      <Button
+                        key={cmd.command}
+                        variant={getButtonVariant(cmd)}
+                        size="sm"
+                        className={`justify-start h-8 px-2 text-xs ${getButtonClassName(
+                          cmd
+                        )}`}
+                        onClick={() => sendGcCommand(cmd.command)}
+                        title={cmd.description}
+                      >
+                        <Icon className="h-3 w-3 mr-1.5 flex-shrink-0" />
+                        <span className="truncate">{cmd.label}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+                {groupIndex < Object.entries(commandGroups).length - 1 && (
+                  <Separator className="my-2" />
+                )}
               </div>
-              {groupName !== "Ball Placement" && <Separator />}
-            </div>
-          ))}
+            )
+          )}
         </CardContent>
       </Card>
     </div>

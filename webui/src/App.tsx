@@ -113,9 +113,9 @@ const App: React.FC = () => {
       : null;
 
   // Get team configuration from world state (this will need to be updated when backend supports it)
-  const teamConfig = undefined; // TODO: Get from world state when implemented
+  const teamConfig = executorInfo?.team_configuration;
   const sideAssignment = rawWorldData?.side_assignment;
-  const primaryTeamId = undefined; // TODO: Get from executor info when implemented
+  const primaryTeamId = executorInfo?.primary_team_id;
   const blueActive =
     executorInfo?.active_teams.includes(TeamColor.Blue) ?? false;
   const yellowActive =

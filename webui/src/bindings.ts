@@ -156,6 +156,18 @@ export enum TeamColor {
 	Yellow = "Yellow",
 }
 
+export interface TeamInfo {
+	id: TeamId;
+	name?: string;
+}
+
+export interface TeamConfiguration {
+	team_a_color: TeamColor;
+	team_a_info: TeamInfo;
+	team_b_color: TeamColor;
+	team_b_info: TeamInfo;
+}
+
 /** Runtime information about the active executor. */
 export interface ExecutorInfo {
 	/** Whether the executor is currently paused. */
@@ -164,6 +176,10 @@ export interface ExecutorInfo {
 	manual_controlled_players: TeamPlayerId[];
 	/** Which teams are currently active/controlled. */
 	active_teams: TeamColor[];
+	/** Current team configuration. */
+	team_configuration: TeamConfiguration;
+	/** Primary team for UI display (if set). */
+	primary_team_id?: TeamId;
 }
 
 /** Runtime information about the active executor. */
@@ -407,18 +423,6 @@ export interface ScenarioInfo {
 	tolerance: number;
 	/** Yaw tolerance for players in rad */
 	yaw_tolerance: number;
-}
-
-export interface TeamInfo {
-	id: TeamId;
-	name?: string;
-}
-
-export interface TeamConfiguration {
-	team_a_color: TeamColor;
-	team_a_info: TeamInfo;
-	team_b_color: TeamColor;
-	team_b_info: TeamInfo;
 }
 
 /** A struct to store the world state from a single frame. */

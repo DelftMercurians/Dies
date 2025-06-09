@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +55,30 @@ const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
     currentSideAssignment || SideAssignment.BlueOnPositive
   );
 
+  // Sync local state with props when they change
+  useEffect(() => {
+    if (currentConfig) {
+      setTeamAName(currentConfig.team_a_info.name || "");
+      setTeamBName(currentConfig.team_b_info.name || "");
+      setTeamAColor(currentConfig.team_a_color);
+      setTeamBColor(currentConfig.team_b_color);
+    }
+  }, [currentConfig]);
+
+  useEffect(() => {
+    setLocalBlueActive(blueActive);
+  }, [blueActive]);
+
+  useEffect(() => {
+    setLocalYellowActive(yellowActive);
+  }, [yellowActive]);
+
+  useEffect(() => {
+    if (currentSideAssignment) {
+      setSideAssignment(currentSideAssignment);
+    }
+  }, [currentSideAssignment]);
+
   const handleSave = () => {
     // Create team configuration
     const config: TeamConfiguration = {
@@ -78,15 +102,16 @@ const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
     setOpen(false);
   };
 
-  // Simple hash function to generate team IDs from names
+  // FNV-1a hash function to match the Rust implementation
   const hash = (str: string): TeamId => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+    const name = str.toLowerCase().replace(/\s+/g, ""); // Remove whitespace like the Rust implementation
+
+    let hash = 2166136261; // FNV offset basis
+    for (let i = 0; i < name.length; i++) {
+      hash ^= name.charCodeAt(i);
+      hash = Math.imul(hash, 16777619); // FNV prime
     }
-    return Math.abs(hash);
+    return hash >>> 0; // Convert to unsigned 32-bit integer
   };
 
   const handleColorSwap = () => {

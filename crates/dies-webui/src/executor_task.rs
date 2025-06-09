@@ -99,14 +99,12 @@ impl ExecutorTask {
                 yellow_active,
             }),
             UiCommand::SetPrimaryTeam { team_id } => {
-                // For now, we'll just log this as the backend doesn't fully support primary team selection yet
                 log::info!("UI requested primary team selection: {:?}", team_id);
-                // TODO: Implement primary team selection in executor
+                self.handle_executor_msg(ControlMsg::SetPrimaryTeam { team_id });
             }
             UiCommand::UpdateTeamConfiguration { config } => {
-                // For now, we'll just log this as the backend doesn't fully support team configuration yet
                 log::info!("UI requested team configuration update: {:?}", config);
-                // TODO: Implement team configuration update in executor
+                self.handle_executor_msg(ControlMsg::UpdateTeamConfiguration { config });
             }
             UiCommand::SimulatorCmd(cmd) => self.handle_executor_msg(ControlMsg::SimulatorCmd(cmd)),
             UiCommand::SetPause(pause) => self.handle_executor_msg(ControlMsg::SetPause(pause)),

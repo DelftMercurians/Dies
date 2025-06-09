@@ -31,11 +31,13 @@ pub enum ControlMsg {
         blue_active: bool,
         yellow_active: bool,
     },
-    SetTeamConfiguration {
-        team_a_name: String,
-        team_a_color: TeamColor,
-        team_b_name: String,
-        team_b_color: TeamColor,
+    /// Set the primary team for UI display
+    SetPrimaryTeam {
+        team_id: TeamId,
+    },
+    /// Update team configuration
+    UpdateTeamConfiguration {
+        config: dies_core::TeamConfiguration,
     },
     SetSideAssignment(SideAssignment),
     Stop,

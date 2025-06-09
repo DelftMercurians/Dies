@@ -45,42 +45,32 @@ const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = ({
   };
 
   return (
-    <div className={`flex flex-col gap-2 ${className}`}>
-      <label className="text-sm font-medium">Primary Team View</label>
-      <ToggleGroup
-        type="single"
-        value={primaryTeamId?.toString()}
-        onValueChange={(value) => {
-          if (value) {
-            setPrimaryTeam(parseInt(value) as TeamId);
-          }
-        }}
-        className="border border-gray-500 rounded-lg"
-      >
-        {teams.map((team) => (
-          <ToggleGroupItem
-            key={team.id.toString()}
-            value={team.id.toString()}
-            className="data-[state=on]:bg-green-600 flex items-center gap-2"
+    <ToggleGroup
+      type="single"
+      value={primaryTeamId?.toString()}
+      onValueChange={(value) => {
+        if (value) {
+          setPrimaryTeam(parseInt(value) as TeamId);
+        }
+      }}
+      className="border border-gray-500 rounded-lg"
+    >
+      {teams.map((team) => (
+        <ToggleGroupItem
+          key={team.id.toString()}
+          value={team.id.toString()}
+          className="data-[state=on]:bg-green-600 flex items-center gap-2"
+        >
+          <Badge
+            variant="secondary"
+            className={`text-xs ${getColorBadgeClass(team.color)}`}
           >
-            <Badge
-              variant="secondary"
-              className={`text-xs ${getColorBadgeClass(team.color)}`}
-            >
-              {team.color}
-            </Badge>
-            <span>{team.name}</span>
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
-      {primaryTeamId && (
-        <div className="text-xs text-muted-foreground">
-          Currently viewing from{" "}
-          {teams.find((t) => t.id === primaryTeamId)?.name || "Unknown"}{" "}
-          perspective
-        </div>
-      )}
-    </div>
+            {team.color}
+          </Badge>
+          <span>{team.name}</span>
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 };
 
