@@ -47,7 +47,7 @@ def trajectory_from_control(
     initial_vel: jax.Array = None,
 ) -> jax.Array:
     if initial_vel is None:
-        initial_vel = jax.numpy.zeros(2)
+        initial_vel = jnp.zeros(2)
 
     dt_schedule = get_dt_schedule()
 
@@ -82,26 +82,24 @@ def trajectory_from_control(
         new_pos = pos + vel * dt + 0.5 * acc1 * dt * dt
         new_vel = vel + 0.5 * (acc1 + acc2) * dt
 
-        return jax.numpy.concatenate([new_pos, new_vel])
+        return jnp.concatenate([new_pos, new_vel])
 
     def scan_fn(carry, inputs):
         control, dt = inputs
         state, time = carry
         new_state = heun_step(state, control, dt)
         new_time = time + dt
-        return (new_state, new_time), jax.numpy.concatenate([new_time[None], new_state])
+        return (new_state, new_time), jnp.concatenate([new_time[None], new_state])
 
     # Initial state includes position and velocity
-    initial_state_vec = jax.numpy.concatenate([initial_pos, initial_vel])
+    initial_state_vec = jnp.concatenate([initial_pos, initial_vel])
 
     # Use scan to efficiently compute trajectory with time
     inputs = (control_sequence, dt_schedule)
     _, trajectory_steps = jax.lax.scan(scan_fn, (initial_state_vec, 0.0), inputs)
 
     # Create initial state with time=0
-    initial_state = jax.numpy.concatenate(
-        [jax.numpy.array([0.0]), initial_pos, initial_vel]
-    )
+    initial_state = jnp.concatenate([jnp.array([0.0]), initial_pos, initial_vel])
 
     # Prepend initial state to get full trajectory
-    return jax.numpy.concatenate([initial_state[None, :], trajectory_steps], axis=0)
+    return jnp.concatenate([initial_state[None, :], trajectory_steps], axis=0)

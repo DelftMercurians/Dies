@@ -3,6 +3,7 @@
 from typing import Literal
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 from jax import grad, jit, value_and_grad
 import numpy as np
 import optax

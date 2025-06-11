@@ -2,6 +2,7 @@
 
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 from jax import grad, jit, value_and_grad
 import numpy as np
 import optax
@@ -19,10 +20,6 @@ from common import (
     N_CANDIDATE_TRAJECTORIES,
     trajectory_from_control,
 )
-
-
-def euler_step(pos: jnp.ndarray, vel: jnp.ndarray, dt: float) -> jnp.ndarray:
-    return pos + vel * dt
 
 
 def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float):
@@ -144,12 +141,12 @@ def generate_candidate_trajectory(
     initial_vel: jnp.ndarray,
     target_pos: jnp.ndarray,
     max_vel: float,
-    key: jax.random.PRNGKey,
+    key: jr.PRNGKey,
 ):
     """Generate a candidate trajectory with pseudo-target and two stages"""
 
     # Generate pseudo-target with normal noise (std 50cm = 500mm)
-    noise = jax.random.normal(key, (2,)) * 500.0
+    noise = jr.normal(key, (2,)) * 500.0
     pseudo_target = target_pos + noise
 
     # Stage 1: Go to 75% of distance in 1 second (5 steps since DT=0.2)
@@ -161,11 +158,9 @@ def generate_candidate_trajectory(
     required_vel_stage1 = clip_vel(required_vel_stage1, max_vel)
 
     # Add noise to stage 1 velocity
-    key1, key2, key = jax.random.split(key, 3)
-    noise1 = jax.random.normal(key1, (2,)) * 200.0
-    first_stage_random_vel_clip_factor = jax.random.uniform(
-        key, (), minval=0.2, maxval=1.0
-    )
+    key1, key2, key = jr.split(key, 3)
+    noise1 = jr.normal(key1, (2,)) * 200.0
+    first_stage_random_vel_clip_factor = jr.uniform(key, (), minval=0.2, maxval=1.0)
     stage1_vel = clip_vel(
         required_vel_stage1 + noise1, max_vel * first_stage_random_vel_clip_factor
     )
@@ -177,7 +172,7 @@ def generate_candidate_trajectory(
     required_vel_stage2 = clip_vel(required_vel_stage2, max_vel)
 
     # Add noise to stage 2 velocity
-    noise2 = jax.random.normal(key2, (2,)) * 200.0
+    noise2 = jr.normal(key2, (2,)) * 200.0
     stage2_vel = clip_vel(required_vel_stage2 + noise2, max_vel)
 
     stage1_steps = PREDICTION_HORIZON // 2
@@ -203,13 +198,13 @@ def solve_mpc_jax(
     max_iterations: int,
     learning_rate: float,
     n_candidates: int,
-    key: jax.random.PRNGKey = None,
+    key: jr.PRNGKey = None,
 ):
     if key is None:
-        key = jax.random.PRNGKey(0)
+        key = jr.PRNGKey(0)
 
     # Stage 1: Generate candidate trajectories
-    keys = jax.random.split(key, n_candidates)
+    keys = jr.split(key, n_candidates)
     candidate_trajectories = jax.vmap(
         lambda k: generate_candidate_trajectory(
             initial_pos, initial_vel, target_pos, max_vel, k
@@ -283,7 +278,7 @@ def solve_mpc(
     max_iterations: int = MAX_ITERATIONS,
     learning_rate: float = LEARNING_RATE,
     n_candidates: int = N_CANDIDATE_TRAJECTORIES,
-    key: jax.random.PRNGKey = None,
+    key: jr.PRNGKey = None,
     with_aux: bool = False,
 ) -> np.ndarray:
     out = solve_mpc_jitted(
