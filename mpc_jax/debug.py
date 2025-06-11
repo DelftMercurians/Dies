@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from typing import Literal
 import jax
 import jax.numpy as jnp
 from jax import grad, jit, value_and_grad
@@ -21,7 +22,7 @@ from main import (
     solve_mpc,
 )
 
-from common import DT, ROBOT_RADIUS, trajectory_from_control
+from common import ROBOT_RADIUS, trajectory_from_control
 
 
 def visualize_mpc_debug(
@@ -119,6 +120,7 @@ def visualize_mpc_debug(
     )
 
     # Add time markers every 0.5 seconds
+    """
     if len(trajectory) > 1:
         time_marker_interval = 0.5  # seconds
         marker_step = int(time_marker_interval / DT)  # convert to trajectory steps
@@ -132,6 +134,7 @@ def visualize_mpc_debug(
                     color="cyan",
                     markersize=6,
                 )
+    """
 
     # Add legend entry for time markers
     ax.plot(
@@ -312,6 +315,60 @@ def animate_moving_obstacle():
     plt.close()
 
 
+def plot_trajectories(
+    initial_pos,
+    target_pos,
+    candidate_trajectories,
+    optimal_trajectory,
+    obstacles,
+    field_bounds,
+    style: Literal["opt", "cand"] = "opt",
+):
+    """Plot all candidate trajectories with semi-transparent lines"""
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    # Convert candidate trajectories to actual trajectories
+    for i, control_seq in enumerate(candidate_trajectories):
+        trajectory_jax = trajectory_from_control(
+            jnp.array(control_seq), jnp.array(initial_pos)
+        )
+        trajectory = np.array(trajectory_jax)[:, 1:3]  # Extract x, y positions
+
+        # Plot trajectory with semi-transparent line
+        if style == "cand":
+            ax.plot(trajectory[:, 0], trajectory[:, 1], "b-", alpha=0.1, linewidth=0.5)
+        else:
+            ax.plot(trajectory[:, 0], trajectory[:, 1], "g-", alpha=0.2, linewidth=0.8)
+
+    ax.plot(optimal_trajectory[:, 1], optimal_trajectory[:, 2], "k", linewidth=2)
+
+    # Plot obstacles as circles
+    for obstacle in obstacles:
+        circle = plt.Circle(obstacle, ROBOT_RADIUS, color="red", alpha=0.7)
+        ax.add_patch(circle)
+
+    # Plot start and target (get target from test_simple_case)
+    ax.plot(initial_pos[0], initial_pos[1], "go", markersize=10, label="Start")
+    ax.plot(target_pos[0], target_pos[1], "r*", markersize=15, label="Target")
+
+    # Set field bounds
+    if field_bounds is not None:
+        min_x, max_x, min_y, max_y = field_bounds
+        ax.set_xlim(min_x, max_x)
+        ax.set_ylim(min_y, max_y)
+
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
+    ax.set_xlabel("X position (mm)")
+    ax.set_ylabel("Y position (mm)")
+    ax.set_title("Trajectories")
+    ax.legend()
+
+    plt.tight_layout()
+    plt.savefig(f"trajectories_{style}.png", dpi=150)
+    print(f"Trajectories saved into 'trajectories_{style}.png'")
+
+
 if __name__ == "__main__":
     # Set to True to use log scale for the cost plots
     USE_LOG_SCALE = False
@@ -322,6 +379,40 @@ if __name__ == "__main__":
     obstacles = np.array([[500.0, 250.0], [400, 600]])
     field_bounds = np.array([-1000.0, 1000.0, -1000.0, 1000.0])
     max_vel = 2000.0
+
+    # Solve MPC
+    optimal_control, candidate_trajectories, optimized_trajectories = solve_mpc(
+        initial_pos,
+        jnp.zeros((2,)),
+        target_pos,
+        obstacles,
+        field_bounds,
+        max_vel,
+        with_aux=True,
+    )
+    optimal_trajectory = trajectory_from_control(
+        optimal_control, initial_pos, jnp.zeros((2,))
+    )
+
+    # Plotting candidate trajectories
+    plot_trajectories(
+        initial_pos,
+        target_pos,
+        candidate_trajectories,
+        optimal_trajectory,
+        obstacles,
+        field_bounds,
+        "cand",
+    )
+    plot_trajectories(
+        initial_pos,
+        target_pos,
+        optimized_trajectories,
+        optimal_trajectory,
+        obstacles,
+        field_bounds,
+        "opt",
+    )
 
     # Generate visualizations with proper aspect ratio and optional log scale
     print(f"Generating visualizations with log_scale={USE_LOG_SCALE}")

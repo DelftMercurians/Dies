@@ -21,14 +21,15 @@ DT = 0.2
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 20
-LEARNING_RATE = 400
+MAX_ITERATIONS = 50
+LEARNING_RATE = 200
 UPDATE_CLIP = 200
+N_CANDIDATE_TRAJECTORIES = 100
 
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
 VEL_FRICTION_COEFF = 0.5  # N*s/m (velocity-dependent friction coefficient)
-MAX_ACC = 100
+MAX_ACC = 100  # i don't fucking know in what units this shit is
 
 
 @jax.jit
