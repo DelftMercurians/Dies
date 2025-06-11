@@ -39,8 +39,6 @@ enum Environment {
     },
 }
 
-/// A map of team controllers, keyed by team color.
-/// Supports 0, 1, or 2 active controllers for team-agnostic operation.
 struct TeamMap {
     team_configuration: TeamConfiguration,
     team_a: (TeamId, Option<TeamController>),
@@ -162,24 +160,36 @@ impl TeamMap {
     }
 
     /// Get all player commands from active controllers
-    fn get_all_commands(&mut self) -> Vec<PlayerCmd> {
+    fn get_all_commands(&mut self) -> Vec<(TeamColor, PlayerCmd)> {
         let mut commands = Vec::new();
 
         if let Some(controller) = &mut self.team_a.1 {
-            commands.extend(controller.commands().iter().map(|c| {
-                self.side_assignment.untransform_player_cmd(
-                    self.team_configuration.get_team_color(self.team_a.0),
-                    c,
-                )
-            }));
+            commands.extend(
+                controller
+                    .commands()
+                    .iter()
+                    .map(|c| {
+                        self.side_assignment.untransform_player_cmd(
+                            self.team_configuration.get_team_color(self.team_a.0),
+                            c,
+                        )
+                    })
+                    .map(|c| (self.team_configuration.get_team_color(self.team_a.0), c)),
+            );
         }
         if let Some(controller) = &mut self.team_b.1 {
-            commands.extend(controller.commands().iter().map(|c| {
-                self.side_assignment.untransform_player_cmd(
-                    self.team_configuration.get_team_color(self.team_b.0),
-                    c,
-                )
-            }));
+            commands.extend(
+                controller
+                    .commands()
+                    .iter()
+                    .map(|c| {
+                        self.side_assignment.untransform_player_cmd(
+                            self.team_configuration.get_team_color(self.team_b.0),
+                            c,
+                        )
+                    })
+                    .map(|c| (self.team_configuration.get_team_color(self.team_b.0), c)),
+            );
         }
 
         commands
@@ -373,7 +383,6 @@ pub struct Executor {
     info_channel_rx: mpsc::UnboundedReceiver<oneshot::Sender<ExecutorInfo>>,
     info_channel_tx: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
     settings: ExecutorSettings,
-    primary_team_id: Option<TeamId>,
 }
 
 impl Executor {
@@ -413,11 +422,10 @@ impl Executor {
             info_channel_rx,
             info_channel_tx,
             settings,
-            primary_team_id: Some(team_a_id),
         }
     }
 
-    pub fn new_simulation(settings: ExecutorSettings, simulator: Simulation) -> Self {
+    pub fn new_simulation(settings: ExecutorSettings, mut simulator: Simulation) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
@@ -429,9 +437,14 @@ impl Executor {
             TeamInfo::new_with_name("Team B"),
         );
         let team_a_id = team_configuration.get_team_id(TeamColor::Blue);
+        let team_b_id = team_configuration.get_team_id(TeamColor::Yellow);
         let mut team_controllers =
             TeamMap::new(team_configuration, SideAssignment::YellowOnPositive);
         team_controllers.activate_team(team_a_id, &settings);
+        let mut team_colors = HashMap::new();
+        team_colors.insert(team_a_id, TeamColor::Blue);
+        team_colors.insert(team_b_id, TeamColor::Yellow);
+        simulator.set_team_colors(team_colors);
 
         Self {
             tracker: WorldTracker::new(&settings),
@@ -446,7 +459,6 @@ impl Executor {
             info_channel_rx,
             info_channel_tx,
             settings,
-            primary_team_id: Some(team_a_id),
         }
     }
 
@@ -471,7 +483,7 @@ impl Executor {
     }
 
     /// Get the currently active player commands.
-    pub fn player_commands(&mut self) -> Vec<PlayerCmd> {
+    pub fn player_commands(&mut self) -> Vec<(TeamColor, PlayerCmd)> {
         self.team_controllers.get_all_commands()
     }
 
@@ -495,7 +507,6 @@ impl Executor {
                 .collect(),
             active_teams: self.team_controllers.active_teams(),
             team_configuration: self.team_controllers.team_configuration.clone(),
-            primary_team_id: self.primary_team_id,
         }
     }
 
@@ -563,9 +574,9 @@ impl Executor {
                         self.step_simulation(&mut simulator, dt)?;
                     }
                     _ = cmd_interval.tick() => {
-                        for cmd in self.player_commands() {
+                        for (team_color, cmd) in self.player_commands() {
                             if let PlayerCmd::Move(cmd) = cmd {
-                                simulator.push_cmd(cmd);
+                                simulator.push_cmd(team_color, cmd);
                             }
                         }
                     }
@@ -632,7 +643,7 @@ impl Executor {
                 _ = cmd_interval.tick() => {
                     let paused = { *self.paused_tx.borrow() };
                     if !paused {
-                        for cmd in self.player_commands() {
+                        for (team_color, cmd) in self.player_commands() {
                             bs_client.send_no_wait(cmd);
                         }
                     }
@@ -736,14 +747,16 @@ impl Executor {
             ControlMsg::SetSideAssignment(side_assignment) => {
                 self.team_controllers.side_assignment = side_assignment;
             }
-            ControlMsg::SetPrimaryTeam { team_id } => {
-                log::info!("Setting primary team to: {:?}", team_id);
-                self.primary_team_id = Some(team_id);
-            }
             ControlMsg::UpdateTeamConfiguration { config } => {
                 log::info!("Updating team configuration: {:?}", config);
                 self.team_controllers
                     .update_team_configuration(config.clone());
+                if let Some(Environment::Simulation { simulator }) = &mut self.environment {
+                    let mut team_colors = HashMap::new();
+                    team_colors.insert(config.get_team_id(TeamColor::Blue), TeamColor::Blue);
+                    team_colors.insert(config.get_team_id(TeamColor::Yellow), TeamColor::Yellow);
+                    simulator.set_team_colors(team_colors);
+                }
                 self.tracker.update_team_configuration(config);
             }
             ControlMsg::Stop => {}

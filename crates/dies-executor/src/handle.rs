@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 use dies_core::{
     ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd,
-    TeamColor, TeamId, WorldUpdate,
+    TeamId, WorldUpdate,
 };
 use dies_protos::ssl_gc_referee_message::referee::Command;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -30,10 +30,6 @@ pub enum ControlMsg {
     SetActiveTeams {
         blue_active: bool,
         yellow_active: bool,
-    },
-    /// Set the primary team for UI display
-    SetPrimaryTeam {
-        team_id: TeamId,
     },
     /// Update team configuration
     UpdateTeamConfiguration {

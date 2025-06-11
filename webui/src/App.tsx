@@ -19,6 +19,7 @@ import {
   useWorldState,
   useExecutorInfo,
   useRawWorldData,
+  usePrimaryTeam,
 } from "./api";
 import logo from "./assets/mercury-logo.svg";
 import { Button } from "./components/ui/button";
@@ -43,7 +44,7 @@ import SettingsEditor from "./views/SettingsEditor";
 import Basestation from "./views/Basestation";
 import TeamOverview from "./views/TeamOverview";
 import HierarchicalList from "./views/HierarchicalList";
-import { PlayerFeedbackMsg } from "./bindings";
+import { PlayerFeedbackMsg, TeamId } from "./bindings";
 import TeamSettingsDialog from "./components/TeamSettingsDialog";
 import GameControllerPanel from "./components/GameControllerPanel";
 import PrimaryTeamSelector from "./components/PrimaryTeamSelector";
@@ -115,7 +116,7 @@ const App: React.FC = () => {
   // Get team configuration from world state (this will need to be updated when backend supports it)
   const teamConfig = executorInfo?.team_configuration;
   const sideAssignment = rawWorldData?.side_assignment;
-  const primaryTeamId = executorInfo?.primary_team_id;
+  const [primaryTeam, setPrimaryTeam] = usePrimaryTeam();
   const blueActive =
     executorInfo?.active_teams.includes(TeamColor.Blue) ?? false;
   const yellowActive =
@@ -227,7 +228,8 @@ const App: React.FC = () => {
           />
           <PrimaryTeamSelector
             currentConfig={teamConfig}
-            primaryTeamId={primaryTeamId}
+            primaryTeam={primaryTeam}
+            setPrimaryTeam={setPrimaryTeam}
           />
         </div>
       </div>

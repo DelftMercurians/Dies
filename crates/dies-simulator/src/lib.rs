@@ -5,7 +5,7 @@ use std::{
 
 use dies_core::{
     Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus,
-    TeamConfiguration, TeamId, TeamInfo, Vector2, WorldInstant,
+    TeamColor, TeamConfiguration, TeamId, TeamInfo, Vector2, WorldInstant,
 };
 use dies_protos::{
     ssl_gc_referee_message::{referee, Referee},
@@ -298,8 +298,9 @@ struct Player {
     heading_control: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TimedPlayerCmd {
+    team_color: TeamColor,
     execute_time: f64,
     player_cmd: PlayerMoveCmd,
 }
@@ -356,6 +357,7 @@ pub struct Simulation {
     game_state: SimulationGameState,
     designated_ball_position: Vector<f64>,
     last_touch_info: Option<(PlayerId, TeamId)>,
+    team_colors: HashMap<TeamId, TeamColor>,
 }
 
 impl Simulation {
@@ -397,6 +399,7 @@ impl Simulation {
             game_state: SimulationGameState::default(),
             designated_ball_position: Vector::new(0.0, 0.0, 0.0),
             last_touch_info: None,
+            team_colors: HashMap::new(),
         };
 
         // Create the ground
@@ -420,6 +423,10 @@ impl Simulation {
         simulation.add_wall(-field_length / 2.0, 0.0, WALL_THICKNESS, field_width);
 
         simulation
+    }
+
+    pub fn set_team_colors(&mut self, team_colors: HashMap<TeamId, TeamColor>) {
+        self.team_colors = team_colors;
     }
 
     pub fn time(&self) -> WorldInstant {
@@ -479,17 +486,10 @@ impl Simulation {
 
     /// Pushes a PlayerCmd onto the execution queue with the time delay specified in
     /// the config
-    pub fn push_cmd(&mut self, cmd: PlayerMoveCmd) {
+    pub fn push_cmd(&mut self, team_color: TeamColor, cmd: PlayerMoveCmd) {
         self.cmd_queue.push(TimedPlayerCmd {
+            team_color,
             execute_time: self.current_time + self.config.command_delay,
-            player_cmd: cmd,
-        });
-    }
-
-    /// Executes a PlayerCmd immediately.
-    pub fn execute_cmd(&mut self, cmd: PlayerMoveCmd) {
-        self.cmd_queue.push(TimedPlayerCmd {
-            execute_time: self.current_time,
             player_cmd: cmd,
         });
     }
@@ -899,7 +899,7 @@ impl Simulation {
             let mut to_exec = HashMap::new();
             self.cmd_queue.retain(|cmd| {
                 if cmd.execute_time <= self.current_time {
-                    to_exec.insert(cmd.player_cmd.id, cmd.player_cmd);
+                    to_exec.insert(cmd.player_cmd.id, cmd.clone());
                     false
                 } else {
                     true
@@ -950,6 +950,15 @@ impl Simulation {
 
             let mut is_kicking = false;
             if let Some(command) = commands_to_exec.get(&player.id) {
+                let player_color = self
+                    .team_colors
+                    .get(&player.team_id)
+                    .unwrap_or(&dies_core::TeamColor::Blue);
+                if command.team_color != *player_color {
+                    continue;
+                }
+                let command = command.player_cmd;
+
                 // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
                 // Angular velocity is in rad/s and +w means counter-clockwise
                 player.target_velocity = Vector::new(command.sx, -command.sy, 0.0) * 1000.0; // m/s to mm/s

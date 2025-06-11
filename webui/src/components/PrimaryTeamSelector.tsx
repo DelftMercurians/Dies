@@ -6,17 +6,17 @@ import { useTeamConfiguration } from "@/api";
 
 interface PrimaryTeamSelectorProps {
   currentConfig?: TeamConfiguration;
-  primaryTeamId?: TeamId;
+  primaryTeam: TeamColor;
   className?: string;
+  setPrimaryTeam: (teamColor: TeamColor) => void;
 }
 
 const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = ({
   currentConfig,
-  primaryTeamId,
+  primaryTeam,
   className = "",
+  setPrimaryTeam,
 }) => {
-  const { setPrimaryTeam } = useTeamConfiguration();
-
   if (!currentConfig) {
     return (
       <div className={`text-sm text-muted-foreground ${className}`}>
@@ -47,10 +47,10 @@ const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = ({
   return (
     <ToggleGroup
       type="single"
-      value={primaryTeamId?.toString()}
+      value={primaryTeam.toString()}
       onValueChange={(value) => {
         if (value) {
-          setPrimaryTeam(parseInt(value) as TeamId);
+          setPrimaryTeam(value as TeamColor);
         }
       }}
       className="border border-gray-500 rounded-lg"
@@ -58,7 +58,7 @@ const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = ({
       {teams.map((team) => (
         <ToggleGroupItem
           key={team.id.toString()}
-          value={team.id.toString()}
+          value={team.color}
           className="data-[state=on]:bg-green-600 flex items-center gap-2"
         >
           <Badge

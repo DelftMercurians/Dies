@@ -97,10 +97,6 @@ pub(crate) enum UiCommand {
         blue_active: bool,
         yellow_active: bool,
     },
-    /// Set the primary team for UI display
-    SetPrimaryTeam {
-        team_id: TeamId,
-    },
     /// Update team configuration
     UpdateTeamConfiguration {
         config: TeamConfiguration,

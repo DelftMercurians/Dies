@@ -98,10 +98,6 @@ impl ExecutorTask {
                 blue_active,
                 yellow_active,
             }),
-            UiCommand::SetPrimaryTeam { team_id } => {
-                log::info!("UI requested primary team selection: {:?}", team_id);
-                self.handle_executor_msg(ControlMsg::SetPrimaryTeam { team_id });
-            }
             UiCommand::UpdateTeamConfiguration { config } => {
                 log::info!("UI requested team configuration update: {:?}", config);
                 self.handle_executor_msg(ControlMsg::UpdateTeamConfiguration { config });

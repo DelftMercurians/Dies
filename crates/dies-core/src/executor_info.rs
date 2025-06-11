@@ -22,6 +22,4 @@ pub struct ExecutorInfo {
     pub active_teams: Vec<TeamColor>,
     /// Current team configuration.
     pub team_configuration: TeamConfiguration,
-    /// Primary team for UI display (if set).
-    pub primary_team_id: Option<TeamId>,
 }

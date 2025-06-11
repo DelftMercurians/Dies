@@ -188,17 +188,6 @@ const isPlayerManuallyControlled = (
 export const useTeamConfiguration = () => {
   const queryClient = useQueryClient();
 
-  const setPrimaryTeam = useMutation({
-    mutationFn: (teamId: TeamId) =>
-      postCommand({
-        type: "SetPrimaryTeam",
-        data: { team_id: teamId },
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["executor-info"] });
-    },
-  });
-
   const updateTeamConfiguration = useMutation({
     mutationFn: (config: TeamConfiguration) =>
       postCommand({
@@ -229,7 +218,6 @@ export const useTeamConfiguration = () => {
   });
 
   return {
-    setPrimaryTeam: setPrimaryTeam.mutate,
     updateTeamConfiguration: updateTeamConfiguration.mutate,
     setActiveTeams: setActiveTeams.mutate,
   };
@@ -258,6 +246,23 @@ export const useSendCommand = () => {
   return (command: UiCommand) => mutation.mutate(command);
 };
 
+const PrimaryTeamContext = createContext<
+  [TeamColor, (team: TeamColor) => void]
+>([TeamColor.Blue, () => {}]);
+
+export const PrimaryTeamProvider: FC<PropsWithChildren> = ({ children }) => {
+  const [primaryTeam, setPrimaryTeam] = useState<TeamColor>(TeamColor.Blue);
+  return (
+    <PrimaryTeamContext.Provider value={[primaryTeam, setPrimaryTeam]}>
+      {children}
+    </PrimaryTeamContext.Provider>
+  );
+};
+
+export const usePrimaryTeam = () => {
+  return useContext(PrimaryTeamContext);
+};
+
 export const useWorldState = (): WorldStatus => {
   const wsConnected = useContext(WsConnectedContext);
   const query = useQuery({
@@ -266,14 +271,12 @@ export const useWorldState = (): WorldStatus => {
     refetchInterval: 100,
     enabled: !wsConnected,
   });
+  const [primaryTeam] = useContext(PrimaryTeamContext);
 
   if (query.isSuccess) {
     if (query.data.type === "Loaded") {
       // Convert WorldData to TeamData using default primary team (Blue for now)
-      const teamData = convertWorldDataToTeamData(
-        query.data.data,
-        TeamColor.Blue
-      );
+      const teamData = convertWorldDataToTeamData(query.data.data, primaryTeam);
       return { status: "connected", data: teamData };
     } else {
       return { status: "none" };
