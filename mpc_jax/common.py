@@ -16,20 +16,28 @@ jax.config.update(
 jax.config.update("jax_debug_nans", True)
 
 # MPC Parameters
-PREDICTION_HORIZON = 30
-DT = 0.2
+PREDICTION_HORIZON = 20
+TIME_HORIZON = 8  # 8 seconds
+DT = 0.1  # Start with 0.1 seconds as DT
+MAX_DT = 2 * TIME_HORIZON / PREDICTION_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
 MAX_ITERATIONS = 50
 LEARNING_RATE = 200
-UPDATE_CLIP = 200
+UPDATE_CLIP = 80
 N_CANDIDATE_TRAJECTORIES = 100
 
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
 VEL_FRICTION_COEFF = 0.5  # N*s/m (velocity-dependent friction coefficient)
 MAX_ACC = 100  # i don't fucking know in what units this shit is
+
+
+def get_dt_schedule() -> jax.Array:
+    """Generate linearly increasing dt schedule from DT to MAX_DT"""
+    steps = jnp.arange(PREDICTION_HORIZON)
+    return DT + (MAX_DT - DT) * steps / (PREDICTION_HORIZON - 1)
 
 
 @jax.jit
@@ -40,9 +48,12 @@ def trajectory_from_control(
 ) -> jax.Array:
     if initial_vel is None:
         initial_vel = jax.numpy.zeros(2)
-    dt = DT
 
-    def dynamics(pos: jax.Array, vel: jax.Array, target_vel: jax.Array) -> jax.Array:
+    dt_schedule = get_dt_schedule()
+
+    def dynamics(
+        pos: jax.Array, vel: jax.Array, target_vel: jax.Array, dt: float
+    ) -> jax.Array:
         vel_friction_force = -VEL_FRICTION_COEFF * vel
         control_force = (
             jnp.clip((target_vel - vel), -MAX_ACC, MAX_ACC) * ROBOT_MASS / dt
@@ -53,19 +64,19 @@ def trajectory_from_control(
         acceleration = total_force / ROBOT_MASS
         return acceleration
 
-    def heun_step(state: jax.Array, target_vel: jax.Array) -> jax.Array:
+    def heun_step(state: jax.Array, target_vel: jax.Array, dt: float) -> jax.Array:
         """Heun method for state integration"""
         pos, vel = state[:2], state[2:]
 
         # First evaluation
-        acc1 = dynamics(pos, vel, target_vel)
+        acc1 = dynamics(pos, vel, target_vel, dt)
 
         # Predictor step
         pos_pred = pos + vel * dt
         vel_pred = vel + acc1 * dt
 
         # Second evaluation
-        acc2 = dynamics(pos_pred, vel_pred, target_vel)
+        acc2 = dynamics(pos_pred, vel_pred, target_vel, dt)
 
         # Corrector step
         new_pos = pos + vel * dt + 0.5 * acc1 * dt * dt
@@ -73,9 +84,10 @@ def trajectory_from_control(
 
         return jax.numpy.concatenate([new_pos, new_vel])
 
-    def scan_fn(carry, control):
+    def scan_fn(carry, inputs):
+        control, dt = inputs
         state, time = carry
-        new_state = heun_step(state, control)
+        new_state = heun_step(state, control, dt)
         new_time = time + dt
         return (new_state, new_time), jax.numpy.concatenate([new_time[None], new_state])
 
@@ -83,9 +95,8 @@ def trajectory_from_control(
     initial_state_vec = jax.numpy.concatenate([initial_pos, initial_vel])
 
     # Use scan to efficiently compute trajectory with time
-    _, trajectory_steps = jax.lax.scan(
-        scan_fn, (initial_state_vec, 0.0), control_sequence
-    )
+    inputs = (control_sequence, dt_schedule)
+    _, trajectory_steps = jax.lax.scan(scan_fn, (initial_state_vec, 0.0), inputs)
 
     # Create initial state with time=0
     initial_state = jax.numpy.concatenate(
