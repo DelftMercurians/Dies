@@ -1,22 +1,22 @@
 use dies_core::{debug_record, debug_remove};
-use dies_core::{DebugColor, DebugShape, DebugValue, PlayerId, TeamId, Vector2};
+use dies_core::{DebugColor, DebugShape, DebugValue, PlayerId, TeamColor, Vector2};
 
 #[derive(Debug, Clone)]
 pub struct TeamContext {
-    team_id: TeamId,
+    team_color: TeamColor,
     debug_prefix: String,
 }
 
 impl TeamContext {
-    pub fn new(team_id: TeamId) -> Self {
+    pub fn new(team_color: TeamColor) -> Self {
         Self {
-            team_id,
-            debug_prefix: format!("team_{}", team_id.0),
+            team_color,
+            debug_prefix: format!("team_{}", team_color),
         }
     }
 
-    pub fn team_id(&self) -> TeamId {
-        self.team_id
+    pub fn team_color(&self) -> TeamColor {
+        self.team_color
     }
 
     pub fn debug_prefix(&self) -> &str {

@@ -32,7 +32,7 @@ use crate::{
 ///
 /// - If our team attacks in the same direction as world +x: coordinates remain unchanged
 /// - If our team attacks in the opposite direction: x coordinates are negated, angles are mirrored
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Hash, PartialEq, Eq)]
 #[typeshare]
 pub enum TeamColor {
     Blue,
@@ -45,6 +45,15 @@ impl TeamColor {
         match self {
             TeamColor::Blue => TeamColor::Yellow,
             TeamColor::Yellow => TeamColor::Blue,
+        }
+    }
+}
+
+impl std::fmt::Display for TeamColor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TeamColor::Blue => write!(f, "Blue"),
+            TeamColor::Yellow => write!(f, "Yellow"),
         }
     }
 }
@@ -131,6 +140,27 @@ impl SideAssignment {
             (SideAssignment::YellowOnPositive, TeamColor::Blue) => 1.0,
             (SideAssignment::YellowOnPositive, TeamColor::Yellow) => -1.0,
         }
+    }
+
+    pub fn is_on_own_side(&self, color: TeamColor, position: &Vector2) -> bool {
+        match (self, color) {
+            (SideAssignment::BlueOnPositive, TeamColor::Blue) => position.x > 0.0,
+            (SideAssignment::BlueOnPositive, TeamColor::Yellow) => position.x < 0.0,
+            (SideAssignment::YellowOnPositive, TeamColor::Blue) => position.x < 0.0,
+            (SideAssignment::YellowOnPositive, TeamColor::Yellow) => position.x > 0.0,
+        }
+    }
+
+    pub fn is_on_own_side_vec3(&self, color: TeamColor, position: &Vector3) -> bool {
+        self.is_on_own_side(color, &Vector2::new(position.x, position.y))
+    }
+
+    pub fn is_on_opp_side(&self, color: TeamColor, position: &Vector2) -> bool {
+        !self.is_on_own_side(color, position)
+    }
+
+    pub fn is_on_opp_side_vec3(&self, color: TeamColor, position: &Vector3) -> bool {
+        !self.is_on_own_side_vec3(color, position)
     }
 
     fn transform_to_team_coords_vec2(&self, color: TeamColor, vec: &Vector2) -> Vector2 {

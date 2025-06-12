@@ -6,7 +6,6 @@ mod geom;
 mod math;
 mod player;
 mod sides;
-mod team_id;
 mod world;
 
 pub mod workspace_utils;
@@ -20,7 +19,6 @@ pub use math::*;
 pub use player::*;
 use serde::{Deserialize, Serialize};
 pub use sides::*;
-pub use team_id::*;
 use typeshare::typeshare;
 pub use world::*;
 

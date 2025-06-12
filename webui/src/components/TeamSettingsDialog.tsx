@@ -12,58 +12,29 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Settings } from "lucide-react";
-import {
-  TeamConfiguration,
-  TeamColor,
-  SideAssignment,
-  TeamId,
-} from "@/bindings";
+import { TeamColor, SideAssignment } from "@/bindings";
 import { useTeamConfiguration } from "@/api";
 
 interface TeamSettingsDialogProps {
-  currentConfig?: TeamConfiguration;
   currentSideAssignment?: SideAssignment;
   blueActive: boolean;
   yellowActive: boolean;
 }
 
 const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
-  currentConfig,
   currentSideAssignment,
   blueActive,
   yellowActive,
 }) => {
-  const { updateTeamConfiguration, setActiveTeams } = useTeamConfiguration();
+  const { setActiveTeams } = useTeamConfiguration();
   const [open, setOpen] = useState(false);
 
   // Local state for the form
-  const [teamAName, setTeamAName] = useState(
-    currentConfig?.team_a_info.name || ""
-  );
-  const [teamBName, setTeamBName] = useState(
-    currentConfig?.team_b_info.name || ""
-  );
-  const [teamAColor, setTeamAColor] = useState<TeamColor>(
-    currentConfig?.team_a_color || TeamColor.Blue
-  );
-  const [teamBColor, setTeamBColor] = useState<TeamColor>(
-    currentConfig?.team_b_color || TeamColor.Yellow
-  );
   const [localBlueActive, setLocalBlueActive] = useState(blueActive);
   const [localYellowActive, setLocalYellowActive] = useState(yellowActive);
   const [sideAssignment, setSideAssignment] = useState<SideAssignment>(
     currentSideAssignment || SideAssignment.BlueOnPositive
   );
-
-  // Sync local state with props when they change
-  useEffect(() => {
-    if (currentConfig) {
-      setTeamAName(currentConfig.team_a_info.name || "");
-      setTeamBName(currentConfig.team_b_info.name || "");
-      setTeamAColor(currentConfig.team_a_color);
-      setTeamBColor(currentConfig.team_b_color);
-    }
-  }, [currentConfig]);
 
   useEffect(() => {
     setLocalBlueActive(blueActive);
@@ -80,44 +51,11 @@ const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
   }, [currentSideAssignment]);
 
   const handleSave = () => {
-    // Create team configuration
-    const config: TeamConfiguration = {
-      team_a_color: teamAColor,
-      team_a_info: {
-        id: teamAName ? hash(teamAName) : hash("Team A"),
-        name: teamAName || undefined,
-      },
-      team_b_color: teamBColor,
-      team_b_info: {
-        id: teamBName ? hash(teamBName) : hash("Team B"),
-        name: teamBName || undefined,
-      },
-    };
-
-    updateTeamConfiguration(config);
     setActiveTeams({
       blueActive: localBlueActive,
       yellowActive: localYellowActive,
     });
     setOpen(false);
-  };
-
-  // FNV-1a hash function to match the Rust implementation
-  const hash = (str: string): TeamId => {
-    const name = str.toLowerCase().replace(/\s+/g, ""); // Remove whitespace like the Rust implementation
-
-    let hash = 2166136261; // FNV offset basis
-    for (let i = 0; i < name.length; i++) {
-      hash ^= name.charCodeAt(i);
-      hash = Math.imul(hash, 16777619); // FNV prime
-    }
-    return hash >>> 0; // Convert to unsigned 32-bit integer
-  };
-
-  const handleColorSwap = () => {
-    const tempColor = teamAColor;
-    setTeamAColor(teamBColor);
-    setTeamBColor(tempColor);
   };
 
   return (
@@ -136,47 +74,13 @@ const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
         <div className="space-y-6 py-4">
           {/* Team A Configuration */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Team A</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="team-a-name">Team Name</Label>
-                <Input
-                  id="team-a-name"
-                  value={teamAName}
-                  onChange={(e) => setTeamAName(e.target.value)}
-                  placeholder="Enter team name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Color</Label>
-                <ToggleGroup
-                  type="single"
-                  value={teamAColor}
-                  onValueChange={(value) =>
-                    value && setTeamAColor(value as TeamColor)
-                  }
-                >
-                  <ToggleGroupItem value={TeamColor.Blue}>Blue</ToggleGroupItem>
-                  <ToggleGroupItem value={TeamColor.Yellow}>
-                    Yellow
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-            </div>
+            <h3 className="text-lg font-semibold">Blue Team</h3>
             <div className="flex items-center space-x-2">
               <Switch
                 id="team-a-active"
-                checked={
-                  teamAColor === TeamColor.Blue
-                    ? localBlueActive
-                    : localYellowActive
-                }
+                checked={localBlueActive}
                 onCheckedChange={(checked) => {
-                  if (teamAColor === TeamColor.Blue) {
-                    setLocalBlueActive(checked);
-                  } else {
-                    setLocalYellowActive(checked);
-                  }
+                  setLocalBlueActive(checked);
                 }}
               />
               <Label htmlFor="team-a-active">Active</Label>
@@ -185,47 +89,13 @@ const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
 
           {/* Team B Configuration */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Team B</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="team-b-name">Team Name</Label>
-                <Input
-                  id="team-b-name"
-                  value={teamBName}
-                  onChange={(e) => setTeamBName(e.target.value)}
-                  placeholder="Enter team name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Color</Label>
-                <ToggleGroup
-                  type="single"
-                  value={teamBColor}
-                  onValueChange={(value) =>
-                    value && setTeamBColor(value as TeamColor)
-                  }
-                >
-                  <ToggleGroupItem value={TeamColor.Blue}>Blue</ToggleGroupItem>
-                  <ToggleGroupItem value={TeamColor.Yellow}>
-                    Yellow
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-            </div>
+            <h3 className="text-lg font-semibold">Yellow Team</h3>
             <div className="flex items-center space-x-2">
               <Switch
                 id="team-b-active"
-                checked={
-                  teamBColor === TeamColor.Blue
-                    ? localBlueActive
-                    : localYellowActive
-                }
+                checked={localYellowActive}
                 onCheckedChange={(checked) => {
-                  if (teamBColor === TeamColor.Blue) {
-                    setLocalBlueActive(checked);
-                  } else {
-                    setLocalYellowActive(checked);
-                  }
+                  setLocalYellowActive(checked);
                 }}
               />
               <Label htmlFor="team-b-active">Active</Label>
@@ -256,9 +126,6 @@ const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
 
           {/* Actions */}
           <div className="flex justify-between">
-            <Button variant="outline" onClick={handleColorSwap}>
-              Swap Colors
-            </Button>
             <div className="space-x-2">
               <Button variant="outline" onClick={() => setOpen(false)}>
                 Cancel

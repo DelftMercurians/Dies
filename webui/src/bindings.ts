@@ -37,8 +37,6 @@ export type DebugMap = Record<string, DebugValue>;
 
 export type PlayerId = number;
 
-export type TeamId = number;
-
 /** A struct to store the ball state from a single frame. */
 export interface BallData {
 	/**
@@ -118,11 +116,6 @@ export interface ControllerSettings {
 	angle_cutoff_distance: number;
 }
 
-export interface TeamPlayerId {
-	team_id: TeamId;
-	player_id: PlayerId;
-}
-
 /**
  * # Team-Specific Coordinate System
  * 
@@ -156,16 +149,9 @@ export enum TeamColor {
 	Yellow = "Yellow",
 }
 
-export interface TeamInfo {
-	id: TeamId;
-	name?: string;
-}
-
-export interface TeamConfiguration {
-	team_a_color: TeamColor;
-	team_a_info: TeamInfo;
-	team_b_color: TeamColor;
-	team_b_info: TeamInfo;
+export interface TeamPlayerId {
+	team_color: TeamColor;
+	player_id: PlayerId;
 }
 
 /** Runtime information about the active executor. */
@@ -176,8 +162,6 @@ export interface ExecutorInfo {
 	manual_controlled_players: TeamPlayerId[];
 	/** Which teams are currently active/controlled. */
 	active_teams: TeamColor[];
-	/** Current team configuration. */
-	team_configuration: TeamConfiguration;
 }
 
 /** Runtime information about the active executor. */
@@ -352,12 +336,12 @@ export interface PostExecutorSettingsBody {
 /** A command from the frontend to the backend. */
 export type UiCommand = 
 	| { type: "SetManualOverride", data: {
-	team_id: TeamId;
+	team_color: TeamColor;
 	player_id: PlayerId;
 	manual_override: boolean;
 }}
 	| { type: "OverrideCommand", data: {
-	team_id: TeamId;
+	team_color: TeamColor;
 	player_id: PlayerId;
 	command: PlayerOverrideCommand;
 }}
@@ -371,10 +355,6 @@ export type UiCommand =
 	| { type: "SetActiveTeams", data: {
 	blue_active: boolean;
 	yellow_active: boolean;
-}}
-	/** Update team configuration */
-	| { type: "UpdateTeamConfiguration", data: {
-	config: TeamConfiguration;
 }}
 	| { type: "Stop",  };
 

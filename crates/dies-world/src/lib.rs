@@ -13,8 +13,7 @@ pub use dies_core::{
 };
 use dies_core::{
     ExecutorSettings, FieldMask, GameState, PlayerFeedbackMsg, PlayerId, RawGameStateData,
-    SideAssignment, TeamColor, TeamConfiguration, TeamId, TrackerSettings, Vector2, WorldData,
-    WorldInstant,
+    SideAssignment, TeamColor, TrackerSettings, Vector2, WorldData, WorldInstant,
 };
 use player::PlayerTracker;
 
@@ -22,17 +21,17 @@ use crate::game_state::GameStateTracker;
 
 /// Tracks players for a single team
 struct TeamTracker {
-    team_id: TeamId,
+    team_color: TeamColor,
     players: HashMap<PlayerId, PlayerTracker>,
     controlled: bool,
 }
 
 impl TeamTracker {
-    fn new(team_id: TeamId) -> Self {
+    fn new(team_color: TeamColor, controlled: bool) -> Self {
         Self {
-            team_id,
+            team_color,
             players: HashMap::new(),
-            controlled: false,
+            controlled,
         }
     }
 
@@ -93,15 +92,13 @@ impl TeamTracker {
 /// A struct to track the world state with team ID support.
 pub struct WorldTracker {
     /// Track teams by ID
-    team_a: TeamTracker,
-    team_b: TeamTracker,
+    blue_team: TeamTracker,
+    yellow_team: TeamTracker,
     ball_tracker: BallTracker,
     game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
     /// Automatically detected from referee messages
     side_assignment: Option<SideAssignment>,
-    /// Team configuration with IDs and colors
-    team_configuration: TeamConfiguration,
     /// Local timestamp of the first detection frame received from vision
     first_t_received: Option<WorldInstant>,
     /// Local timestamp of the last received detection frame, in seconds. This is
@@ -119,35 +116,20 @@ pub struct WorldTracker {
 
 impl WorldTracker {
     /// Create a new world tracker with default team configuration.
-    pub fn new(settings: &ExecutorSettings) -> Self {
-        use dies_core::TeamInfo;
-
-        // Create default team configuration
-        let team_configuration = TeamConfiguration::new(
-            TeamInfo::new_with_name("Team A"),
-            TeamInfo::new_with_name("Team B"),
-        );
-
-        Self::new_with_teams(settings, team_configuration)
-    }
-
-    /// Create a new world tracker with specific team configuration.
-    pub fn new_with_teams(
-        settings: &ExecutorSettings,
-        team_configuration: TeamConfiguration,
-    ) -> Self {
-        // Extract team IDs from configuration
-        let team_a_id = team_configuration.get_team_id(TeamColor::Blue);
-        let team_b_id = team_configuration.get_team_id(TeamColor::Yellow);
-
+    pub fn new(settings: &ExecutorSettings, controlled_teams: &[TeamColor]) -> Self {
         Self {
-            team_a: TeamTracker::new(team_a_id),
-            team_b: TeamTracker::new(team_b_id),
+            blue_team: TeamTracker::new(
+                TeamColor::Blue,
+                controlled_teams.contains(&TeamColor::Blue),
+            ),
+            yellow_team: TeamTracker::new(
+                TeamColor::Yellow,
+                controlled_teams.contains(&TeamColor::Yellow),
+            ),
             ball_tracker: BallTracker::new(&settings.tracker_settings),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
             side_assignment: None, // Will be detected from referee messages
-            team_configuration,
             first_t_received: None,
             last_t_received: None,
             dt_received: None,
@@ -157,61 +139,24 @@ impl WorldTracker {
         }
     }
 
-    /// Update the team configuration (handles color changes).
-    pub fn update_team_configuration(&mut self, new_config: TeamConfiguration) {
-        // Check if team colors have changed and swap trackers if needed
-        let old_team_a_color = self.team_configuration.get_team_color(self.team_a.team_id);
-        let old_team_b_color = self.team_configuration.get_team_color(self.team_b.team_id);
-
-        let new_team_a_color = new_config.get_team_color(self.team_a.team_id);
-        let new_team_b_color = new_config.get_team_color(self.team_b.team_id);
-
-        if old_team_a_color != new_team_a_color || old_team_b_color != new_team_b_color {
-            log::info!("Team colors changed - updating configuration");
-
-            // If both teams changed colors, they likely swapped
-            if old_team_a_color != new_team_a_color && old_team_b_color != new_team_b_color {
-                log::info!("Teams swapped colors - swapping trackers");
-                std::mem::swap(&mut self.team_a, &mut self.team_b);
-            }
-        }
-
-        self.team_configuration = new_config;
-    }
-
     /// Get the list of controlled team IDs.
-    pub fn get_controlled_team_ids(&self) -> Vec<TeamId> {
-        let mut controlled = Vec::new();
-        if self.team_a.controlled {
-            controlled.push(self.team_a.team_id);
-        }
-        if self.team_b.controlled {
-            controlled.push(self.team_b.team_id);
-        }
-        controlled
+    pub fn set_controlled_teams(&mut self, controlled_teams: &[TeamColor]) {
+        self.blue_team.controlled = controlled_teams.contains(&TeamColor::Blue);
+        self.yellow_team.controlled = controlled_teams.contains(&TeamColor::Yellow);
     }
 
     /// Get the team tracker for a given team ID.
-    fn get_team_tracker_mut(&mut self, team_id: TeamId) -> Option<&mut TeamTracker> {
-        if self.team_a.team_id == team_id {
-            Some(&mut self.team_a)
-        } else if self.team_b.team_id == team_id {
-            Some(&mut self.team_b)
-        } else {
-            None
+    fn get_team_tracker_mut(&mut self, team_color: TeamColor) -> Option<&mut TeamTracker> {
+        match team_color {
+            TeamColor::Blue => Some(&mut self.blue_team),
+            TeamColor::Yellow => Some(&mut self.yellow_team),
         }
-    }
-
-    /// Determine which team a player belongs to based on current vision data.
-    fn determine_player_team_id(&self, team_color: TeamColor) -> TeamId {
-        // Map from color to team ID using current configuration
-        self.team_configuration.get_team_id(team_color)
     }
 
     pub fn update_settings(&mut self, settings: &ExecutorSettings) {
         self.tracker_settings = settings.tracker_settings.clone();
-        self.team_a.update_settings(&self.tracker_settings);
-        self.team_b.update_settings(&self.tracker_settings);
+        self.blue_team.update_settings(&self.tracker_settings);
+        self.yellow_team.update_settings(&self.tracker_settings);
         self.ball_tracker.update_settings(&self.tracker_settings);
 
         // Log the field mask lines
@@ -334,8 +279,7 @@ impl WorldTracker {
                 let id = PlayerId::new(player.robot_id());
 
                 // Determine which team this blue player belongs to
-                let team_id = self.determine_player_team_id(TeamColor::Blue);
-                if let Some(team_tracker) = self.get_team_tracker_mut(team_id) {
+                if let Some(team_tracker) = self.get_team_tracker_mut(TeamColor::Blue) {
                     team_tracker.update_from_vision(id, player, t_capture, &tracker_settings);
                 }
             }
@@ -353,15 +297,14 @@ impl WorldTracker {
                 let id = PlayerId::new(player.robot_id());
 
                 // Determine which team this yellow player belongs to
-                let team_id = self.determine_player_team_id(TeamColor::Yellow);
-                if let Some(team_tracker) = self.get_team_tracker_mut(team_id) {
+                if let Some(team_tracker) = self.get_team_tracker_mut(TeamColor::Yellow) {
                     team_tracker.update_from_vision(id, player, t_capture, &tracker_settings);
                 }
             }
 
             // Check for missed players
-            self.team_a.check_players_gone(t_capture, time);
-            self.team_b.check_players_gone(t_capture, time);
+            self.blue_team.check_players_gone(t_capture, time);
+            self.yellow_team.check_players_gone(t_capture, time);
 
             // Update ball
             self.ball_tracker.update(
@@ -383,23 +326,21 @@ impl WorldTracker {
         }
     }
 
-    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
-        // Try to find the player in team trackers to determine which team they belong to
-        let mut found_team = None;
-
-        // Check both teams
-        if self.team_a.update_from_feedback(feedback, time) {
-            found_team = Some(self.team_a.team_id);
-        } else if self.team_b.update_from_feedback(feedback, time) {
-            found_team = Some(self.team_b.team_id);
-        }
-
-        // If player not found in either team, we can't determine which team they belong to
-        // This shouldn't happen if vision data comes before feedback
-        if found_team.is_none() {
+    pub fn update_from_feedback(
+        &mut self,
+        team_color: TeamColor,
+        feedback: &PlayerFeedbackMsg,
+        time: WorldInstant,
+    ) {
+        if team_color == TeamColor::Blue && self.blue_team.controlled {
+            self.blue_team.update_from_feedback(feedback, time);
+        } else if team_color == TeamColor::Yellow && self.yellow_team.controlled {
+            self.yellow_team.update_from_feedback(feedback, time);
+        } else {
             log::warn!(
-                "Received feedback for player {} that hasn't been seen in vision yet",
-                feedback.id
+                "Received feedback for player {} that belongs to team {} but is not controlled",
+                feedback.id,
+                team_color
             );
         }
     }
@@ -409,18 +350,13 @@ impl WorldTracker {
         self.side_assignment.as_ref()
     }
 
-    /// Get the team configuration.
-    pub fn get_team_configuration(&self) -> &TeamConfiguration {
-        &self.team_configuration
-    }
-
     /// Check if the world state is initialized.
     ///
     /// The world state is initialized if at least one player and the ball have been
     /// seen at least twice (so that velocities can be calculated), and the field
     /// geometry has been received.
     pub fn is_init(&self) -> bool {
-        let any_player_init = self.team_a.is_init() || self.team_b.is_init();
+        let any_player_init = self.blue_team.is_init() || self.yellow_team.is_init();
         let ball_init = self.ball_tracker.is_init();
         let field_geom_init = self.field_geometry.is_some();
 
@@ -433,28 +369,16 @@ impl WorldTracker {
     pub fn get(&mut self) -> WorldData {
         let field_geom = self.field_geometry.clone();
 
-        // Get players by their current team colors
-        let team_a_color = self.team_configuration.get_team_color(self.team_a.team_id);
-        let team_b_color = self.team_configuration.get_team_color(self.team_b.team_id);
-
         let mut blue_players = Vec::new();
         let mut yellow_players = Vec::new();
 
         // Add team A players to the appropriate color list
-        let team_a_players = self.team_a.get_players();
-        if team_a_color == TeamColor::Blue {
-            blue_players.extend(team_a_players);
-        } else {
-            yellow_players.extend(team_a_players);
-        }
+        let team_a_players = self.blue_team.get_players();
+        blue_players.extend(team_a_players);
 
         // Add team B players to the appropriate color list
-        let team_b_players = self.team_b.get_players();
-        if team_b_color == TeamColor::Blue {
-            blue_players.extend(team_b_players);
-        } else {
-            yellow_players.extend(team_b_players);
-        }
+        let team_b_players = self.yellow_team.get_players();
+        yellow_players.extend(team_b_players);
 
         let game_state = RawGameStateData {
             game_state: self.game_state_tracker.get(),

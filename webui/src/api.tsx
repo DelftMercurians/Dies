@@ -31,8 +31,6 @@ import {
   WsMessage,
   DebugMap,
   GetDebugMapResponse,
-  TeamConfiguration,
-  TeamId,
   WorldData,
   TeamColor,
   TeamPlayerId,
@@ -188,18 +186,6 @@ const isPlayerManuallyControlled = (
 export const useTeamConfiguration = () => {
   const queryClient = useQueryClient();
 
-  const updateTeamConfiguration = useMutation({
-    mutationFn: (config: TeamConfiguration) =>
-      postCommand({
-        type: "UpdateTeamConfiguration",
-        data: { config },
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["world-state"] });
-      queryClient.invalidateQueries({ queryKey: ["executor-info"] });
-    },
-  });
-
   const setActiveTeams = useMutation({
     mutationFn: ({
       blueActive,
@@ -218,7 +204,6 @@ export const useTeamConfiguration = () => {
   });
 
   return {
-    updateTeamConfiguration: updateTeamConfiguration.mutate,
     setActiveTeams: setActiveTeams.mutate,
   };
 };
@@ -439,6 +424,7 @@ export const useKeyboardControl = ({
   const kickSpeedRef = useRef(kickSpeed);
   kickSpeedRef.current = kickSpeed;
 
+  const [primaryTeam] = usePrimaryTeam();
   useEffect(() => {
     if (playerId === null) return;
     const pressedKeys = new Set<string>();
@@ -459,7 +445,7 @@ export const useKeyboardControl = ({
       const command = {
         type: "OverrideCommand",
         data: {
-          team_id: defaultTeamId,
+          team_color: primaryTeam,
           player_id: playerId,
           command: {
             type:
@@ -504,7 +490,7 @@ export const useKeyboardControl = ({
         const kickCommand = {
           type: "OverrideCommand",
           data: {
-            team_id: defaultTeamId,
+            team_color: primaryTeam,
             player_id: playerId,
             command: {
               type: "Kick",
@@ -525,7 +511,7 @@ export const useKeyboardControl = ({
         const fanCommand = {
           type: "OverrideCommand",
           data: {
-            team_id: defaultTeamId,
+            team_color: primaryTeam,
             player_id: playerId,
             command: {
               type: "SetFanSpeed",
@@ -543,7 +529,7 @@ export const useKeyboardControl = ({
         const kickCommand = {
           type: "OverrideCommand",
           data: {
-            team_id: defaultTeamId,
+            team_color: primaryTeam,
             player_id: playerId,
             command: {
               type: "Kick",

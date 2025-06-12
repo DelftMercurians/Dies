@@ -44,7 +44,7 @@ import SettingsEditor from "./views/SettingsEditor";
 import Basestation from "./views/Basestation";
 import TeamOverview from "./views/TeamOverview";
 import HierarchicalList from "./views/HierarchicalList";
-import { PlayerFeedbackMsg, TeamId } from "./bindings";
+import { PlayerFeedbackMsg } from "./bindings";
 import TeamSettingsDialog from "./components/TeamSettingsDialog";
 import GameControllerPanel from "./components/GameControllerPanel";
 import PrimaryTeamSelector from "./components/PrimaryTeamSelector";
@@ -114,7 +114,6 @@ const App: React.FC = () => {
       : null;
 
   // Get team configuration from world state (this will need to be updated when backend supports it)
-  const teamConfig = executorInfo?.team_configuration;
   const sideAssignment = rawWorldData?.side_assignment;
   const [primaryTeam, setPrimaryTeam] = usePrimaryTeam();
   const blueActive =
@@ -221,13 +220,11 @@ const App: React.FC = () => {
         {/* Team Configuration */}
         <div className="flex items-center gap-4">
           <TeamSettingsDialog
-            currentConfig={teamConfig}
             currentSideAssignment={sideAssignment}
             blueActive={blueActive}
             yellowActive={yellowActive}
           />
           <PrimaryTeamSelector
-            currentConfig={teamConfig}
             primaryTeam={primaryTeam}
             setPrimaryTeam={setPrimaryTeam}
           />

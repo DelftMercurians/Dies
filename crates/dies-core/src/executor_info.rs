@@ -1,12 +1,12 @@
 use serde::Serialize;
 use typeshare::typeshare;
 
-use crate::{PlayerId, TeamColor, TeamConfiguration, TeamId};
+use crate::{PlayerId, TeamColor};
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[typeshare]
 pub struct TeamPlayerId {
-    pub team_id: TeamId,
+    pub team_color: TeamColor,
     pub player_id: PlayerId,
 }
 
@@ -20,6 +20,4 @@ pub struct ExecutorInfo {
     pub manual_controlled_players: Vec<TeamPlayerId>,
     /// Which teams are currently active/controlled.
     pub active_teams: Vec<TeamColor>,
-    /// Current team configuration.
-    pub team_configuration: TeamConfiguration,
 }

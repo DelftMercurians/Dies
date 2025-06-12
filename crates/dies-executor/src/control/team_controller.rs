@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, TeamData, TeamId};
+use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, TeamColor, TeamData};
 use std::sync::Arc;
 
 use super::{
@@ -26,14 +26,14 @@ pub struct TeamController {
 }
 
 impl TeamController {
-    pub fn new(team_id: TeamId, settings: &ExecutorSettings) -> Self {
+    pub fn new(team_color: TeamColor, settings: &ExecutorSettings) -> Self {
         let main_bt_script_path = "crates/dies-executor/src/bt_scripts/standard_player_tree.rhai";
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             start_time: std::time::Instant::now(),
             player_behavior_trees: HashMap::new(),
-            team_context: TeamContext::new(team_id),
+            team_context: TeamContext::new(team_color),
             bt_context: BtContext::new(),
             script_host: RhaiHost::new(main_bt_script_path),
         };

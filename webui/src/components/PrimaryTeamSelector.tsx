@@ -1,40 +1,27 @@
 import React from "react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Badge } from "@/components/ui/badge";
-import { TeamConfiguration, TeamColor, TeamId } from "@/bindings";
-import { useTeamConfiguration } from "@/api";
+import { TeamColor } from "@/bindings";
 
 interface PrimaryTeamSelectorProps {
-  currentConfig?: TeamConfiguration;
   primaryTeam: TeamColor;
   className?: string;
   setPrimaryTeam: (teamColor: TeamColor) => void;
 }
 
 const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = ({
-  currentConfig,
   primaryTeam,
   className = "",
   setPrimaryTeam,
 }) => {
-  if (!currentConfig) {
-    return (
-      <div className={`text-sm text-muted-foreground ${className}`}>
-        No team configuration available
-      </div>
-    );
-  }
-
   const teams = [
     {
-      id: currentConfig.team_a_info.id,
-      name: currentConfig.team_a_info.name || `Team A`,
-      color: currentConfig.team_a_color,
+      name: `Blue Team`,
+      color: TeamColor.Blue,
     },
     {
-      id: currentConfig.team_b_info.id,
-      name: currentConfig.team_b_info.name || `Team B`,
-      color: currentConfig.team_b_color,
+      name: `Yellow Team`,
+      color: TeamColor.Yellow,
     },
   ];
 
@@ -57,7 +44,7 @@ const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = ({
     >
       {teams.map((team) => (
         <ToggleGroupItem
-          key={team.id.toString()}
+          key={team.color.toString()}
           value={team.color}
           className="data-[state=on]:bg-green-600 flex items-center gap-2"
         >

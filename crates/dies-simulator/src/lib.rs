@@ -1,11 +1,11 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     f64::consts::PI,
 };
 
 use dies_core::{
-    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, SysStatus,
-    TeamColor, TeamConfiguration, TeamId, TeamInfo, Vector2, WorldInstant,
+    Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, SideAssignment,
+    SysStatus, TeamColor, Vector2, WorldInstant,
 };
 use dies_protos::{
     ssl_gc_referee_message::{referee, Referee},
@@ -80,23 +80,14 @@ pub struct SimulationConfig {
     pub geometry_interval: f64,
 
     // TEAM CONFIGURATION
-    /// Team configuration for self-play support
-    pub team_configuration: TeamConfiguration,
     /// Which teams are controlled/simulated by the AI
-    pub controlled_teams: std::collections::HashSet<TeamId>,
+    pub blue_controlled: bool,
+    pub yellow_controlled: bool,
+    pub initial_side_assignment: SideAssignment,
 }
 
 impl Default for SimulationConfig {
     fn default() -> Self {
-        // Create default team configuration for backwards compatibility
-        let blue_team = TeamInfo::new_with_name("Blue Team");
-        let yellow_team = TeamInfo::new_with_name("Yellow Team");
-        let team_configuration = TeamConfiguration::new(blue_team.clone(), yellow_team);
-
-        // By default, only control blue team for backwards compatibility
-        let mut controlled_teams = std::collections::HashSet::new();
-        controlled_teams.insert(blue_team.id);
-
         SimulationConfig {
             // PHYSICAL CONSTANTS
             gravity: Vector::z() * -9.81 * 1000.0,
@@ -126,8 +117,9 @@ impl Default for SimulationConfig {
             geometry_interval: 3.0,
 
             // TEAM CONFIGURATION
-            team_configuration,
-            controlled_teams,
+            blue_controlled: true,
+            yellow_controlled: false,
+            initial_side_assignment: SideAssignment::BlueOnPositive,
         }
     }
 }
@@ -287,7 +279,7 @@ struct Ball {
 #[derive(Debug)]
 struct Player {
     id: PlayerId,
-    team_id: TeamId,
+    team_color: TeamColor,
     rigid_body_handle: RigidBodyHandle,
     _collider_handle: ColliderHandle,
     last_cmd_time: f64,
@@ -353,11 +345,11 @@ pub struct Simulation {
     geometry_packet: SSL_WrapperPacket,
     referee_message: VecDeque<Referee>,
     feedback_interval: IntervalTrigger,
-    feedback_queue: VecDeque<PlayerFeedbackMsg>,
+    feedback_queue: VecDeque<(TeamColor, PlayerFeedbackMsg)>,
     game_state: SimulationGameState,
     designated_ball_position: Vector<f64>,
-    last_touch_info: Option<(PlayerId, TeamId)>,
-    team_colors: HashMap<TeamId, TeamColor>,
+    last_touch_info: Option<(PlayerId, TeamColor)>,
+    side_assignment: SideAssignment,
 }
 
 impl Simulation {
@@ -372,6 +364,7 @@ impl Simulation {
         let field_width = config.field_geometry.field_width;
         let geometry_packet = geometry(&config.field_geometry);
 
+        let side_assignment = config.initial_side_assignment.clone();
         let mut simulation = Simulation {
             config,
             current_time: 0.0,
@@ -399,7 +392,7 @@ impl Simulation {
             game_state: SimulationGameState::default(),
             designated_ball_position: Vector::new(0.0, 0.0, 0.0),
             last_touch_info: None,
-            team_colors: HashMap::new(),
+            side_assignment,
         };
 
         // Create the ground
@@ -425,37 +418,42 @@ impl Simulation {
         simulation
     }
 
-    pub fn set_team_colors(&mut self, team_colors: HashMap<TeamId, TeamColor>) {
-        self.team_colors = team_colors;
-    }
-
     pub fn time(&self) -> WorldInstant {
         WorldInstant::Simulated(self.current_time)
     }
 
-    /// Get the team configuration
-    pub fn team_configuration(&self) -> &TeamConfiguration {
-        &self.config.team_configuration
-    }
-
-    /// Set the team configuration
-    pub fn set_team_configuration(&mut self, config: TeamConfiguration) {
-        self.config.team_configuration = config;
-    }
-
     /// Get the controlled teams
-    pub fn controlled_teams(&self) -> &std::collections::HashSet<TeamId> {
-        &self.config.controlled_teams
+    pub fn controlled_teams(&self) -> HashSet<TeamColor> {
+        let mut teams = HashSet::new();
+        if self.config.blue_controlled {
+            teams.insert(TeamColor::Blue);
+        }
+        if self.config.yellow_controlled {
+            teams.insert(TeamColor::Yellow);
+        }
+        teams
     }
 
     /// Set which teams are controlled by the simulation
-    pub fn set_controlled_teams(&mut self, teams: std::collections::HashSet<TeamId>) {
-        self.config.controlled_teams = teams;
+    pub fn set_controlled_teams(&mut self, teams: HashSet<TeamColor>) {
+        if teams.contains(&TeamColor::Blue) {
+            self.config.blue_controlled = true;
+        } else {
+            self.config.blue_controlled = false;
+        }
+        if teams.contains(&TeamColor::Yellow) {
+            self.config.yellow_controlled = true;
+        } else {
+            self.config.yellow_controlled = false;
+        }
     }
 
     /// Check if a team is controlled
-    pub fn is_team_controlled(&self, team_id: TeamId) -> bool {
-        self.config.controlled_teams.contains(&team_id)
+    pub fn is_team_controlled(&self, team_color: TeamColor) -> bool {
+        match team_color {
+            TeamColor::Blue => self.config.blue_controlled,
+            TeamColor::Yellow => self.config.yellow_controlled,
+        }
     }
 
     fn add_wall(&mut self, x: f64, y: f64, width: f64, height: f64) {
@@ -520,7 +518,7 @@ impl Simulation {
         }
     }
 
-    pub fn feedback(&mut self) -> Option<PlayerFeedbackMsg> {
+    pub fn feedback(&mut self) -> Option<(TeamColor, PlayerFeedbackMsg)> {
         self.feedback_queue.pop_front()
     }
 
@@ -573,12 +571,8 @@ impl Simulation {
                 } else if self.ball_out() {
                     // For team-agnostic simulation, we can determine which team gets the free kick
                     // based on last touch info, or default to a neutral decision
-                    if let Some((_kicker_id, kicker_team_id)) = self.last_touch_info {
-                        let blue_team_id = self
-                            .config
-                            .team_configuration
-                            .get_team_id(dies_core::TeamColor::Blue);
-                        if kicker_team_id == blue_team_id {
+                    if let Some((_kicker_id, kicker_color)) = self.last_touch_info {
+                        if kicker_color == TeamColor::Blue {
                             self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
                         } else {
                             self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
@@ -686,11 +680,6 @@ impl Simulation {
         }
 
         // Check if all team players in position
-        let blue_team_id = self
-            .config
-            .team_configuration
-            .get_team_id(dies_core::TeamColor::Blue);
-
         for player in self.players.iter_mut() {
             let rigid_body = self
                 .rigid_body_set
@@ -713,14 +702,11 @@ impl Simulation {
                 );
                 return false;
             }
-            // Check if the player is in the own half, default to the left side(blue team on the left)
-            let out_of_field = if player.team_id == blue_team_id {
-                player_position.x > 0.0
-                    || player_position.x < -self.config.field_geometry.field_length / 2.0
-            } else {
-                player_position.x < 0.0
-                    || player_position.x > self.config.field_geometry.field_length / 2.0
-            };
+            // Check if the player is in the own half, default to the left side
+            let team_color = player.team_color;
+            let out_of_field = self
+                .side_assignment
+                .is_on_opp_side_vec3(team_color, &player_position);
             if out_of_field {
                 dies_core::debug_string(
                     "RefereeMessage",
@@ -862,7 +848,7 @@ impl Simulation {
                 let touch_threshold = self.config.player_radius + BALL_RADIUS + 5.0;
 
                 // Find the closest player touching the ball in this step
-                let mut closest_touching_player: Option<(PlayerId, TeamId, f64)> = None;
+                let mut closest_touching_player: Option<(PlayerId, TeamColor, f64)> = None;
 
                 for player in self.players.iter() {
                     let player_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
@@ -873,13 +859,14 @@ impl Simulation {
                         if closest_touching_player.is_none()
                             || distance < closest_touching_player.unwrap().2
                         {
-                            closest_touching_player = Some((player.id, player.team_id, distance));
+                            closest_touching_player =
+                                Some((player.id, player.team_color, distance));
                         }
                     }
                 }
 
-                if let Some((id, team_id, _)) = closest_touching_player {
-                    self.last_touch_info = Some((id, team_id));
+                if let Some((id, team_color, _)) = closest_touching_player {
+                    self.last_touch_info = Some((id, team_color));
                 }
             }
         } else {
@@ -926,13 +913,9 @@ impl Simulation {
         let send_feedback = self.feedback_interval.trigger(self.current_time);
         for player in self.players.iter_mut() {
             // Only update players from controlled teams
-            if !self.config.controlled_teams.contains(&player.team_id) {
-                let rigid_body = self
-                    .rigid_body_set
-                    .get_mut(player.rigid_body_handle)
-                    .unwrap();
-                rigid_body.set_linvel(Vector::zeros(), false);
-                rigid_body.set_angvel(Vector::zeros(), false);
+            if (!self.config.blue_controlled && player.team_color == TeamColor::Blue)
+                || (!self.config.yellow_controlled && player.team_color == TeamColor::Yellow)
+            {
                 continue;
             }
 
@@ -945,18 +928,11 @@ impl Simulation {
                 } else {
                     Some(SysStatus::NotInstalled)
                 };
-                self.feedback_queue.push_back(feedback);
+                self.feedback_queue.push_back((player.team_color, feedback));
             }
 
             let mut is_kicking = false;
             if let Some(command) = commands_to_exec.get(&player.id) {
-                let player_color = self
-                    .team_colors
-                    .get(&player.team_id)
-                    .unwrap_or(&dies_core::TeamColor::Blue);
-                if command.team_color != *player_color {
-                    continue;
-                }
                 let command = command.player_cmd;
 
                 // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
@@ -1105,11 +1081,6 @@ impl Simulation {
         detection.set_t_sent(self.current_time);
         detection.set_camera_id(1);
 
-        let blue_team_id = self
-            .config
-            .team_configuration
-            .get_team_id(dies_core::TeamColor::Blue);
-
         // Players
         for player in self.players.iter() {
             let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
@@ -1134,7 +1105,7 @@ impl Simulation {
             robot.set_pixel_y(0.0);
             robot.set_orientation(yaw as f32);
             robot.set_confidence(1.0);
-            if player.team_id == blue_team_id {
+            if player.team_color == TeamColor::Blue {
                 detection.robots_blue.push(robot);
             } else {
                 detection.robots_yellow.push(robot);
@@ -1170,82 +1141,45 @@ impl Default for Simulation {
 
 pub struct SimulationBuilder {
     sim: Simulation,
-    last_own_id: u32,
-    last_opp_id: u32,
+    last_blue_id: u32,
+    last_yellow_id: u32,
 }
 
 impl SimulationBuilder {
     pub fn new(config: SimulationConfig) -> Self {
         SimulationBuilder {
             sim: Simulation::new(config),
-            last_own_id: 0,
-            last_opp_id: 0,
+            last_blue_id: 0,
+            last_yellow_id: 0,
         }
     }
 
-    pub fn add_own_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
-        let blue_team_id = self
-            .sim
-            .config
-            .team_configuration
-            .get_team_id(dies_core::TeamColor::Blue);
-        self.add_player(id, blue_team_id, position, yaw);
+    pub fn add_blue_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
+        self.add_player(id, TeamColor::Blue, position, yaw);
         self
     }
 
-    pub fn add_opp_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
-        let yellow_team_id = self
-            .sim
-            .config
-            .team_configuration
-            .get_team_id(dies_core::TeamColor::Yellow);
-        self.add_player(id, yellow_team_id, position, yaw);
+    pub fn add_yellow_player_with_id(mut self, id: u32, position: Vector2, yaw: Angle) -> Self {
+        self.add_player(id, TeamColor::Yellow, position, yaw);
         self
     }
 
-    pub fn add_own_player(mut self, position: Vector2, yaw: Angle) -> Self {
-        let blue_team_id = self
-            .sim
-            .config
-            .team_configuration
-            .get_team_id(dies_core::TeamColor::Blue);
-        self.add_player(self.last_own_id, blue_team_id, position, yaw);
-        self.last_own_id += 1;
+    pub fn add_blue_player(mut self, position: Vector2, yaw: Angle) -> Self {
+        self.add_player(self.last_blue_id, TeamColor::Blue, position, yaw);
+        self.last_blue_id += 1;
         self
     }
 
-    pub fn add_opp_player(mut self, position: Vector2, yaw: Angle) -> Self {
-        let yellow_team_id = self
-            .sim
-            .config
-            .team_configuration
-            .get_team_id(dies_core::TeamColor::Yellow);
-        self.add_player(self.last_opp_id, yellow_team_id, position, yaw);
-        self.last_opp_id += 1;
-        self
-    }
-
-    /// Add a player for a specific team by team ID
-    pub fn add_player_for_team(
-        mut self,
-        team_id: TeamId,
-        id: u32,
-        position: Vector2,
-        yaw: Angle,
-    ) -> Self {
-        self.add_player(id, team_id, position, yaw);
-        self
-    }
-
-    /// Set the team configuration for the simulation
-    pub fn with_team_configuration(mut self, config: TeamConfiguration) -> Self {
-        self.sim.config.team_configuration = config;
+    pub fn add_yellow_player(mut self, position: Vector2, yaw: Angle) -> Self {
+        self.add_player(self.last_yellow_id, TeamColor::Yellow, position, yaw);
+        self.last_yellow_id += 1;
         self
     }
 
     /// Set which teams should be controlled by the simulation
-    pub fn with_controlled_teams(mut self, teams: std::collections::HashSet<TeamId>) -> Self {
-        self.sim.config.controlled_teams = teams;
+    pub fn with_controlled_teams(mut self, blue_controlled: bool, yellow_controlled: bool) -> Self {
+        self.sim.config.blue_controlled = blue_controlled;
+        self.sim.config.yellow_controlled = yellow_controlled;
         self
     }
 
@@ -1281,7 +1215,7 @@ impl SimulationBuilder {
         self.sim
     }
 
-    fn add_player(&mut self, id: u32, team_id: TeamId, position: Vector2, yaw: Angle) {
+    fn add_player(&mut self, id: u32, team_color: TeamColor, position: Vector2, yaw: Angle) {
         let sim = &mut self.sim;
 
         // Players have fixed z position - their bottom surface 1mm above the ground
@@ -1311,7 +1245,7 @@ impl SimulationBuilder {
 
         sim.players.push(Player {
             id: PlayerId::new(id),
-            team_id,
+            team_color,
             rigid_body_handle,
             _collider_handle: collider_handle,
             last_cmd_time: 0.0,
