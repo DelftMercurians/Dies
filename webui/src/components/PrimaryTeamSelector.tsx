@@ -2,18 +2,14 @@ import React from "react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Badge } from "@/components/ui/badge";
 import { TeamColor } from "@/bindings";
+import { usePrimaryTeam } from "@/api";
 
 interface PrimaryTeamSelectorProps {
-  primaryTeam: TeamColor;
   className?: string;
-  setPrimaryTeam: (teamColor: TeamColor) => void;
 }
 
-const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = ({
-  primaryTeam,
-  className = "",
-  setPrimaryTeam,
-}) => {
+const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = () => {
+  const [primaryTeam, setPrimaryTeam] = usePrimaryTeam();
   const teams = [
     {
       name: `Blue Team`,

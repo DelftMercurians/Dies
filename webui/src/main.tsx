@@ -3,7 +3,7 @@ import "./index.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { TeamDataProvider, startWsClient } from "./api";
+import { PrimaryTeamProvider, TeamDataProvider, startWsClient } from "./api";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
 
@@ -13,8 +13,10 @@ ReactDOM.createRoot(document.getElementById("app")!).render(
   <React.StrictMode>
     <TooltipProvider>
       <TeamDataProvider>
-        <App />
-        <Toaster />
+        <PrimaryTeamProvider>
+          <App />
+          <Toaster />
+        </PrimaryTeamProvider>
       </TeamDataProvider>
     </TooltipProvider>
   </React.StrictMode>

@@ -7,7 +7,7 @@ import {
   Radio,
   Square,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   useBasestationInfo,
@@ -115,7 +115,6 @@ const App: React.FC = () => {
 
   // Get team configuration from world state (this will need to be updated when backend supports it)
   const sideAssignment = rawWorldData?.side_assignment;
-  const [primaryTeam, setPrimaryTeam] = usePrimaryTeam();
   const blueActive =
     executorInfo?.active_teams.includes(TeamColor.Blue) ?? false;
   const yellowActive =
@@ -224,10 +223,7 @@ const App: React.FC = () => {
             blueActive={blueActive}
             yellowActive={yellowActive}
           />
-          <PrimaryTeamSelector
-            primaryTeam={primaryTeam}
-            setPrimaryTeam={setPrimaryTeam}
-          />
+          <PrimaryTeamSelector />
         </div>
       </div>
 
