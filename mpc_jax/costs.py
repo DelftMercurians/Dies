@@ -24,7 +24,7 @@ def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray):
 
         # Define safety thresholds
         min_safe_distance = 2.1 * ROBOT_RADIUS
-        no_cost_distance = 2.5 * ROBOT_RADIUS
+        no_cost_distance = 3.5 * ROBOT_RADIUS
 
         # try to avoid certain collision hard
         danger_zone = distance <= min_safe_distance

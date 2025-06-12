@@ -26,7 +26,7 @@ MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt sched
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 50
+MAX_ITERATIONS = 500
 LEARNING_RATE = 200
 UPDATE_CLIP = 80
 N_CANDIDATE_TRAJECTORIES = 100
@@ -87,7 +87,9 @@ class EntityBatch(Entity):
         return EntityBatch(self.position + self.velocity * t, self.velocity)
 
 
-class FieldBounds(eqx.Module): ...
+class FieldBounds(eqx.Module):
+    def bounding_box(self):
+        return jnp.array([-2000.0, 2000.0, -1000.0, 1000.0])  # 4m x 2m field
 
 
 class World(eqx.Module):
@@ -97,7 +99,7 @@ class World(eqx.Module):
 
     obstacles: EntityBatch  # obstacles (e.g. other robots)
     robots: EntityBatch
-    ball: Entity
+    ball: Entity = Entity(jnp.zeros((2,), dtype=jnp.float32))
 
 
 @eqx.filter_jit

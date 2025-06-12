@@ -71,7 +71,7 @@ def clip_vel(vel: jnp.ndarray, limit: float | Float[Array, ""]):
     return jnp.where(speed > limit, vel * (limit / speed), vel)
 
 
-def generate_candidate_trajectory(
+def generate_candidate_control(
     key: PRNGKeyArray,
     initial_pos: Float[Array, "2"],
     target_pos: Float[Array, "2"],
@@ -138,21 +138,21 @@ def solve_mpc_jax(
 
     # Generate candidate trajectories
     keys = jr.split(key, n_candidates)
-    candidate_trajectories = jax.vmap(
+    candidate_controls = jax.vmap(
         lambda k: jax.vmap(
-            eqx.Partial(generate_candidate_trajectory, max_speed=max_speed)
+            eqx.Partial(generate_candidate_control, max_speed=max_speed)
         )(
             jr.split(k, n_robots),
             w.robots.position,
             targets.after(3).position,  # this is a heuristic, since why not
         )
     )(keys)
-    candidate_trajectories = candidate_trajectories.reshape(
+    candidate_controls = candidate_controls.reshape(
         (n_candidates, n_robots, CONTROL_HORIZON, 2)
     )
 
     # Optimize each candidate trajectory via (full-batch) gradient descent
-    def optimize_trajectories(u):
+    def optimize_control(u):
         # Initialize optimizer for this trajectory
         schedule = optax.linear_schedule(
             learning_rate, learning_rate / 10.0, max_iterations
@@ -189,16 +189,14 @@ def solve_mpc_jax(
 
         return u, costs[-1]  # Return final control and final cost
 
-    # Optimize all candidate trajectories in parallel
-    optimized_trajectories, final_costs = jax.vmap(optimize_trajectories)(
-        candidate_trajectories
-    )
+    # Optimize all candidate controls in parallel
+    optimized_controls, final_costs = jax.vmap(optimize_control)(candidate_controls)
 
     # Select the best trajectory (lowest cost)
     best_idx = jnp.argmin(final_costs)
-    best_trajectory = optimized_trajectories[best_idx]
+    best_control = optimized_controls[best_idx]
 
-    return best_trajectory, candidate_trajectories, optimized_trajectories
+    return best_control, candidate_controls, optimized_controls
 
 
 solve_mpc_jitted = eqx.filter_jit(solve_mpc_jax)
