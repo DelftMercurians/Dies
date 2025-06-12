@@ -42,28 +42,38 @@ def mpc_cost_function(
 ):
     # Generate trajectory from control sequence
     trajectories = trajectories_from_control(w, u)
+    n_robots = len(w.robots)
 
     # Compute position-based costs over the trajectory
-    def position_cost_fn(trajectory_point, idx: int):
-        t, pos_x, pos_y, vel_x, vel_y = trajectory_point
+    def position_cost_fn(all_robots, idx: int):
+        t, pos_x, pos_y, vel_x, vel_y = all_robots[idx]
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
-        d_cost = distance_cost(robot.position, targets.get(idx).after(t).position, t)
+        d_cost = distance_cost(robot.position, targets.get(idx).after(t).position, 5)
         c_cost = collision_cost(robot.position, w.obstacles.after(t).position)
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
-        return d_cost + c_cost + b_cost + vc_cost
+
+        # Cost against our own robots
+        mask = jnp.ones((n_robots,)).at[idx].set(0)
+        ours_c_cost = (
+            collision_cost(
+                robot.position,
+                all_robots[:, 1:3],
+                mask=mask,
+            )
+            * 0.2
+        )
+
+        return d_cost + c_cost + b_cost + vc_cost + ours_c_cost
 
     # Skip initial position (i=0) and compute costs for trajectory steps
     total_position_cost = jax.vmap(
-        lambda trajectory, idx: jax.vmap(eqx.Partial(position_cost_fn, idx=idx))(
-            trajectory
+        lambda idx: jax.vmap(eqx.Partial(position_cost_fn, idx=idx))(
+            trajectories.reshape(-1, n_robots, 5)
         )
-    )(trajectories, jnp.arange(len(w.robots))).sum()
+    )(jnp.arange(n_robots)).sum()
 
-    control_effort_costs = jax.vmap(control_effort_cost)(u)
-    total_control_cost = control_effort_costs.sum()
-
-    return total_position_cost + total_control_cost
+    return total_position_cost
 
 
 def clip_vel(vel: jnp.ndarray, limit: float | Float[Array, ""]):

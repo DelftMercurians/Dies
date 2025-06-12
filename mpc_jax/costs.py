@@ -7,28 +7,29 @@ from common import ROBOT_RADIUS
 def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float):
     dist = jnp.sqrt(jnp.sum((pos - target) ** 2))
     return jnp.clip(
-        dist * 2e-2 * (time_from_now + 0.1),
+        dist * 2e-2 * (time_from_now + 1.0),
         0,
         100,
     )
 
 
-def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray):
+def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray, mask=None):
+    if mask is None:
+        mask = jnp.ones((len(pos),))
+
     def single_collision_cost(obstacle: jnp.ndarray, pos: jnp.ndarray):
-        nonlocal obstacles
-        del obstacles
         assert obstacle.shape == (2,)
 
         diff = pos[None, :] - obstacle
-        distance = jnp.sqrt(jnp.sum(diff**2))
+        distance = jnp.sqrt(jnp.sum(diff**2) + 1e-9)
 
         # Define safety thresholds
         min_safe_distance = 2.1 * ROBOT_RADIUS
-        no_cost_distance = 3.5 * ROBOT_RADIUS
+        no_cost_distance = 2.5 * ROBOT_RADIUS
 
         # try to avoid certain collision hard
         danger_zone = distance <= min_safe_distance
-        normalized_distance = jnp.clip(distance / min_safe_distance, 0, 1)
+        normalized_distance = jnp.clip(distance / min_safe_distance, 1e-6, 1)
         danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 100
 
         # try to avoid even getting close to the opponent
@@ -46,7 +47,10 @@ def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray):
 
         return jnp.sum(penalties)
 
-    return jax.vmap(ft.partial(single_collision_cost, pos=pos))(obstacles).sum()
+    return (
+        jax.vmap(ft.partial(single_collision_cost, pos=pos))(obstacles)
+        * jax.lax.stop_gradient(mask)
+    ).sum()
 
 
 def boundary_cost(pos: jnp.ndarray, field_bounds):

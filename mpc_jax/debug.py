@@ -74,10 +74,11 @@ def visualize_mpc_debug(
         w.field_bounds.bounding_box(),
         max_vel,
     )
-    trajectory = trajectories_from_control(w, controls)
+    trajectories = trajectories_from_control(w, controls)
 
-    # Extract positions from trajectory (skip time column)
-    trajectory = trajectory[0, :, 1:]
+    # Extract positions from trajectories (skip time column)
+    num_robots = trajectories.shape[0]
+    robot_trajectories = [trajectories[i, :, 1:] for i in range(num_robots)]
 
     aspect_ratio = (max_x - min_x) / (max_y - min_y)
     fig_width = 16
@@ -96,16 +97,40 @@ def visualize_mpc_debug(
     colorbar_label = "Cost (log scale)" if log_scale else "Cost"
     fig.colorbar(im, ax=ax, label=colorbar_label)
 
-    ax.plot(
-        w.robots.position[0, 0],
-        w.robots.position[0, 1],
-        "bs",
-        markersize=14,
-        label="Start",
-    )
-    ax.plot(target_pos[0, 0], target_pos[0, 1], "g*", markersize=20, label="Target")
+    # Plot start positions for all robots
+    colors = ["r", "b"]
+    for i in range(num_robots):
+        color = colors[i % len(colors)]
+        ax.plot(
+            w.robots.position[i, 0],
+            w.robots.position[i, 1],
+            f"{color}s",
+            markersize=14,
+            label=f"Start {i + 1}",
+        )
 
-    ax.plot(trajectory[:, 0], trajectory[:, 1], "w-", linewidth=1, label="MPC Path")
+    # Plot target positions for all robots
+    for i in range(min(target_pos.shape[0], num_robots)):
+        color = colors[i % len(colors)]
+        ax.plot(
+            target_pos[i, 0],
+            target_pos[i, 1],
+            f"{color}*",
+            markersize=20,
+            label=f"Target {i + 1}",
+        )
+
+    # Plot trajectories for all robots
+    for i, trajectory in enumerate(robot_trajectories):
+        color = colors[i % len(colors)]
+        ax.plot(
+            trajectory[:, 0],
+            trajectory[:, 1],
+            f"{color}-",
+            linewidth=2,
+            label=f"MPC Path {i + 1}",
+        )
+
     ax.plot([], [], "o", color="cyan", markersize=6, label="0.5s markers")
 
     # Add legend and labels
@@ -177,14 +202,12 @@ def plot_collision_cost(
     print("Collision cost visualization saved to 'collision_cost_visualization.png'")
 
 
-def animate_moving_obstacle():
+def animate_moving_obstacle(initial_pos, target_pos):
     """Create an animation of the MPC debug plot with moving second obstacle."""
     # Animation parameters
     num_frames = 10
 
-    # Fixed setup
-    initial_pos = np.array([[-300.0, 0.0]])
-    target_pos = np.array([[700.0, 500.0]])
+    # Fixed setup - two robots
     max_vel = 2000.0
 
     # First obstacle is stationary
@@ -213,11 +236,12 @@ def animate_moving_obstacle():
             w.field_bounds.bounding_box(),
             max_vel,
         )
-        trajectory = trajectories_from_control(w, controls)
-        robot_idx = 0
-        all_trajectories.append(
-            trajectory[robot_idx, :, 1:]
-        )  # cutoff time axis, choose the first robot traj
+        trajectories = trajectories_from_control(w, controls)
+        # Store trajectories for all robots
+        robot_trajectories = []
+        for robot_idx in range(trajectories.shape[0]):
+            robot_trajectories.append(trajectories[robot_idx, :, 1:])
+        all_trajectories.append(robot_trajectories)
 
     # Create static plot elements once
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -229,14 +253,43 @@ def animate_moving_obstacle():
         ax.add_patch(circle)
         obstacle_circles.append(circle)
 
-    # Create line objects for trajectory to update more efficiently
-    (trajectory_line,) = ax.plot([], [], "r-", linewidth=2, label="MPC Path")
-    (start_marker,) = ax.plot(
-        initial_pos[0, 0], initial_pos[0, 1], "bs", markersize=16, label="Start"
-    )
-    (target_marker,) = ax.plot(
-        target_pos[0, 0], target_pos[0, 1], "g*", markersize=20, label="Target"
-    )
+    # Create line objects for trajectories to update more efficiently
+    colors = ["m", "y"]
+    start_colors = ["r", "b"]
+    target_colors = ["r", "b"]
+
+    trajectory_lines = []
+    start_markers = []
+    target_markers = []
+
+    num_robots = initial_pos.shape[0]
+    for i in range(num_robots):
+        traj_color = colors[i % len(colors)]
+        start_color = start_colors[i % len(start_colors)]
+        target_color = target_colors[i % len(target_colors)]
+
+        (trajectory_line,) = ax.plot(
+            [], [], f"{traj_color}-", linewidth=2, label=f"MPC Path {i + 1}"
+        )
+        trajectory_lines.append(trajectory_line)
+
+        (start_marker,) = ax.plot(
+            initial_pos[i, 0],
+            initial_pos[i, 1],
+            f"{start_color}s",
+            markersize=16,
+            label=f"Start {i + 1}",
+        )
+        start_markers.append(start_marker)
+
+        (target_marker,) = ax.plot(
+            target_pos[i, 0],
+            target_pos[i, 1],
+            f"{target_color}*",
+            markersize=20,
+            label=f"Target {i + 1}",
+        )
+        target_markers.append(target_marker)
 
     # Set static properties once
     min_x, max_x, min_y, max_y = FieldBounds().bounding_box()
@@ -254,14 +307,15 @@ def animate_moving_obstacle():
         for i, obstacle in enumerate(obstacles):
             obstacle_circles[i].center = obstacle
 
-        # Update trajectory
-        trajectory = all_trajectories[frame]
-        trajectory_line.set_data(trajectory[:, 0], trajectory[:, 1])
+        # Update trajectories for all robots
+        robot_trajectories = all_trajectories[frame]
+        for i, trajectory in enumerate(robot_trajectories):
+            trajectory_lines[i].set_data(trajectory[:, 0], trajectory[:, 1])
 
         # Update title
         ax.set_title(f"MPC with Moving Obstacle (Frame {frame + 1}/{num_frames})")
 
-        return [trajectory_line] + obstacle_circles + [start_marker, target_marker]
+        return trajectory_lines + obstacle_circles + start_markers + target_markers
 
     anim = FuncAnimation(
         fig, animate, frames=num_frames, interval=200, repeat=True, blit=True
@@ -283,32 +337,76 @@ def plot_trajectories(
     fig, ax = plt.subplots(figsize=(12, 8))
 
     # Convert candidate trajectories to actual trajectories
+    colors = ["m", "y"]
     for i, control_seq in enumerate(candidate_controls):
         trajectories_jax = trajectories_from_control(w, control_seq)
-        trajectory = np.array(trajectories_jax)[0, :, 1:3]  # Extract x, y positions
 
-        # Plot trajectory with semi-transparent line
-        if style == "cand":
-            ax.plot(trajectory[:, 0], trajectory[:, 1], "b-", alpha=0.1, linewidth=0.5)
-        else:
-            ax.plot(trajectory[:, 0], trajectory[:, 1], "g-", alpha=0.2, linewidth=0.8)
+        # Plot trajectories for all robots
+        num_robots = trajectories_jax.shape[0]
+        for robot_idx in range(num_robots):
+            trajectory = np.array(trajectories_jax)[
+                robot_idx, :, 1:3
+            ]  # Extract x, y positions
+            color = colors[robot_idx % len(colors)]
 
-    ax.plot(optimal_trajectory[:, 1], optimal_trajectory[:, 2], "k", linewidth=2)
+            # Plot trajectory with semi-transparent line
+            if style == "cand":
+                ax.plot(
+                    trajectory[:, 0],
+                    trajectory[:, 1],
+                    f"{color}-",
+                    alpha=0.1,
+                    linewidth=0.5,
+                )
+            else:
+                ax.plot(
+                    trajectory[:, 0],
+                    trajectory[:, 1],
+                    f"{color}-",
+                    alpha=0.2,
+                    linewidth=0.8,
+                )
+
+    # Plot optimal trajectories for all robots
+    num_robots = optimal_trajectory.shape[0]
+    for robot_idx in range(num_robots):
+        ax.plot(
+            optimal_trajectory[robot_idx, :, 1],
+            optimal_trajectory[robot_idx, :, 2],
+            "k",
+            linewidth=2,
+        )
 
     # Plot obstacles as circles
     for obstacle in w.obstacles.position:
-        circle = plt.Circle(obstacle, ROBOT_RADIUS, color="red", alpha=0.7)
+        circle = plt.Circle(obstacle, ROBOT_RADIUS, color="black", alpha=0.7)
         ax.add_patch(circle)
 
-    # Plot start and target (get target from test_simple_case)
-    ax.plot(
-        w.robots.position[0, 0],
-        w.robots.position[0, 1],
-        "go",
-        markersize=10,
-        label="Start",
-    )
-    ax.plot(target_pos[0, 0], target_pos[0, 1], "r*", markersize=15, label="Target")
+    # Plot start and target positions for all robots
+    colors = ["r", "b"]
+    target_colors = ["r", "b"]
+    num_robots = w.robots.position.shape[0]
+
+    for i in range(num_robots):
+        color = colors[i % len(colors)]
+        target_color = target_colors[i % len(target_colors)]
+
+        ax.plot(
+            w.robots.position[i, 0],
+            w.robots.position[i, 1],
+            f"{color}o",
+            markersize=10,
+            label=f"Start {i + 1}",
+        )
+
+        if i < targets.shape[0]:
+            ax.plot(
+                targets[i, 0],
+                targets[i, 1],
+                f"{target_color}*",
+                markersize=15,
+                label=f"Target {i + 1}",
+            )
 
     # Set field bounds
     min_x, max_x, min_y, max_y = w.field_bounds.bounding_box()
@@ -331,9 +429,9 @@ if __name__ == "__main__":
     # Set to True to use log scale for the cost plots
     USE_LOG_SCALE = False
 
-    # Run visualization with the simple test case
-    initial_pos = np.array([[-300.0, 0.0]])
-    target_pos = np.array([[700.0, 500.0]])
+    # Run visualization with two robots test case
+    initial_pos = np.array([[-300.0, -50.0], [-300.0, 550.0]])
+    target_pos = np.array([[850.0, 600.0], [1550.0, 300.0]])
     obstacles = np.array([[500.0, 250.0], [400, 600]])
     max_vel = 2000.0
     w = World(
@@ -345,7 +443,7 @@ if __name__ == "__main__":
     # Solve MPC
     optimal_control, candidate_controls, optimized_controls = solve_mpc(
         initial_pos,
-        np.zeros((1, 2)),
+        np.zeros((2, 2)),  # Two robots, so velocity shape is (2, 2)
         target_pos,
         obstacles,
         FieldBounds().bounding_box(),
@@ -383,6 +481,6 @@ if __name__ == "__main__":
     plot_collision_cost(resolution=50, log_scale=USE_LOG_SCALE)
 
     # Create animation of moving obstacle
-    animate_moving_obstacle()
+    animate_moving_obstacle(initial_pos, target_pos)
 
     print("JAX MPC test completed successfully!")
