@@ -45,7 +45,6 @@ impl GameStateTracker {
         if self.last_cmd == Some(command) {
             return self.game_state;
         }
-        println!("Referee command: {:?}", command);
         self.last_cmd = Some(command);
 
         let last_game_state = self.game_state;
@@ -83,10 +82,6 @@ impl GameStateTracker {
             }
             Command::GOAL_YELLOW | Command::GOAL_BLUE => self.game_state,
         };
-
-        if last_game_state != self.game_state {
-            println!("Game state {:?} -> {:?}", last_game_state, self.game_state);
-        }
 
         dies_core::debug_string("last_cmd", format!("{:?}", command));
 

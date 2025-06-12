@@ -142,10 +142,6 @@ impl PlayerMoveCmd {
 
 impl From<PlayerMoveCmd> for glue::Radio_Command {
     fn from(val: PlayerMoveCmd) -> Self {
-        // if val.id == PlayerId::new(1) {
-        //     println!("fan: {:?}", val.fan_speed);
-        // }
-        // println!("PlayerMoveCmd: {:?}", val);
         glue::Radio_Command {
             speed: glue::HG_Pose {
                 x: val.sx as f32,

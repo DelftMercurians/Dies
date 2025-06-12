@@ -550,7 +550,6 @@ impl FetchBallWithHeading {
         let init_ball_pos = *init_ball_pos;
 
         let target_heading = if let Some(heading) = self.target_heading.heading(&ctx) {
-            // println!("Heading: {:?}", heading);
             heading
         } else {
             return SkillProgress::failure();

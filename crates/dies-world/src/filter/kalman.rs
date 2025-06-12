@@ -312,7 +312,6 @@ mod tests {
             smoothed_error += e;
             original_error += e2;
         }
-        // println!("Smoothed error: {:.2}, Original error: {:.2}", smoothed_error, original_error);
         assert!(smoothed_error < original_error);
     }
 

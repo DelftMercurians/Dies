@@ -75,20 +75,6 @@ impl MTP {
         };
         let current_speed = velocity.magnitude();
 
-        // Overshoot detection
-        // if displacement.dot(&velocity) < 0.0 {
-        //     // Proportional control to reduce overshoot
-        //     let proportional_velocity = direction * distance * self.kp;
-        //     let dv = proportional_velocity - velocity;
-        //     // println!("Overshoot case returning");
-        //     // player_context.debug_string("Goal", format!("{:?}", velocity + dv.cap_magnitude(self.max_decel * dt)));
-
-        //     // besides decreasing the velocity with dv, we also go in the opposite direction to compensate for the overshoot
-
-        //     player_context.debug_string("MTPMode", "Overshoot");
-        //     return -velocity + dv.cap_magnitude(self.max_decel * dt);
-        // }
-
         let care_factor = carefullness * 0.2;
         let time_to_target = distance / max_speed;
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
