@@ -435,7 +435,7 @@ impl Simulation {
     }
 
     /// Set which teams are controlled by the simulation
-    pub fn set_controlled_teams(&mut self, teams: HashSet<TeamColor>) {
+    pub fn set_controlled_teams(&mut self, teams: &[TeamColor]) {
         if teams.contains(&TeamColor::Blue) {
             self.config.blue_controlled = true;
         } else {
@@ -886,7 +886,7 @@ impl Simulation {
             let mut to_exec = HashMap::new();
             self.cmd_queue.retain(|cmd| {
                 if cmd.execute_time <= self.current_time {
-                    to_exec.insert(cmd.player_cmd.id, cmd.clone());
+                    to_exec.insert((cmd.team_color, cmd.player_cmd.id), cmd.player_cmd);
                     false
                 } else {
                     true
@@ -932,9 +932,7 @@ impl Simulation {
             }
 
             let mut is_kicking = false;
-            if let Some(command) = commands_to_exec.get(&player.id) {
-                let command = command.player_cmd;
-
+            if let Some(command) = commands_to_exec.get(&(player.team_color, player.id)) {
                 // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
                 // Angular velocity is in rad/s and +w means counter-clockwise
                 player.target_velocity = Vector::new(command.sx, -command.sy, 0.0) * 1000.0; // m/s to mm/s

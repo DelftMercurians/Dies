@@ -355,7 +355,7 @@ impl Executor {
         // Start with blue team active by default for backwards compatibility
         let mut team_controllers = TeamMap::new(SideAssignment::YellowOnPositive);
         team_controllers.activate_team(TeamColor::Blue, &settings);
-        simulator.set_controlled_teams((vec![TeamColor::Blue]).into_iter().collect());
+        simulator.set_controlled_teams(&[TeamColor::Blue]);
 
         let controlled_teams = vec![TeamColor::Blue];
         Self {
@@ -481,6 +481,16 @@ impl Executor {
                                 simulator.update_referee_command(command);
                             }
                             ControlMsg::SimulatorCmd(cmd) => self.handle_simulator_cmd(&mut simulator, cmd),
+                            ControlMsg::SetActiveTeams {
+                                blue_active,
+                                yellow_active,
+                            } => {
+                                self.handle_set_active_teams(
+                                    blue_active,
+                                    yellow_active,
+                                    Some(&mut simulator),
+                                );
+                            }
                             msg => self.handle_control_msg(msg)
                         }
                     }
@@ -519,8 +529,6 @@ impl Executor {
         mut ssl_client: VisionClient,
         mut bs_client: BasestationHandle,
     ) -> Result<()> {
-        // Check that we have ssl and bs clients
-
         let mut cmd_interval = tokio::time::interval(CMD_INTERVAL);
 
         loop {
@@ -528,6 +536,12 @@ impl Executor {
                 Some(msg) = self.command_rx.recv() => {
                     match msg {
                         ControlMsg::Stop => break,
+                        ControlMsg::SetActiveTeams {
+                            blue_active,
+                            yellow_active,
+                        } => {
+                            self.handle_set_active_teams(blue_active, yellow_active, None);
+                        }
                         msg => self.handle_control_msg(msg)
                     }
                 }
@@ -584,6 +598,41 @@ impl Executor {
         }
     }
 
+    fn handle_set_active_teams(
+        &mut self,
+        blue_active: bool,
+        yellow_active: bool,
+        sim: Option<&mut Simulation>,
+    ) {
+        let mut new_active_teams = Vec::with_capacity(2);
+        if blue_active {
+            log::info!("Activating blue team");
+            new_active_teams.push(TeamColor::Blue);
+            self.team_controllers
+                .activate_team(TeamColor::Blue, &self.settings);
+        } else {
+            log::info!("Deactivating blue team");
+            self.team_controllers.deactivate_team(TeamColor::Blue);
+        }
+
+        if yellow_active {
+            log::info!("Activating yellow team");
+            new_active_teams.push(TeamColor::Yellow);
+            self.team_controllers
+                .activate_team(TeamColor::Yellow, &self.settings);
+        } else {
+            log::info!("Deactivating yellow team");
+            self.team_controllers.deactivate_team(TeamColor::Yellow);
+        }
+
+        self.tracker.set_controlled_teams(&new_active_teams);
+        if let Some(simulator) = sim {
+            simulator.set_controlled_teams(&new_active_teams);
+        } else {
+            log::warn!("No simulator found");
+        }
+    }
+
     pub fn handle(&self) -> ExecutorHandle {
         ExecutorHandle {
             control_tx: self.command_tx.clone(),
@@ -623,40 +672,15 @@ impl Executor {
                 self.tracker.update_settings(&settings);
                 self.settings = settings;
             }
-            ControlMsg::SetActiveTeams {
-                blue_active,
-                yellow_active,
-            } => {
-                log::info!(
-                    "SetActiveTeams received: blue_active={}, yellow_active={}",
-                    blue_active,
-                    yellow_active
-                );
-
-                if blue_active {
-                    log::info!("Activating blue team ({})", TeamColor::Blue);
-                    self.team_controllers
-                        .activate_team(TeamColor::Blue, &self.settings);
-                } else {
-                    log::info!("Deactivating blue team ({})", TeamColor::Blue);
-                    self.team_controllers.deactivate_team(TeamColor::Blue);
-                }
-
-                if yellow_active {
-                    log::info!("Activating yellow team ({})", TeamColor::Yellow);
-                    self.team_controllers
-                        .activate_team(TeamColor::Yellow, &self.settings);
-                } else {
-                    log::info!("Deactivating yellow team ({})", TeamColor::Yellow);
-                    self.team_controllers.deactivate_team(TeamColor::Yellow);
-                }
-            }
             ControlMsg::SetSideAssignment(side_assignment) => {
                 self.team_controllers.side_assignment = side_assignment;
             }
             ControlMsg::Stop => {}
-            ControlMsg::GcCommand { .. } | ControlMsg::SimulatorCmd(_) => {
-                // This should be handled by the caller
+
+            ControlMsg::GcCommand { .. }
+            | ControlMsg::SimulatorCmd(_)
+            | ControlMsg::SetActiveTeams { .. } => {
+                unreachable!();
             }
         }
     }
