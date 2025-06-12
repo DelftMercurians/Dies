@@ -5,6 +5,7 @@ use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, Worl
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
+    MPCController, RobotState,
 };
 use crate::{
     roles::{RoleCtx, SkillState},
@@ -27,6 +28,7 @@ pub struct TeamController {
     settings: ExecutorSettings,
     halt: AdHocStrategy,
     start_time: std::time::Instant,
+    mpc_controller: MPCController,
 }
 
 impl TeamController {
@@ -40,6 +42,7 @@ impl TeamController {
             active_strat: None,
             halt: AdHocStrategy::new(),
             start_time: std::time::Instant::now(),
+            mpc_controller: MPCController::new(),
         };
         team.update_controller_settings(settings);
         team
@@ -142,6 +145,41 @@ impl TeamController {
             .chain(world_data.opp_players.iter())
             .collect::<Vec<_>>();
 
+        // Collect robots that need MPC processing
+        let mut mpc_robots = Vec::new();
+        for controller in self.player_controllers.values() {
+            if controller.use_mpc() {
+                let player_data = world_data
+                    .own_players
+                    .iter()
+                    .find(|p| p.id == controller.id());
+
+                if let Some(player_data) = player_data {
+                    let id = controller.id();
+                    let default_input = inputs.player(id);
+                    let input = manual_override.get(&id).unwrap_or(&default_input);
+
+                    if let Some(target_pos) = controller.get_target_position(input) {
+                        mpc_robots.push(RobotState {
+                            id: controller.id(),
+                            position: player_data.position,
+                            velocity: player_data.velocity,
+                            target_position: target_pos,
+                            vel_limit: controller.get_max_speed(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Compute batched MPC controls
+        self.mpc_controller.set_field_bounds(&world_data);
+        let mpc_controls = if !mpc_robots.is_empty() {
+            self.mpc_controller.compute_batch_control(&mpc_robots, &world_data)
+        } else {
+            HashMap::new()
+        };
+
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
@@ -153,6 +191,13 @@ impl TeamController {
                 let id = controller.id();
                 let default_input = inputs.player(id);
                 let input = manual_override.get(&id).unwrap_or(&default_input);
+
+                // Set MPC control result if available
+                if let Some(mpc_control) = mpc_controls.get(&id) {
+                    controller.set_target_velocity(*mpc_control);
+                    // Debug output for MPC timing
+                    dies_core::debug_value(format!("p{}.mpc.duration_ms", id), self.mpc_controller.last_solve_time_ms());
+                }
 
                 let is_manual = manual_override
                     .get(&id)

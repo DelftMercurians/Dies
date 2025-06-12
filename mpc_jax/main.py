@@ -1,9 +1,8 @@
-#!/usr/bin/env python3
-
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 from jax import grad, jit, value_and_grad
+from jaxtyping import PRNGKeyArray, Float, Array
 import numpy as np
 import optax
 import os
@@ -14,169 +13,104 @@ import matplotlib.pyplot as plt
 from common import (
     ROBOT_RADIUS,
     LEARNING_RATE,
-    PREDICTION_HORIZON,
+    CONTROL_HORIZON,
     MAX_ITERATIONS,
     UPDATE_CLIP,
     N_CANDIDATE_TRAJECTORIES,
-    trajectory_from_control,
+    trajectories_from_control,
+    World,
+    Control,
+    Entity,
+    EntityBatch,
+    FieldBounds,
+)
+
+from costs import (
+    distance_cost,
+    collision_cost,
+    boundary_cost,
+    velocity_constraint_cost,
+    control_effort_cost,
 )
 
 
-def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float):
-    dist = jnp.sqrt(jnp.sum((pos - target) ** 2))
-    return jnp.clip(
-        dist * 2e-2 * (time_from_now + 0.1),
-        0,
-        100,
-    )
-
-
-def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray):
-    def single_collision_cost(obstacle: jnp.ndarray, pos: jnp.ndarray):
-        nonlocal obstacles
-        del obstacles
-        assert obstacle.shape == (2,)
-
-        diff = pos[None, :] - obstacle
-        distance = jnp.sqrt(jnp.sum(diff**2))
-
-        # Define safety thresholds
-        min_safe_distance = 2.1 * ROBOT_RADIUS
-        no_cost_distance = 2.5 * ROBOT_RADIUS
-
-        # try to avoid certain collision hard
-        danger_zone = distance <= min_safe_distance
-        normalized_distance = jnp.clip(distance / min_safe_distance, 0, 1)
-        danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 100
-
-        # try to avoid even getting close to the opponent
-        in_decay_zone = jnp.logical_and(
-            distance > min_safe_distance, distance <= no_cost_distance
-        )
-        normalized_distance = jnp.clip(
-            (distance - min_safe_distance) / (no_cost_distance - min_safe_distance),
-            0,
-            1,
-        )
-        smooth_factor = jnp.where(in_decay_zone, 1 - normalized_distance, 0.0) * 10
-
-        penalties = smooth_factor + danger_factor
-
-        return jnp.sum(penalties)
-
-    return jax.vmap(ft.partial(single_collision_cost, pos=pos))(obstacles).sum()
-
-
-def boundary_cost(pos: jnp.ndarray, field_bounds: jnp.ndarray | None):
-    if field_bounds is None:
-        return 0.0
-
-    min_x, max_x, min_y, max_y = field_bounds
-
-    x_lower_violation = jnp.maximum(min_x - pos[0], 0.0)
-    x_upper_violation = jnp.maximum(pos[0] - max_x, 0.0)
-    y_lower_violation = jnp.maximum(min_y - pos[1], 0.0)
-    y_upper_violation = jnp.maximum(pos[1] - max_y, 0.0)
-
-    return (
-        x_lower_violation**2
-        + x_upper_violation**2
-        + y_lower_violation**2
-        + y_upper_violation**2
-    )
-
-
-def velocity_constraint_cost(vel: jnp.ndarray, max_vel: float):
-    speed_sq = jnp.sum(vel**2)
-    max_speed_sq = max_vel**2
-    return jnp.maximum(speed_sq - max_speed_sq, 0.0)
-
-
-def control_effort_cost(vel: jnp.ndarray):
-    return jnp.sum(vel**2) * 1e-6
-
-
 def mpc_cost_function(
-    control_sequence: jnp.ndarray,
-    initial_pos: jnp.ndarray,
-    initial_vel: jnp.ndarray,
-    target_pos: jnp.ndarray,
-    obstacles: jnp.ndarray,
-    field_bounds: jnp.ndarray | None,
-    max_vel: float,
+    w: World,
+    u: Control,
+    targets: EntityBatch,
+    max_speed: float,
 ):
     # Generate trajectory from control sequence
-    trajectory = trajectory_from_control(control_sequence, initial_pos)
+    trajectories = trajectories_from_control(w, u)
 
     # Compute position-based costs over the trajectory
-    def position_costs_fn(trajectory_point):
-        time_from_now, pos_x, pos_y, vel_x, vel_y = trajectory_point
-        pos = jnp.array([pos_x, pos_y])
-        d_cost = distance_cost(pos, target_pos, time_from_now)
-        c_cost = collision_cost(pos, obstacles)
-        b_cost = boundary_cost(pos, field_bounds)
-        vc_cost = velocity_constraint_cost(jnp.array([vel_x, vel_y]), max_vel)
+    def position_cost_fn(trajectory_point, idx: int):
+        t, pos_x, pos_y, vel_x, vel_y = trajectory_point
+        robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
+        d_cost = distance_cost(robot.position, targets[idx].after(t).position, t)
+        c_cost = collision_cost(robot.position, w.obstacles.after(t).position)
+        b_cost = boundary_cost(robot.position, w.field_bounds)
+        vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
         return d_cost + c_cost + b_cost + vc_cost
 
     # Skip initial position (i=0) and compute costs for trajectory steps
-    total_position_cost = jax.vmap(position_costs_fn)(trajectory[1:]).sum()
+    total_position_cost = jax.vmap(
+        lambda trajectory, idx: jax.vmap(eqx.Partial(position_cost_fn, idx=idx))(
+            trajectory
+        )
+    )(trajectories, jnp.arange(len(w.robots))).sum()
 
-    control_effort_costs = jax.vmap(control_effort_cost)(control_sequence)
+    control_effort_costs = jax.vmap(control_effort_cost)(u.value)
     total_control_cost = control_effort_costs.sum()
 
     return total_position_cost + total_control_cost
 
 
-mpc_cost_jit = jit(mpc_cost_function)
-mpc_grad_jit = jit(jax.value_and_grad(mpc_cost_function, argnums=0))
-
-
-def clip_vel(vel: jnp.ndarray, max_vel: float):
+def clip_vel(vel: jnp.ndarray, limit: float | Float[Array, ""]):
     speed = jnp.sqrt((vel**2).sum() + 1e-9)
-    return jnp.where(speed > max_vel, vel * (max_vel / speed), vel)
+    return jnp.where(speed > limit, vel * (limit / speed), vel)
 
 
 def generate_candidate_trajectory(
-    initial_pos: jnp.ndarray,
-    initial_vel: jnp.ndarray,
-    target_pos: jnp.ndarray,
-    max_vel: float,
-    key: jr.PRNGKey,
-):
-    """Generate a candidate trajectory with pseudo-target and two stages"""
-
+    initial_pos: Float[Array, "2"],
+    target_pos: Float[Array, "2"],
+    max_speed: float,
+    key: PRNGKeyArray,
+) -> Float[Array, f"{CONTROL_HORIZON} 2"]:
+    k1, k2, k3, k4, k5, k6 = jr.split(key, 6)
     # Generate pseudo-target with normal noise (std 50cm = 500mm)
-    noise = jr.normal(key, (2,)) * 500.0
+    noise = jr.normal(k1, (2,)) * 500.0
     pseudo_target = target_pos + noise
 
-    # Stage 1: Go to 75% of distance in 1 second (5 steps since DT=0.2)
-    intermediate_target = initial_pos + 0.75 * (pseudo_target - initial_pos)
+    # Stage 1: Go to 75%ish of distance in 1 second (5 steps since DT=0.2)
+    ratio = jr.uniform(k6, (), minval=0.4, maxval=1.2)
+    intermediate_target = initial_pos + ratio * (pseudo_target - initial_pos)
 
     # Calculate required velocity to reach 75% in a few seconds
-    few_seconds = 3.0
+    few_seconds = jr.uniform(k5, (), minval=2.0, maxval=5.0)
     required_vel_stage1 = (intermediate_target - initial_pos) / few_seconds
-    required_vel_stage1 = clip_vel(required_vel_stage1, max_vel)
+    required_vel_stage1 = clip_vel(required_vel_stage1, max_speed)
 
     # Add noise to stage 1 velocity
-    key1, key2, key = jr.split(key, 3)
-    noise1 = jr.normal(key1, (2,)) * 200.0
-    first_stage_random_vel_clip_factor = jr.uniform(key, (), minval=0.2, maxval=1.0)
+    noise1 = jr.normal(k2, (2,)) * 200.0
+    first_stage_random_vel_clip_factor = jr.uniform(k3, (), minval=0.2, maxval=1.0)
     stage1_vel = clip_vel(
-        required_vel_stage1 + noise1, max_vel * first_stage_random_vel_clip_factor
+        required_vel_stage1 + noise1, max_speed * first_stage_random_vel_clip_factor
     )
 
     # Stage 2: Go from intermediate to full pseudo-target
     remaining_distance = jnp.linalg.norm(pseudo_target - intermediate_target)
-    remaining_time = jnp.maximum(few_seconds, remaining_distance / max_vel)
+    remaining_time = jnp.maximum(few_seconds, remaining_distance / max_speed)
     required_vel_stage2 = (pseudo_target - intermediate_target) / remaining_time
-    required_vel_stage2 = clip_vel(required_vel_stage2, max_vel)
+    required_vel_stage2 = clip_vel(required_vel_stage2, max_speed)
 
     # Add noise to stage 2 velocity
-    noise2 = jr.normal(key2, (2,)) * 200.0
-    stage2_vel = clip_vel(required_vel_stage2 + noise2, max_vel)
+    noise2 = jr.normal(k4, (2,)) * 200.0
+    stage2_vel = clip_vel(required_vel_stage2 + noise2, max_speed)
 
-    stage1_steps = PREDICTION_HORIZON // 2
-    stage2_steps = PREDICTION_HORIZON // 2
+    # Combine the two thingies
+    stage1_steps = CONTROL_HORIZON // 2
+    stage2_steps = CONTROL_HORIZON // 2
 
     control_sequence = jnp.concatenate(
         [
@@ -189,30 +123,36 @@ def generate_candidate_trajectory(
 
 
 def solve_mpc_jax(
-    initial_pos: jnp.ndarray,
-    initial_vel: jnp.ndarray,
-    target_pos: jnp.ndarray,
-    obstacles: jnp.ndarray,
-    field_bounds: jnp.ndarray | None,
-    max_vel: float,
+    w: World,
+    targets: EntityBatch,
+    max_speed: float,
     max_iterations: int,
     learning_rate: float,
     n_candidates: int,
-    key: jr.PRNGKey = None,
-):
+    key: PRNGKeyArray | None = None,
+) -> tuple:
+    n_robots = len(w.robots)
+
     if key is None:
         key = jr.PRNGKey(0)
 
     # Stage 1: Generate candidate trajectories
     keys = jr.split(key, n_candidates)
     candidate_trajectories = jax.vmap(
-        lambda k: generate_candidate_trajectory(
-            initial_pos, initial_vel, target_pos, max_vel, k
+        lambda k: jax.vmap(generate_candidate_trajectory)(
+            w.robots.position,
+            targets.after(3).position,  # this is a heuristic, since why not
+            max_speed,
+            jr.split(k, n_robots),
         )
-    )(keys)
+    )(keys)  # [n_robots, trajectory_len, control_shape (== 2)]
+    assert len(candidate_trajectories.shape) == 3
+    assert candidate_trajectories.shape[0] == n_robots
+    assert candidate_trajectories.shape[1] == CONTROL_HORIZON
+    assert candidate_trajectories.shape[2] == 2
 
     # Stage 2: Optimize each candidate trajectory using vmapped optimization
-    def optimize_single_trajectory(control_sequence):
+    def optimize_trajectories(u):
         # Initialize optimizer for this trajectory
         schedule = optax.linear_schedule(
             learning_rate, learning_rate / 10.0, max_iterations
@@ -221,40 +161,36 @@ def solve_mpc_jax(
             optax.sgd(schedule, momentum=0.5, nesterov=True),
             optax.clip_by_global_norm(UPDATE_CLIP),
         )
-        opt_state = optimizer.init(control_sequence)
+        opt_state = optimizer.init(u)
 
         def optimization_step(carry, _):
-            control_seq, opt_state = carry
+            u, opt_state = carry
 
-            # Compute gradient
-            cost, grad_val = mpc_grad_jit(
-                control_seq,
-                initial_pos,
-                initial_vel,
-                target_pos,
-                obstacles,
-                field_bounds,
-                max_vel,
+            # Compute gradient wrt complete cost function
+            cost, grad_val = eqx.filter_value_and_grad(mpc_cost_function)(
+                w, u, targets, max_speed
             )
 
-            # Update with optimizer
+            # Do an optimization step
             updates, opt_state = optimizer.update(grad_val, opt_state)
-            control_seq = optax.apply_updates(control_seq, updates)
-            control_seq = jax.vmap(lambda vel: clip_vel(vel, max_vel))(control_seq)
+            u = optax.apply_updates(u, updates)
 
-            return (control_seq, opt_state), cost
+            # Project the control back to the "valid" domain
+            u = jax.vmap(lambda vel: clip_vel(vel, max_speed))(u)
 
-        (final_control, _), costs = jax.lax.scan(
+            return (u, opt_state), cost
+
+        (u, _), costs = jax.lax.scan(
             optimization_step,
-            (control_sequence, opt_state),
+            (u, opt_state),
             None,
             length=max_iterations,
         )
 
-        return final_control, costs[-1]  # Return final control and final cost
+        return u, costs[-1]  # Return final control and final cost
 
     # Optimize all candidate trajectories in parallel
-    optimized_trajectories, final_costs = jax.vmap(optimize_single_trajectory)(
+    optimized_trajectories, final_costs = jax.vmap(optimize_trajectories)(
         candidate_trajectories
     )
 
@@ -278,16 +214,18 @@ def solve_mpc(
     max_iterations: int = MAX_ITERATIONS,
     learning_rate: float = LEARNING_RATE,
     n_candidates: int = N_CANDIDATE_TRAJECTORIES,
-    key: jr.PRNGKey = None,
+    key: PRNGKeyArray | None = None,
     with_aux: bool = False,
-) -> np.ndarray:
+) -> tuple | np.ndarray:
     out = solve_mpc_jitted(
-        jnp.asarray(initial_pos),
-        jnp.asarray(initial_vel),
-        jnp.asarray(target_pos),
-        jnp.asarray(obstacles),
-        jnp.asarray(field_bounds) if field_bounds is not None else None,
-        float(max_vel),
+        World(
+            FieldBounds(),
+            EntityBatch(jnp.asarray(obstacles)),
+            EntityBatch(jnp.asarray(initial_pos), jnp.asarray(initial_vel)),
+            Entity(jnp.zeros((2,))),
+        ),
+        EntityBatch(jnp.asarray(target_pos)),
+        max_vel,
         int(max_iterations),
         float(learning_rate),
         int(n_candidates),

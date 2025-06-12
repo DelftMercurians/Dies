@@ -2,10 +2,18 @@ use dies_core::{Vector2, WorldData, PlayerId};
 use pyo3::prelude::*;
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use std::time::Instant;
+use std::collections::HashMap;
+
+#[derive(Clone)]
+pub struct RobotState {
+    pub id: PlayerId,
+    pub position: Vector2,
+    pub velocity: Vector2,
+    pub target_position: Vector2,
+    pub vel_limit: f64,
+}
 
 pub struct MPCController {
-    target_position: Vector2,
-    obstacles: Vec<Vector2>,
     field_bounds: Option<(f64, f64, f64, f64)>, // (min_x, max_x, min_y, max_y)
     last_solve_time_ms: f64,
 }
@@ -13,19 +21,9 @@ pub struct MPCController {
 impl MPCController {
     pub fn new() -> Self {
         Self {
-            target_position: Vector2::zeros(),
-            obstacles: Vec::new(),
             field_bounds: None,
             last_solve_time_ms: f64::NAN,
         }
-    }
-
-    pub fn set_target(&mut self, target: Vector2) {
-        self.target_position = target;
-    }
-
-    pub fn set_obstacles(&mut self, obstacles: &[Vector2]) {
-        self.obstacles = obstacles.to_vec();
     }
 
     pub fn set_field_bounds(&mut self, world: &WorldData) {
@@ -36,16 +34,24 @@ impl MPCController {
         }
     }
 
-    pub fn compute_control(&mut self, current_pos: Vector2, current_vel: Vector2, vel_limit: f64) -> Vector2 {
-        match self.solve_mpc_jax(current_pos, current_vel, vel_limit) {
-            Ok(control) => control,
+    pub fn compute_batch_control(&mut self, robots: &[RobotState], world: &WorldData) -> HashMap<PlayerId, Vector2> {
+        if robots.is_empty() {
+            return HashMap::new();
+        }
+
+        match self.solve_batch_mpc_jax(robots, world) {
+            Ok(controls) => controls,
             Err(e) => {
-                log::warn!("JAX MPC failed: {}, falling back to simple control", e);
+                log::warn!("JAX batch MPC failed: {}, falling back to simple control", e);
                 self.last_solve_time_ms = 0.0; // Mark as failed
-                // Fallback: simple proportional control
-                let error = self.target_position - current_pos;
-                let desired_vel = error.normalize() * vel_limit.min(error.magnitude() * 2.0);
-                desired_vel.cap_magnitude(vel_limit)
+                // Fallback: simple proportional control for each robot
+                let mut fallback_controls = HashMap::new();
+                for robot in robots {
+                    let error = robot.target_position - robot.position;
+                    let desired_vel = error.normalize() * robot.vel_limit.min(error.magnitude() * 2.0);
+                    fallback_controls.insert(robot.id, desired_vel.cap_magnitude(robot.vel_limit));
+                }
+                fallback_controls
             }
         }
     }
@@ -54,7 +60,7 @@ impl MPCController {
         self.last_solve_time_ms
     }
 
-    fn solve_mpc_jax(&mut self, current_pos: Vector2, current_vel: Vector2, vel_limit: f64) -> Result<Vector2, PyErr> {
+    fn solve_batch_mpc_jax(&mut self, robots: &[RobotState], world: &WorldData) -> Result<HashMap<PlayerId, Vector2>, PyErr> {
         let start_time = Instant::now();
 
         Python::with_gil(|py| {
@@ -75,19 +81,53 @@ impl MPCController {
             // Import numpy for array creation
             let np = PyModule::import_bound(py, "numpy")?;
 
-            // Prepare input data as numpy arrays
-            let initial_pos = np.call_method1("array", (vec![current_pos.x, current_pos.y],))?;
-            let initial_vel = np.call_method1("array", (vec![current_vel.x, current_vel.y],))?;
-            let target_pos = np.call_method1("array", (vec![self.target_position.x, self.target_position.y],))?;
+            // Prepare batched robot data
+            let n_robots = robots.len();
+            let mut initial_positions = Vec::new();
+            let mut initial_velocities = Vec::new();
+            let mut target_positions = Vec::new();
+            let mut vel_limits = Vec::new();
 
-            // Prepare obstacles
-            let obstacles = if self.obstacles.is_empty() {
-                np.call_method1("zeros", ((0, 2),))?
+            for robot in robots {
+                initial_positions.extend_from_slice(&[robot.position.x, robot.position.y]);
+                initial_velocities.extend_from_slice(&[robot.velocity.x, robot.velocity.y]);
+                target_positions.extend_from_slice(&[robot.target_position.x, robot.target_position.y]);
+                vel_limits.push(robot.vel_limit);
+            }
+
+            // Convert to numpy arrays with proper shapes
+            let initial_pos_array = np.call_method1("array", (initial_positions,))?.call_method1("reshape", (n_robots, 2))?;
+            let initial_vel_array = np.call_method1("array", (initial_velocities,))?.call_method1("reshape", (n_robots, 2))?;
+            let target_pos_array = np.call_method1("array", (target_positions,))?.call_method1("reshape", (n_robots, 2))?;
+            let vel_limits_array = np.call_method1("array", (vel_limits,))?;
+
+            // Prepare obstacles (all other robots and ball)
+            let mut obstacles_data = Vec::new();
+
+            // Add other robots as obstacles for each robot
+            for robot in robots {
+                for other_robot in robots {
+                    if robot.id != other_robot.id {
+                        obstacles_data.extend_from_slice(&[other_robot.position.x, other_robot.position.y]);
+                    }
+                }
+            }
+
+            // Add ball as obstacle if present
+            if let Some(ball) = &world.ball {
+                for _ in robots {
+                    obstacles_data.extend_from_slice(&[ball.position.xy().x, ball.position.xy().y]);
+                }
+            }
+
+            // Convert obstacles to numpy array
+            let obstacles = if obstacles_data.is_empty() {
+                np.call_method1("zeros", ((n_robots, 0, 2),))?
             } else {
-                let obstacles_data: Vec<Vec<f64>> = self.obstacles.iter()
-                    .map(|obs| vec![obs.x, obs.y])
-                    .collect();
-                np.call_method1("array", (obstacles_data,))?
+                let n_obstacles_per_robot = obstacles_data.len() / (n_robots * 2);
+                let obstacles_array = np.call_method1("array", (obstacles_data,))?
+                    .call_method1("reshape", (n_robots, n_obstacles_per_robot, 2))?;
+                obstacles_array
             };
 
             // Prepare field bounds
@@ -98,20 +138,20 @@ impl MPCController {
                 None => None,
             };
 
-            // Call the JAX solve_mpc function
-            let solve_mpc = mpc_module.getattr("solve_mpc")?;
-            let result = solve_mpc.call1((
-                initial_pos,
-                initial_vel,
-                target_pos,
+            // Call the JAX batch solve_mpc function
+            let solve_mpc_batch = mpc_module.getattr("solve_mpc")?;
+            let result = solve_mpc_batch.call1((
+                initial_pos_array,
+                initial_vel_array,
+                target_pos_array,
                 obstacles,
                 field_bounds,
-                vel_limit,
+                vel_limits_array,
             ))?;
 
             // Extract the result - convert numpy array to Python list first
             let result_list = result.call_method0("tolist")?;
-            let control_data: Vec<f64> = result_list.extract()?;
+            let control_data: Vec<Vec<f64>> = result_list.extract()?;
 
             // Restore stdout and capture any prints
             sys.setattr("stdout", original_stdout)?;
@@ -136,31 +176,20 @@ impl MPCController {
                 log::info!("MPC Python output: {}", captured_output.trim());
             }
 
-            if control_data.len() >= 2 {
-                Ok(Vector2::new(control_data[0], control_data[1]))
-            } else {
-                Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid control output size"))
+            // Convert results back to HashMap
+            let mut controls = HashMap::new();
+            for (i, robot) in robots.iter().enumerate() {
+                if let Some(control) = control_data.get(i) {
+                    if control.len() >= 2 {
+                        controls.insert(robot.id, Vector2::new(control[0], control[1]));
+                    }
+                }
             }
+
+            Ok(controls)
         })
     }
 
-    pub fn update_obstacles_from_world(&mut self, world: &WorldData, current_player_id: PlayerId) {
-        let mut obstacles = Vec::new();
-
-        // Add other robots as obstacles
-        for player in world.own_players.iter().chain(world.opp_players.iter()) {
-            if player.id != current_player_id {
-                obstacles.push(player.position);
-            }
-        }
-
-        // Add ball as obstacle if present
-        if let Some(ball) = &world.ball {
-            obstacles.push(ball.position.xy());
-        }
-
-        self.set_obstacles(&obstacles);
-    }
 }
 
 impl Default for MPCController {
