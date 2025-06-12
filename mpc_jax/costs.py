@@ -47,10 +47,10 @@ def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray, mask=None):
 
         return jnp.sum(penalties)
 
-    return (
-        jax.vmap(ft.partial(single_collision_cost, pos=pos))(obstacles)
-        * jax.lax.stop_gradient(mask)
-    ).sum()
+    obstacle_wise_costs = jax.vmap(ft.partial(single_collision_cost, pos=pos))(
+        obstacles
+    )
+    return (obstacle_wise_costs * mask).sum()
 
 
 def boundary_cost(pos: jnp.ndarray, field_bounds):

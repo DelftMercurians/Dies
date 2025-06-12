@@ -430,8 +430,8 @@ if __name__ == "__main__":
     USE_LOG_SCALE = False
 
     # Run visualization with two robots test case
-    initial_pos = np.array([[-300.0, -50.0], [-300.0, 550.0]])
-    target_pos = np.array([[850.0, 600.0], [1550.0, 300.0]])
+    initial_pos = np.array([[-400.0, 550.0], [-300.0, 200.0]])
+    target_pos = np.array([[1000.0, 400.0], [800.0, 700.0]])
     obstacles = np.array([[500.0, 250.0], [400, 600]])
     max_vel = 2000.0
     w = World(

@@ -45,35 +45,43 @@ def mpc_cost_function(
     n_robots = len(w.robots)
 
     # Compute position-based costs over the trajectory
-    def position_cost_fn(all_robots, idx: int):
-        t, pos_x, pos_y, vel_x, vel_y = all_robots[idx]
+    def position_cost_fn(raw_traj, target):
+        t, pos_x, pos_y, vel_x, vel_y = raw_traj
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
-        d_cost = distance_cost(robot.position, targets.get(idx).after(t).position, 5)
+        d_cost = distance_cost(robot.position, target.after(t).position, 5)
         c_cost = collision_cost(robot.position, w.obstacles.after(t).position)
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
+        return d_cost + c_cost + b_cost + vc_cost
 
-        # Cost against our own robots
+    def collective_position_cost_fn(traj_slice, idx):
+        t, pos_x, pos_y, vel_x, vel_y = traj_slice[idx]
+        robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
         mask = jnp.ones((n_robots,)).at[idx].set(0)
         ours_c_cost = (
             collision_cost(
                 robot.position,
-                all_robots[:, 1:3],
+                jax.lax.stop_gradient(traj_slice[:, 1:3]),
                 mask=mask,
             )
             * 0.2
         )
-
-        return d_cost + c_cost + b_cost + vc_cost + ours_c_cost
+        return ours_c_cost
 
     # Skip initial position (i=0) and compute costs for trajectory steps
     total_position_cost = jax.vmap(
-        lambda idx: jax.vmap(eqx.Partial(position_cost_fn, idx=idx))(
-            trajectories.reshape(-1, n_robots, 5)
+        lambda traj, target: jax.vmap(eqx.Partial(position_cost_fn, target=target))(
+            traj
         )
-    )(jnp.arange(n_robots)).sum()
+    )(trajectories[:, 1:], targets).sum()
 
-    return total_position_cost
+    total_collective_cost = jax.vmap(
+        lambda traj_slice: jax.vmap(
+            eqx.Partial(collective_position_cost_fn, traj_slice)
+        )(jnp.arange(n_robots))
+    )(trajectories.reshape((-1, 2, 5))).sum()
+
+    return total_position_cost + total_collective_cost
 
 
 def clip_vel(vel: jnp.ndarray, limit: float | Float[Array, ""]):
