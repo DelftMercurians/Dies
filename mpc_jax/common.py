@@ -43,10 +43,7 @@ def get_dt_schedule() -> jax.Array:
     return DT + (MAX_DT - DT) * steps / (CONTROL_HORIZON - 1)
 
 
-class Control(eqx.Module):
-    """Control signal sent to all the robots"""
-
-    value: Float[Array, f"n_robots {CONTROL_HORIZON} 2"]
+Control = Float[Array, f"n_robots {CONTROL_HORIZON} 2"]
 
 
 class Entity(eqx.Module):
@@ -74,7 +71,7 @@ class EntityBatch(Entity):
         self.position = pos
         self.velocity = jnp.zeros_like(self.position) if vel is None else vel
 
-    def __getitem__(self, idx: int | Int[Array, ""]):
+    def get(self, idx: int | Int[Array, ""]):
         return Entity(self.position[idx], self.velocity[idx])
 
     def set(self, idx: int | Int[Array, ""], value: Entity):
@@ -106,7 +103,7 @@ class World(eqx.Module):
 @eqx.filter_jit
 def trajectories_from_control(w: World, u: Control):
     return jax.vmap(single_trajectory_from_control)(
-        u.value, w.robots.position, w.robots.velocity
+        u, w.robots.position, w.robots.velocity
     )
 
 

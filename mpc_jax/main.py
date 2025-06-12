@@ -35,8 +35,8 @@ from costs import (
 
 
 def mpc_cost_function(
-    w: World,
     u: Control,
+    w: World,
     targets: EntityBatch,
     max_speed: float,
 ):
@@ -47,7 +47,7 @@ def mpc_cost_function(
     def position_cost_fn(trajectory_point, idx: int):
         t, pos_x, pos_y, vel_x, vel_y = trajectory_point
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
-        d_cost = distance_cost(robot.position, targets[idx].after(t).position, t)
+        d_cost = distance_cost(robot.position, targets.get(idx).after(t).position, t)
         c_cost = collision_cost(robot.position, w.obstacles.after(t).position)
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
@@ -60,7 +60,7 @@ def mpc_cost_function(
         )
     )(trajectories, jnp.arange(len(w.robots))).sum()
 
-    control_effort_costs = jax.vmap(control_effort_cost)(u.value)
+    control_effort_costs = jax.vmap(control_effort_cost)(u)
     total_control_cost = control_effort_costs.sum()
 
     return total_position_cost + total_control_cost
@@ -72,10 +72,10 @@ def clip_vel(vel: jnp.ndarray, limit: float | Float[Array, ""]):
 
 
 def generate_candidate_trajectory(
+    key: PRNGKeyArray,
     initial_pos: Float[Array, "2"],
     target_pos: Float[Array, "2"],
     max_speed: float,
-    key: PRNGKeyArray,
 ) -> Float[Array, f"{CONTROL_HORIZON} 2"]:
     k1, k2, k3, k4, k5, k6 = jr.split(key, 6)
     # Generate pseudo-target with normal noise (std 50cm = 500mm)
@@ -136,22 +136,22 @@ def solve_mpc_jax(
     if key is None:
         key = jr.PRNGKey(0)
 
-    # Stage 1: Generate candidate trajectories
+    # Generate candidate trajectories
     keys = jr.split(key, n_candidates)
     candidate_trajectories = jax.vmap(
-        lambda k: jax.vmap(generate_candidate_trajectory)(
+        lambda k: jax.vmap(
+            eqx.Partial(generate_candidate_trajectory, max_speed=max_speed)
+        )(
+            jr.split(k, n_robots),
             w.robots.position,
             targets.after(3).position,  # this is a heuristic, since why not
-            max_speed,
-            jr.split(k, n_robots),
         )
-    )(keys)  # [n_robots, trajectory_len, control_shape (== 2)]
-    assert len(candidate_trajectories.shape) == 3
-    assert candidate_trajectories.shape[0] == n_robots
-    assert candidate_trajectories.shape[1] == CONTROL_HORIZON
-    assert candidate_trajectories.shape[2] == 2
+    )(keys)
+    candidate_trajectories = candidate_trajectories.reshape(
+        (n_candidates, n_robots, CONTROL_HORIZON, 2)
+    )
 
-    # Stage 2: Optimize each candidate trajectory using vmapped optimization
+    # Optimize each candidate trajectory via (full-batch) gradient descent
     def optimize_trajectories(u):
         # Initialize optimizer for this trajectory
         schedule = optax.linear_schedule(
@@ -168,7 +168,7 @@ def solve_mpc_jax(
 
             # Compute gradient wrt complete cost function
             cost, grad_val = eqx.filter_value_and_grad(mpc_cost_function)(
-                w, u, targets, max_speed
+                u, w, targets, max_speed
             )
 
             # Do an optimization step

@@ -11,4 +11,5 @@ dependencies = [
     "optax>=0.2.4",
     "matplotlib",
     "tqdm>=4.67.1",
+    "jaxtyping>=0.3.2",
 ]
