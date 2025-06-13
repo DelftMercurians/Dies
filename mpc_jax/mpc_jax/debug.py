@@ -530,7 +530,7 @@ if __name__ == "__main__":
     )
 
     # Solve MPC
-    optimal_control, candidate_controls, optimized_controls = solve_mpc(
+    optimal_control, candidate_controls, optimized_controls, cost = solve_mpc(
         initial_pos,
         initial_vel,
         target_pos,

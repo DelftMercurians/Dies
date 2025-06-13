@@ -66,7 +66,7 @@ def mpc_cost_function(
         mask = jnp.ones((n_robots,)).at[idx].set(0)
         obstacles = jax.lax.stop_gradient(traj_slice[:, 1:3])
         ours_c_cost = collision_cost(
-            robot.position, obstacles, mask=mask, weak_scale=-0.5, strong_scale=1.2
+            robot.position, obstacles, mask=mask, strong_scale=1.2
         )
         return ours_c_cost * 2
 
@@ -197,23 +197,26 @@ def solve_mpc_jax(
     def optimize_control(u):
         # Initialize optimizer for this trajectory
         clip_schedule = optax.linear_schedule(
-            UPDATE_CLIP, UPDATE_CLIP / 20.0, max_iterations
+            UPDATE_CLIP, UPDATE_CLIP / 10.0, max_iterations
+        )
+        lr_schedule = optax.linear_schedule(
+            learning_rate, learning_rate / 10.0, max_iterations
         )
         optimizer = optax.chain(
-            optax.adan(
-                learning_rate=learning_rate, b1=0.8, b2=0.9, b3=0.9, weight_decay=1e-6
-            ),
-            scheduled_clip_by_global_norm(clip_schedule),
+            optax.adabelief(learning_rate=lr_schedule, b1=0.8, b2=0.8),
         )
         opt_state = optimizer.init(u)
 
         def optimization_step(carry, _):
-            u, opt_state = carry
+            u, opt_state, (best_u, best_cost) = carry
 
             # Compute gradient wrt complete cost function
             cost, grad_val = eqx.filter_value_and_grad(mpc_cost_function)(
                 u, w, targets, max_speeds
             )
+
+            best_u = jnp.where(cost < best_cost, u, best_u)
+            best_cost = jnp.where(cost < best_cost, cost, best_cost)
 
             # Do an optimization step
             updates, opt_state = optimizer.update(grad_val, opt_state, u)
@@ -222,16 +225,16 @@ def solve_mpc_jax(
             # Project the control back to the "valid" domain
             u = jax.vmap(clip_vel)(u, max_speeds)
 
-            return (u, opt_state), cost
+            return (u, opt_state, (best_u, best_cost)), cost
 
-        (u, _), costs = jax.lax.scan(
+        (_, _, (best_u, best_cost)), _ = jax.lax.scan(
             optimization_step,
-            (u, opt_state),
+            (u, opt_state, (u, jnp.inf)),
             None,
             length=max_iterations,
         )
 
-        return u, costs[-1]  # Return final control and final cost
+        return best_u, best_cost
 
     # Optimize all candidate controls in parallel
     optimized_controls, final_costs = jax.vmap(optimize_control)(candidate_controls)
@@ -240,7 +243,7 @@ def solve_mpc_jax(
     best_idx = jnp.argmin(final_costs)
     best_control = optimized_controls[best_idx]
 
-    return best_control, candidate_controls, optimized_controls, final_costs[-1]
+    return best_control, candidate_controls, optimized_controls, final_costs[best_idx]
 
 
 solve_mpc_jitted = eqx.filter_jit(solve_mpc_jax)

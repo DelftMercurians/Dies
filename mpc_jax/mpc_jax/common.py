@@ -26,10 +26,10 @@ MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt sched
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 500
-LEARNING_RATE = 500
-UPDATE_CLIP = 500  # updates are no more than 50cm/s in terms of velocity
-N_CANDIDATE_TRAJECTORIES = 50
+MAX_ITERATIONS = 50
+LEARNING_RATE = 50
+UPDATE_CLIP = 300
+N_CANDIDATE_TRAJECTORIES = 40
 TRAJECTORY_RESOLUTION = 6  # points per physics step for high-resolution trajectories
 
 # Robot dynamics parameters
