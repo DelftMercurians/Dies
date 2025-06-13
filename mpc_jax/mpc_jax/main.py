@@ -16,6 +16,7 @@ from .common import (
     LEARNING_RATE,
     CONTROL_HORIZON,
     MAX_ITERATIONS,
+    TIME_HORIZON,
     UPDATE_CLIP,
     N_CANDIDATE_TRAJECTORIES,
     trajectories_from_control,
@@ -24,6 +25,7 @@ from .common import (
     Entity,
     EntityBatch,
     FieldBounds,
+    steps_to_time,
 )
 
 from .costs import (
@@ -67,9 +69,9 @@ def mpc_cost_function(
         mask = jnp.ones((n_robots,)).at[idx].set(0)
         obstacles = jax.lax.stop_gradient(traj_slice[:, 1:3])
         ours_c_cost = collision_cost(
-            robot.position, obstacles, mask=mask, weak_scale=1.0, strong_scale=1.2
+            robot.position, obstacles, mask=mask, weak_scale=-0.5, strong_scale=1.2
         )
-        return ours_c_cost * 4.0
+        return ours_c_cost
 
     # Skip initial position (i=0) and compute costs for trajectory steps
     total_position_cost = jax.vmap(
@@ -101,20 +103,23 @@ def generate_candidate_control(
 ) -> Float[Array, f"{CONTROL_HORIZON} 2"]:
     k1, k2, k3, k4, k5, k6 = jr.split(key, 6)
     # Generate pseudo-target with normal noise (std 50cm = 500mm)
-    noise = jr.normal(k1, (2,)) * 500.0
+    pos_noise_scale = jnp.clip(
+        (jnp.linalg.norm(initial_pos - target_pos) - 30) / 400, 0, 1
+    )
+    noise = jr.normal(k1, (2,)) * 500.0 * pos_noise_scale
     pseudo_target = target_pos + noise
 
-    # Stage 1: Go to 75%ish of distance in 1 second (5 steps since DT=0.2)
-    ratio = jr.uniform(k6, (), minval=0.4, maxval=1.2)
+    # Stage 1: Go to 75%ish of distance
+    ratio = jr.uniform(k6, (), minval=0.3, maxval=1.2)
     intermediate_target = initial_pos + ratio * (pseudo_target - initial_pos)
 
     # Calculate required velocity to reach 75% in a few seconds
-    few_seconds = jr.uniform(k5, (), minval=2.0, maxval=5.0)
+    few_seconds = jr.uniform(k5, (), minval=2.0, maxval=8.0)
     required_vel_stage1 = (intermediate_target - initial_pos) / few_seconds
     required_vel_stage1 = clip_vel(required_vel_stage1, max_speed)
 
     # Add noise to stage 1 velocity
-    noise1 = jr.normal(k2, (2,)) * 200.0
+    noise1 = jr.normal(k2, (2,)) * 100.0 * pos_noise_scale
     first_stage_random_vel_clip_factor = jr.uniform(k3, (), minval=0.2, maxval=1.0)
     stage1_vel = clip_vel(
         required_vel_stage1 + noise1, max_speed * first_stage_random_vel_clip_factor
@@ -122,23 +127,25 @@ def generate_candidate_control(
 
     # Stage 2: Go from intermediate to full pseudo-target
     remaining_distance = jnp.linalg.norm(pseudo_target - intermediate_target)
-    remaining_time = jnp.maximum(few_seconds, remaining_distance / max_speed)
-    required_vel_stage2 = (pseudo_target - intermediate_target) / remaining_time
+    required_vel_stage2 = (pseudo_target - intermediate_target) / (
+        TIME_HORIZON - few_seconds
+    )
     required_vel_stage2 = clip_vel(required_vel_stage2, max_speed)
 
     # Add noise to stage 2 velocity
-    noise2 = jr.normal(k4, (2,)) * 200.0
+    noise2 = jr.normal(k4, (2,)) * 30.0
     stage2_vel = clip_vel(required_vel_stage2 + noise2, max_speed)
 
-    # Combine the two thingies
-    stage1_steps = CONTROL_HORIZON // 2
-    stage2_steps = CONTROL_HORIZON // 2
+    # Combine the two stages using masks for JIT compatibility
+    stage1_steps = steps_to_time(few_seconds)
 
-    control_sequence = jnp.concatenate(
-        [
-            jnp.tile(stage1_vel[None, :], (stage1_steps, 1)),
-            jnp.tile(stage2_vel[None, :], (stage2_steps, 1)),
-        ]
+    # Create mask for stage1 vs stage2
+    time_indices = jnp.arange(CONTROL_HORIZON)
+    stage1_mask = time_indices < stage1_steps
+
+    # Use where to select between stage1 and stage2 velocities
+    control_sequence = jnp.where(
+        stage1_mask[:, None], stage1_vel[None, :], stage2_vel[None, :]
     )
 
     return control_sequence
@@ -280,7 +287,9 @@ def solve_mpc_tbwrap(*args):
     try:
         return solve_mpc(*args)[:, 0]
     except Exception:
-        raise RuntimeError(f"{tb.format_exc(8)}") from None
+        raise RuntimeError(
+            f"Traceback: {tb.format_exc(20)} with input: {args}"
+        ) from None
 
 
 def test_simple_case():

@@ -38,7 +38,7 @@ from .common import (
 def plot_optimal_trajectories(ax, trajectories, colors=None, time_interval=0.5):
     """Plot optimal trajectories with time markers at equal intervals"""
     if colors is None:
-        colors = ["r", "b"]
+        colors = ["r", "g", "b"]
 
     num_robots = trajectories.shape[0]
     robot_trajectories = [trajectories[i, :, 1:] for i in range(num_robots)]
@@ -144,7 +144,7 @@ def visualize_mpc_debug(
     fig.colorbar(im, ax=ax, label=colorbar_label)
 
     # Plot start positions for all robots
-    colors = ["r", "b"]
+    colors = ["r", "g", "b"]
     for i in range(num_robots):
         color = colors[i % len(colors)]
         ax.plot(
@@ -246,7 +246,7 @@ def animate_moving_obstacle(initial_pos, target_pos):
     num_frames = 10
 
     # Fixed setup - two robots
-    max_vel = np.array([2000.0, 2000])
+    max_vel = np.array([10000] * 3)
 
     # First obstacle is stationary
     obstacle1 = np.array([500.0, 250.0])
@@ -292,9 +292,9 @@ def animate_moving_obstacle(initial_pos, target_pos):
         obstacle_circles.append(circle)
 
     # Create line objects for trajectories to update more efficiently
-    colors = ["m", "y"]
-    start_colors = ["r", "b"]
-    target_colors = ["r", "b"]
+    colors = ["m", "y", "c"]
+    start_colors = ["r", "g", "b"]
+    target_colors = ["r", "g", "b"]
 
     trajectory_lines = []
     start_markers = []
@@ -410,7 +410,7 @@ def plot_trajectories(
     fig, ax = plt.subplots(figsize=(12, 8))
 
     # Convert candidate trajectories to actual trajectories
-    colors = ["m", "y"]
+    colors = ["m", "y", "c"]
     for i, control_seq in enumerate(candidate_controls):
         trajectories_jax = trajectories_from_control(w, control_seq)
 
@@ -449,8 +449,8 @@ def plot_trajectories(
         ax.add_patch(circle)
 
     # Plot start and target positions for all robots
-    colors = ["r", "b"]
-    target_colors = ["r", "b"]
+    colors = ["r", "g", "b"]
+    target_colors = ["r", "g", "b"]
     num_robots = w.robots.position.shape[0]
 
     for i in range(num_robots):
@@ -496,10 +496,11 @@ if __name__ == "__main__":
     USE_LOG_SCALE = False
 
     # Run visualization with two robots test case
-    initial_pos = np.array([[-400.0, 550.0], [-300.0, 200.0]])
-    target_pos = np.array([[1000.0, 200.0], [800.0, 600.0]])
+    initial_pos = np.array([[-400.0, 550.0], [-300.0, 200.0], [-500, -500]])
+    initial_vel = np.zeros((3, 2))
+    target_pos = np.array([[1000.0, 200.0], [800.0, 600.0], [-600, -500]])
     obstacles = np.array([[500.0, 250.0], [400, 600]])
-    max_vel = np.array([2000.0, 2000.0])
+    max_vel = np.array([10000.0, 10000.0, 10000.0])
     w = World(
         field_bounds=FieldBounds(),
         obstacles=EntityBatch(obstacles),
@@ -509,7 +510,7 @@ if __name__ == "__main__":
     # Solve MPC
     optimal_control, candidate_controls, optimized_controls = solve_mpc(
         initial_pos,
-        np.zeros((2, 2)),  # Two robots, so velocity shape is (2, 2)
+        initial_vel,
         target_pos,
         obstacles,
         FieldBounds().bounding_box(),

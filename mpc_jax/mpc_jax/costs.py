@@ -6,7 +6,7 @@ from .common import ROBOT_RADIUS
 
 def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float):
     dist = jnp.sum((pos - target) ** 2 + 1e-9)
-    return (dist * 1e-2 + jnp.sqrt(dist)) * (time_from_now + 0.5) * 1e-3
+    return (dist * 1e-2 + jnp.sqrt(dist)) * (time_from_now + 0.5) * 3e-4
 
 
 def collision_cost(
@@ -17,7 +17,7 @@ def collision_cost(
     strong_scale=1.0,
 ):
     if mask is None:
-        mask = jnp.ones((len(pos),))
+        mask = jnp.ones((len(obstacles),))
 
     def single_collision_cost(obstacle: jnp.ndarray, pos: jnp.ndarray):
         assert obstacle.shape == (2,), (

@@ -44,6 +44,14 @@ def get_dt_schedule() -> jax.Array:
     return DT + (MAX_DT - DT) * steps / (CONTROL_HORIZON - 1)
 
 
+def steps_to_time(time: float):
+    """Return the smallest number of steps such that the control will be past this time point"""
+    dt_schedule = get_dt_schedule()
+    cumulative_time = jnp.cumsum(dt_schedule)
+    steps_past_time = jnp.searchsorted(cumulative_time, time, side="right")
+    return steps_past_time
+
+
 Control = Float[Array, f"n_robots {CONTROL_HORIZON} 2"]
 
 
