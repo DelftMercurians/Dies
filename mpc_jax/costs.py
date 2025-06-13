@@ -5,15 +5,17 @@ from common import ROBOT_RADIUS
 
 
 def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float):
-    dist = jnp.sqrt(jnp.sum((pos - target) ** 2))
-    return jnp.clip(
-        dist * 2e-2 * (time_from_now + 1.0),
-        0,
-        100,
-    )
+    dist = jnp.sum((pos - target) ** 2 + 1e-9)
+    return (dist * 1e-2 + jnp.sqrt(dist)) * (time_from_now + 0.5) * 1e-3
 
 
-def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray, mask=None):
+def collision_cost(
+    pos: jnp.ndarray,
+    obstacles: jnp.ndarray,
+    mask=None,
+    weak_scale=1.0,
+    strong_scale=1.0,
+):
     if mask is None:
         mask = jnp.ones((len(pos),))
 
@@ -24,8 +26,10 @@ def collision_cost(pos: jnp.ndarray, obstacles: jnp.ndarray, mask=None):
         distance = jnp.sqrt(jnp.sum(diff**2) + 1e-9)
 
         # Define safety thresholds
-        min_safe_distance = 2.1 * ROBOT_RADIUS
-        no_cost_distance = 2.5 * ROBOT_RADIUS
+        min_safe_distance = 2.1 * ROBOT_RADIUS * strong_scale
+        no_cost_distance = 2.5 * ROBOT_RADIUS * strong_scale
+
+        no_cost_distance += (no_cost_distance - min_safe_distance) * weak_scale
 
         # try to avoid certain collision hard
         danger_zone = distance <= min_safe_distance

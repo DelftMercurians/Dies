@@ -31,7 +31,53 @@ from common import (
     Entity,
     EntityBatch,
     Control,
+    get_dt_schedule,
 )
+
+
+def plot_optimal_trajectories(ax, trajectories, colors=None, time_interval=0.5):
+    """Plot optimal trajectories with time markers at equal intervals"""
+    if colors is None:
+        colors = ["r", "b"]
+
+    num_robots = trajectories.shape[0]
+    robot_trajectories = [trajectories[i, :, 1:] for i in range(num_robots)]
+
+    # Plot trajectories for all robots
+    for i, trajectory in enumerate(robot_trajectories):
+        color = colors[i % len(colors)]
+        ax.plot(
+            trajectory[:, 0],
+            trajectory[:, 1],
+            f"{color}-",
+            linewidth=2,
+            label=f"MPC Path {i + 1}",
+        )
+
+        # Add time markers at equal intervals
+        dt_schedule = get_dt_schedule()
+
+        # Calculate cumulative time at each trajectory point
+        cumulative_time = jnp.cumsum(jnp.concatenate([jnp.array([0.0]), dt_schedule]))
+
+        # Find indices where cumulative time crosses time_interval boundaries
+        marker_indices = []
+        next_marker_time = time_interval
+        for idx, t in enumerate(cumulative_time):
+            if t >= next_marker_time:
+                marker_indices.append(idx)
+                next_marker_time += time_interval
+
+        for idx in marker_indices:
+            if idx < len(trajectory):
+                ax.plot(
+                    trajectory[idx, 0],
+                    trajectory[idx, 1],
+                    "o",
+                    color="cyan",
+                    markersize=6,
+                    alpha=0.8,
+                )
 
 
 def visualize_mpc_debug(
@@ -120,16 +166,8 @@ def visualize_mpc_debug(
             label=f"Target {i + 1}",
         )
 
-    # Plot trajectories for all robots
-    for i, trajectory in enumerate(robot_trajectories):
-        color = colors[i % len(colors)]
-        ax.plot(
-            trajectory[:, 0],
-            trajectory[:, 1],
-            f"{color}-",
-            linewidth=2,
-            label=f"MPC Path {i + 1}",
-        )
+    # Plot optimal trajectories with time markers
+    plot_optimal_trajectories(ax, trajectories)
 
     ax.plot([], [], "o", color="cyan", markersize=6, label="0.5s markers")
 
@@ -261,6 +299,7 @@ def animate_moving_obstacle(initial_pos, target_pos):
     trajectory_lines = []
     start_markers = []
     target_markers = []
+    time_markers = []  # Store time marker references for removal
 
     num_robots = initial_pos.shape[0]
     for i in range(num_robots):
@@ -311,6 +350,40 @@ def animate_moving_obstacle(initial_pos, target_pos):
         robot_trajectories = all_trajectories[frame]
         for i, trajectory in enumerate(robot_trajectories):
             trajectory_lines[i].set_data(trajectory[:, 0], trajectory[:, 1])
+
+        # Clear previous time markers
+        for marker in time_markers:
+            marker.remove()
+        time_markers.clear()
+
+        # Add time markers for current frame trajectories
+        dt_schedule = get_dt_schedule()
+        time_interval = 0.5
+
+        # Calculate cumulative time at each trajectory point
+        cumulative_time = jnp.cumsum(jnp.concatenate([jnp.array([0.0]), dt_schedule]))
+
+        # Find indices where cumulative time crosses time_interval boundaries
+        marker_indices = []
+        next_marker_time = time_interval
+        for idx, t in enumerate(cumulative_time):
+            if t >= next_marker_time:
+                marker_indices.append(idx)
+                next_marker_time += time_interval
+
+        # Place time markers on all robot trajectories
+        for i, trajectory in enumerate(robot_trajectories):
+            for idx in marker_indices:
+                if idx < len(trajectory):
+                    marker = ax.plot(
+                        trajectory[idx, 0],
+                        trajectory[idx, 1],
+                        "o",
+                        color="cyan",
+                        markersize=6,
+                        alpha=0.8,
+                    )[0]
+                    time_markers.append(marker)
 
         # Update title
         ax.set_title(f"MPC with Moving Obstacle (Frame {frame + 1}/{num_frames})")
@@ -367,15 +440,8 @@ def plot_trajectories(
                     linewidth=0.8,
                 )
 
-    # Plot optimal trajectories for all robots
-    num_robots = optimal_trajectory.shape[0]
-    for robot_idx in range(num_robots):
-        ax.plot(
-            optimal_trajectory[robot_idx, :, 1],
-            optimal_trajectory[robot_idx, :, 2],
-            "k",
-            linewidth=2,
-        )
+    # Plot optimal trajectories with time markers
+    plot_optimal_trajectories(ax, optimal_trajectory, colors=["k", "k"])
 
     # Plot obstacles as circles
     for obstacle in w.obstacles.position:
@@ -431,7 +497,7 @@ if __name__ == "__main__":
 
     # Run visualization with two robots test case
     initial_pos = np.array([[-400.0, 550.0], [-300.0, 200.0]])
-    target_pos = np.array([[1000.0, 400.0], [800.0, 700.0]])
+    target_pos = np.array([[1000.0, 400.0], [800.0, 800.0]])
     obstacles = np.array([[500.0, 250.0], [400, 600]])
     max_vel = 2000.0
     w = World(
