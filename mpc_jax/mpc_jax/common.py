@@ -21,20 +21,21 @@ jax.config.update("jax_debug_nans", True)
 # MPC Parameters
 CONTROL_HORIZON = 16
 TIME_HORIZON = 10  # seconds
-DT = 0.05  # Start with 0.05 seconds as DT
+DT = 0.03  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
 MAX_ITERATIONS = 50
 LEARNING_RATE = 120
-UPDATE_CLIP = 40
+UPDATE_CLIP = 100
 N_CANDIDATE_TRAJECTORIES = 100
 
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
-VEL_FRICTION_COEFF = 0.5  # N*s/m (velocity-dependent friction coefficient)
-MAX_ACC = 100  # i don't fucking know in what units this shit is
+VEL_FRICTION_COEFF = 0.2  # N*s/m (velocity-dependent friction coefficient)
+MAX_ACC = 200  # i don't fucking know in what units this shit is
+CONST_FRICTION_FORCE = 2
 
 
 def get_dt_schedule() -> jax.Array:
@@ -127,6 +128,7 @@ def single_trajectory_from_control(
         control_force = (
             jnp.clip((target_vel - vel), -MAX_ACC, MAX_ACC) * ROBOT_MASS / dt
         )
+        constant_friction_force = -CONST_FRICTION_FORCE
 
         # Total acceleration
         total_force = control_force + vel_friction_force

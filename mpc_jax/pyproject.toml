@@ -3,7 +3,7 @@ name = "mpc_jax"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "equinox>=0.12.2",
     "jax[cuda12]>=0.6.1",

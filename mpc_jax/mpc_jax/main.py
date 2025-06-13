@@ -4,13 +4,14 @@ import jax.random as jr
 from jax import grad, jit, value_and_grad
 from jaxtyping import PRNGKeyArray, Float, Array
 import numpy as np
+import traceback as tb
 import optax
 import os
 import equinox as eqx
 from tqdm import tqdm
 import functools as ft
 import matplotlib.pyplot as plt
-from common import (
+from .common import (
     ROBOT_RADIUS,
     LEARNING_RATE,
     CONTROL_HORIZON,
@@ -25,7 +26,7 @@ from common import (
     FieldBounds,
 )
 
-from costs import (
+from .costs import (
     distance_cost,
     collision_cost,
     boundary_cost,
@@ -38,21 +39,27 @@ def mpc_cost_function(
     u: Control,
     w: World,
     targets: EntityBatch,
-    max_speed: float,
+    max_speeds: jax.Array,
 ):
     # Generate trajectory from control sequence
     trajectories = trajectories_from_control(w, u)
     n_robots = len(w.robots)
 
     # Compute position-based costs over the trajectory
-    def position_cost_fn(raw_traj, target):
+    def position_cost_fn(raw_traj, max_speed, target):
         t, pos_x, pos_y, vel_x, vel_y = raw_traj
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
         d_cost = distance_cost(robot.position, target.after(t).position, t)
-        c_cost = collision_cost(robot.position, w.obstacles.after(t).position)
+        c_cost = 0
+        if len(w.obstacles) != 0:
+            c_cost = collision_cost(robot.position, w.obstacles.after(t).position)
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
-        return d_cost + c_cost + b_cost + vc_cost
+
+        learning_factor_adjustment = (
+            jnp.sqrt(((robot.position - target.after(t).position) ** 2).sum() + 1e-6)
+        ) * 0.01
+        return (d_cost + c_cost + b_cost + vc_cost) * (1 + learning_factor_adjustment)
 
     def collective_position_cost_fn(traj_slice, idx):
         t, pos_x, pos_y, vel_x, vel_y = traj_slice[idx]
@@ -66,10 +73,10 @@ def mpc_cost_function(
 
     # Skip initial position (i=0) and compute costs for trajectory steps
     total_position_cost = jax.vmap(
-        lambda traj, target: jax.vmap(eqx.Partial(position_cost_fn, target=target))(
-            traj
-        )
-    )(trajectories[:, 1:], targets).sum()
+        lambda traj, target, max_speed: jax.vmap(
+            eqx.Partial(position_cost_fn, max_speed=max_speed, target=target)
+        )(traj)
+    )(trajectories[:, 1:], targets, max_speeds).sum()
 
     total_collective_cost = jax.vmap(
         lambda traj_slice: jax.vmap(
@@ -137,10 +144,27 @@ def generate_candidate_control(
     return control_sequence
 
 
+def scheduled_clip_by_global_norm(schedule_fn):
+    def init_fn(_):
+        return 0  # step counter
+
+    def update_fn(updates, state, params=None):
+        clipping_threshold = schedule_fn(state)
+        norm = optax.global_norm(updates)
+        trigger = norm > clipping_threshold
+        scale = clipping_threshold / (norm + 1e-6)
+        scaled_updates = jax.tree.map(
+            lambda g: jnp.where(trigger, g * scale, g), updates
+        )
+        return scaled_updates, state + 1
+
+    return optax.GradientTransformation(init_fn, update_fn)
+
+
 def solve_mpc_jax(
     w: World,
     targets: EntityBatch,
-    max_speed: float,
+    max_speeds: jax.Array,
     max_iterations: int,
     learning_rate: float,
     n_candidates: int,
@@ -154,12 +178,11 @@ def solve_mpc_jax(
     # Generate candidate trajectories
     keys = jr.split(key, n_candidates)
     candidate_controls = jax.vmap(
-        lambda k: jax.vmap(
-            eqx.Partial(generate_candidate_control, max_speed=max_speed)
-        )(
+        lambda k: jax.vmap(eqx.Partial(generate_candidate_control))(
             jr.split(k, n_robots),
             w.robots.position,
             targets.after(3).position,  # this is a heuristic, since why not
+            max_speeds.reshape((n_robots, 1)),
         )
     )(keys)
     candidate_controls = candidate_controls.reshape(
@@ -172,9 +195,12 @@ def solve_mpc_jax(
         schedule = optax.linear_schedule(
             learning_rate, learning_rate / 2.0, max_iterations
         )
+        clip_schedule = optax.linear_schedule(
+            UPDATE_CLIP, UPDATE_CLIP / 5.0, max_iterations
+        )
         optimizer = optax.chain(
             optax.sgd(schedule, momentum=0.5, nesterov=True),
-            optax.clip_by_global_norm(UPDATE_CLIP),
+            scheduled_clip_by_global_norm(clip_schedule),
         )
         opt_state = optimizer.init(u)
 
@@ -183,7 +209,7 @@ def solve_mpc_jax(
 
             # Compute gradient wrt complete cost function
             cost, grad_val = eqx.filter_value_and_grad(mpc_cost_function)(
-                u, w, targets, max_speed
+                u, w, targets, max_speeds
             )
 
             # Do an optimization step
@@ -191,7 +217,7 @@ def solve_mpc_jax(
             u = optax.apply_updates(u, updates)
 
             # Project the control back to the "valid" domain
-            u = jax.vmap(lambda vel: clip_vel(vel, max_speed))(u)
+            u = jax.vmap(clip_vel)(u, max_speeds)
 
             return (u, opt_state), cost
 
@@ -223,7 +249,7 @@ def solve_mpc(
     target_pos: np.ndarray,
     obstacles: np.ndarray,
     field_bounds: np.ndarray | None,
-    max_vel: float,
+    max_speed: np.ndarray,
     max_iterations: int = MAX_ITERATIONS,
     learning_rate: float = LEARNING_RATE,
     n_candidates: int = N_CANDIDATE_TRAJECTORIES,
@@ -238,31 +264,37 @@ def solve_mpc(
             Entity(jnp.zeros((2,))),
         ),
         EntityBatch(jnp.asarray(target_pos)),
-        max_vel,
+        max_speed,
         int(max_iterations),
         float(learning_rate),
         int(n_candidates),
         key,
     )
-
     if with_aux:
         return out
     else:
         return out[0]
 
 
+def solve_mpc_tbwrap(*args):
+    try:
+        return solve_mpc(*args)[:, 0]
+    except Exception:
+        raise RuntimeError(f"{tb.format_exc(8)}") from None
+
+
 def test_simple_case():
     # Simple test case
     initial_pos = np.array([0.0, 0.0])
     initial_vel = np.array([0.0, 0.0])
-    target_pos = np.array([1000.0, 500.0])  # 1m forward, 0.5m right
+    target_pos = np.array([1000.0, 500.0])
     obstacles = np.array([[500.0, 250.0]])  # One obstacle in the way
-    field_bounds = np.array([-2000.0, 2000.0, -1000.0, 1000.0])  # 4m x 2m field
-    max_vel = 4000.0  # 2 m/s
+    field_bounds = np.array([-2000.0, 2000.0, -1000.0, 1000.0])
+    max_speed = np.array([4000.0])
 
     # Solve MPC
     optimal_control = solve_mpc(
-        initial_pos, initial_vel, target_pos, obstacles, field_bounds, max_vel
+        initial_pos, initial_vel, target_pos, obstacles, field_bounds, max_speed
     )
 
     print(f"Control: {np.linalg.norm(optimal_control):.2f}")

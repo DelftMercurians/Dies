@@ -65,21 +65,22 @@ impl MPCController {
 
         Python::with_gil(|py| {
             // Set up stdout capture
-            let sys = PyModule::import_bound(py, "sys")?;
-            let io = PyModule::import_bound(py, "io")?;
+            let sys = PyModule::import(py, "sys")?;
+            let io = PyModule::import(py, "io")?;
             let stdout_capture = io.call_method0("StringIO")?;
             let original_stdout = sys.getattr("stdout")?;
             sys.setattr("stdout", &stdout_capture)?;
 
             // Add the mpc_jax directory to Python path
             let sys_path = sys.getattr("path")?;
+            sys_path.call_method1("insert", (0, "./.venv/lib/python3.12/site-packages"))?;
             sys_path.call_method1("insert", (0, "."))?;
 
             // Import the mpc_jax module
-            let mpc_module = PyModule::import_bound(py, "mpc_jax")?;
+            let mpc_module = PyModule::import(py, "mpc_jax")?;
 
             // Import numpy for array creation
-            let np = PyModule::import_bound(py, "numpy")?;
+            let np = PyModule::import(py, "numpy")?;
 
             // Prepare batched robot data
             let n_robots = robots.len();
@@ -104,29 +105,23 @@ impl MPCController {
             // Prepare obstacles (all other robots and ball)
             let mut obstacles_data = Vec::new();
 
-            // Add other robots as obstacles for each robot
-            for robot in robots {
-                for other_robot in robots {
-                    if robot.id != other_robot.id {
-                        obstacles_data.extend_from_slice(&[other_robot.position.x, other_robot.position.y]);
-                    }
-                }
+            // Add opponent robots as obstacles
+            for opp_player in &world.opp_players {
+                obstacles_data.extend_from_slice(&[opp_player.position.x, opp_player.position.y]);
             }
 
             // Add ball as obstacle if present
             if let Some(ball) = &world.ball {
-                for _ in robots {
-                    obstacles_data.extend_from_slice(&[ball.position.xy().x, ball.position.xy().y]);
-                }
+               obstacles_data.extend_from_slice(&[ball.position.xy().x, ball.position.xy().y]);
             }
 
             // Convert obstacles to numpy array
             let obstacles = if obstacles_data.is_empty() {
-                np.call_method1("zeros", ((n_robots, 0, 2),))?
+                np.call_method1("zeros", ((0, 2),))?
             } else {
-                let n_obstacles_per_robot = obstacles_data.len() / (n_robots * 2);
+                let n = obstacles_data.len();
                 let obstacles_array = np.call_method1("array", (obstacles_data,))?
-                    .call_method1("reshape", (n_robots, n_obstacles_per_robot, 2))?;
+                    .call_method1("reshape", ((n / 2) as i32, 2))?;
                 obstacles_array
             };
 
@@ -139,7 +134,7 @@ impl MPCController {
             };
 
             // Call the JAX batch solve_mpc function
-            let solve_mpc_batch = mpc_module.getattr("solve_mpc")?;
+            let solve_mpc_batch = mpc_module.getattr("solve_mpc_tbwrap")?;
             let result = solve_mpc_batch.call1((
                 initial_pos_array,
                 initial_vel_array,

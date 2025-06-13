@@ -15,7 +15,7 @@ import matplotlib.patches as patches
 from tqdm import tqdm
 import functools as ft
 
-from main import (
+from .main import (
     distance_cost,
     collision_cost,
     boundary_cost,
@@ -23,7 +23,7 @@ from main import (
     solve_mpc,
 )
 
-from common import (
+from .common import (
     ROBOT_RADIUS,
     trajectories_from_control,
     World,
@@ -246,7 +246,7 @@ def animate_moving_obstacle(initial_pos, target_pos):
     num_frames = 10
 
     # Fixed setup - two robots
-    max_vel = 2000.0
+    max_vel = np.array([2000.0, 2000])
 
     # First obstacle is stationary
     obstacle1 = np.array([500.0, 250.0])
@@ -499,7 +499,7 @@ if __name__ == "__main__":
     initial_pos = np.array([[-400.0, 550.0], [-300.0, 200.0]])
     target_pos = np.array([[1000.0, 200.0], [800.0, 600.0]])
     obstacles = np.array([[500.0, 250.0], [400, 600]])
-    max_vel = 2000.0
+    max_vel = np.array([2000.0, 2000.0])
     w = World(
         field_bounds=FieldBounds(),
         obstacles=EntityBatch(obstacles),

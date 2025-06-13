@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import functools as ft
-from common import ROBOT_RADIUS
+from .common import ROBOT_RADIUS
 
 
 def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float):
@@ -20,7 +20,12 @@ def collision_cost(
         mask = jnp.ones((len(pos),))
 
     def single_collision_cost(obstacle: jnp.ndarray, pos: jnp.ndarray):
-        assert obstacle.shape == (2,)
+        assert obstacle.shape == (2,), (
+            f"Single collision cost: Obstacle must be of shape (2,), but got {obstacle.shape}"
+        )
+        assert pos.shape == (2,), (
+            f"Single collision cost: Pos must be of shape (2,), but got {pos.shape}"
+        )
 
         diff = pos[None, :] - obstacle
         distance = jnp.sqrt(jnp.sum(diff**2) + 1e-9)
@@ -77,10 +82,20 @@ def boundary_cost(pos: jnp.ndarray, field_bounds):
     """
 
 
-def velocity_constraint_cost(vel: jnp.ndarray, max_vel: float):
+def velocity_constraint_cost(vel: jnp.ndarray, max_speed: float):
+    # we dislike high velocities
     speed_sq = jnp.sum(vel**2)
-    max_speed_sq = max_vel**2
-    return jnp.maximum(speed_sq - max_speed_sq, 0.0)
+    max_speed_sq = max_speed**2
+    high_cost = jnp.maximum(speed_sq - max_speed_sq, 0.0)
+
+    # and we dislike low velocities
+    speed = jnp.sqrt(speed_sq + 1e-9)
+    low_cost = jnp.where(
+        speed < 100,  # 10cm/s
+        100 - speed,
+        0,
+    )
+    return high_cost + low_cost * 0
 
 
 def control_effort_cost(vel: jnp.ndarray):
