@@ -62,7 +62,7 @@ def get_dt_schedule(upscaled=True):
         return DT + (MAX_DT - DT) * steps / (CONTROL_HORIZON - 1)
 
 
-def control_steps_to_time(time: float):
+def control_steps_to_time(time: float | Float[Array, ""]):
     """Return the smallest number of steps such that the control will be past this time point"""
     dt_schedule = get_dt_schedule(upscaled=False)
     cumulative_time = jnp.cumsum(dt_schedule)

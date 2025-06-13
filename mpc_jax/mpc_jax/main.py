@@ -250,7 +250,7 @@ def solve_mpc(
             Entity(jnp.zeros((2,))),
         ),
         EntityBatch(jnp.asarray(target_pos)),
-        max_speed,
+        jnp.asarray(max_speed),
         int(max_iterations),
         float(learning_rate),
         int(n_candidates),
@@ -264,7 +264,7 @@ def solve_mpc(
 
 def solve_mpc_tbwrap(*args):
     try:
-        return solve_mpc(*args)[:, 0]
+        return solve_mpc(*args)[:, 0]  # type: ignore
     except Exception:
         raise RuntimeError(
             f"Traceback: {tb.format_exc(20)} with input: {args}"
