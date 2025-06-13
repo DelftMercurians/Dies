@@ -266,7 +266,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "equinox", specifier = ">=0.12.2" },
-    { name = "jax", extras = ["cuda12"], specifier = ">=0.6.1" },
+    { name = "jax", extras = ["cuda12"], specifier = ">=0.6" },
     { name = "jaxtyping", specifier = ">=0.3.2" },
     { name = "matplotlib" },
     { name = "numpy", specifier = ">=2.2.6" },

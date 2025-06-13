@@ -32,7 +32,7 @@ def collision_cost(
 
         # Define safety thresholds
         min_safe_distance = 2.1 * ROBOT_RADIUS * strong_scale
-        no_cost_distance = 2.8 * ROBOT_RADIUS * strong_scale
+        no_cost_distance = 3.0 * ROBOT_RADIUS * strong_scale
 
         no_cost_distance += (no_cost_distance - min_safe_distance) * weak_scale
 

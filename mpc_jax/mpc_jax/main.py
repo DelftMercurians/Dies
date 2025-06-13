@@ -25,7 +25,7 @@ from .common import (
     Entity,
     EntityBatch,
     FieldBounds,
-    steps_to_time,
+    control_steps_to_time,
 )
 
 from .costs import (
@@ -134,7 +134,7 @@ def generate_candidate_control(
     stage2_vel = clip_vel(required_vel_stage2 + noise2, max_speed)
 
     # Combine the two stages using masks for JIT compatibility
-    stage1_steps = steps_to_time(few_seconds)
+    stage1_steps = control_steps_to_time(few_seconds)
 
     # Create mask for stage1 vs stage2
     time_indices = jnp.arange(CONTROL_HORIZON)
@@ -200,7 +200,9 @@ def solve_mpc_jax(
             UPDATE_CLIP, UPDATE_CLIP / 20.0, max_iterations
         )
         optimizer = optax.chain(
-            optax.sgd(learning_rate, momentum=0.8, nesterov=True),
+            optax.adan(
+                learning_rate=learning_rate, b1=0.8, b2=0.9, b3=0.9, weight_decay=1e-6
+            ),
             scheduled_clip_by_global_norm(clip_schedule),
         )
         opt_state = optimizer.init(u)
@@ -214,7 +216,7 @@ def solve_mpc_jax(
             )
 
             # Do an optimization step
-            updates, opt_state = optimizer.update(grad_val, opt_state)
+            updates, opt_state = optimizer.update(grad_val, opt_state, u)
             u = optax.apply_updates(u, updates)
 
             # Project the control back to the "valid" domain
@@ -238,7 +240,7 @@ def solve_mpc_jax(
     best_idx = jnp.argmin(final_costs)
     best_control = optimized_controls[best_idx]
 
-    return best_control, candidate_controls, optimized_controls
+    return best_control, candidate_controls, optimized_controls, final_costs[-1]
 
 
 solve_mpc_jitted = eqx.filter_jit(solve_mpc_jax)
@@ -296,11 +298,17 @@ def test_simple_case():
     max_speed = np.array([4000.0])
 
     # Solve MPC
-    optimal_control = solve_mpc(
-        initial_pos, initial_vel, target_pos, obstacles, field_bounds, max_speed
+    optimal_control, _, _, cost = solve_mpc(
+        initial_pos,
+        initial_vel,
+        target_pos,
+        obstacles,
+        field_bounds,
+        max_speed,
+        with_aux=True,
     )
 
-    print(f"Control: {np.linalg.norm(optimal_control):.2f}")
+    print(f"Cost (lower is better): {cost}")
     return optimal_control[0]
 
 

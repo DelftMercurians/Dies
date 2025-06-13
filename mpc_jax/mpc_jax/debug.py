@@ -48,7 +48,7 @@ def get_plots_dir():
     return plots_dir
 
 
-def plot_optimal_trajectories(ax, trajectories, colors=None, time_interval=0.5):
+def plot_optimal_trajectories(ax, trajectories, colors=None, time_interval=1.0):
     """Plot optimal trajectories with time markers at equal intervals"""
     if colors is None:
         colors = ["r", "g", "b"]
@@ -62,8 +62,9 @@ def plot_optimal_trajectories(ax, trajectories, colors=None, time_interval=0.5):
         ax.plot(
             trajectory[:, 0],
             trajectory[:, 1],
-            f"{color}-",
-            linewidth=2,
+            f"{color}-+",
+            markersize=2.5,
+            linewidth=1.2,
             label=f"MPC Path {i + 1}",
         )
 
@@ -375,7 +376,7 @@ def animate_moving_obstacle(initial_pos, target_pos):
 
         # Add time markers for current frame trajectories
         dt_schedule = get_dt_schedule()
-        time_interval = 0.5
+        time_interval = 1.0
 
         # Calculate cumulative time at each trajectory point
         cumulative_time = jnp.cumsum(jnp.concatenate([jnp.array([0.0]), dt_schedule]))
@@ -459,9 +460,6 @@ def plot_trajectories(
                     linewidth=0.8,
                 )
 
-    # Plot optimal trajectories with time markers
-    plot_optimal_trajectories(ax, optimal_trajectory, colors=["k", "k"])
-
     # Plot obstacles as circles
     for obstacle in w.obstacles.position:
         circle = plt.Circle(obstacle, ROBOT_RADIUS, color="black", alpha=0.7)
@@ -492,6 +490,9 @@ def plot_trajectories(
                 markersize=15,
                 label=f"Target {i + 1}",
             )
+
+    # Plot optimal trajectories with time markers
+    plot_optimal_trajectories(ax, optimal_trajectory, colors=["k", "k"])
 
     # Set field bounds
     min_x, max_x, min_y, max_y = w.field_bounds.bounding_box()
