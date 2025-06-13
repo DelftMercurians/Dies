@@ -148,23 +148,6 @@ def generate_candidate_control(
     return control_sequence
 
 
-def scheduled_clip_by_global_norm(schedule_fn):
-    def init_fn(_):
-        return 0  # step counter
-
-    def update_fn(updates, state, params=None):
-        clipping_threshold = schedule_fn(state)
-        norm = optax.global_norm(updates)
-        trigger = norm > clipping_threshold
-        scale = clipping_threshold / (norm + 1e-6)
-        scaled_updates = jax.tree.map(
-            lambda g: jnp.where(trigger, g * scale, g), updates
-        )
-        return scaled_updates, state + 1
-
-    return optax.GradientTransformation(init_fn, update_fn)
-
-
 def solve_mpc_jax(
     w: World,
     targets: EntityBatch,
@@ -196,9 +179,6 @@ def solve_mpc_jax(
     # Optimize each candidate trajectory via (full-batch) gradient descent
     def optimize_control(u):
         # Initialize optimizer for this trajectory
-        clip_schedule = optax.linear_schedule(
-            UPDATE_CLIP, UPDATE_CLIP / 10.0, max_iterations
-        )
         lr_schedule = optax.linear_schedule(
             learning_rate, learning_rate / 10.0, max_iterations
         )
