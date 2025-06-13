@@ -58,10 +58,7 @@ def mpc_cost_function(
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
 
-        learning_factor_adjustment = (
-            jnp.sqrt(((robot.position - target.after(t).position) ** 2).sum() + 1e-6)
-        ) * 0.05
-        return (d_cost + c_cost + b_cost + vc_cost) * (1 + learning_factor_adjustment)
+        return d_cost + c_cost + b_cost + vc_cost
 
     def collective_position_cost_fn(traj_slice, idx):
         t, pos_x, pos_y, vel_x, vel_y = traj_slice[idx]
@@ -199,14 +196,11 @@ def solve_mpc_jax(
     # Optimize each candidate trajectory via (full-batch) gradient descent
     def optimize_control(u):
         # Initialize optimizer for this trajectory
-        schedule = optax.linear_schedule(
-            learning_rate, learning_rate / 2.0, max_iterations
-        )
         clip_schedule = optax.linear_schedule(
-            UPDATE_CLIP, UPDATE_CLIP / 5.0, max_iterations
+            UPDATE_CLIP, UPDATE_CLIP / 20.0, max_iterations
         )
         optimizer = optax.chain(
-            optax.sgd(schedule, momentum=0.5, nesterov=True),
+            optax.sgd(learning_rate, momentum=0.8, nesterov=True),
             scheduled_clip_by_global_norm(clip_schedule),
         )
         opt_state = optimizer.init(u)
