@@ -9,6 +9,7 @@ import numpy as np
 import optax
 import os
 import matplotlib.pyplot as plt
+from pathlib import Path
 from matplotlib.patches import Circle
 from matplotlib.animation import FuncAnimation
 import matplotlib.patches as patches
@@ -33,6 +34,14 @@ from .common import (
     Control,
     get_dt_schedule,
 )
+
+
+def get_plots_dir():
+    """Get the plots directory relative to the module root (where pyproject.toml is located)"""
+    module_root = Path(__file__).parent.parent
+    plots_dir = module_root / "plots"
+    plots_dir.mkdir(exist_ok=True)
+    return plots_dir
 
 
 def plot_optimal_trajectories(ax, trajectories, colors=None, time_interval=0.5):
@@ -178,8 +187,10 @@ def visualize_mpc_debug(
     ax.legend()
 
     plt.tight_layout()
-    plt.savefig("mpc_debug_visualization.png")
-    print("Visualization saved to 'mpc_debug_visualization.png'")
+    plots_dir = get_plots_dir()
+    filepath = plots_dir / "mpc_debug_visualization.png"
+    plt.savefig(filepath)
+    print(f"Visualization saved to '{filepath}'")
 
 
 def plot_collision_cost(
@@ -236,8 +247,10 @@ def plot_collision_cost(
     ax.set_ylabel("Y position (mm)")
 
     plt.tight_layout()
-    plt.savefig("collision_cost_visualization.png")
-    print("Collision cost visualization saved to 'collision_cost_visualization.png'")
+    plots_dir = get_plots_dir()
+    filepath = plots_dir / "collision_cost_visualization.png"
+    plt.savefig(filepath)
+    print(f"Collision cost visualization saved to '{filepath}'")
 
 
 def animate_moving_obstacle(initial_pos, target_pos):
@@ -394,8 +407,10 @@ def animate_moving_obstacle(initial_pos, target_pos):
         fig, animate, frames=num_frames, interval=200, repeat=True, blit=True
     )
     print("Saving the animation...")
-    anim.save("mpc_moving_obstacle.gif", writer="pillow", fps=5)
-    print("Animation saved to 'mpc_moving_obstacle.gif'")
+    plots_dir = get_plots_dir()
+    filepath = plots_dir / "mpc_moving_obstacle.gif"
+    anim.save(filepath, writer="pillow", fps=5)
+    print(f"Animation saved to '{filepath}'")
     plt.close()
 
 
@@ -487,8 +502,10 @@ def plot_trajectories(
     ax.legend()
 
     plt.tight_layout()
-    plt.savefig(f"trajectories_{style}.png", dpi=150)
-    print(f"Trajectories saved into 'trajectories_{style}.png'")
+    plots_dir = get_plots_dir()
+    filepath = plots_dir / f"trajectories_{style}.png"
+    plt.savefig(filepath, dpi=150)
+    print(f"Trajectories saved into '{filepath}'")
 
 
 if __name__ == "__main__":

@@ -33,9 +33,8 @@ N_CANDIDATE_TRAJECTORIES = 100
 
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
-VEL_FRICTION_COEFF = 0.2  # N*s/m (velocity-dependent friction coefficient)
-MAX_ACC = 200  # i don't fucking know in what units this shit is
-CONST_FRICTION_FORCE = 2
+VEL_FRICTION_COEFF = 1e-10  # N*s/m (velocity-dependent friction coefficient)
+MAX_ACC = 10_000  # i don't fucking know in what units this shit is
 
 
 def get_dt_schedule() -> jax.Array:
@@ -134,9 +133,8 @@ def single_trajectory_from_control(
     ) -> jax.Array:
         vel_friction_force = -VEL_FRICTION_COEFF * vel
         control_force = (
-            jnp.clip((target_vel - vel), -MAX_ACC, MAX_ACC) * ROBOT_MASS / dt
+            jnp.clip((target_vel - vel) / dt, -MAX_ACC, MAX_ACC) * ROBOT_MASS
         )
-        constant_friction_force = -CONST_FRICTION_FORCE
 
         # Total acceleration
         total_force = control_force + vel_friction_force
