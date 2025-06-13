@@ -428,7 +428,7 @@ def plot_trajectories(
                     trajectory[:, 0],
                     trajectory[:, 1],
                     f"{color}-",
-                    alpha=0.1,
+                    alpha=0.2,
                     linewidth=0.5,
                 )
             else:
@@ -497,7 +497,7 @@ if __name__ == "__main__":
 
     # Run visualization with two robots test case
     initial_pos = np.array([[-400.0, 550.0], [-300.0, 200.0]])
-    target_pos = np.array([[1000.0, 400.0], [800.0, 800.0]])
+    target_pos = np.array([[1000.0, 200.0], [800.0, 600.0]])
     obstacles = np.array([[500.0, 250.0], [400, 600]])
     max_vel = 2000.0
     w = World(

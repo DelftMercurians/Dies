@@ -13,7 +13,7 @@ def collision_cost(
     pos: jnp.ndarray,
     obstacles: jnp.ndarray,
     mask=None,
-    weak_scale=1.0,
+    weak_scale=0.0,
     strong_scale=1.0,
 ):
     if mask is None:
@@ -27,7 +27,7 @@ def collision_cost(
 
         # Define safety thresholds
         min_safe_distance = 2.1 * ROBOT_RADIUS * strong_scale
-        no_cost_distance = 2.5 * ROBOT_RADIUS * strong_scale
+        no_cost_distance = 2.8 * ROBOT_RADIUS * strong_scale
 
         no_cost_distance += (no_cost_distance - min_safe_distance) * weak_scale
 

@@ -48,7 +48,7 @@ def mpc_cost_function(
     def position_cost_fn(raw_traj, target):
         t, pos_x, pos_y, vel_x, vel_y = raw_traj
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
-        d_cost = distance_cost(robot.position, target.after(t).position, 7)
+        d_cost = distance_cost(robot.position, target.after(t).position, t)
         c_cost = collision_cost(robot.position, w.obstacles.after(t).position)
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
@@ -57,18 +57,12 @@ def mpc_cost_function(
     def collective_position_cost_fn(traj_slice, idx):
         t, pos_x, pos_y, vel_x, vel_y = traj_slice[idx]
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
-        mask = jnp.zeros((n_robots,)).at[idx].set(1)
+        mask = jnp.ones((n_robots,)).at[idx].set(0)
         obstacles = jax.lax.stop_gradient(traj_slice[:, 1:3])
-        obstacles = obstacles.at[idx].set(jnp.array([1e6, 1e6]))
-        ours_c_cost = (
-            collision_cost(
-                robot.position,
-                obstacles,
-                mask=mask,
-            )
-            * 0.1
+        ours_c_cost = collision_cost(
+            robot.position, obstacles, mask=mask, weak_scale=1.0, strong_scale=1.2
         )
-        return ours_c_cost
+        return ours_c_cost * 4.0
 
     # Skip initial position (i=0) and compute costs for trajectory steps
     total_position_cost = jax.vmap(
@@ -80,8 +74,9 @@ def mpc_cost_function(
     total_collective_cost = jax.vmap(
         lambda traj_slice: jax.vmap(
             eqx.Partial(collective_position_cost_fn, traj_slice)
-        )(jnp.arange(n_robots))
-    )(trajectories.reshape((-1, 2, 5))).sum()
+        )(jnp.arange(n_robots)),
+        in_axes=1,
+    )(trajectories).sum()
 
     return total_position_cost + total_collective_cost
 
@@ -175,7 +170,7 @@ def solve_mpc_jax(
     def optimize_control(u):
         # Initialize optimizer for this trajectory
         schedule = optax.linear_schedule(
-            learning_rate, learning_rate / 10.0, max_iterations
+            learning_rate, learning_rate / 2.0, max_iterations
         )
         optimizer = optax.chain(
             optax.sgd(schedule, momentum=0.5, nesterov=True),

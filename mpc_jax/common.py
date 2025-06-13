@@ -19,16 +19,16 @@ jax.config.update(
 jax.config.update("jax_debug_nans", True)
 
 # MPC Parameters
-CONTROL_HORIZON = 20
-TIME_HORIZON = 8  # 8 seconds
-DT = 0.1  # Start with 0.1 seconds as DT
+CONTROL_HORIZON = 16
+TIME_HORIZON = 10  # seconds
+DT = 0.05  # Start with 0.05 seconds as DT
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 100
-LEARNING_RATE = 100
-UPDATE_CLIP = 50
+MAX_ITERATIONS = 50
+LEARNING_RATE = 120
+UPDATE_CLIP = 40
 N_CANDIDATE_TRAJECTORIES = 100
 
 # Robot dynamics parameters
