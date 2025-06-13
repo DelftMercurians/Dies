@@ -8,8 +8,6 @@
 *.njsproj
 *.sln
 *.sw?
-*png
-*gif
 .claude/*
 
 

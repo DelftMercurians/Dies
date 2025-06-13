@@ -35,6 +35,10 @@ from .common import (
     get_dt_schedule,
 )
 
+figsize = (12, 8)
+dpi = 100
+format = "png"
+
 
 def get_plots_dir():
     """Get the plots directory relative to the module root (where pyproject.toml is located)"""
@@ -136,7 +140,7 @@ def visualize_mpc_debug(
     robot_trajectories = [trajectories[i, :, 1:] for i in range(num_robots)]
 
     aspect_ratio = (max_x - min_x) / (max_y - min_y)
-    fig_width = 16
+    fig_width = 12
     fig_height = fig_width / aspect_ratio
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     plot_data = np.log1p(costs) if log_scale else costs
@@ -188,8 +192,8 @@ def visualize_mpc_debug(
 
     plt.tight_layout()
     plots_dir = get_plots_dir()
-    filepath = plots_dir / "mpc_debug_visualization.png"
-    plt.savefig(filepath)
+    filepath = plots_dir / f"mpc_debug_visualization.{format}"
+    plt.savefig(filepath, dpi=dpi, bbox_inches="tight")
     print(f"Visualization saved to '{filepath}'")
 
 
@@ -223,7 +227,7 @@ def plot_collision_cost(
     # Reshape to grid, preserving the original orientation
     costs = costs_flat.reshape(resolution, resolution)
 
-    fig, ax = plt.subplots(figsize=(12, 12))
+    fig, ax = plt.subplots(figsize=(6, 6))
 
     # Apply log scale if requested
     plot_data = np.log1p(costs) if log_scale else costs
@@ -248,8 +252,8 @@ def plot_collision_cost(
 
     plt.tight_layout()
     plots_dir = get_plots_dir()
-    filepath = plots_dir / "collision_cost_visualization.png"
-    plt.savefig(filepath)
+    filepath = plots_dir / f"collision_cost_visualization.{format}"
+    plt.savefig(filepath, dpi=dpi, bbox_inches="tight")
     print(f"Collision cost visualization saved to '{filepath}'")
 
 
@@ -295,7 +299,7 @@ def animate_moving_obstacle(initial_pos, target_pos):
         all_trajectories.append(robot_trajectories)
 
     # Create static plot elements once
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=figsize)
 
     # Pre-create circle patches for obstacles to reuse
     obstacle_circles = []
@@ -409,7 +413,7 @@ def animate_moving_obstacle(initial_pos, target_pos):
     print("Saving the animation...")
     plots_dir = get_plots_dir()
     filepath = plots_dir / "mpc_moving_obstacle.gif"
-    anim.save(filepath, writer="pillow", fps=5)
+    anim.save(filepath, writer="pillow", fps=5, dpi=dpi)
     print(f"Animation saved to '{filepath}'")
     plt.close()
 
@@ -422,7 +426,7 @@ def plot_trajectories(
     style: Literal["opt", "cand"] = "opt",
 ):
     """Plot all candidate trajectories with semi-transparent lines"""
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=figsize)
 
     # Convert candidate trajectories to actual trajectories
     colors = ["m", "y", "c"]
@@ -503,8 +507,8 @@ def plot_trajectories(
 
     plt.tight_layout()
     plots_dir = get_plots_dir()
-    filepath = plots_dir / f"trajectories_{style}.png"
-    plt.savefig(filepath, dpi=150)
+    filepath = plots_dir / f"trajectories_{style}.{format}"
+    plt.savefig(filepath, dpi=dpi, bbox_inches="tight")
     print(f"Trajectories saved into '{filepath}'")
 
 

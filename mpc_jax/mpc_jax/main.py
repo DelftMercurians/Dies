@@ -60,7 +60,7 @@ def mpc_cost_function(
 
         learning_factor_adjustment = (
             jnp.sqrt(((robot.position - target.after(t).position) ** 2).sum() + 1e-6)
-        ) * 0.01
+        ) * 0.05
         return (d_cost + c_cost + b_cost + vc_cost) * (1 + learning_factor_adjustment)
 
     def collective_position_cost_fn(traj_slice, idx):
@@ -71,7 +71,7 @@ def mpc_cost_function(
         ours_c_cost = collision_cost(
             robot.position, obstacles, mask=mask, weak_scale=-0.5, strong_scale=1.2
         )
-        return ours_c_cost
+        return ours_c_cost * 2
 
     # Skip initial position (i=0) and compute costs for trajectory steps
     total_position_cost = jax.vmap(
