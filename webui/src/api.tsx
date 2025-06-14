@@ -46,7 +46,7 @@ export type Status =
 export type WorldStatus =
   | { status: "none" }
   | { status: "loading" }
-  | { status: "connected"; data: TeamData };
+  | { status: "connected"; data: WorldData };
 
 const queryClient = new QueryClient();
 const WsConnectedContext = createContext(false);
@@ -260,9 +260,7 @@ export const useWorldState = (): WorldStatus => {
 
   if (query.isSuccess) {
     if (query.data.type === "Loaded") {
-      // Convert WorldData to TeamData using default primary team (Blue for now)
-      const teamData = convertWorldDataToTeamData(query.data.data, primaryTeam);
-      return { status: "connected", data: teamData };
+      return { status: "connected", data: query.data.data };
     } else {
       return { status: "none" };
     }

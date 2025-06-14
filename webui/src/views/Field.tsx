@@ -6,8 +6,9 @@ import {
   useStatus,
   useWorldState,
   extractPlayerId,
+  usePrimaryTeam,
 } from "../api";
-import { Vector2, TeamData } from "../bindings";
+import { TeamColor, Vector2, WorldData } from "../bindings";
 import { useResizeObserver } from "@/lib/useResizeObserver";
 import {
   CANVAS_PADDING,
@@ -40,6 +41,7 @@ interface FieldProps {
 
 interface PlayerTooltip {
   position: [number, number];
+  color: TeamColor;
   playerId: number;
 }
 
@@ -57,7 +59,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const manualControlledPlayerIds =
     executorInfo?.manual_controlled_players.map(extractPlayerId) ?? [];
   const world = useWorldState();
-  const teamData = world.status === "connected" ? world.data : null;
+  const worldData = world.status === "connected" ? world.data : null;
   const sendCommand = useSendCommand();
 
   const { data: backendState } = useStatus();
@@ -65,8 +67,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 
   const mouseFieldRef = useRef(mouseField);
   mouseFieldRef.current = mouseField;
-  const ballRef = useRef(teamData?.ball);
-  ballRef.current = teamData?.ball;
+  const ballRef = useRef(worldData?.ball);
+  ballRef.current = worldData?.ball;
   const [ballToMouse, setBallToMouse] = useState<boolean>(false);
   useEffect(() => {
     if (ballToMouse && ballRef.current?.raw_position) {
@@ -96,11 +98,11 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     ref: contRef,
   });
   const { canvasWidth, canvasHeight } = useCanvasSize(
-    teamData,
+    worldData,
     contWidth,
     contHeight
   );
-
+  const [primaryTeam] = usePrimaryTeam();
   useEffect(() => {
     if (!canvasRef.current) return;
 
@@ -112,11 +114,15 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       rendererRef.current.setDebugData(debugMap);
     }
     rendererRef.current.setPositionDisplayMode(positionDisplayMode);
-    rendererRef.current.setTeamData(teamData);
-    rendererRef.current.render(selectedPlayerId, manualControlledPlayerIds);
+    rendererRef.current.setWorldData(worldData);
+    rendererRef.current.render(
+      selectedPlayerId,
+      primaryTeam,
+      manualControlledPlayerIds
+    );
   }, [
     debugMap,
-    teamData,
+    worldData,
     canvasWidth,
     canvasHeight,
     manualControlledPlayerIds,
@@ -125,7 +131,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   ]);
 
   const selectedPlayerData =
-    teamData?.own_players.find((p) => p.id === selectedPlayerId) ?? null;
+    primaryTeam === TeamColor.Blue
+      ? worldData?.blue_team.find((p) => p.id === selectedPlayerId) ?? null
+      : worldData?.yellow_team.find((p) => p.id === selectedPlayerId) ?? null;
 
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -138,8 +146,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       const [fieldX, fieldY] = rendererRef.current.canvasToField([x, y]);
       const clickedPlayer = rendererRef.current.getPlayerAt(fieldX, fieldY);
 
-      if (clickedPlayer !== null) {
-        onSelectPlayer(clickedPlayer);
+      if (clickedPlayer !== null && clickedPlayer[0] === primaryTeam) {
+        onSelectPlayer(clickedPlayer[1]);
       }
     },
     [onSelectPlayer]
@@ -156,13 +164,15 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       const fieldXY = rendererRef.current.canvasToField([x, y]);
       setMouseField(fieldXY);
 
-      const playerId = rendererRef.current.getPlayerAt(fieldXY[0], fieldXY[1]);
-      if (playerId !== null) {
+      const player = rendererRef.current.getPlayerAt(fieldXY[0], fieldXY[1]);
+      if (player !== null) {
+        const [color, playerId] = player;
         const contRect = contRef.current.getBoundingClientRect();
         const x = event.clientX - contRect.left + 10;
         const y = event.clientY - contRect.top + 10;
         setPlayerTooltip({
           position: [x, y],
+          color,
           playerId,
         });
       } else {
@@ -171,9 +181,12 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     },
     []
   );
-  const playerTooltipData = teamData?.own_players.find(
-    (p) => p.id === playerTooltip?.playerId
-  );
+  const playerTooltipData =
+    primaryTeam === TeamColor.Blue
+      ? worldData?.blue_team.find((p) => p.id === playerTooltip?.playerId) ??
+        null
+      : worldData?.yellow_team.find((p) => p.id === playerTooltip?.playerId) ??
+        null;
 
   const headingRef = useRef<number | null>(null);
   const handleContextMenu = (event: React.MouseEvent<HTMLElement>) => {
@@ -185,11 +198,10 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     contextMenuPosRef.current = rendererRef.current.canvasToField([x, y]);
   };
   const handleTargetPosition = () => {
-    const defaultTeamId = 1; // TODO: Get from primary team selection
     sendCommand({
       type: "OverrideCommand",
       data: {
-        team_id: defaultTeamId,
+        team_color: primaryTeam,
         player_id: manualControlledPlayerIds[0],
         command: {
           type: "MoveTo",
@@ -214,7 +226,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     sendCommand({
       type: "OverrideCommand",
       data: {
-        team_id: defaultTeamId,
+        team_color: primaryTeam,
         player_id: manualControlledPlayerIds[0],
         command: {
           type: "MoveTo",
@@ -352,14 +364,14 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 export default Field;
 
 function useCanvasSize(
-  teamData: TeamData | null,
+  worldData: WorldData | null,
   contWidth: number,
   contHeight: number
 ): { canvasWidth: number; canvasHeight: number } {
   const fieldSize = [
-    (teamData?.field_geom?.field_length ?? DEFAULT_FIELD_SIZE[0]) +
+    (worldData?.field_geom?.field_length ?? DEFAULT_FIELD_SIZE[0]) +
       2 * CANVAS_PADDING,
-    (teamData?.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1]) +
+    (worldData?.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1]) +
       2 * CANVAS_PADDING,
   ];
   const availableWidth = contWidth - 2 * CONT_PADDING_PX;

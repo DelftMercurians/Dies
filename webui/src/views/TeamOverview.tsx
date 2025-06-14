@@ -3,8 +3,9 @@ import {
   useExecutorInfo,
   useWorldState,
   isPlayerManuallyControlled,
+  usePrimaryTeam,
 } from "@/api";
-import { PlayerData, PlayerFeedbackMsg } from "@/bindings";
+import { PlayerData, PlayerFeedbackMsg, TeamColor } from "@/bindings";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { FC } from "react";
@@ -23,6 +24,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
   const worldState = useWorldState();
   const { data: bsInfo } = useBasestationInfo();
   const executorInfo = useExecutorInfo();
+  const [primaryTeam] = usePrimaryTeam();
 
   if (worldState.status !== "connected") {
     return (
@@ -35,7 +37,8 @@ const TeamOverview: FC<TeamOverviewProps> = ({
     );
   }
 
-  const { own_players } = worldState.data;
+  const { blue_team, yellow_team } = worldState.data;
+  const own_players = primaryTeam === TeamColor.Blue ? blue_team : yellow_team;
   const sorted_players = [...own_players].sort((a, b) => a.id - b.id);
 
   return (
