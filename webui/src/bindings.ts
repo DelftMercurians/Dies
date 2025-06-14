@@ -356,6 +356,11 @@ export type UiCommand =
 	blue_active: boolean;
 	yellow_active: boolean;
 }}
+	/** Set script paths for teams */
+	| { type: "SetTeamScriptPaths", data: {
+	blue_script_path?: string;
+	yellow_script_path?: string;
+}}
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {

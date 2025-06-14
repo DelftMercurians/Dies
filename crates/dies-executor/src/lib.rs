@@ -42,6 +42,8 @@ struct TeamMap {
     blue_team: Option<TeamController>,
     yellow_team: Option<TeamController>,
     side_assignment: SideAssignment,
+    blue_script_path: Option<String>,
+    yellow_script_path: Option<String>,
 }
 
 impl TeamMap {
@@ -50,17 +52,27 @@ impl TeamMap {
             blue_team: None,
             yellow_team: None,
             side_assignment,
+            blue_script_path: None,
+            yellow_script_path: None,
         }
     }
 
     fn activate_team(&mut self, team_color: TeamColor, settings: &ExecutorSettings) {
         if team_color == TeamColor::Blue {
             if self.blue_team.is_none() {
-                self.blue_team = Some(TeamController::new(settings));
+                let script_path = self
+                    .blue_script_path
+                    .as_deref()
+                    .unwrap_or("crates/dies-executor/src/bt_scripts/standard_player_tree.rhai");
+                self.blue_team = Some(TeamController::new(settings, script_path));
             }
         } else {
             if self.yellow_team.is_none() {
-                self.yellow_team = Some(TeamController::new(settings));
+                let script_path = self
+                    .yellow_script_path
+                    .as_deref()
+                    .unwrap_or("crates/dies-executor/src/bt_scripts/standard_player_tree.rhai");
+                self.yellow_team = Some(TeamController::new(settings, script_path));
             }
         }
     }
@@ -88,6 +100,37 @@ impl TeamMap {
         }
         if let Some(controller) = &mut self.yellow_team {
             controller.update_controller_settings(settings);
+        }
+    }
+
+    fn set_script_paths(
+        &mut self,
+        blue_script_path: Option<String>,
+        yellow_script_path: Option<String>,
+        settings: &ExecutorSettings,
+    ) {
+        // Check if blue script path changed and recreate controller if needed
+        if self.blue_script_path != blue_script_path {
+            self.blue_script_path = blue_script_path;
+            if self.blue_team.is_some() {
+                let script_path = self
+                    .blue_script_path
+                    .as_deref()
+                    .unwrap_or("crates/dies-executor/src/bt_scripts/standard_player_tree.rhai");
+                self.blue_team = Some(TeamController::new(settings, script_path));
+            }
+        }
+
+        // Check if yellow script path changed and recreate controller if needed
+        if self.yellow_script_path != yellow_script_path {
+            self.yellow_script_path = yellow_script_path;
+            if self.yellow_team.is_some() {
+                let script_path = self
+                    .yellow_script_path
+                    .as_deref()
+                    .unwrap_or("crates/dies-executor/src/bt_scripts/standard_player_tree.rhai");
+                self.yellow_team = Some(TeamController::new(settings, script_path));
+            }
         }
     }
 
@@ -670,6 +713,16 @@ impl Executor {
             }
             ControlMsg::SetSideAssignment(side_assignment) => {
                 self.team_controllers.side_assignment = side_assignment;
+            }
+            ControlMsg::SetTeamScriptPaths {
+                blue_script_path,
+                yellow_script_path,
+            } => {
+                self.team_controllers.set_script_paths(
+                    blue_script_path,
+                    yellow_script_path,
+                    &self.settings,
+                );
             }
             ControlMsg::Stop => {}
 

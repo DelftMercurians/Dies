@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        Json, State, WebSocketUpgrade,
+        Json, Query, State, WebSocketUpgrade,
     },
     http::StatusCode,
     response::IntoResponse,
@@ -11,6 +11,10 @@ use axum::{
 use dies_core::{DebugMap, DebugSubscriber, WorldUpdate};
 use dies_executor::scenarios::ScenarioType;
 use futures::StreamExt;
+use serde::Deserialize;
+use serde::Serialize;
+use std::fs;
+use std::path::PathBuf;
 use tokio::sync::{broadcast, watch};
 
 use crate::{
@@ -175,4 +179,49 @@ async fn handle_send_debug_map_update(
     let text_data = serde_json::to_string(&msg)?;
     socket.send(Message::Text(text_data)).await?;
     Ok(())
+}
+
+#[derive(Serialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+#[derive(Deserialize)]
+pub struct ListQuery {
+    pub dir: String,
+}
+
+pub async fn list_files(Query(query): Query<ListQuery>) -> impl IntoResponse {
+    let base = PathBuf::from(".");
+    let requested = PathBuf::from(&query.dir);
+    let path = base.join(requested);
+    if !path.exists() {
+        return (StatusCode::BAD_REQUEST, "Path does not exist").into_response();
+    }
+    let read_dir = match fs::read_dir(&path) {
+        Ok(rd) => rd,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to read directory",
+            )
+                .into_response()
+        }
+    };
+    let mut entries = Vec::new();
+    for entry in read_dir {
+        match entry {
+            Ok(e) => {
+                let name = e.file_name().to_string_lossy().to_string();
+                let is_dir = match e.metadata() {
+                    Ok(m) => m.is_dir(),
+                    Err(_) => false,
+                };
+                entries.push(FileEntry { name, is_dir });
+            }
+            Err(_) => {}
+        }
+    }
+    axum::Json(entries).into_response()
 }

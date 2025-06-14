@@ -25,14 +25,13 @@ pub struct TeamController {
 }
 
 impl TeamController {
-    pub fn new(settings: &ExecutorSettings) -> Self {
-        let main_bt_script_path = "crates/dies-executor/src/bt_scripts/standard_player_tree.rhai";
+    pub fn new(settings: &ExecutorSettings, script_path: &str) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             player_behavior_trees: HashMap::new(),
             bt_context: BtContext::new(),
-            script_host: RhaiHost::new(main_bt_script_path),
+            script_host: RhaiHost::new(script_path),
         };
         team.update_controller_settings(settings);
         team

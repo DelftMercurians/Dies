@@ -232,6 +232,7 @@ async fn start_webserver(
         .route("/api/settings", post(routes::post_executor_settings))
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))
+        .route("/api/list", get(routes::list_files))
         .nest_service("/", serve_dir_with_csp.layer(serve_dir.clone()))
         .fallback_service(serve_dir)
         .with_state(Arc::clone(&state));

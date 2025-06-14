@@ -203,8 +203,29 @@ export const useTeamConfiguration = () => {
     },
   });
 
+  const setTeamScriptPaths = useMutation({
+    mutationFn: ({
+      blueScriptPath,
+      yellowScriptPath,
+    }: {
+      blueScriptPath?: string;
+      yellowScriptPath?: string;
+    }) =>
+      postCommand({
+        type: "SetTeamScriptPaths",
+        data: {
+          blue_script_path: blueScriptPath ?? undefined,
+          yellow_script_path: yellowScriptPath ?? undefined,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+    },
+  });
+
   return {
     setActiveTeams: setActiveTeams.mutate,
+    setTeamScriptPaths: setTeamScriptPaths.mutate,
   };
 };
 

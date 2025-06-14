@@ -113,13 +113,6 @@ const App: React.FC = () => {
       ? executorStatus.data.scenario
       : null;
 
-  // Get team configuration from world state (this will need to be updated when backend supports it)
-  const sideAssignment = rawWorldData?.side_assignment;
-  const blueActive =
-    executorInfo?.active_teams.includes(TeamColor.Blue) ?? false;
-  const yellowActive =
-    executorInfo?.active_teams.includes(TeamColor.Yellow) ?? false;
-
   return (
     <main className="w-full h-full flex flex-col bg-background bg-slate-100">
       {/* Toolbar */}
@@ -218,11 +211,7 @@ const App: React.FC = () => {
 
         {/* Team Configuration */}
         <div className="flex items-center gap-4">
-          <TeamSettingsDialog
-            currentSideAssignment={sideAssignment}
-            blueActive={blueActive}
-            yellowActive={yellowActive}
-          />
+          <TeamSettingsDialog />
           <PrimaryTeamSelector />
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useReducer } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,47 +13,88 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Settings } from "lucide-react";
 import { TeamColor, SideAssignment } from "@/bindings";
-import { useTeamConfiguration } from "@/api";
+import { useExecutorInfo, useTeamConfiguration } from "@/api";
+import FilePathSelector from "./FilePathSelector";
 
-interface TeamSettingsDialogProps {
-  currentSideAssignment?: SideAssignment;
+interface State {
   blueActive: boolean;
+  blueScriptPath?: string;
   yellowActive: boolean;
+  yellowScriptPath?: string;
 }
 
-const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
-  currentSideAssignment,
-  blueActive,
-  yellowActive,
-}) => {
-  const { setActiveTeams } = useTeamConfiguration();
+type Action =
+  | {
+      type: "set_blue_active";
+      payload: boolean;
+    }
+  | {
+      type: "set_yellow_active";
+      payload: boolean;
+    }
+  | {
+      type: "set_blue_script_path";
+      payload: string | null;
+    }
+  | {
+      type: "set_yellow_script_path";
+      payload: string | null;
+    };
+
+const reducer = (state: State, action: Action): State => {
+  switch (action.type) {
+    case "set_blue_active":
+      return {
+        ...state,
+        blueActive: action.payload,
+        blueScriptPath: action.payload ? state.blueScriptPath : undefined,
+      };
+    case "set_yellow_active":
+      return {
+        ...state,
+        yellowActive: action.payload,
+        yellowScriptPath: action.payload ? state.yellowScriptPath : undefined,
+      };
+    case "set_blue_script_path":
+      return {
+        ...state,
+        blueScriptPath: action.payload ?? undefined,
+      };
+    case "set_yellow_script_path":
+      return {
+        ...state,
+        yellowScriptPath: action.payload ?? undefined,
+      };
+  }
+};
+
+const TeamSettingsDialog: React.FC = () => {
+  const executorInfo = useExecutorInfo();
+  const blueActive =
+    executorInfo?.active_teams.includes(TeamColor.Blue) ?? false;
+  const yellowActive =
+    executorInfo?.active_teams.includes(TeamColor.Yellow) ?? false;
+  const { setActiveTeams, setTeamScriptPaths } = useTeamConfiguration();
   const [open, setOpen] = useState(false);
 
-  // Local state for the form
-  const [localBlueActive, setLocalBlueActive] = useState(blueActive);
-  const [localYellowActive, setLocalYellowActive] = useState(yellowActive);
-  const [sideAssignment, setSideAssignment] = useState<SideAssignment>(
-    currentSideAssignment || SideAssignment.BlueOnPositive
-  );
+  const [state, dispatch] = useReducer(reducer, {
+    blueActive,
+    yellowActive,
+  });
 
   useEffect(() => {
-    setLocalBlueActive(blueActive);
-  }, [blueActive]);
-
-  useEffect(() => {
-    setLocalYellowActive(yellowActive);
-  }, [yellowActive]);
-
-  useEffect(() => {
-    if (currentSideAssignment) {
-      setSideAssignment(currentSideAssignment);
-    }
-  }, [currentSideAssignment]);
+    dispatch({ type: "set_blue_active", payload: blueActive });
+    dispatch({ type: "set_yellow_active", payload: yellowActive });
+  }, [blueActive, yellowActive]);
 
   const handleSave = () => {
     setActiveTeams({
-      blueActive: localBlueActive,
-      yellowActive: localYellowActive,
+      blueActive: state.blueActive,
+      yellowActive: state.yellowActive,
+    });
+    setTeamScriptPaths({
+      blueScriptPath: state.blueScriptPath,
+      yellowScriptPath: state.yellowScriptPath,
     });
     setOpen(false);
   };
@@ -78,12 +119,24 @@ const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
             <div className="flex items-center space-x-2">
               <Switch
                 id="team-a-active"
-                checked={localBlueActive}
+                checked={state.blueActive}
                 onCheckedChange={(checked) => {
-                  setLocalBlueActive(checked);
+                  dispatch({ type: "set_blue_active", payload: checked });
                 }}
               />
               <Label htmlFor="team-a-active">Active</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="team-a-script-path">Script Path</Label>
+              <div className="flex-1">
+                <FilePathSelector
+                  value={state.blueScriptPath || ""}
+                  onChange={(path) =>
+                    dispatch({ type: "set_blue_script_path", payload: path })
+                  }
+                  placeholder="Select script..."
+                />
+              </div>
             </div>
           </div>
 
@@ -93,34 +146,24 @@ const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
             <div className="flex items-center space-x-2">
               <Switch
                 id="team-b-active"
-                checked={localYellowActive}
+                checked={state.yellowActive}
                 onCheckedChange={(checked) => {
-                  setLocalYellowActive(checked);
+                  dispatch({ type: "set_yellow_active", payload: checked });
                 }}
               />
               <Label htmlFor="team-b-active">Active</Label>
             </div>
-          </div>
-
-          {/* Side Assignment */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Field Assignment</h3>
-            <div className="space-y-2">
-              <Label>Which team defends positive X side</Label>
-              <ToggleGroup
-                type="single"
-                value={sideAssignment}
-                onValueChange={(value) =>
-                  value && setSideAssignment(value as SideAssignment)
-                }
-              >
-                <ToggleGroupItem value={SideAssignment.BlueOnPositive}>
-                  Blue on +X
-                </ToggleGroupItem>
-                <ToggleGroupItem value={SideAssignment.YellowOnPositive}>
-                  Yellow on +X
-                </ToggleGroupItem>
-              </ToggleGroup>
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="team-b-script-path">Script Path</Label>
+              <div className="flex-1">
+                <FilePathSelector
+                  value={state.yellowScriptPath || ""}
+                  onChange={(path) =>
+                    dispatch({ type: "set_yellow_script_path", payload: path })
+                  }
+                  placeholder="Select script..."
+                />
+              </div>
             </div>
           </div>
 

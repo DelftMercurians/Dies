@@ -97,6 +97,11 @@ pub(crate) enum UiCommand {
         blue_active: bool,
         yellow_active: bool,
     },
+    /// Set script paths for teams
+    SetTeamScriptPaths {
+        blue_script_path: Option<String>,
+        yellow_script_path: Option<String>,
+    },
     Stop,
 }
 

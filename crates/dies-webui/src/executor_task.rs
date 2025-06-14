@@ -98,6 +98,13 @@ impl ExecutorTask {
                 blue_active,
                 yellow_active,
             }),
+            UiCommand::SetTeamScriptPaths {
+                blue_script_path,
+                yellow_script_path,
+            } => self.handle_executor_msg(ControlMsg::SetTeamScriptPaths {
+                blue_script_path,
+                yellow_script_path,
+            }),
             UiCommand::SimulatorCmd(cmd) => self.handle_executor_msg(ControlMsg::SimulatorCmd(cmd)),
             UiCommand::SetPause(pause) => self.handle_executor_msg(ControlMsg::SetPause(pause)),
             UiCommand::Stop => self.stop_executor().await,
