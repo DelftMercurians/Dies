@@ -56,11 +56,11 @@ impl TeamMap {
     fn activate_team(&mut self, team_color: TeamColor, settings: &ExecutorSettings) {
         if team_color == TeamColor::Blue {
             if self.blue_team.is_none() {
-                self.blue_team = Some(TeamController::new(team_color, settings));
+                self.blue_team = Some(TeamController::new(settings));
             }
         } else {
             if self.yellow_team.is_none() {
-                self.yellow_team = Some(TeamController::new(team_color, settings));
+                self.yellow_team = Some(TeamController::new(settings));
             }
         }
     }
@@ -142,6 +142,8 @@ impl TeamMap {
         if let Some(controller) = &mut self.blue_team {
             let team_data = world_data.get_team_data(TeamColor::Blue);
             controller.update(
+                TeamColor::Blue,
+                world_data.side_assignment,
                 team_data,
                 manual_override
                     .iter()
@@ -160,6 +162,8 @@ impl TeamMap {
         if let Some(controller) = &mut self.yellow_team {
             let team_data = world_data.get_team_data(TeamColor::Yellow);
             controller.update(
+                TeamColor::Yellow,
+                world_data.side_assignment,
                 team_data,
                 manual_override
                     .iter()

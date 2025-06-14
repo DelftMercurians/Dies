@@ -20,19 +20,17 @@ pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
     player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
-    team_context: TeamContext,
     bt_context: BtContext,
     script_host: RhaiHost,
 }
 
 impl TeamController {
-    pub fn new(team_color: TeamColor, settings: &ExecutorSettings) -> Self {
+    pub fn new(settings: &ExecutorSettings) -> Self {
         let main_bt_script_path = "crates/dies-executor/src/bt_scripts/standard_player_tree.rhai";
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             player_behavior_trees: HashMap::new(),
-            team_context: TeamContext::new(team_color),
             bt_context: BtContext::new(),
             script_host: RhaiHost::new(main_bt_script_path),
         };
@@ -49,10 +47,12 @@ impl TeamController {
 
     pub fn update(
         &mut self,
-        world_data: TeamData,
+        team_color: TeamColor,
+        side_assignment: SideAssignment,
+        team_data: TeamData,
         manual_override: HashMap<PlayerId, PlayerControlInput>,
     ) {
-        let world_data = Arc::new(world_data);
+        let world_data = Arc::new(team_data);
         let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
         for id in detected_ids.iter() {
             if !self.player_controllers.contains_key(id) {
@@ -106,11 +106,12 @@ impl TeamController {
             inputs_for_comply.insert(*id, input.clone());
         }
 
+        let team_context = TeamContext::new(team_color, side_assignment);
         let final_player_inputs = if matches!(
             world_data.current_game_state.game_state,
             GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
         ) {
-            comply(&world_data, inputs_for_comply, &self.team_context)
+            comply(&world_data, inputs_for_comply, &team_context)
         } else {
             inputs_for_comply
         };
@@ -129,7 +130,7 @@ impl TeamController {
 
             if let Some(player_data) = player_data {
                 let id = controller.id();
-                let player_context = self.team_context.player_context(id);
+                let player_context = team_context.player_context(id);
                 let default_input = final_player_inputs.player(id);
                 let input_to_use = manual_override.get(&id).unwrap_or(&default_input);
 
@@ -163,10 +164,11 @@ impl TeamController {
         color: TeamColor,
     ) -> Vec<PlayerCmd> {
         let untransformer = PlayerCmdUntransformer::new(side_assignment, color);
+        let team_context = TeamContext::new(color, side_assignment);
         self.player_controllers
             .values_mut()
             .map(|c| {
-                let player_context = self.team_context.player_context(c.id());
+                let player_context = team_context.player_context(c.id());
                 c.command(&player_context, untransformer.clone())
             })
             .collect()

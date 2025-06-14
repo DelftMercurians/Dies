@@ -1,38 +1,34 @@
-use dies_core::{debug_record, debug_remove};
+use dies_core::{debug_record, debug_remove, SideAssignment};
 use dies_core::{DebugColor, DebugShape, DebugValue, PlayerId, TeamColor, Vector2};
 
 #[derive(Debug, Clone)]
 pub struct TeamContext {
     team_color: TeamColor,
+    side_assignment: SideAssignment,
     debug_prefix: String,
 }
 
 impl TeamContext {
-    pub fn new(team_color: TeamColor) -> Self {
+    pub fn new(team_color: TeamColor, side_assignment: SideAssignment) -> Self {
         Self {
             team_color,
+            side_assignment,
             debug_prefix: format!("team_{}", team_color),
         }
     }
 
-    pub fn team_color(&self) -> TeamColor {
-        self.team_color
-    }
-
-    pub fn debug_prefix(&self) -> &str {
-        &self.debug_prefix
+    fn key(&self, key: impl Into<String>) -> String {
+        format!("{}.{}", self.debug_prefix, key.into())
     }
 
     // Context-aware debug recording with automatic prefixing
     pub fn debug_record(&self, key: impl Into<String>, value: DebugValue) {
-        let prefixed_key = format!("{}.{}", self.debug_prefix, key.into());
-        debug_record(prefixed_key, value);
+        debug_record(self.key(key), value);
     }
 
     // Context-aware debug removal with automatic prefixing
     pub fn debug_remove(&self, key: impl Into<String>) {
-        let prefixed_key = format!("{}.{}", self.debug_prefix, key.into());
-        debug_remove(prefixed_key);
+        debug_remove(self.key(key));
     }
 
     // Cross debug shape with default color
@@ -42,7 +38,15 @@ impl TeamContext {
 
     // Cross debug shape with specified color
     pub fn debug_cross_colored(&self, key: impl Into<String>, center: Vector2, color: DebugColor) {
-        self.debug_record(key, DebugValue::Shape(DebugShape::Cross { center, color }));
+        self.debug_record(
+            self.key(key),
+            DebugValue::Shape(DebugShape::Cross {
+                center: self
+                    .side_assignment
+                    .transform_vec2(self.team_color, &center),
+                color,
+            }),
+        );
     }
 
     // Filled circle debug shape with default color
@@ -59,9 +63,11 @@ impl TeamContext {
         fill: DebugColor,
     ) {
         self.debug_record(
-            key,
+            self.key(key),
             DebugValue::Shape(DebugShape::Circle {
-                center,
+                center: self
+                    .side_assignment
+                    .transform_vec2(self.team_color, &center),
                 radius,
                 fill: Some(fill),
                 stroke: None,
@@ -83,9 +89,11 @@ impl TeamContext {
         stroke: DebugColor,
     ) {
         self.debug_record(
-            key,
+            self.key(key),
             DebugValue::Shape(DebugShape::Circle {
-                center,
+                center: self
+                    .side_assignment
+                    .transform_vec2(self.team_color, &center),
                 radius,
                 fill: None,
                 stroke: Some(stroke),
@@ -107,8 +115,12 @@ impl TeamContext {
         color: DebugColor,
     ) {
         self.debug_record(
-            key,
-            DebugValue::Shape(DebugShape::Line { start, end, color }),
+            self.key(key),
+            DebugValue::Shape(DebugShape::Line {
+                start: self.side_assignment.transform_vec2(self.team_color, &start),
+                end: self.side_assignment.transform_vec2(self.team_color, &end),
+                color,
+            }),
         );
     }
 
@@ -125,7 +137,7 @@ impl TeamContext {
         additional_info: Option<String>,
     ) {
         self.debug_record(
-            key,
+            self.key(key),
             DebugValue::Shape(DebugShape::TreeNode {
                 name: name.into(),
                 id: id.into(),
@@ -140,12 +152,12 @@ impl TeamContext {
 
     // Numeric value debug
     pub fn debug_value(&self, key: impl Into<String>, value: f64) {
-        self.debug_record(key, DebugValue::Number(value));
+        self.debug_record(self.key(key), DebugValue::Number(value));
     }
 
     // String value debug
     pub fn debug_string(&self, key: impl Into<String>, value: impl Into<String>) {
-        self.debug_record(key, DebugValue::String(value.into()));
+        self.debug_record(self.key(key), DebugValue::String(value.into()));
     }
 
     // Create a player context for this team
@@ -171,38 +183,37 @@ impl PlayerContext {
         }
     }
 
-    pub fn team_context(&self) -> &TeamContext {
-        &self.team_context
-    }
-
-    pub fn player_id(&self) -> PlayerId {
-        self.player_id
-    }
-
-    pub fn debug_prefix(&self) -> &str {
-        &self.debug_prefix
+    fn key(&self, key: impl Into<String>) -> String {
+        format!("{}.{}", self.debug_prefix, key.into())
     }
 
     // Context-aware debug recording with automatic prefixing (team.player)
     pub fn debug_record(&self, key: impl Into<String>, value: DebugValue) {
-        let prefixed_key = format!("{}.{}", self.debug_prefix, key.into());
-        debug_record(prefixed_key, value);
+        debug_record(self.key(key), value);
     }
 
     // Context-aware debug removal with automatic prefixing
     pub fn debug_remove(&self, key: impl Into<String>) {
-        let prefixed_key = format!("{}.{}", self.debug_prefix, key.into());
-        debug_remove(prefixed_key);
+        debug_remove(self.key(key));
     }
 
     // Cross debug shape with default color
     pub fn debug_cross(&self, key: impl Into<String>, center: Vector2) {
-        self.debug_cross_colored(key, center, DebugColor::default());
+        self.debug_cross_colored(self.key(key), center, DebugColor::default());
     }
 
     // Cross debug shape with specified color
     pub fn debug_cross_colored(&self, key: impl Into<String>, center: Vector2, color: DebugColor) {
-        self.debug_record(key, DebugValue::Shape(DebugShape::Cross { center, color }));
+        self.debug_record(
+            self.key(key),
+            DebugValue::Shape(DebugShape::Cross {
+                center: self
+                    .team_context
+                    .side_assignment
+                    .transform_vec2(self.team_context.team_color, &center),
+                color,
+            }),
+        );
     }
 
     // Filled circle debug shape with default color
@@ -219,9 +230,12 @@ impl PlayerContext {
         fill: DebugColor,
     ) {
         self.debug_record(
-            key,
+            self.key(key),
             DebugValue::Shape(DebugShape::Circle {
-                center,
+                center: self
+                    .team_context
+                    .side_assignment
+                    .transform_vec2(self.team_context.team_color, &center),
                 radius,
                 fill: Some(fill),
                 stroke: None,
@@ -243,9 +257,12 @@ impl PlayerContext {
         stroke: DebugColor,
     ) {
         self.debug_record(
-            key,
+            self.key(key),
             DebugValue::Shape(DebugShape::Circle {
-                center,
+                center: self
+                    .team_context
+                    .side_assignment
+                    .transform_vec2(self.team_context.team_color, &center),
                 radius,
                 fill: None,
                 stroke: Some(stroke),
@@ -267,8 +284,18 @@ impl PlayerContext {
         color: DebugColor,
     ) {
         self.debug_record(
-            key,
-            DebugValue::Shape(DebugShape::Line { start, end, color }),
+            self.key(key),
+            DebugValue::Shape(DebugShape::Line {
+                start: self
+                    .team_context
+                    .side_assignment
+                    .transform_vec2(self.team_context.team_color, &start),
+                end: self
+                    .team_context
+                    .side_assignment
+                    .transform_vec2(self.team_context.team_color, &end),
+                color,
+            }),
         );
     }
 
@@ -285,7 +312,7 @@ impl PlayerContext {
         additional_info: Option<String>,
     ) {
         self.debug_record(
-            key,
+            self.key(key),
             DebugValue::Shape(DebugShape::TreeNode {
                 name: name.into(),
                 id: id.into(),
@@ -300,11 +327,11 @@ impl PlayerContext {
 
     // Numeric value debug
     pub fn debug_value(&self, key: impl Into<String>, value: f64) {
-        self.debug_record(key, DebugValue::Number(value));
+        self.debug_record(self.key(key), DebugValue::Number(value));
     }
 
     // String value debug
     pub fn debug_string(&self, key: impl Into<String>, value: impl Into<String>) {
-        self.debug_record(key, DebugValue::String(value.into()));
+        self.debug_record(self.key(key), DebugValue::String(value.into()));
     }
 }

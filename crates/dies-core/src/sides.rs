@@ -138,11 +138,11 @@ impl SideAssignment {
         !self.is_on_own_side_vec3(color, position)
     }
 
-    fn transform_vec2(&self, color: TeamColor, vec: &Vector2) -> Vector2 {
+    pub fn transform_vec2(&self, color: TeamColor, vec: &Vector2) -> Vector2 {
         Vector2::new(vec.x * self.attacking_direction_sign(color), vec.y)
     }
 
-    fn transform_vec3(&self, color: TeamColor, vec: &Vector3) -> Vector3 {
+    pub fn transform_vec3(&self, color: TeamColor, vec: &Vector3) -> Vector3 {
         Vector3::new(vec.x * self.attacking_direction_sign(color), vec.y, vec.z)
     }
 

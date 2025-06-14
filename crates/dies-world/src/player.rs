@@ -106,15 +106,6 @@ impl PlayerTracker {
         self.rolling_vision = self.rolling_vision * factor + vision_val * (1.0 - factor);
         self.rolling_control = self.rolling_control * factor + control_val * (1.0 - factor);
 
-        dies_core::debug_string(
-            format!("p{}.rolling vision", self.id),
-            format!("{}", self.rolling_vision),
-        );
-        dies_core::debug_string(
-            format!("p{}.rolling control", self.id),
-            format!("{}", self.rolling_control),
-        );
-
         // For controlled players, require both vision and control
         // For non-controlled players (opponent players), only require vision
         if self.is_controlled {
@@ -132,8 +123,6 @@ impl PlayerTracker {
                 self.is_gone = false;
             }
         }
-
-        dies_core::debug_string(format!("p{}.is_gone", self.id), format!("{}", self.is_gone));
     }
 
     /// Update the tracker with a new frame.
@@ -178,7 +167,6 @@ impl PlayerTracker {
                         let acc = self.velocity_samples.windows(2).fold(0.0, |acc, w| {
                             acc + (w[1] - w[0]).norm() / (t_capture - last_data.timestamp)
                         }) / 9.0;
-                        dies_core::debug_value(format!("p{}.acc", self.id), acc);
                     }
 
                     last_data.timestamp = t_capture;
@@ -202,10 +190,6 @@ impl PlayerTracker {
             self.is_controlled = true; // Mark as controlled when we receive feedback
             self.last_feedback_time = Some(time);
             if let Some(breakbeam) = feedback.breakbeam_ball_detected {
-                dies_core::debug_string(
-                    format!("p{}.breakbeam_value", self.id),
-                    breakbeam.to_string(),
-                );
                 self.breakbeam_detections.push_back(breakbeam as usize);
                 if self.breakbeam_detections.len() > BREAKBEAM_WINDOW {
                     self.breakbeam_detections.pop_front();
@@ -229,10 +213,6 @@ impl PlayerTracker {
 
     pub fn get(&self) -> Option<PlayerData> {
         let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
-        if self.last_feedback.is_some() {
-            dies_core::debug_value(format!("p{}.breakbeam", self.id), breakbeam_count as f64);
-        }
-
         self.last_detection.as_ref().map(|data| PlayerData {
             id: self.id,
             timestamp: data.timestamp,

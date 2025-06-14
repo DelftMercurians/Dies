@@ -99,13 +99,6 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
             return Option::from(x);
         }
 
-        dies_core::debug_value(
-            "kalman.posteriori_covariance",
-            self.posteriori_covariance[(0, 0)],
-        );
-        dies_core::debug_value("kalman.var", self.var);
-        dies_core::debug_value("kalman.measurement_var", self.measurement_noise[(0, 0)]);
-
         let posteriori_covariance =
             &transition_matrix * &self.posteriori_covariance * &transition_matrix.transpose()
                 + &process_noise * self.var;
