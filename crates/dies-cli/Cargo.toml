@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-tokio = { version = "1.35.1", features = [
+tokio = { version = "1.43.1", features = [
     "rt",
     "macros",
     "signal",
