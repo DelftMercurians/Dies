@@ -4,13 +4,14 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    distance_to_line, find_intersection, player::PlayerId, Angle, ExecutorSettings, FieldGeometry,
-    RoleType, SysStatus, Vector2, Vector3,
+    distance_to_line, player::PlayerId, Angle, FieldGeometry, RoleType, SideAssignment, SysStatus,
+    TeamColor, Vector2, Vector3,
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
 const PLAYER_RADIUS: f64 = 90.0;
-const DRIBBLER_ANGLE_DEG: f64 = 56.0;
+const MAX_SPEED: f64 = 10000.0;
+const MAX_ACCELERATION: f64 = 125000.0;
 
 // Enum to represent different obstacle types
 #[derive(Debug, Clone, Serialize)]
@@ -161,6 +162,15 @@ pub struct GameStateData {
     pub us_operating: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[typeshare]
+pub struct RawGameStateData {
+    /// The state of current game
+    pub game_state: GameState,
+    /// The team that is currently performing tasks in the state.
+    pub operating_team: TeamColor,
+}
+
 /// A struct to store the player state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
@@ -220,38 +230,47 @@ impl PlayerData {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct PlayerModel {
-    pub radius: f64,
-    pub dribbler_angle: Angle,
-    pub max_speed: f64,
-    pub max_acceleration: f64,
-    pub max_angular_speed: f64,
-    pub max_angular_acceleration: f64,
-}
-
-impl From<&ExecutorSettings> for PlayerModel {
-    fn from(val: &ExecutorSettings) -> Self {
-        PlayerModel {
-            radius: PLAYER_RADIUS,
-            dribbler_angle: Angle::from_degrees(DRIBBLER_ANGLE_DEG),
-            max_speed: val.controller_settings.max_velocity,
-            max_acceleration: val.controller_settings.max_acceleration,
-            max_angular_speed: val.controller_settings.max_angular_velocity,
-            max_angular_acceleration: val.controller_settings.max_angular_acceleration,
-        }
-    }
-}
-
 pub enum BallPrediction {
     Linear(Vector2),
     Collision(Vector2),
 }
 
-/// A struct to store the world state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct WorldData {
+    /// Timestamp of the frame, in seconds. This timestamp is relative to the time the
+    /// world tracking was started.
+    pub t_received: f64,
+    /// Recording timestamp of the frame, in seconds, as reported by vision. This
+    /// timestamp is relative to the time the first image was captured.
+    pub t_capture: f64,
+    /// The time since the last frame was received, in seconds
+    pub dt: f64,
+    pub blue_team: Vec<PlayerData>,
+    pub yellow_team: Vec<PlayerData>,
+    pub ball: Option<BallData>,
+    pub field_geom: Option<FieldGeometry>,
+    pub game_state: RawGameStateData,
+    pub side_assignment: SideAssignment,
+}
+
+impl WorldData {
+    pub fn get_team_players(&self, color: TeamColor) -> &Vec<PlayerData> {
+        match color {
+            TeamColor::Blue => &self.blue_team,
+            TeamColor::Yellow => &self.yellow_team,
+        }
+    }
+
+    pub fn get_team_data(&self, color: TeamColor) -> TeamData {
+        self.side_assignment.transform_to_team_coords(color, self)
+    }
+}
+
+/// A struct to store the world state from a single frame.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[typeshare]
+pub struct TeamData {
     /// Timestamp of the frame, in seconds. This timestamp is relative to the time the
     /// world tracking was started.
     pub t_received: f64,
@@ -265,10 +284,9 @@ pub struct WorldData {
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameStateData,
-    pub player_model: PlayerModel,
 }
 
-impl WorldData {
+impl TeamData {
     pub fn get_player(&self, id: PlayerId) -> &PlayerData {
         self.own_players.iter().find(|p| p.id == id).unwrap()
     }
@@ -283,8 +301,8 @@ impl WorldData {
 
     /// Compute the approximate time it will take for the player to reach the target point
     pub fn time_to_reach_point(&self, player: &PlayerData, target: Vector2) -> f64 {
-        let max_speed = self.player_model.max_speed;
-        let max_acceleration = self.player_model.max_acceleration;
+        let max_speed = MAX_SPEED;
+        let max_acceleration = MAX_ACCELERATION;
         let current_speed = player.velocity.norm();
         let dist = (target - player.position.xy()).norm();
 
@@ -330,7 +348,7 @@ impl WorldData {
             let oc = start - player.position.xy();
             let a = normalized_direction.dot(&normalized_direction);
             let b = 2.0 * oc.dot(&normalized_direction);
-            let c = oc.dot(&oc) - self.player_model.radius * self.player_model.radius;
+            let c = oc.dot(&oc) - PLAYER_RADIUS * PLAYER_RADIUS;
             let discriminant = b * b - 4.0 * a * c;
 
             if discriminant >= 0.0 {
@@ -343,38 +361,38 @@ impl WorldData {
         }
 
         // Check intersections with field boundaries
-        if let Some(field_geom) = &self.field_geom {
-            let half_length = field_geom.field_length / 2.0;
-            let half_width = field_geom.field_width / 2.0;
+        // if let Some(field_geom) = &self.field_geom {
+        //     let half_length = field_geom.field_length / 2.0;
+        //     let half_width = field_geom.field_width / 2.0;
 
-            let check_boundary = |p1: Vector2, p2: Vector2| {
-                let v1 = p2 - p1;
-                if let Some(intersection) = find_intersection(p1, v1, start, direction) {
-                    let t = (intersection - start).dot(&normalized_direction);
-                    update_closest(&mut closest_intersection, t, intersection);
-                }
-            };
+        //     let check_boundary = |p1: Vector2, p2: Vector2| {
+        //         let v1 = p2 - p1;
+        //         if let Some(intersection) = find_intersection(p1, v1, start, direction) {
+        //             let t = (intersection - start).dot(&normalized_direction);
+        //             update_closest(&mut closest_intersection, t, intersection);
+        //         }
+        //     };
 
-            // Check all four boundaries
-            /*
-            check_boundary(
-                Vector2::new(-half_length, half_width),
-                Vector2::new(half_length, half_width),
-            );
-            check_boundary(
-                Vector2::new(-half_length, -half_width),
-                Vector2::new(half_length, -half_width),
-            );
-            check_boundary(
-                Vector2::new(-half_length, -half_width),
-                Vector2::new(-half_length, half_width),
-            );
-            check_boundary(
-                Vector2::new(half_length, -half_width),
-                Vector2::new(half_length, half_width),
-            );
-            */
-        }
+        // Check all four boundaries
+        /*
+        check_boundary(
+            Vector2::new(-half_length, half_width),
+            Vector2::new(half_length, half_width),
+        );
+        check_boundary(
+            Vector2::new(-half_length, -half_width),
+            Vector2::new(half_length, -half_width),
+        );
+        check_boundary(
+            Vector2::new(-half_length, -half_width),
+            Vector2::new(-half_length, half_width),
+        );
+        check_boundary(
+            Vector2::new(half_length, -half_width),
+            Vector2::new(half_length, half_width),
+        );
+        */
+        // }
 
         closest_intersection.map(|(_, point)| point)
     }
@@ -535,7 +553,7 @@ pub fn nearest_safe_pos(
     let mut found_better = false;
     let min_theta = 0;
     let max_theta = 360;
-    let mut i = 0;
+
     for theta in (min_theta..max_theta).step_by(10) {
         let theta = Angle::from_degrees(theta as f64);
         for radius in (0..max_radius).step_by(50) {
@@ -544,14 +562,10 @@ pub fn nearest_safe_pos(
                 && avoding_point.distance_to(position) > min_distance
             {
                 if (position - target_pos).norm() < (best_pos - target_pos).norm() {
-                    // crate::debug_cross(format!("{i}"), position, crate::DebugColor::Green);
                     best_pos = position;
                     found_better = true;
                 }
-            } else {
-                // crate::debug_cross(format!("{i}"), position, crate::DebugColor::Red);
             }
-            i += 1;
         }
     }
     if !found_better {
@@ -575,6 +589,55 @@ pub fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
 
 pub fn mock_world_data() -> WorldData {
     WorldData {
+        t_received: 0.0,
+        t_capture: 0.0,
+        dt: 1.0,
+        blue_team: vec![PlayerData {
+            id: PlayerId::new(0),
+            position: Vector2::new(1000.0, 1000.0),
+            timestamp: 0.0,
+            raw_position: Vector2::new(1000.0, 1000.0),
+            velocity: Vector2::zeros(),
+            yaw: Angle::default(),
+            raw_yaw: Angle::default(),
+            angular_speed: 0.0,
+            primary_status: Some(SysStatus::Ready),
+            kicker_cap_voltage: Some(0.0),
+            kicker_temp: Some(0.0),
+            pack_voltages: Some([0.0, 0.0]),
+            breakbeam_ball_detected: false,
+            imu_status: Some(SysStatus::Ready),
+            kicker_status: Some(SysStatus::Standby),
+        }],
+        yellow_team: vec![PlayerData {
+            id: PlayerId::new(1),
+            position: Vector2::new(-1000.0, -1000.0),
+            timestamp: 0.0,
+            raw_position: Vector2::new(-1000.0, -1000.0),
+            velocity: Vector2::zeros(),
+            yaw: Angle::default(),
+            raw_yaw: Angle::default(),
+            angular_speed: 0.0,
+            primary_status: Some(SysStatus::Ready),
+            kicker_cap_voltage: Some(0.0),
+            kicker_temp: Some(0.0),
+            pack_voltages: Some([0.0, 0.0]),
+            breakbeam_ball_detected: false,
+            imu_status: Some(SysStatus::Ready),
+            kicker_status: Some(SysStatus::Standby),
+        }],
+        field_geom: Default::default(),
+        ball: None,
+        game_state: RawGameStateData {
+            game_state: GameState::Run,
+            operating_team: TeamColor::Blue,
+        },
+        side_assignment: SideAssignment::YellowOnPositive,
+    }
+}
+
+pub fn mock_team_data() -> TeamData {
+    TeamData {
         own_players: vec![PlayerData {
             id: PlayerId::new(0),
             position: Vector2::new(1000.0, 1000.0),
@@ -614,14 +677,6 @@ pub fn mock_world_data() -> WorldData {
             field_width: 6000.0,
             ..Default::default()
         }),
-        player_model: PlayerModel {
-            radius: 90.0,
-            dribbler_angle: Angle::from_degrees(56.0),
-            max_speed: 1000.0,
-            max_acceleration: 1000.0,
-            max_angular_speed: 1000.0,
-            max_angular_acceleration: 1000.0,
-        },
         t_received: 0.0,
         t_capture: 0.0,
         dt: 1.0,
@@ -641,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_ray_player_intersection() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(1.0, 1.0);
 
@@ -654,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_ray_wall_intersection() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(1.0, 0.0);
 
@@ -667,7 +722,7 @@ mod tests {
 
     #[test]
     fn test_no_intersection() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(0.0, 1.0);
 
@@ -680,7 +735,7 @@ mod tests {
 
     #[test]
     fn test_ray_origin_inside_player() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(1000.0, 1000.0); // Inside the player
         let direction = Vector2::new(1.0, 0.0);
 
@@ -693,7 +748,7 @@ mod tests {
 
     #[test]
     fn test_ray_parallel_to_wall() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 3000.0);
         let direction = Vector2::new(1.0, 0.0);
 
@@ -706,7 +761,7 @@ mod tests {
 
     #[test]
     fn test_ray_away_from_everything() {
-        let world = mock_world_data();
+        let world = mock_team_data();
         let start = Vector2::new(0.0, 0.0);
         let direction = Vector2::new(-1.0, -1.0);
 

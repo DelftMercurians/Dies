@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use dies_core::{
-    ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, SimulatorCmd, WorldUpdate,
+    ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd,
+    TeamColor, WorldUpdate,
 };
 use dies_protos::ssl_gc_referee_message::referee::Command;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -10,16 +11,27 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 #[derive(Debug)]
 pub enum ControlMsg {
     SetPlayerOverride {
+        team_color: TeamColor,
         player_id: PlayerId,
         override_active: bool,
     },
-    PlayerOverrideCommand(PlayerId, PlayerOverrideCommand),
+    PlayerOverrideCommand {
+        team_color: TeamColor,
+        player_id: PlayerId,
+        command: PlayerOverrideCommand,
+    },
     SetPause(bool),
     UpdateSettings(ExecutorSettings),
     GcCommand {
         command: Command,
     },
     SimulatorCmd(SimulatorCmd),
+    /// Control which teams are active
+    SetActiveTeams {
+        blue_active: bool,
+        yellow_active: bool,
+    },
+    SetSideAssignment(SideAssignment),
     Stop,
 }
 

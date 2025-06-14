@@ -1,6 +1,5 @@
 use dies_core::{
-    debug_line, debug_value, to_dies_coords3, BallData, FieldGeometry, FieldMask, TrackerSettings,
-    Vector3,
+    debug_line, debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3,
 };
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 use nalgebra::{SVector, Vector6};
@@ -23,10 +22,6 @@ struct StoredData {
 /// Tracker for the ball.
 #[derive(Debug)]
 pub struct BallTracker {
-    /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
-    /// converting coordinates.
-    play_dir_x: f64,
-
     /// Kalman filter for the ball's position and velocity
     filter: MaybeKalman<3, 6>,
 
@@ -40,7 +35,6 @@ impl BallTracker {
     /// Create a new BallTracker.
     pub fn new(settings: &TrackerSettings) -> BallTracker {
         BallTracker {
-            play_dir_x: settings.initial_opp_goal_x,
             last_detection: None,
             filter: MaybeKalman::new(
                 0.1,
@@ -57,18 +51,6 @@ impl BallTracker {
                 settings.ball_unit_transition_var,
                 settings.ball_measurement_var,
             );
-        }
-    }
-
-    /// Set the sign of the enemy goal's x coordinate in ssl-vision coordinates.
-    pub fn set_play_dir_x(&mut self, play_dir_x: f64) {
-        if play_dir_x != self.play_dir_x {
-            // Flip the x coordinate of the ball's position and velocity
-            if let Some(last_data) = &mut self.last_detection {
-                last_data.position.x *= -1.0;
-                last_data.velocity.x *= -1.0;
-            }
-            self.play_dir_x = play_dir_x;
         }
     }
 
@@ -176,13 +158,9 @@ impl BallTracker {
     pub fn get(&self) -> Option<BallData> {
         self.last_detection.as_ref().map(|data| BallData {
             timestamp: data.timestamp,
-            raw_position: data
-                .raw_position
-                .iter()
-                .map(|v| to_dies_coords3(*v, self.play_dir_x))
-                .collect(),
-            position: to_dies_coords3(data.position, self.play_dir_x),
-            velocity: to_dies_coords3(data.velocity, self.play_dir_x),
+            raw_position: data.raw_position.clone(),
+            position: data.position,
+            velocity: data.velocity,
             detected: self.misses < 5,
         })
     }

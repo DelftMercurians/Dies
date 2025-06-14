@@ -18,7 +18,7 @@ import {
   UiMode,
   UiStatus,
   UiCommand,
-  WorldData,
+  TeamData,
   PostUiModeBody,
   PostUiCommandBody,
   UiWorldState,
@@ -31,6 +31,10 @@ import {
   WsMessage,
   DebugMap,
   GetDebugMapResponse,
+  WorldData,
+  TeamColor,
+  TeamPlayerId,
+  PlayerId,
 } from "./bindings";
 import { toast } from "sonner";
 
@@ -146,6 +150,64 @@ export const useBasestationInfo = () =>
     refetchInterval: 1000,
   });
 
+const convertWorldDataToTeamData = (
+  worldData: WorldData,
+  primaryTeamColor: TeamColor = TeamColor.Blue
+): TeamData => {
+  const isBlue = primaryTeamColor === TeamColor.Blue;
+  return {
+    t_received: worldData.t_received,
+    t_capture: worldData.t_capture,
+    dt: worldData.dt,
+    own_players: isBlue ? worldData.blue_team : worldData.yellow_team,
+    opp_players: isBlue ? worldData.yellow_team : worldData.blue_team,
+    ball: worldData.ball,
+    field_geom: worldData.field_geom,
+    current_game_state: {
+      game_state: worldData.game_state.game_state,
+      us_operating: worldData.game_state.operating_team === primaryTeamColor,
+    },
+  };
+};
+
+// Helper function to extract player ID from TeamPlayerId
+const extractPlayerId = (teamPlayerId: TeamPlayerId): PlayerId => {
+  return teamPlayerId.player_id;
+};
+
+// Helper function to check if a player is in manual control
+const isPlayerManuallyControlled = (
+  playerId: PlayerId,
+  manualControlledPlayers: TeamPlayerId[]
+): boolean => {
+  return manualControlledPlayers.some((tp) => tp.player_id === playerId);
+};
+
+export const useTeamConfiguration = () => {
+  const queryClient = useQueryClient();
+
+  const setActiveTeams = useMutation({
+    mutationFn: ({
+      blueActive,
+      yellowActive,
+    }: {
+      blueActive: boolean;
+      yellowActive: boolean;
+    }) =>
+      postCommand({
+        type: "SetActiveTeams",
+        data: { blue_active: blueActive, yellow_active: yellowActive },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+    },
+  });
+
+  return {
+    setActiveTeams: setActiveTeams.mutate,
+  };
+};
+
 export const useSendCommand = () => {
   const queryClient = useQueryClient();
   const invalidate = () => {
@@ -169,6 +231,23 @@ export const useSendCommand = () => {
   return (command: UiCommand) => mutation.mutate(command);
 };
 
+const PrimaryTeamContext = createContext<
+  [TeamColor, (team: TeamColor) => void]
+>([TeamColor.Blue, () => {}]);
+
+export const PrimaryTeamProvider: FC<PropsWithChildren> = ({ children }) => {
+  const [primaryTeam, setPrimaryTeam] = useState<TeamColor>(TeamColor.Blue);
+  return (
+    <PrimaryTeamContext.Provider value={[primaryTeam, setPrimaryTeam]}>
+      {children}
+    </PrimaryTeamContext.Provider>
+  );
+};
+
+export const usePrimaryTeam = () => {
+  return useContext(PrimaryTeamContext);
+};
+
 export const useWorldState = (): WorldStatus => {
   const wsConnected = useContext(WsConnectedContext);
   const query = useQuery({
@@ -177,6 +256,7 @@ export const useWorldState = (): WorldStatus => {
     refetchInterval: 100,
     enabled: !wsConnected,
   });
+  const [primaryTeam] = useContext(PrimaryTeamContext);
 
   if (query.isSuccess) {
     if (query.data.type === "Loaded") {
@@ -218,6 +298,21 @@ export const useExecutorSettings = () => {
     settings: query.data,
     updateSettings: mutation.mutate,
   };
+};
+
+export const useRawWorldData = () => {
+  const wsConnected = useContext(WsConnectedContext);
+  const query = useQuery({
+    queryKey: ["raw-world-state"],
+    queryFn: getWorldState,
+    refetchInterval: 100,
+    enabled: !wsConnected,
+  });
+
+  if (query.isSuccess && query.data.type === "Loaded") {
+    return query.data.data;
+  }
+  return null;
 };
 
 let ws: WebSocket | null = null;
@@ -302,7 +397,7 @@ export const useKeyboardControl = ({
   mode = "global",
   fanSpeed,
   kickSpeed,
-  kick
+  kick,
 }: {
   playerId: number | null;
   speed: number;
@@ -326,6 +421,8 @@ export const useKeyboardControl = ({
   kickRef.current = kick;
   const kickSpeedRef = useRef(kickSpeed);
   kickSpeedRef.current = kickSpeed;
+
+  const [primaryTeam] = usePrimaryTeam();
   useEffect(() => {
     if (playerId === null) return;
     const pressedKeys = new Set<string>();
@@ -340,9 +437,13 @@ export const useKeyboardControl = ({
     const interval = setInterval(() => {
       if (playerId === null) return;
 
+      // Default team ID - this should be replaced with actual primary team selection
+      const defaultTeamId = 1; // TODO: Get from primary team selection
+
       const command = {
         type: "OverrideCommand",
         data: {
+          team_color: primaryTeam,
           player_id: playerId,
           command: {
             type:
@@ -366,7 +467,7 @@ export const useKeyboardControl = ({
       if (vel_mag > 0) {
         velocity = velocity.map((v) => (v / vel_mag) * speedRef.current) as [
           number,
-          number,
+          number
         ];
       }
       command.data.command.data.velocity = velocity;
@@ -384,9 +485,10 @@ export const useKeyboardControl = ({
       command.data.command.data.dribble_speed = dribble_speed;
 
       if (pressedKeys.has("c")) {
-        const command = {
+        const kickCommand = {
           type: "OverrideCommand",
           data: {
+            team_color: primaryTeam,
             player_id: playerId,
             command: {
               type: "Kick",
@@ -396,17 +498,18 @@ export const useKeyboardControl = ({
             },
           },
         } satisfies UiCommand;
-        sendCommand(command as UiCommand);
-      } 
+        sendCommand(kickCommand);
+      }
 
       if (vel_mag > 0 || angular_velocity !== 0 || dribble_speed > 0) {
-        sendCommand(command as UiCommand);
+        sendCommand(command);
       }
 
       if (fanSpeed) {
-        const command = {
+        const fanCommand = {
           type: "OverrideCommand",
           data: {
+            team_color: primaryTeam,
             player_id: playerId,
             command: {
               type: "SetFanSpeed",
@@ -416,14 +519,15 @@ export const useKeyboardControl = ({
             },
           },
         } satisfies UiCommand;
-        // sendCommand(command as UiCommand);
+        // sendCommand(fanCommand);
       }
       if (kickRef.current) {
         console.log("kick");
         // kickRef.current = false; // doesn't work :/
-        const command = {
+        const kickCommand = {
           type: "OverrideCommand",
           data: {
+            team_color: primaryTeam,
             player_id: playerId,
             command: {
               type: "Kick",
@@ -433,7 +537,7 @@ export const useKeyboardControl = ({
             },
           },
         } satisfies UiCommand;
-        // sendCommand(command as UiCommand);
+        // sendCommand(kickCommand);
       }
     }, 1000 / 30);
 
@@ -447,7 +551,7 @@ export const useKeyboardControl = ({
   }, [playerId]);
 };
 
-export const WorldDataProvider: FC<PropsWithChildren> = ({ children }) => {
+export const TeamDataProvider: FC<PropsWithChildren> = ({ children }) => {
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     addWsConnectedListener(setConnected);
@@ -464,3 +568,6 @@ export const WorldDataProvider: FC<PropsWithChildren> = ({ children }) => {
     </QueryClientProvider>
   );
 };
+
+// Export helper functions for use in components
+export { extractPlayerId, isPlayerManuallyControlled };

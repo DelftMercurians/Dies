@@ -74,15 +74,30 @@ impl ExecutorTask {
     async fn handle_cmd(&mut self, cmd: UiCommand, mut shutdown_rx: broadcast::Receiver<()>) {
         match cmd {
             UiCommand::SetManualOverride {
+                team_color,
                 player_id,
                 manual_override,
             } => self.handle_executor_msg(ControlMsg::SetPlayerOverride {
+                team_color,
                 player_id,
                 override_active: manual_override,
             }),
-            UiCommand::OverrideCommand { player_id, command } => {
-                self.handle_executor_msg(ControlMsg::PlayerOverrideCommand(player_id, command))
-            }
+            UiCommand::OverrideCommand {
+                team_color,
+                player_id,
+                command,
+            } => self.handle_executor_msg(ControlMsg::PlayerOverrideCommand {
+                team_color,
+                player_id,
+                command,
+            }),
+            UiCommand::SetActiveTeams {
+                blue_active,
+                yellow_active,
+            } => self.handle_executor_msg(ControlMsg::SetActiveTeams {
+                blue_active,
+                yellow_active,
+            }),
             UiCommand::SimulatorCmd(cmd) => self.handle_executor_msg(ControlMsg::SimulatorCmd(cmd)),
             UiCommand::SetPause(pause) => self.handle_executor_msg(ControlMsg::SetPause(pause)),
             UiCommand::Stop => self.stop_executor().await,

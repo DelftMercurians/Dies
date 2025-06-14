@@ -5,6 +5,14 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Launch",
+      "program": "${workspaceFolder}/target/debug/dies-cli",
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
       "name": "Debug Dies with webui",
       "type": "cppdbg",
       "request": "launch",

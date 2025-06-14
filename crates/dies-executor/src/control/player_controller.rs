@@ -1,14 +1,15 @@
 use std::time::{Duration, Instant};
 
 use dies_core::{
-    to_dies_coords2, to_dies_yaw, Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd,
-    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, Vector2, WorldData,
+    Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerCmdUntransformer,
+    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, TeamData, Vector2,
 };
 
 use super::{
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
     rvo::velocity_obstacle_update,
+    team_context::PlayerContext,
     yaw_control::YawController,
     Velocity,
 };
@@ -27,7 +28,7 @@ pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP,
     last_pos: Vector2,
-    if_gate_keeper: bool,
+
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
 
@@ -57,17 +58,11 @@ pub struct PlayerController {
     switch_heading: Option<bool>,
     heading_interval: IntervalTrigger,
 
-    opp_goal_sign: f64,
-
     fan_speed: f64,
     kick_speed: f64,
 }
 
 impl PlayerController {
-    pub fn set_opp_goal_sign(&mut self, opp_goal_sign: f64) {
-        self.opp_goal_sign = opp_goal_sign;
-    }
-
     /// Create a new player controller with the given ID.
     pub fn new(id: PlayerId, settings: &ExecutorSettings) -> Self {
         let mut instance = Self {
@@ -87,7 +82,6 @@ impl PlayerController {
             frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
-            if_gate_keeper: false,
 
             max_accel: settings.controller_settings.max_acceleration,
             max_speed: settings.controller_settings.max_velocity,
@@ -99,7 +93,6 @@ impl PlayerController {
             has_target_heading: false,
             switch_heading: None,
             heading_interval: IntervalTrigger::new(Duration::from_secs_f64(0.5)),
-            opp_goal_sign: settings.tracker_settings.initial_opp_goal_x,
 
             fan_speed: 0.0,
             kick_speed: 0.0,
@@ -124,17 +117,16 @@ impl PlayerController {
         self.id
     }
 
-    /// set the player as the gate keeper
-    pub fn set_gate_keeper(&mut self) {
-        self.if_gate_keeper = true;
-    }
-
     pub fn target_velocity(&self) -> Vector2 {
         self.target_velocity
     }
 
     /// Get the current command for the player.
-    pub fn command(&mut self) -> PlayerCmd {
+    pub fn command(
+        &mut self,
+        player_context: &PlayerContext,
+        mut untransformer: PlayerCmdUntransformer,
+    ) -> PlayerCmd {
         if self.frame_misses > MISSING_FRAMES_THRESHOLD {
             return PlayerCmd::Move(PlayerMoveCmd::zero(self.id));
         }
@@ -142,7 +134,7 @@ impl PlayerController {
         if self.heading_interval.trigger() {
             return PlayerCmd::SetHeading {
                 id: self.id,
-                heading: -to_dies_yaw(self.last_yaw, self.opp_goal_sign).radians(),
+                heading: -self.last_yaw.radians(),
             };
         }
 
@@ -164,34 +156,20 @@ impl PlayerController {
             _ => RobotCmd::Arm,
         };
 
-        let target_velocity = to_dies_yaw(self.last_yaw, self.opp_goal_sign)
-            .inv()
-            .rotate_vector(&to_dies_coords2(self.target_velocity, self.opp_goal_sign));
+        let cmd = untransformer
+            .set_target_velocity(self.target_velocity)
+            .set_w(self.target_z)
+            .set_dribble_speed(self.dribble_speed)
+            .set_fan_speed(self.fan_speed)
+            .set_kick_speed(self.kick_speed)
+            .set_robot_cmd(robot_cmd)
+            .untransform_move_cmd(self.id, self.last_yaw);
 
-        let cmd = PlayerMoveCmd {
-            id: self.id,
-            // In the robot's local frame +sx means forward and +sy means right
-            sx: target_velocity.x / 1000.0,  // Convert to m/s
-            sy: -target_velocity.y / 1000.0, // Convert to m/s
-            w: if self.have_imu && self.has_target_heading {
-                -to_dies_yaw(Angle::from_radians(self.target_z), self.opp_goal_sign).radians()
-            } else {
-                -self.target_z * self.opp_goal_sign
-            },
-            dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
-            fan_speed: self.fan_speed,
-            kick_speed: self.kick_speed,
-            robot_cmd,
-        };
-
-        dies_core::debug_value(format!("p{}.sx", self.id), cmd.sx);
-        dies_core::debug_value(format!("p{}.sy", self.id), cmd.sy);
-        dies_core::debug_value(format!("p{}.w", self.id), cmd.w);
-        dies_core::debug_value(format!("p{}.dribble_speed", self.id), cmd.dribble_speed);
-        dies_core::debug_string(
-            format!("p{}.robot_cmd", self.id),
-            format!("{:?}", cmd.robot_cmd),
-        );
+        player_context.debug_value("sx", cmd.sx);
+        player_context.debug_value("sy", cmd.sy);
+        player_context.debug_value("w", cmd.w);
+        player_context.debug_value("dribble_speed", cmd.dribble_speed);
+        player_context.debug_string("robot_cmd", format!("{:?}", cmd.robot_cmd));
 
         PlayerCmd::Move(cmd)
     }
@@ -208,12 +186,13 @@ impl PlayerController {
     pub fn update(
         &mut self,
         state: &PlayerData,
-        world: &WorldData,
+        world: &TeamData,
         input: &PlayerControlInput,
         dt: f64,
         is_manual_override: bool,
         obstacles: Vec<Obstacle>,
         all_players: &[&PlayerData],
+        player_context: &PlayerContext,
     ) {
         self.frame_misses = 0;
         self.have_imu = false; // matches!(
@@ -222,7 +201,7 @@ impl PlayerController {
                                // );
 
         if is_about_to_collide(state, world, 3.0 * dt) {
-            dies_core::debug_string(format!("p{}.collision", self.id), "true");
+            player_context.debug_string("collision", "true");
         }
 
         if let Some(fan_speed) = input.fan_speed {
@@ -232,7 +211,7 @@ impl PlayerController {
             self.kick_speed = kick_speed;
         }
 
-        dies_core::debug_value(format!("p{}.fan_speed", self.id), self.fan_speed);
+        player_context.debug_value("fan_speed", self.fan_speed);
 
         // Calculate velocity using the MTP controller
         self.last_yaw = state.raw_yaw;
@@ -240,8 +219,8 @@ impl PlayerController {
         self.target_velocity = Vector2::zeros();
         if let Some(pos_target) = input.position {
             self.position_mtp.set_setpoint(pos_target);
-            dies_core::debug_cross(
-                format!("p{}.control.target", self.id),
+            player_context.debug_cross_colored(
+                "control.target",
                 pos_target,
                 dies_core::DebugColor::Red,
             );
@@ -254,11 +233,12 @@ impl PlayerController {
                 input.speed_limit.unwrap_or(self.max_speed),
                 input.acceleration_limit.unwrap_or(self.max_decel),
                 input.care,
+                player_context,
             );
             // let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
             self.target_velocity = pos_u;
         } else {
-            dies_core::debug_remove(format!("p{}.control.target", self.id));
+            player_context.debug_remove("control.target");
         }
         let add_vel = match input.velocity {
             Velocity::Global(v) => v,
@@ -290,15 +270,14 @@ impl PlayerController {
                 &self.target_velocity,
                 all_players,
                 obstacles.as_slice(),
-                &world.player_model,
                 super::rvo::VelocityObstacleType::VO,
                 input.avoid_robots,
             );
         }
 
         // Draw the velocity
-        dies_core::debug_line(
-            format!("p{}.velocity", self.id),
+        player_context.debug_line_colored(
+            "velocity",
             self.last_pos,
             self.last_pos + state.velocity,
             dies_core::DebugColor::Red,
@@ -310,18 +289,18 @@ impl PlayerController {
                 self.switch_heading = Some(true);
             }
 
-            dies_core::debug_line(
-                format!("p{}.target_yaw_line", self.id),
+            player_context.debug_line_colored(
+                "target_yaw_line",
                 self.last_pos,
                 self.last_pos + yaw.rotate_vector(&Vector2::new(30.0, 0.0)),
                 dies_core::DebugColor::Purple,
             );
 
             if self.have_imu {
-                dies_core::debug_string(format!("p{}.yaw_control", self.id), "heading");
+                player_context.debug_string("yaw_control", "heading");
                 self.target_z = yaw.radians();
             } else {
-                dies_core::debug_string(format!("p{}.yaw_control", self.id), "yaw rate");
+                player_context.debug_string("yaw_control", "yaw rate");
                 self.yaw_control.set_setpoint(yaw);
                 let head_u = self.yaw_control.update(
                     self.last_yaw,
@@ -382,10 +361,14 @@ impl PlayerController {
         }
     }
 
-    pub fn update_target_velocity_with_avoidance(&mut self, target_velocity: Vector2) {
+    pub fn update_target_velocity_with_avoidance(
+        &mut self,
+        target_velocity: Vector2,
+        player_context: &PlayerContext,
+    ) {
         self.target_velocity = target_velocity;
-        dies_core::debug_line(
-            format!("p{}.target_velocity", self.id),
+        player_context.debug_line_colored(
+            "target_velocity",
             self.last_pos,
             self.last_pos + self.target_velocity,
             dies_core::DebugColor::Green,
@@ -393,7 +376,7 @@ impl PlayerController {
     }
 }
 
-fn is_about_to_collide(player: &PlayerData, world: &WorldData, time_horizon: f64) -> bool {
+fn is_about_to_collide(player: &PlayerData, world: &TeamData, time_horizon: f64) -> bool {
     // Check if the player is about to collide with any other player
     for other in world.own_players.iter().chain(world.opp_players.iter()) {
         if player.position == other.position {

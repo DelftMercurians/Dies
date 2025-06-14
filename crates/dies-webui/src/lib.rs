@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    ScenarioInfo, SimulatorCmd, WorldData,
+    ScenarioInfo, SimulatorCmd, TeamColor, WorldData,
 };
 use dies_executor::scenarios::ScenarioType;
 use dies_ssl_client::SslClientConfig;
@@ -77,10 +77,12 @@ pub(crate) struct UiStatus {
 #[typeshare]
 pub(crate) enum UiCommand {
     SetManualOverride {
+        team_color: TeamColor,
         player_id: PlayerId,
         manual_override: bool,
     },
     OverrideCommand {
+        team_color: TeamColor,
         player_id: PlayerId,
         command: PlayerOverrideCommand,
     },
@@ -90,6 +92,11 @@ pub(crate) enum UiCommand {
         scenario: ScenarioType,
     },
     GcCommand(String),
+    /// Control which teams are active
+    SetActiveTeams {
+        blue_active: bool,
+        yellow_active: bool,
+    },
     Stop,
 }
 

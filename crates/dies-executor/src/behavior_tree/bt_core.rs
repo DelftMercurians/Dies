@@ -1,4 +1,4 @@
-use dies_core::{PlayerData, PlayerId, WorldData};
+use dies_core::{PlayerData, PlayerId, TeamData};
 use rhai::Engine;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -39,11 +39,11 @@ impl Default for BehaviorTree {
 }
 
 #[derive(Clone)]
-pub struct TeamContext {
+pub struct BtContext {
     semaphores: Arc<RwLock<HashMap<String, (usize, HashSet<PlayerId>)>>>,
 }
 
-impl TeamContext {
+impl BtContext {
     pub fn new() -> Self {
         Self {
             semaphores: Arc::new(RwLock::new(HashMap::new())),
@@ -84,7 +84,7 @@ impl TeamContext {
     }
 }
 
-impl Default for TeamContext {
+impl Default for BtContext {
     fn default() -> Self {
         Self::new()
     }
@@ -101,16 +101,16 @@ pub enum BehaviorStatus {
 #[derive(Clone)]
 pub struct RobotSituation {
     pub player_id: PlayerId,
-    pub world: Arc<WorldData>,
-    pub team_context: TeamContext,
+    pub world: Arc<TeamData>,
+    pub team_context: BtContext,
     pub viz_path_prefix: String,
 }
 
 impl RobotSituation {
     pub fn new(
         player_id: PlayerId,
-        world: Arc<WorldData>,
-        team_context: TeamContext,
+        world: Arc<TeamData>,
+        team_context: BtContext,
         viz_path_prefix: String,
     ) -> Self {
         Self {

@@ -2,7 +2,7 @@ mod log_codec;
 mod logger;
 mod playback;
 
-use dies_core::{DebugColor, DebugMap, DebugShape, WorldData};
+use dies_core::{DebugColor, DebugMap, DebugShape, TeamData, WorldData};
 pub use log_codec::*;
 pub use logger::*;
 pub use playback::*;

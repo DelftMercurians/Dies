@@ -4,9 +4,11 @@ import {
   useKeyboardControl,
   useSendCommand,
   useWorldState,
+  isPlayerManuallyControlled,
+  usePrimaryTeam,
 } from "@/api";
 import * as math from "mathjs";
-import { DebugValue, PlayerData } from "@/bindings";
+import { DebugValue, PlayerData, TeamColor } from "@/bindings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -89,10 +91,14 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
   const [fanSpeed, setFanSpeed] = useState(0);
   const [kickSpeed, setKickSpeed] = useState(0);
   const [kick, setKick] = useState(false);
+  const [primaryTeam] = usePrimaryTeam();
 
   const manualControl =
     typeof selectedPlayerId === "number" &&
-    executorInfo?.manual_controlled_players.includes(selectedPlayerId);
+    isPlayerManuallyControlled(
+      selectedPlayerId,
+      executorInfo?.manual_controlled_players ?? []
+    );
   useKeyboardControl({
     playerId: manualControl && keyboardControl ? selectedPlayerId : null,
     speed,
@@ -133,13 +139,16 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 
   const selectedPlayer =
     world.status === "connected"
-      ? world.data.own_players.find((p) => p.id === selectedPlayerId)
+      ? primaryTeam === TeamColor.Blue
+        ? world.data.blue_team.find((p) => p.id === selectedPlayerId)
+        : world.data.yellow_team.find((p) => p.id === selectedPlayerId)
       : null;
 
   const handleToggleManual = (val: boolean) => {
     sendCommand({
       type: "SetManualOverride",
       data: {
+        team_color: primaryTeam,
         player_id: selectedPlayerId,
         manual_override: val,
       },

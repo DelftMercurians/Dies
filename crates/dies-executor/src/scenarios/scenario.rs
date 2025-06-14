@@ -4,7 +4,7 @@ use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     Angle, BallPlacement, ExecutorSettings, PlayerData, PlayerId, PlayerPlacement, ScenarioInfo,
-    Vector2, Vector3, WorldData,
+    TeamData, Vector2, Vector3,
 };
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 use dies_ssl_client::{SslClientConfig, VisionClient};
@@ -124,12 +124,12 @@ impl ScenarioSetup {
 
         for player in self.own_players.iter() {
             let (position, yaw) = player_into_simulation(player, field_width, field_length);
-            builder = builder.add_own_player(position, yaw);
+            builder = builder.add_blue_player(position, yaw);
         }
 
         for player in self.opp_players.iter() {
             let (position, yaw) = player_into_simulation(player, field_width, field_length);
-            builder = builder.add_opp_player(position, yaw);
+            builder = builder.add_yellow_player(position, yaw);
         }
 
         let sim = builder.build();
@@ -172,7 +172,7 @@ impl ScenarioSetup {
     }
 
     /// Check whether the current world state matches the scenario setup.
-    fn check_live(&self, world: WorldData) -> bool {
+    fn check_live(&self, world: TeamData) -> bool {
         // Check ball
         match (&self.ball, world.ball) {
             (BallPlacement::Position(target), Some(ball)) => {
@@ -303,7 +303,7 @@ fn random_pos(field_width: f64, field_length: f64) -> Vector2 {
 
 #[cfg(test)]
 mod tests {
-    use dies_core::{mock_world_data, Angle, BallData, WorldData};
+    use dies_core::{mock_team_data, Angle, BallData, TeamData};
 
     use super::*;
 
@@ -320,7 +320,7 @@ mod tests {
             yaw_tolerance: 10.0f64.to_radians(),
         };
 
-        let mut world = WorldData {
+        let mut world = TeamData {
             ball: None,
             own_players: vec![PlayerData {
                 position: Vector2::new(0.0, 0.0),
@@ -329,7 +329,7 @@ mod tests {
                 ..PlayerData::new(PlayerId::new(0))
             }],
             opp_players: vec![],
-            ..mock_world_data()
+            ..mock_team_data()
         };
 
         assert!(!setup.check_live(world.clone()));

@@ -14,6 +14,6 @@ pub(self) use bt_node::*;
 pub(self) use rhai_plugin::bt_rhai_plugin;
 pub(self) use situation::*;
 
-pub use bt_core::{BehaviorTree, RobotSituation, TeamContext};
+pub use bt_core::{BehaviorTree, BtContext, RobotSituation};
 pub use rhai_host::RhaiHost;
 pub use rhai_types::{RhaiBehaviorNode, RhaiSkill};
