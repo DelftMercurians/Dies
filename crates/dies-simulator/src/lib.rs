@@ -916,6 +916,12 @@ impl Simulation {
             if (!self.config.blue_controlled && player.team_color == TeamColor::Blue)
                 || (!self.config.yellow_controlled && player.team_color == TeamColor::Yellow)
             {
+                let rigid_body = self
+                    .rigid_body_set
+                    .get_mut(player.rigid_body_handle)
+                    .unwrap();
+                rigid_body.set_linvel(Vector::zeros(), true);
+                rigid_body.set_angvel(Vector::zeros(), true);
                 continue;
             }
 

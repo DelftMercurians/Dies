@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    Angle, BallData, GameStateData, PlayerCmd, PlayerData, PlayerMoveCmd, TeamData, Vector2,
-    Vector3, WorldData,
+    Angle, BallData, GameStateData, PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, TeamData,
+    Vector2, Vector3, WorldData,
 };
 
 /// # Team-Specific Coordinate System
@@ -62,7 +62,7 @@ impl std::fmt::Display for TeamColor {
 ///
 /// In RoboCup SSL, the field coordinate system is fixed, but teams can be
 /// assigned to defend either side. This enum tracks that assignment.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[typeshare]
 pub enum SideAssignment {
     /// Blue team defends the positive x side (+x goal)
@@ -97,31 +97,6 @@ impl SideAssignment {
                 game_state: world_data.game_state.game_state,
                 us_operating: world_data.game_state.operating_team == color,
             },
-        }
-    }
-
-    pub fn untransform_player_cmd(&self, color: TeamColor, cmd: &PlayerCmd) -> PlayerCmd {
-        match cmd {
-            PlayerCmd::Move(cmd) => PlayerCmd::Move(self.untransform_player_move_cmd(color, cmd)),
-            PlayerCmd::SetHeading { id, heading } => PlayerCmd::SetHeading {
-                id: *id,
-                heading: self
-                    .transform_to_team_coords_angle(color, Angle::from_degrees(*heading))
-                    .degrees(),
-            },
-        }
-    }
-
-    fn untransform_player_move_cmd(&self, color: TeamColor, cmd: &PlayerMoveCmd) -> PlayerMoveCmd {
-        PlayerMoveCmd {
-            id: cmd.id,
-            sx: cmd.sx * self.attacking_direction_sign(color),
-            sy: cmd.sy,
-            w: cmd.w * self.attacking_direction_sign(color),
-            dribble_speed: cmd.dribble_speed,
-            robot_cmd: cmd.robot_cmd,
-            fan_speed: cmd.fan_speed,
-            kick_speed: cmd.kick_speed,
         }
     }
 
@@ -163,15 +138,15 @@ impl SideAssignment {
         !self.is_on_own_side_vec3(color, position)
     }
 
-    fn transform_to_team_coords_vec2(&self, color: TeamColor, vec: &Vector2) -> Vector2 {
+    fn transform_vec2(&self, color: TeamColor, vec: &Vector2) -> Vector2 {
         Vector2::new(vec.x * self.attacking_direction_sign(color), vec.y)
     }
 
-    fn transform_to_team_coords_vec3(&self, color: TeamColor, vec: &Vector3) -> Vector3 {
+    fn transform_vec3(&self, color: TeamColor, vec: &Vector3) -> Vector3 {
         Vector3::new(vec.x * self.attacking_direction_sign(color), vec.y, vec.z)
     }
 
-    fn transform_to_team_coords_angle(&self, color: TeamColor, angle: Angle) -> Angle {
+    fn transform_angle(&self, color: TeamColor, angle: Angle) -> Angle {
         let sign = self.attacking_direction_sign(color);
         if sign > 0.0 {
             angle
@@ -187,12 +162,12 @@ impl SideAssignment {
 
     fn transform_to_team_coords_player(&self, color: TeamColor, player: &PlayerData) -> PlayerData {
         PlayerData {
-            position: self.transform_to_team_coords_vec2(color, &player.position),
-            velocity: self.transform_to_team_coords_vec2(color, &player.velocity),
-            yaw: self.transform_to_team_coords_angle(color, player.yaw),
+            position: self.transform_vec2(color, &player.position),
+            velocity: self.transform_vec2(color, &player.velocity),
+            yaw: self.transform_angle(color, player.yaw),
             angular_speed: player.angular_speed * self.attacking_direction_sign(color),
-            raw_position: self.transform_to_team_coords_vec2(color, &player.raw_position),
-            raw_yaw: self.transform_to_team_coords_angle(color, player.raw_yaw),
+            raw_position: self.transform_vec2(color, &player.raw_position),
+            raw_yaw: self.transform_angle(color, player.raw_yaw),
             primary_status: player.primary_status,
             kicker_cap_voltage: player.kicker_cap_voltage,
             kicker_temp: player.kicker_temp,
@@ -207,23 +182,131 @@ impl SideAssignment {
 
     fn transform_to_team_coords_ball(&self, color: TeamColor, ball: &BallData) -> BallData {
         BallData {
-            position: self.transform_to_team_coords_vec3(color, &ball.position),
-            velocity: self.transform_to_team_coords_vec3(color, &ball.velocity),
+            position: self.transform_vec3(color, &ball.position),
+            velocity: self.transform_vec3(color, &ball.velocity),
             detected: ball.detected,
             raw_position: ball
                 .raw_position
                 .iter()
-                .map(|p| self.transform_to_team_coords_vec3(color, p))
+                .map(|p| self.transform_vec3(color, p))
                 .collect(),
             timestamp: ball.timestamp,
         }
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct PlayerCmdUntransformer {
+    side_assignment: SideAssignment,
+    team_color: TeamColor,
+    target_velocity: Option<Vector2>,
+    target_yaw: Option<Angle>,
+    w: Option<f64>,
+    dribble_speed: Option<f64>,
+    fan_speed: Option<f64>,
+    kick_speed: Option<f64>,
+    robot_cmd: Option<RobotCmd>,
+}
+
+impl PlayerCmdUntransformer {
+    pub fn new(side_assignment: SideAssignment, team_color: TeamColor) -> Self {
+        Self {
+            side_assignment,
+            team_color,
+            target_velocity: None,
+            target_yaw: None,
+            w: None,
+            dribble_speed: None,
+            fan_speed: None,
+            kick_speed: None,
+            robot_cmd: None,
+        }
+    }
+
+    pub fn set_target_velocity(&mut self, target_velocity: Vector2) -> &mut Self {
+        self.target_velocity = Some(target_velocity);
+        self
+    }
+
+    pub fn set_target_yaw(&mut self, target_yaw: Angle) -> &mut Self {
+        self.target_yaw = Some(target_yaw);
+        self
+    }
+
+    pub fn set_w(&mut self, w: f64) -> &mut Self {
+        self.w = Some(w);
+        self
+    }
+
+    pub fn set_dribble_speed(&mut self, dribble_speed: f64) -> &mut Self {
+        self.dribble_speed = Some(dribble_speed);
+        self
+    }
+
+    pub fn set_fan_speed(&mut self, fan_speed: f64) -> &mut Self {
+        self.fan_speed = Some(fan_speed);
+        self
+    }
+
+    pub fn set_kick_speed(&mut self, kick_speed: f64) -> &mut Self {
+        self.kick_speed = Some(kick_speed);
+        self
+    }
+
+    pub fn set_robot_cmd(&mut self, robot_cmd: RobotCmd) -> &mut Self {
+        self.robot_cmd = Some(robot_cmd);
+        self
+    }
+
+    pub fn untransform_move_cmd(&self, id: PlayerId, yaw: Angle) -> PlayerMoveCmd {
+        let target_velocity_local = if let Some(target_velocity) = self.target_velocity {
+            self.side_assignment
+                .transform_angle(self.team_color, yaw)
+                .inv()
+                .rotate_vector(
+                    &(self
+                        .side_assignment
+                        .transform_vec2(self.team_color, &target_velocity)),
+                )
+        } else {
+            Vector2::zeros()
+        };
+
+        PlayerMoveCmd {
+            id,
+            sx: target_velocity_local.x / 1000.0, // Convert to m/s
+            sy: -target_velocity_local.y / 1000.0, // Convert to m/s
+            w: if let Some(target_yaw) = self.target_yaw {
+                -self
+                    .side_assignment
+                    .transform_angle(self.team_color, target_yaw)
+                    .radians()
+            } else if let Some(w) = self.w {
+                -self
+                    .side_assignment
+                    .attacking_direction_sign(self.team_color)
+                    * w
+            } else {
+                0.0
+            },
+            dribble_speed: self.dribble_speed.unwrap_or(0.0),
+            fan_speed: self.fan_speed.unwrap_or(0.0),
+            kick_speed: self.kick_speed.unwrap_or(0.0),
+            robot_cmd: self.robot_cmd.unwrap_or(RobotCmd::None),
+        }
+    }
+
+    pub fn untrasform_set_heading(&self, heading: Angle) -> f64 {
+        self.side_assignment
+            .transform_angle(self.team_color, heading)
+            .degrees()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Angle, PlayerId, Vector2};
+    use crate::{Angle, Vector2};
     use approx::assert_relative_eq;
 
     const BLUE_ON_POSITIVE: SideAssignment = SideAssignment::BlueOnPositive;
@@ -257,11 +340,11 @@ mod tests {
         let vec = Vector2::new(1.0, 2.0);
 
         // Attacks -x
-        let transformed = BLUE_ON_POSITIVE.transform_to_team_coords_vec2(TeamColor::Blue, &vec);
+        let transformed = BLUE_ON_POSITIVE.transform_vec2(TeamColor::Blue, &vec);
         assert_eq!(transformed, Vector2::new(-1.0, 2.0));
 
         // Attacks +x
-        let transformed = YELLOW_ON_POSITIVE.transform_to_team_coords_vec2(TeamColor::Blue, &vec);
+        let transformed = YELLOW_ON_POSITIVE.transform_vec2(TeamColor::Blue, &vec);
         assert_eq!(transformed, Vector2::new(1.0, 2.0));
     }
 
@@ -271,71 +354,15 @@ mod tests {
         let angle_neg = Angle::from_degrees(-45.0);
 
         // Attacks +x (no change)
-        let transformed_pos =
-            YELLOW_ON_POSITIVE.transform_to_team_coords_angle(TeamColor::Blue, angle_pos);
+        let transformed_pos = YELLOW_ON_POSITIVE.transform_angle(TeamColor::Blue, angle_pos);
         assert_relative_eq!(transformed_pos.degrees(), 45.0);
-        let transformed_neg =
-            YELLOW_ON_POSITIVE.transform_to_team_coords_angle(TeamColor::Blue, angle_neg);
+        let transformed_neg = YELLOW_ON_POSITIVE.transform_angle(TeamColor::Blue, angle_neg);
         assert_relative_eq!(transformed_neg.degrees(), -45.0);
 
         // Attacks -x (flip)
-        let transformed_pos =
-            BLUE_ON_POSITIVE.transform_to_team_coords_angle(TeamColor::Blue, angle_pos);
+        let transformed_pos = BLUE_ON_POSITIVE.transform_angle(TeamColor::Blue, angle_pos);
         assert_relative_eq!(transformed_pos.degrees(), 135.0);
-        let transformed_neg =
-            BLUE_ON_POSITIVE.transform_to_team_coords_angle(TeamColor::Blue, angle_neg);
+        let transformed_neg = BLUE_ON_POSITIVE.transform_angle(TeamColor::Blue, angle_neg);
         assert_relative_eq!(transformed_neg.degrees(), -135.0);
-    }
-
-    #[test]
-    fn test_untransform_player_move_cmd() {
-        let cmd = PlayerMoveCmd {
-            id: PlayerId::new(0),
-            sx: 1.0,
-            sy: 2.0,
-            w: 0.5,
-            dribble_speed: 1.0,
-            robot_cmd: crate::player::RobotCmd::None,
-            fan_speed: 0.0,
-            kick_speed: 0.0,
-        };
-
-        // Attacks -x
-        let untransformed = BLUE_ON_POSITIVE.untransform_player_move_cmd(TeamColor::Blue, &cmd);
-        assert_eq!(untransformed.id, cmd.id);
-        assert_relative_eq!(untransformed.sx, -1.0);
-        assert_relative_eq!(untransformed.sy, 2.0);
-        assert_relative_eq!(untransformed.w, -0.5);
-
-        // Attacks +x
-        let untransformed = YELLOW_ON_POSITIVE.untransform_player_move_cmd(TeamColor::Blue, &cmd);
-        assert_eq!(untransformed.id, cmd.id);
-        assert_relative_eq!(untransformed.sx, 1.0);
-        assert_relative_eq!(untransformed.sy, 2.0);
-        assert_relative_eq!(untransformed.w, 0.5);
-    }
-
-    #[test]
-    fn test_untransform_player_set_heading_cmd() {
-        let cmd = PlayerCmd::SetHeading {
-            id: PlayerId::new(0),
-            heading: 45.0,
-        };
-
-        // Attacks -x
-        let untransformed = BLUE_ON_POSITIVE.untransform_player_cmd(TeamColor::Blue, &cmd);
-        if let PlayerCmd::SetHeading { heading, .. } = untransformed {
-            assert_relative_eq!(heading, 135.0, epsilon = 1e-5);
-        } else {
-            panic!("Expected SetHeading command");
-        }
-
-        // Attacks +x
-        let untransformed = YELLOW_ON_POSITIVE.untransform_player_cmd(TeamColor::Blue, &cmd);
-        if let PlayerCmd::SetHeading { heading, .. } = untransformed {
-            assert_relative_eq!(heading, 45.0, epsilon = 1e-5);
-        } else {
-            panic!("Expected SetHeading command");
-        }
     }
 }

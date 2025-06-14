@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
 use dies_core::{
-    Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerData, PlayerId,
-    PlayerMoveCmd, RobotCmd, TeamData, Vector2,
+    Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerCmdUntransformer,
+    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, TeamData, Vector2,
 };
 
 use super::{
@@ -28,7 +28,7 @@ pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP,
     last_pos: Vector2,
-    if_gate_keeper: bool,
+
     /// Output velocity \[mm/s\]
     target_velocity: Vector2,
 
@@ -82,7 +82,6 @@ impl PlayerController {
             frame_misses: 0,
             kicker: KickerState::Disarming,
             dribble_speed: 0.0,
-            if_gate_keeper: false,
 
             max_accel: settings.controller_settings.max_acceleration,
             max_speed: settings.controller_settings.max_velocity,
@@ -118,17 +117,16 @@ impl PlayerController {
         self.id
     }
 
-    /// set the player as the gate keeper
-    pub fn set_gate_keeper(&mut self) {
-        self.if_gate_keeper = true;
-    }
-
     pub fn target_velocity(&self) -> Vector2 {
         self.target_velocity
     }
 
     /// Get the current command for the player.
-    pub fn command(&mut self, player_context: &PlayerContext) -> PlayerCmd {
+    pub fn command(
+        &mut self,
+        player_context: &PlayerContext,
+        mut untransformer: PlayerCmdUntransformer,
+    ) -> PlayerCmd {
         if self.frame_misses > MISSING_FRAMES_THRESHOLD {
             return PlayerCmd::Move(PlayerMoveCmd::zero(self.id));
         }
@@ -158,19 +156,14 @@ impl PlayerController {
             _ => RobotCmd::Arm,
         };
 
-        let target_velocity = self.last_yaw.inv().rotate_vector(&self.target_velocity);
-
-        let cmd = PlayerMoveCmd {
-            id: self.id,
-            // In the robot's local frame +sx means forward and +sy means right
-            sx: target_velocity.x / 1000.0,  // Convert to m/s
-            sy: -target_velocity.y / 1000.0, // Convert to m/s
-            w: -self.target_z,
-            dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
-            fan_speed: self.fan_speed,
-            kick_speed: self.kick_speed,
-            robot_cmd,
-        };
+        let cmd = untransformer
+            .set_target_velocity(self.target_velocity)
+            .set_w(self.target_z)
+            .set_dribble_speed(self.dribble_speed)
+            .set_fan_speed(self.fan_speed)
+            .set_kick_speed(self.kick_speed)
+            .set_robot_cmd(robot_cmd)
+            .untransform_move_cmd(self.id, self.last_yaw);
 
         player_context.debug_value("sx", cmd.sx);
         player_context.debug_value("sy", cmd.sy);

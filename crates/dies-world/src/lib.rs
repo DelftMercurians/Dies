@@ -21,15 +21,13 @@ use crate::game_state::GameStateTracker;
 
 /// Tracks players for a single team
 struct TeamTracker {
-    team_color: TeamColor,
     players: HashMap<PlayerId, PlayerTracker>,
     controlled: bool,
 }
 
 impl TeamTracker {
-    fn new(team_color: TeamColor, controlled: bool) -> Self {
+    fn new(controlled: bool) -> Self {
         Self {
-            team_color,
             players: HashMap::new(),
             controlled,
         }
@@ -55,13 +53,10 @@ impl TeamTracker {
         tracker.update(t_capture, player);
     }
 
-    fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) -> bool {
+    fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
         if let Some(tracker) = self.players.get_mut(&feedback.id) {
             tracker.update_from_feedback(feedback, time);
             self.controlled = true;
-            true
-        } else {
-            false
         }
     }
 
@@ -118,14 +113,8 @@ impl WorldTracker {
     /// Create a new world tracker with default team configuration.
     pub fn new(settings: &ExecutorSettings, controlled_teams: &[TeamColor]) -> Self {
         Self {
-            blue_team: TeamTracker::new(
-                TeamColor::Blue,
-                controlled_teams.contains(&TeamColor::Blue),
-            ),
-            yellow_team: TeamTracker::new(
-                TeamColor::Yellow,
-                controlled_teams.contains(&TeamColor::Yellow),
-            ),
+            blue_team: TeamTracker::new(controlled_teams.contains(&TeamColor::Blue)),
+            yellow_team: TeamTracker::new(controlled_teams.contains(&TeamColor::Yellow)),
             ball_tracker: BallTracker::new(&settings.tracker_settings),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
@@ -369,16 +358,8 @@ impl WorldTracker {
     pub fn get(&mut self) -> WorldData {
         let field_geom = self.field_geometry.clone();
 
-        let mut blue_players = Vec::new();
-        let mut yellow_players = Vec::new();
-
-        // Add team A players to the appropriate color list
-        let team_a_players = self.blue_team.get_players();
-        blue_players.extend(team_a_players);
-
-        // Add team B players to the appropriate color list
-        let team_b_players = self.yellow_team.get_players();
-        yellow_players.extend(team_b_players);
+        let blue_players = self.blue_team.get_players();
+        let yellow_players = self.yellow_team.get_players();
 
         let game_state = RawGameStateData {
             game_state: self.game_state_tracker.get(),
@@ -405,8 +386,3 @@ impl WorldTracker {
         }
     }
 }
-
-// Note: Tests have been temporarily removed as they need to be updated
-// for the new team-agnostic interface. The WorldTracker now outputs
-// team-agnostic WorldData instead of team-specific TeamData.
-// Coordinate transformations are handled by the SideAssignment in dies-core.

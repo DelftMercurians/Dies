@@ -98,24 +98,16 @@ impl TeamMap {
         if let Some(controller) = &mut self.blue_team {
             commands.extend(
                 controller
-                    .commands()
-                    .iter()
-                    .map(|c| {
-                        self.side_assignment
-                            .untransform_player_cmd(TeamColor::Blue, c)
-                    })
+                    .commands(self.side_assignment, TeamColor::Blue)
+                    .into_iter()
                     .map(|c| (TeamColor::Blue, c)),
             );
         }
         if let Some(controller) = &mut self.yellow_team {
             commands.extend(
                 controller
-                    .commands()
-                    .iter()
-                    .map(|c| {
-                        self.side_assignment
-                            .untransform_player_cmd(TeamColor::Yellow, c)
-                    })
+                    .commands(self.side_assignment, TeamColor::Yellow)
+                    .into_iter()
                     .map(|c| (TeamColor::Yellow, c)),
             );
         }
@@ -153,9 +145,9 @@ impl TeamMap {
                 team_data,
                 manual_override
                     .iter()
-                    .filter_map(|(color, input)| {
-                        if color.0 == TeamColor::Blue {
-                            Some((color.1, input.clone()))
+                    .filter_map(|((color, id), input)| {
+                        if *color == TeamColor::Blue {
+                            Some((*id, input.clone()))
                         } else {
                             None
                         }
@@ -171,9 +163,9 @@ impl TeamMap {
                 team_data,
                 manual_override
                     .iter()
-                    .filter_map(|(color, input)| {
-                        if color.0 == TeamColor::Yellow {
-                            Some((color.1, input.clone()))
+                    .filter_map(|((color, id), input)| {
+                        if *color == TeamColor::Yellow {
+                            Some((*id, input.clone()))
                         } else {
                             None
                         }

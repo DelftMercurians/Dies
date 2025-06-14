@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, TeamColor, TeamData};
+use dies_core::{
+    ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
+    SideAssignment, TeamColor, TeamData,
+};
 use std::sync::Arc;
 
 use super::{
@@ -13,12 +16,9 @@ use crate::{
     PlayerControlInput,
 };
 
-const ACTIVATION_TIME: f64 = 0.2;
-
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
-    start_time: std::time::Instant,
     player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
     team_context: TeamContext,
     bt_context: BtContext,
@@ -31,7 +31,6 @@ impl TeamController {
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
-            start_time: std::time::Instant::now(),
             player_behavior_trees: HashMap::new(),
             team_context: TeamContext::new(team_color),
             bt_context: BtContext::new(),
@@ -59,17 +58,7 @@ impl TeamController {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
                     .insert(*id, PlayerController::new(*id, &self.settings));
-                if self.player_controllers.len() == 1 {
-                    self.player_controllers
-                        .get_mut(id)
-                        .unwrap()
-                        .set_gate_keeper();
-                }
             }
-        }
-
-        if self.start_time.elapsed().as_secs_f64() < ACTIVATION_TIME {
-            return;
         }
 
         let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
@@ -168,12 +157,17 @@ impl TeamController {
         }
     }
 
-    pub fn commands(&mut self) -> Vec<PlayerCmd> {
+    pub fn commands(
+        &mut self,
+        side_assignment: SideAssignment,
+        color: TeamColor,
+    ) -> Vec<PlayerCmd> {
+        let untransformer = PlayerCmdUntransformer::new(side_assignment, color);
         self.player_controllers
             .values_mut()
             .map(|c| {
                 let player_context = self.team_context.player_context(c.id());
-                c.command(&player_context)
+                c.command(&player_context, untransformer.clone())
             })
             .collect()
     }

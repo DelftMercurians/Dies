@@ -50,8 +50,6 @@ pub struct PlayerTracker {
     breakbeam_detections: VecDeque<usize>,
 
     pub is_gone: bool,
-    fb_reappaerance_time: Option<f64>,
-    det_reappaerance_time: Option<f64>,
     rolling_control: f64,
     rolling_vision: f64,
 }
@@ -73,11 +71,9 @@ impl PlayerTracker {
             last_detection: None,
             breakbeam_detections: VecDeque::with_capacity(BREAKBEAM_WINDOW),
             is_gone: false,
-            fb_reappaerance_time: None,
-            det_reappaerance_time: None,
             last_feedback_time: None,
-            rolling_vision: 0.0,
-            rolling_control: 0.0,
+            rolling_vision: 1.0,
+            rolling_control: 1.0,
         }
     }
 
@@ -200,6 +196,9 @@ impl PlayerTracker {
     /// Update the tracker with feedback from the player.
     pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
         if feedback.id == self.id {
+            if !self.is_controlled {
+                self.rolling_control = 1.0;
+            }
             self.is_controlled = true; // Mark as controlled when we receive feedback
             self.last_feedback_time = Some(time);
             if let Some(breakbeam) = feedback.breakbeam_ball_detected {
