@@ -20,7 +20,6 @@ mod control;
 mod gc_client;
 mod handle;
 mod roles;
-pub mod scenarios;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
@@ -633,6 +632,28 @@ impl Executor {
         match cmd {
             SimulatorCmd::ApplyBallForce { force } => {
                 sim.apply_force_to_ball(Vector3::new(force.x, force.y, 0.0));
+            }
+            SimulatorCmd::TeleportRobot {
+                team_color,
+                player_id,
+                position,
+                yaw,
+            } => {
+                sim.teleport_robot(team_color, player_id, position, yaw);
+            }
+            SimulatorCmd::AddRobot {
+                team_color,
+                player_id,
+                position,
+                yaw,
+            } => {
+                sim.add_robot(team_color, player_id, position, yaw);
+            }
+            SimulatorCmd::RemoveRobot {
+                team_color,
+                player_id,
+            } => {
+                sim.remove_robot(team_color, player_id);
             }
         }
     }

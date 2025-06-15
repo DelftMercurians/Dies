@@ -57,9 +57,6 @@ const getWorldState = (): Promise<UiWorldState> =>
 const getUiStatus = (): Promise<UiStatus> =>
   fetch("/api/ui-status").then((res) => res.json());
 
-const getScenarios = (): Promise<string[]> =>
-  fetch("/api/scenarios").then((res) => res.json());
-
 const getExecutorInfo = (): Promise<ExecutorInfo | null> =>
   fetch("/api/executor")
     .then((res) => res.json())
@@ -112,16 +109,6 @@ export const useStatus = () =>
     queryFn: getUiStatus,
     refetchInterval: 1500,
   });
-
-export const useScenarios = (): string[] | null => {
-  const query = useQuery({
-    queryKey: ["scenarios"],
-    queryFn: getScenarios,
-    staleTime: Infinity,
-  });
-
-  return query.data ?? null;
-};
 
 export const useExecutorInfo = (): ExecutorInfo | null => {
   const query = useQuery({

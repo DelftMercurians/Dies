@@ -3,9 +3,8 @@ use std::{collections::HashMap, path::PathBuf};
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    ScenarioInfo, SimulatorCmd, TeamColor, WorldData,
+    SimulatorCmd, TeamColor, WorldData,
 };
-use dies_executor::scenarios::ScenarioType;
 use dies_ssl_client::SslClientConfig;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
@@ -23,7 +22,6 @@ pub struct UiConfig {
     pub settings_file: PathBuf,
     pub environment: UiEnvironment,
     pub start_mode: UiMode,
-    pub start_scenario: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,8 +48,7 @@ impl UiConfig {
 #[typeshare]
 pub(crate) enum ExecutorStatus {
     None,
-    StartingScenario(ScenarioInfo),
-    RunningExecutor { scenario: String },
+    RunningExecutor,
     Failed(String),
 }
 
@@ -88,9 +85,7 @@ pub(crate) enum UiCommand {
     },
     SimulatorCmd(SimulatorCmd),
     SetPause(bool),
-    StartScenario {
-        scenario: ScenarioType,
-    },
+    Start,
     GcCommand(String),
     /// Control which teams are active
     SetActiveTeams {

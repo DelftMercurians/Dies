@@ -347,9 +347,7 @@ export type UiCommand =
 }}
 	| { type: "SimulatorCmd", data: SimulatorCmd }
 	| { type: "SetPause", data: boolean }
-	| { type: "StartScenario", data: {
-	scenario: ScenarioType;
-}}
+	| { type: "Start",  }
 	| { type: "GcCommand", data: string }
 	/** Control which teams are active */
 	| { type: "SetActiveTeams", data: {
@@ -428,10 +426,7 @@ export interface TeamData {
 /** The current status of the executor. */
 export type ExecutorStatus = 
 	| { type: "None",  }
-	| { type: "StartingScenario", data: ScenarioInfo }
-	| { type: "RunningExecutor", data: {
-	scenario: string;
-}}
+	| { type: "RunningExecutor",  }
 	| { type: "Failed", data: string };
 
 /** The current status of the UI. */

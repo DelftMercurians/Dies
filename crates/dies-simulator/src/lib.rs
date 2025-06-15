@@ -482,6 +482,96 @@ impl Simulation {
         }
     }
 
+    pub fn teleport_robot(
+        &mut self,
+        team_color: TeamColor,
+        player_id: PlayerId,
+        position: Vector2,
+        yaw: Angle,
+    ) {
+        if let Some(player) = self
+            .players
+            .iter()
+            .find(|p| p.id == player_id && p.team_color == team_color)
+        {
+            if let Some(rigid_body) = self.rigid_body_set.get_mut(player.rigid_body_handle) {
+                let old_pos = rigid_body.position().translation.vector;
+                let pos = Vector::new(position.x, position.y, old_pos.z);
+                rigid_body.set_position(
+                    Isometry::translation(pos.x, pos.y, pos.z)
+                        * Isometry::rotation(Vector::z() * yaw.radians()),
+                    true,
+                );
+                rigid_body.set_linvel(Vector::zeros(), true);
+                rigid_body.set_angvel(Vector::zeros(), true);
+            }
+        }
+    }
+
+    pub fn add_robot(
+        &mut self,
+        team_color: TeamColor,
+        player_id: PlayerId,
+        position: Vector2,
+        yaw: Angle,
+    ) {
+        // Remove any existing robot with the same id and color
+        self.remove_robot(team_color, player_id);
+        let player_radius = self.config.player_radius;
+        let player_height = self.config.player_height;
+        let pos = Vector::new(position.x, position.y, (player_height / 2.0) + 1.0);
+        let rigid_body = RigidBodyBuilder::dynamic()
+            .translation(pos)
+            .rotation(Vector::z() * yaw.radians())
+            .locked_axes(
+                LockedAxes::TRANSLATION_LOCKED_Z
+                    | LockedAxes::ROTATION_LOCKED_X
+                    | LockedAxes::ROTATION_LOCKED_Y,
+            )
+            .build();
+        let collider = ColliderBuilder::cylinder(player_height / 2.0, player_radius)
+            .rotation(Vector::x() * std::f64::consts::FRAC_PI_2)
+            .restitution(0.0)
+            .restitution_combine_rule(CoefficientCombineRule::Min)
+            .build();
+        let rigid_body_handle = self.rigid_body_set.insert(rigid_body);
+        let collider_handle = self.collider_set.insert_with_parent(
+            collider,
+            rigid_body_handle,
+            &mut self.rigid_body_set,
+        );
+        self.players.push(Player {
+            id: player_id,
+            team_color,
+            rigid_body_handle,
+            _collider_handle: collider_handle,
+            last_cmd_time: 0.0,
+            target_velocity: Vector::zeros(),
+            target_z: 0.0,
+            current_dribble_speed: 0.0,
+            breakbeam: false,
+            heading_control: false,
+        });
+    }
+
+    pub fn remove_robot(&mut self, team_color: TeamColor, player_id: PlayerId) {
+        if let Some(idx) = self
+            .players
+            .iter()
+            .position(|p| p.id == player_id && p.team_color == team_color)
+        {
+            let player = self.players.remove(idx);
+            self.rigid_body_set.remove(
+                player.rigid_body_handle,
+                &mut self.island_manager,
+                &mut self.collider_set,
+                &mut self.impulse_joint_set,
+                &mut self.multibody_joint_set,
+                true,
+            );
+        }
+    }
+
     /// Pushes a PlayerCmd onto the execution queue with the time delay specified in
     /// the config
     pub fn push_cmd(&mut self, team_color: TeamColor, cmd: PlayerMoveCmd) {
@@ -1225,9 +1315,9 @@ impl SimulationBuilder {
         // Players have fixed z position - their bottom surface 1mm above the ground
         let player_radius = sim.config.player_radius;
         let player_height = sim.config.player_height;
-        let position = Vector::new(position.x, position.y, (player_height / 2.0) + 1.0);
+        let pos = Vector::new(position.x, position.y, (player_height / 2.0) + 1.0);
         let rigid_body = RigidBodyBuilder::dynamic()
-            .translation(position)
+            .translation(pos)
             .rotation(Vector::z() * yaw.radians())
             .locked_axes(
                 LockedAxes::TRANSLATION_LOCKED_Z
@@ -1264,7 +1354,40 @@ impl SimulationBuilder {
 
 impl Default for SimulationBuilder {
     fn default() -> Self {
-        SimulationBuilder::new(SimulationConfig::default())
+        // By default we add 6 players on each side, lined up on their respective
+        // half of the field
+        let mut builder = SimulationBuilder::new(SimulationConfig::default());
+        let field_width = builder.sim.config.field_geometry.field_width / 2.0;
+        let field_length = builder.sim.config.field_geometry.field_length / 2.0;
+        let boundary_width = builder.sim.config.field_geometry.boundary_width;
+        let player_radius = builder.sim.config.player_radius;
+        let player_margin = 0.75 * player_radius;
+        let sides = builder.sim.config.initial_side_assignment;
+
+        for i in 0..6 {
+            let position = Vector2::new(
+                field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin),
+                field_width - player_radius - boundary_width,
+            );
+            builder = builder.add_blue_player(
+                sides.transform_vec2(TeamColor::Blue, &position),
+                Angle::from_radians(0.0),
+            );
+        }
+        for i in 0..6 {
+            let position = Vector2::new(
+                field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin),
+                -(field_width - player_radius - boundary_width),
+            );
+            builder = builder.add_yellow_player(
+                sides.transform_vec2(TeamColor::Yellow, &position),
+                Angle::from_radians(0.0),
+            );
+        }
+
+        builder = builder.add_ball(Vector::new(0.0, 0.0, 20.0));
+
+        builder
     }
 }
 

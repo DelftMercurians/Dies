@@ -188,12 +188,6 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     let web_task =
         tokio::spawn(async move { start_webserver(config.port, state, shutdown_rx).await });
 
-    if let Some(scenario) = config.start_scenario {
-        if let Some(scenario) = dies_executor::scenarios::ScenarioType::get_by_name(&scenario) {
-            let _ = cmd_tx.send(UiCommand::StartScenario { scenario });
-        }
-    }
-
     // Graceful shutdown
     executor_task
         .await
@@ -224,7 +218,6 @@ async fn start_webserver(
         .route("/api/executor", get(routes::get_executor_info))
         .route("/api/world-state", get(routes::get_world_state))
         .route("/api/ui-status", get(routes::get_ui_status))
-        .route("/api/scenarios", get(routes::get_scenarios))
         .route("/api/ws", get(routes::websocket))
         .route("/api/settings", get(routes::get_executor_settings))
         .route("/api/basestation", get(routes::get_basesation_info))

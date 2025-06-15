@@ -9,7 +9,6 @@ use axum::{
     response::IntoResponse,
 };
 use dies_core::{DebugMap, DebugSubscriber, WorldUpdate};
-use dies_executor::scenarios::ScenarioType;
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
@@ -35,10 +34,6 @@ pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldStat
 
 pub async fn get_ui_status(state: State<Arc<ServerState>>) -> Json<UiStatus> {
     Json(state.ui_status())
-}
-
-pub async fn get_scenarios() -> Json<Vec<&'static str>> {
-    Json(ScenarioType::get_names())
 }
 
 pub async fn get_executor_info(state: State<Arc<ServerState>>) -> Json<ExecutorInfoResponse> {
