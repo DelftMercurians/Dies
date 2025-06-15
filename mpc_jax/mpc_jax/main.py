@@ -17,7 +17,6 @@ from .common import (
     CONTROL_HORIZON,
     MAX_ITERATIONS,
     TIME_HORIZON,
-    UPDATE_CLIP,
     N_CANDIDATE_TRAJECTORIES,
     trajectories_from_control,
     World,
