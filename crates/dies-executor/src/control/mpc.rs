@@ -16,6 +16,7 @@ pub struct RobotState {
 pub struct MPCController {
     field_bounds: Option<(f64, f64, f64, f64)>, // (min_x, max_x, min_y, max_y)
     last_solve_time_ms: f64,
+    last_control_sequences: HashMap<PlayerId, Vec<Vector2>>,
 }
 
 impl MPCController {
@@ -23,6 +24,7 @@ impl MPCController {
         Self {
             field_bounds: None,
             last_solve_time_ms: f64::NAN,
+            last_control_sequences: HashMap::new(),
         }
     }
 
@@ -49,7 +51,12 @@ impl MPCController {
                 for robot in robots {
                     let error = robot.target_position - robot.position;
                     let desired_vel = error.normalize() * robot.vel_limit.min(error.magnitude() * 2.0);
-                    fallback_controls.insert(robot.id, desired_vel.cap_magnitude(robot.vel_limit));
+                    let control = desired_vel.cap_magnitude(robot.vel_limit);
+                    fallback_controls.insert(robot.id, control);
+
+                    // Store fallback as repeated control sequence
+                    let fallback_sequence = vec![control; 10]; // Use a reasonable default
+                    self.last_control_sequences.insert(robot.id, fallback_sequence);
                 }
                 fallback_controls
             }
@@ -76,8 +83,10 @@ impl MPCController {
             sys_path.call_method1("insert", (0, "./.venv/lib/python3.12/site-packages"))?;
             sys_path.call_method1("insert", (0, "."))?;
 
-            // Import the mpc_jax module
+            // Import the mpc_jax module and get constants
             let mpc_module = PyModule::import(py, "mpc_jax")?;
+            let common_module = PyModule::import(py, "mpc_jax.common")?;
+            let control_horizon: usize = common_module.getattr("CONTROL_HORIZON")?.extract()?;
 
             // Import numpy for array creation
             let np = PyModule::import(py, "numpy")?;
@@ -88,12 +97,22 @@ impl MPCController {
             let mut initial_velocities = Vec::new();
             let mut target_positions = Vec::new();
             let mut vel_limits = Vec::new();
+            let mut last_controls_data = Vec::new();
 
             for robot in robots {
                 initial_positions.extend_from_slice(&[robot.position.x, robot.position.y]);
                 initial_velocities.extend_from_slice(&[robot.velocity.x, robot.velocity.y]);
                 target_positions.extend_from_slice(&[robot.target_position.x, robot.target_position.y]);
                 vel_limits.push(robot.vel_limit);
+
+                // Get last control sequence for this robot, or zeros if not available
+                let last_sequence = self.last_control_sequences.get(&robot.id)
+                    .cloned()
+                    .unwrap_or_else(|| vec![Vector2::new(0.0, 0.0); control_horizon]);
+
+                for control in &last_sequence {
+                    last_controls_data.extend_from_slice(&[control.x, control.y]);
+                }
             }
 
             // Convert to numpy arrays with proper shapes
@@ -101,6 +120,7 @@ impl MPCController {
             let initial_vel_array = np.call_method1("array", (initial_velocities,))?.call_method1("reshape", (n_robots, 2))?;
             let target_pos_array = np.call_method1("array", (target_positions,))?.call_method1("reshape", (n_robots, 2))?;
             let vel_limits_array = np.call_method1("array", (vel_limits,))?;
+            let last_controls_array = np.call_method1("array", (last_controls_data,))?.call_method1("reshape", (n_robots, control_horizon, 2))?;
 
             // Prepare obstacles (all other robots and ball)
             let mut obstacles_data = Vec::new();
@@ -133,7 +153,7 @@ impl MPCController {
                 None => None,
             };
 
-            // Call the JAX batch solve_mpc function
+            // Call the JAX batch solve_mpc function with last controls
             let solve_mpc_batch = mpc_module.getattr("solve_mpc_tbwrap")?;
             let result = solve_mpc_batch.call1((
                 initial_pos_array,
@@ -142,11 +162,12 @@ impl MPCController {
                 obstacles,
                 field_bounds,
                 vel_limits_array,
+                last_controls_array,
             ))?;
 
             // Extract the result - convert numpy array to Python list first
             let result_list = result.call_method0("tolist")?;
-            let control_data: Vec<Vec<f64>> = result_list.extract()?;
+            let control_data: Vec<Vec<Vec<f64>>> = result_list.extract()?;
 
             // Restore stdout and capture any prints
             sys.setattr("stdout", original_stdout)?;
@@ -171,12 +192,32 @@ impl MPCController {
                 log::info!("MPC Python output: {}", captured_output.trim());
             }
 
-            // Convert results back to HashMap
+            // Convert results back to HashMap and store full sequences
             let mut controls = HashMap::new();
             for (i, robot) in robots.iter().enumerate() {
-                if let Some(control) = control_data.get(i) {
-                    if control.len() >= 2 {
-                        controls.insert(robot.id, Vector2::new(control[0], control[1]));
+                if let Some(control_sequence) = control_data.get(i) {
+                    if !control_sequence.is_empty() {
+                        // Extract first control for immediate use
+                        if let Some(first_control) = control_sequence.get(0) {
+                            if first_control.len() >= 2 {
+                                controls.insert(robot.id, Vector2::new(first_control[0], first_control[1]));
+                            }
+                        }
+
+                        // Store full control sequence for continuity
+                        let sequence: Vec<Vector2> = control_sequence.iter()
+                            .filter_map(|control| {
+                                if control.len() >= 2 {
+                                    Some(Vector2::new(control[0], control[1]))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+
+                        if !sequence.is_empty() {
+                            self.last_control_sequences.insert(robot.id, sequence);
+                        }
                     }
                 }
             }

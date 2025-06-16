@@ -33,6 +33,7 @@ from .costs import (
     boundary_cost,
     velocity_constraint_cost,
     control_effort_cost,
+    continuity_cost,
 )
 
 
@@ -41,6 +42,7 @@ def mpc_cost_function(
     w: World,
     targets: EntityBatch,
     max_speeds: jax.Array,
+    last_control_sequences: jax.Array | None = None,
 ):
     # Generate trajectory from control sequence
     trajectories = trajectories_from_control(w, u)
@@ -83,7 +85,18 @@ def mpc_cost_function(
         in_axes=1,
     )(trajectories).sum()
 
-    return total_position_cost + total_collective_cost
+    # Add continuity cost if we have last control sequences
+    total_continuity_cost = 0.0
+    if last_control_sequences is not None:
+        # Compare first control step with last control from previous sequence
+        current_first_controls = u[:, 0, :]  # Shape: (n_robots, 2)
+        last_controls = last_control_sequences[:, 0, :]  # Use first from last sequence
+
+        total_continuity_cost = jax.vmap(continuity_cost)(
+            current_first_controls, last_controls
+        ).sum()
+
+    return total_position_cost + total_collective_cost + total_continuity_cost
 
 
 def clip_vel(vel: jnp.ndarray, limit: float | Float[Array, ""]):
@@ -147,6 +160,34 @@ def generate_candidate_control(
     return control_sequence
 
 
+def generate_continuity_candidates(
+    key: PRNGKeyArray,
+    last_control_sequences: jax.Array,
+    max_speeds: jax.Array,
+    n_robots: int,
+) -> Float[Array, f"n_robots {CONTROL_HORIZON} 2"]:
+    k1, k2 = jr.split(key, 2)
+
+    # Add Gaussian noise to the last control sequences
+    noise_scale = 100.0  # mm/s noise
+    noise = jr.normal(k1, last_control_sequences.shape) * noise_scale
+
+    # Apply noise with time-decay (less noise for earlier time steps)
+    time_decay = jnp.linspace(1.0, 0.1, CONTROL_HORIZON)
+    noise = noise * time_decay[None, :, None]
+
+    perturbed_controls = last_control_sequences + noise
+
+    # Clip to velocity limits
+    perturbed_controls = jax.vmap(
+        lambda controls, max_speed: jax.vmap(
+            lambda control: clip_vel(control, max_speed)
+        )(controls)
+    )(perturbed_controls, max_speeds)
+
+    return perturbed_controls
+
+
 def solve_mpc_jax(
     w: World,
     targets: EntityBatch,
@@ -155,22 +196,48 @@ def solve_mpc_jax(
     learning_rate: float,
     n_candidates: int,
     key: PRNGKeyArray | None = None,
+    last_control_sequences: jax.Array | None = None,
 ) -> tuple:
     n_robots = len(w.robots)
 
     if key is None:
         key = jr.PRNGKey(0)
 
-    # Generate candidate trajectories
+    # Generate candidate trajectories - mix of random and continuity-based
+    continuity_candidates = (
+        int(n_candidates * 0.2) if last_control_sequences is not None else 0
+    )
+    random_candidates = n_candidates - continuity_candidates
+
     keys = jr.split(key, n_candidates)
-    candidate_controls = jax.vmap(
+
+    # Generate random candidates
+    random_keys = keys[:random_candidates]
+    random_candidate_controls = jax.vmap(
         lambda k: jax.vmap(eqx.Partial(generate_candidate_control))(
             jr.split(k, n_robots),
             w.robots.position,
             targets.after(3).position,  # this is a heuristic, since why not
             max_speeds.reshape((n_robots, 1)),
         )
-    )(keys)
+    )(random_keys)
+
+    if continuity_candidates > 0:
+        # Generate continuity-based candidates (perturbations of last control)
+        continuity_keys = keys[random_candidates:]
+        continuity_candidate_controls = jax.vmap(
+            lambda k: generate_continuity_candidates(
+                k, last_control_sequences, max_speeds, n_robots
+            )
+        )(continuity_keys)
+
+        # Combine random and continuity candidates
+        candidate_controls = jnp.concatenate(
+            [random_candidate_controls, continuity_candidate_controls], axis=0
+        )
+    else:
+        candidate_controls = random_candidate_controls
+
     candidate_controls = candidate_controls.reshape(
         (n_candidates, n_robots, CONTROL_HORIZON, 2)
     )
@@ -191,7 +258,7 @@ def solve_mpc_jax(
 
             # Compute gradient wrt complete cost function
             cost, grad_val = eqx.filter_value_and_grad(mpc_cost_function)(
-                u, w, targets, max_speeds
+                u, w, targets, max_speeds, last_control_sequences
             )
 
             best_u = jnp.where(cost < best_cost, u, best_u)
@@ -235,12 +302,17 @@ def solve_mpc(
     obstacles: np.ndarray,
     field_bounds: np.ndarray | None,
     max_speed: np.ndarray,
+    last_control_sequences: np.ndarray | None = None,
     max_iterations: int = MAX_ITERATIONS,
     learning_rate: float = LEARNING_RATE,
     n_candidates: int = N_CANDIDATE_TRAJECTORIES,
     key: PRNGKeyArray | None = None,
     with_aux: bool = False,
 ) -> tuple | np.ndarray:
+    last_controls_jax = (
+        None if last_control_sequences is None else jnp.asarray(last_control_sequences)
+    )
+
     out = solve_mpc_jitted(
         World(
             FieldBounds(),
@@ -254,6 +326,7 @@ def solve_mpc(
         float(learning_rate),
         int(n_candidates),
         key,
+        last_controls_jax,
     )
     if with_aux:
         return out
@@ -263,41 +336,12 @@ def solve_mpc(
 
 def solve_mpc_tbwrap(*args):
     try:
-        return solve_mpc(*args)[:, 0]  # type: ignore
+        result = solve_mpc(*args)  # type: ignore
+        # Return full control sequences instead of just first control
+        return result
     except Exception:
         raise RuntimeError(
             f"Traceback: {tb.format_exc(20)} with input: {args}"
         ) from None
 
 
-def test_simple_case():
-    # Simple test case
-    initial_pos = np.array([0.0, 0.0])
-    initial_vel = np.array([0.0, 0.0])
-    target_pos = np.array([1000.0, 500.0])
-    obstacles = np.array([[500.0, 250.0]])  # One obstacle in the way
-    field_bounds = np.array([-2000.0, 2000.0, -1000.0, 1000.0])
-    max_speed = np.array([4000.0])
-
-    # Solve MPC
-    optimal_control, _, _, cost = solve_mpc(
-        initial_pos,
-        initial_vel,
-        target_pos,
-        obstacles,
-        field_bounds,
-        max_speed,
-        with_aux=True,
-    )
-
-    print(f"Cost (lower is better): {cost}")
-    return optimal_control[0]
-
-
-if __name__ == "__main__":
-    test_simple_case()
-    import time
-
-    t = time.time()
-    test_simple_case()
-    print(f"Took {(time.time() - t) * 1000:.1f}ms")

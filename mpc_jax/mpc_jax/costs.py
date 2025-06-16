@@ -100,3 +100,16 @@ def velocity_constraint_cost(vel: jnp.ndarray, max_speed: float):
 
 def control_effort_cost(vel: jnp.ndarray):
     return jnp.sum(vel**2) * 1e-6
+
+
+def continuity_cost(current_control: jnp.ndarray, last_control: jnp.ndarray):
+    """Penalize changes in control commands to ensure smooth transitions"""
+    if last_control is None:
+        return 0.0
+    
+    # L2 penalty on control changes
+    control_diff = current_control - last_control
+    change_magnitude = jnp.sum(control_diff**2)
+    
+    # Scale the cost - we want smooth transitions but not at the expense of performance
+    return change_magnitude * 1e-4

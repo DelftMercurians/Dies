@@ -3,4 +3,5 @@ setup:
   uv pip install -e mpc_jax
 
 run:
+  cd mpc_jax && uv run pytest -vv -x
   uv run cargo run
