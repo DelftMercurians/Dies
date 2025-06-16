@@ -1,7 +1,7 @@
 ### TODOs:
 **Important:**
 [ ] - final scoring rules based on exact binary heuristics (e.g. if there is a collision - the trajectory is forcefully rejected)
-[ ] - continuity in control cost: prefer the control that is similar to the old one, to avoid self-reinforcing oscillatory loops
+[ ] - Precompile all the variants of the thing before start (maybe use full cash? if it works..)
 [ ] - benchmark the MPC setup based on some scoring rules and pairwise wins vs old version
 [ ] - delay handling
 **Mid:**
