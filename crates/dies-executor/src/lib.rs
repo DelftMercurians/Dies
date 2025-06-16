@@ -601,10 +601,11 @@ impl Executor {
                 }
                 bs_msg = bs_client.recv() => {
                     match bs_msg {
-                        Ok(bs_msg) => {
-                            if let Some(controlled_team_color) = self.team_controllers.active_teams().get(0) {
+                        Ok((team_color, bs_msg)) => {
+                            let team_color = team_color.or(self.team_controllers.active_teams().get(0).copied());
+                            if let Some(team_color) = team_color {
                                 self.update_from_bs_msg(
-                                    *controlled_team_color,
+                                    team_color,
                                     bs_msg,
                                     WorldInstant::now_real(),
                                 );
@@ -618,8 +619,8 @@ impl Executor {
                 _ = cmd_interval.tick() => {
                     let paused = { *self.paused_tx.borrow() };
                     if !paused {
-                        for (_, cmd) in self.player_commands() {
-                            bs_client.send_no_wait(cmd);
+                        for (team_color, cmd) in self.player_commands() {
+                            bs_client.send_no_wait(team_color, cmd);
                         }
                     }
                 }

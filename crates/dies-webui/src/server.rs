@@ -14,7 +14,8 @@ use axum::{
     Router,
 };
 use dies_core::{
-    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, WorldUpdate,
+    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, TeamColor,
+    WorldUpdate,
 };
 use dies_executor::{ControlMsg, ExecutorHandle};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -30,7 +31,7 @@ pub struct ServerState {
     pub is_live_available: bool,
     pub update_rx: watch::Receiver<Option<WorldUpdate>>,
     pub debug_sub: DebugSubscriber,
-    pub basestation_feedback: RwLock<HashMap<PlayerId, PlayerFeedbackMsg>>,
+    pub basestation_feedback: RwLock<HashMap<(Option<TeamColor>, PlayerId), PlayerFeedbackMsg>>,
     pub cmd_tx: broadcast::Sender<UiCommand>,
     pub ui_mode: RwLock<UiMode>,
     pub executor_status: RwLock<ExecutorStatus>,
@@ -164,9 +165,9 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         tokio::spawn(async move {
             match env {
                 UiEnvironment::WithLive { mut bs_handle, .. } => {
-                    while let Ok(msg) = bs_handle.recv().await {
+                    while let Ok((color, msg)) = bs_handle.recv().await {
                         let mut feedback = state.basestation_feedback.write().unwrap();
-                        feedback.insert(msg.id, msg);
+                        feedback.insert((color, msg.id), msg);
                     }
                 }
                 UiEnvironment::SimulationOnly => {}

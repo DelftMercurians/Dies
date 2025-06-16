@@ -1,10 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use anyhow::{anyhow, Context, Result};
-use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus};
+use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus, TeamColor};
 use glue::{Monitor, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
@@ -31,7 +31,7 @@ pub struct BasestationClientConfig {
     /// available ports.
     port_name: String,
     /// Map of player IDs to robot ids
-    robot_id_map: HashMap<PlayerId, u32>,
+    robot_id_map: HashMap<(TeamColor, PlayerId), u32>,
     /// Protocol version
     protocol: BaseStationProtocol,
 }
@@ -45,27 +45,27 @@ impl BasestationClientConfig {
         }
     }
 
-    pub fn set_robot_id_map_from_string(&mut self, map: &str) {
-        // Parse string "<id1>:<id1>;..."
-        self.robot_id_map = map
-            .split(';')
-            .filter(|s| !s.is_empty())
-            .map(|s| {
-                let mut parts = s.split(':');
-                let player_id = parts
-                    .next()
-                    .expect("Failed to parse player id")
-                    .parse::<u32>()
-                    .expect("Failed to parse player id");
-                let robot_id = parts
-                    .next()
-                    .expect("Failed to parse robot id")
-                    .parse::<u32>()
-                    .expect("Failed to parse robot id");
-                (PlayerId::new(player_id), robot_id)
-            })
-            .collect();
-    }
+    // pub fn set_robot_id_map_from_string(&mut self, map: &str) {
+    //     // Parse string "<id1>:<id1>;..."
+    //     self.robot_id_map = map
+    //         .split(';')
+    //         .filter(|s| !s.is_empty())
+    //         .map(|s| {
+    //             let mut parts = s.split(':');
+    //             let player_id = parts
+    //                 .next()
+    //                 .expect("Failed to parse player id")
+    //                 .parse::<u32>()
+    //                 .expect("Failed to parse player id");
+    //             let robot_id = parts
+    //                 .next()
+    //                 .expect("Failed to parse robot id")
+    //                 .parse::<u32>()
+    //                 .expect("Failed to parse robot id");
+    //             (PlayerId::new(player_id), robot_id)
+    //         })
+    //         .collect();
+    // }
 }
 
 impl Default for BasestationClientConfig {
@@ -87,15 +87,15 @@ enum Connection {
 }
 
 enum Message {
-    PlayerCmd((PlayerCmd, oneshot::Sender<Result<()>>)),
-    ChangeIdMap(HashMap<PlayerId, u32>),
+    PlayerCmd((TeamColor, PlayerCmd, oneshot::Sender<Result<()>>)),
+    ChangeIdMap(HashMap<(TeamColor, PlayerId), u32>),
 }
 
 /// Async client for the serial port.
 #[derive(Debug)]
 pub struct BasestationHandle {
     cmd_tx: mpsc::UnboundedSender<Message>,
-    info_rx: broadcast::Receiver<PlayerFeedbackMsg>,
+    info_rx: broadcast::Receiver<(Option<TeamColor>, PlayerFeedbackMsg)>,
 }
 
 impl BasestationHandle {
@@ -105,7 +105,7 @@ impl BasestationHandle {
 
         // Launch a blocking thread for writing to the serial port
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Message>();
-        let (info_tx, info_rx) = broadcast::channel::<PlayerFeedbackMsg>(16);
+        let (info_tx, info_rx) = broadcast::channel::<(Option<TeamColor>, PlayerFeedbackMsg)>(16);
 
         let mut connection = match config.protocol {
             BaseStationProtocol::V0 => {
@@ -126,15 +126,14 @@ impl BasestationHandle {
             let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
             let mut id_map = config.robot_id_map;
 
-            let last_cmd_time = Instant::now();
             let mut all_ids = HashSet::new();
             loop {
                 // Send commands
                 match cmd_rx.try_recv() {
-                    Ok(Message::PlayerCmd((cmd, resp))) => match cmd {
+                    Ok(Message::PlayerCmd((team_color, cmd, resp))) => match cmd {
                         PlayerCmd::Move(cmd) => {
                             let robot_id = id_map
-                                .get(&cmd.id)
+                                .get(&(team_color, cmd.id))
                                 .copied()
                                 .unwrap_or_else(|| cmd.id.as_u32())
                                 as usize;
@@ -176,26 +175,6 @@ impl BasestationHandle {
                     Err(mpsc::error::TryRecvError::Empty) => {}
                 }
 
-                // if last_cmd_time.elapsed().as_secs_f32() >= 1.0 {
-                //     if last_cmd_time.elapsed().as_secs_f32() - 1.0 < 1.0 / 30.0 {
-                //         log::warn!("Command timeout, sending stop to all robots");
-                //     }
-                //     for id in all_ids.iter() {
-                //         let cmd = PlayerCmd::zero(PlayerId::new(*id as u32));
-                //         match &mut connection {
-                //             Connection::V1(monitor) => {
-                //                 let _ = monitor
-                //                     .send_single(cmd.id.as_u32() as u8, cmd.into())
-                //                     .map_err(|err| log::error!("Error sending stop: {:?}", err));
-                //             }
-                //             Connection::V0(serial) => {
-                //                 let cmd_str = cmd.into_proto_v0_with_id(*id);
-                //                 serial.send(&cmd_str);
-                //             }
-                //         }
-                //     }
-                // }
-
                 // Receive feedback
                 if let Connection::V1(monitor) = &mut connection {
                     if !monitor.is_connected() {
@@ -216,32 +195,41 @@ impl BasestationHandle {
                                     < Duration::from_millis(600)
                                 {
                                     all_ids.insert(id);
-                                    let player_id = id_map
+                                    let (color, player_id) = id_map
                                         .iter()
-                                        .find_map(
-                                            |(k, v)| if *v == id as u32 { Some(*k) } else { None },
-                                        )
-                                        .unwrap_or_else(|| PlayerId::new(id as u32));
+                                        .find_map(|(k, v)| {
+                                            if *v == id as u32 {
+                                                Some((Some(k.0), k.1))
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .unwrap_or_else(|| (None, PlayerId::new(id as u32)));
 
-                                    Some(PlayerFeedbackMsg {
-                                        id: player_id,
-                                        primary_status: SysStatus::from_option(
-                                            msg.primary_status(),
-                                        ),
-                                        kicker_status: SysStatus::from_option(msg.kicker_status()),
-                                        imu_status: SysStatus::from_option(msg.imu_status()),
-                                        fan_status: SysStatus::from_option(msg.fan_status()),
-                                        kicker_cap_voltage: msg.kicker_cap_voltage(),
-                                        kicker_temp: msg.kicker_temperature(),
-                                        motor_statuses: msg
-                                            .motor_statuses()
-                                            .map(|v| v.map(Into::into)),
-                                        motor_speeds: msg.motor_speeds(),
-                                        motor_temps: msg.motor_temperatures(),
-                                        breakbeam_ball_detected: msg.breakbeam_ball_detected(),
-                                        breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
-                                        pack_voltages: msg.pack_voltages(),
-                                    })
+                                    Some((
+                                        color,
+                                        PlayerFeedbackMsg {
+                                            id: player_id,
+                                            primary_status: SysStatus::from_option(
+                                                msg.primary_status(),
+                                            ),
+                                            kicker_status: SysStatus::from_option(
+                                                msg.kicker_status(),
+                                            ),
+                                            imu_status: SysStatus::from_option(msg.imu_status()),
+                                            fan_status: SysStatus::from_option(msg.fan_status()),
+                                            kicker_cap_voltage: msg.kicker_cap_voltage(),
+                                            kicker_temp: msg.kicker_temperature(),
+                                            motor_statuses: msg
+                                                .motor_statuses()
+                                                .map(|v| v.map(Into::into)),
+                                            motor_speeds: msg.motor_speeds(),
+                                            motor_temps: msg.motor_temperatures(),
+                                            breakbeam_ball_detected: msg.breakbeam_ball_detected(),
+                                            breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
+                                            pack_voltages: msg.pack_voltages(),
+                                        },
+                                    ))
                                 } else {
                                     None
                                 }
@@ -277,26 +265,28 @@ impl BasestationHandle {
     }
 
     /// Send a message to the serial port.
-    pub async fn send(&mut self, msg: PlayerCmd) -> Result<()> {
+    pub async fn send(&mut self, team_color: TeamColor, msg: PlayerCmd) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
-            .send(Message::PlayerCmd((msg, tx)))
+            .send(Message::PlayerCmd((team_color, msg, tx)))
             .context("Failed to send message to serial port")?;
         rx.await?
     }
 
-    pub fn send_no_wait(&mut self, msg: PlayerCmd) {
+    pub fn send_no_wait(&mut self, team_color: TeamColor, msg: PlayerCmd) {
         let (tx, _) = oneshot::channel();
-        self.cmd_tx.send(Message::PlayerCmd((msg, tx))).ok();
+        self.cmd_tx
+            .send(Message::PlayerCmd((team_color, msg, tx)))
+            .ok();
     }
 
     /// Update the id map
-    pub fn update_id_map(&mut self, id_map: HashMap<PlayerId, u32>) {
+    pub fn update_id_map(&mut self, id_map: HashMap<(TeamColor, PlayerId), u32>) {
         self.cmd_tx.send(Message::ChangeIdMap(id_map)).ok();
     }
 
     /// Receive a message from the serial port.
-    pub async fn recv(&mut self) -> Result<PlayerFeedbackMsg> {
+    pub async fn recv(&mut self) -> Result<(Option<TeamColor>, PlayerFeedbackMsg)> {
         self.info_rx.recv().await.map_err(|e| e.into())
     }
 }

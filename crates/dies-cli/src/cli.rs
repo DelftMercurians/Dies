@@ -181,11 +181,7 @@ impl Cli {
             .await
             .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()
-            .map(|port| {
-                let mut config = BasestationClientConfig::new(port, self.protocol.into());
-                config.set_robot_id_map_from_string(&self.robot_ids);
-                config
-            })
+            .map(|port| BasestationClientConfig::new(port, self.protocol.into()))
     }
 
     /// Configures the vision client based on the CLI arguments.

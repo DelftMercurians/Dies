@@ -157,5 +157,6 @@ pub(crate) struct PostExecutorSettingsBody {
 #[derive(Debug, Clone, Serialize)]
 #[typeshare]
 pub(crate) struct BasestationResponse {
-    pub(crate) players: HashMap<PlayerId, PlayerFeedbackMsg>,
+    pub(crate) blue_team: Vec<PlayerFeedbackMsg>,
+    pub(crate) yellow_team: Vec<PlayerFeedbackMsg>,
 }

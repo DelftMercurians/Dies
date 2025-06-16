@@ -8,7 +8,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use dies_core::{DebugMap, DebugSubscriber, WorldUpdate};
+use dies_core::{DebugMap, DebugSubscriber, TeamColor, WorldUpdate};
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
@@ -79,7 +79,24 @@ pub async fn post_executor_settings(
 
 pub async fn get_basesation_info(state: State<Arc<ServerState>>) -> Json<BasestationResponse> {
     Json(BasestationResponse {
-        players: state.basestation_feedback.read().unwrap().clone(),
+        blue_team: state
+            .basestation_feedback
+            .read()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .filter(|((color, _), _)| *color == Some(TeamColor::Blue))
+            .map(|(_, msg)| msg)
+            .collect(),
+        yellow_team: state
+            .basestation_feedback
+            .read()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .filter(|((color, _), _)| *color == Some(TeamColor::Yellow))
+            .map(|(_, msg)| msg)
+            .collect(),
     })
 }
 
