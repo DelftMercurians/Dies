@@ -22,7 +22,7 @@ TRAJECTORY_RESOLUTION = 6  # points per physics step for high-resolution traject
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
 VEL_FRICTION_COEFF = 1e-10  # N*s/m (velocity-dependent friction coefficient)
-MAX_ACC = 10_000  # i don't fucking know in what units this shit is
+MAX_ACC = 400  # i don't fucking know in what units this shit is
 
 
 def get_dt_schedule(upscaled=True):

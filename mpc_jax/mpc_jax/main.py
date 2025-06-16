@@ -344,6 +344,7 @@ def solve_mpc(
     if with_aux:
         return out
     else:
+        print(f"{initial_vel} {out[0][0][0]}")
         return out[0]
 
 
