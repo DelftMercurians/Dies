@@ -309,9 +309,22 @@ def solve_mpc(
     key: PRNGKeyArray | None = None,
     with_aux: bool = False,
 ) -> tuple | np.ndarray:
+    n_robots = len(initial_pos)
+    assert len(initial_vel) == n_robots, f"{len(initial_vel)} != {n_robots}"
+    assert len(target_pos) == n_robots, f"{len(target_pos)} != {n_robots}"
+    assert len(max_speed) == n_robots, f"{len(max_speed)} != {n_robots}"
+
     last_controls_jax = (
         None if last_control_sequences is None else jnp.asarray(last_control_sequences)
     )
+    ctrl_shape = (len(initial_pos), CONTROL_HORIZON, 2)
+    if (
+        last_control_sequences is not None
+        and last_control_sequences.shape != ctrl_shape
+    ):
+        warnings.warn(
+            "Last control sequence had shape {last_control_sequences.shape}, but was expected to have shape {ctrl_shape}. Disabling continuity."
+        )
 
     out = solve_mpc_jitted(
         World(
@@ -343,5 +356,3 @@ def solve_mpc_tbwrap(*args):
         raise RuntimeError(
             f"Traceback: {tb.format_exc(20)} with input: {args}"
         ) from None
-
-
