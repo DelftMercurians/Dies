@@ -9,7 +9,7 @@ from jaxtyping import Array, Float, Int
 # MPC Parameters
 CONTROL_HORIZON = 10
 TIME_HORIZON = 5  # seconds
-DT = 0.05  # starting value for dt, seconds
+DT = 0.1  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm

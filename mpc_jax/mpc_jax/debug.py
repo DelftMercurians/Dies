@@ -274,6 +274,7 @@ def animate_moving_obstacle(initial_pos, target_pos):
 
     all_obstacles = []
     all_trajectories = []
+    controls = None
     for frame in tqdm(range(num_frames), desc="Computing frames"):
         # Calculate second obstacle position
         t = frame / (num_frames - 1)  # 0 to 1
@@ -291,6 +292,7 @@ def animate_moving_obstacle(initial_pos, target_pos):
             w.obstacles.position,
             w.field_bounds.bounding_box(),
             max_vel,
+            controls,
         )
         trajectories = trajectories_from_control(w, controls)
         # Store trajectories for all robots
