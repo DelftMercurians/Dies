@@ -1,5 +1,6 @@
 ### TODOs:
 **Important:**
+[ ] - MPC mismatch score: the difference between the "expected" position of the robot during the next step, and the actual position during the next step
 [ ] - Add ball
 [ ] - Add field constraints
 [ ] - Precompile all the variants of the thing before start (maybe use full cash? if it works..)
