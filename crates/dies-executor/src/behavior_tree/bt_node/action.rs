@@ -8,7 +8,7 @@ use super::{
 use crate::{
     behavior_tree::Argument,
     control::PlayerControlInput,
-    roles::{
+    skills::{
         skills::{
             ApproachBall, Face, FetchBall, FetchBallWithHeading, GoToPosition, InterceptBall, Kick,
             Wait,

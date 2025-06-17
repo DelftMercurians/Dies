@@ -1,5 +1,5 @@
 use crate::behavior_tree::bt_node::BehaviorNode;
-use crate::roles::Skill as SkillEnum;
+use crate::skills::Skill as SkillEnum;
 use rhai::{CustomType, TypeBuilder};
 
 #[allow(dead_code)]

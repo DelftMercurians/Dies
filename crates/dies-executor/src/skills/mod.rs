@@ -4,7 +4,8 @@ use crate::control::PlayerControlInput;
 use dies_core::{PlayerData, TeamData};
 
 use skills::{
-    ApproachBall, Face, FetchBall, FetchBallWithHeading, GoToPosition, InterceptBall, Kick, Wait,
+    ApproachBall, Face, FetchBall, FetchBallWithHeading, GoToPosition, InterceptBall, Kick, Shoot,
+    Wait,
 };
 
 #[derive(Clone)]
@@ -12,6 +13,7 @@ pub enum Skill {
     GoToPosition(GoToPosition),
     Face(Face),
     Kick(Kick),
+    Shoot(Shoot),
     Wait(Wait),
     FetchBall(FetchBall),
     InterceptBall(InterceptBall),
@@ -25,6 +27,7 @@ impl Skill {
             Skill::GoToPosition(skill) => skill.update(ctx),
             Skill::Face(skill) => skill.update(ctx),
             Skill::Kick(skill) => skill.update(ctx),
+            Skill::Shoot(skill) => skill.update(ctx),
             Skill::Wait(skill) => skill.update(ctx),
             Skill::FetchBall(skill) => skill.update(ctx),
             Skill::InterceptBall(skill) => skill.update(ctx),
@@ -46,12 +49,6 @@ pub enum SkillResult {
     Failure,
 }
 
-/// The state of a skill execution
-pub enum SkillState {
-    InProgress(Skill),
-    Done(SkillResult),
-}
-
 /// The progress of a skill execution
 #[derive(Debug)]
 pub enum SkillProgress {
@@ -68,15 +65,5 @@ impl SkillProgress {
     /// Creates a new `SkillProgress` with a `Failure` result
     pub fn failure() -> SkillProgress {
         SkillProgress::Done(SkillResult::Failure)
-    }
-
-    pub fn map_input<F>(self, f: F) -> SkillProgress
-    where
-        F: FnOnce(PlayerControlInput) -> PlayerControlInput,
-    {
-        match self {
-            SkillProgress::Continue(input) => SkillProgress::Continue(f(input)),
-            SkillProgress::Done(result) => SkillProgress::Done(result),
-        }
     }
 }

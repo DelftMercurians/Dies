@@ -346,7 +346,7 @@ impl PlayerController {
             KickerControlInput::Arm => {
                 self.kicker = KickerState::Arming;
             }
-            KickerControlInput::Kick => match self.kicker {
+            KickerControlInput::Kick { force } => match self.kicker {
                 KickerState::Disarming | KickerState::Arming => {
                     self.kicker = KickerState::Kicking;
                 }

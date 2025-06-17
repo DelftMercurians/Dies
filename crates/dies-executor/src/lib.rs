@@ -19,7 +19,7 @@ mod behavior_tree;
 mod control;
 mod gc_client;
 mod handle;
-mod roles;
+mod skills;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
@@ -294,7 +294,7 @@ impl PlayerOverrideState {
                 ..Default::default()
             },
             PlayerOverrideCommand::Kick { speed } => PlayerControlInput {
-                kicker: KickerControlInput::Kick,
+                kicker: KickerControlInput::Kick { force: speed },
                 kick_speed: Some(speed),
                 ..Default::default()
             },
