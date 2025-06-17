@@ -4,6 +4,7 @@ from jax import numpy as jnp
 import os
 import equinox as eqx
 from jaxtyping import Array, Float, Int
+from typing import Literal
 
 
 # MPC Parameters
@@ -17,7 +18,8 @@ FIELD_BOUNDARY_MARGIN = 100.0  # mm
 MAX_ITERATIONS = 50
 LEARNING_RATE = 50
 N_CANDIDATE_TRAJECTORIES = 40
-TRAJECTORY_RESOLUTION = 6  # points per physics step for high-resolution trajectories
+TRAJECTORY_RESOLUTION = 5  # points per physics step for high-resolution trajectories
+FINAL_COST: Literal["distance-auc", "cost"] = "cost"
 
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
@@ -30,14 +32,10 @@ def get_dt_schedule(upscaled=True):
     if upscaled:
         # The schedule that follows interpolation - linear interpolation of cumulative times
         base_dt_schedule = get_dt_schedule(upscaled=False)
-        base_cumulative_times = jnp.concatenate(
-            [jnp.array([0.0]), jnp.cumsum(base_dt_schedule)]
-        )
+        base_cumulative_times = jnp.concatenate([jnp.array([0.0]), jnp.cumsum(base_dt_schedule)])
 
         # Total interpolated points: CONTROL_HORIZON + (CONTROL_HORIZON-1) * (TRAJECTORY_RESOLUTION-1)
-        total_points = CONTROL_HORIZON + (CONTROL_HORIZON - 1) * (
-            TRAJECTORY_RESOLUTION - 1
-        )
+        total_points = CONTROL_HORIZON + (CONTROL_HORIZON - 1) * (TRAJECTORY_RESOLUTION - 1)
 
         # Linear interpolation from 0 to final time
         final_time = base_cumulative_times[-1]
@@ -141,9 +139,7 @@ def spline_interpolate_trajectory(trajectory: jax.Array) -> jax.Array:
         result_parts.append(trajectory[i : i + 1])  # original point
         start_idx = i * (resolution - 1)
         end_idx = (i + 1) * (resolution - 1)
-        result_parts.append(
-            interpolated_points[start_idx:end_idx]
-        )  # interpolated points
+        result_parts.append(interpolated_points[start_idx:end_idx])  # interpolated points
 
     # Add final point
     result_parts.append(trajectory[-1:])
@@ -212,9 +208,9 @@ class World(eqx.Module):
 
 @eqx.filter_jit
 def trajectories_from_control(w: World, u: Control):
-    return jax.vmap(
-        lambda control, pos, vel: single_trajectory_from_control(control, pos, vel)
-    )(u, w.robots.position, w.robots.velocity)
+    return jax.vmap(lambda control, pos, vel: single_trajectory_from_control(control, pos, vel))(
+        u, w.robots.position, w.robots.velocity
+    )
 
 
 @jax.jit
@@ -228,13 +224,9 @@ def single_trajectory_from_control(
 
     dt_schedule = get_dt_schedule(upscaled=False)
 
-    def dynamics(
-        pos: jax.Array, vel: jax.Array, target_vel: jax.Array, dt: float
-    ) -> jax.Array:
+    def dynamics(pos: jax.Array, vel: jax.Array, target_vel: jax.Array, dt: float) -> jax.Array:
         vel_friction_force = -VEL_FRICTION_COEFF * vel
-        control_force = (
-            jnp.clip((target_vel - vel) / dt, -MAX_ACC, MAX_ACC) * ROBOT_MASS
-        )
+        control_force = jnp.clip((target_vel - vel) / dt, -MAX_ACC, MAX_ACC) * ROBOT_MASS
 
         # Total acceleration
         total_force = control_force + vel_friction_force
@@ -279,9 +271,7 @@ def single_trajectory_from_control(
     initial_state = jnp.concatenate([jnp.array([0.0]), initial_pos, initial_vel])
 
     # Prepend initial state to get full trajectory
-    base_trajectory = jnp.concatenate(
-        [initial_state[None, :], trajectory_steps], axis=0
-    )
+    base_trajectory = jnp.concatenate([initial_state[None, :], trajectory_steps], axis=0)
 
     # Apply spline interpolation for higher resolution
     return spline_interpolate_trajectory(base_trajectory)

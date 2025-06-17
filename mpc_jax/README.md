@@ -1,5 +1,7 @@
 ### TODOs:
 **Important:**
+[ ] - Add ball
+[ ] - Add field constraints
 [ ] - Precompile all the variants of the thing before start (maybe use full cash? if it works..)
 [ ] - benchmark the MPC setup based on some scoring rules and pairwise wins vs old version
 [ ] - delay handling
