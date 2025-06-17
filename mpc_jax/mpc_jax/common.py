@@ -19,12 +19,12 @@ MAX_ITERATIONS = 50
 LEARNING_RATE = 50
 N_CANDIDATE_TRAJECTORIES = 40
 TRAJECTORY_RESOLUTION = 5  # points per physics step for high-resolution trajectories
-FINAL_COST: Literal["distance-auc", "cost"] = "cost"
+FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
 VEL_FRICTION_COEFF = 1e-10  # N*s/m (velocity-dependent friction coefficient)
-MAX_ACC = 400  # i don't fucking know in what units this shit is
+MAX_ACC = 125_000  # mm/s^2
 
 
 def get_dt_schedule(upscaled=True):
@@ -111,6 +111,23 @@ def interpolate_trajectory_segment(
 
     # Combine into trajectory format [time, pos_x, pos_y, vel_x, vel_y]
     return jnp.column_stack([time_interp, pos_interp, vel_interp])
+
+
+@jax.jit
+def softclip(x: jax.Array, min_val: float, max_val: float) -> jax.Array:
+    """Sigmoid-based soft clipping function that clips based on norm for vectors"""
+    if x.ndim == 1 and len(x) > 1:
+        # For vectors, clip based on norm
+        norm = jnp.linalg.norm(x)
+        max_norm = max_val
+        # Use tanh for smooth saturation
+        scale_factor = jnp.tanh(norm / max_norm)
+        return jnp.where(norm > 1e-8, x * (scale_factor / norm * max_norm), x)
+    else:
+        # For scalars, use tanh-based soft clipping
+        mid = (max_val + min_val) / 2
+        range_half = (max_val - min_val) / 2
+        return mid + range_half * jnp.tanh((x - mid) / range_half)
 
 
 @jax.jit
@@ -226,12 +243,13 @@ def single_trajectory_from_control(
 
     def dynamics(pos: jax.Array, vel: jax.Array, target_vel: jax.Array, dt: float) -> jax.Array:
         vel_friction_force = -VEL_FRICTION_COEFF * vel
-        control_force = jnp.clip((target_vel - vel) / dt, -MAX_ACC, MAX_ACC) * ROBOT_MASS
 
-        # Total acceleration
+        desired_acceleration = (target_vel - vel) / dt
+        clipped_acceleration = softclip(desired_acceleration, -MAX_ACC, MAX_ACC)
+        control_force = clipped_acceleration * ROBOT_MASS
+
         total_force = control_force + vel_friction_force
-        acceleration = total_force / ROBOT_MASS
-        return acceleration
+        return total_force / ROBOT_MASS
 
     def heun_step(state: jax.Array, target_vel: jax.Array, dt: float) -> jax.Array:
         """Heun method for state integration"""

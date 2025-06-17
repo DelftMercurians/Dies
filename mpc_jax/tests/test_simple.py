@@ -9,8 +9,8 @@ from mpc_jax.common import CONTROL_HORIZON
 
 def simple_case(last_solution=None):
     n_robots = 2
-    initial_pos = np.array([[0.0, 0.0], [80.0, 700.0]])
-    initial_vel = np.array([[0.0, 0.0], [0.0, 0.0]])
+    initial_pos = np.array([[5.0, 10.0], [80.0, 700.0]])
+    initial_vel = np.array([[-50.0, 10.0], [20.0, 30.0]])
     target_pos = np.array([[1000.0, 500.0], [-500, 500]])
     obstacles = np.array([[500.0, -250.0]])  # One obstacle in the way
     field_bounds = np.array([-2000.0, 2000.0, -1000.0, 1000.0])
@@ -62,9 +62,7 @@ def test_performance():
 
     # Assert reasonable performance (less than 1 second)
     avg_time = np.mean(np.array(times[10:]))  # Skip warmup
-    assert avg_time < 25, (
-        f"Average time {avg_time:.1f}ms is too slow, the threshold is 25ms"
-    )
+    assert avg_time < 25, f"Average time {avg_time:.1f}ms is too slow, the threshold is 25ms"
     print(
         f"\n\n\tAn MPC run is expected to take {avg_time:.1f}ms \n\tAverage score was {np.mean(costs):.1f}, down from {st_cost:.1f} after one iteration.\n"
     )

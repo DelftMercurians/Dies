@@ -20,6 +20,7 @@ from .common import (
     MAX_ITERATIONS,
     TIME_HORIZON,
     N_CANDIDATE_TRAJECTORIES,
+    single_trajectory_from_control,
     trajectories_from_control,
     World,
     Control,
@@ -370,17 +371,14 @@ def solve_mpc_jax(
         best_cf_idx, best_cf_cost = select_best_collision_free_trajectory(
             optimized_controls, w, targets
         )
-        best_idx = jnp.where(best_cf_cost == jnp.inf, jnp.argmin(mpc_costs), best_mpc_idx)
+        best_idx = jnp.where(best_cf_cost == jnp.inf, best_mpc_idx, best_cf_idx)
         best_cost = best_cf_cost
     else:
         raise ValueError(
-            "FINAL_COST was {FINAL_COST}, but must be either of ['cost', 'distance-auc']"
+            f"FINAL_COST was {FINAL_COST}, but must be either of ['cost', 'distance-auc']"
         )
 
     return optimized_controls[best_idx], candidate_controls, optimized_controls, best_cost
-
-
-solve_mpc_jitted = eqx.filter_jit(solve_mpc_jax)
 
 
 def solve_mpc(
@@ -411,7 +409,7 @@ def solve_mpc(
             f"Last control sequence had shape {last_control_sequences.shape}, but was expected to have shape {ctrl_shape}. Disabling continuity."
         )
 
-    out = solve_mpc_jitted(
+    out = eqx.filter_jit(solve_mpc_jax)(
         World(
             FieldBounds(),
             EntityBatch(jnp.asarray(obstacles)),
@@ -426,12 +424,24 @@ def solve_mpc(
         key,
         last_controls_jax,
     )
+
+    ctrl = out[0][1]  # control for the first robot
+    traj = single_trajectory_from_control(ctrl, initial_pos[0], initial_vel[0]).block_until_ready()
+
+    def p(arr):
+        out = "["
+        for v in arr.ravel():
+            out += f"{float(v):.2f} "
+        return out[:-1] + "]" if len(out) != 1 else "[]"
+
+    print(f"\ninitial: {p(initial_vel)} \t ctrl: {p(ctrl[0])}")
+    print(f"\nnext waypoint: {p(traj[1])} - {p(traj[2])}")
+    cost = out[-1]
+    if np.isinf(cost):
+        warnings.warn(
+            "Cost if infinite, which means there is no collision-free resolution found by MPC. Proceeding with the best possible trajectory"
+        )
     if with_aux:
-        cost = out[-1]
-        if np.isinf(cost):
-            warnings.warn(
-                "Cost if infinite, which means there is no collision-free resolution find by MPC. Proceeding with the best possible trajectory"
-            )
         return out
     else:
         return out[0]
