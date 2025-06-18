@@ -15,21 +15,23 @@ def simple_case(last_solution=None):
     obstacles = np.array([[500.0, -250.0]])  # One obstacle in the way
     field_bounds = np.array([-2000.0, 2000.0, -1000.0, 1000.0])
     max_speed = np.array([4000.0, 4000.0])
+    ball_pos = None
 
     (optimal_control, _, _, cost), traj = solve_mpc(
         initial_pos,
         initial_vel,
         target_pos,
         obstacles,
+        ball_pos,
         field_bounds,
         max_speed,
         last_solution,
     )
 
     assert optimal_control is not None
-    assert cost < float("inf") and not np.isnan(
-        cost
-    ), "MPC failed (no collision-free resolution) for a simple case"
+    assert cost < float("inf") and not np.isnan(cost), (
+        "MPC failed (no collision-free resolution) for a simple case"
+    )
     assert optimal_control.shape == (
         n_robots,
         CONTROL_HORIZON,
@@ -61,9 +63,9 @@ def test_performance():
 
     # Assert reasonable performance (less than 1 second)
     avg_time = np.mean(np.array(times[10:]))  # Skip warmup
-    assert (
-        avg_time < 25
-    ), f"Average time {avg_time:.1f}ms is too slow, the threshold is 25ms"
+    assert avg_time < 25, (
+        f"Average time {avg_time:.1f}ms is too slow, the threshold is 25ms"
+    )
     print(
         f"\n\n\tAn MPC run is expected to take {avg_time:.1f}ms \n\tAverage score was {np.mean(costs):.1f}, down from {st_cost:.1f} after one iteration.\n"
     )

@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import functools as ft
-from .common import ROBOT_RADIUS
+from .common import ROBOT_RADIUS, BALL_RADIUS
 
 
 def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float):
@@ -100,6 +100,50 @@ def velocity_constraint_cost(vel: jnp.ndarray, max_speed: float):
 
 def control_effort_cost(vel: jnp.ndarray):
     return jnp.sum(vel**2) * 1e-6
+
+
+def ball_collision_cost(
+    pos: jnp.ndarray,
+    ball_pos: jnp.ndarray,
+    weak_scale=0.0,
+    strong_scale=1.0,
+):
+    """Collision cost specifically for the ball with smaller radius"""
+    assert ball_pos.shape == (2,), (
+        f"Ball collision cost: Ball pos must be of shape (2,), but got {ball_pos.shape}"
+    )
+    assert pos.shape == (2,), (
+        f"Ball collision cost: Robot pos must be of shape (2,), but got {pos.shape}"
+    )
+
+    diff = pos - ball_pos
+    distance = jnp.sqrt(jnp.sum(diff**2) + 1e-9)
+
+    # Define safety thresholds - robot radius + ball radius
+    min_safe_distance = (ROBOT_RADIUS + BALL_RADIUS) * strong_scale
+    no_cost_distance = 2 * (ROBOT_RADIUS + BALL_RADIUS) * strong_scale
+
+    no_cost_distance += (no_cost_distance - min_safe_distance) * weak_scale
+
+    # try to avoid certain collision hard
+    danger_zone = distance <= min_safe_distance
+    normalized_distance = jnp.clip(distance / min_safe_distance, 1e-6, 1)
+    danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 200
+
+    # try to avoid even getting close to the ball
+    in_decay_zone = jnp.logical_and(
+        distance > min_safe_distance, distance <= no_cost_distance
+    )
+    normalized_distance = jnp.clip(
+        (distance - min_safe_distance) / (no_cost_distance - min_safe_distance),
+        0,
+        1,
+    )
+    smooth_factor = jnp.where(in_decay_zone, 1 - normalized_distance, 0.0) * 3
+
+    penalties = smooth_factor + danger_factor
+
+    return jnp.sum(penalties)
 
 
 def continuity_cost(current_control: jnp.ndarray, last_control: jnp.ndarray):

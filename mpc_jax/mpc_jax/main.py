@@ -28,11 +28,13 @@ from .common import (
     EntityBatch,
     FieldBounds,
     control_steps_to_time,
+    clip_by_norm,
 )
 
 from .costs import (
     distance_cost,
     collision_cost,
+    ball_collision_cost,
     boundary_cost,
     velocity_constraint_cost,
     control_effort_cost,
@@ -58,10 +60,12 @@ def mpc_cost_function(
         c_cost = 0
         if len(w.obstacles) != 0:
             c_cost = collision_cost(robot.position, w.obstacles.after(t).position)
+        # Handle ball collision separately with proper radius
+        ball_cost = ball_collision_cost(robot.position, w.ball.after(t).position)
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
 
-        return d_cost + c_cost + b_cost + vc_cost
+        return d_cost + c_cost + ball_cost + b_cost + vc_cost
 
     def collective_position_cost_fn(traj_slice, idx):
         t, pos_x, pos_y, vel_x, vel_y = traj_slice[idx]
@@ -90,11 +94,6 @@ def mpc_cost_function(
     return total_position_cost + total_collective_cost
 
 
-def clip_vel(vel: jnp.ndarray, limit: float | Float[Array, ""]):
-    speed = jnp.sqrt((vel**2).sum() + 1e-9)
-    return jnp.where(speed > limit, vel * (limit / speed), vel)
-
-
 def generate_candidate_control(
     key: PRNGKeyArray,
     initial_pos: Float[Array, "2"],
@@ -116,12 +115,12 @@ def generate_candidate_control(
     # Calculate required velocity to reach 75% in a few seconds
     few_seconds = jr.uniform(k5, (), minval=2.0, maxval=8.0)
     required_vel_stage1 = (intermediate_target - initial_pos) / few_seconds
-    required_vel_stage1 = clip_vel(required_vel_stage1, max_speed)
+    required_vel_stage1 = clip_by_norm(required_vel_stage1, max_speed)
 
     # Add noise to stage 1 velocity
     noise1 = jr.normal(k2, (2,)) * 100.0 * pos_noise_scale
     first_stage_random_vel_clip_factor = jr.uniform(k3, (), minval=0.2, maxval=1.0)
-    stage1_vel = clip_vel(
+    stage1_vel = clip_by_norm(
         required_vel_stage1 + noise1, max_speed * first_stage_random_vel_clip_factor
     )
 
@@ -130,11 +129,11 @@ def generate_candidate_control(
     required_vel_stage2 = (pseudo_target - intermediate_target) / (
         TIME_HORIZON - few_seconds
     )
-    required_vel_stage2 = clip_vel(required_vel_stage2, max_speed)
+    required_vel_stage2 = clip_by_norm(required_vel_stage2, max_speed)
 
     # Add noise to stage 2 velocity
     noise2 = jr.normal(k4, (2,)) * 30.0
-    stage2_vel = clip_vel(required_vel_stage2 + noise2, max_speed)
+    stage2_vel = clip_by_norm(required_vel_stage2 + noise2, max_speed)
 
     # Combine the two stages using masks for JIT compatibility
     stage1_steps = control_steps_to_time(few_seconds)
@@ -172,7 +171,7 @@ def generate_continuity_candidates(
     # Clip to velocity limits
     perturbed_controls = jax.vmap(
         lambda controls, max_speed: jax.vmap(
-            lambda control: clip_vel(control, max_speed)
+            lambda control: clip_by_norm(control, max_speed)
         )(controls)
     )(perturbed_controls, max_speeds)
 
@@ -340,7 +339,7 @@ def solve_mpc_jax(
     def optimize_control(u):
         # Initialize optimizer for this trajectory
         lr_schedule = optax.linear_schedule(
-            learning_rate, learning_rate / 10.0, max_iterations
+            learning_rate, learning_rate / 4.0, max_iterations
         )
         optimizer = optax.chain(
             optax.adabelief(learning_rate=lr_schedule, b1=0.8, b2=0.8),
@@ -360,7 +359,7 @@ def solve_mpc_jax(
 
             # Do an optimization step
             updates, opt_state = optimizer.update(grad_val, opt_state, u)
-            u = optax.apply_updates(u, updates)
+            u: jax.Array = optax.apply_updates(u, updates)  # type: ignore
 
             # Do an adjustment: slightly shift u towards old solution, if it exists
             if last_control_sequences is not None:
@@ -368,7 +367,7 @@ def solve_mpc_jax(
                 u = u * (1.0 - rho) + last_control_sequences * rho
 
             # Project the control back to the "valid" domain
-            u = jax.vmap(clip_vel)(u, max_speeds)
+            u = jax.vmap(clip_by_norm)(u, max_speeds)
 
             return (u, opt_state, (best_u, best_cost)), cost
 
@@ -410,15 +409,23 @@ def solve_mpc_jax(
     return (u, candidate_controls, optimized_controls, best_cost), traj
 
 
+def pprint(arr):
+    out = "["
+    for v in arr.ravel():
+        out += f"{float(v):.2f} "
+    return out[:-1] + "]" if len(out) != 1 else "[]"
+
+
 def solve_mpc(
     initial_pos: np.ndarray,
     initial_vel: np.ndarray,
     target_pos: np.ndarray,
     obstacles: np.ndarray,
+    ball_pos: np.ndarray | None,
     field_bounds: np.ndarray | None,
     max_speed: np.ndarray,
     last_control_sequences: np.ndarray | None = None,
-    last_traj10: np.ndarray | None = None,
+    last_traj: np.ndarray | None = None,
     last_dt: np.ndarray | None = None,
     max_iterations: int = MAX_ITERATIONS,
     learning_rate: float = LEARNING_RATE,
@@ -442,12 +449,15 @@ def solve_mpc(
             f"Last control sequence had shape {last_control_sequences.shape}, but was expected to have shape {ctrl_shape}. Disabling continuity."
         )
 
+    # Handle ball position - use provided ball_pos or default to far away
+    ball_position = jnp.array([1e6, 1e6]) if ball_pos is None else jnp.asarray(ball_pos)
+
     out, traj = eqx.filter_jit(solve_mpc_jax)(
         World(
             FieldBounds(),
             EntityBatch(jnp.asarray(obstacles)),
             EntityBatch(jnp.asarray(initial_pos), jnp.asarray(initial_vel)),
-            Entity(jnp.zeros((2,))),
+            Entity(ball_position),
         ),
         EntityBatch(jnp.asarray(target_pos)),
         jnp.asarray(max_speed),
@@ -458,23 +468,16 @@ def solve_mpc(
         last_controls_jax,
     )
 
-    def p(arr):
-        out = "["
-        for v in arr.ravel():
-            out += f"{float(v):.2f} "
-        return out[:-1] + "]" if len(out) != 1 else "[]"
-
-    cost = out[-1]
-    if np.isinf(cost):
+    if np.isinf(out[-1]) or np.isnan(out[-1]):
         warnings.warn(
-            "Cost if infinite, which means there is no collision-free resolution found by MPC. Proceeding with the best possible trajectory"
+            "Cost if infinite (or nan), which means there is no collision-free resolution found by MPC. Proceeding with the best available trajectory."
         )
     return out, traj
 
 
 def solve_mpc_tbwrap(*args):
     try:
-        result, traj = solve_mpc(*args)  # type: ignore
+        result, traj = solve_mpc(*args)
         # Return full control sequences instead of just first control
         # And the trajectory, just for fun and debug
         # and also for automatic simulator mismatch error

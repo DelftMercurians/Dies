@@ -10,9 +10,10 @@ from typing import Literal
 # MPC Parameters
 CONTROL_HORIZON = 10
 TIME_HORIZON = 5  # seconds
-DT = 0.1  # starting value for dt, seconds
+DT = 0.005  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
+BALL_RADIUS = 20.0  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
 MAX_ITERATIONS = 50
@@ -23,7 +24,7 @@ FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
-VEL_FRICTION_COEFF = 1e-10  # N*s/m (velocity-dependent friction coefficient)
+VEL_FRICTION_COEFF = 0.0  # N*s/m (velocity-dependent friction coefficient)
 MAX_ACC = 125_000  # mm/s^2
 
 
@@ -32,10 +33,14 @@ def get_dt_schedule(upscaled=True):
     if upscaled:
         # The schedule that follows interpolation - linear interpolation of cumulative times
         base_dt_schedule = get_dt_schedule(upscaled=False)
-        base_cumulative_times = jnp.concatenate([jnp.array([0.0]), jnp.cumsum(base_dt_schedule)])
+        base_cumulative_times = jnp.concatenate(
+            [jnp.array([0.0]), jnp.cumsum(base_dt_schedule)]
+        )
 
         # Total interpolated points: CONTROL_HORIZON + (CONTROL_HORIZON-1) * (TRAJECTORY_RESOLUTION-1)
-        total_points = CONTROL_HORIZON + (CONTROL_HORIZON - 1) * (TRAJECTORY_RESOLUTION - 1)
+        total_points = CONTROL_HORIZON + (CONTROL_HORIZON - 1) * (
+            TRAJECTORY_RESOLUTION - 1
+        )
 
         # Linear interpolation from 0 to final time
         final_time = base_cumulative_times[-1]
@@ -56,7 +61,6 @@ def control_steps_to_time(time: float | Float[Array, ""]):
     return steps_past_time
 
 
-@jax.jit
 def cubic_hermite_spline(
     t: jax.Array, p0: jax.Array, p1: jax.Array, v0: jax.Array, v1: jax.Array, dt: float
 ) -> tuple:
@@ -91,7 +95,6 @@ def cubic_hermite_spline(
     return pos, vel
 
 
-@eqx.filter_jit
 def interpolate_trajectory_segment(
     t0: float, t1: float, state0: jax.Array, state1: jax.Array, n_points: int
 ) -> jax.Array:
@@ -113,24 +116,19 @@ def interpolate_trajectory_segment(
     return jnp.column_stack([time_interp, pos_interp, vel_interp])
 
 
-@jax.jit
-def softclip(x: jax.Array, min_val: float, max_val: float) -> jax.Array:
-    """Sigmoid-based soft clipping function that clips based on norm for vectors"""
+def softclip(x: jax.Array, max_norm: float) -> jax.Array:
+    alpha = 2
     if x.ndim == 1 and len(x) > 1:
-        # For vectors, clip based on norm
-        norm = jnp.linalg.norm(x)
-        max_norm = max_val
-        # Use tanh for smooth saturation
-        scale_factor = jnp.tanh(norm / max_norm)
-        return jnp.where(norm > 1e-8, x * (scale_factor / norm * max_norm), x)
+        norm = jnp.sqrt((x**2).sum() + 1e-12)
+
+        scale = max_norm / norm
+        scale = jnp.minimum(scale, 1.0)  # safety for tiny norm
+
+        return x * scale
     else:
-        # For scalars, use tanh-based soft clipping
-        mid = (max_val + min_val) / 2
-        range_half = (max_val - min_val) / 2
-        return mid + range_half * jnp.tanh((x - mid) / range_half)
+        raise RuntimeError("blah blah")
 
 
-@jax.jit
 def spline_interpolate_trajectory(trajectory: jax.Array) -> jax.Array:
     """Add high-resolution interpolated points between trajectory segments"""
     resolution = TRAJECTORY_RESOLUTION
@@ -156,7 +154,9 @@ def spline_interpolate_trajectory(trajectory: jax.Array) -> jax.Array:
         result_parts.append(trajectory[i : i + 1])  # original point
         start_idx = i * (resolution - 1)
         end_idx = (i + 1) * (resolution - 1)
-        result_parts.append(interpolated_points[start_idx:end_idx])  # interpolated points
+        result_parts.append(
+            interpolated_points[start_idx:end_idx]
+        )  # interpolated points
 
     # Add final point
     result_parts.append(trajectory[-1:])
@@ -223,14 +223,17 @@ class World(eqx.Module):
     ball: Entity = Entity(jnp.zeros((2,), dtype=jnp.float32))
 
 
-@eqx.filter_jit
 def trajectories_from_control(w: World, u: Control):
-    return jax.vmap(lambda control, pos, vel: single_trajectory_from_control(control, pos, vel))(
-        u, w.robots.position, w.robots.velocity
-    )
+    return jax.vmap(
+        lambda control, pos, vel: single_trajectory_from_control(control, pos, vel)
+    )(u, w.robots.position, w.robots.velocity)
 
 
-@jax.jit
+def clip_by_norm(vel: jnp.ndarray, limit: float | Float[Array, ""]):
+    speed = jnp.sqrt((vel**2).sum() + 1e-9)
+    return jnp.where(speed > limit, vel * (limit / speed), vel)
+
+
 def single_trajectory_from_control(
     control_sequence: jax.Array,
     initial_pos: jax.Array,
@@ -241,11 +244,15 @@ def single_trajectory_from_control(
 
     dt_schedule = get_dt_schedule(upscaled=False)
 
-    def dynamics(pos: jax.Array, vel: jax.Array, target_vel: jax.Array, dt: float) -> jax.Array:
+    def dynamics(
+        pos: jax.Array, vel: jax.Array, target_vel: jax.Array, dt: float
+    ) -> jax.Array:
         vel_friction_force = -VEL_FRICTION_COEFF * vel
 
         desired_acceleration = (target_vel - vel) / dt
-        clipped_acceleration = softclip(desired_acceleration, -MAX_ACC, MAX_ACC)
+
+        clipped_acceleration = clip_by_norm(desired_acceleration, MAX_ACC)
+
         control_force = clipped_acceleration * ROBOT_MASS
 
         total_force = control_force + vel_friction_force
@@ -289,7 +296,9 @@ def single_trajectory_from_control(
     initial_state = jnp.concatenate([jnp.array([0.0]), initial_pos, initial_vel])
 
     # Prepend initial state to get full trajectory
-    base_trajectory = jnp.concatenate([initial_state[None, :], trajectory_steps], axis=0)
+    base_trajectory = jnp.concatenate(
+        [initial_state[None, :], trajectory_steps], axis=0
+    )
 
     # Apply spline interpolation for higher resolution
     return spline_interpolate_trajectory(base_trajectory)

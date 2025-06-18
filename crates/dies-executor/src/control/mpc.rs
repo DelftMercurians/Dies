@@ -128,17 +128,12 @@ impl MPCController {
             let vel_limits_array = np.call_method1("array", (vel_limits,))?;
             let last_controls_array = np.call_method1("array", (last_controls_data,))?.call_method1("reshape", (n_robots, control_horizon, 2))?;
 
-            // Prepare obstacles (all other robots and ball)
+            // Prepare obstacles (only other robots, NOT the ball)
             let mut obstacles_data = Vec::new();
 
             // Add opponent robots as obstacles
             for opp_player in &world.opp_players {
                 obstacles_data.extend_from_slice(&[opp_player.position.x, opp_player.position.y]);
-            }
-
-            // Add ball as obstacle if present
-            if let Some(ball) = &world.ball {
-               obstacles_data.extend_from_slice(&[ball.position.xy().x, ball.position.xy().y]);
             }
 
             // Convert obstacles to numpy array
@@ -149,6 +144,13 @@ impl MPCController {
                 let obstacles_array = np.call_method1("array", (obstacles_data,))?
                     .call_method1("reshape", ((n / 2) as i32, 2))?;
                 obstacles_array
+            };
+
+            // Handle ball separately with proper position
+            let ball_pos = if let Some(ball) = &world.ball {
+                Some(np.call_method1("array", (vec![ball.position.xy().x, ball.position.xy().y],))?)
+            } else {
+                None
             };
 
             // Prepare field bounds
@@ -194,13 +196,14 @@ impl MPCController {
 
             let dt_value = world.dt;
 
-            // Call the JAX batch solve_mpc function with last controls, trajectory, and dt
+            // Call the JAX batch solve_mpc function with ball passed separately
             let solve_mpc_batch = mpc_module.getattr("solve_mpc_tbwrap")?;
             let result = solve_mpc_batch.call1((
                 initial_pos_array,
                 initial_vel_array,
                 target_pos_array,
                 obstacles,
+                ball_pos,
                 field_bounds,
                 vel_limits_array,
                 last_controls_array,
