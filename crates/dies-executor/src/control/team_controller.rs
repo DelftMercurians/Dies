@@ -19,7 +19,7 @@ use crate::{
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
-    player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
+    player_behavior_trees: HashMap<(PlayerId, GameState), BehaviorTree>,
     bt_context: BtContext,
     script_host: RhaiHost,
 }
@@ -61,20 +61,32 @@ impl TeamController {
         }
 
         let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
+        let current_game_state = world_data.current_game_state.game_state;
 
         let engine = self.script_host.engine();
         let engine_guard = engine.read().unwrap();
         for player_data in &world_data.own_players {
             let player_id = player_data.id;
 
+            let tree_key = (player_id, current_game_state);
             let player_bt =
                 self.player_behavior_trees
-                    .entry(player_id)
-                    .or_insert_with(|| match self.script_host.build_player_bt(player_id) {
-                        Ok(bt) => bt,
-                        Err(e) => {
-                            log::error!("Failed to build player BT: {:?}", e);
-                            BehaviorTree::default()
+                    .entry(tree_key)
+                    .or_insert_with(|| {
+                        match self
+                            .script_host
+                            .build_tree_for_state(player_id, current_game_state)
+                        {
+                            Ok(bt) => bt,
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to build {} BT for player {}: {:?}",
+                                    format!("{:?}", current_game_state),
+                                    player_id,
+                                    e
+                                );
+                                BehaviorTree::default()
+                            }
                         }
                     });
 

@@ -4,14 +4,18 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use dies_core::{Angle, BallData, PlayerData, PlayerId, Vector2, Vector3, TeamData};
+use dies_core::{
+    Angle, BallData, GameState, GameStateData, PlayerData, PlayerId, TeamData, Vector2, Vector3,
+};
 use rhai::{exported_module, Dynamic, Engine, Scope, AST};
 
 use crate::behavior_tree::{bt_rhai_plugin, BehaviorTree, RobotSituation};
 
 use super::rhai_types::RhaiBehaviorNode;
 
-const ENTRY_POINT_NAME: &str = "build_player_bt";
+const PLAY_ENTRY_POINT: &str = "build_play_bt";
+const KICKOFF_ENTRY_POINT: &str = "build_kickoff_bt";
+const PENALTY_ENTRY_POINT: &str = "build_penalty_bt";
 
 pub struct RhaiHost {
     engine: Arc<RwLock<Engine>>,
@@ -33,18 +37,34 @@ impl RhaiHost {
         self.engine.clone()
     }
 
+    /// Legacy method for backward compatibility
     pub fn build_player_bt(&self, player_id: PlayerId) -> Result<BehaviorTree> {
+        self.build_tree_for_state(player_id, GameState::Run)
+    }
+
+    /// Build behavior tree based on game state
+    pub fn build_tree_for_state(
+        &self,
+        player_id: PlayerId,
+        game_state: GameState,
+    ) -> Result<BehaviorTree> {
+        let entry_point = match game_state {
+            GameState::Kickoff | GameState::PrepareKickoff => KICKOFF_ENTRY_POINT,
+            GameState::Penalty | GameState::PreparePenalty => PENALTY_ENTRY_POINT,
+            _ => PLAY_ENTRY_POINT, // Default to play tree for all other states
+        };
+
         let mut scope = Scope::new();
         let ast = self.ast.read().unwrap();
         let result = self.engine.read().unwrap().call_fn::<RhaiBehaviorNode>(
             &mut scope,
             &ast,
-            ENTRY_POINT_NAME,
+            entry_point,
             (player_id,),
         );
         result
             .map(|node| BehaviorTree::new(node.0))
-            .map_err(|e| anyhow::anyhow!("Failed to build player BT: {:?}", e))
+            .map_err(|e| anyhow::anyhow!("Failed to build {} BT: {:?}", entry_point, e))
     }
 }
 
@@ -85,6 +105,9 @@ fn create_engine() -> Engine {
         })
         .register_get("opp_players", |wd: &mut Arc<TeamData>| {
             wd.opp_players.clone()
+        })
+        .register_get("game_state", |wd: &mut Arc<TeamData>| {
+            wd.current_game_state.clone()
         });
 
     engine
@@ -109,6 +132,15 @@ fn create_engine() -> Engine {
         .register_get("x", |v: &mut Vector3| v.x)
         .register_get("y", |v: &mut Vector3| v.y)
         .register_get("z", |v: &mut Vector3| v.z);
+
+    // Register GameStateData
+    engine
+        .register_type_with_name::<GameStateData>("GameStateData")
+        .register_get("game_state", |gsd: &mut GameStateData| gsd.game_state)
+        .register_get("us_operating", |gsd: &mut GameStateData| gsd.us_operating);
+
+    // Register GameState enum
+    engine.register_type_with_name::<GameState>("GameState");
 
     let bt_module = Arc::new(exported_module!(bt_rhai_plugin));
     engine.register_global_module(bt_module);

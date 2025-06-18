@@ -89,7 +89,8 @@ export interface PlayerFeedbackMsg {
 }
 
 export interface BasestationResponse {
-	players: Record<PlayerId, PlayerFeedbackMsg>;
+	blue_team: PlayerFeedbackMsg[];
+	yellow_team: PlayerFeedbackMsg[];
 }
 
 /** Settings for the low-level controller. */
@@ -321,14 +322,6 @@ export interface PlayerData {
 	kicker_status?: SysStatus;
 }
 
-/** Setup for a player in a scenario. */
-export interface PlayerPlacement {
-	/** Initial position of the player. If `None`, any position is acceptable. */
-	position?: Vector2;
-	/** Initial yaw of the player. If `None`, any yaw is acceptable. */
-	yaw?: Angle;
-}
-
 export interface PostExecutorSettingsBody {
 	settings: ExecutorSettings;
 }
@@ -380,26 +373,6 @@ export interface RawGameStateData {
 	game_state: GameState;
 	/** The team that is currently performing tasks in the state. */
 	operating_team: TeamColor;
-}
-
-/** Setup for the ball in a scenario. */
-export type BallPlacement = 
-	/** Ball is placed at a specific position. */
-	| { type: "Position", data: Vector2 }
-	/** Ball is placed at any position. */
-	| { type: "AnyPosition",  }
-	/** No ball is required. */
-	| { type: "NoBall",  };
-
-/** Information about a scenario. */
-export interface ScenarioInfo {
-	own_player_placements: PlayerPlacement[];
-	opponent_player_placements: PlayerPlacement[];
-	ball_placement: BallPlacement;
-	/** Position tolerance for player and ball positions in mm. */
-	tolerance: number;
-	/** Yaw tolerance for players in rad */
-	yaw_tolerance: number;
 }
 
 /** A struct to store the world state from a single frame. */
@@ -563,6 +536,22 @@ export enum RoleType {
 export type SimulatorCmd = 
 	| { type: "ApplyBallForce", data: {
 	force: Vector2;
+}}
+	| { type: "TeleportRobot", data: {
+	team_color: TeamColor;
+	player_id: PlayerId;
+	position: Vector2;
+	yaw: Angle;
+}}
+	| { type: "AddRobot", data: {
+	team_color: TeamColor;
+	player_id: PlayerId;
+	position: Vector2;
+	yaw: Angle;
+}}
+	| { type: "RemoveRobot", data: {
+	team_color: TeamColor;
+	player_id: PlayerId;
 }};
 
 export type UiWorldState = 
@@ -575,4 +564,3 @@ export type WsMessage =
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];
-export type ScenarioType = string;
