@@ -47,7 +47,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
         <div className="grid grid-cols-1 gap-4">
           {sorted_players.length > 0 ? (
             sorted_players.map((player) => {
-              const basestationData = bsInfo?.players[player.id];
+              const basestationData = bsInfo?.players?.[player.id];
               const isManual = isPlayerManuallyControlled(
                 player.id,
                 executorInfo?.manual_controlled_players ?? []
