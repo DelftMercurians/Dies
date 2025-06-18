@@ -197,6 +197,51 @@ impl TeamController {
                     controller.set_target_velocity(*mpc_control);
                     // Debug output for MPC timing
                     dies_core::debug_value(format!("p{}.mpc.duration_ms", id), self.mpc_controller.last_solve_time_ms());
+                    
+                    // Plot MPC trajectory if available
+                    if let Some(trajectory) = self.mpc_controller.get_trajectories().get(&id) {
+                        let debug_name = format!("mpc_traj_p{}", id);
+                        
+                        // Clear previous trajectory
+                        dies_core::debug_remove(&debug_name);
+                        
+                        // Plot trajectory as connected line segments
+                        for i in 0..trajectory.len().saturating_sub(1) {
+                            if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
+                                let start = dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
+                                let end = dies_core::Vector2::new(trajectory[i + 1][1], trajectory[i + 1][2]);
+                                dies_core::debug_line(
+                                    &format!("{}_seg{}", debug_name, i),
+                                    start,
+                                    end,
+                                    dies_core::DebugColor::Purple,
+                                );
+                            }
+                        }
+                        
+                        // Mark trajectory endpoints
+                        if !trajectory.is_empty() {
+                            if trajectory[0].len() >= 5 {
+                                let start_pos = dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
+                                dies_core::debug_cross(
+                                    &format!("{}_start", debug_name),
+                                    start_pos,
+                                    dies_core::DebugColor::Green,
+                                );
+                            }
+                            
+                            if let Some(last) = trajectory.last() {
+                                if last.len() >= 5 {
+                                    let end_pos = dies_core::Vector2::new(last[1], last[2]);
+                                    dies_core::debug_cross(
+                                        &format!("{}_end", debug_name),
+                                        end_pos,
+                                        dies_core::DebugColor::Red,
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
 
                 let is_manual = manual_override

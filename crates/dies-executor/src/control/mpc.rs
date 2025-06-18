@@ -17,6 +17,7 @@ pub struct MPCController {
     field_bounds: Option<(f64, f64, f64, f64)>, // (min_x, max_x, min_y, max_y)
     last_solve_time_ms: f64,
     last_control_sequences: HashMap<PlayerId, Vec<Vector2>>,
+    last_trajectories: HashMap<PlayerId, Vec<Vec<f64>>>, // Store full trajectory data [t, x, y, vx, vy]
 }
 
 impl MPCController {
@@ -25,6 +26,7 @@ impl MPCController {
             field_bounds: None,
             last_solve_time_ms: f64::NAN,
             last_control_sequences: HashMap::new(),
+            last_trajectories: HashMap::new(),
         }
     }
 
@@ -65,6 +67,10 @@ impl MPCController {
 
     pub fn last_solve_time_ms(&self) -> f64 {
         self.last_solve_time_ms
+    }
+
+    pub fn get_trajectories(&self) -> &HashMap<PlayerId, Vec<Vec<f64>>> {
+        &self.last_trajectories
     }
 
     fn solve_batch_mpc_jax(&mut self, robots: &[RobotState], world: &WorldData) -> Result<HashMap<PlayerId, Vector2>, PyErr> {
@@ -153,7 +159,42 @@ impl MPCController {
                 None => None,
             };
 
-            // Call the JAX batch solve_mpc function with last controls
+            // Prepare last trajectory data (shape: n_robots, CONTROL_HORIZON, 5)
+            let mut last_traj_data = Vec::new();
+            for robot in robots {
+                if let Some(traj) = self.last_trajectories.get(&robot.id) {
+                    // Use stored trajectory data directly
+                    for i in 0..control_horizon {
+                        if i < traj.len() && traj[i].len() >= 5 {
+                            last_traj_data.extend_from_slice(&traj[i]);
+                        } else {
+                            // Pad with last available value or zeros if no trajectory exists
+                            let last_point = if !traj.is_empty() && !traj.last().unwrap().is_empty() {
+                                traj.last().unwrap().clone()
+                            } else {
+                                vec![i as f64 * world.dt, 0.0, 0.0, 0.0, 0.0]
+                            };
+                            last_traj_data.extend_from_slice(&last_point);
+                        }
+                    }
+                } else {
+                    // No previous trajectory, use zeros with proper time values
+                    for i in 0..control_horizon {
+                        let t = i as f64 * world.dt;
+                        last_traj_data.extend_from_slice(&[t, 0.0, 0.0, 0.0, 0.0]);
+                    }
+                }
+            }
+
+            let last_traj_array = if last_traj_data.is_empty() {
+                py.None()
+            } else {
+                np.call_method1("array", (last_traj_data,))?.call_method1("reshape", (n_robots, control_horizon, 5))?.into()
+            };
+
+            let dt_value = world.dt;
+
+            // Call the JAX batch solve_mpc function with last controls, trajectory, and dt
             let solve_mpc_batch = mpc_module.getattr("solve_mpc_tbwrap")?;
             let result = solve_mpc_batch.call1((
                 initial_pos_array,
@@ -163,15 +204,26 @@ impl MPCController {
                 field_bounds,
                 vel_limits_array,
                 last_controls_array,
+                last_traj_array,
+                dt_value,
             ))?;
 
-            // Extract the result - convert numpy array to Python list first
-            let result_list = result.call_method0("tolist")?;
-            let control_data: Vec<Vec<Vec<f64>>> = result_list.extract()?;
+            // Extract the result - it's a tuple of (controls, trajectories)
+            let result_tuple: (Py<PyAny>, Py<PyAny>) = result.extract()?;
+            let controls_py = result_tuple.0;
+            let trajectories_py = result_tuple.1;
+
+            // Convert controls to Rust data
+            let controls_list = controls_py.bind(py).call_method0(pyo3::intern!(py, "tolist"))?;
+            let control_data: Vec<Vec<Vec<f64>>> = controls_list.extract()?;
+
+            // Convert trajectories to Rust data
+            let trajectories_list = trajectories_py.bind(py).call_method0(pyo3::intern!(py, "tolist"))?;
+            let trajectory_data: Vec<Vec<Vec<f64>>> = trajectories_list.extract()?;
 
             // Restore stdout and capture any prints
             sys.setattr("stdout", original_stdout)?;
-            let captured_output: String = stdout_capture.call_method0("getvalue")?.extract()?;
+            let captured_output: String = stdout_capture.call_method0(pyo3::intern!(py, "getvalue"))?.extract()?;
 
             // Calculate timing
             let duration = start_time.elapsed();
@@ -195,6 +247,7 @@ impl MPCController {
             // Convert results back to HashMap and store full sequences
             let mut controls = HashMap::new();
             for (i, robot) in robots.iter().enumerate() {
+                // Handle control sequences
                 if let Some(control_sequence) = control_data.get(i) {
                     if !control_sequence.is_empty() {
                         // Extract first control for immediate use
@@ -217,6 +270,26 @@ impl MPCController {
 
                         if !sequence.is_empty() {
                             self.last_control_sequences.insert(robot.id, sequence);
+                        }
+                    }
+                }
+
+                // Handle trajectory data
+                if let Some(trajectory_sequence) = trajectory_data.get(i) {
+                    if !trajectory_sequence.is_empty() {
+                        // Store full trajectory data [t, x, y, vx, vy] for each point
+                        let traj_points: Vec<Vec<f64>> = trajectory_sequence.iter()
+                            .filter_map(|point| {
+                                if point.len() >= 5 {
+                                    Some(point.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+
+                        if !traj_points.is_empty() {
+                            self.last_trajectories.insert(robot.id, traj_points);
                         }
                     }
                 }
