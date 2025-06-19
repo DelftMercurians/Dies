@@ -4,7 +4,7 @@
 import time
 import numpy as np
 from mpc_jax.main import solve_mpc
-from mpc_jax.common import CONTROL_HORIZON
+from mpc_jax.common import Result, CONTROL_HORIZON
 
 
 def simple_case(last_solution=None):
@@ -17,7 +17,7 @@ def simple_case(last_solution=None):
     max_speed = np.array([4000.0, 4000.0])
     ball_pos = None
 
-    (optimal_control, _, _, cost), traj = solve_mpc(
+    r = solve_mpc(
         initial_pos,
         initial_vel,
         target_pos,
@@ -28,16 +28,16 @@ def simple_case(last_solution=None):
         last_solution,
     )
 
-    assert optimal_control is not None
-    assert cost < float("inf") and not np.isnan(cost), (
+    assert r.u is not None
+    assert not np.isinf(r.cost) and not np.isnan(r.cost), (
         "MPC failed (no collision-free resolution) for a simple case"
     )
-    assert optimal_control.shape == (
+    assert r.u.shape == (
         n_robots,
         CONTROL_HORIZON,
         2,
-    ), f"Expected {(n_robots, CONTROL_HORIZON, 2)} got {optimal_control.shape}"
-    return optimal_control, cost
+    ), f"Expected {(n_robots, CONTROL_HORIZON, 2)} got {r.u.shape}"
+    return r.u, r.cost
 
 
 def test_simple_case():

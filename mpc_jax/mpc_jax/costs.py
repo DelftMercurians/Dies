@@ -13,8 +13,8 @@ def collision_cost(
     pos: jnp.ndarray,
     obstacles: jnp.ndarray,
     mask=None,
-    weak_scale=0.0,
-    strong_scale=1.0,
+    min_safe_distance=2.1 * ROBOT_RADIUS,
+    no_cost_distance=4.2 * ROBOT_RADIUS,
 ):
     if mask is None:
         mask = jnp.ones((len(obstacles),))
@@ -29,12 +29,6 @@ def collision_cost(
 
         diff = pos[None, :] - obstacle
         distance = jnp.sqrt(jnp.sum(diff**2) + 1e-9)
-
-        # Define safety thresholds
-        min_safe_distance = 2.1 * ROBOT_RADIUS * strong_scale
-        no_cost_distance = 4.2 * ROBOT_RADIUS * strong_scale
-
-        no_cost_distance += (no_cost_distance - min_safe_distance) * weak_scale
 
         # try to avoid certain collision hard
         danger_zone = distance <= min_safe_distance
@@ -62,6 +56,27 @@ def collision_cost(
     return (obstacle_wise_costs * mask).sum()
 
 
+def ball_collision_cost(
+    pos: jnp.ndarray,
+    ball_pos: jnp.ndarray,
+    min_safe_distance=ROBOT_RADIUS * 1.1 + BALL_RADIUS,
+    no_cost_distance=ROBOT_RADIUS * 2,
+):
+    assert ball_pos.shape == (2,), (
+        f"Ball collision cost: Ball pos must be of shape (2,), but got {ball_pos.shape}"
+    )
+    assert pos.shape == (2,), (
+        f"Ball collision cost: Robot pos must be of shape (2,), but got {pos.shape}"
+    )
+
+    return collision_cost(
+        pos,
+        ball_pos[None, :],
+        min_safe_distance=min_safe_distance,
+        no_cost_distance=no_cost_distance,
+    )
+
+
 def boundary_cost(pos: jnp.ndarray, field_bounds):
     return 0.0
 
@@ -87,73 +102,4 @@ def velocity_constraint_cost(vel: jnp.ndarray, max_speed: float):
     speed_sq = jnp.sum(vel**2)
     max_speed_sq = max_speed**2
     high_cost = jnp.maximum(speed_sq - max_speed_sq, 0.0)
-
-    # and we dislike low velocities
-    speed = jnp.sqrt(speed_sq + 1e-9)
-    low_cost = jnp.where(
-        speed < 100,  # 10cm/s
-        100 - speed,
-        0,
-    )
-    return high_cost + low_cost * 0
-
-
-def control_effort_cost(vel: jnp.ndarray):
-    return jnp.sum(vel**2) * 1e-6
-
-
-def ball_collision_cost(
-    pos: jnp.ndarray,
-    ball_pos: jnp.ndarray,
-    weak_scale=0.0,
-    strong_scale=1.0,
-):
-    """Collision cost specifically for the ball with smaller radius"""
-    assert ball_pos.shape == (2,), (
-        f"Ball collision cost: Ball pos must be of shape (2,), but got {ball_pos.shape}"
-    )
-    assert pos.shape == (2,), (
-        f"Ball collision cost: Robot pos must be of shape (2,), but got {pos.shape}"
-    )
-
-    diff = pos - ball_pos
-    distance = jnp.sqrt(jnp.sum(diff**2) + 1e-9)
-
-    # Define safety thresholds - robot radius + ball radius
-    min_safe_distance = (ROBOT_RADIUS + BALL_RADIUS) * strong_scale
-    no_cost_distance = 2 * (ROBOT_RADIUS + BALL_RADIUS) * strong_scale
-
-    no_cost_distance += (no_cost_distance - min_safe_distance) * weak_scale
-
-    # try to avoid certain collision hard
-    danger_zone = distance <= min_safe_distance
-    normalized_distance = jnp.clip(distance / min_safe_distance, 1e-6, 1)
-    danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 200
-
-    # try to avoid even getting close to the ball
-    in_decay_zone = jnp.logical_and(
-        distance > min_safe_distance, distance <= no_cost_distance
-    )
-    normalized_distance = jnp.clip(
-        (distance - min_safe_distance) / (no_cost_distance - min_safe_distance),
-        0,
-        1,
-    )
-    smooth_factor = jnp.where(in_decay_zone, 1 - normalized_distance, 0.0) * 3
-
-    penalties = smooth_factor + danger_factor
-
-    return jnp.sum(penalties)
-
-
-def continuity_cost(current_control: jnp.ndarray, last_control: jnp.ndarray):
-    """Penalize changes in control commands to ensure smooth transitions"""
-    if last_control is None:
-        return 0.0
-    
-    # L2 penalty on control changes
-    control_diff = current_control - last_control
-    change_magnitude = jnp.sum(control_diff**2)
-    
-    # Scale the cost - we want smooth transitions but not at the expense of performance
-    return change_magnitude * 1e-4
+    return high_cost

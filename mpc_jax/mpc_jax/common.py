@@ -9,8 +9,8 @@ from typing import Literal
 
 # MPC Parameters
 CONTROL_HORIZON = 10
-TIME_HORIZON = 5  # seconds
-DT = 0.005  # starting value for dt, seconds
+TIME_HORIZON = 3  # seconds
+DT = 0.02  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 BALL_RADIUS = 21.35  # mm
@@ -26,6 +26,39 @@ FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 ROBOT_MASS = 1.5  # kg
 VEL_FRICTION_COEFF = 0.0  # N*s/m (velocity-dependent friction coefficient)
 MAX_ACC = 125_000  # mm/s^2
+
+
+class MPCConfig(eqx.Module):
+    distance_factor: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(1.0))
+    collision_factor: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(1.0))
+    ball_collision_factor: jax.Array = eqx.field(
+        default_factory=lambda: jnp.asarray(1.0)
+    )
+    ball_min_safe_distance: jax.Array = eqx.field(
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.2 + BALL_RADIUS)
+    )
+    ball_no_cost_distance: jax.Array = eqx.field(
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.5 + BALL_RADIUS)
+    )
+    obstacle_min_safe_distance: jax.Array = eqx.field(
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.2)
+    )
+    obstacle_no_cost_distance: jax.Array = eqx.field(
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 3.5)
+    )
+
+    @staticmethod
+    def sample(key):
+        return MPCConfig()
+
+
+class Result(eqx.Module):
+    u: jax.Array
+    traj: jax.Array
+    candidate_controls: jax.Array
+    optimized_controls: jax.Array
+    cost: jax.Array
+    idx_by_cost: jax.Array
 
 
 def get_dt_schedule(upscaled=True):

@@ -13,6 +13,7 @@ from tqdm import tqdm
 import functools as ft
 import matplotlib.pyplot as plt
 from .common import (
+    BALL_RADIUS,
     FINAL_COST,
     ROBOT_RADIUS,
     LEARNING_RATE,
@@ -29,6 +30,8 @@ from .common import (
     FieldBounds,
     control_steps_to_time,
     clip_by_norm,
+    Result,
+    MPCConfig,
 )
 
 from .costs import (
@@ -37,8 +40,6 @@ from .costs import (
     ball_collision_cost,
     boundary_cost,
     velocity_constraint_cost,
-    control_effort_cost,
-    continuity_cost,
 )
 
 
@@ -47,6 +48,7 @@ def mpc_cost_function(
     w: World,
     targets: EntityBatch,
     max_speeds: jax.Array,
+    cfg,
 ):
     # Generate trajectory from control sequence
     trajectories = trajectories_from_control(w, u)
@@ -57,23 +59,47 @@ def mpc_cost_function(
         t, pos_x, pos_y, vel_x, vel_y = raw_traj
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
         d_cost = distance_cost(robot.position, target.after(t).position, t)
+        # collision with obstacles (non-controllable robots) costs
         c_cost = 0
         if len(w.obstacles) != 0:
-            c_cost = collision_cost(robot.position, w.obstacles.after(t).position)
+            c_cost = collision_cost(
+                robot.position,
+                w.obstacles.after(t).position,
+                min_safe_distance=cfg.obstacle_min_safe_distance,
+                no_cost_distance=cfg.obstacle_no_cost_distance,
+            )
         # Handle ball collision separately with proper radius
-        ball_cost = ball_collision_cost(robot.position, w.ball.after(t).position)
+        ball_cost = ball_collision_cost(
+            robot.position,
+            w.ball.after(t).position,
+            min_safe_distance=cfg.ball_min_safe_distance,
+            no_cost_distance=cfg.ball_no_cost_distance,
+        )
+
+        # other stuff
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
 
-        return d_cost + c_cost + ball_cost + b_cost + vc_cost
+        return (
+            d_cost * cfg.distance_factor
+            + c_cost * cfg.collision_factor
+            + ball_cost * cfg.ball_collision_factor
+            + b_cost
+            + vc_cost
+        )
 
     def collective_position_cost_fn(traj_slice, idx):
+        # collisions with our own robots cost
         t, pos_x, pos_y, vel_x, vel_y = traj_slice[idx]
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
         mask = jnp.ones((n_robots,)).at[idx].set(0)
         obstacles = jax.lax.stop_gradient(traj_slice[:, 1:3])
         ours_c_cost = collision_cost(
-            robot.position, obstacles, mask=mask, strong_scale=1.2
+            robot.position,
+            obstacles,
+            mask=mask,
+            min_safe_distance=cfg.obstacle_min_safe_distance,
+            no_cost_distance=cfg.obstacle_no_cost_distance,
         )
         return ours_c_cost * 2
 
@@ -178,46 +204,58 @@ def generate_continuity_candidates(
     return perturbed_controls
 
 
-def point_vs_point_collision(a, b):
-    assert a.shape == (2,)
-    assert b.shape == (2,)
-    return jnp.linalg.norm(a - b) < 2.1 * ROBOT_RADIUS
+def point_vs_point_collision(a, b, min_safe_distance):
+    assert a.shape == (2,), a.shape
+    assert b.shape == (2,), b.shape
+    return jnp.linalg.norm(a - b) < min_safe_distance
 
 
-def multipoint_collision(points):
+def multipoint_collision(points, min_safe_distance):
     diff = points[:, None] - points[None, :]
     dist = jnp.linalg.norm(diff, axis=-1)
-    dist = dist + jnp.eye(len(points)) * 1e6  # diagonal is zero
-    return jnp.any(dist < 2.1 * ROBOT_RADIUS)
+    dist = dist + jnp.eye(len(points)) * 1e6  # force no collisions with self
+    return jnp.any(dist < min_safe_distance)
 
 
-def traj_vs_batch_collision(trajectory: jax.Array, obstacles: EntityBatch) -> jax.Array:
+def traj_vs_entity_collision(traj, entity, **kws) -> jax.Array:
+    def check_point_collision(raw_value):
+        t, pos_x, pos_y, vel_x, vel_y = raw_value
+        obstacle_positions = entity.after(t).position  # [n_obstacles, 2]
+        if len(obstacle_positions.shape) == 1:
+            obstacle_positions = obstacle_positions[None, :]
+        collisions = jax.vmap(
+            eqx.Partial(point_vs_point_collision, jnp.array([pos_x, pos_y]), **kws)
+        )(obstacle_positions)
+        return jnp.any(collisions)
+
+    collisions = jax.vmap(check_point_collision)(traj)
+    return jnp.any(collisions)
+
+
+def traj_vs_batch_collision(
+    trajectory: jax.Array, obstacles: EntityBatch, **kws
+) -> jax.Array:
     if len(obstacles) == 0:
         return jnp.array(False)
 
-    # Extract positions from trajectory
-    times = trajectory[:, 0]
-    positions = trajectory[:, 1:3]  # [n_points, 2]
-
-    # Check collision at each trajectory point
-    def check_point_collision(pos, t):
-        obstacle_positions = obstacles.after(t).position  # [n_obstacles, 2]
-        collisions = jax.vmap(eqx.Partial(point_vs_point_collision, pos))(
-            obstacle_positions
+    return jnp.any(
+        jax.vmap(lambda obj: traj_vs_entity_collision(trajectory, obj, **kws))(
+            obstacles
         )
-        return jnp.any(collisions)
+    )
 
-    collisions = jax.vmap(check_point_collision)(positions, times)
+
+def many_traj_collision(trajes, **kws):
+    collisions = jax.vmap(eqx.Partial(multipoint_collision, **kws), in_axes=1)(
+        trajes[:, :, 1:3]
+    )
     return jnp.any(collisions)
 
 
-def many_traj_collision(trajes):
-    collisions = jax.vmap(multipoint_collision, in_axes=1)(trajes[:, :, 1:3])
-    return jnp.any(collisions)
-
-
-def traj_vs_traj_collision(traj1, traj2):
-    collisions = jax.vmap(point_vs_point_collision)(traj1[:, 1:3], traj2[:, 1:3])
+def traj_vs_traj_collision(traj1, traj2, **kws):
+    collisions = jax.vmap(eqx.Partial(point_vs_point_collision, **kws))(
+        traj1[:, 1:3], traj2[:, 1:3]
+    )
     return jnp.any(collisions)
 
 
@@ -251,12 +289,24 @@ def select_best_collision_free_trajectory(
 
     def is_bad(trajectories):
         obstacle_collisions = jax.vmap(
-            lambda traj: traj_vs_batch_collision(traj, w.obstacles)
+            lambda traj: traj_vs_batch_collision(
+                traj, w.obstacles, min_safe_distance=2.2 * ROBOT_RADIUS
+            )
         )(trajectories)
-        self_robot_collisions = many_traj_collision(trajectories)
+        self_robot_collisions = many_traj_collision(
+            trajectories, min_safe_distance=2.2 * ROBOT_RADIUS
+        )
+        ball_collision = jax.vmap(
+            lambda traj: traj_vs_entity_collision(
+                traj, w.ball, min_safe_distance=ROBOT_RADIUS * 1.2 + BALL_RADIUS
+            )
+        )(trajectories)
 
         return jnp.logical_or(
-            jnp.any(obstacle_collisions), jnp.any(self_robot_collisions)
+            jnp.logical_or(
+                jnp.any(obstacle_collisions), jnp.any(self_robot_collisions)
+            ),
+            jnp.any(ball_collision),
         )
 
     collision_mask = jax.vmap(is_bad)(all_trajectories)
@@ -290,7 +340,7 @@ def solve_mpc_jax(
     n_candidates: int,
     key: PRNGKeyArray | None = None,
     last_control_sequences: jax.Array | None = None,
-) -> tuple:
+) -> Result:
     n_robots = len(w.robots)
 
     if key is None:
@@ -301,6 +351,7 @@ def solve_mpc_jax(
         int(n_candidates * 0.2) if last_control_sequences is not None else 0
     )
     random_candidates = n_candidates - continuity_candidates
+    config_key, key = jr.split(key)
 
     keys = jr.split(key, n_candidates)
 
@@ -336,7 +387,7 @@ def solve_mpc_jax(
     )
 
     # Optimize each candidate trajectory via (full-batch) gradient descent
-    def optimize_control(u):
+    def optimize_control(u, cfg: MPCConfig = MPCConfig()):
         # Initialize optimizer for this trajectory
         lr_schedule = optax.linear_schedule(
             learning_rate, learning_rate / 4.0, max_iterations
@@ -351,7 +402,7 @@ def solve_mpc_jax(
 
             # Compute gradient wrt complete cost function
             cost, grad_val = eqx.filter_value_and_grad(mpc_cost_function)(
-                u, w, targets, max_speeds
+                u, w, targets, max_speeds, cfg
             )
 
             best_u = jnp.where(cost < best_cost, u, best_u)
@@ -381,9 +432,18 @@ def solve_mpc_jax(
         return best_u, best_cost
 
     # Optimize all candidate controls in parallel
-    optimized_controls, mpc_costs = jax.vmap(optimize_control)(candidate_controls)
+    configs = eqx.filter_vmap(MPCConfig.sample)(
+        jr.split(config_key, len(candidate_controls))
+    )
+    optimized_controls, mpc_costs = jax.vmap(optimize_control)(
+        candidate_controls, configs
+    )
 
     # Select best collision-free trajectory based on distance integral
+    sind = jnp.argsort(mpc_costs)
+    candidate_controls = candidate_controls[sind]
+    optimized_controls = optimized_controls[sind]
+    mpc_costs = mpc_costs[sind]
 
     best_mpc_idx = jnp.argmin(mpc_costs)
     best_mpc_cost = mpc_costs[best_mpc_idx]
@@ -406,7 +466,14 @@ def solve_mpc_jax(
         u, w.robots.position, w.robots.velocity
     )
 
-    return (u, candidate_controls, optimized_controls, best_cost), traj
+    return Result(
+        u=u,
+        traj=traj,
+        candidate_controls=candidate_controls,
+        optimized_controls=optimized_controls,
+        cost=best_cost,
+        idx_by_cost=best_idx,
+    )
 
 
 def pprint(arr):
@@ -431,7 +498,7 @@ def solve_mpc(
     learning_rate: float = LEARNING_RATE,
     n_candidates: int = N_CANDIDATE_TRAJECTORIES,
     key: PRNGKeyArray | None = None,
-) -> tuple | np.ndarray:
+) -> Result:
     n_robots = len(initial_pos)
     assert len(initial_vel) == n_robots, f"{len(initial_vel)} != {n_robots}"
     assert len(target_pos) == n_robots, f"{len(target_pos)} != {n_robots}"
@@ -452,7 +519,7 @@ def solve_mpc(
     # Handle ball position - use provided ball_pos or default to far away
     ball_position = jnp.array([1e6, 1e6]) if ball_pos is None else jnp.asarray(ball_pos)
 
-    out, traj = eqx.filter_jit(solve_mpc_jax)(
+    r = eqx.filter_jit(solve_mpc_jax)(
         World(
             FieldBounds(),
             EntityBatch(jnp.asarray(obstacles)),
@@ -468,20 +535,22 @@ def solve_mpc(
         last_controls_jax,
     )
 
-    if np.isinf(out[-1]) or np.isnan(out[-1]):
+    print(f"Lower is better: {r.idx_by_cost} / {N_CANDIDATE_TRAJECTORIES}")
+
+    if np.isinf(r.cost) or np.isnan(r.cost):
         warnings.warn(
             "Cost if infinite (or nan), which means there is no collision-free resolution found by MPC. Proceeding with the best available trajectory."
         )
-    return out, traj
+    return r
 
 
 def solve_mpc_tbwrap(*args):
     try:
-        result, traj = solve_mpc(*args)
+        result = solve_mpc(*args)
         # Return full control sequences instead of just first control
         # And the trajectory, just for fun and debug
         # and also for automatic simulator mismatch error
-        return result[0], traj
+        return result.u, result.traj
     except Exception:
         raise RuntimeError(
             f"Traceback: {tb.format_exc(20)} with input: {args}"
