@@ -32,6 +32,7 @@ from .common import (
     clip_by_norm,
     Result,
     MPCConfig,
+    calculate_mismatch_score,
 )
 
 from .costs import (
@@ -50,28 +51,33 @@ def mpc_cost_function(
     max_speeds: jax.Array,
     cfg,
 ):
-    # Generate trajectory from control sequence
-    trajectories = trajectories_from_control(w, u)
+    # Generate trajectory from control sequence with delay handling
+    trajectories = trajectories_from_control(w, u, cfg.delay)
     n_robots = len(w.robots)
 
     # Compute position-based costs over the trajectory
     def position_cost_fn(raw_traj, max_speed, target):
         t, pos_x, pos_y, vel_x, vel_y = raw_traj
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
-        d_cost = distance_cost(robot.position, target.after(t).position, t)
+        # Account for delay in target position prediction
+        delayed_target_pos = target.after(t + cfg.delay).position
+        d_cost = distance_cost(robot.position, delayed_target_pos, t)
         # collision with obstacles (non-controllable robots) costs
         c_cost = 0
         if len(w.obstacles) != 0:
+            # Account for delay in obstacle position prediction
+            delayed_obstacle_pos = w.obstacles.after(t + cfg.delay).position
             c_cost = collision_cost(
                 robot.position,
-                w.obstacles.after(t).position,
+                delayed_obstacle_pos,
                 min_safe_distance=cfg.obstacle_min_safe_distance,
                 no_cost_distance=cfg.obstacle_no_cost_distance,
             )
         # Handle ball collision separately with proper radius
+        delayed_ball_pos = w.ball.after(t + cfg.delay).position
         ball_cost = ball_collision_cost(
             robot.position,
-            w.ball.after(t).position,
+            delayed_ball_pos,
             min_safe_distance=cfg.ball_min_safe_distance,
             no_cost_distance=cfg.ball_no_cost_distance,
         )
@@ -278,12 +284,16 @@ def select_best_collision_free_trajectory(
     optimized_controls: jax.Array,
     w: World,
     targets: EntityBatch,
+    cfg: MPCConfig = None,
 ):
     n_candidates = len(optimized_controls)
     n_robots = len(w.robots)
 
+    if cfg is None:
+        cfg = MPCConfig()
+
     # Generate high-resolution trajectories for all candidates
-    all_trajectories = jax.vmap(lambda u: trajectories_from_control(w, u))(
+    all_trajectories = jax.vmap(lambda u: trajectories_from_control(w, u, cfg.delay))(
         optimized_controls
     )
 
@@ -340,11 +350,15 @@ def solve_mpc_jax(
     n_candidates: int,
     key: PRNGKeyArray | None = None,
     last_control_sequences: jax.Array | None = None,
+    cfg: MPCConfig = None,
 ) -> Result:
     n_robots = len(w.robots)
 
     if key is None:
         key = jr.PRNGKey(0)
+
+    if cfg is None:
+        cfg = MPCConfig()
 
     # Generate candidate trajectories - mix of random and continuity-based
     continuity_candidates = (
@@ -452,7 +466,7 @@ def solve_mpc_jax(
         best_cost = best_mpc_cost
     elif FINAL_COST == "distance-auc":
         best_cf_idx, best_cf_cost = select_best_collision_free_trajectory(
-            optimized_controls, w, targets
+            optimized_controls, w, targets, cfg
         )
         best_idx = jnp.where(best_cf_cost == jnp.inf, best_mpc_idx, best_cf_idx)
         best_cost = best_cf_cost
@@ -462,9 +476,11 @@ def solve_mpc_jax(
         )
 
     u = optimized_controls[best_idx]
-    traj = jax.vmap(single_trajectory_from_control)(
-        u, w.robots.position, w.robots.velocity
-    )
+    traj = jax.vmap(
+        lambda control, pos, vel: single_trajectory_from_control(
+            control, pos, vel, cfg.delay
+        )
+    )(u, w.robots.position, w.robots.velocity)
 
     return Result(
         u=u,
@@ -493,7 +509,7 @@ def solve_mpc(
     max_speed: np.ndarray,
     last_control_sequences: np.ndarray | None = None,
     last_traj: np.ndarray | None = None,
-    last_dt: np.ndarray | None = None,
+    dt: np.ndarray | None = None,
     max_iterations: int = MAX_ITERATIONS,
     learning_rate: float = LEARNING_RATE,
     n_candidates: int = N_CANDIDATE_TRAJECTORIES,
@@ -533,9 +549,16 @@ def solve_mpc(
         int(n_candidates),
         key,
         last_controls_jax,
+        MPCConfig(),  # Use default config with 0.02s delay
+    )
+
+    # Calculate mismatch score
+    mismatch_score = calculate_mismatch_score(
+        r.traj, jnp.asarray(initial_pos), dt if dt is not None else None
     )
 
     print(f"Lower is better: {r.idx_by_cost} / {N_CANDIDATE_TRAJECTORIES}")
+    print(f"Mismatch score: \t{mismatch_score:.0f}mm")
 
     if np.isinf(r.cost) or np.isnan(r.cost):
         warnings.warn(

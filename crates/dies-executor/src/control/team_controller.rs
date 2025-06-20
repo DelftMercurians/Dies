@@ -181,6 +181,7 @@ impl TeamController {
         };
 
         // Update the player controllers
+        let trajectories = self.mpc_controller.get_trajectories();
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
                 .own_players
@@ -197,14 +198,14 @@ impl TeamController {
                     controller.set_target_velocity(*mpc_control);
                     // Debug output for MPC timing
                     dies_core::debug_value(format!("p{}.mpc.duration_ms", id), self.mpc_controller.last_solve_time_ms());
-                    
+
                     // Plot MPC trajectory if available
-                    if let Some(trajectory) = self.mpc_controller.get_trajectories().get(&id) {
+                    if let Some(trajectory) = trajectories.get(&id) {
                         let debug_name = format!("mpc_traj_p{}", id);
-                        
+
                         // Clear previous trajectory
                         dies_core::debug_remove(&debug_name);
-                        
+
                         // Plot trajectory as connected line segments
                         for i in 0..trajectory.len().saturating_sub(1) {
                             if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
@@ -218,7 +219,7 @@ impl TeamController {
                                 );
                             }
                         }
-                        
+
                         // Mark trajectory endpoints
                         if !trajectory.is_empty() {
                             if trajectory[0].len() >= 5 {
@@ -229,14 +230,15 @@ impl TeamController {
                                     dies_core::DebugColor::Green,
                                 );
                             }
-                            
+
                             if let Some(last) = trajectory.last() {
                                 if last.len() >= 5 {
                                     let end_pos = dies_core::Vector2::new(last[1], last[2]);
-                                    dies_core::debug_cross(
+                                    dies_core::debug_circle_fill(
                                         &format!("{}_end", debug_name),
                                         end_pos,
-                                        dies_core::DebugColor::Red,
+                                        80.0,
+                                        dies_core::DebugColor::Purple,
                                     );
                                 }
                             }

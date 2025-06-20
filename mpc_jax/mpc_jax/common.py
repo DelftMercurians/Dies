@@ -8,15 +8,15 @@ from typing import Literal
 
 
 # MPC Parameters
-CONTROL_HORIZON = 10
-TIME_HORIZON = 3  # seconds
+CONTROL_HORIZON = 8
+TIME_HORIZON = 5  # seconds
 DT = 0.02  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 BALL_RADIUS = 21.35  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 50
+MAX_ITERATIONS = 200
 LEARNING_RATE = 50
 N_CANDIDATE_TRAJECTORIES = 40
 TRAJECTORY_RESOLUTION = 5  # points per physics step for high-resolution trajectories
@@ -24,7 +24,7 @@ FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
-VEL_FRICTION_COEFF = 0.0  # N*s/m (velocity-dependent friction coefficient)
+VEL_FRICTION_COEFF = 0  # N*s/m (velocity-dependent friction coefficient)
 MAX_ACC = 125_000  # mm/s^2
 
 
@@ -46,6 +46,7 @@ class MPCConfig(eqx.Module):
     obstacle_no_cost_distance: jax.Array = eqx.field(
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 3.5)
     )
+    delay: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(0.0))
 
     @staticmethod
     def sample(key):
@@ -256,9 +257,18 @@ class World(eqx.Module):
     ball: Entity = Entity(jnp.zeros((2,), dtype=jnp.float32))
 
 
-def trajectories_from_control(w: World, u: Control):
+def trajectories_from_control(w: World, u: Control, delay: float = 0.0):
+    """Generate trajectories from control with optional delay handling.
+
+    Args:
+        w: World state
+        u: Control sequence
+        delay: Time delay for control commands to be executed (default 0.0)
+    """
     return jax.vmap(
-        lambda control, pos, vel: single_trajectory_from_control(control, pos, vel)
+        lambda control, pos, vel: single_trajectory_from_control(
+            control, pos, vel, delay
+        )
     )(u, w.robots.position, w.robots.velocity)
 
 
@@ -271,9 +281,12 @@ def single_trajectory_from_control(
     control_sequence: jax.Array,
     initial_pos: jax.Array,
     initial_vel: jax.Array | None = None,
+    delay: float = 0.0,
 ) -> jax.Array:
     if initial_vel is None:
         initial_vel = jnp.zeros(2)
+
+    initial_pos = initial_pos + initial_vel * delay
 
     dt_schedule = get_dt_schedule(upscaled=False)
 
@@ -318,20 +331,46 @@ def single_trajectory_from_control(
         new_time = time + dt
         return (new_state, new_time), jnp.concatenate([new_time[None], new_state])
 
-    # Initial state includes position and velocity
-    initial_state_vec = jnp.concatenate([initial_pos, initial_vel])
+    initial_state = jnp.concatenate([jnp.array([delay]), initial_pos, initial_vel])
 
-    # Use scan to efficiently compute trajectory with time
     inputs = (control_sequence, dt_schedule)
-    _, trajectory_steps = jax.lax.scan(scan_fn, (initial_state_vec, 0.0), inputs)
+    _, trajectory_steps = jax.lax.scan(scan_fn, (initial_state[1:], delay), inputs)
 
-    # Create initial state with time=0
-    initial_state = jnp.concatenate([jnp.array([0.0]), initial_pos, initial_vel])
-
-    # Prepend initial state to get full trajectory
     base_trajectory = jnp.concatenate(
         [initial_state[None, :], trajectory_steps], axis=0
     )
 
     # Apply spline interpolation for higher resolution
     return spline_interpolate_trajectory(base_trajectory)
+
+
+def calculate_mismatch_score(
+    trajectories: jax.Array, initial_positions: jax.Array, dt_value: float = None
+) -> float:
+    """Calculate mismatch score between trajectory at dt and actual initial positions.
+
+    Args:
+        trajectories: Array of shape (n_robots, n_timesteps, 5) with [time, pos_x, pos_y, vel_x, vel_y]
+        initial_positions: Array of shape (n_robots, 2) with initial positions
+        dt_value: Time value to check trajectory at. If None, uses DT constant.
+
+    Returns:
+        Average mismatch score across all robots in mm
+    """
+    if dt_value is None:
+        dt_value = DT
+
+    n_robots = len(trajectories)
+    mismatch_scores = []
+
+    for robot_idx in range(n_robots):
+        traj = trajectories[robot_idx]
+        # Find trajectory point closest to dt_value
+        time_diff = jnp.abs(traj[:, 0] - dt_value)
+        closest_idx = jnp.argmin(time_diff)
+        traj_pos_at_dt = traj[closest_idx, 1:3]  # position at dt
+        initial_pos_robot = initial_positions[robot_idx]
+        mismatch = jnp.linalg.norm(traj_pos_at_dt - initial_pos_robot)
+        mismatch_scores.append(float(mismatch))
+
+    return sum(mismatch_scores) / len(mismatch_scores)
