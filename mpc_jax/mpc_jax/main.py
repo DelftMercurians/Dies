@@ -33,6 +33,8 @@ from .common import (
     Result,
     MPCConfig,
     calculate_mismatch_score,
+    TRAJECTORY_RESOLUTION,
+    get_dt_schedule,
 )
 
 from .costs import (
@@ -85,7 +87,7 @@ def mpc_cost_function(
         # other stuff
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
-        effort_cost = jnp.sqrt((u**2).sum()) * 3e-6
+        effort_cost = jnp.sqrt((u**2).sum()) * 5e-6
         # TODO: increase the cost drastically if we are past the limit
         # TODO: figure out the cause of oscillations still
         acc_cost = ((u[:, 1:, :] - u[:, :1, :]) ** 2).sum() * 3e-10
@@ -120,16 +122,22 @@ def mpc_cost_function(
         lambda traj, target, max_speed: jax.vmap(
             eqx.Partial(position_cost_fn, max_speed=max_speed, target=target)
         )(traj)
-    )(trajectories[:, 1:], targets, max_speeds).sum()
+    )(trajectories[:, TRAJECTORY_RESOLUTION + 1 :], targets, max_speeds)
 
     total_collective_cost = jax.vmap(
-        lambda traj_slice: jax.vmap(eqx.Partial(collective_position_cost_fn, traj_slice))(
-            jnp.arange(n_robots)
-        ),
+        lambda traj_slice: jax.vmap(
+            eqx.Partial(collective_position_cost_fn, traj_slice)
+        )(jnp.arange(n_robots)),
         in_axes=1,
-    )(trajectories).sum()
+    )(trajectories[:, TRAJECTORY_RESOLUTION + 1 :]).reshape(n_robots, -1)
 
-    return total_position_cost + total_collective_cost
+    dt_schedule = get_dt_schedule(upscaled=True)
+    assert dt_schedule.shape[0] == total_position_cost.shape[-1]
+    assert dt_schedule.shape[0] == total_collective_cost.shape[-1]
+
+    time_weights = jnp.exp(-dt_schedule)
+
+    return ((total_position_cost + total_collective_cost) * time_weights).sum()
 
 
 def generate_candidate_control(
@@ -140,7 +148,9 @@ def generate_candidate_control(
 ) -> Float[Array, f"{CONTROL_HORIZON} 2"]:
     k1, k2, k3, k4, k5, k6 = jr.split(key, 6)
     # Generate pseudo-target with normal noise (std 50cm = 500mm)
-    pos_noise_scale = jnp.clip((jnp.linalg.norm(initial_pos - target_pos) - 30) / 400, 0, 1)
+    pos_noise_scale = jnp.clip(
+        (jnp.linalg.norm(initial_pos - target_pos) - 30) / 400, 0, 1
+    )
     noise = jr.normal(k1, (2,)) * 500.0 * pos_noise_scale
     pseudo_target = target_pos + noise
 
@@ -162,7 +172,9 @@ def generate_candidate_control(
 
     # Stage 2: Go from intermediate to full pseudo-target
     remaining_distance = jnp.linalg.norm(pseudo_target - intermediate_target)
-    required_vel_stage2 = (pseudo_target - intermediate_target) / (TIME_HORIZON - few_seconds)
+    required_vel_stage2 = (pseudo_target - intermediate_target) / (
+        TIME_HORIZON - few_seconds
+    )
     required_vel_stage2 = clip_by_norm(required_vel_stage2, max_speed)
 
     # Add noise to stage 2 velocity
@@ -177,7 +189,9 @@ def generate_candidate_control(
     stage1_mask = time_indices < stage1_steps
 
     # Use where to select between stage1 and stage2 velocities
-    control_sequence = jnp.where(stage1_mask[:, None], stage1_vel[None, :], stage2_vel[None, :])
+    control_sequence = jnp.where(
+        stage1_mask[:, None], stage1_vel[None, :], stage2_vel[None, :]
+    )
 
     return control_sequence
 
@@ -202,9 +216,9 @@ def generate_continuity_candidates(
 
     # Clip to velocity limits
     perturbed_controls = jax.vmap(
-        lambda controls, max_speed: jax.vmap(lambda control: clip_by_norm(control, max_speed))(
-            controls
-        )
+        lambda controls, max_speed: jax.vmap(
+            lambda control: clip_by_norm(control, max_speed)
+        )(controls)
     )(perturbed_controls, max_speeds)
 
     return perturbed_controls
@@ -238,17 +252,23 @@ def traj_vs_entity_collision(traj, entity, **kws) -> jax.Array:
     return jnp.any(collisions)
 
 
-def traj_vs_batch_collision(trajectory: jax.Array, obstacles: EntityBatch, **kws) -> jax.Array:
+def traj_vs_batch_collision(
+    trajectory: jax.Array, obstacles: EntityBatch, **kws
+) -> jax.Array:
     if len(obstacles) == 0:
         return jnp.array(False)
 
     return jnp.any(
-        jax.vmap(lambda obj: traj_vs_entity_collision(trajectory, obj, **kws))(obstacles)
+        jax.vmap(lambda obj: traj_vs_entity_collision(trajectory, obj, **kws))(
+            obstacles
+        )
     )
 
 
 def many_traj_collision(trajes, **kws):
-    collisions = jax.vmap(eqx.Partial(multipoint_collision, **kws), in_axes=1)(trajes[:, :, 1:3])
+    collisions = jax.vmap(eqx.Partial(multipoint_collision, **kws), in_axes=1)(
+        trajes[:, :, 1:3]
+    )
     return jnp.any(collisions)
 
 
@@ -307,7 +327,9 @@ def select_best_collision_free_trajectory(
         )(trajectories)
 
         return jnp.logical_or(
-            jnp.logical_or(jnp.any(obstacle_collisions), jnp.any(self_robot_collisions)),
+            jnp.logical_or(
+                jnp.any(obstacle_collisions), jnp.any(self_robot_collisions)
+            ),
             jnp.any(ball_collision),
         )
 
@@ -316,9 +338,9 @@ def select_best_collision_free_trajectory(
     # Compute distance integrals for collision-free candidates
     def compute_candidate_integral(trajectories):
         # Sum distance integrals for all robots
-        robot_integrals = jax.vmap(lambda traj, target: compute_distance_integral(traj, target))(
-            trajectories, targets
-        )
+        robot_integrals = jax.vmap(
+            lambda traj, target: compute_distance_integral(traj, target)
+        )(trajectories, targets)
         return jnp.sum(robot_integrals)
 
     distance_integrals = jax.vmap(compute_candidate_integral)(all_trajectories)
@@ -353,7 +375,9 @@ def solve_mpc_jax(
         cfg = MPCConfig()
 
     # Generate candidate trajectories - mix of random and continuity-based
-    continuity_candidates = int(n_candidates * 0.2) if last_control_sequences is not None else 0
+    continuity_candidates = (
+        int(n_candidates * 0.2) if last_control_sequences is not None else 0
+    )
     random_candidates = n_candidates - continuity_candidates
     config_key, key = jr.split(key)
 
@@ -386,12 +410,16 @@ def solve_mpc_jax(
     else:
         candidate_controls = random_candidate_controls
 
-    candidate_controls = candidate_controls.reshape((n_candidates, n_robots, CONTROL_HORIZON, 2))
+    candidate_controls = candidate_controls.reshape(
+        (n_candidates, n_robots, CONTROL_HORIZON, 2)
+    )
 
     # Optimize each candidate trajectory via (full-batch) gradient descent
     def optimize_control(u, cfg: MPCConfig = MPCConfig()):
         # Initialize optimizer for this trajectory
-        lr_schedule = optax.linear_schedule(learning_rate, learning_rate / 4.0, max_iterations)
+        lr_schedule = optax.linear_schedule(
+            learning_rate, learning_rate / 4.0, max_iterations
+        )
         optimizer = optax.chain(
             optax.adabelief(learning_rate=lr_schedule, b1=0.8, b2=0.8),
         )
@@ -432,8 +460,12 @@ def solve_mpc_jax(
         return best_u, best_cost
 
     # Optimize all candidate controls in parallel
-    configs = eqx.filter_vmap(MPCConfig.sample)(jr.split(config_key, len(candidate_controls)))
-    optimized_controls, mpc_costs = jax.vmap(optimize_control)(candidate_controls, configs)
+    configs = eqx.filter_vmap(MPCConfig.sample)(
+        jr.split(config_key, len(candidate_controls))
+    )
+    optimized_controls, mpc_costs = jax.vmap(optimize_control)(
+        candidate_controls, configs
+    )
 
     # Select best collision-free trajectory based on distance integral
     sind = jnp.argsort(mpc_costs)
@@ -459,7 +491,9 @@ def solve_mpc_jax(
 
     u = optimized_controls[best_idx]
     traj = jax.vmap(
-        lambda control, pos, vel: single_trajectory_from_control(control, pos, vel, cfg.delay)
+        lambda control, pos, vel: single_trajectory_from_control(
+            control, pos, vel, cfg.delay
+        )
     )(u, w.robots.position, w.robots.velocity)
 
     return Result(
@@ -495,6 +529,7 @@ def solve_mpc(
     n_candidates: int = N_CANDIDATE_TRAJECTORIES,
     key: PRNGKeyArray | None = None,
 ) -> Result:
+    print(initial_vel)
     n_robots = len(initial_pos)
     assert len(initial_vel) == n_robots, f"{len(initial_vel)} != {n_robots}"
     assert len(target_pos) == n_robots, f"{len(target_pos)} != {n_robots}"
@@ -504,7 +539,10 @@ def solve_mpc(
         None if last_control_sequences is None else jnp.asarray(last_control_sequences)
     )
     ctrl_shape = (len(initial_pos), CONTROL_HORIZON, 2)
-    if last_control_sequences is not None and last_control_sequences.shape != ctrl_shape:
+    if (
+        last_control_sequences is not None
+        and last_control_sequences.shape != ctrl_shape
+    ):
         warnings.warn(
             f"Last control sequence had shape {last_control_sequences.shape}, but was expected to have shape {ctrl_shape}. Disabling continuity."
         )
@@ -550,6 +588,9 @@ def solve_mpc_tbwrap(*args):
         # Return full control sequences instead of just first control
         # And the trajectory, just for fun and debug
         # and also for automatic simulator mismatch error
+        print(result.u[0, 0], result.traj[0, 0, 3:], result.traj[0, 1, 3:])
         return result.u, result.traj
     except Exception:
-        raise RuntimeError(f"Traceback: {tb.format_exc(20)} with input: {args}") from None
+        raise RuntimeError(
+            f"Traceback: {tb.format_exc(20)} with input: {args}"
+        ) from None

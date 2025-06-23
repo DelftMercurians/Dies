@@ -45,12 +45,11 @@ def test_simple_case():
 
 
 def test_performance():
-    """Test performance with repeated calls"""
     last_solution, st_cost = simple_case()
 
     times = []
     costs = []
-    for _ in range(20):
+    for _ in range(50):
         t = time.time()
 
         sol, cost = simple_case(last_solution)
@@ -61,8 +60,7 @@ def test_performance():
         elapsed = (time.time() - t) * 1000
         times.append(elapsed)
 
-    # Assert reasonable performance (less than 1 second)
-    avg_time = np.mean(np.array(times[10:]))  # Skip warmup
+    avg_time = np.mean(np.array(times[20:]))
     assert avg_time < 25, (
         f"Average time {avg_time:.1f}ms is too slow, the threshold is 25ms"
     )

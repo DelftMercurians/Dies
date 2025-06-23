@@ -44,7 +44,7 @@ def collision_cost(
             0,
             1,
         )
-        smooth_factor = jnp.where(in_decay_zone, 1 - normalized_distance, 0.0) * 3
+        smooth_factor = jnp.where(in_decay_zone, 1 - normalized_distance, 0.0) * 10
 
         penalties = smooth_factor + danger_factor
 
@@ -60,7 +60,7 @@ def ball_collision_cost(
     pos: jnp.ndarray,
     ball_pos: jnp.ndarray,
     min_safe_distance=ROBOT_RADIUS * 1.1 + BALL_RADIUS,
-    no_cost_distance=ROBOT_RADIUS * 2,
+    no_cost_distance=ROBOT_RADIUS * 3,
 ):
     assert ball_pos.shape == (2,), (
         f"Ball collision cost: Ball pos must be of shape (2,), but got {ball_pos.shape}"

@@ -252,7 +252,7 @@ impl TeamController {
                     .unwrap_or(false);
 
                 let role_type = role_types.get(&id).cloned().unwrap_or_default();
-                let obsacles = world_data.get_obstacles_for_player(role_type);
+                let obstacles = world_data.get_obstacles_for_player(role_type);
 
                 controller.update(
                     player_data,
@@ -260,7 +260,7 @@ impl TeamController {
                     input,
                     world_data.dt,
                     is_manual,
-                    obsacles,
+                    obstacles,
                     &all_players,
                 );
             } else {
