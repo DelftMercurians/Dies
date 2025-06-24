@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import PRNGKeyArray, Float, Array
+from typing import Any
 import equinox as eqx
 
 from .common import (
@@ -202,6 +203,7 @@ def select_best_stochastic_trajectory(
     optimized_controls: jax.Array,
     world: World,
     targets: EntityBatch,
+    last_traj: Any,
     cfg: MPCConfig,
     n_samples: int = 50,
 ) -> tuple[int, float]:

@@ -140,6 +140,7 @@ def mpc_cost_function(
     )(trajectories).reshape(n_robots, -1)
 
     tie_breaker_cost = 0
+    """
     if last_traj is not None and last_traj.shape == trajectories.shape:
         # Match nearest time points and compute (x,y) position differences
         # trajectories shape: (n_robots, n_time_steps, 5) where 5 = (time, x, y, vx, vy)
@@ -166,6 +167,7 @@ def mpc_cost_function(
         robot_diffs = jax.vmap(compute_trajectory_diff)(trajectories, last_traj)
         diff = robot_diffs.mean()
         tie_breaker_cost = diff * 1e-3
+    """
 
     return (total_position_cost + total_collective_cost + tie_breaker_cost).sum()
 

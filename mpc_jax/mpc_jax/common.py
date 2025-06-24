@@ -37,7 +37,7 @@ def add_control_noise(
 ) -> Control:
     k1, k2 = jr.split(key)
     noise = jr.normal(k1, control.shape) * noise_scale
-    scale = jr.uniform(k2, (), minval=0.8, maxval=1.2)
+    scale = jr.uniform(k2, (), minval=1.0, maxval=1.2)
     return control * scale + noise
 
 
