@@ -119,22 +119,16 @@ def mpc_cost_function(u: Control, w: World, targets: EntityBatch, max_speeds: ja
         lambda traj, target, max_speed: jax.vmap(
             eqx.Partial(position_cost_fn, max_speed=max_speed, target=target)
         )(traj)
-    )(trajectories[:, TRAJECTORY_RESOLUTION + 1 :], targets, max_speeds)
+    )(trajectories, targets, max_speeds)
 
     total_collective_cost = jax.vmap(
         lambda traj_slice: jax.vmap(eqx.Partial(collective_position_cost_fn, traj_slice))(
             jnp.arange(n_robots)
         ),
         in_axes=1,
-    )(trajectories[:, TRAJECTORY_RESOLUTION + 1 :]).reshape(n_robots, -1)
+    )(trajectories).reshape(n_robots, -1)
 
-    dt_schedule = get_dt_schedule(upscaled=True)
-    assert dt_schedule.shape[0] == total_position_cost.shape[-1]
-    assert dt_schedule.shape[0] == total_collective_cost.shape[-1]
-
-    time_weights = jnp.exp(-dt_schedule)
-
-    return ((total_position_cost + total_collective_cost) * time_weights).sum()
+    return (total_position_cost + total_collective_cost).sum()
 
 
 def generate_candidate_control(
@@ -273,9 +267,9 @@ def solve_mpc_jax(
     # Optimize each candidate trajectory via (full-batch) gradient descent
     def optimize_control(u, key, cfg: MPCConfig = MPCConfig()):
         # Initialize optimizer for this trajectory
-        lr_schedule = optax.linear_schedule(learning_rate, learning_rate / 4.0, max_iterations)
+        lr_schedule = optax.linear_schedule(learning_rate, learning_rate / 8.0, max_iterations)
         optimizer = optax.chain(
-            optax.adabelief(learning_rate=lr_schedule, b1=0.8, b2=0.8),
+            optax.adabelief(learning_rate=lr_schedule, b1=0.9, b2=0.9),
         )
         opt_state = optimizer.init(u)
 
@@ -294,11 +288,6 @@ def solve_mpc_jax(
             # Do an optimization step
             updates, opt_state = optimizer.update(grad_val, opt_state, u)
             u: jax.Array = optax.apply_updates(u, updates)  # type: ignore
-
-            # Do an adjustment: slightly shift u towards old solution, if it exists
-            if last_control_sequences is not None:
-                rho = 0.1 / max_iterations  # 10% shift over the course of optimization
-                u = u * (1.0 - rho) + last_control_sequences * rho
 
             # Project the control back to the "valid" domain
             u = jax.vmap(clip_by_norm)(u, max_speeds)
