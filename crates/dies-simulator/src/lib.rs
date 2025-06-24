@@ -445,7 +445,6 @@ impl Simulation {
                 velocity + acc * dt
             };
             let new_vel = new_vel.cap_magnitude(self.config.max_vel);
-            println!("rust capped vel: {}", new_vel);
             rigid_body.set_linvel(new_vel, true);
 
             if player.heading_control {

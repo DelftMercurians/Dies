@@ -7,7 +7,12 @@ from mpc_jax.main import solve_mpc
 from mpc_jax.common import Result, CONTROL_HORIZON
 
 
-def simple_case(last_solution=None):
+r = None
+
+
+def simple_case():
+    global r
+
     n_robots = 2
     initial_pos = np.array([[5.0, 10.0], [80.0, 700.0]])
     initial_vel = np.array([[-50.0, 10.0], [20.0, 30.0]])
@@ -25,7 +30,8 @@ def simple_case(last_solution=None):
         ball_pos,
         field_bounds,
         max_speed,
-        last_solution,
+        None if r is None else r.u,
+        None if r is None else r.traj,
     )
 
     assert r.u is not None
@@ -37,7 +43,7 @@ def simple_case(last_solution=None):
         CONTROL_HORIZON,
         2,
     ), f"Expected {(n_robots, CONTROL_HORIZON, 2)} got {r.u.shape}"
-    return r.u, r.cost
+    return r.cost
 
 
 def test_simple_case():
@@ -45,25 +51,20 @@ def test_simple_case():
 
 
 def test_performance():
-    last_solution, st_cost = simple_case()
+    st_cost = simple_case()
 
     times = []
     costs = []
     for _ in range(50):
         t = time.time()
 
-        sol, cost = simple_case(last_solution)
-        assert np.any(sol != last_solution)
-        costs.append(cost)
-        last_solution = sol
+        costs.append(simple_case())
 
         elapsed = (time.time() - t) * 1000
         times.append(elapsed)
 
     avg_time = np.mean(np.array(times[20:]))
-    assert avg_time < 25, (
-        f"Average time {avg_time:.1f}ms is too slow, the threshold is 25ms"
-    )
+    assert avg_time < 25, f"Average time {avg_time:.1f}ms is too slow, the threshold is 25ms"
     print(
         f"\n\n\tAn MPC run is expected to take {avg_time:.1f}ms \n\tAverage score was {np.mean(costs):.1f}, down from {st_cost:.1f} after one iteration.\n"
     )

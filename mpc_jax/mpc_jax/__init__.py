@@ -17,7 +17,7 @@ jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 jax.config.update("jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir")
 
 # jax.config.update("jax_disable_jit", True)
-# jax.config.update("jax_log_compiles", True)
+jax.config.update("jax_log_compiles", True)
 jax.config.update("jax_debug_nans", True)
 
 from .main import solve_mpc, solve_mpc_tbwrap

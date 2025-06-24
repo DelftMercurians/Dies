@@ -8,7 +8,7 @@ from typing import Literal
 
 
 # MPC Parameters
-CONTROL_HORIZON = 20
+CONTROL_HORIZON = 10
 TIME_HORIZON = 3  # seconds
 DT = 0.04  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
