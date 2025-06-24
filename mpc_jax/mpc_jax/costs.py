@@ -12,9 +12,9 @@ def distance_cost(pos: jnp.ndarray, target: jnp.ndarray, time_from_now: float):
 def collision_cost(
     pos: jnp.ndarray,
     obstacles: jnp.ndarray,
+    min_safe_distance,
+    no_cost_distance,
     mask=None,
-    min_safe_distance=2.1 * ROBOT_RADIUS,
-    no_cost_distance=4.2 * ROBOT_RADIUS,
 ):
     if mask is None:
         mask = jnp.ones((len(obstacles),))
@@ -33,34 +33,30 @@ def collision_cost(
         # try to avoid certain collision hard
         danger_zone = distance <= min_safe_distance
         normalized_distance = jnp.clip(distance / min_safe_distance, 1e-6, 1)
-        danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 200
+        danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 10
 
         # try to avoid even getting close to the opponent
-        in_decay_zone = jnp.logical_and(
-            distance > min_safe_distance, distance <= no_cost_distance
-        )
+        in_decay_zone = jnp.logical_and(distance > min_safe_distance, distance <= no_cost_distance)
         normalized_distance = jnp.clip(
             (distance - min_safe_distance) / (no_cost_distance - min_safe_distance),
             0,
             1,
         )
-        smooth_factor = jnp.where(in_decay_zone, 1 - normalized_distance, 0.0) * 10
+        smooth_factor = jnp.where(in_decay_zone, 1 - normalized_distance, 0.0) * 0.5
 
         penalties = smooth_factor + danger_factor
 
         return jnp.sum(penalties)
 
-    obstacle_wise_costs = jax.vmap(ft.partial(single_collision_cost, pos=pos))(
-        obstacles
-    )
+    obstacle_wise_costs = jax.vmap(ft.partial(single_collision_cost, pos=pos))(obstacles)
     return (obstacle_wise_costs * mask).sum()
 
 
 def ball_collision_cost(
     pos: jnp.ndarray,
     ball_pos: jnp.ndarray,
-    min_safe_distance=ROBOT_RADIUS * 1.1 + BALL_RADIUS,
-    no_cost_distance=ROBOT_RADIUS * 3,
+    min_safe_distance,
+    no_cost_distance,
 ):
     assert ball_pos.shape == (2,), (
         f"Ball collision cost: Ball pos must be of shape (2,), but got {ball_pos.shape}"
