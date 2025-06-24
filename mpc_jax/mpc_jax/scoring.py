@@ -203,7 +203,7 @@ def select_best_stochastic_trajectory(
     optimized_controls: jax.Array,
     world: World,
     targets: EntityBatch,
-    last_traj: Any,
+    last_controls: Any,
     cfg: MPCConfig,
     n_samples: int = 50,
 ) -> tuple[int, float]:
@@ -217,8 +217,31 @@ def select_best_stochastic_trajectory(
         )
     )(optimized_controls)
 
-    # Select candidate with minimum score
-    best_idx = jnp.argmin(candidate_scores)
+    sorted_indices = jnp.argsort(candidate_scores)
+    top_indices = sorted_indices[:2]
+
+    # If no last controls, just return the best
+    if last_controls is None:
+        best_idx = sorted_indices[0]
+        best_score = candidate_scores[best_idx]
+        return best_idx, best_score
+
+    top_controls = optimized_controls[top_indices]
+
+    # Compute control similarity to last controls (using second control step)
+    # last_controls shape: (n_robots, control_horizon, 2)
+    # current_controls shape: (n_robots, control_horizon, 2)
+    last_second_controls = last_controls[:, 0, :]  # (n_robots, 2)
+    assert last_second_controls.shape[-1] == 2
+
+    control_similarities = jax.vmap(
+        lambda current_controls: jnp.linalg.norm(
+            current_controls[:, 0, :] - last_second_controls
+        ).mean()
+    )(top_controls)
+
+    most_similar_idx = jnp.argmin(control_similarities)
+    best_idx = top_indices[most_similar_idx]
     best_score = candidate_scores[best_idx]
 
     return best_idx, best_score

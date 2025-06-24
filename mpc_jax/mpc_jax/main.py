@@ -333,10 +333,10 @@ def solve_mpc_jax(
     def optimize_control(u, key, cfg: MPCConfig = MPCConfig()):
         # Initialize optimizer for this trajectory
         lr_schedule = optax.linear_schedule(
-            learning_rate, learning_rate / 8.0, max_iterations
+            learning_rate, learning_rate / 20.0, max_iterations
         )
         optimizer = optax.chain(
-            optax.adabelief(learning_rate=lr_schedule, b1=0.8, b2=0.8),
+            optax.adabelief(learning_rate=lr_schedule, b1=0.9, b2=0.9),
         )
         opt_state = optimizer.init(u)
 
@@ -390,7 +390,7 @@ def solve_mpc_jax(
         # Use stochastic trajectory scoring instead of deterministic collision checking
         stochastic_key, key = jr.split(key)
         best_stoch_idx, best_stoch_cost = select_best_stochastic_trajectory(
-            stochastic_key, optimized_controls, w, targets, cfg
+            stochastic_key, optimized_controls, w, targets, last_control_sequences, cfg
         )
         best_idx = jnp.where(best_stoch_cost == jnp.inf, best_mpc_idx, best_stoch_idx)
         best_cost = best_stoch_cost

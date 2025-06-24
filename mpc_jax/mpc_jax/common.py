@@ -17,10 +17,10 @@ ROBOT_RADIUS = 90.0  # mm
 BALL_RADIUS = 21.35  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 40
-BATCH_SIZE = 10
-LEARNING_RATE = 40
-N_CANDIDATE_TRAJECTORIES = 40
+MAX_ITERATIONS = 50
+BATCH_SIZE = 20
+LEARNING_RATE = 20
+N_CANDIDATE_TRAJECTORIES = 20
 TRAJECTORY_RESOLUTION = 5  # points per physics step for high-resolution trajectories
 FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
@@ -37,7 +37,7 @@ def add_control_noise(
 ) -> Control:
     k1, k2 = jr.split(key)
     noise = jr.normal(k1, control.shape) * noise_scale
-    scale = jr.uniform(k2, (), minval=1.0, maxval=1.2)
+    scale = jr.uniform(k2, (len(control),), minval=1.0, maxval=1.2)
     return control * scale + noise
 
 
@@ -51,7 +51,7 @@ class MPCConfig(eqx.Module):
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.0 + BALL_RADIUS)
     )
     ball_no_cost_distance: jax.Array = eqx.field(
-        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.1 + BALL_RADIUS)
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.5 + BALL_RADIUS)
     )
     obstacle_min_safe_distance: jax.Array = eqx.field(
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.0)
