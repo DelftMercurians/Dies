@@ -33,22 +33,28 @@ def collision_cost(
         # try to avoid certain collision hard
         danger_zone = distance <= min_safe_distance
         normalized_distance = jnp.clip(distance / min_safe_distance, 1e-6, 1)
-        danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 10
+        danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 100
 
         # try to avoid even getting close to the opponent
-        in_decay_zone = jnp.logical_and(distance > min_safe_distance, distance <= no_cost_distance)
+        in_decay_zone = jnp.logical_and(
+            distance > min_safe_distance, distance <= no_cost_distance
+        )
         normalized_distance = jnp.clip(
             (distance - min_safe_distance) / (no_cost_distance - min_safe_distance),
             0,
             1,
         )
-        smooth_factor = jnp.where(in_decay_zone, 1 - normalized_distance, 0.0) * 0.5
+        smooth_factor = (
+            jnp.where(in_decay_zone, (1 - normalized_distance) ** 2, 0.0) * 1.0
+        )
 
         penalties = smooth_factor + danger_factor
 
         return jnp.sum(penalties)
 
-    obstacle_wise_costs = jax.vmap(ft.partial(single_collision_cost, pos=pos))(obstacles)
+    obstacle_wise_costs = jax.vmap(ft.partial(single_collision_cost, pos=pos))(
+        obstacles
+    )
     return (obstacle_wise_costs * mask).sum()
 
 

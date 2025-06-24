@@ -161,12 +161,19 @@ impl MPCController {
                 None => None,
             };
 
-            // Prepare last trajectory data (shape: n_robots, CONTROL_HORIZON, 5)
+            // Prepare last trajectory data with dynamic horizon length
             let mut last_traj_data = Vec::new();
+            let mut dynamic_horizon = control_horizon * 5 + 1; // Default to control_horizon
+
             for robot in robots {
                 if let Some(traj) = self.last_trajectories.get(&robot.id) {
+                    // Use the actual trajectory length for dynamic horizon
+                    if !traj.is_empty() {
+                        dynamic_horizon = traj.len();
+                    }
+
                     // Use stored trajectory data directly
-                    for i in 0..control_horizon {
+                    for i in 0..dynamic_horizon {
                         if i < traj.len() && traj[i].len() >= 5 {
                             last_traj_data.extend_from_slice(&traj[i]);
                         } else {
@@ -181,7 +188,7 @@ impl MPCController {
                     }
                 } else {
                     // No previous trajectory, use zeros with proper time values
-                    for i in 0..control_horizon {
+                    for i in 0..dynamic_horizon {
                         let t = i as f64 * world.dt;
                         last_traj_data.extend_from_slice(&[t, 0.0, 0.0, 0.0, 0.0]);
                     }
@@ -191,7 +198,7 @@ impl MPCController {
             let last_traj_array = if last_traj_data.is_empty() {
                 py.None()
             } else {
-                np.call_method1("array", (last_traj_data,))?.call_method1("reshape", (n_robots, control_horizon, 5))?.into()
+                np.call_method1("array", (last_traj_data,))?.call_method1("reshape", (n_robots, dynamic_horizon, 5))?.into()
             };
 
             let dt_value = world.dt;

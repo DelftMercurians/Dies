@@ -15,17 +15,8 @@ from .common import (
     Entity,
     EntityBatch,
     MPCConfig,
+    add_control_noise,
 )
-
-
-def add_control_noise(
-    key: PRNGKeyArray,
-    control: Control,
-    noise_scale: float = 30.0,  # mm/s
-) -> Control:
-    """Add Gaussian noise to control sequence."""
-    noise = jr.normal(key, control.shape) * noise_scale
-    return control + noise
 
 
 def point_vs_point_collision(a, b, min_safe_distance):
@@ -63,9 +54,9 @@ def traj_vs_batch_collision(
     if len(obstacles) == 0:
         return jnp.array(False)
 
-    return jax.vmap(lambda obj: traj_vs_entity_collision(trajectory, obj, min_safe_distance))(
-        obstacles
-    )
+    return jax.vmap(
+        lambda obj: traj_vs_entity_collision(trajectory, obj, min_safe_distance)
+    )(obstacles)
 
 
 def multipoint_collision(points, min_safe_distance):
@@ -79,7 +70,8 @@ def multipoint_collision(points, min_safe_distance):
 def many_traj_collision(trajs, min_safe_distance):
     """Check collision between multiple trajectories."""
     collisions = jax.vmap(
-        eqx.Partial(multipoint_collision, min_safe_distance=min_safe_distance), in_axes=1
+        eqx.Partial(multipoint_collision, min_safe_distance=min_safe_distance),
+        in_axes=1,
     )(trajs[:, :, 1:3])
     return collisions
 
@@ -117,12 +109,17 @@ def score_single_trajectory_sample(
     noisy_cfg = cfg.noisy(k2)
     noisy_world = world.noisy(k3)
     time_discount = jnp.concatenate(
-        [jnp.ones((TRAJECTORY_RESOLUTION + 1,)), jnp.exp(-get_dt_schedule(upscaled=True))]
+        [
+            jnp.ones((TRAJECTORY_RESOLUTION + 1,)),
+            jnp.exp(-get_dt_schedule(upscaled=True)),
+        ]
     )
 
     # Generate trajectories with noisy parameters
     trajectories = jax.vmap(
-        lambda ctrl, pos, vel: single_trajectory_from_control(ctrl, pos, vel, noisy_cfg.delay)
+        lambda ctrl, pos, vel: single_trajectory_from_control(
+            ctrl, pos, vel, noisy_cfg.delay
+        )
     )(noisy_control, noisy_world.robots.position, noisy_world.robots.velocity)
 
     # Check for collisions
@@ -136,14 +133,18 @@ def score_single_trajectory_sample(
     )
 
     self_robot_collisions = (
-        many_traj_collision(trajectories, min_safe_distance=2.2 * ROBOT_RADIUS).astype(jnp.float32)
+        many_traj_collision(trajectories, min_safe_distance=2.2 * ROBOT_RADIUS).astype(
+            jnp.float32
+        )
         * time_discount[:, None, None]
     )
 
     ball_collisions = (
         jax.vmap(
             lambda traj: traj_vs_entity_collision(
-                traj, noisy_world.ball, min_safe_distance=ROBOT_RADIUS * 1.2 + BALL_RADIUS
+                traj,
+                noisy_world.ball,
+                min_safe_distance=ROBOT_RADIUS * 1.2 + BALL_RADIUS,
             )
         )(trajectories).astype(jnp.float32)
         * time_discount[None, :, None]
@@ -157,9 +158,9 @@ def score_single_trajectory_sample(
     collision_penalty = total_collisions * 1e12
 
     # Compute distance integral for collision-free samples
-    robot_integrals = jax.vmap(lambda traj, target: compute_distance_integral(traj, target))(
-        trajectories, targets
-    )
+    robot_integrals = jax.vmap(
+        lambda traj, target: compute_distance_integral(traj, target)
+    )(trajectories, targets)
     distance_score = jnp.sum(robot_integrals)
 
     return distance_score + collision_penalty
@@ -184,9 +185,9 @@ def stochastic_trajectory_scoring(
         sample_keys = jr.split(key_or_keys, n_samples)
 
     # Score all samples
-    scores = jax.vmap(lambda k: score_single_trajectory_sample(k, control, world, targets, cfg))(
-        sample_keys
-    )
+    scores = jax.vmap(
+        lambda k: score_single_trajectory_sample(k, control, world, targets, cfg)
+    )(sample_keys)
 
     # Sort scores and take trimmed mean (middle 16 out of 20)
     sorted_scores = jnp.sort(scores)

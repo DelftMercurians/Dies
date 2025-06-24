@@ -1,9 +1,10 @@
 from __future__ import annotations
 import jax
 from jax import numpy as jnp
+from jax import random as jr
 import os
 import equinox as eqx
-from jaxtyping import Array, Float, Int
+from jaxtyping import Array, Float, Int, PRNGKeyArray
 from typing import Literal
 
 
@@ -17,6 +18,7 @@ BALL_RADIUS = 21.35  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
 MAX_ITERATIONS = 40
+BATCH_SIZE = 10
 LEARNING_RATE = 40
 N_CANDIDATE_TRAJECTORIES = 40
 TRAJECTORY_RESOLUTION = 5  # points per physics step for high-resolution trajectories
@@ -28,18 +30,31 @@ VEL_FRICTION_COEFF = 0  # N*s/m (velocity-dependent friction coefficient)
 MAX_ACC = 12_000  # mm/s^2
 
 
+def add_control_noise(
+    key: PRNGKeyArray,
+    control: Control,
+    noise_scale: float = 30.0,  # mm/s
+) -> Control:
+    k1, k2 = jr.split(key)
+    noise = jr.normal(k1, control.shape) * noise_scale
+    scale = jr.uniform(k2, (), minval=0.8, maxval=1.2)
+    return control * scale + noise
+
+
 class MPCConfig(eqx.Module):
     distance_factor: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(1.0))
     collision_factor: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(1.0))
-    ball_collision_factor: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(1.0))
+    ball_collision_factor: jax.Array = eqx.field(
+        default_factory=lambda: jnp.asarray(1.0)
+    )
     ball_min_safe_distance: jax.Array = eqx.field(
-        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.1 + BALL_RADIUS)
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.0 + BALL_RADIUS)
     )
     ball_no_cost_distance: jax.Array = eqx.field(
-        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.0 + BALL_RADIUS)
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.1 + BALL_RADIUS)
     )
     obstacle_min_safe_distance: jax.Array = eqx.field(
-        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.2)
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.0)
     )
     obstacle_no_cost_distance: jax.Array = eqx.field(
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 3.5)
@@ -53,7 +68,9 @@ class MPCConfig(eqx.Module):
     def noisy(self, key, noise_scale: float = 0.05):
         """Add noise to delay parameter."""
         noise = jax.random.normal(key, ()) * noise_scale
-        return eqx.tree_at(lambda cfg: cfg.delay, self, jnp.maximum(0.0, self.delay + noise))
+        return eqx.tree_at(
+            lambda cfg: cfg.delay, self, jnp.maximum(0.0, self.delay + noise)
+        )
 
 
 class Result(eqx.Module):
@@ -70,10 +87,14 @@ def get_dt_schedule(upscaled=True):
     if upscaled:
         # The schedule that follows interpolation - linear interpolation of cumulative times
         base_dt_schedule = get_dt_schedule(upscaled=False)
-        base_cumulative_times = jnp.concatenate([jnp.array([0.0]), jnp.cumsum(base_dt_schedule)])
+        base_cumulative_times = jnp.concatenate(
+            [jnp.array([0.0]), jnp.cumsum(base_dt_schedule)]
+        )
 
         # Total interpolated points: CONTROL_HORIZON + (CONTROL_HORIZON-1) * (TRAJECTORY_RESOLUTION-1)
-        total_points = CONTROL_HORIZON + (CONTROL_HORIZON - 1) * (TRAJECTORY_RESOLUTION - 1)
+        total_points = CONTROL_HORIZON + (CONTROL_HORIZON - 1) * (
+            TRAJECTORY_RESOLUTION - 1
+        )
 
         # Linear interpolation from 0 to final time
         final_time = base_cumulative_times[-1]
@@ -187,7 +208,9 @@ def spline_interpolate_trajectory(trajectory: jax.Array) -> jax.Array:
         result_parts.append(trajectory[i : i + 1])  # original point
         start_idx = i * (resolution - 1)
         end_idx = (i + 1) * (resolution - 1)
-        result_parts.append(interpolated_points[start_idx:end_idx])  # interpolated points
+        result_parts.append(
+            interpolated_points[start_idx:end_idx]
+        )  # interpolated points
 
     # Add final point
     result_parts.append(trajectory[-1:])
@@ -271,7 +294,9 @@ class World(eqx.Module):
         noisy_positions = jnp.stack(noisy_positions)
         noisy_velocities = jnp.stack(noisy_velocities)
 
-        return eqx.tree_at(lambda w: w.robots, self, EntityBatch(noisy_positions, noisy_velocities))
+        return eqx.tree_at(
+            lambda w: w.robots, self, EntityBatch(noisy_positions, noisy_velocities)
+        )
 
 
 def trajectories_from_control(w: World, u: Control, delay: float = 0.0):
@@ -283,7 +308,9 @@ def trajectories_from_control(w: World, u: Control, delay: float = 0.0):
         delay: Time delay for control commands to be executed (default 0.0)
     """
     return jax.vmap(
-        lambda control, pos, vel: single_trajectory_from_control(control, pos, vel, delay)
+        lambda control, pos, vel: single_trajectory_from_control(
+            control, pos, vel, delay
+        )
     )(u, w.robots.position, w.robots.velocity)
 
 
@@ -305,7 +332,9 @@ def single_trajectory_from_control(
 
     dt_schedule = get_dt_schedule(upscaled=False)
 
-    def dynamics(pos: jax.Array, vel: jax.Array, target_vel: jax.Array, dt: float) -> jax.Array:
+    def dynamics(
+        pos: jax.Array, vel: jax.Array, target_vel: jax.Array, dt: float
+    ) -> jax.Array:
         vel_friction_force = -VEL_FRICTION_COEFF * vel
 
         desired_acceleration = (target_vel - vel) / dt
@@ -349,7 +378,9 @@ def single_trajectory_from_control(
     inputs = (control_sequence, dt_schedule)
     _, trajectory_steps = jax.lax.scan(scan_fn, (initial_state[1:], delay), inputs)
 
-    base_trajectory = jnp.concatenate([initial_state[None, :], trajectory_steps], axis=0)
+    base_trajectory = jnp.concatenate(
+        [initial_state[None, :], trajectory_steps], axis=0
+    )
 
     # Apply spline interpolation for higher resolution
     return spline_interpolate_trajectory(base_trajectory)

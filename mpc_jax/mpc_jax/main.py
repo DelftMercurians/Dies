@@ -16,11 +16,13 @@ from .common import (
     BALL_RADIUS,
     FINAL_COST,
     ROBOT_RADIUS,
+    BATCH_SIZE,
     LEARNING_RATE,
     CONTROL_HORIZON,
     MAX_ITERATIONS,
     TIME_HORIZON,
     N_CANDIDATE_TRAJECTORIES,
+    add_control_noise,
     single_trajectory_from_control,
     trajectories_from_control,
     World,
@@ -57,9 +59,10 @@ def mpc_cost_function(
     key,
     last_traj,
 ):
-    k1, k2 = jr.split(key)
+    k1, k2, k3 = jr.split(key, 3)
     w = w.noisy(k1)
     cfg = cfg.noisy(k2)
+    u = add_control_noise(k3, u)
     trajectories = trajectories_from_control(w, u, cfg.delay)
     n_robots = len(w.robots)
 
@@ -137,9 +140,32 @@ def mpc_cost_function(
     )(trajectories).reshape(n_robots, -1)
 
     tie_breaker_cost = 0
-    if last_traj is not None:
-        diff = last_traj[:, TRAJECTORY_RESOLUTION + 1 :, :] - trajectories[:, :-5, :]
-        tie_breaker_cost = (diff**2).mean() * 0
+    if last_traj is not None and last_traj.shape == trajectories.shape:
+        # Match nearest time points and compute (x,y) position differences
+        # trajectories shape: (n_robots, n_time_steps, 5) where 5 = (time, x, y, vx, vy)
+        def compute_trajectory_diff(current_traj, last_traj):
+            # Extract time and position for both trajectories
+            current_times = current_traj[:, 0]  # (n_time_steps,)
+            current_pos = current_traj[:, 1:3]  # (n_time_steps, 2) for (x, y)
+            last_times = last_traj[:, 0]  # (n_time_steps,)
+            last_pos = last_traj[:, 1:3]  # (n_time_steps, 2) for (x, y)
+
+            # For each point in current trajectory, find nearest time in last trajectory
+            def find_nearest_match(curr_time, curr_pos):
+                time_diffs = jnp.abs(last_times - curr_time)
+                nearest_idx = jnp.argmin(time_diffs)
+                matched_pos = last_pos[nearest_idx]
+                pos_diff = curr_pos - matched_pos
+                return jnp.sqrt(pos_diff**2 + 1e-8)
+
+            # Compute position differences for all time points
+            diffs = jax.vmap(find_nearest_match)(current_times, current_pos)
+            return diffs.mean()
+
+        # Compute differences for all robots
+        robot_diffs = jax.vmap(compute_trajectory_diff)(trajectories, last_traj)
+        diff = robot_diffs.mean()
+        tie_breaker_cost = diff * 1e-3
 
     return (total_position_cost + total_collective_cost + tie_breaker_cost).sum()
 
@@ -299,7 +325,7 @@ def solve_mpc_jax(
                 key=k,
                 last_traj=last_traj,
             )
-        )(jr.split(key, 5)).mean()
+        )(jr.split(key, BATCH_SIZE)).mean()
 
     # Optimize each candidate trajectory via (full-batch) gradient descent
     def optimize_control(u, key, cfg: MPCConfig = MPCConfig()):
@@ -308,7 +334,7 @@ def solve_mpc_jax(
             learning_rate, learning_rate / 8.0, max_iterations
         )
         optimizer = optax.chain(
-            optax.adabelief(learning_rate=lr_schedule, b1=0.9, b2=0.9),
+            optax.adabelief(learning_rate=lr_schedule, b1=0.8, b2=0.8),
         )
         opt_state = optimizer.init(u)
 
@@ -405,7 +431,7 @@ def solve_mpc(
     max_speed: np.ndarray,
     last_control_sequences: np.ndarray | None = None,
     last_traj: np.ndarray | None = None,
-    dt: np.ndarray | None = None,
+    dt: np.ndarray | None = np.array(0.02),
     max_iterations: int = MAX_ITERATIONS,
     learning_rate: float = LEARNING_RATE,
     n_candidates: int = N_CANDIDATE_TRAJECTORIES,
@@ -430,6 +456,9 @@ def solve_mpc(
 
     # Handle ball position - use provided ball_pos or default to far away
     ball_position = jnp.array([1e6, 1e6]) if ball_pos is None else jnp.asarray(ball_pos)
+    if last_traj is not None:
+        last_traj = np.array(last_traj, dtype=np.float32)
+        last_traj[:, :, 0] = last_traj[:, :, 0] - dt
 
     r = eqx.filter_jit(solve_mpc_jax)(
         w=World(
@@ -447,7 +476,7 @@ def solve_mpc(
         last_control_sequences=None
         if last_controls_jax is None
         else jnp.asarray(last_controls_jax),
-        last_traj=None,  # if last_traj is None else jnp.asarray(last_traj),
+        last_traj=None if last_traj is None else jnp.asarray(last_traj),
         cfg=MPCConfig(),  # Use default config with 0.02s delay
     )
 
