@@ -4,8 +4,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { MoveLeft, MoveRight } from "lucide-react";
 
 type FieldConfig = {
   [K in keyof ExecutorSettings]?: {
@@ -55,24 +53,6 @@ const fieldConfig: FieldConfig = {
     position_cutoff_distance: { min: 0, max: 2000, unit: "mm" },
   },
   tracker_settings: {
-    is_blue: { hidden: true },
-    initial_opp_goal_x: {
-      customComponent: ({ value, onChange }) => (
-        <ToggleGroup
-          type="single"
-          value={value == -1 ? "-1" : "1"}
-          onValueChange={(value) => onChange(value === "-1" ? -1 : 1)}
-          className="border border-gray-500 rounded-lg"
-        >
-          <ToggleGroupItem value="-1">
-            <MoveLeft />
-          </ToggleGroupItem>
-          <ToggleGroupItem value="1">
-            <MoveRight />
-          </ToggleGroupItem>
-        </ToggleGroup>
-      ),
-    },
     player_measurement_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
     player_unit_transition_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },
     ball_measurement_var: { min: 0.01, max: 200, step: 0.01, unit: "s" },

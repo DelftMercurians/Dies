@@ -1,4 +1,4 @@
-use dies_core::{Vector2, WorldData, PlayerId};
+use dies_core::{Vector2, TeamData, PlayerId};
 use pyo3::prelude::*;
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use std::time::Instant;
@@ -30,7 +30,7 @@ impl MPCController {
         }
     }
 
-    pub fn set_field_bounds(&mut self, world: &WorldData) {
+    pub fn set_field_bounds(&mut self, world: &TeamData) {
         if let Some(geom) = &world.field_geom {
             let hw = geom.field_width / 2.0;
             let hl = geom.field_length / 2.0;
@@ -38,7 +38,7 @@ impl MPCController {
         }
     }
 
-    pub fn compute_batch_control(&mut self, robots: &[RobotState], world: &WorldData) -> HashMap<PlayerId, Vector2> {
+    pub fn compute_batch_control(&mut self, robots: &[RobotState], world: &TeamData) -> HashMap<PlayerId, Vector2> {
         if robots.is_empty() {
             return HashMap::new();
         }
@@ -73,7 +73,7 @@ impl MPCController {
         &self.last_trajectories
     }
 
-    fn solve_batch_mpc_jax(&mut self, robots: &[RobotState], world: &WorldData) -> Result<HashMap<PlayerId, Vector2>, PyErr> {
+    fn solve_batch_mpc_jax(&mut self, robots: &[RobotState], world: &TeamData) -> Result<HashMap<PlayerId, Vector2>, PyErr> {
         let start_time = Instant::now();
 
         Python::with_gil(|py| {

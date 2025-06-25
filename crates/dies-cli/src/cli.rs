@@ -41,7 +41,7 @@ enum Command {
     },
 
     #[clap(name = "test-vision")]
-    TestVision
+    TestVision,
 }
 
 #[derive(Debug, Parser)]
@@ -86,9 +86,6 @@ pub struct Cli {
 
     #[clap(long, default_value = "logs")]
     pub log_directory: String,
-
-    #[clap(long, default_value = "none")]
-    pub start_scenario: String,
 
     #[clap(long, default_value = "simulation")]
     pub ui_mode: String,
@@ -164,7 +161,6 @@ impl Cli {
             settings_file: self.settings_file,
             environment,
             port: self.webui_port,
-            start_scenario: Some(self.start_scenario),
             start_mode: match self.ui_mode.as_str() {
                 "simulation" => dies_webui::UiMode::Simulation,
                 "live" => dies_webui::UiMode::Live,
@@ -185,11 +181,7 @@ impl Cli {
             .await
             .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()
-            .map(|port| {
-                let mut config = BasestationClientConfig::new(port, self.protocol.into());
-                config.set_robot_id_map_from_string(&self.robot_ids);
-                config
-            })
+            .map(|port| BasestationClientConfig::new(port, self.protocol.into()))
     }
 
     /// Configures the vision client based on the CLI arguments.

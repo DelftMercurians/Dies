@@ -38,7 +38,7 @@ def add_control_noise(
     k1, k2 = jr.split(key)
     noise = jr.normal(k1, control.shape) * noise_scale
     scale = jr.uniform(k2, (len(control),), minval=1.0, maxval=1.2)
-    return control * scale + noise
+    return control * scale[:, None, None] + noise
 
 
 class MPCConfig(eqx.Module):

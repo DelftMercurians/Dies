@@ -1,4 +1,4 @@
-use crate::{Angle, Vector2, Vector3, WorldData};
+use crate::{Angle, TeamData, Vector2, Vector3};
 
 /// Convert ssl-vision coordinates to dies coordinates.
 ///
@@ -100,7 +100,7 @@ pub fn distance_to_line(a: Vector2, b: Vector2, p: Vector2) -> f64 {
 /// distance to the line of sight from the closest enemy player.
 ///
 /// The score is higher if the line of sight is further from the enemy players.
-pub fn score_line_of_sight(world: &WorldData, from: Vector2, to: Vector2) -> f64 {
+pub fn score_line_of_sight(world: &TeamData, from: Vector2, to: Vector2) -> f64 {
     let mut min_distance = f64::MAX;
     for player in world.opp_players.iter() {
         let distance = distance_to_line(from, to, player.position);

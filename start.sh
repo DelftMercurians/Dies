@@ -11,6 +11,6 @@ function ctrl_c() {
 # auto restart if the process is dead
 while true
 do
-    cargo run -- --start-scenario play --interface enp4s0
+    cargo run -- --interface enp4s0
     echo "Server crashed, restarting..."
 done

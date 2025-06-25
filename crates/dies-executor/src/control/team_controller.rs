@@ -1,57 +1,51 @@
 use std::collections::{HashMap, HashSet};
 
-use dies_core::{ExecutorSettings, GameState, PlayerCmd, PlayerId, RoleType, WorldData};
+use dies_core::{
+    ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
+    SideAssignment, TeamColor, TeamData,
+};
+use std::sync::Arc;
 
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     MPCController, RobotState,
+    team_context::TeamContext,
 };
 use crate::{
-    roles::{RoleCtx, SkillState},
-    strategy::{AdHocStrategy, Strategy, StrategyCtx},
-    PlayerControlInput, StrategyMap,
+    behavior_tree::{BehaviorTree, BtContext, RhaiHost, RobotSituation},
+    PlayerControlInput,
 };
-
-const ACTIVATION_TIME: f64 = 0.2;
-
-#[derive(Default)]
-struct RoleState {
-    skill_map: HashMap<String, SkillState>,
-}
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
-    strategy: StrategyMap,
-    active_strat: Option<String>,
-    role_states: HashMap<PlayerId, RoleState>,
     settings: ExecutorSettings,
-    halt: AdHocStrategy,
+
+    // mpc stuff
     start_time: std::time::Instant,
     mpc_controller: MPCController,
+
+    // bht stuff
+    player_behavior_trees: HashMap<(PlayerId, GameState), BehaviorTree>,
+    bt_context: BtContext,
+    script_host: RhaiHost,
 }
 
 impl TeamController {
-    /// Create a new team controller.
-    pub fn new(strategy: StrategyMap, settings: &ExecutorSettings) -> Self {
+    pub fn new(settings: &ExecutorSettings, script_path: &str) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
-            strategy,
-            role_states: HashMap::new(),
             settings: settings.clone(),
-            active_strat: None,
-            halt: AdHocStrategy::new(),
             start_time: std::time::Instant::now(),
             mpc_controller: MPCController::new(),
+
+            // bht stuff
+            player_behavior_trees: HashMap::new(),
+            bt_context: BtContext::new(),
+            script_host: RhaiHost::new(script_path),
         };
         team.update_controller_settings(settings);
         team
-    }
-
-    pub fn set_opp_goal_sign(&mut self, opp_goal_sign: f64) {
-        for controller in self.player_controllers.values_mut() {
-            controller.set_opp_goal_sign(opp_goal_sign);
-        }
     }
 
     pub fn update_controller_settings(&mut self, settings: &ExecutorSettings) {
@@ -61,83 +55,88 @@ impl TeamController {
         self.settings = settings.clone();
     }
 
-    /// Update the controllers with the current state of the players.
     pub fn update(
         &mut self,
-        world_data: WorldData,
+        team_color: TeamColor,
+        side_assignment: SideAssignment,
+        team_data: TeamData,
         manual_override: HashMap<PlayerId, PlayerControlInput>,
     ) {
-        // Ensure there is a player controller for every ID
+        let world_data = Arc::new(team_data);
         let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
         for id in detected_ids.iter() {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
                     .insert(*id, PlayerController::new(*id, &self.settings));
-                if self.player_controllers.len() == 1 {
-                    self.player_controllers
-                        .get_mut(id)
-                        .unwrap()
-                        .set_gate_keeper();
+            }
+        }
+
+        let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
+        let current_game_state = world_data.current_game_state.game_state;
+
+        let engine = self.script_host.engine();
+        let engine_guard = engine.read().unwrap();
+        for player_data in &world_data.own_players {
+            let player_id = player_data.id;
+
+            let tree_key = (player_id, current_game_state);
+            let player_bt =
+                self.player_behavior_trees
+                    .entry(tree_key)
+                    .or_insert_with(|| {
+                        match self
+                            .script_host
+                            .build_tree_for_state(player_id, current_game_state)
+                        {
+                            Ok(bt) => bt,
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to build {} BT for player {}: {:?}",
+                                    format!("{:?}", current_game_state),
+                                    player_id,
+                                    e
+                                );
+                                BehaviorTree::default()
+                            }
+                        }
+                    });
+
+            let viz_path_prefix = format!("p{}", player_id);
+            let mut robot_situation = RobotSituation::new(
+                player_id,
+                world_data.clone(),
+                self.bt_context.clone(),
+                viz_path_prefix,
+            );
+
+            let (_status, player_input_opt) = player_bt.tick(&mut robot_situation, &engine_guard);
+            let mut player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
+
+            if player_input.role_type == RoleType::Player {
+                if player_id == PlayerId::new(0) {
+                    player_input.role_type = RoleType::Goalkeeper;
+                } else {
+                    player_input.role_type = RoleType::Player;
                 }
             }
+
+            player_inputs_map.insert(player_id, player_input);
         }
 
-        if self.start_time.elapsed().as_secs_f64() < ACTIVATION_TIME {
-            println!("detected_ids: {:?}", detected_ids);
-            return;
+        let mut inputs_for_comply = PlayerInputs::new();
+        for (id, input) in player_inputs_map.iter() {
+            inputs_for_comply.insert(*id, input.clone());
         }
 
-        let state = world_data.current_game_state.game_state;
-        let strategy = if matches!(
-            world_data.current_game_state.game_state,
-            GameState::BallReplacement(_)
-        ) {
-            &mut self.halt
-        } else if let Some(strategy) = self.strategy.get_strategy(&state) {
-            let name = strategy.name().to_owned();
-            dies_core::debug_string("active_strat", &name);
-            if self.active_strat.as_ref() != Some(&name) {
-                log::info!("Switching to strategy: {}", name);
-                self.active_strat = Some(name);
-                strategy.on_enter(StrategyCtx { world: &world_data });
-            }
-            strategy
-        } else {
-            return;
-        };
-
-        let strategy_ctx = StrategyCtx { world: &world_data };
-        strategy.update(strategy_ctx);
-
-        let mut role_types = HashMap::new();
-        let mut inputs =
-            world_data
-                .own_players
-                .iter()
-                .fold(PlayerInputs::new(), |mut inputs, player_data| {
-                    let id = player_data.id;
-                    let strategy_ctx = StrategyCtx { world: &world_data };
-                    if let Some(role) = strategy.get_role(id, strategy_ctx) {
-                        let role_state = self.role_states.entry(id).or_default();
-                        let role_ctx =
-                            RoleCtx::new(player_data, &world_data, &mut role_state.skill_map);
-                        let mut new_input = role.update(role_ctx);
-                        new_input.role_type = role.role_type();
-                        role_types.insert(id, new_input.role_type);
-                        inputs.insert(id, new_input);
-                    } else {
-                        inputs.insert(id, PlayerControlInput::new());
-                    }
-                    inputs
-                });
-
-        // If in a stop state, override the inputs
-        if matches!(
+        let team_context = TeamContext::new(team_color, side_assignment);
+        let final_player_inputs = if matches!(
             world_data.current_game_state.game_state,
             GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
         ) {
-            inputs = comply(&world_data, inputs);
-        }
+            comply(&world_data, inputs_for_comply, &team_context)
+        } else {
+            inputs_for_comply
+        };
 
         let all_players = world_data
             .own_players
@@ -156,7 +155,7 @@ impl TeamController {
 
                 if let Some(player_data) = player_data {
                     let id = controller.id();
-                    let default_input = inputs.player(id);
+                    let default_input = final_player_inputs.player(id);
                     let input = manual_override.get(&id).unwrap_or(&default_input);
 
                     if let Some(target_pos) = controller.get_target_position(input) {
@@ -182,6 +181,7 @@ impl TeamController {
 
         // Update the player controllers
         let trajectories = self.mpc_controller.get_trajectories();
+        // Update the player controllers
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
                 .own_players
@@ -190,8 +190,9 @@ impl TeamController {
 
             if let Some(player_data) = player_data {
                 let id = controller.id();
-                let default_input = inputs.player(id);
-                let input = manual_override.get(&id).unwrap_or(&default_input);
+                let player_context = team_context.player_context(id);
+                let default_input = final_player_inputs.player(id);
+                let input_to_use = manual_override.get(&id).unwrap_or(&default_input);
 
                 // Set MPC control result if available
                 if let Some(mpc_control) = mpc_controls.get(&id) {
@@ -251,17 +252,18 @@ impl TeamController {
                     .map(|i| !i.velocity.is_zero())
                     .unwrap_or(false);
 
-                let role_type = role_types.get(&id).cloned().unwrap_or_default();
+                let role_type = input_to_use.role_type;
                 let obstacles = world_data.get_obstacles_for_player(role_type);
 
                 controller.update(
                     player_data,
                     &world_data,
-                    input,
+                    input_to_use,
                     world_data.dt,
                     is_manual,
                     obstacles,
                     &all_players,
+                    &player_context,
                 );
             } else {
                 controller.increment_frames_misses();
@@ -269,17 +271,24 @@ impl TeamController {
         }
     }
 
-    /// Get the currently active commands for the players.
-    pub fn commands(&mut self) -> Vec<PlayerCmd> {
+    pub fn commands(
+        &mut self,
+        side_assignment: SideAssignment,
+        color: TeamColor,
+    ) -> Vec<PlayerCmd> {
+        let untransformer = PlayerCmdUntransformer::new(side_assignment, color);
+        let team_context = TeamContext::new(color, side_assignment);
         self.player_controllers
             .values_mut()
-            .map(|c| c.command())
+            .map(|c| {
+                let player_context = team_context.player_context(c.id());
+                c.command(&player_context, untransformer.clone())
+            })
             .collect()
     }
 }
 
-/// Override the inputs to comply with the stop state.
-fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
+fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContext) -> PlayerInputs {
     if let (Some(ball), Some(field)) = (world_data.ball.as_ref(), world_data.field_geom.as_ref()) {
         let game_state = world_data.current_game_state.game_state;
         let ball_pos = ball.position.xy();
@@ -323,13 +332,13 @@ fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
                 if let GameState::BallReplacement(pos) = game_state {
                     let line_start = ball_pos;
                     let line_end = pos;
-                    dies_core::debug_line(
+                    team_context.debug_line_colored(
                         "ball_placement",
                         line_start,
                         line_end,
                         dies_core::DebugColor::Orange,
                     );
-                    dies_core::debug_cross(
+                    team_context.debug_cross_colored(
                         "ball_placement_target",
                         pos,
                         dies_core::DebugColor::Orange,
@@ -350,8 +359,8 @@ fn comply(world_data: &WorldData, inputs: PlayerInputs) -> PlayerInputs {
                     );
                     new_input.with_position(target);
                 } else {
-                    dies_core::debug_remove("ball_placement");
-                    dies_core::debug_remove("ball_placement_target");
+                    team_context.debug_remove("ball_placement");
+                    team_context.debug_remove("ball_placement_target");
                 }
 
                 (*id, new_input)

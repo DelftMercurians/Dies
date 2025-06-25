@@ -228,7 +228,7 @@ pub enum KickerControlInput {
     /// Charge the kicker capacitor
     Arm,
     /// Engage the kicker. Should be sent after ~10s of charging and only once.
-    Kick,
+    Kick { force: f64 },
     /// Discharge the kicker capacitor without kicking
     Disarm,
 }

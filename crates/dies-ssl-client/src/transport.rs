@@ -83,8 +83,6 @@ impl<I: Message, O> Transport<I, O> {
             .context(format!("Failed to bind to {}", addr))?;
 
         let socket = UdpSocket::from_std(raw_socket.into())?;
-        println!("Created UDP socket bound to {} ({:?})", addr, socket);
-
         Ok(Self {
             transport_type: TransportType::Udp { socket },
             buf: vec![0u8; 2 * 1024],

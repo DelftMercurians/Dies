@@ -12,25 +12,88 @@ pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
 };
 use dies_core::{
-    ExecutorSettings, FieldMask, GameState, PlayerFeedbackMsg, PlayerId, PlayerModel,
-    TrackerSettings, Vector2, WorldData, WorldInstant,
+    ExecutorSettings, FieldMask, GameState, PlayerFeedbackMsg, PlayerId, RawGameStateData,
+    SideAssignment, TeamColor, TrackerSettings, Vector2, WorldData, WorldInstant,
 };
 use player::PlayerTracker;
 
 use crate::game_state::GameStateTracker;
 
-/// A struct to track the world state.
+/// Tracks players for a single team
+struct TeamTracker {
+    players: HashMap<PlayerId, PlayerTracker>,
+    controlled: bool,
+}
+
+impl TeamTracker {
+    fn new(controlled: bool) -> Self {
+        Self {
+            players: HashMap::new(),
+            controlled,
+        }
+    }
+
+    fn update_settings(&mut self, settings: &TrackerSettings) {
+        for player_tracker in self.players.values_mut() {
+            player_tracker.update_settings(settings);
+        }
+    }
+
+    fn update_from_vision(
+        &mut self,
+        player_id: PlayerId,
+        player: &dies_protos::ssl_vision_detection::SSL_DetectionRobot,
+        t_capture: f64,
+        tracker_settings: &TrackerSettings,
+    ) {
+        let tracker = self
+            .players
+            .entry(player_id)
+            .or_insert_with(|| PlayerTracker::new(player_id, tracker_settings));
+        tracker.update(t_capture, player);
+    }
+
+    fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
+        if let Some(tracker) = self.players.get_mut(&feedback.id) {
+            tracker.update_from_feedback(feedback, time);
+            self.controlled = true;
+        }
+    }
+
+    fn check_players_gone(&mut self, t_capture: f64, time: WorldInstant) {
+        for (_, tracker) in self.players.iter_mut() {
+            tracker.check_is_gone(t_capture, time);
+        }
+    }
+
+    fn get_players(&self) -> Vec<PlayerData> {
+        let mut players = Vec::new();
+        for player_tracker in self.players.values() {
+            if player_tracker.is_gone {
+                continue;
+            }
+            if let Some(player_data) = player_tracker.get() {
+                players.push(player_data);
+            }
+        }
+        players
+    }
+
+    fn is_init(&self) -> bool {
+        self.players.values().any(|t| t.is_init())
+    }
+}
+
+/// A struct to track the world state with team ID support.
 pub struct WorldTracker {
-    /// Whether our team color is blue
-    is_blue: bool,
-    /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
-    /// converting coordinates.
-    play_dir_x: f64,
-    own_players_tracker: HashMap<PlayerId, PlayerTracker>,
-    opp_players_tracker: HashMap<PlayerId, PlayerTracker>,
+    /// Track teams by ID
+    blue_team: TeamTracker,
+    yellow_team: TeamTracker,
     ball_tracker: BallTracker,
     game_state_tracker: GameStateTracker,
     field_geometry: Option<FieldGeometry>,
+    /// Automatically detected from referee messages
+    side_assignment: Option<SideAssignment>,
     /// Local timestamp of the first detection frame received from vision
     first_t_received: Option<WorldInstant>,
     /// Local timestamp of the last received detection frame, in seconds. This is
@@ -44,50 +107,46 @@ pub struct WorldTracker {
     /// `first_t_capture`
     last_t_capture: Option<f64>,
     tracker_settings: TrackerSettings,
-    player_model: PlayerModel,
 }
 
 impl WorldTracker {
-    /// Create a new world tracker from a config.
-    pub fn new(settings: &ExecutorSettings) -> Self {
+    /// Create a new world tracker with default team configuration.
+    pub fn new(settings: &ExecutorSettings, controlled_teams: &[TeamColor]) -> Self {
         Self {
-            is_blue: settings.tracker_settings.is_blue,
-            play_dir_x: settings.tracker_settings.initial_opp_goal_x,
-            own_players_tracker: HashMap::new(),
-            opp_players_tracker: HashMap::new(),
+            blue_team: TeamTracker::new(controlled_teams.contains(&TeamColor::Blue)),
+            yellow_team: TeamTracker::new(controlled_teams.contains(&TeamColor::Yellow)),
             ball_tracker: BallTracker::new(&settings.tracker_settings),
-            game_state_tracker: GameStateTracker::new(settings.tracker_settings.initial_opp_goal_x),
+            game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
+            side_assignment: None, // Will be detected from referee messages
             first_t_received: None,
             last_t_received: None,
             dt_received: None,
             first_t_capture: None,
             last_t_capture: None,
             tracker_settings: settings.tracker_settings.clone(),
-            player_model: settings.into(),
+        }
+    }
+
+    /// Get the list of controlled team IDs.
+    pub fn set_controlled_teams(&mut self, controlled_teams: &[TeamColor]) {
+        self.blue_team.controlled = controlled_teams.contains(&TeamColor::Blue);
+        self.yellow_team.controlled = controlled_teams.contains(&TeamColor::Yellow);
+    }
+
+    /// Get the team tracker for a given team ID.
+    fn get_team_tracker_mut(&mut self, team_color: TeamColor) -> Option<&mut TeamTracker> {
+        match team_color {
+            TeamColor::Blue => Some(&mut self.blue_team),
+            TeamColor::Yellow => Some(&mut self.yellow_team),
         }
     }
 
     pub fn update_settings(&mut self, settings: &ExecutorSettings) {
-        let tracker_settings = &settings.tracker_settings;
-        assert_eq!(
-            tracker_settings.initial_opp_goal_x, self.play_dir_x,
-            "Changing the initial opponent goal x coordinate is not supported"
-        );
-        assert_eq!(
-            tracker_settings.is_blue, self.is_blue,
-            "Changing the team color is not supported"
-        );
-
-        self.player_model = settings.into();
-        self.tracker_settings = tracker_settings.clone();
-        for player_tracker in self.own_players_tracker.values_mut() {
-            player_tracker.update_settings(tracker_settings);
-        }
-        for player_tracker in self.opp_players_tracker.values_mut() {
-            player_tracker.update_settings(tracker_settings);
-        }
-        self.ball_tracker.update_settings(tracker_settings);
+        self.tracker_settings = settings.tracker_settings.clone();
+        self.blue_team.update_settings(&self.tracker_settings);
+        self.yellow_team.update_settings(&self.tracker_settings);
+        self.ball_tracker.update_settings(&self.tracker_settings);
 
         // Log the field mask lines
         if let Some(geom) = self.field_geometry.as_ref() {
@@ -148,23 +207,6 @@ impl WorldTracker {
         }
     }
 
-    /// Update the sign of the enemy goal's x coordinate (in ssl-vision coordinates).
-    pub fn set_play_dir_x(&mut self, sign: f64) {
-        self.play_dir_x = sign.signum();
-        self.ball_tracker.set_play_dir_x(self.play_dir_x);
-        self.game_state_tracker.set_play_dir_x(self.play_dir_x);
-        for player_tracker in self.own_players_tracker.values_mut() {
-            player_tracker.set_play_dir_x(self.play_dir_x);
-        }
-        for player_tracker in self.opp_players_tracker.values_mut() {
-            player_tracker.set_play_dir_x(self.play_dir_x);
-        }
-    }
-
-    pub fn get_play_dir_x(&self) -> f64 {
-        self.play_dir_x
-    }
-
     /// Update the world state from a referee message.
     pub fn update_from_referee(&mut self, data: &Referee) {
         self.game_state_tracker
@@ -182,6 +224,15 @@ impl WorldTracker {
             }
         } else {
             log::error!("Ball not detected, cannot update game state");
+        }
+
+        // Detect side assignment from referee message
+        if let Some(blue_on_positive) = data.blue_team_on_positive_half {
+            self.side_assignment = Some(if blue_on_positive {
+                SideAssignment::BlueOnPositive
+            } else {
+                SideAssignment::YellowOnPositive
+            });
         }
     }
 
@@ -202,12 +253,9 @@ impl WorldTracker {
             let first_t_capture = *self.first_t_capture.get_or_insert(t_capture);
             self.last_t_capture = Some(t_capture - first_t_capture);
 
-            let own_players = if self.is_blue {
-                &frame.robots_blue
-            } else {
-                &frame.robots_yellow
-            };
-            for player in own_players {
+            let tracker_settings = self.tracker_settings.clone();
+            // Update players based on current team configuration
+            for player in &frame.robots_blue {
                 let in_mask = self.tracker_settings.field_mask.contains(
                     player.x(),
                     player.y(),
@@ -218,22 +266,14 @@ impl WorldTracker {
                 }
 
                 let id = PlayerId::new(player.robot_id());
-                let tracker = self.own_players_tracker.get_mut(&id);
-                if let Some(tracker) = tracker {
-                    tracker.update(t_capture, player);
+
+                // Determine which team this blue player belongs to
+                if let Some(team_tracker) = self.get_team_tracker_mut(TeamColor::Blue) {
+                    team_tracker.update_from_vision(id, player, t_capture, &tracker_settings);
                 }
             }
-            // Check for missed players
-            for (_, tracker) in self.own_players_tracker.iter_mut() {
-                tracker.check_is_gone(t_capture, time, true);
-            }
 
-            let opp_players = if self.is_blue {
-                &frame.robots_yellow
-            } else {
-                &frame.robots_blue
-            };
-            for player in opp_players {
+            for player in &frame.robots_yellow {
                 let in_mask = self.tracker_settings.field_mask.contains(
                     player.x(),
                     player.y(),
@@ -244,16 +284,16 @@ impl WorldTracker {
                 }
 
                 let id = PlayerId::new(player.robot_id());
-                let tracker = self
-                    .opp_players_tracker
-                    .entry(id)
-                    .or_insert_with(|| PlayerTracker::new(id, &self.tracker_settings));
-                tracker.update(t_capture, player);
+
+                // Determine which team this yellow player belongs to
+                if let Some(team_tracker) = self.get_team_tracker_mut(TeamColor::Yellow) {
+                    team_tracker.update_from_vision(id, player, t_capture, &tracker_settings);
+                }
             }
+
             // Check for missed players
-            for (_, tracker) in self.opp_players_tracker.iter_mut() {
-                tracker.check_is_gone(t_capture, time, false);
-            }
+            self.blue_team.check_players_gone(t_capture, time);
+            self.yellow_team.check_players_gone(t_capture, time);
 
             // Update ball
             self.ball_tracker.update(
@@ -275,12 +315,28 @@ impl WorldTracker {
         }
     }
 
-    pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
-        let tracker = self
-            .own_players_tracker
-            .entry(feedback.id)
-            .or_insert_with(|| PlayerTracker::new(feedback.id, &self.tracker_settings));
-        tracker.update_from_feedback(feedback, time);
+    pub fn update_from_feedback(
+        &mut self,
+        team_color: TeamColor,
+        feedback: &PlayerFeedbackMsg,
+        time: WorldInstant,
+    ) {
+        if team_color == TeamColor::Blue && self.blue_team.controlled {
+            self.blue_team.update_from_feedback(feedback, time);
+        } else if team_color == TeamColor::Yellow && self.yellow_team.controlled {
+            self.yellow_team.update_from_feedback(feedback, time);
+        } else {
+            log::warn!(
+                "Received feedback for player {} that belongs to team {} but is not controlled",
+                feedback.id,
+                team_color
+            );
+        }
+    }
+
+    /// Get the detected side assignment, if available.
+    pub fn get_side_assignment(&self) -> Option<&SideAssignment> {
+        self.side_assignment.as_ref()
     }
 
     /// Check if the world state is initialized.
@@ -289,12 +345,7 @@ impl WorldTracker {
     /// seen at least twice (so that velocities can be calculated), and the field
     /// geometry has been received.
     pub fn is_init(&self) -> bool {
-        let any_player_init = self
-            .own_players_tracker
-            .values()
-            .chain(self.opp_players_tracker.values())
-            .any(|t| t.is_init());
-
+        let any_player_init = self.blue_team.is_init() || self.yellow_team.is_init();
         let ball_init = self.ball_tracker.is_init();
         let field_geom_init = self.field_geometry.is_some();
 
@@ -303,41 +354,19 @@ impl WorldTracker {
 
     /// Get the current world state.
     ///
-    /// Returns `None` if the world state is not initialized (see
-    /// [`WorldTracker::is_init`]).
+    /// Returns team-agnostic WorldData with team configuration.
     pub fn get(&mut self) -> WorldData {
-        let field_geom = if let Some(v) = &self.field_geometry {
-            Some(v)
-        } else {
-            None
-        };
+        let field_geom = self.field_geometry.clone();
 
-        let mut own_players = Vec::new();
-        for player_tracker in self.own_players_tracker.values() {
-            if player_tracker.is_gone {
-                continue;
-            }
-            if let Some(player_data) = player_tracker.get() {
-                own_players.push(player_data);
-            }
-        }
+        let blue_players = self.blue_team.get_players();
+        let yellow_players = self.yellow_team.get_players();
 
-        let mut opp_players = Vec::new();
-        for player_tracker in self.opp_players_tracker.values() {
-            if player_tracker.is_gone {
-                continue;
-            }
-            if let Some(player_data) = player_tracker.get() {
-                opp_players.push(player_data);
-            }
-        }
-
-        let game_state = GameStateData {
+        let game_state = RawGameStateData {
             game_state: self.game_state_tracker.get(),
-            us_operating: match self.game_state_tracker.get_operator_is_blue() {
-                Some(true) => self.is_blue,
-                Some(false) => !self.is_blue,
-                None => true,
+            operating_team: match self.game_state_tracker.get_operator_is_blue() {
+                Some(true) => TeamColor::Blue,
+                Some(false) => TeamColor::Yellow,
+                None => TeamColor::Blue, // Default fallback
             },
         };
 
@@ -345,261 +374,15 @@ impl WorldTracker {
             dt: self.dt_received.unwrap_or(0.0),
             t_capture: self.last_t_capture.unwrap_or(0.0),
             t_received: self.last_t_received.unwrap_or(0.0),
-            own_players: own_players.into_iter().collect(),
-            opp_players: opp_players.into_iter().collect(),
+            blue_team: blue_players,
+            yellow_team: yellow_players,
             ball: self.ball_tracker.get(),
-            field_geom: field_geom.cloned(),
-            current_game_state: game_state,
-            player_model: self.player_model.clone(),
+            field_geom,
+            game_state,
+            side_assignment: self
+                .side_assignment
+                .clone()
+                .unwrap_or(SideAssignment::YellowOnPositive),
         }
     }
 }
-
-// #[cfg(test)]
-// mod test {
-//     use super::*;
-//     use dies_protos::{
-//         ssl_gc_referee_message::referee::Command,
-//         ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
-//         ssl_vision_geometry::{SSL_GeometryData, SSL_GeometryFieldSize},
-//     };
-//     use std::time::Duration;
-
-//     #[test]
-//     fn test_init() {
-//         let mut tracker = WorldTracker::new(&ExecutorSettings {
-//             tracker_settings: TrackerSettings {
-//                 is_blue: true,
-//                 initial_opp_goal_x: 1.0,
-//                 ..Default::default()
-//             },
-//             ..Default::default()
-//         });
-
-//         // First detection frame
-//         let mut frame = SSL_DetectionFrame::new();
-//         frame.set_t_capture(1.0);
-//         // Add ball
-//         let mut ball = SSL_DetectionBall::new();
-//         ball.set_x(0.0);
-//         ball.set_y(0.0);
-//         ball.set_z(0.0);
-//         frame.balls.push(ball.clone());
-//         // Add player
-//         let mut player = SSL_DetectionRobot::new();
-//         player.set_robot_id(1);
-//         player.set_x(100.0);
-//         player.set_y(200.0);
-//         player.set_orientation(0.0);
-//         frame.robots_blue.push(player.clone());
-//         let mut packet_detection = SSL_WrapperPacket::new();
-//         packet_detection.detection = Some(frame.clone()).into();
-
-//         // Add field geometry
-//         let mut geom = SSL_GeometryData::new();
-//         let mut field = SSL_GeometryFieldSize::new();
-//         field.set_field_length(9000);
-//         field.set_field_width(6000);
-//         field.set_goal_width(1000);
-//         field.set_goal_depth(200);
-//         field.set_boundary_width(300);
-//         geom.field = Some(field).into();
-//         let mut packet_geom = SSL_WrapperPacket::new();
-//         packet_geom.geometry = Some(geom).into();
-
-//         tracker.update_from_vision(&packet_detection, WorldInstant::now_real());
-//         assert!(!tracker.is_init());
-
-//         tracker.update_from_vision(&packet_geom, WorldInstant::now_real());
-//         tracker.update_from_feedback(
-//             &PlayerFeedbackMsg::empty(PlayerId::new(1)),
-//             WorldInstant::now_real(),
-//         );
-//         assert!(!tracker.is_init());
-
-//         // Second detection frame
-//         frame.set_t_capture(2.0);
-//         frame.robots_blue.get_mut(0).unwrap().set_x(200.0);
-//         let mut packet_detection = SSL_WrapperPacket::new();
-//         packet_detection.detection = Some(frame).into();
-
-//         tracker.update_from_vision(&packet_detection, WorldInstant::now_real());
-//         assert!(tracker.is_init());
-
-//         let data = tracker.get();
-
-//         // Check player
-//         assert!(data.own_players.len() == 1);
-//         assert!(data.opp_players.is_empty());
-//         assert!(data.own_players[0].raw_position.x == 200.0);
-//         assert!(data.own_players[0].raw_position.y == 200.0);
-
-//         // Check ball
-//         assert!(data.ball.is_some());
-//         let ball = data.ball.unwrap();
-//         assert!(ball.raw_position[0].x == 0.0);
-//         assert!(ball.raw_position[0].y == 0.0);
-
-//         // Check field geometry
-//         let field_geom = data.field_geom.unwrap();
-//         assert!(field_geom.field_length == 9000.0);
-//         assert!(field_geom.field_width == 6000.0);
-//         assert!(field_geom.goal_width == 1000.0);
-//         assert!(field_geom.goal_depth == 200.0);
-//         assert!(field_geom.boundary_width == 300.0);
-//     }
-
-//     pub struct RefereeBuilder {
-//         /// for simplicity, this can be enhanced later
-//         pub command: Command,
-//     }
-
-//     impl RefereeBuilder {
-//         pub fn new(command: Command) -> RefereeBuilder {
-//             RefereeBuilder { command }
-//         }
-
-//         #[allow(dead_code)]
-//         pub fn command(mut self, command: Command) -> Self {
-//             self.command = command;
-//             self
-//         }
-
-//         pub fn build(self) -> Referee {
-//             let mut referee = Referee::new();
-//             referee.set_command(self.command);
-//             referee
-//         }
-//     }
-
-//     pub struct Director;
-//     impl Director {
-//         pub fn process_commands(commands: Vec<Command>) -> Vec<Referee> {
-//             commands
-//                 .into_iter()
-//                 .map(|command| RefereeBuilder::new(command).build())
-//                 .collect()
-//         }
-//     }
-
-//     #[test]
-//     fn test_game_state_tracker_simple() {
-//         let mut tracker = WorldTracker::new(&ExecutorSettings {
-//             tracker_settings: TrackerSettings {
-//                 is_blue: true,
-//                 initial_opp_goal_x: 1.0,
-//                 ..Default::default()
-//             },
-//             ..Default::default()
-//         });
-//         let messages = Director::process_commands(vec![
-//             Command::HALT,
-//             Command::STOP,
-//             Command::STOP,
-//             Command::FORCE_START,
-//         ]);
-//         tracker.update_from_referee(&messages[0]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Halt);
-//         tracker.update_from_referee(&messages[1]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Stop);
-//         tracker.update_from_referee(&messages[2]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Stop);
-//         tracker.update_from_referee(&messages[3]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Run);
-//     }
-
-//     #[test]
-//     fn test_game_state_tracker_freekick() {
-//         let mut tracker = WorldTracker::new(&ExecutorSettings {
-//             tracker_settings: TrackerSettings {
-//                 is_blue: true,
-//                 initial_opp_goal_x: 1.0,
-//                 ..Default::default()
-//             },
-//             ..Default::default()
-//         });
-//         let mut frame = SSL_DetectionFrame::new();
-//         frame.set_t_capture(0.0);
-//         let mut ball = SSL_DetectionBall::new();
-//         ball.set_x(1.0);
-//         ball.set_y(2.0);
-//         ball.set_z(3.0);
-//         frame.balls.push(ball.clone());
-//         tracker.ball_tracker.update(&frame);
-//         let mut frame = SSL_DetectionFrame::new();
-//         frame.set_t_capture(1.0);
-//         let mut ball = SSL_DetectionBall::new();
-//         ball.set_x(2.0);
-//         ball.set_y(4.0);
-//         ball.set_z(6.0);
-//         frame.balls.push(ball.clone());
-//         tracker.ball_tracker.update(&frame);
-//         let messages = Director::process_commands(vec![
-//             Command::STOP,
-//             Command::DIRECT_FREE_YELLOW,
-//             Command::DIRECT_FREE_YELLOW,
-//             Command::STOP,
-//         ]);
-
-//         tracker.update_from_referee(&messages[0]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Stop);
-//         tracker.update_from_referee(&messages[1]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::FreeKick);
-
-//         std::thread::sleep(Duration::from_secs(6));
-//         tracker.update_from_referee(&messages[2]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Run);
-//         tracker.update_from_referee(&messages[3]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Stop);
-//     }
-
-//     #[test]
-//     fn test_game_penalty_stop_early() {
-//         let mut tracker = WorldTracker::new(&ExecutorSettings {
-//             tracker_settings: TrackerSettings {
-//                 is_blue: true,
-//                 initial_opp_goal_x: 1.0,
-//                 ..Default::default()
-//             },
-//             ..Default::default()
-//         });
-//         let mut frame = SSL_DetectionFrame::new();
-//         frame.set_t_capture(0.0);
-//         let mut ball = SSL_DetectionBall::new();
-//         ball.set_x(1.0);
-//         ball.set_y(2.0);
-//         ball.set_z(3.0);
-//         frame.balls.push(ball.clone());
-//         tracker.ball_tracker.update(&frame);
-//         let mut frame = SSL_DetectionFrame::new();
-//         frame.set_t_capture(1.0);
-//         let mut ball = SSL_DetectionBall::new();
-//         ball.set_x(2.0);
-//         ball.set_y(4.0);
-//         ball.set_z(6.0);
-//         frame.balls.push(ball.clone());
-//         tracker.ball_tracker.update(&frame);
-//         let messages = Director::process_commands(vec![
-//             Command::PREPARE_PENALTY_YELLOW,
-//             Command::NORMAL_START,
-//             Command::STOP,
-//         ]);
-
-//         tracker.update_from_referee(&messages[0]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::PreparePenalty);
-//         tracker.update_from_referee(&messages[1]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Penalty);
-
-//         std::thread::sleep(Duration::from_secs(5));
-
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Penalty);
-
-//         tracker.update_from_referee(&messages[2]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Stop);
-
-//         std::thread::sleep(Duration::from_secs(6));
-
-//         tracker.update_from_referee(&messages[2]);
-//         assert_eq!(tracker.game_state_tracker.get(), GameState::Stop);
-//     }
-// }

@@ -14,7 +14,8 @@ use axum::{
     Router,
 };
 use dies_core::{
-    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, WorldUpdate,
+    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, TeamColor,
+    WorldUpdate,
 };
 use dies_executor::{ControlMsg, ExecutorHandle};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -30,7 +31,7 @@ pub struct ServerState {
     pub is_live_available: bool,
     pub update_rx: watch::Receiver<Option<WorldUpdate>>,
     pub debug_sub: DebugSubscriber,
-    pub basestation_feedback: RwLock<HashMap<PlayerId, PlayerFeedbackMsg>>,
+    pub basestation_feedback: RwLock<HashMap<(Option<TeamColor>, PlayerId), PlayerFeedbackMsg>>,
     pub cmd_tx: broadcast::Sender<UiCommand>,
     pub ui_mode: RwLock<UiMode>,
     pub executor_status: RwLock<ExecutorStatus>,
@@ -164,9 +165,9 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         tokio::spawn(async move {
             match env {
                 UiEnvironment::WithLive { mut bs_handle, .. } => {
-                    while let Ok(msg) = bs_handle.recv().await {
+                    while let Ok((color, msg)) = bs_handle.recv().await {
                         let mut feedback = state.basestation_feedback.write().unwrap();
-                        feedback.insert(msg.id, msg);
+                        feedback.insert((color, msg.id), msg);
                     }
                 }
                 UiEnvironment::SimulationOnly => {}
@@ -187,12 +188,6 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     // Start the web server
     let web_task =
         tokio::spawn(async move { start_webserver(config.port, state, shutdown_rx).await });
-
-    if let Some(scenario) = config.start_scenario {
-        if let Some(scenario) = dies_executor::scenarios::ScenarioType::get_by_name(&scenario) {
-            let _ = cmd_tx.send(UiCommand::StartScenario { scenario });
-        }
-    }
 
     // Graceful shutdown
     executor_task
@@ -224,7 +219,6 @@ async fn start_webserver(
         .route("/api/executor", get(routes::get_executor_info))
         .route("/api/world-state", get(routes::get_world_state))
         .route("/api/ui-status", get(routes::get_ui_status))
-        .route("/api/scenarios", get(routes::get_scenarios))
         .route("/api/ws", get(routes::websocket))
         .route("/api/settings", get(routes::get_executor_settings))
         .route("/api/basestation", get(routes::get_basesation_info))
@@ -232,6 +226,7 @@ async fn start_webserver(
         .route("/api/settings", post(routes::post_executor_settings))
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))
+        .route("/api/list", get(routes::list_files))
         .nest_service("/", serve_dir_with_csp.layer(serve_dir.clone()))
         .fallback_service(serve_dir)
         .with_state(Arc::clone(&state));

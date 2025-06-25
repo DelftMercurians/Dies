@@ -41,7 +41,7 @@ pub async fn test_radio(
             }
 
             println!("Sending {:?}", cmd);
-            bs_handle.send_no_wait(dies_core::PlayerCmd::Move(cmd));
+            bs_handle.send_no_wait(dies_core::TeamColor::Blue, dies_core::PlayerCmd::Move(cmd));
         }
     }
 

@@ -41,6 +41,15 @@ pub enum DebugShape {
         end: Vector2,
         color: DebugColor,
     },
+    TreeNode {
+        name: String,
+        id: String,
+        children_ids: Vec<String>,
+        is_active: bool,
+        node_type: String,
+        internal_state: Option<String>,
+        additional_info: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,78 +135,6 @@ impl DebugSubscriber {
     }
 }
 
-/// A debug record that will be removed when dropped.
-#[derive(Debug)]
-pub struct DebugRecord {
-    key: String,
-}
-
-impl Default for DebugRecord {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl DebugRecord {
-    /// Create a new debug record with a random key.
-    pub fn new() -> Self {
-        Self {
-            key: uuid::Uuid::new_v4().to_string(),
-        }
-    }
-
-    /// Set the value of the debug record.
-    pub fn set(&self, value: DebugValue) {
-        debug_record(&self.key, value);
-    }
-
-    /// Set a cross shape for the debug record.
-    pub fn set_cross(&self, center: Vector2, color: DebugColor) {
-        self.set(DebugValue::Shape(DebugShape::Cross { center, color }));
-    }
-
-    /// Set a filled circle shape for the debug record.
-    pub fn set_circle_fill(&self, center: Vector2, radius: f64, fill: DebugColor) {
-        self.set(DebugValue::Shape(DebugShape::Circle {
-            center,
-            radius,
-            fill: Some(fill),
-            stroke: None,
-        }));
-    }
-
-    /// Set a hollow circle shape for the debug record.
-    pub fn set_circle_stroke(&self, center: Vector2, radius: f64, stroke: DebugColor) {
-        self.set(DebugValue::Shape(DebugShape::Circle {
-            center,
-            radius,
-            fill: None,
-            stroke: Some(stroke),
-        }));
-    }
-
-    /// Set a line shape for the debug record.
-    pub fn set_line(&self, start: Vector2, end: Vector2, color: DebugColor) {
-        self.set(DebugValue::Shape(DebugShape::Line { start, end, color }));
-    }
-
-    /// Set a numeric value for the debug record.
-    pub fn set_value(&self, value: f64) {
-        self.set(DebugValue::Number(value));
-    }
-
-    /// Set a string value for the debug record.
-    pub fn set_string(&self, value: impl Into<String>) {
-        self.set(DebugValue::String(value.into()));
-    }
-}
-
-impl Drop for DebugRecord {
-    fn drop(&mut self) {
-        debug_remove(self.key.clone());
-    }
-}
-
 /// Clear all debug messages.
 pub fn debug_clear() {
     if let Some(sender) = DEBUG_MESSAGES.get() {
@@ -266,6 +203,31 @@ pub fn debug_line(key: impl Into<String>, start: Vector2, end: Vector2, color: D
     debug_record(
         key.into(),
         DebugValue::Shape(DebugShape::Line { start, end, color }),
+    );
+}
+
+/// Record a debug message with a tree node.
+pub fn debug_tree_node(
+    key: impl Into<String>,
+    name: impl Into<String>,
+    id: impl Into<String>,
+    children_ids: impl Into<Vec<String>>,
+    is_active: bool,
+    node_type: impl Into<String>,
+    internal_state: Option<String>,
+    additional_info: Option<String>,
+) {
+    debug_record(
+        key.into(),
+        DebugValue::Shape(DebugShape::TreeNode {
+            name: name.into(),
+            id: id.into(),
+            children_ids: children_ids.into(),
+            is_active,
+            node_type: node_type.into(),
+            internal_state,
+            additional_info,
+        }),
     );
 }
 

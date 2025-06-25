@@ -264,7 +264,7 @@ impl LogFile {
 
 #[cfg(test)]
 mod tests {
-    use dies_core::{mock_world_data, DebugValue};
+    use dies_core::{mock_team_data, mock_world_data, DebugValue};
     use dies_protos::dies_log_line::LogLevel;
     use flate2::read::GzDecoder;
     use tempfile::NamedTempFile;

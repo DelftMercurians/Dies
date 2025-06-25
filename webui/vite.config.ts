@@ -24,6 +24,15 @@ export default defineConfig({
     target: "es2020",
     outDir: "../crates/dies-webui/static",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        inlineDynamicImports: false,
+        format: "iife",
+        manualChunks: () => {
+          return "Any string";
+        },
+      },
+    },
   },
   plugins: [react()],
   resolve: {

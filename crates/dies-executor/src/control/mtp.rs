@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use dies_core::Vector2;
 
+use super::team_context::PlayerContext;
+
 /// Minimum Time Path
 pub struct MTP {
     setpoint: Option<Vector2>,
@@ -50,6 +52,7 @@ impl MTP {
         max_speed: f64,
         max_decel: f64,
         carefullness: f64,
+        player_context: &PlayerContext,
     ) -> Vector2 {
         let setpoint = match self.setpoint {
             Some(s) => s,
@@ -72,20 +75,6 @@ impl MTP {
         };
         let current_speed = velocity.magnitude();
 
-        // Overshoot detection
-        // if displacement.dot(&velocity) < 0.0 {
-        //     // Proportional control to reduce overshoot
-        //     let proportional_velocity = direction * distance * self.kp;
-        //     let dv = proportional_velocity - velocity;
-        //     // println!("Overshoot case returning");
-        //     // dies_core::debug_string("p5.Goal", format!("{:?}", velocity + dv.cap_magnitude(self.max_decel * dt)));
-
-        //     // besides decreasing the velocity with dv, we also go in the opposite direction to compensate for the overshoot
-
-        //     dies_core::debug_string("p5.MTPMode", "Overshoot");
-        //     return -velocity + dv.cap_magnitude(self.max_decel * dt);
-        // }
-
         let care_factor = carefullness * 0.2;
         let time_to_target = distance / max_speed;
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
@@ -101,17 +90,17 @@ impl MTP {
                 v_control *= 5.0 * (1.0 + care_factor);
             }
 
-            dies_core::debug_string("p5.MTPMode", "Proportional");
+            player_context.debug_string("MTPMode", "Proportional");
             let new_speed = current_speed + cap_magnitude(v_control, max_decel * dt);
             direction * new_speed
         } else if current_speed < max_speed {
             // Acceleration phase
-            dies_core::debug_string("p5.MTPMode", "Acceleration");
+            player_context.debug_string("MTPMode", "Acceleration");
             let new_speed = current_speed + max_accel * dt;
             direction * new_speed
         } else {
             // Cruise phase
-            dies_core::debug_string("p5.MTPMode", "Cruise");
+            player_context.debug_string("MTPMode", "Cruise");
             direction * max_speed
         }
     }

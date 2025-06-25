@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 
 use dies_core::{
-    to_dies_coords2, to_dies_yaw, Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings,
-    Vector2, WorldInstant,
+    Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2, WorldInstant,
 };
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
@@ -31,9 +30,8 @@ struct StoredData {
 pub struct PlayerTracker {
     /// Player's unique id
     id: PlayerId,
-    /// The sign of the enemy goal's x coordinate in ssl-vision coordinates. Used for
-    /// converting coordinates.
-    play_dir_x: f64,
+    /// Whether this player's team is controlled (we receive feedback)
+    is_controlled: bool,
 
     /// Kalman filter for the player's position and velocity
     filter: MaybeKalman<2, 4>,
@@ -52,8 +50,6 @@ pub struct PlayerTracker {
     breakbeam_detections: VecDeque<usize>,
 
     pub is_gone: bool,
-    fb_reappaerance_time: Option<f64>,
-    det_reappaerance_time: Option<f64>,
     rolling_control: f64,
     rolling_vision: f64,
 }
@@ -63,7 +59,7 @@ impl PlayerTracker {
     pub fn new(id: PlayerId, settings: &TrackerSettings) -> PlayerTracker {
         PlayerTracker {
             id,
-            play_dir_x: settings.initial_opp_goal_x,
+            is_controlled: false, // Will be set to true when feedback is received
             filter: MaybeKalman::new(
                 0.1,
                 settings.player_unit_transition_var,
@@ -75,11 +71,9 @@ impl PlayerTracker {
             last_detection: None,
             breakbeam_detections: VecDeque::with_capacity(BREAKBEAM_WINDOW),
             is_gone: false,
-            fb_reappaerance_time: None,
-            det_reappaerance_time: None,
             last_feedback_time: None,
-            rolling_vision: 0.0,
-            rolling_control: 0.0,
+            rolling_vision: 1.0,
+            rolling_control: 1.0,
         }
     }
 
@@ -87,33 +81,7 @@ impl PlayerTracker {
         self.last_detection.is_some()
     }
 
-    /// Set the sign of the enemy goal's x coordinate in ssl-vision coordinates.
-    pub fn set_play_dir_x(&mut self, play_dir_x: f64) {
-        self.play_dir_x = play_dir_x;
-    }
-
-    pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant, own: bool) {
-        if !own {
-            let vision_val = if let Some(last_detection) = &self.last_detection {
-                if time - last_detection.timestamp < 0.2 {
-                    1.0
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            };
-            self.rolling_vision = self.rolling_vision * 0.95 + vision_val * (1.0 - 0.95);
-            if self.rolling_vision < 0.2 {
-                self.is_gone = true;
-            }
-            if self.rolling_vision > 0.8 {
-                self.is_gone = false;
-            }
-
-            return;
-        }
-
+    pub fn check_is_gone(&mut self, time: f64, world_time: WorldInstant) {
         let vision_val = if let Some(last_detection) = &self.last_detection {
             if time - last_detection.timestamp < 0.2 {
                 1.0
@@ -138,23 +106,23 @@ impl PlayerTracker {
         self.rolling_vision = self.rolling_vision * factor + vision_val * (1.0 - factor);
         self.rolling_control = self.rolling_control * factor + control_val * (1.0 - factor);
 
-        dies_core::debug_string(
-            format!("p{}.rolling vision", self.id),
-            format!("{}", self.rolling_vision),
-        );
-        dies_core::debug_string(
-            format!("p{}.rolling control", self.id),
-            format!("{}", self.rolling_control),
-        );
-
-        if self.rolling_control < 0.2 || self.rolling_vision < 0.2 {
-            self.is_gone = true;
+        // For controlled players, require both vision and control
+        // For non-controlled players (opponent players), only require vision
+        if self.is_controlled {
+            if self.rolling_control < 0.2 || self.rolling_vision < 0.2 {
+                self.is_gone = true;
+            }
+            if self.rolling_control > 0.8 && self.rolling_vision > 0.8 {
+                self.is_gone = false;
+            }
+        } else {
+            if self.rolling_vision < 0.2 {
+                self.is_gone = true;
+            }
+            if self.rolling_vision > 0.8 {
+                self.is_gone = false;
+            }
         }
-        if self.rolling_control > 0.8 && self.rolling_vision > 0.8 {
-            self.is_gone = false;
-        }
-
-        dies_core::debug_string(format!("p{}.is_gone", self.id), format!("{}", self.is_gone));
     }
 
     /// Update the tracker with a new frame.
@@ -200,7 +168,6 @@ impl PlayerTracker {
                         let acc = self.velocity_samples.windows(2).fold(0.0, |acc, w| {
                             acc + (w[1] - w[0]).norm() / dt
                         }) / 9.0;
-                        dies_core::debug_value(format!("p{}.acc", self.id), acc);
                     }
 
                     last_data.timestamp = t_capture;
@@ -218,12 +185,12 @@ impl PlayerTracker {
     /// Update the tracker with feedback from the player.
     pub fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
         if feedback.id == self.id {
+            if !self.is_controlled {
+                self.rolling_control = 1.0;
+            }
+            self.is_controlled = true; // Mark as controlled when we receive feedback
             self.last_feedback_time = Some(time);
             if let Some(breakbeam) = feedback.breakbeam_ball_detected {
-                dies_core::debug_string(
-                    format!("p{}.breakbeam_value", self.id),
-                    breakbeam.to_string(),
-                );
                 self.breakbeam_detections.push_back(breakbeam as usize);
                 if self.breakbeam_detections.len() > BREAKBEAM_WINDOW {
                     self.breakbeam_detections.pop_front();
@@ -246,48 +213,16 @@ impl PlayerTracker {
     }
 
     pub fn get(&self) -> Option<PlayerData> {
-        // If we have received feedback but not detection return some placeholder data
-        // if let (None, Some(feedback)) = (self.last_detection.as_ref(), self.last_feedback) {
-        //     let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
-        //     if let Some(_) = &self.last_feedback {
-        //         dies_core::debug_value(format!("p{}.breakbeam", self.id), breakbeam_count as f64);
-        //     }
-
-        //     return Some(PlayerData {
-        //         id: self.id,
-        //         timestamp: 0.0,
-        //         position: Vector2::zeros(),
-        //         velocity: Vector2::zeros(),
-        //         yaw: Angle::default(),
-        //         angular_speed: 0.0,
-        //         raw_position: Vector2::zeros(),
-        //         raw_yaw: Angle::default(),
-        //         primary_status: feedback.primary_status,
-        //         kicker_cap_voltage: feedback.kicker_cap_voltage,
-        //         kicker_temp: feedback.kicker_temp,
-        //         pack_voltages: feedback.pack_voltages,
-        //         breakbeam_ball_detected: self.breakbeam_detections.iter().sum::<usize>()
-        //             > BREAKBEAM_DETECTION_THRESHOLD,
-        //         imu_status: feedback.imu_status,
-        //         kicker_status: feedback.kicker_status,
-        //     });
-        // }
-
         let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
-        if self.last_feedback.is_some() {
-            dies_core::debug_value(format!("p{}.breakbeam", self.id), breakbeam_count as f64);
-        }
-
         self.last_detection.as_ref().map(|data| PlayerData {
             id: self.id,
             timestamp: data.timestamp,
-            position: to_dies_coords2(data.position, self.play_dir_x),
-            velocity: to_dies_coords2(data.velocity, self.play_dir_x),
-            yaw: to_dies_yaw(data.yaw, self.play_dir_x),
-            // Flip the angular speed if the goal is on the left
-            angular_speed: data.angular_speed * self.play_dir_x,
-            raw_position: to_dies_coords2(data.raw_position, self.play_dir_x),
-            raw_yaw: to_dies_yaw(data.raw_yaw, self.play_dir_x),
+            position: data.position,
+            velocity: data.velocity,
+            yaw: data.yaw,
+            angular_speed: data.angular_speed,
+            raw_position: data.raw_position,
+            raw_yaw: data.raw_yaw,
             primary_status: self.last_feedback.and_then(|f| f.primary_status),
             kicker_cap_voltage: self.last_feedback.and_then(|f| f.kicker_cap_voltage),
             kicker_temp: self.last_feedback.and_then(|f| f.kicker_temp),
@@ -370,10 +305,7 @@ mod test {
     #[test]
     fn test_x_flip() {
         let id = PlayerId::new(1);
-        let settings = TrackerSettings {
-            initial_opp_goal_x: -1.0,
-            ..Default::default()
-        };
+        let settings = TrackerSettings::default();
         let mut tracker = PlayerTracker::new(id, &settings);
 
         let mut player = SSL_DetectionRobot::new();
@@ -393,16 +325,11 @@ mod test {
 
         let data = tracker.get().unwrap();
         assert_eq!(data.id.as_u32(), 1);
-        assert_eq!(data.raw_position, Vector2::new(-150.0, 200.0));
-        assert!(data.velocity.x < 0.0);
-        assert_relative_eq!(
-            data.yaw.radians(),
-            (Angle::PI + Angle::from_radians(dir)).radians(),
-            epsilon = 1e-6
-        );
+        // Note: Now returns raw vision coordinates without transformation
+        assert_eq!(data.raw_position, Vector2::new(150.0, 200.0));
+        assert!(data.velocity.x > 0.0);
+        assert_relative_eq!(data.yaw.radians(), dir, epsilon = 1e-6);
         assert_eq!(data.angular_speed, 0.0);
-
-        tracker.set_play_dir_x(1.0);
 
         player.set_x(200.0);
         player.set_y(300.0);

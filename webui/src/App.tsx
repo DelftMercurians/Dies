@@ -7,26 +7,19 @@ import {
   Radio,
   Square,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   useBasestationInfo,
-  useDebugData,
-  useScenarios,
   useSendCommand,
   useSetMode,
   useStatus,
   useWorldState,
+  useExecutorInfo,
+  useRawWorldData,
 } from "./api";
 import logo from "./assets/mercury-logo.svg";
 import { Button } from "./components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./components/ui/select";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -34,42 +27,33 @@ import {
 } from "@/components/ui/resizable";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import { SimpleTooltip } from "./components/ui/tooltip";
-import { cn, useIsOverflow, useWarningSound } from "./lib/utils";
+import { cn, useWarningSound } from "./lib/utils";
 import Field from "./views/Field";
 import PlayerSidebar from "./views/PlayerSidebar";
 import SettingsEditor from "./views/SettingsEditor";
 import Basestation from "./views/Basestation";
-import HierarchicalList from "./views/HierarchicalList";
+import TeamOverview from "./views/TeamOverview";
 import { PlayerFeedbackMsg } from "./bindings";
+import TeamSettingsDialog from "./components/TeamSettingsDialog";
+import GameControllerPanel from "./components/GameControllerPanel";
+import PrimaryTeamSelector from "./components/PrimaryTeamSelector";
 
-type Panel = "left" | "right";
+type Panel = "left" | "right" | "left-bottom" | "game-controller";
 
 const App: React.FC = () => {
-  const scenarios = useScenarios() ?? [];
-  const [selectedScenario, setSelectedScenario] = useState<null | string>(null);
   const { data: backendState, status: backendLoadingState } = useStatus();
   const worldState = useWorldState();
+  const rawWorldData = useRawWorldData();
   const { mutate: setMode, status: setModeStatus } = useSetMode();
   const sendCommand = useSendCommand();
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
-  const [collapsed, setCollapsed] = useState<Panel[]>([]);
-  const debugData = useDebugData();
-  const tabListRef = useRef<HTMLDivElement>(null);
-  const isTabListOverflowing = useIsOverflow(tabListRef, "horizontal");
+  const [collapsed, setCollapsed] = useState<Panel[]>(["left-bottom"]);
+  const executorInfo = useExecutorInfo();
 
-  const GCcommands = [
-    "HALT", "STOP", "NORMAL_START", "FORCE_START", "PREPARE_KICKOFF_YELLOW",
-    "PREPARE_KICKOFF_BLUE", "PREPARE_PENALTY_YELLOW", "PREPARE_PENALTY_BLUE",
-    "DIRECT_FREE_YELLOW", "DIRECT_FREE_BLUE", "INDIRECT_FREE_YELLOW", "INDIRECT_FREE_BLUE",
-    "TIMEOUT_YELLOW", "TIMEOUT_BLUE", "GOAL_YELLOW", "GOAL_BLUE", "BALL_PLACEMENT_YELLOW",
-    "BALL_PLACEMENT_BLUE",
-  ];
-
-  const [selectedCommand, setSelectedCommand] = useState<null | string>("HALT");
   const bsInfo = useBasestationInfo().data;
   const allMotorsOk = Object.values(bsInfo?.players ?? {}).every(
     (p: PlayerFeedbackMsg) =>
-      p.motor_statuses?.find((m) => m === "NoReply") === undefined,
+      p.motor_statuses?.find((m) => m === "NoReply") === undefined
   );
   useWarningSound(!allMotorsOk);
 
@@ -97,10 +81,9 @@ const App: React.FC = () => {
       ? "stop"
       : "play";
   const handleSetPlayState = (val: string) => {
-    if (val === "play" && playingState !== "play" && selectedScenario) {
+    if (val === "play" && playingState !== "play") {
       sendCommand({
-        type: "StartScenario",
-        data: { scenario: selectedScenario },
+        type: "Start",
       });
     } else if (val === "stop" && playingState !== "stop") {
       setSelectedPlayerId(null);
@@ -109,17 +92,6 @@ const App: React.FC = () => {
       toast.error(`Unhandled state ${val}`);
     }
   };
-  const handleCommandChange = (val: string) => {
-    setSelectedCommand(val);
-    sendCommand({
-      type: "GcCommand",
-      data: val
-    })
-  }
-  const runningScenario =
-    executorStatus.type === "RunningExecutor"
-      ? executorStatus.data.scenario
-      : null;
 
   return (
     <main className="w-full h-full flex flex-col bg-background bg-slate-100">
@@ -131,7 +103,6 @@ const App: React.FC = () => {
           type="single"
           value={uiMode}
           onValueChange={setMode}
-          // disabled={setModeStatus === "pending"}
           className="border border-gray-500 rounded-lg"
         >
           <SimpleTooltip title="Simulation">
@@ -152,46 +123,17 @@ const App: React.FC = () => {
               <Radio />
             </ToggleGroupItem>
           </SimpleTooltip>
-
         </ToggleGroup>
-
-        <Select
-          value={
-            runningScenario ? runningScenario : (selectedScenario ?? undefined)
-          }
-          onValueChange={(val) => setSelectedScenario(val)}
-          disabled={!!runningScenario}
-        >
-          <SelectTrigger className="w-64">
-            <SelectValue placeholder="Select Scenario" />
-          </SelectTrigger>
-
-          <SelectContent>
-            {scenarios.map((scenario) => (
-              <SelectItem key={scenario} value={scenario}>
-                {scenario}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
 
         <ToggleGroup
           type="single"
           value={playingState}
           onValueChange={handleSetPlayState}
-          disabled={executorStatus.type === "StartingScenario"}
           className="border border-gray-500 rounded-lg"
         >
-          <SimpleTooltip
-            title={
-              selectedScenario
-                ? "Start selected scenario"
-                : "Select a scenario first"
-            }
-          >
+          <SimpleTooltip title="Start">
             <ToggleGroupItem
               value="play"
-              disabled={!selectedScenario}
               className="data-[state=on]:bg-green-400 data-[state=on]:opacity-100  data-[state=on]:text-gray-500"
             >
               <Play />
@@ -219,32 +161,44 @@ const App: React.FC = () => {
           </SimpleTooltip>
         </ToggleGroup>
 
-
-        <Select
-          value={
-            selectedCommand ?? undefined
-          }
-          onValueChange={(val) => handleCommandChange(val)}
-        >
-          <SelectTrigger className="w-64">
-            <SelectValue placeholder="Select GC command" />
-          </SelectTrigger>
-
-          <SelectContent>
-            {GCcommands.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
+        {/* Team Configuration */}
+        <div className="flex items-center gap-4">
+          <TeamSettingsDialog />
+          <PrimaryTeamSelector />
+        </div>
       </div>
-
-
 
       {/* Main content */}
       <ResizablePanelGroup autoSaveId="main-layout" direction="horizontal">
+        {/* Game Controller Panel */}
+        <ResizablePanel
+          defaultSize={15}
+          minSize={12}
+          maxSize={25}
+          collapsible
+          className="h-full bg-slate-950 p-2"
+          onCollapse={() =>
+            setCollapsed((prev) =>
+              !prev.includes("game-controller")
+                ? [...prev, "game-controller"]
+                : prev
+            )
+          }
+          onExpand={() =>
+            setCollapsed((prev) => prev.filter((v) => v !== "game-controller"))
+          }
+        >
+          {!collapsed.includes("game-controller") ? (
+            <GameControllerPanel />
+          ) : (
+            <div className="text-center text-slate-400 p-2 text-sm transform -rotate-90">
+              Game Controller
+            </div>
+          )}
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+
+        {/* Team Overview Panel */}
         <ResizablePanel
           defaultSize={20}
           minSize={10}
@@ -252,7 +206,7 @@ const App: React.FC = () => {
           className="h-full bg-slate-950 p-2"
           onCollapse={() =>
             setCollapsed((prev) =>
-              !prev.includes("left") ? [...prev, "left"] : prev,
+              !prev.includes("left") ? [...prev, "left"] : prev
             )
           }
           onExpand={() =>
@@ -260,39 +214,75 @@ const App: React.FC = () => {
           }
         >
           {!collapsed.includes("left") ? (
-            <Tabs
-              defaultValue="controller"
-              className="h-full w-full flex flex-col gap-2"
-              orientation={isTabListOverflowing ? "vertical" : "horizontal"}
-            >
-              <TabsList
-                ref={tabListRef}
-                className="w-full data-[orientation=vertical]:flex-col data-[orientation=vertical]:h-auto data-[orientation=vertical]:w-auto"
+            <ResizablePanelGroup direction="vertical">
+              <ResizablePanel defaultSize={70}>
+                <Tabs
+                  size="sm"
+                  defaultValue="team_overview"
+                  className="h-full w-full flex flex-col gap-2 p-2"
+                >
+                  <TabsList>
+                    <TabsTrigger value="team_overview">Team</TabsTrigger>
+                    <TabsTrigger value="basestation">Basestation</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="team_overview" className="flex-1">
+                    <TeamOverview
+                      onSelectPlayer={setSelectedPlayerId}
+                      selectedPlayerId={selectedPlayerId}
+                      className="h-full"
+                    />
+                  </TabsContent>
+                  <TabsContent value="basestation" asChild>
+                    <Basestation
+                      onSelectPlayer={(id) => setSelectedPlayerId(id)}
+                      className="h-full"
+                    />
+                  </TabsContent>
+                </Tabs>
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel
+                defaultSize={5}
+                collapsible
+                collapsedSize={5}
+                onCollapse={() =>
+                  setCollapsed((prev) =>
+                    !prev.includes("left-bottom")
+                      ? [...prev, "left-bottom"]
+                      : prev
+                  )
+                }
+                onExpand={() =>
+                  setCollapsed((prev) =>
+                    prev.filter((v) => v !== "left-bottom")
+                  )
+                }
               >
-                <TabsTrigger value="controller">Controller</TabsTrigger>
-                <TabsTrigger value="tracker">Tracker</TabsTrigger>
-                <TabsTrigger value="basestation">Basestation</TabsTrigger>
-                <TabsTrigger value="debug">Debug Values</TabsTrigger>
-              </TabsList>
+                {!collapsed.includes("left-bottom") ? (
+                  <Tabs
+                    size="sm"
+                    defaultValue="controller"
+                    className="h-full w-full flex flex-col gap-2 p-2"
+                  >
+                    <TabsList className="w-full">
+                      <TabsTrigger value="controller">Controller</TabsTrigger>
+                      <TabsTrigger value="tracker">Tracker</TabsTrigger>
+                    </TabsList>
 
-              <TabsContent value="controller" asChild>
-                <SettingsEditor settingsKey="controller_settings" />
-              </TabsContent>
-              <TabsContent value="tracker" asChild>
-                <SettingsEditor settingsKey="tracker_settings" />
-              </TabsContent>
-              <TabsContent value="basestation" asChild>
-                <Basestation onSelectPlayer={(id) => setSelectedPlayerId(id)} className="h-full" />
-              </TabsContent>
-              <TabsContent value="debug" asChild>
-                <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
-                  <HierarchicalList
-                    data={debugData ? Object.entries(debugData) : []}
-                    className="h-full"
-                  />
-                </div>
-              </TabsContent>
-            </Tabs>
+                    <TabsContent value="controller" asChild>
+                      <SettingsEditor settingsKey="controller_settings" />
+                    </TabsContent>
+                    <TabsContent value="tracker" asChild>
+                      <SettingsEditor settingsKey="tracker_settings" />
+                    </TabsContent>
+                  </Tabs>
+                ) : (
+                  <div className="text-center text-slate-400 p-2 text-sm">
+                    Settings
+                  </div>
+                )}
+              </ResizablePanel>
+            </ResizablePanelGroup>
           ) : null}
         </ResizablePanel>
         <ResizableHandle withHandle />
@@ -314,7 +304,7 @@ const App: React.FC = () => {
           className=" bg-slate-950 flex flex-col"
           onCollapse={() =>
             setCollapsed((prev) =>
-              !prev.includes("right") ? [...prev, "right"] : prev,
+              !prev.includes("right") ? [...prev, "right"] : prev
             )
           }
           onExpand={() =>
@@ -335,24 +325,21 @@ const App: React.FC = () => {
         className={cn(
           "w-full text-sm px-4 py-1 select-none",
           "bg-slate-800",
-          executorStatus.type === "StartingScenario" && "bg-yellow-500",
           executorStatus.type === "RunningExecutor" &&
-          worldState.status === "connected" &&
-          "bg-green-500",
+            worldState.status === "connected" &&
+            "bg-green-500",
           (backendLoadingState === "error" ||
             executorStatus.type === "Failed") &&
-          "bg-red-500",
+            "bg-red-500"
         )}
       >
         {backendLoadingState === "error"
           ? "Failed to connect to backend"
           : executorStatus.type === "Failed"
-            ? "Executor failed"
-            : executorStatus.type === "RunningExecutor"
-              ? "Running"
-              : executorStatus.type === "StartingScenario"
-                ? "Starting scenario"
-                : "Idle"}
+          ? "Executor failed"
+          : executorStatus.type === "RunningExecutor"
+          ? "Running"
+          : "Idle"}
       </div>
     </main>
   );

@@ -502,6 +502,18 @@ def solve_mpc_tbwrap(*args):
         result = solve_mpc(*args)
         return result.u, result.traj
     except Exception:
+        repr = ""
+        for arg in args:
+            repr += f"{arg}\n\n---------------\n"
+
+        shapes_repr = ""
+        for a in args:
+            if isinstance(a, float) or isinstance(a, int):
+                shapes_repr += "() "
+            elif a is None:
+                shapes_repr += "None "
+            else:
+                shapes_repr += f"{a.shape} "
         raise RuntimeError(
-            f"Traceback: {tb.format_exc(20)} with input: {args}"
+            f"Traceback: {tb.format_exc(20)} with input: {repr} and shapes: {shapes_repr}"
         ) from None

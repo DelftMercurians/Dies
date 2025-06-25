@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use dies_core::WorldUpdate;
-use dies_executor::{scenarios::ScenarioType, ControlMsg, ExecutorHandle};
+use dies_executor::{ControlMsg, Executor, ExecutorHandle};
 use dies_protos::ssl_gc_referee_message::referee::Command;
-use dies_simulator::SimulationConfig;
+use dies_simulator::SimulationBuilder;
+use dies_ssl_client::VisionClient;
 use tokio::{
     sync::{broadcast, oneshot, watch},
     task::JoinHandle,
@@ -16,10 +17,7 @@ use crate::{server::ServerState, ExecutorStatus, UiCommand, UiEnvironment, UiMod
 enum ExecutorTaskState {
     #[default]
     Idle,
-    Starting {
-        task_handle: JoinHandle<()>,
-        cancel_tx: oneshot::Sender<()>,
-    },
+    Starting,
     Runnning {
         task_handle: JoinHandle<()>,
         executor_handle: ExecutorHandle,
@@ -32,7 +30,6 @@ pub struct ExecutorTask {
     update_tx: watch::Sender<Option<WorldUpdate>>,
     server_state: Arc<ServerState>,
     ui_env: UiEnvironment,
-    sim_config: SimulationConfig,
 }
 
 impl ExecutorTask {
@@ -48,16 +45,14 @@ impl ExecutorTask {
             cmd_rx,
             server_state,
             ui_env: config,
-            sim_config: SimulationConfig::default(),
         }
     }
 
     pub async fn run(&mut self, mut shutdown_rx: broadcast::Receiver<()>) {
         loop {
-            let shutdown_rx2 = shutdown_rx.resubscribe();
             tokio::select! {
                 cmd = self.cmd_rx.recv() => match cmd {
-                    Ok(cmd) => self.handle_cmd(cmd, shutdown_rx2).await,
+                    Ok(cmd) => self.handle_cmd(cmd).await,
                     Err(err) => match err {
                         broadcast::error::RecvError::Lagged(_) => {}
                         broadcast::error::RecvError::Closed => break
@@ -71,29 +66,46 @@ impl ExecutorTask {
         }
     }
 
-    async fn handle_cmd(&mut self, cmd: UiCommand, mut shutdown_rx: broadcast::Receiver<()>) {
+    async fn handle_cmd(&mut self, cmd: UiCommand) {
         match cmd {
             UiCommand::SetManualOverride {
+                team_color,
                 player_id,
                 manual_override,
             } => self.handle_executor_msg(ControlMsg::SetPlayerOverride {
+                team_color,
                 player_id,
                 override_active: manual_override,
             }),
-            UiCommand::OverrideCommand { player_id, command } => {
-                self.handle_executor_msg(ControlMsg::PlayerOverrideCommand(player_id, command))
-            }
+            UiCommand::OverrideCommand {
+                team_color,
+                player_id,
+                command,
+            } => self.handle_executor_msg(ControlMsg::PlayerOverrideCommand {
+                team_color,
+                player_id,
+                command,
+            }),
+            UiCommand::SetActiveTeams {
+                blue_active,
+                yellow_active,
+            } => self.handle_executor_msg(ControlMsg::SetActiveTeams {
+                blue_active,
+                yellow_active,
+            }),
+            UiCommand::SetTeamScriptPaths {
+                blue_script_path,
+                yellow_script_path,
+            } => self.handle_executor_msg(ControlMsg::SetTeamScriptPaths {
+                blue_script_path,
+                yellow_script_path,
+            }),
             UiCommand::SimulatorCmd(cmd) => self.handle_executor_msg(ControlMsg::SimulatorCmd(cmd)),
             UiCommand::SetPause(pause) => self.handle_executor_msg(ControlMsg::SetPause(pause)),
             UiCommand::Stop => self.stop_executor().await,
-            UiCommand::StartScenario { scenario } => {
-                log::info!("Starting scenarion \"{}\"", scenario.name());
-                // This is a potentially long running operation (in case of live mode),
-                // so we allow cancelling
-                tokio::select! {
-                    _ = shutdown_rx.recv() => self.stop_executor().await,
-                    _ = self.start_scenario(scenario) => {}
-                }
+            UiCommand::Start => {
+                log::info!("Starting executor");
+                self.start().await;
             }
             UiCommand::GcCommand(command) => {
                 let cmd = string_to_command(command).unwrap();
@@ -112,32 +124,22 @@ impl ExecutorTask {
                 let _ = task_handle.await;
                 log::info!("Executor stopped");
             }
-            ExecutorTaskState::Starting {
-                cancel_tx,
-                task_handle,
-            } => {
-                let _ = cancel_tx.send(());
-                let _ = task_handle.await;
-                log::info!("Executor startup cancelled");
-            }
+            ExecutorTaskState::Starting => {}
             ExecutorTaskState::Idle => {}
         }
         self.server_state.set_executor_status(ExecutorStatus::None);
     }
 
-    async fn start_scenario(&mut self, scenario: ScenarioType) {
-        let setup = scenario.into_setup();
+    async fn start(&mut self) {
         let mode = {
             let mode = self.server_state.ui_mode.read().unwrap();
             *mode
         };
 
         let (handle_tx, handle_rx) = oneshot::channel::<ExecutorHandle>();
-        let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
         let task_handle = {
             let settings = { self.server_state.executor_settings.read().unwrap().clone() };
             let ui_env = self.ui_env.clone();
-            let sim_config = self.sim_config.clone();
             let server_state = Arc::clone(&self.server_state);
             let update_tx = self.update_tx.clone();
             let res = tokio::spawn(async move {
@@ -149,7 +151,10 @@ impl ExecutorTask {
                 dies_logger::log_start(log_file_name);
 
                 let executor = match (mode, ui_env) {
-                    (UiMode::Simulation, _) => Ok(setup.into_simulation(settings, sim_config)),
+                    (UiMode::Simulation, _) => Ok(Executor::new_simulation(
+                        settings,
+                        SimulationBuilder::default().build(),
+                    )),
                     (
                         UiMode::Live,
                         UiEnvironment::WithLive {
@@ -157,14 +162,11 @@ impl ExecutorTask {
                             bs_handle,
                         },
                     ) => {
-                        log::info!("Starting live scenario {}", scenario.name());
-                        server_state.set_executor_status(ExecutorStatus::StartingScenario(
-                            setup.get_info(),
-                        ));
-
-                        tokio::select! {
-                            _ = cancel_rx => Err(anyhow::anyhow!("Cancelled")),
-                            executor = setup.into_live(settings, ssl_config, bs_handle) => executor
+                        let vision_client = VisionClient::new(ssl_config).await;
+                        if let Ok(vision_client) = vision_client {
+                            Ok(Executor::new_live(settings, vision_client, bs_handle))
+                        } else {
+                            Err(anyhow::anyhow!("Failed to connect to vision"))
                         }
                     }
                     (UiMode::Live, UiEnvironment::SimulationOnly) => {
@@ -174,7 +176,7 @@ impl ExecutorTask {
 
                 match executor {
                     Ok(executor) => {
-                        log::info!("Scenario started, executor ready");
+                        log::info!("Executor ready");
 
                         // Relay world update to the UI
                         let _ = handle_tx.send(executor.handle());
@@ -185,15 +187,13 @@ impl ExecutorTask {
                             }
                         });
 
-                        server_state.set_executor_status(ExecutorStatus::RunningExecutor {
-                            scenario: scenario.name().to_owned(),
-                        });
+                        server_state.set_executor_status(ExecutorStatus::RunningExecutor);
                         if let Err(err) = executor.run_real_time().await {
                             log::error!("Executor failed: {}", err);
                         }
                     }
                     Err(err) => {
-                        log::error!("Failed to start scenario: {}", err);
+                        log::error!("Failed to start executor: {}", err);
                         server_state
                             .set_executor_status(ExecutorStatus::Failed(format!("{}", err)));
                     }
@@ -213,14 +213,9 @@ impl ExecutorTask {
             })
         };
 
-        self.state = ExecutorTaskState::Starting {
-            task_handle,
-            cancel_tx,
-        };
-
+        self.state = ExecutorTaskState::Starting;
         if let Ok(executor_handle) = handle_rx.await {
-            if let ExecutorTaskState::Starting { task_handle, .. } = std::mem::take(&mut self.state)
-            {
+            if let ExecutorTaskState::Starting = std::mem::take(&mut self.state) {
                 *self.server_state.executor_handle.write().unwrap() = Some(executor_handle.clone());
                 self.state = ExecutorTaskState::Runnning {
                     task_handle,
