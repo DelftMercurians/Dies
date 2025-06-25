@@ -10,4 +10,4 @@ anyhow = "1.0.79"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 network-interface = "2.0.0"
 socket2 = "0.5.5"
-tokio = { version = "1.35.1", features = ["net", "io-util", "sync"] }
+tokio = { version = "1.43.1", features = ["net", "io-util", "sync"] }
