@@ -51,10 +51,6 @@ def traj_vs_entity_collision(traj, entity, min_safe_distance) -> jax.Array:
 def traj_vs_batch_collision(
     trajectory: jax.Array, obstacles: EntityBatch, min_safe_distance
 ) -> jax.Array:
-    """Check collision between trajectory and batch of entities."""
-    if len(obstacles) == 0:
-        return jnp.array(False)
-
     return jax.vmap(
         lambda obj: traj_vs_entity_collision(trajectory, obj, min_safe_distance)
     )(obstacles)
@@ -125,19 +121,28 @@ def score_single_trajectory_sample(
 
     # Check for collisions
     obstacle_collisions = (
-        jax.vmap(
-            lambda traj: traj_vs_batch_collision(
-                traj, noisy_world.obstacles, min_safe_distance=2.2 * ROBOT_RADIUS
-            )
-        )(trajectories).astype(jnp.float32)
-        * time_discount[None, None, :, None]
-    )
+        (
+            jax.vmap(
+                lambda traj: traj_vs_batch_collision(
+                    traj, noisy_world.obstacles, min_safe_distance=2.2 * ROBOT_RADIUS
+                )
+            )(trajectories).astype(jnp.float32)
+            * time_discount[None, None, :, None]
+        )
+        * world.robots.mask[:, None, None, None]
+        * world.obstacles.mask[None, :, None, None]
+    )  # TODO: wtf is the last dimension??
+    # 6,6,31,6: per-robot per-obstacle per-timestep ??
 
     self_robot_collisions = (
-        many_traj_collision(trajectories, min_safe_distance=2.2 * ROBOT_RADIUS).astype(
-            jnp.float32
+        (
+            many_traj_collision(
+                trajectories, min_safe_distance=2.2 * ROBOT_RADIUS
+            ).astype(jnp.float32)
+            * time_discount[:, None, None]
         )
-        * time_discount[:, None, None]
+        * world.robots.mask[None, :, None]
+        * world.robots.mask[None, None, :]
     )
 
     ball_collisions = (
@@ -149,6 +154,7 @@ def score_single_trajectory_sample(
             )
         )(trajectories).astype(jnp.float32)
         * time_discount[None, :, None]
+        * world.robots.mask[:, None, None]
     )
 
     # Count total collisions
@@ -162,7 +168,7 @@ def score_single_trajectory_sample(
     robot_integrals = jax.vmap(
         lambda traj, target: compute_distance_integral(traj, target)
     )(trajectories, targets)
-    distance_score = jnp.sum(robot_integrals)
+    distance_score = jnp.sum(robot_integrals * world.robots.mask[None, :])
 
     return distance_score + collision_penalty
 
@@ -177,9 +183,9 @@ def stochastic_trajectory_scoring(
     with_shared_noise: bool = False,
 ) -> float:
     if with_shared_noise:
-        assert len(key_or_keys) == n_samples, (
-            f"key_or_keys must be an array of keys when with_shared_noise=True of size {n_samples}, was {key_or_keys.shape}"
-        )
+        assert (
+            len(key_or_keys) == n_samples
+        ), f"key_or_keys must be an array of keys when with_shared_noise=True of size {n_samples}, was {key_or_keys.shape}"
         sample_keys = key_or_keys
         n_samples = len(sample_keys)
     else:

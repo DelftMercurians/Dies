@@ -34,7 +34,6 @@ from .common import (
     clip_by_norm,
     Result,
     MPCConfig,
-    calculate_mismatch_score,
     TRAJECTORY_RESOLUTION,
     get_dt_schedule,
 )
@@ -57,14 +56,12 @@ def mpc_cost_function(
     max_speeds: jax.Array,
     cfg,
     key,
-    last_traj,
 ):
     k1, k2, k3 = jr.split(key, 3)
     w = w.noisy(k1)
     cfg = cfg.noisy(k2)
     u = add_control_noise(k3, u)
     trajectories = trajectories_from_control(w, u, cfg.delay)
-    n_robots = len(w.robots)
 
     # Compute position-based costs over the trajectory
     def position_cost_fn(raw_traj, max_speed, target):
@@ -75,12 +72,13 @@ def mpc_cost_function(
         d_cost = distance_cost(robot.position, delayed_target_pos, t)
         # collision with obstacles (non-controllable robots) costs
         c_cost = 0
-        if len(w.obstacles) != 0:
+        if w.obstacles.st_len() != 0:
             # Account for delay in obstacle position prediction
             delayed_obstacle_pos = w.obstacles.after(t + cfg.delay).position
             c_cost = collision_cost(
                 robot.position,
                 delayed_obstacle_pos,
+                mask=w.obstacles.mask,
                 min_safe_distance=cfg.obstacle_min_safe_distance,
                 no_cost_distance=cfg.obstacle_no_cost_distance,
             )
@@ -110,20 +108,18 @@ def mpc_cost_function(
             + acc_cost
         )
 
-    def collective_position_cost_fn(traj_slice, idx):
+    def collective_position_cost_fn(traj_slice, idx, is_bad_robot):
         # collisions with our own robots cost
         t, pos_x, pos_y, vel_x, vel_y = traj_slice[idx]
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
-        mask = jnp.ones((n_robots,)).at[idx].set(0)
         obstacles = jax.lax.stop_gradient(traj_slice[:, 1:3])
         ours_c_cost = collision_cost(
             robot.position,
             obstacles,
-            mask=mask,
             min_safe_distance=cfg.obstacle_min_safe_distance,
             no_cost_distance=cfg.obstacle_no_cost_distance,
         )
-        return ours_c_cost * 2
+        return jax.lax.cond(is_bad_robot, lambda: 0.0, lambda: ours_c_cost * 2)
 
     # Skip initial position (i=0) and compute costs for trajectory steps
     total_position_cost = jax.vmap(
@@ -135,41 +131,16 @@ def mpc_cost_function(
     total_collective_cost = jax.vmap(
         lambda traj_slice: jax.vmap(
             eqx.Partial(collective_position_cost_fn, traj_slice)
-        )(jnp.arange(n_robots)),
+        )(jnp.arange(len(w.robots.mask)), w.robots.mask),
         in_axes=1,
-    )(trajectories).reshape(n_robots, -1)
+    )(trajectories).reshape(w.robots.st_len(), -1)
 
     tie_breaker_cost = 0
-    """
-    if last_traj is not None and last_traj.shape == trajectories.shape:
-        # Match nearest time points and compute (x,y) position differences
-        # trajectories shape: (n_robots, n_time_steps, 5) where 5 = (time, x, y, vx, vy)
-        def compute_trajectory_diff(current_traj, last_traj):
-            # Extract time and position for both trajectories
-            current_times = current_traj[:, 0]  # (n_time_steps,)
-            current_pos = current_traj[:, 1:3]  # (n_time_steps, 2) for (x, y)
-            last_times = last_traj[:, 0]  # (n_time_steps,)
-            last_pos = last_traj[:, 1:3]  # (n_time_steps, 2) for (x, y)
 
-            # For each point in current trajectory, find nearest time in last trajectory
-            def find_nearest_match(curr_time, curr_pos):
-                time_diffs = jnp.abs(last_times - curr_time)
-                nearest_idx = jnp.argmin(time_diffs)
-                matched_pos = last_pos[nearest_idx]
-                pos_diff = curr_pos - matched_pos
-                return jnp.sqrt(pos_diff**2 + 1e-8)
-
-            # Compute position differences for all time points
-            diffs = jax.vmap(find_nearest_match)(current_times, current_pos)
-            return diffs.mean()
-
-        # Compute differences for all robots
-        robot_diffs = jax.vmap(compute_trajectory_diff)(trajectories, last_traj)
-        diff = robot_diffs.mean()
-        tie_breaker_cost = diff * 1e-3
-    """
-
-    return (total_position_cost + total_collective_cost + tie_breaker_cost).sum()
+    return (
+        (total_position_cost + total_collective_cost + tie_breaker_cost)
+        * w.robots.mask[:, None]
+    ).sum()
 
 
 def generate_candidate_control(
@@ -263,18 +234,11 @@ def solve_mpc_jax(
     max_iterations: int,
     learning_rate: float,
     n_candidates: int,
-    key: PRNGKeyArray | None = None,
-    last_traj: jax.Array | None = None,
-    last_control_sequences: jax.Array | None = None,
-    cfg: MPCConfig | None = None,
+    key: PRNGKeyArray,
+    last_control_sequences: jax.Array,
+    cfg: MPCConfig,
 ) -> Result:
-    n_robots = len(w.robots)
-
-    if key is None:
-        key = jr.PRNGKey(0)
-
-    if cfg is None:
-        cfg = MPCConfig()
+    n_robots = w.robots.st_len()
 
     # Generate candidate trajectories - mix of random and continuity-based
     continuity_candidates = (
@@ -296,22 +260,18 @@ def solve_mpc_jax(
         )
     )(random_keys)
 
-    if continuity_candidates > 0:
-        # Generate continuity-based candidates (perturbations of last control)
-        continuity_keys = keys[random_candidates:]
-        continuity_candidate_controls = jax.vmap(
-            lambda k: generate_continuity_candidates(
-                k, last_control_sequences, max_speeds, n_robots
-            )
-        )(continuity_keys)
-
-        # Combine random and continuity candidates
-        candidate_controls = jnp.concatenate(
-            [random_candidate_controls, continuity_candidate_controls], axis=0
+    # Generate continuity-based candidates (perturbations of last control)
+    continuity_keys = keys[random_candidates:]
+    continuity_candidate_controls = jax.vmap(
+        lambda k: generate_continuity_candidates(
+            k, last_control_sequences, max_speeds, n_robots
         )
-    else:
-        candidate_controls = random_candidate_controls
+    )(continuity_keys)
 
+    # Combine random and continuity candidates
+    candidate_controls = jnp.concatenate(
+        [random_candidate_controls, continuity_candidate_controls], axis=0
+    )
     candidate_controls = candidate_controls.reshape(
         (n_candidates, n_robots, CONTROL_HORIZON, 2)
     )
@@ -325,7 +285,6 @@ def solve_mpc_jax(
                 max_speeds=max_speeds,
                 cfg=cfg,
                 key=k,
-                last_traj=last_traj,
             )
         )(jr.split(key, BATCH_SIZE)).mean()
 
@@ -333,7 +292,7 @@ def solve_mpc_jax(
     def optimize_control(u, key, cfg: MPCConfig = MPCConfig()):
         # Initialize optimizer for this trajectory
         lr_schedule = optax.linear_schedule(
-            learning_rate, learning_rate / 20.0, max_iterations
+            learning_rate, learning_rate / 10.0, max_iterations
         )
         optimizer = optax.chain(
             optax.adabelief(learning_rate=lr_schedule, b1=0.9, b2=0.9),
@@ -430,9 +389,8 @@ def solve_mpc(
     obstacles: np.ndarray,
     ball_pos: np.ndarray | None,
     field_bounds: np.ndarray | None,
-    max_speed: np.ndarray,
+    max_speeds: np.ndarray,
     last_control_sequences: np.ndarray | None = None,
-    last_traj: np.ndarray | None = None,
     dt: np.ndarray | None = np.array(0.02),
     max_iterations: int = MAX_ITERATIONS,
     learning_rate: float = LEARNING_RATE,
@@ -442,11 +400,8 @@ def solve_mpc(
     n_robots = len(initial_pos)
     assert len(initial_vel) == n_robots, f"{len(initial_vel)} != {n_robots}"
     assert len(target_pos) == n_robots, f"{len(target_pos)} != {n_robots}"
-    assert len(max_speed) == n_robots, f"{len(max_speed)} != {n_robots}"
+    assert len(max_speeds) == n_robots, f"{len(max_speed)} != {n_robots}"
 
-    last_controls_jax = (
-        None if last_control_sequences is None else jnp.asarray(last_control_sequences)
-    )
     ctrl_shape = (len(initial_pos), CONTROL_HORIZON, 2)
     if (
         last_control_sequences is not None
@@ -458,9 +413,17 @@ def solve_mpc(
 
     # Handle ball position - use provided ball_pos or default to far away
     ball_position = jnp.array([1e6, 1e6]) if ball_pos is None else jnp.asarray(ball_pos)
-    if last_traj is not None:
-        last_traj = np.array(last_traj, dtype=np.float32)
-        last_traj[:, :, 0] = last_traj[:, :, 0] - dt
+    max_speeds = (
+        (jnp.ones((6,), dtype=jnp.float32) * 1e6).at[: len(max_speeds)].set(max_speeds)
+    )
+    if last_control_sequences is None:
+        last_control_sequences = jnp.zeros((6, CONTROL_HORIZON, 2))
+    else:
+        last_control_sequences = (
+            jnp.zeros((6, CONTROL_HORIZON, 2))
+            .at[: len(last_control_sequences)]
+            .set(jnp.asarray(last_control_sequences))
+        )
 
     r = eqx.filter_jit(solve_mpc_jax)(
         w=World(
@@ -470,25 +433,24 @@ def solve_mpc(
             Entity(ball_position),
         ),
         targets=EntityBatch(jnp.asarray(target_pos)),
-        max_speeds=jnp.asarray(max_speed),
+        max_speeds=max_speeds,
         max_iterations=int(max_iterations),
         learning_rate=float(learning_rate),
         n_candidates=int(n_candidates),
-        key=key,
-        last_control_sequences=None
-        if last_controls_jax is None
-        else jnp.asarray(last_controls_jax),
-        last_traj=None if last_traj is None else jnp.asarray(last_traj),
+        key=jr.key(0) if key is None else key,
+        last_control_sequences=last_control_sequences,
         cfg=MPCConfig(),  # Use default config with 0.02s delay
     )
 
-    # Calculate mismatch score
-    # mismatch_score = calculate_mismatch_score(
-    #    r.traj, jnp.asarray(initial_pos), dt if dt is not None else None
-    # )
-
-    # print(f"Lower is better: {r.idx_by_cost} / {N_CANDIDATE_TRAJECTORIES}")
-    # print(f"Mismatch score: \t{mismatch_score:.0f}mm")
+    # unpad the result
+    r = Result(
+        u=r.u[:n_robots],
+        traj=r.traj[:n_robots],
+        candidate_controls=r.candidate_controls[:, :n_robots],
+        optimized_controls=r.optimized_controls[:, :n_robots],
+        cost=r.cost,
+        idx_by_cost=r.idx_by_cost,
+    )
 
     if np.isinf(r.cost) or np.isnan(r.cost):
         warnings.warn(
@@ -500,7 +462,6 @@ def solve_mpc(
 def solve_mpc_tbwrap(*args):
     try:
         result = solve_mpc(*args)
-        print(result.u)
         return result.u, result.traj
     except Exception:
         repr = ""

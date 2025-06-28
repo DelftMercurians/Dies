@@ -17,11 +17,11 @@ ROBOT_RADIUS = 90.0  # mm
 BALL_RADIUS = 21.35  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 5
-BATCH_SIZE = 20
-LEARNING_RATE = 20
-N_CANDIDATE_TRAJECTORIES = 20
-TRAJECTORY_RESOLUTION = 5  # points per physics step for high-resolution trajectories
+MAX_ITERATIONS = 50
+BATCH_SIZE = 4
+LEARNING_RATE = 40
+N_CANDIDATE_TRAJECTORIES = 10
+TRAJECTORY_RESOLUTION = 3  # points per physics step for high-resolution trajectories
 FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
 # Robot dynamics parameters
@@ -33,10 +33,9 @@ MAX_ACC = 12_000  # mm/s^2
 def add_control_noise(
     key: PRNGKeyArray,
     control: Control,
-    noise_scale: float = 30.0,  # mm/s
 ) -> Control:
     k1, k2 = jr.split(key)
-    noise = jr.normal(k1, control.shape) * noise_scale
+    noise = jr.normal(k1, control.shape) * 30.0
     scale = jr.uniform(k2, (len(control),), minval=1.0, maxval=1.2)
     return control * scale[:, None, None] + noise
 
@@ -236,15 +235,19 @@ class Entity(eqx.Module):
 class EntityBatch(Entity):
     position: Float[Array, "n 2"]
     velocity: Float[Array, "n 2"]
+    mask: Int[Array, "n"]
 
-    def __init__(self, pos, vel=None):
+    def __init__(self, pos, vel=None, n=6):
         # automatically wrap (2,) into (1,2)
+        n = max(n, pos.size // 2)
         if len(pos.shape) == 1:
             pos = pos[None, :]
             vel = None if vel is None else vel[None, :]
 
-        self.position = pos
-        self.velocity = jnp.zeros_like(self.position) if vel is None else vel
+        self.position = jnp.zeros((n, 2)).at[: len(pos)].set(pos)
+        vel = jnp.zeros_like(self.position) if vel is None else vel
+        self.velocity = jnp.zeros((n, 2)).at[: len(vel)].set(vel)
+        self.mask = jnp.arange(n) < n
 
     def get(self, idx: int | Int[Array, ""]):
         return Entity(self.position[idx], self.velocity[idx])
@@ -255,11 +258,16 @@ class EntityBatch(Entity):
             self.velocity.at[idx].set(value.velocity),
         )
 
-    def __len__(self):
-        return len(self.position)
+    def dyn_len(self):
+        return jnp.count_nonzero(self.mask)
+
+    def st_len(self):
+        return len(self.mask)
 
     def after(self, t: int | float | Float[Array, ""]):
-        return EntityBatch(self.position + self.velocity * t, self.velocity)
+        return eqx.tree_at(
+            lambda s: s.position, self, self.position + self.velocity * t
+        )
 
 
 class FieldBounds(eqx.Module):
@@ -278,7 +286,7 @@ class World(eqx.Module):
 
     def noisy(self, key, pos_noise_scale: float = 30.0, vel_noise_scale: float = 10.0):
         """Add noise to robot positions and velocities."""
-        pos_vel_keys = jax.random.split(key, len(self.robots))
+        pos_vel_keys = jax.random.split(key, self.robots.st_len())
 
         noisy_positions = []
         noisy_velocities = []
@@ -300,13 +308,6 @@ class World(eqx.Module):
 
 
 def trajectories_from_control(w: World, u: Control, delay: float = 0.0):
-    """Generate trajectories from control with optional delay handling.
-
-    Args:
-        w: World state
-        u: Control sequence
-        delay: Time delay for control commands to be executed (default 0.0)
-    """
     return jax.vmap(
         lambda control, pos, vel: single_trajectory_from_control(
             control, pos, vel, delay
@@ -322,12 +323,9 @@ def clip_by_norm(vel: jnp.ndarray, limit: float | Float[Array, ""]):
 def single_trajectory_from_control(
     control_sequence: jax.Array,
     initial_pos: jax.Array,
-    initial_vel: jax.Array | None = None,
+    initial_vel: jax.Array,
     delay: float = 0.0,
 ) -> jax.Array:
-    if initial_vel is None:
-        initial_vel = jnp.zeros(2)
-
     initial_pos = initial_pos + initial_vel * delay
 
     dt_schedule = get_dt_schedule(upscaled=False)
@@ -384,35 +382,3 @@ def single_trajectory_from_control(
 
     # Apply spline interpolation for higher resolution
     return spline_interpolate_trajectory(base_trajectory)
-
-
-def calculate_mismatch_score(
-    trajectories: jax.Array, initial_positions: jax.Array, dt_value: float = None
-) -> float:
-    """Calculate mismatch score between trajectory at dt and actual initial positions.
-
-    Args:
-        trajectories: Array of shape (n_robots, n_timesteps, 5) with [time, pos_x, pos_y, vel_x, vel_y]
-        initial_positions: Array of shape (n_robots, 2) with initial positions
-        dt_value: Time value to check trajectory at. If None, uses DT constant.
-
-    Returns:
-        Average mismatch score across all robots in mm
-    """
-    if dt_value is None:
-        dt_value = DT
-
-    n_robots = len(trajectories)
-    mismatch_scores = []
-
-    for robot_idx in range(n_robots):
-        traj = trajectories[robot_idx]
-        # Find trajectory point closest to dt_value
-        time_diff = jnp.abs(traj[:, 0] - dt_value)
-        closest_idx = jnp.argmin(time_diff)
-        traj_pos_at_dt = traj[closest_idx, 1:3]  # position at dt
-        initial_pos_robot = initial_positions[robot_idx]
-        mismatch = jnp.linalg.norm(traj_pos_at_dt - initial_pos_robot)
-        mismatch_scores.append(float(mismatch))
-
-    return sum(mismatch_scores) / len(mismatch_scores)
