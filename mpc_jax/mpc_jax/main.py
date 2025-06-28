@@ -400,7 +400,7 @@ def solve_mpc(
     n_robots = len(initial_pos)
     assert len(initial_vel) == n_robots, f"{len(initial_vel)} != {n_robots}"
     assert len(target_pos) == n_robots, f"{len(target_pos)} != {n_robots}"
-    assert len(max_speeds) == n_robots, f"{len(max_speed)} != {n_robots}"
+    assert len(max_speeds) == n_robots, f"{len(max_speeds)} != {n_robots}"
 
     ctrl_shape = (len(initial_pos), CONTROL_HORIZON, 2)
     if (
@@ -410,46 +410,55 @@ def solve_mpc(
         warnings.warn(
             f"Last control sequence had shape {last_control_sequences.shape}, but was expected to have shape {ctrl_shape}. Disabling continuity."
         )
+        last_control_sequences = None
 
     # Handle ball position - use provided ball_pos or default to far away
-    ball_position = jnp.array([1e6, 1e6]) if ball_pos is None else jnp.asarray(ball_pos)
-    max_speeds = (
-        (jnp.ones((6,), dtype=jnp.float32) * 1e6).at[: len(max_speeds)].set(max_speeds)
-    )
+    ball_position = np.array([1e6, 1e6]) if ball_pos is None else ball_pos
+
+    # Pad inputs to fixed size (6 robots) in numpy
+    padded_initial_pos = np.zeros((6, 2))
+    padded_initial_pos[:n_robots] = initial_pos
+    
+    padded_initial_vel = np.zeros((6, 2))
+    padded_initial_vel[:n_robots] = initial_vel
+    
+    padded_target_pos = np.zeros((6, 2))
+    padded_target_pos[:n_robots] = target_pos
+    
+    padded_max_speeds = np.full(6, 1e6)
+    padded_max_speeds[:n_robots] = max_speeds
+    
     if last_control_sequences is None:
-        last_control_sequences = jnp.zeros((6, CONTROL_HORIZON, 2))
+        padded_last_control = np.zeros((6, CONTROL_HORIZON, 2))
     else:
-        last_control_sequences = (
-            jnp.zeros((6, CONTROL_HORIZON, 2))
-            .at[: len(last_control_sequences)]
-            .set(jnp.asarray(last_control_sequences))
-        )
+        padded_last_control = np.zeros((6, CONTROL_HORIZON, 2))
+        padded_last_control[:n_robots] = last_control_sequences
 
     r = eqx.filter_jit(solve_mpc_jax)(
         w=World(
             FieldBounds(),
             EntityBatch(jnp.asarray(obstacles)),
-            EntityBatch(jnp.asarray(initial_pos), jnp.asarray(initial_vel)),
-            Entity(ball_position),
+            EntityBatch(jnp.asarray(padded_initial_pos), jnp.asarray(padded_initial_vel)),
+            Entity(jnp.asarray(ball_position)),
         ),
-        targets=EntityBatch(jnp.asarray(target_pos)),
-        max_speeds=max_speeds,
+        targets=EntityBatch(jnp.asarray(padded_target_pos)),
+        max_speeds=jnp.asarray(padded_max_speeds),
         max_iterations=int(max_iterations),
         learning_rate=float(learning_rate),
         n_candidates=int(n_candidates),
         key=jr.key(0) if key is None else key,
-        last_control_sequences=last_control_sequences,
+        last_control_sequences=jnp.asarray(padded_last_control),
         cfg=MPCConfig(),  # Use default config with 0.02s delay
     )
 
-    # unpad the result
+    # Unpad the result in numpy
     r = Result(
-        u=r.u[:n_robots],
-        traj=r.traj[:n_robots],
-        candidate_controls=r.candidate_controls[:, :n_robots],
-        optimized_controls=r.optimized_controls[:, :n_robots],
-        cost=r.cost,
-        idx_by_cost=r.idx_by_cost,
+        u=np.array(r.u)[:n_robots],
+        traj=np.array(r.traj)[:n_robots],
+        candidate_controls=np.array(r.candidate_controls)[:, :n_robots],
+        optimized_controls=np.array(r.optimized_controls)[:, :n_robots],
+        cost=float(r.cost),
+        idx_by_cost=int(r.idx_by_cost),
     )
 
     if np.isinf(r.cost) or np.isnan(r.cost):
