@@ -247,7 +247,6 @@ impl PlayerController {
         // Calculate velocity using MTP controller (MPC is handled at team level)
         self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
-        self.target_velocity = Vector2::zeros();
         if let Some(pos_target) = input.position {
             self.position_mtp.set_setpoint(pos_target);
             player_context.debug_cross_colored(

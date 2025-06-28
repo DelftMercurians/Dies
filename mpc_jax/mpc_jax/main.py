@@ -500,6 +500,7 @@ def solve_mpc(
 def solve_mpc_tbwrap(*args):
     try:
         result = solve_mpc(*args)
+        print(result.u)
         return result.u, result.traj
     except Exception:
         repr = ""
