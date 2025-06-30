@@ -214,7 +214,6 @@ impl MPCController {
                 field_bounds,
                 vel_limits_array,
                 last_controls_array,
-                last_traj_array,
                 dt_value,
             ))?;
 

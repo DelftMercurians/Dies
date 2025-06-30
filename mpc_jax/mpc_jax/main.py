@@ -94,7 +94,8 @@ def mpc_cost_function(
         # other stuff
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
-        effort_cost = jnp.sqrt((u**2).sum()) * 1e-6
+        dist = jnp.sqrt(((delayed_target_pos - robot.position) ** 2 + 1e-9).sum())
+        effort_cost = jnp.sqrt((u**2).sum() + 1e-8) * 1e-4 / dist
         # TODO: increase the cost drastically if we are past the limit
         acc_cost = ((u[:, 1:, :] - u[:, :1, :]) ** 2).sum() * 3e-10
 
@@ -106,7 +107,7 @@ def mpc_cost_function(
             + vc_cost
             + effort_cost
             + acc_cost
-        )
+        ) * target.mask
 
     def collective_position_cost_fn(traj_slice, idx, is_bad_robot):
         # collisions with our own robots cost
@@ -416,18 +417,9 @@ def solve_mpc(
     ball_position = np.array([1e6, 1e6]) if ball_pos is None else ball_pos
 
     # Pad inputs to fixed size (6 robots) in numpy
-    padded_initial_pos = np.zeros((6, 2))
-    padded_initial_pos[:n_robots] = initial_pos
-    
-    padded_initial_vel = np.zeros((6, 2))
-    padded_initial_vel[:n_robots] = initial_vel
-    
-    padded_target_pos = np.zeros((6, 2))
-    padded_target_pos[:n_robots] = target_pos
-    
     padded_max_speeds = np.full(6, 1e6)
     padded_max_speeds[:n_robots] = max_speeds
-    
+
     if last_control_sequences is None:
         padded_last_control = np.zeros((6, CONTROL_HORIZON, 2))
     else:
@@ -438,10 +430,10 @@ def solve_mpc(
         w=World(
             FieldBounds(),
             EntityBatch(jnp.asarray(obstacles)),
-            EntityBatch(jnp.asarray(padded_initial_pos), jnp.asarray(padded_initial_vel)),
+            EntityBatch(jnp.asarray(initial_pos), jnp.asarray(initial_vel)),
             Entity(jnp.asarray(ball_position)),
         ),
-        targets=EntityBatch(jnp.asarray(padded_target_pos)),
+        targets=EntityBatch(jnp.asarray(target_pos)),
         max_speeds=jnp.asarray(padded_max_speeds),
         max_iterations=int(max_iterations),
         learning_rate=float(learning_rate),

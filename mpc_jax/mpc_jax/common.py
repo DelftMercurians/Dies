@@ -11,16 +11,16 @@ from typing import Literal
 # MPC Parameters
 CONTROL_HORIZON = 10
 TIME_HORIZON = 3  # seconds
-DT = 0.04  # starting value for dt, seconds
+DT = 0.08  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 BALL_RADIUS = 21.35  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 10
-BATCH_SIZE = 4
-LEARNING_RATE = 40
-N_CANDIDATE_TRAJECTORIES = 5
+MAX_ITERATIONS = 30
+BATCH_SIZE = 10
+LEARNING_RATE = 20
+N_CANDIDATE_TRAJECTORIES = 10
 TRAJECTORY_RESOLUTION = 3  # points per physics step for high-resolution trajectories
 FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
@@ -34,10 +34,11 @@ def add_control_noise(
     key: PRNGKeyArray,
     control: Control,
 ) -> Control:
-    k1, k2 = jr.split(key)
-    noise = jr.normal(k1, control.shape) * 30.0
-    scale = jr.uniform(k2, (len(control),), minval=1.0, maxval=1.2)
-    return control * scale[:, None, None] + noise
+    k1, k2, k3 = jr.split(key, 3)
+    noise = jr.normal(k1, control.shape) * 10.0
+    scale = jr.uniform(k2, (len(control),), minval=1.0, maxval=1.05)
+    uni_scale = jr.uniform(k3, (1,), minval=1.0, maxval=1.1)
+    return control * scale[:, None, None] * uni_scale[None, None, :] + noise
 
 
 class MPCConfig(eqx.Module):
@@ -47,13 +48,13 @@ class MPCConfig(eqx.Module):
         default_factory=lambda: jnp.asarray(1.0)
     )
     ball_min_safe_distance: jax.Array = eqx.field(
-        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.0 + BALL_RADIUS)
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.05 + BALL_RADIUS)
     )
     ball_no_cost_distance: jax.Array = eqx.field(
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.5 + BALL_RADIUS)
     )
     obstacle_min_safe_distance: jax.Array = eqx.field(
-        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.0)
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.1)
     )
     obstacle_no_cost_distance: jax.Array = eqx.field(
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 3.5)
@@ -247,7 +248,7 @@ class EntityBatch(Entity):
         self.position = jnp.zeros((n, 2)).at[: len(pos)].set(pos)
         vel = jnp.zeros_like(self.position) if vel is None else vel
         self.velocity = jnp.zeros((n, 2)).at[: len(vel)].set(vel)
-        self.mask = jnp.arange(n) < n
+        self.mask = jnp.arange(n) < len(pos)
 
     def get(self, idx: int | Int[Array, ""]):
         return Entity(self.position[idx], self.velocity[idx])
