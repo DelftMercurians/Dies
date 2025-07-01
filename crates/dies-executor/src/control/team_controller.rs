@@ -158,13 +158,24 @@ impl TeamController {
                     let default_input = final_player_inputs.player(id);
                     let input = manual_override.get(&id).unwrap_or(&default_input);
 
-                    if let Some(target_pos) = controller.get_target_position(input) {
+                    if let Some(target_pos) = input.position {
                         mpc_robots.push(RobotState {
                             id: controller.id(),
                             position: player_data.position,
                             velocity: player_data.velocity,
                             target_position: target_pos,
                             vel_limit: controller.get_max_speed(),
+                        });
+                    }
+                    else {
+                        // if we don't need to move - force robots to stay in place while
+                        // still putting them to mpc for continuity, which is fairly important
+                        mpc_robots.push(RobotState {
+                            id: controller.id(),
+                            position: player_data.position,
+                            velocity: player_data.velocity,
+                            target_position: player_data.position,
+                            vel_limit: 0.0,
                         });
                     }
                 }

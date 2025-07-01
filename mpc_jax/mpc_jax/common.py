@@ -9,7 +9,7 @@ from typing import Literal
 
 
 # MPC Parameters
-CONTROL_HORIZON = 10
+CONTROL_HORIZON = 5
 TIME_HORIZON = 3  # seconds
 DT = 0.08  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
@@ -21,7 +21,7 @@ MAX_ITERATIONS = 30
 BATCH_SIZE = 10
 LEARNING_RATE = 20
 N_CANDIDATE_TRAJECTORIES = 10
-TRAJECTORY_RESOLUTION = 3  # points per physics step for high-resolution trajectories
+TRAJECTORY_RESOLUTION = 10  # points per physics step for high-resolution trajectories
 FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
 # Robot dynamics parameters
@@ -54,7 +54,7 @@ class MPCConfig(eqx.Module):
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.5 + BALL_RADIUS)
     )
     obstacle_min_safe_distance: jax.Array = eqx.field(
-        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.1)
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.2)
     )
     obstacle_no_cost_distance: jax.Array = eqx.field(
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 3.5)

@@ -411,7 +411,7 @@ def solve_mpc(
         warnings.warn(
             f"Last control sequence had shape {last_control_sequences.shape}, but was expected to have shape {ctrl_shape}. Disabling continuity."
         )
-        last_control_sequences = None
+        last_control_sequences = np.zeros_like(ctrl_shape)
 
     # Handle ball position - use provided ball_pos or default to far away
     ball_position = np.array([1e6, 1e6]) if ball_pos is None else ball_pos
