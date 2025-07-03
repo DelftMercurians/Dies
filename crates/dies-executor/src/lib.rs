@@ -25,7 +25,7 @@ pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
-const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 30); // 30 Hz
+const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 50); // 50 Hz
 
 enum Environment {
     Live {
@@ -569,9 +569,15 @@ impl Executor {
     ) -> Result<()> {
         let mut cmd_interval = tokio::time::interval(CMD_INTERVAL);
 
+        let mut last_control_msg = tokio::time::Instant::now();
+        let mut last_bs_msg = tokio::time::Instant::now();
+        let mut last_ssl_msg = tokio::time::Instant::now();
+        let mut last_cmd_time = tokio::time::Instant::now();
         loop {
             tokio::select! {
                 Some(msg) = self.command_rx.recv() => {
+                    dies_core::debug_value("exec_control msg_elapsed", last_control_msg.elapsed().as_secs_f64() * 1000.0);
+                    last_control_msg = tokio::time::Instant::now();
                     match msg {
                         ControlMsg::Stop => break,
                         ControlMsg::SetActiveTeams {
@@ -584,6 +590,8 @@ impl Executor {
                     }
                 }
                 ssl_msg = ssl_client.recv() => {
+                    dies_core::debug_value("exec_ssl msg_elapsed", last_ssl_msg.elapsed().as_secs_f64() * 1000.0);
+                    last_ssl_msg = tokio::time::Instant::now();
                     match ssl_msg {
                         Ok(SslMessage::Vision(vision_msg)) => {
                             self.update_from_vision_msg(vision_msg, WorldInstant::now_real());
@@ -600,6 +608,8 @@ impl Executor {
                     let _  = tx.send(self.info());
                 }
                 bs_msg = bs_client.recv() => {
+                    dies_core::debug_value("exec_bs msg_elapsed", last_bs_msg.elapsed().as_secs_f64() * 1000.0);
+                    last_bs_msg = tokio::time::Instant::now();
                     match bs_msg {
                         Ok((team_color, bs_msg)) => {
                             let team_color = team_color.or(self.team_controllers.active_teams().get(0).copied());
@@ -617,6 +627,8 @@ impl Executor {
                     }
                 }
                 _ = cmd_interval.tick() => {
+                    dies_core::debug_value("exec_cmd msg_elapsed", last_cmd_time.elapsed().as_secs_f64() * 1000.0);
+                    last_cmd_time = tokio::time::Instant::now();
                     let paused = { *self.paused_tx.borrow() };
                     if !paused {
                         for (team_color, cmd) in self.player_commands() {

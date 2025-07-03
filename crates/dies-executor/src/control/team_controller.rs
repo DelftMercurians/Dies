@@ -122,7 +122,8 @@ impl TeamController {
             world_data.current_game_state.game_state,
             GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
         ) {
-            comply(&world_data, inputs_for_comply, &team_context)
+            // comply(&world_data, inputs_for_comply, &team_context)
+            inputs_for_comply
         } else {
             inputs_for_comply
         };

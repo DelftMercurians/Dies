@@ -82,6 +82,7 @@ impl GameStateTracker {
             }
             Command::GOAL_YELLOW | Command::GOAL_BLUE => self.game_state,
         };
+        dies_core::debug_string("game_state", format!("{:?}", self.game_state));
 
         dies_core::debug_string("last_cmd", format!("{:?}", command));
 
@@ -96,6 +97,17 @@ impl GameStateTracker {
             | Command::BALL_PLACEMENT_YELLOW => Some(false),
             _ => self.operator_is_blue,
         };
+        dies_core::debug_string(
+            "operating_team",
+            format!(
+                "{:?}",
+                if self.operator_is_blue.unwrap_or(true) {
+                    "Blue"
+                } else {
+                    "Yellow"
+                }
+            ),
+        );
 
         // Reset
         match self.game_state {
@@ -141,12 +153,14 @@ impl GameStateTracker {
             self.is_outdated = true;
         } else if self.start.elapsed().as_secs() >= self.timeout {
             self.game_state = self.new_state_timeout;
+            dies_core::debug_string("game_state", format!("{}", self.game_state));
             self.is_outdated = true;
         } else {
             let distance = (ball_data.unwrap().position - p).norm();
             let velocity = ball_data.unwrap().velocity.norm();
             if distance > 500.0 && velocity > 5000.0 {
                 self.game_state = self.new_state_movement;
+                dies_core::debug_string("game_state", format!("{}", self.game_state));
                 self.is_outdated = true;
             }
             return self.game_state;
@@ -155,7 +169,6 @@ impl GameStateTracker {
     }
 
     pub fn get(&self) -> GameState {
-        dies_core::debug_string("game_state", format!("{}", self.game_state));
         // Return raw game state without coordinate transformation
         self.game_state
     }
