@@ -27,6 +27,7 @@ enum KickerState {
 pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP,
+    use_mpc: bool,
     last_pos: Vector2,
 
     /// Output velocity \[mm/s\]
@@ -63,12 +64,17 @@ pub struct PlayerController {
 }
 
 impl PlayerController {
+    pub fn get_max_speed(&self) -> f64 {
+        self.max_speed
+    }
+
     /// Create a new player controller with the given ID.
     pub fn new(id: PlayerId, settings: &ExecutorSettings) -> Self {
         let mut instance = Self {
             id,
 
             position_mtp: MTP::new(),
+            use_mpc: true, // Default to using MPC
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
@@ -117,8 +123,33 @@ impl PlayerController {
         self.id
     }
 
+    /// Toggle between MPC and MTP controllers
+    pub fn set_use_mpc(&mut self, use_mpc: bool) {
+        self.use_mpc = use_mpc;
+    }
+
     pub fn target_velocity(&self) -> Vector2 {
         self.target_velocity
+    }
+
+    /// Set the target velocity (used when MPC is computed externally)
+    pub fn set_target_velocity(&mut self, velocity: Vector2) {
+        self.target_velocity = velocity;
+    }
+
+    /// Get the target position for MPC calculation
+    pub fn get_target_position(&self, input: &PlayerControlInput) -> Option<Vector2> {
+        input.position
+    }
+
+    /// Get max speed setting
+    pub fn max_speed(&self) -> f64 {
+        self.max_speed
+    }
+
+    /// Check if using MPC
+    pub fn use_mpc(&self) -> bool {
+        self.use_mpc
     }
 
     /// Get the current command for the player.
@@ -213,10 +244,9 @@ impl PlayerController {
 
         player_context.debug_value("fan_speed", self.fan_speed);
 
-        // Calculate velocity using the MTP controller
+        // Calculate velocity using MTP controller (MPC is handled at team level)
         self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
-        self.target_velocity = Vector2::zeros();
         if let Some(pos_target) = input.position {
             self.position_mtp.set_setpoint(pos_target);
             player_context.debug_cross_colored(
@@ -224,21 +254,47 @@ impl PlayerController {
                 pos_target,
                 dies_core::DebugColor::Red,
             );
+        }
 
-            let pos_u = self.position_mtp.update(
-                self.last_pos,
-                state.velocity,
-                dt,
-                input.acceleration_limit.unwrap_or(self.max_accel),
-                input.speed_limit.unwrap_or(self.max_speed),
-                input.acceleration_limit.unwrap_or(self.max_decel),
-                input.care,
-                player_context,
-            );
-            // let local_u = self.last_yaw.inv().rotate_vector(&pos_u);
-            self.target_velocity = pos_u;
+        // Only update target_velocity if not using MPC (MPC sets it externally)
+        if !self.use_mpc {
+            self.target_velocity = Vector2::zeros();
+            if let Some(pos_target) = input.position {
+                dies_core::debug_cross(
+                    format!("p{}.control.target", self.id),
+                    pos_target,
+                    dies_core::DebugColor::Red,
+                );
+
+                // Use MTP controller
+                self.position_mtp.set_setpoint(pos_target);
+                let pos_u = self.position_mtp.update(
+                    self.last_pos,
+                    state.velocity,
+                    dt,
+                    input.acceleration_limit.unwrap_or(self.max_accel),
+                    input.speed_limit.unwrap_or(self.max_speed),
+                    input.acceleration_limit.unwrap_or(self.max_decel),
+                    input.care,
+                    player_context
+                );
+                self.target_velocity = pos_u;
+                player_context.debug_string("controller", "MTP");
+            } else {
+                dies_core::debug_remove(format!("p{}.control.target", self.id));
+            }
         } else {
-            player_context.debug_remove("control.target");
+            // MPC controller - target_velocity should be set externally
+            if let Some(pos_target) = input.position {
+                dies_core::debug_cross(
+                    format!("p{}.control.target", self.id),
+                    pos_target,
+                    dies_core::DebugColor::Red,
+                );
+                player_context.debug_string("controller", "MPC");
+            } else {
+                player_context.debug_remove("control.target");
+            }
         }
         let add_vel = match input.velocity {
             Velocity::Global(v) => v,
@@ -249,6 +305,7 @@ impl PlayerController {
             .target_velocity
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
+        /*
         if !is_manual_override {
             let obstacles = if input.avoid_ball {
                 if let Some(ball) = world.ball.as_ref() {
@@ -273,7 +330,10 @@ impl PlayerController {
                 super::rvo::VelocityObstacleType::VO,
                 input.avoid_robots,
             );
+
+            println!("Obstacle avoiding trickery wtf??")
         }
+        */
 
         // Draw the velocity
         player_context.debug_line_colored(

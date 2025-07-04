@@ -7,8 +7,8 @@ use dies_core::{
 use super::{SkillCtx, SkillProgress};
 use crate::{control::Velocity, skills::SkillResult, KickerControlInput, PlayerControlInput};
 
-const DEFAULT_POS_TOLERANCE: f64 = 70.0;
-const DEFAULT_VEL_TOLERANCE: f64 = 30.0;
+const DEFAULT_POS_TOLERANCE: f64 = 20.0;
+const DEFAULT_VEL_TOLERANCE: f64 = 10.0;
 
 /// A skill that makes the player go to a specific position
 #[derive(Clone)]
