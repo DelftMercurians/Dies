@@ -2,12 +2,9 @@ use dies_core::{PlayerId, TeamData, Vector2};
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 use std::time::Instant;
-use tokio::sync::Mutex;
-use tokio::task;
-use tokio::task::JoinError;
-use tokio::task::JoinHandle;
 
 #[derive(Clone)]
 pub struct RobotState {
@@ -26,28 +23,53 @@ struct MPCControllerState {
     last_solve_time_ms: f64,
 }
 
+struct MPCRequest {
+    robots: Vec<RobotState>,
+    world: TeamData,
+    controller_state: MPCControllerState,
+}
+
+struct MPCResponse {
+    controls: HashMap<PlayerId, Vector2>,
+    updated_state: MPCControllerState,
+}
+
 pub struct MPCController {
     field_bounds: Option<(f64, f64, f64, f64)>, // (min_x, max_x, min_y, max_y)
     last_solve_time_ms: f64,
     last_control_sequences: HashMap<PlayerId, Vec<Vector2>>,
     last_trajectories: HashMap<PlayerId, Vec<Vec<f64>>>, // Store full trajectory data [t, x, y, vx, vy]
 
-    // Async MPC state
-    running_task: Arc<Mutex<Option<JoinHandle<(HashMap<PlayerId, Vector2>, MPCControllerState)>>>>,
+    // Thread communication
+    request_sender: mpsc::SyncSender<MPCRequest>,
+    response_receiver: mpsc::Receiver<MPCResponse>,
     last_mpc_result: Option<HashMap<PlayerId, Vector2>>,
     last_mpc_time: Instant,
+    _thread_handle: thread::JoinHandle<()>,
 }
 
 impl MPCController {
     pub fn new() -> Self {
+        let (request_sender, request_receiver) = mpsc::sync_channel::<MPCRequest>(1);
+        let (response_sender, response_receiver) = mpsc::sync_channel::<MPCResponse>(1);
+
+        let thread_handle = thread::Builder::new()
+            .name("mpc-worker".to_string())
+            .spawn(move || {
+                Self::mpc_worker_thread(request_receiver, response_sender);
+            })
+            .expect("Failed to spawn MPC worker thread");
+
         Self {
             field_bounds: None,
             last_solve_time_ms: f64::NAN,
             last_control_sequences: HashMap::new(),
             last_trajectories: HashMap::new(),
-            running_task: Arc::new(Mutex::new(None)),
+            request_sender,
+            response_receiver,
             last_mpc_result: None,
             last_mpc_time: Instant::now(),
+            _thread_handle: thread_handle,
         }
     }
 
@@ -68,8 +90,29 @@ impl MPCController {
             return HashMap::new();
         }
 
-        let robots_clone = robots.to_vec();
-        let world_clone = world.clone();
+        // Check for completed results from worker thread
+        while let Ok(response) = self.response_receiver.try_recv() {
+            // Update controller state with results from background thread
+            self.last_control_sequences = response.updated_state.last_control_sequences;
+            self.last_trajectories = response.updated_state.last_trajectories;
+            self.last_solve_time_ms = response.updated_state.last_solve_time_ms;
+
+            self.last_mpc_result = Some(response.controls.clone());
+            self.last_mpc_time = Instant::now();
+            return response.controls;
+        }
+
+        // Check if we should use last result or send new request
+        let elapsed = self.last_mpc_time.elapsed().as_millis();
+
+        if elapsed <= 150 {
+            // Use last known result if available and recent
+            if let Some(ref last_result) = self.last_mpc_result {
+                return last_result.clone();
+            }
+        }
+
+        // Send new request to worker thread (non-blocking)
         let controller_state = MPCControllerState {
             field_bounds: self.field_bounds,
             last_control_sequences: self.last_control_sequences.clone(),
@@ -77,62 +120,20 @@ impl MPCController {
             last_solve_time_ms: self.last_solve_time_ms,
         };
 
-        // Check if there's already a running task
-        if let Ok(mut task_guard) = self.running_task.try_lock() {
-            if let Some(task) = task_guard.as_ref() {
-                // Check if task is finished
-                if task.is_finished() {
-                    // Get the result
-                    let finished_task = task_guard.take().unwrap();
-                    // Use tokio::runtime::Handle to block on the result
-                    match tokio::runtime::Handle::try_current()
-                        .map(|handle| handle.block_on(finished_task))
-                        .unwrap_or_else(|_| {
-                            // Fallback if no tokio runtime
-                            log::warn!("No tokio runtime available, using MTP fallback");
-                            Ok((HashMap::new(), controller_state.clone()))
-                        }) {
-                        Ok((result, updated_state)) => {
-                            // Update controller state with results from background task
-                            self.last_control_sequences = updated_state.last_control_sequences;
-                            self.last_trajectories = updated_state.last_trajectories;
-                            self.last_solve_time_ms = updated_state.last_solve_time_ms;
+        let request = MPCRequest {
+            robots: robots.to_vec(),
+            world: world.clone(),
+            controller_state,
+        };
 
-                            self.last_mpc_result = Some(result.clone());
-                            self.last_mpc_time = Instant::now();
-                            return result;
-                        }
-                        Err(e) => {
-                            log::warn!("MPC task failed: {}", e);
-                            return HashMap::new(); // Return empty - let MTP handle it
-                        }
-                    }
-                } else {
-                    // Task is still running, check how long it's been
-                    let elapsed = self.last_mpc_time.elapsed().as_millis();
-
-                    if elapsed <= 150 {
-                        // Use last known result if available
-                        if let Some(ref last_result) = self.last_mpc_result {
-                            return last_result.clone();
-                        }
-                    }
-
-                    // Elapsed > 150ms, return empty - let MTP handle it
-                    return HashMap::new();
-                }
-            }
-
-            // No running task, start a new one
-
-            let task = tokio::spawn(async move {
-                Self::solve_batch_mpc_jax_async(robots_clone, world_clone, controller_state).await
-            });
-
-            *task_guard = Some(task);
+        if let Err(e) = self.request_sender.try_send(request) {
+            log::warn!("mpc thread is having troubles: {}", e);
+        }
+        else {
+            log::info!("mpc thread request sent");
         }
 
-        // For the first call, use last known result or return empty (let MTP handle it)
+        // Return last known result or empty (let MTP handle it)
         if let Some(ref last_result) = self.last_mpc_result {
             last_result.clone()
         } else {
@@ -158,41 +159,32 @@ impl MPCController {
         elapsed > 150
     }
 
-    async fn solve_batch_mpc_jax_async(
-        robots: Vec<RobotState>,
-        world: TeamData,
-        controller_state: MPCControllerState,
-    ) -> (HashMap<PlayerId, Vector2>, MPCControllerState) {
-        let robots = Arc::new(robots);
-        let world = Arc::new(world);
+    fn mpc_worker_thread(
+        request_receiver: mpsc::Receiver<MPCRequest>,
+        response_sender: mpsc::SyncSender<MPCResponse>,
+    ) {
+        while let Ok(request) = request_receiver.recv() {
+            let mut controller_state = request.controller_state;
 
-        // Keep an untouched copy for the “panic fallback” path.
-        let state_fallback = controller_state.clone();
+            // Keep an untouched copy for the “panic fallback” path.
+            let state_fallback = controller_state.clone();
 
-        let join = task::spawn_blocking({
-            // Clone the Arcs so the closure owns its data.
-            let robots = Arc::clone(&robots);
-            let world = Arc::clone(&world);
-
-            move || {
-                // Own and mutate our private controller state
-                let mut state = controller_state;
-                match Self::solve_batch_mpc_jax_sync(&robots, &world, &mut state) {
-                    Ok(controls) => (controls, state),
-                    Err(e) => {
-                        log::warn!("JAX batch-MPC failed: {e}; returning empty result");
-                        (HashMap::new(), state)
-                    }
+            let (controls, updated_state) = match Self::solve_batch_mpc_jax_sync(&request.robots, &request.world, &mut controller_state) {
+                Ok(controls) => (controls, controller_state),
+                Err(e) => {
+                    log::warn!("JAX batch-MPC failed: {e}; returning empty result");
+                    (HashMap::new(), state_fallback)
                 }
-            }
-        })
-        .await;
+            };
 
-        match join {
-            Ok(pair) => pair,
-            Err(e) => {
-                log::warn!("MPC task panicked: {e}; returning empty result");
-                (HashMap::new(), state_fallback)
+            let response = MPCResponse {
+                controls,
+                updated_state,
+            };
+
+            if let Err(e) = response_sender.try_send(response) {
+                log::error!("Failed to send MPC response: {e}");
+                break;
             }
         }
     }

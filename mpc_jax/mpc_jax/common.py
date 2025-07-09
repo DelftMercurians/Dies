@@ -10,7 +10,7 @@ from typing import Literal
 
 # MPC Parameters
 CONTROL_HORIZON = 5
-TIME_HORIZON = 3  # seconds
+TIME_HORIZON = 2  # seconds
 DT = 0.08  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
@@ -18,10 +18,10 @@ BALL_RADIUS = 21.35  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
 MAX_ITERATIONS = 30
-BATCH_SIZE = 10
-LEARNING_RATE = 20
-N_CANDIDATE_TRAJECTORIES = 10
-TRAJECTORY_RESOLUTION = 10  # points per physics step for high-resolution trajectories
+BATCH_SIZE = 6
+LEARNING_RATE = 40
+N_CANDIDATE_TRAJECTORIES = 5
+TRAJECTORY_RESOLUTION = 8  # points per physics step for high-resolution trajectories
 FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
 # Robot dynamics parameters
