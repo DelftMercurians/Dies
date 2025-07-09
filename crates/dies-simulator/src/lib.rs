@@ -692,9 +692,7 @@ impl Simulation {
                 }
             }
             SimulationGameState::FreeKick { .. } => {
-                // Immutable borrow ends here
-                let is_player_too_close = { self.players_too_close_to_ball() };
-
+                let num_players_too_close = self.num_players_too_close_to_ball();
                 if let SimulationGameState::FreeKick {
                     kick_timer,
                     ball_is_kicked,
@@ -704,19 +702,22 @@ impl Simulation {
                         kick_timer.tick(self.integration_parameters.dt);
                     let is_ball_kicked = *ball_is_kicked;
 
+                    let is_one_player_too_close = num_players_too_close > 1;
+
                     // Only reset the timer when changing the state
-                    if is_player_too_close || is_free_kick_time_exceeded || is_ball_kicked {
+                    if num_players_too_close > 0 || is_free_kick_time_exceeded || is_ball_kicked {
                         kick_timer.reset();
                     }
 
-                    if is_player_too_close {
+                    if is_one_player_too_close {
                         // The rules say this is a non-stopping foul, but for our purposes this makes sense
                         dies_core::debug_string(
                             "RefereeMessage",
                             RefereeMessage::PlayerTooCloseToBall.to_string(),
                         );
-                        self.update_referee_command(referee::Command::STOP);
-                        self.game_state = SimulationGameState::stop();
+                        // TODO: Not sure what to do here
+                        // self.update_referee_command(referee::Command::STOP);
+                        // self.game_state = SimulationGameState::stop();
                     } else if is_free_kick_time_exceeded {
                         dies_core::debug_string(
                             "RefereeMessage",
@@ -845,20 +846,19 @@ impl Simulation {
                 // Wait a few frames before resetting the ball's position (default: 0.2s)
                 if let SimulationGameState::Run { wait_timer, .. } = &mut self.game_state {
                     if wait_timer.tick(self.integration_parameters.dt) {
-                        wait_timer.reset();
+                        // Reset the ball's position to the free kick position
+                        ball_body.set_position(
+                            Isometry::translation(
+                                self.designated_ball_position.x,
+                                self.designated_ball_position.y,
+                                self.designated_ball_position.z,
+                            ),
+                            true,
+                        );
+                        ball_body.set_linvel(Vector::zeros(), true);
                     }
                 }
 
-                // Reset the ball's position to the free kick position
-                // ball_body.set_position(
-                //     Isometry::translation(
-                //         self.designated_ball_position.x,
-                //         self.designated_ball_position.y,
-                //         self.designated_ball_position.z,
-                //     ),
-                //     true,
-                // );
-                // ball_body.set_linvel(Vector::zeros(), true);
                 return true;
             }
         }
@@ -927,6 +927,26 @@ impl Simulation {
             }
         }
         false
+    }
+
+    fn num_players_too_close_to_ball(&self) -> usize {
+        let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
+        if let Some(ball_handle) = ball_handle {
+            let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
+            let ball_position = ball_body.position().translation.vector;
+
+            let mut count = 0;
+            for player in self.players.iter() {
+                let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
+                let player_position = rigid_body.position().translation.vector;
+                if (player_position - ball_position).norm() < 500.0 {
+                    count += 1;
+                }
+            }
+            count
+        } else {
+            0
+        }
     }
 
     pub fn step(&mut self, dt: f64) {
