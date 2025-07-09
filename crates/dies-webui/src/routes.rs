@@ -8,8 +8,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use dies_core::{DebugMap, DebugSubscriber, TeamColor, WorldUpdate};
-use dies_executor::ScriptError;
+use dies_core::{DebugMap, DebugSubscriber, ScriptError, TeamColor, WorldUpdate};
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;

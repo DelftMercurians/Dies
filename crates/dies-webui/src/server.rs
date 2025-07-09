@@ -14,10 +14,10 @@ use axum::{
     Router,
 };
 use dies_core::{
-    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, TeamColor,
-    WorldUpdate,
+    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, ScriptError,
+    TeamColor, WorldUpdate,
 };
-use dies_executor::{ControlMsg, ExecutorHandle, ScriptError};
+use dies_executor::{ControlMsg, ExecutorHandle};
 use tokio::sync::{broadcast, mpsc, watch};
 use tower_http::services::ServeDir;
 use tower_layer::Layer;

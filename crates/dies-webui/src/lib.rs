@@ -3,9 +3,8 @@ use std::path::PathBuf;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, WorldData,
+    ScriptError, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, WorldData,
 };
-use dies_executor::ScriptError;
 use dies_ssl_client::SslClientConfig;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;

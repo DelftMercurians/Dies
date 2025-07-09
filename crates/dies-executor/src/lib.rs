@@ -4,7 +4,8 @@ use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    SideAssignment, SimulatorCmd, TeamColor, TeamPlayerId, Vector3, WorldInstant, WorldUpdate,
+    ScriptError, SideAssignment, SimulatorCmd, TeamColor, TeamPlayerId, Vector3, WorldInstant,
+    WorldUpdate,
 };
 use dies_logger::{log_referee, log_vision, log_world};
 use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
@@ -15,37 +16,6 @@ use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-
-/// Script error types for error handling and UI display
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
-#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
-pub enum ScriptError {
-    /// Syntax error that occurs during script compilation
-    Syntax {
-        /// The script file path that caused the error
-        script_path: String,
-        /// The error message from the compiler
-        message: String,
-        /// Line number if available
-        line: Option<usize>,
-        /// Column number if available  
-        column: Option<usize>,
-    },
-    /// Runtime error that occurs during script execution
-    Runtime {
-        /// The script file path where the error occurred
-        script_path: String,
-        /// The function name where the error occurred
-        function_name: String,
-        /// The error message
-        message: String,
-        /// The team color that encountered the error
-        team_color: TeamColor,
-        /// The player ID that was being processed when the error occurred
-        player_id: Option<PlayerId>,
-    },
-}
 
 mod behavior_tree;
 mod control;

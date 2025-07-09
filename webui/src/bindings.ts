@@ -559,6 +559,33 @@ export enum RoleType {
 	FreeKicker = "FreeKicker",
 }
 
+/** Script error types for error handling and UI display */
+export type ScriptError = 
+	/** Syntax error that occurs during script compilation */
+	| { type: "Syntax", data: {
+	/** The script file path that caused the error */
+	script_path: string;
+	/** The error message from the compiler */
+	message: string;
+	/** Line number if available */
+	line?: number;
+	/** Column number if available */
+	column?: number;
+}}
+	/** Runtime error that occurs during script execution */
+	| { type: "Runtime", data: {
+	/** The script file path where the error occurred */
+	script_path: string;
+	/** The function name where the error occurred */
+	function_name: string;
+	/** The error message */
+	message: string;
+	/** The team color that encountered the error */
+	team_color: TeamColor;
+	/** The player ID that was being processed when the error occurred */
+	player_id?: PlayerId;
+}};
+
 /** Command to modify the simulator state. */
 export type SimulatorCmd = 
 	| { type: "ApplyBallForce", data: {

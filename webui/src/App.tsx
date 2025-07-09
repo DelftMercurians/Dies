@@ -139,6 +139,11 @@ const App: React.FC = () => {
       : "play";
   const handleSetPlayState = (val: string) => {
     if (val === "play" && playingState !== "play") {
+      // Clear script errors when starting a new run
+      scriptConsoleRef.current?.clearConsole();
+      setCurrentSyntaxError(null);
+      setSyntaxErrorDialogOpen(false);
+
       sendCommand({
         type: "Start",
       });

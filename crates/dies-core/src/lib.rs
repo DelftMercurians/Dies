@@ -54,3 +54,34 @@ pub enum SimulatorCmd {
         player_id: PlayerId,
     },
 }
+
+/// Script error types for error handling and UI display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare::typeshare]
+pub enum ScriptError {
+    /// Syntax error that occurs during script compilation
+    Syntax {
+        /// The script file path that caused the error
+        script_path: String,
+        /// The error message from the compiler
+        message: String,
+        /// Line number if available
+        line: Option<u32>,
+        /// Column number if available  
+        column: Option<u32>,
+    },
+    /// Runtime error that occurs during script execution
+    Runtime {
+        /// The script file path where the error occurred
+        script_path: String,
+        /// The function name where the error occurred
+        function_name: String,
+        /// The error message
+        message: String,
+        /// The team color that encountered the error
+        team_color: TeamColor,
+        /// The player ID that was being processed when the error occurred
+        player_id: Option<PlayerId>,
+    },
+}
