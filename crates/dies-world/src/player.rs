@@ -165,9 +165,11 @@ impl PlayerTracker {
                         self.velocity_samples.remove(0);
                         self.velocity_samples.push(last_data.velocity);
 
-                        let acc = self.velocity_samples.windows(2).fold(0.0, |acc, w| {
-                            acc + (w[1] - w[0]).norm() / dt
-                        }) / 9.0;
+                        let acc = self
+                            .velocity_samples
+                            .windows(2)
+                            .fold(0.0, |acc, w| acc + (w[1] - w[0]).norm() / dt)
+                            / 9.0;
                     }
 
                     last_data.timestamp = t_capture;

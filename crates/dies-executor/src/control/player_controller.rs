@@ -276,7 +276,7 @@ impl PlayerController {
                     input.speed_limit.unwrap_or(self.max_speed),
                     input.acceleration_limit.unwrap_or(self.max_decel),
                     input.care,
-                    player_context
+                    player_context,
                 );
                 self.target_velocity = pos_u;
                 player_context.debug_string("controller", "MTP");

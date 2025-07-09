@@ -9,8 +9,8 @@ use std::sync::Arc;
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
-    MPCController, RobotState,
     team_context::TeamContext,
+    MPCController, RobotState,
 };
 use crate::{
     behavior_tree::{BehaviorTree, BtContext, RhaiHost, RobotSituation},
@@ -166,8 +166,7 @@ impl TeamController {
                             target_position: target_pos,
                             vel_limit: controller.get_max_speed(),
                         });
-                    }
-                    else {
+                    } else {
                         // if we don't need to move - force robots to stay in place while
                         // still putting them to mpc for continuity, which is fairly important
                         mpc_robots.push(RobotState {
@@ -185,7 +184,8 @@ impl TeamController {
         // Compute batched MPC controls
         self.mpc_controller.set_field_bounds(&world_data);
         let mpc_controls = if !mpc_robots.is_empty() {
-            self.mpc_controller.compute_batch_control(&mpc_robots, &world_data)
+            self.mpc_controller
+                .compute_batch_control(&mpc_robots, &world_data)
         } else {
             HashMap::new()
         };
@@ -209,7 +209,10 @@ impl TeamController {
                 if let Some(mpc_control) = mpc_controls.get(&id) {
                     controller.set_target_velocity(*mpc_control);
                     // Debug output for MPC timing
-                    dies_core::debug_value(format!("p{}.mpc.duration_ms", id), self.mpc_controller.last_solve_time_ms());
+                    dies_core::debug_value(
+                        format!("p{}.mpc.duration_ms", id),
+                        self.mpc_controller.last_solve_time_ms(),
+                    );
 
                     // Plot MPC trajectory if available
                     if let Some(trajectory) = trajectories.get(&id) {
@@ -221,8 +224,12 @@ impl TeamController {
                         // Plot trajectory as connected line segments
                         for i in 0..trajectory.len().saturating_sub(1) {
                             if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
-                                let start = dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
-                                let end = dies_core::Vector2::new(trajectory[i + 1][1], trajectory[i + 1][2]);
+                                let start =
+                                    dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
+                                let end = dies_core::Vector2::new(
+                                    trajectory[i + 1][1],
+                                    trajectory[i + 1][2],
+                                );
                                 dies_core::debug_line(
                                     &format!("{}_seg{}", debug_name, i),
                                     start,
@@ -235,7 +242,8 @@ impl TeamController {
                         // Mark trajectory endpoints
                         if !trajectory.is_empty() {
                             if trajectory[0].len() >= 5 {
-                                let start_pos = dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
+                                let start_pos =
+                                    dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
                                 dies_core::debug_cross(
                                     &format!("{}_start", debug_name),
                                     start_pos,

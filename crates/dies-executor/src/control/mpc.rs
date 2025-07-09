@@ -1,8 +1,13 @@
-use dies_core::{Vector2, TeamData, PlayerId};
-use pyo3::prelude::*;
+use dies_core::{PlayerId, TeamData, Vector2};
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
-use std::time::Instant;
+use pyo3::prelude::*;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::Mutex;
+use tokio::task;
+use tokio::task::JoinError;
+use tokio::task::JoinHandle;
 
 #[derive(Clone)]
 pub struct RobotState {
@@ -13,11 +18,24 @@ pub struct RobotState {
     pub vel_limit: f64,
 }
 
+#[derive(Clone)]
+struct MPCControllerState {
+    field_bounds: Option<(f64, f64, f64, f64)>,
+    last_control_sequences: HashMap<PlayerId, Vec<Vector2>>,
+    last_trajectories: HashMap<PlayerId, Vec<Vec<f64>>>,
+    last_solve_time_ms: f64,
+}
+
 pub struct MPCController {
     field_bounds: Option<(f64, f64, f64, f64)>, // (min_x, max_x, min_y, max_y)
     last_solve_time_ms: f64,
     last_control_sequences: HashMap<PlayerId, Vec<Vector2>>,
     last_trajectories: HashMap<PlayerId, Vec<Vec<f64>>>, // Store full trajectory data [t, x, y, vx, vy]
+
+    // Async MPC state
+    running_task: Arc<Mutex<Option<JoinHandle<(HashMap<PlayerId, Vector2>, MPCControllerState)>>>>,
+    last_mpc_result: Option<HashMap<PlayerId, Vector2>>,
+    last_mpc_time: Instant,
 }
 
 impl MPCController {
@@ -27,6 +45,9 @@ impl MPCController {
             last_solve_time_ms: f64::NAN,
             last_control_sequences: HashMap::new(),
             last_trajectories: HashMap::new(),
+            running_task: Arc::new(Mutex::new(None)),
+            last_mpc_result: None,
+            last_mpc_time: Instant::now(),
         }
     }
 
@@ -38,30 +59,84 @@ impl MPCController {
         }
     }
 
-    pub fn compute_batch_control(&mut self, robots: &[RobotState], world: &TeamData) -> HashMap<PlayerId, Vector2> {
+    pub fn compute_batch_control(
+        &mut self,
+        robots: &[RobotState],
+        world: &TeamData,
+    ) -> HashMap<PlayerId, Vector2> {
         if robots.is_empty() {
             return HashMap::new();
         }
 
-        match self.solve_batch_mpc_jax(robots, world) {
-            Ok(controls) => controls,
-            Err(e) => {
-                log::warn!("JAX batch MPC failed: {}, falling back to simple control", e);
-                self.last_solve_time_ms = 0.0; // Mark as failed
-                // Fallback: simple proportional control for each robot
-                let mut fallback_controls = HashMap::new();
-                for robot in robots {
-                    let error = robot.target_position - robot.position;
-                    let desired_vel = error.normalize() * robot.vel_limit.min(error.magnitude() * 2.0);
-                    let control = desired_vel.cap_magnitude(robot.vel_limit);
-                    fallback_controls.insert(robot.id, control);
+        let robots_clone = robots.to_vec();
+        let world_clone = world.clone();
+        let controller_state = MPCControllerState {
+            field_bounds: self.field_bounds,
+            last_control_sequences: self.last_control_sequences.clone(),
+            last_trajectories: self.last_trajectories.clone(),
+            last_solve_time_ms: self.last_solve_time_ms,
+        };
 
-                    // Store fallback as repeated control sequence
-                    let fallback_sequence = vec![control; 10]; // Use a reasonable default
-                    self.last_control_sequences.insert(robot.id, fallback_sequence);
+        // Check if there's already a running task
+        if let Ok(mut task_guard) = self.running_task.try_lock() {
+            if let Some(task) = task_guard.as_ref() {
+                // Check if task is finished
+                if task.is_finished() {
+                    // Get the result
+                    let finished_task = task_guard.take().unwrap();
+                    // Use tokio::runtime::Handle to block on the result
+                    match tokio::runtime::Handle::try_current()
+                        .map(|handle| handle.block_on(finished_task))
+                        .unwrap_or_else(|_| {
+                            // Fallback if no tokio runtime
+                            log::warn!("No tokio runtime available, using MTP fallback");
+                            Ok((HashMap::new(), controller_state.clone()))
+                        }) {
+                        Ok((result, updated_state)) => {
+                            // Update controller state with results from background task
+                            self.last_control_sequences = updated_state.last_control_sequences;
+                            self.last_trajectories = updated_state.last_trajectories;
+                            self.last_solve_time_ms = updated_state.last_solve_time_ms;
+
+                            self.last_mpc_result = Some(result.clone());
+                            self.last_mpc_time = Instant::now();
+                            return result;
+                        }
+                        Err(e) => {
+                            log::warn!("MPC task failed: {}", e);
+                            return HashMap::new(); // Return empty - let MTP handle it
+                        }
+                    }
+                } else {
+                    // Task is still running, check how long it's been
+                    let elapsed = self.last_mpc_time.elapsed().as_millis();
+
+                    if elapsed <= 150 {
+                        // Use last known result if available
+                        if let Some(ref last_result) = self.last_mpc_result {
+                            return last_result.clone();
+                        }
+                    }
+
+                    // Elapsed > 150ms, return empty - let MTP handle it
+                    return HashMap::new();
                 }
-                fallback_controls
             }
+
+            // No running task, start a new one
+
+            let task = tokio::spawn(async move {
+                Self::solve_batch_mpc_jax_async(robots_clone, world_clone, controller_state).await
+            });
+
+            *task_guard = Some(task);
+        }
+
+        // For the first call, use last known result or return empty (let MTP handle it)
+        if let Some(ref last_result) = self.last_mpc_result {
+            last_result.clone()
+        } else {
+            HashMap::new()
         }
     }
 
@@ -73,7 +148,60 @@ impl MPCController {
         &self.last_trajectories
     }
 
-    fn solve_batch_mpc_jax(&mut self, robots: &[RobotState], world: &TeamData) -> Result<HashMap<PlayerId, Vector2>, PyErr> {
+    fn should_fallback_to_mtp(&self) -> bool {
+        // Check if we should fallback - either no last result or timeout exceeded
+        if self.last_mpc_result.is_none() {
+            return true;
+        }
+
+        let elapsed = self.last_mpc_time.elapsed().as_millis();
+        elapsed > 150
+    }
+
+    async fn solve_batch_mpc_jax_async(
+        robots: Vec<RobotState>,
+        world: TeamData,
+        controller_state: MPCControllerState,
+    ) -> (HashMap<PlayerId, Vector2>, MPCControllerState) {
+        let robots = Arc::new(robots);
+        let world = Arc::new(world);
+
+        // Keep an untouched copy for the “panic fallback” path.
+        let state_fallback = controller_state.clone();
+
+        let join = task::spawn_blocking({
+            // Clone the Arcs so the closure owns its data.
+            let robots = Arc::clone(&robots);
+            let world = Arc::clone(&world);
+
+            move || {
+                // Own and mutate our private controller state
+                let mut state = controller_state;
+                match Self::solve_batch_mpc_jax_sync(&robots, &world, &mut state) {
+                    Ok(controls) => (controls, state),
+                    Err(e) => {
+                        log::warn!("JAX batch-MPC failed: {e}; returning empty result");
+                        (HashMap::new(), state)
+                    }
+                }
+            }
+        })
+        .await;
+
+        match join {
+            Ok(pair) => pair,
+            Err(e) => {
+                log::warn!("MPC task panicked: {e}; returning empty result");
+                (HashMap::new(), state_fallback)
+            }
+        }
+    }
+
+    fn solve_batch_mpc_jax_sync(
+        robots: &[RobotState],
+        world: &TeamData,
+        controller_state: &mut MPCControllerState,
+    ) -> Result<HashMap<PlayerId, Vector2>, PyErr> {
         let start_time = Instant::now();
 
         Python::with_gil(|py| {
@@ -108,11 +236,14 @@ impl MPCController {
             for robot in robots {
                 initial_positions.extend_from_slice(&[robot.position.x, robot.position.y]);
                 initial_velocities.extend_from_slice(&[robot.velocity.x, robot.velocity.y]);
-                target_positions.extend_from_slice(&[robot.target_position.x, robot.target_position.y]);
+                target_positions
+                    .extend_from_slice(&[robot.target_position.x, robot.target_position.y]);
                 vel_limits.push(robot.vel_limit);
 
                 // Get last control sequence for this robot, or zeros if not available
-                let last_sequence = self.last_control_sequences.get(&robot.id)
+                let last_sequence = controller_state
+                    .last_control_sequences
+                    .get(&robot.id)
                     .cloned()
                     .unwrap_or_else(|| vec![Vector2::new(0.0, 0.0); control_horizon]);
 
@@ -122,11 +253,19 @@ impl MPCController {
             }
 
             // Convert to numpy arrays with proper shapes
-            let initial_pos_array = np.call_method1("array", (initial_positions,))?.call_method1("reshape", (n_robots, 2))?;
-            let initial_vel_array = np.call_method1("array", (initial_velocities,))?.call_method1("reshape", (n_robots, 2))?;
-            let target_pos_array = np.call_method1("array", (target_positions,))?.call_method1("reshape", (n_robots, 2))?;
+            let initial_pos_array = np
+                .call_method1("array", (initial_positions,))?
+                .call_method1("reshape", (n_robots, 2))?;
+            let initial_vel_array = np
+                .call_method1("array", (initial_velocities,))?
+                .call_method1("reshape", (n_robots, 2))?;
+            let target_pos_array = np
+                .call_method1("array", (target_positions,))?
+                .call_method1("reshape", (n_robots, 2))?;
             let vel_limits_array = np.call_method1("array", (vel_limits,))?;
-            let last_controls_array = np.call_method1("array", (last_controls_data,))?.call_method1("reshape", (n_robots, control_horizon, 2))?;
+            let last_controls_array = np
+                .call_method1("array", (last_controls_data,))?
+                .call_method1("reshape", (n_robots, control_horizon, 2))?;
 
             // Prepare obstacles (only other robots, NOT the ball)
             let mut obstacles_data = Vec::new();
@@ -141,7 +280,8 @@ impl MPCController {
                 np.call_method1("zeros", ((0, 2),))?
             } else {
                 let n = obstacles_data.len();
-                let obstacles_array = np.call_method1("array", (obstacles_data,))?
+                let obstacles_array = np
+                    .call_method1("array", (obstacles_data,))?
                     .call_method1("reshape", ((n / 2) as i32, 2))?;
                 obstacles_array
             };
@@ -154,7 +294,7 @@ impl MPCController {
             };
 
             // Prepare field bounds
-            let field_bounds = match self.field_bounds {
+            let field_bounds = match controller_state.field_bounds {
                 Some((min_x, max_x, min_y, max_y)) => {
                     Some(np.call_method1("array", (vec![min_x, max_x, min_y, max_y],))?)
                 }
@@ -166,7 +306,7 @@ impl MPCController {
             let mut dynamic_horizon = control_horizon * 5 + 1; // Default to control_horizon
 
             for robot in robots {
-                if let Some(traj) = self.last_trajectories.get(&robot.id) {
+                if let Some(traj) = controller_state.last_trajectories.get(&robot.id) {
                     // Use the actual trajectory length for dynamic horizon
                     if !traj.is_empty() {
                         dynamic_horizon = traj.len();
@@ -178,7 +318,8 @@ impl MPCController {
                             last_traj_data.extend_from_slice(&traj[i]);
                         } else {
                             // Pad with last available value or zeros if no trajectory exists
-                            let last_point = if !traj.is_empty() && !traj.last().unwrap().is_empty() {
+                            let last_point = if !traj.is_empty() && !traj.last().unwrap().is_empty()
+                            {
                                 traj.last().unwrap().clone()
                             } else {
                                 vec![i as f64 * world.dt, 0.0, 0.0, 0.0, 0.0]
@@ -198,7 +339,9 @@ impl MPCController {
             let last_traj_array = if last_traj_data.is_empty() {
                 py.None()
             } else {
-                np.call_method1("array", (last_traj_data,))?.call_method1("reshape", (n_robots, dynamic_horizon, 5))?.into()
+                np.call_method1("array", (last_traj_data,))?
+                    .call_method1("reshape", (n_robots, dynamic_horizon, 5))?
+                    .into()
             };
 
             let dt_value = world.dt;
@@ -223,28 +366,39 @@ impl MPCController {
             let trajectories_py = result_tuple.1;
 
             // Convert controls to Rust data
-            let controls_list = controls_py.bind(py).call_method0(pyo3::intern!(py, "tolist"))?;
+            let controls_list = controls_py
+                .bind(py)
+                .call_method0(pyo3::intern!(py, "tolist"))?;
             let control_data: Vec<Vec<Vec<f64>>> = controls_list.extract()?;
 
             // Convert trajectories to Rust data
-            let trajectories_list = trajectories_py.bind(py).call_method0(pyo3::intern!(py, "tolist"))?;
+            let trajectories_list = trajectories_py
+                .bind(py)
+                .call_method0(pyo3::intern!(py, "tolist"))?;
             let trajectory_data: Vec<Vec<Vec<f64>>> = trajectories_list.extract()?;
 
             // Restore stdout and capture any prints
             sys.setattr("stdout", original_stdout)?;
-            let captured_output: String = stdout_capture.call_method0(pyo3::intern!(py, "getvalue"))?.extract()?;
+            let captured_output: String = stdout_capture
+                .call_method0(pyo3::intern!(py, "getvalue"))?
+                .extract()?;
 
             // Calculate timing
             let duration = start_time.elapsed();
             let duration_ms = duration.as_secs_f64() * 1000.0;
 
-            if self.last_solve_time_ms.is_nan() {
-                self.last_solve_time_ms = duration_ms;
+            if controller_state.last_solve_time_ms.is_nan() {
+                controller_state.last_solve_time_ms = duration_ms;
             }
-            if self.last_solve_time_ms < duration_ms / 4.0 {
-                log::warn!("MPC abnormal timing: usually its around {:.1} but got {:.1}", self.last_solve_time_ms, duration_ms);
+            if controller_state.last_solve_time_ms < duration_ms / 4.0 {
+                log::warn!(
+                    "MPC abnormal timing: usually its around {:.1} but got {:.1}",
+                    controller_state.last_solve_time_ms,
+                    duration_ms
+                );
             }
-            self.last_solve_time_ms = duration_ms * 0.05 + self.last_solve_time_ms * 0.95;
+            controller_state.last_solve_time_ms =
+                duration_ms * 0.05 + controller_state.last_solve_time_ms * 0.95;
 
             // Output any Python prints using dies_core::debug
             if !captured_output.trim().is_empty() {
@@ -262,12 +416,16 @@ impl MPCController {
                         // Extract first control for immediate use
                         if let Some(first_control) = control_sequence.get(0) {
                             if first_control.len() >= 2 {
-                                controls.insert(robot.id, Vector2::new(first_control[0], first_control[1]));
+                                controls.insert(
+                                    robot.id,
+                                    Vector2::new(first_control[0], first_control[1]),
+                                );
                             }
                         }
 
                         // Store full control sequence for continuity
-                        let sequence: Vec<Vector2> = control_sequence.iter()
+                        let sequence: Vec<Vector2> = control_sequence
+                            .iter()
                             .filter_map(|control| {
                                 if control.len() >= 2 {
                                     Some(Vector2::new(control[0], control[1]))
@@ -278,7 +436,9 @@ impl MPCController {
                             .collect();
 
                         if !sequence.is_empty() {
-                            self.last_control_sequences.insert(robot.id, sequence);
+                            controller_state
+                                .last_control_sequences
+                                .insert(robot.id, sequence);
                         }
                     }
                 }
@@ -287,7 +447,8 @@ impl MPCController {
                 if let Some(trajectory_sequence) = trajectory_data.get(i) {
                     if !trajectory_sequence.is_empty() {
                         // Store full trajectory data [t, x, y, vx, vy] for each point
-                        let traj_points: Vec<Vec<f64>> = trajectory_sequence.iter()
+                        let traj_points: Vec<Vec<f64>> = trajectory_sequence
+                            .iter()
                             .filter_map(|point| {
                                 if point.len() >= 5 {
                                     Some(point.clone())
@@ -298,7 +459,9 @@ impl MPCController {
                             .collect();
 
                         if !traj_points.is_empty() {
-                            self.last_trajectories.insert(robot.id, traj_points);
+                            controller_state
+                                .last_trajectories
+                                .insert(robot.id, traj_points);
                         }
                     }
                 }
@@ -307,7 +470,6 @@ impl MPCController {
             Ok(controls)
         })
     }
-
 }
 
 impl Default for MPCController {
