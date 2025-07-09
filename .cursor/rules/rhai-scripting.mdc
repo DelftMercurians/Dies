@@ -1,0 +1,284 @@
+---
+globs: *.rhai
+alwaysApply: false
+---
+
+# A Comprehensive Guide to Writing Rhai Strategies for Dies
+
+This guide provides a comprehensive overview of the Dies Behavior Tree (BT) and Rhai Scripting system. It is designed to equip a coding agent with the knowledge necessary to write effective and intelligent strategies for the robots.
+
+## 1. Introduction
+
+### The Dies Behavior Tree (BT) & Rhai Scripting System
+
+The Dies project uses a powerful combination of **Behavior Trees** to model robot behavior and the **Rhai scripting language** to define the logic within those trees. This allows for creating complex, dynamic, and even hot-reloadable behaviors in a declarative and easy-to-understand way.
+
+### The Role of Rhai: Strategy vs. Skills
+
+The core design principle is a clear separation of concerns:
+
+- **Rust implements Skills**: These are the fundamental, atomic "building blocks" of robot behavior (e.g., `Kick`, `FetchBall`, `GoToPosition`). They are reusable, self-contained, and performant. They define _how_ a robot does something.
+- **Rhai defines Strategy**: Rhai scripts compose these skills into high-level strategies. The scripts define the "brain" of the robot, focusing on decision-making and orchestration. They define _when_ and _why_ a robot does something.
+
+---
+
+## 2. Rhai Language Essentials for Dies
+
+This section covers the core Rhai language features relevant to writing BT scripts.
+
+### 2.1. Basic Syntax
+
+- **Variables**: Declared with `let`. They are dynamically typed.
+  ```rust
+  let x = 42;
+  let name = "droste";
+  ```
+- **Functions**: Declared with `fn`. They are essential for creating conditions and scorers. The last expression is implicitly returned.
+  ```rust
+  fn is_near_ball(s) {
+      // 's' is the RobotSituation object
+      let dist = (s.player.position - s.world.ball.position).norm();
+      dist < 500.0
+  }
+  ```
+- **Comments**: Use `//` for single-line comments and `/* ... */` for block comments.
+
+### 2.2. Data Types
+
+- **Primitives**:
+  - `INT` (e.g., `42`, `-10`) - 64-bit signed integer.
+  - `FLOAT` (e.g., `3.14`, `-0.5`) - 64-bit float.
+  - `BOOL` (`true`, `false`).
+  - `STRING` (e.g., `"a description"`).
+- **Arrays**: An ordered list of items, enclosed in `[]`.
+  ```rust
+  let nodes = [FetchBall(), Kick()];
+  ```
+- **Maps**: A collection of key-value pairs, enclosed in `#{}`. Used for optional parameters.
+  ```rust
+  // Used for the 'options' parameter in GoToPosition
+  let opts = #{ heading: 1.57, with_ball: true };
+  ```
+
+### 2.3. Control Flow
+
+- **`if`/`else`**: Used for conditional logic inside functions.
+  ```rust
+  fn get_score(s) {
+      let score = 100.0;
+      if s.has_ball() {
+          score += 50.0;
+      } else {
+          score -= 20.0;
+      }
+      return score;
+  }
+  ```
+- **`switch`**: Matches a value against several cases. It is more efficient than a long `if/else` chain.
+  ```rust
+  switch state {
+      1 => "one",
+      2 | 3 => "two or three",
+      _ => "other"
+  }
+  ```
+
+### 2.4. Functions In-Depth
+
+- **Anonymous Functions & Closures**: Defined with `|...| ...` syntax. They can "capture" variables from their defining scope. This is the primary way to define conditions and scorers inline.
+  ```rust
+  // A Guard using a closure as a condition
+  Guard(|s| s.has_ball(), Kick())
+  ```
+- **Function Pointers**: A reference to a function, created with `Fn("function_name")` or by just using the function name as a variable.
+
+  ```rust
+  fn my_condition(s) { s.has_ball() }
+
+  // These are equivalent
+  Guard(my_condition, Kick())
+  Guard(Fn("my_condition"), Kick())
+  ```
+
+### 2.5. Modules
+
+- **`import`**: Scripts are modular. Use `import "path/to/module.rhai" as module_name;` to use functions from other files.
+- **Project Script Structure**:
+  - `strategies/main.rhai`: The main entry point.
+  - `strategies/game_modes/`: Contains scripts for specific game states (`play.rhai`, `kickoff.rhai`).
+  - `strategies/shared/`: Contains reusable logic.
+    - `situations.rhai`: For condition functions (`Guard`s).
+    - `utilities.rhai`: For helper functions.
+
+Due to a bug in Rhai, imported functions cannot be used as function pointers (eg as conditions or scorers) -- in these cases they should be wrapped in an anonymous function `|s| util::my_condition(s)`.
+
+---
+
+## 3. Behavior Tree (BT) Fundamentals
+
+### 3.1. Core Concepts
+
+- **The "Tick"**: A BT is executed by "ticking" its root node. This happens on every frame.
+- **Node Status**: Each node returns one of three statuses:
+  - `Success`: The node's task is complete and successful.
+  - `Failure`: The node's task failed.
+  - `Running`: The node is still working and needs more ticks.
+
+### 3.2. Node Types
+
+- **Composite Nodes**: Control the flow of execution for their children.
+  - `Select`: An **OR** gate. Tries children in order until one succeeds or is running. Fails if all children fail.
+  - `Sequence`: An **AND** gate. Runs children in order. Fails if any child fails. Succeeds only if all children succeed.
+  - `ScoringSelect`: Chooses which child to run based on a calculated score. The highest score wins.
+- **Decorator Nodes**: Modify the behavior of a single child.
+  - `Guard`: A conditional node. If its condition is true, it ticks its child. Otherwise, it fails.
+  - `Semaphore`: A team coordination tool. Limits how many robots can run its child branch simultaneously.
+- **Action Nodes (Skills)**: The leaves of the tree that perform actual robot actions (e.g., `Kick`, `GoToPosition`).
+
+---
+
+## 4. The Dies Scripting API Reference
+
+This is the definitive reference for the functions and data available in Rhai scripts, derived directly from the Rust implementation.
+
+### 4.1. Entry Points
+
+Your `strategies/main.rhai` script must provide these functions, which are called by the system to build the BT for a player based on the current game state. Each must return a `BehaviorNode`.
+
+- `build_play_bt(player_id)`: For normal gameplay.
+- `build_kickoff_bt(player_id)`: For kickoff situations.
+- `build_penalty_bt(player_id)`: For penalty situations.
+
+### 4.2. The `RobotSituation` Context Object
+
+Condition and scorer functions receive a single argument, typically named `s`, which is the `RobotSituation` object. It provides a snapshot of the world from the current robot's perspective.
+
+**Top-Level Properties & Methods:**
+
+- `s.player_id`: `PlayerId` of the current robot.
+- `s.has_ball()`: `true` if the robot's breakbeam sensor detects the ball.
+- `s.player()`: `PlayerData` object for the current robot.
+- `s.world`: The `World` object containing global state.
+
+**`World` Object (`Arc<TeamData>`)**
+
+- `s.world.ball`: `BallData` object or `()` if not present.
+- `s.world.own_players`: `Array` of `PlayerData` for your teammates.
+- `s.world.opp_players`: `Array` of `PlayerData` for opponents.
+- `s.world.game_state`: `GameStateData` object.
+- `s.world.field_geom`: `FieldGeometry` object or `()` if not present.
+
+**Data Structure Reference**
+
+- **`PlayerData`**:
+  - `.id`: `PlayerId`
+  - `.position`: `Vec3`
+  - `.velocity`: `Vec3`
+  - `.heading`: `FLOAT` (in radians)
+- **`BallData`**:
+  - `.position`: `Vec3`
+  - `.velocity`: `Vec3`
+- **`Vec2` / `Vec3`**:
+  - `.x`, `.y`, (`.z`)
+- **`GameStateData`**:
+  - `.game_state`: `GameState` enum.
+  - `.us_operating`: `BOOL`.
+- **`FieldGeometry`**:
+  - `.field_length`, `.field_width`, `.goal_width`, `.goal_depth`, etc.
+
+### 4.3. Behavior Node Constructors
+
+These functions create the structure of your BT.
+
+- `Select(children: Array, [description: String]) -> BehaviorNode`
+- `Sequence(children: Array, [description: String]) -> BehaviorNode`
+- `Guard(condition_fn: FnPtr, child: BehaviorNode, cond_description: String) -> BehaviorNode`
+- `Semaphore(child: BehaviorNode, id: String, max_count: INT, [description: String]) -> BehaviorNode`
+- `ScoringSelect(children_scorers: Array, hysteresis_margin: FLOAT, [description: String]) -> BehaviorNode`
+  - `children_scorers` is an array of maps: `[#{ node: ..., scorer: ... }, ...]`.
+
+### 4.4. Skills (Action Nodes)
+
+Skills are the actions your robot can perform. Many arguments can be **dynamic**, meaning you can provide either a static value or a callback function `|s| { ... }` that returns the value.
+
+- `GoToPosition(target: Vec2 | FnPtr, [options: Map], [description: String])`
+  - `options` map keys: `heading` (Float|FnPtr), `with_ball` (Bool|FnPtr), `avoid_ball` (Bool|FnPtr).
+- `FaceAngle(angle: Float | FnPtr, [options: Map], [description: String])`
+  - `options` map keys: `with_ball` (Bool|FnPtr).
+- `FaceTowardsPosition(target: Vec2 | FnPtr, [options: Map], [description: String])`
+  - `options` map keys: `with_ball` (Bool|FnPtr).
+- `FaceTowardsOwnPlayer(player_id: INT | FnPtr, [options: Map], [description: String])`
+  - `options` map keys: `with_ball` (Bool|FnPtr).
+- `Kick([description: String])`
+- `Wait(duration_secs: Float | FnPtr, [description: String])`
+- `FetchBall([description: String])`
+- `InterceptBall([description: String])`
+- `ApproachBall([description: String])`
+- `FetchBallWithHeadingAngle(angle_rad: Float | FnPtr, [description: String])`
+- `FetchBallWithHeadingPosition(target: Vec2 | FnPtr, [description: String])`
+- `FetchBallWithHeadingPlayer(player_id: INT | FnPtr, [description: String])`
+
+### 4.5. Helper Functions
+
+- `vec2(x: FLOAT, y: FLOAT) -> Vec2`: Creates a 2D vector.
+- `to_string(id: PlayerId) -> String`: Converts a `PlayerId` to a string.
+- `hash_float(id: PlayerId) -> FLOAT`: Returns a deterministic float [0.0, 1.0] from a player ID, useful for distributing players.
+
+---
+
+## 5. Strategy and Patterns
+
+### 5.1. Writing Conditions and Scorers
+
+- **Conditions (`Guard`)**: Must be a function that takes `RobotSituation` (`s`) and returns a `BOOL`.
+  ```rust
+  fn is_ball_on_our_side(s) { s.world.ball.position.x < 0.0 }
+  Guard(is_ball_on_our_side, AttackerTree())
+  ```
+- **Scorers (`ScoringSelect`)**: Must be a function that takes `RobotSituation` (`s`) and returns a `FLOAT`. Higher scores are preferred.
+  ```rust
+  fn score_attacker(s) {
+      let dist = (s.player.position - s.world.ball.position).norm();
+      // Closer players get a higher score
+      return 1000.0 - dist;
+  }
+  ```
+
+### 5.2. Role Assignment with `ScoringSelect`
+
+`ScoringSelect` is the primary mechanism for dynamic role assignment. Create a child node for each role (e.g., Attacker, Defender) and a scorer function that evaluates how suitable the current robot is for that role.
+
+```rust
+fn build_play_bt(player_id) {
+    return ScoringSelect([
+        #{ node: AttackerTree(), scorer: |s| score_attacker(s) },
+        #{ node: DefenderTree(), scorer: |s| score_defender(s) },
+        #{ node: SupporterTree(), scorer: |s| score_supporter(s) }
+    ], 0.1, "Role Selection");
+}
+```
+
+### 5.3. Team Coordination with `Semaphore`
+
+Use `Semaphore` to ensure only a certain number of robots perform a role or action. The `id` string must be unique for each semaphore.
+
+```rust
+fn AttackerTree() {
+    // Only one player can be the primary attacker at a time
+    return Semaphore(
+        // ... sequence of actions for the attacker ...
+        Sequence([...]),
+        "primary_attacker", // Unique ID for this semaphore
+        1                   // Max number of robots
+    );
+}
+```
+
+### 5.4. Debugging Scripts
+
+Use the `print()` and `debug()` functions within your scripts. Their output is forwarded to the main application's `log`.
+
+```rust
+print(`Player ${s.player_id}: Ball is at ${s.world.ball.position}`);
+debug(s.player); // Prints the full PlayerData struct
+```
