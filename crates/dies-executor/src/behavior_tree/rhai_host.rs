@@ -1,14 +1,17 @@
 use anyhow::Result;
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
 
 use dies_core::{
-    Angle, BallData, GameState, GameStateData, PlayerData, PlayerId, TeamColor, TeamData, Vector2,
-    Vector3,
+    Angle, BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameState, GameStateData,
+    PlayerData, PlayerId, TeamColor, TeamData, Vector2, Vector3,
 };
-use rhai::{exported_module, module_resolvers::FileModuleResolver, Dynamic, Engine, Scope, AST};
+use rhai::{
+    exported_module, module_resolvers::FileModuleResolver, Dynamic, Engine, ModuleResolver,
+    OptimizationLevel, Scope, AST,
+};
 
 use crate::behavior_tree::{bt_rhai_plugin, BehaviorTree, RobotSituation};
 use crate::ScriptError;
@@ -19,52 +22,58 @@ const PLAY_ENTRY_POINT: &str = "build_play_bt";
 const KICKOFF_ENTRY_POINT: &str = "build_kickoff_bt";
 const PENALTY_ENTRY_POINT: &str = "build_penalty_bt";
 
+#[derive(Clone)]
+
+struct SharedModuleResolver {
+    resolver: Arc<RwLock<FileModuleResolver>>,
+}
+
+impl SharedModuleResolver {
+    pub fn new(resolver: FileModuleResolver) -> Self {
+        Self {
+            resolver: Arc::new(RwLock::new(resolver)),
+        }
+    }
+
+    pub fn set_scope(&self, scope: Scope<'static>) {
+        let mut resolver = self.resolver.write().unwrap();
+        resolver.set_scope(scope);
+    }
+}
+
+impl ModuleResolver for SharedModuleResolver {
+    fn resolve(
+        &self,
+        engine: &Engine,
+        source: Option<&str>,
+        path: &str,
+        pos: rhai::Position,
+    ) -> Result<rhai::Shared<rhai::Module>, Box<rhai::EvalAltResult>> {
+        let resolver = self.resolver.read().unwrap();
+        resolver.resolve(engine, source, path, pos)
+    }
+}
+
 pub struct RhaiHost {
     engine: Arc<RwLock<Engine>>,
-    ast: Arc<RwLock<Option<AST>>>,
+    resolver: SharedModuleResolver,
     script_path: String,
-    compilation_error: Arc<RwLock<Option<ScriptError>>>,
 }
 
 impl RhaiHost {
     pub fn new(script_path: impl AsRef<Path>) -> Self {
-        let engine = create_engine();
+        let (engine, resolver) = create_engine();
         let path_str = script_path.as_ref().to_string_lossy().to_string();
-
-        let (ast, compilation_error) = match engine.compile_file(script_path.as_ref().into()) {
-            Ok(ast) => (Some(ast), None),
-            Err(err) => {
-                let script_error = ScriptError::Syntax {
-                    script_path: path_str.clone(),
-                    message: format!("{}", err),
-                    line: None, // Rhai doesn't provide line info in compile errors easily
-                    column: None,
-                };
-                log::error!("Script compilation failed for {}: {}", path_str, err);
-                (None, Some(script_error))
-            }
-        };
 
         Self {
             engine: Arc::new(RwLock::new(engine)),
-            ast: Arc::new(RwLock::new(ast)),
+            resolver,
             script_path: path_str,
-            compilation_error: Arc::new(RwLock::new(compilation_error)),
         }
     }
 
     pub fn engine(&self) -> Arc<RwLock<Engine>> {
         self.engine.clone()
-    }
-
-    /// Get the compilation error if any
-    pub fn compilation_error(&self) -> Option<ScriptError> {
-        self.compilation_error.read().unwrap().clone()
-    }
-
-    /// Check if the script compiled successfully
-    pub fn is_compiled(&self) -> bool {
-        self.ast.read().unwrap().is_some()
     }
 
     /// Build behavior tree based on game state
@@ -73,21 +82,39 @@ impl RhaiHost {
         player_id: PlayerId,
         game_state: GameState,
         team_color: TeamColor,
+        field_geom: FieldGeometry,
     ) -> Result<BehaviorTree, ScriptError> {
-        // Check if script is compiled
-        let ast_guard = self.ast.read().unwrap();
-        let ast = match ast_guard.as_ref() {
-            Some(ast) => ast,
-            None => {
-                // Return compilation error if script didn't compile
-                return Err(self
-                    .compilation_error()
-                    .unwrap_or_else(|| ScriptError::Syntax {
-                        script_path: self.script_path.clone(),
-                        message: "Script compilation failed".to_string(),
-                        line: None,
-                        column: None,
-                    }));
+        let mut scope = Scope::new();
+        scope.push_constant("FIELD_LENGTH", field_geom.field_length);
+        scope.push_constant("FIELD_HALF_LENGTH", field_geom.field_length / 2.0);
+        scope.push_constant("FIELD_WIDTH", field_geom.field_width);
+        scope.push_constant("FIELD_HALF_WIDTH", field_geom.field_width / 2.0);
+        scope.push_constant("GOAL_WIDTH", field_geom.goal_width);
+        scope.push_constant("GOAL_HALF_WIDTH", field_geom.goal_width / 2.0);
+        scope.push_constant("GOAL_DEPTH", field_geom.goal_depth);
+        scope.push_constant("FIELD", field_geom);
+        self.resolver.set_scope(scope.clone());
+
+        let ast = match self
+            .engine
+            .read()
+            .unwrap()
+            .compile_file_with_scope(&scope, PathBuf::from(&self.script_path))
+        {
+            Ok(ast) => ast,
+            Err(err) => {
+                let script_error = ScriptError::Syntax {
+                    script_path: self.script_path.clone(),
+                    message: format!("{}", err),
+                    line: None,
+                    column: None,
+                };
+                log::error!(
+                    "Script compilation failed for {}: {}",
+                    self.script_path,
+                    err
+                );
+                return Err(script_error);
             }
         };
 
@@ -97,7 +124,6 @@ impl RhaiHost {
             _ => PLAY_ENTRY_POINT, // Default to play tree for all other states
         };
 
-        let mut scope = Scope::new();
         let result = self.engine.read().unwrap().call_fn::<RhaiBehaviorNode>(
             &mut scope,
             &ast,
@@ -127,14 +153,17 @@ impl RhaiHost {
     }
 }
 
-fn create_engine() -> Engine {
+fn create_engine() -> (Engine, SharedModuleResolver) {
     let mut engine = Engine::new();
     engine.set_max_expr_depths(64, 64);
 
     // Set up module resolver to support imports
-    let mut resolver = FileModuleResolver::new_with_path(Path::new("strategies"));
-    resolver.enable_cache(true);
-    engine.set_module_resolver(resolver);
+    let mut file_resolver = FileModuleResolver::new_with_path(Path::new("strategies"));
+    file_resolver.enable_cache(true);
+
+    let resolver = SharedModuleResolver::new(file_resolver);
+    engine.set_module_resolver(resolver.clone());
+    engine.set_optimization_level(OptimizationLevel::Simple);
 
     engine.on_print(|text| log::info!("[RHAI SCRIPT] {}", text));
 
@@ -172,6 +201,13 @@ fn create_engine() -> Engine {
         })
         .register_get("game_state", |wd: &mut Arc<TeamData>| {
             wd.current_game_state.clone()
+        })
+        .register_get("field_geom", |wd: &mut Arc<TeamData>| {
+            if let Some(field_geom) = &wd.field_geom {
+                Dynamic::from(field_geom.clone())
+            } else {
+                Dynamic::from(())
+            }
         });
 
     engine
@@ -206,8 +242,30 @@ fn create_engine() -> Engine {
     // Register GameState enum
     engine.register_type_with_name::<GameState>("GameState");
 
+    // Register FieldGeometry and related types
+    engine
+        .register_type_with_name::<FieldGeometry>("FieldGeometry")
+        .register_get("field_length", |fg: &mut FieldGeometry| fg.field_length)
+        .register_get("field_width", |fg: &mut FieldGeometry| fg.field_width)
+        .register_get("goal_width", |fg: &mut FieldGeometry| fg.goal_width)
+        .register_get("goal_depth", |fg: &mut FieldGeometry| fg.goal_depth)
+        .register_get("boundary_width", |fg: &mut FieldGeometry| fg.boundary_width)
+        .register_get("penalty_area_depth", |fg: &mut FieldGeometry| {
+            fg.penalty_area_depth
+        })
+        .register_get("penalty_area_width", |fg: &mut FieldGeometry| {
+            fg.penalty_area_width
+        })
+        .register_get("center_circle_radius", |fg: &mut FieldGeometry| {
+            fg.center_circle_radius
+        })
+        .register_get("goal_line_to_penalty_mark", |fg: &mut FieldGeometry| {
+            fg.goal_line_to_penalty_mark
+        })
+        .register_get("ball_radius", |fg: &mut FieldGeometry| fg.ball_radius);
+
     let bt_module = Arc::new(exported_module!(bt_rhai_plugin));
     engine.register_global_module(bt_module);
 
-    engine
+    (engine, resolver)
 }

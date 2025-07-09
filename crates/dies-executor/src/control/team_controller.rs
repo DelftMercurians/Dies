@@ -29,13 +29,6 @@ pub struct TeamController {
 impl TeamController {
     pub fn new(settings: &ExecutorSettings, script_path: &str, team_color: TeamColor) -> Self {
         let script_host = RhaiHost::new(script_path);
-        let mut latest_script_errors = Vec::new();
-
-        // Check for compilation errors on creation
-        if let Some(compilation_error) = script_host.compilation_error() {
-            latest_script_errors.push(compilation_error);
-        }
-
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
@@ -43,7 +36,7 @@ impl TeamController {
             bt_context: BtContext::new(),
             script_host,
             team_color,
-            latest_script_errors,
+            latest_script_errors: Vec::new(),
         };
         team.update_controller_settings(settings);
         team
@@ -94,6 +87,7 @@ impl TeamController {
                         player_id,
                         current_game_state,
                         self.team_color,
+                        world_data.field_geom.clone().unwrap_or_default(),
                     ) {
                         Ok(bt) => bt,
                         Err(script_error) => {

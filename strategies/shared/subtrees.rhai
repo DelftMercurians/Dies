@@ -22,7 +22,7 @@ fn build_attacker_behavior() {
                     // Try to score if close to goal
                     Guard(|s| util::close_to_goal(s),
                         Sequence([
-                            FaceTowardsPosition(util::get_opponent_goal(), #{}, "Aim at Goal"),
+                            FaceTowardsPosition(util::opp_goal_center(), #{}, "Aim at Goal"),
                             Kick("Shoot!")
                         ], "Score Goal"),
                         "Close to goal?"
@@ -81,7 +81,7 @@ fn build_kickoff_kicker_behavior() {
         FetchBall("Get Ball"),
         Guard(|s| sit::i_have_ball(s),
             Sequence([
-                FaceTowardsPosition(util::get_opponent_goal(), #{}, "Face Goal"),
+                FaceTowardsPosition(util::opp_goal_center(), #{}, "Face Goal"),
                 Kick("Kickoff!")
             ], "Execute Kickoff"),
             "Have ball?"
@@ -116,7 +116,7 @@ fn build_penalty_taker_behavior() {
         FetchBall("Get Ball"),
         Guard(|s| sit::i_have_ball(s),
             Sequence([
-                FaceTowardsPosition(util::get_opponent_goal(), #{}, "Aim at Goal"),
+                FaceTowardsPosition(util::opp_goal_center(), #{}, "Aim at Goal"),
                 Wait(0.5, "Aim"),
                 Kick("Penalty Shot!")
             ], "Execute Penalty"),

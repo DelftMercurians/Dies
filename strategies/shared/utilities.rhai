@@ -1,19 +1,20 @@
-// Goal positions
-fn get_opponent_goal() { return vec2(6000.0, 0.0); }
-fn get_own_goal() { return vec2(-6000.0, 0.0); }
+fn opp_goal_center() { vec2(FIELD_HALF_LENGTH, 0.0) }
+fn opp_goal_inner_center() { vec2(FIELD_HALF_LENGTH + GOAL_DEPTH, 0.0) }
+fn opp_goal_top() { vec2(FIELD_HALF_LENGTH, FIELD.goal_width / 2.0) }
+fn opp_goal_bottom() { vec2(FIELD_HALF_LENGTH, -FIELD.goal_width / 2.0) }
+
+fn own_goal_center() { vec2(-FIELD_HALF_LENGTH, 0.0) }
+fn own_goal_inner_center() { vec2(-FIELD_HALF_LENGTH - GOAL_DEPTH, 0.0) }
+fn own_goal_top() { vec2(-FIELD_HALF_LENGTH, FIELD.goal_width / 2.0) }
+fn own_goal_bottom() { vec2(-FIELD_HALF_LENGTH, -FIELD.goal_width / 2.0) }
+
 
 // Ball position helpers
 fn get_ball_pos(s) {
-    if s.world.ball == () {
-        throw "Ball information not available in get_ball_pos.";
-    }
     return s.world.ball.position;
 }
 
 fn get_ball_velocity(s) {
-    if s.world.ball == () {
-        return vec2(0.0, 0.0);
-    }
     return s.world.ball.velocity;
 }
 
@@ -34,7 +35,7 @@ fn distance_to_ball(s) {
 
 fn distance_to_own_goal(s) {
     let player_pos = s.player().position;
-    let goal = get_own_goal();
+    let goal = own_goal_center();
     let dx = goal.x - player_pos.x;
     let dy = goal.y - player_pos.y;
     return (dx*dx + dy*dy).sqrt();
@@ -85,7 +86,7 @@ fn get_supporter_pos(s) {
 }
 
 fn get_defender_pos(s) {
-    let own_goal = get_own_goal();
+    let own_goal = own_goal_center();
     let player_id_hash = hash_float(s.player_id);
     
     if s.world.ball == () {
@@ -104,7 +105,7 @@ fn get_defender_pos(s) {
 
 fn get_heading_to_goal(s) {
     let player_pos = s.player().position;
-    let goal = get_opponent_goal();
+    let goal = opp_goal_center();
     let dx = goal.x - player_pos.x;
     let dy = goal.y - player_pos.y;
     return dy.atan(dx);
@@ -131,14 +132,14 @@ fn get_penalty_support_pos(player_id) {
 // Attacker helper functions
 fn close_to_goal(s) {
     let player_pos = s.player().position;
-    let goal = get_opponent_goal();
+    let goal = opp_goal_center();
     let dist = (goal.x - player_pos.x).abs() + (goal.y - player_pos.y).abs();
     return dist < 3000.0;
 }
 
 fn advance_toward_goal(s) {
     let player_pos = s.player().position;
-    let goal = get_opponent_goal();
+    let goal = opp_goal_center();
     let advance_factor = 0.3;
     
     let target_x = player_pos.x + (goal.x - player_pos.x) * advance_factor;
