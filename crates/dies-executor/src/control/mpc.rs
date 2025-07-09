@@ -45,6 +45,7 @@ pub struct MPCController {
     response_receiver: mpsc::Receiver<MPCResponse>,
     last_mpc_result: Option<HashMap<PlayerId, Vector2>>,
     last_mpc_time: Instant,
+    request_pending: bool,
     _thread_handle: thread::JoinHandle<()>,
 }
 
@@ -69,6 +70,7 @@ impl MPCController {
             response_receiver,
             last_mpc_result: None,
             last_mpc_time: Instant::now(),
+            request_pending: false,
             _thread_handle: thread_handle,
         }
     }
@@ -99,37 +101,40 @@ impl MPCController {
 
             self.last_mpc_result = Some(response.controls.clone());
             self.last_mpc_time = Instant::now();
+            self.request_pending = false; // Clear the pending flag when we get a response
             return response.controls;
         }
 
         // Check if we should use last result or send new request
         let elapsed = self.last_mpc_time.elapsed().as_millis();
 
-        if elapsed <= 150 {
-            // Use last known result if available and recent
-            if let Some(ref last_result) = self.last_mpc_result {
-                return last_result.clone();
-            }
+        if elapsed > 150 {
+            // If delay is too long, fall back to MTP (return empty HashMap)
+            return HashMap::new();
         }
 
-        // Send new request to worker thread (non-blocking)
-        let controller_state = MPCControllerState {
-            field_bounds: self.field_bounds,
-            last_control_sequences: self.last_control_sequences.clone(),
-            last_trajectories: self.last_trajectories.clone(),
-            last_solve_time_ms: self.last_solve_time_ms,
-        };
+        // If delay is acceptable, always try to send new request unless already pending
+        if !self.request_pending {
+            // Send new request to worker thread (non-blocking)
+            let controller_state = MPCControllerState {
+                field_bounds: self.field_bounds,
+                last_control_sequences: self.last_control_sequences.clone(),
+                last_trajectories: self.last_trajectories.clone(),
+                last_solve_time_ms: self.last_solve_time_ms,
+            };
 
-        let request = MPCRequest {
-            robots: robots.to_vec(),
-            world: world.clone(),
-            controller_state,
-        };
+            let request = MPCRequest {
+                robots: robots.to_vec(),
+                world: world.clone(),
+                controller_state,
+            };
 
-        if let Err(e) = self.request_sender.try_send(request) {
-            log::warn!("mpc thread is having troubles: {}", e);
-        } else {
-            log::info!("mpc thread request sent");
+            if let Err(e) = self.request_sender.try_send(request) {
+                log::warn!("mpc thread is having troubles: {}", e);
+            } else {
+                log::info!("mpc thread request sent");
+                self.request_pending = true; // Mark request as pending
+            }
         }
 
         // Return last known result or empty (let MTP handle it)

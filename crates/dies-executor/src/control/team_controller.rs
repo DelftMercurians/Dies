@@ -62,6 +62,7 @@ impl TeamController {
         team_data: TeamData,
         manual_override: HashMap<PlayerId, PlayerControlInput>,
     ) {
+        log::info!("meow {}", team_color);
         let world_data = Arc::new(team_data);
         let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
         for id in detected_ids.iter() {
@@ -205,65 +206,70 @@ impl TeamController {
                 let default_input = final_player_inputs.player(id);
                 let input_to_use = manual_override.get(&id).unwrap_or(&default_input);
 
-                // Set MPC control result if available
-                if let Some(mpc_control) = mpc_controls.get(&id) {
-                    controller.set_target_velocity(*mpc_control);
-                    // Debug output for MPC timing
-                    dies_core::debug_value(
-                        format!("p{}.mpc.duration_ms", id),
-                        self.mpc_controller.last_solve_time_ms(),
-                    );
+                // Handle MPC vs MTP control
+                if controller.use_mpc() {
+                    if let Some(mpc_control) = mpc_controls.get(&id) {
+                        // Use MPC control
+                        controller.set_target_velocity(*mpc_control);
+                        // Debug output for MPC timing
+                        dies_core::debug_value(
+                            format!("p{}.mpc.duration_ms", id),
+                            self.mpc_controller.last_solve_time_ms(),
+                        );
 
-                    // Plot MPC trajectory if available
-                    if let Some(trajectory) = trajectories.get(&id) {
-                        let debug_name = format!("mpc_traj_p{}", id);
+                        // Plot MPC trajectory if available
+                        if let Some(trajectory) = trajectories.get(&id) {
+                            let debug_name = format!("mpc_traj_p{}", id);
 
-                        // Clear previous trajectory
-                        dies_core::debug_remove(&debug_name);
+                            // Clear previous trajectory
+                            dies_core::debug_remove(&debug_name);
 
-                        // Plot trajectory as connected line segments
-                        for i in 0..trajectory.len().saturating_sub(1) {
-                            if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
-                                let start =
-                                    dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
-                                let end = dies_core::Vector2::new(
-                                    trajectory[i + 1][1],
-                                    trajectory[i + 1][2],
-                                );
-                                dies_core::debug_line(
-                                    &format!("{}_seg{}", debug_name, i),
-                                    start,
-                                    end,
-                                    dies_core::DebugColor::Purple,
-                                );
-                            }
-                        }
-
-                        // Mark trajectory endpoints
-                        if !trajectory.is_empty() {
-                            if trajectory[0].len() >= 5 {
-                                let start_pos =
-                                    dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
-                                dies_core::debug_cross(
-                                    &format!("{}_start", debug_name),
-                                    start_pos,
-                                    dies_core::DebugColor::Green,
-                                );
-                            }
-
-                            if let Some(last) = trajectory.last() {
-                                if last.len() >= 5 {
-                                    let end_pos = dies_core::Vector2::new(last[1], last[2]);
-                                    dies_core::debug_circle_fill(
-                                        &format!("{}_end", debug_name),
-                                        end_pos,
-                                        80.0,
+                            // Plot trajectory as connected line segments
+                            for i in 0..trajectory.len().saturating_sub(1) {
+                                if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
+                                    let start =
+                                        dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
+                                    let end = dies_core::Vector2::new(
+                                        trajectory[i + 1][1],
+                                        trajectory[i + 1][2],
+                                    );
+                                    dies_core::debug_line(
+                                        &format!("{}_seg{}", debug_name, i),
+                                        start,
+                                        end,
                                         dies_core::DebugColor::Purple,
                                     );
                                 }
                             }
+
+                            // Mark trajectory endpoints
+                            if !trajectory.is_empty() {
+                                if trajectory[0].len() >= 5 {
+                                    let start_pos =
+                                        dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
+                                    dies_core::debug_cross(
+                                        &format!("{}_start", debug_name),
+                                        start_pos,
+                                        dies_core::DebugColor::Green,
+                                    );
+                                }
+
+                                if let Some(last) = trajectory.last() {
+                                    if last.len() >= 5 {
+                                        let end_pos = dies_core::Vector2::new(last[1], last[2]);
+                                        dies_core::debug_circle_fill(
+                                            &format!("{}_end", debug_name),
+                                            end_pos,
+                                            80.0,
+                                            dies_core::DebugColor::Purple,
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
+                    // If MPC returned empty (fallback to MTP), don't call set_target_velocity
+                    // Let the controller use MTP through the regular update() call below
                 }
 
                 let is_manual = manual_override
