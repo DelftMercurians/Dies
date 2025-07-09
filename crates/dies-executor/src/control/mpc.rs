@@ -128,8 +128,7 @@ impl MPCController {
 
         if let Err(e) = self.request_sender.try_send(request) {
             log::warn!("mpc thread is having troubles: {}", e);
-        }
-        else {
+        } else {
             log::info!("mpc thread request sent");
         }
 
@@ -169,7 +168,11 @@ impl MPCController {
             // Keep an untouched copy for the “panic fallback” path.
             let state_fallback = controller_state.clone();
 
-            let (controls, updated_state) = match Self::solve_batch_mpc_jax_sync(&request.robots, &request.world, &mut controller_state) {
+            let (controls, updated_state) = match Self::solve_batch_mpc_jax_sync(
+                &request.robots,
+                &request.world,
+                &mut controller_state,
+            ) {
                 Ok(controls) => (controls, controller_state),
                 Err(e) => {
                     log::warn!("JAX batch-MPC failed: {e}; returning empty result");
