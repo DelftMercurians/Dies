@@ -7,7 +7,7 @@ use std::{
 use dies_core::{
     Angle, BallData, GameState, GameStateData, PlayerData, PlayerId, TeamData, Vector2, Vector3,
 };
-use rhai::{exported_module, Dynamic, Engine, Scope, AST};
+use rhai::{exported_module, module_resolvers::FileModuleResolver, Dynamic, Engine, Scope, AST};
 
 use crate::behavior_tree::{bt_rhai_plugin, BehaviorTree, RobotSituation};
 
@@ -71,6 +71,10 @@ impl RhaiHost {
 fn create_engine() -> Engine {
     let mut engine = Engine::new();
     engine.set_max_expr_depths(64, 64);
+
+    // Set up module resolver to support imports
+    let resolver = FileModuleResolver::new();
+    engine.set_module_resolver(resolver);
 
     engine.on_print(|text| log::info!("[RHAI SCRIPT] {}", text));
 

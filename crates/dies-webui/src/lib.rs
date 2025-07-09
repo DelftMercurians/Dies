@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    SimulatorCmd, TeamColor, WorldData,
+    SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, WorldData,
 };
 use dies_ssl_client::SslClientConfig;
 use serde::{Deserialize, Serialize};
@@ -97,6 +97,18 @@ pub(crate) enum UiCommand {
         blue_script_path: Option<String>,
         yellow_script_path: Option<String>,
     },
+    /// Set side assignment
+    SetSideAssignment {
+        side_assignment: SideAssignment,
+    },
+    /// Set complete team configuration (for pre-executor setup)
+    SetTeamConfiguration {
+        configuration: TeamConfiguration,
+    },
+    /// Swap team colors (Blue <-> Yellow)
+    SwapTeamColors,
+    /// Swap team sides (BlueOnPositive <-> YellowOnPositive)
+    SwapTeamSides,
     Stop,
 }
 

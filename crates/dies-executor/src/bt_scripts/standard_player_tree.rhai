@@ -28,13 +28,6 @@ fn get_ball_velocity(s) {
     return s.world.ball.velocity;
 }
 
-// Field geometry constants (Division A)
-fn get_field_length() { return 12000.0; }
-fn get_field_width() { return 9000.0; }
-fn get_goal_width() { return 1800.0; }
-fn get_penalty_area_depth() { return 1800.0; }
-fn get_penalty_area_width() { return 3600.0; }
-
 // Goal positions
 fn get_opponent_goal() { return vec2(6000.0, 0.0); }
 fn get_own_goal() { return vec2(-6000.0, 0.0); }

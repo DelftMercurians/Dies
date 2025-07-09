@@ -62,7 +62,7 @@ impl TeamMap {
                 let script_path = self
                     .blue_script_path
                     .as_deref()
-                    .unwrap_or("crates/dies-executor/src/bt_scripts/standard_player_tree.rhai");
+                    .unwrap_or("strategies/main.rhai");
                 self.blue_team = Some(TeamController::new(settings, script_path));
             }
         } else {
@@ -70,7 +70,7 @@ impl TeamMap {
                 let script_path = self
                     .yellow_script_path
                     .as_deref()
-                    .unwrap_or("crates/dies-executor/src/bt_scripts/standard_player_tree.rhai");
+                    .unwrap_or("strategies/main.rhai");
                 self.yellow_team = Some(TeamController::new(settings, script_path));
             }
         }
@@ -115,7 +115,7 @@ impl TeamMap {
                 let script_path = self
                     .blue_script_path
                     .as_deref()
-                    .unwrap_or("crates/dies-executor/src/bt_scripts/standard_player_tree.rhai");
+                    .unwrap_or("strategies/main.rhai");
                 self.blue_team = Some(TeamController::new(settings, script_path));
             }
         }
@@ -127,7 +127,7 @@ impl TeamMap {
                 let script_path = self
                     .yellow_script_path
                     .as_deref()
-                    .unwrap_or("crates/dies-executor/src/bt_scripts/standard_player_tree.rhai");
+                    .unwrap_or("strategies/main.rhai");
                 self.yellow_team = Some(TeamController::new(settings, script_path));
             }
         }
@@ -360,11 +360,27 @@ impl Executor {
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
-        // Start with blue team active by default for backwards compatibility
-        let mut team_controllers = TeamMap::new(SideAssignment::YellowOnPositive);
-        team_controllers.activate_team(TeamColor::Blue, &settings);
+        // Use team configuration from settings
+        let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
 
-        let controlled_teams = vec![TeamColor::Blue];
+        // Set script paths first
+        team_controllers.set_script_paths(
+            settings.team_configuration.blue_script_path.clone(),
+            settings.team_configuration.yellow_script_path.clone(),
+            &settings,
+        );
+
+        // Activate teams based on configuration
+        let mut controlled_teams = Vec::new();
+        if settings.team_configuration.blue_active {
+            team_controllers.activate_team(TeamColor::Blue, &settings);
+            controlled_teams.push(TeamColor::Blue);
+        }
+        if settings.team_configuration.yellow_active {
+            team_controllers.activate_team(TeamColor::Yellow, &settings);
+            controlled_teams.push(TeamColor::Yellow);
+        }
+
         Self {
             tracker: WorldTracker::new(&settings, &controlled_teams),
             team_controllers,
@@ -390,12 +406,29 @@ impl Executor {
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
-        // Start with blue team active by default for backwards compatibility
-        let mut team_controllers = TeamMap::new(SideAssignment::YellowOnPositive);
-        team_controllers.activate_team(TeamColor::Blue, &settings);
-        simulator.set_controlled_teams(&[TeamColor::Blue]);
+        // Use team configuration from settings
+        let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
 
-        let controlled_teams = vec![TeamColor::Blue];
+        // Set script paths first
+        team_controllers.set_script_paths(
+            settings.team_configuration.blue_script_path.clone(),
+            settings.team_configuration.yellow_script_path.clone(),
+            &settings,
+        );
+
+        // Activate teams based on configuration
+        let mut controlled_teams = Vec::new();
+        if settings.team_configuration.blue_active {
+            team_controllers.activate_team(TeamColor::Blue, &settings);
+            controlled_teams.push(TeamColor::Blue);
+        }
+        if settings.team_configuration.yellow_active {
+            team_controllers.activate_team(TeamColor::Yellow, &settings);
+            controlled_teams.push(TeamColor::Yellow);
+        }
+
+        simulator.set_controlled_teams(&controlled_teams);
+
         Self {
             tracker: WorldTracker::new(&settings, &controlled_teams),
             team_controllers,
@@ -757,6 +790,81 @@ impl Executor {
                     yellow_script_path,
                     &self.settings,
                 );
+            }
+            ControlMsg::SetTeamConfiguration(config) => {
+                // Apply complete team configuration
+                self.team_controllers.side_assignment = config.side_assignment;
+                self.team_controllers.set_script_paths(
+                    config.blue_script_path.clone(),
+                    config.yellow_script_path.clone(),
+                    &self.settings,
+                );
+
+                // Update active teams
+                let mut controlled_teams = Vec::new();
+
+                if config.blue_active {
+                    if !self.team_controllers.blue_team.is_some() {
+                        self.team_controllers
+                            .activate_team(TeamColor::Blue, &self.settings);
+                    }
+                    controlled_teams.push(TeamColor::Blue);
+                } else {
+                    self.team_controllers.deactivate_team(TeamColor::Blue);
+                }
+
+                if config.yellow_active {
+                    if !self.team_controllers.yellow_team.is_some() {
+                        self.team_controllers
+                            .activate_team(TeamColor::Yellow, &self.settings);
+                    }
+                    controlled_teams.push(TeamColor::Yellow);
+                } else {
+                    self.team_controllers.deactivate_team(TeamColor::Yellow);
+                }
+
+                self.tracker.set_controlled_teams(&controlled_teams);
+            }
+            ControlMsg::SwapTeamColors => {
+                // Swap team controller settings
+                let old_blue_active = self.team_controllers.blue_team.is_some();
+                let old_yellow_active = self.team_controllers.yellow_team.is_some();
+                let old_blue_script = self.team_controllers.blue_script_path.clone();
+                let old_yellow_script = self.team_controllers.yellow_script_path.clone();
+
+                // Deactivate all teams first
+                self.team_controllers.deactivate_team(TeamColor::Blue);
+                self.team_controllers.deactivate_team(TeamColor::Yellow);
+
+                // Swap script paths
+                self.team_controllers.set_script_paths(
+                    old_yellow_script,
+                    old_blue_script,
+                    &self.settings,
+                );
+
+                // Reactivate teams with swapped settings
+                let mut controlled_teams = Vec::new();
+                if old_yellow_active {
+                    self.team_controllers
+                        .activate_team(TeamColor::Blue, &self.settings);
+                    controlled_teams.push(TeamColor::Blue);
+                }
+                if old_blue_active {
+                    self.team_controllers
+                        .activate_team(TeamColor::Yellow, &self.settings);
+                    controlled_teams.push(TeamColor::Yellow);
+                }
+
+                self.tracker.set_controlled_teams(&controlled_teams);
+            }
+            ControlMsg::SwapTeamSides => {
+                // Swap side assignment
+                self.team_controllers.side_assignment = match self.team_controllers.side_assignment
+                {
+                    SideAssignment::BlueOnPositive => SideAssignment::YellowOnPositive,
+                    SideAssignment::YellowOnPositive => SideAssignment::BlueOnPositive,
+                };
             }
             ControlMsg::Stop => {}
 

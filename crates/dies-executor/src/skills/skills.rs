@@ -300,6 +300,10 @@ impl FetchBall {
             };
             input.with_yaw(ball_angle);
 
+            dies_core::debug_string(
+                "fetchball_state",
+                format!("{} && {}", ctx.player.breakbeam_ball_detected, distance),
+            );
             if ctx.player.breakbeam_ball_detected && distance < 200.0 {
                 return SkillProgress::success();
             }

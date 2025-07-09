@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 use dies_core::{
     ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd,
-    TeamColor, WorldUpdate,
+    TeamColor, TeamConfiguration, WorldUpdate,
 };
 use dies_protos::ssl_gc_referee_message::referee::Command;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -37,6 +37,12 @@ pub enum ControlMsg {
         yellow_script_path: Option<String>,
     },
     SetSideAssignment(SideAssignment),
+    /// Set complete team configuration (for pre-executor setup)
+    SetTeamConfiguration(TeamConfiguration),
+    /// Swap team colors (Blue <-> Yellow)
+    SwapTeamColors,
+    /// Swap team sides (BlueOnPositive <-> YellowOnPositive)
+    SwapTeamSides,
     Stop,
 }
 

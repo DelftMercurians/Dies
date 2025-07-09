@@ -37,6 +37,7 @@ import { PlayerFeedbackMsg } from "./bindings";
 import TeamSettingsDialog from "./components/TeamSettingsDialog";
 import GameControllerPanel from "./components/GameControllerPanel";
 import PrimaryTeamSelector from "./components/PrimaryTeamSelector";
+import TeamSwapControls from "./components/TeamSwapControls";
 
 type Panel = "left" | "right" | "left-bottom" | "game-controller";
 
@@ -51,11 +52,11 @@ const App: React.FC = () => {
   const executorInfo = useExecutorInfo();
 
   const bsInfo = useBasestationInfo().data;
-  const allMotorsOk = Object.values(bsInfo?.players ?? {}).every(
-    (p: PlayerFeedbackMsg) =>
-      p.motor_statuses?.find((m) => m === "NoReply") === undefined
-  );
-  useWarningSound(!allMotorsOk);
+  // const allMotorsOk = Object.values(bsInfo?.players ?? {}).every(
+  //   (p: PlayerFeedbackMsg) =>
+  //     p.motor_statuses?.find((m) => m === "NoReply") === undefined
+  // );
+  // useWarningSound(!allMotorsOk);
 
   if (!backendState) {
     return (
@@ -164,6 +165,7 @@ const App: React.FC = () => {
         {/* Team Configuration */}
         <div className="flex items-center gap-4">
           <TeamSettingsDialog />
+          <TeamSwapControls />
           <PrimaryTeamSelector />
         </div>
       </div>

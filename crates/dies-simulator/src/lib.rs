@@ -5,7 +5,7 @@ use std::{
 
 use dies_core::{
     Angle, FieldGeometry, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd, SideAssignment,
-    SysStatus, TeamColor, Vector2, WorldInstant,
+    SysStatus, TeamColor, Vector2, Vector3, WorldInstant,
 };
 use dies_protos::{
     ssl_gc_referee_message::{referee, Referee},
@@ -91,7 +91,7 @@ impl Default for SimulationConfig {
         SimulationConfig {
             // PHYSICAL CONSTANTS
             gravity: Vector::z() * -9.81 * 1000.0,
-            ball_damping: 1.4,
+            ball_damping: 1.0,
             vision_update_step: 1.0 / 40.0,
 
             // ROBOT MODEL PARAMETERS
@@ -390,7 +390,7 @@ impl Simulation {
             feedback_interval: IntervalTrigger::new(feedback_interval),
             feedback_queue: VecDeque::new(),
             game_state: SimulationGameState::default(),
-            designated_ball_position: Vector::new(0.0, 0.0, 0.0),
+            designated_ball_position: Vector::new(0.0, 0.0, 20.0),
             last_touch_info: None,
             side_assignment,
         };
@@ -757,15 +757,15 @@ impl Simulation {
                     "RefereeMessage.ball",
                     RefereeMessage::BallPlacementInterference.to_string(),
                 );
-                ball_body.set_position(
-                    Isometry::translation(
-                        self.designated_ball_position.x,
-                        self.designated_ball_position.y,
-                        self.designated_ball_position.z,
-                    ),
-                    true,
-                );
-                ball_body.set_linvel(Vector::zeros(), true);
+                // ball_body.set_position(
+                //     Isometry::translation(
+                //         self.designated_ball_position.x,
+                //         self.designated_ball_position.y,
+                //         self.designated_ball_position.z,
+                //     ),
+                //     true,
+                // );
+                // ball_body.set_linvel(Vector::zeros(), true);
             }
         }
 
@@ -793,17 +793,17 @@ impl Simulation {
                 return false;
             }
             // Check if the player is in the own half, default to the left side
-            let team_color = player.team_color;
-            let out_of_field = self
-                .side_assignment
-                .is_on_opp_side_vec3(team_color, &player_position);
-            if out_of_field {
-                dies_core::debug_string(
-                    "RefereeMessage",
-                    format!("Player {} out of field", player.id.as_u32()),
-                );
-                return false;
-            }
+            // let team_color = player.team_color;
+            // let out_of_field = self
+            //     .side_assignment
+            //     .is_on_opp_side_vec3(team_color, &player_position);
+            // if out_of_field {
+            //     dies_core::debug_string(
+            //         "RefereeMessage",
+            //         format!("Player {} out of field", player.id.as_u32()),
+            //     );
+            //     return false;
+            // }
         }
         true
     }
@@ -850,15 +850,15 @@ impl Simulation {
                 }
 
                 // Reset the ball's position to the free kick position
-                ball_body.set_position(
-                    Isometry::translation(
-                        self.designated_ball_position.x,
-                        self.designated_ball_position.y,
-                        self.designated_ball_position.z,
-                    ),
-                    true,
-                );
-                ball_body.set_linvel(Vector::zeros(), true);
+                // ball_body.set_position(
+                //     Isometry::translation(
+                //         self.designated_ball_position.x,
+                //         self.designated_ball_position.y,
+                //         self.designated_ball_position.z,
+                //     ),
+                //     true,
+                // );
+                // ball_body.set_linvel(Vector::zeros(), true);
                 return true;
             }
         }
@@ -898,8 +898,8 @@ impl Simulation {
                 }
 
                 // Reset the ball's position to the kick off position (center)
-                ball_body.set_position(Isometry::translation(0.0, 0.0, 0.0), true);
-                ball_body.set_linvel(Vector::zeros(), true);
+                // ball_body.set_position(Isometry::translation(0.0, 0.0, 20.0), true);
+                // ball_body.set_linvel(Vector::zeros(), true);
                 return true;
             }
         }
@@ -1100,8 +1100,6 @@ impl Simulation {
             // Check if the ball is in the dribbler
             let yaw = rigid_body.position().rotation * Vector::x();
             let player_position = rigid_body.position().translation.vector;
-            let dribbler_position =
-                player_position + yaw * (self.config.player_radius + BALL_RADIUS + 20.0);
             let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
             if let Some(ball_handle) = ball_handle {
                 let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
@@ -1133,6 +1131,9 @@ impl Simulation {
                         // ball_body.set_linear_damping(self.config.ball_damping * 2.0);
 
                         // Fix the bals position to the dribbler
+                        let dribbler_position = player_position
+                            + yaw
+                                * (self.config.player_radius + self.config.dribbler_radius - 10.0);
                         ball_body.set_position(
                             Isometry::translation(
                                 dribbler_position.x,
@@ -1141,6 +1142,7 @@ impl Simulation {
                             ),
                             true,
                         );
+                        ball_body.set_linvel(Vector3::zeros(), true);
                     }
                 } else {
                     player.breakbeam = false;
@@ -1164,6 +1166,28 @@ impl Simulation {
             &(),
             &(),
         );
+
+        // Clamp ball z position to minimum of 20.0
+        // if let Some(ball) = self.ball.as_ref() {
+        //     let ball_body = self
+        //         .rigid_body_set
+        //         .get_mut(ball._rigid_body_handle)
+        //         .unwrap();
+        //     let mut position = ball_body.position().translation.vector;
+        //     if position.z < 20.0 {
+        //         position.z = 20.0;
+        //         ball_body.set_position(
+        //             Isometry::translation(position.x, position.y, position.z),
+        //             true,
+        //         );
+        //         // Also zero out downward velocity to prevent bouncing
+        //         let mut velocity = *ball_body.linvel();
+        //         if velocity.z < 0.0 {
+        //             velocity.z = 0.0;
+        //             ball_body.set_linvel(velocity, true);
+        //         }
+        //     }
+        // }
 
         self.current_time += dt;
     }
@@ -1283,7 +1307,6 @@ impl SimulationBuilder {
         let ball_body = RigidBodyBuilder::dynamic()
             .can_sleep(false)
             .translation(position)
-            .locked_axes(LockedAxes::TRANSLATION_LOCKED_Z)
             .linear_damping(sim.config.ball_damping)
             .build();
         let ball_collider = ColliderBuilder::ball(BALL_RADIUS)

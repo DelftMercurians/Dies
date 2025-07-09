@@ -193,10 +193,38 @@ export interface TrackerSettings {
 	ball_measurement_var: number;
 }
 
+/**
+ * Represents which team defends the positive x side of the field.
+ * 
+ * In RoboCup SSL, the field coordinate system is fixed, but teams can be
+ * assigned to defend either side. This enum tracks that assignment.
+ */
+export enum SideAssignment {
+	/** Blue team defends the positive x side (+x goal) */
+	BlueOnPositive = "BlueOnPositive",
+	/** Yellow team defends the positive x side (+x goal) */
+	YellowOnPositive = "YellowOnPositive",
+}
+
+/** Team configuration that can be set before executor creation. */
+export interface TeamConfiguration {
+	/** Whether the blue team is active */
+	blue_active: boolean;
+	/** Whether the yellow team is active */
+	yellow_active: boolean;
+	/** Script path for the blue team */
+	blue_script_path?: string;
+	/** Script path for the yellow team */
+	yellow_script_path?: string;
+	/** Which team defends the positive x side */
+	side_assignment: SideAssignment;
+}
+
 /** Settings for the executor. */
 export interface ExecutorSettings {
 	controller_settings: ControllerSettings;
 	tracker_settings: TrackerSettings;
+	team_configuration: TeamConfiguration;
 }
 
 export interface ExecutorSettingsResponse {
@@ -352,6 +380,18 @@ export type UiCommand =
 	blue_script_path?: string;
 	yellow_script_path?: string;
 }}
+	/** Set side assignment */
+	| { type: "SetSideAssignment", data: {
+	side_assignment: SideAssignment;
+}}
+	/** Set complete team configuration (for pre-executor setup) */
+	| { type: "SetTeamConfiguration", data: {
+	configuration: TeamConfiguration;
+}}
+	/** Swap team colors (Blue <-> Yellow) */
+	| { type: "SwapTeamColors",  }
+	/** Swap team sides (BlueOnPositive <-> YellowOnPositive) */
+	| { type: "SwapTeamSides",  }
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
@@ -407,19 +447,6 @@ export interface UiStatus {
 	is_live_available: boolean;
 	ui_mode: UiMode;
 	executor: ExecutorStatus;
-}
-
-/**
- * Represents which team defends the positive x side of the field.
- * 
- * In RoboCup SSL, the field coordinate system is fixed, but teams can be
- * assigned to defend either side. This enum tracks that assignment.
- */
-export enum SideAssignment {
-	/** Blue team defends the positive x side (+x goal) */
-	BlueOnPositive = "BlueOnPositive",
-	/** Yellow team defends the positive x side (+x goal) */
-	YellowOnPositive = "YellowOnPositive",
 }
 
 export interface WorldData {

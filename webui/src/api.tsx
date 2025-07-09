@@ -35,6 +35,9 @@ import {
   TeamColor,
   TeamPlayerId,
   PlayerId,
+  PlayerOverrideCommand,
+  TeamConfiguration,
+  SideAssignment,
 } from "./bindings";
 import { toast } from "sonner";
 
@@ -187,6 +190,7 @@ export const useTeamConfiguration = () => {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+      queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
     },
   });
 
@@ -207,12 +211,57 @@ export const useTeamConfiguration = () => {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+      queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
+    },
+  });
+
+  const setSideAssignment = useMutation({
+    mutationFn: (sideAssignment: SideAssignment) =>
+      postCommand({
+        type: "SetSideAssignment",
+        data: { side_assignment: sideAssignment },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+      queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
+    },
+  });
+
+  const setTeamConfiguration = useMutation({
+    mutationFn: (configuration: TeamConfiguration) =>
+      postCommand({
+        type: "SetTeamConfiguration",
+        data: { configuration },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+      queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
+    },
+  });
+
+  const swapTeamColors = useMutation({
+    mutationFn: () => postCommand({ type: "SwapTeamColors" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+      queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
+    },
+  });
+
+  const swapTeamSides = useMutation({
+    mutationFn: () => postCommand({ type: "SwapTeamSides" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["executor-info"] });
+      queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
     },
   });
 
   return {
     setActiveTeams: setActiveTeams.mutate,
     setTeamScriptPaths: setTeamScriptPaths.mutate,
+    setSideAssignment: setSideAssignment.mutate,
+    setTeamConfiguration: setTeamConfiguration.mutate,
+    swapTeamColors: () => swapTeamColors.mutate(),
+    swapTeamSides: () => swapTeamSides.mutate(),
   };
 };
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use dies_core::WorldUpdate;
+use dies_core::{SideAssignment, WorldUpdate};
 use dies_executor::{ControlMsg, Executor, ExecutorHandle};
 use dies_protos::ssl_gc_referee_message::referee::Command;
 use dies_simulator::SimulationBuilder;
@@ -89,17 +89,87 @@ impl ExecutorTask {
             UiCommand::SetActiveTeams {
                 blue_active,
                 yellow_active,
-            } => self.handle_executor_msg(ControlMsg::SetActiveTeams {
-                blue_active,
-                yellow_active,
-            }),
+            } => {
+                // Update team configuration in settings
+                {
+                    let mut settings = self.server_state.executor_settings.write().unwrap();
+                    settings.team_configuration.blue_active = blue_active;
+                    settings.team_configuration.yellow_active = yellow_active;
+                }
+                self.handle_executor_msg(ControlMsg::SetActiveTeams {
+                    blue_active,
+                    yellow_active,
+                });
+            }
             UiCommand::SetTeamScriptPaths {
                 blue_script_path,
                 yellow_script_path,
-            } => self.handle_executor_msg(ControlMsg::SetTeamScriptPaths {
-                blue_script_path,
-                yellow_script_path,
-            }),
+            } => {
+                // Update team configuration in settings
+                {
+                    let mut settings = self.server_state.executor_settings.write().unwrap();
+                    settings.team_configuration.blue_script_path = blue_script_path.clone();
+                    settings.team_configuration.yellow_script_path = yellow_script_path.clone();
+                }
+                self.handle_executor_msg(ControlMsg::SetTeamScriptPaths {
+                    blue_script_path,
+                    yellow_script_path,
+                });
+            }
+            UiCommand::SetSideAssignment { side_assignment } => {
+                // Update team configuration in settings
+                {
+                    let mut settings = self.server_state.executor_settings.write().unwrap();
+                    settings.team_configuration.side_assignment = side_assignment;
+                }
+                self.handle_executor_msg(ControlMsg::SetSideAssignment(side_assignment));
+            }
+            UiCommand::SetTeamConfiguration { configuration } => {
+                // Update team configuration in settings
+                {
+                    let mut settings = self.server_state.executor_settings.write().unwrap();
+                    settings.team_configuration = configuration.clone();
+                }
+                self.handle_executor_msg(ControlMsg::SetTeamConfiguration(configuration));
+            }
+            UiCommand::SwapTeamColors => {
+                let (new_blue_active, new_yellow_active, new_blue_script, new_yellow_script) = {
+                    let mut settings = self.server_state.executor_settings.write().unwrap();
+                    // Swap active teams
+                    let old_blue_active = settings.team_configuration.blue_active;
+                    let old_yellow_active = settings.team_configuration.yellow_active;
+                    settings.team_configuration.blue_active = old_yellow_active;
+                    settings.team_configuration.yellow_active = old_blue_active;
+
+                    // Swap script paths
+                    let old_blue_script = settings.team_configuration.blue_script_path.clone();
+                    let old_yellow_script = settings.team_configuration.yellow_script_path.clone();
+                    settings.team_configuration.blue_script_path = old_yellow_script.clone();
+                    settings.team_configuration.yellow_script_path = old_blue_script.clone();
+
+                    (
+                        old_yellow_active,
+                        old_blue_active,
+                        old_yellow_script,
+                        old_blue_script,
+                    )
+                };
+
+                self.handle_executor_msg(ControlMsg::SwapTeamColors);
+            }
+            UiCommand::SwapTeamSides => {
+                let new_side_assignment = {
+                    let mut settings = self.server_state.executor_settings.write().unwrap();
+                    let new_assignment = match settings.team_configuration.side_assignment {
+                        SideAssignment::BlueOnPositive => SideAssignment::YellowOnPositive,
+                        SideAssignment::YellowOnPositive => SideAssignment::BlueOnPositive,
+                    };
+                    settings.team_configuration.side_assignment = new_assignment;
+                    new_assignment
+                };
+
+                self.handle_executor_msg(ControlMsg::SwapTeamSides);
+            }
             UiCommand::SimulatorCmd(cmd) => self.handle_executor_msg(ControlMsg::SimulatorCmd(cmd)),
             UiCommand::SetPause(pause) => self.handle_executor_msg(ControlMsg::SetPause(pause)),
             UiCommand::Stop => self.stop_executor().await,

@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::FieldGeometry;
+use crate::{FieldGeometry, SideAssignment};
 
 /// Settings for the low-level controller.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -117,12 +117,41 @@ impl Default for TrackerSettings {
     }
 }
 
+/// Team configuration that can be set before executor creation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[typeshare]
+pub struct TeamConfiguration {
+    /// Whether the blue team is active
+    pub blue_active: bool,
+    /// Whether the yellow team is active
+    pub yellow_active: bool,
+    /// Script path for the blue team
+    pub blue_script_path: Option<String>,
+    /// Script path for the yellow team
+    pub yellow_script_path: Option<String>,
+    /// Which team defends the positive x side
+    pub side_assignment: SideAssignment,
+}
+
+impl Default for TeamConfiguration {
+    fn default() -> Self {
+        Self {
+            blue_active: true,
+            yellow_active: false,
+            blue_script_path: None,
+            yellow_script_path: None,
+            side_assignment: SideAssignment::YellowOnPositive,
+        }
+    }
+}
+
 /// Settings for the executor.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
 pub struct ExecutorSettings {
     pub controller_settings: ControllerSettings,
     pub tracker_settings: TrackerSettings,
+    pub team_configuration: TeamConfiguration,
 }
 
 impl ExecutorSettings {
@@ -165,6 +194,7 @@ impl Default for ExecutorSettings {
         Self {
             controller_settings: ControllerSettings::default(),
             tracker_settings: TrackerSettings::default(),
+            team_configuration: TeamConfiguration::default(),
         }
     }
 }
