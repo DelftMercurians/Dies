@@ -9,6 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 use dies_core::{DebugMap, DebugSubscriber, TeamColor, WorldUpdate};
+use dies_executor::ScriptError;
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
@@ -107,11 +108,14 @@ pub async fn get_debug_map(state: State<Arc<ServerState>>) -> Json<GetDebugMapRe
 }
 
 pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> impl IntoResponse {
-    let rx = state.update_rx.clone();
-    let tx = state.cmd_tx.clone();
-    let debug_sub = state.debug_sub.clone();
-    ws.on_upgrade(|socket| async move {
-        handle_ws_conn(tx, rx, debug_sub, socket).await;
+    ws.on_upgrade(move |socket| {
+        handle_ws_conn(
+            state.cmd_tx.clone(),
+            state.update_rx.clone(),
+            state.debug_sub.clone(),
+            state.script_error_tx.subscribe(),
+            socket,
+        )
     })
 }
 
@@ -119,6 +123,7 @@ async fn handle_ws_conn(
     tx: broadcast::Sender<UiCommand>,
     mut world_rx: watch::Receiver<Option<WorldUpdate>>,
     debug_rx: DebugSubscriber,
+    mut script_error_rx: broadcast::Receiver<ScriptError>,
     mut socket: WebSocket,
 ) {
     loop {
@@ -135,6 +140,12 @@ async fn handle_ws_conn(
             debug_map = debug_rx.wait_and_get_copy() => {
                 if let Err(err) =  handle_send_debug_map_update(debug_map, &mut socket).await {
                     log::error!("Failed to send update: {}", err);
+                    break;
+                }
+            }
+            Ok(script_error) = script_error_rx.recv() => {
+                if let Err(err) = handle_send_script_error(&script_error, &mut socket).await {
+                    log::error!("Failed to send script error: {}", err);
                     break;
                 }
             }
@@ -184,11 +195,19 @@ async fn handle_send_ws_world_update(
 }
 
 async fn handle_send_debug_map_update(
-    data: DebugMap,
+    debug_map: DebugMap,
     socket: &mut WebSocket,
 ) -> anyhow::Result<()> {
-    let msg = WsMessage::Debug(&data);
-    let text_data = serde_json::to_string(&msg)?;
+    let text_data = serde_json::to_string(&WsMessage::Debug(&debug_map))?;
+    socket.send(Message::Text(text_data)).await?;
+    Ok(())
+}
+
+async fn handle_send_script_error(
+    script_error: &ScriptError,
+    socket: &mut WebSocket,
+) -> anyhow::Result<()> {
+    let text_data = serde_json::to_string(&WsMessage::ScriptError(script_error))?;
     socket.send(Message::Text(text_data)).await?;
     Ok(())
 }

@@ -7,7 +7,7 @@ import {
   Radio,
   Square,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   useBasestationInfo,
@@ -33,11 +33,16 @@ import PlayerSidebar from "./views/PlayerSidebar";
 import SettingsEditor from "./views/SettingsEditor";
 import Basestation from "./views/Basestation";
 import TeamOverview from "./views/TeamOverview";
-import { PlayerFeedbackMsg } from "./bindings";
+import { PlayerFeedbackMsg, ScriptError } from "./bindings";
 import TeamSettingsDialog from "./components/TeamSettingsDialog";
 import GameControllerPanel from "./components/GameControllerPanel";
 import PrimaryTeamSelector from "./components/PrimaryTeamSelector";
 import TeamSwapControls from "./components/TeamSwapControls";
+import { ScriptErrorDialog } from "./components/ScriptErrorDialog";
+import {
+  ScriptConsoleWithRef,
+  ScriptConsoleRef,
+} from "./components/ScriptConsole";
 
 type Panel = "left" | "right" | "left-bottom" | "game-controller";
 
@@ -50,6 +55,57 @@ const App: React.FC = () => {
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState<Panel[]>(["left-bottom"]);
   const executorInfo = useExecutorInfo();
+
+  // Script error handling state
+  const [currentSyntaxError, setCurrentSyntaxError] =
+    useState<ScriptError | null>(null);
+  const [syntaxErrorDialogOpen, setSyntaxErrorDialogOpen] = useState(false);
+  const scriptConsoleRef = useRef<ScriptConsoleRef>(null);
+
+  // WebSocket message handling for script errors
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+
+    const connectWebSocket = () => {
+      ws = new WebSocket(`ws://127.0.0.1:5555/api/ws`);
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+
+          if (message.type === "ScriptError") {
+            const scriptError = message.data as ScriptError;
+
+            if (scriptError.type === "Syntax") {
+              // Show syntax errors in popup dialog
+              setCurrentSyntaxError(scriptError);
+              setSyntaxErrorDialogOpen(true);
+            } else if (scriptError.type === "Runtime") {
+              // Add runtime errors to console
+              scriptConsoleRef.current?.addError(scriptError);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to parse WebSocket message:", err);
+        }
+      };
+
+      ws.onerror = () => {
+        // Will reconnect automatically
+      };
+
+      ws.onclose = () => {
+        // Reconnect after delay
+        setTimeout(connectWebSocket, 1000);
+      };
+    };
+
+    connectWebSocket();
+
+    return () => {
+      ws?.close();
+    };
+  }, []);
 
   const bsInfo = useBasestationInfo().data;
   // const allMotorsOk = Object.values(bsInfo?.players ?? {}).every(
@@ -343,6 +399,16 @@ const App: React.FC = () => {
           ? "Running"
           : "Idle"}
       </div>
+
+      {/* Script Error Dialog */}
+      <ScriptErrorDialog
+        open={syntaxErrorDialogOpen}
+        onClose={() => setSyntaxErrorDialogOpen(false)}
+        error={currentSyntaxError}
+      />
+
+      {/* Script Console */}
+      <ScriptConsoleWithRef ref={scriptConsoleRef} />
     </main>
   );
 };

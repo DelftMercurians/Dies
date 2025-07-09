@@ -8,6 +8,8 @@ use dies_core::{
 use dies_protos::ssl_gc_referee_message::referee::Command;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
+use crate::ScriptError;
+
 #[derive(Debug)]
 pub enum ControlMsg {
     SetPlayerOverride {
@@ -43,6 +45,8 @@ pub enum ControlMsg {
     SwapTeamColors,
     /// Swap team sides (BlueOnPositive <-> YellowOnPositive)
     SwapTeamSides,
+    /// Report a script error (sent from executor to UI)
+    ScriptError(ScriptError),
     Stop,
 }
 
@@ -66,6 +70,7 @@ pub struct ExecutorHandle {
     pub control_tx: mpsc::UnboundedSender<ControlMsg>,
     pub update_rx: broadcast::Receiver<WorldUpdate>,
     pub info_channel: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
+    pub script_error_rx: broadcast::Receiver<ScriptError>,
 }
 
 impl ExecutorHandle {
@@ -75,6 +80,16 @@ impl ExecutorHandle {
             .await
             .map_err(|err| {
                 log::error!("Error receiving world update: {:?}", err);
+            })
+            .ok()
+    }
+
+    pub async fn recv_script_error(&mut self) -> Option<ScriptError> {
+        self.script_error_rx
+            .recv()
+            .await
+            .map_err(|err| {
+                log::error!("Error receiving script error: {:?}", err);
             })
             .ok()
     }
@@ -105,6 +120,7 @@ impl Clone for ExecutorHandle {
             control_tx: self.control_tx.clone(),
             update_rx: self.update_rx.resubscribe(),
             info_channel: self.info_channel.clone(),
+            script_error_rx: self.script_error_rx.resubscribe(),
         }
     }
 }

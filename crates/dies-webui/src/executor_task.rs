@@ -251,9 +251,26 @@ impl ExecutorTask {
                         // Relay world update to the UI
                         let _ = handle_tx.send(executor.handle());
                         let mut handle = executor.handle();
+
+                        // Spawn task to relay world updates
+                        let update_tx_clone = update_tx.clone();
                         tokio::spawn(async move {
                             while let Ok(update) = handle.update_rx.recv().await {
-                                let _ = update_tx.send(Some(update));
+                                let _ = update_tx_clone.send(Some(update));
+                            }
+                        });
+
+                        // Spawn task to relay script errors via WebSocket
+                        let server_state_clone = Arc::clone(&server_state);
+                        let mut handle_clone = executor.handle();
+                        tokio::spawn(async move {
+                            while let Some(script_error) = handle_clone.recv_script_error().await {
+                                // Broadcast script error through the server state
+                                if let Err(err) =
+                                    server_state_clone.script_error_tx.send(script_error)
+                                {
+                                    log::error!("Failed to broadcast script error: {}", err);
+                                }
                             }
                         });
 

@@ -13,7 +13,39 @@ use dies_ssl_client::{SslMessage, VisionClient};
 use dies_world::WorldTracker;
 use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
+use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
+
+/// Script error types for error handling and UI display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+#[cfg_attr(feature = "typeshare", typeshare::typeshare)]
+pub enum ScriptError {
+    /// Syntax error that occurs during script compilation
+    Syntax {
+        /// The script file path that caused the error
+        script_path: String,
+        /// The error message from the compiler
+        message: String,
+        /// Line number if available
+        line: Option<usize>,
+        /// Column number if available  
+        column: Option<usize>,
+    },
+    /// Runtime error that occurs during script execution
+    Runtime {
+        /// The script file path where the error occurred
+        script_path: String,
+        /// The function name where the error occurred
+        function_name: String,
+        /// The error message
+        message: String,
+        /// The team color that encountered the error
+        team_color: TeamColor,
+        /// The player ID that was being processed when the error occurred
+        player_id: Option<PlayerId>,
+    },
+}
 
 mod behavior_tree;
 mod control;
@@ -63,7 +95,7 @@ impl TeamMap {
                     .blue_script_path
                     .as_deref()
                     .unwrap_or("strategies/main.rhai");
-                self.blue_team = Some(TeamController::new(settings, script_path));
+                self.blue_team = Some(TeamController::new(settings, script_path, TeamColor::Blue));
             }
         } else {
             if self.yellow_team.is_none() {
@@ -71,7 +103,11 @@ impl TeamMap {
                     .yellow_script_path
                     .as_deref()
                     .unwrap_or("strategies/main.rhai");
-                self.yellow_team = Some(TeamController::new(settings, script_path));
+                self.yellow_team = Some(TeamController::new(
+                    settings,
+                    script_path,
+                    TeamColor::Yellow,
+                ));
             }
         }
     }
@@ -116,7 +152,7 @@ impl TeamMap {
                     .blue_script_path
                     .as_deref()
                     .unwrap_or("strategies/main.rhai");
-                self.blue_team = Some(TeamController::new(settings, script_path));
+                self.blue_team = Some(TeamController::new(settings, script_path, TeamColor::Blue));
             }
         }
 
@@ -128,7 +164,11 @@ impl TeamMap {
                     .yellow_script_path
                     .as_deref()
                     .unwrap_or("strategies/main.rhai");
-                self.yellow_team = Some(TeamController::new(settings, script_path));
+                self.yellow_team = Some(TeamController::new(
+                    settings,
+                    script_path,
+                    TeamColor::Yellow,
+                ));
             }
         }
     }
@@ -219,6 +259,21 @@ impl TeamMap {
                     .collect(),
             );
         }
+    }
+
+    /// Get and clear script errors from all active team controllers
+    fn take_script_errors(&mut self) -> Vec<ScriptError> {
+        let mut errors = Vec::new();
+
+        if let Some(controller) = &mut self.blue_team {
+            errors.extend(controller.take_script_errors());
+        }
+
+        if let Some(controller) = &mut self.yellow_team {
+            errors.extend(controller.take_script_errors());
+        }
+
+        errors
     }
 }
 
@@ -346,6 +401,7 @@ pub struct Executor {
     paused_tx: watch::Sender<bool>,
     info_channel_rx: mpsc::UnboundedReceiver<oneshot::Sender<ExecutorInfo>>,
     info_channel_tx: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
+    script_error_tx: broadcast::Sender<ScriptError>,
     settings: ExecutorSettings,
 }
 
@@ -359,6 +415,7 @@ impl Executor {
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
+        let (script_error_tx, _) = broadcast::channel(16);
 
         // Use team configuration from settings
         let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
@@ -396,6 +453,7 @@ impl Executor {
             paused_tx,
             info_channel_rx,
             info_channel_tx,
+            script_error_tx,
             settings,
         }
     }
@@ -405,6 +463,7 @@ impl Executor {
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
+        let (script_error_tx, _) = broadcast::channel(16);
 
         // Use team configuration from settings
         let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
@@ -441,6 +500,7 @@ impl Executor {
             paused_tx,
             info_channel_rx,
             info_channel_tx,
+            script_error_tx,
             settings,
         }
     }
@@ -744,6 +804,7 @@ impl Executor {
             control_tx: self.command_tx.clone(),
             update_rx: self.update_tx.subscribe(),
             info_channel: self.info_channel_tx.clone(),
+            script_error_rx: self.script_error_tx.subscribe(),
         }
     }
 
@@ -780,6 +841,7 @@ impl Executor {
             }
             ControlMsg::SetSideAssignment(side_assignment) => {
                 self.team_controllers.side_assignment = side_assignment;
+                self.tracker.set_side_assignment(side_assignment);
             }
             ControlMsg::SetTeamScriptPaths {
                 blue_script_path,
@@ -794,6 +856,7 @@ impl Executor {
             ControlMsg::SetTeamConfiguration(config) => {
                 // Apply complete team configuration
                 self.team_controllers.side_assignment = config.side_assignment;
+                self.tracker.set_side_assignment(config.side_assignment);
                 self.team_controllers.set_script_paths(
                     config.blue_script_path.clone(),
                     config.yellow_script_path.clone(),
@@ -865,6 +928,15 @@ impl Executor {
                     SideAssignment::BlueOnPositive => SideAssignment::YellowOnPositive,
                     SideAssignment::YellowOnPositive => SideAssignment::BlueOnPositive,
                 };
+                self.tracker
+                    .set_side_assignment(self.team_controllers.side_assignment);
+            }
+            ControlMsg::ScriptError(_) => {
+                // Script errors are sent from executor to UI, not handled by executor
+                // This should not happen in normal operation
+                log::warn!(
+                    "Received ScriptError control message, but these should only be sent to UI"
+                );
             }
             ControlMsg::Stop => {}
 
@@ -892,5 +964,12 @@ impl Executor {
             .map(|(id, s)| (*id, s.advance()))
             .collect();
         self.team_controllers.update(&world_data, manual_override);
+
+        let script_errors = self.team_controllers.take_script_errors();
+        for error in script_errors {
+            if let Err(err) = self.script_error_tx.send(error) {
+                log::error!("Failed to broadcast script error: {}", err);
+            }
+        }
     }
 }

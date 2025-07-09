@@ -585,9 +585,11 @@ export type UiWorldState =
 	| { type: "Loaded", data: WorldData }
 	| { type: "None",  };
 
+/** WebSocket message types sent from backend to frontend */
 export type WsMessage = 
 	| { type: "WorldUpdate", data: WorldData }
-	| { type: "Debug", data: DebugMap };
+	| { type: "Debug", data: DebugMap }
+	| { type: "ScriptError", data: ScriptError };
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];

@@ -5,11 +5,13 @@ use std::{
 };
 
 use dies_core::{
-    Angle, BallData, GameState, GameStateData, PlayerData, PlayerId, TeamData, Vector2, Vector3,
+    Angle, BallData, GameState, GameStateData, PlayerData, PlayerId, TeamColor, TeamData, Vector2,
+    Vector3,
 };
 use rhai::{exported_module, module_resolvers::FileModuleResolver, Dynamic, Engine, Scope, AST};
 
 use crate::behavior_tree::{bt_rhai_plugin, BehaviorTree, RobotSituation};
+use crate::ScriptError;
 
 use super::rhai_types::RhaiBehaviorNode;
 
@@ -19,17 +21,35 @@ const PENALTY_ENTRY_POINT: &str = "build_penalty_bt";
 
 pub struct RhaiHost {
     engine: Arc<RwLock<Engine>>,
-    ast: Arc<RwLock<AST>>,
+    ast: Arc<RwLock<Option<AST>>>,
+    script_path: String,
+    compilation_error: Arc<RwLock<Option<ScriptError>>>,
 }
 
 impl RhaiHost {
     pub fn new(script_path: impl AsRef<Path>) -> Self {
         let engine = create_engine();
-        let ast = engine.compile_file(script_path.as_ref().into()).unwrap();
+        let path_str = script_path.as_ref().to_string_lossy().to_string();
+
+        let (ast, compilation_error) = match engine.compile_file(script_path.as_ref().into()) {
+            Ok(ast) => (Some(ast), None),
+            Err(err) => {
+                let script_error = ScriptError::Syntax {
+                    script_path: path_str.clone(),
+                    message: format!("{}", err),
+                    line: None, // Rhai doesn't provide line info in compile errors easily
+                    column: None,
+                };
+                log::error!("Script compilation failed for {}: {}", path_str, err);
+                (None, Some(script_error))
+            }
+        };
 
         Self {
             engine: Arc::new(RwLock::new(engine)),
             ast: Arc::new(RwLock::new(ast)),
+            script_path: path_str,
+            compilation_error: Arc::new(RwLock::new(compilation_error)),
         }
     }
 
@@ -37,9 +57,14 @@ impl RhaiHost {
         self.engine.clone()
     }
 
-    /// Legacy method for backward compatibility
-    pub fn build_player_bt(&self, player_id: PlayerId) -> Result<BehaviorTree> {
-        self.build_tree_for_state(player_id, GameState::Run)
+    /// Get the compilation error if any
+    pub fn compilation_error(&self) -> Option<ScriptError> {
+        self.compilation_error.read().unwrap().clone()
+    }
+
+    /// Check if the script compiled successfully
+    pub fn is_compiled(&self) -> bool {
+        self.ast.read().unwrap().is_some()
     }
 
     /// Build behavior tree based on game state
@@ -47,7 +72,25 @@ impl RhaiHost {
         &self,
         player_id: PlayerId,
         game_state: GameState,
-    ) -> Result<BehaviorTree> {
+        team_color: TeamColor,
+    ) -> Result<BehaviorTree, ScriptError> {
+        // Check if script is compiled
+        let ast_guard = self.ast.read().unwrap();
+        let ast = match ast_guard.as_ref() {
+            Some(ast) => ast,
+            None => {
+                // Return compilation error if script didn't compile
+                return Err(self
+                    .compilation_error()
+                    .unwrap_or_else(|| ScriptError::Syntax {
+                        script_path: self.script_path.clone(),
+                        message: "Script compilation failed".to_string(),
+                        line: None,
+                        column: None,
+                    }));
+            }
+        };
+
         let entry_point = match game_state {
             GameState::Kickoff | GameState::PrepareKickoff => KICKOFF_ENTRY_POINT,
             GameState::Penalty | GameState::PreparePenalty => PENALTY_ENTRY_POINT,
@@ -55,16 +98,32 @@ impl RhaiHost {
         };
 
         let mut scope = Scope::new();
-        let ast = self.ast.read().unwrap();
         let result = self.engine.read().unwrap().call_fn::<RhaiBehaviorNode>(
             &mut scope,
             &ast,
             entry_point,
             (player_id,),
         );
-        result
-            .map(|node| BehaviorTree::new(node.0))
-            .map_err(|e| anyhow::anyhow!("Failed to build {} BT: {:?}", entry_point, e))
+
+        match result {
+            Ok(node) => Ok(BehaviorTree::new(node.0)),
+            Err(e) => {
+                let script_error = ScriptError::Runtime {
+                    script_path: self.script_path.clone(),
+                    function_name: entry_point.to_string(),
+                    message: format!("{}", e),
+                    team_color,
+                    player_id: Some(player_id),
+                };
+                log::error!(
+                    "Script runtime error for {} in {}: {}",
+                    entry_point,
+                    self.script_path,
+                    e
+                );
+                Err(script_error)
+            }
+        }
     }
 }
 
@@ -73,7 +132,8 @@ fn create_engine() -> Engine {
     engine.set_max_expr_depths(64, 64);
 
     // Set up module resolver to support imports
-    let resolver = FileModuleResolver::new();
+    let mut resolver = FileModuleResolver::new_with_path(Path::new("strategies"));
+    resolver.enable_cache(true);
     engine.set_module_resolver(resolver);
 
     engine.on_print(|text| log::info!("[RHAI SCRIPT] {}", text));

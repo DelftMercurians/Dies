@@ -5,6 +5,7 @@ use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
     SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, WorldData,
 };
+use dies_executor::ScriptError;
 use dies_ssl_client::SslClientConfig;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
@@ -140,12 +141,14 @@ pub(crate) enum UiWorldState {
     None,
 }
 
+/// WebSocket message types sent from backend to frontend
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum WsMessage<'a> {
     WorldUpdate(&'a WorldData),
     Debug(&'a DebugMap),
+    ScriptError(&'a ScriptError),
 }
 
 #[derive(Debug, Clone, Serialize)]

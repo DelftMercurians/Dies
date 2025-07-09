@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     behavior_tree::{BehaviorTree, BtContext, RhaiHost, RobotSituation},
-    PlayerControlInput,
+    PlayerControlInput, ScriptError,
 };
 
 pub struct TeamController {
@@ -22,19 +22,36 @@ pub struct TeamController {
     player_behavior_trees: HashMap<(PlayerId, GameState), BehaviorTree>,
     bt_context: BtContext,
     script_host: RhaiHost,
+    team_color: TeamColor,
+    latest_script_errors: Vec<ScriptError>,
 }
 
 impl TeamController {
-    pub fn new(settings: &ExecutorSettings, script_path: &str) -> Self {
+    pub fn new(settings: &ExecutorSettings, script_path: &str, team_color: TeamColor) -> Self {
+        let script_host = RhaiHost::new(script_path);
+        let mut latest_script_errors = Vec::new();
+
+        // Check for compilation errors on creation
+        if let Some(compilation_error) = script_host.compilation_error() {
+            latest_script_errors.push(compilation_error);
+        }
+
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             player_behavior_trees: HashMap::new(),
             bt_context: BtContext::new(),
-            script_host: RhaiHost::new(script_path),
+            script_host,
+            team_color,
+            latest_script_errors,
         };
         team.update_controller_settings(settings);
         team
+    }
+
+    /// Get and clear any script errors that occurred since the last call
+    pub fn take_script_errors(&mut self) -> Vec<ScriptError> {
+        std::mem::take(&mut self.latest_script_errors)
     }
 
     pub fn update_controller_settings(&mut self, settings: &ExecutorSettings) {
@@ -69,26 +86,29 @@ impl TeamController {
             let player_id = player_data.id;
 
             let tree_key = (player_id, current_game_state);
-            let player_bt =
-                self.player_behavior_trees
-                    .entry(tree_key)
-                    .or_insert_with(|| {
-                        match self
-                            .script_host
-                            .build_tree_for_state(player_id, current_game_state)
-                        {
-                            Ok(bt) => bt,
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to build {} BT for player {}: {:?}",
-                                    format!("{:?}", current_game_state),
-                                    player_id,
-                                    e
-                                );
-                                BehaviorTree::default()
-                            }
+            let player_bt = self
+                .player_behavior_trees
+                .entry(tree_key)
+                .or_insert_with(|| {
+                    match self.script_host.build_tree_for_state(
+                        player_id,
+                        current_game_state,
+                        self.team_color,
+                    ) {
+                        Ok(bt) => bt,
+                        Err(script_error) => {
+                            log::error!(
+                                "Failed to build {} BT for player {}: {:?}",
+                                format!("{:?}", current_game_state),
+                                player_id,
+                                script_error
+                            );
+                            // Store the error for reporting to UI
+                            self.latest_script_errors.push(script_error);
+                            BehaviorTree::default()
                         }
-                    });
+                    }
+                });
 
             let viz_path_prefix = format!("p{}", player_id);
             let mut robot_situation = RobotSituation::new(

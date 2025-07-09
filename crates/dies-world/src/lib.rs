@@ -226,14 +226,18 @@ impl WorldTracker {
             log::error!("Ball not detected, cannot update game state");
         }
 
-        // Detect side assignment from referee message
-        if let Some(blue_on_positive) = data.blue_team_on_positive_half {
-            self.side_assignment = Some(if blue_on_positive {
-                SideAssignment::BlueOnPositive
-            } else {
-                SideAssignment::YellowOnPositive
-            });
-        }
+        // Detect side assignment from referee message TODO: make this work
+        // if let Some(blue_on_positive) = data.blue_team_on_positive_half {
+        //     self.side_assignment = Some(if blue_on_positive {
+        //         SideAssignment::BlueOnPositive
+        //     } else {
+        //         SideAssignment::YellowOnPositive
+        //     });
+        // }
+    }
+
+    pub fn set_side_assignment(&mut self, side_assignment: SideAssignment) {
+        self.side_assignment = Some(side_assignment);
     }
 
     /// Update the world state from a vision message.

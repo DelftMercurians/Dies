@@ -97,11 +97,29 @@ Use `//` for single-line comments and `/* ... */` for block comments.
 
 In Dies, we use Rhai to declaratively construct behavior trees. Instead of building the tree structure in Rust, we write a Rhai script that defines the tree. This script is then loaded and executed by the system to generate the behavior tree for each robot.
 
-The core of this system is a Rhai script, typically located at `crates/dies-executor/src/bt_scripts/standard_player_tree.rhai`. This script must contain an entry-point function:
+The core of this system is a modular Rhai script system, with the main entry point at `strategies/main.rhai`. This script must contain entry-point functions for different game states:
 
 ```rust
+// strategies/main.rhai
+import "game_modes/play" as play;
+import "game_modes/kickoff" as kickoff;
+import "game_modes/penalty" as penalty;
+
+fn build_play_bt(player_id) {
+    return play::build_play_bt(player_id);
+}
+
+fn build_kickoff_bt(player_id) {
+    return kickoff::build_kickoff_bt(player_id);
+}
+
+fn build_penalty_bt(player_id) {
+    return penalty::build_penalty_bt(player_id);
+}
+
+// Legacy entry point for backward compatibility
 fn build_player_bt(player_id) {
-    // ... script logic to build and return a BehaviorNode ...
+    return build_play_bt(player_id);
 }
 ```
 
@@ -131,7 +149,7 @@ Rhai is used to compose these building blocks into complex, high-level strategie
 - **Team Coordination**: Using `Semaphore` to coordinate behavior between multiple robots.
 - **Dynamic Behavior**: Using callbacks to dynamically provide arguments to skills based on real-time world data.
 
-The `standard_player_tree.rhai` script is a perfect example of this. It doesn't implement the _how_ of moving or kicking, but it defines the _when_ and _why_: _when_ to be an attacker, _when_ to support, what defines those roles, and how to transition between them.
+The modular strategy system (`strategies/main.rhai` and its modules) is a perfect example of this. It doesn't implement the _how_ of moving or kicking, but it defines the _when_ and _why_: _when_ to be an attacker, _when_ to support, what defines those roles, and how to transition between them. The modular structure also makes it easier to maintain and understand different game modes and shared behaviors.
 
 ### The Core Idea
 

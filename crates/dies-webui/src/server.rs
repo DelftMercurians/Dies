@@ -17,7 +17,7 @@ use dies_core::{
     DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, TeamColor,
     WorldUpdate,
 };
-use dies_executor::{ControlMsg, ExecutorHandle};
+use dies_executor::{ControlMsg, ExecutorHandle, ScriptError};
 use tokio::sync::{broadcast, mpsc, watch};
 use tower_http::services::ServeDir;
 use tower_layer::Layer;
@@ -37,6 +37,7 @@ pub struct ServerState {
     pub executor_status: RwLock<ExecutorStatus>,
     pub executor_handle: RwLock<Option<ExecutorHandle>>,
     pub executor_settings: RwLock<ExecutorSettings>,
+    pub script_error_tx: broadcast::Sender<ScriptError>,
     #[allow(dead_code)]
     pub robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     settings_file: PathBuf,
@@ -45,23 +46,26 @@ pub struct ServerState {
 impl ServerState {
     pub fn new(
         is_live_available: bool,
-        initial_ui_mode: UiMode,
+        ui_mode: UiMode,
         settings_file: PathBuf,
         debug_sub: DebugSubscriber,
         update_rx: watch::Receiver<Option<WorldUpdate>>,
         cmd_tx: broadcast::Sender<UiCommand>,
         robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     ) -> Self {
+        let (script_error_tx, _) = broadcast::channel(16);
+
         Self {
             is_live_available,
             update_rx,
-            cmd_tx,
             debug_sub,
             basestation_feedback: RwLock::new(HashMap::new()),
-            ui_mode: RwLock::new(initial_ui_mode),
+            cmd_tx,
+            ui_mode: RwLock::new(ui_mode),
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
             executor_settings: RwLock::new(ExecutorSettings::load_or_insert(&settings_file)),
+            script_error_tx,
             settings_file,
             robot_id_map_tx,
         }
