@@ -62,7 +62,6 @@ impl TeamController {
         team_data: TeamData,
         manual_override: HashMap<PlayerId, PlayerControlInput>,
     ) {
-        log::info!("meow {}", team_color);
         let world_data = Arc::new(team_data);
         let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
         for id in detected_ids.iter() {
@@ -209,8 +208,10 @@ impl TeamController {
                 // Handle MPC vs MTP control
                 if controller.use_mpc() {
                     if let Some(mpc_control) = mpc_controls.get(&id) {
-                        // Use MPC control
+                        // Use MPC control (override MTP fallback)
                         controller.set_target_velocity(*mpc_control);
+                        // Update debug string to show MPC is being used
+                        player_context.debug_string("controller", "MPC");
                         // Debug output for MPC timing
                         dies_core::debug_value(
                             format!("p{}.mpc.duration_ms", id),

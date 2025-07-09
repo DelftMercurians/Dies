@@ -256,45 +256,33 @@ impl PlayerController {
             );
         }
 
-        // Only update target_velocity if not using MPC (MPC sets it externally)
-        if !self.use_mpc {
-            self.target_velocity = Vector2::zeros();
-            if let Some(pos_target) = input.position {
-                dies_core::debug_cross(
-                    format!("p{}.control.target", self.id),
-                    pos_target,
-                    dies_core::DebugColor::Red,
-                );
+        // Always compute MTP first as fallback
+        self.target_velocity = Vector2::zeros();
+        if let Some(pos_target) = input.position {
+            dies_core::debug_cross(
+                format!("p{}.control.target", self.id),
+                pos_target,
+                dies_core::DebugColor::Red,
+            );
 
-                // Use MTP controller
-                self.position_mtp.set_setpoint(pos_target);
-                let pos_u = self.position_mtp.update(
-                    self.last_pos,
-                    state.velocity,
-                    dt,
-                    input.acceleration_limit.unwrap_or(self.max_accel),
-                    input.speed_limit.unwrap_or(self.max_speed),
-                    input.acceleration_limit.unwrap_or(self.max_decel),
-                    input.care,
-                    player_context,
-                );
-                self.target_velocity = pos_u;
-                player_context.debug_string("controller", "MTP");
-            } else {
-                dies_core::debug_remove(format!("p{}.control.target", self.id));
-            }
+            // Always use MTP controller to compute fallback velocity
+            self.position_mtp.set_setpoint(pos_target);
+            let pos_u = self.position_mtp.update(
+                self.last_pos,
+                state.velocity,
+                dt,
+                input.acceleration_limit.unwrap_or(self.max_accel),
+                input.speed_limit.unwrap_or(self.max_speed),
+                input.acceleration_limit.unwrap_or(self.max_decel),
+                input.care,
+                player_context,
+            );
+            self.target_velocity = pos_u;
+            
+            // Debug string will be updated by team controller if MPC overrides
+            player_context.debug_string("controller", "MTP");
         } else {
-            // MPC controller - target_velocity should be set externally
-            if let Some(pos_target) = input.position {
-                dies_core::debug_cross(
-                    format!("p{}.control.target", self.id),
-                    pos_target,
-                    dies_core::DebugColor::Red,
-                );
-                player_context.debug_string("controller", "MPC");
-            } else {
-                player_context.debug_remove("control.target");
-            }
+            dies_core::debug_remove(format!("p{}.control.target", self.id));
         }
         let add_vel = match input.velocity {
             Velocity::Global(v) => v,
