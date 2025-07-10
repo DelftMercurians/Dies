@@ -21,14 +21,9 @@ use crate::{
     ScriptError,
 };
 
-use super::rhai_types::RhaiBehaviorNode;
+use super::{rhai_type_registration, rhai_types::RhaiBehaviorNode};
 
-const PLAY_ENTRY_POINT: &str = "build_play_bt";
-const KICKOFF_ENTRY_POINT: &str = "build_kickoff_bt";
-const PENALTY_ENTRY_POINT: &str = "build_penalty_bt";
-
-// New: Single entry point for role assignment
-const ROLE_ASSIGNMENT_ENTRY_POINT: &str = "get_role_assignment";
+const SCRIPT_ENTRY_POINT: &str = "main";
 
 #[derive(Clone)]
 struct SharedModuleResolver {
@@ -124,13 +119,13 @@ impl RhaiHost {
             .engine
             .read()
             .unwrap()
-            .call_fn::<RoleAssignmentProblem>(&mut scope, &ast, ROLE_ASSIGNMENT_ENTRY_POINT, ());
+            .call_fn::<RoleAssignmentProblem>(&mut scope, &ast, SCRIPT_ENTRY_POINT, ());
 
         match result {
             Ok(problem) => Ok(problem),
             Err(e) => Err(ScriptError::Runtime {
                 script_path: self.script_path.clone(),
-                function_name: ROLE_ASSIGNMENT_ENTRY_POINT.to_string(),
+                function_name: SCRIPT_ENTRY_POINT.to_string(),
                 message: format!("{}", e),
                 team_color: self.team_color,
                 player_id: None,
@@ -215,6 +210,7 @@ impl RhaiHost {
 fn create_engine() -> (Engine, SharedModuleResolver) {
     let mut engine = Engine::new();
     engine.set_max_expr_depths(64, 64);
+    engine.set_fast_operators(false);
 
     // Set up module resolver to support imports
     let mut file_resolver = FileModuleResolver::new_with_path(Path::new("strategies"));
@@ -236,98 +232,11 @@ fn create_engine() -> (Engine, SharedModuleResolver) {
         log::debug!("[RHAI SCRIPT DEBUG]{}{}: {}", src_info, pos_info, text);
     });
 
-    engine
-        .register_type_with_name::<RobotSituation>("RobotSituation")
-        .register_fn("has_ball", |rs: &mut RobotSituation| rs.has_ball())
-        .register_fn("player", |rs: &mut RobotSituation| rs.player_data().clone())
-        .register_get("world", |rs: &mut RobotSituation| rs.world.clone())
-        .register_get("player_id", |rs: &mut RobotSituation| rs.player_id);
+    // Register all types and their extended APIs
+    rhai_type_registration::register_all_types(&mut engine);
 
-    engine
-        .register_type_with_name::<Arc<TeamData>>("World")
-        .register_get("ball", |wd: &mut Arc<TeamData>| {
-            if let Some(ball) = &wd.ball {
-                Dynamic::from(ball.clone())
-            } else {
-                Dynamic::from(())
-            }
-        })
-        .register_get("own_players", |wd: &mut Arc<TeamData>| {
-            wd.own_players.clone()
-        })
-        .register_get("opp_players", |wd: &mut Arc<TeamData>| {
-            wd.opp_players.clone()
-        })
-        .register_get("game_state", |wd: &mut Arc<TeamData>| {
-            wd.current_game_state.clone()
-        })
-        .register_get("field_geom", |wd: &mut Arc<TeamData>| {
-            if let Some(field_geom) = &wd.field_geom {
-                Dynamic::from(field_geom.clone())
-            } else {
-                Dynamic::from(())
-            }
-        });
-
-    engine
-        .register_type_with_name::<PlayerData>("PlayerData")
-        .register_get("id", |pd: &mut PlayerData| pd.id)
-        .register_get("position", |pd: &mut PlayerData| pd.position)
-        .register_get("velocity", |pd: &mut PlayerData| pd.velocity)
-        .register_get("heading", |pd: &mut PlayerData| pd.yaw.radians());
-
-    engine
-        .register_type_with_name::<BallData>("BallData")
-        .register_get("position", |bd: &mut BallData| bd.position)
-        .register_get("velocity", |bd: &mut BallData| bd.velocity);
-
-    engine
-        .register_type_with_name::<Vector2>("Vec2")
-        .register_get("x", |v: &mut Vector2| v.x)
-        .register_get("y", |v: &mut Vector2| v.y);
-
-    engine
-        .register_type_with_name::<Vector3>("Vec3")
-        .register_get("x", |v: &mut Vector3| v.x)
-        .register_get("y", |v: &mut Vector3| v.y)
-        .register_get("z", |v: &mut Vector3| v.z);
-
-    // Register GameStateData
-    engine
-        .register_type_with_name::<GameStateData>("GameStateData")
-        .register_get("game_state", |gsd: &mut GameStateData| gsd.game_state)
-        .register_get("us_operating", |gsd: &mut GameStateData| gsd.us_operating);
-
-    // Register GameState enum
-    engine.register_type_with_name::<GameState>("GameState");
-
-    // Register FieldGeometry and related types
-    engine
-        .register_type_with_name::<FieldGeometry>("FieldGeometry")
-        .register_get("field_length", |fg: &mut FieldGeometry| fg.field_length)
-        .register_get("field_width", |fg: &mut FieldGeometry| fg.field_width)
-        .register_get("goal_width", |fg: &mut FieldGeometry| fg.goal_width)
-        .register_get("goal_depth", |fg: &mut FieldGeometry| fg.goal_depth)
-        .register_get("boundary_width", |fg: &mut FieldGeometry| fg.boundary_width)
-        .register_get("penalty_area_depth", |fg: &mut FieldGeometry| {
-            fg.penalty_area_depth
-        })
-        .register_get("penalty_area_width", |fg: &mut FieldGeometry| {
-            fg.penalty_area_width
-        })
-        .register_get("center_circle_radius", |fg: &mut FieldGeometry| {
-            fg.center_circle_radius
-        })
-        .register_get("goal_line_to_penalty_mark", |fg: &mut FieldGeometry| {
-            fg.goal_line_to_penalty_mark
-        })
-        .register_get("ball_radius", |fg: &mut FieldGeometry| fg.ball_radius);
-
-    // Register role assignment types
-    engine
-        .register_type_with_name::<RoleBuilder>("RoleBuilder")
-        .register_type_with_name::<Role>("Role")
-        .register_type_with_name::<RoleAssignmentProblem>("RoleAssignmentProblem");
+    // Disable fast operators to allow operator overloading
+    engine.set_fast_operators(false);
 
     let bt_module = Arc::new(exported_module!(super::rhai_plugin::bt_rhai_plugin));
     engine.register_global_module(bt_module);

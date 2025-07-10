@@ -4,6 +4,7 @@ mod bt_core;
 mod bt_node;
 mod rhai_host;
 mod rhai_plugin;
+mod rhai_type_registration;
 mod rhai_types;
 mod role_assignment;
 mod situation;

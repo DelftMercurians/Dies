@@ -2,14 +2,10 @@
 
 The role assignment system allows you to define different roles for robots and automatically assign them based on scoring functions and filters.
 
-## Overview
-
-The new API is much simpler than the previous capability-based system. You define roles using a fluent builder pattern and then use `AssignRoles()` to create the assignment problem.
-
 ## Basic Structure
 
 ```rhai
-fn get_role_assignment() {
+fn main() {
     AssignRoles([
         Role("role_name")
             .score(|situation| /* scoring function */)
@@ -75,7 +71,7 @@ _Optional_ - Filter function that must return `false` for a robot to be eligible
 })
 ```
 
-### `.behavior(|s| -> BehaviorNode)`
+### `.behavior(|| -> BehaviorNode)`
 
 **Required** - Function that builds the behavior tree for robots assigned to this role.
 
@@ -97,7 +93,7 @@ _Optional_ - Filter function that must return `false` for a robot to be eligible
 ## Complete Example
 
 ```rhai
-fn get_role_assignment() {
+fn main() {
     AssignRoles([
         // Goalkeeper - exactly one robot, must be robot 0
         Role("goalkeeper")
