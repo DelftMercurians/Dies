@@ -132,8 +132,10 @@ impl TwoStepMTP {
         let to_target = target - current;
         let distance_to_target = to_target.magnitude();
 
-        // Circle radius is half the distance to target
-        let circle_radius = distance_to_target * 0.5;
+        // Circle radius is half the distance to target + some random number
+        // no worries, when we are close, the proportial control is triggered
+        // (proportional_time_window) - which generally means we just go directly to the target
+        let circle_radius = distance_to_target * 0.5 + 60.0;
 
         // Sample points uniformly around the circle
         let mut best_point = target;
@@ -211,9 +213,9 @@ impl TwoStepMTP {
     ) -> f64 {
         // total cost is multiplied by magic coeff -> lower implies we care more about
         // avoiding shit, less means we are straighter (less gay)
-        let mut total_cost = 0.1 * (start - mid).magnitude() + (mid - end).magnitude();
+        let mut total_cost = 0.01 * (start - mid).magnitude() + (mid - end).magnitude();
         let robot_scare = 190.0; // mm - 2xrobot radius + some margin
-        let ball_scare = 90.0 + 40.0; // mm robot_radius + ball_radius
+        let ball_scare = 90.0 + 90.0; // mm robot_radius + ball_radius
 
         // Calculate intersection cost with other robots
         for robot in world_data.own_players.iter().chain(world_data.opp_players.iter()) {
@@ -242,7 +244,7 @@ impl TwoStepMTP {
                 ball_scare, // Ball radius
             ) + self.line_circle_intersection_length(mid, end, ball.position.xy(), ball_scare) * 0.1;
             if intersection_length > 0.0 {
-                total_cost += 500.0
+                total_cost += 1000.0
             }
             total_cost += intersection_length; // Weight for ball avoidance
         }
@@ -277,25 +279,64 @@ impl TwoStepMTP {
             return 0.0;
         }
 
-        let line_dir = line_vec / line_length;
-        let to_center = circle_center - line_start;
+        let start_dist = (line_start - circle_center).magnitude();
+        let end_dist = (line_end - circle_center).magnitude();
+        let start_inside = start_dist <= circle_radius;
+        let end_inside = end_dist <= circle_radius;
 
-        // Project circle center onto line
-        let projection = to_center.dot(&line_dir);
-        let closest_point = line_start + line_dir * projection.clamp(0.0, line_length);
+        match (start_inside, end_inside) {
+            (true, true) => {
+                // Both endpoints inside circle - return full line length
+                line_length
+            }
+            (true, false) => {
+                // Start inside, end outside - find exit point
+                let line_dir = line_vec / line_length;
+                let to_center = circle_center - line_start;
+                let projection = to_center.dot(&line_dir);
+                let dist_to_center = (circle_center - (line_start + line_dir * projection)).magnitude();
 
-        let dist_to_center = (circle_center - closest_point).magnitude();
+                if dist_to_center >= circle_radius {
+                    return 0.0;
+                }
 
-        if dist_to_center >= circle_radius {
-            return 0.0;
+                let half_chord = (circle_radius.powi(2) - dist_to_center.powi(2)).sqrt();
+                let exit_t = (projection + half_chord).min(line_length);
+                exit_t
+            }
+            (false, true) => {
+                // Start outside, end inside - find entry point
+                let line_dir = line_vec / line_length;
+                let to_center = circle_center - line_start;
+                let projection = to_center.dot(&line_dir);
+                let dist_to_center = (circle_center - (line_start + line_dir * projection)).magnitude();
+
+                if dist_to_center >= circle_radius {
+                    return 0.0;
+                }
+
+                let half_chord = (circle_radius.powi(2) - dist_to_center.powi(2)).sqrt();
+                let entry_t = (projection - half_chord).max(0.0);
+                line_length - entry_t
+            }
+            (false, false) => {
+                // Both outside - find intersection segment
+                let line_dir = line_vec / line_length;
+                let to_center = circle_center - line_start;
+                let projection = to_center.dot(&line_dir);
+                let dist_to_center = (circle_center - (line_start + line_dir * projection)).magnitude();
+
+                if dist_to_center >= circle_radius {
+                    return 0.0;
+                }
+
+                let half_chord = (circle_radius.powi(2) - dist_to_center.powi(2)).sqrt();
+                let entry_t = (projection - half_chord).max(0.0);
+                let exit_t = (projection + half_chord).min(line_length);
+
+                (exit_t - entry_t).max(0.0)
+            }
         }
-
-        // Calculate intersection length
-        let half_chord = (circle_radius.powi(2) - dist_to_center.powi(2)).sqrt();
-        let intersection_start = (projection - half_chord).max(0.0);
-        let intersection_end = (projection + half_chord).min(line_length);
-
-        (intersection_end - intersection_start).max(0.0)
     }
 
     fn is_point_inside_rectangle(
