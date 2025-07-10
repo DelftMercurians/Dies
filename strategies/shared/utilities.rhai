@@ -40,7 +40,7 @@ fn distance_to_opp_goal(s) {
 
 // Role scoring functions for role assignment
 fn score_striker(s) {
-    let mut score = 50.0;  // Base score
+    let score = 50.0;  // Base score
     
     // Prefer robots closer to ball
     let ball_dist = s.distance_to_ball();
@@ -57,13 +57,13 @@ fn score_striker(s) {
     }
     
     // Slight preference based on robot hash for consistency
-    score += s.hash_float() * 5.0;
+    score += s.player_id.hash_float() * 5.0;
     
     return score;
 }
 
 fn score_defender(s) {
-    let mut score = 40.0;  // Lower base score than striker
+    let score = 40.0;  // Lower base score than striker
     
     // Prefer robots closer to our goal
     let goal_dist = s.distance_to_position(s.get_own_goal_position());
@@ -83,7 +83,7 @@ fn score_defender(s) {
 }
 
 fn score_support(s) {
-    let mut score = 30.0;  // Base score
+    let score = 30.0;  // Base score
     
     // Prefer robots at medium distance from ball (not too close, not too far)
     let ball_dist = s.distance_to_ball();
@@ -92,7 +92,7 @@ fn score_support(s) {
     score -= dist_penalty.min(20.0);
     
     // Slight randomization for role diversity
-    score += s.hash_float() * 10.0;
+    score += s.player_id.hash_float() * 10.0;
     
     return score;
 }
@@ -169,7 +169,7 @@ fn get_goalkeeper_heading(s) {
 fn calculate_defender_position(s) {
     let goal_pos = s.get_own_goal_position();
     if s.world.ball == () {
-        let spread_y = (s.hash_float() - 0.5) * 3000.0;
+        let spread_y = (s.player_id.hash_float() - 0.5) * 3000.0;
         return goal_pos + vec2(2000.0, spread_y);
     }
     
@@ -195,7 +195,7 @@ fn calculate_support_position(s) {
     // Position to support attack or defend as needed
     if s.is_in_attacking_half(ball_pos) {
         // Support attack from side
-        let side_offset = (s.hash_float() - 0.5) * 3000.0;
+        let side_offset = (s.player_id.hash_float() - 0.5) * 3000.0;
         return ball_pos + vec2(-1000.0, side_offset);
     } else {
         // Support defense
@@ -233,7 +233,7 @@ fn get_heading_to_ball(s) {
 
 fn get_kickoff_support_position(s) {
     // Position in own half, spread out, ready to support
-    let player_hash = s.hash_float();
+    let player_hash = s.player_id.hash_float();
     let spread_x = -3000.0 + player_hash * 2000.0; // Between -3000 and -1000
     let spread_y = (player_hash - 0.5) * 4000.0;    // Between -2000 and 2000
     
@@ -242,7 +242,7 @@ fn get_kickoff_support_position(s) {
 
 fn get_penalty_support_position(s) {
     // Rule: All other players must be 1m behind ball
-    let player_hash = s.hash_float();
+    let player_hash = s.player_id.hash_float();
     let spread_y = (player_hash - 0.5) * 6000.0; // Spread across field width
     
     return vec2(1000.0, spread_y); // 1m behind penalty mark
@@ -258,7 +258,7 @@ fn get_supporter_pos(s) {
     let goal_pos = s.get_opp_goal_position();
     
     // Position to support the attack - between ball and goal but offset
-    let support_offset = vec2(-1500.0, (s.hash_float() - 0.5) * 2000.0);
+    let support_offset = vec2(-1500.0, (s.player_id.hash_float() - 0.5) * 2000.0);
     return ball_pos + support_offset;
 }
 
@@ -267,7 +267,7 @@ fn get_defender_pos(s) {
     
     if s.world.ball == () {
         // Default spread formation
-        let spread_y = (s.hash_float() - 0.5) * 3000.0;
+        let spread_y = (s.player_id.hash_float() - 0.5) * 3000.0;
         return own_goal + vec2(2000.0, spread_y);
     }
     
@@ -278,24 +278,6 @@ fn get_defender_pos(s) {
     let defend_radius = 2000.0;
     
     return ball_pos + ball_to_goal * defend_radius;
-}
-
-// Enhanced player-specific positioning using new API
-fn get_kickoff_supporter_pos(player_id) {
-    // Position in own half, spread out, ready to support
-    let player_hash = hash_float(player_id);
-    let spread_x = -3000.0 + player_hash * 2000.0; // Between -3000 and -1000
-    let spread_y = (player_hash - 0.5) * 4000.0;    // Between -2000 and 2000
-    
-    return vec2(spread_x, spread_y);
-}
-
-fn get_penalty_support_pos(player_id) {
-    // Rule: All other players must be 1m behind ball
-    let player_hash = hash_float(player_id);
-    let spread_y = (player_hash - 0.5) * 6000.0; // Spread across field width
-    
-    return vec2(1000.0, spread_y); // 1m behind penalty mark
 }
 
 // Enhanced helper functions using new API

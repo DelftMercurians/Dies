@@ -96,6 +96,14 @@ impl RhaiHost {
         scope.push_constant("GAME_STATE", game_state);
         scope.push_constant("TEAM_DATA", team_data.clone());
 
+        let engine = self.engine.read().unwrap();
+        engine
+            .definitions_with_scope(&scope)
+            .with_headers(true) // write headers in all files
+            .include_standard_packages(false) // skip standard packages
+            .write_to_dir("strategies/definitions")
+            .unwrap();
+
         self.resolver.set_scope(scope.clone());
 
         let ast = match self

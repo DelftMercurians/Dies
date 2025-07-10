@@ -470,7 +470,7 @@ fn calculate_attacking_support_position(s) {
     let goal_pos = s.get_opp_goal_position();
     
     // Position to receive passes or provide width
-    let side_multiplier = if s.hash_float() > 0.5 { 1.0 } else { -1.0 };
+    let side_multiplier = if s.player_id.hash_float() > 0.5 { 1.0 } else { -1.0 };
     let width_offset = vec2(0.0, 2000.0 * side_multiplier);
     let depth_offset = vec2(-1000.0, 0.0); // Stay behind ball
     
@@ -493,8 +493,8 @@ fn find_best_pass_target(s) {
     let ball_pos = s.world.ball.position;
     
     // Find teammate closest to opponent goal with clear pass
-    let mut best_target = s.get_opp_goal_position();
-    let mut best_score = -1.0;
+    let best_target = s.get_opp_goal_position();
+    let best_score = -1.0;
     
     for teammate in teammates {
         if teammate.id != s.player_id {
@@ -520,7 +520,7 @@ fn choose_penalty_target(s) {
     // Simple strategy: choose corner opposite to where goalkeeper is leaning
     if goal_corners.len() >= 2 {
         // Use hash to consistently choose same corner for this robot
-        if s.hash_float() > 0.5 {
+        if s.player_id.hash_float() > 0.5 {
             return goal_corners[0];
         } else {
             return goal_corners[1];
