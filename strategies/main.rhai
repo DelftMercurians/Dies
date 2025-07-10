@@ -1,16 +1,36 @@
-import "game_modes/play" as play;
-import "game_modes/kickoff" as kickoff;
-import "game_modes/penalty" as penalty;
+import "shared/utilities" as util;
+import "shared/situations" as sit;
+import "shared/subtrees" as trees;
 
+fn main() {
+    return AssignRoles([
+        Role("goalkeeper")
+            .count(1)
+            .score(|s| 100.0)
+            .require(|s| s.player_id == 0)
+            .behavior(|| trees::build_goalkeeper_tree())
+            .build(),
 
-fn build_play_bt(player_id) {
-    return play::build_play_bt(player_id);
-}
+        Role("striker")
+            .max(1)
+            .score(|s| util::score_striker(s))
+            .exclude(|s| s.player_id == 0)
+            .behavior(|| trees::build_striker_tree())
+            .build(),
 
-fn build_kickoff_bt(player_id) {
-    return kickoff::build_kickoff_bt(player_id);
-}
+        Role("defender")
+            .min(1)
+            .max(2)
+            .score(|s| util::score_defender(s))
+            .exclude(|s| s.player_id == 0)
+            .behavior(|| trees::build_defender_tree())
+            .build(),
 
-fn build_penalty_bt(player_id) {
-    return penalty::build_penalty_bt(player_id);
+        Role("support")
+            .min(1)
+            .score(|s| util::score_support(s))
+            .exclude(|s| s.player_id == 0)
+            .behavior(|| trees::build_support_tree())
+            .build()
+    ]);
 }
