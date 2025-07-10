@@ -7,6 +7,7 @@ use dies_core::{
 
 use super::{
     mtp::MTP,
+    two_step_mtp::TwoStepMTP,
     player_input::{KickerControlInput, PlayerControlInput},
     rvo::velocity_obstacle_update,
     team_context::PlayerContext,
@@ -27,7 +28,9 @@ enum KickerState {
 pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP,
+    two_step_mtp: TwoStepMTP,
     use_mpc: bool,
+    use_two_step_mtp: bool,
     last_pos: Vector2,
 
     /// Output velocity \[mm/s\]
@@ -74,7 +77,9 @@ impl PlayerController {
             id,
 
             position_mtp: MTP::new(),
-            use_mpc: true, // Default to using MPC
+            two_step_mtp: TwoStepMTP::new(),
+            use_mpc: false, // Default to using MPC
+            use_two_step_mtp: true, // Default to regular MTP
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
@@ -114,6 +119,11 @@ impl PlayerController {
             Duration::from_secs_f64(settings.position_proportional_time_window),
             settings.position_cutoff_distance,
         );
+        self.two_step_mtp.update_settings(
+            settings.position_kp,
+            Duration::from_secs_f64(settings.position_proportional_time_window),
+            settings.position_cutoff_distance,
+        );
         self.yaw_control
             .update_settings(settings.angle_kp, settings.angle_cutoff_distance);
     }
@@ -126,6 +136,11 @@ impl PlayerController {
     /// Toggle between MPC and MTP controllers
     pub fn set_use_mpc(&mut self, use_mpc: bool) {
         self.use_mpc = use_mpc;
+    }
+
+    /// Toggle between regular MTP and two-step MTP controllers
+    pub fn set_use_two_step_mtp(&mut self, use_two_step_mtp: bool) {
+        self.use_two_step_mtp = use_two_step_mtp;
     }
 
     pub fn target_velocity(&self) -> Vector2 {
@@ -265,22 +280,39 @@ impl PlayerController {
                 dies_core::DebugColor::Red,
             );
 
-            // Always use MTP controller to compute fallback velocity
-            self.position_mtp.set_setpoint(pos_target);
-            let pos_u = self.position_mtp.update(
-                self.last_pos,
-                state.velocity,
-                dt,
-                input.acceleration_limit.unwrap_or(self.max_accel),
-                input.speed_limit.unwrap_or(self.max_speed),
-                input.acceleration_limit.unwrap_or(self.max_decel),
-                input.care,
-                player_context,
-            );
+            // Choose between regular MTP and two-step MTP
+            let pos_u = if self.use_two_step_mtp {
+                self.two_step_mtp.set_setpoint(pos_target);
+                self.two_step_mtp.update(
+                    self.last_pos,
+                    state.velocity,
+                    dt,
+                    input.acceleration_limit.unwrap_or(self.max_accel),
+                    input.speed_limit.unwrap_or(self.max_speed),
+                    input.acceleration_limit.unwrap_or(self.max_decel),
+                    input.care,
+                    player_context,
+                    world,
+                    state,
+                )
+            } else {
+                self.position_mtp.set_setpoint(pos_target);
+                self.position_mtp.update(
+                    self.last_pos,
+                    state.velocity,
+                    dt,
+                    input.acceleration_limit.unwrap_or(self.max_accel),
+                    input.speed_limit.unwrap_or(self.max_speed),
+                    input.acceleration_limit.unwrap_or(self.max_decel),
+                    input.care,
+                    player_context,
+                )
+            };
             self.target_velocity = pos_u;
-            
+
             // Debug string will be updated by team controller if MPC overrides
-            player_context.debug_string("controller", "MTP");
+            let controller_name = if self.use_two_step_mtp { "TwoStepMTP" } else { "MTP" };
+            player_context.debug_string("controller", controller_name);
         } else {
             dies_core::debug_remove(format!("p{}.control.target", self.id));
         }

@@ -5,7 +5,7 @@
 /**
  * An angle in radians, always in (-pi, pi]. This type supports safe arithmetic
  * operations:
- * 
+ *
  * ```ignore
  * # use dies_core::Angle;
  * let a = Angle::from_degrees(90.0);
@@ -16,19 +16,19 @@
  */
 export type Angle = number;
 
-export type DebugValue = 
+export type DebugValue =
 	| { type: "Shape", data: DebugShape }
 	| { type: "Number", data: number }
 	| { type: "String", data: string };
 
 /**
  * A map of debug messages.
- * 
+ *
  * # Key format
- * 
+ *
  * The keys should always be `snake_case` and should only contain alphanumerical
  * characters. The `.` character is reserved for separating different parts of the key.
- * 
+ *
  * Keys can be arbitrary, but there are some patterns that are recognized by the
  * UI:
  * - `p{player_id}.{value}`: A value associated with a player.
@@ -119,29 +119,29 @@ export interface ControllerSettings {
 
 /**
  * # Team-Specific Coordinate System
- * 
+ *
  * This module provides coordinate system transformations to create a consistent
  * team-specific reference frame where the +x axis always points towards the
  * enemy goal, regardless of which side of the field the team is defending.
- * 
+ *
  * ## Coordinate System Philosophy
- * 
+ *
  * In RoboCup SSL, teams can be assigned to defend either the positive or negative
  * x side of the field. To simplify strategy code, we transform all coordinates
  * into a team-specific coordinate system where:
- * 
+ *
  * - **+x axis**: Always points towards the enemy goal (attacking direction)
  * - **-x axis**: Always points towards our own goal (defending direction)
  * - **y axis**: Remains unchanged (left/right from team perspective)
- * 
+ *
  * ## How It Works
- * 
+ *
  * The transformation is based on two key pieces of information:
  * 1. **SideAssignment**: Which team (Blue/Yellow) defends the positive x side
  * 2. **TeamColor**: The color of our team (Blue/Yellow)
- * 
+ *
  * ### Transformation Rules
- * 
+ *
  * - If our team attacks in the same direction as world +x: coordinates remain unchanged
  * - If our team attacks in the opposite direction: x coordinates are negated, angles are mirrored
  */
@@ -256,7 +256,7 @@ export interface FieldGeometry {
 }
 
 /** The game state, as reported by the referee. */
-export type GameState = 
+export type GameState =
 	| { type: "Unknown",  }
 	| { type: "Halt",  }
 	| { type: "Timeout",  }
@@ -327,7 +327,7 @@ export interface PostExecutorSettingsBody {
 }
 
 /** A command from the frontend to the backend. */
-export type UiCommand = 
+export type UiCommand =
 	| { type: "SetManualOverride", data: {
 	team_color: TeamColor;
 	player_id: PlayerId;
@@ -397,7 +397,7 @@ export interface TeamData {
 }
 
 /** The current status of the executor. */
-export type ExecutorStatus = 
+export type ExecutorStatus =
 	| { type: "None",  }
 	| { type: "RunningExecutor",  }
 	| { type: "Failed", data: string };
@@ -411,7 +411,7 @@ export interface UiStatus {
 
 /**
  * Represents which team defends the positive x side of the field.
- * 
+ *
  * In RoboCup SSL, the field coordinate system is fixed, but teams can be
  * assigned to defend either side. This enum tracks that assignment.
  */
@@ -452,9 +452,11 @@ export enum DebugColor {
 	Green = "green",
 	Orange = "orange",
 	Purple = "purple",
+  Blue = "blue",
+  Gray = "gray"
 }
 
-export type DebugShape = 
+export type DebugShape =
 	| { type: "Cross", data: {
 	center: Vector2;
 	color: DebugColor;
@@ -481,7 +483,7 @@ export type DebugShape =
 }};
 
 /** An override command for a player for manual control. */
-export type PlayerOverrideCommand = 
+export type PlayerOverrideCommand =
 	/** Do nothing */
 	| { type: "Stop",  }
 	/** Move the robot to a globel position and yaw */
@@ -533,7 +535,7 @@ export enum RoleType {
 }
 
 /** Command to modify the simulator state. */
-export type SimulatorCmd = 
+export type SimulatorCmd =
 	| { type: "ApplyBallForce", data: {
 	force: Vector2;
 }}
@@ -554,11 +556,11 @@ export type SimulatorCmd =
 	player_id: PlayerId;
 }};
 
-export type UiWorldState = 
+export type UiWorldState =
 	| { type: "Loaded", data: WorldData }
 	| { type: "None",  };
 
-export type WsMessage = 
+export type WsMessage =
 	| { type: "WorldUpdate", data: WorldData }
 	| { type: "Debug", data: DebugMap };
 
