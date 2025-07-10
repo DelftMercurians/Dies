@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-tokio = { version = "1.35.1", features = ["rt", "macros", "signal", "time"] }
+tokio = { version = "1.43.1", features = ["rt", "macros", "signal", "time"] }
 anyhow = "1.0.75"
 dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-basestation-client = { version = "0.1.0", path = "../dies-basestation-client" }
