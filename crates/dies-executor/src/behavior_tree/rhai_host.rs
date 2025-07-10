@@ -13,8 +13,13 @@ use rhai::{
     OptimizationLevel, Scope, AST,
 };
 
-use crate::behavior_tree::{bt_rhai_plugin, BehaviorTree, RobotSituation};
-use crate::ScriptError;
+use crate::{
+    behavior_tree::{
+        role_assignment::{Role, RoleAssignmentProblem},
+        BehaviorTree, RobotSituation, RoleBuilder,
+    },
+    ScriptError,
+};
 
 use super::rhai_types::RhaiBehaviorNode;
 
@@ -22,8 +27,10 @@ const PLAY_ENTRY_POINT: &str = "build_play_bt";
 const KICKOFF_ENTRY_POINT: &str = "build_kickoff_bt";
 const PENALTY_ENTRY_POINT: &str = "build_penalty_bt";
 
-#[derive(Clone)]
+// New: Single entry point for role assignment
+const ROLE_ASSIGNMENT_ENTRY_POINT: &str = "get_role_assignment";
 
+#[derive(Clone)]
 struct SharedModuleResolver {
     resolver: Arc<RwLock<FileModuleResolver>>,
 }
@@ -57,7 +64,8 @@ impl ModuleResolver for SharedModuleResolver {
 pub struct RhaiHost {
     engine: Arc<RwLock<Engine>>,
     resolver: SharedModuleResolver,
-    script_path: String,
+    pub(crate) script_path: String,
+    team_color: TeamColor,
 }
 
 impl RhaiHost {
@@ -69,30 +77,30 @@ impl RhaiHost {
             engine: Arc::new(RwLock::new(engine)),
             resolver,
             script_path: path_str,
+            team_color: TeamColor::Yellow, // Default, should be set later
         }
+    }
+
+    pub fn set_team_color(&mut self, team_color: TeamColor) {
+        self.team_color = team_color;
     }
 
     pub fn engine(&self) -> Arc<RwLock<Engine>> {
         self.engine.clone()
     }
 
-    /// Build behavior tree based on game state
-    pub fn build_tree_for_state(
+    /// Get role assignment configuration from script
+    pub fn get_role_assignment(
         &self,
-        player_id: PlayerId,
+        team_data: &TeamData,
         game_state: GameState,
-        team_color: TeamColor,
-        field_geom: FieldGeometry,
-    ) -> Result<BehaviorTree, ScriptError> {
-        let mut scope = Scope::new();
-        scope.push_constant("FIELD_LENGTH", field_geom.field_length);
-        scope.push_constant("FIELD_HALF_LENGTH", field_geom.field_length / 2.0);
-        scope.push_constant("FIELD_WIDTH", field_geom.field_width);
-        scope.push_constant("FIELD_HALF_WIDTH", field_geom.field_width / 2.0);
-        scope.push_constant("GOAL_WIDTH", field_geom.goal_width);
-        scope.push_constant("GOAL_HALF_WIDTH", field_geom.goal_width / 2.0);
-        scope.push_constant("GOAL_DEPTH", field_geom.goal_depth);
-        scope.push_constant("FIELD", field_geom);
+    ) -> Result<RoleAssignmentProblem, ScriptError> {
+        let mut scope = self.create_scope(&team_data.field_geom);
+
+        // Add game state to scope
+        scope.push_constant("GAME_STATE", game_state);
+        scope.push_constant("TEAM_DATA", team_data.clone());
+
         self.resolver.set_scope(scope.clone());
 
         let ast = match self
@@ -103,53 +111,104 @@ impl RhaiHost {
         {
             Ok(ast) => ast,
             Err(err) => {
-                let script_error = ScriptError::Syntax {
+                return Err(ScriptError::Syntax {
                     script_path: self.script_path.clone(),
                     message: format!("{}", err),
                     line: None,
                     column: None,
-                };
-                log::error!(
-                    "Script compilation failed for {}: {}",
-                    self.script_path,
-                    err
-                );
-                return Err(script_error);
+                });
             }
         };
 
-        let entry_point = match game_state {
-            GameState::Kickoff | GameState::PrepareKickoff => KICKOFF_ENTRY_POINT,
-            GameState::Penalty | GameState::PreparePenalty => PENALTY_ENTRY_POINT,
-            _ => PLAY_ENTRY_POINT, // Default to play tree for all other states
-        };
+        let result = self
+            .engine
+            .read()
+            .unwrap()
+            .call_fn::<RoleAssignmentProblem>(&mut scope, &ast, ROLE_ASSIGNMENT_ENTRY_POINT, ());
 
+        match result {
+            Ok(problem) => Ok(problem),
+            Err(e) => Err(ScriptError::Runtime {
+                script_path: self.script_path.clone(),
+                function_name: ROLE_ASSIGNMENT_ENTRY_POINT.to_string(),
+                message: format!("{}", e),
+                team_color: self.team_color,
+                player_id: None,
+            }),
+        }
+    }
+
+    /// Build behavior tree for a specific role
+    pub fn build_tree_for_role(
+        &self,
+        player_id: PlayerId,
+        role_name: &str,
+        team_data: &TeamData,
+    ) -> Result<BehaviorTree, ScriptError> {
+        let mut scope = self.create_scope(&team_data.field_geom);
+
+        let ast = self.compile_script(&scope)?;
+
+        // Call role-specific builder function
+        let builder_name = format!("build_{}_tree", role_name);
         let result = self.engine.read().unwrap().call_fn::<RhaiBehaviorNode>(
             &mut scope,
             &ast,
-            entry_point,
+            &builder_name,
             (player_id,),
         );
 
         match result {
             Ok(node) => Ok(BehaviorTree::new(node.0)),
             Err(e) => {
-                let script_error = ScriptError::Runtime {
-                    script_path: self.script_path.clone(),
-                    function_name: entry_point.to_string(),
-                    message: format!("{}", e),
-                    team_color,
-                    player_id: Some(player_id),
-                };
-                log::error!(
-                    "Script runtime error for {} in {}: {}",
-                    entry_point,
-                    self.script_path,
-                    e
+                // Fallback to generic builder
+                let fallback_result = self.engine.read().unwrap().call_fn::<RhaiBehaviorNode>(
+                    &mut scope,
+                    &ast,
+                    "build_default_tree",
+                    (player_id,),
                 );
-                Err(script_error)
+
+                match fallback_result {
+                    Ok(node) => Ok(BehaviorTree::new(node.0)),
+                    Err(_) => Err(ScriptError::Runtime {
+                        script_path: self.script_path.clone(),
+                        function_name: builder_name,
+                        message: format!("{}", e),
+                        team_color: self.team_color,
+                        player_id: Some(player_id),
+                    }),
+                }
             }
         }
+    }
+
+    fn create_scope(&self, field_geom: &Option<FieldGeometry>) -> Scope<'static> {
+        let mut scope = Scope::new();
+        if let Some(geom) = field_geom {
+            scope.push_constant("FIELD_LENGTH", geom.field_length);
+            scope.push_constant("FIELD_HALF_LENGTH", geom.field_length / 2.0);
+            scope.push_constant("FIELD_WIDTH", geom.field_width);
+            scope.push_constant("FIELD_HALF_WIDTH", geom.field_width / 2.0);
+            scope.push_constant("GOAL_WIDTH", geom.goal_width);
+            scope.push_constant("GOAL_HALF_WIDTH", geom.goal_width / 2.0);
+            scope.push_constant("GOAL_DEPTH", geom.goal_depth);
+            scope.push_constant("FIELD", geom.clone());
+        }
+        scope
+    }
+
+    fn compile_script(&self, scope: &Scope) -> Result<AST, ScriptError> {
+        self.engine
+            .read()
+            .unwrap()
+            .compile_file_with_scope(scope, PathBuf::from(&self.script_path))
+            .map_err(|err| ScriptError::Syntax {
+                script_path: self.script_path.clone(),
+                message: format!("{}", err),
+                line: None,
+                column: None,
+            })
     }
 }
 
@@ -264,7 +323,13 @@ fn create_engine() -> (Engine, SharedModuleResolver) {
         })
         .register_get("ball_radius", |fg: &mut FieldGeometry| fg.ball_radius);
 
-    let bt_module = Arc::new(exported_module!(bt_rhai_plugin));
+    // Register role assignment types
+    engine
+        .register_type_with_name::<RoleBuilder>("RoleBuilder")
+        .register_type_with_name::<Role>("Role")
+        .register_type_with_name::<RoleAssignmentProblem>("RoleAssignmentProblem");
+
+    let bt_module = Arc::new(exported_module!(super::rhai_plugin::bt_rhai_plugin));
     engine.register_global_module(bt_module);
 
     (engine, resolver)

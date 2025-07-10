@@ -1,16 +1,19 @@
 use rhai::plugin::*;
-use rhai::{Array, EvalAltResult, FnPtr, Map, NativeCallContext, Position};
+use rhai::{Array, Engine, EvalAltResult, FnPtr, Map, NativeCallContext, Position, INT};
 
+use super::bt_callback::BtCallback;
+use super::role_assignment::{Role, RoleAssignmentProblem, RoleBuilder};
 use crate::behavior_tree::{
     ActionNode, BehaviorNode as BehaviorNodeTypeEnum, GuardNode, ScoringSelectNode, SelectNode,
     SemaphoreNode, SequenceNode, Situation,
 };
+use crate::behavior_tree::{BehaviorTree, RobotSituation};
 use dies_core::{PlayerId, Vector2 as CoreVector2};
 
 #[export_module]
 pub mod bt_rhai_plugin {
     use crate::behavior_tree::rhai_types::RhaiBehaviorNode;
-    use crate::behavior_tree::{Argument, BtCallback, FaceTarget, HeadingTarget, SkillDefinition};
+    use crate::behavior_tree::{Argument, FaceTarget, HeadingTarget, SkillDefinition};
 
     use super::*;
 
@@ -679,5 +682,97 @@ pub mod bt_rhai_plugin {
             target: HeadingTarget::OwnPlayer(player_id_arg),
         };
         to_action_node(skill_def, description)
+    }
+
+    // ROLE ASSIGNMENT API
+    #[rhai_fn(name = "Role")]
+    pub fn role_constructor(name: &str) -> RoleBuilder {
+        RoleBuilder::new(name)
+    }
+
+    // RoleBuilder methods
+    #[rhai_fn(name = "min", pure)]
+    pub fn role_builder_min(builder: &mut RoleBuilder, count: INT) -> RoleBuilder {
+        builder.clone().min(count as usize)
+    }
+
+    #[rhai_fn(name = "max", pure)]
+    pub fn role_builder_max(builder: &mut RoleBuilder, count: INT) -> RoleBuilder {
+        builder.clone().max(count as usize)
+    }
+
+    #[rhai_fn(name = "count", pure)]
+    pub fn role_builder_count(builder: &mut RoleBuilder, count: INT) -> RoleBuilder {
+        builder.clone().count(count as usize)
+    }
+
+    #[rhai_fn(name = "score", return_raw)]
+    pub fn role_builder_score(
+        context: NativeCallContext,
+        builder: &mut RoleBuilder,
+        scorer_fn: FnPtr,
+    ) -> Result<RoleBuilder, Box<EvalAltResult>> {
+        let callback = BtCallback::new_rhai(&context, scorer_fn);
+        Ok(builder.clone().score(callback))
+    }
+
+    #[rhai_fn(name = "require", return_raw)]
+    pub fn role_builder_require(
+        context: NativeCallContext,
+        builder: &mut RoleBuilder,
+        filter_fn: FnPtr,
+    ) -> Result<RoleBuilder, Box<EvalAltResult>> {
+        let callback = BtCallback::new_rhai(&context, filter_fn);
+        Ok(builder.clone().require(callback))
+    }
+
+    #[rhai_fn(name = "exclude", return_raw)]
+    pub fn role_builder_exclude(
+        context: NativeCallContext,
+        builder: &mut RoleBuilder,
+        filter_fn: FnPtr,
+    ) -> Result<RoleBuilder, Box<EvalAltResult>> {
+        let callback = BtCallback::new_rhai(&context, filter_fn);
+        Ok(builder.clone().exclude(callback))
+    }
+
+    #[rhai_fn(name = "behavior", return_raw)]
+    pub fn role_builder_behavior(
+        context: NativeCallContext,
+        builder: &mut RoleBuilder,
+        builder_fn: FnPtr,
+    ) -> Result<RoleBuilder, Box<EvalAltResult>> {
+        let callback = BtCallback::new_rhai(&context, builder_fn);
+        Ok(builder.clone().behavior(callback))
+    }
+
+    #[rhai_fn(name = "build", return_raw)]
+    pub fn role_builder_build(builder: &mut RoleBuilder) -> Result<Role, Box<EvalAltResult>> {
+        builder.clone().build().map_err(|e| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                format!("Failed to build role: {}", e).into(),
+                Position::NONE,
+            ))
+        })
+    }
+
+    // AssignRoles function
+    #[rhai_fn(name = "AssignRoles", return_raw)]
+    pub fn assign_roles(roles_array: Array) -> Result<RoleAssignmentProblem, Box<EvalAltResult>> {
+        let mut roles = Vec::new();
+
+        for role_dyn in roles_array {
+            let type_name = role_dyn.type_name().to_string();
+            let role = role_dyn.try_cast::<Role>().ok_or_else(|| {
+                Box::new(EvalAltResult::ErrorMismatchDataType(
+                    "Expected Role".to_string(),
+                    type_name.into(),
+                    Position::NONE,
+                ))
+            })?;
+            roles.push(role);
+        }
+
+        Ok(RoleAssignmentProblem { roles })
     }
 }

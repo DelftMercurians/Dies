@@ -18,3 +18,4 @@
 - [Behavior Nodes](behavior-tree/reference/nodes.md)
 - [Skills (Action Nodes)](behavior-tree/reference/skills.md)
 - [Helpers & The Situation Object](behavior-tree/reference/helpers.md)
+- [Role Assignment API](behavior-tree/role_assignment_api.md)

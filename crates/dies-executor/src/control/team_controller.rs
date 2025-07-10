@@ -12,14 +12,16 @@ use super::{
     team_context::TeamContext,
 };
 use crate::{
-    behavior_tree::{BehaviorTree, BtContext, RhaiHost, RobotSituation},
+    behavior_tree::{BehaviorTree, BtContext, RhaiHost, RobotSituation, RoleAssignmentSolver},
     PlayerControlInput, ScriptError,
 };
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
-    player_behavior_trees: HashMap<(PlayerId, GameState), BehaviorTree>,
+    role_solver: RoleAssignmentSolver,
+    role_assignments: HashMap<PlayerId, String>,
+    player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
     bt_context: BtContext,
     script_host: RhaiHost,
     team_color: TeamColor,
@@ -28,10 +30,13 @@ pub struct TeamController {
 
 impl TeamController {
     pub fn new(settings: &ExecutorSettings, script_path: &str, team_color: TeamColor) -> Self {
-        let script_host = RhaiHost::new(script_path);
+        let mut script_host = RhaiHost::new(script_path);
+        script_host.set_team_color(team_color);
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
+            role_solver: RoleAssignmentSolver::new(),
+            role_assignments: HashMap::new(),
             player_behavior_trees: HashMap::new(),
             bt_context: BtContext::new(),
             script_host,
@@ -73,36 +78,140 @@ impl TeamController {
         let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
         let current_game_state = world_data.current_game_state.game_state;
 
+        // Get active robots
+        let active_robots: Vec<PlayerId> = world_data.own_players.iter().map(|p| p.id).collect();
+
+        // Get role assignment problem from script
+        match self
+            .script_host
+            .get_role_assignment(&world_data, current_game_state)
+        {
+            Ok(assignment_problem) => {
+                // Get the engine for role assignment solving
+                let engine = self.script_host.engine();
+                let engine_guard = engine.read().unwrap();
+
+                // Solve role assignments
+                match self.role_solver.solve(
+                    &assignment_problem,
+                    &active_robots,
+                    &world_data,
+                    &engine_guard,
+                ) {
+                    Ok(assignments) => {
+                        self.role_assignments = assignments.clone();
+
+                        // Update behavior trees based on new assignments
+                        for (player_id, role_name) in &assignments {
+                            // Only rebuild tree if role changed
+                            let needs_rebuild = self
+                                .player_behavior_trees
+                                .get(player_id)
+                                .map(|_| true) // For now, always rebuild
+                                .unwrap_or(true);
+
+                            if needs_rebuild {
+                                // Find the role and build its tree
+                                if let Some(role) = assignment_problem
+                                    .roles
+                                    .iter()
+                                    .find(|r| &r.name == role_name)
+                                {
+                                    // Create a mock situation for the tree builder
+                                    let situation = RobotSituation::new(
+                                        *player_id,
+                                        world_data.clone(),
+                                        self.bt_context.clone(),
+                                        String::new(),
+                                    );
+
+                                    match role.tree_builder.call(&situation, &engine_guard) {
+                                        Ok(node) => {
+                                            let tree = BehaviorTree::new(node.0);
+                                            self.player_behavior_trees.insert(*player_id, tree);
+                                        }
+                                        Err(e) => {
+                                            log::error!(
+                                                "Failed to build behavior tree for player {} role {}: {}",
+                                                player_id,
+                                                role_name,
+                                                e
+                                            );
+                                            self.player_behavior_trees
+                                                .insert(*player_id, BehaviorTree::default());
+                                        }
+                                    }
+                                } else {
+                                    log::error!(
+                                        "Role '{}' not found for player {}",
+                                        role_name,
+                                        player_id
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to solve role assignments: {}", e);
+                        self.latest_script_errors.push(ScriptError::Runtime {
+                            script_path: self.script_host.script_path.clone(),
+                            function_name: "role_assignment_solver".to_string(),
+                            message: format!("{}", e),
+                            team_color: self.team_color,
+                            player_id: None,
+                        });
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to get role assignment problem: {:?}", e);
+                self.latest_script_errors.push(e);
+
+                // Fallback: build default trees for all players
+                for player_id in &active_robots {
+                    if !self.player_behavior_trees.contains_key(player_id) {
+                        match self.script_host.build_tree_for_role(
+                            *player_id,
+                            "default",
+                            &world_data,
+                        ) {
+                            Ok(tree) => {
+                                self.player_behavior_trees.insert(*player_id, tree);
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to build default tree for player {}: {:?}",
+                                    player_id,
+                                    e
+                                );
+                                self.player_behavior_trees
+                                    .insert(*player_id, BehaviorTree::default());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Execute behavior trees
         let engine = self.script_host.engine();
         let engine_guard = engine.read().unwrap();
+
         for player_data in &world_data.own_players {
             let player_id = player_data.id;
 
-            let tree_key = (player_id, current_game_state);
+            // Ensure we have a behavior tree for this player
+            if !self.player_behavior_trees.contains_key(&player_id) {
+                log::warn!("No behavior tree for player {}", player_id);
+                self.player_behavior_trees
+                    .insert(player_id, BehaviorTree::default());
+            }
+
+            // Get the behavior tree for this player
             let player_bt = self
                 .player_behavior_trees
-                .entry(tree_key)
-                .or_insert_with(|| {
-                    match self.script_host.build_tree_for_state(
-                        player_id,
-                        current_game_state,
-                        self.team_color,
-                        world_data.field_geom.clone().unwrap_or_default(),
-                    ) {
-                        Ok(bt) => bt,
-                        Err(script_error) => {
-                            log::error!(
-                                "Failed to build {} BT for player {}: {:?}",
-                                format!("{:?}", current_game_state),
-                                player_id,
-                                script_error
-                            );
-                            // Store the error for reporting to UI
-                            self.latest_script_errors.push(script_error);
-                            BehaviorTree::default()
-                        }
-                    }
-                });
+                .get_mut(&player_id)
+                .expect("Behavior tree should exist after insertion");
 
             let viz_path_prefix = format!("p{}", player_id);
             let mut robot_situation = RobotSituation::new(
@@ -115,12 +224,16 @@ impl TeamController {
             let (_status, player_input_opt) = player_bt.tick(&mut robot_situation, &engine_guard);
             let mut player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
 
-            if player_input.role_type == RoleType::Player {
-                if player_id == PlayerId::new(0) {
-                    player_input.role_type = RoleType::Goalkeeper;
-                } else {
-                    player_input.role_type = RoleType::Player;
-                }
+            // Set role type based on assignment
+            if let Some(role_name) = self.role_assignments.get(&player_id) {
+                player_input.role_type = match role_name.as_str() {
+                    "goalkeeper" => RoleType::Goalkeeper,
+                    _ => RoleType::Player,
+                };
+            } else if player_id == PlayerId::new(0) {
+                player_input.role_type = RoleType::Goalkeeper;
+            } else {
+                player_input.role_type = RoleType::Player;
             }
 
             player_inputs_map.insert(player_id, player_input);

@@ -287,7 +287,7 @@ impl FetchBall {
             let ball_pos = ball.position.xy();
             let ball_speed = ball.velocity.xy().norm();
             let player_pos = ctx.player.position;
-            let distance = (ball_pos - player_pos).norm();
+            let distance = 80.0 + (ball_pos - player_pos).norm();
 
             let ball_angle = {
                 let angle = Angle::between_points(player_pos, ball_pos);
