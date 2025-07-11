@@ -97,6 +97,44 @@ fn score_support(s) {
     return score;
 }
 
+// Special role scoring functions
+fn score_free_kicker(s) {
+    let score = 60.0;  // High base score for special role
+    
+    // Prefer robots closest to ball
+    let ball_dist = s.distance_to_ball();
+    score += (1000.0 - ball_dist.min(1000.0)) / 10.0;
+    
+    // Prefer robots not under pressure
+    let opp_nearby = s.get_opp_players_within_radius(s.player.position, 1000.0);
+    if opp_nearby.len() == 0 {
+        score += 20.0;
+    }
+    
+    // Prefer robots with good kicking angle to goal
+    let goal_pos = s.get_opp_goal_position();
+    let ball_pos = s.world.ball.position;
+    let ball_to_goal = (goal_pos - ball_pos).unit();
+    let robot_to_ball = (ball_pos - s.player.position).unit();
+    let angle_alignment = ball_to_goal.x * robot_to_ball.x + ball_to_goal.y * robot_to_ball.y;
+    score += angle_alignment * 15.0;
+    
+    return score;
+}
+
+fn score_penalty_taker(s) {
+    let score = 80.0;  // Very high base score for penalty taker
+    
+    // Prefer robots closer to penalty area
+    let penalty_dist = s.distance_to_opp_penalty_area();
+    score += (2000.0 - penalty_dist.min(2000.0)) / 25.0;
+    
+    // Consistent assignment based on robot hash
+    score += s.player_id.hash_float() * 10.0;
+    
+    return score;
+}
+
 // Enhanced role scoring functions using new API
 fn score_as_attacker(s) {
     let ball_dist = s.distance_to_ball();

@@ -1,27 +1,85 @@
 # Role Assignment API
 
-The role assignment system allows you to define different roles for robots and automatically assign them based on scoring functions and filters.
+The role assignment system allows you to define different roles for robots and automatically assign them based on scoring functions and filters. The system is **dynamic** - the main function is called whenever the number of players changes or the game state changes, allowing strategies to adapt in real-time.
 
-## Basic Structure
+## Entry Point
+
+Your strategy script must provide a `main(game)` function that adds roles using the game context:
 
 ```rhai
-fn main() {
-    AssignRoles([
-        Role("role_name")
-            .score(|situation| /* scoring function */)
-            .require(|situation| /* filter that must return true */)
-            .exclude(|situation| /* filter that must return false */)
-            .min(1)  // minimum number of robots for this role
-            .max(3)  // maximum number of robots for this role
-            .count(2)  // exact count (sets min = max = 2)
-            .behavior(|situation| /* behavior tree builder */)
-            .build(),
-        // ... more roles
-    ])
+fn main(game) {
+    // Access game information
+    let current_state = game.game_state;
+    let player_count = game.num_own_players;
+
+    // Add roles using the fluent API
+    game.add_role("goalkeeper")
+        .count(1)
+        .score(|s| 100.0)
+        .require(|s| s.player_id == 0)
+        .behavior(|| build_goalkeeper_tree())
+        .build();
+
+    // Add special roles based on game state
+    if current_state == "FreeKick" {
+        game.add_role("free_kicker")
+            .max(1)
+            .score(|s| score_free_kicker(s))
+            .behavior(|| build_free_kicker_tree())
+            .build();
+    }
 }
 ```
 
-## Role Methods
+## When main() is Called
+
+The `main(game)` function is automatically called by the system in the following situations:
+
+- **Player count changes**: When robots join or leave the field
+- **Game state changes**: When transitioning between game states (Normal, FreeKick, PenaltyKick, etc.)
+- **Initial startup**: When the system first starts
+
+This allows your strategy to dynamically adapt roles based on the current situation.
+
+## Game Context Object
+
+The `game` parameter provides access to current game information:
+
+- `game.game_state` - Current game state (GameState enum)
+- `game.num_own_players` - Number of your team's active players
+- `game.num_opp_players` - Number of opponent players
+- `game.field_geom` - Field geometry information (may be `()` if not available)
+- `game.add_role(name)` - Add a new role and return a builder for configuration
+
+### Game State Values
+
+The `game.game_state` can be one of:
+
+- `"Halt"` - Game is halted
+- `"Stop"` - Game is stopped
+- `"Play"` - Normal gameplay
+- `"FreeKick"` - Free kick situation
+- `"PenaltyKick"` - Penalty kick situation
+- `"BallReplacement"` - Ball placement
+- `"Kickoff"` - Kickoff situation
+
+## Modern API Structure
+
+```rhai
+fn main(game) {
+    game.add_role("role_name")
+        .score(|situation| /* scoring function */)
+        .require(|situation| /* filter that must return true */)
+        .exclude(|situation| /* filter that must return false */)
+        .min(1)  // minimum number of robots for this role
+        .max(3)  // maximum number of robots for this role
+        .count(2)  // exact count (sets min = max = 2)
+        .behavior(|| /* behavior tree builder */)
+        .build();  // Build and store the role automatically
+}
+```
+
+## Role Builder Methods
 
 ### `.score(|s| -> f64)`
 
@@ -44,14 +102,6 @@ _Optional_ - Filter function that must return `true` for a robot to be eligible 
 
 ```rhai
 .require(|s| s.player_id != 0)  // Only non-goalkeeper robots
-.require(|s| {
-    // Only robots with working kicker
-    if let Some(status) = s.player().kicker_status {
-        status.to_string() == "Ready"
-    } else {
-        false
-    }
-})
 ```
 
 ### `.exclude(|s| -> bool)`
@@ -60,15 +110,6 @@ _Optional_ - Filter function that must return `false` for a robot to be eligible
 
 ```rhai
 .exclude(|s| s.player_id == 0)  // Exclude goalkeeper
-.exclude(|s| {
-    // Exclude robots that are too far from ball
-    if let Some(ball) = s.world.ball {
-        let distance = (s.player().position - ball.position.xy()).magnitude();
-        distance > 2000.0
-    } else {
-        false
-    }
-})
 ```
 
 ### `.behavior(|| -> BehaviorNode)`
@@ -76,7 +117,7 @@ _Optional_ - Filter function that must return `false` for a robot to be eligible
 **Required** - Function that builds the behavior tree for robots assigned to this role.
 
 ```rhai
-.behavior(|s| {
+.behavior(|| {
     Select([
         Guard(|s| s.has_ball(), Kick("Shoot"), "has_ball"),
         FetchBall("Get ball")
@@ -90,48 +131,50 @@ _Optional_ - Filter function that must return `false` for a robot to be eligible
 - `.max(count)` - Maximum number of robots for this role
 - `.count(count)` - Exact count (equivalent to `.min(count).max(count)`)
 
+### `.build()`
+
+**Required** - Builds the role and automatically stores it in the game context. No return value needed.
+
 ## Complete Example
 
 ```rhai
-fn main() {
-    AssignRoles([
-        // Goalkeeper - exactly one robot, must be robot 0
-        Role("goalkeeper")
-            .count(1)
-            .score(|s| 100.0)  // Fixed high score
-            .require(|s| s.player_id == 0)
-            .behavior(|s| build_goalkeeper_tree(s))
-            .build(),
+fn main(game) {
+    // Goalkeeper - exactly one robot, must be robot 0
+    game.add_role("goalkeeper")
+        .count(1)
+        .score(|s| 100.0)  // Fixed high score
+        .require(|s| s.player_id == 0)
+        .behavior(|| build_goalkeeper_tree())
+        .build();
 
-        // Attacker - 1-2 robots, prefers closer to ball, excludes goalkeeper
-        Role("attacker")
-            .min(1)
-            .max(2)
-            .score(|s| {
-                if let Some(ball) = s.world.ball {
-                    let distance = (s.player().position - ball.position.xy()).magnitude();
-                    200.0 - distance
-                } else {
-                    50.0
-                }
-            })
-            .exclude(|s| s.player_id == 0)
-            .behavior(|s| build_attacker_tree(s))
-            .build(),
+    // Attacker - 1-2 robots, prefers closer to ball, excludes goalkeeper
+    game.add_role("attacker")
+        .min(1)
+        .max(2)
+        .score(|s| {
+            if let Some(ball) = s.world.ball {
+                let distance = (s.player().position - ball.position.xy()).magnitude();
+                200.0 - distance
+            } else {
+                50.0
+            }
+        })
+        .exclude(|s| s.player_id == 0)
+        .behavior(|| build_attacker_tree())
+        .build();
 
-        // Defender - remaining robots
-        Role("defender")
-            .min(1)
-            .max(3)
-            .score(|s| {
-                let own_goal = vec2(-FIELD_HALF_LENGTH, 0.0);
-                let distance = (s.player().position - own_goal).magnitude();
-                150.0 - distance
-            })
-            .exclude(|s| s.player_id == 0)
-            .behavior(|s| build_defender_tree(s))
-            .build()
-    ])
+    // Defender - remaining robots
+    game.add_role("defender")
+        .min(1)
+        .max(3)
+        .score(|s| {
+            let own_goal = vec2(-FIELD_HALF_LENGTH, 0.0);
+            let distance = (s.player().position - own_goal).magnitude();
+            150.0 - distance
+        })
+        .exclude(|s| s.player_id == 0)
+        .behavior(|| build_defender_tree())
+        .build();
 }
 ```
 
@@ -144,14 +187,3 @@ The situation object `s` passed to scoring and filter functions contains:
 - `s.world` - World data (ball, other players, game state)
 - `s.has_ball()` - Whether this robot has the ball
 - `s.hash_float()` - Deterministic random value for this robot (0.0-1.0)
-
-## Migration from Old API
-
-The new API removes:
-
-- Capability system (`require_capability`, `add_robot_capability`)
-- Robot ID constraints (`exclude_robots`, `only_robots`)
-- `RoleAssignmentBuilder` - now use `AssignRoles()` directly
-- Separate scorer function - each role has its own scorer
-
-Instead, use filter functions (`.require()` and `.exclude()`) for all constraints.

@@ -11,6 +11,9 @@ use crate::behavior_tree::{
     RobotSituation,
 };
 
+// Add GameContext import
+use crate::behavior_tree::rhai_host::GameContext;
+
 /// Register all types and their methods with the Rhai engine
 pub fn register_all_types(engine: &mut Engine) {
     register_robot_situation_type(engine);
@@ -21,6 +24,7 @@ pub fn register_all_types(engine: &mut Engine) {
     register_game_state_types(engine);
     register_field_geometry_type(engine);
     register_role_assignment_types(engine);
+    register_game_context_type(engine);
     register_vector_operators(engine);
 }
 
@@ -212,6 +216,29 @@ fn register_role_assignment_types(engine: &mut Engine) {
         .register_type_with_name::<RoleBuilder>("RoleBuilder")
         .register_type_with_name::<Role>("Role")
         .register_type_with_name::<RoleAssignmentProblem>("RoleAssignmentProblem");
+}
+
+/// Register GameContext type
+fn register_game_context_type(engine: &mut Engine) {
+    engine
+        .register_type_with_name::<GameContext>("GameContext")
+        .register_get("game_state", |gc: &mut GameContext| gc.game_state)
+        .register_get("num_own_players", |gc: &mut GameContext| {
+            gc.num_own_players as i64
+        })
+        .register_get("num_opp_players", |gc: &mut GameContext| {
+            gc.num_opp_players as i64
+        })
+        .register_get("field_geom", |gc: &mut GameContext| {
+            if let Some(field_geom) = &gc.field_geom {
+                Dynamic::from(field_geom.clone())
+            } else {
+                Dynamic::from(())
+            }
+        })
+        .register_fn("add_role", |gc: &mut GameContext, name: &str| {
+            gc.add_role(name)
+        });
 }
 
 /// Register vector arithmetic operators

@@ -76,16 +76,12 @@ impl TeamController {
         }
 
         let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
-        let current_game_state = world_data.current_game_state.game_state;
 
         // Get active robots
         let active_robots: Vec<PlayerId> = world_data.own_players.iter().map(|p| p.id).collect();
 
         // Get role assignment problem from script
-        match self
-            .script_host
-            .get_role_assignment(&world_data, current_game_state)
-        {
+        match self.script_host.get_role_assignment(&world_data) {
             Ok(assignment_problem) => {
                 // Get the engine for role assignment solving
                 let engine = self.script_host.engine();
@@ -166,30 +162,6 @@ impl TeamController {
             Err(e) => {
                 log::error!("Failed to get role assignment problem: {:?}", e);
                 self.latest_script_errors.push(e);
-
-                // Fallback: build default trees for all players
-                for player_id in &active_robots {
-                    if !self.player_behavior_trees.contains_key(player_id) {
-                        match self.script_host.build_tree_for_role(
-                            *player_id,
-                            "default",
-                            &world_data,
-                        ) {
-                            Ok(tree) => {
-                                self.player_behavior_trees.insert(*player_id, tree);
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to build default tree for player {}: {:?}",
-                                    player_id,
-                                    e
-                                );
-                                self.player_behavior_trees
-                                    .insert(*player_id, BehaviorTree::default());
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -199,19 +171,7 @@ impl TeamController {
 
         for player_data in &world_data.own_players {
             let player_id = player_data.id;
-
-            // Ensure we have a behavior tree for this player
-            if !self.player_behavior_trees.contains_key(&player_id) {
-                log::warn!("No behavior tree for player {}", player_id);
-                self.player_behavior_trees
-                    .insert(player_id, BehaviorTree::default());
-            }
-
-            // Get the behavior tree for this player
-            let player_bt = self
-                .player_behavior_trees
-                .get_mut(&player_id)
-                .expect("Behavior tree should exist after insertion");
+            let player_bt = self.player_behavior_trees.entry(player_id).or_default();
 
             let viz_path_prefix = format!("p{}", player_id);
             let mut robot_situation = RobotSituation::new(

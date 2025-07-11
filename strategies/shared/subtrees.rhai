@@ -529,4 +529,90 @@ fn choose_penalty_target(s) {
     
     // Fallback to goal center
     return s.get_opp_goal_position();
+}
+
+// Special role behavior trees
+fn build_free_kicker_tree() {
+    return Semaphore(
+        Select([
+            // Direct shot if close to goal
+            Guard(|s| s.distance_to_position(s.get_opp_goal_position()) < 3000.0 && sit::clear_shot_to_goal(s),
+                Sequence([
+                    FetchBall("Get Ball for Free Kick"),
+                    Guard(|s| s.has_ball(),
+                        Sequence([
+                            FaceTowardsPosition(|s| s.get_opp_goal_position(), #{}, "Aim at Goal"),
+                            Wait(0.5, "Aim"),
+                            Kick("Free Kick Shot!")
+                        ], "Execute Shot"),
+                        "Have ball?"
+                    )
+                ], "Direct Shot"),
+                "Close shot opportunity"
+            ),
+            
+            // Pass to teammate in good position
+            Guard(|s| sit::can_pass_to_teammate(s),
+                Sequence([
+                    FetchBall("Get Ball for Free Kick"),
+                    Guard(|s| s.has_ball(),
+                        Sequence([
+                            FaceTowardsPosition(|s| find_best_pass_target(s), #{}, "Aim Pass"),
+                            Wait(0.3, "Aim Pass"),
+                            Kick("Free Kick Pass!")
+                        ], "Execute Pass"),
+                        "Have ball?"
+                    )
+                ], "Pass Option"),
+                "Can pass to teammate"
+            ),
+            
+            // Default: get ball and advance
+            Sequence([
+                FetchBall("Get Ball for Free Kick"),
+                Guard(|s| s.has_ball(),
+                    GoToPosition(
+                        |s| util::calculate_advance_position(s),
+                        #{ heading: |s| util::get_heading_to_goal(s), with_ball: true },
+                        "Advance with Ball"
+                    ),
+                    "Have ball?"
+                )
+            ], "Advance")
+        ], "Free Kick Actions"),
+        "free_kick_role",
+        1,
+        "Free Kick Role"
+    );
+}
+
+fn build_penalty_taker_tree() {
+    return Semaphore(
+        Sequence([
+            // Move to penalty position
+            GoToPosition(
+                |s| s.get_opp_penalty_mark() + vec2(-300.0, 0.0), // 300mm behind mark
+                #{ heading: |s| util::get_heading_to_goal(s) },
+                "Approach Penalty"
+            ),
+            
+            // Wait for setup and ball placement
+            Wait(1.5, "Wait for Setup"),
+            
+            // Execute penalty
+            FetchBall("Get Ball"),
+            Guard(|s| s.has_ball(),
+                Sequence([
+                    // Choose target corner
+                    FaceTowardsPosition(|s| choose_penalty_target(s), #{}, "Aim Penalty"),
+                    Wait(0.8, "Final Aim"),
+                    Kick("Penalty Shot!")
+                ], "Execute Penalty"),
+                "Have ball?"
+            )
+        ], "Penalty Sequence"),
+        "penalty_taker_role",
+        1,
+        "Penalty Taker Role"
+    );
 } 

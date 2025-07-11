@@ -1,7 +1,9 @@
 use anyhow::Result;
 use std::{
+    cell::RefCell,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
+    rc::Rc,
+    sync::{Arc, Mutex, RwLock},
 };
 
 use dies_core::{
@@ -15,8 +17,8 @@ use rhai::{
 
 use crate::{
     behavior_tree::{
-        role_assignment::{Role, RoleAssignmentProblem},
-        BehaviorTree, RobotSituation, RoleBuilder,
+        role_assignment::{Role, RoleAssignmentProblem, RoleBuilder},
+        BehaviorTree, RobotSituation,
     },
     ScriptError,
 };
@@ -24,6 +26,44 @@ use crate::{
 use super::{rhai_type_registration, rhai_types::RhaiBehaviorNode};
 
 const SCRIPT_ENTRY_POINT: &str = "main";
+
+/// Game context passed to strategy scripts
+#[derive(Clone)]
+pub struct GameContext {
+    pub game_state: GameState,
+    pub num_own_players: usize,
+    pub num_opp_players: usize,
+    pub field_geom: Option<FieldGeometry>,
+    role_builders: Arc<Mutex<Vec<RoleBuilder>>>,
+}
+
+impl GameContext {
+    pub fn new(team_data: &TeamData) -> Self {
+        Self {
+            game_state: team_data.current_game_state.game_state,
+            num_own_players: team_data.own_players.len(),
+            num_opp_players: team_data.opp_players.len(),
+            field_geom: team_data.field_geom.clone(),
+            role_builders: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Add a role and return a builder for configuration
+    pub fn add_role(&self, name: &str) -> RoleBuilder {
+        RoleBuilder::new(name)
+    }
+
+    /// Extract the final role assignment problem
+    pub fn into_role_assignment_problem(self) -> RoleAssignmentProblem {
+        let mut role_builders = self.role_builders.lock().unwrap();
+        let roles = std::mem::take(&mut *role_builders)
+            .into_iter()
+            .filter_map(|builder| builder.build().ok())
+            .collect();
+
+        RoleAssignmentProblem { roles }
+    }
+}
 
 #[derive(Clone)]
 struct SharedModuleResolver {
@@ -61,6 +101,7 @@ pub struct RhaiHost {
     resolver: SharedModuleResolver,
     pub(crate) script_path: String,
     team_color: TeamColor,
+    compiled_ast: Option<AST>,
 }
 
 impl RhaiHost {
@@ -68,12 +109,20 @@ impl RhaiHost {
         let (engine, resolver) = create_engine();
         let path_str = script_path.as_ref().to_string_lossy().to_string();
 
-        Self {
+        let mut host = Self {
             engine: Arc::new(RwLock::new(engine)),
             resolver,
             script_path: path_str,
             team_color: TeamColor::Yellow, // Default, should be set later
+            compiled_ast: None,
+        };
+
+        // Compile the script immediately
+        if let Err(e) = host.compile() {
+            log::error!("Failed to compile script on creation: {:?}", e);
         }
+
+        host
     }
 
     pub fn set_team_color(&mut self, team_color: TeamColor) {
@@ -84,53 +133,65 @@ impl RhaiHost {
         self.engine.clone()
     }
 
-    /// Get role assignment configuration from script
-    pub fn get_role_assignment(
-        &self,
-        team_data: &TeamData,
-        game_state: GameState,
-    ) -> Result<RoleAssignmentProblem, ScriptError> {
-        let mut scope = self.create_scope(&team_data.field_geom);
-
-        // Add game state to scope
-        scope.push_constant("GAME_STATE", game_state);
-        scope.push_constant("TEAM_DATA", team_data.clone());
-
-        let engine = self.engine.read().unwrap();
-        engine
-            .definitions_with_scope(&scope)
-            .with_headers(true) // write headers in all files
-            .include_standard_packages(false) // skip standard packages
-            .write_to_dir("strategies/definitions")
-            .unwrap();
-
+    /// Compile the script once and store the AST
+    pub fn compile(&mut self) -> Result<(), ScriptError> {
+        let scope = self.create_scope(&None); // Create scope without field geometry for compilation
         self.resolver.set_scope(scope.clone());
 
-        let ast = match self
+        let ast = self
             .engine
             .read()
             .unwrap()
             .compile_file_with_scope(&scope, PathBuf::from(&self.script_path))
-        {
-            Ok(ast) => ast,
-            Err(err) => {
-                return Err(ScriptError::Syntax {
-                    script_path: self.script_path.clone(),
-                    message: format!("{}", err),
-                    line: None,
-                    column: None,
-                });
-            }
-        };
+            .map_err(|err| ScriptError::Syntax {
+                script_path: self.script_path.clone(),
+                message: format!("{}", err),
+                line: None,
+                column: None,
+            })?;
 
-        let result = self
-            .engine
-            .read()
-            .unwrap()
-            .call_fn::<RoleAssignmentProblem>(&mut scope, &ast, SCRIPT_ENTRY_POINT, ());
+        self.compiled_ast = Some(ast);
+        Ok(())
+    }
+
+    /// Get role assignment configuration from script
+    pub fn get_role_assignment(
+        &self,
+        team_data: &TeamData,
+    ) -> Result<RoleAssignmentProblem, ScriptError> {
+        let ast = self
+            .compiled_ast
+            .as_ref()
+            .ok_or_else(|| ScriptError::Runtime {
+                script_path: self.script_path.clone(),
+                function_name: "get_role_assignment".to_string(),
+                message: "Script not compiled. Call compile() first.".to_string(),
+                team_color: self.team_color,
+                player_id: None,
+            })?;
+
+        let mut scope = self.create_scope(&team_data.field_geom);
+
+        // Create game context
+        let game_context = GameContext::new(team_data);
+
+        // Add game context and team data to scope
+        scope.push_constant("GAME_CONTEXT", game_context.clone());
+        scope.push_constant("TEAM_DATA", team_data.clone());
+
+        self.resolver.set_scope(scope.clone());
+
+        let engine = self.engine.read().unwrap();
+
+        // Call main function without expecting a return value
+        let result =
+            engine.call_fn::<()>(&mut scope, ast, SCRIPT_ENTRY_POINT, (game_context.clone(),));
 
         match result {
-            Ok(problem) => Ok(problem),
+            Ok(()) => {
+                // Extract the role assignment problem from the game context
+                Ok(game_context.into_role_assignment_problem())
+            }
             Err(e) => Err(ScriptError::Runtime {
                 script_path: self.script_path.clone(),
                 function_name: SCRIPT_ENTRY_POINT.to_string(),
@@ -148,15 +209,24 @@ impl RhaiHost {
         role_name: &str,
         team_data: &TeamData,
     ) -> Result<BehaviorTree, ScriptError> {
-        let mut scope = self.create_scope(&team_data.field_geom);
+        let ast = self
+            .compiled_ast
+            .as_ref()
+            .ok_or_else(|| ScriptError::Runtime {
+                script_path: self.script_path.clone(),
+                function_name: "build_tree_for_role".to_string(),
+                message: "Script not compiled. Call compile() first.".to_string(),
+                team_color: self.team_color,
+                player_id: Some(player_id),
+            })?;
 
-        let ast = self.compile_script(&scope)?;
+        let mut scope = self.create_scope(&team_data.field_geom);
 
         // Call role-specific builder function
         let builder_name = format!("build_{}_tree", role_name);
         let result = self.engine.read().unwrap().call_fn::<RhaiBehaviorNode>(
             &mut scope,
-            &ast,
+            ast,
             &builder_name,
             (player_id,),
         );
@@ -167,7 +237,7 @@ impl RhaiHost {
                 // Fallback to generic builder
                 let fallback_result = self.engine.read().unwrap().call_fn::<RhaiBehaviorNode>(
                     &mut scope,
-                    &ast,
+                    ast,
                     "build_default_tree",
                     (player_id,),
                 );
@@ -199,19 +269,6 @@ impl RhaiHost {
             scope.push_constant("FIELD", geom.clone());
         }
         scope
-    }
-
-    fn compile_script(&self, scope: &Scope) -> Result<AST, ScriptError> {
-        self.engine
-            .read()
-            .unwrap()
-            .compile_file_with_scope(scope, PathBuf::from(&self.script_path))
-            .map_err(|err| ScriptError::Syntax {
-                script_path: self.script_path.clone(),
-                message: format!("{}", err),
-                line: None,
-                column: None,
-            })
     }
 }
 

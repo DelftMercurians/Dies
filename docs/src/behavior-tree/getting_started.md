@@ -1,119 +1,167 @@
 # Getting Started: Your First Behavior Tree
 
-This guide will walk you through creating a simple behavior tree script.
+This guide will walk you through creating a simple behavior tree script using the modern **role assignment system**.
 
-## The Entry Point
+## Entry Point
 
-All behavior tree scripts must define entry point functions for different game states. The main entry points are `build_play_bt`, `build_kickoff_bt`, and `build_penalty_bt`. These functions take a `player_id` as an argument and must return a `BehaviorNode`.
+There is a single `main(game)` function per strategy that adds roles dynamically using the game context:
 
-```rust
-// In strategies/main.rhai
+```rhai
+// strategies/main.rhai
 
-fn build_play_bt(player_id) {
-    // Return a BehaviorNode for normal gameplay
-}
+fn main(game) {
+    // The game parameter provides context about the current situation
+    print(`Game state: ${game.game_state}, Players: ${game.num_own_players}`);
 
-fn build_kickoff_bt(player_id) {
-    // Return a BehaviorNode for kickoff situations
-}
+    // Add roles using the fluent API - no return value needed
+    game.add_role("goalkeeper")
+        .count(1)
+        .score(|s| 100.0)
+        .require(|s| s.player_id == 0)
+        .behavior(|| build_goalkeeper_tree())
+        .build();
 
-fn build_penalty_bt(player_id) {
-    // Return a BehaviorNode for penalty situations
-}
-
-// Legacy entry point for backward compatibility
-fn build_player_bt(player_id) {
-    return build_play_bt(player_id);
+    game.add_role("attacker")
+        .max(1)
+        .score(|s| score_attacker(s))
+        .exclude(|s| s.player_id == 0)
+        .behavior(|| build_attacker_tree())
+        .build();
 }
 ```
 
-## Example 1: The Simplest Action
+## Example 1: Basic Role Assignment
 
-Let's start with the most basic tree: a single action. We'll make the robot fetch the ball.
+Let's start with a simple role assignment that creates basic team roles:
 
-```rust
+```rhai
 // strategies/main.rhai
-fn build_play_bt(player_id) {
-    // This tree has only one node: an ActionNode that executes the "FetchBall" skill.
-    return FetchBall();
-}
-
-// Legacy entry point
-fn build_player_bt(player_id) {
-    return build_play_bt(player_id);
-}
-```
-
-With this script, every robot will simply try to fetch the ball, no matter the situation.
-
-## Example 2: A Sequence of Actions
-
-A more useful behavior might involve a sequence of actions. For example, fetch the ball, then turn towards the opponent's goal, and then kick. We can achieve this with a `Sequence` node.
-
-```rust
-// strategies/main.rhai
-fn build_play_bt(player_id) {
-    return Sequence([
-        FetchBall(),
-        FaceTowardsPosition(vec2(6000.0, 0.0)), // Assuming opponent goal is at (6000, 0)
-        Kick()
-    ]);
-}
-
-// Legacy entry point
-fn build_player_bt(player_id) {
-    return build_play_bt(player_id);
-}
-```
-
-A `Sequence` node executes its children in order. It will only proceed to the next child if the previous one returns `Success`. If any child `Fail`s, the sequence stops and fails. If a child is `Running`, the sequence is also `Running`.
-
-## Example 3: Conditional Behavior with Guards
-
-Now, let's make the behavior conditional. We only want to kick if we actually have the ball. We can use a `Guard` node for this. A `Guard` takes a condition function and a child node. It only executes the child if the condition is true.
-
-```rust
-// strategies/main.rhai
-
-import "shared/situations" as sit;
 import "shared/utilities" as util;
+import "shared/subtrees" as trees;
 
-fn build_play_bt(player_id) {
-    return Select([
-        // This branch is for when we have the ball
-        Sequence([
-            // This Guard ensures the rest of the sequence only runs if we have the ball.
-            Guard(sit::i_have_ball,
-                Sequence([
-                    FaceTowardsPosition(util::get_opponent_goal(), #{}, "Face opponent goal"),
-                    Kick("Kick!")
-                ], "Ball Actions"),
-                "Do I have the ball?"
-            ),
-        ], "Have Ball Sequence"),
+fn main(game) {
+    // Always need exactly one goalkeeper
+    game.add_role("goalkeeper")
+        .count(1)
+        .score(|s| 100.0)
+        .require(|s| s.player_id == 0)  // Only robot 0 can be goalkeeper
+        .behavior(|| trees::build_goalkeeper_tree())
+        .build();
 
-        // This is the fallback branch if the first one fails (i.e., we don't have the ball)
-        FetchBall("Get the ball"),
-    ]);
-}
+    // One main attacker
+    game.add_role("attacker")
+        .max(1)
+        .score(|s| util::score_attacker(s))  // Closest to ball gets highest score
+        .exclude(|s| s.player_id == 0)      // Exclude goalkeeper
+        .behavior(|| trees::build_attacker_tree())
+        .build();
 
-// Legacy entry point
-fn build_player_bt(player_id) {
-    return build_play_bt(player_id);
+    // Remaining robots become defenders
+    game.add_role("defender")
+        .min(1)  // At least one defender
+        .score(|s| util::score_defender(s))
+        .exclude(|s| s.player_id == 0)
+        .behavior(|| trees::build_defender_tree())
+        .build();
 }
 ```
 
-This example shows how the modular system works:
+## Example 2: Dynamic Roles Based on Game State
 
-- Condition functions are imported from `shared/situations`
-- Utility functions are imported from `shared/utilities`
-- The code is much cleaner and more organized
+Here's how to adapt roles based on the game situation:
 
-This tree uses a `Select` node. A `Select` node tries its children in order until one succeeds.
+```rhai
+// strategies/main.rhai
+import "shared/utilities" as util;
+import "shared/subtrees" as trees;
 
-1.  It first tries the `Sequence`.
-2.  The `Sequence` starts with a `Guard`. If `i_have_ball` returns `false`, the `Guard` fails, which makes the `Sequence` fail.
-3.  The `Select` node then moves to its next child, which is `FetchBall()`.
-4.  If `i_have_ball` returns `true`, the `Guard` succeeds, and the `Sequence` continues to face the goal and kick. If the `Sequence` succeeds, the `Select` node also succeeds and stops.
+fn main(game) {
+    // Add base roles
+    game.add_role("goalkeeper")
+        .count(1)
+        .score(|s| 100.0)
+        .require(|s| s.player_id == 0)
+        .behavior(|| trees::build_goalkeeper_tree())
+        .build();
 
-This creates a simple but effective offensive logic. You can now build upon these concepts to create more complex and intelligent behaviors.
+    game.add_role("defender")
+        .min(1)
+        .max(2)
+        .score(|s| util::score_defender(s))
+        .exclude(|s| s.player_id == 0)
+        .behavior(|| trees::build_defender_tree())
+        .build();
+
+    // Add special roles based on game state
+    switch game.game_state {
+        "FreeKick" => {
+            print("Adding free kicker for free kick situation");
+            game.add_role("free_kicker")
+                .count(1)
+                .score(|s| util::score_free_kicker(s))
+                .exclude(|s| s.player_id == 0)
+                .behavior(|| trees::build_free_kicker_tree())
+                .build();
+        },
+        "PenaltyKick" => {
+            print("Adding penalty taker for penalty situation");
+            game.add_role("penalty_taker")
+                .count(1)
+                .score(|s| util::score_penalty_taker(s))
+                .exclude(|s| s.player_id == 0)
+                .behavior(|| trees::build_penalty_taker_tree())
+                .build();
+        },
+        _ => {
+            // Normal play - add regular attacker
+            game.add_role("attacker")
+                .max(1)
+                .score(|s| util::score_attacker(s))
+                .exclude(|s| s.player_id == 0)
+                .behavior(|| trees::build_attacker_tree())
+                .build();
+        }
+    }
+}
+```
+
+## Example 3: Adapting to Player Count
+
+You can also adapt your strategy based on how many players are available:
+
+```rhai
+fn main(game) {
+    game.add_role("goalkeeper")
+        .count(1)
+        .score(|s| 100.0)
+        .require(|s| s.player_id == 0)
+        .behavior(|| trees::build_goalkeeper_tree())
+        .build();
+
+    // Adapt strategy based on available players
+    if game.num_own_players >= 3 {
+        // Full team - can have specialized roles
+        game.add_role("attacker")
+            .max(1)
+            .score(|s| util::score_attacker(s))
+            .exclude(|s| s.player_id == 0)
+            .behavior(|| trees::build_attacker_tree())
+            .build();
+
+        game.add_role("defender")
+            .min(1)
+            .score(|s| util::score_defender(s))
+            .exclude(|s| s.player_id == 0)
+            .behavior(|| trees::build_defender_tree())
+            .build();
+    } else {
+        // Limited players - use flexible support role
+        game.add_role("support")
+            .min(1)
+            .score(|s| util::score_support(s))
+            .exclude(|s| s.player_id == 0)
+            .behavior(|| trees::build_support_tree())
+            .build();
+    }
+}
+```
