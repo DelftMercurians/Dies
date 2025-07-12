@@ -1,5 +1,5 @@
 use dies_core::debug_tree_node;
-use rhai::Engine;
+use rhai::{Array, Engine};
 
 use super::{
     super::bt_callback::BtCallback,
@@ -19,7 +19,7 @@ pub struct Scorer {
 #[derive(Clone)]
 pub enum ScorersSource {
     Static(Vec<Scorer>),
-    DynamicWithKeys(BtCallback<Vec<Scorer>>),
+    DynamicWithKeys(BtCallback<Array>),
 }
 
 #[derive(Clone)]
@@ -61,7 +61,7 @@ impl ScoringSelectNode {
     }
 
     pub fn new_dynamic(
-        callback: BtCallback<Vec<Scorer>>,
+        callback: BtCallback<Array>,
         hysteresis_margin: f64,
         description: Option<String>,
     ) -> Self {
@@ -80,12 +80,15 @@ impl ScoringSelectNode {
     fn get_scorers(&self, situation: &RobotSituation, engine: &Engine) -> Vec<Scorer> {
         match &self.scorers_source {
             ScorersSource::Static(scorers) => scorers.clone(),
-            ScorersSource::DynamicWithKeys(callback) => {
-                callback.call(situation, engine).unwrap_or_else(|e| {
+            ScorersSource::DynamicWithKeys(callback) => callback
+                .call(situation, engine)
+                .unwrap_or_else(|e| {
                     log::error!("Failed to generate dynamic scorers: {}", e);
                     vec![]
                 })
-            }
+                .into_iter()
+                .filter_map(|n| n.try_cast_result::<Scorer>().ok())
+                .collect(),
         }
     }
 

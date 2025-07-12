@@ -10,18 +10,13 @@ import "kickoff_kicker" as kickoff_kicker;
 import "freekick_kicker" as freekick_kicker;
 import "freekick_interference" as freekick_interference;
 
-fn dummy_tree(s) {
-    return GoToPosition(vec2(0.0, 0.0), #{}, "Dummy");
-}
-
 fn main(game) {
     // Always need exactly one goalkeeper
     game.add_role("goalkeeper")
         .count(1)
-        .score(|s| 100.0)
-        .require(|s| s.player_id == 0)
-        // .behavior(|| keeper::build_goalkeeper_tree());
-        .behavior(dummy_tree);
+        .score(|s| 100000.0)
+        // .require(|s| s.player_id == 0)
+        .behavior(|s| keeper::build_goalkeeper_tree());
 
     // Specialized roles based on game state
     switch game.game_state {
@@ -31,9 +26,8 @@ fn main(game) {
                 game.add_role("kickoff_kicker")
                     .count(1)
                     .score(|s| kickoff_kicker::score_kickoff_kicker(s))
-                    .exclude(|s| s.player_id == 0)
-                    // .behavior(|| kickoff_kicker::build_kickoff_kicker_tree());
-                    .behavior(dummy_tree);
+                    // .exclude(|s| s.player_id == 0)
+                    .behavior(|s| kickoff_kicker::build_kickoff_kicker_tree());
             }
         },
         "FreeKick" => {
@@ -42,17 +36,15 @@ fn main(game) {
                 game.add_role("free_kick_kicker")
                     .count(1)
                     .score(|s| freekick_kicker::score_free_kick_kicker(s))
-                    .exclude(|s| s.player_id == 0)
-                    // .behavior(|| freekick_kicker::build_free_kick_kicker_tree());
-                    .behavior(dummy_tree);
+                    // .exclude(|s| s.player_id == 0)
+                    .behavior(|s| freekick_kicker::build_free_kick_kicker_tree());
             } else {
                 // Free kick interference - defend against opponent free kick
                 game.add_role("free_kick_interference")
                     .min(1).max(2)
                     .score(|s| freekick_interference::score_free_kick_interference(s))
-                    .exclude(|s| s.player_id == 0)
-                    // .behavior(|| freekick_interference::build_free_kick_interference_tree());
-                    .behavior(dummy_tree);
+                    // .exclude(|s| s.player_id == 0)
+                    .behavior(|s| freekick_interference::build_free_kick_interference_tree());
             }
         },
         "Penalty" => {
@@ -61,9 +53,8 @@ fn main(game) {
                 game.add_role("penalty_kicker")
                     .count(1)
                     .score(|s| score_penalty_kicker(s))
-                    .exclude(|s| s.player_id == 0)
-                    // .behavior(|| build_penalty_kicker_tree());
-                    .behavior(dummy_tree);
+                    // .exclude(|s| s.player_id == 0)
+                    .behaviosr(|| build_penalty_kicker_tree());
             }
         }
     }
@@ -72,23 +63,20 @@ fn main(game) {
     game.add_role("striker")
         .max(1)
         .score(|s| striker_scorer::score_striker(s))
-        .exclude(|s| s.player_id == 0)
-        // .behavior(|| striker::build_striker_tree());
-        .behavior(dummy_tree);
+        // .exclude(|s| s.player_id == 0)
+        .behavior(|s| striker::build_striker_tree());
 
     // Dynamic waller role
     game.add_role("waller")
         .min(0).max(2)
         .score(|s| waller_scorer::score_as_waller(s))
-        .exclude(|s| s.player_id == 0)
-        // .behavior(|| waller::build_waller_tree());
-        .behavior(dummy_tree);
+        // .exclude(|s| s.player_id == 0)
+        .behavior(|s| waller::build_waller_tree());
 
     // Dynamic harasser role
     game.add_role("harasser")
         .min(0).max(2)
         .score(|s| harasser_scorer::score_as_harasser(s))
-        .exclude(|s| s.player_id == 0)
-        // .behavior(|| harasser::build_harasser_tree());
-        .behavior(dummy_tree);
+        // .exclude(|s| s.player_id == 0)
+        .behavior(|s| harasser::build_harasser_tree());
 }

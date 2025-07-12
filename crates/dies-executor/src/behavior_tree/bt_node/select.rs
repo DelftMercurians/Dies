@@ -1,5 +1,5 @@
 use dies_core::debug_tree_node;
-use rhai::Engine;
+use rhai::{Array, Engine};
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -13,7 +13,7 @@ use crate::{
 #[derive(Clone)]
 pub enum ChildrenSource {
     Static(Vec<BehaviorNode>),
-    Dynamic(BtCallback<Vec<RhaiBehaviorNode>>),
+    Dynamic(BtCallback<Array>),
 }
 
 #[derive(Clone)]
@@ -37,10 +37,7 @@ impl SelectNode {
         }
     }
 
-    pub fn new_dynamic(
-        callback: BtCallback<Vec<RhaiBehaviorNode>>,
-        description: Option<String>,
-    ) -> Self {
+    pub fn new_dynamic(callback: BtCallback<Array>, description: Option<String>) -> Self {
         let desc = description.unwrap_or_else(|| "Select".to_string());
         Self {
             children_source: ChildrenSource::Dynamic(callback),
@@ -55,7 +52,10 @@ impl SelectNode {
         match &self.children_source {
             ChildrenSource::Static(children) => children.clone(),
             ChildrenSource::Dynamic(callback) => match callback.call(situation, engine) {
-                Ok(nodes) => nodes.into_iter().map(|n| n.0).collect(),
+                Ok(nodes) => nodes
+                    .into_iter()
+                    .filter_map(|n| n.try_cast_result::<RhaiBehaviorNode>().ok().map(|n| n.0))
+                    .collect(),
                 Err(e) => {
                     log::error!("Failed to generate dynamic children for Select: {}", e);
                     vec![]
