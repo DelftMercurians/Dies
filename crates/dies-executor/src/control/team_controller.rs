@@ -248,6 +248,7 @@ impl TeamController {
 
         // Collect robots that need MPC processing
         let mut mpc_robots = Vec::new();
+        let mut controllable_mask = Vec::new();
         for controller in self.player_controllers.values() {
             if controller.use_mpc() {
                 let player_data = world_data
@@ -268,6 +269,7 @@ impl TeamController {
                             target_position: target_pos,
                             vel_limit: controller.get_max_speed(),
                         });
+                        controllable_mask.push(true); // Robot should be controlled
                     } else {
                         // if we don't need to move - force robots to stay in place while
                         // still putting them to mpc for continuity, which is fairly important
@@ -278,6 +280,7 @@ impl TeamController {
                             target_position: player_data.position,
                             vel_limit: 0.0,
                         });
+                        controllable_mask.push(false); // Robot should not be controlled
                     }
                 }
             }
@@ -287,7 +290,7 @@ impl TeamController {
         self.mpc_controller.set_field_bounds(&world_data);
         let mpc_controls = if !mpc_robots.is_empty() {
             self.mpc_controller
-                .compute_batch_control(&mpc_robots, &world_data)
+                .compute_batch_control(&mpc_robots, &world_data, Some(&controllable_mask))
         } else {
             HashMap::new()
         };

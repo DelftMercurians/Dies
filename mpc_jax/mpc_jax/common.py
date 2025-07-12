@@ -18,9 +18,9 @@ BALL_RADIUS = 21.35  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
 MAX_ITERATIONS = 50
-BATCH_SIZE = 4
+BATCH_SIZE = 5
 LEARNING_RATE = 20
-N_CANDIDATE_TRAJECTORIES = 8
+N_CANDIDATE_TRAJECTORIES = 15
 TRAJECTORY_RESOLUTION = 10  # points per physics step for high-resolution trajectories
 FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 

@@ -396,19 +396,34 @@ def solve_mpc(
     last_control_sequences: np.ndarray | None = None,
     dt: np.ndarray | None = np.array(0.02),
     field_geometry: np.ndarray | None = None,
+    controllable_mask: np.ndarray | None = None,
 ) -> Result:
     n_robots = len(initial_pos)
     ctrl_shape = (len(initial_pos), CONTROL_HORIZON, 2)
 
+    # Handle controllable mask
+    if controllable_mask is None:
+        controllable_mask = np.ones(n_robots, dtype=bool)
+    else:
+        controllable_mask = controllable_mask.astype(bool)
+
     # Pad inputs to fixed size (6 robots) in numpy
     padded_max_speeds = np.full(6, 1e6)
     padded_max_speeds[:n_robots] = max_speeds
+    
+    # Apply controllable mask - set max_speeds to 0 for non-controllable robots
+    effective_max_speeds = max_speeds.copy()
+    effective_max_speeds[~controllable_mask] = 0.0
+    padded_max_speeds[:n_robots] = effective_max_speeds
 
     if last_control_sequences is None:
         padded_last_control = np.zeros((6, CONTROL_HORIZON, 2))
     else:
         padded_last_control = np.zeros((6, CONTROL_HORIZON, 2))
-        padded_last_control[:n_robots] = last_control_sequences
+        effective_last_control = last_control_sequences.copy()
+        # Zero out controls for non-controllable robots
+        effective_last_control[~controllable_mask] = 0.0
+        padded_last_control[:n_robots] = effective_last_control
 
     field_bounds_obj = FieldBounds(
         field_length=float(field_geometry[0]),

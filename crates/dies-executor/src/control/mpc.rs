@@ -27,6 +27,7 @@ struct MPCRequest {
     robots: Vec<RobotState>,
     world: TeamData,
     controller_state: MPCControllerState,
+    controllable_mask: Vec<bool>,
 }
 
 struct MPCResponse {
@@ -88,6 +89,7 @@ impl MPCController {
         &mut self,
         robots: &[RobotState],
         world: &TeamData,
+        controllable_mask: Option<&[bool]>,
     ) -> HashMap<PlayerId, Vector2> {
         if robots.is_empty() {
             return HashMap::new();
@@ -129,6 +131,7 @@ impl MPCController {
                 robots: robots.to_vec(),
                 world: world.clone(),
                 controller_state,
+                controllable_mask: controllable_mask.unwrap_or(&vec![true; robots.len()]).to_vec(),
             };
 
             if let Err(e) = self.request_sender.try_send(request) {
@@ -217,6 +220,7 @@ impl MPCController {
                 &request.robots,
                 &request.world,
                 &mut controller_state,
+                &request.controllable_mask,
             ) {
                 Ok(controls) => (controls, controller_state),
                 Err(e) => {
@@ -242,6 +246,7 @@ impl MPCController {
         robots: &[RobotState],
         world: &TeamData,
         controller_state: &mut MPCControllerState,
+        controllable_mask: &[bool],
     ) -> Result<HashMap<PlayerId, Vector2>, PyErr> {
         let start_time = Instant::now();
 
@@ -395,6 +400,10 @@ impl MPCController {
 
             let dt_value = world.dt;
 
+            // Prepare controllable mask as numpy array
+            let controllable_mask_data: Vec<i32> = controllable_mask.iter().map(|&b| if b { 1 } else { 0 }).collect();
+            let controllable_mask_array = np.call_method1("array", (controllable_mask_data,))?;
+
             // Call the JAX batch solve_mpc function with field geometry
             let solve_mpc_batch = mpc_module.getattr("solve_mpc_tbwrap")?;
             let result = solve_mpc_batch.call1((
@@ -407,7 +416,8 @@ impl MPCController {
                 vel_limits_array,
                 last_controls_array,
                 dt_value,
-                field_geometry
+                field_geometry,
+                controllable_mask_array
             ))?;
 
             // Extract the result - it's a tuple of (controls, trajectories)
