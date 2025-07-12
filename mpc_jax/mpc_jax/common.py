@@ -9,9 +9,9 @@ from typing import Literal
 
 
 # MPC Parameters
-CONTROL_HORIZON = 5
-TIME_HORIZON = 2  # seconds
-DT = 0.08  # starting value for dt, seconds
+CONTROL_HORIZON = 8
+TIME_HORIZON = 3  # seconds
+DT = 0.05  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 BALL_RADIUS = 21.35  # mm
@@ -20,8 +20,8 @@ FIELD_BOUNDARY_MARGIN = 100.0  # mm
 MAX_ITERATIONS = 30
 BATCH_SIZE = 6
 LEARNING_RATE = 40
-N_CANDIDATE_TRAJECTORIES = 5
-TRAJECTORY_RESOLUTION = 8  # points per physics step for high-resolution trajectories
+N_CANDIDATE_TRAJECTORIES = 4
+TRAJECTORY_RESOLUTION = 10  # points per physics step for high-resolution trajectories
 FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
 # Robot dynamics parameters
@@ -59,7 +59,7 @@ class MPCConfig(eqx.Module):
     obstacle_no_cost_distance: jax.Array = eqx.field(
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 3.5)
     )
-    delay: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(0.0))
+    delay: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(DT / 2))
 
     @staticmethod
     def sample(key):
@@ -276,14 +276,19 @@ class FieldBounds(eqx.Module):
     field_width: float = 2000.0  # mm
     penalty_area_depth: float = 1000.0  # mm
     penalty_area_width: float = 2000.0  # mm
-    
-    def __init__(self, field_length: float = 4000.0, field_width: float = 2000.0, 
-                 penalty_area_depth: float = 1000.0, penalty_area_width: float = 2000.0):
+
+    def __init__(
+        self,
+        field_length: float = 4000.0,
+        field_width: float = 2000.0,
+        penalty_area_depth: float = 1000.0,
+        penalty_area_width: float = 2000.0,
+    ):
         self.field_length = field_length
         self.field_width = field_width
         self.penalty_area_depth = penalty_area_depth
         self.penalty_area_width = penalty_area_width
-    
+
     def bounding_box(self):
         half_length = self.field_length / 2.0
         half_width = self.field_width / 2.0
@@ -360,22 +365,12 @@ def single_trajectory_from_control(
         return total_force / ROBOT_MASS
 
     def heun_step(state: jax.Array, target_vel: jax.Array, dt: float) -> jax.Array:
-        """Heun method for state integration"""
         pos, vel = state[:2], state[2:]
 
-        # First evaluation
         acc1 = dynamics(pos, vel, target_vel, dt)
 
-        # Predictor step
-        pos_pred = pos + vel * dt
-        vel_pred = vel + acc1 * dt
-
-        # Second evaluation
-        acc2 = dynamics(pos_pred, vel_pred, target_vel, dt)
-
-        # Corrector step
-        new_pos = pos + vel * dt + 0.5 * acc1 * dt * dt
-        new_vel = vel + 0.5 * (acc1 + acc2) * dt
+        new_pos = pos + vel * dt + acc1 * dt * dt * 0.5
+        new_vel = vel + acc1 * dt
 
         return jnp.concatenate([new_pos, new_vel])
 

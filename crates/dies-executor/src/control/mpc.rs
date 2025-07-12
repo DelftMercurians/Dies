@@ -132,7 +132,6 @@ impl MPCController {
             if let Err(e) = self.request_sender.try_send(request) {
                 log::warn!("mpc thread is having troubles: {}", e);
             } else {
-                log::info!("mpc thread request sent");
                 self.request_pending = true; // Mark request as pending
             }
         }

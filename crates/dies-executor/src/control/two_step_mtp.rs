@@ -22,7 +22,7 @@ impl TwoStepMTP {
             kp: 1.0,
             proportional_time_window: Duration::from_millis(700),
             cutoff_distance: 30.0,
-            sample_count: 20,
+            sample_count: 8,
         }
     }
 
@@ -150,14 +150,6 @@ impl TwoStepMTP {
             current_player,
         );
 
-        // Visualize the direct trajectory sample
-        player_context.debug_circle_fill_colored(
-            "two_step_direct",
-            target,
-            5.0,
-            dies_core::DebugColor::Blue,
-        );
-
         if direct_cost < best_cost {
             best_cost = direct_cost;
             best_point = target;
@@ -177,14 +169,6 @@ impl TwoStepMTP {
                 target,
                 world_data,
                 current_player,
-            );
-
-            // Visualize all sample points as very small crosses
-            player_context.debug_circle_fill_colored(
-                &format!("two_step_sample_{}", i),
-                sample_point,
-                5.0,
-                dies_core::DebugColor::Gray,
             );
 
             if cost < best_cost {

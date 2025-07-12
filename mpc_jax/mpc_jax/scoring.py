@@ -32,18 +32,20 @@ def point_vs_field_boundary_collision(pos, field_bounds):
     x, y = pos[0], pos[1]
     half_length = field_bounds.field_length / 2.0
     half_width = field_bounds.field_width / 2.0
-    
+
     # Check if outside field boundaries
     outside_field = (jnp.abs(x) > half_length) | (jnp.abs(y) > half_width)
-    
+
     # Check if inside left penalty area
-    in_left_penalty = (x < -half_length + field_bounds.penalty_area_depth) & \
-                     (jnp.abs(y) < field_bounds.penalty_area_width / 2.0)
-    
-    # Check if inside right penalty area  
-    in_right_penalty = (x > half_length - field_bounds.penalty_area_depth) & \
-                      (jnp.abs(y) < field_bounds.penalty_area_width / 2.0)
-    
+    in_left_penalty = (x < -half_length + field_bounds.penalty_area_depth) & (
+        jnp.abs(y) < field_bounds.penalty_area_width / 2.0
+    )
+
+    # Check if inside right penalty area
+    in_right_penalty = (x > half_length - field_bounds.penalty_area_depth) & (
+        jnp.abs(y) < field_bounds.penalty_area_width / 2.0
+    )
+
     return outside_field | in_left_penalty | in_right_penalty
 
 
@@ -70,11 +72,13 @@ def traj_vs_entity_collision(traj, entity, min_safe_distance) -> jax.Array:
 
 def traj_vs_field_boundary_collision(traj, field_bounds) -> jax.Array:
     """Check collision between trajectory and field boundaries/penalty areas."""
-    
+
     def check_point_boundary_collision(raw_value):
         t, pos_x, pos_y, vel_x, vel_y = raw_value
-        return point_vs_field_boundary_collision(jnp.array([pos_x, pos_y]), field_bounds)
-    
+        return point_vs_field_boundary_collision(
+            jnp.array([pos_x, pos_y]), field_bounds
+        )
+
     collisions = jax.vmap(check_point_boundary_collision)(traj)
     return collisions
 
@@ -191,7 +195,9 @@ def score_single_trajectory_sample(
     # Check field boundary violations
     field_boundary_collisions = (
         jax.vmap(
-            lambda traj: traj_vs_field_boundary_collision(traj, noisy_world.field_bounds)
+            lambda traj: traj_vs_field_boundary_collision(
+                traj, noisy_world.field_bounds
+            )
         )(trajectories).astype(jnp.float32)
         * time_discount[None, :]
         * world.robots.mask[:, None]
@@ -199,7 +205,10 @@ def score_single_trajectory_sample(
 
     # Count total collisions
     total_collisions = (
-        obstacle_collisions.sum() + self_robot_collisions.sum() + ball_collisions.sum() + field_boundary_collisions.sum()
+        obstacle_collisions.sum()
+        + self_robot_collisions.sum()
+        + ball_collisions.sum()
+        + field_boundary_collisions.sum()
     )
 
     collision_penalty = total_collisions * 1e12
@@ -251,7 +260,7 @@ def select_best_stochastic_trajectory(
     targets: EntityBatch,
     last_controls: Any,
     cfg: MPCConfig,
-    n_samples: int = 50,
+    n_samples: int = 5,
 ) -> tuple[int, float]:
     n_candidates = len(optimized_controls)
     sample_keys = jr.split(key, n_samples)

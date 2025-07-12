@@ -79,7 +79,7 @@ impl PlayerController {
             position_mtp: MTP::new(),
             two_step_mtp: TwoStepMTP::new(),
             use_mpc: true, // Default to using MPC
-            use_two_step_mtp: true, // Default to regular MTP
+            use_two_step_mtp: true, // Default to double step MTP
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
 
