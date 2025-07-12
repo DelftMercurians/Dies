@@ -9,6 +9,7 @@ import optax
 import os
 import warnings
 import equinox as eqx
+import time
 from tqdm import tqdm
 import functools as ft
 import matplotlib.pyplot as plt
@@ -232,13 +233,13 @@ def solve_mpc_jax(
     w: World,
     targets: EntityBatch,
     max_speeds: jax.Array,
-    max_iterations: int,
-    learning_rate: float,
-    n_candidates: int,
-    key: PRNGKeyArray,
     last_control_sequences: jax.Array,
-    cfg: MPCConfig,
+    max_iterations: int = MAX_ITERATIONS,
+    learning_rate: float = LEARNING_RATE,
+    n_candidates: int = N_CANDIDATE_TRAJECTORIES,
 ) -> Result:
+    key = jr.key(0)
+    cfg = MPCConfig()
     n_robots = w.robots.st_len()
 
     # Generate candidate trajectories - mix of random and continuity-based
@@ -369,8 +370,6 @@ def solve_mpc_jax(
     return Result(
         u=u,
         traj=traj,
-        candidate_controls=candidate_controls,
-        optimized_controls=optimized_controls,
         cost=best_cost,
         idx_by_cost=best_idx,
     )
@@ -383,39 +382,23 @@ def pprint(arr):
     return out[:-1] + "]" if len(out) != 1 else "[]"
 
 
+_jitted = eqx.filter_jit(solve_mpc_jax)
+
+
 def solve_mpc(
     initial_pos: np.ndarray,
     initial_vel: np.ndarray,
     target_pos: np.ndarray,
     obstacles: np.ndarray,
-    ball_pos: np.ndarray | None,
+    ball_pos: np.ndarray,
     field_bounds: np.ndarray | None,
     max_speeds: np.ndarray,
     last_control_sequences: np.ndarray | None = None,
     dt: np.ndarray | None = np.array(0.02),
     field_geometry: np.ndarray | None = None,
-    max_iterations: int = MAX_ITERATIONS,
-    learning_rate: float = LEARNING_RATE,
-    n_candidates: int = N_CANDIDATE_TRAJECTORIES,
-    key: PRNGKeyArray | None = None,
 ) -> Result:
     n_robots = len(initial_pos)
-    assert len(initial_vel) == n_robots, f"{len(initial_vel)} != {n_robots}"
-    assert len(target_pos) == n_robots, f"{len(target_pos)} != {n_robots}"
-    assert len(max_speeds) == n_robots, f"{len(max_speeds)} != {n_robots}"
-
     ctrl_shape = (len(initial_pos), CONTROL_HORIZON, 2)
-    if (
-        last_control_sequences is not None
-        and last_control_sequences.shape != ctrl_shape
-    ):
-        warnings.warn(
-            f"Last control sequence had shape {last_control_sequences.shape}, but was expected to have shape {ctrl_shape}. Disabling continuity."
-        )
-        last_control_sequences = np.zeros_like(ctrl_shape)
-
-    # Handle ball position - use provided ball_pos or default to far away
-    ball_position = np.array([1e6, 1e6]) if ball_pos is None else ball_pos
 
     # Pad inputs to fixed size (6 robots) in numpy
     padded_max_speeds = np.full(6, 1e6)
@@ -427,48 +410,33 @@ def solve_mpc(
         padded_last_control = np.zeros((6, CONTROL_HORIZON, 2))
         padded_last_control[:n_robots] = last_control_sequences
 
-    # Create FieldBounds with provided geometry or defaults
-    if field_geometry is not None:
-        field_bounds_obj = FieldBounds(
-            field_length=float(field_geometry[0]),
-            field_width=float(field_geometry[1]),
-            penalty_area_depth=float(field_geometry[2]),
-            penalty_area_width=float(field_geometry[3]),
-        )
-    else:
-        field_bounds_obj = FieldBounds()
+    field_bounds_obj = FieldBounds(
+        field_length=float(field_geometry[0]),
+        field_width=float(field_geometry[1]),
+        penalty_area_depth=float(field_geometry[2]),
+        penalty_area_width=float(field_geometry[3]),
+    )
 
-    r = eqx.filter_jit(solve_mpc_jax)(
+    r = _jitted(
         w=World(
             field_bounds_obj,
             EntityBatch(jnp.asarray(obstacles)),
             EntityBatch(jnp.asarray(initial_pos), jnp.asarray(initial_vel)),
-            Entity(jnp.asarray(ball_position)),
+            Entity(jnp.asarray(ball_pos)),
         ),
         targets=EntityBatch(jnp.asarray(target_pos)),
         max_speeds=jnp.asarray(padded_max_speeds),
-        max_iterations=int(max_iterations),
-        learning_rate=float(learning_rate),
-        n_candidates=int(n_candidates),
-        key=jr.key(0) if key is None else key,
         last_control_sequences=jnp.asarray(padded_last_control),
-        cfg=MPCConfig(),  # Use default config with 0.02s delay
     )
 
     # Unpad the result in numpy
     r = Result(
         u=np.array(r.u)[:n_robots],
         traj=np.array(r.traj)[:n_robots],
-        candidate_controls=np.array(r.candidate_controls)[:, :n_robots],
-        optimized_controls=np.array(r.optimized_controls)[:, :n_robots],
         cost=float(r.cost),
         idx_by_cost=int(r.idx_by_cost),
     )
 
-    if np.isinf(r.cost) or np.isnan(r.cost):
-        warnings.warn(
-            "Cost if infinite (or nan), which means there is no collision-free resolution found by MPC. Proceeding with the best available trajectory."
-        )
     return r
 
 

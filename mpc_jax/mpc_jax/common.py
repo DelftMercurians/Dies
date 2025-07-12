@@ -9,18 +9,18 @@ from typing import Literal
 
 
 # MPC Parameters
-CONTROL_HORIZON = 8
-TIME_HORIZON = 3  # seconds
+CONTROL_HORIZON = 5
+TIME_HORIZON = 2  # seconds
 DT = 0.05  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 BALL_RADIUS = 21.35  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 30
-BATCH_SIZE = 6
-LEARNING_RATE = 40
-N_CANDIDATE_TRAJECTORIES = 4
+MAX_ITERATIONS = 50
+BATCH_SIZE = 4
+LEARNING_RATE = 20
+N_CANDIDATE_TRAJECTORIES = 8
 TRAJECTORY_RESOLUTION = 10  # points per physics step for high-resolution trajectories
 FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
@@ -35,8 +35,8 @@ def add_control_noise(
     control: Control,
 ) -> Control:
     k1, k2, k3 = jr.split(key, 3)
-    noise = jr.normal(k1, control.shape) * 10.0
-    scale = jr.uniform(k2, (len(control),), minval=1.0, maxval=1.05)
+    noise = jr.normal(k1, control.shape) * 5.0
+    scale = jr.uniform(k2, (len(control),), minval=1.0, maxval=1.02)
     uni_scale = jr.uniform(k3, (1,), minval=1.0, maxval=1.1)
     return control * scale[:, None, None] * uni_scale[None, None, :] + noise
 
@@ -51,21 +51,21 @@ class MPCConfig(eqx.Module):
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.05 + BALL_RADIUS)
     )
     ball_no_cost_distance: jax.Array = eqx.field(
-        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 1.5 + BALL_RADIUS)
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2 + BALL_RADIUS)
     )
     obstacle_min_safe_distance: jax.Array = eqx.field(
         default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 2.2)
     )
     obstacle_no_cost_distance: jax.Array = eqx.field(
-        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 3.5)
+        default_factory=lambda: jnp.asarray(ROBOT_RADIUS * 4)
     )
-    delay: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(DT / 2))
+    delay: jax.Array = eqx.field(default_factory=lambda: jnp.asarray(0.0))
 
     @staticmethod
     def sample(key):
         return MPCConfig()
 
-    def noisy(self, key, noise_scale: float = 0.05):
+    def noisy(self, key, noise_scale: float = 0.0):
         """Add noise to delay parameter."""
         noise = jax.random.normal(key, ()) * noise_scale
         return eqx.tree_at(
@@ -76,8 +76,6 @@ class MPCConfig(eqx.Module):
 class Result(eqx.Module):
     u: jax.Array
     traj: jax.Array
-    candidate_controls: jax.Array
-    optimized_controls: jax.Array
     cost: jax.Array
     idx_by_cost: jax.Array
 
@@ -327,7 +325,7 @@ class World(eqx.Module):
         )
 
 
-def trajectories_from_control(w: World, u: Control, delay: float = 0.0):
+def trajectories_from_control(w: World, u: Control, delay: float = 0.1):
     return jax.vmap(
         lambda control, pos, vel: single_trajectory_from_control(
             control, pos, vel, delay
@@ -344,7 +342,7 @@ def single_trajectory_from_control(
     control_sequence: jax.Array,
     initial_pos: jax.Array,
     initial_vel: jax.Array,
-    delay: float = 0.0,
+    delay: float = 0.1,
 ) -> jax.Array:
     initial_pos = initial_pos + initial_vel * delay
 
@@ -367,10 +365,19 @@ def single_trajectory_from_control(
     def heun_step(state: jax.Array, target_vel: jax.Array, dt: float) -> jax.Array:
         pos, vel = state[:2], state[2:]
 
+        # First evaluation
         acc1 = dynamics(pos, vel, target_vel, dt)
 
-        new_pos = pos + vel * dt + acc1 * dt * dt * 0.5
-        new_vel = vel + acc1 * dt
+        # Predictor step
+        pos_pred = pos + vel * dt
+        vel_pred = vel + acc1 * dt
+
+        # Second evaluation
+        acc2 = dynamics(pos_pred, vel_pred, target_vel, dt)
+
+        # Corrector step
+        new_pos = pos + vel * dt + 0.5 * acc1 * dt * dt
+        new_vel = vel + 0.5 * (acc1 + acc2) * dt
 
         return jnp.concatenate([new_pos, new_vel])
 

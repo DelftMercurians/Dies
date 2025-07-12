@@ -31,6 +31,7 @@ struct MPCRequest {
 
 struct MPCResponse {
     controls: HashMap<PlayerId, Vector2>,
+    control_sequences: HashMap<PlayerId, Vec<Vector2>>,
     updated_state: MPCControllerState,
 }
 
@@ -51,8 +52,8 @@ pub struct MPCController {
 
 impl MPCController {
     pub fn new() -> Self {
-        let (request_sender, request_receiver) = mpsc::sync_channel::<MPCRequest>(1);
-        let (response_sender, response_receiver) = mpsc::sync_channel::<MPCResponse>(1);
+        let (request_sender, request_receiver) = mpsc::sync_channel::<MPCRequest>(2);
+        let (response_sender, response_receiver) = mpsc::sync_channel::<MPCResponse>(2);
 
         let thread_handle = thread::Builder::new()
             .name("mpc-worker".to_string())
@@ -110,6 +111,7 @@ impl MPCController {
 
         if elapsed > 150 {
             // If delay is too long, fall back to MTP (return empty HashMap)
+            log::warn!("mpc took too long, switching back to a decent control");
             return HashMap::new();
         }
 
@@ -136,9 +138,9 @@ impl MPCController {
             }
         }
 
-        // Return last known result or empty (let MTP handle it)
+        // Return interpolated control based on elapsed time or empty (let MTP handle it)
         if let Some(ref last_result) = self.last_mpc_result {
-            last_result.clone()
+            self.interpolate_controls_at_time(elapsed as f64)
         } else {
             HashMap::new()
         }
@@ -150,6 +152,37 @@ impl MPCController {
 
     pub fn get_trajectories(&self) -> &HashMap<PlayerId, Vec<Vec<f64>>> {
         &self.last_trajectories
+    }
+
+    fn interpolate_controls_at_time(&self, elapsed_ms: f64) -> HashMap<PlayerId, Vector2> {
+        let mut interpolated_controls = HashMap::new();
+
+        // Target time step is 80ms, so calculate which control step we should interpolate to
+        let target_time_step = 50.0; // ms
+        let step_index = (elapsed_ms + 30.0) / target_time_step;
+        let step_floor = step_index.floor() as usize;
+        let step_frac = step_index.fract();
+
+        for (robot_id, control_sequence) in &self.last_control_sequences {
+            if control_sequence.len() > step_floor {
+                let current_control = control_sequence[step_floor];
+
+                if control_sequence.len() > step_floor + 1 && step_frac > 0.0 {
+                    // Interpolate between current and next control
+                    let next_control = control_sequence[step_floor + 1];
+                    let interpolated = Vector2::new(
+                        current_control.x * (1.0 - step_frac) + next_control.x * step_frac,
+                        current_control.y * (1.0 - step_frac) + next_control.y * step_frac,
+                    );
+                    interpolated_controls.insert(*robot_id, interpolated);
+                } else {
+                    // Use current control if no next step available
+                    interpolated_controls.insert(*robot_id, current_control);
+                }
+            }
+        }
+
+        interpolated_controls
     }
 
     fn should_fallback_to_mtp(&self) -> bool {
@@ -185,7 +218,8 @@ impl MPCController {
             };
 
             let response = MPCResponse {
-                controls,
+                controls: controls.clone(),
+                control_sequences: updated_state.last_control_sequences.clone(),
                 updated_state,
             };
 

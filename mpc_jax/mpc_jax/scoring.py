@@ -159,7 +159,7 @@ def score_single_trajectory_sample(
         (
             jax.vmap(
                 lambda traj: traj_vs_batch_collision(
-                    traj, noisy_world.obstacles, min_safe_distance=2.2 * ROBOT_RADIUS
+                    traj, noisy_world.obstacles, min_safe_distance=2.5 * ROBOT_RADIUS
                 )
             )(trajectories).astype(jnp.float32)
             * time_discount[None, None, :, None]
@@ -172,7 +172,7 @@ def score_single_trajectory_sample(
     self_robot_collisions = (
         (
             many_traj_collision(
-                trajectories, min_safe_distance=2.2 * ROBOT_RADIUS
+                trajectories, min_safe_distance=2.5 * ROBOT_RADIUS
             ).astype(jnp.float32)
             * time_discount[:, None, None]
         )
