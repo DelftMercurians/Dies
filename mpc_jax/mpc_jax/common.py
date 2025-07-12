@@ -9,7 +9,7 @@ from typing import Literal
 
 
 # MPC Parameters
-CONTROL_HORIZON = 5
+CONTROL_HORIZON = 6
 TIME_HORIZON = 2  # seconds
 DT = 0.05  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
@@ -17,17 +17,17 @@ ROBOT_RADIUS = 90.0  # mm
 BALL_RADIUS = 21.35  # mm
 COLLISION_PENALTY_RADIUS = 200.0  # mm
 FIELD_BOUNDARY_MARGIN = 100.0  # mm
-MAX_ITERATIONS = 50
-BATCH_SIZE = 5
-LEARNING_RATE = 20
-N_CANDIDATE_TRAJECTORIES = 15
-TRAJECTORY_RESOLUTION = 10  # points per physics step for high-resolution trajectories
+MAX_ITERATIONS = 40
+BATCH_SIZE = 10
+LEARNING_RATE = 30
+N_CANDIDATE_TRAJECTORIES = 10
+TRAJECTORY_RESOLUTION = 6  # points per physics step for high-resolution trajectories
 FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
 VEL_FRICTION_COEFF = 0  # N*s/m (velocity-dependent friction coefficient)
-MAX_ACC = 9_000  # mm/s^2
+MAX_ACC = 12_000  # mm/s^2
 
 
 def add_control_noise(

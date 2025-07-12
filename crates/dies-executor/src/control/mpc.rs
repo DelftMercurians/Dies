@@ -229,9 +229,12 @@ impl MPCController {
                 }
             };
 
+            // Extract control sequences from updated state before moving it
+            let control_sequences = updated_state.last_control_sequences.clone();
+
             let response = MPCResponse {
                 controls: controls.clone(),
-                control_sequences: updated_state.last_control_sequences.clone(),
+                control_sequences,
                 updated_state,
             };
 
@@ -353,49 +356,6 @@ impl MPCController {
                 Some(np.call_method1("array", (vec![geom.field_length, geom.field_width, geom.penalty_area_depth, geom.penalty_area_width],))?)
             } else {
                 None
-            };
-
-            // Prepare last trajectory data with dynamic horizon length
-            let mut last_traj_data = Vec::new();
-            let mut dynamic_horizon = control_horizon * 5 + 1; // Default to control_horizon
-
-            for robot in robots {
-                if let Some(traj) = controller_state.last_trajectories.get(&robot.id) {
-                    // Use the actual trajectory length for dynamic horizon
-                    if !traj.is_empty() {
-                        dynamic_horizon = traj.len();
-                    }
-
-                    // Use stored trajectory data directly
-                    for i in 0..dynamic_horizon {
-                        if i < traj.len() && traj[i].len() >= 5 {
-                            last_traj_data.extend_from_slice(&traj[i]);
-                        } else {
-                            // Pad with last available value or zeros if no trajectory exists
-                            let last_point = if !traj.is_empty() && !traj.last().unwrap().is_empty()
-                            {
-                                traj.last().unwrap().clone()
-                            } else {
-                                vec![i as f64 * world.dt, 0.0, 0.0, 0.0, 0.0]
-                            };
-                            last_traj_data.extend_from_slice(&last_point);
-                        }
-                    }
-                } else {
-                    // No previous trajectory, use zeros with proper time values
-                    for i in 0..dynamic_horizon {
-                        let t = i as f64 * world.dt;
-                        last_traj_data.extend_from_slice(&[t, 0.0, 0.0, 0.0, 0.0]);
-                    }
-                }
-            }
-
-            let last_traj_array = if last_traj_data.is_empty() {
-                py.None()
-            } else {
-                np.call_method1("array", (last_traj_data,))?
-                    .call_method1("reshape", (n_robots, dynamic_horizon, 5))?
-                    .into()
             };
 
             let dt_value = world.dt;

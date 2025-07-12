@@ -420,10 +420,11 @@ def solve_mpc(
         padded_last_control = np.zeros((6, CONTROL_HORIZON, 2))
     else:
         padded_last_control = np.zeros((6, CONTROL_HORIZON, 2))
-        effective_last_control = last_control_sequences.copy()
-        # Zero out controls for non-controllable robots
-        effective_last_control[~controllable_mask] = 0.0
-        padded_last_control[:n_robots] = effective_last_control
+        # Copy control sequences for controllable robots only
+        for i in range(n_robots):
+            if controllable_mask[i]:
+                padded_last_control[i] = last_control_sequences[i]
+            # Non-controllable robots keep zeros
 
     field_bounds_obj = FieldBounds(
         field_length=float(field_geometry[0]),
