@@ -214,8 +214,7 @@ fn register_field_geometry_type(engine: &mut Engine) {
 fn register_role_assignment_types(engine: &mut Engine) {
     engine
         .register_type_with_name::<RoleBuilder>("RoleBuilder")
-        .register_type_with_name::<Role>("Role")
-        .register_type_with_name::<RoleAssignmentProblem>("RoleAssignmentProblem");
+        .register_type_with_name::<Role>("Role");
 }
 
 /// Register GameContext type
@@ -713,7 +712,7 @@ fn filter_own_players_by(
     context: NativeCallContext,
     rs: &mut RobotSituation,
     predicate_fn: FnPtr,
-) -> Vec<PlayerData> {
+) -> Array {
     filter_players_by(&context, &rs.world.own_players, predicate_fn)
 }
 
@@ -721,7 +720,7 @@ fn filter_opp_players_by(
     context: NativeCallContext,
     rs: &mut RobotSituation,
     predicate_fn: FnPtr,
-) -> Vec<PlayerData> {
+) -> Array {
     filter_players_by(&context, &rs.world.opp_players, predicate_fn)
 }
 
@@ -729,7 +728,7 @@ fn filter_players_by(
     context: &NativeCallContext,
     players: &[PlayerData],
     predicate_fn: FnPtr,
-) -> Vec<PlayerData> {
+) -> Array {
     players
         .iter()
         .filter(|player| {
@@ -737,7 +736,7 @@ fn filter_players_by(
                 .call_within_context::<bool>(context, ((*player).clone(),))
                 .unwrap_or(false)
         })
-        .cloned()
+        .map(|p| Dynamic::from(p.clone()))
         .collect()
 }
 
@@ -774,41 +773,30 @@ fn count_players_where(
 
 // ===== Player Collections =====
 
-fn get_players_within_radius(
-    rs: &mut RobotSituation,
-    center: Vector2,
-    radius: f64,
-) -> Vec<PlayerData> {
+fn get_players_within_radius(rs: &mut RobotSituation, center: Vector2, radius: f64) -> Array {
     rs.world
         .players_within_radius(center, radius)
         .into_iter()
         .cloned()
+        .map(|p| Dynamic::from(p.clone()))
         .collect()
 }
 
-fn get_own_players_within_radius(
-    rs: &mut RobotSituation,
-    center: Vector2,
-    radius: f64,
-) -> Vec<PlayerData> {
+fn get_own_players_within_radius(rs: &mut RobotSituation, center: Vector2, radius: f64) -> Array {
     rs.world
         .own_players
         .iter()
         .filter(|p| (p.position - center).norm() < radius)
-        .cloned()
+        .map(|p| Dynamic::from(p.clone()))
         .collect()
 }
 
-fn get_opp_players_within_radius(
-    rs: &mut RobotSituation,
-    center: Vector2,
-    radius: f64,
-) -> Vec<PlayerData> {
+fn get_opp_players_within_radius(rs: &mut RobotSituation, center: Vector2, radius: f64) -> Array {
     rs.world
         .opp_players
         .iter()
         .filter(|p| (p.position - center).norm() < radius)
-        .cloned()
+        .map(|p| Dynamic::from(p.clone()))
         .collect()
 }
 

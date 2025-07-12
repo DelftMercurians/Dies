@@ -12,6 +12,8 @@ use dies_core::{PlayerId, Vector2 as CoreVector2};
 
 #[export_module]
 pub mod bt_rhai_plugin {
+    use std::sync::{Arc, Mutex};
+
     use crate::behavior_tree::rhai_types::RhaiBehaviorNode;
     use crate::behavior_tree::{Argument, FaceTarget, HeadingTarget, SkillDefinition};
 
@@ -744,88 +746,96 @@ pub mod bt_rhai_plugin {
     }
 
     // RoleBuilder methods
-    #[rhai_fn(name = "min", pure)]
-    pub fn role_builder_min(builder: &mut RoleBuilder, count: INT) -> RoleBuilder {
-        builder.clone().min(count as usize)
+    #[rhai_fn(name = "min")]
+    pub fn role_builder_min(
+        builder: Arc<Mutex<RoleBuilder>>,
+        count: INT,
+    ) -> Arc<Mutex<RoleBuilder>> {
+        {
+            let mut builder_guard = builder.lock().unwrap();
+            builder_guard.min_count = count as usize;
+        }
+        builder
     }
 
-    #[rhai_fn(name = "max", pure)]
-    pub fn role_builder_max(builder: &mut RoleBuilder, count: INT) -> RoleBuilder {
-        builder.clone().max(count as usize)
+    #[rhai_fn(name = "max")]
+    pub fn role_builder_max(
+        builder: Arc<Mutex<RoleBuilder>>,
+        count: INT,
+    ) -> Arc<Mutex<RoleBuilder>> {
+        {
+            let mut builder_guard = builder.lock().unwrap();
+            builder_guard.max_count = count as usize;
+        }
+        builder
     }
 
-    #[rhai_fn(name = "count", pure)]
-    pub fn role_builder_count(builder: &mut RoleBuilder, count: INT) -> RoleBuilder {
-        builder.clone().count(count as usize)
+    #[rhai_fn(name = "count")]
+    pub fn role_builder_count(
+        builder: Arc<Mutex<RoleBuilder>>,
+        count: INT,
+    ) -> Arc<Mutex<RoleBuilder>> {
+        {
+            let mut builder_guard = builder.lock().unwrap();
+            builder_guard.min_count = count as usize;
+            builder_guard.max_count = count as usize;
+        }
+        builder
     }
 
-    #[rhai_fn(name = "score", return_raw)]
+    #[rhai_fn(name = "score")]
     pub fn role_builder_score(
         context: NativeCallContext,
-        builder: &mut RoleBuilder,
+        builder: Arc<Mutex<RoleBuilder>>,
         scorer_fn: FnPtr,
-    ) -> Result<RoleBuilder, Box<EvalAltResult>> {
+    ) -> Arc<Mutex<RoleBuilder>> {
         let callback = BtCallback::new_rhai(&context, scorer_fn);
-        Ok(builder.clone().score(callback))
+        {
+            let mut builder_guard = builder.lock().unwrap();
+            builder_guard.scorer = Some(callback);
+        }
+        builder
     }
 
-    #[rhai_fn(name = "require", return_raw)]
+    #[rhai_fn(name = "require")]
     pub fn role_builder_require(
         context: NativeCallContext,
-        builder: &mut RoleBuilder,
+        builder: Arc<Mutex<RoleBuilder>>,
         filter_fn: FnPtr,
-    ) -> Result<RoleBuilder, Box<EvalAltResult>> {
+    ) -> Arc<Mutex<RoleBuilder>> {
         let callback = BtCallback::new_rhai(&context, filter_fn);
-        Ok(builder.clone().require(callback))
+        {
+            let mut builder_guard = builder.lock().unwrap();
+            builder_guard.require_filter = Some(callback);
+        }
+        builder
     }
 
-    #[rhai_fn(name = "exclude", return_raw)]
+    #[rhai_fn(name = "exclude")]
     pub fn role_builder_exclude(
         context: NativeCallContext,
-        builder: &mut RoleBuilder,
+        builder: Arc<Mutex<RoleBuilder>>,
         filter_fn: FnPtr,
-    ) -> Result<RoleBuilder, Box<EvalAltResult>> {
+    ) -> Arc<Mutex<RoleBuilder>> {
         let callback = BtCallback::new_rhai(&context, filter_fn);
-        Ok(builder.clone().exclude(callback))
+        {
+            let mut builder_guard = builder.lock().unwrap();
+            builder_guard.exclude_filter = Some(callback);
+        }
+        builder
     }
 
-    #[rhai_fn(name = "behavior", return_raw)]
+    #[rhai_fn(name = "behavior")]
     pub fn role_builder_behavior(
         context: NativeCallContext,
-        builder: &mut RoleBuilder,
+        builder: Arc<Mutex<RoleBuilder>>,
         builder_fn: FnPtr,
-    ) -> Result<RoleBuilder, Box<EvalAltResult>> {
+    ) -> Arc<Mutex<RoleBuilder>> {
         let callback = BtCallback::new_rhai(&context, builder_fn);
-        Ok(builder.clone().behavior(callback))
-    }
-
-    #[rhai_fn(name = "build", return_raw)]
-    pub fn role_builder_build(builder: &mut RoleBuilder) -> Result<Role, Box<EvalAltResult>> {
-        builder.clone().build().map_err(|e| {
-            Box::new(EvalAltResult::ErrorRuntime(
-                format!("Failed to build role: {}", e).into(),
-                Position::NONE,
-            ))
-        })
-    }
-
-    // AssignRoles function
-    #[rhai_fn(name = "AssignRoles", return_raw)]
-    pub fn assign_roles(roles_array: Array) -> Result<RoleAssignmentProblem, Box<EvalAltResult>> {
-        let mut roles = Vec::new();
-
-        for role_dyn in roles_array {
-            let type_name = role_dyn.type_name().to_string();
-            let role = role_dyn.try_cast::<Role>().ok_or_else(|| {
-                Box::new(EvalAltResult::ErrorMismatchDataType(
-                    "Expected Role".to_string(),
-                    type_name.into(),
-                    Position::NONE,
-                ))
-            })?;
-            roles.push(role);
+        {
+            let mut builder_guard = builder.lock().unwrap();
+            builder_guard.tree_builder = Some(callback);
         }
-
-        Ok(RoleAssignmentProblem { roles })
+        builder
     }
 }

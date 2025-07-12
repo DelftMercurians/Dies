@@ -34,7 +34,7 @@ pub struct GameContext {
     pub num_own_players: usize,
     pub num_opp_players: usize,
     pub field_geom: Option<FieldGeometry>,
-    role_builders: Arc<Mutex<Vec<RoleBuilder>>>,
+    role_builders: Arc<Mutex<Vec<Arc<Mutex<RoleBuilder>>>>>,
 }
 
 impl GameContext {
@@ -49,16 +49,25 @@ impl GameContext {
     }
 
     /// Add a role and return a builder for configuration
-    pub fn add_role(&self, name: &str) -> RoleBuilder {
-        RoleBuilder::new(name)
+    pub fn add_role(&mut self, name: &str) -> Arc<Mutex<RoleBuilder>> {
+        log::info!("Adding role: {}", name);
+        let builder = RoleBuilder::new(name);
+        let shared_builder = Arc::new(Mutex::new(builder));
+        let mut role_builders = self.role_builders.lock().unwrap();
+        role_builders.push(shared_builder.clone());
+        shared_builder
     }
 
     /// Extract the final role assignment problem
     pub fn into_role_assignment_problem(self) -> RoleAssignmentProblem {
         let mut role_builders = self.role_builders.lock().unwrap();
+        log::info!("Role builders: {:?}", role_builders.len());
         let roles = std::mem::take(&mut *role_builders)
             .into_iter()
-            .filter_map(|builder| builder.build().ok())
+            .filter_map(|builder| {
+                let builder = builder.lock().unwrap();
+                builder.clone().build().ok()
+            })
             .collect();
 
         RoleAssignmentProblem { roles }
@@ -156,19 +165,15 @@ impl RhaiHost {
 
     /// Get role assignment configuration from script
     pub fn get_role_assignment(
-        &self,
+        &mut self,
         team_data: &TeamData,
     ) -> Result<RoleAssignmentProblem, ScriptError> {
-        let ast = self
-            .compiled_ast
-            .as_ref()
-            .ok_or_else(|| ScriptError::Runtime {
-                script_path: self.script_path.clone(),
-                function_name: "get_role_assignment".to_string(),
-                message: "Script not compiled. Call compile() first.".to_string(),
-                team_color: self.team_color,
-                player_id: None,
-            })?;
+        let ast = if let Some(ast) = self.compiled_ast.as_ref() {
+            ast
+        } else {
+            self.compile()?;
+            self.compiled_ast.as_ref().unwrap()
+        };
 
         let mut scope = self.create_scope(&team_data.field_geom);
 

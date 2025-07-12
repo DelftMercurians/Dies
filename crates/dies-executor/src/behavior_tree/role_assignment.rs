@@ -38,13 +38,13 @@ pub struct RoleAssignmentProblem {
 /// Builder for creating roles with a fluent API
 #[derive(Clone)]
 pub struct RoleBuilder {
-    name: String,
-    min_count: usize,
-    max_count: usize,
-    scorer: Option<BtCallback<f64>>,
-    require_filter: Option<BtCallback<bool>>,
-    exclude_filter: Option<BtCallback<bool>>,
-    tree_builder: Option<BtCallback<RhaiBehaviorNode>>,
+    pub name: String,
+    pub min_count: usize,
+    pub max_count: usize,
+    pub scorer: Option<BtCallback<f64>>,
+    pub require_filter: Option<BtCallback<bool>>,
+    pub exclude_filter: Option<BtCallback<bool>>,
+    pub tree_builder: Option<BtCallback<RhaiBehaviorNode>>,
 }
 
 impl RoleBuilder {

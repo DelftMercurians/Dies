@@ -113,6 +113,7 @@ impl TeamController {
                 let engine_guard = engine.read().unwrap();
 
                 // Solve role assignments
+                let start_time = std::time::Instant::now();
                 match self.role_solver.solve(
                     &assignment_problem,
                     &active_robots,
@@ -121,6 +122,8 @@ impl TeamController {
                 ) {
                     Ok(assignments) => {
                         self.role_assignments = assignments.clone();
+                        let duration = start_time.elapsed();
+                        log::info!("Role assignment took {:?}", duration);
 
                         // Update behavior trees based on new assignments
                         for (player_id, role_name) in &assignments {
@@ -138,7 +141,6 @@ impl TeamController {
                                     .iter()
                                     .find(|r| &r.name == role_name)
                                 {
-                                    // Create a mock situation for the tree builder
                                     let situation = RobotSituation::new(
                                         *player_id,
                                         world_data.clone(),
