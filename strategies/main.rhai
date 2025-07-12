@@ -1,6 +1,10 @@
 import "keeper" as keeper;
 import "striker" as striker;
-import "defender/scorer" as defender_scorer;
+import "penalty_kicker" as penalty_kicker;
+import "harasser" as harasser;
+import "waller" as waller;
+import "waller_scorer" as waller_scorer;
+import "harasser_scorer" as harasser_scorer;
 import "striker_scorer" as striker_scorer;
 import "kickoff_kicker" as kickoff_kicker;
 import "freekick_kicker" as freekick_kicker;
@@ -71,7 +75,7 @@ fn main(game) {
     // Dynamic waller role
     game.add_role("waller")
         .min(0).max(2)
-        .score(|s| defender_scorer::score_as_waller(s))
+        .score(|s| waller_scorer::score_as_waller(s))
         .exclude(|s| s.player_id == 0)
         .behavior(|| waller::build_waller_tree())
         .build();
@@ -79,7 +83,7 @@ fn main(game) {
     // Dynamic harasser role
     game.add_role("harasser")
         .min(0).max(2)
-        .score(|s| defender_scorer::score_as_harasser(s))
+        .score(|s| harasser_scorer::score_as_harasser(s))
         .exclude(|s| s.player_id == 0)
         .behavior(|| harasser::build_harasser_tree())
         .build();

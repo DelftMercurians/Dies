@@ -17,6 +17,7 @@ import {
   useWorldState,
   useExecutorInfo,
   useRawWorldData,
+  useScriptError,
 } from "./api";
 import logo from "./assets/mercury-logo.svg";
 import { Button } from "./components/ui/button";
@@ -57,62 +58,13 @@ const App: React.FC = () => {
   const executorInfo = useExecutorInfo();
 
   // Script error handling state
-  const [currentSyntaxError, setCurrentSyntaxError] =
-    useState<ScriptError | null>(null);
-  const [syntaxErrorDialogOpen, setSyntaxErrorDialogOpen] = useState(false);
+  const [scriptError, setScriptError] = useScriptError();
   const scriptConsoleRef = useRef<ScriptConsoleRef>(null);
-
-  // WebSocket message handling for script errors
   useEffect(() => {
-    let ws: WebSocket | null = null;
-
-    const connectWebSocket = () => {
-      ws = new WebSocket(`ws://127.0.0.1:5555/api/ws`);
-
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-
-          if (message.type === "ScriptError") {
-            const scriptError = message.data as ScriptError;
-
-            if (scriptError.type === "Syntax") {
-              // Show syntax errors in popup dialog
-              setCurrentSyntaxError(scriptError);
-              setSyntaxErrorDialogOpen(true);
-            } else if (scriptError.type === "Runtime") {
-              // Add runtime errors to console
-              scriptConsoleRef.current?.addError(scriptError);
-            }
-          }
-        } catch (err) {
-          console.error("Failed to parse WebSocket message:", err);
-        }
-      };
-
-      ws.onerror = () => {
-        // Will reconnect automatically
-      };
-
-      ws.onclose = () => {
-        // Reconnect after delay
-        setTimeout(connectWebSocket, 1000);
-      };
-    };
-
-    connectWebSocket();
-
-    return () => {
-      ws?.close();
-    };
-  }, []);
-
-  const bsInfo = useBasestationInfo().data;
-  // const allMotorsOk = Object.values(bsInfo?.players ?? {}).every(
-  //   (p: PlayerFeedbackMsg) =>
-  //     p.motor_statuses?.find((m) => m === "NoReply") === undefined
-  // );
-  // useWarningSound(!allMotorsOk);
+    if (scriptError) {
+      scriptConsoleRef.current?.addError(scriptError);
+    }
+  }, [scriptError]);
 
   if (!backendState) {
     return (
@@ -141,8 +93,7 @@ const App: React.FC = () => {
     if (val === "play" && playingState !== "play") {
       // Clear script errors when starting a new run
       scriptConsoleRef.current?.clearConsole();
-      setCurrentSyntaxError(null);
-      setSyntaxErrorDialogOpen(false);
+      setScriptError(null);
 
       sendCommand({
         type: "Start",
@@ -406,11 +357,11 @@ const App: React.FC = () => {
       </div>
 
       {/* Script Error Dialog */}
-      <ScriptErrorDialog
+      {/* <ScriptErrorDialog
         open={syntaxErrorDialogOpen}
         onClose={() => setSyntaxErrorDialogOpen(false)}
-        error={currentSyntaxError}
-      />
+        error={scriptError}
+      /> */}
 
       {/* Script Console */}
       <ScriptConsoleWithRef ref={scriptConsoleRef} />

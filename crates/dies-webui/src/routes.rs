@@ -112,7 +112,7 @@ pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> 
             state.cmd_tx.clone(),
             state.update_rx.clone(),
             state.debug_sub.clone(),
-            state.script_error_tx.subscribe(),
+            state.script_error_rx.resubscribe(),
             socket,
         )
     })

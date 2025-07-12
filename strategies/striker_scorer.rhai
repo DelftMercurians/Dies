@@ -114,7 +114,7 @@ fn evaluate_shot_quality(s, from_pos, to_pos) {
         }
     }
     
-    return clear_count as f64 / ray_offsets.len() as f64;
+    return clear_count / ray_offsets.len();
 }
 
 // Score for free kicker role

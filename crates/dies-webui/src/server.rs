@@ -38,6 +38,7 @@ pub struct ServerState {
     pub executor_handle: RwLock<Option<ExecutorHandle>>,
     pub executor_settings: RwLock<ExecutorSettings>,
     pub script_error_tx: broadcast::Sender<ScriptError>,
+    pub script_error_rx: broadcast::Receiver<ScriptError>,
     #[allow(dead_code)]
     pub robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     settings_file: PathBuf,
@@ -53,7 +54,7 @@ impl ServerState {
         cmd_tx: broadcast::Sender<UiCommand>,
         robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     ) -> Self {
-        let (script_error_tx, _) = broadcast::channel(16);
+        let (script_error_tx, script_error_rx) = broadcast::channel(16);
 
         Self {
             is_live_available,
@@ -66,6 +67,7 @@ impl ServerState {
             executor_handle: RwLock::new(None),
             executor_settings: RwLock::new(ExecutorSettings::load_or_insert(&settings_file)),
             script_error_tx,
+            script_error_rx,
             settings_file,
             robot_id_map_tx,
         }

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::behavior_tree::bt_callback::BtCallback;
 use crate::behavior_tree::RhaiBehaviorNode;
 
-use super::{BehaviorTree, RobotSituation};
+use super::RobotSituation;
 
 /// Represents a role that can be assigned to robots
 #[derive(Clone)]
@@ -23,8 +23,14 @@ pub struct Role {
     pub tree_builder: BtCallback<RhaiBehaviorNode>,
 }
 
+impl std::fmt::Debug for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Role {{ name: {}, min_count: {}, max_count: {}, scorer: {:?}, require_filter: {:?}, exclude_filter: {:?} }}", self.name, self.min_count, self.max_count, self.scorer, self.require_filter, self.exclude_filter)
+    }
+}
+
 /// The complete role assignment problem definition
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RoleAssignmentProblem {
     pub roles: Vec<Role>,
 }

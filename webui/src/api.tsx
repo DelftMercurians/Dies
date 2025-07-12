@@ -38,8 +38,10 @@ import {
   PlayerOverrideCommand,
   TeamConfiguration,
   SideAssignment,
+  ScriptError,
 } from "./bindings";
 import { toast } from "sonner";
+import { atom, getDefaultStore, useAtom } from "jotai";
 
 export type Status =
   | { status: "loading" }
@@ -372,6 +374,11 @@ export const useRawWorldData = () => {
   return null;
 };
 
+const scriptErrorAtom = atom<ScriptError | null>(null);
+export const useScriptError = () => {
+  return useAtom(scriptErrorAtom);
+};
+
 let ws: WebSocket | null = null;
 const onWsConnectedChange: ((connected: boolean) => void)[] = [];
 const addWsConnectedListener = (cb: (connected: boolean) => void) => {
@@ -411,6 +418,10 @@ export function startWsClient() {
           } satisfies UiWorldState);
         } else if (msg.type === "Debug") {
           queryClient.setQueryData(["debug-map"], msg.data satisfies DebugMap);
+        } else if (msg.type === "ScriptError") {
+          const scriptError = msg.data as ScriptError;
+          const store = getDefaultStore();
+          store.set(scriptErrorAtom, scriptError);
         }
       };
       ws.onerror = (err) => {

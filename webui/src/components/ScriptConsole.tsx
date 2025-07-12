@@ -179,12 +179,19 @@ export const ScriptConsoleWithRef = React.forwardRef<
 
   const addError = (error: ScriptError) => {
     const entry: ScriptConsoleEntry = {
-      id: `${Date.now()}-${Math.random()}`,
+      // Id from the error content
+      id: error.data.script_path + error.data.message + error.data.script_path,
       timestamp: new Date(),
       error,
     };
 
-    setEntries((prev) => [...prev, entry]);
+    setEntries((prev) => {
+      // Check if entry with same id already exists
+      if (prev.some((e) => e.id === entry.id)) {
+        return prev; // Skip duplicate
+      }
+      return [...prev, entry];
+    });
     setHasNewErrors(true);
 
     // Auto-scroll to bottom

@@ -185,10 +185,10 @@ impl RhaiHost {
 
         // Call main function without expecting a return value
         let result =
-            engine.call_fn::<()>(&mut scope, ast, SCRIPT_ENTRY_POINT, (game_context.clone(),));
+            engine.call_fn::<Dynamic>(&mut scope, ast, SCRIPT_ENTRY_POINT, (game_context.clone(),));
 
         match result {
-            Ok(()) => {
+            Ok(_) => {
                 // Extract the role assignment problem from the game context
                 Ok(game_context.into_role_assignment_problem())
             }
