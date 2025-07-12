@@ -479,6 +479,8 @@ export enum DebugColor {
 	Green = "green",
 	Orange = "orange",
 	Purple = "purple",
+	Blue = "blue",
+	Gray = "gray",
 }
 
 export type DebugShape = 

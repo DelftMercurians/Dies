@@ -103,8 +103,8 @@ impl Default for SimulationConfig {
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 30.0 / 1000.0,
-            max_accel: 105000.0,
-            max_vel: 2000.0,
+            max_accel: 15000.0,
+            max_vel: 6000.0,
             max_ang_accel: 50.0 * 720.0f64.to_radians(),
             max_ang_vel: 0.5 * 720.0f64.to_radians(),
             velocity_treshold: 1.0,
@@ -1089,11 +1089,9 @@ impl Simulation {
                     * player.target_velocity;
 
             let vel_err = target_velocity - velocity;
-            let new_vel = if vel_err.norm() > 10.0 {
+            let new_vel = {
                 let acc = (vel_err / dt).cap_magnitude(self.config.max_accel);
                 velocity + acc * dt
-            } else {
-                target_velocity
             };
             let new_vel = new_vel.cap_magnitude(self.config.max_vel);
             rigid_body.set_linvel(new_vel, true);

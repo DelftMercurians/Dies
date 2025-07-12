@@ -150,9 +150,10 @@ impl PlayerTracker {
                         });
                         self.last_detection.as_mut().unwrap()
                     };
+                    let dt = t_capture - last_data.timestamp;
                     last_data.raw_position = raw_position;
-                    last_data.position = na::convert(Vector2::new(x[0], x[2]));
                     last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
+                    last_data.position = na::convert(Vector2::new(x[0], x[2]));
                     last_data.angular_speed = (yaw - last_data.yaw).radians()
                         / (t_capture - last_data.timestamp + std::f64::EPSILON);
                     last_data.yaw = yaw;
@@ -164,9 +165,11 @@ impl PlayerTracker {
                         self.velocity_samples.remove(0);
                         self.velocity_samples.push(last_data.velocity);
 
-                        let acc = self.velocity_samples.windows(2).fold(0.0, |acc, w| {
-                            acc + (w[1] - w[0]).norm() / (t_capture - last_data.timestamp)
-                        }) / 9.0;
+                        let acc = self
+                            .velocity_samples
+                            .windows(2)
+                            .fold(0.0, |acc, w| acc + (w[1] - w[0]).norm() / dt)
+                            / 9.0;
                     }
 
                     last_data.timestamp = t_capture;

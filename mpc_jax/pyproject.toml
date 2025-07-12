@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mpc_jax"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "equinox>=0.12.2",
+    "jax>=0.6",
+    "numpy>=2.2.6",
+    "optax>=0.2.4",
+    "matplotlib",
+    "tqdm>=4.67.1",
+    "jaxtyping>=0.3.2",
+    "pytest>=8.0.0",
+]
+
+[tool.ruff]
+line-length = 100

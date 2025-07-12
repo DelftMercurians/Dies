@@ -258,7 +258,7 @@ mod tests {
         let init_pos = SVector::<f64, 4>::new(0.0, 0.0, 0.0, 0.0);
         let init_time: f64 = 0.0;
         let init_std: f64 = 100.0;
-        let measurement_std: f64 = 5.0;
+        let measurement_std: f64 = 1.0;
         let unit_transition_std: f64 = 200.0;
         let mut filter = Kalman::<2, 4>::new_player_filter(
             init_std.powi(2),
@@ -314,7 +314,7 @@ mod tests {
         let init_pos = SVector::<f64, 6>::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         let init_time: f64 = 0.0;
         let init_std: f64 = 100.0;
-        let measurement_std: f64 = 5.0;
+        let measurement_std: f64 = 1.0;
         let unit_transition_std: f64 = 200.0;
         let mut filter = Kalman::<3, 6>::new_ball_filter(
             init_std.powi(2),

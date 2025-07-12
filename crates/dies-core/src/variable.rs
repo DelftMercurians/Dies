@@ -96,7 +96,8 @@ impl Variable for Angle {
     }
 
     fn dot(self, rhs: Self) -> f64 {
-        self.rotate_vector(&Vector2::x()).dot(rhs.rotate_vector(&Vector2::x()))
+        self.rotate_vector(&Vector2::x())
+            .dot(rhs.rotate_vector(&Vector2::x()))
     }
 }
 

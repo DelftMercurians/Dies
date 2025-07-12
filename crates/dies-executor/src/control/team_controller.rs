@@ -10,6 +10,7 @@ use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     team_context::TeamContext,
+    MPCController, RobotState,
 };
 use crate::{
     behavior_tree::{BehaviorTree, BtContext, RhaiHost, RobotSituation, RoleAssignmentSolver},
@@ -21,6 +22,12 @@ pub struct TeamController {
     settings: ExecutorSettings,
     role_solver: RoleAssignmentSolver,
     role_assignments: HashMap<PlayerId, String>,
+
+    // mpc stuff
+    start_time: std::time::Instant,
+    mpc_controller: MPCController,
+
+    // bht stuff
     player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
     bt_context: BtContext,
     script_host: RhaiHost,
@@ -37,6 +44,10 @@ impl TeamController {
             settings: settings.clone(),
             role_solver: RoleAssignmentSolver::new(),
             role_assignments: HashMap::new(),
+            start_time: std::time::Instant::now(),
+            mpc_controller: MPCController::new(),
+
+            // bht stuff
             player_behavior_trees: HashMap::new(),
             bt_context: BtContext::new(),
             script_host,
@@ -57,6 +68,20 @@ impl TeamController {
             controller.update_settings(&settings.controller_settings);
         }
         self.settings = settings.clone();
+    }
+
+    /// Enable two-step MTP controller for a specific player
+    pub fn set_player_two_step_mtp(&mut self, player_id: PlayerId, enable: bool) {
+        if let Some(controller) = self.player_controllers.get_mut(&player_id) {
+            controller.set_use_two_step_mtp(enable);
+        }
+    }
+
+    /// Enable two-step MTP controller for all players
+    pub fn set_all_players_two_step_mtp(&mut self, enable: bool) {
+        for controller in self.player_controllers.values_mut() {
+            controller.set_use_two_step_mtp(enable);
+        }
     }
 
     pub fn update(
@@ -221,6 +246,55 @@ impl TeamController {
             .chain(world_data.opp_players.iter())
             .collect::<Vec<_>>();
 
+        // Collect robots that need MPC processing
+        let mut mpc_robots = Vec::new();
+        for controller in self.player_controllers.values() {
+            if controller.use_mpc() {
+                let player_data = world_data
+                    .own_players
+                    .iter()
+                    .find(|p| p.id == controller.id());
+
+                if let Some(player_data) = player_data {
+                    let id = controller.id();
+                    let default_input = final_player_inputs.player(id);
+                    let input = manual_override.get(&id).unwrap_or(&default_input);
+
+                    if let Some(target_pos) = input.position {
+                        mpc_robots.push(RobotState {
+                            id: controller.id(),
+                            position: player_data.position,
+                            velocity: player_data.velocity,
+                            target_position: target_pos,
+                            vel_limit: controller.get_max_speed(),
+                        });
+                    } else {
+                        // if we don't need to move - force robots to stay in place while
+                        // still putting them to mpc for continuity, which is fairly important
+                        mpc_robots.push(RobotState {
+                            id: controller.id(),
+                            position: player_data.position,
+                            velocity: player_data.velocity,
+                            target_position: player_data.position,
+                            vel_limit: 0.0,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Compute batched MPC controls
+        self.mpc_controller.set_field_bounds(&world_data);
+        let mpc_controls = if !mpc_robots.is_empty() {
+            self.mpc_controller
+                .compute_batch_control(&mpc_robots, &world_data)
+        } else {
+            HashMap::new()
+        };
+
+        // Update the player controllers
+        let trajectories = self.mpc_controller.get_trajectories();
+        // Update the player controllers
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
                 .own_players
@@ -233,13 +307,81 @@ impl TeamController {
                 let default_input = final_player_inputs.player(id);
                 let input_to_use = manual_override.get(&id).unwrap_or(&default_input);
 
+                // Handle MPC vs MTP control
+                if controller.use_mpc() {
+                    if let Some(mpc_control) = mpc_controls.get(&id) {
+                        // Use MPC control (override MTP fallback)
+                        controller.set_target_velocity(*mpc_control);
+                        // Update debug string to show MPC is being used
+                        player_context.debug_string("controller", "MPC");
+                        // Debug output for MPC timing
+                        dies_core::debug_value(
+                            format!("p{}.mpc.duration_ms", id),
+                            self.mpc_controller.last_solve_time_ms(),
+                        );
+
+                        // Plot MPC trajectory if available
+                        if let Some(trajectory) = trajectories.get(&id) {
+                            let debug_name = format!("mpc_traj_p{}", id);
+
+                            // Clear previous trajectory
+                            dies_core::debug_remove(&debug_name);
+
+                            // Plot trajectory as connected line segments
+                            for i in 0..trajectory.len().saturating_sub(1) {
+                                if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
+                                    let start =
+                                        dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
+                                    let end = dies_core::Vector2::new(
+                                        trajectory[i + 1][1],
+                                        trajectory[i + 1][2],
+                                    );
+                                    dies_core::debug_line(
+                                        &format!("{}_seg{}", debug_name, i),
+                                        start,
+                                        end,
+                                        dies_core::DebugColor::Purple,
+                                    );
+                                }
+                            }
+
+                            // Mark trajectory endpoints
+                            if !trajectory.is_empty() {
+                                if trajectory[0].len() >= 5 {
+                                    let start_pos =
+                                        dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
+                                    dies_core::debug_cross(
+                                        &format!("{}_start", debug_name),
+                                        start_pos,
+                                        dies_core::DebugColor::Green,
+                                    );
+                                }
+
+                                if let Some(last) = trajectory.last() {
+                                    if last.len() >= 5 {
+                                        let end_pos = dies_core::Vector2::new(last[1], last[2]);
+                                        dies_core::debug_circle_fill(
+                                            &format!("{}_end", debug_name),
+                                            end_pos,
+                                            80.0,
+                                            dies_core::DebugColor::Purple,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // If MPC returned empty (fallback to MTP), don't call set_target_velocity
+                    // Let the controller use MTP through the regular update() call below
+                }
+
                 let is_manual = manual_override
                     .get(&id)
                     .map(|i| !i.velocity.is_zero())
                     .unwrap_or(false);
 
                 let role_type = input_to_use.role_type;
-                let obsacles = world_data.get_obstacles_for_player(role_type);
+                let obstacles = world_data.get_obstacles_for_player(role_type);
 
                 controller.update(
                     player_data,
@@ -247,7 +389,7 @@ impl TeamController {
                     input_to_use,
                     world_data.dt,
                     is_manual,
-                    obsacles,
+                    obstacles,
                     &all_players,
                     &player_context,
                 );

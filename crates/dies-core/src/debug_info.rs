@@ -20,6 +20,8 @@ pub enum DebugColor {
     Green,
     Orange,
     Purple,
+    Blue,
+    Gray
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,4 +1,6 @@
+mod mpc;
 mod mtp;
+mod two_step_mtp;
 mod player_controller;
 mod player_input;
 mod rvo;
@@ -8,5 +10,7 @@ mod yaw_control;
 
 pub(self) use team_context::*;
 
+pub use mpc::{MPCController, RobotState};
 pub use player_input::*;
 pub use team_controller::TeamController;
+pub use two_step_mtp::TwoStepMTP;

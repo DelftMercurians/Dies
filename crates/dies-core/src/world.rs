@@ -262,6 +262,13 @@ impl WorldData {
         }
     }
 
+    pub fn get_opp_team_players(&self, color: TeamColor) -> &Vec<PlayerData> {
+        match color {
+            TeamColor::Blue => &self.yellow_team,
+            TeamColor::Yellow => &self.blue_team,
+        }
+    }
+
     pub fn get_team_data(&self, color: TeamColor) -> TeamData {
         self.side_assignment.transform_to_team_coords(color, self)
     }
