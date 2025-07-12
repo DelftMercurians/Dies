@@ -23,7 +23,7 @@ use utils::IntervalTrigger;
 mod utils;
 
 // Simulation constants - these are in mm
-const BALL_RADIUS: f64 = 43.0;
+const BALL_RADIUS: f64 = 21.45;
 const GROUND_THICKNESS: f64 = 10.0;
 const WALL_HEIGHT: f64 = 1000.0;
 const WALL_THICKNESS: f64 = 1.0;
@@ -95,7 +95,7 @@ impl Default for SimulationConfig {
             vision_update_step: 1.0 / 40.0,
 
             // ROBOT MODEL PARAMETERS
-            player_radius: 80.0,
+            player_radius: 90.0,
             player_height: 140.0,
             dribbler_radius: BALL_RADIUS + 60.0,
             dribbler_angle: PI / 6.0,
@@ -1051,7 +1051,7 @@ impl Simulation {
             if let Some(command) = commands_to_exec.get(&(player.team_color, player.id)) {
                 // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
                 // Angular velocity is in rad/s and +w means counter-clockwise
-                player.target_velocity = Vector::new(command.sx, -command.sy, 0.0) * 1000.0; // m/s to mm/s
+                player.target_velocity = Vector::new(command.sx, -command.sy, 0.0) * 1000.0; // mm/s to m/s
                 player.target_z = -command.w;
                 player.current_dribble_speed = command.dribble_speed;
                 player.last_cmd_time = self.current_time;
@@ -1089,6 +1089,7 @@ impl Simulation {
                     * player.target_velocity;
 
             let vel_err = target_velocity - velocity;
+
             let new_vel = {
                 let acc = (vel_err / dt).cap_magnitude(self.config.max_accel);
                 velocity + acc * dt

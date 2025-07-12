@@ -278,9 +278,9 @@ impl TeamController {
                             position: player_data.position,
                             velocity: player_data.velocity,
                             target_position: player_data.position,
-                            vel_limit: controller.get_max_speed(),
+                            vel_limit: 0.0,
                         });
-                        controllable_mask.push(true); // Robot should not be controlled
+                        controllable_mask.push(false); // Robot should not be controlled
                     }
                 }
             }

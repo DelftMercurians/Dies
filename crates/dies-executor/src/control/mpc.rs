@@ -113,7 +113,7 @@ impl MPCController {
 
         if elapsed > 150 {
             // If delay is too long, fall back to MTP (return empty HashMap)
-            log::warn!("mpc took too long, switching back to a decent control");
+            log::warn!("mpc took too long, switching back to the mtp");
             return HashMap::new();
         }
 

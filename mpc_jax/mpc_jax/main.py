@@ -95,10 +95,6 @@ def mpc_cost_function(
         # other stuff
         b_cost = boundary_cost(robot.position, w.field_bounds)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
-        dist = jnp.sqrt(((delayed_target_pos - robot.position) ** 2 + 1e-9).sum())
-        effort_cost = jnp.sqrt((u**2).sum() + 1e-8) * 1e-4 / dist
-        # TODO: increase the cost drastically if we are past the limit
-        acc_cost = ((u[:, 1:, :] - u[:, :1, :]) ** 2).sum() * 3e-10
 
         return (
             d_cost * cfg.distance_factor
@@ -106,8 +102,6 @@ def mpc_cost_function(
             + ball_cost * cfg.ball_collision_factor
             + b_cost
             + vc_cost
-            + effort_cost
-            + acc_cost
         ) * target.mask
 
     def collective_position_cost_fn(traj_slice, idx, is_bad_robot):
@@ -457,9 +451,7 @@ def solve_mpc(
 
 def solve_mpc_tbwrap(*args):
     try:
-        t0 = time.time()
         result = solve_mpc(*args)
-        print(f"{(time.time() - t0) * 1000.0:.1f}")
         return result.u, result.traj
     except Exception:
         repr = ""
