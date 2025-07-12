@@ -199,7 +199,15 @@ impl MPCController {
         request_receiver: mpsc::Receiver<MPCRequest>,
         response_sender: mpsc::SyncSender<MPCResponse>,
     ) {
-        while let Ok(request) = request_receiver.recv() {
+        loop {
+            let request = match request_receiver.try_recv() {
+                Ok(req) => req,
+                Err(mpsc::TryRecvError::Empty) => {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    continue;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => break,
+            };
             let mut controller_state = request.controller_state;
 
             // Keep an untouched copy for the “panic fallback” path.
