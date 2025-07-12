@@ -213,7 +213,8 @@ impl MPCController {
 
             // Add the mpc_jax directory to Python path
             let sys_path = sys.getattr("path")?;
-            sys_path.call_method1("insert", (0, "./.venv/lib/python3.12/site-packages"))?;
+            sys_path.call_method1("insert", (0, "./.venv/lib/python3.13/site-packages"))?;
+            sys_path.call_method1("insert", (0, "./mpc_jax"))?;
             sys_path.call_method1("insert", (0, "."))?;
 
             // Import the mpc_jax module and get constants
