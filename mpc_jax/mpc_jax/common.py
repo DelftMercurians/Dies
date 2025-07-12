@@ -11,7 +11,7 @@ from typing import Literal
 # MPC Parameters
 CONTROL_HORIZON = 6
 TIME_HORIZON = 2  # seconds
-DT = 0.05  # starting value for dt, seconds
+DT = 0.04  # starting value for dt, seconds
 MAX_DT = 2 * TIME_HORIZON / CONTROL_HORIZON - DT  # Computed for linear dt schedule
 ROBOT_RADIUS = 90.0  # mm
 BALL_RADIUS = 21.35  # mm
@@ -325,7 +325,7 @@ class World(eqx.Module):
         )
 
 
-def trajectories_from_control(w: World, u: Control, delay: float = 0.1):
+def trajectories_from_control(w: World, u: Control, delay: float = 0.0):
     return jax.vmap(
         lambda control, pos, vel: single_trajectory_from_control(
             control, pos, vel, delay
@@ -342,9 +342,9 @@ def single_trajectory_from_control(
     control_sequence: jax.Array,
     initial_pos: jax.Array,
     initial_vel: jax.Array,
-    delay: float = 0.1,
+    delay: float = 0.0,
 ) -> jax.Array:
-    initial_pos = initial_pos + initial_vel * delay
+    initial_pos = initial_pos + initial_vel * 0.1
 
     dt_schedule = get_dt_schedule(upscaled=False)
 

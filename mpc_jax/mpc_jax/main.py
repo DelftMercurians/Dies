@@ -452,6 +452,7 @@ def solve_mpc(
         cost=float(r.cost),
         idx_by_cost=int(r.idx_by_cost),
     )
+    print(f"{initial_vel[0]} - {r.traj[0,1,3:5]}")
 
     return r
 
