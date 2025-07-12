@@ -27,7 +27,7 @@ FINAL_COST: Literal["distance-auc", "cost"] = "distance-auc"
 # Robot dynamics parameters
 ROBOT_MASS = 1.5  # kg
 VEL_FRICTION_COEFF = 0  # N*s/m (velocity-dependent friction coefficient)
-MAX_ACC = 12_000  # mm/s^2
+MAX_ACC = 9_000  # mm/s^2
 
 
 def add_control_noise(

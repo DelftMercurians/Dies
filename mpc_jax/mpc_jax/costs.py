@@ -33,7 +33,7 @@ def collision_cost(
         # try to avoid certain collision hard
         danger_zone = distance <= min_safe_distance
         normalized_distance = jnp.clip(distance / min_safe_distance, 1e-6, 1)
-        danger_factor = jnp.where(danger_zone, 1.1 - normalized_distance, 0.0) * 200
+        danger_factor = jnp.where(danger_zone, 2.0 - normalized_distance, 0.0) * 200
 
         # try to avoid even getting close to the opponent
         in_decay_zone = jnp.logical_and(
@@ -45,7 +45,7 @@ def collision_cost(
             1,
         )
         smooth_factor = (
-            jnp.where(in_decay_zone, (1 - normalized_distance) ** 2, 0.0) * 10.0
+            jnp.where(in_decay_zone, (1 - normalized_distance) ** 2, 0.0) * 100.0
         )
 
         penalties = smooth_factor + danger_factor

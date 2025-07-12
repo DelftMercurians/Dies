@@ -410,7 +410,7 @@ def solve_mpc(
     # Pad inputs to fixed size (6 robots) in numpy
     padded_max_speeds = np.full(6, 1e6)
     padded_max_speeds[:n_robots] = max_speeds
-    
+
     # Apply controllable mask - set max_speeds to 0 for non-controllable robots
     effective_max_speeds = max_speeds.copy()
     effective_max_speeds[~controllable_mask] = 0.0
@@ -457,7 +457,9 @@ def solve_mpc(
 
 def solve_mpc_tbwrap(*args):
     try:
+        t0 = time.time()
         result = solve_mpc(*args)
+        print(f"{(time.time() - t0) * 1000.0:.1f}")
         return result.u, result.traj
     except Exception:
         repr = ""
