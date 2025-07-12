@@ -1,11 +1,7 @@
-// Updated situation detection functions using modern RobotSituation API
-
-// Player has ball check - using new API
 fn i_have_ball(s) {
     return s.has_ball();
 }
 
-// Ball position checks - using new API
 fn ball_in_our_half(s) {
     if s.world.ball == () { return false; }
     return s.is_in_defensive_half(s.world.ball.position);
@@ -21,32 +17,31 @@ fn is_goalkeeper(s) {
     return s.player_id == 0;
 }
 
-// Game state checks
+// Game state checks using proper GameState values
 fn we_are_attacking(s) {
     return s.world.game_state.us_operating;
 }
 
-// Game mode detection functions
-fn is_kickoff_mode(s) {
-    // Detect kickoff by ball being near center
-    if s.world.ball == () { return false; }
-    return s.is_in_center_circle(s.world.ball.position);
+fn is_kickoff_state(s) {
+    return s.world.game_state.game_state == "Kickoff" || s.world.game_state.game_state == "PrepareKickoff";
 }
 
-fn is_penalty_mode(s) {
-    // Detect penalty by ball being near penalty mark
-    if s.world.ball == () { return false; }
-    let ball_pos = s.world.ball.position;
-    let own_penalty_dist = s.distance_to_position(s.get_own_penalty_mark());
-    let opp_penalty_dist = s.distance_to_position(s.get_opp_penalty_mark());
-    return own_penalty_dist < 500.0 || opp_penalty_dist < 500.0;
+fn is_penalty_state(s) {
+    return s.world.game_state.game_state == "Penalty" || s.world.game_state.game_state == "PreparePenalty" || s.world.game_state.game_state == "PenaltyRun";
 }
 
-fn is_normal_play_mode(s) {
-    return !is_kickoff_mode(s) && !is_penalty_mode(s);
+fn is_free_kick_state(s) {
+    return s.world.game_state.game_state == "FreeKick";
 }
 
-// Distance-based conditions - using new API
+fn is_normal_play_state(s) {
+    return s.world.game_state.game_state == "Run";
+}
+
+fn is_stopped_state(s) {
+    return s.world.game_state.game_state == "Stop" || s.world.game_state.game_state == "Halt";
+}
+
 fn close_to_ball(s) {
     return s.distance_to_ball() < 500.0; // Within 500mm
 }
@@ -59,7 +54,6 @@ fn far_from_ball(s) {
     return s.distance_to_ball() > 2000.0; // Further than 2m
 }
 
-// Enhanced distance conditions using new API
 fn close_to_own_goal(s) {
     return s.distance_to_position(s.get_own_goal_position()) < 1000.0;
 }
@@ -72,7 +66,6 @@ fn in_center_circle(s) {
     return s.is_in_center_circle(s.player.position);
 }
 
-// Ball zone conditions using new API
 fn ball_in_penalty_area(s) {
     if s.world.ball == () { return false; }
     return s.is_in_penalty_area(s.world.ball.position);
@@ -93,7 +86,6 @@ fn ball_in_center_circle(s) {
     return s.is_in_center_circle(s.world.ball.position);
 }
 
-// Enhanced team coordination conditions using new API
 fn am_closest_to_ball(s) {
     let closest = s.closest_own_player_to_ball();
     return closest != () && closest.id == s.player_id;
@@ -126,7 +118,6 @@ fn teammates_near_ball(s) {
     return nearby_teammates.len() > 1; // More than just me
 }
 
-// Ball movement conditions using new API
 fn ball_moving_fast(s) {
     if s.world.ball == () { return false; }
     return s.world.ball.velocity.norm() > 500.0; // 0.5 m/s threshold

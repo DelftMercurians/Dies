@@ -77,6 +77,59 @@ pub mod bt_rhai_plugin {
         )))
     }
 
+    #[rhai_fn(name = "Select", return_raw)]
+    pub fn select_node_dynamic_with_description(
+        context: NativeCallContext,
+        callback: FnPtr,
+        description: &str,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        select_node_dynamic_impl(context, callback, Some(description))
+    }
+
+    #[rhai_fn(name = "Select", return_raw)]
+    pub fn select_node_dynamic_basic(
+        context: NativeCallContext,
+        callback: FnPtr,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        select_node_dynamic_impl(context, callback, None)
+    }
+
+    fn select_node_dynamic_impl(
+        context: NativeCallContext,
+        callback: FnPtr,
+        description: Option<&str>,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        let bt_callback = BtCallback::new_rhai(&context, callback);
+        Ok(RhaiBehaviorNode(BehaviorNodeTypeEnum::Select(
+            SelectNode::new_dynamic(bt_callback, description.map(|s| s.to_string())),
+        )))
+    }
+
+    #[rhai_fn(name = "ScoringSelect", return_raw)]
+    pub fn scoring_select_node_dynamic_basic(
+        context: NativeCallContext,
+        callback: FnPtr,
+        hysteresis_margin: f64,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        scoring_select_node_dynamic_impl(context, callback, hysteresis_margin, None)
+    }
+
+    fn scoring_select_node_dynamic_impl(
+        context: NativeCallContext,
+        callback: FnPtr,
+        hysteresis_margin: f64,
+        description: Option<&str>,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        let bt_callback = BtCallback::new_rhai(&context, callback);
+        Ok(RhaiBehaviorNode(BehaviorNodeTypeEnum::ScoringSelect(
+            ScoringSelectNode::new_dynamic(
+                bt_callback,
+                hysteresis_margin,
+                description.map(|s| s.to_string()),
+            ),
+        )))
+    }
+
     #[rhai_fn(name = "Sequence", return_raw)]
     pub fn sequence_node_with_description(
         children_dyn: Array,
