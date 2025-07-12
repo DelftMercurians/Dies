@@ -80,23 +80,40 @@ def ball_collision_cost(
 
 
 def boundary_cost(pos: jnp.ndarray, field_bounds):
-    return 0.0
-
     """
-    min_x, max_x, min_y, max_y = field_bounds
-
-    x_lower_violation = jnp.maximum(min_x - pos[0], 0.0)
-    x_upper_violation = jnp.maximum(pos[0] - max_x, 0.0)
-    y_lower_violation = jnp.maximum(min_y - pos[1], 0.0)
-    y_upper_violation = jnp.maximum(pos[1] - max_y, 0.0)
-
-    return (
-        x_lower_violation**2
-        + x_upper_violation**2
-        + y_lower_violation**2
-        + y_upper_violation**2
-    )
+    Calculate cost for being inside penalty areas or outside field boundaries.
+    field_bounds: FieldBounds object with field dimensions
     """
+    half_length = field_bounds.field_length / 2.0
+    half_width = field_bounds.field_width / 2.0
+    
+    x, y = pos[0], pos[1]
+    cost = 0.0
+    
+    # Cost for being outside field boundaries (very high penalty)
+    x_outside = jnp.maximum(jnp.abs(x) - half_length, 0.0)
+    y_outside = jnp.maximum(jnp.abs(y) - half_width, 0.0)
+    field_violation = x_outside + y_outside
+    cost += field_violation * 1000.0  # Very high penalty for leaving field
+    
+    # Cost for being inside penalty areas (amplifies with depth)
+    # Left penalty area
+    left_penalty_x_inside = jnp.maximum(-half_length + field_bounds.penalty_area_depth - x, 0.0)
+    left_penalty_y_inside = jnp.maximum(field_bounds.penalty_area_width / 2.0 - jnp.abs(y), 0.0)
+    left_penalty_violation = jnp.minimum(left_penalty_x_inside, left_penalty_y_inside)
+    left_penalty_violation = jnp.maximum(left_penalty_violation, 0.0)
+    
+    # Right penalty area  
+    right_penalty_x_inside = jnp.maximum(x - (half_length - field_bounds.penalty_area_depth), 0.0)
+    right_penalty_y_inside = jnp.maximum(field_bounds.penalty_area_width / 2.0 - jnp.abs(y), 0.0)
+    right_penalty_violation = jnp.minimum(right_penalty_x_inside, right_penalty_y_inside)
+    right_penalty_violation = jnp.maximum(right_penalty_violation, 0.0)
+    
+    # Sum of absolute distances as penalty (deeper = higher cost)
+    penalty_area_cost = (left_penalty_violation + right_penalty_violation) * 10.0
+    cost += penalty_area_cost
+    
+    return cost
 
 
 def velocity_constraint_cost(vel: jnp.ndarray, max_speed: float):

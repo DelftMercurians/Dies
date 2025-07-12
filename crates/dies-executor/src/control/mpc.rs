@@ -301,6 +301,13 @@ impl MPCController {
                 None => None,
             };
 
+            // Prepare field geometry [field_length, field_width, penalty_area_depth, penalty_area_width]
+            let field_geometry = if let Some(geom) = &world.field_geom {
+                Some(np.call_method1("array", (vec![geom.field_length, geom.field_width, geom.penalty_area_depth, geom.penalty_area_width],))?)
+            } else {
+                None
+            };
+
             // Prepare last trajectory data with dynamic horizon length
             let mut last_traj_data = Vec::new();
             let mut dynamic_horizon = control_horizon * 5 + 1; // Default to control_horizon
@@ -346,7 +353,7 @@ impl MPCController {
 
             let dt_value = world.dt;
 
-            // Call the JAX batch solve_mpc function with ball passed separately
+            // Call the JAX batch solve_mpc function with field geometry
             let solve_mpc_batch = mpc_module.getattr("solve_mpc_tbwrap")?;
             let result = solve_mpc_batch.call1((
                 initial_pos_array,
@@ -358,6 +365,7 @@ impl MPCController {
                 vel_limits_array,
                 last_controls_array,
                 dt_value,
+                field_geometry
             ))?;
 
             // Extract the result - it's a tuple of (controls, trajectories)

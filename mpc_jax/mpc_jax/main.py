@@ -393,6 +393,7 @@ def solve_mpc(
     max_speeds: np.ndarray,
     last_control_sequences: np.ndarray | None = None,
     dt: np.ndarray | None = np.array(0.02),
+    field_geometry: np.ndarray | None = None,
     max_iterations: int = MAX_ITERATIONS,
     learning_rate: float = LEARNING_RATE,
     n_candidates: int = N_CANDIDATE_TRAJECTORIES,
@@ -426,9 +427,20 @@ def solve_mpc(
         padded_last_control = np.zeros((6, CONTROL_HORIZON, 2))
         padded_last_control[:n_robots] = last_control_sequences
 
+    # Create FieldBounds with provided geometry or defaults
+    if field_geometry is not None:
+        field_bounds_obj = FieldBounds(
+            field_length=float(field_geometry[0]),
+            field_width=float(field_geometry[1]),
+            penalty_area_depth=float(field_geometry[2]),
+            penalty_area_width=float(field_geometry[3]),
+        )
+    else:
+        field_bounds_obj = FieldBounds()
+
     r = eqx.filter_jit(solve_mpc_jax)(
         w=World(
-            FieldBounds(),
+            field_bounds_obj,
             EntityBatch(jnp.asarray(obstacles)),
             EntityBatch(jnp.asarray(initial_pos), jnp.asarray(initial_vel)),
             Entity(jnp.asarray(ball_position)),

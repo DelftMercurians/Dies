@@ -272,8 +272,22 @@ class EntityBatch(Entity):
 
 
 class FieldBounds(eqx.Module):
+    field_length: float = 4000.0  # mm
+    field_width: float = 2000.0  # mm
+    penalty_area_depth: float = 1000.0  # mm
+    penalty_area_width: float = 2000.0  # mm
+    
+    def __init__(self, field_length: float = 4000.0, field_width: float = 2000.0, 
+                 penalty_area_depth: float = 1000.0, penalty_area_width: float = 2000.0):
+        self.field_length = field_length
+        self.field_width = field_width
+        self.penalty_area_depth = penalty_area_depth
+        self.penalty_area_width = penalty_area_width
+    
     def bounding_box(self):
-        return jnp.array([-2000.0, 2000.0, -1000.0, 1000.0])  # 4m x 2m field
+        half_length = self.field_length / 2.0
+        half_width = self.field_width / 2.0
+        return jnp.array([-half_length, half_length, -half_width, half_width])
 
 
 class World(eqx.Module):
