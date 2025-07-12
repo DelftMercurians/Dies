@@ -394,7 +394,7 @@ def solve_mpc(
     field_bounds: np.ndarray | None,
     max_speeds: np.ndarray,
     last_control_sequences: np.ndarray | None = None,
-    dt: np.ndarray | None = np.array(0.02),
+    dt: np.ndarray | None = np.array(0.04),
     field_geometry: np.ndarray | None = None,
     controllable_mask: np.ndarray | None = None,
 ) -> Result:
@@ -452,8 +452,6 @@ def solve_mpc(
         cost=float(r.cost),
         idx_by_cost=int(r.idx_by_cost),
     )
-    print(f"{initial_vel[0]} - {r.traj[0,1,3:5]}")
-
     return r
 
 
