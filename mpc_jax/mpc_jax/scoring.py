@@ -70,7 +70,7 @@ def traj_vs_entity_collision(traj, entity, min_safe_distance) -> jax.Array:
     return collisions
 
 
-def traj_vs_field_boundary_collision(traj, field_bounds) -> jax.Array:
+def traj_vs_field_boundary_collision(traj, field_bounds, avoid_goal_area) -> jax.Array:
     """Check collision between trajectory and field boundaries/penalty areas."""
 
     def check_point_boundary_collision(raw_value):

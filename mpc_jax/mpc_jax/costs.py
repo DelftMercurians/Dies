@@ -124,9 +124,9 @@ def boundary_cost(pos: jnp.ndarray, field_bounds, avoid_goal_area):
 
         # Sum of absolute distances as penalty (deeper = higher cost)
         penalty_area_cost = (left_penalty_violation + right_penalty_violation) * 10.0
-        cost += penalty_area_cost
+        return penalty_area_cost
 
-    cost += jax.lax.cond(avoid_goal_area, goal_area_cost, lambda: 0)
+    cost += jax.lax.cond(avoid_goal_area, goal_area_cost, lambda: 0.0)
 
     return cost
 

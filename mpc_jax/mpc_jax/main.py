@@ -119,8 +119,13 @@ def mpc_cost_function(
 
     # Skip initial position (i=0) and compute costs for trajectory steps
     total_position_cost = jax.vmap(
-        lambda traj, target, max_speed: jax.vmap(
-            eqx.Partial(position_cost_fn, max_speed=max_speed, target=target)
+        lambda traj, target, max_speed, avoid_goal: jax.vmap(
+            eqx.Partial(
+                position_cost_fn,
+                max_speed=max_speed,
+                target=target,
+                avoid_goal_area=avoid_goal,
+            )
         )(traj)
     )(trajectories, targets, max_speeds, w.avoid_goal_area)
 
@@ -430,7 +435,7 @@ def solve_mpc(
 
     # Use a single boolean - true if any robot should avoid goal area
 
-    avoid_goal_area_padded = np.zeros((6, CONTROL_HORIZON, 2))
+    avoid_goal_area_padded = np.zeros((6,))
     avoid_goal_area_padded[:n_robots] = avoid_goal_area
 
     r = _jitted(
