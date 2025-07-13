@@ -252,10 +252,10 @@ fn evaluate_boundary_position(
     let perpendicular_dist = (ball_to_pos - ball_to_goal.normalize() * projection).norm();
 
     // Score based on being on the line and distance from ball
-    let blocking_score = 1000.0 / (1.0 + perpendicular_dist);
+    let blocking_score = 1.0 / (1.0 + perpendicular_dist);
     let distance_score = projection.max(0.0) / ball_to_goal.norm();
 
-    blocking_score + distance_score * 50.0
+    blocking_score + distance_score
 }
 
 fn find_closest_boundary_point(
@@ -474,11 +474,29 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
 
         // how much of the backline is covered by the robot at this position
         let coverage_score = compute_coverage_score(ball_pos, pos, backline);
-        total_score += coverage_score * 100.0; // Weight coverage highly
+        total_score += coverage_score * 10.0; // Weight coverage highly
 
-        // Base scoring using existing evaluation
-        let pos_score = evaluate_boundary_position(s, pos, ball_pos, goal_pos);
-        total_score += pos_score;
+        // the closer it is to the ball trajectory (ray formed by its velocity)
+        // the better, with a high weight (normed to 1)
+        let ball_velocity = ball.velocity;
+        let velocity_magnitude = ball_velocity.norm();
+
+        if velocity_magnitude > 100.0 { // Only consider trajectory if ball is moving
+            let ball_to_pos = pos - ball_pos;
+            let ball_to_pos_magnitude = ball_to_pos.norm();
+
+            if ball_to_pos_magnitude > 0.0 {
+                // Calculate angle between ball-to-position vector and ball velocity
+                let dot_product = ball_to_pos.dot(&ball_velocity);
+                let cos_angle = dot_product / (ball_to_pos_magnitude * velocity_magnitude);
+                let cos_angle_clamped = cos_angle.clamp(-1.0, 1.0);
+
+                // Convert angle to score: cos(0) = 1 (perfect alignment), cos(90°) = 0 (perpendicular)
+                // Use squared cosine to emphasize positions that are well-aligned
+                let trajectory_score = cos_angle_clamped.max(0.0).powi(2);
+                total_score += trajectory_score;
+            }
+        }
     }
 
     // Penalize positions too far from current robot positions
