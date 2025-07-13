@@ -507,7 +507,7 @@ impl TwoStepMTP {
                 *boundary_end,
             ) {
                 // Add penalty for crossing field boundaries
-                cost += 1000.0;
+                cost += 10000.0;
             }
         }
 
