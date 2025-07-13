@@ -476,6 +476,7 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
         let coverage_score = compute_coverage_score(ball_pos, pos, backline);
         total_score += coverage_score * 10.0; // Weight coverage highly
 
+        /*
         // the closer it is to the ball trajectory (ray formed by its velocity)
         // the better, with a high weight (normed to 1)
         let ball_velocity = ball.velocity;
@@ -497,6 +498,7 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
                 total_score += trajectory_score;
             }
         }
+        */
     }
 
     // Penalize positions too far from current robot positions
