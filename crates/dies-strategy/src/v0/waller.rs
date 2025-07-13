@@ -148,11 +148,6 @@ impl DefenseAreaBoundary {
                 Vector2::new(self.penalty_line_x, self.bottom_y),
                 Vector2::new(self.goal_line_x, self.bottom_y),
             ),
-            // Left vertical line (goal line) - only the parts not covered by goal
-            (
-                Vector2::new(self.goal_line_x, self.bottom_y),
-                Vector2::new(self.goal_line_x, self.top_y),
-            ),
         ]
     }
 }
@@ -317,10 +312,6 @@ fn evaluate_waller_positioning(s: &RobotSituation, ball_pos: Vector2, goal_pos: 
     }
 }
 
-pub fn dir(a: &Vector2, b: &Vector2) -> f64 {
-    (a - b).y.atan2((a - b).x)
-}
-
 
 /// Generate candidate position tuples for all wallers
 /// Returns array of position tuples, each containing (x,y) coordinates for each waller
@@ -361,16 +352,13 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
         }
     }
 
-    // Sort positions by y-coordinate (left to right across the defense area)
-    let goal_midpoint = Vector2::new(-s.world.field_geom.as_ref().unwrap().field_length / 2.0, 0.0);
-    boundary_positions.sort_by(|a, b| dir(&goal_midpoint, a).partial_cmp(&dir(&goal_midpoint, b)).unwrap());
-
     let mut position_tuples = Vec::new();
     let max_tuples = 50;
 
     // Generate 50 tuples by sampling leftmost waller positions
     let step = (boundary_positions.len() / max_tuples).max(1);
 
+    println!("----");
     for i in (0..boundary_positions.len()).step_by(step) {
         if position_tuples.len() >= max_tuples {
             break;
@@ -378,6 +366,7 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
 
         let mut tuple = Vec::new();
         let mut current_idx = i;
+        println!("{}", boundary_positions[current_idx]);
 
         // Place first waller at the sampled position
         tuple.push(boundary_positions[current_idx]);
