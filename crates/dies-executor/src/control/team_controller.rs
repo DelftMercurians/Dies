@@ -35,7 +35,7 @@ pub struct TeamController {
     bt_context: BtContext,
     team_color: TeamColor,
     latest_script_errors: Vec<ScriptError>,
-    
+
     // per-robot flags
     avoid_goal_area_flags: HashMap<PlayerId, bool>,
 }
@@ -56,7 +56,7 @@ impl TeamController {
             bt_context: BtContext::new(),
             team_color,
             latest_script_errors: Vec::new(),
-            
+
             // per-robot flags - initialize to true by default
             avoid_goal_area_flags: HashMap::new(),
         };
@@ -217,8 +217,10 @@ impl TeamController {
             player_inputs_map.insert(player_id, player_input);
         }
 
+
         let mut inputs_for_comply = PlayerInputs::new();
         for (id, input) in player_inputs_map.iter() {
+            self.avoid_goal_area_flags.insert(*id, input.role_type != RoleType::Goalkeeper);
             inputs_for_comply.insert(*id, input.clone());
         }
 
