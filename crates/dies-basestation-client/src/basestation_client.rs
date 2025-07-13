@@ -155,13 +155,6 @@ impl BasestationHandle {
                                 }
                             }
                         }
-                        PlayerCmd::SetHeading { id, heading } => match &mut connection {
-                            Connection::V1(monitor) => {
-                                let _ =
-                                    monitor.set_current_heading(id.as_u32() as u8, heading as f32);
-                            }
-                            _ => {}
-                        },
                     },
                     Ok(Message::ChangeIdMap(new_id_map)) => {
                         id_map = new_id_map;

@@ -70,14 +70,12 @@ impl From<RobotCmd> for glue::Radio_RobotCommand {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum PlayerCmd {
     Move(PlayerMoveCmd),
-    SetHeading { id: PlayerId, heading: f64 },
 }
 
 impl PlayerCmd {
     pub fn id(&self) -> PlayerId {
         match self {
             PlayerCmd::Move(cmd) => cmd.id,
-            PlayerCmd::SetHeading { id, .. } => *id,
         }
     }
 }

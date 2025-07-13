@@ -7,10 +7,10 @@ use dies_core::{
 
 use super::{
     mtp::MTP,
-    two_step_mtp::TwoStepMTP,
     player_input::{KickerControlInput, PlayerControlInput},
     rvo::velocity_obstacle_update,
     team_context::PlayerContext,
+    two_step_mtp::TwoStepMTP,
     yaw_control::YawController,
     Velocity,
 };
@@ -78,7 +78,7 @@ impl PlayerController {
 
             position_mtp: MTP::new(),
             two_step_mtp: TwoStepMTP::new(),
-            use_mpc: true, // Default to using MPC
+            use_mpc: true,          // Default to using MPC
             use_two_step_mtp: true, // Default to double step MTP
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity: Vector2::new(0.0, 0.0),
@@ -175,13 +175,6 @@ impl PlayerController {
     ) -> PlayerCmd {
         if self.frame_misses > MISSING_FRAMES_THRESHOLD {
             return PlayerCmd::Move(PlayerMoveCmd::zero(self.id));
-        }
-
-        if self.heading_interval.trigger() {
-            return PlayerCmd::SetHeading {
-                id: self.id,
-                heading: -self.last_yaw.radians(),
-            };
         }
 
         // Priority list: 1. Kick, 2. Switch heading, 3. Anything else
@@ -311,7 +304,11 @@ impl PlayerController {
             self.target_velocity = pos_u;
 
             // Debug string will be updated by team controller if MPC overrides
-            let controller_name = if self.use_two_step_mtp { "TwoStepMTP" } else { "MTP" };
+            let controller_name = if self.use_two_step_mtp {
+                "TwoStepMTP"
+            } else {
+                "MTP"
+            };
             player_context.debug_string("controller", controller_name);
         } else {
             dies_core::debug_remove(format!("p{}.control.target", self.id));
