@@ -268,12 +268,6 @@ impl PlayerController {
         // Always compute MTP first as fallback
         self.target_velocity = Vector2::zeros();
         if let Some(pos_target) = input.position {
-            dies_core::debug_cross(
-                format!("p{}.control.target", self.id),
-                pos_target,
-                dies_core::DebugColor::Red,
-            );
-
             // Choose between regular MTP and two-step MTP
             let pos_u = if self.use_two_step_mtp {
                 self.two_step_mtp.set_setpoint(pos_target);

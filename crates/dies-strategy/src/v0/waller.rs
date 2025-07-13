@@ -150,6 +150,13 @@ impl DefenseAreaBoundary {
             ),
         ]
     }
+
+    fn get_back_line(&self) -> (Vector2, Vector2) {
+        (
+            Vector2::new(self.goal_line_x, self.top_y),
+            Vector2::new(self.goal_line_x, self.bottom_y),
+        )
+    }
 }
 
 fn find_best_boundary_position(s: &RobotSituation, ball_pos: Vector2) -> Vector2 {
@@ -343,12 +350,15 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
 
     for (start, end) in segments {
         let segment_length = (end - start).norm();
-        let num_positions = (segment_length / 200.0).ceil() as usize + 1;
+        let num_positions = (segment_length / 100.0).ceil() as usize + 1;
 
         for i in 0..num_positions {
             let t = i as f64 / (num_positions - 1) as f64;
             let pos = start + (end - start) * t;
-            boundary_positions.push(pos);
+            if boundary_positions.len() == 0 || pos != boundary_positions[boundary_positions.len() - 1] {
+                boundary_positions.push(pos);
+            }
+
         }
     }
 
@@ -358,7 +368,6 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
     // Generate 50 tuples by sampling leftmost waller positions
     let step = (boundary_positions.len() / max_tuples).max(1);
 
-    println!("----");
     for i in (0..boundary_positions.len()).step_by(step) {
         if position_tuples.len() >= max_tuples {
             break;
@@ -366,12 +375,11 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
 
         let mut tuple = Vec::new();
         let mut current_idx = i;
-        println!("{}", boundary_positions[current_idx]);
 
         // Place first waller at the sampled position
         tuple.push(boundary_positions[current_idx]);
 
-        // Place subsequent wallers 200mm to the right (next available position)
+        // Place subsequent wallers 200mm to the next available positions
         for _ in 1..waller_count {
             // Find next position that's at least 200mm away
             let current_pos = boundary_positions[current_idx];
@@ -381,23 +389,12 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
                 let next_pos = boundary_positions[next_idx];
                 let distance = (next_pos - current_pos).norm();
 
-                if distance >= 200.0 {
+                if distance >= 170.0 && distance <= 200.0 {
                     tuple.push(next_pos);
                     current_idx = next_idx;
                     break;
                 }
                 next_idx += 1;
-            }
-
-            // If we can't find a position 200mm away, use the last available position
-            if next_idx >= boundary_positions.len() {
-                if current_idx + 1 < boundary_positions.len() {
-                    tuple.push(boundary_positions[current_idx + 1]);
-                    current_idx += 1;
-                } else {
-                    // Not enough space for all wallers, skip this tuple
-                    break;
-                }
             }
         }
 
@@ -410,6 +407,10 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
     position_tuples
 }
 
+pub fn compute_coverage_score(ball: Vector2, our_pos: Vector2, backline: (Vector2, Vector2)) {
+
+}
+
 /// Score a position tuple for all wallers
 /// Higher score is better
 pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f64 {
@@ -419,32 +420,26 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
 
     let ball_pos = ball.position.xy();
     let goal_pos = s.get_own_goal_position();
-    let mut total_score = 0.0;
+    let mut score = 0.0;
+
+    let Some(boundary) = get_defense_area_boundary(s) else {
+        return 0.0;
+    };
+
+    let backline = boundary.get_back_line();
+
+    for &pos in position_tuple {
+        // the closer to ball - the better
+        let ball_score = -(ball_pos - pos).norm() / 5_000.0;
+
+        // how much of the backline is covered by the
+        let coverage_score = compute_coverage_score(ball_pos, pos, backline);
+    }
 
     // Base scoring using existing evaluation
     for &pos in position_tuple {
         let pos_score = evaluate_boundary_position(s, pos, ball_pos, goal_pos);
         total_score += pos_score;
-    }
-
-    // Penalize overlapping positions
-    for i in 0..position_tuple.len() {
-        for j in (i + 1)..position_tuple.len() {
-            let distance = (position_tuple[i] - position_tuple[j]).norm();
-            if distance < 500.0 { // Too close - 500mm minimum separation
-                total_score -= 1000.0 * (500.0 - distance) / 500.0;
-            }
-        }
-    }
-
-    // Bonus for good coverage spread
-    if position_tuple.len() > 1 {
-        let mut y_positions: Vec<f64> = position_tuple.iter().map(|p| p.y).collect();
-        y_positions.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-        let total_spread = y_positions.last().unwrap() - y_positions.first().unwrap();
-        let coverage_bonus = (total_spread / 1000.0).min(2.0) * 200.0; // Reward up to 2m spread
-        total_score += coverage_bonus;
     }
 
     // Penalize positions too far from current robot positions
@@ -463,7 +458,7 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
             let distance = (current_pos - target_pos).norm();
 
             // Slight penalty for distance to encourage stability
-            total_score -= distance * 0.1;
+            total_score -= distance * 0.01;
         }
     }
 
