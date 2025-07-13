@@ -101,7 +101,7 @@ pub struct Cli {
     #[clap(long, default_value = "false", action)]
     pub auto_start: bool,
 
-    #[clap(long, default_value = "Blue")]
+    #[clap(long, default_value = "blue")]
     pub controlled_teams: ControlledTeam,
 }
 
