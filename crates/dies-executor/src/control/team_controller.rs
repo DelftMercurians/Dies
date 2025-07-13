@@ -117,6 +117,7 @@ impl TeamController {
             &active_robots,
             team_context.clone(),
             world_data.clone(),
+            Some(&self.role_assignments),
         ) {
             Ok(assignments) => {
                 self.role_assignments = assignments.clone();

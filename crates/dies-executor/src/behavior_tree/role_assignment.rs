@@ -129,22 +129,39 @@ impl RoleBuilder {
 pub struct RoleAssignmentSolver {
     // Cache for performance
     score_cache: HashMap<(PlayerId, String), f64>,
+    /// Bonus score added to robots that already have the role (hysteresis)
+    hysteresis_bonus: f64,
 }
 
 impl RoleAssignmentSolver {
     pub fn new() -> Self {
         Self {
             score_cache: HashMap::new(),
+            hysteresis_bonus: 50.0,
         }
     }
 
-    /// Solve the role assignment problem using fast greedy algorithm
+    /// Create a new solver with custom hysteresis bonus
+    pub fn with_hysteresis_bonus(hysteresis_bonus: f64) -> Self {
+        Self {
+            score_cache: HashMap::new(),
+            hysteresis_bonus,
+        }
+    }
+
+    /// Set the hysteresis bonus strength
+    pub fn set_hysteresis_bonus(&mut self, bonus: f64) {
+        self.hysteresis_bonus = bonus;
+    }
+
+    /// Solve the role assignment problem using fast greedy algorithm with hysteresis
     pub fn solve(
         &mut self,
         problem: &RoleAssignmentProblem,
         active_robots: &[PlayerId],
         team_context: TeamContext,
         team_data: Arc<TeamData>,
+        previous_assignments: Option<&HashMap<PlayerId, String>>,
     ) -> Result<HashMap<PlayerId, String>> {
         if active_robots.is_empty() {
             return Ok(HashMap::new());
@@ -208,6 +225,7 @@ impl RoleAssignmentSolver {
                         role,
                         team_context.clone(),
                         team_data.clone(),
+                        previous_assignments,
                     );
                     (robot_id, score)
                 })
@@ -249,6 +267,7 @@ impl RoleAssignmentSolver {
                         role,
                         team_context.clone(),
                         team_data.clone(),
+                        previous_assignments,
                     );
                     (**robot_id, score)
                 })
@@ -308,6 +327,7 @@ impl RoleAssignmentSolver {
         role: &Role,
         team_context: TeamContext,
         team_data: Arc<TeamData>,
+        previous_assignments: Option<&HashMap<PlayerId, String>>,
     ) -> f64 {
         let cache_key = (robot_id, role_name.to_string());
 
@@ -321,7 +341,16 @@ impl RoleAssignmentSolver {
             Default::default(),
             team_context.player_context(robot_id).key("bt"),
         );
-        let score = (role.scorer)(&situation);
+        let mut score = (role.scorer)(&situation);
+
+        // Apply hysteresis bonus - strongly prefer keeping current role assignment
+        if let Some(prev_assignments) = previous_assignments {
+            if let Some(prev_role) = prev_assignments.get(&robot_id) {
+                if prev_role == role_name {
+                    score += self.hysteresis_bonus;
+                }
+            }
+        }
 
         self.score_cache.insert(cache_key, score);
         score
@@ -450,7 +479,7 @@ mod tests {
         };
 
         let assignments = solver
-            .solve(&problem, &active_robots, team_context, team_data)
+            .solve(&problem, &active_robots, team_context, team_data, None)
             .unwrap();
 
         assert_eq!(assignments.len(), 3);
@@ -479,7 +508,7 @@ mod tests {
         };
 
         let assignments = solver
-            .solve(&problem, &active_robots, team_context, team_data)
+            .solve(&problem, &active_robots, team_context, team_data, None)
             .unwrap();
 
         // Basic validation - all robots should be assigned
@@ -498,6 +527,72 @@ mod tests {
         assert!(role_counts
             .get("defender")
             .map_or(false, |&c| c >= 1 && c <= 2));
+    }
+
+    #[test]
+    fn test_hysteresis_prevents_oscillations() {
+        let mut solver = RoleAssignmentSolver::with_hysteresis_bonus(100.0);
+        let team_context = TeamContext::new(TeamColor::Blue, SideAssignment::YellowOnPositive);
+        let team_data = Arc::new(create_test_team_data(3));
+        let active_robots = vec![PlayerId::new(0), PlayerId::new(1), PlayerId::new(2)];
+
+        let problem = RoleAssignmentProblem {
+            roles: vec![
+                create_test_role("goalkeeper", 1, 1),
+                create_test_role("attacker", 1, 1),
+                create_test_role("defender", 1, 1),
+            ],
+        };
+
+        // First assignment (no previous assignments)
+        let assignments1 = solver
+            .solve(
+                &problem,
+                &active_robots,
+                team_context.clone(),
+                team_data.clone(),
+                None,
+            )
+            .unwrap();
+
+        // Second assignment with previous assignments should be identical due to hysteresis
+        let assignments2 = solver
+            .solve(
+                &problem,
+                &active_robots,
+                team_context.clone(),
+                team_data.clone(),
+                Some(&assignments1),
+            )
+            .unwrap();
+
+        // Should be identical assignments due to hysteresis
+        assert_eq!(assignments1, assignments2);
+
+        // Third assignment should also be identical
+        let assignments3 = solver
+            .solve(
+                &problem,
+                &active_robots,
+                team_context.clone(),
+                team_data.clone(),
+                Some(&assignments2),
+            )
+            .unwrap();
+
+        assert_eq!(assignments2, assignments3);
+    }
+
+    #[test]
+    fn test_hysteresis_bonus_configuration() {
+        let mut solver = RoleAssignmentSolver::new();
+        assert_eq!(solver.hysteresis_bonus, 50.0);
+
+        solver.set_hysteresis_bonus(75.0);
+        assert_eq!(solver.hysteresis_bonus, 75.0);
+
+        let solver2 = RoleAssignmentSolver::with_hysteresis_bonus(25.0);
+        assert_eq!(solver2.hysteresis_bonus, 25.0);
     }
 
     #[test]
