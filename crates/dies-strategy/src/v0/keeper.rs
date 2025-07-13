@@ -1,4 +1,4 @@
-use dies_core::Vector2;
+use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
@@ -70,14 +70,12 @@ fn calculate_goalkeeper_position(s: &RobotSituation) -> Vector2 {
     }
 }
 
-fn get_goalkeeper_heading(s: &RobotSituation) -> f64 {
+fn get_goalkeeper_heading(s: &RobotSituation) -> Angle {
     if let Some(ball) = &s.world.ball {
         let goal_pos = s.get_own_goal_position();
         let ball_pos = ball.position.xy();
-        let dx = ball_pos.x - goal_pos.x;
-        let dy = ball_pos.y - goal_pos.y;
-        dy.atan2(dx)
+        Angle::between_points(ball_pos, goal_pos)
     } else {
-        0.0
+        Angle::from_radians(0.0)
     }
 }

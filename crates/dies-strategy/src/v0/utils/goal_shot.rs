@@ -1,4 +1,4 @@
-use dies_core::Vector2;
+use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 pub fn has_clear_shot(s: &RobotSituation) -> bool {
@@ -27,18 +27,18 @@ pub fn find_optimal_shot_target(s: &RobotSituation) -> Vector2 {
     }
 }
 
-pub fn get_heading_toward_ball(s: &RobotSituation) -> f64 {
+pub fn get_heading_toward_ball(s: &RobotSituation) -> Angle {
     if let Some(ball) = &s.world.ball {
         let ball_pos = ball.position.xy();
         let my_pos = s.player_data().position;
-        (ball_pos - my_pos).y.atan2((ball_pos - my_pos).x)
+        Angle::between_points(ball_pos, my_pos)
     } else {
-        0.0
+        Angle::from_radians(0.0)
     }
 }
 
-pub fn get_heading_to_goal(s: &RobotSituation) -> f64 {
+pub fn get_heading_to_goal(s: &RobotSituation) -> Angle {
     let player_pos = s.player_data().position;
     let goal_pos = s.get_opp_goal_position();
-    (goal_pos - player_pos).y.atan2((goal_pos - player_pos).x)
+    Angle::between_points(goal_pos, player_pos)
 }

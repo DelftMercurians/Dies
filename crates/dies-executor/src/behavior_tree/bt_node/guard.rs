@@ -151,7 +151,7 @@ impl GuardNodeBuilder {
         GuardNode::new(
             self.condition.expect("Condition is required"),
             self.child.expect("Child is required"),
-            self.description.expect("Description is required"),
+            self.description.unwrap_or_default(),
         )
     }
 }

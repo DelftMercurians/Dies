@@ -18,14 +18,14 @@ use crate::{
 
 #[derive(Clone)]
 pub enum FaceTarget {
-    Angle(Argument<f64>),
+    Angle(Argument<Angle>),
     Position(Argument<Vector2>),
     OwnPlayer(Argument<u32>),
 }
 
 #[derive(Clone)]
 pub enum HeadingTarget {
-    Angle(Argument<f64>),
+    Angle(Argument<Angle>),
     Position(Argument<Vector2>),
     OwnPlayer(Argument<u32>),
 }
@@ -34,7 +34,7 @@ pub enum HeadingTarget {
 pub enum SkillDefinition {
     GoToPosition {
         target_pos: Argument<Vector2>,
-        target_heading: Option<Argument<f64>>,
+        target_heading: Option<Argument<Angle>>,
         target_velocity: Argument<Vector2>,
         pos_tolerance: Argument<f64>,
         velocity_tolerance: Argument<f64>,
@@ -124,7 +124,7 @@ impl ActionNode {
 
                     let mut skill = GoToPosition::new(target);
                     if let Some(heading) = heading {
-                        skill = skill.with_heading(Angle::from_radians(heading));
+                        skill = skill.with_heading(heading);
                     }
                     if with_ball {
                         skill = skill.with_ball();
@@ -139,9 +139,7 @@ impl ActionNode {
                     let with_ball = with_ball.resolve(situation);
 
                     let mut skill = match target {
-                        FaceTarget::Angle(angle_rad) => {
-                            Face::new(Angle::from_radians(angle_rad.resolve(situation)))
-                        }
+                        FaceTarget::Angle(angle_rad) => Face::new(angle_rad.resolve(situation)),
                         FaceTarget::Position(pos) => Face::towards_position(pos.resolve(situation)),
                         FaceTarget::OwnPlayer(id) => {
                             Face::towards_own_player(PlayerId::new(id.resolve(situation)))
@@ -160,9 +158,9 @@ impl ActionNode {
                 SkillDefinition::FetchBall => Some(Skill::FetchBall(FetchBall::new())),
                 SkillDefinition::FetchBallWithHeading { target } => {
                     let skill = match target {
-                        HeadingTarget::Angle(angle_rad) => FetchBallWithHeading::new(
-                            Angle::from_radians(angle_rad.resolve(situation)),
-                        ),
+                        HeadingTarget::Angle(angle_rad) => {
+                            FetchBallWithHeading::new(angle_rad.resolve(situation))
+                        }
                         HeadingTarget::Position(pos) => {
                             FetchBallWithHeading::towards_position(pos.resolve(situation))
                         }
@@ -258,7 +256,7 @@ impl From<ActionNode> for BehaviorNode {
 
 pub struct GoToPositionBuilder {
     target_pos: Argument<Vector2>,
-    target_heading: Option<Argument<f64>>,
+    target_heading: Option<Argument<Angle>>,
     target_velocity: Argument<Vector2>,
     pos_tolerance: Argument<f64>,
     velocity_tolerance: Argument<f64>,
@@ -281,7 +279,7 @@ impl GoToPositionBuilder {
         }
     }
 
-    pub fn with_heading(mut self, heading: impl Into<Argument<f64>>) -> Self {
+    pub fn with_heading(mut self, heading: impl Into<Argument<Angle>>) -> Self {
         self.target_heading = Some(heading.into());
         self
     }
@@ -339,7 +337,7 @@ pub struct FaceBuilder {
 }
 
 impl FaceBuilder {
-    pub fn angle(angle: impl Into<Argument<f64>>) -> Self {
+    pub fn angle(angle: impl Into<Argument<Angle>>) -> Self {
         Self {
             target: FaceTarget::Angle(angle.into()),
             with_ball: Argument::Static(false),
@@ -456,7 +454,7 @@ pub struct FetchBallWithHeadingBuilder {
 }
 
 impl FetchBallWithHeadingBuilder {
-    pub fn angle(angle: impl Into<Argument<f64>>) -> Self {
+    pub fn angle(angle: impl Into<Argument<Angle>>) -> Self {
         Self {
             target: HeadingTarget::Angle(angle.into()),
             description: None,
@@ -535,7 +533,7 @@ pub fn go_to_position(target_pos: impl Into<Argument<Vector2>>) -> GoToPositionB
     GoToPositionBuilder::new(target_pos)
 }
 
-pub fn face_angle(angle: impl Into<Argument<f64>>) -> FaceBuilder {
+pub fn face_angle(angle: impl Into<Argument<Angle>>) -> FaceBuilder {
     FaceBuilder::angle(angle)
 }
 
@@ -559,7 +557,7 @@ pub fn fetch_ball() -> FetchBallBuilder {
     FetchBallBuilder::new()
 }
 
-pub fn fetch_ball_with_angle(angle: impl Into<Argument<f64>>) -> FetchBallWithHeadingBuilder {
+pub fn fetch_ball_with_angle(angle: impl Into<Argument<Angle>>) -> FetchBallWithHeadingBuilder {
     FetchBallWithHeadingBuilder::angle(angle)
 }
 

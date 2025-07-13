@@ -2,6 +2,7 @@ use super::bt_core::{BehaviorStatus, RobotSituation};
 use crate::control::PlayerControlInput;
 
 mod action;
+mod continuous;
 mod guard;
 mod noop;
 mod scoring_select;
@@ -10,6 +11,7 @@ mod semaphore;
 mod sequence;
 
 pub use action::*;
+pub use continuous::{continuous, ContinuousNode};
 pub use guard::{guard_node, GuardNode};
 pub use noop::{noop_node, NoopNode};
 pub use scoring_select::{scoring_select_node, ScoringSelectNode};
@@ -23,6 +25,7 @@ pub enum BehaviorNode {
     Sequence(SequenceNode),
     Guard(GuardNode),
     Action(ActionNode),
+    Continuous(ContinuousNode),
     Semaphore(SemaphoreNode),
     ScoringSelect(ScoringSelectNode),
     Noop(NoopNode),
@@ -38,6 +41,7 @@ impl BehaviorNode {
             BehaviorNode::Sequence(node) => node.tick(situation),
             BehaviorNode::Guard(node) => node.tick(situation),
             BehaviorNode::Action(node) => node.tick(situation),
+            BehaviorNode::Continuous(node) => node.tick(situation),
             BehaviorNode::Semaphore(node) => node.tick(situation),
             BehaviorNode::ScoringSelect(node) => node.tick(situation),
             BehaviorNode::Noop(_) => (BehaviorStatus::Success, None),
@@ -50,6 +54,7 @@ impl BehaviorNode {
             BehaviorNode::Sequence(node) => node.debug_all_nodes(situation),
             BehaviorNode::Guard(node) => node.debug_all_nodes(situation),
             BehaviorNode::Action(node) => node.debug_all_nodes(situation),
+            BehaviorNode::Continuous(node) => node.debug_all_nodes(situation),
             BehaviorNode::Semaphore(node) => node.debug_all_nodes(situation),
             BehaviorNode::ScoringSelect(node) => node.debug_all_nodes(situation),
             BehaviorNode::Noop(_) => {
@@ -64,6 +69,7 @@ impl BehaviorNode {
             BehaviorNode::Sequence(node) => node.description(),
             BehaviorNode::Guard(node) => node.description(),
             BehaviorNode::Action(node) => node.description(),
+            BehaviorNode::Continuous(node) => node.description(),
             BehaviorNode::Semaphore(node) => node.description(),
             BehaviorNode::ScoringSelect(node) => node.description(),
             BehaviorNode::Noop(_) => "Noop".to_string(),
@@ -76,6 +82,7 @@ impl BehaviorNode {
             BehaviorNode::Sequence(node) => node.get_node_id_fragment(),
             BehaviorNode::Guard(node) => node.get_node_id_fragment(),
             BehaviorNode::Action(node) => node.get_node_id_fragment(),
+            BehaviorNode::Continuous(node) => node.get_node_id_fragment(),
             BehaviorNode::Semaphore(node) => node.get_node_id_fragment(),
             BehaviorNode::ScoringSelect(node) => node.get_node_id_fragment(),
             BehaviorNode::Noop(_) => "Noop".to_string(),
@@ -97,6 +104,7 @@ impl BehaviorNode {
             BehaviorNode::Sequence(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Guard(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Action(node) => node.get_child_node_ids(current_path_prefix),
+            BehaviorNode::Continuous(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Semaphore(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::ScoringSelect(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Noop(_) => vec![],

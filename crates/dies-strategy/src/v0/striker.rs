@@ -1,4 +1,4 @@
-use dies_core::Vector2;
+use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::{
@@ -134,9 +134,9 @@ fn build_striker_in_zone(zone: &str) -> BehaviorNode {
                         if let Some(ball) = &s.world.ball {
                             let ball_pos = ball.position.xy();
                             let my_pos = s.player_data().position;
-                            (ball_pos - my_pos).y.atan2((ball_pos - my_pos).x)
+                            Angle::between_points(ball_pos, my_pos)
                         } else {
-                            0.0
+                            Angle::from_radians(0.0)
                         }
                     }))
                     .description(format!("Position in {}", zone_name))
@@ -201,7 +201,7 @@ fn build_dribble_sequence(zone: &str) -> BehaviorNode {
         .with_heading(move |s: &RobotSituation| {
             let goal_pos = s.get_opp_goal_position();
             let my_pos = s.player_data().position;
-            (goal_pos - my_pos).y.atan2((goal_pos - my_pos).x)
+            Angle::between_points(goal_pos, my_pos)
         })
         .with_ball()
         .description(format!("Dribble in {}", zone))

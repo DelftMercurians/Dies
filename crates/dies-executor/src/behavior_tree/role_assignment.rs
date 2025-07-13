@@ -137,21 +137,8 @@ impl RoleAssignmentSolver {
     pub fn new() -> Self {
         Self {
             score_cache: HashMap::new(),
-            hysteresis_bonus: 50.0,
+            hysteresis_bonus: 1.5,
         }
-    }
-
-    /// Create a new solver with custom hysteresis bonus
-    pub fn with_hysteresis_bonus(hysteresis_bonus: f64) -> Self {
-        Self {
-            score_cache: HashMap::new(),
-            hysteresis_bonus,
-        }
-    }
-
-    /// Set the hysteresis bonus strength
-    pub fn set_hysteresis_bonus(&mut self, bonus: f64) {
-        self.hysteresis_bonus = bonus;
     }
 
     /// Solve the role assignment problem using fast greedy algorithm with hysteresis
@@ -351,7 +338,7 @@ impl RoleAssignmentSolver {
         if let Some(prev_assignments) = previous_assignments {
             if let Some(prev_role) = prev_assignments.get(&robot_id) {
                 if prev_role == role_name {
-                    score += self.hysteresis_bonus;
+                    score *= self.hysteresis_bonus;
                 }
             }
         }
@@ -535,7 +522,7 @@ mod tests {
 
     #[test]
     fn test_hysteresis_prevents_oscillations() {
-        let mut solver = RoleAssignmentSolver::with_hysteresis_bonus(100.0);
+        let mut solver = RoleAssignmentSolver::new();
         let team_context = TeamContext::new(TeamColor::Blue, SideAssignment::YellowOnPositive);
         let team_data = Arc::new(create_test_team_data(3));
         let active_robots = vec![PlayerId::new(0), PlayerId::new(1), PlayerId::new(2)];
@@ -585,18 +572,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(assignments2, assignments3);
-    }
-
-    #[test]
-    fn test_hysteresis_bonus_configuration() {
-        let mut solver = RoleAssignmentSolver::new();
-        assert_eq!(solver.hysteresis_bonus, 50.0);
-
-        solver.set_hysteresis_bonus(75.0);
-        assert_eq!(solver.hysteresis_bonus, 75.0);
-
-        let solver2 = RoleAssignmentSolver::with_hysteresis_bonus(25.0);
-        assert_eq!(solver2.hysteresis_bonus, 25.0);
     }
 
     #[test]

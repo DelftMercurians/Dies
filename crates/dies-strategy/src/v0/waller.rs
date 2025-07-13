@@ -1,5 +1,5 @@
+use dies_core::get_tangent_line_direction;
 use dies_core::Vector2;
-use dies_core::{get_tangent_line_direction, find_intersection};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::{evaluate_ball_threat, get_defender_heading};
@@ -8,9 +8,9 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
         .add(
             // Normal wall positioning
-            go_to_position(Argument::callback(|s| calculate_wall_position(s)))
-                .with_heading(Argument::callback(get_defender_heading))
-                .description("Wall position".to_string())
+            continuous("wall position")
+                .position(calculate_wall_position)
+                .heading(get_defender_heading)
                 .build(),
         )
         .description("Waller")
@@ -320,7 +320,6 @@ fn evaluate_waller_positioning(s: &RobotSituation, ball_pos: Vector2, goal_pos: 
     }
 }
 
-
 /// Generate candidate position tuples for all wallers
 /// Returns array of position tuples, each containing (x,y) coordinates for each waller
 pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>> {
@@ -356,10 +355,11 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
         for i in 0..num_positions {
             let t = i as f64 / (num_positions - 1) as f64;
             let pos = start + (end - start) * t;
-            if boundary_positions.len() == 0 || pos != boundary_positions[boundary_positions.len() - 1] {
+            if boundary_positions.len() == 0
+                || pos != boundary_positions[boundary_positions.len() - 1]
+            {
                 boundary_positions.push(pos);
             }
-
         }
     }
 
@@ -408,7 +408,11 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
     position_tuples
 }
 
-pub fn compute_coverage_score(ball: Vector2, our_pos: Vector2, backline: (Vector2, Vector2)) -> f64 {
+pub fn compute_coverage_score(
+    ball: Vector2,
+    our_pos: Vector2,
+    backline: (Vector2, Vector2),
+) -> f64 {
     // Calculate the two tangent line directions from ball to robot circle
     let (angle1, angle2) = get_tangent_line_direction(our_pos, dies_core::PLAYER_RADIUS, ball);
 
@@ -429,14 +433,13 @@ pub fn compute_coverage_score(ball: Vector2, our_pos: Vector2, backline: (Vector
         let total_length = (backline.1 - backline.0).norm();
         let mut coverage_length = 0.0;
 
-        if is_point_on_segment(p1, backline.0, backline.1) &&
-           is_point_on_segment(p2, backline.0, backline.1) {
+        if is_point_on_segment(p1, backline.0, backline.1)
+            && is_point_on_segment(p2, backline.0, backline.1)
+        {
             coverage_length = (p2 - p1).norm();
-        }
-        else if is_point_on_segment(p1, backline.0, backline.1) {
+        } else if is_point_on_segment(p1, backline.0, backline.1) {
             coverage_length = (p1 - backline.0).norm().min((p1 - backline.1).norm());
-        }
-        else if is_point_on_segment(p2, backline.0, backline.1) {
+        } else if is_point_on_segment(p2, backline.0, backline.1) {
             coverage_length = (p2 - backline.0).norm().min((p2 - backline.1).norm());
         }
 
