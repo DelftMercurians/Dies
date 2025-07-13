@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
 use dies_ssl_client::{ConnectionConfig, SslClientConfig};
 use dies_webui::{UiConfig, UiEnvironment};
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::commands::{
@@ -42,6 +43,13 @@ enum Command {
 
     #[clap(name = "test-vision")]
     TestVision,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ValueEnum)]
+pub enum ControlledTeam {
+    Blue,
+    Yellow,
+    Both,
 }
 
 #[derive(Debug, Parser)]
@@ -89,6 +97,12 @@ pub struct Cli {
 
     #[clap(long, default_value = "simulation")]
     pub ui_mode: String,
+
+    #[clap(long, default_value = "false", action)]
+    pub auto_start: bool,
+
+    #[clap(long, default_value = "Blue")]
+    pub controlled_teams: ControlledTeam,
 }
 
 impl Cli {
@@ -167,6 +181,12 @@ impl Cli {
                 _ => {
                     bail!("Invalid UI mode: {}", self.ui_mode);
                 }
+            },
+            auto_start: self.auto_start,
+            controlled_teams: match self.controlled_teams {
+                ControlledTeam::Blue => dies_webui::ControlledTeam::Blue,
+                ControlledTeam::Yellow => dies_webui::ControlledTeam::Yellow,
+                ControlledTeam::Both => dies_webui::ControlledTeam::Both,
             },
         })
     }

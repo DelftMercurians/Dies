@@ -23,8 +23,8 @@ use tower_http::services::ServeDir;
 use tower_layer::Layer;
 
 use crate::{
-    executor_task::ExecutorTask, routes, ExecutorStatus, UiCommand, UiConfig, UiEnvironment,
-    UiMode, UiStatus,
+    executor_task::ExecutorTask, routes, ControlledTeam, ExecutorStatus, UiCommand, UiConfig,
+    UiEnvironment, UiMode, UiStatus,
 };
 
 pub struct ServerState {
@@ -134,7 +134,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
     let (cmd_tx, cmd_rx) = broadcast::channel(16);
     let (id_map_tx, _id_map_rx) = mpsc::unbounded_channel();
     let debug_sub: DebugSubscriber = DebugSubscriber::spawn();
-    let state = Arc::new(ServerState::new(
+    let mut state = ServerState::new(
         config.is_live_available(),
         if config.is_live_available() {
             UiMode::Live
@@ -146,7 +146,26 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
         update_rx,
         cmd_tx.clone(),
         id_map_tx,
-    ));
+    );
+    state
+        .executor_settings
+        .write()
+        .unwrap()
+        .team_configuration
+        .blue_active = matches!(
+        config.controlled_teams,
+        ControlledTeam::Blue | ControlledTeam::Both
+    );
+    state
+        .executor_settings
+        .write()
+        .unwrap()
+        .team_configuration
+        .yellow_active = matches!(
+        config.controlled_teams,
+        ControlledTeam::Yellow | ControlledTeam::Both
+    );
+    let state = Arc::new(state);
 
     // Start debug log task -- this should probably be done elsewhere, but oh well
     let debug_log_task = {
@@ -188,7 +207,15 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
         tokio::spawn(async move {
             let mut executor_task =
                 ExecutorTask::new(config.environment, update_tx, cmd_rx, state, strategy);
-            executor_task.run(shutdown_rx).await
+            if config.auto_start {
+                log::info!("Starting executor automatically in 2 seconds...");
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    log::info!("Starting executor automatically");
+                    cmd_tx.send(UiCommand::Start).unwrap();
+                });
+            }
+            executor_task.run(shutdown_rx).await;
         })
     };
 

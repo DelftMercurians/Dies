@@ -15,6 +15,13 @@ mod server;
 
 pub use server::start;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ControlledTeam {
+    Blue,
+    Yellow,
+    Both,
+}
+
 /// The configuration for the web UI.
 #[derive(Debug, Clone)]
 pub struct UiConfig {
@@ -22,6 +29,8 @@ pub struct UiConfig {
     pub settings_file: PathBuf,
     pub environment: UiEnvironment,
     pub start_mode: UiMode,
+    pub auto_start: bool,
+    pub controlled_teams: ControlledTeam,
 }
 
 #[derive(Debug, Clone)]

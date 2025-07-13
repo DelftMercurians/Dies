@@ -893,6 +893,7 @@ dependencies = [
  "log",
  "network-interface",
  "protobuf-json-mapping",
+ "serde",
  "serde_json",
  "tokio",
 ]
