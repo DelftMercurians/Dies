@@ -264,7 +264,7 @@ impl TeamController {
             self.mpc_controller.compute_batch_control(
                 &mpc_robots,
                 &world_data,
-                Some(&controllable_mask),
+                Some(&controllable_mask)
             )
         } else {
             HashMap::new()
@@ -366,6 +366,7 @@ impl TeamController {
                     obstacles,
                     &all_players,
                     &player_context,
+                    avoid_goal_area
                 );
             } else {
                 controller.increment_frames_misses();

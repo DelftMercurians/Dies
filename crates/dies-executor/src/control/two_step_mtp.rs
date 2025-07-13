@@ -53,6 +53,7 @@ impl TwoStepMTP {
         player_context: &PlayerContext,
         world_data: &TeamData,
         current_player: &PlayerData,
+        avoid_goal_area: bool
     ) -> Vector2 {
         let setpoint = match self.setpoint {
             Some(s) => s,
@@ -73,6 +74,7 @@ impl TwoStepMTP {
             world_data,
             current_player,
             player_context,
+            avoid_goal_area
         );
 
         // Use the intermediate target as the new setpoint for MTP control
@@ -127,6 +129,7 @@ impl TwoStepMTP {
         world_data: &TeamData,
         current_player: &PlayerData,
         player_context: &PlayerContext,
+        avoid_goal_area: bool
     ) -> Vector2 {
         // Debug visualization for boundary rectangles
         let to_target = target - current;
@@ -148,6 +151,7 @@ impl TwoStepMTP {
             target,
             world_data,
             current_player,
+            avoid_goal_area
         );
 
         if direct_cost < best_cost {
@@ -194,6 +198,7 @@ impl TwoStepMTP {
         end: Vector2,
         world_data: &TeamData,
         current_player: &PlayerData,
+        avoid_goal_area: bool
     ) -> f64 {
         // total cost is multiplied by magic coeff -> lower implies we care more about
         // avoiding shit, less means we are straighter (less gay)
@@ -239,7 +244,8 @@ impl TwoStepMTP {
                 start,
                 mid,
                 field,
-            ) + self.calculate_field_intersection_cost(mid, end, field) * 0.1;
+                avoid_goal_area
+            ) + self.calculate_field_intersection_cost(mid, end, field, self.avoid_goal_area) * 0.1;
             if intersection_length > 0.0 {
                 total_cost += 500.0
             }
@@ -471,6 +477,7 @@ impl TwoStepMTP {
         line_start: Vector2,
         line_end: Vector2,
         field: &dies_core::FieldGeometry,
+        avoid_goal_area: bool
     ) -> f64 {
         let mut cost = 0.0;
 
@@ -503,27 +510,28 @@ impl TwoStepMTP {
             }
         }
 
+        if avoid_goal_area {
+            let left_rect_min = Vector2::new(-half_length, -field.penalty_area_width / 2.0);
+            let left_rect_max = Vector2::new(-half_length + field.penalty_area_depth, field.penalty_area_width / 2.0);
+            let left_intersection_length = self.line_rectangle_intersection_length(
+                line_start,
+                line_end,
+                left_rect_min,
+                left_rect_max,
+            );
+            cost += left_intersection_length * 10.0; // Weight for left boundary area
 
-        let left_rect_min = Vector2::new(-half_length, -field.penalty_area_width / 2.0);
-        let left_rect_max = Vector2::new(-half_length + field.penalty_area_depth, field.penalty_area_width / 2.0);
-        let left_intersection_length = self.line_rectangle_intersection_length(
-            line_start,
-            line_end,
-            left_rect_min,
-            left_rect_max,
-        );
-        cost += left_intersection_length * 10.0; // Weight for left boundary area
-
-        // Right side boundary rectangle (outside field)
-        let right_rect_min = Vector2::new(half_length - field.penalty_area_depth, -field.penalty_area_width / 2.0);
-        let right_rect_max = Vector2::new(half_length, field.penalty_area_width / 2.0);
-        let right_intersection_length = self.line_rectangle_intersection_length(
-            line_start,
-            line_end,
-            right_rect_min,
-            right_rect_max,
-        );
-        cost += right_intersection_length * 10.0; // Weight for right boundary area
+            // Right side boundary rectangle (outside field)
+            let right_rect_min = Vector2::new(half_length - field.penalty_area_depth, -field.penalty_area_width / 2.0);
+            let right_rect_max = Vector2::new(half_length, field.penalty_area_width / 2.0);
+            let right_intersection_length = self.line_rectangle_intersection_length(
+                line_start,
+                line_end,
+                right_rect_min,
+                right_rect_max,
+            );
+            cost += right_intersection_length * 10.0; // Weight for right boundary area
+        }
 
         cost
     }

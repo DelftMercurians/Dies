@@ -301,6 +301,7 @@ class World(eqx.Module):
     obstacles: EntityBatch  # obstacles (e.g. other robots)
     robots: EntityBatch
     ball: Entity = Entity(jnp.zeros((2,), dtype=jnp.float32))
+    avoid_goal_area: bool = False
 
     def noisy(self, key, pos_noise_scale: float = 30.0, vel_noise_scale: float = 10.0):
         """Add noise to robot positions and velocities."""

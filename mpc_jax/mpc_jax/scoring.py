@@ -196,7 +196,7 @@ def score_single_trajectory_sample(
     field_boundary_collisions = (
         jax.vmap(
             lambda traj: traj_vs_field_boundary_collision(
-                traj, noisy_world.field_bounds
+                traj, noisy_world.field_bounds, noisy_world.avoid_goal_area
             )
         )(trajectories).astype(jnp.float32)
         * time_discount[None, :]

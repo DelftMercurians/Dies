@@ -547,18 +547,52 @@ impl Avoid {
             Avoid::Circle { center } => (center - pos).norm(),
         }
     }
+
+    fn intersects_line(&self, start: Vector2, end: Vector2) -> bool {
+        match self {
+            Avoid::Line { start: line_start, end: line_end } => {
+                let line_seg = *line_end - *line_start;
+                let test_seg = end - start;
+
+                let denom = line_seg.x * test_seg.y - line_seg.y * test_seg.x;
+                if denom.abs() < 1e-10 {
+                    return false; // Lines are parallel
+                }
+
+                let t = ((start.x - line_start.x) * test_seg.y - (start.y - line_start.y) * test_seg.x) / denom;
+                let u = ((start.x - line_start.x) * line_seg.y - (start.y - line_start.y) * line_seg.x) / denom;
+
+                t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0
+            }
+            Avoid::Circle { center } => {
+                // Calculate minimum distance from circle center to line segment
+                let line_vec = end - start;
+                let line_len_sq = line_vec.norm_squared();
+
+                if line_len_sq == 0.0 {
+                    return false;
+                }
+
+                let t = ((center - start).dot(&line_vec) / line_len_sq).clamp(0.0, 1.0);
+                let closest_point = start + line_vec * t;
+                let dist_to_line = (center - closest_point).norm();
+
+                dist_to_line < PLAYER_RADIUS
+            }
+        }
+    }
 }
 
 pub fn nearest_safe_pos(
-    avoding_point: Avoid,
+    entity_to_avoid: Avoid,
     min_distance: f64,
     initial_pos: Vector2,
     target_pos: Vector2,
     max_radius: i32,
     field: &FieldGeometry,
 ) -> Vector2 {
-    let mut best_pos = Vector2::new(f64::INFINITY, f64::INFINITY);
-    let mut found_better = false;
+    let mut best_pos = target_pos;
+    let mut best_loss = f64::INFINITY;
     let min_theta = 0;
     let max_theta = 360;
 
@@ -567,17 +601,23 @@ pub fn nearest_safe_pos(
         for radius in (0..max_radius).step_by(50) {
             let position = initial_pos + theta.to_vector() * (radius as f64);
             if is_pos_in_field(position, field)
-                && avoding_point.distance_to(position) > min_distance
+                && entity_to_avoid.distance_to(position) > min_distance
             {
-                if (position - target_pos).norm() < (best_pos - target_pos).norm() {
+                let distnorm = (initial_pos - target_pos).norm();
+                let dist_score = (position - target_pos).norm() / distnorm;
+                let closeness_score = (position - initial_pos).norm() / distnorm;
+                let not_gay_score = entity_to_avoid.intersects_line(initial_pos, position) as i32 as f64;
+                let loss = dist_score + closeness_score * 0.5 + not_gay_score;
+
+                if loss < best_loss {
+                    best_loss = loss;
                     best_pos = position;
-                    found_better = true;
                 }
             }
         }
     }
-    if !found_better {
-        log::warn!("Could not find a safe position from {initial_pos}, avoiding {avoding_point:?}");
+    if best_loss == f64::INFINITY {
+        log::warn!("Could not find a safe position from {initial_pos}, avoiding {entity_to_avoid:?}");
     }
 
     best_pos

@@ -21,6 +21,7 @@ struct MPCControllerState {
     last_control_sequences: HashMap<PlayerId, Vec<Vector2>>,
     last_trajectories: HashMap<PlayerId, Vec<Vec<f64>>>,
     last_solve_time_ms: f64,
+    avoid_goal_area: bool,
 }
 
 struct MPCRequest {
@@ -53,8 +54,8 @@ pub struct MPCController {
 
 impl MPCController {
     pub fn new() -> Self {
-        let (request_sender, request_receiver) = mpsc::sync_channel::<MPCRequest>(2);
-        let (response_sender, response_receiver) = mpsc::sync_channel::<MPCResponse>(2);
+        let (request_sender, request_receiver) = mpsc::sync_channel::<MPCRequest>(1);
+        let (response_sender, response_receiver) = mpsc::sync_channel::<MPCResponse>(1);
 
         let thread_handle = thread::Builder::new()
             .name("mpc-worker".to_string())
@@ -90,6 +91,7 @@ impl MPCController {
         robots: &[RobotState],
         world: &TeamData,
         controllable_mask: Option<&[bool]>,
+        avoid_goal_area: bool,
     ) -> HashMap<PlayerId, Vector2> {
         if robots.is_empty() {
             return HashMap::new();
@@ -125,6 +127,7 @@ impl MPCController {
                 last_control_sequences: self.last_control_sequences.clone(),
                 last_trajectories: self.last_trajectories.clone(),
                 last_solve_time_ms: self.last_solve_time_ms,
+                avoid_goal_area: avoid_goal_area
             };
 
             let request = MPCRequest {
@@ -391,6 +394,7 @@ impl MPCController {
                 dt_value,
                 field_geometry,
                 controllable_mask_array,
+                controller_state.avoid_goal_area
             ))?;
 
             // Extract the result - it's a tuple of (controls, trajectories)

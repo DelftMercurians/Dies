@@ -433,6 +433,7 @@ def solve_mpc(
             EntityBatch(jnp.asarray(obstacles)),
             EntityBatch(jnp.asarray(initial_pos), jnp.asarray(initial_vel)),
             Entity(jnp.asarray(ball_pos)),
+            avoid_goal_area=avoid_goal_area,
         ),
         targets=EntityBatch(jnp.asarray(target_pos)),
         max_speeds=jnp.asarray(padded_max_speeds),

@@ -79,7 +79,7 @@ def ball_collision_cost(
     )
 
 
-def boundary_cost(pos: jnp.ndarray, field_bounds):
+def boundary_cost(pos: jnp.ndarray, field_bounds, avoid_goal_area):
     """
     Calculate cost for being inside penalty areas or outside field boundaries.
     field_bounds: FieldBounds object with field dimensions
@@ -96,32 +96,37 @@ def boundary_cost(pos: jnp.ndarray, field_bounds):
     field_violation = x_outside + y_outside
     cost += field_violation * 1000.0  # Very high penalty for leaving field
 
-    # Cost for being inside penalty areas (amplifies with depth)
-    # Left penalty area
-    left_penalty_x_inside = jnp.maximum(
-        -half_length + field_bounds.penalty_area_depth - x, 0.0
-    )
-    left_penalty_y_inside = jnp.maximum(
-        field_bounds.penalty_area_width / 2.0 - jnp.abs(y), 0.0
-    )
-    left_penalty_violation = jnp.minimum(left_penalty_x_inside, left_penalty_y_inside)
-    left_penalty_violation = jnp.maximum(left_penalty_violation, 0.0)
+    def goal_area_cost():
+        # Cost for being inside penalty areas (amplifies with depth)
+        # Left penalty area
+        left_penalty_x_inside = jnp.maximum(
+            -half_length + field_bounds.penalty_area_depth - x, 0.0
+        )
+        left_penalty_y_inside = jnp.maximum(
+            field_bounds.penalty_area_width / 2.0 - jnp.abs(y), 0.0
+        )
+        left_penalty_violation = jnp.minimum(
+            left_penalty_x_inside, left_penalty_y_inside
+        )
+        left_penalty_violation = jnp.maximum(left_penalty_violation, 0.0)
 
-    # Right penalty area
-    right_penalty_x_inside = jnp.maximum(
-        x - (half_length - field_bounds.penalty_area_depth), 0.0
-    )
-    right_penalty_y_inside = jnp.maximum(
-        field_bounds.penalty_area_width / 2.0 - jnp.abs(y), 0.0
-    )
-    right_penalty_violation = jnp.minimum(
-        right_penalty_x_inside, right_penalty_y_inside
-    )
-    right_penalty_violation = jnp.maximum(right_penalty_violation, 0.0)
+        # Right penalty area
+        right_penalty_x_inside = jnp.maximum(
+            x - (half_length - field_bounds.penalty_area_depth), 0.0
+        )
+        right_penalty_y_inside = jnp.maximum(
+            field_bounds.penalty_area_width / 2.0 - jnp.abs(y), 0.0
+        )
+        right_penalty_violation = jnp.minimum(
+            right_penalty_x_inside, right_penalty_y_inside
+        )
+        right_penalty_violation = jnp.maximum(right_penalty_violation, 0.0)
 
-    # Sum of absolute distances as penalty (deeper = higher cost)
-    penalty_area_cost = (left_penalty_violation + right_penalty_violation) * 10.0
-    cost += penalty_area_cost
+        # Sum of absolute distances as penalty (deeper = higher cost)
+        penalty_area_cost = (left_penalty_violation + right_penalty_violation) * 10.0
+        cost += penalty_area_cost
+
+    cost += jax.lax.cond(avoid_goal_area, goal_area_cost, lambda: 0)
 
     return cost
 
