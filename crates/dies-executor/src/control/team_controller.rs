@@ -35,6 +35,9 @@ pub struct TeamController {
     bt_context: BtContext,
     team_color: TeamColor,
     latest_script_errors: Vec<ScriptError>,
+    
+    // per-robot flags
+    avoid_goal_area_flags: HashMap<PlayerId, bool>,
 }
 
 impl TeamController {
@@ -53,6 +56,9 @@ impl TeamController {
             bt_context: BtContext::new(),
             team_color,
             latest_script_errors: Vec::new(),
+            
+            // per-robot flags - initialize to true by default
+            avoid_goal_area_flags: HashMap::new(),
         };
         team.update_controller_settings(settings);
         team
@@ -84,6 +90,18 @@ impl TeamController {
         }
     }
 
+    /// Set avoid_goal_area flag for a specific player
+    pub fn set_player_avoid_goal_area(&mut self, player_id: PlayerId, avoid: bool) {
+        self.avoid_goal_area_flags.insert(player_id, avoid);
+    }
+
+    /// Set avoid_goal_area flag for all players
+    pub fn set_all_players_avoid_goal_area(&mut self, avoid: bool) {
+        for &player_id in self.player_controllers.keys() {
+            self.avoid_goal_area_flags.insert(player_id, avoid);
+        }
+    }
+
     pub fn update(
         &mut self,
         team_color: TeamColor,
@@ -97,6 +115,8 @@ impl TeamController {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
                     .insert(*id, PlayerController::new(*id, &self.settings));
+                // Initialize avoid_goal_area flag to true for new players
+                self.avoid_goal_area_flags.insert(*id, true);
             }
         }
         let team_context = TeamContext::new(team_color, side_assignment);
@@ -261,10 +281,18 @@ impl TeamController {
         // Compute batched MPC controls
         self.mpc_controller.set_field_bounds(&world_data);
         let mpc_controls = if !mpc_robots.is_empty() {
+            // Collect avoid_goal_area flags for MPC robots (in the same order as mpc_robots)
+            let mut avoid_goal_area_flags = Vec::new();
+            for robot in &mpc_robots {
+                let avoid_goal_area = self.avoid_goal_area_flags.get(&robot.id).copied().unwrap_or(true);
+                avoid_goal_area_flags.push(avoid_goal_area);
+            }
+
             self.mpc_controller.compute_batch_control(
                 &mpc_robots,
                 &world_data,
-                Some(&controllable_mask)
+                Some(&controllable_mask),
+                &avoid_goal_area_flags
             )
         } else {
             HashMap::new()
@@ -356,6 +384,9 @@ impl TeamController {
 
                 let role_type = input_to_use.role_type;
                 let obstacles = world_data.get_obstacles_for_player(role_type);
+
+                // Get the avoid_goal_area flag for this specific player (default to true)
+                let avoid_goal_area = self.avoid_goal_area_flags.get(&id).copied().unwrap_or(true);
 
                 controller.update(
                     player_data,

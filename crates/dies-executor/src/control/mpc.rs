@@ -21,7 +21,7 @@ struct MPCControllerState {
     last_control_sequences: HashMap<PlayerId, Vec<Vector2>>,
     last_trajectories: HashMap<PlayerId, Vec<Vec<f64>>>,
     last_solve_time_ms: f64,
-    avoid_goal_area: bool,
+    avoid_goal_area_flags: Vec<bool>,
 }
 
 struct MPCRequest {
@@ -91,7 +91,7 @@ impl MPCController {
         robots: &[RobotState],
         world: &TeamData,
         controllable_mask: Option<&[bool]>,
-        avoid_goal_area: bool,
+        avoid_goal_area_flags: &[bool],
     ) -> HashMap<PlayerId, Vector2> {
         if robots.is_empty() {
             return HashMap::new();
@@ -127,7 +127,7 @@ impl MPCController {
                 last_control_sequences: self.last_control_sequences.clone(),
                 last_trajectories: self.last_trajectories.clone(),
                 last_solve_time_ms: self.last_solve_time_ms,
-                avoid_goal_area: avoid_goal_area
+                avoid_goal_area_flags: avoid_goal_area_flags.to_vec()
             };
 
             let request = MPCRequest {
@@ -382,6 +382,13 @@ impl MPCController {
 
             // Call the JAX batch solve_mpc function with field geometry
             let solve_mpc_batch = mpc_module.getattr("solve_mpc_tbwrap")?;
+            // Convert avoid_goal_area_flags to numpy array
+            let avoid_goal_area_data: Vec<i32> = controller_state.avoid_goal_area_flags
+                .iter()
+                .map(|&b| if b { 1 } else { 0 })
+                .collect();
+            let avoid_goal_area_array = np.call_method1("array", (avoid_goal_area_data,))?;
+
             let result = solve_mpc_batch.call1((
                 initial_pos_array,
                 initial_vel_array,
@@ -394,7 +401,7 @@ impl MPCController {
                 dt_value,
                 field_geometry,
                 controllable_mask_array,
-                controller_state.avoid_goal_area
+                avoid_goal_area_array
             ))?;
 
             // Extract the result - it's a tuple of (controls, trajectories)

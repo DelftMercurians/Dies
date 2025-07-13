@@ -173,6 +173,7 @@ impl TwoStepMTP {
                 target,
                 world_data,
                 current_player,
+                avoid_goal_area
             );
 
             if cost < best_cost {
@@ -245,7 +246,7 @@ impl TwoStepMTP {
                 mid,
                 field,
                 avoid_goal_area
-            ) + self.calculate_field_intersection_cost(mid, end, field, self.avoid_goal_area) * 0.1;
+            ) + self.calculate_field_intersection_cost(mid, end, field, avoid_goal_area) * 0.1;
             if intersection_length > 0.0 {
                 total_cost += 500.0
             }

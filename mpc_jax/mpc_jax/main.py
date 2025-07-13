@@ -391,6 +391,7 @@ def solve_mpc(
     dt: np.ndarray | None = np.array(0.04),
     field_geometry: np.ndarray | None = None,
     controllable_mask: np.ndarray | None = None,
+    avoid_goal_area_flags: np.ndarray | None = None,
 ) -> Result:
     n_robots = len(initial_pos)
     ctrl_shape = (len(initial_pos), CONTROL_HORIZON, 2)
@@ -400,6 +401,12 @@ def solve_mpc(
         controllable_mask = np.ones(n_robots, dtype=bool)
     else:
         controllable_mask = controllable_mask.astype(bool)
+
+    # Handle avoid_goal_area_flags
+    if avoid_goal_area_flags is None:
+        avoid_goal_area_flags = np.ones(n_robots, dtype=bool)
+    else:
+        avoid_goal_area_flags = avoid_goal_area_flags.astype(bool)
 
     # Pad inputs to fixed size (6 robots) in numpy
     padded_max_speeds = np.full(6, 1e6)
@@ -426,6 +433,9 @@ def solve_mpc(
         penalty_area_depth=float(field_geometry[2]),
         penalty_area_width=float(field_geometry[3]),
     )
+
+    # Use a single boolean - true if any robot should avoid goal area
+    avoid_goal_area = bool(np.any(avoid_goal_area_flags[:n_robots]))
 
     r = _jitted(
         w=World(
