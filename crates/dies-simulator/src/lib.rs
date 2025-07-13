@@ -124,7 +124,7 @@ impl Default for SimulationConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub enum SimulationGameState {
     #[default]
     StartGame,
@@ -242,7 +242,7 @@ impl fmt::Display for SimulationGameState {
             SimulationGameState::StartGame => write!(f, "Start game"),
             SimulationGameState::Stop => write!(f, "Stop"),
             SimulationGameState::Halt => write!(f, "Halt"),
-            SimulationGameState::StopAndKickOff { .. } => write!(f, "Stop"),
+            SimulationGameState::StopAndKickOff { .. } => write!(f, "Stop and kick off"),
             SimulationGameState::StopAndForceStart { .. } => write!(f, "Stop and force start"),
             SimulationGameState::PrepareKickOff { .. } => write!(f, "Prepare kick off"),
             SimulationGameState::Run { .. } => write!(f, "Run"),
@@ -311,7 +311,7 @@ pub struct SimulationPlayerState {
     yaw: Angle,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Timer {
     counter: f64,
     duration: f64, // in seconds
@@ -330,7 +330,7 @@ impl Timer {
     }
 
     pub fn tick(&mut self, dt: f64) -> bool {
-        self.counter += dt;
+        self.counter = self.counter + dt;
         if self.counter >= self.duration {
             self.reset();
             return true;
@@ -760,21 +760,20 @@ impl Simulation {
     pub fn update_game_state(&mut self) {
         dies_core::debug_string("Auto Game State", self.game_state.to_string());
 
-        match self.game_state {
+        let mut game_state = std::mem::take(&mut self.game_state);
+        self.game_state = match game_state {
             SimulationGameState::StartGame => {
                 self.update_referee_command(referee::Command::STOP);
-                self.game_state = SimulationGameState::stop_and_kickoff(TeamColor::Blue);
+                SimulationGameState::stop_and_kickoff(TeamColor::Blue)
             }
-            SimulationGameState::Stop => {}
-            SimulationGameState::Halt => {}
+            SimulationGameState::Stop => game_state,
+            SimulationGameState::Halt => game_state,
             SimulationGameState::StopAndKickOff {
                 team_color,
-                mut stop_timer,
+                ref mut stop_timer,
             } => {
                 // Wait for 1s before starting the game
                 if stop_timer.tick(self.integration_parameters.dt) {
-                    // Reset the timer
-                    stop_timer.reset();
                     match team_color {
                         TeamColor::Blue => {
                             self.update_referee_command(referee::Command::PREPARE_KICKOFF_BLUE);
@@ -783,16 +782,18 @@ impl Simulation {
                             self.update_referee_command(referee::Command::PREPARE_KICKOFF_YELLOW);
                         }
                     }
-                    self.game_state = SimulationGameState::prepare_kickoff(team_color);
+                    SimulationGameState::prepare_kickoff(team_color)
+                } else {
+                    game_state
                 }
             }
-            SimulationGameState::StopAndForceStart { mut stop_timer } => {
+            SimulationGameState::StopAndForceStart { ref mut stop_timer } => {
                 // Wait for 1s before starting the game
                 if stop_timer.tick(self.integration_parameters.dt) {
-                    // Reset the timer
-                    stop_timer.reset();
                     self.update_referee_command(referee::Command::FORCE_START);
-                    self.game_state = SimulationGameState::run();
+                    SimulationGameState::run()
+                } else {
+                    game_state
                 }
             }
             SimulationGameState::PrepareKickOff { team_color } => {
@@ -809,11 +810,13 @@ impl Simulation {
                     self.kick_in_progress = true;
                     self.last_kicker_info = None; // Will be set when robot touches ball
                     self.update_referee_command(referee::Command::NORMAL_START);
-                    self.game_state = SimulationGameState::run();
+                    SimulationGameState::run()
+                } else {
+                    game_state
                 }
             }
             SimulationGameState::Run {
-                mut no_progress_timer,
+                ref mut no_progress_timer,
                 last_ball_position,
                 ..
             } => {
@@ -848,10 +851,10 @@ impl Simulation {
 
                     if ball_pos.x > 0.0 && self.side_assignment == SideAssignment::BlueOnPositive {
                         self.update_referee_command(referee::Command::PREPARE_KICKOFF_BLUE);
-                        self.game_state = SimulationGameState::prepare_kickoff(TeamColor::Blue);
+                        SimulationGameState::prepare_kickoff(TeamColor::Blue)
                     } else {
                         self.update_referee_command(referee::Command::PREPARE_KICKOFF_YELLOW);
-                        self.game_state = SimulationGameState::prepare_kickoff(TeamColor::Yellow);
+                        SimulationGameState::prepare_kickoff(TeamColor::Yellow)
                     }
                 } else if self.ball_out() {
                     // Clear kick tracking
@@ -862,14 +865,13 @@ impl Simulation {
                     if let Some((_kicker_id, kicker_color)) = self.last_touch_info {
                         if kicker_color == TeamColor::Blue {
                             self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
-                            self.game_state = SimulationGameState::free_kick(TeamColor::Yellow);
+                            SimulationGameState::free_kick(TeamColor::Yellow)
                         } else {
                             self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
-                            self.game_state = SimulationGameState::free_kick(TeamColor::Blue);
+                            SimulationGameState::free_kick(TeamColor::Blue)
                         }
                     } else {
-                        // Do nothing
-                        println!("No last touch info available");
+                        game_state
                     }
                 } else {
                     // Check for no progress
@@ -882,151 +884,146 @@ impl Simulation {
                         if (ball_position_2d - last_ball_position_unwrapped).norm() < 10.0 {
                             if no_progress_timer.tick(self.integration_parameters.dt) {
                                 self.update_referee_command(referee::Command::STOP);
-                                self.game_state = SimulationGameState::stop_and_force_start();
+                                SimulationGameState::stop_and_force_start()
+                            } else {
+                                game_state
                             }
                         } else {
-                            self.game_state = SimulationGameState::run();
+                            game_state
                         }
+                    } else {
+                        game_state
                     }
                 }
             }
             SimulationGameState::FreeKick {
                 team_color,
-                mut kick_timer,
+                ref mut kick_timer,
                 ball_is_kicked,
             } => {
                 // Check if positions are valid
                 if !self.check_free_kick_positions(team_color) {
                     // Reset timer when positions are invalid
                     kick_timer.reset();
-                    // Stay in free kick state
-                    self.game_state = SimulationGameState::FreeKick {
-                        team_color,
-                        kick_timer,
-                        ball_is_kicked,
-                    };
-                    return;
-                }
-
-                // Initialize kick tracking if not already done
-                if !self.kick_in_progress {
-                    self.kick_start_time = self.current_time;
-                    if let Some(ball_handle) =
-                        self.ball.as_ref().map(|ball| ball._rigid_body_handle)
-                    {
-                        let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
-                        self.kick_ball_position =
-                            Some(ball_body.position().translation.vector.xy());
-                    }
-                    self.kick_in_progress = true;
-                    self.last_kicker_info = None;
-                }
-
-                // Check if ball is in play
-                let ball_in_play = self.check_ball_in_play();
-
-                // Check time limit (5s for Div A, 10s for Div B - using 5s for now)
-                let time_limit = 5.0; // TODO: Make this configurable based on division
-                let time_exceeded = (self.current_time - self.kick_start_time) > time_limit;
-
-                let is_free_kick_time_exceeded = kick_timer.tick(self.integration_parameters.dt);
-
-                if ball_in_play || time_exceeded {
-                    // Ball is in play or time exceeded - transition to run
-                    self.kick_in_progress = false;
-                    self.game_state = SimulationGameState::run();
-                } else if is_free_kick_time_exceeded {
-                    // Original timer logic - keep for compatibility
-                    dies_core::debug_string(
-                        "RefereeMessage",
-                        RefereeMessage::FreekickTimeExceeded.to_string(),
-                    );
-                    self.kick_in_progress = false;
-                    self.game_state = SimulationGameState::run();
+                    game_state
                 } else {
-                    // Stay in free kick state
-                    self.game_state = SimulationGameState::FreeKick {
-                        team_color,
-                        kick_timer,
-                        ball_is_kicked,
-                    };
+                    // Initialize kick tracking if not already done
+                    if !self.kick_in_progress {
+                        self.kick_start_time = self.current_time;
+                        if let Some(ball_handle) =
+                            self.ball.as_ref().map(|ball| ball._rigid_body_handle)
+                        {
+                            let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
+                            self.kick_ball_position =
+                                Some(ball_body.position().translation.vector.xy());
+                        }
+                        self.kick_in_progress = true;
+                        self.last_kicker_info = None;
+                    }
+
+                    // Check if ball is in play
+                    let ball_in_play = self.check_ball_in_play();
+
+                    let time_limit = 10.0;
+                    let time_exceeded = (self.current_time - self.kick_start_time) > time_limit;
+
+                    let is_free_kick_time_exceeded =
+                        kick_timer.tick(self.integration_parameters.dt);
+
+                    if ball_in_play || time_exceeded {
+                        // Ball is in play or time exceeded - transition to run
+                        self.kick_in_progress = false;
+                        SimulationGameState::run()
+                    } else if is_free_kick_time_exceeded {
+                        // Original timer logic - keep for compatibility
+                        dies_core::debug_string(
+                            "RefereeMessage",
+                            RefereeMessage::FreekickTimeExceeded.to_string(),
+                        );
+                        self.kick_in_progress = false;
+                        SimulationGameState::run()
+                    } else {
+                        game_state
+                    }
                 }
             }
             SimulationGameState::Penalty { team_color } => {
                 // Check if positions are valid
                 if !self.check_penalty_positions(team_color) {
                     // Stay in penalty state until positions are correct
-                    return;
-                }
+                    game_state
+                } else {
+                    // Initialize kick tracking if not already done
+                    if !self.kick_in_progress {
+                        self.kick_start_time = self.current_time;
+                        if let Some(ball_handle) =
+                            self.ball.as_ref().map(|ball| ball._rigid_body_handle)
+                        {
+                            let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
+                            self.kick_ball_position =
+                                Some(ball_body.position().translation.vector.xy());
+                        }
+                        self.kick_in_progress = true;
+                        self.last_kicker_info = None;
 
-                // Initialize kick tracking if not already done
-                if !self.kick_in_progress {
-                    self.kick_start_time = self.current_time;
-                    if let Some(ball_handle) =
-                        self.ball.as_ref().map(|ball| ball._rigid_body_handle)
-                    {
-                        let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
-                        self.kick_ball_position =
-                            Some(ball_body.position().translation.vector.xy());
+                        // Issue normal start command
+                        self.update_referee_command(referee::Command::NORMAL_START);
                     }
-                    self.kick_in_progress = true;
-                    self.last_kicker_info = None;
 
-                    // Issue normal start command
-                    self.update_referee_command(referee::Command::NORMAL_START);
-                }
+                    // Check if ball is in play
+                    let ball_in_play = self.check_ball_in_play();
 
-                // Check if ball is in play
-                let ball_in_play = self.check_ball_in_play();
+                    // Check 10 second time limit
+                    let time_exceeded = (self.current_time - self.kick_start_time) > 10.0;
 
-                // Check 10 second time limit
-                let time_exceeded = (self.current_time - self.kick_start_time) > 10.0;
+                    // Check if ball direction is valid (toward goal)
+                    let direction_valid = self.check_penalty_ball_direction(team_color);
 
-                // Check if ball direction is valid (toward goal)
-                let direction_valid = self.check_penalty_ball_direction(team_color);
-
-                if time_exceeded {
-                    dies_core::debug_string(
-                        "RefereeMessage",
-                        RefereeMessage::PenaltyTimeExceeded.to_string(),
-                    );
-                    self.kick_in_progress = false;
-                    // Award goal kick to defending team
-                    let defending_team = if team_color == TeamColor::Blue {
-                        TeamColor::Yellow
+                    if time_exceeded {
+                        dies_core::debug_string(
+                            "RefereeMessage",
+                            RefereeMessage::PenaltyTimeExceeded.to_string(),
+                        );
+                        self.kick_in_progress = false;
+                        // Award goal kick to defending team
+                        let defending_team = if team_color == TeamColor::Blue {
+                            TeamColor::Yellow
+                        } else {
+                            TeamColor::Blue
+                        };
+                        match team_color {
+                            TeamColor::Blue => {
+                                self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
+                            }
+                            TeamColor::Yellow => {
+                                self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
+                            }
+                        }
+                        SimulationGameState::free_kick(defending_team)
+                    } else if ball_in_play && !direction_valid {
+                        // Ball moved but in wrong direction - award goal kick to defending team
+                        self.kick_in_progress = false;
+                        let defending_team = if team_color == TeamColor::Blue {
+                            TeamColor::Yellow
+                        } else {
+                            TeamColor::Blue
+                        };
+                        match team_color {
+                            TeamColor::Blue => {
+                                self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
+                            }
+                            TeamColor::Yellow => {
+                                self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
+                            }
+                        }
+                        SimulationGameState::free_kick(defending_team)
+                    } else if ball_in_play {
+                        // Ball in play and direction is valid - continue with run state
+                        self.kick_in_progress = false;
+                        SimulationGameState::run()
                     } else {
-                        TeamColor::Blue
-                    };
-                    match team_color {
-                        TeamColor::Blue => {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
-                        }
-                        TeamColor::Yellow => {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
-                        }
+                        game_state
                     }
-                    self.game_state = SimulationGameState::free_kick(defending_team);
-                } else if ball_in_play && !direction_valid {
-                    // Ball moved but in wrong direction - award goal kick to defending team
-                    self.kick_in_progress = false;
-                    let defending_team = if team_color == TeamColor::Blue {
-                        TeamColor::Yellow
-                    } else {
-                        TeamColor::Blue
-                    };
-                    match team_color {
-                        TeamColor::Blue => {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
-                        }
-                        TeamColor::Yellow => {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
-                        }
-                    }
-                    self.game_state = SimulationGameState::free_kick(defending_team);
-                } else if ball_in_play {
-                    // Ball in play and direction is valid - continue with run state
-                    self.kick_in_progress = false;
-                    self.game_state = SimulationGameState::run();
                 }
             }
             SimulationGameState::BallPlacement {
@@ -1060,11 +1057,14 @@ impl Simulation {
                             self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
                         }
                     }
-                    self.game_state = SimulationGameState::free_kick(opposite_team);
+                    SimulationGameState::free_kick(opposite_team)
+                } else {
+                    game_state
                 }
             }
             SimulationGameState::Null => {
                 // Do nothing, this is a placeholder state
+                game_state
             }
         }
     }
