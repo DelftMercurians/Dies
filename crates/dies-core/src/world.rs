@@ -9,7 +9,7 @@ use crate::{
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
-const PLAYER_RADIUS: f64 = 90.0;
+pub const PLAYER_RADIUS: f64 = 90.0;
 const MAX_SPEED: f64 = 10000.0;
 const MAX_ACCELERATION: f64 = 125000.0;
 

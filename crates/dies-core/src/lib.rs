@@ -10,12 +10,12 @@ mod world;
 
 pub mod workspace_utils;
 
+pub use math::*;
 pub use angle::*;
 pub use debug_info::*;
 pub use executor_info::*;
 pub use executor_settings::*;
 pub use geom::*;
-pub use math::*;
 pub use player::*;
 use serde::{Deserialize, Serialize};
 pub use sides::*;
@@ -91,7 +91,7 @@ pub enum ScriptError {
         message: String,
         /// Line number if available
         line: Option<u32>,
-        /// Column number if available  
+        /// Column number if available
         column: Option<u32>,
     },
     /// Runtime error that occurs during script execution

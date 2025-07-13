@@ -1,4 +1,5 @@
 use dies_core::Vector2;
+use dies_core::{get_tangent_line_direction, find_intersection};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::{evaluate_ball_threat, get_defender_heading};
@@ -407,8 +408,43 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
     position_tuples
 }
 
-pub fn compute_coverage_score(ball: Vector2, our_pos: Vector2, backline: (Vector2, Vector2)) {
+pub fn compute_coverage_score(ball: Vector2, our_pos: Vector2, backline: (Vector2, Vector2)) -> f64 {
+    // Calculate the two tangent line directions from ball to robot circle
+    let (angle1, angle2) = get_tangent_line_direction(our_pos, dies_core::PLAYER_RADIUS, ball);
 
+    // Convert angles to direction vectors
+    let dir1 = Vector2::new(angle1.radians().cos(), angle1.radians().sin());
+    let dir2 = Vector2::new(angle2.radians().cos(), angle2.radians().sin());
+
+    // Create far points for the shadow rays (extending the tangent lines)
+    let far_point1 = ball + dir1 * 10000.0;
+    let far_point2 = ball + dir2 * 10000.0;
+
+    // Find intersections with the goal line (backline)
+    let intersection1 = line_intersection(ball, far_point1, backline.0, backline.1);
+    let intersection2 = line_intersection(ball, far_point2, backline.0, backline.1);
+
+    // Check if both intersections exist and are on the goal line segment
+    if let (Some(p1), Some(p2)) = (intersection1, intersection2) {
+        let total_length = (backline.1 - backline.0).norm();
+        let mut coverage_length = 0.0;
+
+        if is_point_on_segment(p1, backline.0, backline.1) &&
+           is_point_on_segment(p2, backline.0, backline.1) {
+            coverage_length = (p2 - p1).norm();
+        }
+        else if is_point_on_segment(p1, backline.0, backline.1) {
+            coverage_length = (p1 - backline.0).norm().min((p1 - backline.1).norm());
+        }
+        else if is_point_on_segment(p2, backline.0, backline.1) {
+            coverage_length = (p2 - backline.0).norm().min((p2 - backline.1).norm());
+        }
+
+        return coverage_length / total_length;
+    }
+
+    // If no valid coverage found, return 0
+    0.0
 }
 
 /// Score a position tuple for all wallers
@@ -420,7 +456,7 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
 
     let ball_pos = ball.position.xy();
     let goal_pos = s.get_own_goal_position();
-    let mut score = 0.0;
+    let mut total_score = 0.0;
 
     let Some(boundary) = get_defense_area_boundary(s) else {
         return 0.0;
@@ -431,13 +467,13 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
     for &pos in position_tuple {
         // the closer to ball - the better
         let ball_score = -(ball_pos - pos).norm() / 5_000.0;
+        total_score += ball_score;
 
-        // how much of the backline is covered by the
+        // how much of the backline is covered by the robot at this position
         let coverage_score = compute_coverage_score(ball_pos, pos, backline);
-    }
+        total_score += coverage_score * 100.0; // Weight coverage highly
 
-    // Base scoring using existing evaluation
-    for &pos in position_tuple {
+        // Base scoring using existing evaluation
         let pos_score = evaluate_boundary_position(s, pos, ball_pos, goal_pos);
         total_score += pos_score;
     }
