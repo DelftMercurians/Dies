@@ -166,6 +166,7 @@ impl TeamController {
                                 world_data.clone(),
                                 self.bt_context.clone(),
                                 player_context.key("bt"),
+                                self.role_assignments.clone(),
                             );
 
                             self.player_behavior_trees.insert(
@@ -195,6 +196,7 @@ impl TeamController {
                 world_data.clone(),
                 self.bt_context.clone(),
                 viz_path_prefix,
+                self.role_assignments.clone(),
             );
 
             let (_status, player_input_opt) = player_bt.tick(&mut robot_situation);

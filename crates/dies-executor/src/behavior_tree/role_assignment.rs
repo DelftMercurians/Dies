@@ -176,6 +176,7 @@ impl RoleAssignmentSolver {
             active_robots,
             team_context.clone(),
             team_data.clone(),
+            previous_assignments,
         )?;
 
         // Sort roles by priority (critical roles first)
@@ -294,6 +295,7 @@ impl RoleAssignmentSolver {
         robots: &[PlayerId],
         team_context: TeamContext,
         team_data: Arc<TeamData>,
+        previous_assignments: Option<&HashMap<PlayerId, String>>,
     ) -> Result<HashMap<String, Vec<PlayerId>>> {
         let mut eligible_robots = HashMap::new();
 
@@ -306,6 +308,7 @@ impl RoleAssignmentSolver {
                     team_data.clone(),
                     Default::default(),
                     team_context.player_context(robot_id).key("bt"),
+                    previous_assignments.cloned().unwrap_or_default(),
                 );
 
                 if !self.violates_filters(&role, &situation) {
@@ -340,6 +343,7 @@ impl RoleAssignmentSolver {
             team_data.clone(),
             Default::default(),
             team_context.player_context(robot_id).key("bt"),
+            previous_assignments.cloned().unwrap_or_default(),
         );
         let mut score = (role.scorer)(&situation);
 
