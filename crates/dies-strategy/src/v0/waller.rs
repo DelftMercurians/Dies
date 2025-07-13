@@ -67,9 +67,40 @@ fn is_ball_threatening(s: &RobotSituation) -> bool {
 }
 
 fn calculate_wall_position(s: &RobotSituation) -> Vector2 {
-    if let Some(ball) = &s.world.ball {
-        let ball_pos = ball.position.xy();
-        find_best_boundary_position(s, ball_pos)
+    // Generate all position tuples
+    let position_tuples = generate_boundary_position_tuples(s);
+
+    if position_tuples.is_empty() {
+        return s.player_data().position;
+    }
+
+    // Find the best tuple
+    let mut best_tuple = &position_tuples[0];
+    let mut best_score = score_position_tuple(s, best_tuple);
+
+    for tuple in &position_tuples[1..] {
+        let score = score_position_tuple(s, tuple);
+        if score > best_score {
+            best_score = score;
+            best_tuple = tuple;
+        }
+    }
+
+    // Find this waller's index and return corresponding position
+    let mut wallers = s
+        .role_assignments
+        .iter()
+        .filter(|(_, v)| *v == "waller")
+        .collect::<Vec<_>>();
+    wallers.sort_by_key(|(k, _)| *k);
+
+    let waller_index = wallers
+        .iter()
+        .position(|(k, _)| **k == s.player_id)
+        .unwrap_or(0);
+
+    if waller_index < best_tuple.len() {
+        best_tuple[waller_index]
     } else {
         s.player_data().position
     }
@@ -284,4 +315,168 @@ fn evaluate_waller_positioning(s: &RobotSituation, ball_pos: Vector2, goal_pos: 
     } else {
         0.0
     }
+}
+
+pub fn dir(a: &Vector2, b: &Vector2) -> f64 {
+    (a - b).y.atan2((a - b).x)
+}
+
+
+/// Generate candidate position tuples for all wallers
+/// Returns array of position tuples, each containing (x,y) coordinates for each waller
+pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>> {
+    let mut wallers = s
+        .role_assignments
+        .iter()
+        .filter(|(_, v)| *v == "waller")
+        .collect::<Vec<_>>();
+    wallers.sort_by_key(|(k, _)| *k);
+
+    let waller_count = wallers.len();
+    if waller_count == 0 {
+        return vec![];
+    }
+
+    let Some(boundary) = get_defense_area_boundary(s) else {
+        return vec![];
+    };
+
+    let Some(ball) = &s.world.ball else {
+        return vec![];
+    };
+
+    let segments = boundary.get_boundary_segments();
+
+    // Generate positions along boundary segments with 200mm spacing
+    let mut boundary_positions = Vec::new();
+
+    for (start, end) in segments {
+        let segment_length = (end - start).norm();
+        let num_positions = (segment_length / 200.0).ceil() as usize + 1;
+
+        for i in 0..num_positions {
+            let t = i as f64 / (num_positions - 1) as f64;
+            let pos = start + (end - start) * t;
+            boundary_positions.push(pos);
+        }
+    }
+
+    // Sort positions by y-coordinate (left to right across the defense area)
+    let goal_midpoint = Vector2::new(-s.world.field_geom.as_ref().unwrap().field_length / 2.0, 0.0);
+    boundary_positions.sort_by(|a, b| dir(&goal_midpoint, a).partial_cmp(&dir(&goal_midpoint, b)).unwrap());
+
+    let mut position_tuples = Vec::new();
+    let max_tuples = 50;
+
+    // Generate 50 tuples by sampling leftmost waller positions
+    let step = (boundary_positions.len() / max_tuples).max(1);
+
+    for i in (0..boundary_positions.len()).step_by(step) {
+        if position_tuples.len() >= max_tuples {
+            break;
+        }
+
+        let mut tuple = Vec::new();
+        let mut current_idx = i;
+
+        // Place first waller at the sampled position
+        tuple.push(boundary_positions[current_idx]);
+
+        // Place subsequent wallers 200mm to the right (next available position)
+        for _ in 1..waller_count {
+            // Find next position that's at least 200mm away
+            let current_pos = boundary_positions[current_idx];
+            let mut next_idx = current_idx + 1;
+
+            while next_idx < boundary_positions.len() {
+                let next_pos = boundary_positions[next_idx];
+                let distance = (next_pos - current_pos).norm();
+
+                if distance >= 200.0 {
+                    tuple.push(next_pos);
+                    current_idx = next_idx;
+                    break;
+                }
+                next_idx += 1;
+            }
+
+            // If we can't find a position 200mm away, use the last available position
+            if next_idx >= boundary_positions.len() {
+                if current_idx + 1 < boundary_positions.len() {
+                    tuple.push(boundary_positions[current_idx + 1]);
+                    current_idx += 1;
+                } else {
+                    // Not enough space for all wallers, skip this tuple
+                    break;
+                }
+            }
+        }
+
+        // Only add tuple if we successfully placed all wallers
+        if tuple.len() == waller_count {
+            position_tuples.push(tuple);
+        }
+    }
+
+    position_tuples
+}
+
+/// Score a position tuple for all wallers
+/// Higher score is better
+pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f64 {
+    let Some(ball) = &s.world.ball else {
+        return 0.0;
+    };
+
+    let ball_pos = ball.position.xy();
+    let goal_pos = s.get_own_goal_position();
+    let mut total_score = 0.0;
+
+    // Base scoring using existing evaluation
+    for &pos in position_tuple {
+        let pos_score = evaluate_boundary_position(s, pos, ball_pos, goal_pos);
+        total_score += pos_score;
+    }
+
+    // Penalize overlapping positions
+    for i in 0..position_tuple.len() {
+        for j in (i + 1)..position_tuple.len() {
+            let distance = (position_tuple[i] - position_tuple[j]).norm();
+            if distance < 500.0 { // Too close - 500mm minimum separation
+                total_score -= 1000.0 * (500.0 - distance) / 500.0;
+            }
+        }
+    }
+
+    // Bonus for good coverage spread
+    if position_tuple.len() > 1 {
+        let mut y_positions: Vec<f64> = position_tuple.iter().map(|p| p.y).collect();
+        y_positions.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let total_spread = y_positions.last().unwrap() - y_positions.first().unwrap();
+        let coverage_bonus = (total_spread / 1000.0).min(2.0) * 200.0; // Reward up to 2m spread
+        total_score += coverage_bonus;
+    }
+
+    // Penalize positions too far from current robot positions
+    let mut wallers = s
+        .role_assignments
+        .iter()
+        .filter(|(_, v)| *v == "waller")
+        .collect::<Vec<_>>();
+    wallers.sort_by_key(|(k, _)| *k);
+
+    for (i, (player_id, _)) in wallers.iter().enumerate() {
+        if i < position_tuple.len() {
+            let player = s.world.get_player(**player_id);
+            let current_pos = player.position;
+            let target_pos = position_tuple[i];
+            let distance = (current_pos - target_pos).norm();
+
+            // Slight penalty for distance to encourage stability
+            total_score -= distance * 0.1;
+        }
+    }
+
+    total_score
 }
