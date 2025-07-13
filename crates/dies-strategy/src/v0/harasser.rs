@@ -1,11 +1,32 @@
 use dies_core::{PlayerId, Vector2};
 use dies_executor::behavior_tree_api::*;
 
-use crate::v0::utils::get_defender_heading;
+use crate::v0::utils::{find_best_pass_target, get_defender_heading};
 
 pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
-        .dynamic(|s| {
+        .add(
+            guard_node()
+                .condition(|s| should_pickup_ball(s))
+                .then(
+                    semaphore_node()
+                        .do_then(
+                            select_node()
+                                .add(
+                                    fetch_ball()
+                                        .description("Pickup free ball".to_string())
+                                        .build(),
+                                )
+                                .add(face_position(find_best_pass_target).build())
+                                .build(),
+                        )
+                        .semaphore_id("harasser_ball_pickup".to_string())
+                        .max_entry(1)
+                        .build(),
+                )
+                .build(),
+        )
+        .add(select_node().dynamic(|s| {
             // Find all threatening opponents in our half
             let threats: Vec<_> = s
                 .world
@@ -39,20 +60,233 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
                 );
             }
 
-            // Add fallback behavior if no threats to mark
-            if options.is_empty() {
-                options.push(
-                    go_to_position(Argument::callback(fallback_defender_position))
-                        .with_heading(Argument::callback(get_defender_heading))
-                        .description("Defend position".to_string())
-                        .build()
-                        .into(),
-                );
-            }
+            // Generate fallback behaviors for multiple harassers
+            let fallback_options = generate_fallback_behaviors(s);
+            options.extend(fallback_options);
 
             options
-        })
+        }))
+        .build()
         .into()
+}
+
+/// Generate multiple fallback behaviors for free harassers
+fn generate_fallback_behaviors(s: &RobotSituation) -> Vec<BehaviorNode> {
+    let mut behaviors = Vec::new();
+
+    // Generate defensive positions for multiple harassers
+    let defensive_positions = generate_defensive_positions(s);
+    for (i, position) in defensive_positions.iter().enumerate() {
+        let position_copy = *position;
+        behaviors.push(
+            semaphore_node()
+                .do_then(
+                    go_to_position(Argument::callback(move |_s| position_copy))
+                        .with_heading(Argument::callback(get_defender_heading))
+                        .description(format!("Defend position {}", i + 1))
+                        .build(),
+                )
+                .semaphore_id(format!("harasser_defensive_pos_{}", i))
+                .max_entry(1)
+                .build()
+                .into(),
+        );
+    }
+
+    behaviors
+}
+
+/// Check if a harasser should go pickup the ball
+fn should_pickup_ball(s: &RobotSituation) -> bool {
+    if let Some(ball) = &s.world.ball {
+        let ball_pos = ball.position.xy();
+
+        // Only consider if ball is on our half
+        if ball_pos.x >= 0.0 {
+            return false;
+        }
+
+        // Check if ball is close to any opponent (within 1000mm)
+        let ball_threatened = s
+            .world
+            .opp_players
+            .iter()
+            .any(|opp| (opp.position - ball_pos).norm() < 1000.0);
+
+        if ball_threatened {
+            return false;
+        }
+
+        // Check if any teammate is already close to the ball
+        let teammate_nearby = s.world.own_players.iter().any(|teammate| {
+            teammate.id != s.player_id && (teammate.position - ball_pos).norm() < 800.0
+        });
+
+        if teammate_nearby {
+            return false;
+        }
+
+        // Check if ball is not moving fast (velocity magnitude < 500 mm/s)
+        let ball_velocity = ball.velocity.xy();
+        if ball_velocity.norm() > 500.0 {
+            return false;
+        }
+
+        // Ball is free and on our side - we should pick it up
+        true
+    } else {
+        false
+    }
+}
+
+/// Generate multiple defensive positions for harassers
+fn generate_defensive_positions(s: &RobotSituation) -> Vec<Vector2> {
+    let mut positions = Vec::new();
+    let goal_pos = s.get_own_goal_position();
+
+    if let Some(ball) = &s.world.ball {
+        let ball_pos = ball.position.xy();
+
+        // Ensure ball position is constrained to our half for defensive calculations
+        let defensive_ball_pos = Vector2::new(ball_pos.x.min(-200.0), ball_pos.y);
+
+        // Primary defensive position - between ball and goal
+        let primary_pos = calculate_primary_defensive_position(s, defensive_ball_pos, goal_pos);
+        positions.push(primary_pos);
+
+        // Secondary positions - flanking the primary position
+        let secondary_positions =
+            calculate_secondary_defensive_positions(s, defensive_ball_pos, goal_pos);
+        positions.extend(secondary_positions);
+
+        // Tertiary positions - wider defensive coverage
+        let tertiary_positions = calculate_tertiary_defensive_positions(s, goal_pos);
+        positions.extend(tertiary_positions);
+    } else {
+        // No ball - create default defensive positions
+        positions.extend(calculate_default_defensive_positions(s, goal_pos));
+    }
+
+    // Ensure all positions are on our half and within field bounds
+    positions
+        .iter()
+        .map(|&pos| constrain_to_our_half(s, pos))
+        .collect()
+}
+
+/// Calculate primary defensive position between ball and goal
+fn calculate_primary_defensive_position(
+    s: &RobotSituation,
+    ball_pos: Vector2,
+    goal_pos: Vector2,
+) -> Vector2 {
+    let ball_to_goal = goal_pos - ball_pos;
+    let defend_ratio = 0.4; // 40% of the way from ball to goal
+    ball_pos + ball_to_goal * defend_ratio
+}
+
+/// Calculate secondary defensive positions flanking the primary
+fn calculate_secondary_defensive_positions(
+    s: &RobotSituation,
+    ball_pos: Vector2,
+    goal_pos: Vector2,
+) -> Vec<Vector2> {
+    let mut positions = Vec::new();
+    let ball_to_goal = goal_pos - ball_pos;
+    let ball_to_goal_normalized = ball_to_goal.normalize();
+
+    // Create perpendicular vector for flanking
+    let perpendicular = Vector2::new(-ball_to_goal_normalized.y, ball_to_goal_normalized.x);
+
+    // Base position slightly closer to goal than primary
+    let base_pos = ball_pos + ball_to_goal * 0.3;
+
+    // Left and right flanking positions
+    let flank_distance = 1200.0; // Distance from center line
+    positions.push(base_pos + perpendicular * flank_distance);
+    positions.push(base_pos - perpendicular * flank_distance);
+
+    // Positions closer to goal for deeper coverage
+    let deeper_pos = ball_pos + ball_to_goal * 0.6;
+    positions.push(deeper_pos + perpendicular * 800.0);
+    positions.push(deeper_pos - perpendicular * 800.0);
+
+    positions
+}
+
+/// Calculate tertiary defensive positions for wider coverage
+fn calculate_tertiary_defensive_positions(s: &RobotSituation, goal_pos: Vector2) -> Vec<Vector2> {
+    let mut positions = Vec::new();
+
+    // Wide defensive positions
+    let wide_x = goal_pos.x + 2000.0; // 2m in front of goal
+    let field_width = s
+        .world
+        .field_geom
+        .as_ref()
+        .map(|f| f.field_width)
+        .unwrap_or(6000.0);
+    let max_y = (field_width / 2.0 - 500.0).min(2000.0); // Stay within bounds
+
+    positions.push(Vector2::new(wide_x, max_y)); // Top wide position
+    positions.push(Vector2::new(wide_x, -max_y)); // Bottom wide position
+    positions.push(Vector2::new(wide_x, 0.0)); // Center wide position
+
+    // Mid-field defensive positions
+    let mid_x = -1000.0; // 1m on our side
+    positions.push(Vector2::new(mid_x, max_y / 2.0));
+    positions.push(Vector2::new(mid_x, -max_y / 2.0));
+
+    positions
+}
+
+/// Calculate default defensive positions when no ball is present
+fn calculate_default_defensive_positions(s: &RobotSituation, goal_pos: Vector2) -> Vec<Vector2> {
+    let mut positions = Vec::new();
+
+    // Default formation spread in front of goal
+    let base_x = goal_pos.x + 1500.0;
+    let field_width = s
+        .world
+        .field_geom
+        .as_ref()
+        .map(|f| f.field_width)
+        .unwrap_or(6000.0);
+    let max_y = (field_width / 2.0 - 500.0).min(2000.0);
+
+    positions.push(Vector2::new(base_x, 0.0)); // Center
+    positions.push(Vector2::new(base_x, max_y)); // Top
+    positions.push(Vector2::new(base_x, -max_y)); // Bottom
+    positions.push(Vector2::new(base_x, max_y / 2.0)); // Mid-top
+    positions.push(Vector2::new(base_x, -max_y / 2.0)); // Mid-bottom
+
+    positions
+}
+
+/// Constrain position to our half of the field
+fn constrain_to_our_half(s: &RobotSituation, pos: Vector2) -> Vector2 {
+    let mut constrained_pos = pos;
+
+    // Ensure we stay on our half (x < 0, but leave some margin)
+    constrained_pos.x = constrained_pos.x.min(-200.0);
+
+    // Constrain to field bounds
+    if let Some(field) = &s.world.field_geom {
+        let half_width = field.field_width / 2.0;
+        let half_length = field.field_length / 2.0;
+
+        constrained_pos.x = constrained_pos.x.max(-half_length + 100.0).min(-200.0);
+        constrained_pos.y = constrained_pos
+            .y
+            .max(-half_width + 100.0)
+            .min(half_width - 100.0);
+    } else {
+        // Default field bounds
+        constrained_pos.x = constrained_pos.x.max(-4400.0).min(-200.0);
+        constrained_pos.y = constrained_pos.y.max(-2900.0).min(2900.0);
+    }
+
+    constrained_pos
 }
 
 pub fn score_as_harasser(s: &RobotSituation) -> f64 {
@@ -61,7 +295,30 @@ pub fn score_as_harasser(s: &RobotSituation) -> f64 {
     // Find unmarked opponents in our half
     let unmarked_threats = find_unmarked_threats(s);
     if unmarked_threats.is_empty() {
-        return 0.0; // No need for harasser
+        // No threats to mark, but we can still be useful for fallback duties
+        score = 20.0;
+
+        // Bonus for being close to a good defensive position
+        let defensive_positions = generate_defensive_positions(s);
+        if let Some(closest_pos) = defensive_positions.first() {
+            let dist_to_position = s.distance_to_position(*closest_pos);
+            score += (1000.0 - dist_to_position.min(1000.0)) / 50.0;
+        }
+
+        // Bonus if we should pickup the ball
+        if should_pickup_ball(s) {
+            score += 15.0;
+            let ball_pos = s
+                .world
+                .ball
+                .as_ref()
+                .map(|b| b.position.xy())
+                .unwrap_or_default();
+            let dist_to_ball = s.distance_to_position(ball_pos);
+            score += (1500.0 - dist_to_ball.min(1500.0)) / 50.0;
+        }
+
+        return score;
     }
 
     // Score based on proximity to highest threat opponent
@@ -167,20 +424,5 @@ fn calculate_harasser_position_for_pos(s: &RobotSituation, target_pos: Vector2) 
         left_pos
     } else {
         right_pos
-    }
-}
-
-fn fallback_defender_position(s: &RobotSituation) -> Vector2 {
-    let goal_pos = s.get_own_goal_position();
-
-    if let Some(ball) = &s.world.ball {
-        let ball_pos = ball.position.xy();
-        let ball_to_goal = goal_pos - ball_pos;
-
-        // Position between ball and goal
-        let defend_ratio = 0.4; // 40% of the way from ball to goal
-        ball_pos + ball_to_goal * defend_ratio
-    } else {
-        goal_pos + Vector2::new(1500.0, 0.0)
     }
 }
