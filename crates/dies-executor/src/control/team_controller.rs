@@ -13,7 +13,9 @@ use super::{
     MPCController, RobotState,
 };
 use crate::{
-    behavior_tree::{BehaviorTree, BtContext, RhaiHost, RobotSituation, RoleAssignmentSolver},
+    behavior_tree::{
+        BehaviorTree, BtContext, GameContext, RobotSituation, RoleAssignmentSolver, Strategy,
+    },
     PlayerControlInput, ScriptError,
 };
 
@@ -28,17 +30,15 @@ pub struct TeamController {
     mpc_controller: MPCController,
 
     // bht stuff
+    strategy: Strategy,
     player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
     bt_context: BtContext,
-    script_host: RhaiHost,
     team_color: TeamColor,
     latest_script_errors: Vec<ScriptError>,
 }
 
 impl TeamController {
-    pub fn new(settings: &ExecutorSettings, script_path: &str, team_color: TeamColor) -> Self {
-        let mut script_host = RhaiHost::new(script_path);
-        script_host.set_team_color(team_color);
+    pub fn new(settings: &ExecutorSettings, team_color: TeamColor, strategy: Strategy) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
@@ -48,9 +48,9 @@ impl TeamController {
             mpc_controller: MPCController::new(),
 
             // bht stuff
+            strategy,
             player_behavior_trees: HashMap::new(),
             bt_context: BtContext::new(),
-            script_host,
             team_color,
             latest_script_errors: Vec::new(),
         };
@@ -99,6 +99,7 @@ impl TeamController {
                     .insert(*id, PlayerController::new(*id, &self.settings));
             }
         }
+        let team_context = TeamContext::new(team_color, side_assignment);
 
         let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
 
@@ -106,101 +107,66 @@ impl TeamController {
         let active_robots: Vec<PlayerId> = world_data.own_players.iter().map(|p| p.id).collect();
 
         // Get role assignment problem from script
-        match self.script_host.get_role_assignment(&world_data) {
-            Ok(assignment_problem) => {
-                // Get the engine for role assignment solving
-                let engine = self.script_host.engine();
-                let engine_guard = engine.read().unwrap();
+        let mut game_context = GameContext::new(&world_data);
+        (self.strategy)(&mut game_context);
+        let assignment_problem = game_context.into_role_assignment_problem();
 
-                // Solve role assignments
-                let start_time = std::time::Instant::now();
-                match self.role_solver.solve(
-                    &assignment_problem,
-                    &active_robots,
-                    &world_data,
-                    &engine_guard,
-                ) {
-                    Ok(assignments) => {
-                        self.role_assignments = assignments.clone();
-                        let duration = start_time.elapsed();
-                        log::info!("Role assignment took {:?}", duration);
+        // Solve role assignments
+        match self
+            .role_solver
+            .solve(&assignment_problem, &active_robots, &world_data)
+        {
+            Ok(assignments) => {
+                self.role_assignments = assignments.clone();
 
-                        // Update behavior trees based on new assignments
-                        for (player_id, role_name) in &assignments {
-                            // Only rebuild tree if role changed
-                            let needs_rebuild = self
-                                .player_behavior_trees
-                                .get(player_id)
-                                .map(|_| true) // For now, always rebuild
-                                .unwrap_or(true);
+                // Update behavior trees based on new assignments
+                for (player_id, role_name) in &assignments {
+                    let player_context = team_context.player_context(*player_id);
+                    player_context.debug_string("role", role_name);
 
-                            if needs_rebuild {
-                                // Find the role and build its tree
-                                if let Some(role) = assignment_problem
-                                    .roles
-                                    .iter()
-                                    .find(|r| &r.name == role_name)
-                                {
-                                    let situation = RobotSituation::new(
-                                        *player_id,
-                                        world_data.clone(),
-                                        self.bt_context.clone(),
-                                        String::new(),
-                                    );
+                    // Only rebuild tree if role changed
+                    let needs_rebuild = self
+                        .player_behavior_trees
+                        .get(player_id)
+                        .map(|bt| bt.name != *role_name)
+                        .unwrap_or(true);
 
-                                    match role.tree_builder.call(&situation, &engine_guard) {
-                                        Ok(node) => {
-                                            let tree = BehaviorTree::new(node.0);
-                                            self.player_behavior_trees.insert(*player_id, tree);
-                                        }
-                                        Err(e) => {
-                                            log::error!(
-                                                "Failed to build behavior tree for player {} role {}: {}",
-                                                player_id,
-                                                role_name,
-                                                e
-                                            );
-                                            self.player_behavior_trees
-                                                .insert(*player_id, BehaviorTree::default());
-                                        }
-                                    }
-                                } else {
-                                    log::error!(
-                                        "Role '{}' not found for player {}",
-                                        role_name,
-                                        player_id
-                                    );
-                                }
-                            }
+                    if needs_rebuild {
+                        // Find the role and build its tree
+                        if let Some(role) = assignment_problem
+                            .roles
+                            .iter()
+                            .find(|r| &r.name == role_name)
+                        {
+                            let situation = RobotSituation::new(
+                                *player_id,
+                                world_data.clone(),
+                                self.bt_context.clone(),
+                                player_context.key("bt"),
+                            );
+
+                            self.player_behavior_trees.insert(
+                                *player_id,
+                                BehaviorTree::new(
+                                    role_name.clone(),
+                                    (role.tree_builder)(&situation),
+                                ),
+                            );
+                        } else {
+                            log::error!("Role '{}' not found for player {}", role_name, player_id);
                         }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to solve role assignments: {}", e);
-                        self.latest_script_errors.push(ScriptError::Runtime {
-                            script_path: self.script_host.script_path.clone(),
-                            function_name: "role_assignment_solver".to_string(),
-                            message: format!("{}", e),
-                            team_color: self.team_color,
-                            player_id: None,
-                        });
                     }
                 }
             }
-            Err(e) => {
-                log::error!("Failed to get role assignment problem: {:?}", e);
-                self.latest_script_errors.push(e);
-            }
+            Err(e) => log::error!("Failed to solve role assignments: {}", e),
         }
 
         // Execute behavior trees
-        let engine = self.script_host.engine();
-        let engine_guard = engine.read().unwrap();
-
         for player_data in &world_data.own_players {
             let player_id = player_data.id;
             let player_bt = self.player_behavior_trees.entry(player_id).or_default();
 
-            let viz_path_prefix = format!("p{}", player_id);
+            let viz_path_prefix = team_context.player_context(player_id).key("bt");
             let mut robot_situation = RobotSituation::new(
                 player_id,
                 world_data.clone(),
@@ -208,13 +174,15 @@ impl TeamController {
                 viz_path_prefix,
             );
 
-            let (_status, player_input_opt) = player_bt.tick(&mut robot_situation, &engine_guard);
+            let (_status, player_input_opt) = player_bt.tick(&mut robot_situation);
             let mut player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
 
             // Set role type based on assignment
             if let Some(role_name) = self.role_assignments.get(&player_id) {
                 player_input.role_type = match role_name.as_str() {
                     "goalkeeper" => RoleType::Goalkeeper,
+                    "kickoff_kicker" => RoleType::KickoffKicker,
+                    "free_kick_kicker" => RoleType::FreeKicker,
                     _ => RoleType::Player,
                 };
             } else if player_id == PlayerId::new(0) {
@@ -231,7 +199,6 @@ impl TeamController {
             inputs_for_comply.insert(*id, input.clone());
         }
 
-        let team_context = TeamContext::new(team_color, side_assignment);
         let final_player_inputs = if matches!(
             world_data.current_game_state.game_state,
             GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
@@ -291,8 +258,11 @@ impl TeamController {
         // Compute batched MPC controls
         self.mpc_controller.set_field_bounds(&world_data);
         let mpc_controls = if !mpc_robots.is_empty() {
-            self.mpc_controller
-                .compute_batch_control(&mpc_robots, &world_data, Some(&controllable_mask))
+            self.mpc_controller.compute_batch_control(
+                &mpc_robots,
+                &world_data,
+                Some(&controllable_mask),
+            )
         } else {
             HashMap::new()
         };
@@ -330,50 +300,50 @@ impl TeamController {
                             let debug_name = format!("mpc_traj_p{}", id);
 
                             // Clear previous trajectory
-                            dies_core::debug_remove(&debug_name);
+                            // dies_core::debug_remove(&debug_name);
 
                             // Plot trajectory as connected line segments
-                            for i in 0..trajectory.len().saturating_sub(1) {
-                                if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
-                                    let start =
-                                        dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
-                                    let end = dies_core::Vector2::new(
-                                        trajectory[i + 1][1],
-                                        trajectory[i + 1][2],
-                                    );
-                                    dies_core::debug_line(
-                                        &format!("{}_seg{}", debug_name, i),
-                                        start,
-                                        end,
-                                        dies_core::DebugColor::Purple,
-                                    );
-                                }
-                            }
+                            // for i in 0..trajectory.len().saturating_sub(1) {
+                            //     if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
+                            //         let start =
+                            //             dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
+                            //         let end = dies_core::Vector2::new(
+                            //             trajectory[i + 1][1],
+                            //             trajectory[i + 1][2],
+                            //         );
+                            //         dies_core::debug_line(
+                            //             &format!("{}_seg{}", debug_name, i),
+                            //             start,
+                            //             end,
+                            //             dies_core::DebugColor::Purple,
+                            //         );
+                            //     }
+                            // }
 
                             // Mark trajectory endpoints
-                            if !trajectory.is_empty() {
-                                if trajectory[0].len() >= 5 {
-                                    let start_pos =
-                                        dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
-                                    dies_core::debug_cross(
-                                        &format!("{}_start", debug_name),
-                                        start_pos,
-                                        dies_core::DebugColor::Green,
-                                    );
-                                }
+                            // if !trajectory.is_empty() {
+                            //     if trajectory[0].len() >= 5 {
+                            //         let start_pos =
+                            //             dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
+                            //         dies_core::debug_cross(
+                            //             &format!("{}_start", debug_name),
+                            //             start_pos,
+                            //             dies_core::DebugColor::Green,
+                            //         );
+                            //     }
 
-                                if let Some(last) = trajectory.last() {
-                                    if last.len() >= 5 {
-                                        let end_pos = dies_core::Vector2::new(last[1], last[2]);
-                                        dies_core::debug_circle_fill(
-                                            &format!("{}_end", debug_name),
-                                            end_pos,
-                                            80.0,
-                                            dies_core::DebugColor::Purple,
-                                        );
-                                    }
-                                }
-                            }
+                            //     if let Some(last) = trajectory.last() {
+                            //         if last.len() >= 5 {
+                            //             let end_pos = dies_core::Vector2::new(last[1], last[2]);
+                            //             dies_core::debug_circle_fill(
+                            //                 &format!("{}_end", debug_name),
+                            //                 end_pos,
+                            //                 80.0,
+                            //                 dies_core::DebugColor::Purple,
+                            //             );
+                            //         }
+                            //     }
+                            // }
                         }
                     }
                     // If MPC returned empty (fallback to MTP), don't call set_target_velocity

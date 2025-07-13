@@ -17,7 +17,7 @@ impl TeamContext {
         }
     }
 
-    fn key(&self, key: impl Into<String>) -> String {
+    pub fn key(&self, key: impl Into<String>) -> String {
         format!("{}.{}", self.debug_prefix, key.into())
     }
 
@@ -183,7 +183,7 @@ impl PlayerContext {
         }
     }
 
-    fn key(&self, key: impl Into<String>) -> String {
+    pub fn key(&self, key: impl Into<String>) -> String {
         format!("{}.{}", self.debug_prefix, key.into())
     }
 

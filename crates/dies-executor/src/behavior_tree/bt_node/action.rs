@@ -1,12 +1,11 @@
 use dies_core::{debug_tree_node, Angle, PlayerId, Vector2};
-use rhai::Engine;
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
     sanitize_id_fragment,
 };
 use crate::{
-    behavior_tree::Argument,
+    behavior_tree::{Argument, BehaviorNode},
     control::PlayerControlInput,
     skills::{
         skills::{
@@ -77,7 +76,7 @@ impl ActionNode {
         }
     }
 
-    pub fn debug_all_nodes(&self, situation: &RobotSituation, _engine: &Engine) {
+    pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let skill_info = match &self.skill_def {
             SkillDefinition::GoToPosition { .. } => "GoToPosition",
@@ -105,7 +104,6 @@ impl ActionNode {
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
-        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         // Create a new skill if there is no active one
         if self.active_skill.is_none() {
@@ -119,94 +117,60 @@ impl ActionNode {
                     with_ball,
                     avoid_ball,
                 } => {
-                    let target = target_pos.resolve(situation, engine);
-                    let heading = target_heading
-                        .as_ref()
-                        .map(|h| h.resolve(situation, engine));
-                    let with_ball = with_ball.resolve(situation, engine);
-                    let avoid_ball = avoid_ball.resolve(situation, engine);
+                    let target = target_pos.resolve(situation);
+                    let heading = target_heading.as_ref().map(|h| h.resolve(situation));
+                    let with_ball = with_ball.resolve(situation);
+                    let avoid_ball = avoid_ball.resolve(situation);
 
-                    if let (Ok(target), Ok(with_ball), Ok(avoid_ball)) =
-                        (target, with_ball, avoid_ball)
-                    {
-                        let mut skill = GoToPosition::new(target);
-                        if let Some(Ok(heading)) = heading {
-                            skill = skill.with_heading(Angle::from_radians(heading));
-                        }
-                        if with_ball {
-                            skill = skill.with_ball();
-                        }
-                        if avoid_ball {
-                            skill = skill.avoid_ball();
-                        }
-
-                        Some(Skill::GoToPosition(skill))
-                    } else {
-                        log::error!(
-                            "Failed to resolve arguments for GoToPosition: {:?}, {:?}",
-                            target_pos,
-                            target_heading,
-                        );
-                        None
+                    let mut skill = GoToPosition::new(target);
+                    if let Some(heading) = heading {
+                        skill = skill.with_heading(Angle::from_radians(heading));
                     }
+                    if with_ball {
+                        skill = skill.with_ball();
+                    }
+                    if avoid_ball {
+                        skill = skill.avoid_ball();
+                    }
+
+                    Some(Skill::GoToPosition(skill))
                 }
                 SkillDefinition::Face { target, with_ball } => {
-                    let with_ball = with_ball.resolve(situation, engine);
-                    if let Ok(with_ball) = with_ball {
-                        let skill = match target {
-                            FaceTarget::Angle(angle_rad) => angle_rad
-                                .resolve(situation, engine)
-                                .ok()
-                                .map(|rad| Face::new(Angle::from_radians(rad))),
-                            FaceTarget::Position(pos) => pos
-                                .resolve(situation, engine)
-                                .ok()
-                                .map(Face::towards_position),
-                            FaceTarget::OwnPlayer(id) => id
-                                .resolve(situation, engine)
-                                .ok()
-                                .map(|id| Face::towards_own_player(PlayerId::new(id))),
-                        };
+                    let with_ball = with_ball.resolve(situation);
 
-                        if let Some(mut skill) = skill {
-                            if with_ball {
-                                skill = skill.with_ball();
-                            }
-                            Some(Skill::Face(skill))
-                        } else {
-                            log::error!("Failed to resolve arguments for Face");
-                            None
+                    let mut skill = match target {
+                        FaceTarget::Angle(angle_rad) => {
+                            Face::new(Angle::from_radians(angle_rad.resolve(situation)))
                         }
-                    } else {
-                        log::error!("Failed to resolve arguments for Face");
-                        None
+                        FaceTarget::Position(pos) => Face::towards_position(pos.resolve(situation)),
+                        FaceTarget::OwnPlayer(id) => {
+                            Face::towards_own_player(PlayerId::new(id.resolve(situation)))
+                        }
+                    };
+
+                    if with_ball {
+                        skill = skill.with_ball();
                     }
+                    Some(Skill::Face(skill))
                 }
                 SkillDefinition::Kick => Some(Skill::Kick(Kick::new())),
-                SkillDefinition::Wait { duration_secs } => duration_secs
-                    .resolve(situation, engine)
-                    .ok()
-                    .map(|s| Skill::Wait(Wait::new_secs_f64(s))),
+                SkillDefinition::Wait { duration_secs } => Some(Skill::Wait(Wait::new_secs_f64(
+                    duration_secs.resolve(situation),
+                ))),
                 SkillDefinition::FetchBall => Some(Skill::FetchBall(FetchBall::new())),
                 SkillDefinition::FetchBallWithHeading { target } => {
                     let skill = match target {
-                        HeadingTarget::Angle(angle_rad) => angle_rad
-                            .resolve(situation, engine)
-                            .ok()
-                            .map(|rad| FetchBallWithHeading::new(Angle::from_radians(rad))),
-                        HeadingTarget::Position(pos) => pos
-                            .resolve(situation, engine)
-                            .ok()
-                            .map(FetchBallWithHeading::towards_position),
-                        HeadingTarget::OwnPlayer(id) => id
-                            .resolve(situation, engine)
-                            .ok()
-                            .map(|id| FetchBallWithHeading::towards_own_player(PlayerId::new(id))),
+                        HeadingTarget::Angle(angle_rad) => FetchBallWithHeading::new(
+                            Angle::from_radians(angle_rad.resolve(situation)),
+                        ),
+                        HeadingTarget::Position(pos) => {
+                            FetchBallWithHeading::towards_position(pos.resolve(situation))
+                        }
+                        HeadingTarget::OwnPlayer(id) => FetchBallWithHeading::towards_own_player(
+                            PlayerId::new(id.resolve(situation)),
+                        ),
                     };
-                    if skill.is_none() {
-                        log::error!("Failed to resolve arguments for FetchBallWithHeading");
-                    }
-                    skill.map(Skill::FetchBallWithHeading)
+                    Some(Skill::FetchBallWithHeading(skill))
                 }
                 SkillDefinition::ApproachBall => Some(Skill::ApproachBall(ApproachBall::new())),
                 SkillDefinition::InterceptBall => Some(Skill::InterceptBall(InterceptBall::new())),
@@ -284,4 +248,333 @@ impl ActionNode {
     pub fn get_child_node_ids(&self, _current_path_prefix: &str) -> Vec<String> {
         vec![]
     }
+}
+
+impl From<ActionNode> for BehaviorNode {
+    fn from(node: ActionNode) -> Self {
+        BehaviorNode::Action(node)
+    }
+}
+
+pub struct GoToPositionBuilder {
+    target_pos: Argument<Vector2>,
+    target_heading: Option<Argument<f64>>,
+    target_velocity: Argument<Vector2>,
+    pos_tolerance: Argument<f64>,
+    velocity_tolerance: Argument<f64>,
+    with_ball: Argument<bool>,
+    avoid_ball: Argument<bool>,
+    description: Option<String>,
+}
+
+impl GoToPositionBuilder {
+    pub fn new(target_pos: impl Into<Argument<Vector2>>) -> Self {
+        Self {
+            target_pos: target_pos.into(),
+            target_heading: None,
+            target_velocity: Argument::Static(Vector2::zeros()),
+            pos_tolerance: Argument::Static(0.1),
+            velocity_tolerance: Argument::Static(0.1),
+            with_ball: Argument::Static(false),
+            avoid_ball: Argument::Static(false),
+            description: None,
+        }
+    }
+
+    pub fn with_heading(mut self, heading: impl Into<Argument<f64>>) -> Self {
+        self.target_heading = Some(heading.into());
+        self
+    }
+
+    pub fn with_velocity(mut self, velocity: impl Into<Argument<Vector2>>) -> Self {
+        self.target_velocity = velocity.into();
+        self
+    }
+
+    pub fn with_pos_tolerance(mut self, tolerance: impl Into<Argument<f64>>) -> Self {
+        self.pos_tolerance = tolerance.into();
+        self
+    }
+
+    pub fn with_velocity_tolerance(mut self, tolerance: impl Into<Argument<f64>>) -> Self {
+        self.velocity_tolerance = tolerance.into();
+        self
+    }
+
+    pub fn with_ball(mut self) -> Self {
+        self.with_ball = Argument::Static(true);
+        self
+    }
+
+    pub fn avoid_ball(mut self) -> Self {
+        self.avoid_ball = Argument::Static(true);
+        self
+    }
+
+    pub fn description(mut self, desc: impl AsRef<str>) -> Self {
+        self.description = Some(desc.as_ref().to_string());
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(
+            SkillDefinition::GoToPosition {
+                target_pos: self.target_pos,
+                target_heading: self.target_heading,
+                target_velocity: self.target_velocity,
+                pos_tolerance: self.pos_tolerance,
+                velocity_tolerance: self.velocity_tolerance,
+                with_ball: self.with_ball,
+                avoid_ball: self.avoid_ball,
+            },
+            self.description,
+        )
+    }
+}
+
+pub struct FaceBuilder {
+    target: FaceTarget,
+    with_ball: Argument<bool>,
+    description: Option<String>,
+}
+
+impl FaceBuilder {
+    pub fn angle(angle: impl Into<Argument<f64>>) -> Self {
+        Self {
+            target: FaceTarget::Angle(angle.into()),
+            with_ball: Argument::Static(false),
+            description: None,
+        }
+    }
+
+    pub fn position(pos: impl Into<Argument<Vector2>>) -> Self {
+        Self {
+            target: FaceTarget::Position(pos.into()),
+            with_ball: Argument::Static(false),
+            description: None,
+        }
+    }
+
+    pub fn own_player(id: impl Into<Argument<u32>>) -> Self {
+        Self {
+            target: FaceTarget::OwnPlayer(id.into()),
+            with_ball: Argument::Static(false),
+            description: None,
+        }
+    }
+
+    pub fn with_ball(mut self) -> Self {
+        self.with_ball = Argument::Static(true);
+        self
+    }
+
+    pub fn description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(
+            SkillDefinition::Face {
+                target: self.target,
+                with_ball: self.with_ball,
+            },
+            self.description,
+        )
+    }
+}
+
+pub struct KickBuilder {
+    description: Option<String>,
+}
+
+impl KickBuilder {
+    pub fn new() -> Self {
+        Self { description: None }
+    }
+
+    pub fn description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(SkillDefinition::Kick, self.description)
+    }
+}
+
+pub struct WaitBuilder {
+    duration_secs: Argument<f64>,
+    description: Option<String>,
+}
+
+impl WaitBuilder {
+    pub fn new(duration_secs: impl Into<Argument<f64>>) -> Self {
+        Self {
+            duration_secs: duration_secs.into(),
+            description: None,
+        }
+    }
+
+    pub fn description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(
+            SkillDefinition::Wait {
+                duration_secs: self.duration_secs,
+            },
+            self.description,
+        )
+    }
+}
+
+pub struct FetchBallBuilder {
+    description: Option<String>,
+}
+
+impl FetchBallBuilder {
+    pub fn new() -> Self {
+        Self { description: None }
+    }
+
+    pub fn description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(SkillDefinition::FetchBall, self.description)
+    }
+}
+
+pub struct FetchBallWithHeadingBuilder {
+    target: HeadingTarget,
+    description: Option<String>,
+}
+
+impl FetchBallWithHeadingBuilder {
+    pub fn angle(angle: impl Into<Argument<f64>>) -> Self {
+        Self {
+            target: HeadingTarget::Angle(angle.into()),
+            description: None,
+        }
+    }
+
+    pub fn position(pos: impl Into<Argument<Vector2>>) -> Self {
+        Self {
+            target: HeadingTarget::Position(pos.into()),
+            description: None,
+        }
+    }
+
+    pub fn own_player(id: impl Into<Argument<u32>>) -> Self {
+        Self {
+            target: HeadingTarget::OwnPlayer(id.into()),
+            description: None,
+        }
+    }
+
+    pub fn description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(
+            SkillDefinition::FetchBallWithHeading {
+                target: self.target,
+            },
+            self.description,
+        )
+    }
+}
+
+pub struct ApproachBallBuilder {
+    description: Option<String>,
+}
+
+impl ApproachBallBuilder {
+    pub fn new() -> Self {
+        Self { description: None }
+    }
+
+    pub fn description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(SkillDefinition::ApproachBall, self.description)
+    }
+}
+
+pub struct InterceptBallBuilder {
+    description: Option<String>,
+}
+
+impl InterceptBallBuilder {
+    pub fn new() -> Self {
+        Self { description: None }
+    }
+
+    pub fn description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(SkillDefinition::InterceptBall, self.description)
+    }
+}
+
+// Convenience functions to create builders
+pub fn go_to_position(target_pos: impl Into<Argument<Vector2>>) -> GoToPositionBuilder {
+    GoToPositionBuilder::new(target_pos)
+}
+
+pub fn face_angle(angle: impl Into<Argument<f64>>) -> FaceBuilder {
+    FaceBuilder::angle(angle)
+}
+
+pub fn face_position(pos: impl Into<Argument<Vector2>>) -> FaceBuilder {
+    FaceBuilder::position(pos)
+}
+
+pub fn face_own_player(id: impl Into<Argument<u32>>) -> FaceBuilder {
+    FaceBuilder::own_player(id)
+}
+
+pub fn kick() -> KickBuilder {
+    KickBuilder::new()
+}
+
+pub fn wait(duration_secs: impl Into<Argument<f64>>) -> WaitBuilder {
+    WaitBuilder::new(duration_secs)
+}
+
+pub fn fetch_ball() -> FetchBallBuilder {
+    FetchBallBuilder::new()
+}
+
+pub fn fetch_ball_with_angle(angle: impl Into<Argument<f64>>) -> FetchBallWithHeadingBuilder {
+    FetchBallWithHeadingBuilder::angle(angle)
+}
+
+pub fn fetch_ball_with_position(pos: impl Into<Argument<Vector2>>) -> FetchBallWithHeadingBuilder {
+    FetchBallWithHeadingBuilder::position(pos)
+}
+
+pub fn fetch_ball_with_own_player(id: impl Into<Argument<u32>>) -> FetchBallWithHeadingBuilder {
+    FetchBallWithHeadingBuilder::own_player(id)
+}
+
+pub fn approach_ball() -> ApproachBallBuilder {
+    ApproachBallBuilder::new()
+}
+
+pub fn intercept_ball() -> InterceptBallBuilder {
+    InterceptBallBuilder::new()
 }

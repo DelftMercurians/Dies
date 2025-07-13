@@ -50,7 +50,6 @@ impl GameContext {
 
     /// Add a role and return a builder for configuration
     pub fn add_role(&mut self, name: &str) -> Arc<Mutex<RoleBuilder>> {
-        log::info!("Adding role: {}", name);
         let builder = RoleBuilder::new(name);
         let shared_builder = Arc::new(Mutex::new(builder));
         let mut role_builders = self.role_builders.lock().unwrap();

@@ -17,7 +17,7 @@ use dies_core::{
     DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, ScriptError,
     TeamColor, WorldUpdate,
 };
-use dies_executor::{ControlMsg, ExecutorHandle};
+use dies_executor::{ControlMsg, ExecutorHandle, Strategy};
 use tokio::sync::{broadcast, mpsc, watch};
 use tower_http::services::ServeDir;
 use tower_layer::Layer;
@@ -128,7 +128,7 @@ impl ServerState {
 }
 
 /// Start the web server and executor task.
-pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
+pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strategy: Strategy) {
     // Setup state
     let (update_tx, update_rx) = watch::channel(None);
     let (cmd_tx, cmd_rx) = broadcast::channel(16);
@@ -186,7 +186,8 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         let shutdown_rx = shutdown_rx.resubscribe();
         let state = Arc::clone(&state);
         tokio::spawn(async move {
-            let mut executor_task = ExecutorTask::new(config.environment, update_tx, cmd_rx, state);
+            let mut executor_task =
+                ExecutorTask::new(config.environment, update_tx, cmd_rx, state, strategy);
             executor_task.run(shutdown_rx).await
         })
     };

@@ -1,0 +1,13 @@
+[package]
+name = "dies-strategy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dies-core = { path = "../dies-core" }
+dies-executor = { version = "0.1.0", path = "../dies-executor" }
+anyhow = "1.0"
+log = "0.4"
+nalgebra = { version = "0.33", features = ["serde-serialize"] }
+
+# We'll add dies-executor-behavior-tree as a separate public module export

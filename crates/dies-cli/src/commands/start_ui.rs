@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use dies_logger::AsyncProtobufLogger;
+use dies_strategy::v0_strategy;
 use log::{LevelFilter, Log};
 use tokio::sync::broadcast;
 
@@ -34,7 +35,7 @@ pub async fn start_ui(args: Cli) -> Result<()> {
                 return;
             }
         };
-        dies_webui::start(conf, stop_rx).await;
+        dies_webui::start(conf, stop_rx, v0_strategy).await;
     });
 
     tokio::signal::ctrl_c()

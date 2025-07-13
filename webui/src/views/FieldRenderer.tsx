@@ -32,7 +32,7 @@ const DEBUG_COLORS: Record<DebugColor, string> = {
   orange: "#f9731688",
   purple: "#9333ea88",
   blue: "#0000aa88",
-  gray: "#66666688"
+  gray: "#66666688",
 };
 
 export type PositionDisplayMode = "raw" | "filtered" | "both";
@@ -42,6 +42,7 @@ export class FieldRenderer {
   private ctx: CanvasRenderingContext2D;
   private world: WorldData | null = null;
   private debugShapes: DebugShape[] = [];
+  private debugStrings: Record<string, string> = {};
   private fieldSize: [number, number] = DEFAULT_FIELD_SIZE;
   private positionDisplayMode: PositionDisplayMode = "filtered";
 
@@ -64,6 +65,20 @@ export class FieldRenderer {
     this.debugShapes = Object.values(data)
       .filter(({ type }) => type === "Shape")
       .map(({ data }) => data as DebugShape);
+
+    // Extract string debug values
+    this.debugStrings = {};
+    Object.entries(data).forEach(([key, value]) => {
+      if (value.type === "String") {
+        this.debugStrings[key] = value.data as string;
+      }
+    });
+  }
+
+  private getPlayerRole(playerId: number, teamColor: TeamColor): string | null {
+    const teamColorStr = teamColor === TeamColor.Blue ? "blue" : "yellow";
+    const roleKey = `team_${teamColorStr}.p${playerId}.role`;
+    return this.debugStrings[roleKey] || null;
   }
 
   setPositionDisplayMode(mode: PositionDisplayMode) {
@@ -93,7 +108,8 @@ export class FieldRenderer {
         "blue",
         player.id === selectedPlayerId && primaryTeam === TeamColor.Blue,
         manualControl.includes(player.id) && primaryTeam === TeamColor.Blue,
-        this.positionDisplayMode
+        this.positionDisplayMode,
+        TeamColor.Blue
       )
     );
     yellow_team.forEach((player) =>
@@ -102,7 +118,8 @@ export class FieldRenderer {
         "yellow",
         player.id === selectedPlayerId && primaryTeam === TeamColor.Yellow,
         manualControl.includes(player.id) && primaryTeam === TeamColor.Yellow,
-        this.positionDisplayMode
+        this.positionDisplayMode,
+        TeamColor.Yellow
       )
     );
 
@@ -175,11 +192,19 @@ export class FieldRenderer {
     selected: boolean,
     manualControl: boolean,
     positionDisplayMode: PositionDisplayMode,
+    teamColor: TeamColor,
     opacity = 1
   ) {
     if (positionDisplayMode === "both") {
-      this.drawPlayer(data, team, selected, manualControl, "filtered");
-      this.drawPlayer(data, team, false, false, "raw", 0.7);
+      this.drawPlayer(
+        data,
+        team,
+        selected,
+        manualControl,
+        "filtered",
+        teamColor
+      );
+      this.drawPlayer(data, team, false, false, "raw", teamColor, 0.7);
       return;
     }
 
@@ -234,6 +259,17 @@ export class FieldRenderer {
       this.ctx.beginPath();
       this.ctx.arc(x, y, robotCanvasRadius - 2, 0, 2 * Math.PI);
       this.ctx.stroke();
+    }
+
+    // Draw role name if available and opacity is full (not for the "both" mode secondary rendering)
+    if (opacity === 1) {
+      const role = this.getPlayerRole(data.id, teamColor);
+      if (role) {
+        this.ctx.fillStyle = "white";
+        this.ctx.font = "12px Arial";
+        this.ctx.textAlign = "center";
+        this.ctx.fillText(role, x, y - robotCanvasRadius - 5);
+      }
     }
   }
 

@@ -14,7 +14,6 @@ use dies_ssl_client::{SslMessage, VisionClient};
 use dies_world::WorldTracker;
 use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
-use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 mod behavior_tree;
@@ -25,6 +24,29 @@ mod skills;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};
+
+pub use crate::behavior_tree::Strategy;
+
+// Export behavior tree API for native strategies
+pub mod behavior_tree_api {
+    // Re-export core types
+    pub use crate::behavior_tree::{
+        Argument, BehaviorTree, BtContext, GameContext, RobotSituation, RoleAssignmentProblem,
+        RoleAssignmentSolver, RoleBuilder, Strategy,
+    };
+
+    // Re-export node types
+    pub use crate::behavior_tree::bt_node::*;
+
+    // Re-export callback types
+    pub use crate::behavior_tree::BtCallback;
+
+    // Re-export skills
+    pub use crate::skills::{Skill, SkillCtx, SkillProgress, SkillResult};
+
+    // Re-export role assignment types
+    pub use crate::behavior_tree::role_assignment::Role;
+}
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 50); // 50 Hz
@@ -58,26 +80,19 @@ impl TeamMap {
         }
     }
 
-    fn activate_team(&mut self, team_color: TeamColor, settings: &ExecutorSettings) {
+    fn activate_team(
+        &mut self,
+        team_color: TeamColor,
+        settings: &ExecutorSettings,
+        strategy: Strategy,
+    ) {
         if team_color == TeamColor::Blue {
             if self.blue_team.is_none() {
-                let script_path = self
-                    .blue_script_path
-                    .as_deref()
-                    .unwrap_or("strategies/main.rhai");
-                self.blue_team = Some(TeamController::new(settings, script_path, TeamColor::Blue));
+                self.blue_team = Some(TeamController::new(settings, TeamColor::Blue, strategy));
             }
         } else {
             if self.yellow_team.is_none() {
-                let script_path = self
-                    .yellow_script_path
-                    .as_deref()
-                    .unwrap_or("strategies/main.rhai");
-                self.yellow_team = Some(TeamController::new(
-                    settings,
-                    script_path,
-                    TeamColor::Yellow,
-                ));
+                self.yellow_team = Some(TeamController::new(settings, TeamColor::Yellow, strategy));
             }
         }
     }
@@ -108,39 +123,8 @@ impl TeamMap {
         }
     }
 
-    fn set_script_paths(
-        &mut self,
-        blue_script_path: Option<String>,
-        yellow_script_path: Option<String>,
-        settings: &ExecutorSettings,
-    ) {
-        // Check if blue script path changed and recreate controller if needed
-        if self.blue_script_path != blue_script_path {
-            self.blue_script_path = blue_script_path;
-            if self.blue_team.is_some() {
-                let script_path = self
-                    .blue_script_path
-                    .as_deref()
-                    .unwrap_or("strategies/main.rhai");
-                self.blue_team = Some(TeamController::new(settings, script_path, TeamColor::Blue));
-            }
-        }
-
-        // Check if yellow script path changed and recreate controller if needed
-        if self.yellow_script_path != yellow_script_path {
-            self.yellow_script_path = yellow_script_path;
-            if self.yellow_team.is_some() {
-                let script_path = self
-                    .yellow_script_path
-                    .as_deref()
-                    .unwrap_or("strategies/main.rhai");
-                self.yellow_team = Some(TeamController::new(
-                    settings,
-                    script_path,
-                    TeamColor::Yellow,
-                ));
-            }
-        }
+    fn swap_teams(&mut self) {
+        std::mem::swap(&mut self.blue_team, &mut self.yellow_team);
     }
 
     /// Get all player commands from active controllers
@@ -380,6 +364,7 @@ impl Executor {
         settings: ExecutorSettings,
         ssl_client: VisionClient,
         bs_client: BasestationHandle,
+        strategy: Strategy,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
@@ -390,21 +375,14 @@ impl Executor {
         // Use team configuration from settings
         let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
 
-        // Set script paths first
-        team_controllers.set_script_paths(
-            settings.team_configuration.blue_script_path.clone(),
-            settings.team_configuration.yellow_script_path.clone(),
-            &settings,
-        );
-
         // Activate teams based on configuration
         let mut controlled_teams = Vec::new();
         if settings.team_configuration.blue_active {
-            team_controllers.activate_team(TeamColor::Blue, &settings);
+            team_controllers.activate_team(TeamColor::Blue, &settings, strategy);
             controlled_teams.push(TeamColor::Blue);
         }
         if settings.team_configuration.yellow_active {
-            team_controllers.activate_team(TeamColor::Yellow, &settings);
+            team_controllers.activate_team(TeamColor::Yellow, &settings, strategy);
             controlled_teams.push(TeamColor::Yellow);
         }
 
@@ -428,7 +406,11 @@ impl Executor {
         }
     }
 
-    pub fn new_simulation(settings: ExecutorSettings, mut simulator: Simulation) -> Self {
+    pub fn new_simulation(
+        settings: ExecutorSettings,
+        mut simulator: Simulation,
+        strategy: Strategy,
+    ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
@@ -438,21 +420,14 @@ impl Executor {
         // Use team configuration from settings
         let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
 
-        // Set script paths first
-        team_controllers.set_script_paths(
-            settings.team_configuration.blue_script_path.clone(),
-            settings.team_configuration.yellow_script_path.clone(),
-            &settings,
-        );
-
         // Activate teams based on configuration
         let mut controlled_teams = Vec::new();
         if settings.team_configuration.blue_active {
-            team_controllers.activate_team(TeamColor::Blue, &settings);
+            team_controllers.activate_team(TeamColor::Blue, &settings, strategy);
             controlled_teams.push(TeamColor::Blue);
         }
         if settings.team_configuration.yellow_active {
-            team_controllers.activate_team(TeamColor::Yellow, &settings);
+            team_controllers.activate_team(TeamColor::Yellow, &settings, strategy);
             controlled_teams.push(TeamColor::Yellow);
         }
 
@@ -582,15 +557,8 @@ impl Executor {
                                 simulator.update_referee_command(command);
                             }
                             ControlMsg::SimulatorCmd(cmd) => self.handle_simulator_cmd(&mut simulator, cmd),
-                            ControlMsg::SetActiveTeams {
-                                blue_active,
-                                yellow_active,
-                            } => {
-                                self.handle_set_active_teams(
-                                    blue_active,
-                                    yellow_active,
-                                    Some(&mut simulator),
-                                );
+                            ControlMsg::SetActiveTeams { .. } => {
+                                log::warn!("Setting active teams is not supported mid run");
                             }
                             msg => self.handle_control_msg(msg)
                         }
@@ -643,11 +611,8 @@ impl Executor {
                     last_control_msg = tokio::time::Instant::now();
                     match msg {
                         ControlMsg::Stop => break,
-                        ControlMsg::SetActiveTeams {
-                            blue_active,
-                            yellow_active,
-                        } => {
-                            self.handle_set_active_teams(blue_active, yellow_active, None);
+                        ControlMsg::SetActiveTeams { .. } => {
+                            log::warn!("Setting active teams is not supported mid run");
                         }
                         msg => self.handle_control_msg(msg)
                     }
@@ -734,41 +699,6 @@ impl Executor {
         }
     }
 
-    fn handle_set_active_teams(
-        &mut self,
-        blue_active: bool,
-        yellow_active: bool,
-        sim: Option<&mut Simulation>,
-    ) {
-        let mut new_active_teams = Vec::with_capacity(2);
-        if blue_active {
-            log::info!("Activating blue team");
-            new_active_teams.push(TeamColor::Blue);
-            self.team_controllers
-                .activate_team(TeamColor::Blue, &self.settings);
-        } else {
-            log::info!("Deactivating blue team");
-            self.team_controllers.deactivate_team(TeamColor::Blue);
-        }
-
-        if yellow_active {
-            log::info!("Activating yellow team");
-            new_active_teams.push(TeamColor::Yellow);
-            self.team_controllers
-                .activate_team(TeamColor::Yellow, &self.settings);
-        } else {
-            log::info!("Deactivating yellow team");
-            self.team_controllers.deactivate_team(TeamColor::Yellow);
-        }
-
-        self.tracker.set_controlled_teams(&new_active_teams);
-        if let Some(simulator) = sim {
-            simulator.set_controlled_teams(&new_active_teams);
-        } else {
-            log::warn!("No simulator found");
-        }
-    }
-
     pub fn handle(&self) -> ExecutorHandle {
         ExecutorHandle {
             control_tx: self.command_tx.clone(),
@@ -813,83 +743,42 @@ impl Executor {
                 self.team_controllers.side_assignment = side_assignment;
                 self.tracker.set_side_assignment(side_assignment);
             }
-            ControlMsg::SetTeamScriptPaths {
-                blue_script_path,
-                yellow_script_path,
-            } => {
-                self.team_controllers.set_script_paths(
-                    blue_script_path,
-                    yellow_script_path,
-                    &self.settings,
-                );
+            ControlMsg::SetTeamScriptPaths { .. } => {
+                log::warn!("Setting team script paths is not supported mid run");
             }
-            ControlMsg::SetTeamConfiguration(config) => {
+            ControlMsg::SetTeamConfiguration(_) => {
+                log::warn!("Setting team configuration is not supported mid run");
                 // Apply complete team configuration
-                self.team_controllers.side_assignment = config.side_assignment;
-                self.tracker.set_side_assignment(config.side_assignment);
-                self.team_controllers.set_script_paths(
-                    config.blue_script_path.clone(),
-                    config.yellow_script_path.clone(),
-                    &self.settings,
-                );
+                // self.team_controllers.side_assignment = config.side_assignment;
+                // self.tracker.set_side_assignment(config.side_assignment);
 
-                // Update active teams
-                let mut controlled_teams = Vec::new();
+                // // Update active teams
+                // let mut controlled_teams = Vec::new();
 
-                if config.blue_active {
-                    if !self.team_controllers.blue_team.is_some() {
-                        self.team_controllers
-                            .activate_team(TeamColor::Blue, &self.settings);
-                    }
-                    controlled_teams.push(TeamColor::Blue);
-                } else {
-                    self.team_controllers.deactivate_team(TeamColor::Blue);
-                }
+                // if config.blue_active {
+                //     if !self.team_controllers.blue_team.is_some() {
+                //         self.team_controllers
+                //             .activate_team(TeamColor::Blue, &self.settings);
+                //     }
+                //     controlled_teams.push(TeamColor::Blue);
+                // } else {
+                //     self.team_controllers.deactivate_team(TeamColor::Blue);
+                // }
 
-                if config.yellow_active {
-                    if !self.team_controllers.yellow_team.is_some() {
-                        self.team_controllers
-                            .activate_team(TeamColor::Yellow, &self.settings);
-                    }
-                    controlled_teams.push(TeamColor::Yellow);
-                } else {
-                    self.team_controllers.deactivate_team(TeamColor::Yellow);
-                }
+                // if config.yellow_active {
+                //     if !self.team_controllers.yellow_team.is_some() {
+                //         self.team_controllers
+                //             .activate_team(TeamColor::Yellow, &self.settings);
+                //     }
+                //     controlled_teams.push(TeamColor::Yellow);
+                // } else {
+                //     self.team_controllers.deactivate_team(TeamColor::Yellow);
+                // }
 
-                self.tracker.set_controlled_teams(&controlled_teams);
+                // self.tracker.set_controlled_teams(&controlled_teams);
             }
             ControlMsg::SwapTeamColors => {
-                // Swap team controller settings
-                let old_blue_active = self.team_controllers.blue_team.is_some();
-                let old_yellow_active = self.team_controllers.yellow_team.is_some();
-                let old_blue_script = self.team_controllers.blue_script_path.clone();
-                let old_yellow_script = self.team_controllers.yellow_script_path.clone();
-
-                // Deactivate all teams first
-                self.team_controllers.deactivate_team(TeamColor::Blue);
-                self.team_controllers.deactivate_team(TeamColor::Yellow);
-
-                // Swap script paths
-                self.team_controllers.set_script_paths(
-                    old_yellow_script,
-                    old_blue_script,
-                    &self.settings,
-                );
-
-                // Reactivate teams with swapped settings
-                let mut controlled_teams = Vec::new();
-                if old_yellow_active {
-                    self.team_controllers
-                        .activate_team(TeamColor::Blue, &self.settings);
-                    controlled_teams.push(TeamColor::Blue);
-                }
-                if old_blue_active {
-                    self.team_controllers
-                        .activate_team(TeamColor::Yellow, &self.settings);
-                    controlled_teams.push(TeamColor::Yellow);
-                }
-
-                self.tracker.set_controlled_teams(&controlled_teams);
+                self.team_controllers.swap_teams();
             }
             ControlMsg::SwapTeamSides => {
                 // Swap side assignment

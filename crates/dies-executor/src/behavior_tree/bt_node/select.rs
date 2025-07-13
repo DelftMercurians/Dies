@@ -1,19 +1,17 @@
+use std::sync::Arc;
+
 use dies_core::debug_tree_node;
-use rhai::{Array, Engine};
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
     sanitize_id_fragment, BehaviorNode,
 };
-use crate::{
-    behavior_tree::{bt_callback::BtCallback, RhaiBehaviorNode},
-    control::PlayerControlInput,
-};
+use crate::{behavior_tree::BtCallback, control::PlayerControlInput};
 
 #[derive(Clone)]
 pub enum ChildrenSource {
     Static(Vec<BehaviorNode>),
-    Dynamic(BtCallback<Array>),
+    Dynamic(Arc<dyn BtCallback<Vec<BehaviorNode>>>),
 }
 
 #[derive(Clone)]
@@ -37,7 +35,10 @@ impl SelectNode {
         }
     }
 
-    pub fn new_dynamic(callback: BtCallback<Array>, description: Option<String>) -> Self {
+    pub fn new_dynamic(
+        callback: Arc<dyn BtCallback<Vec<BehaviorNode>>>,
+        description: Option<String>,
+    ) -> Self {
         let desc = description.unwrap_or_else(|| "Select".to_string());
         Self {
             children_source: ChildrenSource::Dynamic(callback),
@@ -48,23 +49,14 @@ impl SelectNode {
         }
     }
 
-    fn get_children(&mut self, situation: &RobotSituation, engine: &Engine) -> Vec<BehaviorNode> {
+    fn get_children(&mut self, situation: &RobotSituation) -> Vec<BehaviorNode> {
         match &self.children_source {
             ChildrenSource::Static(children) => children.clone(),
-            ChildrenSource::Dynamic(callback) => match callback.call(situation, engine) {
-                Ok(nodes) => nodes
-                    .into_iter()
-                    .filter_map(|n| n.try_cast_result::<RhaiBehaviorNode>().ok().map(|n| n.0))
-                    .collect(),
-                Err(e) => {
-                    log::error!("Failed to generate dynamic children for Select: {}", e);
-                    vec![]
-                }
-            },
+            ChildrenSource::Dynamic(callback) => callback(situation),
         }
     }
 
-    pub fn debug_all_nodes(&self, situation: &RobotSituation, engine: &Engine) {
+    pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let children = match &self.children_source {
             ChildrenSource::Static(children) => children.clone(),
@@ -85,14 +77,13 @@ impl SelectNode {
         let mut child_situation = situation.clone();
         child_situation.viz_path_prefix = node_full_id;
         for child in &children {
-            child.debug_all_nodes(&child_situation, engine);
+            child.debug_all_nodes(&child_situation);
         }
     }
 
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
-        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
 
@@ -100,7 +91,7 @@ impl SelectNode {
             if let Some(child) = self.last_children.get_mut(running_idx) {
                 let mut child_situation = situation.clone();
                 child_situation.viz_path_prefix = node_full_id.clone();
-                let (status, input) = child.tick(&mut child_situation, engine);
+                let (status, input) = child.tick(&mut child_situation);
                 if status == BehaviorStatus::Running {
                     return (BehaviorStatus::Running, input);
                 }
@@ -108,7 +99,7 @@ impl SelectNode {
         }
         self.last_running_child_idx = None;
 
-        let mut children = self.get_children(situation, engine);
+        let mut children = self.get_children(situation);
         let mut final_status = BehaviorStatus::Failure;
         let mut final_input: Option<PlayerControlInput> = None;
 
@@ -116,7 +107,7 @@ impl SelectNode {
         child_situation.viz_path_prefix = node_full_id.clone();
 
         for (idx, child) in children.iter_mut().enumerate() {
-            match child.tick(&mut child_situation, engine) {
+            match child.tick(&mut child_situation) {
                 (BehaviorStatus::Success, input_opt) => {
                     final_status = BehaviorStatus::Success;
                     final_input = input_opt;
@@ -181,4 +172,46 @@ impl SelectNode {
             .map(|c| c.get_full_node_id(&self_full_id))
             .collect()
     }
+}
+
+impl From<SelectNode> for BehaviorNode {
+    fn from(node: SelectNode) -> Self {
+        BehaviorNode::Select(node)
+    }
+}
+
+pub struct SelectNodeBuilder {
+    children: Vec<BehaviorNode>,
+    description: Option<String>,
+}
+
+impl SelectNodeBuilder {
+    pub fn new() -> Self {
+        Self {
+            children: Vec::new(),
+            description: None,
+        }
+    }
+
+    pub fn dynamic(self, callback: impl BtCallback<Vec<BehaviorNode>>) -> SelectNode {
+        SelectNode::new_dynamic(Arc::new(callback), self.description)
+    }
+
+    pub fn add(mut self, child: impl Into<BehaviorNode>) -> Self {
+        self.children.push(child.into());
+        self
+    }
+
+    pub fn description(mut self, description: impl AsRef<str>) -> Self {
+        self.description = Some(description.as_ref().to_string());
+        self
+    }
+
+    pub fn build(self) -> SelectNode {
+        SelectNode::new(self.children, self.description)
+    }
+}
+
+pub fn select_node() -> SelectNodeBuilder {
+    SelectNodeBuilder::new()
 }

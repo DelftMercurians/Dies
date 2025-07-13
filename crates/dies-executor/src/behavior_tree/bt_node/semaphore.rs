@@ -1,5 +1,4 @@
 use dies_core::{debug_tree_node, PlayerId};
-use rhai::Engine;
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -35,7 +34,7 @@ impl SemaphoreNode {
         }
     }
 
-    pub fn debug_all_nodes(&self, situation: &RobotSituation, engine: &Engine) {
+    pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         debug_tree_node(
             format!("bt.p{}.{}", situation.player_id, node_full_id),
@@ -51,13 +50,12 @@ impl SemaphoreNode {
         // Debug the child node
         let mut child_situation = situation.clone();
         child_situation.viz_path_prefix = node_full_id.clone();
-        self.child.debug_all_nodes(&child_situation, engine);
+        self.child.debug_all_nodes(&child_situation);
     }
 
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
-        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let player_id = situation.player_id;
@@ -67,7 +65,7 @@ impl SemaphoreNode {
         let acquired_semaphore = if self.player_id_holding_via_this_node == Some(player_id) {
             true
         } else {
-            if situation.team_context.try_acquire_semaphore(
+            if situation.bt_context.try_acquire_semaphore(
                 &self.semaphore_id_str,
                 self.max_count,
                 player_id,
@@ -82,14 +80,14 @@ impl SemaphoreNode {
         if acquired_semaphore {
             let mut child_situation = situation.clone();
             child_situation.viz_path_prefix = node_full_id.clone();
-            let (child_status, child_input) = self.child.tick(&mut child_situation, engine);
+            let (child_status, child_input) = self.child.tick(&mut child_situation);
             result_status = child_status;
             result_input = child_input;
 
             match child_status {
                 BehaviorStatus::Success | BehaviorStatus::Failure => {
                     situation
-                        .team_context
+                        .bt_context
                         .release_semaphore(&self.semaphore_id_str, player_id);
                     self.player_id_holding_via_this_node = None;
                 }
@@ -140,5 +138,62 @@ impl SemaphoreNode {
     pub fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
         let self_full_id = self.get_full_node_id(current_path_prefix);
         vec![self.child.get_full_node_id(&self_full_id)]
+    }
+}
+
+pub struct SemaphoreNodeBuilder {
+    child: Option<BehaviorNode>,
+    semaphore_id: Option<String>,
+    max_count: Option<usize>,
+    description: Option<String>,
+}
+
+impl SemaphoreNodeBuilder {
+    pub fn new() -> Self {
+        Self {
+            child: None,
+            semaphore_id: None,
+            max_count: None,
+            description: None,
+        }
+    }
+
+    pub fn do_then(mut self, child: impl Into<BehaviorNode>) -> Self {
+        self.child = Some(child.into());
+        self
+    }
+
+    pub fn semaphore_id(mut self, semaphore_id: String) -> Self {
+        self.semaphore_id = Some(semaphore_id);
+        self
+    }
+
+    pub fn max_entry(mut self, max_count: usize) -> Self {
+        self.max_count = Some(max_count);
+        self
+    }
+
+    pub fn description(mut self, description: impl AsRef<str>) -> Self {
+        self.description = Some(description.as_ref().to_string());
+        self
+    }
+
+    pub fn build(self) -> SemaphoreNode {
+        SemaphoreNode::new(
+            self.child.expect("Child is required"),
+            self.semaphore_id.expect("Semaphore ID is required"),
+            self.max_count.expect("Max count is required"),
+            self.description,
+        )
+    }
+}
+
+pub fn semaphore_node() -> SemaphoreNodeBuilder {
+    SemaphoreNodeBuilder::new()
+}
+
+impl From<SemaphoreNode> for BehaviorNode {
+    fn from(node: SemaphoreNode) -> Self {
+        BehaviorNode::Semaphore(node)
     }
 }

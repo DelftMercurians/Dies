@@ -1,6 +1,5 @@
 use super::bt_core::{BehaviorStatus, RobotSituation};
 use crate::control::PlayerControlInput;
-use rhai::Engine;
 
 mod action;
 mod guard;
@@ -11,12 +10,12 @@ mod semaphore;
 mod sequence;
 
 pub use action::*;
-pub use guard::GuardNode;
-pub use noop::NoopNode;
-pub use scoring_select::ScoringSelectNode;
-pub use select::SelectNode;
-pub use semaphore::SemaphoreNode;
-pub use sequence::SequenceNode;
+pub use guard::{guard_node, GuardNode};
+pub use noop::{noop_node, NoopNode};
+pub use scoring_select::{scoring_select_node, ScoringSelectNode};
+pub use select::{select_node, SelectNode};
+pub use semaphore::{semaphore_node, SemaphoreNode};
+pub use sequence::{sequence_node, SequenceNode};
 
 #[derive(Clone)]
 pub enum BehaviorNode {
@@ -33,27 +32,26 @@ impl BehaviorNode {
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
-        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         match self {
-            BehaviorNode::Select(node) => node.tick(situation, engine),
-            BehaviorNode::Sequence(node) => node.tick(situation, engine),
-            BehaviorNode::Guard(node) => node.tick(situation, engine),
-            BehaviorNode::Action(node) => node.tick(situation, engine),
-            BehaviorNode::Semaphore(node) => node.tick(situation, engine),
-            BehaviorNode::ScoringSelect(node) => node.tick(situation, engine),
+            BehaviorNode::Select(node) => node.tick(situation),
+            BehaviorNode::Sequence(node) => node.tick(situation),
+            BehaviorNode::Guard(node) => node.tick(situation),
+            BehaviorNode::Action(node) => node.tick(situation),
+            BehaviorNode::Semaphore(node) => node.tick(situation),
+            BehaviorNode::ScoringSelect(node) => node.tick(situation),
             BehaviorNode::Noop(_) => (BehaviorStatus::Success, None),
         }
     }
 
-    pub fn debug_all_nodes(&self, situation: &RobotSituation, engine: &Engine) {
+    pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         match self {
-            BehaviorNode::Select(node) => node.debug_all_nodes(situation, engine),
-            BehaviorNode::Sequence(node) => node.debug_all_nodes(situation, engine),
-            BehaviorNode::Guard(node) => node.debug_all_nodes(situation, engine),
-            BehaviorNode::Action(node) => node.debug_all_nodes(situation, engine),
-            BehaviorNode::Semaphore(node) => node.debug_all_nodes(situation, engine),
-            BehaviorNode::ScoringSelect(node) => node.debug_all_nodes(situation, engine),
+            BehaviorNode::Select(node) => node.debug_all_nodes(situation),
+            BehaviorNode::Sequence(node) => node.debug_all_nodes(situation),
+            BehaviorNode::Guard(node) => node.debug_all_nodes(situation),
+            BehaviorNode::Action(node) => node.debug_all_nodes(situation),
+            BehaviorNode::Semaphore(node) => node.debug_all_nodes(situation),
+            BehaviorNode::ScoringSelect(node) => node.debug_all_nodes(situation),
             BehaviorNode::Noop(_) => {
                 // Noop nodes don't have structure to debug
             }

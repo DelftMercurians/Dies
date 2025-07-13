@@ -1,5 +1,4 @@
 use dies_core::debug_tree_node;
-use rhai::Engine;
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -26,7 +25,7 @@ impl SequenceNode {
         }
     }
 
-    pub fn debug_all_nodes(&self, situation: &RobotSituation, engine: &Engine) {
+    pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         debug_tree_node(
             format!("bt.p{}.{}", situation.player_id, node_full_id),
@@ -47,14 +46,13 @@ impl SequenceNode {
         let mut child_situation = situation.clone();
         child_situation.viz_path_prefix = node_full_id.clone();
         for child in &self.children {
-            child.debug_all_nodes(&child_situation, engine);
+            child.debug_all_nodes(&child_situation);
         }
     }
 
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
-        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let mut last_input_on_success: Option<PlayerControlInput> = None;
@@ -63,7 +61,7 @@ impl SequenceNode {
         child_situation.viz_path_prefix = node_full_id.clone();
 
         while self.current_child_index < self.children.len() {
-            match self.children[self.current_child_index].tick(&mut child_situation, engine) {
+            match self.children[self.current_child_index].tick(&mut child_situation) {
                 (BehaviorStatus::Success, input_opt) => {
                     self.current_child_index += 1;
                     last_input_on_success = input_opt;
@@ -148,4 +146,42 @@ impl SequenceNode {
             .map(|c| c.get_full_node_id(&self_full_id))
             .collect()
     }
+}
+
+impl From<SequenceNode> for BehaviorNode {
+    fn from(node: SequenceNode) -> Self {
+        BehaviorNode::Sequence(node)
+    }
+}
+
+pub struct SequenceNodeBuilder {
+    children: Vec<BehaviorNode>,
+    description: Option<String>,
+}
+
+impl SequenceNodeBuilder {
+    pub fn new() -> Self {
+        Self {
+            children: Vec::new(),
+            description: None,
+        }
+    }
+
+    pub fn add(mut self, child: impl Into<BehaviorNode>) -> Self {
+        self.children.push(child.into());
+        self
+    }
+
+    pub fn description(mut self, description: impl AsRef<str>) -> Self {
+        self.description = Some(description.as_ref().to_string());
+        self
+    }
+
+    pub fn build(self) -> SequenceNode {
+        SequenceNode::new(self.children, self.description)
+    }
+}
+
+pub fn sequence_node() -> SequenceNodeBuilder {
+    SequenceNodeBuilder::new()
 }

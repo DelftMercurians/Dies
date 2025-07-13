@@ -1,25 +1,23 @@
 use dies_core::debug_tree_node;
-use rhai::{Array, Engine};
 
 use super::{
-    super::bt_callback::BtCallback,
     super::bt_core::{BehaviorStatus, RobotSituation},
     sanitize_id_fragment, BehaviorNode,
 };
-use crate::control::PlayerControlInput;
-use std::collections::HashMap;
+use crate::{behavior_tree::BtCallback, control::PlayerControlInput};
+use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone)]
 pub struct Scorer {
     pub node: BehaviorNode,
-    pub callback: BtCallback<f64>,
+    pub callback: Arc<dyn BtCallback<f64>>,
     pub key: String,
 }
 
 #[derive(Clone)]
 pub enum ScorersSource {
     Static(Vec<Scorer>),
-    DynamicWithKeys(BtCallback<Array>),
+    DynamicWithKeys(Arc<dyn BtCallback<Vec<Scorer>>>),
 }
 
 #[derive(Clone)]
@@ -35,7 +33,7 @@ pub struct ScoringSelectNode {
 
 impl ScoringSelectNode {
     pub fn new(
-        children_with_scorers: Vec<(BehaviorNode, BtCallback<f64>)>,
+        children_with_scorers: Vec<(BehaviorNode, Arc<dyn BtCallback<f64>>)>,
         hysteresis_margin: f64,
         description: Option<String>,
     ) -> Self {
@@ -61,7 +59,7 @@ impl ScoringSelectNode {
     }
 
     pub fn new_dynamic(
-        callback: BtCallback<Array>,
+        callback: Arc<dyn BtCallback<Vec<Scorer>>>,
         hysteresis_margin: f64,
         description: Option<String>,
     ) -> Self {
@@ -77,22 +75,14 @@ impl ScoringSelectNode {
         }
     }
 
-    fn get_scorers(&self, situation: &RobotSituation, engine: &Engine) -> Vec<Scorer> {
+    fn get_scorers(&self, situation: &RobotSituation) -> Vec<Scorer> {
         match &self.scorers_source {
             ScorersSource::Static(scorers) => scorers.clone(),
-            ScorersSource::DynamicWithKeys(callback) => callback
-                .call(situation, engine)
-                .unwrap_or_else(|e| {
-                    log::error!("Failed to generate dynamic scorers: {}", e);
-                    vec![]
-                })
-                .into_iter()
-                .filter_map(|n| n.try_cast_result::<Scorer>().ok())
-                .collect(),
+            ScorersSource::DynamicWithKeys(callback) => callback(situation),
         }
     }
 
-    pub fn debug_all_nodes(&self, situation: &RobotSituation, engine: &Engine) {
+    pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let children = self.last_children.clone();
         debug_tree_node(
@@ -110,17 +100,16 @@ impl ScoringSelectNode {
         let mut child_situation = situation.clone();
         child_situation.viz_path_prefix = node_full_id.clone();
         for scorer in &children {
-            scorer.node.debug_all_nodes(&child_situation, engine);
+            scorer.node.debug_all_nodes(&child_situation);
         }
     }
 
     pub fn tick(
         &mut self,
         situation: &mut RobotSituation,
-        engine: &Engine,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
-        let mut children = self.get_scorers(situation, engine);
+        let mut children = self.get_scorers(situation);
 
         if children.is_empty() {
             debug_tree_node(
@@ -138,10 +127,7 @@ impl ScoringSelectNode {
 
         let mut scores = HashMap::new();
         for scorer in &children {
-            let score = scorer
-                .callback
-                .call(situation, engine)
-                .unwrap_or(f64::NEG_INFINITY);
+            let score = (scorer.callback)(situation);
             scores.insert(scorer.key.clone(), score);
         }
 
@@ -180,7 +166,7 @@ impl ScoringSelectNode {
 
         let mut child_situation = situation.clone();
         child_situation.viz_path_prefix = node_full_id.clone();
-        let (status, input) = child_node.tick(&mut child_situation, engine);
+        let (status, input) = child_node.tick(&mut child_situation);
 
         match status {
             BehaviorStatus::Success | BehaviorStatus::Failure => {
@@ -241,4 +227,57 @@ impl ScoringSelectNode {
             .map(|c| c.node.get_full_node_id(&self_full_id))
             .collect()
     }
+}
+
+impl From<ScoringSelectNode> for BehaviorNode {
+    fn from(node: ScoringSelectNode) -> Self {
+        BehaviorNode::ScoringSelect(node)
+    }
+}
+
+pub struct ScoringSelectNodeBuilder {
+    children_with_scorers: Vec<(BehaviorNode, Arc<dyn BtCallback<f64>>)>,
+    hysteresis_margin: f64,
+    description: Option<String>,
+}
+
+impl ScoringSelectNodeBuilder {
+    pub fn new() -> Self {
+        Self {
+            children_with_scorers: Vec::new(),
+            hysteresis_margin: 0.1,
+            description: None,
+        }
+    }
+
+    pub fn dynamic(self, callback: impl BtCallback<Vec<Scorer>>) -> ScoringSelectNode {
+        ScoringSelectNode::new_dynamic(Arc::new(callback), self.hysteresis_margin, self.description)
+    }
+
+    pub fn add_child(mut self, child: BehaviorNode, scorer: impl BtCallback<f64>) -> Self {
+        self.children_with_scorers.push((child, Arc::new(scorer)));
+        self
+    }
+
+    pub fn hysteresis_margin(mut self, hysteresis_margin: f64) -> Self {
+        self.hysteresis_margin = hysteresis_margin;
+        self
+    }
+
+    pub fn description(mut self, description: impl AsRef<str>) -> Self {
+        self.description = Some(description.as_ref().to_string());
+        self
+    }
+
+    pub fn build(self) -> ScoringSelectNode {
+        ScoringSelectNode::new(
+            self.children_with_scorers,
+            self.hysteresis_margin,
+            self.description,
+        )
+    }
+}
+
+pub fn scoring_select_node() -> ScoringSelectNodeBuilder {
+    ScoringSelectNodeBuilder::new()
 }

@@ -1,59 +1,31 @@
-use super::bt_callback::BtCallback;
-use crate::behavior_tree::RobotSituation;
-use anyhow::Result;
-use dies_core::Angle;
-use rhai::{Engine, FnPtr, NativeCallContext, Variant};
+use crate::behavior_tree::{BtCallback, RobotSituation};
+use std::sync::Arc;
 
-#[derive(Clone, Debug)]
-pub enum Argument<T: Clone + Variant + Send + Sync + 'static> {
+#[derive(Clone)]
+pub enum Argument<T: Clone + Send + Sync + 'static> {
     Static(T),
-    Callback(BtCallback<T>),
+    Callback(Arc<dyn BtCallback<T>>),
 }
 
-impl<T: Clone + Variant + Send + Sync + 'static> Argument<T> {
-    pub fn from_rhai(
-        val: rhai::Dynamic,
-        context: &NativeCallContext,
-    ) -> Result<Self, Box<rhai::EvalAltResult>> {
-        let name = val.type_name().to_string();
-        if let Some(fn_ptr) = val.clone().try_cast::<FnPtr>() {
-            Ok(Argument::Callback(BtCallback::new_rhai(context, fn_ptr)))
-        } else if let Some(static_val) = val.try_cast::<T>() {
-            Ok(Argument::Static(static_val))
-        } else {
-            Err(Box::new(rhai::EvalAltResult::ErrorMismatchDataType(
-                format!("Expected {} or callback", std::any::type_name::<T>()),
-                name,
-                rhai::Position::NONE,
-            )))
-        }
+impl<T: Clone + Send + Sync + 'static> Argument<T> {
+    pub fn static_arg(val: T) -> Self {
+        Self::Static(val)
     }
 
-    pub fn resolve(&self, situation: &RobotSituation, engine: &Engine) -> Result<T> {
+    pub fn callback(cb: impl BtCallback<T>) -> Self {
+        Self::Callback(Arc::new(cb))
+    }
+
+    pub fn resolve(&self, situation: &RobotSituation) -> T {
         match self {
-            Argument::Static(val) => Ok(val.clone()),
-            Argument::Callback(cb) => cb.call(situation, engine),
+            Argument::Static(val) => val.clone(),
+            Argument::Callback(cb) => cb(situation),
         }
     }
 }
 
-impl Argument<Option<Angle>> {
-    pub fn from_rhai_angle(
-        val: rhai::Dynamic,
-        context: &NativeCallContext,
-    ) -> Result<Self, Box<rhai::EvalAltResult>> {
-        if let Some(fn_ptr) = val.clone().try_cast::<FnPtr>() {
-            Ok(Argument::Callback(BtCallback::new_rhai(context, fn_ptr)))
-        } else if let Some(static_val) = val.clone().try_cast::<f64>() {
-            Ok(Argument::Static(Some(Angle::from_radians(static_val))))
-        } else if val.is::<()>( /* check for nil */ ) {
-            Ok(Argument::Static(None))
-        } else {
-            Err(Box::new(rhai::EvalAltResult::ErrorMismatchDataType(
-                "Expected f64, nil or callback".to_string(),
-                val.type_name().into(),
-                rhai::Position::NONE,
-            )))
-        }
+impl<R: Clone + Send + Sync + 'static, T: BtCallback<R>> From<T> for Argument<R> {
+    fn from(cb: T) -> Self {
+        Argument::Callback(Arc::new(cb))
     }
 }

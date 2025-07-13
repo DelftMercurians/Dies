@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use dies_core::{SideAssignment, WorldUpdate};
-use dies_executor::{ControlMsg, Executor, ExecutorHandle};
+use dies_executor::{ControlMsg, Executor, ExecutorHandle, Strategy};
 use dies_protos::ssl_gc_referee_message::referee::Command;
 use dies_simulator::SimulationBuilder;
 use dies_ssl_client::VisionClient;
@@ -30,6 +30,7 @@ pub struct ExecutorTask {
     update_tx: watch::Sender<Option<WorldUpdate>>,
     server_state: Arc<ServerState>,
     ui_env: UiEnvironment,
+    strategy: Strategy,
 }
 
 impl ExecutorTask {
@@ -38,6 +39,7 @@ impl ExecutorTask {
         update_tx: watch::Sender<Option<WorldUpdate>>,
         cmd_rx: broadcast::Receiver<UiCommand>,
         server_state: Arc<ServerState>,
+        strategy: Strategy,
     ) -> Self {
         Self {
             state: ExecutorTaskState::Idle,
@@ -45,6 +47,7 @@ impl ExecutorTask {
             cmd_rx,
             server_state,
             ui_env: config,
+            strategy,
         }
     }
 
@@ -175,7 +178,7 @@ impl ExecutorTask {
             UiCommand::Stop => self.stop_executor().await,
             UiCommand::Start => {
                 log::info!("Starting executor");
-                self.start().await;
+                self.start(self.strategy).await;
             }
             UiCommand::GcCommand(command) => {
                 let cmd = string_to_command(command).unwrap();
@@ -200,7 +203,7 @@ impl ExecutorTask {
         self.server_state.set_executor_status(ExecutorStatus::None);
     }
 
-    async fn start(&mut self) {
+    async fn start(&mut self, strategy: Strategy) {
         let mode = {
             let mode = self.server_state.ui_mode.read().unwrap();
             *mode
@@ -224,6 +227,7 @@ impl ExecutorTask {
                     (UiMode::Simulation, _) => Ok(Executor::new_simulation(
                         settings,
                         SimulationBuilder::default().build(),
+                        strategy,
                     )),
                     (
                         UiMode::Live,
@@ -234,7 +238,12 @@ impl ExecutorTask {
                     ) => {
                         let vision_client = VisionClient::new(ssl_config).await;
                         if let Ok(vision_client) = vision_client {
-                            Ok(Executor::new_live(settings, vision_client, bs_handle))
+                            Ok(Executor::new_live(
+                                settings,
+                                vision_client,
+                                bs_handle,
+                                strategy,
+                            ))
                         } else {
                             Err(anyhow::anyhow!("Failed to connect to vision"))
                         }

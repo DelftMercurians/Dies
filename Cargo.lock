@@ -887,6 +887,7 @@ dependencies = [
  "dies-core",
  "dies-logger",
  "dies-ssl-client",
+ "dies-strategy",
  "dies-webui",
  "env_logger",
  "log",
@@ -906,7 +907,7 @@ dependencies = [
  "glue",
  "lazy_static",
  "log",
- "nalgebra",
+ "nalgebra 0.32.6",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -930,7 +931,7 @@ dependencies = [
  "dies-world",
  "lapjv",
  "log",
- "nalgebra",
+ "nalgebra 0.32.6",
  "ndarray 0.12.1",
  "numpy",
  "paste",
@@ -989,6 +990,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dies-strategy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dies-core",
+ "dies-executor",
+ "log",
+ "nalgebra 0.33.2",
+]
+
+[[package]]
 name = "dies-webui"
 version = "0.1.0"
 dependencies = [
@@ -1020,7 +1032,7 @@ dependencies = [
  "dies-core",
  "dies-protos",
  "log",
- "nalgebra",
+ "nalgebra 0.32.6",
  "rand 0.8.5",
  "rand_distr",
 ]
@@ -2222,7 +2234,24 @@ dependencies = [
  "num-rational",
  "num-traits 0.2.19",
  "serde",
- "simba",
+ "simba 0.8.1",
+ "typenum",
+]
+
+[[package]]
+name = "nalgebra"
+version = "0.33.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26aecdf64b707efd1310e3544d709c5c0ac61c13756046aaaba41be5c4f66a3b"
+dependencies = [
+ "approx",
+ "matrixmultiply 0.3.10",
+ "nalgebra-macros",
+ "num-complex 0.4.6",
+ "num-rational",
+ "num-traits 0.2.19",
+ "serde",
+ "simba 0.9.0",
  "typenum",
 ]
 
@@ -2328,6 +2357,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-bigint"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
+dependencies = [
+ "num-integer",
+ "num-traits 0.2.19",
+]
+
+[[package]]
 name = "num-complex"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2379,6 +2418,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f83d14da390562dca69fc84082e73e548e1ad308d24accdedd2720017cb37824"
 dependencies = [
+ "num-bigint",
  "num-integer",
  "num-traits 0.2.19",
 ]
@@ -2470,11 +2510,11 @@ dependencies = [
  "downcast-rs",
  "either",
  "indexmap 1.9.3",
- "nalgebra",
+ "nalgebra 0.32.6",
  "num-derive",
  "num-traits 0.2.19",
  "rustc-hash 1.1.0",
- "simba",
+ "simba 0.8.1",
  "slab",
  "smallvec",
  "spade",
@@ -2850,12 +2890,12 @@ dependencies = [
  "bitflags 1.3.2",
  "crossbeam",
  "downcast-rs",
- "nalgebra",
+ "nalgebra 0.32.6",
  "num-derive",
  "num-traits 0.2.19",
  "parry3d-f64",
  "rustc-hash 1.1.0",
- "simba",
+ "simba 0.8.1",
 ]
 
 [[package]]
@@ -3313,6 +3353,19 @@ checksum = "061507c94fc6ab4ba1c9a0305018408e312e17c041eb63bef8aa726fa33aceae"
 dependencies = [
  "approx",
  "libm",
+ "num-complex 0.4.6",
+ "num-traits 0.2.19",
+ "paste",
+ "wide",
+]
+
+[[package]]
+name = "simba"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3a386a501cd104797982c15ae17aafe8b9261315b5d07e3ec803f2ea26be0fa"
+dependencies = [
+ "approx",
  "num-complex 0.4.6",
  "num-traits 0.2.19",
  "paste",

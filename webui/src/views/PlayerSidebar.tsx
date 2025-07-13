@@ -110,11 +110,13 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
   });
 
   const debugData = useDebugData();
+  const teamColor = primaryTeam === TeamColor.Blue ? "Blue" : "Yellow";
   const playerDebugData = debugData
     ? (Object.entries(debugData)
         .filter(
           ([key, val]) =>
-            key.startsWith(`p${selectedPlayerId}`) && val.type !== "Shape"
+            key.startsWith(`team_${teamColor}.p${selectedPlayerId}`) &&
+            val.type !== "Shape"
         )
         .map(([key, val]) => [
           key.slice(`p${selectedPlayerId}`.length + 1),

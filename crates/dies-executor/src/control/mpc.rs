@@ -113,7 +113,7 @@ impl MPCController {
 
         if elapsed > 150 {
             // If delay is too long, fall back to MTP (return empty HashMap)
-            log::warn!("mpc took too long, switching back to the mtp");
+            // log::warn!("mpc took too long, switching back to a decent control");
             return HashMap::new();
         }
 
@@ -131,7 +131,9 @@ impl MPCController {
                 robots: robots.to_vec(),
                 world: world.clone(),
                 controller_state,
-                controllable_mask: controllable_mask.unwrap_or(&vec![true; robots.len()]).to_vec(),
+                controllable_mask: controllable_mask
+                    .unwrap_or(&vec![true; robots.len()])
+                    .to_vec(),
             };
 
             if let Err(e) = self.request_sender.try_send(request) {
@@ -353,7 +355,15 @@ impl MPCController {
 
             // Prepare field geometry [field_length, field_width, penalty_area_depth, penalty_area_width]
             let field_geometry = if let Some(geom) = &world.field_geom {
-                Some(np.call_method1("array", (vec![geom.field_length, geom.field_width, geom.penalty_area_depth, geom.penalty_area_width],))?)
+                Some(np.call_method1(
+                    "array",
+                    (vec![
+                        geom.field_length,
+                        geom.field_width,
+                        geom.penalty_area_depth,
+                        geom.penalty_area_width,
+                    ],),
+                )?)
             } else {
                 None
             };
@@ -361,7 +371,10 @@ impl MPCController {
             let dt_value = world.dt;
 
             // Prepare controllable mask as numpy array
-            let controllable_mask_data: Vec<i32> = controllable_mask.iter().map(|&b| if b { 1 } else { 0 }).collect();
+            let controllable_mask_data: Vec<i32> = controllable_mask
+                .iter()
+                .map(|&b| if b { 1 } else { 0 })
+                .collect();
             let controllable_mask_array = np.call_method1("array", (controllable_mask_data,))?;
 
             // Call the JAX batch solve_mpc function with field geometry
@@ -377,7 +390,7 @@ impl MPCController {
                 last_controls_array,
                 dt_value,
                 field_geometry,
-                controllable_mask_array
+                controllable_mask_array,
             ))?;
 
             // Extract the result - it's a tuple of (controls, trajectories)

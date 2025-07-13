@@ -26,3 +26,4 @@ network-interface = "2.0.0"
 console-subscriber = "0.3.0"
 protobuf-json-mapping = "3.5.0"
 cargo-make = "0.37.23"
+dies-strategy = { version = "0.1.0", path = "../dies-strategy" }
