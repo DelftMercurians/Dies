@@ -29,7 +29,6 @@ const TeamOverview: FC<TeamOverviewProps> = ({
   if (worldState.status !== "connected") {
     return (
       <div className={cn("p-1 bg-gray-900 text-white", className)}>
-        <h2 className="text-2xl font-bold mb-4">Team Overview</h2>
         <div className="text-center text-gray-400">
           Waiting for world state...
         </div>

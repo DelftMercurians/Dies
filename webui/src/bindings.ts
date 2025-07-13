@@ -369,7 +369,7 @@ export type UiCommand =
 	| { type: "SimulatorCmd", data: SimulatorCmd }
 	| { type: "SetPause", data: boolean }
 	| { type: "Start",  }
-	| { type: "GcCommand", data: string }
+	| { type: "GcCommand", data: GcSimCommand }
 	/** Control which teams are active */
 	| { type: "SetActiveTeams", data: {
 	blue_active: boolean;
@@ -507,6 +507,25 @@ export type DebugShape =
 	node_type: string;
 	internal_state?: string;
 	additional_info?: string;
+}};
+
+export type GcSimCommand = 
+	| { type: "Stop",  }
+	| { type: "Halt",  }
+	| { type: "NormalStart",  }
+	| { type: "ForceStart",  }
+	| { type: "KickOff", data: {
+	team_color: TeamColor;
+}}
+	| { type: "Penalty", data: {
+	team_color: TeamColor;
+}}
+	| { type: "DirectFree", data: {
+	team_color: TeamColor;
+}}
+	| { type: "BallPlacement", data: {
+	team_color: TeamColor;
+	position: Vector2;
 }};
 
 /** An override command for a player for manual control. */

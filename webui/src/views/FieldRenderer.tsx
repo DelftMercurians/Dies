@@ -94,7 +94,8 @@ export class FieldRenderer {
   render(
     selectedPlayerId: number | null,
     primaryTeam: TeamColor,
-    manualControl: number[]
+    manualControl: number[],
+    manualBallPlacementPosition: Vector2 | null
   ) {
     this.clear();
     if (!this.world) return;
@@ -136,6 +137,19 @@ export class FieldRenderer {
       ) {
         ball.raw_position.forEach((pos) => this.drawBall(pos, "raw"));
       }
+    }
+
+    if (manualBallPlacementPosition) {
+      this.ctx.fillStyle = "#00000088";
+      this.ctx.beginPath();
+      this.ctx.arc(
+        this.fieldToCanvas(manualBallPlacementPosition)[0],
+        this.fieldToCanvas(manualBallPlacementPosition)[1],
+        this.convertLength(BALL_RADIUS),
+        0,
+        2 * Math.PI
+      );
+      this.ctx.fill();
     }
 
     this.debugShapes.forEach((shape) => this.drawDebugShape(shape));

@@ -554,7 +554,7 @@ impl Executor {
                         match msg {
                             ControlMsg::Stop => break,
                             ControlMsg::GcCommand { command } => {
-                                simulator.update_referee_command(command);
+                                simulator.handle_gc_command(command);
                             }
                             ControlMsg::SimulatorCmd(cmd) => self.handle_simulator_cmd(&mut simulator, cmd),
                             ControlMsg::SetActiveTeams { .. } => {

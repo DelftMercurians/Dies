@@ -219,10 +219,10 @@ impl TeamController {
             player_inputs_map.insert(player_id, player_input);
         }
 
-
         let mut inputs_for_comply = PlayerInputs::new();
         for (id, input) in player_inputs_map.iter() {
-            self.avoid_goal_area_flags.insert(*id, input.role_type != RoleType::Goalkeeper);
+            self.avoid_goal_area_flags
+                .insert(*id, input.role_type != RoleType::Goalkeeper);
             inputs_for_comply.insert(*id, input.clone());
         }
 
@@ -230,8 +230,7 @@ impl TeamController {
             world_data.current_game_state.game_state,
             GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
         ) {
-            // comply(&world_data, inputs_for_comply, &team_context)
-            inputs_for_comply
+            comply(&world_data, inputs_for_comply, &team_context)
         } else {
             inputs_for_comply
         };
@@ -288,7 +287,11 @@ impl TeamController {
             // Collect avoid_goal_area flags for MPC robots (in the same order as mpc_robots)
             let mut avoid_goal_area_flags = Vec::new();
             for robot in &mpc_robots {
-                let avoid_goal_area = self.avoid_goal_area_flags.get(&robot.id).copied().unwrap_or(true);
+                let avoid_goal_area = self
+                    .avoid_goal_area_flags
+                    .get(&robot.id)
+                    .copied()
+                    .unwrap_or(true);
                 avoid_goal_area_flags.push(avoid_goal_area);
             }
 
@@ -296,7 +299,7 @@ impl TeamController {
                 &mpc_robots,
                 &world_data,
                 Some(&controllable_mask),
-                &avoid_goal_area_flags
+                &avoid_goal_area_flags,
             )
         } else {
             HashMap::new()
@@ -401,7 +404,7 @@ impl TeamController {
                     obstacles,
                     &all_players,
                     &player_context,
-                    avoid_goal_area
+                    avoid_goal_area,
                 );
             } else {
                 controller.increment_frames_misses();

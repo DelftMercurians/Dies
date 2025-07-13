@@ -15,12 +15,16 @@ import {
   Trophy,
   Navigation,
 } from "lucide-react";
+import { GcSimCommand, TeamColor, Vector2 } from "@/bindings";
+import { atom, useAtomValue } from "jotai";
+
+export const BallPlacementPostionAtom = atom<Vector2 | null>(null);
 
 const GameControllerPanel: React.FC = () => {
   const sendCommand = useSendCommand();
-  const [lastCommand, setLastCommand] = useState<string | null>(null);
+  const [lastCommand, setLastCommand] = useState<GcSimCommand | null>(null);
 
-  const sendGcCommand = (command: string) => {
+  const sendGcCommand = (command: GcSimCommand) => {
     sendCommand({
       type: "GcCommand",
       data: command,
@@ -28,31 +32,42 @@ const GameControllerPanel: React.FC = () => {
     setLastCommand(command);
   };
 
-  const commandGroups = {
+  const ballPlacementPosition = useAtomValue(BallPlacementPostionAtom);
+  const commandGroups: Record<
+    string,
+    {
+      command: GcSimCommand;
+      label: string;
+      icon: React.ElementType;
+      variant?: "default" | "secondary" | "destructive" | "outline";
+      description: string;
+      color?: "blue" | "yellow";
+    }[]
+  > = {
     "Game Flow": [
       {
-        command: "HALT",
+        command: { type: "Halt" },
         label: "Halt",
         icon: Square,
         variant: "destructive" as const,
         description: "Stop all robots immediately",
       },
       {
-        command: "STOP",
+        command: { type: "Stop" },
         label: "Stop",
         icon: Pause,
         variant: "secondary" as const,
         description: "Stop game, robots may move slowly",
       },
       {
-        command: "NORMAL_START",
+        command: { type: "NormalStart" },
         label: "Normal Start",
         icon: Play,
         variant: "default" as const,
         description: "Resume normal play",
       },
       {
-        command: "FORCE_START",
+        command: { type: "ForceStart" },
         label: "Force Start",
         icon: Play,
         variant: "default" as const,
@@ -61,14 +76,14 @@ const GameControllerPanel: React.FC = () => {
     ],
     Kickoffs: [
       {
-        command: "PREPARE_KICKOFF_BLUE",
+        command: { type: "KickOff", data: { team_color: TeamColor.Blue } },
         label: "Blue Kickoff",
         icon: Navigation,
         color: "blue",
         description: "Prepare kickoff for blue team",
       },
       {
-        command: "PREPARE_KICKOFF_YELLOW",
+        command: { type: "KickOff", data: { team_color: TeamColor.Yellow } },
         label: "Yellow Kickoff",
         icon: Navigation,
         color: "yellow",
@@ -77,14 +92,14 @@ const GameControllerPanel: React.FC = () => {
     ],
     Penalties: [
       {
-        command: "PREPARE_PENALTY_BLUE",
+        command: { type: "Penalty", data: { team_color: TeamColor.Blue } },
         label: "Blue Penalty",
         icon: Target,
         color: "blue",
         description: "Prepare penalty for blue team",
       },
       {
-        command: "PREPARE_PENALTY_YELLOW",
+        command: { type: "Penalty", data: { team_color: TeamColor.Yellow } },
         label: "Yellow Penalty",
         icon: Target,
         color: "yellow",
@@ -93,76 +108,74 @@ const GameControllerPanel: React.FC = () => {
     ],
     "Free Kicks": [
       {
-        command: "DIRECT_FREE_BLUE",
+        command: { type: "DirectFree", data: { team_color: TeamColor.Blue } },
         label: "Blue Direct",
         icon: Target,
         color: "blue",
         description: "Direct free kick for blue",
       },
       {
-        command: "DIRECT_FREE_YELLOW",
+        command: { type: "DirectFree", data: { team_color: TeamColor.Yellow } },
         label: "Yellow Direct",
         icon: Target,
         color: "yellow",
         description: "Direct free kick for yellow",
       },
-      {
-        command: "INDIRECT_FREE_BLUE",
-        label: "Blue Indirect",
-        icon: RotateCcw,
-        color: "blue",
-        description: "Indirect free kick for blue",
-      },
-      {
-        command: "INDIRECT_FREE_YELLOW",
-        label: "Yellow Indirect",
-        icon: RotateCcw,
-        color: "yellow",
-        description: "Indirect free kick for yellow",
-      },
     ],
-    Timeouts: [
-      {
-        command: "TIMEOUT_BLUE",
-        label: "Blue Timeout",
-        icon: Clock,
-        color: "blue",
-        description: "Timeout for blue team",
-      },
-      {
-        command: "TIMEOUT_YELLOW",
-        label: "Yellow Timeout",
-        icon: Clock,
-        color: "yellow",
-        description: "Timeout for yellow team",
-      },
-    ],
-    Goals: [
-      {
-        command: "GOAL_BLUE",
-        label: "Blue Goal",
-        icon: Trophy,
-        color: "blue",
-        description: "Goal scored by blue team",
-      },
-      {
-        command: "GOAL_YELLOW",
-        label: "Yellow Goal",
-        icon: Trophy,
-        color: "yellow",
-        description: "Goal scored by yellow team",
-      },
-    ],
+    // Timeouts: [
+    //   {
+    //     command: { type: "Timeout", data: { team_color: TeamColor.Blue } },
+    //     label: "Blue Timeout",
+    //     icon: Clock,
+    //     color: "blue",
+    //     description: "Timeout for blue team",
+    //   },
+    //   {
+    //     command: "TIMEOUT_YELLOW",
+    //     label: "Yellow Timeout",
+    //     icon: Clock,
+    //     color: "yellow",
+    //     description: "Timeout for yellow team",
+    //   },
+    // ],
+    // Goals: [
+    //   {
+    //     command: "GOAL_BLUE",
+    //     label: "Blue Goal",
+    //     icon: Trophy,
+    //     color: "blue",
+    //     description: "Goal scored by blue team",
+    //   },
+    //   {
+    //     command: "GOAL_YELLOW",
+    //     label: "Yellow Goal",
+    //     icon: Trophy,
+    //     color: "yellow",
+    //     description: "Goal scored by yellow team",
+    //   },
+    // ],
     "Ball Placement": [
       {
-        command: "BALL_PLACEMENT_BLUE",
+        command: {
+          type: "BallPlacement",
+          data: {
+            team_color: TeamColor.Blue,
+            position: ballPlacementPosition ?? [0, 0],
+          },
+        },
         label: "Blue Ball Placement",
         icon: Navigation,
         color: "blue",
         description: "Ball placement by blue team",
       },
       {
-        command: "BALL_PLACEMENT_YELLOW",
+        command: {
+          type: "BallPlacement",
+          data: {
+            team_color: TeamColor.Yellow,
+            position: ballPlacementPosition ?? [0, 0],
+          },
+        },
         label: "Yellow Ball Placement",
         icon: Navigation,
         color: "yellow",
@@ -192,7 +205,7 @@ const GameControllerPanel: React.FC = () => {
           <CardTitle className="text-base">Game Controller</CardTitle>
           {lastCommand && (
             <Badge variant="outline" className="w-fit text-xs">
-              Last: {lastCommand.replace(/_/g, " ")}
+              Last: {lastCommand.type}
             </Badge>
           )}
         </CardHeader>
@@ -208,7 +221,7 @@ const GameControllerPanel: React.FC = () => {
                     const Icon = cmd.icon;
                     return (
                       <Button
-                        key={cmd.command}
+                        key={cmd.command.type}
                         variant={getButtonVariant(cmd)}
                         size="sm"
                         className={`justify-start h-8 px-2 text-xs ${getButtonClassName(

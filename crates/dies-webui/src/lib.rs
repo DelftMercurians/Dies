@@ -2,8 +2,9 @@ use std::path::PathBuf;
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    DebugMap, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    ScriptError, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, WorldData,
+    DebugMap, ExecutorInfo, ExecutorSettings, GcSimCommand, PlayerFeedbackMsg, PlayerId,
+    PlayerOverrideCommand, ScriptError, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration,
+    WorldData,
 };
 use dies_ssl_client::SslClientConfig;
 use serde::{Deserialize, Serialize};
@@ -95,7 +96,7 @@ pub(crate) enum UiCommand {
     SimulatorCmd(SimulatorCmd),
     SetPause(bool),
     Start,
-    GcCommand(String),
+    GcCommand(GcSimCommand),
     /// Control which teams are active
     SetActiveTeams {
         blue_active: bool,

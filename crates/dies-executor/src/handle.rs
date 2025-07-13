@@ -2,10 +2,9 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use dies_core::{
-    ExecutorInfo, ExecutorSettings, PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd,
-    TeamColor, TeamConfiguration, WorldUpdate,
+    ExecutorInfo, ExecutorSettings, GcSimCommand, PlayerId, PlayerOverrideCommand, SideAssignment,
+    SimulatorCmd, TeamColor, TeamConfiguration, WorldUpdate,
 };
-use dies_protos::ssl_gc_referee_message::referee::Command;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::ScriptError;
@@ -25,7 +24,7 @@ pub enum ControlMsg {
     SetPause(bool),
     UpdateSettings(ExecutorSettings),
     GcCommand {
-        command: Command,
+        command: GcSimCommand,
     },
     SimulatorCmd(SimulatorCmd),
     /// Control which teams are active

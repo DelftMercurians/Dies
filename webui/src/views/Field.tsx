@@ -31,6 +31,8 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { useAtom, useSetAtom } from "jotai";
+import { BallPlacementPostionAtom } from "@/components/GameControllerPanel";
 
 const CONT_PADDING_PX = 8;
 
@@ -103,6 +105,10 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     contHeight
   );
   const [primaryTeam] = usePrimaryTeam();
+  const [manualBallPlacementPosition, setManualBallPlacementPosition] = useAtom(
+    BallPlacementPostionAtom
+  );
+
   useEffect(() => {
     if (!canvasRef.current) return;
 
@@ -118,7 +124,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     rendererRef.current.render(
       selectedPlayerId,
       primaryTeam,
-      manualControlledPlayerIds
+      manualControlledPlayerIds,
+      manualBallPlacementPosition
     );
   }, [
     debugMap,
@@ -128,6 +135,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     manualControlledPlayerIds,
     positionDisplayMode,
     selectedPlayerId,
+    manualBallPlacementPosition,
   ]);
 
   const selectedPlayerData =
@@ -351,9 +359,16 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           ) : null}
 
           {isSim ? (
-            <ContextMenuItem onClick={() => setBallToMouse((s) => !s)}>
-              {ballToMouse ? "Stop moving ball" : "Move ball towards mouse"}
-            </ContextMenuItem>
+            <>
+              <ContextMenuItem
+                onClick={() => setManualBallPlacementPosition(mouseField)}
+              >
+                Set ball placement position
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => setBallToMouse((s) => !s)}>
+                {ballToMouse ? "Stop moving ball" : "Move ball towards mouse"}
+              </ContextMenuItem>
+            </>
           ) : null}
         </ContextMenuContent>
       </ContextMenu>

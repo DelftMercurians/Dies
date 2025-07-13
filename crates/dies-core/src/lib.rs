@@ -55,6 +55,29 @@ pub enum SimulatorCmd {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare::typeshare]
+pub enum GcSimCommand {
+    Stop,
+    Halt,
+    NormalStart,
+    ForceStart,
+    KickOff {
+        team_color: TeamColor,
+    },
+    Penalty {
+        team_color: TeamColor,
+    },
+    DirectFree {
+        team_color: TeamColor,
+    },
+    BallPlacement {
+        team_color: TeamColor,
+        position: Vector2,
+    },
+}
+
 /// Script error types for error handling and UI display
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
