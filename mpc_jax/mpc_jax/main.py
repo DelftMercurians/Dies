@@ -65,7 +65,7 @@ def mpc_cost_function(
     trajectories = trajectories_from_control(w, u, cfg.delay)
 
     # Compute position-based costs over the trajectory
-    def position_cost_fn(raw_traj, max_speed, target):
+    def position_cost_fn(raw_traj, max_speed, target, avoid_goal_area):
         t, pos_x, pos_y, vel_x, vel_y = raw_traj
         robot = Entity(jnp.array([pos_x, pos_y]), jnp.array([vel_x, vel_y]))
         # Account for delay in target position prediction
@@ -93,7 +93,7 @@ def mpc_cost_function(
         )
 
         # other stuff
-        b_cost = boundary_cost(robot.position, w.field_bounds)
+        b_cost = boundary_cost(robot.position, w.field_bounds, avoid_goal_area)
         vc_cost = velocity_constraint_cost(robot.velocity, max_speed)
 
         return (
@@ -122,7 +122,7 @@ def mpc_cost_function(
         lambda traj, target, max_speed: jax.vmap(
             eqx.Partial(position_cost_fn, max_speed=max_speed, target=target)
         )(traj)
-    )(trajectories, targets, max_speeds)
+    )(trajectories, targets, max_speeds, w.avoid_goal_area)
 
     total_collective_cost = jax.vmap(
         lambda traj_slice: jax.vmap(
@@ -391,7 +391,7 @@ def solve_mpc(
     dt: np.ndarray | None = np.array(0.04),
     field_geometry: np.ndarray | None = None,
     controllable_mask: np.ndarray | None = None,
-    avoid_goal_area_flags: np.ndarray | None = None,
+    avoid_goal_area: np.ndarray | None = None,
 ) -> Result:
     n_robots = len(initial_pos)
     ctrl_shape = (len(initial_pos), CONTROL_HORIZON, 2)
@@ -401,12 +401,6 @@ def solve_mpc(
         controllable_mask = np.ones(n_robots, dtype=bool)
     else:
         controllable_mask = controllable_mask.astype(bool)
-
-    # Handle avoid_goal_area_flags
-    if avoid_goal_area_flags is None:
-        avoid_goal_area_flags = np.ones(n_robots, dtype=bool)
-    else:
-        avoid_goal_area_flags = avoid_goal_area_flags.astype(bool)
 
     # Pad inputs to fixed size (6 robots) in numpy
     padded_max_speeds = np.full(6, 1e6)
@@ -435,7 +429,9 @@ def solve_mpc(
     )
 
     # Use a single boolean - true if any robot should avoid goal area
-    avoid_goal_area = bool(np.any(avoid_goal_area_flags[:n_robots]))
+
+    avoid_goal_area_padded = np.zeros((6, CONTROL_HORIZON, 2))
+    avoid_goal_area_padded[:n_robots] = avoid_goal_area
 
     r = _jitted(
         w=World(
@@ -443,7 +439,7 @@ def solve_mpc(
             EntityBatch(jnp.asarray(obstacles)),
             EntityBatch(jnp.asarray(initial_pos), jnp.asarray(initial_vel)),
             Entity(jnp.asarray(ball_pos)),
-            avoid_goal_area=avoid_goal_area,
+            avoid_goal_area=avoid_goal_area_padded,
         ),
         targets=EntityBatch(jnp.asarray(target_pos)),
         max_speeds=jnp.asarray(padded_max_speeds),
