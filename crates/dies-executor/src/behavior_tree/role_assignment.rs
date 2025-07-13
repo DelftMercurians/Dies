@@ -137,7 +137,7 @@ impl RoleAssignmentSolver {
     pub fn new() -> Self {
         Self {
             score_cache: HashMap::new(),
-            hysteresis_bonus: 1.5,
+            hysteresis_bonus: 5.0,
         }
     }
 

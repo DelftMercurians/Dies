@@ -296,27 +296,27 @@ pub fn score_as_harasser(s: &RobotSituation) -> f64 {
     let unmarked_threats = find_unmarked_threats(s);
     if unmarked_threats.is_empty() {
         // No threats to mark, but we can still be useful for fallback duties
-        score = 20.0;
+        score = 10.0;
 
         // Bonus for being close to a good defensive position
-        let defensive_positions = generate_defensive_positions(s);
-        if let Some(closest_pos) = defensive_positions.first() {
-            let dist_to_position = s.distance_to_position(*closest_pos);
-            score += (1000.0 - dist_to_position.min(1000.0)) / 50.0;
-        }
+        // let defensive_positions = generate_defensive_positions(s);
+        // if let Some(closest_pos) = defensive_positions.first() {
+        //     let dist_to_position = s.distance_to_position(*closest_pos);
+        //     score += (1000.0 - dist_to_position.min(1000.0)) / 50.0;
+        // }
 
-        // Bonus if we should pickup the ball
-        if should_pickup_ball(s) {
-            score += 15.0;
-            let ball_pos = s
-                .world
-                .ball
-                .as_ref()
-                .map(|b| b.position.xy())
-                .unwrap_or_default();
-            let dist_to_ball = s.distance_to_position(ball_pos);
-            score += (1500.0 - dist_to_ball.min(1500.0)) / 50.0;
-        }
+        // // Bonus if we should pickup the ball
+        // if should_pickup_ball(s) {
+        //     score += 15.0;
+        //     let ball_pos = s
+        //         .world
+        //         .ball
+        //         .as_ref()
+        //         .map(|b| b.position.xy())
+        //         .unwrap_or_default();
+        //     let dist_to_ball = s.distance_to_position(ball_pos);
+        //     score += (1500.0 - dist_to_ball.min(1500.0)) / 50.0;
+        // }
 
         return score;
     }
