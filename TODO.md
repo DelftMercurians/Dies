@@ -1,1 +1,2 @@
-
+- [ ] Fault tolerance
+  - [ ] Kicker/dribbler failure hadnling in strategy

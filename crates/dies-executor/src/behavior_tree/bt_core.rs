@@ -121,6 +121,10 @@ impl RobotSituation {
         }
     }
 
+    pub fn debug_key(&self, key: impl Into<String>) -> String {
+        format!("{}.{}", self.viz_path_prefix, key.into())
+    }
+
     pub fn player_data(&self) -> &PlayerData {
         self.world.get_player(self.player_id)
     }

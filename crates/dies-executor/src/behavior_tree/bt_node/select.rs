@@ -64,7 +64,7 @@ impl SelectNode {
         };
 
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids_with_children(&situation.viz_path_prefix, &children),
@@ -128,7 +128,7 @@ impl SelectNode {
         let is_active =
             final_status == BehaviorStatus::Running || final_status == BehaviorStatus::Success;
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids_with_children(&situation.viz_path_prefix, &self.last_children),
@@ -153,7 +153,7 @@ impl SelectNode {
         if current_path_prefix.is_empty() {
             fragment
         } else {
-            format!("{}/{}", current_path_prefix, fragment)
+            format!("{}.{}", current_path_prefix, fragment)
         }
     }
 

@@ -112,10 +112,12 @@ impl TeamController {
         let assignment_problem = game_context.into_role_assignment_problem();
 
         // Solve role assignments
-        match self
-            .role_solver
-            .solve(&assignment_problem, &active_robots, &world_data)
-        {
+        match self.role_solver.solve(
+            &assignment_problem,
+            &active_robots,
+            team_context.clone(),
+            world_data.clone(),
+        ) {
             Ok(assignments) => {
                 self.role_assignments = assignments.clone();
 
@@ -268,7 +270,7 @@ impl TeamController {
         };
 
         // Update the player controllers
-        let trajectories = self.mpc_controller.get_trajectories();
+        // let trajectories = self.mpc_controller.get_trajectories();
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
@@ -296,55 +298,51 @@ impl TeamController {
                         );
 
                         // Plot MPC trajectory if available
-                        if let Some(trajectory) = trajectories.get(&id) {
-                            let debug_name = format!("mpc_traj_p{}", id);
-
-                            // Clear previous trajectory
-                            // dies_core::debug_remove(&debug_name);
-
-                            // Plot trajectory as connected line segments
-                            // for i in 0..trajectory.len().saturating_sub(1) {
-                            //     if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
-                            //         let start =
-                            //             dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
-                            //         let end = dies_core::Vector2::new(
-                            //             trajectory[i + 1][1],
-                            //             trajectory[i + 1][2],
-                            //         );
-                            //         dies_core::debug_line(
-                            //             &format!("{}_seg{}", debug_name, i),
-                            //             start,
-                            //             end,
-                            //             dies_core::DebugColor::Purple,
-                            //         );
-                            //     }
-                            // }
-
-                            // Mark trajectory endpoints
-                            // if !trajectory.is_empty() {
-                            //     if trajectory[0].len() >= 5 {
-                            //         let start_pos =
-                            //             dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
-                            //         dies_core::debug_cross(
-                            //             &format!("{}_start", debug_name),
-                            //             start_pos,
-                            //             dies_core::DebugColor::Green,
-                            //         );
-                            //     }
-
-                            //     if let Some(last) = trajectory.last() {
-                            //         if last.len() >= 5 {
-                            //             let end_pos = dies_core::Vector2::new(last[1], last[2]);
-                            //             dies_core::debug_circle_fill(
-                            //                 &format!("{}_end", debug_name),
-                            //                 end_pos,
-                            //                 80.0,
-                            //                 dies_core::DebugColor::Purple,
-                            //             );
-                            //         }
-                            //     }
-                            // }
-                        }
+                        // if let Some(trajectory) = trajectories.get(&id) {
+                        //     let debug_name = format!("mpc_traj_p{}", id);
+                        // Clear previous trajectory
+                        // dies_core::debug_remove(&debug_name);
+                        // Plot trajectory as connected line segments
+                        // for i in 0..trajectory.len().saturating_sub(1) {
+                        //     if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
+                        //         let start =
+                        //             dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
+                        //         let end = dies_core::Vector2::new(
+                        //             trajectory[i + 1][1],
+                        //             trajectory[i + 1][2],
+                        //         );
+                        //         dies_core::debug_line(
+                        //             &format!("{}_seg{}", debug_name, i),
+                        //             start,
+                        //             end,
+                        //             dies_core::DebugColor::Purple,
+                        //         );
+                        //     }
+                        // }
+                        // Mark trajectory endpoints
+                        // if !trajectory.is_empty() {
+                        //     if trajectory[0].len() >= 5 {
+                        //         let start_pos =
+                        //             dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
+                        //         dies_core::debug_cross(
+                        //             &format!("{}_start", debug_name),
+                        //             start_pos,
+                        //             dies_core::DebugColor::Green,
+                        //         );
+                        //     }
+                        //     if let Some(last) = trajectory.last() {
+                        //         if last.len() >= 5 {
+                        //             let end_pos = dies_core::Vector2::new(last[1], last[2]);
+                        //             dies_core::debug_circle_fill(
+                        //                 &format!("{}_end", debug_name),
+                        //                 end_pos,
+                        //                 80.0,
+                        //                 dies_core::DebugColor::Purple,
+                        //             );
+                        //         }
+                        //     }
+                        // }
+                        // }
                     }
                     // If MPC returned empty (fallback to MTP), don't call set_target_velocity
                     // Let the controller use MTP through the regular update() call below

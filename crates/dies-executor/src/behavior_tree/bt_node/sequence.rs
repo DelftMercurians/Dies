@@ -28,14 +28,14 @@ impl SequenceNode {
     pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&situation.viz_path_prefix),
             false, // We don't know if it's active without ticking
             "Sequence",
             Some(format!(
-                "{}/{} children",
+                "{}.{} children",
                 self.current_child_index,
                 self.children.len()
             )),
@@ -68,14 +68,14 @@ impl SequenceNode {
                 }
                 (BehaviorStatus::Running, input_opt) => {
                     debug_tree_node(
-                        format!("bt.p{}.{}", situation.player_id, node_full_id),
+                        situation.debug_key(node_full_id.clone()),
                         self.description(),
                         node_full_id.clone(),
                         self.get_child_node_ids(&situation.viz_path_prefix),
                         true,
                         "Sequence",
                         Some(format!(
-                            "{}/{} children",
+                            "{}.{} children",
                             self.current_child_index + 1,
                             self.children.len()
                         )),
@@ -86,14 +86,14 @@ impl SequenceNode {
                 (BehaviorStatus::Failure, _input_opt) => {
                     self.current_child_index = 0;
                     debug_tree_node(
-                        format!("bt.p{}.{}", situation.player_id, node_full_id),
+                        situation.debug_key(node_full_id.clone()),
                         self.description(),
                         node_full_id.clone(),
                         self.get_child_node_ids(&situation.viz_path_prefix),
                         false,
                         "Sequence",
                         Some(format!(
-                            "Failed at {}/{}",
+                            "Failed at {}.{}",
                             self.current_child_index + 1,
                             self.children.len()
                         )),
@@ -106,14 +106,14 @@ impl SequenceNode {
 
         self.current_child_index = 0;
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&situation.viz_path_prefix),
             true,
             "Sequence",
             Some(format!(
-                "All {}/{} completed",
+                "All {}.{} completed",
                 self.children.len(),
                 self.children.len()
             )),
@@ -135,7 +135,7 @@ impl SequenceNode {
         if current_path_prefix.is_empty() {
             fragment
         } else {
-            format!("{}/{}", current_path_prefix, fragment)
+            format!("{}.{}", current_path_prefix, fragment)
         }
     }
 

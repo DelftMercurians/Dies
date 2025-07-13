@@ -90,7 +90,7 @@ impl ActionNode {
         };
         let internal_state = self.active_skill.as_ref().map(|_| "Active".to_string());
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&node_full_id),
@@ -216,7 +216,7 @@ impl ActionNode {
             Some("Idle".to_string())
         };
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&node_full_id),
@@ -241,7 +241,7 @@ impl ActionNode {
         if current_path_prefix.is_empty() {
             fragment
         } else {
-            format!("{}/{}", current_path_prefix, fragment)
+            format!("{}.{}", current_path_prefix, fragment)
         }
     }
 

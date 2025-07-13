@@ -60,7 +60,12 @@ const HierarchicalList: FC<HierarchicalListProps> = ({ data, className }) => {
     return JSON.stringify(value);
   };
 
-  const renderGroup = (group: Record<string, any>, key = "", depth = 0) => {
+  const renderGroup = (
+    group: Record<string, any>,
+    key = "",
+    fullKey = "",
+    depth = 0
+  ) => {
     const isLeaf = typeof group.data !== "undefined";
     if (isLeaf) {
       return (
@@ -77,12 +82,12 @@ const HierarchicalList: FC<HierarchicalListProps> = ({ data, className }) => {
       );
     }
 
-    const isOpen = openKeys.includes(key);
+    const isOpen = openKeys.includes(fullKey);
     const handleOpenChange = (isOpen: boolean) => {
       if (isOpen) {
-        setOpenKeys((keys) => [...keys, key]);
+        setOpenKeys((keys) => [...keys, fullKey]);
       } else {
-        setOpenKeys((keys) => keys.filter((k) => k !== key));
+        setOpenKeys((keys) => keys.filter((k) => k !== fullKey));
       }
     };
 
@@ -103,7 +108,7 @@ const HierarchicalList: FC<HierarchicalListProps> = ({ data, className }) => {
             <div className="ml-4 relative">
               <div className="w-4 h-full border-l border-gray-300 absolute -left-4"></div>
               {sortKeys(group).map(([subKey, subGroup]) =>
-                renderGroup(subGroup, subKey, depth + 1),
+                renderGroup(subGroup, subKey, `${fullKey}.${subKey}`, depth + 1)
               )}
             </div>
           </CollapsibleContent>
@@ -114,7 +119,9 @@ const HierarchicalList: FC<HierarchicalListProps> = ({ data, className }) => {
 
   return (
     <div className={cn("p-2", className)}>
-      {sortKeys(groupedData).map(([key, group]) => renderGroup(group, key))}
+      {sortKeys(groupedData).map(([key, group]) =>
+        renderGroup(group, key, key)
+      )}
     </div>
   );
 };

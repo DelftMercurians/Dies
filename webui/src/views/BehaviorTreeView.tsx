@@ -1,4 +1,5 @@
-import { useDebugData } from "@/api";
+import { useDebugData, usePrimaryTeam } from "@/api";
+import { TeamColor } from "@/bindings";
 import React, { useMemo } from "react";
 
 interface BehaviorTreeViewProps {
@@ -88,13 +89,15 @@ const BehaviorTreeView: React.FC<BehaviorTreeViewProps> = ({
   className,
 }) => {
   const debugData = useDebugData();
+  const [selectedTeam] = usePrimaryTeam();
+  const primaryTeam = selectedTeam === TeamColor.Blue ? "Blue" : "Yellow";
 
   const renderedTree = useMemo(() => {
     if (selectedPlayerId === null || !debugData) {
       return null;
     }
 
-    const prefix = `bt.p${selectedPlayerId}.`;
+    const prefix = `team_${primaryTeam}.p${selectedPlayerId}.bt`;
     const nodeDataMap: Record<string, TreeNodeData> = {};
     for (const [key, value] of Object.entries(debugData)) {
       if (

@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use dies_core::{PlayerId, TeamData};
 use std::{collections::HashMap, sync::Arc};
 
-use crate::behavior_tree::BehaviorNode;
+use crate::{behavior_tree::BehaviorNode, control::TeamContext};
 
 use super::{BtCallback, RobotSituation};
 
@@ -143,7 +143,8 @@ impl RoleAssignmentSolver {
         &mut self,
         problem: &RoleAssignmentProblem,
         active_robots: &[PlayerId],
-        team_data: &TeamData,
+        team_context: TeamContext,
+        team_data: Arc<TeamData>,
     ) -> Result<HashMap<PlayerId, String>> {
         if active_robots.is_empty() {
             return Ok(HashMap::new());
@@ -153,7 +154,12 @@ impl RoleAssignmentSolver {
         self.score_cache.clear();
 
         // Pre-compute eligible robots for each role
-        let eligible_robots = self.compute_eligible_robots(problem, active_robots, team_data)?;
+        let eligible_robots = self.compute_eligible_robots(
+            problem,
+            active_robots,
+            team_context.clone(),
+            team_data.clone(),
+        )?;
 
         // Sort roles by priority (critical roles first)
         let mut sorted_roles: Vec<_> = problem.roles.iter().enumerate().collect();
@@ -196,10 +202,16 @@ impl RoleAssignmentSolver {
             let mut scored_robots: Vec<_> = available
                 .iter()
                 .map(|&&robot_id| {
-                    let score = self.get_cached_score(robot_id, &role.name, role, team_data)?;
-                    Ok((robot_id, score))
+                    let score = self.get_cached_score(
+                        robot_id,
+                        &role.name,
+                        role,
+                        team_context.clone(),
+                        team_data.clone(),
+                    );
+                    (robot_id, score)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Vec<_>>();
 
             scored_robots
                 .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -230,11 +242,17 @@ impl RoleAssignmentSolver {
 
             let mut scored_robots: Vec<_> = available
                 .iter()
-                .map(|&&robot_id| {
-                    let score = self.get_cached_score(robot_id, &role.name, role, team_data)?;
-                    Ok((robot_id, score))
+                .map(|robot_id| {
+                    let score = self.get_cached_score(
+                        **robot_id,
+                        &role.name,
+                        role,
+                        team_context.clone(),
+                        team_data.clone(),
+                    );
+                    (**robot_id, score)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Vec<_>>();
 
             scored_robots
                 .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -255,7 +273,8 @@ impl RoleAssignmentSolver {
         &mut self,
         problem: &RoleAssignmentProblem,
         robots: &[PlayerId],
-        team_data: &TeamData,
+        team_context: TeamContext,
+        team_data: Arc<TeamData>,
     ) -> Result<HashMap<String, Vec<PlayerId>>> {
         let mut eligible_robots = HashMap::new();
 
@@ -263,7 +282,12 @@ impl RoleAssignmentSolver {
             let mut eligible = Vec::new();
 
             for &robot_id in robots {
-                let situation = self.create_robot_situation(robot_id, team_data);
+                let situation = RobotSituation::new(
+                    robot_id,
+                    team_data.clone(),
+                    Default::default(),
+                    team_context.player_context(robot_id).key("bt"),
+                );
 
                 if !self.violates_filters(&role, &situation) {
                     eligible.push(robot_id);
@@ -282,19 +306,25 @@ impl RoleAssignmentSolver {
         robot_id: PlayerId,
         role_name: &str,
         role: &Role,
-        team_data: &TeamData,
-    ) -> Result<f64> {
+        team_context: TeamContext,
+        team_data: Arc<TeamData>,
+    ) -> f64 {
         let cache_key = (robot_id, role_name.to_string());
 
         if let Some(&cached_score) = self.score_cache.get(&cache_key) {
-            return Ok(cached_score);
+            return cached_score;
         }
 
-        let situation = self.create_robot_situation(robot_id, team_data);
+        let situation = RobotSituation::new(
+            robot_id,
+            team_data.clone(),
+            Default::default(),
+            team_context.player_context(robot_id).key("bt"),
+        );
         let score = (role.scorer)(&situation);
 
         self.score_cache.insert(cache_key, score);
-        Ok(score)
+        score
     }
 
     /// Check if a robot violates role filters
@@ -315,16 +345,6 @@ impl RoleAssignmentSolver {
 
         false
     }
-
-    /// Create robot situation for scoring
-    fn create_robot_situation(&self, robot_id: PlayerId, team_data: &TeamData) -> RobotSituation {
-        RobotSituation::new(
-            robot_id,
-            std::sync::Arc::new(team_data.clone()),
-            Default::default(),
-            String::new(),
-        )
-    }
 }
 
 impl Default for RoleAssignmentSolver {
@@ -339,8 +359,8 @@ mod tests {
 
     use super::*;
     use dies_core::{
-        Angle, BallData, GameState, GameStateData, PlayerData, SysStatus, TeamData, Vector2,
-        Vector3,
+        Angle, BallData, GameState, GameStateData, PlayerData, SideAssignment, SysStatus,
+        TeamColor, TeamData, Vector2, Vector3,
     };
 
     fn create_test_team_data(num_players: usize) -> TeamData {
@@ -417,7 +437,8 @@ mod tests {
     #[test]
     fn test_simple_assignment() {
         let mut solver = RoleAssignmentSolver::new();
-        let team_data = create_test_team_data(3);
+        let team_context = TeamContext::new(TeamColor::Blue, SideAssignment::YellowOnPositive);
+        let team_data = Arc::new(create_test_team_data(3));
         let active_robots = vec![PlayerId::new(0), PlayerId::new(1), PlayerId::new(2)];
 
         let problem = RoleAssignmentProblem {
@@ -428,7 +449,9 @@ mod tests {
             ],
         };
 
-        let assignments = solver.solve(&problem, &active_robots, &team_data).unwrap();
+        let assignments = solver
+            .solve(&problem, &active_robots, team_context, team_data)
+            .unwrap();
 
         assert_eq!(assignments.len(), 3);
         // All robots should be assigned
@@ -437,7 +460,8 @@ mod tests {
     #[test]
     fn test_filter_constraints() {
         let mut solver = RoleAssignmentSolver::new();
-        let team_data = create_test_team_data(4);
+        let team_context = TeamContext::new(TeamColor::Blue, SideAssignment::YellowOnPositive);
+        let team_data = Arc::new(create_test_team_data(4));
         let active_robots = vec![
             PlayerId::new(0),
             PlayerId::new(1),
@@ -454,7 +478,9 @@ mod tests {
             ],
         };
 
-        let assignments = solver.solve(&problem, &active_robots, &team_data).unwrap();
+        let assignments = solver
+            .solve(&problem, &active_robots, team_context, team_data)
+            .unwrap();
 
         // Basic validation - all robots should be assigned
         assert_eq!(assignments.len(), 4);

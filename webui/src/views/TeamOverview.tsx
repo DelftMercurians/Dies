@@ -28,7 +28,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
 
   if (worldState.status !== "connected") {
     return (
-      <div className={cn("p-4 bg-gray-900 text-white", className)}>
+      <div className={cn("p-1 bg-gray-900 text-white", className)}>
         <h2 className="text-2xl font-bold mb-4">Team Overview</h2>
         <div className="text-center text-gray-400">
           Waiting for world state...
@@ -44,10 +44,13 @@ const TeamOverview: FC<TeamOverviewProps> = ({
   return (
     <div className={cn("relative", className)}>
       <div className="absolute inset-0 overflow-y-auto p-2 bg-slate-900">
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-1">
           {sorted_players.length > 0 ? (
             sorted_players.map((player) => {
-              const basestationData = bsInfo?.players?.[player.id];
+              const basestationData =
+                primaryTeam === TeamColor.Blue
+                  ? bsInfo?.blue_team?.[player.id]
+                  : bsInfo?.yellow_team?.[player.id];
               const isManual = isPlayerManuallyControlled(
                 player.id,
                 executorInfo?.manual_controlled_players ?? []

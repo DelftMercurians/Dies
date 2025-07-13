@@ -86,7 +86,7 @@ impl ScoringSelectNode {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let children = self.last_children.clone();
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids_with_children(&situation.viz_path_prefix, &children),
@@ -113,7 +113,7 @@ impl ScoringSelectNode {
 
         if children.is_empty() {
             debug_tree_node(
-                format!("bt.p{}.{}", situation.player_id, node_full_id),
+                situation.debug_key(node_full_id.clone()),
                 self.description(),
                 node_full_id.clone(),
                 vec![],
@@ -183,7 +183,7 @@ impl ScoringSelectNode {
             final_child_key, scores[&final_child_key]
         );
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids_with_children(&situation.viz_path_prefix, &self.last_children),
@@ -208,7 +208,7 @@ impl ScoringSelectNode {
         if current_path_prefix.is_empty() {
             fragment
         } else {
-            format!("{}/{}", current_path_prefix, fragment)
+            format!("{}.{}", current_path_prefix, fragment)
         }
     }
 

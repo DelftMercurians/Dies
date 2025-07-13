@@ -37,7 +37,7 @@ impl SemaphoreNode {
     pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&situation.viz_path_prefix),
@@ -106,7 +106,7 @@ impl SemaphoreNode {
             "Waiting"
         };
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&situation.viz_path_prefix),
@@ -131,7 +131,7 @@ impl SemaphoreNode {
         if current_path_prefix.is_empty() {
             fragment
         } else {
-            format!("{}/{}", current_path_prefix, fragment)
+            format!("{}.{}", current_path_prefix, fragment)
         }
     }
 

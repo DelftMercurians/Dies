@@ -34,7 +34,7 @@ impl GuardNode {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let condition_result = (self.condition)(situation);
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&situation.viz_path_prefix),
@@ -69,7 +69,7 @@ impl GuardNode {
         let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
         let condition_state = (self.condition)(situation);
         debug_tree_node(
-            format!("bt.p{}.{}", situation.player_id, node_full_id),
+            situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&situation.viz_path_prefix),
@@ -101,7 +101,7 @@ impl GuardNode {
         if current_path_prefix.is_empty() {
             fragment
         } else {
-            format!("{}/{}", current_path_prefix, fragment)
+            format!("{}.{}", current_path_prefix, fragment)
         }
     }
 

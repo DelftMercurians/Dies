@@ -76,7 +76,7 @@ export class FieldRenderer {
   }
 
   private getPlayerRole(playerId: number, teamColor: TeamColor): string | null {
-    const teamColorStr = teamColor === TeamColor.Blue ? "blue" : "yellow";
+    const teamColorStr = teamColor === TeamColor.Blue ? "Blue" : "Yellow";
     const roleKey = `team_${teamColorStr}.p${playerId}.role`;
     return this.debugStrings[roleKey] || null;
   }
