@@ -47,11 +47,9 @@ pub fn choose_best_direction_and_score(s: &RobotSituation) -> (f64, Angle) {
     let mut best_angle = Angle::between_points(goal_pos, robot_pos);
 
     let num_samples = 50;
-    println!("starting");
     for i in 0..num_samples {
         let t = i as f64 / (num_samples - 1) as f64;
         let angle = left_angle.lerp(right_angle, t);
-        println!("{}", angle);
 
         let score = score_shot_direction(s, angle);
         if score > best_score {
