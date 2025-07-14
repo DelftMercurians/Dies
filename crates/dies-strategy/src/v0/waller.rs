@@ -527,9 +527,32 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         .find(|v| *v == "harasser")
         .is_none();
 
-    no_harassers
-        && s.ball_position().x < 0.0
+    let ball_in_our_half = s.ball_position().x < 0.0;
+    let ball_is_slow = s.ball_speed() < 200.0;
+    let opponents_are_far = s.distance_of_closest_opp_player_to_ball() > 1000.0;
+    let i_am_the_closest_robot = {
+        let my_distance = s.distance_to_ball();
+        let ball_pos = s.ball_position();
+
+        // Check if I'm closer than all teammates
+        s.world.own_players
+            .iter()
+            .all(|robot_data| {
+                let teammate_distance = (robot_data.position.xy() - ball_pos).norm();
+                my_distance <= teammate_distance
+            })
+    };
+
+    let should = no_harassers
+        && ball_in_our_half
         && !s.ball_in_own_penalty_area()
-        && s.ball_speed() < 500.0
-        && s.distance_of_closest_opp_player_to_ball() > 1000.0
+        && ball_is_slow
+        && opponents_are_far
+        && i_am_the_closest_robot;
+
+    if should {
+        println!("waller decides to go for the ball cuz it sucks lollolol");
+    }
+
+    should
 }
