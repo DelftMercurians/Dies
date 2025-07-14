@@ -72,7 +72,7 @@ fn score_shot_direction(s: &RobotSituation, direction: Angle) -> f64 {
         return 0.0;
     }
 
-    let mut score = 100.0;
+    let mut score = 1.0;
 
     // Factor 1: Distance to nearest opponent (larger is better, quadratic growth)
     let distance_factor = ((nearest_opponent_distance - 200.0) / 1000.0).powi(2);
