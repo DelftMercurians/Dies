@@ -44,6 +44,6 @@ fn calculate_free_kick_defense_position(s: &RobotSituation) -> Vector2 {
         // Position 700mm from ball toward goal (SSL rule: 500mm minimum)
         ball_pos + ball_to_goal * 700.0
     } else {
-        s.get_own_goal_position() + Vector2::new(1000.0, 0.0)
+        s.get_own_goal_position() + Vector2::new(1200.0, 0.0)
     }
 }

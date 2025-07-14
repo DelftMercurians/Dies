@@ -47,9 +47,11 @@ pub fn choose_best_direction_and_score(s: &RobotSituation) -> (f64, Angle) {
     let mut best_angle = Angle::between_points(goal_pos, robot_pos);
 
     let num_samples = 50;
+    println!("starting");
     for i in 0..num_samples {
         let t = i as f64 / (num_samples - 1) as f64;
         let angle = left_angle.lerp(right_angle, t);
+        println!("{}", angle);
 
         let score = score_shot_direction(s, angle);
         if score > best_score {
@@ -66,7 +68,7 @@ fn score_shot_direction(s: &RobotSituation, direction: Angle) -> f64 {
     let goal_pos = s.get_opp_goal_position();
 
     // Find nearest opponent robot distance along this direction
-    let nearest_opponent_distance = find_nearest_opponent_distance_along_direction(s, direction);
+    let nearest_opponent_distance = find_nearest_opponent_distance_along_direction(s, Angle::PI - direction);
 
     // Score is zero if distance < 200mm, then increases quadratically
     if nearest_opponent_distance < 200.0 {
@@ -82,8 +84,8 @@ fn score_shot_direction(s: &RobotSituation, direction: Angle) -> f64 {
     // Factor 2: Angle to middle of goal (closer to center is better)
     let center_angle = Angle::between_points(goal_pos, robot_pos);
     let angle_diff = (direction.radians() - center_angle.radians()).abs();
-    let angle_factor = 1.0 - (angle_diff / std::f64::consts::PI).min(1.0);
-    score += angle_factor * 5.0;
+    let angle_factor = (1.0 - (angle_diff / std::f64::consts::PI)).min(1.0);
+    score -= angle_factor * 5.0;
 
     // Factor 3: Distance preference (closer intersection with goal line)
     let direction_vector = direction.to_vector();
@@ -91,7 +93,7 @@ fn score_shot_direction(s: &RobotSituation, direction: Angle) -> f64 {
     let intersection_y = robot_pos.y + t * direction_vector.y;
     let intersection = Vector2::new(goal_pos.x, intersection_y);
     let distance_to_intersection = (robot_pos - intersection).norm();
-    score -= distance_to_intersection / 5000.0;
+    score -= distance_to_intersection / 3000.0;
 
     score
 }
