@@ -474,7 +474,7 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
 
         // how much of the backline is covered by the robot at this position
         let coverage_score = compute_coverage_score(ball_pos, pos, backline);
-        total_score += coverage_score * 20.0; // Weight coverage highly
+        total_score += coverage_score * 0.0; // Weight coverage highly
 
         // the closer the position to the ball-goal ray the better
         let ball_to_goal = goal_pos - ball_pos;
@@ -482,7 +482,7 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
         let projection = ball_to_pos.dot(&ball_to_goal.normalize());
         let perpendicular_dist = (ball_to_pos - ball_to_goal.normalize() * projection).norm();
         let ray_score = -perpendicular_dist / 1000.0; // Penalize positions far from ball-goal line
-        total_score += ray_score * 10.0;
+        total_score += ray_score;
     }
 
     // Penalize positions too far from current robot positions

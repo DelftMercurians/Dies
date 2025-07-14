@@ -49,9 +49,9 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
         )
         .add(
             // Normal goalkeeper behavior
-            go_to_position(calculate_arc_position)
-                .with_heading(get_goalkeeper_heading)
-                .description("Guard Goal (arc)")
+            continuous("arc position")
+                .position(calculate_arc_position)
+                .heading(get_goalkeeper_heading)
                 .build(),
         )
         .description("Goalkeeper")
@@ -80,24 +80,35 @@ fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
     // Define the three points of the shallow arc
     let left_point = Vector2::new(goal_pos.x, -geom.goal_width / 2.0);
     let right_point = Vector2::new(goal_pos.x, geom.goal_width / 2.0);
-    let forward_point = Vector2::new(goal_pos.x - 400.0, 0.0); // 40cm forward from goal center
+    let forward_point = Vector2::new(goal_pos.x + 400.0, 0.0); // 40cm forward from goal center
 
-    // Generate 50 sample points along the arc
+    // Calculate circle center and radius that passes through all three points
+    let (circle_center, circle_radius) = calculate_circumcircle(left_point, right_point, forward_point);
+
+    // Generate 50 sample points uniformly around the circle arc
     let mut arc_points = Vec::new();
 
-    // Sample points along the arc connecting left -> forward -> right
+    // Calculate start and end angles for the arc
+    let start_angle = (left_point - circle_center).y.atan2((left_point - circle_center).x);
+    let end_angle = (right_point - circle_center).y.atan2((left_point - circle_center).x);
+
+    // Determine the shorter arc direction
+    let mut angle_diff = end_angle - start_angle;
+    if angle_diff > std::f64::consts::PI {
+        angle_diff -= 2.0 * std::f64::consts::PI;
+    } else if angle_diff < -std::f64::consts::PI {
+        angle_diff += 2.0 * std::f64::consts::PI;
+    }
+
+    // Sample points uniformly by angle
     for i in 0..50 {
         let t = i as f64 / 49.0; // 0 to 1
+        let angle = start_angle + angle_diff * t;
 
-        let point = if t <= 0.5 {
-            // First half: left to forward
-            let local_t = t * 2.0;
-            interpolate_arc_point(left_point, forward_point, goal_pos, local_t)
-        } else {
-            // Second half: forward to right
-            let local_t = (t - 0.5) * 2.0;
-            interpolate_arc_point(forward_point, right_point, goal_pos, local_t)
-        };
+        let point = circle_center + Vector2::new(
+            circle_radius * angle.cos(),
+            circle_radius * angle.sin()
+        );
 
         arc_points.push(point);
     }
@@ -117,19 +128,30 @@ fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
     best_point
 }
 
-fn interpolate_arc_point(start: Vector2, end: Vector2, center: Vector2, t: f64) -> Vector2 {
-    // Create a shallow arc by interpolating through a point slightly forward from the midpoint
-    let midpoint = (start + end) * 0.5;
-    let arc_center = midpoint + (center - midpoint).normalize() * 100.0; // 10cm forward arc
+fn calculate_circumcircle(p1: Vector2, p2: Vector2, p3: Vector2) -> (Vector2, f64) {
+    // Calculate the circumcenter and circumradius of the triangle formed by three points
+    let d = 2.0 * (p1.x * (p2.y - p3.y) + p2.x * (p3.y - p1.y) + p3.x * (p1.y - p2.y));
 
-    // Use quadratic interpolation for smooth arc
-    let p0 = start;
-    let p1 = arc_center;
-    let p2 = end;
+    // Handle degenerate case (collinear points)
+    if d.abs() < 1e-10 {
+        // Fallback to midpoint between extremes
+        let center = (p1 + p3) * 0.5;
+        let radius = (p1 - center).norm();
+        return (center, radius);
+    }
 
-    // Quadratic Bezier curve: (1-t)²P0 + 2(1-t)tP1 + t²P2
-    let one_minus_t = 1.0 - t;
-    p0 * (one_minus_t * one_minus_t) + p1 * (2.0 * one_minus_t * t) + p2 * (t * t)
+    let ux = (p1.x * p1.x + p1.y * p1.y) * (p2.y - p3.y) +
+             (p2.x * p2.x + p2.y * p2.y) * (p3.y - p1.y) +
+             (p3.x * p3.x + p3.y * p3.y) * (p1.y - p2.y);
+
+    let uy = (p1.x * p1.x + p1.y * p1.y) * (p3.x - p2.x) +
+             (p2.x * p2.x + p2.y * p2.y) * (p1.x - p3.x) +
+             (p3.x * p3.x + p3.y * p3.y) * (p2.x - p1.x);
+
+    let center = Vector2::new(ux / d, uy / d);
+    let radius = (p1 - center).norm();
+
+    (center, radius)
 }
 
 fn score_arc_position(s: &RobotSituation, position: Vector2) -> f64 {
@@ -155,7 +177,7 @@ fn score_arc_position(s: &RobotSituation, position: Vector2) -> f64 {
         let perpendicular_dist = (ball_to_pos - projection * vel_direction).norm();
 
         // Negative distance to velocity line (closer is better)
-        score -= perpendicular_dist;
+        score -= perpendicular_dist * 2.0;
 
         // Bonus for being ahead of the ball in the velocity direction
         if projection > 0.0 {
