@@ -21,7 +21,7 @@ impl TwoStepMTP {
             setpoint: None,
             kp: 1.0,
             proportional_time_window: Duration::from_millis(700),
-            cutoff_distance: 30.0,
+            cutoff_distance: 10.0,
             sample_count: 8,
         }
     }
@@ -138,7 +138,7 @@ impl TwoStepMTP {
         // Circle radius is half the distance to target + some random number
         // no worries, when we are close, the proportial control is triggered
         // (proportional_time_window) - which generally means we just go directly to the target
-        let circle_radius = distance_to_target * 0.5 + 60.0;
+        let circle_radius = distance_to_target * 0.5 + 40.0;
 
         // Sample points uniformly around the circle
         let mut best_point = target;
@@ -183,10 +183,11 @@ impl TwoStepMTP {
         }
 
         // Visualize the best chosen midpoint as a larger cross
-        player_context.debug_cross_colored(
+        player_context.debug_circle_fill_colored(
             "two_step_best",
             best_point,
-            dies_core::DebugColor::Green,
+            100.0,
+            dies_core::DebugColor::Gray,
         );
 
         best_point
@@ -203,9 +204,9 @@ impl TwoStepMTP {
     ) -> f64 {
         // total cost is multiplied by magic coeff -> lower implies we care more about
         // avoiding shit, less means we are straighter (less gay)
-        let mut total_cost = 0.01 * (start - mid).magnitude() + (mid - end).magnitude();
-        let robot_scare = 190.0; // mm - 2xrobot radius + some margin
-        let ball_scare = 90.0 + 90.0; // mm robot_radius + ball_radius
+        let mut total_cost = 0.1 * ((start - mid).magnitude() + (mid - end).magnitude());
+        let robot_scare = 200.0; // mm - 2xrobot radius + some margin
+        let ball_scare = 150.0; // mm robot_radius + ball_radius
 
         // Calculate intersection cost with other robots
         for robot in world_data.own_players.iter().chain(world_data.opp_players.iter()) {
