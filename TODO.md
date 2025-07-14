@@ -1,9 +1,18 @@
 - [x] Harassers - position without threats
-- [roma] Add defense area to comply
-- [roma] Keeper - move on shallow arc around goal
-- [ ] fetchball
-- [ ] Striker - pick up ball when free
-- [ ] Passing - pass to flug in btcontext
+- [x] Add defense area to comply
+- [x] Keeper - move on shallow arc around goal
+- [x] fetchball
+- [x] Striker - pick up ball when free
 - [ ] Switch to embedded heading
-- [ ] Fault tolerance
-  - [ ] Kicker/dribbler failure hadnling in strategy
+- [ ] role assignment - simplify to just use counts, make sure order=priority
+- [ ] Feedback - read all team at once
+- [ ] freekick interference - positin in frot of kicker or between ball and goal
+- [ ] freekicker - test
+- [ ] yellow card handling - move one robot to replacement position
+- [ ] Fault tolerance - Kicker/dribbler failure hadnling in strategy
+- [ ] Passing - pass to flug in btcontext
+- [ ] evaluate passing risk for smart target selection
+- [ ] smart tunring depedning on threat
+- [ ] Midfielder role
+- [ ] add field states - def neut off
+- [ ] backward passing cone safety check
