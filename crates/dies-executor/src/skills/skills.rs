@@ -304,7 +304,7 @@ impl FetchBall {
                 "fetchball_state",
                 format!("{} && {}", ctx.player.breakbeam_ball_detected, distance),
             );
-            if ctx.player.breakbeam_ball_detected && distance < 200.0 {
+            if ctx.player.breakbeam_ball_detected && distance < 250.0 {
                 return SkillProgress::success();
             }
 

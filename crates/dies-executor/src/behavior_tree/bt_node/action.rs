@@ -208,6 +208,10 @@ impl ActionNode {
             SkillDefinition::ApproachBall => "ApproachBall",
             SkillDefinition::InterceptBall => "InterceptBall",
         };
+        if status == BehaviorStatus::Success {
+            println!("{skill_info} {node_full_id} success");
+        }
+
         let internal_state = if self.active_skill.is_some() {
             Some(format!("Running {}", skill_info))
         } else {

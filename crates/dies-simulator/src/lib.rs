@@ -97,7 +97,7 @@ impl Default for SimulationConfig {
             // ROBOT MODEL PARAMETERS
             player_radius: 90.0,
             player_height: 140.0,
-            dribbler_radius: BALL_RADIUS + 60.0,
+            dribbler_radius: BALL_RADIUS + 120.0,
             dribbler_angle: PI / 6.0,
             kicker_strength: 300000.0,
             player_cmd_timeout: 0.1,
@@ -1706,7 +1706,7 @@ impl Simulation {
                 let ball_dir = ball_position - player_position;
                 let distance = ball_dir.norm();
                 let angle = yaw.angle(&ball_dir);
-                if distance < self.config.player_radius + self.config.dribbler_radius
+                if distance < self.config.player_radius + self.config.dribbler_radius + 20.0
                     && angle < self.config.dribbler_angle
                 {
                     player.breakbeam = true;
@@ -1721,18 +1721,10 @@ impl Simulation {
                             *ball_is_kicked = true;
                         }
                     } else if player.current_dribble_speed > 0.0 {
-                        // let force = (player.current_dribble_speed * self.config.dribbler_strength)
-                        //     * (dribbler_position - ball_position);
-                        // // clamp the force to the max force
-                        // // let force = force.cap_magnitude(200.0);
-                        // ball_body.apply_impulse(force, true);
-                        // // dampen the ball's velocity
-                        // ball_body.set_linear_damping(self.config.ball_damping * 2.0);
-
                         // Fix the bals position to the dribbler
                         let dribbler_position = player_position
                             + yaw
-                                * (self.config.player_radius + self.config.dribbler_radius - 10.0);
+                                * (self.config.player_radius + self.config.dribbler_radius - 70.0);
                         ball_body.set_position(
                             Isometry::translation(
                                 dribbler_position.x,

@@ -159,7 +159,6 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
             .any(|opp| (opp.position - ball_pos).norm() < 500.0);
 
         if ball_threatened {
-            println!("{} ball threatened", s.viz_path_prefix);
             return false;
         }
 
@@ -169,14 +168,12 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         });
 
         if teammate_nearby {
-            println!("{} teammate nearby", s.viz_path_prefix);
             return false;
         }
 
         // Check if ball is not moving fast (velocity magnitude < 500 mm/s)
         let ball_velocity = ball.velocity.xy();
         if ball_velocity.norm() > 500.0 {
-            println!("{} ball velocity too high", s.viz_path_prefix);
             return false;
         }
 
