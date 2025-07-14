@@ -288,7 +288,7 @@ fn find_optimal_striker_position(s: &RobotSituation, zone: &str) -> Vector2 {
 
 fn score_for_zone(s: &RobotSituation, zone: &str) -> f64 {
     // Base score with some randomization for diversity
-    let hash = (s.player_id.as_u32() as f64 * 0.6180339887498949) % 1.0;
+    let hash = s.player_id_hash();
     let base_score = 50.0 + hash * 20.0;
 
     // Prefer zones with fewer opponents
@@ -353,7 +353,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         .map(|p| (ball.position.xy() - p.position).norm())
         .min_by(|a, b| a.partial_cmp(b).unwrap());
 
-    ball.position.x > 0.0
+    ball.position.x > -1000.0
         && ball.velocity.norm() < 500.0
         && closest_opponent_dist.map(|d| d > 1000.0).unwrap_or(true)
 }

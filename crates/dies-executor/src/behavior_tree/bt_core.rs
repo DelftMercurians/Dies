@@ -104,7 +104,7 @@ pub struct RobotSituation {
     pub world: Arc<TeamData>,
     pub bt_context: BtContext,
     pub viz_path_prefix: String,
-    pub role_assignments: HashMap<PlayerId, String>,
+    pub role_assignments: Arc<HashMap<PlayerId, String>>,
     pub team_color: TeamColor,
 }
 
@@ -114,7 +114,7 @@ impl RobotSituation {
         world: Arc<TeamData>,
         team_context: BtContext,
         viz_path_prefix: String,
-        role_assignments: HashMap<PlayerId, String>,
+        role_assignments: Arc<HashMap<PlayerId, String>>,
         team_color: TeamColor,
     ) -> Self {
         Self {

@@ -23,7 +23,7 @@ pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
     role_solver: RoleAssignmentSolver,
-    role_assignments: HashMap<PlayerId, String>,
+    role_assignments: Arc<HashMap<PlayerId, String>>,
 
     // mpc stuff
     start_time: std::time::Instant,
@@ -46,7 +46,7 @@ impl TeamController {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             role_solver: RoleAssignmentSolver::new(),
-            role_assignments: HashMap::new(),
+            role_assignments: Arc::new(HashMap::new()),
             start_time: std::time::Instant::now(),
             mpc_controller: MPCController::new(),
 
@@ -114,7 +114,7 @@ impl TeamController {
             Some(&self.role_assignments),
         ) {
             Ok(assignments) => {
-                self.role_assignments = assignments.clone();
+                self.role_assignments = Arc::new(assignments.clone());
 
                 // Update behavior trees based on new assignments
                 for (player_id, role_name) in &assignments {
@@ -151,6 +151,7 @@ impl TeamController {
                                     (role.tree_builder)(&situation),
                                 ),
                             );
+                            println!("{} {}", player_id.as_u32(), role_name);
                         } else {
                             log::error!("Role '{}' not found for player {}", role_name, player_id);
                         }

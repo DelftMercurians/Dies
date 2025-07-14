@@ -295,7 +295,7 @@ impl RoleAssignmentSolver {
                     team_data.clone(),
                     Default::default(),
                     team_context.player_context(robot_id).key("bt"),
-                    previous_assignments.cloned().unwrap_or_default(),
+                    previous_assignments.cloned().unwrap_or_default().into(),
                     team_context.team_color(),
                 );
 
@@ -331,7 +331,7 @@ impl RoleAssignmentSolver {
             team_data.clone(),
             Default::default(),
             team_context.player_context(robot_id).key("bt"),
-            previous_assignments.cloned().unwrap_or_default(),
+            previous_assignments.cloned().unwrap_or_default().into(),
             team_context.team_color(),
         );
         let mut score = (role.scorer)(&situation);
