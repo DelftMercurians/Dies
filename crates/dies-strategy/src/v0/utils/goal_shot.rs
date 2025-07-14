@@ -20,7 +20,7 @@ pub fn find_optimal_shot_target(s: &RobotSituation) -> Vector2 {
 
     let target = Vector2::new(goal_pos.x, intersection_y);
 
-    dies_core::debug_circle_fill("shooting target", target, 100.0, dies_core::DebugColor::Gray);
+    dies_core::debug_circle_fill("shooting target", target, 100.0, dies_core::DebugColor::Purple);
 
     target
 }
