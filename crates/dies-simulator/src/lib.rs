@@ -1751,6 +1751,7 @@ impl Simulation {
             }
 
             // Check if the ball is in the dribbler
+            player.breakbeam = false;
             let yaw = rigid_body.position().rotation * Vector::x();
             let player_position = rigid_body.position().translation.vector;
             let ball_handle = self.ball.as_ref().map(|ball| ball._rigid_body_handle);
