@@ -7,7 +7,6 @@
 - [x] Feedback - read all team at once
 - [x] add max distance to fetchball
 - [x] fix prevent double touch after freekick - 1 global check tracking if another robot has touched the ball since the freekick. also add a timeout
-- [ ] role assignment - simplify to just use counts, make sure order=priority
 - [ ] warmup state - before starting the strategy
 - [ ] freekicker - test
 - [ ] freekick interference - positin in frot of kicker or between ball and goal
@@ -19,3 +18,4 @@
 - [ ] Midfielder role
 - [ ] add field states - def neut off
 - [ ] backward passing cone safety check
+- [ ] role assignment - simplify to just use counts, make sure order=priority ?

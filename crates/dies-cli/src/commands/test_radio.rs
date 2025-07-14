@@ -44,11 +44,8 @@ pub async fn test_radio(
                 cmd.global_y = sy;
             }
             cmd.max_yaw_rate = max_yaw_rate;
-            cmd.preferred_rotation_direction = match preferred_rotation_direction {
-                1.0 => RotationDirection::Clockwise,
-                -1.0 => RotationDirection::CounterClockwise,
-                _ => RotationDirection::NoPreference,
-            };
+            cmd.preferred_rotation_direction =
+                RotationDirection::from_f64(preferred_rotation_direction);
             cmd.last_heading = f64::NAN;
 
             bs_handle.send_no_wait(

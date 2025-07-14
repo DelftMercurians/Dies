@@ -161,11 +161,19 @@ pub enum RotationDirection {
 }
 
 impl RotationDirection {
-    pub fn as_f64(self) -> f64 {
+    pub fn as_i8(self) -> i8 {
         match self {
-            RotationDirection::Clockwise => -1.0,
-            RotationDirection::CounterClockwise => 1.0,
-            RotationDirection::NoPreference => 0.0,
+            RotationDirection::Clockwise => -1,
+            RotationDirection::CounterClockwise => 1,
+            RotationDirection::NoPreference => 0,
+        }
+    }
+
+    pub fn from_f64(val: f64) -> Self {
+        match val {
+            -1.0 => RotationDirection::Clockwise,
+            1.0 => RotationDirection::CounterClockwise,
+            _ => RotationDirection::NoPreference,
         }
     }
 }
@@ -215,11 +223,7 @@ impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
             smart_kick_couter: val.kick_counter,
             time_to_kick: 0,
             max_yaw_rate: (val.max_yaw_rate * 10.0) as u16,
-            preferred_rotation_direction: match val.preferred_rotation_direction {
-                RotationDirection::Clockwise => -1,
-                RotationDirection::CounterClockwise => 1,
-                RotationDirection::NoPreference => 0,
-            },
+            preferred_rotation_direction: val.preferred_rotation_direction.as_i8(),
             _pad2: 0,
         }
     }
