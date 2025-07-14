@@ -40,7 +40,7 @@ impl Default for BehaviorTree {
 
 #[derive(Clone)]
 pub struct BtContext {
-    semaphores: Arc<RwLock<HashMap<String, (usize, HashSet<PlayerId>)>>>,
+    semaphores: Arc<RwLock<HashMap<String, HashSet<PlayerId>>>>,
 }
 
 impl BtContext {
@@ -52,17 +52,14 @@ impl BtContext {
 
     pub fn try_acquire_semaphore(&self, id: &str, max_count: usize, player_id: PlayerId) -> bool {
         let mut semaphores = self.semaphores.write().unwrap();
-        let entry = semaphores
-            .entry(id.to_string())
-            .or_insert((0, HashSet::new()));
+        let entry = semaphores.entry(id.to_string()).or_insert(HashSet::new());
 
-        if entry.1.contains(&player_id) {
+        if entry.contains(&player_id) {
             return true;
         }
 
-        if entry.0 < max_count {
-            entry.0 += 1;
-            entry.1.insert(player_id);
+        if entry.len() < max_count {
+            entry.insert(player_id);
             true
         } else {
             false
@@ -72,9 +69,7 @@ impl BtContext {
     pub fn release_semaphore(&self, id: &str, player_id: PlayerId) {
         let mut semaphores = self.semaphores.write().unwrap();
         if let Some(entry) = semaphores.get_mut(id) {
-            if entry.1.remove(&player_id) {
-                entry.0 = entry.0.saturating_sub(1);
-            }
+            entry.remove(&player_id);
         }
     }
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
-use dies_core::{PlayerId, PlayerMoveCmd};
+use dies_core::{Angle, PlayerGlobalMoveCmd, PlayerId};
 use tokio::time::{Duration, Instant};
 
 use crate::cli::SerialPort;
@@ -29,19 +29,22 @@ pub async fn test_radio(
         }
 
         for id in ids.iter() {
-            let mut cmd = PlayerMoveCmd::zero(PlayerId::new(*id));
+            let mut cmd = PlayerGlobalMoveCmd::zero(PlayerId::new(*id));
             if let Some(w) = w {
-                cmd.w = w;
+                cmd.heading_setpoint = Angle::from_degrees(w).radians();
             }
             if let Some(sx) = sx {
-                cmd.sx = sx;
+                cmd.global_x = sx;
             }
             if let Some(sy) = sy {
-                cmd.sy = sy;
+                cmd.global_y = sy;
             }
+            cmd.last_heading = f64::NAN;
 
-            println!("Sending {:?}", cmd);
-            bs_handle.send_no_wait(dies_core::TeamColor::Blue, dies_core::PlayerCmd::Move(cmd));
+            bs_handle.send_no_wait(
+                dies_core::TeamColor::Blue,
+                dies_core::PlayerCmd::GlobalMove(cmd),
+            );
         }
     }
 
