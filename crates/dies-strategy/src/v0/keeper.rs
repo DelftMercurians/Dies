@@ -162,7 +162,7 @@ fn score_arc_position(s: &RobotSituation, position: Vector2) -> f64 {
     score -= ball_distance;
 
     // Score based on distance to ball velocity line (if ball is moving)
-    if ball_vel.norm() > 100.0 {
+    if ball_vel.norm() > 50.0 {
         // Only consider if ball is moving
         let vel_direction = ball_vel.normalize();
         let ball_to_pos = position - ball_pos;
