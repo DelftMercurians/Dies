@@ -86,6 +86,19 @@ impl Angle {
     pub fn to_vector(&self) -> Vector2 {
         Vector2::new(self.0.cos(), self.0.sin())
     }
+
+    /// Linear interpolation between two angles, taking the shortest path.
+    /// 
+    /// # Arguments
+    /// * `other` - The target angle to interpolate towards
+    /// * `t` - The interpolation parameter (0.0 returns self, 1.0 returns other)
+    pub fn lerp(&self, other: Self, t: f64) -> Self {
+        // Calculate the angular difference, taking the shortest path
+        let diff = wrap_angle(other.0 - self.0);
+        
+        // Interpolate and wrap the result
+        Self::from_radians(self.0 + diff * t)
+    }
 }
 
 impl std::ops::Add for Angle {
@@ -298,5 +311,32 @@ mod tests {
         let v = Vector2::new(-1.0, -1.0);
         let angle = Angle::from_vector(v);
         assert_relative_eq!(angle.degrees(), -135.0, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn test_angle_lerp() {
+        // Test basic interpolation
+        let a = Angle::from_degrees(0.0);
+        let b = Angle::from_degrees(90.0);
+        let result = a.lerp(b, 0.5);
+        assert_relative_eq!(result.degrees(), 45.0, epsilon = 1e-5);
+        
+        // Test interpolation across the wrap boundary
+        let a = Angle::from_degrees(170.0);
+        let b = Angle::from_degrees(-170.0);
+        let result = a.lerp(b, 0.5);
+        assert_relative_eq!(result.degrees(), 180.0, epsilon = 1e-5);
+        
+        // Test edge cases - shortest path
+        let a = Angle::from_degrees(10.0);
+        let b = Angle::from_degrees(350.0);
+        let result = a.lerp(b, 0.5);
+        assert_relative_eq!(result.degrees(), 0.0, epsilon = 1e-5);
+        
+        // Test t=0 and t=1
+        let a = Angle::from_degrees(45.0);
+        let b = Angle::from_degrees(135.0);
+        assert_relative_eq!(a.lerp(b, 0.0).degrees(), 45.0, epsilon = 1e-5);
+        assert_relative_eq!(a.lerp(b, 1.0).degrees(), 135.0, epsilon = 1e-5);
     }
 }
