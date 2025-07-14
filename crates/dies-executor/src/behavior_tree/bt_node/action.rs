@@ -8,11 +8,7 @@ use crate::{
     behavior_tree::{Argument, BehaviorNode},
     control::PlayerControlInput,
     skills::{
-        skills::{
-            ApproachBall, Face, FetchBall, FetchBallWithHeading, GoToPosition, InterceptBall, Kick,
-            Wait,
-        },
-        Skill, SkillCtx, SkillProgress, SkillResult,
+        Face, FetchBall, GoToPosition, Kick, Skill, SkillCtx, SkillProgress, SkillResult, Wait,
     },
 };
 
@@ -50,11 +46,6 @@ pub enum SkillDefinition {
         duration_secs: Argument<f64>,
     },
     FetchBall,
-    FetchBallWithHeading {
-        target: HeadingTarget,
-    },
-    ApproachBall,
-    InterceptBall,
 }
 
 #[derive(Clone)]
@@ -84,9 +75,6 @@ impl ActionNode {
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
             SkillDefinition::FetchBall => "FetchBall",
-            SkillDefinition::FetchBallWithHeading { .. } => "FetchBallWithHeading",
-            SkillDefinition::ApproachBall => "ApproachBall",
-            SkillDefinition::InterceptBall => "InterceptBall",
         };
         let internal_state = self.active_skill.as_ref().map(|_| "Active".to_string());
         debug_tree_node(
@@ -156,22 +144,6 @@ impl ActionNode {
                     duration_secs.resolve(situation),
                 ))),
                 SkillDefinition::FetchBall => Some(Skill::FetchBall(FetchBall::new())),
-                SkillDefinition::FetchBallWithHeading { target } => {
-                    let skill = match target {
-                        HeadingTarget::Angle(angle_rad) => {
-                            FetchBallWithHeading::new(angle_rad.resolve(situation))
-                        }
-                        HeadingTarget::Position(pos) => {
-                            FetchBallWithHeading::towards_position(pos.resolve(situation))
-                        }
-                        HeadingTarget::OwnPlayer(id) => FetchBallWithHeading::towards_own_player(
-                            PlayerId::new(id.resolve(situation)),
-                        ),
-                    };
-                    Some(Skill::FetchBallWithHeading(skill))
-                }
-                SkillDefinition::ApproachBall => Some(Skill::ApproachBall(ApproachBall::new())),
-                SkillDefinition::InterceptBall => Some(Skill::InterceptBall(InterceptBall::new())),
             };
             self.active_skill = new_skill;
         }
@@ -204,9 +176,6 @@ impl ActionNode {
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
             SkillDefinition::FetchBall => "FetchBall",
-            SkillDefinition::FetchBallWithHeading { .. } => "FetchBallWithHeading",
-            SkillDefinition::ApproachBall => "ApproachBall",
-            SkillDefinition::InterceptBall => "InterceptBall",
         };
         if status == BehaviorStatus::Success {
             println!("{skill_info} {node_full_id} success");
@@ -452,86 +421,6 @@ impl FetchBallBuilder {
     }
 }
 
-pub struct FetchBallWithHeadingBuilder {
-    target: HeadingTarget,
-    description: Option<String>,
-}
-
-impl FetchBallWithHeadingBuilder {
-    pub fn angle(angle: impl Into<Argument<Angle>>) -> Self {
-        Self {
-            target: HeadingTarget::Angle(angle.into()),
-            description: None,
-        }
-    }
-
-    pub fn position(pos: impl Into<Argument<Vector2>>) -> Self {
-        Self {
-            target: HeadingTarget::Position(pos.into()),
-            description: None,
-        }
-    }
-
-    pub fn own_player(id: impl Into<Argument<u32>>) -> Self {
-        Self {
-            target: HeadingTarget::OwnPlayer(id.into()),
-            description: None,
-        }
-    }
-
-    pub fn description(mut self, desc: String) -> Self {
-        self.description = Some(desc);
-        self
-    }
-
-    pub fn build(self) -> ActionNode {
-        ActionNode::new(
-            SkillDefinition::FetchBallWithHeading {
-                target: self.target,
-            },
-            self.description,
-        )
-    }
-}
-
-pub struct ApproachBallBuilder {
-    description: Option<String>,
-}
-
-impl ApproachBallBuilder {
-    pub fn new() -> Self {
-        Self { description: None }
-    }
-
-    pub fn description(mut self, desc: String) -> Self {
-        self.description = Some(desc);
-        self
-    }
-
-    pub fn build(self) -> ActionNode {
-        ActionNode::new(SkillDefinition::ApproachBall, self.description)
-    }
-}
-
-pub struct InterceptBallBuilder {
-    description: Option<String>,
-}
-
-impl InterceptBallBuilder {
-    pub fn new() -> Self {
-        Self { description: None }
-    }
-
-    pub fn description(mut self, desc: String) -> Self {
-        self.description = Some(desc);
-        self
-    }
-
-    pub fn build(self) -> ActionNode {
-        ActionNode::new(SkillDefinition::InterceptBall, self.description)
-    }
-}
-
 // Convenience functions to create builders
 pub fn go_to_position(target_pos: impl Into<Argument<Vector2>>) -> GoToPositionBuilder {
     GoToPositionBuilder::new(target_pos)
@@ -559,24 +448,4 @@ pub fn wait(duration_secs: impl Into<Argument<f64>>) -> WaitBuilder {
 
 pub fn fetch_ball() -> FetchBallBuilder {
     FetchBallBuilder::new()
-}
-
-pub fn fetch_ball_with_angle(angle: impl Into<Argument<Angle>>) -> FetchBallWithHeadingBuilder {
-    FetchBallWithHeadingBuilder::angle(angle)
-}
-
-pub fn fetch_ball_with_position(pos: impl Into<Argument<Vector2>>) -> FetchBallWithHeadingBuilder {
-    FetchBallWithHeadingBuilder::position(pos)
-}
-
-pub fn fetch_ball_with_own_player(id: impl Into<Argument<u32>>) -> FetchBallWithHeadingBuilder {
-    FetchBallWithHeadingBuilder::own_player(id)
-}
-
-pub fn approach_ball() -> ApproachBallBuilder {
-    ApproachBallBuilder::new()
-}
-
-pub fn intercept_ball() -> InterceptBallBuilder {
-    InterceptBallBuilder::new()
 }

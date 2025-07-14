@@ -1,24 +1,27 @@
 pub mod skills;
 
-use crate::control::PlayerControlInput;
-use dies_core::{PlayerData, TeamData};
+mod face;
+mod fetchball;
+mod go_to_pos;
+mod kick;
+mod wait;
 
-use skills::{
-    ApproachBall, Face, FetchBall, FetchBallWithHeading, GoToPosition, InterceptBall, Kick, Shoot,
-    Wait,
-};
+pub use face::Face;
+pub use fetchball::FetchBall;
+pub use go_to_pos::GoToPosition;
+pub use kick::Kick;
+pub use wait::Wait;
+
+use crate::control::PlayerControlInput;
+use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2};
 
 #[derive(Clone)]
 pub enum Skill {
     GoToPosition(GoToPosition),
     Face(Face),
     Kick(Kick),
-    Shoot(Shoot),
     Wait(Wait),
     FetchBall(FetchBall),
-    InterceptBall(InterceptBall),
-    ApproachBall(ApproachBall),
-    FetchBallWithHeading(FetchBallWithHeading),
 }
 
 impl Skill {
@@ -27,12 +30,8 @@ impl Skill {
             Skill::GoToPosition(skill) => skill.update(ctx),
             Skill::Face(skill) => skill.update(ctx),
             Skill::Kick(skill) => skill.update(ctx),
-            Skill::Shoot(skill) => skill.update(ctx),
             Skill::Wait(skill) => skill.update(ctx),
             Skill::FetchBall(skill) => skill.update(ctx),
-            Skill::InterceptBall(skill) => skill.update(ctx),
-            Skill::ApproachBall(skill) => skill.update(ctx),
-            Skill::FetchBallWithHeading(skill) => skill.update(ctx),
         }
     }
 }
@@ -65,5 +64,31 @@ impl SkillProgress {
     /// Creates a new `SkillProgress` with a `Failure` result
     pub fn failure() -> SkillProgress {
         SkillProgress::Done(SkillResult::Failure)
+    }
+}
+
+#[derive(Clone)]
+pub enum HeadingTarget {
+    Angle(Angle),
+    Ball,
+    Position(Vector2),
+    OwnPlayer(PlayerId),
+}
+
+impl HeadingTarget {
+    fn heading(&self, ctx: &SkillCtx) -> Option<Angle> {
+        match self {
+            HeadingTarget::Angle(angle) => Some(*angle),
+            HeadingTarget::Ball => ctx
+                .world
+                .ball
+                .as_ref()
+                .map(|ball| Angle::between_points(ctx.player.position, ball.position.xy())),
+            HeadingTarget::Position(pos) => Some(Angle::between_points(ctx.player.position, *pos)),
+            HeadingTarget::OwnPlayer(id) => {
+                let player = ctx.world.get_player(*id);
+                Some(Angle::between_points(ctx.player.position, player.position))
+            }
+        }
     }
 }
