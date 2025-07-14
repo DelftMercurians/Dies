@@ -20,17 +20,17 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
         )
         .add(
             guard_node()
-                .condition(|s| should_pickup_ball(s))
+                .condition(|s| should_pickup_ball(s) && s.am_closest_to_ball())
                 .then(
                     semaphore_node()
                         .do_then(
-                            select_node()
+                            sequence_node()
                                 .add(
                                     fetch_ball()
                                         .description("Pickup free ball".to_string())
                                         .build(),
                                 )
-                                .add(face_position(find_best_pass_target).build())
+                                .add(face_position(find_best_pass_target).with_ball().build())
                                 .add(kick().build())
                                 .build(),
                         )
@@ -192,6 +192,7 @@ fn build_shoot_sequence() -> BehaviorNode {
     sequence_node()
         .add(
             face_position(find_optimal_shot_target)
+                .with_ball()
                 .description("Aim at goal".to_string())
                 .build(),
         )
@@ -206,6 +207,7 @@ fn build_pass_sequence() -> BehaviorNode {
     sequence_node()
         .add(
             face_position(find_best_pass_target)
+                .with_ball()
                 .description("Aim pass".to_string())
                 .build(),
         )

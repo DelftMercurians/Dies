@@ -17,6 +17,10 @@ impl TeamContext {
         }
     }
 
+    pub fn team_color(&self) -> TeamColor {
+        self.team_color
+    }
+
     pub fn key(&self, key: impl Into<String>) -> String {
         format!("{}.{}", self.debug_prefix, key.into())
     }

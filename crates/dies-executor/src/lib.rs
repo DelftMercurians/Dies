@@ -531,7 +531,7 @@ impl Executor {
         if let Some(gc_message) = simulator.gc_message() {
             self.update_from_gc_msg(gc_message);
         }
-        if let Some((team_color, feedback)) = simulator.feedback() {
+        for ((team_color, _), feedback) in simulator.feedback().into_iter() {
             self.update_from_bs_msg(team_color, feedback, simulator.time());
         }
 

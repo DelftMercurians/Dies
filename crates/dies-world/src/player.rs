@@ -215,7 +215,6 @@ impl PlayerTracker {
     }
 
     pub fn get(&self) -> Option<PlayerData> {
-        let breakbeam_count = self.breakbeam_detections.iter().sum::<usize>();
         self.last_detection.as_ref().map(|data| PlayerData {
             id: self.id,
             timestamp: data.timestamp,
@@ -229,7 +228,10 @@ impl PlayerTracker {
             kicker_cap_voltage: self.last_feedback.and_then(|f| f.kicker_cap_voltage),
             kicker_temp: self.last_feedback.and_then(|f| f.kicker_temp),
             pack_voltages: self.last_feedback.and_then(|f| f.pack_voltages),
-            breakbeam_ball_detected: breakbeam_count > BREAKBEAM_DETECTION_THRESHOLD,
+            breakbeam_ball_detected: self
+                .last_feedback
+                .and_then(|f| f.breakbeam_ball_detected)
+                .unwrap_or(false),
             imu_status: self.last_feedback.and_then(|f| f.imu_status),
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),
         })

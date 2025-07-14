@@ -35,6 +35,7 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
                                             face_position(|s: &RobotSituation| {
                                                 s.get_field_center()
                                             })
+                                            .with_ball()
                                             .description("Face Field".to_string())
                                             .build(),
                                         )

@@ -109,7 +109,7 @@ impl Default for SimulationConfig {
             max_ang_vel: 0.5 * 720.0f64.to_radians(),
             velocity_treshold: 1.0,
             angular_velocity_treshold: 0.0,
-            feedback_interval: 0.5,
+            feedback_interval: 0.05,
             has_imu: true,
 
             // FIELD GEOMRTY PARAMETERS
@@ -414,11 +414,12 @@ pub struct Simulation {
     geometry_packet: SSL_WrapperPacket,
     referee_message: VecDeque<Referee>,
     feedback_interval: IntervalTrigger,
-    feedback_queue: VecDeque<(TeamColor, PlayerFeedbackMsg)>,
+    feedback_queue: HashMap<(TeamColor, PlayerId), PlayerFeedbackMsg>,
     game_state: SimulationGameState,
     designated_ball_position: Vector<f64>,
     last_touch_info: Option<(PlayerId, TeamColor)>,
     side_assignment: SideAssignment,
+    ball_being_dribbled_by: Option<(PlayerId, TeamColor)>,
     // New fields for rule enforcement
     kick_start_time: f64,
     kick_ball_position: Option<Vector2>,
@@ -462,11 +463,12 @@ impl Simulation {
             geometry_packet,
             referee_message: VecDeque::new(),
             feedback_interval: IntervalTrigger::new(feedback_interval),
-            feedback_queue: VecDeque::new(),
+            feedback_queue: HashMap::new(),
             game_state: SimulationGameState::default(),
             designated_ball_position: Vector::new(0.0, 0.0, 20.0),
             last_touch_info: None,
             side_assignment,
+            ball_being_dribbled_by: None,
             kick_start_time: 0.0,
             kick_ball_position: None,
             last_kicker_info: None,
@@ -753,8 +755,8 @@ impl Simulation {
         }
     }
 
-    pub fn feedback(&mut self) -> Option<(TeamColor, PlayerFeedbackMsg)> {
-        self.feedback_queue.pop_front()
+    pub fn feedback(&mut self) -> HashMap<(TeamColor, PlayerId), PlayerFeedbackMsg> {
+        std::mem::take(&mut self.feedback_queue)
     }
 
     pub fn update_game_state(&mut self) {
@@ -1168,8 +1170,17 @@ impl Simulation {
                     );
                     // In next frame, Ball will be out of bounds
                     // Do linear interpolation to find the free kick position
-                    self.designated_ball_position =
-                        ball_position + (next_ball_position - ball_position) * 0.5;
+                    let mut designated = ball_position + (next_ball_position - ball_position) * 0.5;
+                    // Constrain designated position to the field
+                    designated.x = designated.x.clamp(
+                        -(self.config.field_geometry.field_length / 2.0 - test_boundary),
+                        self.config.field_geometry.field_length / 2.0 - test_boundary,
+                    );
+                    designated.y = designated.y.clamp(
+                        -(self.config.field_geometry.field_width / 2.0 - test_boundary),
+                        self.config.field_geometry.field_width / 2.0 - test_boundary,
+                    );
+                    self.designated_ball_position = designated;
                 }
                 return false;
             } else {
@@ -1624,7 +1635,8 @@ impl Simulation {
                 } else {
                     Some(SysStatus::NotInstalled)
                 };
-                self.feedback_queue.push_back((player.team_color, feedback));
+                self.feedback_queue
+                    .insert((player.team_color, player.id), feedback);
             }
 
             let mut is_kicking = false;
@@ -1706,11 +1718,17 @@ impl Simulation {
                 let ball_dir = ball_position - player_position;
                 let distance = ball_dir.norm();
                 let angle = yaw.angle(&ball_dir);
+                let is_player_dribbling = matches!(self.ball_being_dribbled_by, Some((player_id, team_color)) if player_id == player.id && team_color == player.team_color);
                 if distance < self.config.player_radius + self.config.dribbler_radius + 20.0
                     && angle < self.config.dribbler_angle
                 {
                     player.breakbeam = true;
+                    dies_core::debug_string(
+                        format!("breakbeam_{}_{}", player.team_color, player.id),
+                        format!("{} {}", player.team_color, player.id),
+                    );
                     if is_kicking {
+                        self.ball_being_dribbled_by = None;
                         let force = yaw * self.config.kicker_strength;
                         ball_body.add_force(force, true);
                         ball_body.set_linear_damping(self.config.ball_damping * 2.0);
@@ -1721,24 +1739,48 @@ impl Simulation {
                             *ball_is_kicked = true;
                         }
                     } else if player.current_dribble_speed > 0.0 {
-                        // Fix the bals position to the dribbler
-                        let dribbler_position = player_position
-                            + yaw
-                                * (self.config.player_radius + self.config.dribbler_radius - 70.0);
-                        ball_body.set_position(
-                            Isometry::translation(
-                                dribbler_position.x,
-                                dribbler_position.y,
-                                dribbler_position.z,
-                            ),
-                            true,
-                        );
-                        ball_body.set_linvel(Vector3::zeros(), true);
+                        self.ball_being_dribbled_by = Some((player.id, player.team_color));
+                    } else {
+                        if is_player_dribbling {
+                            // If the player is dribbling, we need to stop the dribbling
+                            self.ball_being_dribbled_by = None;
+                        }
                     }
-                } else {
-                    player.breakbeam = false;
                 }
             }
+        }
+
+        if let Some((player_id, team_color)) = self.ball_being_dribbled_by {
+            // println!("Dribbling ball by {} {}", team_color, player_id);
+            dies_core::debug_string("dribbling_ball", format!("{} {}", team_color, player_id));
+            let player = self
+                .players
+                .iter()
+                .find(|p| p.id == player_id && p.team_color == team_color)
+                .unwrap();
+            let rigid_body = self
+                .rigid_body_set
+                .get_mut(player.rigid_body_handle)
+                .unwrap();
+            let yaw = rigid_body.position().rotation * Vector::x();
+            let player_position = rigid_body.position().translation.vector;
+            let ball_body = self
+                .rigid_body_set
+                .get_mut(self.ball.as_ref().unwrap()._rigid_body_handle)
+                .unwrap();
+
+            // Fix the ball position to the dribbler
+            let dribbler_position = player_position
+                + yaw * (self.config.player_radius + self.config.dribbler_radius - 90.0);
+            ball_body.set_position(
+                Isometry::translation(
+                    dribbler_position.x,
+                    dribbler_position.y,
+                    dribbler_position.z,
+                ),
+                true,
+            );
+            ball_body.set_linvel(Vector3::zeros(), true);
         }
 
         self.integration_parameters.dt = dt;
@@ -1758,27 +1800,31 @@ impl Simulation {
             &(),
         );
 
-        // Clamp ball z position to minimum of 20.0
-        // if let Some(ball) = self.ball.as_ref() {
-        //     let ball_body = self
-        //         .rigid_body_set
-        //         .get_mut(ball._rigid_body_handle)
-        //         .unwrap();
-        //     let mut position = ball_body.position().translation.vector;
-        //     if position.z < 20.0 {
-        //         position.z = 20.0;
-        //         ball_body.set_position(
-        //             Isometry::translation(position.x, position.y, position.z),
-        //             true,
-        //         );
-        //         // Also zero out downward velocity to prevent bouncing
-        //         let mut velocity = *ball_body.linvel();
-        //         if velocity.z < 0.0 {
-        //             velocity.z = 0.0;
-        //             ball_body.set_linvel(velocity, true);
-        //         }
-        //     }
-        // }
+        // Clamp ball position to the field
+        if let Some(ball) = self.ball.as_ref() {
+            let ball_body = self
+                .rigid_body_set
+                .get_mut(ball._rigid_body_handle)
+                .unwrap();
+            let position = ball_body.position().translation.vector;
+            let x = position.x.clamp(
+                -(self.config.field_geometry.field_width
+                    + self.config.field_geometry.boundary_width)
+                    / 2.0,
+                (self.config.field_geometry.field_width
+                    + self.config.field_geometry.boundary_width)
+                    / 2.0,
+            );
+            let y = position.y.clamp(
+                -(self.config.field_geometry.field_length
+                    + self.config.field_geometry.boundary_width)
+                    / 2.0,
+                (self.config.field_geometry.field_length
+                    + self.config.field_geometry.boundary_width)
+                    / 2.0,
+            );
+            ball_body.set_position(Isometry::translation(x, y, position.z), true);
+        }
 
         self.current_time += dt;
     }

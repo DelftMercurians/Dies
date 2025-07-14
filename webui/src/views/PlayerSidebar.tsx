@@ -119,7 +119,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
             val.type !== "Shape"
         )
         .map(([key, val]) => [
-          key.slice(`p${selectedPlayerId}`.length + 1),
+          key.slice(`team_${teamColor}.p${selectedPlayerId}`.length + 1),
           val,
         ]) as PlayerDebugValues)
     : [];
@@ -252,7 +252,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                 Player Specific Debug Data
               </h2>
               <div className="bg-slate-800 p-2 rounded-xl max-h-[50vh] overflow-auto">
-                <HierarchicalList data={playerDebugData} />
+                <HierarchicalList data={playerDebugData} expandAll />
               </div>
             </div>
 

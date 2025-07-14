@@ -296,6 +296,7 @@ impl RoleAssignmentSolver {
                     Default::default(),
                     team_context.player_context(robot_id).key("bt"),
                     previous_assignments.cloned().unwrap_or_default(),
+                    team_context.team_color(),
                 );
 
                 if !self.violates_filters(&role, &situation) {
@@ -331,6 +332,7 @@ impl RoleAssignmentSolver {
             Default::default(),
             team_context.player_context(robot_id).key("bt"),
             previous_assignments.cloned().unwrap_or_default(),
+            team_context.team_color(),
         );
         let mut score = (role.scorer)(&situation);
 

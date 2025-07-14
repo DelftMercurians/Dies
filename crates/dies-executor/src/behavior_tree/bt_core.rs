@@ -1,4 +1,4 @@
-use dies_core::{Angle, GameState, PlayerData, PlayerId, TeamData, Vector2};
+use dies_core::{Angle, GameState, PlayerData, PlayerId, TeamColor, TeamData, Vector2};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -105,6 +105,7 @@ pub struct RobotSituation {
     pub bt_context: BtContext,
     pub viz_path_prefix: String,
     pub role_assignments: HashMap<PlayerId, String>,
+    pub team_color: TeamColor,
 }
 
 impl RobotSituation {
@@ -114,6 +115,7 @@ impl RobotSituation {
         team_context: BtContext,
         viz_path_prefix: String,
         role_assignments: HashMap<PlayerId, String>,
+        team_color: TeamColor,
     ) -> Self {
         Self {
             player_id,
@@ -121,6 +123,7 @@ impl RobotSituation {
             bt_context: team_context,
             viz_path_prefix,
             role_assignments,
+            team_color,
         }
     }
 

@@ -30,6 +30,7 @@ pub fn build_free_kick_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                                     sequence_node()
                                         .add(
                                             face_position(find_optimal_shot_target)
+                                                .with_ball()
                                                 .description("Aim at goal".to_string())
                                                 .build(),
                                         )
@@ -73,6 +74,7 @@ pub fn build_free_kick_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                                     sequence_node()
                                         .add(
                                             face_position(find_best_pass_target)
+                                                .with_ball()
                                                 .description("Aim pass".to_string())
                                                 .build(),
                                         )

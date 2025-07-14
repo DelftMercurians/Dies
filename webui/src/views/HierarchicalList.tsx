@@ -10,10 +10,17 @@ import { FC, useState, useMemo } from "react";
 interface HierarchicalListProps {
   data: [string, any][];
   className?: string;
+  expandAll?: boolean;
 }
 
-const HierarchicalList: FC<HierarchicalListProps> = ({ data, className }) => {
-  const [openKeys, setOpenKeys] = useState<string[]>([]);
+const HierarchicalList: FC<HierarchicalListProps> = ({
+  data,
+  className,
+  expandAll = false,
+}) => {
+  const [openKeys, setOpenKeys] = useState<string[]>(
+    expandAll ? data.map(([key]) => key) : []
+  );
 
   const groupedData = useMemo(() => {
     const grouped: Record<string, any> = {};

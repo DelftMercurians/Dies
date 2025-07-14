@@ -10,7 +10,6 @@ pub struct FetchBall {
     dribbling_speed: f64,
     stop_distance: f64,
     max_relative_speed: f64,
-    breakbeam_ball_detected: f64,
     last_good_heading: Option<Angle>,
 }
 
@@ -21,7 +20,6 @@ impl FetchBall {
             dribbling_speed: 1.0,
             stop_distance: 200.0,
             max_relative_speed: 1500.0,
-            breakbeam_ball_detected: 0.0,
             last_good_heading: None,
         }
     }
@@ -50,13 +48,14 @@ impl FetchBall {
             input.with_yaw(ball_angle);
 
             dies_core::debug_string(
-                "fetchball_state",
+                format!("fetchball_state_{}", ctx.player.id),
                 format!(
                     "bb: {}; dist: {:.1}; speed: {:.1}",
                     ctx.player.breakbeam_ball_detected, distance, ball_speed
                 ),
             );
-            if ctx.player.breakbeam_ball_detected && distance < 250.0 {
+            if ctx.player.breakbeam_ball_detected && distance < 400.0 {
+                dies_core::debug_string("fetchball_state", "done");
                 return SkillProgress::success();
             }
 

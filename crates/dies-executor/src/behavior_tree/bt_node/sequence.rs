@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use dies_core::debug_tree_node;
 
 use super::{
@@ -60,7 +62,9 @@ impl SequenceNode {
         let mut child_situation = situation.clone();
         child_situation.viz_path_prefix = node_full_id.clone();
 
+        let mut ticker_indicies = Vec::new();
         while self.current_child_index < self.children.len() {
+            ticker_indicies.push(self.current_child_index);
             match self.children[self.current_child_index].tick(&mut child_situation) {
                 (BehaviorStatus::Success, input_opt) => {
                     self.current_child_index += 1;
@@ -81,6 +85,17 @@ impl SequenceNode {
                         )),
                         Some("All must succeed in order".to_string()),
                     );
+                    dies_core::debug_string(
+                        format!("sequence_node_{}", self.description()),
+                        format!(
+                            "Running: {}",
+                            ticker_indicies
+                                .iter()
+                                .map(|i| i.to_string())
+                                .collect::<Vec<String>>()
+                                .join(", "),
+                        ),
+                    );
                     return (BehaviorStatus::Running, input_opt);
                 }
                 (BehaviorStatus::Failure, _input_opt) => {
@@ -99,11 +114,33 @@ impl SequenceNode {
                         )),
                         Some("All must succeed in order".to_string()),
                     );
+                    dies_core::debug_string(
+                        format!("sequence_node_{}", self.description()),
+                        format!(
+                            "Failed: {}",
+                            ticker_indicies
+                                .iter()
+                                .map(|i| i.to_string())
+                                .collect::<Vec<String>>()
+                                .join(", "),
+                        ),
+                    );
                     return (BehaviorStatus::Failure, None);
                 }
             }
         }
 
+        dies_core::debug_string(
+            format!("sequence_node_{}", self.description()),
+            format!(
+                "Done: {}",
+                ticker_indicies
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
+            ),
+        );
         self.current_child_index = 0;
         debug_tree_node(
             situation.debug_key(node_full_id.clone()),

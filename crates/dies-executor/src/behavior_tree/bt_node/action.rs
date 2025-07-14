@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use dies_core::{debug_tree_node, Angle, PlayerId, Vector2};
 
 use super::{
@@ -177,9 +179,23 @@ impl ActionNode {
             SkillDefinition::Wait { .. } => "Wait",
             SkillDefinition::FetchBall => "FetchBall",
         };
-        if status == BehaviorStatus::Success {
-            println!("{skill_info} {node_full_id} success");
-        }
+        dies_core::debug_string(
+            format!(
+                "team_{}.p{}.skill",
+                situation.team_color, situation.player_id
+            ),
+            format!(
+                "{}: {}",
+                skill_info,
+                if status == BehaviorStatus::Success {
+                    "success"
+                } else if status == BehaviorStatus::Failure {
+                    "failure"
+                } else {
+                    "running"
+                }
+            ),
+        );
 
         let internal_state = if self.active_skill.is_some() {
             Some(format!("Running {}", skill_info))

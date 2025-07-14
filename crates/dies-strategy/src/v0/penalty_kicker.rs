@@ -29,6 +29,7 @@ pub fn build_penalty_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                             sequence_node()
                                 .add(
                                     face_position(choose_penalty_target)
+                                        .with_ball()
                                         .description("Aim penalty".to_string())
                                         .build(),
                                 )

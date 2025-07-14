@@ -57,6 +57,11 @@ impl TeamTracker {
         if let Some(tracker) = self.players.get_mut(&feedback.id) {
             tracker.update_from_feedback(feedback, time);
             self.controlled = true;
+        } else {
+            log::warn!(
+                "Received feedback for player {} that is not tracked",
+                feedback.id
+            );
         }
     }
 

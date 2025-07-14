@@ -45,6 +45,14 @@ impl ContinuousNode {
         self.last_position = position;
         self.last_heading = heading;
 
+        dies_core::debug_string(
+            format!(
+                "team_{}.p{}.skill",
+                situation.team_color, situation.player_id
+            ),
+            format!("continuous: {}", self.description),
+        );
+
         (BehaviorStatus::Running, Some(control_input))
     }
 

@@ -106,16 +106,16 @@ const PlayerCard: FC<PlayerCardProps> = ({
         isSelected && "ring-2 ring-blue-500"
       )}
     >
-      <CardContent className="p-4">
+      <CardContent className="px-0 py-1 text-sm">
         <div className="flex justify-between items-center">
-          <h3 className="text-lg font-semibold">Robot {player.id}</h3>
+          <h3 className="text-sm font-semibold">Robot {player.id}</h3>
           {isManual && (
             <span className="text-xs bg-red-500 text-white px-2 py-1 rounded">
               Manual
             </span>
           )}
         </div>
-        <div className="text-sm mt-2 flex items-center gap-2">
+        <div className="text-sm mt-0.5 flex items-center gap-2">
           <span>Basestation:</span>
           <div
             className={cn(
@@ -127,7 +127,17 @@ const PlayerCard: FC<PlayerCardProps> = ({
             {bsStatus || (hasBsInfo ? "Ok" : "N/A")}
           </span>
         </div>
-        <div className="text-sm mt-2 flex items-center gap-2 font-mono">
+        <div className="text-sm mt-0.5 flex items-center gap-2">
+          <span>Breakbeam:</span>
+          <span>
+            {basestationData
+              ? basestationData.breakbeam_ball_detected
+                ? "Yes"
+                : "No"
+              : "N/A"}
+          </span>
+        </div>
+        <div className="text-sm mt-0.5 flex items-center gap-2 font-mono">
           <span>Pos:</span>
           <span>
             ({player.position[0].toFixed(0)}, {player.position[1].toFixed(0)})
