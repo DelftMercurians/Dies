@@ -603,7 +603,7 @@ pub fn nearest_safe_pos(
             if is_pos_in_field(position, field)
                 && entity_to_avoid.distance_to(position) > min_distance
             {
-                let distnorm = (initial_pos - target_pos).norm();
+                let distnorm = (initial_pos - target_pos).norm() + 1e-6;
                 let dist_score = (position - target_pos).norm() / distnorm;
                 let closeness_score = (position - initial_pos).norm() / distnorm;
                 let not_gay_score = entity_to_avoid.intersects_line(initial_pos, position) as i32 as f64;
@@ -617,7 +617,7 @@ pub fn nearest_safe_pos(
         }
     }
     if best_loss == f64::INFINITY {
-        log::warn!("Could not find a safe position from {initial_pos}, avoiding {entity_to_avoid:?}");
+        log::warn!("Could not find a safe position from {initial_pos}, avoiding {entity_to_avoid:?}, {best_loss}");
     }
 
     best_pos

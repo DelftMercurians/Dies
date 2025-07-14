@@ -350,7 +350,7 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
 
     for (start, end) in segments {
         let segment_length = (end - start).norm();
-        let num_positions = (segment_length / 100.0).ceil() as usize + 1;
+        let num_positions = (segment_length / 40.0).ceil() as usize + 1;
 
         for i in 0..num_positions {
             let t = i as f64 / (num_positions - 1) as f64;
@@ -474,31 +474,15 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
 
         // how much of the backline is covered by the robot at this position
         let coverage_score = compute_coverage_score(ball_pos, pos, backline);
-        total_score += coverage_score * 10.0; // Weight coverage highly
+        total_score += coverage_score * 20.0; // Weight coverage highly
 
-        /*
-        // the closer it is to the ball trajectory (ray formed by its velocity)
-        // the better, with a high weight (normed to 1)
-        let ball_velocity = ball.velocity;
-        let velocity_magnitude = ball_velocity.norm();
-
-        if velocity_magnitude > 100.0 { // Only consider trajectory if ball is moving
-            let ball_to_pos = pos - ball_pos;
-            let ball_to_pos_magnitude = ball_to_pos.norm();
-
-            if ball_to_pos_magnitude > 0.0 {
-                // Calculate angle between ball-to-position vector and ball velocity
-                let dot_product = ball_to_pos.dot(&ball_velocity);
-                let cos_angle = dot_product / (ball_to_pos_magnitude * velocity_magnitude);
-                let cos_angle_clamped = cos_angle.clamp(-1.0, 1.0);
-
-                // Convert angle to score: cos(0) = 1 (perfect alignment), cos(90°) = 0 (perpendicular)
-                // Use squared cosine to emphasize positions that are well-aligned
-                let trajectory_score = cos_angle_clamped.max(0.0).powi(2);
-                total_score += trajectory_score;
-            }
-        }
-        */
+        // the closer the position to the ball-goal ray the better
+        let ball_to_goal = goal_pos - ball_pos;
+        let ball_to_pos = pos - ball_pos;
+        let projection = ball_to_pos.dot(&ball_to_goal.normalize());
+        let perpendicular_dist = (ball_to_pos - ball_to_goal.normalize() * projection).norm();
+        let ray_score = -perpendicular_dist / 1000.0; // Penalize positions far from ball-goal line
+        total_score += ray_score * 10.0;
     }
 
     // Penalize positions too far from current robot positions
@@ -508,18 +492,6 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
         .filter(|(_, v)| *v == "waller")
         .collect::<Vec<_>>();
     wallers.sort_by_key(|(k, _)| *k);
-
-    for (i, (player_id, _)) in wallers.iter().enumerate() {
-        if i < position_tuple.len() {
-            let player = s.world.get_player(**player_id);
-            let current_pos = player.position;
-            let target_pos = position_tuple[i];
-            let distance = (current_pos - target_pos).norm();
-
-            // Slight penalty for distance to encourage stability
-            total_score -= distance * 0.01;
-        }
-    }
 
     total_score
 }
