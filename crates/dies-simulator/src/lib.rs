@@ -1681,12 +1681,6 @@ impl Simulation {
                             RobotCmd::Kick => {
                                 is_kicking = true;
                             }
-                            RobotCmd::YawRateControl => {
-                                player.heading_control = false;
-                            }
-                            RobotCmd::HeadingControl => {
-                                player.heading_control = true;
-                            }
                             _ => {}
                         }
                     }

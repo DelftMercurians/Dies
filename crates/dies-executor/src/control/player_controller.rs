@@ -184,6 +184,7 @@ impl PlayerController {
             .set_dribble_speed(self.dribble_speed * MAX_DRIBBLE_SPEED)
             .set_kick_speed(self.kick_speed)
             .set_kick_counter(self.kick_counter)
+            .set_robot_cmd(RobotCmd::Arm)
             .untransform_global_move_cmd(self.id, self.last_yaw);
 
         player_context.debug_value("global_x", global_cmd.global_x);

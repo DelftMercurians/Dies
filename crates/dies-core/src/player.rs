@@ -44,15 +44,13 @@ pub enum RobotCmd {
     Reboot,
     Beep,
     Coast,
-    HeadingControl,
-    YawRateControl,
 }
 
 impl From<RobotCmd> for glue::Radio_RobotCommand {
     fn from(val: RobotCmd) -> Self {
         match val {
             RobotCmd::None => glue::Radio_RobotCommand::NONE,
-            RobotCmd::Arm => glue::Radio_RobotCommand::ARM,
+            RobotCmd::Arm => glue::Radio_RobotCommand::ARM_COUNTER_KICK,
             RobotCmd::Disarm => glue::Radio_RobotCommand::DISARM,
             RobotCmd::Discharge => glue::Radio_RobotCommand::DISCHARGE,
             RobotCmd::Kick => glue::Radio_RobotCommand::KICK,
@@ -61,8 +59,6 @@ impl From<RobotCmd> for glue::Radio_RobotCommand {
             RobotCmd::Reboot => glue::Radio_RobotCommand::REBOOT,
             RobotCmd::Beep => glue::Radio_RobotCommand::BEEP,
             RobotCmd::Coast => glue::Radio_RobotCommand::COAST,
-            RobotCmd::HeadingControl => glue::Radio_RobotCommand::HEADING_CONTROL,
-            RobotCmd::YawRateControl => glue::Radio_RobotCommand::YAW_RATE_CONTROL,
         }
     }
 }
