@@ -37,6 +37,11 @@ enum Command {
         #[clap(long, allow_hyphen_values = true)]
         sy: Option<f64>,
 
+        #[clap(long, default_value = "10000")]
+        max_yaw_rate: f64,
+        #[clap(long, default_value = "0", allow_hyphen_values = true)]
+        preferred_rotation_direction: f64,
+
         /// The IDs of the robots to test.
         ids: Vec<u32>,
     },
@@ -137,7 +142,20 @@ impl Cli {
                 w,
                 sx,
                 sy,
-            }) => match test_radio(self.serial_port, id, duration, w, sx, sy).await {
+                max_yaw_rate,
+                preferred_rotation_direction,
+            }) => match test_radio(
+                self.serial_port,
+                id,
+                duration,
+                w,
+                sx,
+                sy,
+                max_yaw_rate,
+                preferred_rotation_direction,
+            )
+            .await
+            {
                 Ok(_) => ExitCode::SUCCESS,
                 Err(err) => {
                     eprintln!("Error testing radio: {}", err);

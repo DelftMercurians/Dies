@@ -1,6 +1,6 @@
 use anyhow::Result;
 use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
-use dies_core::{Angle, PlayerGlobalMoveCmd, PlayerId};
+use dies_core::{Angle, PlayerGlobalMoveCmd, PlayerId, RotationDirection};
 use tokio::time::{Duration, Instant};
 
 use crate::cli::SerialPort;
@@ -12,6 +12,8 @@ pub async fn test_radio(
     w: Option<f64>,
     sx: Option<f64>,
     sy: Option<f64>,
+    max_yaw_rate: f64,
+    preferred_rotation_direction: f64,
 ) -> Result<()> {
     let port = port.select().await?;
     let bs_config =
@@ -41,6 +43,12 @@ pub async fn test_radio(
             if let Some(sy) = sy {
                 cmd.global_y = sy;
             }
+            cmd.max_yaw_rate = max_yaw_rate;
+            cmd.preferred_rotation_direction = match preferred_rotation_direction {
+                1.0 => RotationDirection::Clockwise,
+                -1.0 => RotationDirection::CounterClockwise,
+                _ => RotationDirection::NoPreference,
+            };
             cmd.last_heading = f64::NAN;
 
             bs_handle.send_no_wait(

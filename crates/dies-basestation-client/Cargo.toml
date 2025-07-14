@@ -10,4 +10,4 @@ anyhow = "1.0.79"
 dies-core = { version = "0.1.0", path = "../dies-core" }
 log = "0.4.21"
 tokio = { version = "1.35.1", features = ["rt", "sync"] }
-glue = { git = "https://github.com/DelftMercurians/glue.git", tag = "v0.7.3" }
+glue = { git = "https://github.com/DelftMercurians/glue.git", tag = "v0.7.4" }

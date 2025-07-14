@@ -3,7 +3,7 @@ use typeshare::typeshare;
 
 use crate::{
     Angle, BallData, GameStateData, PlayerData, PlayerGlobalMoveCmd, PlayerId, PlayerMoveCmd,
-    RobotCmd, TeamData, Vector2, Vector3, WorldData,
+    RobotCmd, RotationDirection, TeamData, Vector2, Vector3, WorldData,
 };
 
 /// # Team-Specific Coordinate System
@@ -207,6 +207,8 @@ pub struct PlayerCmdUntransformer {
     kick_speed: Option<f64>,
     robot_cmd: Option<RobotCmd>,
     kick_counter: Option<u8>,
+    max_yaw_rate: Option<f64>,
+    preferred_rotation_direction: Option<RotationDirection>,
 }
 
 impl PlayerCmdUntransformer {
@@ -222,6 +224,8 @@ impl PlayerCmdUntransformer {
             kick_speed: None,
             robot_cmd: None,
             kick_counter: None,
+            max_yaw_rate: None,
+            preferred_rotation_direction: None,
         }
     }
 
@@ -262,6 +266,19 @@ impl PlayerCmdUntransformer {
 
     pub fn set_kick_counter(&mut self, kick_counter: u8) -> &mut Self {
         self.kick_counter = Some(kick_counter);
+        self
+    }
+
+    pub fn set_max_yaw_rate(&mut self, max_yaw_rate: f64) -> &mut Self {
+        self.max_yaw_rate = Some(max_yaw_rate);
+        self
+    }
+
+    pub fn set_preferred_rotation_direction(
+        &mut self,
+        preferred_rotation_direction: RotationDirection,
+    ) -> &mut Self {
+        self.preferred_rotation_direction = Some(preferred_rotation_direction);
         self
     }
 
@@ -320,6 +337,10 @@ impl PlayerCmdUntransformer {
             dribble_speed: self.dribble_speed.unwrap_or(0.0),
             kick_counter: self.kick_counter.unwrap_or(0),
             robot_cmd: self.robot_cmd.unwrap_or(RobotCmd::None),
+            max_yaw_rate: self.max_yaw_rate.unwrap_or(10_000.0),
+            preferred_rotation_direction: self
+                .preferred_rotation_direction
+                .unwrap_or(RotationDirection::NoPreference),
         }
     }
 

@@ -154,6 +154,23 @@ impl From<PlayerMoveCmd> for glue::Radio_Command {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum RotationDirection {
+    Clockwise,
+    CounterClockwise,
+    NoPreference,
+}
+
+impl RotationDirection {
+    pub fn as_f64(self) -> f64 {
+        match self {
+            RotationDirection::Clockwise => -1.0,
+            RotationDirection::CounterClockwise => 1.0,
+            RotationDirection::NoPreference => 0.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct PlayerGlobalMoveCmd {
     pub id: PlayerId,
     pub global_x: f64,
@@ -163,6 +180,9 @@ pub struct PlayerGlobalMoveCmd {
     pub dribble_speed: f64,
     pub kick_counter: u8,
     pub robot_cmd: RobotCmd,
+    /// Maximum yaw rate in rad/s
+    pub max_yaw_rate: f64,
+    pub preferred_rotation_direction: RotationDirection,
 }
 
 impl PlayerGlobalMoveCmd {
@@ -176,6 +196,8 @@ impl PlayerGlobalMoveCmd {
             dribble_speed: 0.0,
             kick_counter: 0,
             robot_cmd: RobotCmd::None,
+            max_yaw_rate: 0.0,
+            preferred_rotation_direction: RotationDirection::NoPreference,
         }
     }
 }
@@ -192,6 +214,12 @@ impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
             robot_command: val.robot_cmd.into(),
             smart_kick_couter: val.kick_counter,
             time_to_kick: 0,
+            max_yaw_rate: (val.max_yaw_rate * 10.0) as u16,
+            preferred_rotation_direction: match val.preferred_rotation_direction {
+                RotationDirection::Clockwise => -1,
+                RotationDirection::CounterClockwise => 1,
+                RotationDirection::NoPreference => 0,
+            },
             _pad2: 0,
         }
     }
