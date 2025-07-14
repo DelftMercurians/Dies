@@ -76,32 +76,6 @@ impl TeamController {
         self.settings = settings.clone();
     }
 
-    /// Enable two-step MTP controller for a specific player
-    pub fn set_player_two_step_mtp(&mut self, player_id: PlayerId, enable: bool) {
-        if let Some(controller) = self.player_controllers.get_mut(&player_id) {
-            controller.set_use_two_step_mtp(enable);
-        }
-    }
-
-    /// Enable two-step MTP controller for all players
-    pub fn set_all_players_two_step_mtp(&mut self, enable: bool) {
-        for controller in self.player_controllers.values_mut() {
-            controller.set_use_two_step_mtp(enable);
-        }
-    }
-
-    /// Set avoid_goal_area flag for a specific player
-    pub fn set_player_avoid_goal_area(&mut self, player_id: PlayerId, avoid: bool) {
-        self.avoid_goal_area_flags.insert(player_id, avoid);
-    }
-
-    /// Set avoid_goal_area flag for all players
-    pub fn set_all_players_avoid_goal_area(&mut self, avoid: bool) {
-        for &player_id in self.player_controllers.keys() {
-            self.avoid_goal_area_flags.insert(player_id, avoid);
-        }
-    }
-
     pub fn update(
         &mut self,
         team_color: TeamColor,

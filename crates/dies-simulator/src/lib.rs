@@ -4,8 +4,8 @@ use std::{
 };
 
 use dies_core::{
-    Angle, FieldGeometry, GcSimCommand, PlayerFeedbackMsg, PlayerId, PlayerMoveCmd, RobotCmd,
-    SideAssignment, SysStatus, TeamColor, Vector2, Vector3, WorldInstant,
+    Angle, FieldGeometry, GcSimCommand, PlayerFeedbackMsg, PlayerGlobalMoveCmd, PlayerId,
+    PlayerMoveCmd, RobotCmd, SideAssignment, SysStatus, TeamColor, Vector2, Vector3, WorldInstant,
 };
 use dies_protos::{
     ssl_gc_referee_message::{referee, Referee},
@@ -353,17 +353,25 @@ struct Player {
     _collider_handle: ColliderHandle,
     last_cmd_time: f64,
     target_velocity: Vector<f64>,
-    target_z: f64,
+    w: f64,
+    target_heading: f64,
     current_dribble_speed: f64,
     breakbeam: bool,
     heading_control: bool,
 }
 
 #[derive(Debug, Clone)]
+enum MoveCmd {
+    Local(PlayerMoveCmd),
+    Global(PlayerGlobalMoveCmd),
+}
+
+#[derive(Debug, Clone)]
 struct TimedPlayerCmd {
+    id: PlayerId,
     team_color: TeamColor,
     execute_time: f64,
-    player_cmd: PlayerMoveCmd,
+    player_cmd: MoveCmd,
 }
 
 /// A complete simulator for testing strategies and robot control in silico.
@@ -627,7 +635,8 @@ impl Simulation {
             _collider_handle: collider_handle,
             last_cmd_time: 0.0,
             target_velocity: Vector::zeros(),
-            target_z: 0.0,
+            w: 0.0,
+            target_heading: f64::NAN,
             current_dribble_speed: 0.0,
             breakbeam: false,
             heading_control: false,
@@ -656,9 +665,19 @@ impl Simulation {
     /// the config
     pub fn push_cmd(&mut self, team_color: TeamColor, cmd: PlayerMoveCmd) {
         self.cmd_queue.push(TimedPlayerCmd {
+            id: cmd.id,
             team_color,
             execute_time: self.current_time + self.config.command_delay,
-            player_cmd: cmd,
+            player_cmd: MoveCmd::Local(cmd),
+        });
+    }
+
+    pub fn push_global_cmd(&mut self, team_color: TeamColor, cmd: PlayerGlobalMoveCmd) {
+        self.cmd_queue.push(TimedPlayerCmd {
+            id: cmd.id,
+            team_color,
+            execute_time: self.current_time + self.config.command_delay,
+            player_cmd: MoveCmd::Global(cmd),
         });
     }
 
@@ -1587,7 +1606,7 @@ impl Simulation {
             let mut to_exec = HashMap::new();
             self.cmd_queue.retain(|cmd| {
                 if cmd.execute_time <= self.current_time {
-                    to_exec.insert((cmd.team_color, cmd.player_cmd.id), cmd.player_cmd);
+                    to_exec.insert((cmd.team_color, cmd.id), cmd.player_cmd.clone());
                     false
                 } else {
                     true
@@ -1639,38 +1658,55 @@ impl Simulation {
                     .insert((player.team_color, player.id), feedback);
             }
 
-            let mut is_kicking = false;
-            if let Some(command) = commands_to_exec.get(&(player.team_color, player.id)) {
-                // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
-                // Angular velocity is in rad/s and +w means counter-clockwise
-                player.target_velocity = Vector::new(command.sx, -command.sy, 0.0) * 1000.0; // mm/s to m/s
-                player.target_z = -command.w;
-                player.current_dribble_speed = command.dribble_speed;
-                player.last_cmd_time = self.current_time;
-                is_kicking = matches!(command.robot_cmd, RobotCmd::Kick);
-
-                match command.robot_cmd {
-                    RobotCmd::Kick => {
-                        is_kicking = true;
-                    }
-                    RobotCmd::YawRateControl => {
-                        player.heading_control = false;
-                    }
-                    RobotCmd::HeadingControl => {
-                        player.heading_control = true;
-                    }
-                    _ => {}
-                }
-            }
-
             let rigid_body = self
                 .rigid_body_set
                 .get_mut(player.rigid_body_handle)
                 .unwrap();
 
+            let mut is_kicking = false;
+            if let Some(command) = commands_to_exec.get(&(player.team_color, player.id)) {
+                match command {
+                    MoveCmd::Local(cmd) => {
+                        // In the robot's local frame, +sx means forward, +sy means right and both are in m/s
+                        // Angular velocity is in rad/s and +w means counter-clockwise
+                        player.target_velocity = Vector::new(cmd.sx, -cmd.sy, 0.0) * 1000.0; // m/s to mm/s
+                        player.w = -cmd.w;
+                        player.current_dribble_speed = cmd.dribble_speed;
+                        player.last_cmd_time = self.current_time;
+                        is_kicking = matches!(cmd.robot_cmd, RobotCmd::Kick);
+
+                        match cmd.robot_cmd {
+                            RobotCmd::Kick => {
+                                is_kicking = true;
+                            }
+                            RobotCmd::YawRateControl => {
+                                player.heading_control = false;
+                            }
+                            RobotCmd::HeadingControl => {
+                                player.heading_control = true;
+                            }
+                            _ => {}
+                        }
+                    }
+                    MoveCmd::Global(cmd) => {
+                        // Rotate the velocity to the robot's frame
+                        let yaw = Rotation::<f64>::new(
+                            Vector::z() * rigid_body.rotation().euler_angles().2,
+                        );
+                        let target_velocity =
+                            yaw.inverse() * Vector::new(cmd.global_x, cmd.global_y, 0.0);
+                        player.target_velocity = target_velocity * 1000.0; // m/s to mm/s
+                        player.target_heading = cmd.heading_setpoint;
+                        player.current_dribble_speed = cmd.dribble_speed;
+                        player.last_cmd_time = self.current_time;
+                    }
+                }
+            }
+
             if (self.current_time - player.last_cmd_time).abs() > self.config.player_cmd_timeout {
                 player.target_velocity = Vector::zeros();
-                player.target_z = 0.0;
+                player.w = 0.0;
+                player.target_heading = f64::NAN;
             }
 
             let velocity = rigid_body.linvel();
@@ -1689,10 +1725,10 @@ impl Simulation {
             let new_vel = new_vel.cap_magnitude(self.config.max_vel);
             rigid_body.set_linvel(new_vel, true);
 
-            if player.heading_control {
+            if !player.target_heading.is_nan() {
                 // Move towards the target heading with config.max_ang_vel
                 let current_yaw = rigid_body.rotation().euler_angles().2;
-                let target_yaw = player.target_z;
+                let target_yaw = player.target_heading;
                 let yaw_err = target_yaw - current_yaw;
                 let new_yaw = if yaw_err.abs() > 5f64.to_degrees() {
                     let ang_vel = (yaw_err / dt).min(self.config.max_ang_vel / dt);
@@ -1702,7 +1738,7 @@ impl Simulation {
                 };
                 rigid_body.set_rotation(Rotation::from_euler_angles(0.0, 0.0, new_yaw), true);
             } else {
-                let target_ang_vel = player.target_z;
+                let target_ang_vel = player.w;
                 let new_ang_vel =
                     target_ang_vel.clamp(-self.config.max_ang_vel, self.config.max_ang_vel);
                 rigid_body.set_angvel(Vector::z() * new_ang_vel, true);
@@ -2004,7 +2040,8 @@ impl SimulationBuilder {
             _collider_handle: collider_handle,
             last_cmd_time: 0.0,
             target_velocity: Vector::zeros(),
-            target_z: 0.0,
+            w: 0.0,
+            target_heading: f64::NAN,
             current_dribble_speed: 0.0,
             breakbeam: false,
             heading_control: false,

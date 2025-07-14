@@ -70,12 +70,14 @@ impl From<RobotCmd> for glue::Radio_RobotCommand {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum PlayerCmd {
     Move(PlayerMoveCmd),
+    GlobalMove(PlayerGlobalMoveCmd),
 }
 
 impl PlayerCmd {
     pub fn id(&self) -> PlayerId {
         match self {
             PlayerCmd::Move(cmd) => cmd.id,
+            PlayerCmd::GlobalMove(cmd) => cmd.id,
         }
     }
 }
@@ -115,10 +117,6 @@ impl PlayerMoveCmd {
         }
     }
 
-    // pub fn is_zero(&self) -> bool {
-    //     self.sx == 0.0 && self.sy == 0.0 && self.w == 0.0 && self.dribble_speed == 0.0 && self.robot_cmd
-    // }
-
     pub fn into_proto_v0_with_id(self, with_id: usize) -> String {
         let extra = match self.robot_cmd {
             RobotCmd::Arm => "A".to_string(),
@@ -149,8 +147,52 @@ impl From<PlayerMoveCmd> for glue::Radio_Command {
             dribbler_speed: val.dribble_speed as f32,
             robot_command: val.robot_cmd.into(),
             kick_time: 5_000.0,
-            fan_speed: 0.0, //val.fan_speed as f32,
+            fan_speed: 0.0,
             _pad: [0, 0, 0],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct PlayerGlobalMoveCmd {
+    pub id: PlayerId,
+    pub global_x: f64,
+    pub global_y: f64,
+    pub heading_setpoint: f64,
+    pub last_heading: f64,
+    pub dribble_speed: f64,
+    pub kick_counter: u8,
+    pub robot_cmd: RobotCmd,
+}
+
+impl PlayerGlobalMoveCmd {
+    pub fn zero(id: PlayerId) -> PlayerGlobalMoveCmd {
+        PlayerGlobalMoveCmd {
+            id,
+            global_x: 0.0,
+            global_y: 0.0,
+            heading_setpoint: 0.0,
+            last_heading: 0.0,
+            dribble_speed: 0.0,
+            kick_counter: 0,
+            robot_cmd: RobotCmd::None,
+        }
+    }
+}
+
+impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
+    fn from(val: PlayerGlobalMoveCmd) -> Self {
+        glue::Radio_GlobalCommand {
+            global_speed_x: val.global_x as f32,
+            global_speed_y: val.global_y as f32,
+            heading_last_measurement: val.last_heading as f32,
+            heading_setpoint: val.heading_setpoint as f32,
+            dribbler_speed_i: val.dribble_speed as i16,
+            kick_time_i: 5_000,
+            robot_command: val.robot_cmd.into(),
+            smart_kick_couter: val.kick_counter,
+            time_to_kick: 0,
+            _pad2: 0,
         }
     }
 }

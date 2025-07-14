@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    Angle, BallData, GameStateData, PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, TeamData,
-    Vector2, Vector3, WorldData,
+    Angle, BallData, GameStateData, PlayerData, PlayerGlobalMoveCmd, PlayerId, PlayerMoveCmd,
+    RobotCmd, TeamData, Vector2, Vector3, WorldData,
 };
 
 /// # Team-Specific Coordinate System
@@ -206,6 +206,7 @@ pub struct PlayerCmdUntransformer {
     fan_speed: Option<f64>,
     kick_speed: Option<f64>,
     robot_cmd: Option<RobotCmd>,
+    kick_counter: Option<u8>,
 }
 
 impl PlayerCmdUntransformer {
@@ -220,6 +221,7 @@ impl PlayerCmdUntransformer {
             fan_speed: None,
             kick_speed: None,
             robot_cmd: None,
+            kick_counter: None,
         }
     }
 
@@ -258,6 +260,11 @@ impl PlayerCmdUntransformer {
         self
     }
 
+    pub fn set_kick_counter(&mut self, kick_counter: u8) -> &mut Self {
+        self.kick_counter = Some(kick_counter);
+        self
+    }
+
     pub fn untransform_move_cmd(&self, id: PlayerId, yaw: Angle) -> PlayerMoveCmd {
         let target_velocity_local = if let Some(target_velocity) = self.target_velocity {
             self.side_assignment
@@ -276,22 +283,42 @@ impl PlayerCmdUntransformer {
             id,
             sx: target_velocity_local.x / 1000.0, // Convert to m/s
             sy: -target_velocity_local.y / 1000.0, // Convert to m/s
-            w: if let Some(target_yaw) = self.target_yaw {
-                -self
-                    .side_assignment
-                    .transform_angle(self.team_color, target_yaw)
-                    .radians()
-            } else if let Some(w) = self.w {
-                -self
-                    .side_assignment
-                    .attacking_direction_sign(self.team_color)
-                    * w
-            } else {
-                0.0
-            },
+            w: -self
+                .side_assignment
+                .attacking_direction_sign(self.team_color)
+                * self.w.unwrap_or(0.0),
             dribble_speed: self.dribble_speed.unwrap_or(0.0),
             fan_speed: self.fan_speed.unwrap_or(0.0),
             kick_speed: self.kick_speed.unwrap_or(0.0),
+            robot_cmd: self.robot_cmd.unwrap_or(RobotCmd::None),
+        }
+    }
+
+    pub fn untransform_global_move_cmd(&self, id: PlayerId, yaw: Angle) -> PlayerGlobalMoveCmd {
+        let target_velocity = self.side_assignment.transform_vec2(
+            self.team_color,
+            &self.target_velocity.unwrap_or(Vector2::zeros()),
+        );
+        let target_yaw = self
+            .target_yaw
+            .map(|yaw| {
+                self.side_assignment
+                    .transform_angle(self.team_color, yaw)
+                    .radians()
+            })
+            .unwrap_or(f64::NAN);
+        let last_yaw = self
+            .side_assignment
+            .transform_angle(self.team_color, yaw)
+            .radians();
+        PlayerGlobalMoveCmd {
+            id,
+            global_x: target_velocity.x / 1000.0,
+            global_y: target_velocity.y / 1000.0,
+            heading_setpoint: target_yaw,
+            last_heading: last_yaw,
+            dribble_speed: self.dribble_speed.unwrap_or(0.0),
+            kick_counter: self.kick_counter.unwrap_or(0),
             robot_cmd: self.robot_cmd.unwrap_or(RobotCmd::None),
         }
     }

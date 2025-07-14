@@ -571,8 +571,13 @@ impl Executor {
                     }
                     _ = cmd_interval.tick() => {
                         for (team_color, cmd) in self.player_commands() {
-                            if let PlayerCmd::Move(cmd) = cmd {
-                                simulator.push_cmd(team_color, cmd);
+                            match cmd {
+                                PlayerCmd::Move(cmd) => {
+                                    simulator.push_cmd(team_color, cmd);
+                                }
+                                PlayerCmd::GlobalMove(cmd) => {
+                                    simulator.push_global_cmd(team_color, cmd);
+                                }
                             }
                         }
                     }

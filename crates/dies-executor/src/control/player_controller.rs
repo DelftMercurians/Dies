@@ -2,13 +2,12 @@ use std::time::{Duration, Instant};
 
 use dies_core::{
     Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerCmdUntransformer,
-    PlayerData, PlayerId, PlayerMoveCmd, RobotCmd, TeamData, Vector2,
+    PlayerData, PlayerGlobalMoveCmd, PlayerId, RobotCmd, TeamData, Vector2,
 };
 
 use super::{
     mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
-    rvo::velocity_obstacle_update,
     team_context::PlayerContext,
     two_step_mtp::TwoStepMTP,
     yaw_control::YawController,
@@ -34,13 +33,17 @@ pub struct PlayerController {
     last_pos: Vector2,
 
     /// Output velocity \[mm/s\]
-    target_velocity: Vector2,
+    target_velocity_global: Vector2,
 
     yaw_control: YawController,
     last_yaw: Angle,
-    // ToDo enum instead of target_z for 2 things
-    /// Output angular velocity (has_target_headis == false || has_imu == false) or heading
+
+    /// Target heading
     target_z: f64,
+    /// Local angular velocity
+    w: f64,
+    /// Kick counter
+    kick_counter: u8,
 
     frame_misses: usize,
 
@@ -54,13 +57,6 @@ pub struct PlayerController {
     max_decel: f64,
     max_angular_velocity: f64,
     max_angular_acceleration: f64,
-
-    have_imu: bool,
-    has_target_heading: bool,
-    /// If Some(true) we need to switch to imu heading, if Some(false) we need to switch
-    /// to yaw control, and if None we don't need to do anything.
-    switch_heading: Option<bool>,
-    heading_interval: IntervalTrigger,
 
     fan_speed: f64,
     kick_speed: f64,
@@ -81,14 +77,15 @@ impl PlayerController {
             use_mpc: false,         // Default to using MPC
             use_two_step_mtp: true, // Default to double step MTP
             last_pos: Vector2::new(0.0, 0.0),
-            target_velocity: Vector2::new(0.0, 0.0),
-
+            target_velocity_global: Vector2::new(0.0, 0.0),
+            w: 0.0,
             yaw_control: YawController::new(
                 settings.controller_settings.angle_kp,
                 settings.controller_settings.angle_cutoff_distance,
             ),
             last_yaw: Angle::from_radians(0.0),
             target_z: 0.0,
+            kick_counter: 0,
 
             frame_misses: 0,
             kicker: KickerState::Disarming,
@@ -99,11 +96,6 @@ impl PlayerController {
             max_decel: settings.controller_settings.max_deceleration,
             max_angular_velocity: settings.controller_settings.max_angular_velocity,
             max_angular_acceleration: settings.controller_settings.max_angular_acceleration,
-
-            have_imu: false,
-            has_target_heading: false,
-            switch_heading: None,
-            heading_interval: IntervalTrigger::new(Duration::from_secs_f64(0.5)),
 
             fan_speed: 0.0,
             kick_speed: 0.0,
@@ -133,33 +125,9 @@ impl PlayerController {
         self.id
     }
 
-    /// Toggle between MPC and MTP controllers
-    pub fn set_use_mpc(&mut self, use_mpc: bool) {
-        self.use_mpc = use_mpc;
-    }
-
-    /// Toggle between regular MTP and two-step MTP controllers
-    pub fn set_use_two_step_mtp(&mut self, use_two_step_mtp: bool) {
-        self.use_two_step_mtp = use_two_step_mtp;
-    }
-
-    pub fn target_velocity(&self) -> Vector2 {
-        self.target_velocity
-    }
-
     /// Set the target velocity (used when MPC is computed externally)
     pub fn set_target_velocity(&mut self, velocity: Vector2) {
-        self.target_velocity = velocity;
-    }
-
-    /// Get the target position for MPC calculation
-    pub fn get_target_position(&self, input: &PlayerControlInput) -> Option<Vector2> {
-        input.position
-    }
-
-    /// Get max speed setting
-    pub fn max_speed(&self) -> f64 {
-        self.max_speed
+        self.target_velocity_global = velocity;
     }
 
     /// Check if using MPC
@@ -174,43 +142,59 @@ impl PlayerController {
         mut untransformer: PlayerCmdUntransformer,
     ) -> PlayerCmd {
         if self.frame_misses > MISSING_FRAMES_THRESHOLD {
-            return PlayerCmd::Move(PlayerMoveCmd::zero(self.id));
+            return PlayerCmd::GlobalMove(PlayerGlobalMoveCmd::zero(self.id));
         }
 
-        // Priority list: 1. Kick, 2. Switch heading, 3. Anything else
-        let robot_cmd = match (self.kicker, self.switch_heading) {
-            (_, Some(heading)) if self.have_imu => {
-                self.switch_heading = None;
-                if heading {
-                    RobotCmd::HeadingControl
-                } else {
-                    RobotCmd::YawRateControl
-                }
-            }
-            (KickerState::Kicking, _) => {
+        // Priority list: 1. Kick, 2. Anything else
+        let robot_cmd = match self.kicker {
+            KickerState::Kicking => {
                 self.kicker = KickerState::Disarming;
+                self.kick_counter = self.kick_counter.wrapping_add(1);
                 RobotCmd::Kick
             }
-            (KickerState::Arming, None) => RobotCmd::Arm,
             _ => RobotCmd::Arm,
         };
 
-        let cmd = untransformer
-            .set_target_velocity(self.target_velocity)
-            .set_w(self.target_z)
-            .set_dribble_speed(self.dribble_speed)
-            .set_fan_speed(self.fan_speed)
+        let _local_cmd = untransformer
+            .set_target_velocity(self.target_velocity_global)
+            .set_w(self.w)
+            .set_dribble_speed(self.dribble_speed * MAX_DRIBBLE_SPEED)
             .set_kick_speed(self.kick_speed)
             .set_robot_cmd(robot_cmd)
             .untransform_move_cmd(self.id, self.last_yaw);
+        // player_context.debug_value("sx", local_cmd.sx);
+        // player_context.debug_value("sy", local_cmd.sy);
+        // player_context.debug_value("w", local_cmd.w);
+        // player_context.debug_value("dribble_speed", local_cmd.dribble_speed);
+        // player_context.debug_string("robot_cmd", format!("{:?}", local_cmd.robot_cmd));
 
-        player_context.debug_value("sx", cmd.sx);
-        player_context.debug_value("sy", cmd.sy);
-        player_context.debug_value("w", cmd.w);
-        player_context.debug_value("dribble_speed", cmd.dribble_speed);
-        player_context.debug_string("robot_cmd", format!("{:?}", cmd.robot_cmd));
+        // let global_cmd = PlayerGlobalMoveCmd {
+        //     id: self.id,
+        //     global_x: self.target_velocity_global.x / 1000.0,
+        //     global_y: self.target_velocity_global.y / 1000.0,
+        //     heading_setpoint: 0.0,
+        //     last_heading: self.last_yaw.radians(),
+        //     dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
+        //     kick_counter: self.kick_counter,
+        //     robot_cmd,
+        // };
+        let global_cmd = untransformer
+            .set_target_velocity(self.target_velocity_global)
+            .set_target_yaw(Angle::from_radians(self.target_z))
+            .set_dribble_speed(self.dribble_speed * MAX_DRIBBLE_SPEED)
+            .set_kick_speed(self.kick_speed)
+            .set_kick_counter(self.kick_counter)
+            .untransform_global_move_cmd(self.id, self.last_yaw);
 
-        PlayerCmd::Move(cmd)
+        player_context.debug_value("global_x", global_cmd.global_x);
+        player_context.debug_value("global_y", global_cmd.global_y);
+        player_context.debug_value("heading_setpoint", global_cmd.heading_setpoint);
+        player_context.debug_value("last_heading", global_cmd.last_heading);
+        player_context.debug_value("dribble_speed", global_cmd.dribble_speed);
+        player_context.debug_value("kick_counter", global_cmd.kick_counter as f64);
+        player_context.debug_string("robot_cmd", format!("{:?}", global_cmd.robot_cmd));
+
+        PlayerCmd::GlobalMove(global_cmd)
     }
 
     /// Increment the missing frame count, stops the robot if it is too high.
@@ -235,10 +219,6 @@ impl PlayerController {
         avoid_goal_area: bool,
     ) {
         self.frame_misses = 0;
-        self.have_imu = false; // matches!(
-                               //     state.imu_status,
-                               //     Some(SysStatus::Ok) | Some(SysStatus::Ready)
-                               // );
 
         if is_about_to_collide(state, world, 3.0 * dt) {
             player_context.debug_string("collision", "true");
@@ -266,7 +246,7 @@ impl PlayerController {
         }
 
         // Always compute MTP first as fallback
-        self.target_velocity = Vector2::zeros();
+        self.target_velocity_global = Vector2::zeros();
         if let Some(pos_target) = input.position {
             // Choose between regular MTP and two-step MTP
             let pos_u = if self.use_two_step_mtp {
@@ -297,7 +277,7 @@ impl PlayerController {
                     player_context,
                 )
             };
-            self.target_velocity = pos_u;
+            self.target_velocity_global = pos_u;
 
             // Debug string will be updated by team controller if MPC overrides
             let controller_name = if self.use_two_step_mtp {
@@ -313,9 +293,9 @@ impl PlayerController {
             Velocity::Global(v) => v,
             Velocity::Local(v) => self.last_yaw.rotate_vector(&v),
         };
-        self.target_velocity += add_vel;
-        self.target_velocity = self
-            .target_velocity
+        self.target_velocity_global += add_vel;
+        self.target_velocity_global = self
+            .target_velocity_global
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
         /*
@@ -357,11 +337,6 @@ impl PlayerController {
         );
 
         if let Some(yaw) = input.yaw {
-            if !self.has_target_heading {
-                self.has_target_heading = true;
-                self.switch_heading = Some(true);
-            }
-
             player_context.debug_line_colored(
                 "target_yaw_line",
                 self.last_pos,
@@ -369,32 +344,25 @@ impl PlayerController {
                 dies_core::DebugColor::Purple,
             );
 
-            if self.have_imu {
-                player_context.debug_string("yaw_control", "heading");
-                self.target_z = yaw.radians();
-            } else {
-                player_context.debug_string("yaw_control", "yaw rate");
-                self.yaw_control.set_setpoint(yaw);
-                let head_u = self.yaw_control.update(
-                    self.last_yaw,
-                    state.angular_speed,
-                    dt,
-                    input
-                        .angular_speed_limit
-                        .unwrap_or(self.max_angular_velocity),
-                    input
-                        .angular_acceleration_limit
-                        .unwrap_or(self.max_angular_acceleration),
-                    input.care,
-                );
-                self.target_z = head_u;
-            }
+            self.target_z = yaw.radians();
+
+            self.yaw_control.set_setpoint(yaw);
+            let head_u = self.yaw_control.update(
+                self.last_yaw,
+                state.angular_speed,
+                dt,
+                input
+                    .angular_speed_limit
+                    .unwrap_or(self.max_angular_velocity),
+                input
+                    .angular_acceleration_limit
+                    .unwrap_or(self.max_angular_acceleration),
+                input.care,
+            );
+            self.w = head_u;
         } else {
-            if self.has_target_heading {
-                self.has_target_heading = false;
-                self.switch_heading = Some(false);
-            }
-            self.target_z = 0.0;
+            self.target_z = f64::NAN;
+            self.w = 0.0;
         }
 
         // Set dribbling speed
@@ -405,7 +373,7 @@ impl PlayerController {
             KickerControlInput::Arm => {
                 self.kicker = KickerState::Arming;
             }
-            KickerControlInput::Kick { force } => match self.kicker {
+            KickerControlInput::Kick { .. } => match self.kicker {
                 KickerState::Disarming | KickerState::Arming => {
                     self.kicker = KickerState::Kicking;
                 }
@@ -425,11 +393,11 @@ impl PlayerController {
         target_velocity: Vector2,
         player_context: &PlayerContext,
     ) {
-        self.target_velocity = target_velocity;
+        self.target_velocity_global = target_velocity;
         player_context.debug_line_colored(
             "target_velocity",
             self.last_pos,
-            self.last_pos + self.target_velocity,
+            self.last_pos + self.target_velocity_global,
             dies_core::DebugColor::Green,
         );
     }

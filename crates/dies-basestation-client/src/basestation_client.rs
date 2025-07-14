@@ -155,6 +155,31 @@ impl BasestationHandle {
                                 }
                             }
                         }
+                        PlayerCmd::GlobalMove(cmd) => {
+                            let robot_id = id_map
+                                .get(&(team_color, cmd.id))
+                                .copied()
+                                .unwrap_or_else(|| cmd.id.as_u32())
+                                as usize;
+                            match &mut connection {
+                                Connection::V1(monitor) => {
+                                    let glue_cmd: glue::Radio_GlobalCommand = cmd.into();
+                                    resp.send(
+                                        monitor
+                                            .send_single_global(robot_id as u8, glue_cmd)
+                                            .map_err(|_| anyhow!("Failed to send command")),
+                                    )
+                                    .ok();
+                                }
+                                Connection::V0(_) => {
+                                    log::error!("Global move commands are not supported in V0");
+                                    resp.send(Err(anyhow!(
+                                        "Global move commands are not supported in V0"
+                                    )))
+                                    .ok();
+                                }
+                            }
+                        }
                     },
                     Ok(Message::ChangeIdMap(new_id_map)) => {
                         id_map = new_id_map;
