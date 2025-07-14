@@ -1,5 +1,6 @@
 use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
+use super::super::utils::find_nearest_opponent_distance_along_direction;
 
 pub fn has_clear_shot(s: &RobotSituation) -> bool {
     let (score, _) = choose_best_direction_and_score(s);
@@ -95,34 +96,6 @@ fn score_shot_direction(s: &RobotSituation, direction: Angle) -> f64 {
     score
 }
 
-fn find_nearest_opponent_distance_along_direction(s: &RobotSituation, direction: Angle) -> f64 {
-    let robot_pos = s.player_data().position;
-    let direction_vector = direction.to_vector();
-
-    let mut min_distance = f64::INFINITY;
-
-    // Check all opponent robots
-    for player in s.world.opp_players.iter().chain(s.world.own_players.iter()) {
-        if player.id != s.player_data().id {
-            let opp_pos = player.position;
-            let to_opponent = opp_pos - robot_pos;
-
-            // Project opponent position onto the shooting direction
-            let projection = to_opponent.dot(&direction_vector);
-
-            // Only consider opponents in front of us
-            if projection > 0.0 {
-                let perpendicular_distance = (to_opponent - projection * direction_vector).norm();
-
-                // Consider robot radius (approximate as 90mm)
-                let effective_distance = perpendicular_distance - 90.0;
-                min_distance = min_distance.min(effective_distance.max(0.0));
-            }
-        }
-    }
-
-    min_distance
-}
 
 pub fn get_heading_toward_ball(s: &RobotSituation) -> Angle {
     if let Some(ball) = &s.world.ball {
