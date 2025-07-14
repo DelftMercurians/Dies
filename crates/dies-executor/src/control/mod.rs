@@ -1,3 +1,4 @@
+#[cfg(feature = "mpc")]
 mod mpc;
 mod mtp;
 mod player_controller;
@@ -10,6 +11,7 @@ mod yaw_control;
 
 pub use team_context::*;
 
+#[cfg(feature = "mpc")]
 pub use mpc::{MPCController, RobotState};
 pub use player_input::*;
 pub use team_controller::TeamController;

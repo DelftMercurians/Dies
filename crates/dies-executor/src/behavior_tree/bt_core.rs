@@ -7,7 +7,6 @@ use crate::PlayerControlInput;
 
 use super::BehaviorNode;
 
-#[derive(Clone)]
 pub struct BehaviorTree {
     pub name: String,
     root_node: BehaviorNode,

@@ -7,20 +7,17 @@ use super::{
 use crate::{behavior_tree::BtCallback, control::PlayerControlInput};
 use std::{collections::HashMap, sync::Arc};
 
-#[derive(Clone)]
 pub struct Scorer {
     pub node: BehaviorNode,
     pub callback: Arc<dyn BtCallback<f64>>,
     pub key: String,
 }
 
-#[derive(Clone)]
 pub enum ScorersSource {
     Static(Vec<Scorer>),
     DynamicWithKeys(Arc<dyn BtCallback<Vec<Scorer>>>),
 }
 
-#[derive(Clone)]
 pub struct ScoringSelectNode {
     scorers_source: ScorersSource,
     hysteresis_margin: f64,
@@ -28,7 +25,7 @@ pub struct ScoringSelectNode {
     node_id_fragment: String,
     current_best_child_key: Option<String>,
     current_best_child_score: f64,
-    last_children: Vec<Scorer>,
+    last_children_ids: Vec<String>,
 }
 
 impl ScoringSelectNode {
@@ -54,7 +51,7 @@ impl ScoringSelectNode {
             description_text: desc,
             current_best_child_key: None,
             current_best_child_score: f64::NEG_INFINITY,
-            last_children: Vec::new(),
+            last_children_ids: Vec::new(),
         }
     }
 
@@ -71,20 +68,17 @@ impl ScoringSelectNode {
             description_text: desc,
             current_best_child_key: None,
             current_best_child_score: f64::NEG_INFINITY,
-            last_children: Vec::new(),
-        }
-    }
-
-    fn get_scorers(&self, situation: &RobotSituation) -> Vec<Scorer> {
-        match &self.scorers_source {
-            ScorersSource::Static(scorers) => scorers.clone(),
-            ScorersSource::DynamicWithKeys(callback) => callback(situation),
+            last_children_ids: Vec::new(),
         }
     }
 
     pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
-        let children = self.last_children.clone();
+
+        let children = match &self.scorers_source {
+            ScorersSource::Static(scorers) => scorers,
+            ScorersSource::DynamicWithKeys(_) => panic!("Dynamic children not supported"),
+        };
         debug_tree_node(
             situation.debug_key(node_full_id.clone()),
             self.description(),
@@ -99,8 +93,13 @@ impl ScoringSelectNode {
         // Debug all child nodes
         let mut child_situation = situation.clone();
         child_situation.viz_path_prefix = node_full_id.clone();
-        for scorer in &children {
-            scorer.node.debug_all_nodes(&child_situation);
+        match &self.scorers_source {
+            ScorersSource::Static(scorers) => {
+                for scorer in scorers {
+                    scorer.node.debug_all_nodes(&child_situation);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -109,9 +108,19 @@ impl ScoringSelectNode {
         situation: &mut RobotSituation,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
-        let mut children = self.get_scorers(situation);
 
-        if children.is_empty() {
+        self.last_children_ids = match &self.scorers_source {
+            ScorersSource::Static(scorers) => {
+                self.get_child_node_ids_with_children(&situation.viz_path_prefix, scorers)
+            }
+            ScorersSource::DynamicWithKeys(cb) => {
+                let children = cb(situation);
+
+                self.get_child_node_ids_with_children(&situation.viz_path_prefix, &children)
+            }
+        };
+
+        if self.last_children_ids.is_empty() {
             debug_tree_node(
                 situation.debug_key(node_full_id.clone()),
                 self.description(),
@@ -126,7 +135,11 @@ impl ScoringSelectNode {
         }
 
         let mut scores = HashMap::new();
-        for scorer in &children {
+        let children = match &mut self.scorers_source {
+            ScorersSource::Static(scorers) => scorers,
+            ScorersSource::DynamicWithKeys(cb) => panic!("Dynamic children not supported"),
+        };
+        for scorer in children.iter() {
             let score = (scorer.callback)(situation);
             scores.insert(scorer.key.clone(), score);
         }
@@ -176,7 +189,6 @@ impl ScoringSelectNode {
             BehaviorStatus::Running => {}
         }
 
-        self.last_children = children;
         let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
         let selected_info = format!(
             "Selected: {} (Score: {:.2})",
@@ -186,7 +198,7 @@ impl ScoringSelectNode {
             situation.debug_key(node_full_id.clone()),
             self.description(),
             node_full_id.clone(),
-            self.get_child_node_ids_with_children(&situation.viz_path_prefix, &self.last_children),
+            self.last_children_ids.clone(),
             is_active,
             "ScoringSelect",
             Some(selected_info),
@@ -213,7 +225,7 @@ impl ScoringSelectNode {
     }
 
     pub fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
-        self.get_child_node_ids_with_children(current_path_prefix, &self.last_children)
+        self.last_children_ids.clone()
     }
 
     fn get_child_node_ids_with_children(

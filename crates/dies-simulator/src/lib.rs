@@ -358,6 +358,7 @@ struct Player {
     current_dribble_speed: f64,
     breakbeam: bool,
     heading_control: bool,
+    last_kick_counter: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -640,6 +641,7 @@ impl Simulation {
             current_dribble_speed: 0.0,
             breakbeam: false,
             heading_control: false,
+            last_kick_counter: 0,
         });
     }
 
@@ -1699,6 +1701,10 @@ impl Simulation {
                         player.target_heading = cmd.heading_setpoint;
                         player.current_dribble_speed = cmd.dribble_speed;
                         player.last_cmd_time = self.current_time;
+                        if cmd.kick_counter > player.last_kick_counter {
+                            player.last_kick_counter = cmd.kick_counter;
+                            is_kicking = true;
+                        }
                     }
                 }
             }
@@ -1764,7 +1770,19 @@ impl Simulation {
                         format!("{} {}", player.team_color, player.id),
                     );
                     if is_kicking {
+                        println!("Kicking ball");
                         self.ball_being_dribbled_by = None;
+                        // Move the ball away from the player
+                        let new_ball_position = ball_position + yaw * 100.0;
+                        ball_body.set_position(
+                            Isometry::translation(
+                                new_ball_position.x,
+                                new_ball_position.y,
+                                new_ball_position.z,
+                            ),
+                            true,
+                        );
+
                         let force = yaw * self.config.kicker_strength;
                         ball_body.add_force(force, true);
                         ball_body.set_linear_damping(self.config.ball_damping * 2.0);
@@ -1779,9 +1797,16 @@ impl Simulation {
                     } else {
                         if is_player_dribbling {
                             // If the player is dribbling, we need to stop the dribbling
+                            println!("Stopping dribbling");
                             self.ball_being_dribbled_by = None;
                         }
                     }
+                } else if is_kicking {
+                    dies_core::debug_string(
+                        format!("breakbeam_{}_{}", player.team_color, player.id),
+                        "false",
+                    );
+                    println!("Kicking but ball not in dribbler");
                 }
             }
         }
@@ -1817,6 +1842,8 @@ impl Simulation {
                 true,
             );
             ball_body.set_linvel(Vector3::zeros(), true);
+        } else {
+            dies_core::debug_string("dribbling_ball", "none");
         }
 
         self.integration_parameters.dt = dt;
@@ -2045,6 +2072,7 @@ impl SimulationBuilder {
             current_dribble_speed: 0.0,
             breakbeam: false,
             heading_control: false,
+            last_kick_counter: 0,
         });
     }
 }

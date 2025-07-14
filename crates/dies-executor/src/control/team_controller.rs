@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use dies_core::{
     ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
-    SideAssignment, TeamColor, TeamData,
+    SideAssignment, TeamColor, TeamData, Vector2,
 };
 use std::sync::Arc;
 
@@ -10,7 +10,6 @@ use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     team_context::TeamContext,
-    MPCController, RobotState,
 };
 use crate::{
     behavior_tree::{
@@ -27,6 +26,7 @@ pub struct TeamController {
 
     // mpc stuff
     start_time: std::time::Instant,
+    #[cfg(feature = "mpc")]
     mpc_controller: MPCController,
 
     // bht stuff
@@ -48,6 +48,7 @@ impl TeamController {
             role_solver: RoleAssignmentSolver::new(),
             role_assignments: Arc::new(HashMap::new()),
             start_time: std::time::Instant::now(),
+            #[cfg(feature = "mpc")]
             mpc_controller: MPCController::new(),
 
             // bht stuff
@@ -154,7 +155,6 @@ impl TeamController {
                                     (role.tree_builder)(&situation),
                                 ),
                             );
-                            println!("{} {}", player_id.as_u32(), role_name);
                         } else {
                             log::error!("Role '{}' not found for player {}", role_name, player_id);
                         }
@@ -213,7 +213,8 @@ impl TeamController {
             world_data.current_game_state.game_state,
             GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
         ) {
-            comply(&world_data, inputs_for_comply, &team_context)
+            // comply(&world_data, inputs_for_comply, &team_context)
+            inputs_for_comply
         } else {
             inputs_for_comply
         };
@@ -225,69 +226,77 @@ impl TeamController {
             .collect::<Vec<_>>();
 
         // Collect robots that need MPC processing
-        let mut mpc_robots = Vec::new();
-        let mut controllable_mask = Vec::new();
-        for controller in self.player_controllers.values() {
-            if controller.use_mpc() {
-                let player_data = world_data
-                    .own_players
-                    .iter()
-                    .find(|p| p.id == controller.id());
+        #[allow(unused_mut)]
+        let mut mpc_controls: HashMap<PlayerId, Vector2> = HashMap::new();
+        #[cfg(feature = "mpc")]
+        {
+            let mut mpc_robots = Vec::new();
+            let mut controllable_mask = Vec::new();
+            for controller in self.player_controllers.values() {
+                if controller.use_mpc() {
+                    let player_data = world_data
+                        .own_players
+                        .iter()
+                        .find(|p| p.id == controller.id());
 
-                if let Some(player_data) = player_data {
-                    let id = controller.id();
-                    let default_input = final_player_inputs.player(id);
-                    let input = manual_override.get(&id).unwrap_or(&default_input);
+                    if let Some(player_data) = player_data {
+                        let id = controller.id();
+                        let default_input = final_player_inputs.player(id);
+                        let input = manual_override.get(&id).unwrap_or(&default_input);
 
-                    if let Some(target_pos) = input.position {
-                        mpc_robots.push(RobotState {
-                            id: controller.id(),
-                            position: player_data.position,
-                            velocity: player_data.velocity,
-                            target_position: target_pos,
-                            vel_limit: controller.get_max_speed(),
-                        });
-                        controllable_mask.push(true); // Robot should be controlled
-                    } else {
-                        // if we don't need to move - force robots to stay in place while
-                        // still putting them to mpc for continuity, which is fairly important
-                        mpc_robots.push(RobotState {
-                            id: controller.id(),
-                            position: player_data.position,
-                            velocity: player_data.velocity,
-                            target_position: player_data.position,
-                            vel_limit: 0.0,
-                        });
-                        controllable_mask.push(false); // Robot should not be controlled
+                        if let Some(target_pos) = input.position {
+                            #[cfg(feature = "mpc")]
+                            mpc_robots.push(super::mpc::RobotState {
+                                id: controller.id(),
+                                position: player_data.position,
+                                velocity: player_data.velocity,
+                                target_position: target_pos,
+                                vel_limit: controller.get_max_speed(),
+                            });
+
+                            controllable_mask.push(true); // Robot should be controlled
+                        } else {
+                            // if we don't need to move - force robots to stay in place while
+                            // still putting them to mpc for continuity, which is fairly important
+                            #[cfg(feature = "mpc")]
+                            mpc_robots.push(super::mpc::RobotState {
+                                id: controller.id(),
+                                position: player_data.position,
+                                velocity: player_data.velocity,
+                                target_position: player_data.position,
+                                vel_limit: 0.0,
+                            });
+                            controllable_mask.push(false); // Robot should not be controlled
+                        }
                     }
                 }
             }
-        }
 
-        // Compute batched MPC controls
-        self.mpc_controller.set_field_bounds(&world_data);
-        let mpc_controls = if !mpc_robots.is_empty() {
-            // Collect avoid_goal_area flags for MPC robots (in the same order as mpc_robots)
-            let mut avoid_goal_area_flags = Vec::new();
-            for robot in &mpc_robots {
-                let avoid_goal_area = self
-                    .avoid_goal_area_flags
-                    .get(&robot.id)
-                    .copied()
-                    .unwrap_or(true);
-                avoid_goal_area_flags.push(avoid_goal_area);
+            // Compute batched MPC controls
+            #[cfg(feature = "mpc")]
+            self.mpc_controller.set_field_bounds(&world_data);
+
+            #[cfg(feature = "mpc")]
+            if !mpc_robots.is_empty() {
+                // Collect avoid_goal_area flags for MPC robots (in the same order as mpc_robots)
+                let mut avoid_goal_area_flags = Vec::new();
+                for robot in &mpc_robots {
+                    let avoid_goal_area = self
+                        .avoid_goal_area_flags
+                        .get(&robot.id)
+                        .copied()
+                        .unwrap_or(true);
+                    avoid_goal_area_flags.push(avoid_goal_area);
+                }
+
+                mpc_controls = self.mpc_controller.compute_batch_control(
+                    &mpc_robots,
+                    &world_data,
+                    Some(&controllable_mask),
+                    &avoid_goal_area_flags,
+                )
             }
-
-            self.mpc_controller.compute_batch_control(
-                &mpc_robots,
-                &world_data,
-                Some(&controllable_mask),
-                &avoid_goal_area_flags,
-            )
-        } else {
-            HashMap::new()
-        };
-
+        }
         // Update the player controllers
         // let trajectories = self.mpc_controller.get_trajectories();
         // Update the player controllers
@@ -311,6 +320,7 @@ impl TeamController {
                         // Update debug string to show MPC is being used
                         player_context.debug_string("controller", "MPC");
                         // Debug output for MPC timing
+                        #[cfg(feature = "mpc")]
                         dies_core::debug_value(
                             format!("p{}.mpc.duration_ms", id),
                             self.mpc_controller.last_solve_time_ms(),

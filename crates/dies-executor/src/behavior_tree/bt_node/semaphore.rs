@@ -6,7 +6,6 @@ use super::{
 };
 use crate::control::PlayerControlInput;
 
-#[derive(Clone)]
 pub struct SemaphoreNode {
     child: Box<BehaviorNode>,
     semaphore_id_str: String,

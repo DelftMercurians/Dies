@@ -41,13 +41,14 @@ impl Face {
         let mut input = PlayerControlInput::new();
         if let Some(ball) = ctx.world.ball.as_ref() {
             let balldist = (ball.position.xy() - ctx.player.position).magnitude();
-            if self.with_ball && balldist > 250.0 {
+            if self.with_ball && balldist > 350.0 {
                 return SkillProgress::failure();
             }
         }
         let heading = if let Some(heading) = self.heading.heading(&ctx) {
             heading
         } else {
+            log::error!("No heading found for face");
             return SkillProgress::failure();
         };
 

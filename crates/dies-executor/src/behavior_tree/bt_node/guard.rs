@@ -8,7 +8,6 @@ use super::{
 };
 use crate::{behavior_tree::BtCallback, control::PlayerControlInput};
 
-#[derive(Clone)]
 pub struct GuardNode {
     condition: Arc<dyn BtCallback<bool>>,
     child: Box<BehaviorNode>,

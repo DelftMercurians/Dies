@@ -8,7 +8,6 @@ use super::{
 };
 use crate::control::PlayerControlInput;
 
-#[derive(Clone)]
 pub struct SequenceNode {
     children: Vec<BehaviorNode>,
     description_text: String,

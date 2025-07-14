@@ -8,18 +8,16 @@ use super::{
 };
 use crate::{behavior_tree::BtCallback, control::PlayerControlInput};
 
-#[derive(Clone)]
 pub enum ChildrenSource {
     Static(Vec<BehaviorNode>),
     Dynamic(Arc<dyn BtCallback<Vec<BehaviorNode>>>),
 }
 
-#[derive(Clone)]
 pub struct SelectNode {
     children_source: ChildrenSource,
     description_text: String,
     node_id_fragment: String,
-    last_children: Vec<BehaviorNode>,
+    last_children_ids: Vec<String>,
     last_running_child_idx: Option<usize>,
 }
 
@@ -30,7 +28,7 @@ impl SelectNode {
             children_source: ChildrenSource::Static(children),
             node_id_fragment: sanitize_id_fragment(&desc),
             description_text: desc,
-            last_children: Vec::new(),
+            last_children_ids: Vec::new(),
             last_running_child_idx: None,
         }
     }
@@ -39,28 +37,22 @@ impl SelectNode {
         callback: Arc<dyn BtCallback<Vec<BehaviorNode>>>,
         description: Option<String>,
     ) -> Self {
+        panic!("Dynamic children not supported");
         let desc = description.unwrap_or_else(|| "Select".to_string());
         Self {
             children_source: ChildrenSource::Dynamic(callback),
             node_id_fragment: sanitize_id_fragment(&desc),
             description_text: desc,
-            last_children: Vec::new(),
+            last_children_ids: Vec::new(),
             last_running_child_idx: None,
-        }
-    }
-
-    fn get_children(&mut self, situation: &RobotSituation) -> Vec<BehaviorNode> {
-        match &self.children_source {
-            ChildrenSource::Static(children) => children.clone(),
-            ChildrenSource::Dynamic(callback) => callback(situation),
         }
     }
 
     pub fn debug_all_nodes(&self, situation: &RobotSituation) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let children = match &self.children_source {
-            ChildrenSource::Static(children) => children.clone(),
-            ChildrenSource::Dynamic(_) => self.last_children.clone(),
+            ChildrenSource::Static(children) => children,
+            ChildrenSource::Dynamic(_) => panic!("Dynamic children not supported"),
         };
 
         debug_tree_node(
@@ -76,7 +68,7 @@ impl SelectNode {
 
         let mut child_situation = situation.clone();
         child_situation.viz_path_prefix = node_full_id;
-        for child in &children {
+        for child in children {
             child.debug_all_nodes(&child_situation);
         }
     }
@@ -99,7 +91,18 @@ impl SelectNode {
         // }
         // self.last_running_child_idx = None;
 
-        let mut children = self.get_children(situation);
+        let description = self.description();
+        let children = match &self.children_source {
+            ChildrenSource::Static(children) => children,
+            ChildrenSource::Dynamic(callback) => panic!("Dynamic children not supported"),
+        };
+        let child_node_ids =
+            self.get_child_node_ids_with_children(&situation.viz_path_prefix, children);
+        self.last_children_ids = child_node_ids.clone();
+        let children = match &mut self.children_source {
+            ChildrenSource::Static(children) => children,
+            ChildrenSource::Dynamic(callback) => panic!("Dynamic children not supported"),
+        };
         let mut final_status = BehaviorStatus::Failure;
         let mut final_input: Option<PlayerControlInput> = None;
 
@@ -119,22 +122,22 @@ impl SelectNode {
                     self.last_running_child_idx = Some(idx);
                     break;
                 }
-                (BehaviorStatus::Failure, _) => continue,
+                (BehaviorStatus::Failure, _) => {
+                    continue;
+                }
             }
         }
-
-        self.last_children = children;
 
         let is_active =
             final_status == BehaviorStatus::Running || final_status == BehaviorStatus::Success;
         debug_tree_node(
             situation.debug_key(node_full_id.clone()),
-            self.description(),
+            description,
             node_full_id.clone(),
-            self.get_child_node_ids_with_children(&situation.viz_path_prefix, &self.last_children),
+            child_node_ids,
             is_active,
             "Select",
-            Some(format!("{} children", self.last_children.len())),
+            Some(format!("{} children", children.len())),
             Some("First success wins".to_string()),
         );
         (final_status, final_input)
@@ -158,7 +161,7 @@ impl SelectNode {
     }
 
     pub fn get_child_node_ids(&self, current_path_prefix: &str) -> Vec<String> {
-        self.get_child_node_ids_with_children(current_path_prefix, &self.last_children)
+        self.last_children_ids.clone()
     }
 
     fn get_child_node_ids_with_children(

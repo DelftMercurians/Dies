@@ -215,20 +215,17 @@ fn build_dribble_sequence(zone: &str) -> BehaviorNode {
 }
 
 fn get_kickoff_striker_position(s: &RobotSituation) -> Vector2 {
-    let player_hash = s.player_id_hash();
+    let player_hash = s.player_id_hash() - 0.5;
 
     // Spread strikers across our half
     let spread_x = -500.0;
-    let spread_y = (player_hash - 0.5) * 4000.0; // Between -2000 and 2000
-
-    // Ensure outside center circle (500mm radius + margin)
-    let pos = Vector2::new(spread_x, spread_y);
-    if s.is_position_in_center_circle(pos) {
-        // Move further down if in center circle
-        Vector2::new(spread_x, spread_y - 1000.0)
+    let spread_y = if player_hash < 0.0 {
+        -1200.0 - player_hash * 1000.0
     } else {
-        pos
-    }
+        1200.0 + player_hash * 1000.0
+    };
+
+    Vector2::new(spread_x, spread_y)
 }
 
 pub fn calculate_striker_advance_position(s: &RobotSituation) -> Vector2 {

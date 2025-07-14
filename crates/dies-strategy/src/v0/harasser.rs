@@ -6,24 +6,25 @@ use crate::v0::utils::find_best_pass_target;
 pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
         .add(
-            guard_node()
-                .condition(|s| should_pickup_ball(s))
-                .then(
-                    semaphore_node()
-                        .do_then(
-                            sequence_node()
-                                .add(
-                                    fetch_ball()
-                                        .description("Pickup free ball".to_string())
-                                        .build(),
-                                )
-                                .add(face_position(find_best_pass_target).with_ball().build())
-                                .add(kick().build())
+            committing_guard_node()
+                .when(|s| should_pickup_ball(s))
+                .until(|s| false)
+                .commit_to(
+                    // semaphore_node()
+                    //     .do_then(
+                    sequence_node()
+                        .add(
+                            fetch_ball()
+                                .description("Pickup free ball".to_string())
                                 .build(),
                         )
-                        .semaphore_id("harasser_ball_pickup".to_string())
-                        .max_entry(1)
+                        .add(face_position(find_best_pass_target).with_ball().build())
+                        .add(kick().build())
                         .build(),
+                    // )
+                    // .semaphore_id("harasser_ball_pickup".to_string())
+                    // .max_entry(1)
+                    // .build(),
                 )
                 .build(),
         )
@@ -66,6 +67,10 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
 
         // Only consider if ball is on our half
         if ball_pos.x >= 0.0 {
+            dies_core::debug_string(
+                format!("harasser_should_pickup_ball_{}", s.team_color),
+                format!("Ball is not on our half, not picking up: {:?}", ball_pos),
+            );
             return false;
         }
 
@@ -74,23 +79,46 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
             .world
             .opp_players
             .iter()
-            .any(|opp| (opp.position - ball_pos).norm() < 500.0);
+            .any(|opp| (opp.position - ball_pos).norm() < 400.0);
 
         if ball_threatened {
+            dies_core::debug_string(
+                format!("harasser_should_pickup_ball_{}", s.team_color),
+                format!(
+                    "Ball is threatened, not picking up: {:?}",
+                    s.get_closest_opp_player_to_ball().map(|p| p.position)
+                ),
+            );
             return false;
         }
 
         // Check if ball is not moving fast (velocity magnitude < 500 mm/s)
         let ball_velocity = ball.velocity.xy();
         if ball_velocity.norm() > 500.0 {
+            dies_core::debug_string(
+                format!("harasser_should_pickup_ball_{}", s.team_color),
+                format!("Ball is moving fast, not picking up: {:?}", ball_velocity),
+            );
             return false;
         }
 
         // Ball is free and on our side - we should pick it up
+        dies_core::debug_string(
+            format!("harasser_should_pickup_ball_{}", s.team_color),
+            format!("Ball is free and on our side, picking up: {:?}", ball_pos),
+        );
         true
     } else {
+        dies_core::debug_string(
+            format!("harasser_should_pickup_ball_{}", s.team_color),
+            "No ball found, not picking up",
+        );
         false
     }
+}
+
+fn should_cancel_pickup_ball(s: &RobotSituation) -> bool {
+    s.ball_position().x > 500.0 || s.distance_of_closest_opp_player_to_ball() < 400.0
 }
 
 pub fn score_as_harasser(s: &RobotSituation) -> f64 {

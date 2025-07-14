@@ -1,6 +1,6 @@
 use std::fmt::format;
 
-use dies_core::{debug_tree_node, Angle, PlayerId, Vector2};
+use dies_core::{debug_tree_node, Angle, PlayerId, TeamColor, Vector2};
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -95,6 +95,13 @@ impl ActionNode {
         &mut self,
         situation: &mut RobotSituation,
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
+        let skill_info = match &self.skill_def {
+            SkillDefinition::GoToPosition { .. } => "GoToPosition",
+            SkillDefinition::Face { .. } => "Face",
+            SkillDefinition::Kick => "Kick",
+            SkillDefinition::Wait { .. } => "Wait",
+            SkillDefinition::FetchBall => "FetchBall",
+        };
         // Create a new skill if there is no active one
         if self.active_skill.is_none() {
             let new_skill = match &self.skill_def {
@@ -172,13 +179,12 @@ impl ActionNode {
         }
 
         let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
-        let skill_info = match &self.skill_def {
-            SkillDefinition::GoToPosition { .. } => "GoToPosition",
-            SkillDefinition::Face { .. } => "Face",
-            SkillDefinition::Kick => "Kick",
-            SkillDefinition::Wait { .. } => "Wait",
-            SkillDefinition::FetchBall => "FetchBall",
-        };
+        if matches!(status, BehaviorStatus::Failure) {
+            dies_core::debug_string(
+                format!("{}_p{}_skill", situation.team_color, situation.player_id),
+                format!("{}: {}", skill_info, "failure"),
+            );
+        }
         dies_core::debug_string(
             format!(
                 "team_{}.p{}.skill",

@@ -55,7 +55,7 @@ impl Kick {
                     .world
                     .ball
                     .as_ref()
-                    .map(|b| b.detected && ((b.position.xy() - ctx.player.position).norm() < 200.0))
+                    .map(|b| b.detected && ((b.position.xy() - ctx.player.position).norm() < 400.0))
                     .unwrap_or(false))
             {
                 return SkillProgress::failure();

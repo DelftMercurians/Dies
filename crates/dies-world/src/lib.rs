@@ -331,8 +331,20 @@ impl WorldTracker {
         time: WorldInstant,
     ) {
         if team_color == TeamColor::Blue && self.blue_team.controlled {
+            if let Some(breakbeam) = feedback.breakbeam_ball_detected {
+                dies_core::debug_string(
+                    format!("team_{}.p{}.breakbeam", team_color, feedback.id.as_u32()),
+                    format!("{}", breakbeam),
+                );
+            }
             self.blue_team.update_from_feedback(feedback, time);
         } else if team_color == TeamColor::Yellow && self.yellow_team.controlled {
+            if let Some(breakbeam) = feedback.breakbeam_ball_detected {
+                dies_core::debug_string(
+                    format!("team_{}.p{}.breakbeam", team_color, feedback.id.as_u32()),
+                    format!("{}", breakbeam),
+                );
+            }
             self.yellow_team.update_from_feedback(feedback, time);
         } else {
             log::warn!(
