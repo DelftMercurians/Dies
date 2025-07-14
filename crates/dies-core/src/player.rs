@@ -171,7 +171,7 @@ impl PlayerGlobalMoveCmd {
             id,
             global_x: 0.0,
             global_y: 0.0,
-            heading_setpoint: 0.0,
+            heading_setpoint: f64::NAN,
             last_heading: 0.0,
             dribble_speed: 0.0,
             kick_counter: 0,

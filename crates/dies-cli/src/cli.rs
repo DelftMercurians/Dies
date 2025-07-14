@@ -30,11 +30,11 @@ enum Command {
     TestRadio {
         #[clap(long, default_value = "3.0")]
         duration: f64,
-        #[clap(long)]
+        #[clap(long, allow_hyphen_values = true)]
         w: Option<f64>,
-        #[clap(long)]
+        #[clap(long, allow_hyphen_values = true)]
         sx: Option<f64>,
-        #[clap(long)]
+        #[clap(long, allow_hyphen_values = true)]
         sy: Option<f64>,
 
         /// The IDs of the robots to test.
