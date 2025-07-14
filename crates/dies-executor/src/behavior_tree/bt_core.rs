@@ -308,6 +308,23 @@ impl RobotSituation {
             })
     }
 
+    pub fn find_own_player_min_by(&self, key: impl Fn(&PlayerData) -> f64) -> Option<PlayerData> {
+        self.world
+            .own_players
+            .iter()
+            .filter(|p| p.id != self.player_id)
+            .min_by(|p, q| key(p).partial_cmp(&key(q)).unwrap())
+            .map(|p| p.clone())
+    }
+
+    pub fn find_opp_player_min_by(&self, key: impl Fn(&PlayerData) -> f64) -> Option<PlayerData> {
+        self.world
+            .opp_players
+            .iter()
+            .min_by(|p, q| key(p).partial_cmp(&key(q)).unwrap())
+            .map(|p| p.clone())
+    }
+
     pub fn get_closest_own_player_to_ball(&self) -> Option<PlayerId> {
         self.world.ball.as_ref().and_then(|ball| {
             let ball_pos = ball.position.xy();

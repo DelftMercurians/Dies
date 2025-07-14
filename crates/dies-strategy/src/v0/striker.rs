@@ -42,10 +42,6 @@ pub fn score_striker(s: &RobotSituation) -> f64 {
         score += 30.0;
     }
 
-    // Slight preference based on robot hash for consistency
-    let hash = (s.player_id.as_u32() as f64 * 0.6180339887498949) % 1.0;
-    score += hash * 5.0;
-
     score
 }
 

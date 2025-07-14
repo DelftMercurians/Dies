@@ -87,17 +87,17 @@ impl SelectNode {
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
 
-        if let Some(running_idx) = self.last_running_child_idx {
-            if let Some(child) = self.last_children.get_mut(running_idx) {
-                let mut child_situation = situation.clone();
-                child_situation.viz_path_prefix = node_full_id.clone();
-                let (status, input) = child.tick(&mut child_situation);
-                if status == BehaviorStatus::Running {
-                    return (BehaviorStatus::Running, input);
-                }
-            }
-        }
-        self.last_running_child_idx = None;
+        // if let Some(running_idx) = self.last_running_child_idx {
+        //     if let Some(child) = self.last_children.get_mut(running_idx) {
+        //         let mut child_situation = situation.clone();
+        //         child_situation.viz_path_prefix = node_full_id.clone();
+        //         let (status, input) = child.tick(&mut child_situation);
+        //         if status == BehaviorStatus::Running {
+        //             return (BehaviorStatus::Running, input);
+        //         }
+        //     }
+        // }
+        // self.last_running_child_idx = None;
 
         let mut children = self.get_children(situation);
         let mut final_status = BehaviorStatus::Failure;

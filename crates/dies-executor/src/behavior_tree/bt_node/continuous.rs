@@ -59,7 +59,7 @@ impl ContinuousNode {
             self.description(),
             node_full_id.clone(),
             self.get_child_node_ids(&node_full_id),
-            false, // We don't know if it's active without ticking
+            true,
             "Continuous",
             None,
             Some(format!(

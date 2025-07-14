@@ -70,7 +70,7 @@ pub fn v0_strategy(game: &mut GameContext) {
 
     // Standard roles
     game.add_role("striker")
-        .max(1)
+        .max(2)
         .score(score_striker)
         .behavior(|s| striker::build_striker_tree(s));
 
