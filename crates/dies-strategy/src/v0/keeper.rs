@@ -152,9 +152,14 @@ fn score_arc_position(s: &RobotSituation, position: Vector2) -> f64 {
     let ball_vel = ball.velocity.xy();
     let mut score = 0.0;
 
+    // be close to the classical position
+    let goal_pos = s.get_own_goal_position();
+    let goal_distance = (position - goal_pos).norm();
+    score -= goal_distance;
+
     // Negative distance to ball (closer is better)
     let ball_distance = (ball_pos - position).norm();
-    score -= ball_distance / 3.0;
+    score -= ball_distance;
 
     // Score based on distance to ball velocity line (if ball is moving)
     if ball_vel.norm() > 100.0 {
@@ -164,14 +169,21 @@ fn score_arc_position(s: &RobotSituation, position: Vector2) -> f64 {
 
         // Project position onto ball velocity line
         let projection = ball_to_pos.dot(&vel_direction);
-        let perpendicular_dist = (ball_to_pos - projection * vel_direction).norm();
+        let parallel_dist = projection * vel_direction;
+        let perpendicular_dist = (ball_to_pos - parallel_dist).norm().clamp(-2000.0, 2000.0);
+
+        let mut time_to_intersect = if projection <= 0.0 {
+            20.0
+        } else {
+            parallel_dist.norm() / ball_vel.x.abs()
+        };
 
         // Negative distance to velocity line (closer is better)
-        score -= perpendicular_dist * 2.0;
+        score -= perpendicular_dist / time_to_intersect;
 
         // Bonus for being ahead of the ball in the velocity direction
         if projection > 0.0 {
-            score += projection / 2.0;
+            score -= projection * 0.5 / time_to_intersect;
         }
     }
 
