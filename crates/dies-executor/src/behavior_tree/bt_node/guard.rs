@@ -159,7 +159,6 @@ pub fn guard_node() -> GuardNodeBuilder {
     GuardNodeBuilder::new()
 }
 
-#[derive(Clone)]
 pub struct GuardWithHysteresisNode {
     condition: Arc<dyn BtCallback<bool>>,
     child: Box<BehaviorNode>,
@@ -215,7 +214,7 @@ impl GuardWithHysteresisNode {
 
     fn evaluate_condition_with_hysteresis(&self, situation: &RobotSituation) -> bool {
         let raw_condition = (self.condition)(situation);
-        
+
         match self.last_condition_result {
             None => raw_condition,
             Some(last_result) => {
@@ -239,7 +238,7 @@ impl GuardWithHysteresisNode {
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let raw_condition = (self.condition)(situation);
-        
+
         // Apply hysteresis logic
         let effective_condition = match self.last_condition_result {
             None => {
