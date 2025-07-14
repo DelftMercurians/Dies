@@ -3,7 +3,7 @@
 - [x] Keeper - move on shallow arc around goal
 - [x] fetchball
 - [x] Striker - pick up ball when free
-- [ ] Switch to embedded heading
+- [x] Switch to embedded heading
 - [ ] role assignment - simplify to just use counts, make sure order=priority
 - [ ] Feedback - read all team at once
 - [ ] freekick interference - positin in frot of kicker or between ball and goal
