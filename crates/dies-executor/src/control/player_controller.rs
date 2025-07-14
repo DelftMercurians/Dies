@@ -232,7 +232,7 @@ impl PlayerController {
         obstacles: Vec<Obstacle>,
         all_players: &[&PlayerData],
         player_context: &PlayerContext,
-        avoid_goal_area: bool
+        avoid_goal_area: bool,
     ) {
         self.frame_misses = 0;
         self.have_imu = false; // matches!(
@@ -282,7 +282,7 @@ impl PlayerController {
                     player_context,
                     world,
                     state,
-                    avoid_goal_area
+                    avoid_goal_area,
                 )
             } else {
                 self.position_mtp.set_setpoint(pos_target);
@@ -395,20 +395,6 @@ impl PlayerController {
                 self.switch_heading = Some(false);
             }
             self.target_z = 0.0;
-        }
-
-        // Set angular velocity
-        if self.has_target_heading == false || self.have_imu == false {
-            match input.angular_velocity {
-                Some(angular_velocity) => {
-                    self.target_z = angular_velocity;
-                }
-                None => {
-                    self.target_z = 0.0;
-                }
-            }
-        } else {
-            // ToDo
         }
 
         // Set dribbling speed
