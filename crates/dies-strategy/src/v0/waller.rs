@@ -16,7 +16,8 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
                 .commit_to(
                     semaphore_node()
                         .description("Pickup ball semaphore")
-                        .semaphore_id("waller_pickup_ball".into())
+                        .semaphore_id("defender_pickup_ball".into())
+                        .max_entry(1)
                         .do_then(
                             sequence_node()
                                 .add(fetch_ball().description("Pickup ball".to_string()).build())
@@ -568,4 +569,5 @@ fn should_not_pickup_ball(s: &RobotSituation) -> bool {
     }
 
     s.distance_of_closest_opp_player_to_ball() < 800.0
+        || s.distance_of_closest_own_player_to_ball() < 200.0
 }

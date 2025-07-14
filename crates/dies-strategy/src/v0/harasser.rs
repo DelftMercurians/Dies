@@ -10,21 +10,21 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
                 .when(|s| should_pickup_ball(s))
                 .until(|s| false)
                 .commit_to(
-                    // semaphore_node()
-                    //     .do_then(
-                    sequence_node()
-                        .add(
-                            fetch_ball()
-                                .description("Pickup free ball".to_string())
+                    semaphore_node()
+                        .semaphore_id("defender_pickup_ball".to_string())
+                        .max_entry(1)
+                        .do_then(
+                            sequence_node()
+                                .add(
+                                    fetch_ball()
+                                        .description("Pickup free ball".to_string())
+                                        .build(),
+                                )
+                                .add(face_position(find_best_pass_target).with_ball().build())
+                                .add(kick().build())
                                 .build(),
                         )
-                        .add(face_position(find_best_pass_target).with_ball().build())
-                        .add(kick().build())
                         .build(),
-                    // )
-                    // .semaphore_id("harasser_ball_pickup".to_string())
-                    // .max_entry(1)
-                    // .build(),
                 )
                 .build(),
         )
