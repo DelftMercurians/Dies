@@ -1,21 +1,28 @@
+use dies_core::{GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::can_pass_to_teammate;
 
+use super::utils::find_best_pass_target;
+
 pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
-    semaphore_node()
-        .do_then(
+    select_node()
+        .add(
+            guard_node()
+                .description("Prepare kickoff?")
+                .condition(|s| s.game_state_is(GameState::PrepareKickoff))
+                .then(
+                    go_to_position(|s: &RobotSituation| {
+                        s.get_field_center() - Vector2::new(0.0, 400.0)
+                    })
+                    .description("Move to center")
+                    .build(),
+                )
+                .build(),
+        )
+        .add(
             sequence_node()
-                .add(
-                    go_to_position(|s: &RobotSituation| s.get_field_center())
-                        .description("Move to center")
-                        .build(),
-                )
-                .add(
-                    wait(Argument::Static(0.5))
-                        .description("Wait for start".to_string())
-                        .build(),
-                )
+                .description("Kickoff sequence")
                 .add(fetch_ball().description("Get ball".to_string()).build())
                 .add(
                     guard_node()
@@ -29,11 +36,9 @@ pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                                         .then(
                                             sequence_node()
                                                 .add(
-                                                    face_position(
-                                                        super::utils::find_best_pass_target,
-                                                    )
-                                                    .description("Aim pass".to_string())
-                                                    .build(),
+                                                    face_position(find_best_pass_target)
+                                                        .description("Aim pass".to_string())
+                                                        .build(),
                                                 )
                                                 .add(
                                                     kick()
@@ -66,12 +71,8 @@ pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                         .description("Have ball?")
                         .build(),
                 )
-                .description("Kickoff sequence")
                 .build(),
         )
-        .semaphore_id("kickoff_kicker".to_string())
-        .max_entry(1)
-        .description("Kickoff kicker")
         .build()
         .into()
 }

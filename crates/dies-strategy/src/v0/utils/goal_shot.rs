@@ -11,20 +11,8 @@ pub fn has_clear_shot(s: &RobotSituation) -> bool {
 
 pub fn find_optimal_shot_target(s: &RobotSituation) -> Vector2 {
     let goal_pos = s.get_opp_goal_position();
-
-    if let Some(field) = &s.world.field_geom {
-        let half_goal_width = field.goal_width / 2.0;
-
-        // Simple strategy: alternate between corners based on player hash
-        let hash = (s.player_id.as_u32() as f64 * 0.6180339887498949) % 1.0;
-        if hash > 0.5 {
-            Vector2::new(goal_pos.x, half_goal_width)
-        } else {
-            Vector2::new(goal_pos.x, -half_goal_width)
-        }
-    } else {
-        goal_pos
-    }
+    // TODO: Implement proper shot target selection
+    goal_pos
 }
 
 pub fn get_heading_toward_ball(s: &RobotSituation) -> Angle {

@@ -1,7 +1,8 @@
-- [ ] Harassers - position without threats
+- [x] Harassers - position without threats
 - [roma] Add defense area to comply
 - [roma] Keeper - move on shallow arc around goal
 - [ ] Striker - pick up ball when free
 - [ ] Passing - pass to flug in btcontext
+- [ ] Switch to embedded heading
 - [ ] Fault tolerance
   - [ ] Kicker/dribbler failure hadnling in strategy

@@ -1,4 +1,4 @@
-use dies_core::{Angle, Vector2};
+use dies_core::{Angle, GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::{
@@ -11,9 +11,33 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
         .add(
             // Handle kickoff positioning - stay on our side
             guard_node()
-                .condition(|s| s.is_kickoff_state())
+                .condition(|s| {
+                    s.game_state_is_one_of(&[GameState::PrepareKickoff, GameState::Kickoff])
+                })
                 .then(build_kickoff_positioning_behavior())
                 .description("Kickoff positioning")
+                .build(),
+        )
+        .add(
+            guard_node()
+                .condition(|s| should_pickup_ball(s))
+                .then(
+                    semaphore_node()
+                        .do_then(
+                            select_node()
+                                .add(
+                                    fetch_ball()
+                                        .description("Pickup free ball".to_string())
+                                        .build(),
+                                )
+                                .add(face_position(find_best_pass_target).build())
+                                .add(kick().build())
+                                .build(),
+                        )
+                        .semaphore_id("striker_ball_pickup".to_string())
+                        .max_entry(1)
+                        .build(),
+                )
                 .build(),
         )
         .add(
@@ -206,17 +230,17 @@ fn build_dribble_sequence(zone: &str) -> BehaviorNode {
 }
 
 fn get_kickoff_striker_position(s: &RobotSituation) -> Vector2 {
-    let player_hash = (s.player_id.as_u32() as f64 * 0.6180339887498949) % 1.0;
+    let player_hash = s.player_id_hash();
 
     // Spread strikers across our half
-    let spread_x = -2000.0 + player_hash * 1500.0; // Between -2000 and -500
+    let spread_x = -500.0;
     let spread_y = (player_hash - 0.5) * 4000.0; // Between -2000 and 2000
 
     // Ensure outside center circle (500mm radius + margin)
     let pos = Vector2::new(spread_x, spread_y);
     if s.is_position_in_center_circle(pos) {
-        // Move further back if in center circle
-        Vector2::new(spread_x - 1000.0, spread_y)
+        // Move further down if in center circle
+        Vector2::new(spread_x, spread_y - 1000.0)
     } else {
         pos
     }
@@ -313,4 +337,21 @@ fn score_for_passing(s: &RobotSituation) -> f64 {
     }
 
     score
+}
+
+fn should_pickup_ball(s: &RobotSituation) -> bool {
+    let Some(ball) = s.world.ball.as_ref() else {
+        return false;
+    };
+
+    let closest_opponent_dist = s
+        .world
+        .opp_players
+        .iter()
+        .map(|p| (ball.position.xy() - p.position).norm())
+        .min_by(|a, b| a.partial_cmp(b).unwrap());
+
+    ball.position.x > 0.0
+        && ball.velocity.norm() < 500.0
+        && closest_opponent_dist.map(|d| d > 1000.0).unwrap_or(true)
 }

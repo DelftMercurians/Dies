@@ -1324,13 +1324,13 @@ impl Simulation {
                             );
                             return false;
                         }
-                    } else {
-                        dies_core::debug_string(
-                            "RefereeMessage",
-                            RefereeMessage::KickoffPositionViolation.to_string(),
-                        );
-                        return false;
                     }
+                } else {
+                    dies_core::debug_string(
+                        "RefereeMessage",
+                        RefereeMessage::KickoffPositionViolation.to_string(),
+                    );
+                    return false;
                 }
             }
         }

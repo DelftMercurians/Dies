@@ -1,7 +1,7 @@
 use dies_core::{PlayerId, Vector2};
 use dies_executor::behavior_tree_api::*;
 
-use crate::v0::utils::{find_best_pass_target, get_defender_heading};
+use crate::v0::utils::find_best_pass_target;
 
 pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()

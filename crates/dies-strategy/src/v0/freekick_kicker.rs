@@ -9,100 +9,14 @@ use crate::v0::{
 };
 
 pub fn build_free_kick_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
-    semaphore_node()
-        .do_then(
-            select_node()
-                .add(
-                    // Direct shot if close to goal
-                    guard_node()
-                        .condition(|s| {
-                            s.distance_to_position(s.get_opp_goal_position()) < 3000.0
-                                && has_clear_shot(s)
-                        })
-                        .then(
-                            sequence_node()
-                                .add(
-                                    fetch_ball()
-                                        .description("Get ball for free kick".to_string())
-                                        .build(),
-                                )
-                                .add(
-                                    guard_node()
-                                        .condition(|s| s.has_ball())
-                                        .then(
-                                            sequence_node()
-                                                .add(
-                                                    face_position(find_optimal_shot_target)
-                                                        .description("Aim at goal".to_string())
-                                                        .build(),
-                                                )
-                                                .add(
-                                                    wait(Argument::Static(0.5))
-                                                        .description("Aim".to_string())
-                                                        .build(),
-                                                )
-                                                .add(
-                                                    kick()
-                                                        .description("Free kick shot!".to_string())
-                                                        .build(),
-                                                )
-                                                .description("Execute shot")
-                                                .build(),
-                                        )
-                                        .description("Have ball?")
-                                        .build(),
-                                )
-                                .description("Direct shot")
-                                .build(),
-                        )
-                        .description("Close shot opportunity")
-                        .build(),
-                )
-                .add(
-                    // Pass to teammate
-                    guard_node()
-                        .condition(can_pass_to_teammate)
-                        .then(
-                            sequence_node()
-                                .add(
-                                    fetch_ball()
-                                        .description("Get ball for free kick".to_string())
-                                        .build(),
-                                )
-                                .add(
-                                    guard_node()
-                                        .condition(|s| s.has_ball())
-                                        .then(
-                                            sequence_node()
-                                                .add(
-                                                    face_position(find_best_pass_target)
-                                                        .description("Aim pass".to_string())
-                                                        .build(),
-                                                )
-                                                .add(
-                                                    wait(Argument::Static(0.3))
-                                                        .description("Aim pass".to_string())
-                                                        .build(),
-                                                )
-                                                .add(
-                                                    kick()
-                                                        .description("Free kick pass!".to_string())
-                                                        .build(),
-                                                )
-                                                .description("Execute pass")
-                                                .build(),
-                                        )
-                                        .description("Have ball?")
-                                        .build(),
-                                )
-                                .description("Pass option")
-                                .build(),
-                        )
-                        .description("Can pass to teammate")
-                        .build(),
-                )
-                .add(
-                    // Default: advance with ball
+    select_node()
+        .add(
+            // Direct shot if close to goal
+            guard_node()
+                .condition(|s| {
+                    s.distance_to_position(s.get_opp_goal_position()) < 3000.0 && has_clear_shot(s)
+                })
+                .then(
                     sequence_node()
                         .add(
                             fetch_ball()
@@ -113,24 +27,102 @@ pub fn build_free_kick_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                             guard_node()
                                 .condition(|s| s.has_ball())
                                 .then(
-                                    go_to_position(calculate_striker_advance_position)
-                                        .with_heading(get_heading_to_goal)
-                                        .with_ball()
-                                        .description("Advance with ball")
+                                    sequence_node()
+                                        .add(
+                                            face_position(find_optimal_shot_target)
+                                                .description("Aim at goal".to_string())
+                                                .build(),
+                                        )
+                                        .add(
+                                            wait(Argument::Static(0.5))
+                                                .description("Aim".to_string())
+                                                .build(),
+                                        )
+                                        .add(
+                                            kick()
+                                                .description("Free kick shot!".to_string())
+                                                .build(),
+                                        )
+                                        .description("Execute shot")
                                         .build(),
                                 )
                                 .description("Have ball?")
                                 .build(),
                         )
-                        .description("Advance")
+                        .description("Direct shot")
                         .build(),
                 )
-                .description("Free kick actions")
+                .description("Close shot opportunity")
                 .build(),
         )
-        .semaphore_id("free_kick_kicker".to_string())
-        .max_entry(1)
-        .description("Free kick kicker")
+        .add(
+            // Pass to teammate
+            guard_node()
+                .condition(can_pass_to_teammate)
+                .then(
+                    sequence_node()
+                        .add(
+                            fetch_ball()
+                                .description("Get ball for free kick".to_string())
+                                .build(),
+                        )
+                        .add(
+                            guard_node()
+                                .condition(|s| s.has_ball())
+                                .then(
+                                    sequence_node()
+                                        .add(
+                                            face_position(find_best_pass_target)
+                                                .description("Aim pass".to_string())
+                                                .build(),
+                                        )
+                                        .add(
+                                            wait(Argument::Static(0.3))
+                                                .description("Aim pass".to_string())
+                                                .build(),
+                                        )
+                                        .add(
+                                            kick()
+                                                .description("Free kick pass!".to_string())
+                                                .build(),
+                                        )
+                                        .description("Execute pass")
+                                        .build(),
+                                )
+                                .description("Have ball?")
+                                .build(),
+                        )
+                        .description("Pass option")
+                        .build(),
+                )
+                .description("Can pass to teammate")
+                .build(),
+        )
+        .add(
+            // Default: advance with ball
+            sequence_node()
+                .add(
+                    fetch_ball()
+                        .description("Get ball for free kick".to_string())
+                        .build(),
+                )
+                .add(
+                    guard_node()
+                        .condition(|s| s.has_ball())
+                        .then(
+                            go_to_position(calculate_striker_advance_position)
+                                .with_heading(get_heading_to_goal)
+                                .with_ball()
+                                .description("Advance with ball")
+                                .build(),
+                        )
+                        .description("Have ball?")
+                        .build(),
+                )
+                .description("Advance")
+                .build(),
+        )
+        .description("Free kick actions")
         .build()
         .into()
 }

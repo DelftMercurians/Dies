@@ -128,6 +128,54 @@ impl RobotSituation {
         format!("{}.{}", self.viz_path_prefix, key.into())
     }
 
+    pub fn player_id(&self) -> PlayerId {
+        self.player_id
+    }
+
+    pub fn ball_position(&self) -> Vector2 {
+        self.world
+            .ball
+            .as_ref()
+            .map(|b| b.position.xy())
+            .unwrap_or_default()
+    }
+
+    pub fn ball_velocity(&self) -> Vector2 {
+        self.world
+            .ball
+            .as_ref()
+            .map(|b| b.velocity.xy())
+            .unwrap_or_default()
+    }
+
+    pub fn ball_speed(&self) -> f64 {
+        self.ball_velocity().norm()
+    }
+
+    pub fn player_id_hash(&self) -> f64 {
+        (self.player_id.as_u32() as f64 * 0.6180339887498949) % 1.0
+    }
+
+    pub fn game_state(&self) -> GameState {
+        self.world.current_game_state.game_state
+    }
+
+    pub fn game_state_is(&self, state: GameState) -> bool {
+        self.game_state() == state
+    }
+
+    pub fn game_state_is_not(&self, state: GameState) -> bool {
+        self.game_state() != state
+    }
+
+    pub fn game_state_is_one_of(&self, states: &[GameState]) -> bool {
+        states.contains(&self.game_state())
+    }
+
+    pub fn game_state_is_none_of(&self, states: &[GameState]) -> bool {
+        !states.contains(&self.game_state())
+    }
+
     pub fn player_data(&self) -> &PlayerData {
         self.world.get_player(self.player_id)
     }
@@ -325,7 +373,7 @@ impl RobotSituation {
             .map(|p| p.clone())
     }
 
-    pub fn get_closest_own_player_to_ball(&self) -> Option<PlayerId> {
+    pub fn get_closest_own_player_to_ball(&self) -> Option<PlayerData> {
         self.world.ball.as_ref().and_then(|ball| {
             let ball_pos = ball.position.xy();
             self.world
@@ -333,8 +381,31 @@ impl RobotSituation {
                 .iter()
                 .filter(|p| p.id != self.player_id)
                 .min_by_key(|p| ((p.position - ball_pos).norm() * 1000.0) as i64)
-                .map(|p| p.id)
+                .map(|p| p.clone())
         })
+    }
+
+    pub fn distance_of_closest_own_player_to_ball(&self) -> f64 {
+        self.get_closest_own_player_to_ball()
+            .map(|p| (p.position - self.ball_position()).norm())
+            .unwrap_or(f64::INFINITY)
+    }
+
+    pub fn get_closest_opp_player_to_ball(&self) -> Option<PlayerData> {
+        self.world.ball.as_ref().and_then(|ball| {
+            let ball_pos = ball.position.xy();
+            self.world
+                .opp_players
+                .iter()
+                .min_by_key(|p| ((p.position - ball_pos).norm() * 1000.0) as i64)
+                .map(|p| p.clone())
+        })
+    }
+
+    pub fn distance_of_closest_opp_player_to_ball(&self) -> f64 {
+        self.get_closest_opp_player_to_ball()
+            .map(|p| (p.position - self.ball_position()).norm())
+            .unwrap_or(f64::INFINITY)
     }
 
     pub fn get_all_players_within_radius(&self, center: Vector2, radius: f64) -> Vec<PlayerData> {
@@ -425,8 +496,7 @@ impl RobotSituation {
                 let half_length = field.field_length / 2.0;
                 let half_penalty_width = field.penalty_area_width / 2.0;
 
-                ball_pos.x >= -half_length
-                    && ball_pos.x <= -half_length + field.penalty_area_depth
+                ball_pos.x <= -half_length + field.penalty_area_depth
                     && ball_pos.y >= -half_penalty_width
                     && ball_pos.y <= half_penalty_width
             })
@@ -442,8 +512,7 @@ impl RobotSituation {
                 let half_length = field.field_length / 2.0;
                 let half_penalty_width = field.penalty_area_width / 2.0;
 
-                ball_pos.x <= half_length
-                    && ball_pos.x >= half_length - field.penalty_area_depth
+                ball_pos.x >= half_length - field.penalty_area_depth
                     && ball_pos.y >= -half_penalty_width
                     && ball_pos.y <= half_penalty_width
             })

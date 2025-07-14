@@ -2,10 +2,29 @@ use dies_core::get_tangent_line_direction;
 use dies_core::Vector2;
 use dies_executor::behavior_tree_api::*;
 
+use crate::v0::utils::find_best_pass_target;
 use crate::v0::utils::{evaluate_ball_threat, get_defender_heading};
 
 pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
+        .add(
+            guard_node()
+                .description("Pickup ball?")
+                .condition(should_pickup_ball)
+                .then(
+                    sequence_node()
+                        .add(fetch_ball().description("Pickup ball".to_string()).build())
+                        .add(
+                            face_position(find_best_pass_target)
+                                .description("Aim pass".to_string())
+                                .build(),
+                        )
+                        .add(kick().description("Kickoff pass!".to_string()).build())
+                        .description("Pass kickoff")
+                        .build(),
+                )
+                .build(),
+        )
         .add(
             // Normal wall positioning
             continuous("wall position")
@@ -494,4 +513,18 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
     wallers.sort_by_key(|(k, _)| *k);
 
     total_score
+}
+
+fn should_pickup_ball(s: &RobotSituation) -> bool {
+    let no_harassers = s
+        .role_assignments
+        .values()
+        .find(|v| *v == "harasser")
+        .is_none();
+
+    no_harassers
+        && s.ball_position().x < 0.0
+        && !s.ball_in_own_penalty_area()
+        && s.ball_speed() < 500.0
+        && s.distance_of_closest_opp_player_to_ball() > 1000.0
 }

@@ -18,15 +18,19 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
         .add(
             // Emergency ball clearing if ball is very close
             guard_node()
-                .condition(|s| s.ball_in_own_penalty_area() && s.distance_to_ball() < 1000.0)
+                .description("Ball in penalty area")
+                .condition(|s| s.ball_in_own_penalty_area() && s.ball_speed() < 500.0)
                 .then(
                     sequence_node()
+                        .description("Clear ball")
                         .add(fetch_ball().description("Clear Ball".to_string()).build())
                         .add(
                             guard_node()
+                                .description("Have ball?")
                                 .condition(|s| s.has_ball())
                                 .then(
                                     sequence_node()
+                                        .description("Execute Clear")
                                         .add(
                                             face_position(|s: &RobotSituation| {
                                                 s.get_field_center()
@@ -35,16 +39,12 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
                                             .build(),
                                         )
                                         .add(kick().description("Clear!".to_string()).build())
-                                        .description("Execute Clear")
                                         .build(),
                                 )
-                                .description("Have ball?")
                                 .build(),
                         )
-                        .description("Emergency Clear")
                         .build(),
                 )
-                .description("Ball in penalty area")
                 .build(),
         )
         .add(
@@ -59,20 +59,6 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
         .into()
 }
 
-fn calculate_goalkeeper_position(s: &RobotSituation) -> Vector2 {
-    let geom = s.world.field_geom.clone().unwrap();
-    let goal_line_start = Vector2::new(geom.field_length / 2.0, -geom.goal_width / 2.0);
-    let goal_line_start = Vector2::new(geom.field_length / 2.0, geom.goal_width / 2.0);
-    let goal_pos = s.get_own_goal_position();
-    if let Some(ball) = &s.world.ball {
-        let ball_pos = ball.position.xy();
-        let direction = (ball_pos - goal_pos).normalize();
-        goal_pos + direction * 800.0 // 800mm from goal
-    } else {
-        goal_pos + Vector2::new(500.0, 0.0) // Default position
-    }
-}
-
 fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
     let geom = s.world.field_geom.clone().unwrap();
     let goal_pos = s.get_own_goal_position();
@@ -83,14 +69,19 @@ fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
     let forward_point = Vector2::new(goal_pos.x + 400.0, 0.0); // 40cm forward from goal center
 
     // Calculate circle center and radius that passes through all three points
-    let (circle_center, circle_radius) = calculate_circumcircle(left_point, right_point, forward_point);
+    let (circle_center, circle_radius) =
+        calculate_circumcircle(left_point, right_point, forward_point);
 
     // Generate 50 sample points uniformly around the circle arc
     let mut arc_points = Vec::new();
 
     // Calculate start and end angles for the arc
-    let start_angle = (left_point - circle_center).y.atan2((left_point - circle_center).x);
-    let end_angle = (right_point - circle_center).y.atan2((left_point - circle_center).x);
+    let start_angle = (left_point - circle_center)
+        .y
+        .atan2((left_point - circle_center).x);
+    let end_angle = (right_point - circle_center)
+        .y
+        .atan2((left_point - circle_center).x);
 
     // Determine the shorter arc direction
     let mut angle_diff = end_angle - start_angle;
@@ -105,10 +96,8 @@ fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
         let t = i as f64 / 49.0; // 0 to 1
         let angle = start_angle + angle_diff * t;
 
-        let point = circle_center + Vector2::new(
-            circle_radius * angle.cos(),
-            circle_radius * angle.sin()
-        );
+        let point =
+            circle_center + Vector2::new(circle_radius * angle.cos(), circle_radius * angle.sin());
 
         arc_points.push(point);
     }
@@ -140,13 +129,13 @@ fn calculate_circumcircle(p1: Vector2, p2: Vector2, p3: Vector2) -> (Vector2, f6
         return (center, radius);
     }
 
-    let ux = (p1.x * p1.x + p1.y * p1.y) * (p2.y - p3.y) +
-             (p2.x * p2.x + p2.y * p2.y) * (p3.y - p1.y) +
-             (p3.x * p3.x + p3.y * p3.y) * (p1.y - p2.y);
+    let ux = (p1.x * p1.x + p1.y * p1.y) * (p2.y - p3.y)
+        + (p2.x * p2.x + p2.y * p2.y) * (p3.y - p1.y)
+        + (p3.x * p3.x + p3.y * p3.y) * (p1.y - p2.y);
 
-    let uy = (p1.x * p1.x + p1.y * p1.y) * (p3.x - p2.x) +
-             (p2.x * p2.x + p2.y * p2.y) * (p1.x - p3.x) +
-             (p3.x * p3.x + p3.y * p3.y) * (p2.x - p1.x);
+    let uy = (p1.x * p1.x + p1.y * p1.y) * (p3.x - p2.x)
+        + (p2.x * p2.x + p2.y * p2.y) * (p1.x - p3.x)
+        + (p3.x * p3.x + p3.y * p3.y) * (p2.x - p1.x);
 
     let center = Vector2::new(ux / d, uy / d);
     let radius = (p1 - center).norm();
@@ -168,7 +157,8 @@ fn score_arc_position(s: &RobotSituation, position: Vector2) -> f64 {
     score -= ball_distance / 3.0;
 
     // Score based on distance to ball velocity line (if ball is moving)
-    if ball_vel.norm() > 100.0 { // Only consider if ball is moving
+    if ball_vel.norm() > 100.0 {
+        // Only consider if ball is moving
         let vel_direction = ball_vel.normalize();
         let ball_to_pos = position - ball_pos;
 
