@@ -158,7 +158,11 @@ impl GameStateTracker {
         } else {
             let distance = (ball_data.unwrap().position - p).norm();
             let velocity = ball_data.unwrap().velocity.norm();
-            if distance > 500.0 && velocity > 5000.0 {
+            if distance > 500.0 || velocity > 5000.0 {
+                println!(
+                    "ball movement detected: distance: {}, velocity: {}\ngame state {} -> {}",
+                    distance, velocity, self.game_state, self.new_state_movement
+                );
                 self.game_state = self.new_state_movement;
                 dies_core::debug_string("game_state", format!("{}", self.game_state));
                 self.is_outdated = true;

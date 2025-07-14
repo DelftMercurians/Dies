@@ -22,12 +22,6 @@ mod striker;
 mod waller;
 
 pub fn v0_strategy(game: &mut GameContext) {
-    game.add_role("harasser")
-        .count(1)
-        .score(|_| 100000.0)
-        .behavior(|s| harasser::build_harasser_tree(s));
-    return;
-
     // Goalkeeper - always exactly one
     game.add_role("goalkeeper")
         .count(1)

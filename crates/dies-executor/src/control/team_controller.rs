@@ -132,7 +132,7 @@ impl TeamController {
                     if needs_rebuild {
                         // Clear semaphores for this player before rebuilding
                         self.bt_context.clear_semaphores_for_player(*player_id);
-                        
+
                         // Find the role and build its tree
                         if let Some(role) = assignment_problem
                             .roles
@@ -211,10 +211,13 @@ impl TeamController {
 
         let final_player_inputs = if matches!(
             world_data.current_game_state.game_state,
-            GameState::Stop | GameState::BallReplacement(_) | GameState::FreeKick
+            GameState::Stop
+                | GameState::BallReplacement(_)
+                | GameState::FreeKick
+                | GameState::Kickoff
+                | GameState::PrepareKickoff
         ) {
-            // comply(&world_data, inputs_for_comply, &team_context)
-            inputs_for_comply
+            comply(&world_data, inputs_for_comply, &team_context)
         } else {
             inputs_for_comply
         };
@@ -461,6 +464,25 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                         field,
                     );
                     new_input.with_position(target);
+                }
+
+                if matches!(game_state, GameState::Kickoff | GameState::PrepareKickoff) {
+                    // Avoid center circle unless we are the kicker
+                    if input.role_type != RoleType::KickoffKicker {
+                        let center_circle_center = Vector2::new(0.0, 0.0);
+                        let center_circle_radius = field.center_circle_radius;
+                        let target = dies_core::nearest_safe_pos(
+                            dies_core::Avoid::Circle {
+                                center: center_circle_center,
+                            },
+                            center_circle_radius + 500.0,
+                            player_data.position,
+                            input.position.unwrap_or(player_data.position),
+                            4000,
+                            field,
+                        );
+                        new_input.with_position(target);
+                    }
                 }
 
                 if let GameState::BallReplacement(pos) = game_state {

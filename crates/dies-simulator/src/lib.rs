@@ -1766,15 +1766,10 @@ impl Simulation {
                     && angle < self.config.dribbler_angle
                 {
                     player.breakbeam = true;
-                    dies_core::debug_string(
-                        format!("breakbeam_{}_{}", player.team_color, player.id),
-                        format!("{} {}", player.team_color, player.id),
-                    );
                     if is_kicking {
-                        println!("Kicking ball");
                         self.ball_being_dribbled_by = None;
                         // Move the ball away from the player
-                        let new_ball_position = ball_position + yaw * 100.0;
+                        let new_ball_position = ball_position + yaw * 80.0;
                         ball_body.set_position(
                             Isometry::translation(
                                 new_ball_position.x,
@@ -1798,23 +1793,14 @@ impl Simulation {
                     } else {
                         if is_player_dribbling {
                             // If the player is dribbling, we need to stop the dribbling
-                            println!("Stopping dribbling");
                             self.ball_being_dribbled_by = None;
                         }
                     }
-                } else if is_kicking {
-                    dies_core::debug_string(
-                        format!("breakbeam_{}_{}", player.team_color, player.id),
-                        "false",
-                    );
-                    println!("Kicking but ball not in dribbler");
                 }
             }
         }
 
         if let Some((player_id, team_color)) = self.ball_being_dribbled_by {
-            // println!("Dribbling ball by {} {}", team_color, player_id);
-            dies_core::debug_string("dribbling_ball", format!("{} {}", team_color, player_id));
             let player = self
                 .players
                 .iter()
@@ -1833,7 +1819,7 @@ impl Simulation {
 
             // Fix the ball position to the dribbler
             let dribbler_position = player_position
-                + yaw * (self.config.player_radius + self.config.dribbler_radius - 90.0);
+                + yaw * (self.config.player_radius + self.config.dribbler_radius - 80.0);
             ball_body.set_position(
                 Isometry::translation(
                     dribbler_position.x,
@@ -1843,8 +1829,6 @@ impl Simulation {
                 true,
             );
             ball_body.set_linvel(Vector3::zeros(), true);
-        } else {
-            dies_core::debug_string("dribbling_ball", "none");
         }
 
         self.integration_parameters.dt = dt;
@@ -1873,18 +1857,18 @@ impl Simulation {
             let position = ball_body.position().translation.vector;
             let x = position.x.clamp(
                 -(self.config.field_geometry.field_width
-                    + self.config.field_geometry.boundary_width)
+                    - self.config.field_geometry.boundary_width)
                     / 2.0,
                 (self.config.field_geometry.field_width
-                    + self.config.field_geometry.boundary_width)
+                    - self.config.field_geometry.boundary_width)
                     / 2.0,
             );
             let y = position.y.clamp(
                 -(self.config.field_geometry.field_length
-                    + self.config.field_geometry.boundary_width)
+                    - self.config.field_geometry.boundary_width)
                     / 2.0,
                 (self.config.field_geometry.field_length
-                    + self.config.field_geometry.boundary_width)
+                    - self.config.field_geometry.boundary_width)
                     / 2.0,
             );
             ball_body.set_position(Isometry::translation(x, y, position.z), true);

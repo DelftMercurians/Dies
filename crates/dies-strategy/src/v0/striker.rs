@@ -80,18 +80,13 @@ fn build_kickoff_positioning_behavior() -> BehaviorNode {
 
 fn build_zone_based_striker_behavior() -> BehaviorNode {
     scoring_select_node()
-        .add_child(
-            build_striker_in_zone("top"),
-            |s| score_for_zone(s, "top"),
-        )
-        .add_child(
-            build_striker_in_zone("middle"),
-            |s| score_for_zone(s, "middle"),
-        )
-        .add_child(
-            build_striker_in_zone("bottom"),
-            |s| score_for_zone(s, "bottom"),
-        )
+        .add_child(build_striker_in_zone("top"), |s| score_for_zone(s, "top"))
+        .add_child(build_striker_in_zone("middle"), |s| {
+            score_for_zone(s, "middle")
+        })
+        .add_child(build_striker_in_zone("bottom"), |s| {
+            score_for_zone(s, "bottom")
+        })
         .hysteresis_margin(0.2) // Increased hysteresis for zone selection
         .description("Choose Attack Zone")
         .build()
@@ -271,7 +266,6 @@ fn score_for_zone(s: &RobotSituation, zone: &str) -> f64 {
     let hash = s.player_id_hash();
     let base_score = 50.0 + hash * 20.0;
 
-
     // Prefer zones with fewer opponents
     let zone_center = match zone {
         "top" => Vector2::new(2000.0, 2000.0),
@@ -325,6 +319,10 @@ fn score_for_passing(s: &RobotSituation) -> f64 {
 }
 
 fn should_pickup_ball(s: &RobotSituation) -> bool {
+    if s.game_state_is_not(GameState::Run) {
+        return false;
+    }
+
     let Some(ball) = s.world.ball.as_ref() else {
         return false;
     };

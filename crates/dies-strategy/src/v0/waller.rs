@@ -1,4 +1,5 @@
 use dies_core::get_tangent_line_direction;
+use dies_core::GameState;
 use dies_core::Vector2;
 use dies_executor::behavior_tree_api::*;
 
@@ -517,6 +518,9 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
 }
 
 fn should_pickup_ball(s: &RobotSituation) -> bool {
+    if s.game_state_is_not(GameState::Run) {
+        return false;
+    }
     let no_harassers = s
         .role_assignments
         .values()
