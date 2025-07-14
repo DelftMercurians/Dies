@@ -4,10 +4,13 @@
 - [x] fetchball
 - [x] Striker - pick up ball when free
 - [x] Switch to embedded heading
+- [x] Feedback - read all team at once
+- [x] add max distance to fetchball
+- [x] fix prevent double touch after freekick - 1 global check tracking if another robot has touched the ball since the freekick. also add a timeout
 - [ ] role assignment - simplify to just use counts, make sure order=priority
-- [ ] Feedback - read all team at once
-- [ ] freekick interference - positin in frot of kicker or between ball and goal
+- [ ] warmup state - before starting the strategy
 - [ ] freekicker - test
+- [ ] freekick interference - positin in frot of kicker or between ball and goal
 - [ ] yellow card handling - move one robot to replacement position
 - [ ] Fault tolerance - Kicker/dribbler failure hadnling in strategy
 - [ ] Passing - pass to flug in btcontext

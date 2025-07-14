@@ -1,4 +1,4 @@
-use dies_core::{Angle, Vector2};
+use dies_core::{Angle, Vector2, BALL_RADIUS, PLAYER_RADIUS};
 
 use super::{SkillCtx, SkillProgress};
 use crate::{control::Velocity, PlayerControlInput};
@@ -11,6 +11,7 @@ pub struct FetchBall {
     stop_distance: f64,
     max_relative_speed: f64,
     last_good_heading: Option<Angle>,
+    starting_position: Option<Vector2>,
 }
 
 impl FetchBall {
@@ -18,9 +19,10 @@ impl FetchBall {
         Self {
             dribbling_distance: 1000.0,
             dribbling_speed: 1.0,
-            stop_distance: 200.0,
+            stop_distance: PLAYER_RADIUS + BALL_RADIUS + 50.0,
             max_relative_speed: 1500.0,
             last_good_heading: None,
+            starting_position: None,
         }
     }
 }
@@ -59,18 +61,27 @@ impl FetchBall {
                 return SkillProgress::success();
             }
 
-            if (!ball.detected && distance < 300.0)
-                || (distance < self.dribbling_distance && ball_speed < 500.0)
-            {
-                input.velocity = Velocity::global(
-                    distance
-                        * (self.max_relative_speed / self.dribbling_distance)
-                        * (ball_pos - player_pos).normalize(),
-                );
-            } else if ball_speed < 250.0 {
-                // If the ball is too slow, just go to the ball
-                let target_pos = ball_pos + ball_angle * Vector2::new(-self.stop_distance, 0.0);
-                input.with_position(target_pos);
+            if ball_speed < 250.0 {
+                // Ball is stationary/slow, so we move to get it
+                if distance > self.stop_distance {
+                    // move close to the ball
+                    let target_pos = ball_pos + ball_angle * Vector2::new(-self.stop_distance, 0.0);
+                    input.with_position(target_pos);
+                } else if (!ball.detected && distance < 300.0)
+                    || (distance < self.dribbling_distance && ball_speed < 500.0)
+                {
+                    let start_pos = self.starting_position.unwrap_or(player_pos);
+                    let distance = (player_pos - start_pos).norm();
+                    if distance > self.stop_distance * 1.2 {
+                        // if we moved too far we probably got stuck, so fail
+                        return SkillProgress::failure();
+                    }
+                    input.velocity = Velocity::global(
+                        distance
+                            * (self.max_relative_speed / self.dribbling_distance)
+                            * (ball_pos - player_pos).normalize(),
+                    );
+                }
             } else {
                 // if ball is fast and we are far away
                 // sample bunch of points on the ball ray, and see which 'segment'

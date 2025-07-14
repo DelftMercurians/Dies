@@ -5,11 +5,12 @@ use typeshare::typeshare;
 
 use crate::{
     distance_to_line, player::PlayerId, Angle, FieldGeometry, RoleType, SideAssignment, SysStatus,
-    TeamColor, Vector2, Vector3,
+    TeamColor, TeamPlayerId, Vector2, Vector3,
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
 pub const PLAYER_RADIUS: f64 = 90.0;
+pub const BALL_RADIUS: f64 = 21.5;
 const MAX_SPEED: f64 = 10000.0;
 const MAX_ACCELERATION: f64 = 125000.0;
 
@@ -169,6 +170,8 @@ pub struct RawGameStateData {
     pub game_state: GameState,
     /// The team that is currently performing tasks in the state.
     pub operating_team: TeamColor,
+    /// The player who performed the freekick (for double touch tracking)
+    pub freekick_kicker: Option<TeamPlayerId>,
 }
 
 /// A struct to store the player state from a single frame.
@@ -550,7 +553,10 @@ impl Avoid {
 
     fn intersects_line(&self, start: Vector2, end: Vector2) -> bool {
         match self {
-            Avoid::Line { start: line_start, end: line_end } => {
+            Avoid::Line {
+                start: line_start,
+                end: line_end,
+            } => {
                 let line_seg = *line_end - *line_start;
                 let test_seg = end - start;
 
@@ -559,8 +565,12 @@ impl Avoid {
                     return false; // Lines are parallel
                 }
 
-                let t = ((start.x - line_start.x) * test_seg.y - (start.y - line_start.y) * test_seg.x) / denom;
-                let u = ((start.x - line_start.x) * line_seg.y - (start.y - line_start.y) * line_seg.x) / denom;
+                let t = ((start.x - line_start.x) * test_seg.y
+                    - (start.y - line_start.y) * test_seg.x)
+                    / denom;
+                let u = ((start.x - line_start.x) * line_seg.y
+                    - (start.y - line_start.y) * line_seg.x)
+                    / denom;
 
                 t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0
             }
@@ -606,7 +616,8 @@ pub fn nearest_safe_pos(
                 let distnorm = (initial_pos - target_pos).norm() + 1e-6;
                 let dist_score = (position - target_pos).norm() / distnorm;
                 let closeness_score = (position - initial_pos).norm() / distnorm;
-                let not_gay_score = entity_to_avoid.intersects_line(initial_pos, position) as i32 as f64;
+                let not_gay_score =
+                    entity_to_avoid.intersects_line(initial_pos, position) as i32 as f64;
                 let loss = dist_score + closeness_score * 0.5 + not_gay_score;
 
                 if loss < best_loss {
@@ -679,6 +690,7 @@ pub fn mock_world_data() -> WorldData {
         game_state: RawGameStateData {
             game_state: GameState::Run,
             operating_team: TeamColor::Blue,
+            freekick_kicker: None,
         },
         side_assignment: SideAssignment::YellowOnPositive,
     }

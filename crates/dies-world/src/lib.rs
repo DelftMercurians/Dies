@@ -216,6 +216,11 @@ impl WorldTracker {
     pub fn update_from_referee(&mut self, data: &Referee) {
         self.game_state_tracker
             .update_ball_movement_check(self.ball_tracker.get().as_ref());
+        
+        // Update freekick double touch tracking
+        let world_data = self.get();
+        self.game_state_tracker
+            .update_freekick_double_touch(Some(&world_data), self.ball_tracker.get().as_ref());
 
         if let Some(ball) = self.ball_tracker.get() {
             let cur = self.game_state_tracker.update(data);
@@ -313,6 +318,11 @@ impl WorldTracker {
 
             self.game_state_tracker
                 .update_ball_movement_check(self.ball_tracker.get().as_ref());
+            
+            // Update freekick double touch tracking
+            let world_data = self.get();
+            self.game_state_tracker
+                .update_freekick_double_touch(Some(&world_data), self.ball_tracker.get().as_ref());
         }
         if let Some(geometry) = data.geometry.as_ref() {
             // We don't expect the field geometry to change, so only update it once.
@@ -389,6 +399,7 @@ impl WorldTracker {
                 Some(false) => TeamColor::Yellow,
                 None => TeamColor::Blue, // Default fallback
             },
+            freekick_kicker: self.game_state_tracker.get_freekick_kicker(),
         };
 
         WorldData {

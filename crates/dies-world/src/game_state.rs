@@ -1,9 +1,14 @@
 use std::time::Instant;
 
-use dies_core::{GameState, Vector2, Vector3};
+use dies_core::{
+    GameState, PlayerData, TeamColor, TeamPlayerId, Vector2, Vector3, WorldData, BALL_RADIUS,
+    PLAYER_RADIUS,
+};
 use dies_protos::ssl_gc_referee_message::{referee::Command, Referee};
 
 use crate::BallData;
+
+const FREEKICK_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Debug, Clone, Copy)]
 pub struct GameStateTracker {
@@ -21,6 +26,8 @@ pub struct GameStateTracker {
     is_outdated: bool,
     operator_is_blue: Option<bool>,
     last_cmd: Option<Command>,
+    freekick_kicker: Option<TeamPlayerId>,
+    freekick_start_time: Option<Instant>,
 }
 
 impl GameStateTracker {
@@ -36,6 +43,8 @@ impl GameStateTracker {
             is_outdated: true,
             operator_is_blue: None,
             last_cmd: None,
+            freekick_kicker: None,
+            freekick_start_time: None,
         }
     }
 
@@ -69,7 +78,11 @@ impl GameStateTracker {
             Command::DIRECT_FREE_YELLOW
             | Command::DIRECT_FREE_BLUE
             | Command::INDIRECT_FREE_BLUE
-            | Command::INDIRECT_FREE_YELLOW => GameState::FreeKick,
+            | Command::INDIRECT_FREE_YELLOW => {
+                self.freekick_kicker = None;
+                self.freekick_start_time = Some(Instant::now());
+                GameState::FreeKick
+            }
             Command::TIMEOUT_YELLOW => GameState::Timeout,
             Command::TIMEOUT_BLUE => GameState::Timeout,
             Command::BALL_PLACEMENT_YELLOW | Command::BALL_PLACEMENT_BLUE => {
@@ -111,8 +124,14 @@ impl GameStateTracker {
 
         // Reset
         match self.game_state {
-            GameState::Halt | GameState::Stop | GameState::Timeout | GameState::Run => {
-                self.operator_is_blue = None
+            GameState::Halt | GameState::Stop | GameState::Timeout => {
+                self.operator_is_blue = None;
+                self.freekick_kicker = None;
+                self.freekick_start_time = None;
+            }
+            GameState::Run => {
+                self.operator_is_blue = None;
+                // Keep freekick_kicker and freekick_start_time for double touch tracking
             }
             _ => (),
         }
@@ -175,6 +194,134 @@ impl GameStateTracker {
     pub fn get(&self) -> GameState {
         // Return raw game state without coordinate transformation
         self.game_state
+    }
+
+    fn is_robot_touching_ball(&self, player: &PlayerData, ball_pos: Vector2) -> bool {
+        let distance = (player.position - ball_pos).norm();
+        distance <= (PLAYER_RADIUS + BALL_RADIUS + 50.0)
+    }
+
+    fn find_closest_robot_to_ball(
+        &self,
+        world_data: &WorldData,
+        ball_pos: Vector2,
+    ) -> Option<TeamPlayerId> {
+        let mut closest_robot: Option<TeamPlayerId> = None;
+        let mut closest_distance = f64::INFINITY;
+
+        for player in &world_data.blue_team {
+            let distance = (player.position - ball_pos).norm();
+            if distance < closest_distance {
+                closest_distance = distance;
+                closest_robot = Some(TeamPlayerId {
+                    team_color: TeamColor::Blue,
+                    player_id: player.id,
+                });
+            }
+        }
+
+        for player in &world_data.yellow_team {
+            let distance = (player.position - ball_pos).norm();
+            if distance < closest_distance {
+                closest_distance = distance;
+                closest_robot = Some(TeamPlayerId {
+                    team_color: TeamColor::Yellow,
+                    player_id: player.id,
+                });
+            }
+        }
+
+        closest_robot
+    }
+
+    pub fn get_freekick_kicker(&self) -> Option<TeamPlayerId> {
+        self.freekick_kicker
+    }
+
+    pub fn update_freekick_double_touch(
+        &mut self,
+        world_data: Option<&WorldData>,
+        ball_data: Option<&BallData>,
+    ) {
+        // Only track during FreeKick state or Run state with an active kicker
+        if self.game_state != GameState::FreeKick
+            && (self.game_state != GameState::Run || self.freekick_kicker.is_none())
+        {
+            return;
+        }
+
+        let (world_data, ball_data) = match (world_data, ball_data) {
+            (Some(w), Some(b)) => (w, b),
+            _ => return,
+        };
+
+        let ball_pos = ball_data.position.xy();
+
+        if let Some(start_time) = self.freekick_start_time {
+            if start_time.elapsed().as_secs() >= FREEKICK_TIMEOUT_SECS {
+                self.freekick_kicker = None;
+                self.freekick_start_time = None;
+                return;
+            }
+        }
+
+        if self.freekick_kicker.is_none() {
+            let closest_robot = self.find_closest_robot_to_ball(world_data, ball_pos);
+            if let Some(robot) = closest_robot {
+                let is_touching = match robot.team_color {
+                    TeamColor::Blue => world_data
+                        .blue_team
+                        .iter()
+                        .find(|p| p.id == robot.player_id)
+                        .map(|p| self.is_robot_touching_ball(p, ball_pos))
+                        .unwrap_or(false),
+                    TeamColor::Yellow => world_data
+                        .yellow_team
+                        .iter()
+                        .find(|p| p.id == robot.player_id)
+                        .map(|p| self.is_robot_touching_ball(p, ball_pos))
+                        .unwrap_or(false),
+                };
+
+                if is_touching {
+                    self.freekick_kicker = Some(robot);
+                }
+            }
+        } else if let Some(kicker) = self.freekick_kicker {
+            for player in &world_data.blue_team {
+                if self.is_robot_touching_ball(player, ball_pos) {
+                    let touching_robot = TeamPlayerId {
+                        team_color: TeamColor::Blue,
+                        player_id: player.id,
+                    };
+
+                    if touching_robot.team_color != kicker.team_color
+                        || touching_robot.player_id != kicker.player_id
+                    {
+                        self.freekick_kicker = None;
+                        self.freekick_start_time = None;
+                        return;
+                    }
+                }
+            }
+
+            for player in &world_data.yellow_team {
+                if self.is_robot_touching_ball(player, ball_pos) {
+                    let touching_robot = TeamPlayerId {
+                        team_color: TeamColor::Yellow,
+                        player_id: player.id,
+                    };
+
+                    if touching_robot.team_color != kicker.team_color
+                        || touching_robot.player_id != kicker.player_id
+                    {
+                        self.freekick_kicker = None;
+                        self.freekick_start_time = None;
+                        return;
+                    }
+                }
+            }
+        }
     }
 }
 
