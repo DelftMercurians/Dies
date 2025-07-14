@@ -25,7 +25,7 @@ pub async fn test_radio(
 
     let mut interval = tokio::time::interval(Duration::from_secs_f64(1.0 / 30.0));
     let start = Instant::now();
-    let mut has_kicked = false;
+
     loop {
         interval.tick().await;
 
@@ -52,10 +52,10 @@ pub async fn test_radio(
             cmd.kick_counter = 0;
 
             cmd.robot_cmd = RobotCmd::Arm;
-            if kick && !has_kicked {
+            if kick && elapsed > 0.2 {
                 cmd.kick_counter = 1;
-                has_kicked = true;
             }
+            println!("{}", cmd.kick_counter);
 
             bs_handle.send_no_wait(
                 dies_core::TeamColor::Blue,
