@@ -68,7 +68,7 @@ pub fn score_as_waller(s: &RobotSituation) -> f64 {
 
 fn is_ball_threatening(s: &RobotSituation) -> bool {
     if let Some(ball) = &s.world.ball {
-        let ball_vel = ball.velocity;
+        let ball_vel = ball.velocity.xy();
         let goal_pos = s.get_own_goal_position();
         let ball_pos = ball.position.xy();
 

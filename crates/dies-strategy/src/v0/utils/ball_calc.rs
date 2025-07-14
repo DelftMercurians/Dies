@@ -13,7 +13,7 @@ pub fn get_defender_heading(s: &RobotSituation) -> Angle {
 
 pub fn calculate_intercept_position(s: &RobotSituation) -> Vector2 {
     if let Some(ball) = &s.world.ball {
-        if ball.velocity.norm() < 100.0 {
+        if ball.velocity.xy().norm() < 100.0 {
             return ball.position.xy();
         }
 

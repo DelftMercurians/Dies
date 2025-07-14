@@ -55,88 +55,6 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
                 }))
                 .build(),
         )
-        // .add(select_node().dynamic(|s| {
-        //     // Find all threatening opponents in our half
-        //     let threats: Vec<_> = s
-        //         .world
-        //         .opp_players
-        //         .iter()
-        //         .filter(|p| {
-        //             p.position.x < 0.0 && (p.position - s.get_own_goal_position()).norm() < 4000.0
-        //         })
-        //         .collect();
-        //     // Create behavior options for each threat
-        //     let mut options: Vec<BehaviorNode> = Vec::new();
-        //     for (_i, opponent) in threats.iter().enumerate() {
-        //         // Each option tries to mark this specific opponent
-        //         let opponent_pos = opponent.position;
-        //         let opponent_id = opponent.id;
-        //         options.push(
-        //             semaphore_node()
-        //                 .do_then(
-        //                     continuous(format!("mark opponent {}", opponent_id))
-        //                         .position(Argument::callback(move |s| {
-        //                             calculate_harasser_position_for_pos(s, opponent_pos)
-        //                         }))
-        //                         .heading(Argument::callback(get_defender_heading))
-        //                         .build(),
-        //                 )
-        //                 .semaphore_id(format!("tag_opponent_{}", opponent_id))
-        //                 .max_entry(1)
-        //                 .build()
-        //                 .into(),
-        //         );
-        //     }
-        //     // 1. Standby position
-        //     options.push(
-        //         continuous("standby position 1")
-        //             .position(Argument::callback(move |s| {
-        //                 // Defense line: 60% of the way from our goal to halfway line (on our side)
-        //                 let own_goal = s.get_own_goal_position();
-        //                 let defense_line_x = 0.6 * own_goal.x;
-        //                 // If ball is moving, project intersection with defense line
-        //                 if let Some(ball) = &s.world.ball {
-        //                     let ball_pos = ball.position.xy();
-        //                     let ball_vel = ball.velocity.xy();
-        //                     // Only if ball is moving toward our goal (negative x)
-        //                     if ball_vel.x < -10.0 {
-        //                         // t = (defense_line_x - ball_pos.x) / ball_vel.x
-        //                         let t = (defense_line_x - ball_pos.x) / ball_vel.x;
-        //                         if t > 0.0 && t < 5.0 {
-        //                             // Projected intersection point
-        //                             let intersection = ball_pos + ball_vel * t;
-        //                             return intersection;
-        //                         }
-        //                     } else {
-        //                         return Vector2::new(defense_line_x, ball_pos.y);
-        //                     }
-        //                 }
-        //                 let y = 0.0;
-        //                 Vector2::new(defense_line_x, y)
-        //             }))
-        //             .build()
-        //             .into(),
-        //     );
-        //     // 2. Standby position
-        //     options.push(
-        //         continuous("standby position 2")
-        //             .position(Argument::callback(move |s| {
-        //                 // Defense line: 60% of the way from our goal to halfway line (on our side)
-        //                 let own_goal = s.get_own_goal_position();
-        //                 let halfway_x = 0.0;
-        //                 let defense_line_x = own_goal.x + 0.6 * (halfway_x - own_goal.x);
-        //                 // Shadow closest opponent on the defense line
-        //                 let closest_opponent = s.find_opp_player_min_by(|p| p.position.x);
-        //                 if let Some(opponent) = closest_opponent {
-        //                     return opponent.position;
-        //                 }
-        //                 Vector2::new(defense_line_x, 0.0)
-        //             }))
-        //             .build()
-        //             .into(),
-        //     );
-        //     options
-        // }))
         .build()
         .into()
 }
@@ -159,15 +77,6 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
             .any(|opp| (opp.position - ball_pos).norm() < 500.0);
 
         if ball_threatened {
-            return false;
-        }
-
-        // Check if any teammate is already close to the ball
-        let teammate_nearby = s.world.own_players.iter().any(|teammate| {
-            teammate.id != s.player_id && (teammate.position - ball_pos).norm() < 500.0
-        });
-
-        if teammate_nearby {
             return false;
         }
 
