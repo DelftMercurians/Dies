@@ -1,6 +1,6 @@
 use anyhow::Result;
 use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
-use dies_core::{Angle, PlayerGlobalMoveCmd, PlayerId, RotationDirection};
+use dies_core::{Angle, PlayerGlobalMoveCmd, PlayerId, RobotCmd, RotationDirection};
 use tokio::time::{Duration, Instant};
 
 use crate::cli::SerialPort;
@@ -14,6 +14,7 @@ pub async fn test_radio(
     sy: Option<f64>,
     max_yaw_rate: f64,
     preferred_rotation_direction: f64,
+    kick: bool,
 ) -> Result<()> {
     let port = port.select().await?;
     let bs_config =
@@ -24,6 +25,7 @@ pub async fn test_radio(
 
     let mut interval = tokio::time::interval(Duration::from_secs_f64(1.0 / 30.0));
     let start = Instant::now();
+    let mut has_kicked = false;
     loop {
         interval.tick().await;
 
@@ -47,6 +49,13 @@ pub async fn test_radio(
             cmd.preferred_rotation_direction =
                 RotationDirection::from_f64(preferred_rotation_direction);
             cmd.last_heading = f64::NAN;
+            cmd.kick_counter = 0;
+
+            cmd.robot_cmd = RobotCmd::Arm;
+            if kick && !has_kicked {
+                cmd.kick_counter = 1;
+                has_kicked = true;
+            }
 
             bs_handle.send_no_wait(
                 dies_core::TeamColor::Blue,

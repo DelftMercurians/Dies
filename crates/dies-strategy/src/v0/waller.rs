@@ -9,20 +9,27 @@ use crate::v0::utils::{evaluate_ball_threat, get_defender_heading};
 pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
         .add(
-            guard_node()
+            committing_guard_node()
                 .description("Pickup ball?")
-                .condition(should_pickup_ball)
-                .then(
-                    sequence_node()
-                        .add(fetch_ball().description("Pickup ball".to_string()).build())
-                        .add(
-                            face_position(find_best_pass_target)
-                                .with_ball()
-                                .description("Aim pass".to_string())
+                .when(should_pickup_ball)
+                .until(should_not_pickup_ball)
+                .commit_to(
+                    semaphore_node()
+                        .description("Pickup ball semaphore")
+                        .semaphore_id("waller_pickup_ball".into())
+                        .do_then(
+                            sequence_node()
+                                .add(fetch_ball().description("Pickup ball".to_string()).build())
+                                .add(
+                                    face_position(find_best_pass_target)
+                                        .with_ball()
+                                        .description("Aim pass".to_string())
+                                        .build(),
+                                )
+                                .add(kick().description("Kickoff pass!".to_string()).build())
+                                .description("Pass kickoff")
                                 .build(),
                         )
-                        .add(kick().description("Kickoff pass!".to_string()).build())
-                        .description("Pass kickoff")
                         .build(),
                 )
                 .build(),
@@ -535,12 +542,10 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         let ball_pos = s.ball_position();
 
         // Check if I'm closer than all teammates
-        s.world.own_players
-            .iter()
-            .all(|robot_data| {
-                let teammate_distance = (robot_data.position.xy() - ball_pos).norm();
-                my_distance <= teammate_distance
-            })
+        s.world.own_players.iter().all(|robot_data| {
+            let teammate_distance = (robot_data.position.xy() - ball_pos).norm();
+            my_distance <= teammate_distance
+        })
     };
 
     let should = no_harassers
@@ -555,4 +560,12 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
     }
 
     should
+}
+
+fn should_not_pickup_ball(s: &RobotSituation) -> bool {
+    if s.game_state_is_not(GameState::Run) {
+        return true;
+    }
+
+    s.distance_of_closest_opp_player_to_ball() < 800.0
 }

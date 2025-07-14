@@ -42,6 +42,9 @@ enum Command {
         #[clap(long, default_value = "0", allow_hyphen_values = true)]
         preferred_rotation_direction: f64,
 
+        #[clap(long, default_value = "false", action)]
+        kick: bool,
+
         /// The IDs of the robots to test.
         ids: Vec<u32>,
     },
@@ -144,6 +147,7 @@ impl Cli {
                 sy,
                 max_yaw_rate,
                 preferred_rotation_direction,
+                kick,
             }) => match test_radio(
                 self.serial_port,
                 id,
@@ -153,6 +157,7 @@ impl Cli {
                 sy,
                 max_yaw_rate,
                 preferred_rotation_direction,
+                kick,
             )
             .await
             {
