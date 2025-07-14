@@ -77,6 +77,18 @@ impl BtContext {
         let mut semaphores = self.semaphores.write().unwrap();
         semaphores.clear();
     }
+
+    pub fn clear_semaphores_for_player(&self, player_id: PlayerId) {
+        let mut semaphores = self.semaphores.write().unwrap();
+        for (_, player_set) in semaphores.iter_mut() {
+            player_set.remove(&player_id);
+        }
+    }
+
+    pub fn cleanup_empty_semaphores(&self) {
+        let mut semaphores = self.semaphores.write().unwrap();
+        semaphores.retain(|_, player_set| !player_set.is_empty());
+    }
 }
 
 impl Default for BtContext {

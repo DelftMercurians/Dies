@@ -21,6 +21,7 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
         .add(
             guard_node()
                 .condition(|s| should_pickup_ball(s) && s.am_closest_to_ball())
+                .description("Ball pickup opportunity")
                 .then(
                     semaphore_node()
                         .do_then(
@@ -80,36 +81,18 @@ fn build_kickoff_positioning_behavior() -> BehaviorNode {
 fn build_zone_based_striker_behavior() -> BehaviorNode {
     scoring_select_node()
         .add_child(
-            semaphore_node()
-                .do_then(build_striker_in_zone("top"))
-                .semaphore_id("striker_zone_top".to_string())
-                .max_entry(1)
-                .description("Top Zone")
-                .build()
-                .into(),
+            build_striker_in_zone("top"),
             |s| score_for_zone(s, "top"),
         )
         .add_child(
-            semaphore_node()
-                .do_then(build_striker_in_zone("middle"))
-                .semaphore_id("striker_zone_middle".to_string())
-                .max_entry(1)
-                .description("Middle Zone")
-                .build()
-                .into(),
+            build_striker_in_zone("middle"),
             |s| score_for_zone(s, "middle"),
         )
         .add_child(
-            semaphore_node()
-                .do_then(build_striker_in_zone("bottom"))
-                .semaphore_id("striker_zone_bottom".to_string())
-                .max_entry(1)
-                .description("Bottom Zone")
-                .build()
-                .into(),
+            build_striker_in_zone("bottom"),
             |s| score_for_zone(s, "bottom"),
         )
-        .hysteresis_margin(0.1)
+        .hysteresis_margin(0.2) // Increased hysteresis for zone selection
         .description("Choose Attack Zone")
         .build()
         .into()
@@ -291,6 +274,7 @@ fn score_for_zone(s: &RobotSituation, zone: &str) -> f64 {
     let hash = s.player_id_hash();
     let base_score = 50.0 + hash * 20.0;
 
+
     // Prefer zones with fewer opponents
     let zone_center = match zone {
         "top" => Vector2::new(2000.0, 2000.0),
@@ -298,11 +282,13 @@ fn score_for_zone(s: &RobotSituation, zone: &str) -> f64 {
         _ => Vector2::new(2000.0, 0.0),
     };
 
+    let dist_score = (s.player_data().position - zone_center).norm() / 10.0;
+
     let opponents_in_zone = s.get_opp_players_within_radius(zone_center, 1500.0).len();
 
     let congestion_penalty = opponents_in_zone as f64 * 10.0;
 
-    base_score - congestion_penalty
+    base_score - congestion_penalty - dist_score
 }
 
 /// Score for shooting vs passing decision

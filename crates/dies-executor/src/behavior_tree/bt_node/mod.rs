@@ -12,7 +12,7 @@ mod sequence;
 
 pub use action::*;
 pub use continuous::{continuous, ContinuousNode};
-pub use guard::{guard_node, GuardNode};
+pub use guard::{guard_node, guard_with_hysteresis_node, GuardNode, GuardWithHysteresisNode};
 pub use noop::{noop_node, NoopNode};
 pub use scoring_select::{scoring_select_node, ScoringSelectNode};
 pub use select::{select_node, SelectNode};
@@ -24,6 +24,7 @@ pub enum BehaviorNode {
     Select(SelectNode),
     Sequence(SequenceNode),
     Guard(GuardNode),
+    GuardWithHysteresis(GuardWithHysteresisNode),
     Action(ActionNode),
     Continuous(ContinuousNode),
     Semaphore(SemaphoreNode),
@@ -40,6 +41,7 @@ impl BehaviorNode {
             BehaviorNode::Select(node) => node.tick(situation),
             BehaviorNode::Sequence(node) => node.tick(situation),
             BehaviorNode::Guard(node) => node.tick(situation),
+            BehaviorNode::GuardWithHysteresis(node) => node.tick(situation),
             BehaviorNode::Action(node) => node.tick(situation),
             BehaviorNode::Continuous(node) => node.tick(situation),
             BehaviorNode::Semaphore(node) => node.tick(situation),
@@ -53,6 +55,7 @@ impl BehaviorNode {
             BehaviorNode::Select(node) => node.debug_all_nodes(situation),
             BehaviorNode::Sequence(node) => node.debug_all_nodes(situation),
             BehaviorNode::Guard(node) => node.debug_all_nodes(situation),
+            BehaviorNode::GuardWithHysteresis(node) => node.debug_all_nodes(situation),
             BehaviorNode::Action(node) => node.debug_all_nodes(situation),
             BehaviorNode::Continuous(node) => node.debug_all_nodes(situation),
             BehaviorNode::Semaphore(node) => node.debug_all_nodes(situation),
@@ -68,6 +71,7 @@ impl BehaviorNode {
             BehaviorNode::Select(node) => node.description(),
             BehaviorNode::Sequence(node) => node.description(),
             BehaviorNode::Guard(node) => node.description(),
+            BehaviorNode::GuardWithHysteresis(node) => node.description(),
             BehaviorNode::Action(node) => node.description(),
             BehaviorNode::Continuous(node) => node.description(),
             BehaviorNode::Semaphore(node) => node.description(),
@@ -81,6 +85,7 @@ impl BehaviorNode {
             BehaviorNode::Select(node) => node.get_node_id_fragment(),
             BehaviorNode::Sequence(node) => node.get_node_id_fragment(),
             BehaviorNode::Guard(node) => node.get_node_id_fragment(),
+            BehaviorNode::GuardWithHysteresis(node) => node.get_node_id_fragment(),
             BehaviorNode::Action(node) => node.get_node_id_fragment(),
             BehaviorNode::Continuous(node) => node.get_node_id_fragment(),
             BehaviorNode::Semaphore(node) => node.get_node_id_fragment(),
@@ -103,6 +108,7 @@ impl BehaviorNode {
             BehaviorNode::Select(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Sequence(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Guard(node) => node.get_child_node_ids(current_path_prefix),
+            BehaviorNode::GuardWithHysteresis(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Action(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Continuous(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Semaphore(node) => node.get_child_node_ids(current_path_prefix),

@@ -129,6 +129,9 @@ impl TeamController {
                         .unwrap_or(true);
 
                     if needs_rebuild {
+                        // Clear semaphores for this player before rebuilding
+                        self.bt_context.clear_semaphores_for_player(*player_id);
+                        
                         // Find the role and build its tree
                         if let Some(role) = assignment_problem
                             .roles
@@ -160,6 +163,9 @@ impl TeamController {
             }
             Err(e) => log::error!("Failed to solve role assignments: {}", e),
         }
+
+        // Clean up empty semaphores periodically
+        self.bt_context.cleanup_empty_semaphores();
 
         // Execute behavior trees
         for player_data in &world_data.own_players {

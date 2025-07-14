@@ -62,8 +62,20 @@ impl SemaphoreNode {
         let mut result_status = BehaviorStatus::Failure;
         let mut result_input: Option<PlayerControlInput> = None;
 
+        // Check if we have a local claim but verify it's still valid in the global context
         let acquired_semaphore = if self.player_id_holding_via_this_node == Some(player_id) {
-            true
+            // Verify our local state matches global state
+            if situation.bt_context.try_acquire_semaphore(
+                &self.semaphore_id_str,
+                self.max_count,
+                player_id,
+            ) {
+                true
+            } else {
+                // Local state is out of sync, clear it
+                self.player_id_holding_via_this_node = None;
+                false
+            }
         } else {
             if situation.bt_context.try_acquire_semaphore(
                 &self.semaphore_id_str,
@@ -94,6 +106,8 @@ impl SemaphoreNode {
                 BehaviorStatus::Running => {}
             }
         } else {
+            // Ensure local state is cleared when we can't acquire
+            self.player_id_holding_via_this_node = None;
             result_status = BehaviorStatus::Failure;
             result_input = None;
         }
