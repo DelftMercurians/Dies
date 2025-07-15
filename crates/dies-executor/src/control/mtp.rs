@@ -19,7 +19,7 @@ impl MTP {
             setpoint: None,
             kp: 1.0,
             proportional_time_window: Duration::from_millis(700),
-            cutoff_distance: 30.0,
+            cutoff_distance: 10.0,
         }
     }
 

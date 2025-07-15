@@ -114,6 +114,9 @@ pub struct Cli {
 
     #[clap(long, default_value = "v0")]
     pub strategy: String,
+
+    #[clap(long, default_value = "false", action)]
+    pub calibration_mode: bool,
 }
 
 impl Cli {
@@ -189,6 +192,7 @@ impl Cli {
 
     /// Converts the CLI arguments into a `UiConfig` object that can be used to start the web UI.
     pub async fn into_ui(self) -> Result<UiConfig> {
+        let calibration_mode = self.calibration_mode;
         let environment = match (self.serial_config().await, self.ssl_config()) {
             (Some(bs_config), Some(ssl_config)) => UiEnvironment::WithLive {
                 bs_handle: BasestationHandle::spawn(bs_config)?,
@@ -214,6 +218,7 @@ impl Cli {
                 ControlledTeam::Yellow => dies_webui::ControlledTeam::Yellow,
                 ControlledTeam::Both => dies_webui::ControlledTeam::Both,
             },
+            calibration_mode,
         })
     }
 

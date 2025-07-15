@@ -6,6 +6,7 @@ mod committing_guard;
 mod continuous;
 mod guard;
 mod noop;
+mod repeat;
 mod scoring_select;
 mod select;
 mod semaphore;
@@ -16,6 +17,7 @@ pub use committing_guard::{committing_guard_node, CommittingGuardNode};
 pub use continuous::{continuous, ContinuousNode};
 pub use guard::{guard_node, guard_with_hysteresis_node, GuardNode, GuardWithHysteresisNode};
 pub use noop::{noop_node, NoopNode};
+pub use repeat::{repeat_node, RepeatNode};
 pub use scoring_select::{scoring_select_node, ScoringSelectNode};
 pub use select::{select_node, SelectNode};
 pub use semaphore::{semaphore_node, SemaphoreNode};
@@ -31,6 +33,7 @@ pub enum BehaviorNode {
     Continuous(ContinuousNode),
     Semaphore(SemaphoreNode),
     ScoringSelect(ScoringSelectNode),
+    Repeat(RepeatNode),
     Noop(NoopNode),
 }
 
@@ -49,6 +52,7 @@ impl BehaviorNode {
             BehaviorNode::Continuous(node) => node.tick(situation),
             BehaviorNode::Semaphore(node) => node.tick(situation),
             BehaviorNode::ScoringSelect(node) => node.tick(situation),
+            BehaviorNode::Repeat(node) => node.tick(situation),
             BehaviorNode::Noop(_) => (BehaviorStatus::Success, None),
         }
     }
@@ -64,6 +68,7 @@ impl BehaviorNode {
             BehaviorNode::Continuous(node) => node.debug_all_nodes(situation),
             BehaviorNode::Semaphore(node) => node.debug_all_nodes(situation),
             BehaviorNode::ScoringSelect(node) => node.debug_all_nodes(situation),
+            BehaviorNode::Repeat(node) => node.debug_all_nodes(situation),
             BehaviorNode::Noop(_) => {
                 // Noop nodes don't have structure to debug
             }
@@ -81,6 +86,7 @@ impl BehaviorNode {
             BehaviorNode::Continuous(node) => node.description(),
             BehaviorNode::Semaphore(node) => node.description(),
             BehaviorNode::ScoringSelect(node) => node.description(),
+            BehaviorNode::Repeat(node) => node.description(),
             BehaviorNode::Noop(_) => "Noop".to_string(),
         }
     }
@@ -96,6 +102,7 @@ impl BehaviorNode {
             BehaviorNode::Continuous(node) => node.get_node_id_fragment(),
             BehaviorNode::Semaphore(node) => node.get_node_id_fragment(),
             BehaviorNode::ScoringSelect(node) => node.get_node_id_fragment(),
+            BehaviorNode::Repeat(node) => node.get_node_id_fragment(),
             BehaviorNode::Noop(_) => "Noop".to_string(),
         }
     }
@@ -120,6 +127,7 @@ impl BehaviorNode {
             BehaviorNode::Continuous(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Semaphore(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::ScoringSelect(node) => node.get_child_node_ids(current_path_prefix),
+            BehaviorNode::Repeat(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Noop(_) => vec![],
         }
     }

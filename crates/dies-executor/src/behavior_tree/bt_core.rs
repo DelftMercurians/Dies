@@ -1,4 +1,6 @@
-use dies_core::{Angle, GameState, Handicap, PlayerData, PlayerId, TeamColor, TeamData, Vector2};
+use dies_core::{
+    Angle, FieldGeometry, GameState, Handicap, PlayerData, PlayerId, TeamColor, TeamData, Vector2,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -182,6 +184,26 @@ impl RobotSituation {
 
     pub fn player_id(&self) -> PlayerId {
         self.player_id
+    }
+
+    pub fn field(&self) -> FieldGeometry {
+        self.world.field_geom.clone().unwrap_or_default()
+    }
+
+    pub fn field_length(&self) -> f64 {
+        self.field().field_length
+    }
+
+    pub fn field_width(&self) -> f64 {
+        self.field().field_width
+    }
+
+    pub fn half_field_length(&self) -> f64 {
+        self.field().field_length / 2.0
+    }
+
+    pub fn half_field_width(&self) -> f64 {
+        self.field().field_width / 2.0
     }
 
     pub fn ball_position(&self) -> Vector2 {

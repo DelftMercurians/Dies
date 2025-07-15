@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     behavior_tree::{Argument, BehaviorNode},
-    control::PlayerControlInput,
+    control::{PlayerContext, PlayerControlInput},
     skills::{
         Face, FetchBall, GoToPosition, Kick, Shoot, ShootTarget, Skill, SkillCtx, SkillProgress,
         SkillResult, TryReceive, Wait,
@@ -177,6 +177,7 @@ impl ActionNode {
             player: situation.player_data(),
             world: &situation.world,
             bt_context: situation.bt_context.clone(),
+            viz_path_prefix: situation.debug_key(""),
         };
 
         let (status, input) = match skill.update(skill_ctx) {

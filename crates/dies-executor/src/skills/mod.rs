@@ -16,7 +16,10 @@ pub use receive::TryReceive;
 pub use shoot::{Shoot, ShootTarget};
 pub use wait::Wait;
 
-use crate::{behavior_tree::BtContext, control::PlayerControlInput};
+use crate::{
+    behavior_tree::BtContext,
+    control::{PlayerContext, PlayerControlInput},
+};
 use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2};
 
 pub enum Skill {
@@ -48,6 +51,7 @@ pub struct SkillCtx<'a> {
     pub player: &'a PlayerData,
     pub world: &'a TeamData,
     pub bt_context: BtContext,
+    pub viz_path_prefix: String,
 }
 
 /// The result of a skill execution

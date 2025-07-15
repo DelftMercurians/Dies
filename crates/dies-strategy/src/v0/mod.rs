@@ -90,7 +90,7 @@ pub fn v0_strategy(game: &mut GameContext) {
         .behavior(|s| waller::build_waller_tree(s));
 
     game.add_role("harasser")
-        .min(0)
+        .min(2)
         .max(2)
         .score(score_as_harasser)
         .behavior(|s| harasser::build_harasser_tree(s));

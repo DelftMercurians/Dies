@@ -1,8 +1,10 @@
+use std::fmt::format;
+
 use dies_core::{Angle, Vector2};
 
 use super::{PlayerControlInput, SkillCtx, SkillProgress};
 
-const DEFAULT_POS_TOLERANCE: f64 = 20.0;
+const DEFAULT_POS_TOLERANCE: f64 = 50.0;
 const DEFAULT_VEL_TOLERANCE: f64 = 10.0;
 
 /// A skill that makes the player go to a specific position
@@ -55,7 +57,12 @@ impl GoToPosition {
         let position = ctx.player.position;
         let distance = (self.target_pos - position).norm();
         let dv = (self.target_velocity - ctx.player.velocity).norm();
+        dies_core::debug_string(format!("goto_distance"), distance.to_string());
+        dies_core::debug_string(format!("goto_dv"), dv.to_string());
+
         if distance < self.pos_tolerance && dv < self.velocity_tolerance {
+            dies_core::debug_string(format!("goto_distance"), format!("success"));
+            dies_core::debug_string(format!("goto_dv"), format!("success"));
             return SkillProgress::success();
         }
 

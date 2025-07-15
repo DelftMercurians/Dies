@@ -134,7 +134,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
     let (cmd_tx, cmd_rx) = broadcast::channel(16);
     let (id_map_tx, _id_map_rx) = mpsc::unbounded_channel();
     let debug_sub: DebugSubscriber = DebugSubscriber::spawn();
-    let mut state = ServerState::new(
+    let state = ServerState::new(
         config.is_live_available(),
         if config.is_live_available() {
             UiMode::Live
@@ -143,7 +143,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
         },
         config.settings_file,
         debug_sub.clone(),
-        update_rx,
+        update_rx.clone(),
         cmd_tx.clone(),
         id_map_tx,
     );
@@ -218,6 +218,185 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
             executor_task.run(shutdown_rx).await;
         })
     };
+
+    if config.calibration_mode {
+        let mut update_rx = state.update_rx.clone();
+        tokio::spawn(async move {
+            let file =
+                std::fs::File::create("calibration_data.csv").expect("Failed to create CSV file");
+            let mut writer = csv::Writer::from_writer(file);
+
+            // Build CSV header
+            let mut header = vec![
+                "timestamp_received".to_owned(),
+                "timestamp_capture".to_owned(),
+                "dt".to_owned(),
+                "game_state".to_owned(),
+                "operating_team".to_owned(),
+                "ball_detected".to_owned(),
+                "ball_pos_x".to_owned(),
+                "ball_pos_y".to_owned(),
+                "ball_pos_z".to_owned(),
+                "ball_vel_x".to_owned(),
+                "ball_vel_y".to_owned(),
+                "ball_vel_z".to_owned(),
+                "blue_players_count".to_owned(),
+                "yellow_players_count".to_owned(),
+            ];
+
+            // Add player headers for each team (assuming max 6 players per team)
+            for team in ["blue", "yellow"] {
+                for player_id in 0..6 {
+                    header.extend_from_slice(&[
+                        format!("{team}_player_{player_id}_id"),
+                        format!("{team}_player_{player_id}_pos_x"),
+                        format!("{team}_player_{player_id}_pos_y"),
+                        format!("{team}_player_{player_id}_vel_x"),
+                        format!("{team}_player_{player_id}_vel_y"),
+                        format!("{team}_player_{player_id}_yaw"),
+                        format!("{team}_player_{player_id}_raw_pos_x"),
+                        format!("{team}_player_{player_id}_raw_pos_y"),
+                        format!("{team}_player_{player_id}_raw_yaw"),
+                        format!("{team}_player_{player_id}_angular_speed"),
+                        format!("{team}_player_{player_id}_breakbeam_detected"),
+                    ]);
+                }
+            }
+
+            writer
+                .write_record(&header)
+                .expect("Failed to write CSV header");
+
+            while let Ok(()) = update_rx.changed().await {
+                let update = update_rx.borrow_and_update().clone();
+                if let Some(update) = update {
+                    let world_data = &update.world_data;
+
+                    // Prepare ball data
+                    let (
+                        ball_detected,
+                        ball_pos_x,
+                        ball_pos_y,
+                        ball_pos_z,
+                        ball_vel_x,
+                        ball_vel_y,
+                        ball_vel_z,
+                    ) = if let Some(ball) = &world_data.ball {
+                        (
+                            ball.detected,
+                            ball.position.x,
+                            ball.position.y,
+                            ball.position.z,
+                            ball.velocity.x,
+                            ball.velocity.y,
+                            ball.velocity.z,
+                        )
+                    } else {
+                        (false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+                    };
+
+                    // Start building the record
+                    let mut record = vec![
+                        world_data.t_received.to_string(),
+                        world_data.t_capture.to_string(),
+                        world_data.dt.to_string(),
+                        world_data.game_state.game_state.to_string(),
+                        format!("{:?}", world_data.game_state.operating_team),
+                        ball_detected.to_string(),
+                        ball_pos_x.to_string(),
+                        ball_pos_y.to_string(),
+                        ball_pos_z.to_string(),
+                        ball_vel_x.to_string(),
+                        ball_vel_y.to_string(),
+                        ball_vel_z.to_string(),
+                        world_data.blue_team.len().to_string(),
+                        world_data.yellow_team.len().to_string(),
+                    ];
+
+                    // Add blue team player data
+                    for player_id in 0..6 {
+                        if let Some(player) = world_data
+                            .blue_team
+                            .iter()
+                            .find(|p| p.id.as_u32() == player_id)
+                        {
+                            record.extend_from_slice(&[
+                                player.id.as_u32().to_string(),
+                                player.position.x.to_string(),
+                                player.position.y.to_string(),
+                                player.velocity.x.to_string(),
+                                player.velocity.y.to_string(),
+                                player.yaw.radians().to_string(),
+                                player.raw_position.x.to_string(),
+                                player.raw_position.y.to_string(),
+                                player.raw_yaw.radians().to_string(),
+                                player.angular_speed.to_string(),
+                                player.breakbeam_ball_detected.to_string(),
+                            ]);
+                        } else {
+                            // Fill with zeros for missing players
+                            record.extend_from_slice(&[
+                                player_id.to_string(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "false".into(),
+                            ]);
+                        }
+                    }
+
+                    // Add yellow team player data
+                    for player_id in 0..6 {
+                        if let Some(player) = world_data
+                            .yellow_team
+                            .iter()
+                            .find(|p| p.id.as_u32() == player_id)
+                        {
+                            record.extend_from_slice(&[
+                                player.id.as_u32().to_string(),
+                                player.position.x.to_string(),
+                                player.position.y.to_string(),
+                                player.velocity.x.to_string(),
+                                player.velocity.y.to_string(),
+                                player.yaw.radians().to_string(),
+                                player.raw_position.x.to_string(),
+                                player.raw_position.y.to_string(),
+                                player.raw_yaw.radians().to_string(),
+                                player.angular_speed.to_string(),
+                                player.breakbeam_ball_detected.to_string(),
+                            ]);
+                        } else {
+                            // Fill with zeros for missing players
+                            record.extend_from_slice(&[
+                                player_id.to_string(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "0.0".into(),
+                                "false".into(),
+                            ]);
+                        }
+                    }
+
+                    writer
+                        .write_record(&record)
+                        .expect("Failed to write CSV record");
+                    writer.flush().expect("Failed to flush CSV writer");
+                }
+            }
+        });
+    }
 
     // Start the web server
     let web_task =

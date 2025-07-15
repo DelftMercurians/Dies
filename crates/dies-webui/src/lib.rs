@@ -32,6 +32,7 @@ pub struct UiConfig {
     pub start_mode: UiMode,
     pub auto_start: bool,
     pub controlled_teams: ControlledTeam,
+    pub calibration_mode: bool,
 }
 
 #[derive(Debug, Clone)]
