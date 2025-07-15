@@ -11,7 +11,7 @@ pub(self) use bt_core::BehaviorStatus;
 pub(self) use bt_node::*;
 
 pub use argument::Argument;
-pub use bt_core::{BehaviorTree, BtContext, RobotSituation};
+pub use bt_core::*;
 pub use game_context::GameContext;
 pub use role_assignment::{Role, RoleAssignmentProblem, RoleAssignmentSolver, RoleBuilder};
 

@@ -50,7 +50,6 @@ pub enum SkillDefinition {
     FetchBall,
 }
 
-#[derive(Clone)]
 pub struct ActionNode {
     skill_def: SkillDefinition,
     active_skill: Option<Skill>,
@@ -165,6 +164,7 @@ impl ActionNode {
         let skill_ctx = SkillCtx {
             player: situation.player_data(),
             world: &situation.world,
+            bt_context: situation.bt_context.clone(),
         };
 
         let (status, input) = match skill.update(skill_ctx) {

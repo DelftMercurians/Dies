@@ -7,15 +7,15 @@
 - [x] Feedback - read all team at once
 - [x] add max distance to fetchball
 - [x] fix prevent double touch after freekick - 1 global check tracking if another robot has touched the ball since the freekick. also add a timeout
+- [x] freekicker - test
 - [ ] warmup state - before starting the strategy
-- [ ] freekicker - test
 - [ ] freekick interference - positin in frot of kicker or between ball and goal
 - [ ] yellow card handling - move one robot to replacement position
 - [ ] Fault tolerance - Kicker/dribbler failure hadnling in strategy
 - [ ] Passing - pass to flug in btcontext
-- [ ] evaluate passing risk for smart target selection
+- [x] evaluate passing risk for smart target selection
 - [ ] smart tunring depedning on threat
 - [ ] Midfielder role
 - [ ] add field states - def neut off
-- [ ] backward passing cone safety check
+- [x] backward passing cone safety check
 - [ ] role assignment - simplify to just use counts, make sure order=priority ?

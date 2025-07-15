@@ -91,7 +91,7 @@ impl Default for SimulationConfig {
         SimulationConfig {
             // PHYSICAL CONSTANTS
             gravity: Vector::z() * -9.81 * 1000.0,
-            ball_damping: 1.0,
+            ball_damping: 0.8,
             vision_update_step: 1.0 / 40.0,
 
             // ROBOT MODEL PARAMETERS
@@ -1775,7 +1775,7 @@ impl Simulation {
 
                         let force = yaw * self.config.kicker_strength;
                         ball_body.add_force(force, true);
-                        ball_body.set_linear_damping(self.config.ball_damping * 2.0);
+
                         // Set the ball_is_kicked to true
                         if let SimulationGameState::FreeKick { ball_is_kicked, .. } =
                             &mut self.game_state
@@ -1851,21 +1851,25 @@ impl Simulation {
             let position = ball_body.position().translation.vector;
             let x = position.x.clamp(
                 -(self.config.field_geometry.field_width
-                    - self.config.field_geometry.boundary_width)
+                    - self.config.field_geometry.boundary_width
+                    - 100.0)
                     / 2.0,
                 (self.config.field_geometry.field_width
-                    - self.config.field_geometry.boundary_width)
+                    - self.config.field_geometry.boundary_width
+                    - 100.0)
                     / 2.0,
             );
             let y = position.y.clamp(
                 -(self.config.field_geometry.field_length
-                    - self.config.field_geometry.boundary_width)
+                    - self.config.field_geometry.boundary_width
+                    - 100.0)
                     / 2.0,
                 (self.config.field_geometry.field_length
-                    - self.config.field_geometry.boundary_width)
+                    - self.config.field_geometry.boundary_width
+                    - 100.0)
                     / 2.0,
             );
-            let z = position.z.clamp(22.0, 100.0);
+            let z = position.z.clamp(24.0, 100.0);
             ball_body.set_position(Isometry::translation(x, y, z), true);
         }
 

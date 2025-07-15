@@ -55,7 +55,6 @@ pub async fn test_radio(
             if kick && elapsed > 2.0 {
                 cmd.kick_counter = 1;
             }
-            println!("{}", cmd.kick_counter);
 
             bs_handle.send_no_wait(
                 dies_core::TeamColor::Blue,

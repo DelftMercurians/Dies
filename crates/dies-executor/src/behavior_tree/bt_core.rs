@@ -38,14 +38,22 @@ impl Default for BehaviorTree {
 }
 
 #[derive(Clone)]
+pub struct PassingTarget {
+    pub id: PlayerId,
+    pub position: Vector2,
+}
+
+#[derive(Clone)]
 pub struct BtContext {
     semaphores: Arc<RwLock<HashMap<String, HashSet<PlayerId>>>>,
+    passing_target: Arc<RwLock<Option<PassingTarget>>>,
 }
 
 impl BtContext {
     pub fn new() -> Self {
         Self {
             semaphores: Arc::new(RwLock::new(HashMap::new())),
+            passing_target: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -87,6 +95,32 @@ impl BtContext {
     pub fn cleanup_empty_semaphores(&self) {
         let mut semaphores = self.semaphores.write().unwrap();
         semaphores.retain(|_, player_set| !player_set.is_empty());
+    }
+
+    pub fn set_passing_target(&self, target: PassingTarget) {
+        *self.passing_target.write().unwrap() = Some(target);
+    }
+
+    pub fn is_passing_target(&self, player_id: PlayerId) -> bool {
+        self.passing_target
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|p| p.id == player_id)
+            .unwrap_or(false)
+    }
+
+    pub fn take_passing_target(&self, player_id: PlayerId) -> Option<PassingTarget> {
+        let mut passing_target = self.passing_target.write().unwrap();
+        if let Some(target) = passing_target.as_ref() {
+            if target.id == player_id {
+                passing_target.take()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 }
 
@@ -525,5 +559,31 @@ impl RobotSituation {
                     && ball_pos.y >= -half_penalty_width
                     && ball_pos.y <= half_penalty_width
             })
+    }
+
+    pub fn is_passing_target(&self) -> bool {
+        self.bt_context
+            .passing_target
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|p| p.id == self.player_id)
+            .unwrap_or(false)
+    }
+
+    pub fn accept_passing_target(&mut self) -> bool {
+        if self.is_passing_target() {
+            self.bt_context.take_passing_target(self.player_id);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn set_passing_target(&mut self, player_id: PlayerId) {
+        self.bt_context.set_passing_target(PassingTarget {
+            id: player_id,
+            position: self.world.get_player(player_id).position,
+        });
     }
 }

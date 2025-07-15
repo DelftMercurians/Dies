@@ -29,7 +29,8 @@ pub fn clean_goal_shot_score(s: &RobotSituation, player: &dies_core::PlayerData)
     let center_angle = Angle::between_points(player_pos, goal_pos);
     let mut temp_situation = s.clone();
     temp_situation.player_id = player.id;
-    let nearest_opponent_distance = find_nearest_opponent_distance_along_direction(&temp_situation, center_angle);
+    let nearest_opponent_distance =
+        find_nearest_opponent_distance_along_direction(&temp_situation, center_angle);
 
     let blocking_score = if nearest_opponent_distance < 200.0 {
         0.0
@@ -84,20 +85,30 @@ pub fn find_best_pass_target(s: &RobotSituation) -> Vector2 {
 
         // score based on how bad is the trajectory: are there opponents on the shot line?
         let angle = Angle::between_points(teammate.position, robot_pos);
-        let nearest_opponent_distance = find_nearest_opponent_distance_along_direction(s, angle).clamp(0.0, 1000.0);
+        let nearest_opponent_distance =
+            find_nearest_opponent_distance_along_direction(s, angle).clamp(0.0, 1000.0);
         let low = 250.0;
         let high = 500.0;
         if nearest_opponent_distance < low {
             score -= 0.5;
-        }
-        else if nearest_opponent_distance < high {
+        } else if nearest_opponent_distance < high {
             score -= 0.1;
-        }
-        else {
+        } else {
             score -= 0.0;
         }
 
         // println!("{} passing {}: {:.2}; clean: {:.2}", s.player_id, teammate.id, score, clean_shot_score);
+
+        // Stringly prefer passing to strikers
+        let teammate_role = s
+            .role_assignments
+            .get(&teammate.id)
+            .cloned()
+            .unwrap_or_default();
+        let teammate_striker = teammate_role == "striker";
+        if teammate_striker {
+            score += 0.2;
+        }
 
         if score > best_score {
             best_score = score;
@@ -117,7 +128,6 @@ pub fn can_pass_to_teammate(s: &RobotSituation) -> bool {
     let teammates = &s.world.own_players;
     teammates.iter().any(|p| p.id != s.player_id)
 }
-
 
 pub fn find_nearest_opponent_distance_along_direction(s: &RobotSituation, direction: Angle) -> f64 {
     let robot_pos = s.player_data().position;
