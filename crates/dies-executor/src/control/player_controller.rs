@@ -326,6 +326,8 @@ impl PlayerController {
             .target_velocity_global
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
+        self.target_velocity_global = // constrain velocity to not go into prohibited zones
+
         /*
         if !is_manual_override {
             let obstacles = if input.avoid_ball {
