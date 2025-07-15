@@ -326,6 +326,7 @@ impl PlayerController {
             .target_velocity_global
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
+        /*
         self.target_velocity_global = self.constrain_velocity_from_prohibited_zones(
             self.target_velocity_global,
             state.position,
@@ -333,6 +334,7 @@ impl PlayerController {
             avoid_goal_area,
             dt as f64,
         );
+        */
 
         /*
         if !is_manual_override {
