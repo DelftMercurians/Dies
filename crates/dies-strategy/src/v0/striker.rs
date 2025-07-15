@@ -167,7 +167,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         .map(|p| (ball.position.xy() - p.position).norm())
         .min_by(|a, b| a.partial_cmp(b).unwrap());
 
-    ball.position.x > 100.0
+    ball.position.x > -100.0
         && ball.velocity.xy().norm() < 500.0
-        && closest_opponent_dist.map(|d| d > 1000.0).unwrap_or(true)
+        && closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true)
 }

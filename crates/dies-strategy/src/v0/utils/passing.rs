@@ -251,9 +251,11 @@ pub fn pass_success_probability(s: &RobotSituation, teammate: &PlayerData) -> f6
 pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
     let teammates = &s.world.own_players;
 
-    let (best_target_pos, mut best_prob) = best_goal_shoot(s);
-    let mut best_target = ShootTarget::Goal(best_target_pos);
+    let (best_target_direct, mut best_prob_direct) = best_goal_shoot(s);
+    let best_target_direct = ShootTarget::Goal(best_target_direct);
     // println!("{} scored as {}", s.player_id, best_score);
+    let mut best_prob_pass = 0.0;
+    let mut best_target_pass = best_target_direct.clone();
 
     for teammate in teammates {
         if teammate.id == s.player_id {
@@ -264,14 +266,65 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
         let (t, goal_shoot_prob) = best_goal_shoot(&change_situation_player(s, teammate.id));
         let prob = goal_shoot_prob * pass_success_probability(s, teammate);
 
-        if prob > best_prob {
-            best_prob = prob;
-            best_target = ShootTarget::Player {
+        if prob > best_prob_pass {
+            best_prob_pass = prob;
+            best_target_pass = ShootTarget::Player {
                 id: teammate.id,
                 position: teammate.position.into(),
             };
         }
     }
+
+    // Non-deterministic choice between passing and shooting
+    // We use a probabilistic approach that considers both the absolute probabilities
+    // and the relative difference between them
+
+    // Apply a bias factor to make the choice more interesting
+    let bias_factor = 0.7; // Adjust this to control how much we favor the better option
+    let min_prob_threshold = 0.05; // Minimum probability to consider an option
+
+    // Only consider options above minimum threshold
+    let direct_viable = best_prob_direct >= min_prob_threshold;
+    let pass_viable = best_prob_pass >= min_prob_threshold;
+
+    let (best_target, best_prob) = if !direct_viable && !pass_viable {
+        // If neither option is viable, default to direct shooting
+        (best_target_direct, best_prob_direct)
+    } else if !pass_viable {
+        // Only direct shooting is viable
+        (best_target_direct, best_prob_direct)
+    } else if !direct_viable {
+        // Only passing is viable
+        (best_target_pass, best_prob_pass)
+    } else {
+        // Both options are viable - make probabilistic choice
+        let total_prob = best_prob_direct + best_prob_pass;
+
+        // Normalize probabilities and apply bias toward the better option
+        let direct_weight = best_prob_direct / total_prob;
+        let pass_weight = best_prob_pass / total_prob;
+
+        // Apply bias factor to make the better option more likely
+        let biased_direct = direct_weight.powf(bias_factor);
+        let biased_pass = pass_weight.powf(bias_factor);
+        let biased_total = biased_direct + biased_pass;
+
+        let final_direct_prob = biased_direct / biased_total;
+
+        // Use a simple random number generator based on robot position and time-like hash
+        // This provides deterministic but seemingly random behavior
+        let player_pos = s.player_data().position;
+        let hash_input = (player_pos.x * 1000.0) as u64 + (player_pos.y * 1000.0) as u64 +
+                        (best_prob_direct * 10000.0) as u64 + (best_prob_pass * 10000.0) as u64;
+        let pseudo_random = (hash_input.wrapping_mul(1103515245).wrapping_add(12345) >> 16) % 1000;
+        let random_value = pseudo_random as f64 / 1000.0;
+
+        if random_value < final_direct_prob {
+            (best_target_direct, best_prob_direct)
+        } else {
+            (best_target_pass, best_prob_pass)
+        }
+    };
 
     (best_target, best_prob)
 }
@@ -298,6 +351,7 @@ pub fn combination_discounting_for_receivers(s: &RobotSituation) -> f64 {
     // that we are not blocking line of sight for other robots
     // TODO: add blocking based on how much we block of the goal (we don't want to stand between
     // the goal and the ball)
+    let ball_pos = s.world.ball.as_ref().unwrap().position.xy();
     let mut discount = 1.0;
     let player_pos = s.player_data().position;
     let teammates = &s.world.own_players;
@@ -311,22 +365,16 @@ pub fn combination_discounting_for_receivers(s: &RobotSituation) -> f64 {
         let distance = (player_pos - teammate.position).norm();
         if distance < 2000.0 {
             let proximity_penalty = (2000.0 - distance) / 2000.0;
-            discount *= 1.0 - proximity_penalty * 0.3; // Up to 60% penalty
+            discount *= 1.0 - proximity_penalty * 0.3;
         }
     }
 
     // Factor 2: Line of sight blocking penalty to goal
     let goal_pos = s.get_opp_goal_position();
-    for teammate in teammates {
-        if teammate.id == s.player_id {
-            continue;
-        }
+    let blocking_penalty = calculate_line_blocking_penalty(player_pos, ball_pos, goal_pos);
+    discount *= blocking_penalty;
 
-        let blocking_penalty = calculate_line_blocking_penalty(player_pos, teammate.position, goal_pos);
-        discount *= blocking_penalty;
-    }
-
-    discount.max(0.01) // Minimum discount to avoid completely zeroing out
+    discount.max(0.001) // Minimum discount to avoid completely zeroing out
 }
 
 fn calculate_line_blocking_penalty(blocker_pos: Vector2, shooter_pos: Vector2, target_pos: Vector2) -> f64 {
