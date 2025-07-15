@@ -1,4 +1,4 @@
-use dies_core::{PlayerId, Vector2};
+use dies_core::{GameState, PlayerId, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::find_best_shoot_target;
@@ -52,6 +52,13 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
 
 /// Check if a harasser should go pickup the ball
 fn should_pickup_ball(s: &RobotSituation) -> bool {
+    if s.game_state_is_not(GameState::Run) {
+        return false;
+    }
+    if !s.can_touch_ball() {
+        return false;
+    }
+
     if let Some(ball) = &s.world.ball {
         let ball_pos = ball.position.xy();
 

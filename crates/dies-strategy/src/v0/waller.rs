@@ -523,6 +523,10 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
     if s.game_state_is_not(GameState::Run) {
         return false;
     }
+    if !s.can_touch_ball() {
+        return false;
+    }
+
     let no_harassers = s
         .role_assignments
         .values()

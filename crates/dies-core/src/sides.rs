@@ -100,6 +100,15 @@ impl SideAssignment {
                     TeamColor::Blue => world_data.game_state.blue_team_yellow_cards,
                     TeamColor::Yellow => world_data.game_state.yellow_team_yellow_cards,
                 },
+                freekick_kicker: if let Some(kicker) = world_data.game_state.freekick_kicker {
+                    if kicker.team_color == color {
+                        Some(kicker.player_id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                },
             },
         }
     }

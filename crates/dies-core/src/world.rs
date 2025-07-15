@@ -163,6 +163,9 @@ pub struct GameStateData {
     pub us_operating: bool,
     #[typeshare(serialized_as = "u32")]
     pub yellow_cards: usize,
+    /// The player who performed the freekick, if it was us (for double touch tracking)
+    /// Only Some until another player touches the ball
+    pub freekick_kicker: Option<PlayerId>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -760,6 +763,7 @@ pub fn mock_team_data() -> TeamData {
             game_state: GameState::Run,
             us_operating: true,
             yellow_cards: 0,
+            freekick_kicker: None,
         },
     }
 }

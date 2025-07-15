@@ -433,6 +433,7 @@ mod tests {
                 game_state: GameState::Stop,
                 us_operating: false,
                 yellow_cards: 0,
+                freekick_kicker: None,
             },
             field_geom: None,
         }

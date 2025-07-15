@@ -274,6 +274,9 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
     if s.game_state_is_not(GameState::Run) {
         return false;
     }
+    if !s.can_touch_ball() {
+        return false;
+    }
 
     let Some(ball) = s.world.ball.as_ref() else {
         return false;

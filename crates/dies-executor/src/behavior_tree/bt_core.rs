@@ -213,6 +213,10 @@ impl RobotSituation {
             .all(|h| !handicaps.contains(h))
     }
 
+    pub fn can_touch_ball(&self) -> bool {
+        !matches!(self.world.current_game_state.freekick_kicker, Some(kicker) if kicker == self.player_id)
+    }
+
     pub fn ball_speed(&self) -> f64 {
         self.ball_velocity().norm()
     }
