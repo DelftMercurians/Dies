@@ -185,7 +185,6 @@ impl PlayerController {
             .set_kick_speed(self.kick_speed)
             .set_kick_counter(self.kick_counter)
             .set_robot_cmd(RobotCmd::Arm)
-            .set_max_yaw_rate()
             .untransform_global_move_cmd(self.id, self.last_yaw);
 
         player_context.debug_string(
@@ -326,7 +325,13 @@ impl PlayerController {
             .target_velocity_global
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
 
-        self.target_velocity_global = // constrain velocity to not go into prohibited zones
+        self.target_velocity_global = self.constrain_velocity_from_prohibited_zones(
+            self.target_velocity_global,
+            state.position,
+            world,
+            avoid_goal_area,
+            dt as f64,
+        );
 
         /*
         if !is_manual_override {
@@ -416,6 +421,175 @@ impl PlayerController {
                 }
             }
         }
+    }
+
+    fn constrain_velocity_from_prohibited_zones(
+        &self,
+        velocity: Vector2,
+        position: Vector2,
+        world: &TeamData,
+        avoid_goal_area: bool,
+        dt: f64,
+    ) -> Vector2 {
+        let geometry = &world.field_geom.as_ref().unwrap();
+        let mut constrained_velocity = velocity;
+
+        // Check if we're in a prohibited zone and need to push out
+        let push_out_velocity = self.calculate_push_out_velocity(position, geometry, avoid_goal_area);
+
+        // If we need to push out, modify the velocity
+        if push_out_velocity.magnitude() > 0.0 {
+            // Blend the push-out velocity with the desired velocity
+            // Give priority to pushing out of prohibited zones
+            constrained_velocity = push_out_velocity * 0.7 + velocity * 0.3;
+        }
+
+        // Check if the velocity would take us into a prohibited zone
+        let next_position = position + constrained_velocity * dt;
+        if self.is_in_prohibited_zone(next_position, geometry, avoid_goal_area) {
+            // Project velocity to avoid entering prohibited zones
+            constrained_velocity = self.project_velocity_away_from_prohibited_zones(
+                constrained_velocity,
+                position,
+                geometry,
+                avoid_goal_area,
+                dt,
+            );
+        }
+
+        constrained_velocity
+    }
+
+    fn calculate_push_out_velocity(
+        &self,
+        position: Vector2,
+        geometry: &dies_core::FieldGeometry,
+        avoid_goal_area: bool,
+    ) -> Vector2 {
+        let mut push_velocity = Vector2::new(0.0, 0.0);
+
+        // Check field boundaries
+        let field_half_width = geometry.field_width / 2.0;
+        let field_half_length = geometry.field_length / 2.0;
+
+        // Push away from field boundaries
+        if position.x < -field_half_length {
+            push_velocity.x += (-field_half_length - position.x) * 2.0;
+        } else if position.x > field_half_length {
+            push_velocity.x += (field_half_length - position.x) * 2.0;
+        }
+
+        if position.y < -field_half_width {
+            push_velocity.y += (-field_half_width - position.y) * 2.0;
+        } else if position.y > field_half_width {
+            push_velocity.y += (field_half_width - position.y) * 2.0;
+        }
+
+        // Check goal areas if avoidance is enabled
+        if avoid_goal_area {
+            let goal_area_depth = geometry.penalty_area_depth;
+            let goal_area_width = geometry.penalty_area_width;
+
+            // Our goal area (negative x)
+            if position.x < -field_half_length + goal_area_depth &&
+               position.y.abs() < goal_area_width / 2.0 {
+                push_velocity.x += (-field_half_length + goal_area_depth - position.x) * 2.0;
+            }
+
+            // Enemy goal area (positive x)
+            if position.x > field_half_length - goal_area_depth &&
+               position.y.abs() < goal_area_width / 2.0 {
+                push_velocity.x += (field_half_length - goal_area_depth - position.x) * 2.0;
+            }
+        }
+
+        push_velocity
+    }
+
+    fn is_in_prohibited_zone(
+        &self,
+        position: Vector2,
+        geometry: &dies_core::FieldGeometry,
+        avoid_goal_area: bool,
+    ) -> bool {
+        let field_half_width = geometry.field_width / 2.0;
+        let field_half_length = geometry.field_length / 2.0;
+
+        // Check if outside field boundaries
+        if position.x < -field_half_length || position.x > field_half_length ||
+           position.y < -field_half_width || position.y > field_half_width {
+            return true;
+        }
+
+        // Check goal areas if avoidance is enabled
+        if avoid_goal_area {
+            let goal_area_depth = geometry.penalty_area_depth;
+            let goal_area_width = geometry.penalty_area_width;
+
+            // Our goal area (negative x)
+            if position.x < -field_half_length + goal_area_depth &&
+               position.y.abs() < goal_area_width / 2.0 {
+                return true;
+            }
+
+            // Enemy goal area (positive x)
+            if position.x > field_half_length - goal_area_depth &&
+               position.y.abs() < goal_area_width / 2.0 {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn project_velocity_away_from_prohibited_zones(
+        &self,
+        velocity: Vector2,
+        position: Vector2,
+        geometry: &dies_core::FieldGeometry,
+        avoid_goal_area: bool,
+        dt: f64,
+    ) -> Vector2 {
+        let field_half_width = geometry.field_width / 2.0;
+        let field_half_length = geometry.field_length / 2.0;
+        let mut projected_velocity = velocity;
+
+        // Check field boundaries and project velocity away
+        let next_pos = position + velocity * dt;
+
+        if next_pos.x < -field_half_length && velocity.x < 0.0 {
+            projected_velocity.x = 0.0;
+        } else if next_pos.x > field_half_length && velocity.x > 0.0 {
+            projected_velocity.x = 0.0;
+        }
+
+        if next_pos.y < -field_half_width && velocity.y < 0.0 {
+            projected_velocity.y = 0.0;
+        } else if next_pos.y > field_half_width && velocity.y > 0.0 {
+            projected_velocity.y = 0.0;
+        }
+
+        // Check goal areas if avoidance is enabled
+        if avoid_goal_area {
+            let goal_area_depth = geometry.penalty_area_depth;
+            let goal_area_width = geometry.penalty_area_width;
+
+            // Our goal area (negative x)
+            if next_pos.x < -field_half_length + goal_area_depth &&
+               next_pos.y.abs() < goal_area_width / 2.0 &&
+               velocity.x < 0.0 {
+                projected_velocity.x = 0.0;
+            }
+
+            // Enemy goal area (positive x)
+            if next_pos.x > field_half_length - goal_area_depth &&
+               next_pos.y.abs() < goal_area_width / 2.0 &&
+               velocity.x > 0.0 {
+                projected_velocity.x = 0.0;
+            }
+        }
+
+        projected_velocity
     }
 
     pub fn update_target_velocity_with_avoidance(
