@@ -24,7 +24,7 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
             // Pickup ball if we can
             committing_guard_node()
                 .description("Ball pickup opportunity")
-                .when(|s| should_pickup_ball(s) && s.am_closest_to_ball())
+                .when(|s| should_pickup_ball(s)) // TODO: make sure that the closest robots gets it
                 .until(|_| false)
                 .commit_to(
                     semaphore_node()
@@ -167,7 +167,5 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         .map(|p| (ball.position.xy() - p.position).norm())
         .min_by(|a, b| a.partial_cmp(b).unwrap());
 
-    ball.position.x > -100.0
-        && ball.velocity.xy().norm() < 500.0
-        && closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true)
+    ball.position.x > -100.0 && closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true)
 }

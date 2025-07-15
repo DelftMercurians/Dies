@@ -80,7 +80,10 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
     let goal_pos = s.get_opp_goal_position();
     let direction = Angle::between_points(player_pos, target_pos);
 
-    // Find nearest opponent robot distance along this direction
+    // backward discounting
+    let backward_dist = (player_pos.y - target_pos.y).max(0.0); // + when bad, - when good
+    prob *= (1.2 - (5000.0 / backward_dist).min(1.0));
+
     let nearest_opponent_distance =
         find_nearest_opponent_distance_along_direction(s, Angle::PI - direction);
 
@@ -194,7 +197,7 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
 }
 
 pub fn pass_success_probability(s: &RobotSituation, teammate: &PlayerData) -> f64 {
-    let mut prob: f64 = 0.95;
+    let mut prob: f64 = 0.7;
     let player_pos = s.player_data().position;
     // score based on how far is the robot: not too close, not too far
     let robot_dist = (player_pos - teammate.position).norm();
@@ -284,7 +287,7 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
 
     // Apply a bias factor to make the choice more interesting
     let bias_factor = 0.7; // Adjust this to control how much we favor the better option
-    let min_prob_threshold = 0.05; // Minimum probability to consider an option
+    let min_prob_threshold = 0.0001; // Minimum probability to consider an option
 
     // Only consider options above minimum threshold
     let direct_viable = best_prob_direct >= min_prob_threshold;
@@ -326,8 +329,10 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
         let random_value = pseudo_random as f64 / 1000.0;
 
         if random_value < final_direct_prob {
+            println!("randomly chosen direct with p={:.3}", final_direct_prob);
             best_target_direct
         } else {
+            println!("randomly chosen pass with p={:.3}", 1.0 - final_direct_prob);
             best_target_pass
         }
     };
@@ -371,7 +376,7 @@ pub fn combination_discounting_for_receivers(s: &RobotSituation) -> f64 {
         let distance = (player_pos - teammate.position).norm();
         if distance < 2000.0 {
             let proximity_penalty = (2000.0 - distance) / 2000.0;
-            discount *= 1.0 - proximity_penalty * 0.3;
+            discount *= 1.0 - proximity_penalty * 0.5;
         }
     }
 

@@ -61,7 +61,7 @@ impl FetchBall {
                 return SkillProgress::success();
             }
 
-            if ball_speed < 250.0 {
+            if ball_speed < 100.0 {
                 // Ball is stationary/slow, so we move to get it
                 if distance > self.stop_distance {
                     // move close to the ball
@@ -95,7 +95,7 @@ impl FetchBall {
                     1.2, 1.5, 2.0,
                 ];
 
-                let friction_factor = 3.0;
+                let friction_factor = 1.5;
 
                 let ball_points: Vec<Vector2> = points_schedule
                     .iter()
@@ -117,7 +117,7 @@ impl FetchBall {
                         ctx.world.time_to_reach_point(ctx.player, a),
                         ctx.world.time_to_reach_point(ctx.player, b),
                     );
-                    // but this time is also kinda useless, mostly, so add 0.3 seconds
+                    // but this time is also kinda useless, mostly, so add a bit of time
                     // to compensate
                     time_to_reach = time_to_reach * 1.2 + 0.1;
 
