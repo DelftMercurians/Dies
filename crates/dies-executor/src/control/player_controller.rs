@@ -15,7 +15,7 @@ use super::{
 };
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
-const MAX_DRIBBLE_SPEED: f64 = 1_000.0;
+const MAX_DRIBBLE_SPEED: f64 = 1000.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum KickerState {
@@ -185,6 +185,7 @@ impl PlayerController {
             .set_kick_speed(self.kick_speed)
             .set_kick_counter(self.kick_counter)
             .set_robot_cmd(RobotCmd::Arm)
+            .set_max_yaw_rate()
             .untransform_global_move_cmd(self.id, self.last_yaw);
 
         player_context.debug_string(
