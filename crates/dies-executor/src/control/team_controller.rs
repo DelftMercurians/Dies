@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Duration, Instant},
+};
 
 use dies_core::{
     ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
@@ -36,6 +39,11 @@ pub struct TeamController {
     team_color: TeamColor,
     latest_script_errors: Vec<ScriptError>,
 
+    removing_players: HashSet<PlayerId>,
+
+    warmup_timer: Option<Instant>,
+    warmup_done: bool,
+
     // per-robot flags
     avoid_goal_area_flags: HashMap<PlayerId, bool>,
 }
@@ -58,8 +66,13 @@ impl TeamController {
             team_color,
             latest_script_errors: Vec::new(),
 
+            removing_players: HashSet::new(),
+
             // per-robot flags - initialize to true by default
             avoid_goal_area_flags: HashMap::new(),
+
+            warmup_timer: None,
+            warmup_done: false,
         };
         team.update_controller_settings(settings);
         team
@@ -99,7 +112,52 @@ impl TeamController {
         let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
 
         // Get active robots
-        let active_robots: Vec<PlayerId> = world_data.own_players.iter().map(|p| p.id).collect();
+        let active_robots: Vec<PlayerId> = world_data
+            .own_players
+            .iter()
+            .map(|p| p.id)
+            .filter(|id| !self.removing_players.contains(id))
+            .collect();
+
+        if let Some(warmup_timer) = self.warmup_timer {
+            if warmup_timer.elapsed() > Duration::from_secs(1) {
+                self.warmup_done = true;
+                self.warmup_timer = None;
+            }
+        }
+        if !self.warmup_done {
+            if self.warmup_timer.is_none() {
+                self.warmup_timer = Some(Instant::now());
+            }
+
+            // Update player controllers
+            for controller in self.player_controllers.values_mut() {
+                let player_data = world_data
+                    .own_players
+                    .iter()
+                    .find(|p| p.id == controller.id());
+                if let Some(player_data) = player_data {
+                    let player_context = team_context.player_context(controller.id());
+                    let default_input = PlayerControlInput::default();
+                    let input_to_use = manual_override
+                        .get(&controller.id())
+                        .unwrap_or(&default_input);
+                    controller.update(
+                        player_data,
+                        &world_data,
+                        input_to_use,
+                        world_data.dt,
+                        false,
+                        Vec::new(),
+                        &[],
+                        &player_context,
+                        true,
+                    );
+                }
+            }
+
+            return;
+        }
 
         // Get role assignment problem from script
         let mut game_context = GameContext::new(&world_data);
@@ -107,15 +165,26 @@ impl TeamController {
         let assignment_problem = game_context.into_role_assignment_problem();
 
         // Solve role assignments
-        match self.role_solver.solve(
+        let priority_list = match self.role_solver.solve(
             &assignment_problem,
             &active_robots,
             team_context.clone(),
             world_data.clone(),
             Some(&self.role_assignments),
         ) {
-            Ok(assignments) => {
+            Ok((assignments, priority_list)) => {
                 self.role_assignments = Arc::new(assignments.clone());
+
+                let priority_list_ids: Vec<PlayerId> = priority_list
+                    .iter()
+                    .map(|role_name| {
+                        *assignments
+                            .iter()
+                            .find(|(_, role)| *role == role_name)
+                            .unwrap()
+                            .0
+                    })
+                    .collect();
 
                 // Update behavior trees based on new assignments
                 for (player_id, role_name) in &assignments {
@@ -160,8 +229,29 @@ impl TeamController {
                         }
                     }
                 }
+                priority_list_ids
             }
-            Err(e) => log::error!("Failed to solve role assignments: {}", e),
+            Err(e) => {
+                log::error!("Failed to solve role assignments: {}", e);
+                // Fallback to sorting by id
+                let mut priority_list_ids: Vec<PlayerId> = active_robots.clone();
+                priority_list_ids.sort();
+                priority_list_ids
+            }
+        };
+
+        let allowed_number_of_robots = (6 - world_data.current_game_state.yellow_cards).max(0);
+        if active_robots.len() > allowed_number_of_robots {
+            let n_robots_to_remove =
+                (active_robots.len() - allowed_number_of_robots).clamp(0, active_robots.len());
+            log::info!(
+                "We have {} yellow cards and {} robots, removing {} robots",
+                world_data.current_game_state.yellow_cards,
+                active_robots.len(),
+                n_robots_to_remove
+            );
+            self.removing_players
+                .extend(priority_list.iter().take(n_robots_to_remove));
         }
 
         // Clean up empty semaphores periodically
@@ -169,6 +259,10 @@ impl TeamController {
 
         // Execute behavior trees
         for player_data in &world_data.own_players {
+            if self.removing_players.contains(&player_data.id) {
+                continue;
+            }
+
             let player_id = player_data.id;
             let player_bt = self.player_behavior_trees.entry(player_id).or_default();
 
@@ -200,6 +294,30 @@ impl TeamController {
             }
 
             player_inputs_map.insert(player_id, player_input);
+        }
+
+        // Drive robots that are being removed to the removal position
+        let mut removing_players = self.removing_players.iter().copied().collect::<Vec<_>>();
+        removing_players.sort();
+        let first_removal_position = Vector2::new(
+            -800.0,
+            world_data
+                .field_geom
+                .as_ref()
+                .map(|g| -g.field_width / 2.0 - 150.0)
+                .unwrap_or(-3000.0 - 150.0),
+        );
+        for (i, player_id) in removing_players.iter().enumerate() {
+            let player_data = world_data.own_players.iter().find(|p| p.id == *player_id);
+            if player_data.is_some() {
+                let removal_position =
+                    first_removal_position + Vector2::new(-(i as f64) * 100.0, 0.0);
+                let mut player_input = PlayerControlInput::default();
+                player_input.with_position(removal_position);
+                player_inputs_map.insert(*player_id, player_input);
+            } else {
+                self.removing_players.remove(player_id);
+            }
         }
 
         let mut inputs_for_comply = PlayerInputs::new();

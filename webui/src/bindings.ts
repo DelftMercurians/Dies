@@ -306,6 +306,7 @@ export interface GameStateData {
 	 * true for symmetric states(halt stop run timout)
 	 */
 	us_operating: boolean;
+	yellow_cards: number;
 }
 
 export interface GetDebugMapResponse {
@@ -413,6 +414,10 @@ export interface RawGameStateData {
 	game_state: GameState;
 	/** The team that is currently performing tasks in the state. */
 	operating_team: TeamColor;
+	/** The player who performed the freekick (for double touch tracking) */
+	freekick_kicker?: TeamPlayerId;
+	blue_team_yellow_cards: number;
+	yellow_team_yellow_cards: number;
 }
 
 /** A struct to store the world state from a single frame. */

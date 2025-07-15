@@ -18,6 +18,7 @@ import {
   useExecutorInfo,
   useRawWorldData,
   useScriptError,
+  usePrimaryTeam,
 } from "./api";
 import logo from "./assets/mercury-logo.svg";
 import { Button } from "./components/ui/button";
@@ -28,7 +29,7 @@ import {
 } from "@/components/ui/resizable";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import { SimpleTooltip } from "./components/ui/tooltip";
-import { cn, useWarningSound } from "./lib/utils";
+import { cn, useWarningSound, useRobotCountAlerts } from "./lib/utils";
 import Field from "./views/Field";
 import PlayerSidebar from "./views/PlayerSidebar";
 import SettingsEditor from "./views/SettingsEditor";
@@ -56,6 +57,10 @@ const App: React.FC = () => {
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState<Panel[]>(["left-bottom"]);
   const executorInfo = useExecutorInfo();
+  const [primaryTeam] = usePrimaryTeam();
+
+  // Robot count sound alerts
+  useRobotCountAlerts(worldState, primaryTeam);
 
   // Script error handling state
   const [scriptError, setScriptError] = useScriptError();

@@ -161,6 +161,8 @@ pub struct GameStateData {
     /// If we are the main party currently performing tasks in the state.
     /// true for symmetric states(halt stop run timout)
     pub us_operating: bool,
+    #[typeshare(serialized_as = "u32")]
+    pub yellow_cards: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -172,6 +174,10 @@ pub struct RawGameStateData {
     pub operating_team: TeamColor,
     /// The player who performed the freekick (for double touch tracking)
     pub freekick_kicker: Option<TeamPlayerId>,
+    #[typeshare(serialized_as = "u32")]
+    pub blue_team_yellow_cards: usize,
+    #[typeshare(serialized_as = "u32")]
+    pub yellow_team_yellow_cards: usize,
 }
 
 /// A struct to store the player state from a single frame.
@@ -691,6 +697,8 @@ pub fn mock_world_data() -> WorldData {
             game_state: GameState::Run,
             operating_team: TeamColor::Blue,
             freekick_kicker: None,
+            blue_team_yellow_cards: 0,
+            yellow_team_yellow_cards: 0,
         },
         side_assignment: SideAssignment::YellowOnPositive,
     }
@@ -744,6 +752,7 @@ pub fn mock_team_data() -> TeamData {
         current_game_state: GameStateData {
             game_state: GameState::Run,
             us_operating: true,
+            yellow_cards: 0,
         },
     }
 }

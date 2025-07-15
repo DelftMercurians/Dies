@@ -96,6 +96,10 @@ impl SideAssignment {
             current_game_state: GameStateData {
                 game_state: world_data.game_state.game_state,
                 us_operating: world_data.game_state.operating_team == color,
+                yellow_cards: match color {
+                    TeamColor::Blue => world_data.game_state.blue_team_yellow_cards,
+                    TeamColor::Yellow => world_data.game_state.yellow_team_yellow_cards,
+                },
             },
         }
     }

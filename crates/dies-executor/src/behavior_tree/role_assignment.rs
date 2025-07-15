@@ -149,9 +149,9 @@ impl RoleAssignmentSolver {
         team_context: TeamContext,
         team_data: Arc<TeamData>,
         previous_assignments: Option<&HashMap<PlayerId, String>>,
-    ) -> Result<HashMap<PlayerId, String>> {
+    ) -> Result<(HashMap<PlayerId, String>, Vec<String>)> {
         if active_robots.is_empty() {
-            return Ok(HashMap::new());
+            return Ok((HashMap::new(), Vec::new()));
         }
 
         // Clear cache for fresh assignment
@@ -181,6 +181,12 @@ impl RoleAssignmentSolver {
             };
             (-(role.min_count as i32), scarcity_score)
         });
+
+        // Extract priority list (highest priority first)
+        let priority_list: Vec<String> = sorted_roles
+            .iter()
+            .map(|(_, role)| role.name.clone())
+            .collect();
 
         let mut assignments = HashMap::new();
         let mut assigned_robots = std::collections::HashSet::new();
@@ -272,7 +278,7 @@ impl RoleAssignmentSolver {
             }
         }
 
-        Ok(assignments)
+        Ok((assignments, priority_list))
     }
 
     /// Compute eligible robots for each role (applying filters)
@@ -423,6 +429,7 @@ mod tests {
             current_game_state: GameStateData {
                 game_state: GameState::Stop,
                 us_operating: false,
+                yellow_cards: 0,
             },
             field_geom: None,
         }
@@ -471,12 +478,17 @@ mod tests {
             ],
         };
 
-        let assignments = solver
+        let (assignments, priority_list) = solver
             .solve(&problem, &active_robots, team_context, team_data, None)
             .unwrap();
 
         assert_eq!(assignments.len(), 3);
         // All robots should be assigned
+        assert_eq!(priority_list.len(), 3);
+        // Priority list should contain all role names
+        assert!(priority_list.contains(&"goalkeeper".to_string()));
+        assert!(priority_list.contains(&"attacker".to_string()));
+        assert!(priority_list.contains(&"defender".to_string()));
     }
 
     #[test]
@@ -500,12 +512,13 @@ mod tests {
             ],
         };
 
-        let assignments = solver
+        let (assignments, priority_list) = solver
             .solve(&problem, &active_robots, team_context, team_data, None)
             .unwrap();
 
         // Basic validation - all robots should be assigned
         assert_eq!(assignments.len(), 4);
+        assert_eq!(priority_list.len(), 3);
 
         // Count by role
         let mut role_counts = std::collections::HashMap::new();
@@ -538,7 +551,7 @@ mod tests {
         };
 
         // First assignment (no previous assignments)
-        let assignments1 = solver
+        let (assignments1, priority_list1) = solver
             .solve(
                 &problem,
                 &active_robots,
@@ -549,7 +562,7 @@ mod tests {
             .unwrap();
 
         // Second assignment with previous assignments should be identical due to hysteresis
-        let assignments2 = solver
+        let (assignments2, priority_list2) = solver
             .solve(
                 &problem,
                 &active_robots,
@@ -561,9 +574,10 @@ mod tests {
 
         // Should be identical assignments due to hysteresis
         assert_eq!(assignments1, assignments2);
+        assert_eq!(priority_list1, priority_list2);
 
         // Third assignment should also be identical
-        let assignments3 = solver
+        let (assignments3, priority_list3) = solver
             .solve(
                 &problem,
                 &active_robots,
@@ -574,6 +588,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(assignments2, assignments3);
+        assert_eq!(priority_list2, priority_list3);
     }
 
     #[test]

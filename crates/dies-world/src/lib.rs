@@ -112,6 +112,8 @@ pub struct WorldTracker {
     /// `first_t_capture`
     last_t_capture: Option<f64>,
     tracker_settings: TrackerSettings,
+    blue_team_yellow_cards: usize,
+    yellow_team_yellow_cards: usize,
 }
 
 impl WorldTracker {
@@ -130,6 +132,8 @@ impl WorldTracker {
             first_t_capture: None,
             last_t_capture: None,
             tracker_settings: settings.tracker_settings.clone(),
+            blue_team_yellow_cards: 0,
+            yellow_team_yellow_cards: 0,
         }
     }
 
@@ -216,7 +220,7 @@ impl WorldTracker {
     pub fn update_from_referee(&mut self, data: &Referee) {
         self.game_state_tracker
             .update_ball_movement_check(self.ball_tracker.get().as_ref());
-        
+
         // Update freekick double touch tracking
         let world_data = self.get();
         self.game_state_tracker
@@ -235,6 +239,21 @@ impl WorldTracker {
         } else {
             log::error!("Ball not detected, cannot update game state");
         }
+
+        self.blue_team_yellow_cards = data.blue.red_cards.unwrap_or_default() as usize
+            + data
+                .blue
+                .yellow_card_times
+                .iter()
+                .filter(|t| **t > 0)
+                .count() as usize;
+        self.yellow_team_yellow_cards = data.yellow.red_cards.unwrap_or_default() as usize
+            + data
+                .yellow
+                .yellow_card_times
+                .iter()
+                .filter(|t| **t > 0)
+                .count() as usize;
 
         // Detect side assignment from referee message TODO: make this work
         // if let Some(blue_on_positive) = data.blue_team_on_positive_half {
@@ -318,7 +337,7 @@ impl WorldTracker {
 
             self.game_state_tracker
                 .update_ball_movement_check(self.ball_tracker.get().as_ref());
-            
+
             // Update freekick double touch tracking
             let world_data = self.get();
             self.game_state_tracker
@@ -400,6 +419,8 @@ impl WorldTracker {
                 None => TeamColor::Blue, // Default fallback
             },
             freekick_kicker: self.game_state_tracker.get_freekick_kicker(),
+            blue_team_yellow_cards: self.blue_team_yellow_cards,
+            yellow_team_yellow_cards: self.yellow_team_yellow_cards,
         };
 
         WorldData {
