@@ -111,6 +111,9 @@ pub struct Cli {
 
     #[clap(long, default_value = "blue")]
     pub controlled_teams: ControlledTeam,
+
+    #[clap(long, default_value = "v0")]
+    pub strategy: String,
 }
 
 impl Cli {

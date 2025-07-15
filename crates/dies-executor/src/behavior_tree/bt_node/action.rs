@@ -10,7 +10,8 @@ use crate::{
     behavior_tree::{Argument, BehaviorNode},
     control::PlayerControlInput,
     skills::{
-        Face, FetchBall, GoToPosition, Kick, Skill, SkillCtx, SkillProgress, SkillResult, Wait,
+        Face, FetchBall, GoToPosition, Kick, Pass, Skill, SkillCtx, SkillProgress, SkillResult,
+        TryReceive, Wait,
     },
 };
 
@@ -48,6 +49,11 @@ pub enum SkillDefinition {
         duration_secs: Argument<f64>,
     },
     FetchBall,
+    Pass {
+        target_player_id: Argument<PlayerId>,
+        target_position: Argument<Option<Vector2>>,
+    },
+    TryReceive,
 }
 
 pub struct ActionNode {
@@ -76,6 +82,8 @@ impl ActionNode {
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
             SkillDefinition::FetchBall => "FetchBall",
+            SkillDefinition::Pass { .. } => "Pass",
+            SkillDefinition::TryReceive => "TryReceive",
         };
         let internal_state = self.active_skill.as_ref().map(|_| "Active".to_string());
         debug_tree_node(
@@ -100,6 +108,8 @@ impl ActionNode {
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
             SkillDefinition::FetchBall => "FetchBall",
+            SkillDefinition::Pass { .. } => "Pass",
+            SkillDefinition::TryReceive => "TryReceive",
         };
         // Create a new skill if there is no active one
         if self.active_skill.is_none() {
@@ -152,6 +162,17 @@ impl ActionNode {
                     duration_secs.resolve(situation),
                 ))),
                 SkillDefinition::FetchBall => Some(Skill::FetchBall(FetchBall::new())),
+                SkillDefinition::Pass {
+                    target_player_id,
+                    target_position,
+                } => {
+                    let target_player_id = target_player_id.resolve(situation);
+                    let target_position = target_position.resolve(situation);
+                    let target_position = target_position
+                        .unwrap_or(situation.world.get_player(target_player_id).position);
+                    Some(Skill::Pass(Pass::new(target_player_id, target_position)))
+                }
+                SkillDefinition::TryReceive => Some(Skill::TryReceive(TryReceive::new())),
             };
             self.active_skill = new_skill;
         }
@@ -470,4 +491,62 @@ pub fn wait(duration_secs: impl Into<Argument<f64>>) -> WaitBuilder {
 
 pub fn fetch_ball() -> FetchBallBuilder {
     FetchBallBuilder::new()
+}
+
+pub struct PassBuilder {
+    target_player_id: Option<Argument<PlayerId>>,
+    target_position: Option<Argument<Option<Vector2>>>,
+    description: Option<String>,
+}
+
+impl PassBuilder {
+    pub fn new() -> Self {
+        Self {
+            target_player_id: None,
+            target_position: None,
+            description: None,
+        }
+    }
+
+    pub fn target_player_id(mut self, target_player_id: impl Into<Argument<PlayerId>>) -> Self {
+        self.target_player_id = Some(target_player_id.into());
+        self
+    }
+
+    pub fn target_position(mut self, target_position: impl Into<Argument<Vector2>>) -> Self {
+        self.target_position = Some(target_position.into().map(|v| Some(v)));
+        self
+    }
+
+    pub fn description(mut self, desc: impl AsRef<str>) -> Self {
+        self.description = Some(desc.as_ref().to_string());
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(
+            SkillDefinition::Pass {
+                target_player_id: self.target_player_id.expect("target_player_id is required"),
+                target_position: self.target_position.unwrap_or(Argument::Static(None)),
+            },
+            self.description,
+        )
+    }
+}
+
+impl From<PassBuilder> for BehaviorNode {
+    fn from(builder: PassBuilder) -> Self {
+        builder.build().into()
+    }
+}
+
+pub fn pass() -> PassBuilder {
+    PassBuilder::new()
+}
+
+pub fn try_receive() -> ActionNode {
+    ActionNode::new(
+        SkillDefinition::TryReceive,
+        Some("Try receive?".to_string()),
+    )
 }

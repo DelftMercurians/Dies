@@ -26,7 +26,7 @@ pub enum Skill {
     Wait(Wait),
     FetchBall(FetchBall),
     Pass(Pass),
-    Receive(TryReceive),
+    TryReceive(TryReceive),
 }
 
 impl Skill {
@@ -38,7 +38,7 @@ impl Skill {
             Skill::Wait(skill) => skill.update(ctx),
             Skill::FetchBall(skill) => skill.update(ctx),
             Skill::Pass(skill) => skill.update(ctx),
-            Skill::Receive(skill) => skill.update(ctx),
+            Skill::TryReceive(skill) => skill.update(ctx),
         }
     }
 }
