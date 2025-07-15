@@ -2,8 +2,7 @@ use dies_core::{Angle, GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::{
-    find_best_shoot_target, find_best_shoot_score, get_heading_toward_ball,
-    under_pressure,
+    find_best_shoot_score, find_best_shoot_target, get_heading_toward_ball, under_pressure,
 };
 
 pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
@@ -107,15 +106,11 @@ fn build_striker_in_zone(zone: &str) -> BehaviorNode {
                         .condition(|s| s.has_ball())
                         .then(build_ball_carrier_behavior(&zone_owned))
                         .description("Have ball")
-                        .build()
-                        .into(),
+                        .build(),
                     |s| if s.has_ball() { 100.0 } else { 0.0 },
                 )
                 .add_child(
-                    fetch_ball()
-                        .description("Get ball".to_string())
-                        .build()
-                        .into(),
+                    fetch_ball().description("Get ball".to_string()).build(),
                     move |s| {
                         let ball_pos = if let Some(ball) = &s.world.ball {
                             ball.position.xy()
@@ -160,7 +155,6 @@ fn build_striker_in_zone(zone: &str) -> BehaviorNode {
                             }))
                             .description(format!("Position in {}", zone_name))
                             .build()
-                            .into()
                         }
                     },
                     |_| 30.0,
@@ -217,7 +211,9 @@ fn get_kickoff_striker_position(s: &RobotSituation) -> Vector2 {
 
 pub fn calculate_striker_advance_position(s: &RobotSituation) -> Vector2 {
     // Find optimal shoot target
-    let shoot_target = find_best_shoot_target(s).position().unwrap_or(s.get_opp_goal_position());
+    let shoot_target = find_best_shoot_target(s)
+        .position()
+        .unwrap_or(s.get_opp_goal_position());
 
     // Advance toward shoot target, not just goal center
     let advance_direction = (shoot_target - s.position()).normalize();

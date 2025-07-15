@@ -266,8 +266,13 @@ impl ScoringSelectNodeBuilder {
         ScoringSelectNode::new_dynamic(Arc::new(callback), self.hysteresis_margin, self.description)
     }
 
-    pub fn add_child(mut self, child: BehaviorNode, scorer: impl BtCallback<f64>) -> Self {
-        self.children_with_scorers.push((child, Arc::new(scorer)));
+    pub fn add_child(
+        mut self,
+        child: impl Into<BehaviorNode>,
+        scorer: impl BtCallback<f64>,
+    ) -> Self {
+        self.children_with_scorers
+            .push((child.into(), Arc::new(scorer)));
         self
     }
 
