@@ -185,6 +185,7 @@ impl PlayerController {
             .set_kick_speed(self.kick_speed)
             .set_kick_counter(self.kick_counter)
             .set_robot_cmd(RobotCmd::Arm)
+            .set_max_yaw_rate(self.max_angular_velocity)
             .untransform_global_move_cmd(self.id, self.last_yaw);
 
         player_context.debug_string(
@@ -371,6 +372,9 @@ impl PlayerController {
             dies_core::DebugColor::Red,
         );
 
+        self.max_angular_velocity = input
+            .angular_speed_limit
+            .unwrap_or(self.max_angular_velocity);
         if let Some(yaw) = input.yaw {
             player_context.debug_line_colored(
                 "target_yaw_line",
@@ -435,7 +439,8 @@ impl PlayerController {
         let mut constrained_velocity = velocity;
 
         // Check if we're in a prohibited zone and need to push out
-        let push_out_velocity = self.calculate_push_out_velocity(position, geometry, avoid_goal_area);
+        let push_out_velocity =
+            self.calculate_push_out_velocity(position, geometry, avoid_goal_area);
 
         // If we need to push out, modify the velocity
         if push_out_velocity.magnitude() > 0.0 {
@@ -491,14 +496,16 @@ impl PlayerController {
             let goal_area_width = geometry.penalty_area_width;
 
             // Our goal area (negative x)
-            if position.x < -field_half_length + goal_area_depth &&
-               position.y.abs() < goal_area_width / 2.0 {
+            if position.x < -field_half_length + goal_area_depth
+                && position.y.abs() < goal_area_width / 2.0
+            {
                 push_velocity.x += (-field_half_length + goal_area_depth - position.x) * 2.0;
             }
 
             // Enemy goal area (positive x)
-            if position.x > field_half_length - goal_area_depth &&
-               position.y.abs() < goal_area_width / 2.0 {
+            if position.x > field_half_length - goal_area_depth
+                && position.y.abs() < goal_area_width / 2.0
+            {
                 push_velocity.x += (field_half_length - goal_area_depth - position.x) * 2.0;
             }
         }
@@ -516,8 +523,11 @@ impl PlayerController {
         let field_half_length = geometry.field_length / 2.0;
 
         // Check if outside field boundaries
-        if position.x < -field_half_length || position.x > field_half_length ||
-           position.y < -field_half_width || position.y > field_half_width {
+        if position.x < -field_half_length
+            || position.x > field_half_length
+            || position.y < -field_half_width
+            || position.y > field_half_width
+        {
             return true;
         }
 
@@ -527,14 +537,16 @@ impl PlayerController {
             let goal_area_width = geometry.penalty_area_width;
 
             // Our goal area (negative x)
-            if position.x < -field_half_length + goal_area_depth &&
-               position.y.abs() < goal_area_width / 2.0 {
+            if position.x < -field_half_length + goal_area_depth
+                && position.y.abs() < goal_area_width / 2.0
+            {
                 return true;
             }
 
             // Enemy goal area (positive x)
-            if position.x > field_half_length - goal_area_depth &&
-               position.y.abs() < goal_area_width / 2.0 {
+            if position.x > field_half_length - goal_area_depth
+                && position.y.abs() < goal_area_width / 2.0
+            {
                 return true;
             }
         }
@@ -575,16 +587,18 @@ impl PlayerController {
             let goal_area_width = geometry.penalty_area_width;
 
             // Our goal area (negative x)
-            if next_pos.x < -field_half_length + goal_area_depth &&
-               next_pos.y.abs() < goal_area_width / 2.0 &&
-               velocity.x < 0.0 {
+            if next_pos.x < -field_half_length + goal_area_depth
+                && next_pos.y.abs() < goal_area_width / 2.0
+                && velocity.x < 0.0
+            {
                 projected_velocity.x = 0.0;
             }
 
             // Enemy goal area (positive x)
-            if next_pos.x > field_half_length - goal_area_depth &&
-               next_pos.y.abs() < goal_area_width / 2.0 &&
-               velocity.x > 0.0 {
+            if next_pos.x > field_half_length - goal_area_depth
+                && next_pos.y.abs() < goal_area_width / 2.0
+                && velocity.x > 0.0
+            {
                 projected_velocity.x = 0.0;
             }
         }
