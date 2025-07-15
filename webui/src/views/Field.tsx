@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/context-menu";
 import { useAtom, useSetAtom } from "jotai";
 import { BallPlacementPostionAtom } from "@/components/GameControllerPanel";
-import YellowCardBanner from "@/components/YellowCardBanner";
+import GameBanner from "@/components/GameBanner";
 
 const CONT_PADDING_PX = 8;
 
@@ -326,7 +326,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 
       {/* Yellow Card Banner */}
       {worldData && (
-        <YellowCardBanner
+        <GameBanner
           blueTeamYellowCards={worldData.game_state.blue_team_yellow_cards}
           yellowTeamYellowCards={worldData.game_state.yellow_team_yellow_cards}
           sideAssignment={worldData.side_assignment}
