@@ -48,13 +48,13 @@ impl Shoot {
                 ShootState::None => {
                     self.state = match &self.target {
                         ShootTarget::Goal(position) => {
-                            ShootState::Face(Face::towards_position(*position))
+                            ShootState::Face(Face::towards_position(*position).with_ball())
                         }
                         ShootTarget::Player { id, position } => {
                             let position = position.unwrap_or(ctx.world.get_player(*id).position);
                             ctx.bt_context
                                 .set_passing_target(PassingTarget { id: *id, position });
-                            ShootState::Face(Face::towards_position(position))
+                            ShootState::Face(Face::towards_position(position).with_ball())
                         }
                     };
                 }
