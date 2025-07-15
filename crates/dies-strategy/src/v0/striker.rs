@@ -1,7 +1,7 @@
 use dies_core::{Angle, GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
-use crate::v0::utils::{fetch_and_shoot, get_heading_toward_ball, find_best_receiver_target};
+use crate::v0::utils::{fetch_and_shoot, find_best_receiver_target, get_heading_toward_ball};
 
 pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()

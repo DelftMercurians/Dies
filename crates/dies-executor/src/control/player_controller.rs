@@ -1,6 +1,4 @@
-use std::{
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use dies_core::{
     Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerCmdUntransformer,

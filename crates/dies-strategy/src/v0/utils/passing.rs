@@ -30,8 +30,11 @@ pub fn change_situation_player(s: &RobotSituation, other_id: PlayerId) -> RobotS
 pub fn force_position(s: &RobotSituation, pos: Vector2) -> RobotSituation {
     let mut temp_situation = s.clone();
     let mut world_copy = (*temp_situation.world).clone();
-    if let Some(p) = world_copy.own_players.iter_mut()
-                                           .find(|p| p.id == s.player_id) {
+    if let Some(p) = world_copy
+        .own_players
+        .iter_mut()
+        .find(|p| p.id == s.player_id)
+    {
         p.position = pos;
     }
     temp_situation.world = world_copy.into();
@@ -286,16 +289,17 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
     // Only consider options above minimum threshold
     let direct_viable = best_prob_direct >= min_prob_threshold;
     let pass_viable = best_prob_pass >= min_prob_threshold;
+    let best_prob = best_prob_direct.max(best_prob_pass);
 
-    let (best_target, best_prob) = if !direct_viable && !pass_viable {
+    let best_target = if !direct_viable && !pass_viable {
         // If neither option is viable, default to direct shooting
-        (best_target_direct, best_prob_direct)
+        best_target_direct
     } else if !pass_viable {
         // Only direct shooting is viable
-        (best_target_direct, best_prob_direct)
+        best_target_direct
     } else if !direct_viable {
         // Only passing is viable
-        (best_target_pass, best_prob_pass)
+        best_target_pass
     } else {
         // Both options are viable - make probabilistic choice
         let total_prob = best_prob_direct + best_prob_pass;
@@ -314,15 +318,17 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
         // Use a simple random number generator based on robot position and time-like hash
         // This provides deterministic but seemingly random behavior
         let player_pos = s.player_data().position;
-        let hash_input = (player_pos.x * 1000.0) as u64 + (player_pos.y * 1000.0) as u64 +
-                        (best_prob_direct * 10000.0) as u64 + (best_prob_pass * 10000.0) as u64;
+        let hash_input = (player_pos.x * 1000.0) as u64
+            + (player_pos.y * 1000.0) as u64
+            + (best_prob_direct * 10000.0) as u64
+            + (best_prob_pass * 10000.0) as u64;
         let pseudo_random = (hash_input.wrapping_mul(1103515245).wrapping_add(12345) >> 16) % 1000;
         let random_value = pseudo_random as f64 / 1000.0;
 
         if random_value < final_direct_prob {
-            (best_target_direct, best_prob_direct)
+            best_target_direct
         } else {
-            (best_target_pass, best_prob_pass)
+            best_target_pass
         }
     };
 
@@ -377,7 +383,11 @@ pub fn combination_discounting_for_receivers(s: &RobotSituation) -> f64 {
     discount.max(0.001) // Minimum discount to avoid completely zeroing out
 }
 
-fn calculate_line_blocking_penalty(blocker_pos: Vector2, shooter_pos: Vector2, target_pos: Vector2) -> f64 {
+fn calculate_line_blocking_penalty(
+    blocker_pos: Vector2,
+    shooter_pos: Vector2,
+    target_pos: Vector2,
+) -> f64 {
     let shooter_to_target = target_pos - shooter_pos;
     let shooter_to_blocker = blocker_pos - shooter_pos;
 
@@ -447,9 +457,10 @@ pub fn find_best_receiver_target(s: &RobotSituation) -> (Vector2, f64) {
             let candidate_pos = Vector2::new(x, y);
 
             // if candidate position within goalie area -> skip
-            if candidate_pos.x >= opp_goal_pos.x - penalty_depth &&
-               candidate_pos.y >= opp_goal_pos.y - penalty_width / 2.0 &&
-               candidate_pos.y <= opp_goal_pos.y + penalty_width / 2.0 {
+            if candidate_pos.x >= opp_goal_pos.x - penalty_depth
+                && candidate_pos.y >= opp_goal_pos.y - penalty_width / 2.0
+                && candidate_pos.y <= opp_goal_pos.y + penalty_width / 2.0
+            {
                 continue;
             }
 
@@ -486,7 +497,8 @@ pub fn find_nearest_opponent_distance_along_direction(s: &RobotSituation, direct
     let mut min_distance = f64::INFINITY;
 
     // Check all opponent robots
-    for player in s.world.opp_players.iter(){//.chain(s.world.own_players.iter()) {
+    for player in s.world.opp_players.iter() {
+        //.chain(s.world.own_players.iter()) {
         if player.id != s.player_data().id {
             let opp_pos = player.position;
             let to_opponent = opp_pos - player_pos;
