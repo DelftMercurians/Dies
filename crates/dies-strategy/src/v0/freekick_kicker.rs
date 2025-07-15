@@ -1,8 +1,6 @@
 use dies_executor::behavior_tree_api::*;
 
-use crate::v0::utils::{
-    find_best_shoot_target, under_pressure,
-};
+use crate::v0::utils::{find_best_shoot_target, under_pressure};
 
 pub fn build_free_kick_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
     sequence_node()
@@ -11,9 +9,7 @@ pub fn build_free_kick_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .description("Get ball for free kick".to_string())
                 .build(),
         )
-        .add(
-            shoot(find_best_shoot_target)
-        )
+        .add(shoot(find_best_shoot_target))
         .build()
         .into()
 }

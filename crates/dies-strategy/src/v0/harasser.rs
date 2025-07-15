@@ -13,9 +13,7 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
                     semaphore_node()
                         .semaphore_id("defender_pickup_ball".to_string())
                         .max_entry(1)
-                        .do_then(
-                            shoot(find_best_shoot_target)
-                        )
+                        .do_then(shoot(find_best_shoot_target))
                         .build(),
                 )
                 .build(),

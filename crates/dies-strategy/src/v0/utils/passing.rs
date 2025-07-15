@@ -1,7 +1,7 @@
-use dies_core::{Angle, Vector2, PlayerData};
+use dies_core::PlayerId;
+use dies_core::{Angle, PlayerData, Vector2};
 use dies_executor::behavior_tree_api::*;
 use dies_executor::skills::ShootTarget;
-use dies_core::PlayerId;
 
 fn erf_approx(x: f64) -> f64 {
     // Abramowitz and Stegun approximation
@@ -67,7 +67,8 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
     let direction = Angle::between_points(player_pos, target_pos);
 
     // Find nearest opponent robot distance along this direction
-    let nearest_opponent_distance = find_nearest_opponent_distance_along_direction(s, Angle::PI - direction);
+    let nearest_opponent_distance =
+        find_nearest_opponent_distance_along_direction(s, Angle::PI - direction);
 
     // Factor 1: Distance to nearest opponent (larger is better, quadratic growth)
     let opp_distance_factor = if nearest_opponent_distance < 200.0 {
@@ -80,7 +81,9 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
         0.6
     } else if nearest_opponent_distance < 1000.0 {
         0.8
-    } else { 1.0 };
+    } else {
+        1.0
+    };
     prob *= opp_distance_factor;
 
     // Factor 2: Angle to middle of goal (closer to center is better)
@@ -90,14 +93,22 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
         1.0
     } else if angle_diff <= 0.3 {
         0.9
-    } else { 0.8 };
+    } else {
+        0.8
+    };
     prob *= angle_factor;
 
     // Factor 2': Angle of the goal visibility
     // this one can actually be computed analytically
     let shooting_noise_std = 0.14; // in rad
-    let goal_left = Vector2::new(goal_pos.x, goal_pos.y - s.world.field_geom.as_ref().unwrap().goal_width / 2.0);
-    let goal_right = Vector2::new(goal_pos.x, goal_pos.y + s.world.field_geom.as_ref().unwrap().goal_width / 2.0);
+    let goal_left = Vector2::new(
+        goal_pos.x,
+        goal_pos.y - s.world.field_geom.as_ref().unwrap().goal_width / 2.0,
+    );
+    let goal_right = Vector2::new(
+        goal_pos.x,
+        goal_pos.y + s.world.field_geom.as_ref().unwrap().goal_width / 2.0,
+    );
     let left_angle = Angle::between_points(player_pos, goal_left);
     let right_angle = Angle::between_points(player_pos, goal_right);
 
@@ -141,7 +152,6 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
     println!("{} has vis factor of {}", s.player_id(), visibility_factor);
     prob *= visibility_factor;
 
-
     // Factor 3: Distance preference (closer intersection with goal line)
     let direction_vector = direction.to_vector();
     let t = (goal_pos.x - player_pos.x) / direction_vector.x;
@@ -162,7 +172,9 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
         0.8
     } else if distance_to_intersection < 5000.0 {
         0.5
-    } else { 0.3 };
+    } else {
+        0.3
+    };
     prob *= goal_distance_factor;
 
     prob
@@ -189,7 +201,6 @@ pub fn pass_success_probability(s: &RobotSituation, teammate: &PlayerData) -> f6
         0.4 // meh
     };
     prob *= no_miss_probability;
-
 
     // score based on how bad is the trajectory: are there opponents on the shoot line?
     let angle = Angle::between_points(teammate.position, player_pos);
@@ -247,7 +258,10 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
 
         if prob > best_prob {
             best_prob = prob;
-            best_target = ShootTarget::Player{id: teammate.id, position: teammate.position.into()};
+            best_target = ShootTarget::Player {
+                id: teammate.id,
+                position: teammate.position.into(),
+            };
         }
     }
 

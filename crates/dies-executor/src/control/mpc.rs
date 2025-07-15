@@ -127,7 +127,7 @@ impl MPCController {
                 last_control_sequences: self.last_control_sequences.clone(),
                 last_trajectories: self.last_trajectories.clone(),
                 last_solve_time_ms: self.last_solve_time_ms,
-                avoid_goal_area_flags: avoid_goal_area_flags.to_vec()
+                avoid_goal_area_flags: avoid_goal_area_flags.to_vec(),
             };
 
             let request = MPCRequest {
@@ -383,7 +383,8 @@ impl MPCController {
             // Call the JAX batch solve_mpc function with field geometry
             let solve_mpc_batch = mpc_module.getattr("solve_mpc_tbwrap")?;
             // Convert avoid_goal_area_flags to numpy array
-            let avoid_goal_area_data: Vec<i32> = controller_state.avoid_goal_area_flags
+            let avoid_goal_area_data: Vec<i32> = controller_state
+                .avoid_goal_area_flags
                 .iter()
                 .map(|&b| if b { 1 } else { 0 })
                 .collect();
@@ -401,7 +402,7 @@ impl MPCController {
                 dt_value,
                 field_geometry,
                 controllable_mask_array,
-                avoid_goal_area_array
+                avoid_goal_area_array,
             ))?;
 
             // Extract the result - it's a tuple of (controls, trajectories)

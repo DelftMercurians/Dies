@@ -271,7 +271,7 @@ impl PlayerController {
                     world,
                     state,
                     avoid_goal_area,
-                    obstacles
+                    obstacles,
                 )
             } else {
                 self.position_mtp.set_setpoint(pos_target);

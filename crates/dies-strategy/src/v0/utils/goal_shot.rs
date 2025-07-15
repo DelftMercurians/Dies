@@ -1,6 +1,6 @@
+use super::super::utils::best_goal_shoot;
 use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
-use super::super::utils::best_goal_shoot;
 
 pub fn has_clear_shot(s: &RobotSituation) -> bool {
     let (_, p) = best_goal_shoot(s);
@@ -9,11 +9,15 @@ pub fn has_clear_shot(s: &RobotSituation) -> bool {
 
 pub fn find_optimal_shot_target(s: &RobotSituation) -> Vector2 {
     let (target, _) = best_goal_shoot(s);
-    dies_core::debug_circle_fill("shooting target", target, 100.0, dies_core::DebugColor::Purple);
+    dies_core::debug_circle_fill(
+        "shooting target",
+        target,
+        100.0,
+        dies_core::DebugColor::Purple,
+    );
 
     target
 }
-
 
 pub fn get_heading_toward_ball(s: &RobotSituation) -> Angle {
     if let Some(ball) = &s.world.ball {

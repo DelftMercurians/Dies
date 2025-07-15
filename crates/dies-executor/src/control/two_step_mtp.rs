@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use dies_core::{Vector2, TeamData, PlayerData, Obstacle};
+use dies_core::{Obstacle, PlayerData, TeamData, Vector2};
 
 use super::team_context::PlayerContext;
-
 
 /// Two-Step MTP Controller
 /// Samples intermediate points on a circle around the robot to find collision-free paths
@@ -54,7 +53,7 @@ impl TwoStepMTP {
         world_data: &TeamData,
         current_player: &PlayerData,
         avoid_goal_area: bool,
-        obstacles: Vec<Obstacle>
+        obstacles: Vec<Obstacle>,
     ) -> Vector2 {
         let setpoint = match self.setpoint {
             Some(s) => s,
@@ -76,7 +75,7 @@ impl TwoStepMTP {
             current_player,
             player_context,
             avoid_goal_area,
-            obstacles
+            obstacles,
         );
 
         // Use the intermediate target as the new setpoint for MTP control
@@ -99,9 +98,10 @@ impl TwoStepMTP {
 
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
-            let proportional_velocity_magnitude = f64::max(intermediate_distance - self.cutoff_distance, 0.0)
-                * (self.kp * (1.0 - care_factor))
-                + 100.0 * care_factor;
+            let proportional_velocity_magnitude =
+                f64::max(intermediate_distance - self.cutoff_distance, 0.0)
+                    * (self.kp * (1.0 - care_factor))
+                    + 100.0 * care_factor;
             let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
 
             let mut v_control = dv_magnitude;
@@ -132,7 +132,7 @@ impl TwoStepMTP {
         current_player: &PlayerData,
         player_context: &PlayerContext,
         avoid_goal_area: bool,
-        obstacles: Vec<Obstacle>
+        obstacles: Vec<Obstacle>,
     ) -> Vector2 {
         // Debug visualization for boundary rectangles
         let to_target = target - current;
@@ -155,7 +155,7 @@ impl TwoStepMTP {
             world_data,
             current_player,
             avoid_goal_area,
-            obstacles.clone()
+            obstacles.clone(),
         );
 
         if direct_cost < best_cost {
@@ -165,10 +165,8 @@ impl TwoStepMTP {
 
         for i in 0..self.sample_count {
             let angle = 2.0 * std::f64::consts::PI * i as f64 / self.sample_count as f64;
-            let sample_point = current + Vector2::new(
-                circle_radius * angle.cos(),
-                circle_radius * angle.sin(),
-            );
+            let sample_point =
+                current + Vector2::new(circle_radius * angle.cos(), circle_radius * angle.sin());
 
             // Calculate cost for this sample point
             let cost = self.calculate_path_cost(
@@ -178,7 +176,7 @@ impl TwoStepMTP {
                 world_data,
                 current_player,
                 avoid_goal_area,
-                obstacles.clone()
+                obstacles.clone(),
             );
 
             if cost < best_cost {
@@ -206,7 +204,7 @@ impl TwoStepMTP {
         world_data: &TeamData,
         current_player: &PlayerData,
         avoid_goal_area: bool,
-        obstacles: Vec<Obstacle>
+        obstacles: Vec<Obstacle>,
     ) -> f64 {
         // total cost is multiplied by magic coeff -> lower implies we care more about
         // avoiding shit, less means we are straighter (less gay)
@@ -215,17 +213,23 @@ impl TwoStepMTP {
         let ball_scare = 150.0; // mm robot_radius + ball_radius
 
         // Calculate intersection cost with other robots
-        for robot in world_data.own_players.iter().chain(world_data.opp_players.iter()) {
+        for robot in world_data
+            .own_players
+            .iter()
+            .chain(world_data.opp_players.iter())
+        {
             if robot.id == current_player.id {
                 continue;
             }
 
-            let intersection_length = self.line_circle_intersection_length(
-                start,
-                mid,
-                robot.position,
-                robot_scare, // Robot radius
-            ) + self.line_circle_intersection_length(mid, end, robot.position, robot_scare) * 0.1;
+            let intersection_length =
+                self.line_circle_intersection_length(
+                    start,
+                    mid,
+                    robot.position,
+                    robot_scare, // Robot radius
+                ) + self.line_circle_intersection_length(mid, end, robot.position, robot_scare)
+                    * 0.1;
             if intersection_length > 0.0 {
                 total_cost += 500.0
             }
@@ -234,12 +238,14 @@ impl TwoStepMTP {
 
         // Calculate intersection cost with ball
         if let Some(ball) = &world_data.ball {
-            let intersection_length = self.line_circle_intersection_length(
-                start,
-                mid,
-                ball.position.xy(),
-                ball_scare, // Ball radius
-            ) + self.line_circle_intersection_length(mid, end, ball.position.xy(), ball_scare) * 0.1;
+            let intersection_length =
+                self.line_circle_intersection_length(
+                    start,
+                    mid,
+                    ball.position.xy(),
+                    ball_scare, // Ball radius
+                ) + self.line_circle_intersection_length(mid, end, ball.position.xy(), ball_scare)
+                    * 0.1;
             if intersection_length > 0.0 {
                 total_cost += 1000.0
             }
@@ -248,12 +254,10 @@ impl TwoStepMTP {
 
         // Calculate intersection cost with field boundaries
         if let Some(field) = &world_data.field_geom {
-            let intersection_length = self.calculate_field_intersection_cost(
-                start,
-                mid,
-                field,
-                avoid_goal_area
-            ) + self.calculate_field_intersection_cost(mid, end, field, avoid_goal_area) * 0.1;
+            let intersection_length =
+                self.calculate_field_intersection_cost(start, mid, field, avoid_goal_area)
+                    + self.calculate_field_intersection_cost(mid, end, field, avoid_goal_area)
+                        * 0.1;
             if intersection_length > 0.0 {
                 total_cost += 500.0
             }
@@ -310,7 +314,8 @@ impl TwoStepMTP {
                 let line_dir = line_vec / line_length;
                 let to_center = circle_center - line_start;
                 let projection = to_center.dot(&line_dir);
-                let dist_to_center = (circle_center - (line_start + line_dir * projection)).magnitude();
+                let dist_to_center =
+                    (circle_center - (line_start + line_dir * projection)).magnitude();
 
                 if dist_to_center >= circle_radius {
                     return 0.0;
@@ -325,7 +330,8 @@ impl TwoStepMTP {
                 let line_dir = line_vec / line_length;
                 let to_center = circle_center - line_start;
                 let projection = to_center.dot(&line_dir);
-                let dist_to_center = (circle_center - (line_start + line_dir * projection)).magnitude();
+                let dist_to_center =
+                    (circle_center - (line_start + line_dir * projection)).magnitude();
 
                 if dist_to_center >= circle_radius {
                     return 0.0;
@@ -340,7 +346,8 @@ impl TwoStepMTP {
                 let line_dir = line_vec / line_length;
                 let to_center = circle_center - line_start;
                 let projection = to_center.dot(&line_dir);
-                let dist_to_center = (circle_center - (line_start + line_dir * projection)).magnitude();
+                let dist_to_center =
+                    (circle_center - (line_start + line_dir * projection)).magnitude();
 
                 if dist_to_center >= circle_radius {
                     return 0.0;
@@ -361,8 +368,10 @@ impl TwoStepMTP {
         rect_min: Vector2,
         rect_max: Vector2,
     ) -> bool {
-        point.x >= rect_min.x && point.x <= rect_max.x &&
-        point.y >= rect_min.y && point.y <= rect_max.y
+        point.x >= rect_min.x
+            && point.x <= rect_max.x
+            && point.y >= rect_min.y
+            && point.y <= rect_max.y
     }
 
     fn line_rectangle_intersection_length(
@@ -389,7 +398,9 @@ impl TwoStepMTP {
             }
             (true, false) => {
                 // Start inside, end outside - find exit point
-                if let Some(exit_point) = self.find_line_rectangle_exit_point(line_start, line_end, rect_min, rect_max) {
+                if let Some(exit_point) =
+                    self.find_line_rectangle_exit_point(line_start, line_end, rect_min, rect_max)
+                {
                     (exit_point - line_start).magnitude()
                 } else {
                     0.0
@@ -397,7 +408,9 @@ impl TwoStepMTP {
             }
             (false, true) => {
                 // Start outside, end inside - find entry point
-                if let Some(entry_point) = self.find_line_rectangle_entry_point(line_start, line_end, rect_min, rect_max) {
+                if let Some(entry_point) =
+                    self.find_line_rectangle_entry_point(line_start, line_end, rect_min, rect_max)
+                {
                     (line_end - entry_point).magnitude()
                 } else {
                     0.0
@@ -405,8 +418,15 @@ impl TwoStepMTP {
             }
             (false, false) => {
                 // Both outside - find entry and exit points
-                if let Some(entry_point) = self.find_line_rectangle_entry_point(line_start, line_end, rect_min, rect_max) {
-                    if let Some(exit_point) = self.find_line_rectangle_exit_point(entry_point, line_end, rect_min, rect_max) {
+                if let Some(entry_point) =
+                    self.find_line_rectangle_entry_point(line_start, line_end, rect_min, rect_max)
+                {
+                    if let Some(exit_point) = self.find_line_rectangle_exit_point(
+                        entry_point,
+                        line_end,
+                        rect_min,
+                        rect_max,
+                    ) {
                         (exit_point - entry_point).magnitude()
                     } else {
                         0.0
@@ -437,7 +457,11 @@ impl TwoStepMTP {
 
         // Check intersection with each rectangle edge
         for axis in 0..2 {
-            let ray_origin = if axis == 0 { line_start.x } else { line_start.y };
+            let ray_origin = if axis == 0 {
+                line_start.x
+            } else {
+                line_start.y
+            };
             let ray_dir = if axis == 0 { line_dir.x } else { line_dir.y };
             let rect_min_axis = if axis == 0 { rect_min.x } else { rect_min.y };
             let rect_max_axis = if axis == 0 { rect_max.x } else { rect_max.y };
@@ -477,7 +501,11 @@ impl TwoStepMTP {
 
         // Check intersection with each rectangle edge
         for axis in 0..2 {
-            let ray_origin = if axis == 0 { line_start.x } else { line_start.y };
+            let ray_origin = if axis == 0 {
+                line_start.x
+            } else {
+                line_start.y
+            };
             let ray_dir = if axis == 0 { line_dir.x } else { line_dir.y };
             let rect_min_axis = if axis == 0 { rect_min.x } else { rect_min.y };
             let rect_max_axis = if axis == 0 { rect_max.x } else { rect_max.y };
@@ -503,7 +531,7 @@ impl TwoStepMTP {
         line_start: Vector2,
         line_end: Vector2,
         field: &dies_core::FieldGeometry,
-        avoid_goal_area: bool
+        avoid_goal_area: bool,
     ) -> f64 {
         let mut cost = 0.0;
 
@@ -515,22 +543,31 @@ impl TwoStepMTP {
         // Check intersection with field boundaries
         let field_lines = [
             // Top boundary
-            (Vector2::new(-half_length, half_width), Vector2::new(half_length, half_width)),
+            (
+                Vector2::new(-half_length, half_width),
+                Vector2::new(half_length, half_width),
+            ),
             // Bottom boundary
-            (Vector2::new(-half_length, -half_width), Vector2::new(half_length, -half_width)),
+            (
+                Vector2::new(-half_length, -half_width),
+                Vector2::new(half_length, -half_width),
+            ),
             // Left boundary
-            (Vector2::new(-half_length, -half_width), Vector2::new(-half_length, half_width)),
+            (
+                Vector2::new(-half_length, -half_width),
+                Vector2::new(-half_length, half_width),
+            ),
             // Right boundary
-            (Vector2::new(half_length, -half_width), Vector2::new(half_length, half_width)),
+            (
+                Vector2::new(half_length, -half_width),
+                Vector2::new(half_length, half_width),
+            ),
         ];
 
         for (boundary_start, boundary_end) in field_lines.iter() {
-            if let Some(intersection) = self.line_line_intersection(
-                line_start,
-                line_end,
-                *boundary_start,
-                *boundary_end,
-            ) {
+            if let Some(intersection) =
+                self.line_line_intersection(line_start, line_end, *boundary_start, *boundary_end)
+            {
                 // Add penalty for crossing field boundaries
                 cost += 10000.0;
             }
@@ -538,7 +575,10 @@ impl TwoStepMTP {
 
         if avoid_goal_area {
             let left_rect_min = Vector2::new(-half_length, -field.penalty_area_width / 2.0);
-            let left_rect_max = Vector2::new(-half_length + field.penalty_area_depth, field.penalty_area_width / 2.0);
+            let left_rect_max = Vector2::new(
+                -half_length + field.penalty_area_depth,
+                field.penalty_area_width / 2.0,
+            );
             let left_intersection_length = self.line_rectangle_intersection_length(
                 line_start,
                 line_end,
@@ -548,7 +588,10 @@ impl TwoStepMTP {
             cost += left_intersection_length * 10.0; // Weight for left boundary area
 
             // Right side boundary rectangle (outside field)
-            let right_rect_min = Vector2::new(half_length - field.penalty_area_depth, -field.penalty_area_width / 2.0);
+            let right_rect_min = Vector2::new(
+                half_length - field.penalty_area_depth,
+                -field.penalty_area_width / 2.0,
+            );
             let right_rect_max = Vector2::new(half_length, field.penalty_area_width / 2.0);
             let right_intersection_length = self.line_rectangle_intersection_length(
                 line_start,
