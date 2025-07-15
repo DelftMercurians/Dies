@@ -10,13 +10,17 @@ use crate::transport::Transport;
 
 pub enum ConnectionConfig {
     /// Receive messages from a TCP socket.
-    Tcp { host: String, port: u16 },
+    Tcp {
+        host: String,
+        port: u16,
+    },
     /// Receive messages from a UDP socket.
     Udp {
         host: String,
         port: u16,
         interface: Option<String>,
     },
+    Mock,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +55,7 @@ impl VisionClient {
             } => Transport::udp(&host, port, interface)
                 .await
                 .context("Failed to create UDP transport for vision")?,
+            ConnectionConfig::Mock => Transport::mock(),
         };
 
         let gc_transport = match config.gc {
@@ -64,6 +69,7 @@ impl VisionClient {
             } => Transport::udp(&host, port, interface)
                 .await
                 .context("Failed to create UDP transport for GC")?,
+            ConnectionConfig::Mock => Transport::mock(),
         };
 
         Ok(Self {

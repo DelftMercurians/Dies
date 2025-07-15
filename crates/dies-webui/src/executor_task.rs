@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dies_core::WorldUpdate;
 use dies_executor::{ControlMsg, Executor, ExecutorHandle, Strategy};
 use dies_simulator::SimulationBuilder;
-use dies_ssl_client::VisionClient;
+use dies_ssl_client::{SslClientConfig, VisionClient};
 use tokio::{
     sync::{broadcast, oneshot, watch},
     task::JoinHandle,
@@ -210,7 +210,22 @@ impl ExecutorTask {
                                 strategy,
                             ))
                         } else {
-                            Err(anyhow::anyhow!("Failed to connect to vision"))
+                            if settings.allow_no_vision {
+                                log::warn!("Starting executor with mock vision client");
+                                Ok(Executor::new_live(
+                                    settings,
+                                    VisionClient::new(SslClientConfig {
+                                        vision: dies_ssl_client::ConnectionConfig::Mock,
+                                        gc: dies_ssl_client::ConnectionConfig::Mock,
+                                    })
+                                    .await
+                                    .unwrap(),
+                                    bs_handle,
+                                    strategy,
+                                ))
+                            } else {
+                                Err(anyhow::anyhow!("Failed to connect to vision"))
+                            }
                         }
                     }
                     (UiMode::Live, UiEnvironment::SimulationOnly) => {

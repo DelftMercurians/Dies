@@ -9,6 +9,7 @@ pub use v0::v0_strategy;
 pub enum StrategyDef {
     Testing,
     V0,
+    None,
 }
 
 impl StrategyDef {
@@ -16,6 +17,7 @@ impl StrategyDef {
         match self {
             StrategyDef::Testing => testing_strategy,
             StrategyDef::V0 => v0_strategy,
+            StrategyDef::None => |_| {},
         }
     }
 
@@ -23,6 +25,7 @@ impl StrategyDef {
         match s {
             "testing" => StrategyDef::Testing,
             "v0" => StrategyDef::V0,
+            "none" => StrategyDef::None,
             _ => panic!("Invalid strategy: {}", s),
         }
     }

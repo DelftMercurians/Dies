@@ -23,14 +23,20 @@ use crate::game_state::GameStateTracker;
 /// Tracks players for a single team
 struct TeamTracker {
     players: HashMap<PlayerId, PlayerTracker>,
+    allow_no_vision: bool,
     controlled: bool,
     handicaps: HashMap<PlayerId, Vec<Handicap>>,
 }
 
 impl TeamTracker {
-    fn new(controlled: bool, handicaps: HashMap<PlayerId, Vec<Handicap>>) -> Self {
+    fn new(
+        controlled: bool,
+        handicaps: HashMap<PlayerId, Vec<Handicap>>,
+        allow_no_vision: bool,
+    ) -> Self {
         Self {
             players: HashMap::new(),
+            allow_no_vision,
             controlled,
             handicaps,
         }
@@ -71,20 +77,44 @@ impl TeamTracker {
                     .into_iter()
                     .collect(),
                 tracker_settings,
+                self.allow_no_vision,
             )
         });
         tracker.update(t_capture, player);
     }
 
-    fn update_from_feedback(&mut self, feedback: &PlayerFeedbackMsg, time: WorldInstant) {
+    fn update_from_feedback(
+        &mut self,
+        feedback: &PlayerFeedbackMsg,
+        time: WorldInstant,
+        tracker_settings: &TrackerSettings,
+    ) {
         if let Some(tracker) = self.players.get_mut(&feedback.id) {
             tracker.update_from_feedback(feedback, time);
             self.controlled = true;
         } else {
-            log::warn!(
-                "Received feedback for player {} that is not tracked",
-                feedback.id
-            );
+            if self.allow_no_vision {
+                let tracker = self.players.entry(feedback.id).or_insert_with(|| {
+                    PlayerTracker::new(
+                        feedback.id,
+                        self.handicaps
+                            .get(&feedback.id)
+                            .cloned()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .collect(),
+                        &tracker_settings,
+                        true,
+                    )
+                });
+                tracker.update_from_feedback(feedback, time);
+                self.controlled = true;
+            } else {
+                log::warn!(
+                    "Received feedback for player {} that is not tracked",
+                    feedback.id
+                );
+            }
         }
     }
 
@@ -97,7 +127,7 @@ impl TeamTracker {
     fn get_players(&self) -> Vec<PlayerData> {
         let mut players = Vec::new();
         for player_tracker in self.players.values() {
-            if player_tracker.is_gone {
+            if player_tracker.is_gone && !self.allow_no_vision {
                 continue;
             }
             if let Some(player_data) = player_tracker.get() {
@@ -144,15 +174,21 @@ pub struct WorldTracker {
 
 impl WorldTracker {
     /// Create a new world tracker with default team configuration.
-    pub fn new(settings: &ExecutorSettings, controlled_teams: &[TeamColor]) -> Self {
+    pub fn new(
+        settings: &ExecutorSettings,
+        controlled_teams: &[TeamColor],
+        allow_no_vision: bool,
+    ) -> Self {
         Self {
             blue_team: TeamTracker::new(
                 controlled_teams.contains(&TeamColor::Blue),
                 settings.blue_team_settings.handicaps.clone(),
+                allow_no_vision,
             ),
             yellow_team: TeamTracker::new(
                 controlled_teams.contains(&TeamColor::Yellow),
                 settings.yellow_team_settings.handicaps.clone(),
+                allow_no_vision,
             ),
             ball_tracker: BallTracker::new(&settings.tracker_settings),
             game_state_tracker: GameStateTracker::new(),
@@ -404,7 +440,8 @@ impl WorldTracker {
                     format!("{}", breakbeam),
                 );
             }
-            self.blue_team.update_from_feedback(feedback, time);
+            self.blue_team
+                .update_from_feedback(feedback, time, &self.tracker_settings);
         } else if team_color == TeamColor::Yellow && self.yellow_team.controlled {
             if let Some(breakbeam) = feedback.breakbeam_ball_detected {
                 dies_core::debug_string(
@@ -412,7 +449,8 @@ impl WorldTracker {
                     format!("{}", breakbeam),
                 );
             }
-            self.yellow_team.update_from_feedback(feedback, time);
+            self.yellow_team
+                .update_from_feedback(feedback, time, &self.tracker_settings);
         } else {
             log::warn!(
                 "Received feedback for player {} that belongs to team {} but is not controlled",

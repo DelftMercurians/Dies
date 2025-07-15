@@ -1461,8 +1461,8 @@ dependencies = [
 
 [[package]]
 name = "glue"
-version = "0.7.4"
-source = "git+https://github.com/DelftMercurians/glue.git?tag=v0.7.4#eaa5fa306079f6ce1ad9e31873f549fbd8d5b149"
+version = "0.7.8"
+source = "git+https://github.com/DelftMercurians/glue.git?tag=v0.7.8#ded4a364cdefc97b6142a79c01dad7f5c3466896"
 dependencies = [
  "bindgen",
  "chrono",

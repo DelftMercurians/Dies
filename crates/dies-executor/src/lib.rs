@@ -49,7 +49,7 @@ pub mod behavior_tree_api {
 }
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
-const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 50); // 50 Hz
+const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 20); // 20 Hz
 
 enum Environment {
     Live {
@@ -237,7 +237,7 @@ struct PlayerOverrideState {
 }
 
 impl PlayerOverrideState {
-    const VELOCITY_TIMEOUT: u32 = 5;
+    const VELOCITY_TIMEOUT: u32 = 30;
 
     pub fn new() -> Self {
         Self {
@@ -387,7 +387,7 @@ impl Executor {
         }
 
         Self {
-            tracker: WorldTracker::new(&settings, &controlled_teams),
+            tracker: WorldTracker::new(&settings, &controlled_teams, settings.allow_no_vision),
             team_controllers,
             gc_client: GcClient::new(),
             environment: Some(Environment::Live {
@@ -434,7 +434,7 @@ impl Executor {
         simulator.set_controlled_teams(&controlled_teams);
 
         Self {
-            tracker: WorldTracker::new(&settings, &controlled_teams),
+            tracker: WorldTracker::new(&settings, &controlled_teams, settings.allow_no_vision),
             team_controllers,
             gc_client: GcClient::new(),
             environment: Some(Environment::Simulation { simulator }),
@@ -605,15 +605,12 @@ impl Executor {
     ) -> Result<()> {
         let mut cmd_interval = tokio::time::interval(CMD_INTERVAL);
 
-        let mut last_control_msg = tokio::time::Instant::now();
         let mut last_bs_msg = tokio::time::Instant::now();
         let mut last_ssl_msg = tokio::time::Instant::now();
         let mut last_cmd_time = tokio::time::Instant::now();
         loop {
             tokio::select! {
                 Some(msg) = self.command_rx.recv() => {
-                    dies_core::debug_value("exec_control msg_elapsed", last_control_msg.elapsed().as_secs_f64() * 1000.0);
-                    last_control_msg = tokio::time::Instant::now();
                     match msg {
                         ControlMsg::Stop => break,
                         ControlMsg::SetActiveTeams { .. } => {
@@ -633,7 +630,11 @@ impl Executor {
                             self.update_from_gc_msg(gc_msg);
                         }
                         Err(err) => {
-                            log::error!("Failed to receive vision/gc msg: {}", err);
+                            if !self.settings.allow_no_vision {
+                                log::error!("Failed to receive vision/gc msg: {}", err);
+                            } else {
+                                self.update_team_controller();
+                            }
                         }
                     }
                 }
@@ -661,7 +662,6 @@ impl Executor {
                 }
                 _ = cmd_interval.tick() => {
                     dies_core::debug_value("exec_cmd msg_elapsed", last_cmd_time.elapsed().as_secs_f64() * 1000.0);
-                    last_cmd_time = tokio::time::Instant::now();
                     let paused = { *self.paused_tx.borrow() };
                     if !paused {
                         for (team_color, cmd) in self.player_commands() {

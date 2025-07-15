@@ -177,6 +177,7 @@ pub struct ExecutorSettings {
     pub team_configuration: TeamConfiguration,
     pub yellow_team_settings: TeamSpecificSettings,
     pub blue_team_settings: TeamSpecificSettings,
+    pub allow_no_vision: bool,
 }
 
 impl ExecutorSettings {
@@ -222,6 +223,7 @@ impl Default for ExecutorSettings {
             team_configuration: TeamConfiguration::default(),
             yellow_team_settings: TeamSpecificSettings::default(),
             blue_team_settings: TeamSpecificSettings::default(),
+            allow_no_vision: false,
         }
     }
 }

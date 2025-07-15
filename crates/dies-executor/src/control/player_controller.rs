@@ -187,7 +187,13 @@ impl PlayerController {
             .set_robot_cmd(RobotCmd::Arm)
             .untransform_global_move_cmd(self.id, self.last_yaw);
 
-        player_context.debug_string("target_vel", format!("{}", self.target_velocity_global));
+        player_context.debug_string(
+            "target_vel",
+            format!(
+                "{} {}",
+                self.target_velocity_global.x, self.target_velocity_global.y
+            ),
+        );
         player_context.debug_value("heading_setpoint", global_cmd.heading_setpoint);
         player_context.debug_value("dribble_speed", global_cmd.dribble_speed);
         player_context.debug_value("kick_counter", global_cmd.kick_counter as f64);

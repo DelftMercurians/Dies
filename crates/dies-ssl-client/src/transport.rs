@@ -15,6 +15,7 @@ use tokio::{
 enum TransportType {
     Tcp { stream: TcpStream },
     Udp { socket: UdpSocket },
+    Mock,
 }
 
 /// A transport for receiving and sending protobuf messages over the network.
@@ -28,6 +29,15 @@ pub struct Transport<I: Message, O = ()> {
 }
 
 impl<I: Message, O> Transport<I, O> {
+    pub fn mock() -> Self {
+        Self {
+            transport_type: TransportType::Mock,
+            buf: vec![0u8; 32 * 1024],
+            incoming_msg_type: PhantomData,
+            outgoing_msg_type: PhantomData,
+        }
+    }
+
     pub async fn tcp(host: &str, port: u16) -> Result<Self> {
         let addr = format!("{}:{}", host, port);
         let stream = TcpStream::connect(addr.clone()).await.context(format!(
@@ -109,6 +119,7 @@ impl<I: Message, O> Transport<I, O> {
                 let msg = I::parse_from_bytes(&self.buf[..len])?;
                 Ok(msg)
             }
+            TransportType::Mock => Err(anyhow::anyhow!("Mock transport does not support recv")),
         }
     }
 }
@@ -133,6 +144,7 @@ impl<I: Message, O: Message> Transport<I, O> {
                     .context("Failed to send on UDP socket")?;
                 Ok(())
             }
+            TransportType::Mock => Err(anyhow::anyhow!("Mock transport does not support send")),
         }
     }
 }

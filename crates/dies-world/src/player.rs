@@ -32,6 +32,7 @@ pub struct PlayerTracker {
     pub id: PlayerId,
     /// Whether this player's team is controlled (we receive feedback)
     is_controlled: bool,
+    allow_no_vision: bool,
 
     /// Kalman filter for the player's position and velocity
     filter: MaybeKalman<2, 4>,
@@ -62,10 +63,12 @@ impl PlayerTracker {
         id: PlayerId,
         handicaps: HashSet<Handicap>,
         settings: &TrackerSettings,
+        allow_no_vision: bool,
     ) -> PlayerTracker {
         PlayerTracker {
             id,
             is_controlled: false, // Will be set to true when feedback is received
+            allow_no_vision,
             filter: MaybeKalman::new(
                 0.1,
                 settings.player_unit_transition_var,
@@ -100,6 +103,10 @@ impl PlayerTracker {
         };
 
         let control_val = if let Some(last_feedback) = &self.last_feedback_time {
+            dies_core::debug_string(
+                format!("player_{}_feedback_time", self.id),
+                format!("{:.2}ms", world_time.duration_since(last_feedback) / 1000.0),
+            );
             if world_time.duration_since(last_feedback) < 0.5 {
                 1.0
             } else {
@@ -116,12 +123,14 @@ impl PlayerTracker {
         // For controlled players, require both vision and control
         // For non-controlled players (opponent players), only require vision
         if self.is_controlled {
-            if self.rolling_control < 0.2 || self.rolling_vision < 0.2 {
-                self.is_gone = true;
-            }
-            if self.rolling_control > 0.8 && self.rolling_vision > 0.8 {
-                self.is_gone = false;
-            }
+            // if self.rolling_control < 0.2 || self.rolling_vision < 0.2 {
+            //     println!("Player {} is gone (control)", self.id);
+            //     self.is_gone = true;
+            // }
+            // if self.rolling_control > 0.8 && self.rolling_vision > 0.8 {
+            //     println!("Player {} is back (control)", self.id);
+            //     self.is_gone = false;
+            // }
         } else {
             if self.rolling_vision < 0.2 {
                 self.is_gone = true;
@@ -223,6 +232,26 @@ impl PlayerTracker {
     }
 
     pub fn get(&self) -> Option<PlayerData> {
+        if self.last_detection.is_none() && self.allow_no_vision {
+            return self.last_feedback.map(|f| PlayerData {
+                id: self.id,
+                timestamp: 0.0,
+                position: Vector2::zeros(),
+                velocity: Vector2::zeros(),
+                yaw: Angle::from_radians(0.0),
+                angular_speed: 0.0,
+                raw_position: Vector2::zeros(),
+                raw_yaw: Angle::from_radians(0.0),
+                primary_status: f.primary_status,
+                kicker_cap_voltage: f.kicker_cap_voltage,
+                kicker_temp: f.kicker_temp,
+                pack_voltages: f.pack_voltages,
+                breakbeam_ball_detected: f.breakbeam_ball_detected.unwrap_or(false),
+                imu_status: f.imu_status,
+                kicker_status: f.kicker_status,
+                handicaps: self.handicaps.clone(),
+            });
+        }
         self.last_detection.as_ref().map(|data| PlayerData {
             id: self.id,
             timestamp: data.timestamp,
@@ -261,6 +290,7 @@ mod test {
             PlayerId::new(1),
             HashSet::new(),
             &TrackerSettings::default(),
+            false,
         );
 
         assert!(!tracker.is_init());
@@ -273,6 +303,7 @@ mod test {
             PlayerId::new(1),
             HashSet::new(),
             &TrackerSettings::default(),
+            false,
         );
 
         let mut player = SSL_DetectionRobot::new();
@@ -288,7 +319,8 @@ mod test {
     #[test]
     fn test_basic_update() {
         let id = PlayerId::new(1);
-        let mut tracker = PlayerTracker::new(id, HashSet::new(), &TrackerSettings::default());
+        let mut tracker =
+            PlayerTracker::new(id, HashSet::new(), &TrackerSettings::default(), false);
 
         let mut player = SSL_DetectionRobot::new();
         player.set_x(100.0);
@@ -327,7 +359,7 @@ mod test {
     fn test_x_flip() {
         let id = PlayerId::new(1);
         let settings = TrackerSettings::default();
-        let mut tracker = PlayerTracker::new(id, HashSet::new(), &settings);
+        let mut tracker = PlayerTracker::new(id, HashSet::new(), &settings, false);
 
         let mut player = SSL_DetectionRobot::new();
         let dir = PI / 8.0;

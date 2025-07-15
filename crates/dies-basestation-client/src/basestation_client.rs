@@ -8,8 +8,8 @@ use dies_core::{PlayerCmd, PlayerFeedbackMsg, PlayerId, SysStatus, TeamColor};
 use glue::{Monitor, Serial};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-const MAX_MSG_FREQ: f64 = 200.0;
-const BASE_STATION_READ_FREQ: f64 = 100.0;
+const MAX_MSG_FREQ: f64 = 50.0;
+const BASE_STATION_READ_FREQ: f64 = 50.0;
 
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
@@ -127,70 +127,72 @@ impl BasestationHandle {
             let mut id_map = config.robot_id_map;
 
             let mut all_ids = HashSet::new();
-            loop {
+            'outer: loop {
                 // Send commands
-                match cmd_rx.try_recv() {
-                    Ok(Message::PlayerCmd((team_color, cmd, resp))) => match cmd {
-                        PlayerCmd::Move(cmd) => {
-                            let robot_id = id_map
-                                .get(&(team_color, cmd.id))
-                                .copied()
-                                .unwrap_or_else(|| cmd.id.as_u32())
-                                as usize;
-                            match &mut connection {
-                                Connection::V1(monitor) => {
-                                    let glue_cmd: glue::Radio_Command = cmd.into();
-                                    resp.send(
-                                        monitor
-                                            .send_single(cmd.id.as_u32() as u8, glue_cmd)
-                                            .map_err(|_| anyhow!("Failed to send command")),
-                                    )
-                                    .ok();
-                                }
-                                Connection::V0(serial) => {
-                                    all_ids.insert(robot_id);
-                                    let cmd_str = cmd.into_proto_v0_with_id(robot_id);
-                                    serial.send(&cmd_str);
-                                    resp.send(Ok(())).ok();
-                                }
-                            }
-                        }
-                        PlayerCmd::GlobalMove(cmd) => {
-                            let robot_id = id_map
-                                .get(&(team_color, cmd.id))
-                                .copied()
-                                .unwrap_or_else(|| cmd.id.as_u32())
-                                as usize;
-                            match &mut connection {
-                                Connection::V1(monitor) => {
-                                    let glue_cmd: glue::Radio_GlobalCommand = cmd.into();
-                                    resp.send(
-                                        monitor
-                                            .send_single_global(robot_id as u8, glue_cmd)
-                                            .map_err(|_| anyhow!("Failed to send command")),
-                                    )
-                                    .ok();
-                                }
-                                Connection::V0(_) => {
-                                    log::error!("Global move commands are not supported in V0");
-                                    resp.send(Err(anyhow!(
-                                        "Global move commands are not supported in V0"
-                                    )))
-                                    .ok();
+                'inner: loop {
+                    match cmd_rx.try_recv() {
+                        Ok(Message::PlayerCmd((team_color, cmd, resp))) => match cmd {
+                            PlayerCmd::Move(cmd) => {
+                                let robot_id = id_map
+                                    .get(&(team_color, cmd.id))
+                                    .copied()
+                                    .unwrap_or_else(|| cmd.id.as_u32())
+                                    as usize;
+                                match &mut connection {
+                                    Connection::V1(monitor) => {
+                                        let glue_cmd: glue::Radio_Command = cmd.into();
+                                        resp.send(
+                                            monitor
+                                                .send_single(cmd.id.as_u32() as u8, glue_cmd)
+                                                .map_err(|_| anyhow!("Failed to send command")),
+                                        )
+                                        .ok();
+                                    }
+                                    Connection::V0(serial) => {
+                                        all_ids.insert(robot_id);
+                                        let cmd_str = cmd.into_proto_v0_with_id(robot_id);
+                                        serial.send(&cmd_str);
+                                        resp.send(Ok(())).ok();
+                                    }
                                 }
                             }
+                            PlayerCmd::GlobalMove(cmd) => {
+                                let robot_id = id_map
+                                    .get(&(team_color, cmd.id))
+                                    .copied()
+                                    .unwrap_or_else(|| cmd.id.as_u32())
+                                    as usize;
+                                match &mut connection {
+                                    Connection::V1(monitor) => {
+                                        let glue_cmd: glue::Radio_GlobalCommand = cmd.into();
+                                        resp.send(
+                                            monitor
+                                                .send_single_global(robot_id as u8, glue_cmd)
+                                                .map_err(|_| anyhow!("Failed to send command")),
+                                        )
+                                        .ok();
+                                    }
+                                    Connection::V0(_) => {
+                                        log::error!("Global move commands are not supported in V0");
+                                        resp.send(Err(anyhow!(
+                                            "Global move commands are not supported in V0"
+                                        )))
+                                        .ok();
+                                    }
+                                }
+                            }
+                        },
+                        Ok(Message::ChangeIdMap(new_id_map)) => {
+                            id_map = new_id_map;
                         }
-                    },
-                    Ok(Message::ChangeIdMap(new_id_map)) => {
-                        id_map = new_id_map;
-                    }
-                    Err(mpsc::error::TryRecvError::Disconnected) => {
-                        if let Connection::V1(monitor) = connection {
-                            monitor.stop();
+                        Err(mpsc::error::TryRecvError::Disconnected) => {
+                            if let Connection::V1(monitor) = connection {
+                                monitor.stop();
+                            }
+                            break 'outer;
                         }
-                        break;
+                        Err(mpsc::error::TryRecvError::Empty) => break 'inner,
                     }
-                    Err(mpsc::error::TryRecvError::Empty) => {}
                 }
 
                 // Receive feedback
