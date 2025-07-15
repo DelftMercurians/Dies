@@ -1,7 +1,7 @@
 use dies_core::{Angle, GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
-use crate::v0::utils::{fetch_and_shoot, get_heading_toward_ball};
+use crate::v0::utils::{fetch_and_shoot, get_heading_toward_ball, find_best_receiver_target};
 
 pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -36,14 +36,11 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .build(),
         )
         .add(
-            // Normal striker behavior with zone allocation
-            scoring_select_node()
-                .add_child(build_striker_in_zone("top"), |s| score_for_zone(s, "top"))
-                .add_child(build_striker_in_zone("bottom"), |s| {
-                    score_for_zone(s, "bottom")
-                })
-                .hysteresis_margin(0.2) // Increased hysteresis for zone selection
-                .description("Choose Attack Zone")
+            continuous("zoning")
+                .position(Argument::callback(move |s| {
+                    let (target, score) = find_best_receiver_target(s);
+                    target
+                }))
                 .build(),
         )
         .description("Striker")

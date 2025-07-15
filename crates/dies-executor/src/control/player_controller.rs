@@ -1,5 +1,4 @@
 use std::{
-    os::macos::raw::stat,
     time::{Duration, Instant},
 };
 

@@ -27,6 +27,17 @@ pub fn change_situation_player(s: &RobotSituation, other_id: PlayerId) -> RobotS
     copy
 }
 
+pub fn force_position(s: &RobotSituation, pos: Vector2) -> RobotSituation {
+    let mut temp_situation = s.clone();
+    let mut world_copy = (*temp_situation.world).clone();
+    if let Some(p) = world_copy.own_players.iter_mut()
+                                           .find(|p| p.id == s.player_id) {
+        p.position = pos;
+    }
+    temp_situation.world = world_copy.into();
+    temp_situation
+}
+
 pub fn best_goal_shoot(s: &RobotSituation) -> (Vector2, f64) {
     let robot_pos = s.player_data().position;
     let goal_pos = s.get_opp_goal_position();
@@ -239,14 +250,13 @@ pub fn pass_success_probability(s: &RobotSituation, teammate: &PlayerData) -> f6
 
 pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
     let teammates = &s.world.own_players;
-    let my_id = s.player_id;
 
     let (best_target_pos, mut best_prob) = best_goal_shoot(s);
     let mut best_target = ShootTarget::Goal(best_target_pos);
     // println!("{} scored as {}", s.player_id, best_score);
 
     for teammate in teammates {
-        if teammate.id == my_id {
+        if teammate.id == s.player_id {
             continue;
         }
 
@@ -266,6 +276,149 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
     (best_target, best_prob)
 }
 
+pub fn best_receiver_target_score(s: &RobotSituation) -> f64 {
+    // for each teammate, check how far the ball is, and take average of their probabilityies
+    // weighted by the distance to the ball (the closer our teammate to the ball, the more
+    // important it is for us to support him).
+    // PS: we don't have to explicitly try to get far away from other robots because we
+    // already account for this in probability of passing.
+    let player_pos = s.player_data().position;
+    let ball_pos = s.world.ball.as_ref().unwrap().position.xy();
+    let teammates = &s.world.own_players;
+
+    let (_, goal_shoot_prob) = best_goal_shoot(s);
+
+    let hypothetical = force_position(s, ball_pos);
+    pass_success_probability(&hypothetical, s.player_data()) * goal_shoot_prob
+}
+
+pub fn combination_discounting_for_receivers(s: &RobotSituation) -> f64 {
+    // value between 0 and 1 that totally screws up our pure bayesian shit
+    // and tries to allocate the robots such that the distance between robots are large and
+    // that we are not blocking line of sight for other robots
+    let mut discount = 1.0;
+    let player_pos = s.player_data().position;
+    let teammates = &s.world.own_players;
+
+    // Factor 1: Distance penalty - penalize being too close to teammates
+    for teammate in teammates {
+        if teammate.id == s.player_id {
+            continue;
+        }
+
+        let distance = (player_pos - teammate.position).norm();
+        if distance < 2000.0 {
+            let proximity_penalty = (2000.0 - distance) / 2000.0;
+            discount *= 1.0 - proximity_penalty * 0.3; // Up to 60% penalty
+        }
+    }
+
+    // Factor 2: Line of sight blocking penalty to goal
+    let goal_pos = s.get_opp_goal_position();
+    for teammate in teammates {
+        if teammate.id == s.player_id {
+            continue;
+        }
+
+        let blocking_penalty = calculate_line_blocking_penalty(player_pos, teammate.position, goal_pos);
+        discount *= blocking_penalty;
+    }
+
+    discount.max(0.01) // Minimum discount to avoid completely zeroing out
+}
+
+fn calculate_line_blocking_penalty(blocker_pos: Vector2, shooter_pos: Vector2, target_pos: Vector2) -> f64 {
+    let shooter_to_target = target_pos - shooter_pos;
+    let shooter_to_blocker = blocker_pos - shooter_pos;
+
+    let line_length = shooter_to_target.norm();
+    if line_length < 100.0 {
+        return 1.0; // Too close to matter
+    }
+
+    // Project blocker onto the line from shooter to target
+    let projection = shooter_to_blocker.dot(&shooter_to_target) / line_length;
+
+    // Only care if blocker is between shooter and target
+    if projection < 0.0 || projection > line_length {
+        return 1.0; // Not blocking
+    }
+
+    // Calculate distance from blocker to the line
+    let projected_point = shooter_pos + (projection / line_length) * shooter_to_target;
+    let distance_to_line = (blocker_pos - projected_point).norm();
+
+    // Apply penalty if too close to the line
+    if distance_to_line < 200.0 {
+        return 0.4; // Significant penalty for blocking
+    } else if distance_to_line < 350.0 {
+        return 0.7; // Moderate penalty
+    }
+
+    1.0 // No penalty
+}
+
+pub fn find_best_receiver_target(s: &RobotSituation) -> (Vector2, f64) {
+    // we want to sample positions all around the enemy half;
+    // however, this will be slow, so we limit the number to "merely" a 100 positions to consider
+    // sample points (x,y) on the opponents half of the field, choose the best one
+
+    let Some(field_geom) = &s.world.field_geom else {
+        return (s.player_data().position, 0.0); // fallback if no field geometry
+    };
+
+    let half_length = field_geom.field_length / 2.0;
+    let half_width = field_geom.field_width / 2.0;
+
+    // Sample in opponent's half (positive x direction)
+    let x_min = 0.0; // center line
+    let x_max = half_length - 200.0; // stay away from goal line
+    let y_min = -half_width + 200.0; // stay in bounds
+    let y_max = half_width - 200.0;
+
+    let opp_goal_pos = s.get_opp_goal_position();
+    let penalty_depth = field_geom.penalty_area_depth;
+    let penalty_width = field_geom.penalty_area_width;
+
+    let mut best_position = s.player_data().position;
+    let mut best_score = 0.0;
+
+    let num_samples = 150;
+    let samples_per_axis = (num_samples as f64).sqrt() as i32;
+
+    for i in 0..samples_per_axis {
+        for j in 0..samples_per_axis {
+            let t_x = i as f64 / (samples_per_axis - 1) as f64;
+            let t_y = j as f64 / (samples_per_axis - 1) as f64;
+
+            let x = x_min + t_x * (x_max - x_min);
+            let y = y_min + t_y * (y_max - y_min);
+
+            let candidate_pos = Vector2::new(x, y);
+
+            // if candidate position within goalie area -> skip
+            if candidate_pos.x >= opp_goal_pos.x - penalty_depth &&
+               candidate_pos.y >= opp_goal_pos.y - penalty_width / 2.0 &&
+               candidate_pos.y <= opp_goal_pos.y + penalty_width / 2.0 {
+                continue;
+            }
+
+            // Create a temporary situation with this position
+            let temp_situation = force_position(s, candidate_pos);
+
+            let dumb_heuristic = combination_discounting_for_receivers(&temp_situation);
+            let score = best_receiver_target_score(&temp_situation) * dumb_heuristic;
+
+            if score > best_score {
+                best_score = score;
+                best_position = candidate_pos;
+            }
+        }
+    }
+
+    (best_position, best_score)
+}
+
 pub fn find_best_shoot_score(s: &RobotSituation) -> f64 {
     let (_, p) = best_teammate_pass_or_shoot(s);
     p
@@ -283,7 +436,7 @@ pub fn find_nearest_opponent_distance_along_direction(s: &RobotSituation, direct
     let mut min_distance = f64::INFINITY;
 
     // Check all opponent robots
-    for player in s.world.opp_players.iter() {
+    for player in s.world.opp_players.iter(){//.chain(s.world.own_players.iter()) {
         if player.id != s.player_data().id {
             let opp_pos = player.position;
             let to_opponent = opp_pos - player_pos;
