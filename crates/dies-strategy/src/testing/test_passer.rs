@@ -1,12 +1,12 @@
 use dies_core::PlayerId;
 use dies_executor::behavior_tree_api::{
-    fetch_ball, pass, sequence_node, wait, BehaviorNode, RobotSituation,
+    fetch_ball, sequence_node, shoot, to_player, wait, BehaviorNode, RobotSituation,
 };
 
 pub fn build_test_passer() -> BehaviorNode {
     sequence_node()
         .add(fetch_ball().build())
-        .add(pass().target_player_id(find_receiver).build())
+        .add(shoot(to_player(find_receiver)))
         .add(wait(5.0).build())
         .build()
         .into()

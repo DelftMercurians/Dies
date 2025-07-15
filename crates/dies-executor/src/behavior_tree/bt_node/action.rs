@@ -1,6 +1,7 @@
 use std::fmt::format;
 
 use dies_core::{debug_tree_node, Angle, PlayerId, TeamColor, Vector2};
+use rhai::Position;
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -10,8 +11,8 @@ use crate::{
     behavior_tree::{Argument, BehaviorNode},
     control::PlayerControlInput,
     skills::{
-        Face, FetchBall, GoToPosition, Kick, Pass, Skill, SkillCtx, SkillProgress, SkillResult,
-        TryReceive, Wait,
+        Face, FetchBall, GoToPosition, Kick, Shoot, ShootTarget, Skill, SkillCtx, SkillProgress,
+        SkillResult, TryReceive, Wait,
     },
 };
 
@@ -49,9 +50,8 @@ pub enum SkillDefinition {
         duration_secs: Argument<f64>,
     },
     FetchBall,
-    Pass {
-        target_player_id: Argument<PlayerId>,
-        target_position: Argument<Option<Vector2>>,
+    Shoot {
+        target: Argument<ShootTarget>,
     },
     TryReceive,
 }
@@ -82,7 +82,7 @@ impl ActionNode {
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
             SkillDefinition::FetchBall => "FetchBall",
-            SkillDefinition::Pass { .. } => "Pass",
+            SkillDefinition::Shoot { .. } => "Shoot",
             SkillDefinition::TryReceive => "TryReceive",
         };
         let internal_state = self.active_skill.as_ref().map(|_| "Active".to_string());
@@ -108,7 +108,7 @@ impl ActionNode {
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
             SkillDefinition::FetchBall => "FetchBall",
-            SkillDefinition::Pass { .. } => "Pass",
+            SkillDefinition::Shoot { .. } => "Shoot",
             SkillDefinition::TryReceive => "TryReceive",
         };
         // Create a new skill if there is no active one
@@ -162,15 +162,9 @@ impl ActionNode {
                     duration_secs.resolve(situation),
                 ))),
                 SkillDefinition::FetchBall => Some(Skill::FetchBall(FetchBall::new())),
-                SkillDefinition::Pass {
-                    target_player_id,
-                    target_position,
-                } => {
-                    let target_player_id = target_player_id.resolve(situation);
-                    let target_position = target_position.resolve(situation);
-                    let target_position = target_position
-                        .unwrap_or(situation.world.get_player(target_player_id).position);
-                    Some(Skill::Pass(Pass::new(target_player_id, target_position)))
+                SkillDefinition::Shoot { target } => {
+                    let target = target.resolve(situation);
+                    Some(Skill::Shoot(Shoot::new(target)))
                 }
                 SkillDefinition::TryReceive => Some(Skill::TryReceive(TryReceive::new())),
             };
@@ -493,55 +487,29 @@ pub fn fetch_ball() -> FetchBallBuilder {
     FetchBallBuilder::new()
 }
 
-pub struct PassBuilder {
-    target_player_id: Option<Argument<PlayerId>>,
-    target_position: Option<Argument<Option<Vector2>>>,
-    description: Option<String>,
+pub fn shoot(target: impl Into<Argument<ShootTarget>>) -> ActionNode {
+    ActionNode::new(
+        SkillDefinition::Shoot {
+            target: target.into(),
+        },
+        Some("Shoot".to_string()),
+    )
 }
 
-impl PassBuilder {
-    pub fn new() -> Self {
-        Self {
-            target_player_id: None,
-            target_position: None,
-            description: None,
-        }
-    }
-
-    pub fn target_player_id(mut self, target_player_id: impl Into<Argument<PlayerId>>) -> Self {
-        self.target_player_id = Some(target_player_id.into());
-        self
-    }
-
-    pub fn target_position(mut self, target_position: impl Into<Argument<Vector2>>) -> Self {
-        self.target_position = Some(target_position.into().map(|v| Some(v)));
-        self
-    }
-
-    pub fn description(mut self, desc: impl AsRef<str>) -> Self {
-        self.description = Some(desc.as_ref().to_string());
-        self
-    }
-
-    pub fn build(self) -> ActionNode {
-        ActionNode::new(
-            SkillDefinition::Pass {
-                target_player_id: self.target_player_id.expect("target_player_id is required"),
-                target_position: self.target_position.unwrap_or(Argument::Static(None)),
-            },
-            self.description,
-        )
-    }
+pub fn at_goal(pos: impl Into<Argument<Vector2>>) -> Argument<ShootTarget> {
+    pos.into().map(|p| ShootTarget::Goal(p))
 }
 
-impl From<PassBuilder> for BehaviorNode {
-    fn from(builder: PassBuilder) -> Self {
-        builder.build().into()
-    }
+pub fn to_player(id: impl Into<Argument<PlayerId>>) -> Argument<ShootTarget> {
+    id.into()
+        .map(|id| ShootTarget::Player { id, position: None })
 }
 
-pub fn pass() -> PassBuilder {
-    PassBuilder::new()
+pub fn to_player_at_pos(target: Argument<(PlayerId, Vector2)>) -> Argument<ShootTarget> {
+    target.map(|(id, pos)| ShootTarget::Player {
+        id,
+        position: Some(pos),
+    })
 }
 
 pub fn try_receive() -> ActionNode {

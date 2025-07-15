@@ -1,4 +1,7 @@
-use crate::behavior_tree::{BtCallback, RobotSituation};
+use crate::{
+    behavior_tree::{BtCallback, RobotSituation},
+    skills::ShootTarget,
+};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -62,5 +65,11 @@ impl_into_argument_for_primitive!(
 impl<'a> From<&'a str> for Argument<String> {
     fn from(val: &'a str) -> Self {
         Argument::Static(val.to_string())
+    }
+}
+
+impl From<ShootTarget> for Argument<ShootTarget> {
+    fn from(val: ShootTarget) -> Self {
+        Argument::Static(val)
     }
 }

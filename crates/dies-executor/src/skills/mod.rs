@@ -4,16 +4,16 @@ mod face;
 mod fetchball;
 mod go_to_pos;
 mod kick;
-mod pass;
 mod receive;
+mod shoot;
 mod wait;
 
 pub use face::Face;
 pub use fetchball::FetchBall;
 pub use go_to_pos::GoToPosition;
 pub use kick::Kick;
-pub use pass::Pass;
 pub use receive::TryReceive;
+pub use shoot::{Shoot, ShootTarget};
 pub use wait::Wait;
 
 use crate::{behavior_tree::BtContext, control::PlayerControlInput};
@@ -25,7 +25,7 @@ pub enum Skill {
     Kick(Kick),
     Wait(Wait),
     FetchBall(FetchBall),
-    Pass(Pass),
+    Shoot(Shoot),
     TryReceive(TryReceive),
 }
 
@@ -37,7 +37,7 @@ impl Skill {
             Skill::Kick(skill) => skill.update(ctx),
             Skill::Wait(skill) => skill.update(ctx),
             Skill::FetchBall(skill) => skill.update(ctx),
-            Skill::Pass(skill) => skill.update(ctx),
+            Skill::Shoot(skill) => skill.update(ctx),
             Skill::TryReceive(skill) => skill.update(ctx),
         }
     }
