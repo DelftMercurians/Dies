@@ -25,7 +25,7 @@ pub fn clean_goal_shot_score(s: &RobotSituation, player: &dies_core::PlayerData)
     let max_visibility_angle = std::f64::consts::PI;
     let visibility_score = (visibility_angle / max_visibility_angle).min(1.0);
 
-    // Factor 3: Check if shot line is blocked using existing function
+    // Factor 3: Check if shot line is blocked
     let center_angle = Angle::between_points(player_pos, goal_pos);
     let mut temp_situation = s.clone();
     temp_situation.player_id = player.id;
@@ -44,11 +44,11 @@ pub fn clean_goal_shot_score(s: &RobotSituation, player: &dies_core::PlayerData)
 
     // println!("{:.2} {:.2} {:.2}", distance_score, visibility_score, blocking_score);
     // Weighted combination of factors
-    let score = distance_score * 0.4 + visibility_score * 0.4 + blocking_score * 0.2;
+    let score = distance_score * 0.2 + visibility_score * 0.3 + blocking_score * 0.5;
     score.clamp(0.0, 1.0)
 }
 
-pub fn find_best_pass_target(s: &RobotSituation) -> Vector2 {
+pub fn find_best_shoot_target(s: &RobotSituation) -> Vector2 {
     let teammates = &s.world.own_players;
     let my_id = s.player_id;
 

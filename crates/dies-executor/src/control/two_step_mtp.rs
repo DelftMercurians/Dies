@@ -53,7 +53,8 @@ impl TwoStepMTP {
         player_context: &PlayerContext,
         world_data: &TeamData,
         current_player: &PlayerData,
-        avoid_goal_area: bool
+        avoid_goal_area: bool,
+        obstacles: Vec<Obstacle>
     ) -> Vector2 {
         let setpoint = match self.setpoint {
             Some(s) => s,
@@ -74,7 +75,8 @@ impl TwoStepMTP {
             world_data,
             current_player,
             player_context,
-            avoid_goal_area
+            avoid_goal_area,
+            obstacles
         );
 
         // Use the intermediate target as the new setpoint for MTP control
@@ -129,7 +131,8 @@ impl TwoStepMTP {
         world_data: &TeamData,
         current_player: &PlayerData,
         player_context: &PlayerContext,
-        avoid_goal_area: bool
+        avoid_goal_area: bool,
+        obstacles: Vec<Obstacle>
     ) -> Vector2 {
         // Debug visualization for boundary rectangles
         let to_target = target - current;
@@ -151,7 +154,8 @@ impl TwoStepMTP {
             target,
             world_data,
             current_player,
-            avoid_goal_area
+            avoid_goal_area,
+            obstacles.clone()
         );
 
         if direct_cost < best_cost {
@@ -173,7 +177,8 @@ impl TwoStepMTP {
                 target,
                 world_data,
                 current_player,
-                avoid_goal_area
+                avoid_goal_area,
+                obstacles.clone()
             );
 
             if cost < best_cost {
@@ -200,7 +205,8 @@ impl TwoStepMTP {
         end: Vector2,
         world_data: &TeamData,
         current_player: &PlayerData,
-        avoid_goal_area: bool
+        avoid_goal_area: bool,
+        obstacles: Vec<Obstacle>
     ) -> f64 {
         // total cost is multiplied by magic coeff -> lower implies we care more about
         // avoiding shit, less means we are straighter (less gay)
@@ -252,6 +258,24 @@ impl TwoStepMTP {
                 total_cost += 500.0
             }
             total_cost += intersection_length; // High weight for field boundaries
+        }
+
+        // calculate instersection cost with all of the obstacles
+        for obstacle in obstacles {
+            let intersection_length = match obstacle {
+                Obstacle::Circle { center, radius } => {
+                    self.line_circle_intersection_length(start, mid, center, radius)
+                        + self.line_circle_intersection_length(mid, end, center, radius) * 0.1
+                }
+                Obstacle::Rectangle { min, max } => {
+                    self.line_rectangle_intersection_length(start, mid, min, max)
+                        + self.line_rectangle_intersection_length(mid, end, min, max) * 0.1
+                }
+            };
+            if intersection_length > 0.0 {
+                total_cost += 1500.0; // High penalty for obstacle collision
+            }
+            total_cost += intersection_length * 2.0; // Weight for obstacle avoidance
         }
 
         total_cost

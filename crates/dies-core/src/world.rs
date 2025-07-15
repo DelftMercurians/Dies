@@ -523,10 +523,10 @@ impl TeamData {
                     _ => {
                         // Add center circle for non kicker robots
                         // TODO: fix
-                        // obstacles.push(Obstacle::Circle {
-                        //     center: Vector2::zeros(),
-                        //     radius: field_geom.center_circle_radius,
-                        // });
+                        obstacles.push(Obstacle::Circle {
+                             center: Vector2::zeros(),
+                             radius: field_geom.center_circle_radius,
+                        });
                     }
                 },
                 GameState::BallReplacement(_) => {}

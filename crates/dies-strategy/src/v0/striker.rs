@@ -26,15 +26,7 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .commit_to(
                     semaphore_node()
                         .do_then(
-                            sequence_node()
-                                .add(
-                                    fetch_ball()
-                                        .description("Pickup free ball".to_string())
-                                        .build(),
-                                )
-                                .add(face_position(find_best_pass_target).with_ball().build())
-                                .add(kick().build())
-                                .build(),
+                            shoot().build()
                         )
                         .semaphore_id("striker_ball_pickup".to_string())
                         .max_entry(1)
@@ -177,44 +169,13 @@ fn build_striker_in_zone(zone: &str) -> BehaviorNode {
 /// Build ball carrier decision making behavior
 fn build_ball_carrier_behavior(zone: &str) -> BehaviorNode {
     scoring_select_node()
-        .add_child(build_shoot_sequence(), score_for_shooting)
-        .add_child(build_pass_sequence(), score_for_passing)
+        .add_child(shoot().build(), shooting_score)
         .add_child(
             build_dribble_sequence(zone),
-            |_| 20.0, // Base dribble score
+            |_| 0.5, // Base dribble score
         )
-        .hysteresis_margin(5.0)
+        .hysteresis_margin(0.1)
         .description("Ball Carrier Decision")
-        .build()
-        .into()
-}
-
-/// Build shooting sequence
-fn build_shoot_sequence() -> BehaviorNode {
-    sequence_node()
-        .add(
-            face_position(find_optimal_shot_target)
-                .with_ball()
-                .description("Aim at goal".to_string())
-                .build(),
-        )
-        .add(kick().description("Shoot!".to_string()).build())
-        .description("Execute Shot")
-        .build()
-        .into()
-}
-
-/// Build passing sequence
-fn build_pass_sequence() -> BehaviorNode {
-    sequence_node()
-        .add(
-            face_position(find_best_pass_target)
-                .with_ball()
-                .description("Aim pass".to_string())
-                .build(),
-        )
-        .add(kick().description("Pass!".to_string()).build())
-        .description("Execute Pass")
         .build()
         .into()
 }
@@ -304,42 +265,6 @@ fn score_for_zone(s: &RobotSituation, zone: &str) -> f64 {
     let congestion_penalty = opponents_in_zone as f64 * 10.0;
 
     base_score - congestion_penalty - dist_score
-}
-
-/// Score for shooting vs passing decision
-fn score_for_shooting(s: &RobotSituation) -> f64 {
-    if !s.has_ball() {
-        return 0.0;
-    }
-
-    let goal_pos = s.get_opp_goal_position();
-    let my_pos = s.player_data().position;
-    let goal_dist = (my_pos - goal_pos).norm();
-
-    // Base score from distance (closer = better)
-    let distance_score = (4000.0 - goal_dist.min(4000.0)) / 40.0;
-
-    // Simple shot quality estimate
-    let shot_quality = if has_clear_shot(s) { 1.0 } else { 0.3 };
-
-    distance_score * shot_quality
-}
-
-/// Score for passing
-fn score_for_passing(s: &RobotSituation) -> f64 {
-    if !s.has_ball() || !can_pass_to_teammate(s) {
-        return 0.0;
-    }
-
-    // Base score for having a pass option
-    let mut score = 40.0;
-
-    // Bonus if under pressure
-    if under_pressure(s) {
-        score += 30.0;
-    }
-
-    score
 }
 
 fn should_pickup_ball(s: &RobotSituation) -> bool {

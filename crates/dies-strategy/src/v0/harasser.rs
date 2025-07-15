@@ -14,15 +14,7 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
                         .semaphore_id("defender_pickup_ball".to_string())
                         .max_entry(1)
                         .do_then(
-                            sequence_node()
-                                .add(
-                                    fetch_ball()
-                                        .description("Pickup free ball".to_string())
-                                        .build(),
-                                )
-                                .add(face_position(find_best_pass_target).with_ball().build())
-                                .add(kick().build())
-                                .build(),
+                            shoot().build()
                         )
                         .build(),
                 )

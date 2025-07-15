@@ -22,13 +22,7 @@ pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
             sequence_node()
                 .description("Kickoff sequence")
                 .add(fetch_ball().description("Get ball".to_string()).build())
-                .add(
-                    face_position(find_best_pass_target)
-                        .with_ball()
-                        .description("Aim pass".to_string())
-                        .build(),
-                )
-                .add(kick().description("Kickoff pass!".to_string()).build())
+                .add(shoot(find_best_shoot_target).build())
                 .description("Pass kickoff")
                 .build(),
         )

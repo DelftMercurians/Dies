@@ -21,13 +21,7 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
                         .do_then(
                             sequence_node()
                                 .add(fetch_ball().description("Pickup ball".to_string()).build())
-                                .add(
-                                    face_position(find_best_pass_target)
-                                        .with_ball()
-                                        .description("Aim pass".to_string())
-                                        .build(),
-                                )
-                                .add(kick().description("Kickoff pass!".to_string()).build())
+                                .add(shoot(find_best_shoot_target).build())
                                 .description("Pass kickoff")
                                 .build(),
                         )
