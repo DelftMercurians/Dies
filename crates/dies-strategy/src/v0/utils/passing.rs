@@ -362,6 +362,7 @@ pub fn combination_discounting_for_receivers(s: &RobotSituation) -> f64 {
     // that we are not blocking line of sight for other robots
     // TODO: add blocking based on how much we block of the goal (we don't want to stand between
     // the goal and the ball)
+
     let ball_pos = s.world.ball.as_ref().unwrap().position.xy();
     let mut discount = 1.0;
     let player_pos = s.player_data().position;

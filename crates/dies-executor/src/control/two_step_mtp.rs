@@ -163,11 +163,9 @@ impl TwoStepMTP {
         let circle_radius = distance_to_target * 0.5 + 40.0;
 
         // Sample points uniformly around the circle
-        let mut best_point = current + to_target.normalize() * circle_radius;
-        let mut best_cost = f64::INFINITY;
-
         // First, sample the direct trajectory as a starting point
-        let best_cost = self.calculate_path_cost(
+        let mut best_point = current + to_target.normalize() * circle_radius;
+        let mut best_cost = self.calculate_path_cost(
             current,
             best_point,
             target,
@@ -177,32 +175,27 @@ impl TwoStepMTP {
             obstacles.clone(),
         );
 
-        // if direct_cost < best_cost {
-        //     best_cost = direct_cost;
-        //     best_point = target;
-        // }
+        for i in 0..self.sample_count {
+            let angle = 2.0 * std::f64::consts::PI * i as f64 / self.sample_count as f64;
+            let sample_point =
+                current + Vector2::new(circle_radius * angle.cos(), circle_radius * angle.sin());
 
-        // for i in 0..self.sample_count {
-        //     let angle = 2.0 * std::f64::consts::PI * i as f64 / self.sample_count as f64;
-        //     let sample_point =
-        //         current + Vector2::new(circle_radius * angle.cos(), circle_radius * angle.sin());
+            // Calculate cost for this sample point
+            let cost = self.calculate_path_cost(
+                current,
+                sample_point,
+                target,
+                world_data,
+                current_player,
+                avoid_goal_area,
+                obstacles.clone(),
+            );
 
-        //     // Calculate cost for this sample point
-        //     let cost = self.calculate_path_cost(
-        //         current,
-        //         sample_point,
-        //         target,
-        //         world_data,
-        //         current_player,
-        //         avoid_goal_area,
-        //         obstacles.clone(),
-        //     );
-
-        //     if cost < best_cost {
-        //         best_cost = cost;
-        //         best_point = sample_point;
-        //     }
-        // }
+            if cost < best_cost {
+                best_cost = cost;
+                best_point = sample_point;
+            }
+        }
 
         // Visualize the best chosen midpoint as a larger cross
         player_context.debug_circle_fill_colored(
