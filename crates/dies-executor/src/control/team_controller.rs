@@ -177,12 +177,11 @@ impl TeamController {
 
                 let priority_list_ids: Vec<PlayerId> = priority_list
                     .iter()
-                    .map(|role_name| {
-                        *assignments
+                    .filter_map(|role_name| {
+                        assignments
                             .iter()
                             .find(|(_, role)| *role == role_name)
-                            .unwrap()
-                            .0
+                            .map(|(id, _)| *id)
                     })
                     .collect();
 
