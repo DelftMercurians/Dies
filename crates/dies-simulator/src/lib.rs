@@ -1858,21 +1858,21 @@ impl Simulation {
                 .unwrap();
             let position = ball_body.position().translation.vector;
             let x = position.x.clamp(
-                -(self.config.field_geometry.field_width
-                    - self.config.field_geometry.boundary_width
-                    - 100.0)
-                    / 2.0,
-                (self.config.field_geometry.field_width
-                    - self.config.field_geometry.boundary_width
-                    - 100.0)
-                    / 2.0,
-            );
-            let y = position.y.clamp(
                 -(self.config.field_geometry.field_length
                     - self.config.field_geometry.boundary_width
                     - 100.0)
                     / 2.0,
                 (self.config.field_geometry.field_length
+                    - self.config.field_geometry.boundary_width
+                    - 100.0)
+                    / 2.0,
+            );
+            let y = position.y.clamp(
+                -(self.config.field_geometry.field_width
+                    - self.config.field_geometry.boundary_width
+                    - 100.0)
+                    / 2.0,
+                (self.config.field_geometry.field_width
                     - self.config.field_geometry.boundary_width
                     - 100.0)
                     / 2.0,
