@@ -149,7 +149,6 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
     let right_cdf = 0.5 * (1.0 + erf_approx(right_z));
 
     let visibility_factor = (right_cdf - left_cdf).max(0.0);
-    println!("{} has vis factor of {}", s.player_id(), visibility_factor);
     prob *= visibility_factor;
 
     // Factor 3: Distance preference (closer intersection with goal line)
