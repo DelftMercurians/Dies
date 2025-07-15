@@ -209,8 +209,8 @@ impl TwoStepMTP {
         // total cost is multiplied by magic coeff -> lower implies we care more about
         // avoiding shit, less means we are straighter (less gay)
         let mut total_cost = 0.1 * ((start - mid).magnitude() + (mid - end).magnitude());
-        let robot_scare = 200.0; // mm - 2xrobot radius + some margin
-        let ball_scare = 150.0; // mm robot_radius + ball_radius
+        let robot_scare = 190.0; // mm - 2xrobot radius + some margin
+        let ball_scare = 100.0; // mm robot_radius + ball_radius
 
         // Calculate intersection cost with other robots
         for robot in world_data
@@ -234,22 +234,6 @@ impl TwoStepMTP {
                 total_cost += 500.0
             }
             total_cost += intersection_length; // Weight for robot avoidance
-        }
-
-        // Calculate intersection cost with ball
-        if let Some(ball) = &world_data.ball {
-            let intersection_length =
-                self.line_circle_intersection_length(
-                    start,
-                    mid,
-                    ball.position.xy(),
-                    ball_scare, // Ball radius
-                ) + self.line_circle_intersection_length(mid, end, ball.position.xy(), ball_scare)
-                    * 0.1;
-            if intersection_length > 0.0 {
-                total_cost += 1000.0
-            }
-            total_cost += intersection_length; // Weight for ball avoidance
         }
 
         // Calculate intersection cost with field boundaries
