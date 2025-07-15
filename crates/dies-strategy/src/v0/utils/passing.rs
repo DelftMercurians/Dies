@@ -296,6 +296,8 @@ pub fn combination_discounting_for_receivers(s: &RobotSituation) -> f64 {
     // value between 0 and 1 that totally screws up our pure bayesian shit
     // and tries to allocate the robots such that the distance between robots are large and
     // that we are not blocking line of sight for other robots
+    // TODO: add blocking based on how much we block of the goal (we don't want to stand between
+    // the goal and the ball)
     let mut discount = 1.0;
     let player_pos = s.player_data().position;
     let teammates = &s.world.own_players;
