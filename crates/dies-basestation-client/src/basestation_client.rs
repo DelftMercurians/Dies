@@ -94,7 +94,7 @@ enum Message {
 /// Async client for the serial port.
 #[derive(Debug)]
 pub struct BasestationHandle {
-    cmd_tx: mpsc::UnboundedSender<Message>,
+    cmd_tx: mpsc::Sender<Message>,
     info_rx: broadcast::Receiver<(Option<TeamColor>, PlayerFeedbackMsg)>,
 }
 
@@ -104,7 +104,7 @@ impl BasestationHandle {
         let BasestationClientConfig { port_name, .. } = config;
 
         // Launch a blocking thread for writing to the serial port
-        let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Message>();
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<Message>(32);
         let (info_tx, info_rx) = broadcast::channel::<(Option<TeamColor>, PlayerFeedbackMsg)>(16);
 
         let mut connection = match config.protocol {
@@ -289,6 +289,7 @@ impl BasestationHandle {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(Message::PlayerCmd((team_color, msg, tx)))
+            .await
             .context("Failed to send message to serial port")?;
         rx.await?
     }
@@ -296,13 +297,13 @@ impl BasestationHandle {
     pub fn send_no_wait(&mut self, team_color: TeamColor, msg: PlayerCmd) {
         let (tx, _) = oneshot::channel();
         self.cmd_tx
-            .send(Message::PlayerCmd((team_color, msg, tx)))
+            .try_send(Message::PlayerCmd((team_color, msg, tx)))
             .ok();
     }
 
     /// Update the id map
     pub fn update_id_map(&mut self, id_map: HashMap<(TeamColor, PlayerId), u32>) {
-        self.cmd_tx.send(Message::ChangeIdMap(id_map)).ok();
+        self.cmd_tx.try_send(Message::ChangeIdMap(id_map)).ok();
     }
 
     /// Receive a message from the serial port.

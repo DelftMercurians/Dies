@@ -620,7 +620,6 @@ impl Executor {
                     }
                 }
                 ssl_msg = ssl_client.recv() => {
-                    dies_core::debug_value("exec_ssl msg_elapsed", last_ssl_msg.elapsed().as_secs_f64() * 1000.0);
                     last_ssl_msg = tokio::time::Instant::now();
                     match ssl_msg {
                         Ok(SslMessage::Vision(vision_msg)) => {

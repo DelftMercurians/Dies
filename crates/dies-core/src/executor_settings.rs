@@ -223,7 +223,7 @@ impl Default for ExecutorSettings {
             team_configuration: TeamConfiguration::default(),
             yellow_team_settings: TeamSpecificSettings::default(),
             blue_team_settings: TeamSpecificSettings::default(),
-            allow_no_vision: false,
+            allow_no_vision: true,
         }
     }
 }

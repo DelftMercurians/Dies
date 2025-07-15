@@ -1,22 +1,20 @@
 {
   "controller_settings": {
-    "max_acceleration": 50000.0,
+    "max_acceleration": 125000.0,
     "max_velocity": 10000.0,
-    "max_deceleration": 50000.0,
+    "max_deceleration": 6340.0,
     "max_angular_velocity": 25.132741228718345,
     "max_angular_acceleration": 349.0658503988659,
-    "position_kp": 2.6,
-    "position_proportional_time_window": 2.2,
-    "position_cutoff_distance": 50.0,
+    "position_kp": 50000.0,
+    "position_proportional_time_window": 1.1,
+    "position_cutoff_distance": 70.0,
     "angle_kp": 2.8,
     "angle_cutoff_distance": 0.03490658503988659
   },
   "tracker_settings": {
-    "is_blue": true,
-    "initial_opp_goal_x": 1.0,
     "field_mask": {
       "x_min": -1.0,
-      "x_max": 1.0,
+      "x_max": -0.03,
       "y_min": -1.0,
       "y_max": 1.0
     },
@@ -25,5 +23,19 @@
     "player_yaw_lpf_alpha": 0.15,
     "ball_unit_transition_var": 20.48,
     "ball_measurement_var": 0.01
-  }
+  },
+  "team_configuration": {
+    "blue_active": true,
+    "yellow_active": false,
+    "blue_script_path": null,
+    "yellow_script_path": null,
+    "side_assignment": "YellowOnPositive"
+  },
+  "yellow_team_settings": {
+    "handicaps": {}
+  },
+  "blue_team_settings": {
+    "handicaps": {}
+  },
+  "allow_no_vision": true
 }

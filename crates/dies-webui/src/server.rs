@@ -168,20 +168,20 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
     let state = Arc::new(state);
 
     // Start debug log task -- this should probably be done elsewhere, but oh well
-    let debug_log_task = {
-        let debug_sub = debug_sub.clone();
-        let mut shutdown_rx = shutdown_rx.resubscribe();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    data = debug_sub.wait_and_get_copy() => {
-                        dies_logger::log_debug(&data);
-                    }
-                    _ = shutdown_rx.recv() => break,
-                }
-            }
-        })
-    };
+    // let debug_log_task = {
+    //     let debug_sub = debug_sub.clone();
+    //     let mut shutdown_rx = shutdown_rx.resubscribe();
+    //     tokio::spawn(async move {
+    //         loop {
+    //             tokio::select! {
+    //                 data = debug_sub.wait_and_get_copy() => {
+    //                     dies_logger::log_debug(&data);
+    //                 }
+    //                 _ = shutdown_rx.recv() => break,
+    //             }
+    //         }
+    //     })
+    // };
 
     // Start basestation watcher
     let basestation_task = {
@@ -410,9 +410,9 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
         .await
         .expect("Shutting down basestation watcher task failed");
     web_task.await.expect("Shutting down server task failed");
-    debug_log_task
-        .await
-        .expect("Shutting down debug log task failed");
+    // debug_log_task
+    //     .await
+    //     .expect("Shutting down debug log task failed");
 }
 
 async fn start_webserver(

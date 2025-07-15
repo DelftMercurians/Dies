@@ -123,14 +123,12 @@ impl PlayerTracker {
         // For controlled players, require both vision and control
         // For non-controlled players (opponent players), only require vision
         if self.is_controlled {
-            // if self.rolling_control < 0.2 || self.rolling_vision < 0.2 {
-            //     println!("Player {} is gone (control)", self.id);
-            //     self.is_gone = true;
-            // }
-            // if self.rolling_control > 0.8 && self.rolling_vision > 0.8 {
-            //     println!("Player {} is back (control)", self.id);
-            //     self.is_gone = false;
-            // }
+            if self.rolling_control < 0.2 || self.rolling_vision < 0.2 {
+                self.is_gone = true;
+            }
+            if self.rolling_control > 0.8 && self.rolling_vision > 0.8 {
+                self.is_gone = false;
+            }
         } else {
             if self.rolling_vision < 0.2 {
                 self.is_gone = true;
