@@ -19,6 +19,10 @@ impl Kick {
         let mut input = PlayerControlInput::new();
         input.with_dribbling(1.0);
 
+        if !ctx.player.breakbeam_ball_detected {
+            return SkillProgress::failure();
+        }
+
         let ready = match ctx.player.kicker_status.as_ref() {
             Some(SysStatus::Ready) => true,
             _ => false,

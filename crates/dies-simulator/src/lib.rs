@@ -1865,7 +1865,8 @@ impl Simulation {
                     - self.config.field_geometry.boundary_width)
                     / 2.0,
             );
-            ball_body.set_position(Isometry::translation(x, y, position.z), true);
+            let z = position.z.clamp(22.0, 100.0);
+            ball_body.set_position(Isometry::translation(x, y, z), true);
         }
 
         self.current_time += dt;

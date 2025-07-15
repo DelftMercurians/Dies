@@ -52,7 +52,7 @@ pub async fn test_radio(
             cmd.kick_counter = 0;
 
             cmd.robot_cmd = RobotCmd::Arm;
-            if kick && elapsed > 0.2 {
+            if kick && elapsed > 2.0 {
                 cmd.kick_counter = 1;
             }
             println!("{}", cmd.kick_counter);

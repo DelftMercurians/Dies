@@ -19,10 +19,11 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .build(),
         )
         .add(
-            guard_node()
-                .condition(|s| should_pickup_ball(s) && s.am_closest_to_ball())
+            committing_guard_node()
+                .when(|s| should_pickup_ball(s) && s.am_closest_to_ball())
                 .description("Ball pickup opportunity")
-                .then(
+                .until(|_| false)
+                .commit_to(
                     semaphore_node()
                         .do_then(
                             sequence_node()
@@ -96,56 +97,79 @@ fn build_zone_based_striker_behavior() -> BehaviorNode {
 /// Build striker behavior within a specific zone
 fn build_striker_in_zone(zone: &str) -> BehaviorNode {
     let zone_owned = zone.to_string();
-    scoring_select_node()
-        .add_child(
-            guard_node()
-                .condition(|s| s.has_ball())
-                .then(build_ball_carrier_behavior(&zone_owned))
-                .description("Have ball")
-                .build()
-                .into(),
-            |s| if s.has_ball() { 100.0 } else { 0.0 },
-        )
-        .add_child(
-            fetch_ball()
-                .description("Get ball".to_string())
-                .build()
-                .into(),
-            |s| {
-                let ball_dist = s.distance_to_ball();
-                if ball_dist < 1000.0 {
-                    80.0 - ball_dist / 20.0
-                } else {
-                    0.0
-                }
-            },
-        )
-        .add_child(
-            {
-                let zone_inner = zone_owned.clone();
-                {
-                    let zone_name = zone_inner.clone();
-                    go_to_position(Argument::callback(move |s| {
-                        find_optimal_striker_position(s, &zone_inner)
-                    }))
-                    .with_heading(Argument::callback(|s: &RobotSituation| {
-                        if let Some(ball) = &s.world.ball {
-                            let ball_pos = ball.position.xy();
-                            let my_pos = s.player_data().position;
-                            Angle::between_points(ball_pos, my_pos)
+    let zone_owned_clone = zone_owned.clone();
+    semaphore_node()
+        .semaphore_id(format!("striker_in_zone_{}", zone))
+        .max_entry(1)
+        .do_then(
+            scoring_select_node()
+                .add_child(
+                    guard_node()
+                        .condition(|s| s.has_ball())
+                        .then(build_ball_carrier_behavior(&zone_owned))
+                        .description("Have ball")
+                        .build()
+                        .into(),
+                    |s| if s.has_ball() { 100.0 } else { 0.0 },
+                )
+                .add_child(
+                    fetch_ball()
+                        .description("Get ball".to_string())
+                        .build()
+                        .into(),
+                    move |s| {
+                        let ball_pos = if let Some(ball) = &s.world.ball {
+                            ball.position.xy()
                         } else {
-                            Angle::from_radians(0.0)
+                            return 0.0;
+                        };
+                        let my_zone = &zone_owned_clone;
+                        let in_my_zone = match my_zone.as_str() {
+                            "top" => ball_pos.y > 1000.0,
+                            "middle" => ball_pos.y >= -1000.0 && ball_pos.y <= 1000.0,
+                            "bottom" => ball_pos.y < -1000.0,
+                            _ => true,
+                        };
+                        if in_my_zone {
+                            80.0
+                        } else {
+                            let dist = s.distance_to_ball();
+                            if dist < 1000.0 {
+                                80.0 - dist / 20.0
+                            } else {
+                                0.0
+                            }
                         }
-                    }))
-                    .description(format!("Position in {}", zone_name))
-                    .build()
-                    .into()
-                }
-            },
-            |_| 30.0,
+                    },
+                )
+                .add_child(
+                    {
+                        let zone_inner = zone_owned.clone();
+                        {
+                            let zone_name = zone_inner.clone();
+                            go_to_position(Argument::callback(move |s| {
+                                find_optimal_striker_position(s, &zone_inner)
+                            }))
+                            .with_heading(Argument::callback(|s: &RobotSituation| {
+                                if let Some(ball) = &s.world.ball {
+                                    let ball_pos = ball.position.xy();
+                                    let my_pos = s.player_data().position;
+                                    Angle::between_points(ball_pos, my_pos)
+                                } else {
+                                    Angle::from_radians(0.0)
+                                }
+                            }))
+                            .description(format!("Position in {}", zone_name))
+                            .build()
+                            .into()
+                        }
+                    },
+                    |_| 30.0,
+                )
+                .hysteresis_margin(0.1)
+                .description(format!("Zone {} Actions", zone))
+                .build(),
         )
-        .hysteresis_margin(0.2)
-        .description(format!("Zone {} Actions", zone))
         .build()
         .into()
 }

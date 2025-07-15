@@ -8,7 +8,7 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
         .add(
             committing_guard_node()
                 .when(|s| should_pickup_ball(s))
-                .until(|s| false)
+                .until(should_cancel_pickup_ball)
                 .commit_to(
                     semaphore_node()
                         .semaphore_id("defender_pickup_ball".to_string())
@@ -74,7 +74,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
             return false;
         }
 
-        // Check if ball is close to any opponent (within 1000mm)
+        // Check if ball is close to any opponent (within 400mm)
         let ball_threatened = s
             .world
             .opp_players
@@ -118,7 +118,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
 }
 
 fn should_cancel_pickup_ball(s: &RobotSituation) -> bool {
-    s.ball_position().x > 500.0 || s.distance_of_closest_opp_player_to_ball() < 400.0
+    s.ball_position().x > 500.0 || s.distance_of_closest_opp_player_to_ball() < 200.0
 }
 
 pub fn score_as_harasser(s: &RobotSituation) -> f64 {
