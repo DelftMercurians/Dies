@@ -1,11 +1,9 @@
-use dies_core::Vector2;
+use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
-
-use crate::v0::utils::get_defender_heading;
 
 pub fn build_free_kick_interference_tree(_s: &RobotSituation) -> BehaviorNode {
     go_to_position(calculate_free_kick_defense_position)
-        .with_heading(get_defender_heading)
+        .with_heading(head_towards_ball)
         .description("Free kick defense")
         .build()
         .into()
@@ -45,5 +43,15 @@ fn calculate_free_kick_defense_position(s: &RobotSituation) -> Vector2 {
         ball_pos + ball_to_goal * 700.0
     } else {
         s.get_own_goal_position() + Vector2::new(1200.0, 0.0)
+    }
+}
+
+pub fn head_towards_ball(s: &RobotSituation) -> Angle {
+    if let Some(ball) = &s.world.ball {
+        let ball_pos = ball.position.xy();
+        let my_pos = s.player_data().position;
+        Angle::between_points(my_pos, ball_pos)
+    } else {
+        Angle::from_radians(0.0)
     }
 }
