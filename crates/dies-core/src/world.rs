@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    distance_to_line, player::PlayerId, Angle, FieldGeometry, RoleType, SideAssignment, SysStatus,
-    TeamColor, TeamPlayerId, Vector2, Vector3,
+    distance_to_line, player::PlayerId, Angle, FieldGeometry, Handicap, RoleType, SideAssignment,
+    SysStatus, TeamColor, TeamPlayerId, Vector2, Vector3,
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
@@ -215,6 +215,8 @@ pub struct PlayerData {
     pub breakbeam_ball_detected: bool,
     pub imu_status: Option<SysStatus>,
     pub kicker_status: Option<SysStatus>,
+
+    pub handicaps: HashSet<Handicap>,
 }
 
 impl PlayerData {
@@ -235,6 +237,7 @@ impl PlayerData {
             imu_status: None,
             breakbeam_ball_detected: false,
             kicker_status: None,
+            handicaps: HashSet::new(),
         }
     }
 }
@@ -673,6 +676,7 @@ pub fn mock_world_data() -> WorldData {
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             kicker_status: Some(SysStatus::Standby),
+            handicaps: HashSet::new(),
         }],
         yellow_team: vec![PlayerData {
             id: PlayerId::new(1),
@@ -690,6 +694,7 @@ pub fn mock_world_data() -> WorldData {
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             kicker_status: Some(SysStatus::Standby),
+            handicaps: HashSet::new(),
         }],
         field_geom: Default::default(),
         ball: None,
@@ -722,6 +727,7 @@ pub fn mock_team_data() -> TeamData {
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             kicker_status: Some(SysStatus::Standby),
+            handicaps: HashSet::new(),
         }],
         opp_players: vec![PlayerData {
             id: PlayerId::new(1),
@@ -739,6 +745,7 @@ pub fn mock_team_data() -> TeamData {
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             kicker_status: Some(SysStatus::Standby),
+            handicaps: HashSet::new(),
         }],
         field_geom: Some(FieldGeometry {
             field_length: 9000.0,

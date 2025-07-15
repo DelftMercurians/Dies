@@ -1,7 +1,8 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use dies_core::{
-    Angle, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2, WorldInstant,
+    Angle, Handicap, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2,
+    WorldInstant,
 };
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
@@ -9,7 +10,6 @@ use nalgebra::{self as na, Vector4};
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
 
 const BREAKBEAM_WINDOW: usize = 100;
-const BREAKBEAM_DETECTION_THRESHOLD: usize = 5;
 
 /// Stored data for a player from the last update.
 ///
@@ -29,7 +29,7 @@ struct StoredData {
 /// Tracker for a single player.
 pub struct PlayerTracker {
     /// Player's unique id
-    id: PlayerId,
+    pub id: PlayerId,
     /// Whether this player's team is controlled (we receive feedback)
     is_controlled: bool,
 
@@ -52,11 +52,17 @@ pub struct PlayerTracker {
     pub is_gone: bool,
     rolling_control: f64,
     rolling_vision: f64,
+
+    handicaps: HashSet<Handicap>,
 }
 
 impl PlayerTracker {
     /// Create a new PlayerTracker.
-    pub fn new(id: PlayerId, settings: &TrackerSettings) -> PlayerTracker {
+    pub fn new(
+        id: PlayerId,
+        handicaps: HashSet<Handicap>,
+        settings: &TrackerSettings,
+    ) -> PlayerTracker {
         PlayerTracker {
             id,
             is_controlled: false, // Will be set to true when feedback is received
@@ -74,6 +80,7 @@ impl PlayerTracker {
             last_feedback_time: None,
             rolling_vision: 1.0,
             rolling_control: 1.0,
+            handicaps,
         }
     }
 
@@ -203,13 +210,14 @@ impl PlayerTracker {
         }
     }
 
-    pub fn update_settings(&mut self, settings: &TrackerSettings) {
+    pub fn update_settings(&mut self, handicaps: HashSet<Handicap>, settings: &TrackerSettings) {
         if let Some(filter) = self.filter.as_mut() {
             filter.update_settings(
                 settings.player_unit_transition_var,
                 settings.player_measurement_var,
             );
         }
+        self.handicaps = handicaps;
         self.yaw_filter
             .update_settings(settings.player_yaw_lpf_alpha);
     }
@@ -234,6 +242,7 @@ impl PlayerTracker {
                 .unwrap_or(false),
             imu_status: self.last_feedback.and_then(|f| f.imu_status),
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),
+            handicaps: self.handicaps.clone(),
         })
     }
 }
@@ -248,7 +257,11 @@ mod test {
 
     #[test]
     fn test_no_player() {
-        let tracker = PlayerTracker::new(PlayerId::new(1), &TrackerSettings::default());
+        let tracker = PlayerTracker::new(
+            PlayerId::new(1),
+            HashSet::new(),
+            &TrackerSettings::default(),
+        );
 
         assert!(!tracker.is_init());
         assert!(tracker.get().is_none());
@@ -256,7 +269,11 @@ mod test {
 
     #[test]
     fn test_no_data_after_one_update() {
-        let mut tracker = PlayerTracker::new(PlayerId::new(1), &TrackerSettings::default());
+        let mut tracker = PlayerTracker::new(
+            PlayerId::new(1),
+            HashSet::new(),
+            &TrackerSettings::default(),
+        );
 
         let mut player = SSL_DetectionRobot::new();
         player.set_x(100.0);
@@ -271,7 +288,7 @@ mod test {
     #[test]
     fn test_basic_update() {
         let id = PlayerId::new(1);
-        let mut tracker = PlayerTracker::new(id, &TrackerSettings::default());
+        let mut tracker = PlayerTracker::new(id, HashSet::new(), &TrackerSettings::default());
 
         let mut player = SSL_DetectionRobot::new();
         player.set_x(100.0);
@@ -310,7 +327,7 @@ mod test {
     fn test_x_flip() {
         let id = PlayerId::new(1);
         let settings = TrackerSettings::default();
-        let mut tracker = PlayerTracker::new(id, &settings);
+        let mut tracker = PlayerTracker::new(id, HashSet::new(), &settings);
 
         let mut player = SSL_DetectionRobot::new();
         let dir = PI / 8.0;

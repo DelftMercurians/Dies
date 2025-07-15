@@ -221,10 +221,6 @@ impl PlayerController {
     ) {
         self.frame_misses = 0;
 
-        if is_about_to_collide(state, world, 3.0 * dt) {
-            player_context.debug_string("collision", "true");
-        }
-
         if let Some(fan_speed) = input.fan_speed {
             self.fan_speed = fan_speed;
         }
@@ -232,7 +228,18 @@ impl PlayerController {
             self.kick_speed = kick_speed;
         }
 
-        player_context.debug_value("fan_speed", self.fan_speed);
+        player_context.debug_string(
+            "handicaps",
+            format!(
+                "{:?}",
+                state
+                    .handicaps
+                    .iter()
+                    .map(|h| format!("{}", h).replace("No ", ""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        );
 
         // Calculate velocity using MTP controller (MPC is handled at team level)
         self.last_yaw = state.raw_yaw;

@@ -12,8 +12,9 @@ pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
 };
 use dies_core::{
-    ExecutorSettings, FieldMask, GameState, PlayerFeedbackMsg, PlayerId, RawGameStateData,
-    SideAssignment, TeamColor, TrackerSettings, Vector2, WorldData, WorldInstant,
+    ExecutorSettings, FieldMask, GameState, Handicap, PlayerFeedbackMsg, PlayerId,
+    RawGameStateData, SideAssignment, TeamColor, TeamSpecificSettings, TrackerSettings, Vector2,
+    WorldData, WorldInstant,
 };
 use player::PlayerTracker;
 
@@ -23,19 +24,33 @@ use crate::game_state::GameStateTracker;
 struct TeamTracker {
     players: HashMap<PlayerId, PlayerTracker>,
     controlled: bool,
+    handicaps: HashMap<PlayerId, Vec<Handicap>>,
 }
 
 impl TeamTracker {
-    fn new(controlled: bool) -> Self {
+    fn new(controlled: bool, handicaps: HashMap<PlayerId, Vec<Handicap>>) -> Self {
         Self {
             players: HashMap::new(),
             controlled,
+            handicaps,
         }
     }
 
-    fn update_settings(&mut self, settings: &TrackerSettings) {
+    fn update_settings(
+        &mut self,
+        handicaps: &HashMap<PlayerId, Vec<Handicap>>,
+        settings: &TrackerSettings,
+    ) {
         for player_tracker in self.players.values_mut() {
-            player_tracker.update_settings(settings);
+            player_tracker.update_settings(
+                handicaps
+                    .get(&player_tracker.id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect(),
+                settings,
+            );
         }
     }
 
@@ -46,10 +61,18 @@ impl TeamTracker {
         t_capture: f64,
         tracker_settings: &TrackerSettings,
     ) {
-        let tracker = self
-            .players
-            .entry(player_id)
-            .or_insert_with(|| PlayerTracker::new(player_id, tracker_settings));
+        let tracker = self.players.entry(player_id).or_insert_with(|| {
+            PlayerTracker::new(
+                player_id,
+                self.handicaps
+                    .get(&player_id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect(),
+                tracker_settings,
+            )
+        });
         tracker.update(t_capture, player);
     }
 
@@ -114,14 +137,23 @@ pub struct WorldTracker {
     tracker_settings: TrackerSettings,
     blue_team_yellow_cards: usize,
     yellow_team_yellow_cards: usize,
+
+    blue_team_settings: TeamSpecificSettings,
+    yellow_team_settings: TeamSpecificSettings,
 }
 
 impl WorldTracker {
     /// Create a new world tracker with default team configuration.
     pub fn new(settings: &ExecutorSettings, controlled_teams: &[TeamColor]) -> Self {
         Self {
-            blue_team: TeamTracker::new(controlled_teams.contains(&TeamColor::Blue)),
-            yellow_team: TeamTracker::new(controlled_teams.contains(&TeamColor::Yellow)),
+            blue_team: TeamTracker::new(
+                controlled_teams.contains(&TeamColor::Blue),
+                settings.blue_team_settings.handicaps.clone(),
+            ),
+            yellow_team: TeamTracker::new(
+                controlled_teams.contains(&TeamColor::Yellow),
+                settings.yellow_team_settings.handicaps.clone(),
+            ),
             ball_tracker: BallTracker::new(&settings.tracker_settings),
             game_state_tracker: GameStateTracker::new(),
             field_geometry: None,
@@ -134,6 +166,8 @@ impl WorldTracker {
             tracker_settings: settings.tracker_settings.clone(),
             blue_team_yellow_cards: 0,
             yellow_team_yellow_cards: 0,
+            blue_team_settings: settings.blue_team_settings.clone(),
+            yellow_team_settings: settings.yellow_team_settings.clone(),
         }
     }
 
@@ -153,9 +187,13 @@ impl WorldTracker {
 
     pub fn update_settings(&mut self, settings: &ExecutorSettings) {
         self.tracker_settings = settings.tracker_settings.clone();
-        self.blue_team.update_settings(&self.tracker_settings);
-        self.yellow_team.update_settings(&self.tracker_settings);
+        self.blue_team
+            .update_settings(&self.blue_team_settings.handicaps, &self.tracker_settings);
+        self.yellow_team
+            .update_settings(&self.yellow_team_settings.handicaps, &self.tracker_settings);
         self.ball_tracker.update_settings(&self.tracker_settings);
+        self.blue_team_settings = settings.blue_team_settings.clone();
+        self.yellow_team_settings = settings.yellow_team_settings.clone();
 
         // Log the field mask lines
         if let Some(geom) = self.field_geometry.as_ref() {

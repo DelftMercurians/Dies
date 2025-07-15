@@ -383,6 +383,8 @@ impl Default for RoleAssignmentSolver {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use crate::behavior_tree::NoopNode;
 
     use super::*;
@@ -410,6 +412,7 @@ mod tests {
                 breakbeam_ball_detected: false,
                 imu_status: Some(SysStatus::Ready),
                 kicker_status: Some(SysStatus::Standby),
+                handicaps: HashSet::new(),
             });
         }
 

@@ -1,4 +1,4 @@
-use dies_core::{Angle, GameState, PlayerData, PlayerId, TeamColor, TeamData, Vector2};
+use dies_core::{Angle, GameState, Handicap, PlayerData, PlayerId, TeamColor, TeamData, Vector2};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -189,6 +189,28 @@ impl RobotSituation {
             .as_ref()
             .map(|b| b.velocity.xy())
             .unwrap_or_default()
+    }
+
+    pub fn has_handicap(&self, handicap: Handicap) -> bool {
+        self.player_data().handicaps.contains(&handicap)
+    }
+
+    pub fn does_not_have_handicap(&self, handicap: Handicap) -> bool {
+        !self.has_handicap(handicap)
+    }
+
+    pub fn has_any_handicap(&self, handicaps: &[Handicap]) -> bool {
+        self.player_data()
+            .handicaps
+            .iter()
+            .any(|h| handicaps.contains(h))
+    }
+
+    pub fn has_none_of_handicaps(&self, handicaps: &[Handicap]) -> bool {
+        self.player_data()
+            .handicaps
+            .iter()
+            .all(|h| !handicaps.contains(h))
     }
 
     pub fn ball_speed(&self) -> f64 {

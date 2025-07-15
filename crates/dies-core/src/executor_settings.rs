@@ -1,9 +1,9 @@
-use std::{fs, path::Path};
+use std::{collections::HashMap, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::{FieldGeometry, SideAssignment};
+use crate::{FieldGeometry, PlayerId, SideAssignment};
 
 /// Settings for the low-level controller.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -145,6 +145,29 @@ impl Default for TeamConfiguration {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+#[typeshare]
+pub enum Handicap {
+    NoKicker,
+    NoDribbler,
+}
+
+impl std::fmt::Display for Handicap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Handicap::NoKicker => write!(f, "No kicker"),
+            Handicap::NoDribbler => write!(f, "No dribbler"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[typeshare]
+pub struct TeamSpecificSettings {
+    pub handicaps: HashMap<PlayerId, Vec<Handicap>>,
+}
+
 /// Settings for the executor.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
@@ -152,6 +175,8 @@ pub struct ExecutorSettings {
     pub controller_settings: ControllerSettings,
     pub tracker_settings: TrackerSettings,
     pub team_configuration: TeamConfiguration,
+    pub yellow_team_settings: TeamSpecificSettings,
+    pub blue_team_settings: TeamSpecificSettings,
 }
 
 impl ExecutorSettings {
@@ -195,6 +220,8 @@ impl Default for ExecutorSettings {
             controller_settings: ControllerSettings::default(),
             tracker_settings: TrackerSettings::default(),
             team_configuration: TeamConfiguration::default(),
+            yellow_team_settings: TeamSpecificSettings::default(),
+            blue_team_settings: TeamSpecificSettings::default(),
         }
     }
 }

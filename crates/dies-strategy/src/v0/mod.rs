@@ -1,4 +1,4 @@
-use dies_core::GameState;
+use dies_core::{GameState, Handicap};
 use dies_executor::behavior_tree_api::GameContext;
 
 use crate::v0::{
@@ -41,6 +41,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                 // Kickoff kicker
                 game.add_role("kickoff_kicker")
                     .count(1)
+                    .exclude(|s| s.has_handicap(Handicap::NoKicker))
                     .score(score_kickoff_kicker)
                     .behavior(|s| kickoff_kicker::build_kickoff_kicker_tree(s));
             }
@@ -50,6 +51,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                 // Free kick kicker
                 game.add_role("free_kick_kicker")
                     .count(1)
+                    .exclude(|s| s.has_handicap(Handicap::NoKicker))
                     .score(score_free_kick_kicker)
                     .behavior(|s| freekick_kicker::build_free_kick_kicker_tree(s));
             } else {
@@ -66,6 +68,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                 // Penalty kicker
                 game.add_role("penalty_kicker")
                     .count(1)
+                    .exclude(|s| s.has_handicap(Handicap::NoKicker))
                     .score(score_penalty_kicker)
                     .behavior(|s| penalty_kicker::build_penalty_kicker_tree(s));
             }
@@ -77,6 +80,7 @@ pub fn v0_strategy(game: &mut GameContext) {
     game.add_role("striker")
         .max(2)
         .score(score_striker)
+        .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
         .behavior(|s| striker::build_striker_tree(s));
 
     game.add_role("waller")
