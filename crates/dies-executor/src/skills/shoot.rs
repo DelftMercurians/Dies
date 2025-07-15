@@ -14,6 +14,15 @@ pub enum ShootTarget {
     },
 }
 
+impl ShootTarget {
+    pub fn position(&self) -> Option<Vector2> {
+        match self {
+            ShootTarget::Goal(position) => Some(*position),
+            ShootTarget::Player { position, .. } => *position,
+        }
+    }
+}
+
 enum ShootState {
     None,
     Face(Face),

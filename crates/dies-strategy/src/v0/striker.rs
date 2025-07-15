@@ -2,8 +2,8 @@ use dies_core::{Angle, GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::{
-    can_pass_to_teammate, find_best_pass_target, find_optimal_shot_target, get_heading_toward_ball,
-    has_clear_shot, under_pressure,
+    find_best_shoot_target, find_best_shoot_score, get_heading_toward_ball,
+    under_pressure,
 };
 
 pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
@@ -26,7 +26,14 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .commit_to(
                     semaphore_node()
                         .do_then(
-                            shoot().build()
+                            sequence_node()
+                                .add(
+                                    fetch_ball()
+                                        .description("Pickup free ball".to_string())
+                                        .build(),
+                                )
+                                .add(shoot(find_best_shoot_target))
+                                .build(),
                         )
                         .semaphore_id("striker_ball_pickup".to_string())
                         .max_entry(1)
@@ -169,7 +176,7 @@ fn build_striker_in_zone(zone: &str) -> BehaviorNode {
 /// Build ball carrier decision making behavior
 fn build_ball_carrier_behavior(zone: &str) -> BehaviorNode {
     scoring_select_node()
-        .add_child(shoot().build(), shooting_score)
+        .add_child(shoot(find_best_shoot_target), find_best_shoot_score)
         .add_child(
             build_dribble_sequence(zone),
             |_| 0.5, // Base dribble score
@@ -209,11 +216,11 @@ fn get_kickoff_striker_position(s: &RobotSituation) -> Vector2 {
 }
 
 pub fn calculate_striker_advance_position(s: &RobotSituation) -> Vector2 {
-    // Find optimal shot target
-    let shot_target = find_optimal_shot_target(s);
+    // Find optimal shoot target
+    let shoot_target = find_best_shoot_target(s).position().unwrap_or(s.get_opp_goal_position());
 
-    // Advance toward shot target, not just goal center
-    let advance_direction = (shot_target - s.position()).normalize();
+    // Advance toward shoot target, not just goal center
+    let advance_direction = (shoot_target - s.position()).normalize();
     let advance_distance = 1000.0;
 
     let target_pos = s.position() + advance_direction * advance_distance;

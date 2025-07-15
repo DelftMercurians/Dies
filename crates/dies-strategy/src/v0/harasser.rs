@@ -1,7 +1,7 @@
 use dies_core::{PlayerId, Vector2};
 use dies_executor::behavior_tree_api::*;
 
-use crate::v0::utils::find_best_pass_target;
+use crate::v0::utils::find_best_shoot_target;
 
 pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -14,7 +14,7 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
                         .semaphore_id("defender_pickup_ball".to_string())
                         .max_entry(1)
                         .do_then(
-                            shoot().build()
+                            shoot(find_best_shoot_target)
                         )
                         .build(),
                 )

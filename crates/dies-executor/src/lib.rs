@@ -20,7 +20,7 @@ mod behavior_tree;
 mod control;
 mod gc_client;
 mod handle;
-mod skills;
+pub mod skills;
 
 pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
 use control::{TeamController, Velocity};

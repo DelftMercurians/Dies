@@ -1,7 +1,7 @@
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::{
-    find_best_pass_target, find_optimal_shot_target, has_clear_shot, under_pressure,
+    find_best_shoot_target, under_pressure,
 };
 
 pub fn build_free_kick_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
@@ -12,49 +12,7 @@ pub fn build_free_kick_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .build(),
         )
         .add(
-            select_node()
-                .description("Free kick actions")
-                .add(
-                    // Direct shot if close to goal
-                    guard_node()
-                        .description("Direct shot?")
-                        .condition(|s| {
-                            s.distance_to_position(s.get_opp_goal_position()) < 3000.0
-                                && has_clear_shot(s)
-                        })
-                        .then(
-                            sequence_node()
-                                .description("Execute shot")
-                                .add(
-                                    face_position(find_optimal_shot_target)
-                                        .description("Aim at goal".to_string())
-                                        .with_ball()
-                                        .build(),
-                                )
-                                .add(
-                                    wait(Argument::Static(0.5))
-                                        .description("Aim".to_string())
-                                        .build(),
-                                )
-                                .add(kick().description("Free kick shot!".to_string()).build())
-                                .build(),
-                        )
-                        .build(),
-                )
-                .add(
-                    sequence_node()
-                        .add(
-                            face_position(find_best_pass_target)
-                                .with_ball()
-                                .description("Aim pass".to_string())
-                                .build(),
-                        )
-                        .add(kick().description("Free kick pass!".to_string()).build())
-                        .description("Execute pass")
-                        .build(),
-                )
-                .description("Pass option")
-                .build(),
+            shoot(find_best_shoot_target)
         )
         .build()
         .into()

@@ -1,8 +1,34 @@
-use dies_core::{Angle, Vector2};
+use dies_core::{Angle, Vector2, PlayerData};
 use dies_executor::behavior_tree_api::*;
+use dies_executor::skills::ShootTarget;
+use dies_core::PlayerId;
 
-pub fn clean_goal_shot_score(s: &RobotSituation, player: &dies_core::PlayerData) -> f64 {
-    let player_pos = player.position;
+fn erf_approx(x: f64) -> f64 {
+    // Abramowitz and Stegun approximation
+    let a1 = 0.254829592;
+    let a2 = -0.284496736;
+    let a3 = 1.421413741;
+    let a4 = -1.453152027;
+    let a5 = 1.061405429;
+    let p = 0.3275911;
+
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    let x = x.abs();
+
+    let t = 1.0 / (1.0 + p * x);
+    let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x * x).exp();
+
+    sign * y
+}
+
+pub fn change_situation_player(s: &RobotSituation, other_id: PlayerId) -> RobotSituation {
+    let mut copy = s.clone();
+    copy.player_id = other_id;
+    copy
+}
+
+pub fn best_goal_shoot(s: &RobotSituation) -> (Vector2, f64) {
+    let robot_pos = s.player_data().position;
     let goal_pos = s.get_opp_goal_position();
 
     // Get goal geometry
@@ -13,124 +39,233 @@ pub fn clean_goal_shot_score(s: &RobotSituation, player: &dies_core::PlayerData)
     let goal_left = Vector2::new(goal_pos.x, goal_pos.y - goal_width / 2.0);
     let goal_right = Vector2::new(goal_pos.x, goal_pos.y + goal_width / 2.0);
 
-    // Factor 1: Distance to goal (closer is better, normalized between 0-1)
-    let distance_to_goal = (player_pos - goal_pos).norm();
-    let max_field_distance = 8000.0; // Approximate max field distance
-    let distance_score = 1.0 - (distance_to_goal / max_field_distance).min(1.0);
+    // Sample angles between goal boundaries
+    let mut best_prob: f64 = 0.0;
+    let mut best_pos = goal_pos;
 
-    // Factor 2: Visibility angle of the goal (wider angle is better)
-    let left_angle = Angle::between_points(goal_left, player_pos);
-    let right_angle = Angle::between_points(goal_right, player_pos);
-    let visibility_angle = (left_angle.radians() - right_angle.radians()).abs();
-    let max_visibility_angle = std::f64::consts::PI;
-    let visibility_score = (visibility_angle / max_visibility_angle).min(1.0);
+    let num_samples = 40;
+    for i in 0..num_samples {
+        let t = i as f64 / (num_samples - 1) as f64;
 
-    // Factor 3: Check if shot line is blocked
-    let center_angle = Angle::between_points(player_pos, goal_pos);
-    let mut temp_situation = s.clone();
-    temp_situation.player_id = player.id;
-    let nearest_opponent_distance =
-        find_nearest_opponent_distance_along_direction(&temp_situation, center_angle);
+        let pos = goal_left * (1.0 - t) + goal_right * t;
+        let prob = goal_shoot_success_probability(s, pos);
 
-    let blocking_score = if nearest_opponent_distance < 200.0 {
-        0.0
-    } else if nearest_opponent_distance < 500.0 {
+        if prob > best_prob {
+            best_prob = prob;
+            best_pos = pos;
+        }
+    }
+
+    (best_pos, best_prob)
+}
+
+fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f64 {
+    let mut prob: f64 = 1.0;
+
+    let player_pos = s.player_data().position;
+    let goal_pos = s.get_opp_goal_position();
+    let direction = Angle::between_points(player_pos, target_pos);
+
+    // Find nearest opponent robot distance along this direction
+    let nearest_opponent_distance = find_nearest_opponent_distance_along_direction(s, Angle::PI - direction);
+
+    // Factor 1: Distance to nearest opponent (larger is better, quadratic growth)
+    let opp_distance_factor = if nearest_opponent_distance < 200.0 {
+        0.05
+    } else if nearest_opponent_distance < 300.0 {
+        0.2
+    } else if nearest_opponent_distance < 400.0 {
         0.3
+    } else if nearest_opponent_distance < 600.0 {
+        0.6
     } else if nearest_opponent_distance < 1000.0 {
-        0.7
+        0.8
+    } else { 1.0 };
+    prob *= opp_distance_factor;
+
+    // Factor 2: Angle to middle of goal (closer to center is better)
+    let center_angle = Angle::between_points(goal_pos, player_pos);
+    let angle_diff = (direction.radians() - center_angle.radians()).abs();
+    let angle_factor = if angle_diff <= 0.1 {
+        1.0
+    } else if angle_diff <= 0.3 {
+        0.9
+    } else { 0.8 };
+    prob *= angle_factor;
+
+    // Factor 2': Angle of the goal visibility
+    // this one can actually be computed analytically
+    let shooting_noise_std = 0.14; // in rad
+    let goal_left = Vector2::new(goal_pos.x, goal_pos.y - s.world.field_geom.as_ref().unwrap().goal_width / 2.0);
+    let goal_right = Vector2::new(goal_pos.x, goal_pos.y + s.world.field_geom.as_ref().unwrap().goal_width / 2.0);
+    let left_angle = Angle::between_points(player_pos, goal_left);
+    let right_angle = Angle::between_points(player_pos, goal_right);
+
+    // Compute probability mass of normal distribution falling into goal interval
+    let center_angle = direction.radians();
+    let left_bound = left_angle.radians();
+    let right_bound = right_angle.radians();
+
+    // Normalize angles to [-π, π] and handle wrapping
+    let mut left_diff = left_bound - center_angle;
+    let mut right_diff = right_bound - center_angle;
+
+    // Handle angle wrapping
+    if left_diff > std::f64::consts::PI {
+        left_diff -= 2.0 * std::f64::consts::PI;
+    } else if left_diff < -std::f64::consts::PI {
+        left_diff += 2.0 * std::f64::consts::PI;
+    }
+
+    if right_diff > std::f64::consts::PI {
+        right_diff -= 2.0 * std::f64::consts::PI;
+    } else if right_diff < -std::f64::consts::PI {
+        right_diff += 2.0 * std::f64::consts::PI;
+    }
+
+    // Ensure left_diff <= right_diff for proper integration bounds
+    if left_diff > right_diff {
+        std::mem::swap(&mut left_diff, &mut right_diff);
+    }
+
+    // Calculate CDF values using error function approximation
+    let sqrt_2 = std::f64::consts::SQRT_2;
+    let left_z = left_diff / (shooting_noise_std * sqrt_2);
+    let right_z = right_diff / (shooting_noise_std * sqrt_2);
+
+    // Approximate error function using built-in methods
+    let left_cdf = 0.5 * (1.0 + erf_approx(left_z));
+    let right_cdf = 0.5 * (1.0 + erf_approx(right_z));
+
+    let visibility_factor = (right_cdf - left_cdf).max(0.0);
+    println!("{} has vis factor of {}", s.player_id(), visibility_factor);
+    prob *= visibility_factor;
+
+
+    // Factor 3: Distance preference (closer intersection with goal line)
+    let direction_vector = direction.to_vector();
+    let t = (goal_pos.x - player_pos.x) / direction_vector.x;
+    let intersection_y = player_pos.y + t * direction_vector.y;
+    let intersection = Vector2::new(goal_pos.x, intersection_y);
+    let distance_to_intersection = (player_pos - intersection).norm();
+    let goal_distance_factor = if distance_to_intersection < 1000.0 {
+        1.0
+    } else if distance_to_intersection < 1500.0 {
+        0.97
+    } else if distance_to_intersection < 2000.0 {
+        0.95
+    } else if distance_to_intersection < 2500.0 {
+        0.93
+    } else if distance_to_intersection < 3000.0 {
+        0.9
+    } else if distance_to_intersection < 4000.0 {
+        0.8
+    } else if distance_to_intersection < 5000.0 {
+        0.5
+    } else { 0.3 };
+    prob *= goal_distance_factor;
+
+    prob
+}
+
+pub fn pass_success_probability(s: &RobotSituation, teammate: &PlayerData) -> f64 {
+    let mut prob: f64 = 0.95;
+    let player_pos = s.player_data().position;
+    // score based on how far is the robot: not too close, not too far
+    let robot_dist = (player_pos - teammate.position).norm();
+    let no_miss_probability = if robot_dist < 400.0 {
+        0.5 // not a super good idea to do short shoots
+    } else if robot_dist < 800.0 {
+        0.8 // this one is doable, but maybe a bit further would be nice
+    } else if robot_dist < 1200.0 {
+        0.9 // very doable
+    } else if robot_dist < 2000.0 {
+        0.95 // bearable
+    } else if robot_dist < 3500.0 {
+        1.0 // good
+    } else if robot_dist < 5000.0 {
+        0.8 // this is mid
+    } else {
+        0.4 // meh
+    };
+    prob *= no_miss_probability;
+
+
+    // score based on how bad is the trajectory: are there opponents on the shoot line?
+    let angle = Angle::between_points(teammate.position, player_pos);
+    let nearest_opponent_distance =
+        find_nearest_opponent_distance_along_direction(s, angle).clamp(0.0, 1000.0);
+    let no_intercept_prob = if nearest_opponent_distance < 200.0 {
+        0.1
+    } else if nearest_opponent_distance < 250.0 {
+        0.3
+    } else if nearest_opponent_distance < 300.0 {
+        0.6
+    } else if nearest_opponent_distance < 600.0 {
+        0.8
     } else {
         1.0
     };
+    prob *= no_intercept_prob;
 
-    // println!("{:.2} {:.2} {:.2}", distance_score, visibility_score, blocking_score);
-    // Weighted combination of factors
-    let score = distance_score * 0.2 + visibility_score * 0.3 + blocking_score * 0.5;
-    score.clamp(0.0, 1.0)
+    // println!("{} passing {}: {:.2}; clean: {:.2}", s.player_id, teammate.id, score, clean_shoot_score);
+
+    // Prefer passing to strikers
+    let teammate_role = s
+        .role_assignments
+        .get(&teammate.id)
+        .cloned()
+        .unwrap_or_default();
+    let teammate_striker = teammate_role == "striker";
+    if teammate_striker {
+        // this is a frequentist shitting which i don't fucking carea bout
+        // if you say anything about "ohhh noooo your beliefs are susceptible to dutch book :((" im
+        // jumping out of the window
+        prob *= 2.0;
+        prob = prob.min(1.0);
+    }
+
+    prob
 }
 
-pub fn find_best_shoot_target(s: &RobotSituation) -> Vector2 {
+pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
     let teammates = &s.world.own_players;
     let my_id = s.player_id;
 
-    let mut best_target = s.get_opp_goal_position();
-    let mut best_score = clean_goal_shot_score(s, s.player_data());
+    let (best_target_pos, mut best_prob) = best_goal_shoot(s);
+    let mut best_target = ShootTarget::Goal(best_target_pos);
     // println!("{} scored as {}", s.player_id, best_score);
 
     for teammate in teammates {
         if teammate.id == my_id {
             continue;
         }
-        let robot_pos = s.player_data().position;
 
-        // Score based on goal distance
-        let clean_shot_score = clean_goal_shot_score(s, teammate);
-        let mut score = clean_shot_score;
+        // score is a combination of clean shoot from the teammate and passing discount
+        let (t, goal_shoot_prob) = best_goal_shoot(&change_situation_player(s, teammate.id));
+        let prob = goal_shoot_prob * pass_success_probability(s, teammate);
 
-        // score based on how far is the robot: not too close, not too far
-        let robot_dist = (robot_pos - teammate.position).norm();
-        let dist_badness = if robot_dist < 400.0 {
-            0.2
-        } else if robot_dist < 800.0 {
-            0.1
-        } else if robot_dist < 1200.0 {
-            0.05
-        } else if robot_dist < 3000.0 {
-            0.0 // this is totally fine
-        } else if robot_dist < 5000.0 {
-            0.3 // this is mid
-        } else {
-            0.5 // meh
-        };
-        score -= dist_badness;
-
-        // score based on how bad is the trajectory: are there opponents on the shot line?
-        let angle = Angle::between_points(teammate.position, robot_pos);
-        let nearest_opponent_distance =
-            find_nearest_opponent_distance_along_direction(s, angle).clamp(0.0, 1000.0);
-        let low = 250.0;
-        let high = 500.0;
-        if nearest_opponent_distance < low {
-            score -= 0.5;
-        } else if nearest_opponent_distance < high {
-            score -= 0.1;
-        } else {
-            score -= 0.0;
-        }
-
-        // println!("{} passing {}: {:.2}; clean: {:.2}", s.player_id, teammate.id, score, clean_shot_score);
-
-        // Stringly prefer passing to strikers
-        let teammate_role = s
-            .role_assignments
-            .get(&teammate.id)
-            .cloned()
-            .unwrap_or_default();
-        let teammate_striker = teammate_role == "striker";
-        if teammate_striker {
-            score += 0.2;
-        }
-
-        if score > best_score {
-            best_score = score;
-            best_target = teammate.position;
-            // println!("passing to an opponent! {} {}", best_target, best_score);
+        if prob > best_prob {
+            best_prob = prob;
+            best_target = ShootTarget::Player{id: teammate.id, position: teammate.position.into()};
         }
     }
 
-    best_target
+    (best_target, best_prob)
 }
 
-pub fn can_pass_to_teammate(s: &RobotSituation) -> bool {
-    if !s.has_ball() {
-        return false;
-    }
+pub fn find_best_shoot_score(s: &RobotSituation) -> f64 {
+    let (_, p) = best_teammate_pass_or_shoot(s);
+    p
+}
 
-    let teammates = &s.world.own_players;
-    teammates.iter().any(|p| p.id != s.player_id)
+pub fn find_best_shoot_target(s: &RobotSituation) -> ShootTarget {
+    let (t, _) = best_teammate_pass_or_shoot(s);
+    t
 }
 
 pub fn find_nearest_opponent_distance_along_direction(s: &RobotSituation, direction: Angle) -> f64 {
-    let robot_pos = s.player_data().position;
+    let player_pos = s.player_data().position;
     let direction_vector = direction.to_vector();
 
     let mut min_distance = f64::INFINITY;
@@ -139,7 +274,7 @@ pub fn find_nearest_opponent_distance_along_direction(s: &RobotSituation, direct
     for player in s.world.opp_players.iter() {
         if player.id != s.player_data().id {
             let opp_pos = player.position;
-            let to_opponent = opp_pos - robot_pos;
+            let to_opponent = opp_pos - player_pos;
 
             // Project opponent position onto the shooting direction
             let projection = to_opponent.dot(&direction_vector);

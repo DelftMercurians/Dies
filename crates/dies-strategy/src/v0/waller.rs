@@ -3,7 +3,7 @@ use dies_core::GameState;
 use dies_core::Vector2;
 use dies_executor::behavior_tree_api::*;
 
-use crate::v0::utils::find_best_pass_target;
+use crate::v0::utils::find_best_shoot_target;
 use crate::v0::utils::{evaluate_ball_threat, get_defender_heading};
 
 pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
@@ -21,7 +21,7 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
                         .do_then(
                             sequence_node()
                                 .add(fetch_ball().description("Pickup ball".to_string()).build())
-                                .add(shoot(find_best_shoot_target).build())
+                                .add(shoot(find_best_shoot_target))
                                 .description("Pass kickoff")
                                 .build(),
                         )
