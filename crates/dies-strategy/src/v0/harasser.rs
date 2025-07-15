@@ -59,10 +59,6 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
 
         // Only consider if ball is on our half
         if ball_pos.x >= 0.0 {
-            dies_core::debug_string(
-                format!("harasser_should_pickup_ball_{}", s.team_color),
-                format!("Ball is not on our half, not picking up: {:?}", ball_pos),
-            );
             return false;
         }
 
@@ -74,37 +70,17 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
             .any(|opp| (opp.position - ball_pos).norm() < 400.0);
 
         if ball_threatened {
-            dies_core::debug_string(
-                format!("harasser_should_pickup_ball_{}", s.team_color),
-                format!(
-                    "Ball is threatened, not picking up: {:?}",
-                    s.get_closest_opp_player_to_ball().map(|p| p.position)
-                ),
-            );
             return false;
         }
 
         // Check if ball is not moving fast (velocity magnitude < 500 mm/s)
         let ball_velocity = ball.velocity.xy();
         if ball_velocity.norm() > 500.0 {
-            dies_core::debug_string(
-                format!("harasser_should_pickup_ball_{}", s.team_color),
-                format!("Ball is moving fast, not picking up: {:?}", ball_velocity),
-            );
             return false;
         }
 
-        // Ball is free and on our side - we should pick it up
-        dies_core::debug_string(
-            format!("harasser_should_pickup_ball_{}", s.team_color),
-            format!("Ball is free and on our side, picking up: {:?}", ball_pos),
-        );
         true
     } else {
-        dies_core::debug_string(
-            format!("harasser_should_pickup_ball_{}", s.team_color),
-            "No ball found, not picking up",
-        );
         false
     }
 }
@@ -121,26 +97,6 @@ pub fn score_as_harasser(s: &RobotSituation) -> f64 {
     if unmarked_threats.is_empty() {
         // No threats to mark, but we can still be useful for fallback duties
         score = 10.0;
-
-        // Bonus for being close to a good defensive position
-        // let defensive_positions = generate_defensive_positions(s);
-        // if let Some(closest_pos) = defensive_positions.first() {
-        //     let dist_to_position = s.distance_to_position(*closest_pos);
-        //     score += (1000.0 - dist_to_position.min(1000.0)) / 50.0;
-        // }
-
-        // // Bonus if we should pickup the ball
-        // if should_pickup_ball(s) {
-        //     score += 15.0;
-        //     let ball_pos = s
-        //         .world
-        //         .ball
-        //         .as_ref()
-        //         .map(|b| b.position.xy())
-        //         .unwrap_or_default();
-        //     let dist_to_ball = s.distance_to_position(ball_pos);
-        //     score += (1500.0 - dist_to_ball.min(1500.0)) / 50.0;
-        // }
 
         return score;
     }
