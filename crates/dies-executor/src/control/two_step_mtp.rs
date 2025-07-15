@@ -99,10 +99,16 @@ impl TwoStepMTP {
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
             let proportional_velocity_magnitude =
-                f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp;
+                f64::max(intermediate_distance - self.cutoff_distance, 0.0)
+                    * self.kp
+                    + 100.0;
+            let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
+
+            let mut v_control = dv_magnitude;
 
             player_context.debug_string("TwoStepMTPMode", "Proportional");
-            direction * proportional_velocity_magnitude
+            let new_speed = current_speed + cap_magnitude(v_control, max_decel * dt);
+            direction * new_speed
         } else if current_speed < max_speed {
             // Acceleration phase
             player_context.debug_string("TwoStepMTPMode", "Acceleration");

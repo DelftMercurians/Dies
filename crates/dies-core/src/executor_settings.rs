@@ -34,12 +34,12 @@ pub struct ControllerSettings {
 impl Default for ControllerSettings {
     fn default() -> Self {
         Self {
-            max_acceleration: 125000.0,
+            max_acceleration: 1200.0,
             max_velocity: 3120.0,
             max_deceleration: 6340.0,
             max_angular_velocity: 25.132741228718345,
             max_angular_acceleration: 349.0658503988659,
-            position_kp: 50000.0,
+            position_kp: 10.0,
             position_proportional_time_window: 1.1,
             position_cutoff_distance: 70.0,
             angle_kp: 2.8,
