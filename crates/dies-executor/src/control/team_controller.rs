@@ -305,7 +305,7 @@ impl TeamController {
         let mut removing_players = self.removing_players.iter().copied().collect::<Vec<_>>();
         removing_players.sort();
         let first_removal_position = Vector2::new(
-            -800.0,
+            -800.0 * side_assignment.attacking_direction_sign(team_color), // unflip to world coords
             world_data
                 .field_geom
                 .as_ref()

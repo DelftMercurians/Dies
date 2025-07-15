@@ -121,7 +121,7 @@ impl SideAssignment {
     /// # Returns
     /// - `1.0`: Team attacks towards +x (coordinates unchanged)
     /// - `-1.0`: Team attacks towards -x (coordinates need to be flipped)
-    fn attacking_direction_sign(&self, color: TeamColor) -> f64 {
+    pub fn attacking_direction_sign(&self, color: TeamColor) -> f64 {
         match (self, color) {
             (SideAssignment::BlueOnPositive, TeamColor::Blue) => -1.0,
             (SideAssignment::BlueOnPositive, TeamColor::Yellow) => 1.0,

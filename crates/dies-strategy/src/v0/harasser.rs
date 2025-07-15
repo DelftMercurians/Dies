@@ -1,7 +1,11 @@
-use dies_core::{GameState, PlayerId, Vector2};
+use dies_core::{GameState, PlayerId, Vector2, PLAYER_RADIUS};
 use dies_executor::behavior_tree_api::*;
 
-use crate::v0::utils::find_best_shoot_target;
+use crate::v0::utils::fetch_and_shoot;
+
+const SAFETY_MARGIN: f64 = 50.0; // Additional safety margin
+const MIN_DISTANCE_TO_PLAYER: f64 = PLAYER_RADIUS * 2.0 + SAFETY_MARGIN;
+const ARC_SAMPLES: usize = 12; // Number of positions to sample on arc
 
 pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -13,46 +17,43 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
                     semaphore_node()
                         .semaphore_id("defender_pickup_ball".to_string())
                         .max_entry(1)
-                        .do_then(
-                            sequence_node()
-                                .add(
-                                    fetch_ball()
-                                        .description("Pickup free ball".to_string())
-                                        .build(),
-                                )
-                                .add(shoot(find_best_shoot_target))
-                                .build(),
-                        )
-                        .build()
+                        .do_then(fetch_and_shoot())
+                        .build(),
                 )
                 .build(),
         )
         .add(
-            continuous("standby position 1")
-                .position(Argument::callback(move |s| {
-                    // Defense line: 60% of the way from our goal to halfway line (on our side)
-                    let own_goal = s.get_own_goal_position();
-                    let defense_line_x = 0.6 * own_goal.x;
-                    // If ball is moving, project intersection with defense line
-                    if let Some(ball) = &s.world.ball {
-                        let ball_pos = ball.position.xy();
-                        let ball_vel = ball.velocity.xy();
-                        // Only if ball is moving toward our goal (negative x)
-                        if ball_vel.x < -10.0 {
-                            // t = (defense_line_x - ball_pos.x) / ball_vel.x
-                            let t = (defense_line_x - ball_pos.x) / ball_vel.x;
-                            if t > 0.0 && t < 5.0 {
-                                // Projected intersection point
-                                let intersection = ball_pos + ball_vel * t;
-                                return intersection;
-                            }
-                        } else {
-                            return Vector2::new(defense_line_x, ball_pos.y);
-                        }
-                    }
-                    let y = 0.0;
-                    Vector2::new(defense_line_x, y)
-                }))
+            scoring_select_node()
+                .description("harasser positioning")
+                .hysteresis_margin(0.1)
+                .add_child(
+                    semaphore_node()
+                        .semaphore_id("primary_harasser".to_string())
+                        .max_entry(1)
+                        .do_then(
+                            continuous("primary harasser")
+                                .position(Argument::callback(move |s| {
+                                    calculate_primary_harasser_position(s)
+                                }))
+                                .build(),
+                        )
+                        .build(),
+                    |s| score_as_primary_harasser(s),
+                )
+                .add_child(
+                    semaphore_node()
+                        .semaphore_id("secondary_harasser".to_string())
+                        .max_entry(1)
+                        .do_then(
+                            continuous("secondary harasser")
+                                .position(Argument::callback(move |s| {
+                                    calculate_secondary_harasser_position(s)
+                                }))
+                                .build(),
+                        )
+                        .build(),
+                    |s| score_as_secondary_harasser(s),
+                )
                 .build(),
         )
         .build()
@@ -200,23 +201,241 @@ fn is_opponent_marked(s: &RobotSituation, opponent: &dies_core::PlayerData) -> b
         .any(|p| (p.position - opponent.position).norm() < marking_distance)
 }
 
-fn calculate_harasser_position_for_pos(s: &RobotSituation, target_pos: Vector2) -> Vector2 {
-    let my_pos = s.player_data().position;
-    let goal_pos = s.get_opp_goal_position();
+fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
+    let ball_pos = s.ball_position();
+    let own_goal = s.get_own_goal_position();
 
-    // Position to harass from the side toward goal
-    let to_goal = (goal_pos - target_pos).normalize();
-    let harass_offset = 800.0; // Distance to maintain
+    // Check if closest opponent is within 0.5m of ball
+    if let Some(closest_opp) = s.get_closest_opp_player_to_ball() {
+        let opp_to_ball_dist = (closest_opp.position - ball_pos).norm();
+        if opp_to_ball_dist < 500.0 {
+            // Position on line from ball towards opponent heading
+            let opp_heading = closest_opp.yaw.rotate_vector(&Vector2::x());
+            let harass_distance = 300.0;
+            let target_pos = ball_pos + opp_heading * harass_distance;
+            let constrained_pos = s.constrain_to_field(target_pos);
+            let final_pos = Vector2::new(constrained_pos.x.min(-50.0), constrained_pos.y);
 
-    // Choose side based on current position
-    let perpendicular = Vector2::new(-to_goal.y, to_goal.x);
-    let left_pos = target_pos + perpendicular * harass_offset;
-    let right_pos = target_pos - perpendicular * harass_offset;
+            // Check if the position is obstructed
+            if is_position_obstructed(s, final_pos) {
+                // Sample positions on arc around opponent
+                let angle_to_opp = opp_heading.y.atan2(opp_heading.x);
+                return find_best_position_on_arc(
+                    s,
+                    closest_opp.position,
+                    harass_distance,
+                    angle_to_opp,
+                    final_pos,
+                );
+            }
 
-    // Choose closer side
-    if (left_pos - my_pos).norm() < (right_pos - my_pos).norm() {
-        left_pos
-    } else {
-        right_pos
+            return final_pos;
+        }
     }
+
+    // Default: position on line from ball towards our goal
+    let harass_distance = 300.0;
+    let to_goal = (own_goal - ball_pos).normalize();
+    let target_pos = ball_pos + to_goal * harass_distance;
+    let constrained_pos = s.constrain_to_field(target_pos);
+    let final_pos = Vector2::new(constrained_pos.x.min(-50.0), constrained_pos.y);
+
+    // Check if the position is obstructed
+    if is_position_obstructed(s, final_pos) {
+        // Sample positions on arc around ball
+        let angle_to_goal = to_goal.y.atan2(to_goal.x);
+        return find_best_position_on_arc(s, ball_pos, harass_distance, angle_to_goal, final_pos);
+    }
+
+    final_pos
+}
+
+fn calculate_secondary_harasser_position(s: &RobotSituation) -> Vector2 {
+    let ball_pos = s.ball_position();
+    let harass_distance = 300.0;
+
+    // Find unmarked opponent on our side
+    let unmarked_threats = find_unmarked_threats(s);
+    if !unmarked_threats.is_empty() {
+        if let Some(target_opp) = find_highest_threat_opponent(s, &unmarked_threats) {
+            // Position between opponent and ball, maintaining 30cm distance
+            let to_ball = (ball_pos - target_opp.position).normalize();
+            let target_pos = target_opp.position + to_ball * harass_distance;
+            let constrained_pos = s.constrain_to_field(target_pos);
+            // Ensure we stay on our side of the field (x < 0)
+            return Vector2::new(constrained_pos.x.min(-50.0), constrained_pos.y);
+        }
+    }
+
+    // No unmarked opponent on our side - position near second closest opponent to ball
+    let mut opp_distances: Vec<_> = s
+        .world
+        .opp_players
+        .iter()
+        .map(|opp| (opp, (opp.position - ball_pos).norm()))
+        .collect();
+    opp_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+    if opp_distances.len() >= 2 {
+        let second_closest = opp_distances[1].0;
+        // Find closest point on our side of field to this opponent
+        let target_pos = if second_closest.position.x > 0.0 {
+            // Opponent is on their side, position at center line but stay on our side
+            Vector2::new(-50.0, second_closest.position.y)
+        } else {
+            // Opponent is on our side, position near them
+            second_closest.position
+        };
+        let constrained_pos = s.constrain_to_field(target_pos);
+        // Ensure we stay on our side of the field (x < 0)
+        return Vector2::new(constrained_pos.x.min(-50.0), constrained_pos.y);
+    }
+
+    // Fallback: defensive position
+    let own_goal = s.get_own_goal_position();
+    let defense_line_x = 0.6 * own_goal.x;
+    let constrained_pos = s.constrain_to_field(Vector2::new(defense_line_x, ball_pos.y));
+    // Ensure we stay on our side of the field (x < 0)
+    Vector2::new(constrained_pos.x.min(-50.0), constrained_pos.y)
+}
+
+fn score_as_primary_harasser(s: &RobotSituation) -> f64 {
+    let mut score = 60.0; // Higher base score for primary role
+
+    // Bonus for being close to ball
+    let ball_dist = s.distance_to_ball();
+    score += (1500.0 - ball_dist.min(1500.0)) / 30.0;
+
+    // Bonus if there's a close opponent to harass
+    if let Some(closest_opp) = s.get_closest_opp_player_to_ball() {
+        let opp_to_ball_dist = (closest_opp.position - s.ball_position()).norm();
+        if opp_to_ball_dist < 500.0 {
+            score += 20.0;
+        }
+    }
+
+    score
+}
+
+fn score_as_secondary_harasser(s: &RobotSituation) -> f64 {
+    let mut score = 40.0; // Lower base score for secondary role
+
+    // Check for unmarked threats
+    let unmarked_threats = find_unmarked_threats(s);
+    if !unmarked_threats.is_empty() {
+        score += 25.0; // Bonus for having threats to mark
+
+        // Additional bonus based on threat level
+        if let Some(highest_threat) = find_highest_threat_opponent(s, &unmarked_threats) {
+            let threat_score = evaluate_opponent_threat(s, highest_threat);
+            score += threat_score * 20.0;
+        }
+    }
+
+    score
+}
+
+/// Check if a position is obstructed by defense area, field boundaries, or other players
+fn is_position_obstructed(s: &RobotSituation, pos: Vector2) -> bool {
+    // Check if position is in own defense area (penalty area)
+    if let Some(field) = &s.world.field_geom {
+        let half_length = field.field_length / 2.0;
+        let half_penalty_width = field.penalty_area_width / 2.0;
+
+        // Check own penalty area
+        if pos.x <= -half_length + field.penalty_area_depth
+            && pos.y >= -half_penalty_width
+            && pos.y <= half_penalty_width
+        {
+            return true;
+        }
+
+        // Check opponent penalty area
+        if pos.x >= half_length - field.penalty_area_depth
+            && pos.y >= -half_penalty_width
+            && pos.y <= half_penalty_width
+        {
+            return true;
+        }
+    }
+
+    // Check if position is too close to field boundaries
+    let constrained_pos = s.constrain_to_field(pos);
+    if (constrained_pos - pos).norm() > 10.0 {
+        return true;
+    }
+
+    // Check if position is too close to other players
+    for player in &s.world.own_players {
+        if player.id != s.player_id {
+            if (player.position - pos).norm() < MIN_DISTANCE_TO_PLAYER {
+                return true;
+            }
+        }
+    }
+
+    for player in &s.world.opp_players {
+        if (player.position - pos).norm() < MIN_DISTANCE_TO_PLAYER {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Score a position based on distance to original target (primary) and centrality (secondary)
+fn score_position(pos: Vector2, target: Vector2) -> f64 {
+    let distance_to_target = (pos - target).norm();
+    let field_center = Vector2::new(0.0, 0.0);
+    let centrality_score = (pos - field_center).norm();
+
+    // Primary preference: closest to original target
+    // Secondary preference: closer to field center
+    distance_to_target + centrality_score * 0.1
+}
+
+/// Sample positions on an arc around a center point and return the best valid position
+fn find_best_position_on_arc(
+    s: &RobotSituation,
+    center: Vector2,
+    radius: f64,
+    preferred_angle: f64,
+    original_target: Vector2,
+) -> Vector2 {
+    use std::f64::consts::PI;
+
+    let mut best_pos = original_target;
+    let mut best_score = f64::INFINITY;
+    let mut found_valid = false;
+
+    // Sample positions around the arc
+    for i in 0..ARC_SAMPLES {
+        let angle_offset = (i as f64 / ARC_SAMPLES as f64) * 2.0 * PI;
+        let angle = preferred_angle + angle_offset;
+        let pos = center + Vector2::new(angle.cos(), angle.sin()) * radius;
+
+        if !is_position_obstructed(s, pos) {
+            found_valid = true;
+            let score = score_position(pos, original_target);
+
+            if score < best_score {
+                best_score = score;
+                best_pos = pos;
+            }
+        }
+    }
+
+    // If no valid position found, try larger radius
+    if !found_valid && radius < 1000.0 {
+        return find_best_position_on_arc(
+            s,
+            center,
+            radius * 1.3,
+            preferred_angle,
+            original_target,
+        );
+    }
+
+    // Ensure the position is within field boundaries
+    s.constrain_to_field(best_pos)
 }
