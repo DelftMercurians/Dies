@@ -24,7 +24,7 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
             // Pickup ball if we can
             committing_guard_node()
                 .description("Ball pickup opportunity")
-                .when(|s| should_pickup_ball(s) && is_closest_striker(s)) // TODO: make sure that
+                .when(|s| should_pickup_ball(s)) // TODO: make sure that
                 // the closest robots gets it; on second thought, this is probably not
                 // implementable -> the roles are not available yet during the role assigment. so maybe not.
                 .until(|_| false)
