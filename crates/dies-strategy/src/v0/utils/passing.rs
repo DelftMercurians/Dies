@@ -227,12 +227,11 @@ pub fn pass_success_probability(s: &RobotSituation, teammate: &PlayerData) -> f6
         .cloned()
         .unwrap_or_default();
     let teammate_striker = teammate_role == "striker";
-    if teammate_striker {
+    if !teammate_striker {
         // this is a frequentist shitting which i don't fucking carea bout
         // if you say anything about "ohhh noooo your beliefs are susceptible to dutch book :((" im
         // jumping out of the window
-        prob *= 2.0;
-        prob = prob.min(1.0);
+        prob *= 0.3;
     }
 
     prob

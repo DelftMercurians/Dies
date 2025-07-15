@@ -198,6 +198,7 @@ impl TeamController {
                         .unwrap_or(true);
 
                     if needs_rebuild {
+                        // println!("assigned {} to {} with rebuild", role_name, player_id);
                         // Clear semaphores for this player before rebuilding
                         self.bt_context.clear_semaphores_for_player(*player_id);
 
