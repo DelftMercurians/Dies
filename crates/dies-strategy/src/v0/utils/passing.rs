@@ -347,7 +347,11 @@ pub fn best_receiver_target_score(s: &RobotSituation) -> f64 {
     // PS: we don't have to explicitly try to get far away from other robots because we
     // already account for this in probability of passing.
     let player_pos = s.player_data().position;
-    let ball_pos = s.world.ball.as_ref().unwrap().position.xy();
+    let ball = match s.world.ball.as_ref() {
+        Some(b) => b,
+        None => return 0.0, // early return if ball is not found
+    };
+    let ball_pos = ball.position.xy();
     let teammates = &s.world.own_players;
 
     let (_, goal_shoot_prob) = best_goal_shoot(s);
@@ -363,7 +367,11 @@ pub fn combination_discounting_for_receivers(s: &RobotSituation) -> f64 {
     // TODO: add blocking based on how much we block of the goal (we don't want to stand between
     // the goal and the ball)
 
-    let ball_pos = s.world.ball.as_ref().unwrap().position.xy();
+    let ball = match s.world.ball.as_ref() {
+        Some(b) => b,
+        None => return 0.0, // early return if ball is not found
+    };
+    let ball_pos = ball.position.xy();
     let mut discount = 1.0;
     let player_pos = s.player_data().position;
     let teammates = &s.world.own_players;
