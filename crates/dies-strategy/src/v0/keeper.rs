@@ -195,7 +195,7 @@ fn get_goalkeeper_heading(s: &RobotSituation) -> Angle {
     if let Some(ball) = &s.world.ball {
         let goal_pos = s.get_own_goal_position();
         let ball_pos = ball.position.xy();
-        Angle::between_points(ball_pos, goal_pos)
+        Angle::between_points(goal_pos, ball_pos)
     } else {
         Angle::from_radians(0.0)
     }

@@ -1,10 +1,10 @@
 use dies_core::get_tangent_line_direction;
 use dies_core::GameState;
-use dies_core::Vector2;
+use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
 
+use crate::v0::utils::evaluate_ball_threat;
 use crate::v0::utils::find_best_shoot_target;
-use crate::v0::utils::{evaluate_ball_threat, get_defender_heading};
 
 pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -568,4 +568,14 @@ fn should_not_pickup_ball(s: &RobotSituation) -> bool {
 
     s.distance_of_closest_opp_player_to_ball() < 800.0
         || s.distance_of_closest_own_player_to_ball() < 200.0
+}
+
+pub fn get_defender_heading(s: &RobotSituation) -> Angle {
+    if let Some(ball) = &s.world.ball {
+        let ball_pos = ball.position.xy();
+        let my_pos = s.player_data().position;
+        Angle::between_points(my_pos, ball_pos)
+    } else {
+        Angle::from_radians(0.0)
+    }
 }

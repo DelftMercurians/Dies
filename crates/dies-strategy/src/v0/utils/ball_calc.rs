@@ -1,16 +1,6 @@
 use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
 
-pub fn get_defender_heading(s: &RobotSituation) -> Angle {
-    if let Some(ball) = &s.world.ball {
-        let ball_pos = ball.position.xy();
-        let my_pos = s.player_data().position;
-        Angle::between_points(ball_pos, my_pos)
-    } else {
-        Angle::from_radians(0.0)
-    }
-}
-
 pub fn calculate_intercept_position(s: &RobotSituation) -> Vector2 {
     if let Some(ball) = &s.world.ball {
         if ball.velocity.xy().norm() < 100.0 {
