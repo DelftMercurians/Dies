@@ -1,11 +1,11 @@
 {
   "controller_settings": {
-    "max_acceleration": 125000.0,
+    "max_acceleration": 12500.0,
     "max_velocity": 10000.0,
     "max_deceleration": 6340.0,
     "max_angular_velocity": 25.132741228718345,
     "max_angular_acceleration": 349.0658503988659,
-    "position_kp": 50000.0,
+    "position_kp": 3.0,
     "position_proportional_time_window": 1.1,
     "position_cutoff_distance": 70.0,
     "angle_kp": 2.8,

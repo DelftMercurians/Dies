@@ -12,6 +12,7 @@ pub struct TwoStepMTP {
     proportional_time_window: Duration,
     cutoff_distance: f64,
     sample_count: usize,
+    last_intermediate_point: Option<Vector2>,
 }
 
 impl TwoStepMTP {
@@ -22,6 +23,7 @@ impl TwoStepMTP {
             proportional_time_window: Duration::from_millis(400),
             cutoff_distance: 10.0,
             sample_count: 8,
+            last_intermediate_point: None,
         }
     }
 
@@ -96,22 +98,42 @@ impl TwoStepMTP {
         let care_factor = carefullness * 0.2;
         let time_to_target = intermediate_distance / max_speed;
 
+        player_context.debug_string("TwoStepMTPTimeToTarget", time_to_target.to_string());
+        player_context.debug_string(
+            "TwoStepMTPProportionalTimeWindow",
+            self.proportional_time_window.as_secs_f64().to_string(),
+        );
+        player_context.debug_string("TwoStepMTPKp", self.kp.to_string());
+        player_context.debug_string(
+            "TwoStepMTPcutoff_distance",
+            self.cutoff_distance.to_string(),
+        );
+        player_context.debug_string("TwoStepMTPCurrentSpeed", current_speed.to_string());
+        player_context.debug_string("TwoStepMTPMaxSpeed", max_speed.to_string());
+        player_context.debug_string("TwoStepMTPMaxAccel", max_accel.to_string());
+        player_context.debug_string("TwoStepMTPDt", dt.to_string());
+        player_context.debug_string("TwoStepMTPMaxDecel", max_decel.to_string());
+        player_context.debug_string("TwoStepMTPCarefullness", carefullness.to_string());
+
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
             let proportional_velocity_magnitude =
-                f64::max(intermediate_distance - self.cutoff_distance, 0.0)
-                    * self.kp
-                    + 100.0;
-            let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
+                (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp + 100.0)
+                    .clamp(0.0, max_speed);
+            // let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
+            // player_context.debug_string("TwoStepMTPDvMagnitude", dv_magnitude.to_string());
+            // player_context.debug_string("TwoStepMTPCurrentSpeed", current_speed.to_string());
+            // player_context.debug_string("TwoStepMTPMaxSpeed", max_speed.to_string());
 
-            let mut v_control = dv_magnitude;
+            // let v_control = dv_magnitude;
 
             player_context.debug_string("TwoStepMTPMode", "Proportional");
-            let new_speed = current_speed + cap_magnitude(v_control, max_decel * dt);
-            direction * new_speed
+            // let new_speed = current_speed + cap_magnitude(v_control, max_decel * dt / 10.0);
+            direction * proportional_velocity_magnitude
         } else if current_speed < max_speed {
             // Acceleration phase
             player_context.debug_string("TwoStepMTPMode", "Acceleration");
+            // let last_vel = self.las.unwrap_or(velocity);
             let new_speed = current_speed + max_accel * dt;
             direction * new_speed
         } else {
@@ -141,13 +163,13 @@ impl TwoStepMTP {
         let circle_radius = distance_to_target * 0.5 + 40.0;
 
         // Sample points uniformly around the circle
-        let mut best_point = target;
+        let mut best_point = current + to_target.normalize() * circle_radius;
         let mut best_cost = f64::INFINITY;
 
         // First, sample the direct trajectory as a starting point
-        let direct_cost = self.calculate_path_cost(
+        let best_cost = self.calculate_path_cost(
             current,
-            target,
+            best_point,
             target,
             world_data,
             current_player,
@@ -155,32 +177,32 @@ impl TwoStepMTP {
             obstacles.clone(),
         );
 
-        if direct_cost < best_cost {
-            best_cost = direct_cost;
-            best_point = target;
-        }
+        // if direct_cost < best_cost {
+        //     best_cost = direct_cost;
+        //     best_point = target;
+        // }
 
-        for i in 0..self.sample_count {
-            let angle = 2.0 * std::f64::consts::PI * i as f64 / self.sample_count as f64;
-            let sample_point =
-                current + Vector2::new(circle_radius * angle.cos(), circle_radius * angle.sin());
+        // for i in 0..self.sample_count {
+        //     let angle = 2.0 * std::f64::consts::PI * i as f64 / self.sample_count as f64;
+        //     let sample_point =
+        //         current + Vector2::new(circle_radius * angle.cos(), circle_radius * angle.sin());
 
-            // Calculate cost for this sample point
-            let cost = self.calculate_path_cost(
-                current,
-                sample_point,
-                target,
-                world_data,
-                current_player,
-                avoid_goal_area,
-                obstacles.clone(),
-            );
+        //     // Calculate cost for this sample point
+        //     let cost = self.calculate_path_cost(
+        //         current,
+        //         sample_point,
+        //         target,
+        //         world_data,
+        //         current_player,
+        //         avoid_goal_area,
+        //         obstacles.clone(),
+        //     );
 
-            if cost < best_cost {
-                best_cost = cost;
-                best_point = sample_point;
-            }
-        }
+        //     if cost < best_cost {
+        //         best_cost = cost;
+        //         best_point = sample_point;
+        //     }
+        // }
 
         // Visualize the best chosen midpoint as a larger cross
         player_context.debug_circle_fill_colored(
