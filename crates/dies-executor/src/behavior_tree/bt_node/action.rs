@@ -1,7 +1,4 @@
-use std::fmt::format;
-
-use dies_core::{debug_tree_node, Angle, PlayerId, TeamColor, Vector2};
-use rhai::Position;
+use dies_core::{debug_tree_node, Angle, PlayerId, Vector2};
 
 use super::{
     super::bt_core::{BehaviorStatus, RobotSituation},
@@ -188,11 +185,6 @@ impl ActionNode {
             SkillProgress::Done(SkillResult::Failure) => (BehaviorStatus::Failure, None),
         };
 
-        // If the skill is done, remove it so it can be recreated on the next tick
-        if status != BehaviorStatus::Running {
-            self.active_skill = None;
-        }
-
         let is_active = status == BehaviorStatus::Running || status == BehaviorStatus::Success;
         if matches!(status, BehaviorStatus::Failure) {
             dies_core::debug_string(
@@ -206,7 +198,7 @@ impl ActionNode {
                 situation.team_color, situation.player_id
             ),
             format!(
-                "{}: {}",
+                "{}: {}{}",
                 skill_info,
                 if status == BehaviorStatus::Success {
                     "success"
@@ -214,9 +206,19 @@ impl ActionNode {
                     "failure"
                 } else {
                     "running"
-                }
+                },
+                if let Skill::Shoot(shoot) = skill {
+                    format!(" ({})", shoot.state())
+                } else {
+                    "".to_string()
+                },
             ),
         );
+
+        // If the skill is done, remove it so it can be recreated on the next tick
+        if status != BehaviorStatus::Running {
+            self.active_skill = None;
+        }
 
         let internal_state = if self.active_skill.is_some() {
             Some(format!("Running {}", skill_info))

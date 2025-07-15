@@ -97,6 +97,15 @@ impl BtContext {
         semaphores.retain(|_, player_set| !player_set.is_empty());
     }
 
+    pub fn debug_semaphores(&self) -> String {
+        let semaphores = self.semaphores.read().unwrap();
+        let mut result = String::new();
+        for (id, player_set) in semaphores.iter() {
+            result.push_str(&format!("{}: {:?}", id, player_set));
+        }
+        result
+    }
+
     pub fn set_passing_target(&self, target: PassingTarget) {
         *self.passing_target.write().unwrap() = Some(target);
     }

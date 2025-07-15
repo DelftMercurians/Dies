@@ -1736,6 +1736,12 @@ impl Simulation {
                 } else {
                     target_yaw
                 };
+                println!(
+                    "Turning {} {} to {}",
+                    player.team_color,
+                    player.id,
+                    new_yaw.to_degrees()
+                );
                 rigid_body.set_rotation(Rotation::from_euler_angles(0.0, 0.0, new_yaw), true);
             } else {
                 let target_ang_vel = player.w;

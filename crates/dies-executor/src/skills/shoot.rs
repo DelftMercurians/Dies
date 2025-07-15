@@ -5,7 +5,7 @@ use crate::{
     skills::{Face, Kick, SkillCtx, SkillProgress, SkillResult},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ShootTarget {
     Goal(Vector2),
     Player {
@@ -39,6 +39,14 @@ impl Shoot {
         Self {
             state: ShootState::None,
             target,
+        }
+    }
+
+    pub fn state(&self) -> String {
+        match &self.state {
+            ShootState::None => "None".to_string(),
+            ShootState::Face(_) => format!("Face: {:?}", self.target),
+            ShootState::Kick(_) => format!("Kick: {:?}", self.target),
         }
     }
 

@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    os::macos::raw::stat,
+    time::{Duration, Instant},
+};
 
 use dies_core::{
     Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerCmdUntransformer,
@@ -187,13 +190,10 @@ impl PlayerController {
             .set_robot_cmd(RobotCmd::Arm)
             .untransform_global_move_cmd(self.id, self.last_yaw);
 
-        player_context.debug_value("global_x", global_cmd.global_x);
-        player_context.debug_value("global_y", global_cmd.global_y);
+        player_context.debug_string("target_vel", format!("{}", self.target_velocity_global));
         player_context.debug_value("heading_setpoint", global_cmd.heading_setpoint);
-        player_context.debug_value("last_heading", global_cmd.last_heading);
         player_context.debug_value("dribble_speed", global_cmd.dribble_speed);
         player_context.debug_value("kick_counter", global_cmd.kick_counter as f64);
-        player_context.debug_string("robot_cmd", format!("{:?}", global_cmd.robot_cmd));
 
         PlayerCmd::GlobalMove(global_cmd)
     }
@@ -228,16 +228,31 @@ impl PlayerController {
             self.kick_speed = kick_speed;
         }
 
+        if state.handicaps.len() > 0 {
+            player_context.debug_string(
+                "handicaps",
+                format!(
+                    "{:?}",
+                    state
+                        .handicaps
+                        .iter()
+                        .map(|h| format!("{}", h).replace("No ", ""))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
+        } else {
+            player_context.debug_remove("handicaps");
+        }
+
         player_context.debug_string(
-            "handicaps",
+            "can_touch_ball",
             format!(
-                "{:?}",
-                state
-                    .handicaps
-                    .iter()
-                    .map(|h| format!("{}", h).replace("No ", ""))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                "{}",
+                !matches!(
+                    world.current_game_state.freekick_kicker,
+                    Some(kicker) if kicker == self.id
+                )
             ),
         );
 

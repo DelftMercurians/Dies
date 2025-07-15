@@ -296,6 +296,11 @@ impl TeamController {
             player_inputs_map.insert(player_id, player_input);
         }
 
+        team_context.debug_string(
+            format!("{}_semaphores", team_color),
+            self.bt_context.debug_semaphores(),
+        );
+
         // Drive robots that are being removed to the removal position
         let mut removing_players = self.removing_players.iter().copied().collect::<Vec<_>>();
         removing_players.sort();
