@@ -321,7 +321,23 @@ impl PlayerController {
             Velocity::Global(v) => v,
             Velocity::Local(v) => self.last_yaw.rotate_vector(&v),
         };
-        self.target_velocity_global += add_vel;
+
+        let geom = world.field_geom.as_ref().unwrap();
+        let maxdist = 400.0;
+        let add_vel_factor = if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, maxdist) {
+            let mut actual_dist = 0.0;
+            for dist in (1..=(maxdist as i32)).step_by(10) {
+                if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, dist as f64) {
+                    actual_dist = dist as f64;
+                    break;
+                }
+            }
+            (actual_dist - 50.0) / (maxdist - 50.0).max(0.0)
+        } else {
+            1.0
+        };
+
+        self.target_velocity_global += add_vel * add_vel_factor;
         self.target_velocity_global = self
             .target_velocity_global
             .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
@@ -453,7 +469,7 @@ impl PlayerController {
 
         // Check if the velocity would take us into a prohibited zone
         let next_position = position + constrained_velocity * dt;
-        if self.is_in_prohibited_zone(next_position, geometry, avoid_goal_area) {
+        if self.is_in_prohibited_zone(next_position, geometry, avoid_goal_area, 50.0) {
             // Project velocity to avoid entering prohibited zones
             constrained_velocity = self.project_velocity_away_from_prohibited_zones(
                 constrained_velocity,
@@ -542,9 +558,10 @@ impl PlayerController {
         position: Vector2,
         geometry: &dies_core::FieldGeometry,
         avoid_goal_area: bool,
+        margin: f64
     ) -> bool {
-        let field_half_width = geometry.field_width / 2.0;
-        let field_half_length = geometry.field_length / 2.0;
+        let field_half_width = geometry.field_width / 2.0 - margin;
+        let field_half_length = geometry.field_length / 2.0 - margin;
 
         // Check if outside field boundaries
         if position.x < -field_half_length
@@ -557,8 +574,8 @@ impl PlayerController {
 
         // Check goal areas if avoidance is enabled
         if avoid_goal_area {
-            let goal_area_depth = geometry.penalty_area_depth + 40.0;
-            let goal_area_width = geometry.penalty_area_width + 60.0;
+            let goal_area_depth = geometry.penalty_area_depth + margin;
+            let goal_area_width = geometry.penalty_area_width + margin * 2.0;
 
             // Our goal area (negative x)
             if position.x < -field_half_length + goal_area_depth

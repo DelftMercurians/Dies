@@ -1,7 +1,7 @@
 use dies_core::{GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
-use super::utils::find_best_shoot_target;
+use super::utils::fetch_and_shoot;
 
 pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -19,12 +19,7 @@ pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .build(),
         )
         .add(
-            sequence_node()
-                .description("Kickoff sequence")
-                .add(fetch_ball().description("Get ball".to_string()).build())
-                .add(shoot(find_best_shoot_target))
-                .description("Pass kickoff")
-                .build(),
+            fetch_and_shoot()
         )
         .build()
         .into()
