@@ -551,7 +551,7 @@ pub fn find_best_preshoot_target(s: &RobotSituation) -> Vector2 {
         .unwrap_or(goal_pos);
     let to_target = target - ball_pos;
 
-    ball_pos - to_target.normalize() * 300.0
+    ball_pos - to_target.normalize() * 150.0
 }
 
 pub fn find_best_preshoot_heading(s: &RobotSituation) -> Angle {
