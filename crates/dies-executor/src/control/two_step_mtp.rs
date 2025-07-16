@@ -533,11 +533,12 @@ impl TwoStepMTP {
         avoid_goal_area: bool,
     ) -> f64 {
         let mut cost = 0.0;
-        let margin = 10.0;
+        let margin = 200.0;
 
         // Field boundaries
-        let half_width = field.field_width / 2.0 - margin;
-        let half_length = field.field_length / 2.0 - margin;
+        let fmargin = margin / 2.0;
+        let half_width = field.field_width / 2.0 - fmargin;
+        let half_length = field.field_length / 2.0 - fmargin;
         let boundary_width = field.boundary_width;
 
         // Check intersection with field boundaries
@@ -565,6 +566,13 @@ impl TwoStepMTP {
         ];
 
         for (boundary_start, boundary_end) in field_lines.iter() {
+
+            dies_core::debug_line(
+                &format!("{}{}_seg", boundary_start.x, boundary_end.y),
+                boundary_start.xy(),
+                boundary_end.xy(),
+                dies_core::DebugColor::Blue,
+            );
             if let Some(intersection) =
                 self.line_line_intersection(line_start, line_end, *boundary_start, *boundary_end)
             {
@@ -573,7 +581,7 @@ impl TwoStepMTP {
             }
         }
 
-        let penalty_depth = field.penalty_area_depth + margin; // no need for margin here: already shifted
+        let penalty_depth = field.penalty_area_depth - fmargin + margin; // no need for margin here: already shifted
                                                                // the field boundary
         let penalty_width = field.penalty_area_width + 2.0 * margin;
 
@@ -587,6 +595,7 @@ impl TwoStepMTP {
                 left_rect_max,
             );
             cost += left_intersection_length * 10.0; // Weight for left boundary area
+            debug_rect(left_rect_min, left_rect_max);
 
             // Right side boundary rectangle (outside field)
             let right_rect_min = Vector2::new(half_length - penalty_depth, -penalty_width / 2.0);
@@ -598,6 +607,7 @@ impl TwoStepMTP {
                 right_rect_max,
             );
             cost += right_intersection_length * 10.0; // Weight for right boundary area
+            debug_rect(right_rect_min, right_rect_max);
         }
 
         cost
@@ -643,4 +653,35 @@ fn cap_magnitude(v: f64, max: f64) -> f64 {
     } else {
         v
     }
+}
+
+fn debug_rect(low: Vector2, high: Vector2) {
+    dies_core::debug_line(
+        &format!("__{}{}_seg", low.x, high.y),
+        low.xy(),
+        Vector2::new(low.x, high.y),
+        dies_core::DebugColor::Blue,
+    );
+
+    dies_core::debug_line(
+        &format!("__{}{}_seg", low.y, high.x),
+        low.xy(),
+        Vector2::new(high.x, low.y),
+        dies_core::DebugColor::Blue,
+    );
+
+    dies_core::debug_line(
+        &format!("__{}{}_seg", high.x, high.y),
+        high.xy(),
+        Vector2::new(high.x, low.y),
+        dies_core::DebugColor::Blue,
+    );
+
+
+    dies_core::debug_line(
+        &format!("__{}{}_seg", high.x, low.x),
+        high.xy(),
+        Vector2::new(low.x, high.y),
+        dies_core::DebugColor::Blue,
+    );
 }

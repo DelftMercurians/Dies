@@ -1,8 +1,8 @@
 pub mod skills;
 
 mod face;
-mod fetchball;
 mod fetch_ball_with_preshoot;
+mod fetchball;
 mod go_to_pos;
 mod kick;
 mod receive;
@@ -10,8 +10,8 @@ mod shoot;
 mod wait;
 
 pub use face::Face;
-pub use fetchball::FetchBall;
 pub use fetch_ball_with_preshoot::FetchBallWithPreshoot;
+pub use fetchball::FetchBall;
 pub use go_to_pos::GoToPosition;
 pub use kick::Kick;
 pub use receive::TryReceive;

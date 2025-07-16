@@ -8,8 +8,8 @@ use crate::{
     behavior_tree::{Argument, BehaviorNode},
     control::{PlayerContext, PlayerControlInput},
     skills::{
-        Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, ShootTarget, Skill, SkillCtx, SkillProgress,
-        SkillResult, TryReceive, Wait,
+        Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, ShootTarget, Skill,
+        SkillCtx, SkillProgress, SkillResult, TryReceive, Wait,
     },
 };
 
@@ -166,7 +166,11 @@ impl ActionNode {
                     duration_secs.resolve(situation),
                 ))),
                 SkillDefinition::FetchBall => Some(Skill::FetchBall(FetchBall::new())),
-                SkillDefinition::FetchBallWithPreshoot { preshoot_position, preshoot_heading, shoot_target } => {
+                SkillDefinition::FetchBallWithPreshoot {
+                    preshoot_position,
+                    preshoot_heading,
+                    shoot_target,
+                } => {
                     let position = preshoot_position.resolve(situation);
                     let target = shoot_target.resolve(situation);
                     let mut skill = FetchBallWithPreshoot::new(position, target);
