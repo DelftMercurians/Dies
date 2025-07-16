@@ -9,7 +9,7 @@ use nalgebra::{self as na, Vector4};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
 
-const BREAKBEAM_WINDOW: usize = 4;
+const BREAKBEAM_WINDOW: usize = 5;
 
 /// Stored data for a player from the last update.
 ///
@@ -232,7 +232,9 @@ impl PlayerTracker {
     /// Returns filtered breakbeam detection status.
     /// Returns true if there's at least one detection within the buffer.
     fn get_filtered_breakbeam_detection(&self) -> bool {
-        self.breakbeam_detections.iter().any(|&detection| detection != 0)
+        self.breakbeam_detections
+            .iter()
+            .any(|&detection| detection != 0)
     }
 
     pub fn get(&self) -> Option<PlayerData> {

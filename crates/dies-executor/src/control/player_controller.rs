@@ -430,7 +430,7 @@ impl PlayerController {
         if let Some(target_yaw_rate) = input.angular_speed_limit {
             let last_yaw_rate = self.last_yaw_rate_limit.unwrap_or(0.0);
             let yaw_rate_error = target_yaw_rate - last_yaw_rate;
-            let yaw_rate_output = yaw_rate_error * 1.0; // kp
+            let yaw_rate_output = yaw_rate_error * 0.2; // kp
             self.last_yaw_rate_limit = Some(last_yaw_rate + yaw_rate_output);
         } else {
             self.last_yaw_rate_limit = None;

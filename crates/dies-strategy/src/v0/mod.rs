@@ -22,6 +22,11 @@ mod striker;
 mod waller;
 
 pub fn v0_strategy(game: &mut GameContext) {
+    game.add_role("striker_1")
+        .score(score_striker)
+        .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
+        .behavior(|s| striker::build_striker_tree(s));
+    return;
     // Goalkeeper - always exactly one
     game.add_role("goalkeeper")
         .count(1)

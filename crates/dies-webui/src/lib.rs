@@ -184,4 +184,5 @@ pub(crate) struct PostExecutorSettingsBody {
 pub(crate) struct BasestationResponse {
     pub(crate) blue_team: Vec<PlayerFeedbackMsg>,
     pub(crate) yellow_team: Vec<PlayerFeedbackMsg>,
+    pub(crate) unknown_team: Vec<PlayerFeedbackMsg>,
 }
