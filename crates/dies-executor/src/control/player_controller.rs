@@ -55,8 +55,8 @@ pub struct PlayerController {
     max_accel: f64,
     max_speed: f64,
     max_decel: f64,
-    max_angular_velocity: f64,
     max_angular_acceleration: f64,
+    last_yaw_rate_limit: Option<f64>,
 
     fan_speed: f64,
     kick_speed: f64,
@@ -94,11 +94,12 @@ impl PlayerController {
             max_accel: settings.controller_settings.max_acceleration,
             max_speed: settings.controller_settings.max_velocity,
             max_decel: settings.controller_settings.max_deceleration,
-            max_angular_velocity: settings.controller_settings.max_angular_velocity,
             max_angular_acceleration: settings.controller_settings.max_angular_acceleration,
 
             fan_speed: 0.0,
             kick_speed: 0.0,
+
+            last_yaw_rate_limit: None,
         };
         instance.update_settings(&settings.controller_settings);
         instance
@@ -185,7 +186,7 @@ impl PlayerController {
             .set_kick_speed(self.kick_speed)
             .set_kick_counter(self.kick_counter)
             .set_robot_cmd(RobotCmd::Arm)
-            .set_max_yaw_rate(self.max_angular_velocity)
+            .set_max_yaw_rate(self.last_yaw_rate_limit.unwrap_or(100.0))
             .untransform_global_move_cmd(self.id, self.last_yaw);
 
         player_context.debug_string(
@@ -396,9 +397,6 @@ impl PlayerController {
             dies_core::DebugColor::Red,
         );
 
-        self.max_angular_velocity = input
-            .angular_speed_limit
-            .unwrap_or(self.max_angular_velocity);
         if let Some(yaw) = input.yaw {
             player_context.debug_line_colored(
                 "target_yaw_line",
@@ -416,7 +414,7 @@ impl PlayerController {
                 dt,
                 input
                     .angular_speed_limit
-                    .unwrap_or(self.max_angular_velocity),
+                    .unwrap_or(self.last_yaw_rate_limit.unwrap_or(100.0)),
                 input
                     .angular_acceleration_limit
                     .unwrap_or(self.max_angular_acceleration),
@@ -426,6 +424,16 @@ impl PlayerController {
         } else {
             self.target_z = f64::NAN;
             self.w = 0.0;
+        }
+
+        // Ramp up yaw rate with proprtional control
+        if let Some(target_yaw_rate) = input.angular_speed_limit {
+            let last_yaw_rate = self.last_yaw_rate_limit.unwrap_or(0.0);
+            let yaw_rate_error = target_yaw_rate - last_yaw_rate;
+            let yaw_rate_output = yaw_rate_error * 1.0; // kp
+            self.last_yaw_rate_limit = Some(last_yaw_rate + yaw_rate_output);
+        } else {
+            self.last_yaw_rate_limit = None;
         }
 
         // Set dribbling speed
