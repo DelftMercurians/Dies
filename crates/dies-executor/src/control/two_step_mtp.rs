@@ -121,13 +121,23 @@ impl TwoStepMTP {
                 (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp + 150.0)
                     .clamp(0.0, max_speed);
             let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
-
             let v_control = dv_magnitude;
+            let current_vel = self.last_vel.unwrap_or(velocity);
+
 
             player_context.debug_string("TwoStepMTPMode", "Proportional");
-            let current_vel = self.last_vel.unwrap_or(velocity);
-            let new_speed = current_vel.magnitude() + cap_magnitude(v_control, 2500.0 * dt);
-            direction * new_speed
+
+            if false {
+                let target_vel = proportional_velocity_magnitude * direction;
+                let dv = cap_vec(target_vel - current_vel, 2500.0 * dt);
+
+                current_vel + dv
+            }
+            else {
+                let new_speed = current_vel.magnitude() + cap_magnitude(v_control, 2500.0 * dt);
+                direction * new_speed
+            }
+
         } else {
             unreachable!()
         };
@@ -630,6 +640,10 @@ impl TwoStepMTP {
             None
         }
     }
+}
+
+fn cap_vec(v: Vector2, cap: f64) -> Vector2 {
+    v.normalize() * v.magnitude().min(cap)
 }
 
 fn cap_magnitude(v: f64, max: f64) -> f64 {

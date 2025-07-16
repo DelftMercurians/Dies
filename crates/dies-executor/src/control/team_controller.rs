@@ -622,7 +622,7 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                                     -field.penalty_area_width / 2.0,
                                 ),
                                 max: Vector2::new(
-                                    field.field_length / 2.0,
+                                    -field.field_length / 2.0 + field.penalty_area_depth,
                                     field.penalty_area_width / 2.0,
                                 ),
                             },
