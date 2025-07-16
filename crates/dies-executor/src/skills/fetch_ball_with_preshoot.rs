@@ -54,6 +54,7 @@ impl FetchBallWithPreshoot {
                     if let Some(heading) = self.preshoot_heading {
                         go_to_position = go_to_position.with_heading(heading);
                     }
+                    go_to_position = go_to_position.avoid_ball();
                     self.state = FetchBallWithPreshootState::GoToPreshoot(go_to_position);
                 }
                 FetchBallWithPreshootState::GoToPreshoot(go_to_position) => {

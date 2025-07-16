@@ -1,7 +1,7 @@
 use dies_core::SysStatus;
 
 use super::{SkillCtx, SkillProgress};
-use crate::{KickerControlInput, PlayerControlInput};
+use crate::{control::Velocity, KickerControlInput, PlayerControlInput};
 
 #[derive(Clone)]
 pub struct Kick {
@@ -17,6 +17,14 @@ impl Kick {
 impl Kick {
     pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let mut input = PlayerControlInput::new();
+
+        if let Some(ball) = ctx.world.ball.as_ref() {
+            let ball_pos = ball.position.xy();
+            let player_pos = ctx.player.position.xy();
+            let dir = (ball_pos - player_pos).normalize();
+            input.velocity = Velocity::Global(dir * 100.0);
+        }
+
         input.with_dribbling(0.6);
 
         if self.has_kicked {
