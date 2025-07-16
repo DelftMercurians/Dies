@@ -32,7 +32,7 @@ const DEBUG_COLORS: Record<DebugColor, string> = {
   orange: "#f9731688",
   purple: "#9333ea88",
   blue: "#0000aa88",
-  gray: "#66666688",
+  gray: "#66666622",
 };
 
 export type PositionDisplayMode = "raw" | "filtered" | "both";
