@@ -160,7 +160,7 @@ impl TeamController {
         }
 
         // Get role assignment problem from script
-        let mut game_context = GameContext::new(&world_data);
+        let mut game_context = GameContext::new(Arc::clone(&world_data));
         (self.strategy)(&mut game_context);
         let assignment_problem = game_context.into_role_assignment_problem();
 
@@ -282,18 +282,23 @@ impl TeamController {
                 team_color,
             );
 
+            player_context.debug_string("role_bt", &player_bt.name);
             let (_status, player_input_opt) = player_bt.tick(&mut robot_situation);
             let mut player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
 
             // Set role type based on assignment
             if let Some(role_name) = self.role_assignments.get(&player_id) {
                 player_context.debug_string("role", role_name);
-                player_input.role_type = match role_name.as_str() {
-                    "goalkeeper" => RoleType::Goalkeeper,
-                    "kickoff_kicker" => RoleType::KickoffKicker,
-                    "free_kick_kicker" => RoleType::FreeKicker,
-                    "waller" => RoleType::Waller,
-                    _ => RoleType::Player,
+                player_input.role_type = if role_name.contains("goalkeeper") {
+                    RoleType::Goalkeeper
+                } else if role_name.contains("kickoff_kicker") {
+                    RoleType::KickoffKicker
+                } else if role_name.contains("free_kick_kicker") {
+                    RoleType::FreeKicker
+                } else if role_name.contains("waller") {
+                    RoleType::Waller
+                } else {
+                    RoleType::Player
                 };
             } else {
                 player_context.debug_string("role", "not found");

@@ -114,7 +114,7 @@ fn calculate_wall_position(s: &RobotSituation) -> Vector2 {
     let mut wallers = s
         .role_assignments
         .iter()
-        .filter(|(_, v)| *v == "waller")
+        .filter(|(_, v)| v.contains("waller"))
         .collect::<Vec<_>>();
     wallers.sort_by_key(|(k, _)| *k);
 
@@ -123,11 +123,13 @@ fn calculate_wall_position(s: &RobotSituation) -> Vector2 {
         .position(|(k, _)| **k == s.player_id)
         .unwrap_or(0);
 
-    if waller_index < best_tuple.len() {
+    let pos = if waller_index < best_tuple.len() {
         best_tuple[waller_index]
     } else {
         s.player_data().position
-    }
+    };
+
+    pos
 }
 
 fn get_defense_area_boundary(s: &RobotSituation) -> Option<DefenseAreaBoundary> {
@@ -208,7 +210,7 @@ fn find_best_boundary_position(s: &RobotSituation, ball_pos: Vector2) -> Vector2
         let mut wallers = s
             .role_assignments
             .iter()
-            .filter(|(_, v)| *v == "waller")
+            .filter(|(_, v)| v.contains("waller"))
             .collect::<Vec<_>>();
         wallers.sort_by_key(|(k, _)| *k);
 
@@ -369,7 +371,7 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
     let mut wallers = s
         .role_assignments
         .iter()
-        .filter(|(_, v)| *v == "waller")
+        .filter(|(_, v)| v.contains("waller"))
         .collect::<Vec<_>>();
     wallers.sort_by_key(|(k, _)| *k);
 
@@ -532,7 +534,7 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
     let mut wallers = s
         .role_assignments
         .iter()
-        .filter(|(_, v)| *v == "waller")
+        .filter(|(_, v)| v.contains("waller"))
         .collect::<Vec<_>>();
     wallers.sort_by_key(|(k, _)| *k);
 
@@ -550,7 +552,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
     let no_harassers = s
         .role_assignments
         .values()
-        .find(|v| *v == "harasser")
+        .find(|v| v.contains("harasser"))
         .is_none();
 
     let ball_in_our_half = s.ball_position().x < 0.0;

@@ -26,13 +26,6 @@ pub fn v0_strategy(game: &mut GameContext) {
     game.add_role("goalkeeper")
         .count(1)
         .score(|_| 100000.0)
-        .require(|s| {
-            if s.team_color == TeamColor::Yellow {
-                s.player_id == PlayerId::new(4)
-            } else {
-                s.player_id == PlayerId::new(5)
-            }
-        })
         .behavior(|s| keeper::build_goalkeeper_tree(s));
 
     // Game state specific roles
@@ -59,7 +52,7 @@ pub fn v0_strategy(game: &mut GameContext) {
             } else {
                 // Free kick interference
                 game.add_role("free_kick_interference")
-                    .count(1)
+                    .max(1)
                     .score(score_free_kick_interference)
                     .behavior(|s| freekick_interference::build_free_kick_interference_tree(s));
             }
@@ -78,25 +71,45 @@ pub fn v0_strategy(game: &mut GameContext) {
     }
 
     // Standard roles
-    // game.add_role("waller")
-    //     .min(1)
-    //     .count(1)
-    //     .max(1)
-    //     .score(score_as_waller)
-    //     .behavior(|s| waller::build_waller_tree(s));
-
-    game.add_role("harasser")
-        .min(1)
-        .count(1)
+    game.add_role("waller_1")
         .max(1)
-        .score(score_as_harasser)
-        .behavior(|s| harasser::build_harasser_tree(s));
+        .score(score_as_waller)
+        .behavior(|s| waller::build_waller_tree(s));
 
-    game.add_role("striker")
-        .min(1)
-        .count(1)
+    if game.ball_has_been_on_opp_side_for_at_least(15.0) {
+        game.add_role("striker_2")
+            .max(1)
+            .score(score_striker)
+            .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
+            .behavior(|s| striker::build_striker_tree(s));
+    } else {
+        game.add_role("harasser_1")
+            .max(1)
+            .score(score_as_harasser)
+            .behavior(|s| harasser::build_harasser_tree(s));
+    }
+
+    game.add_role("waller_2")
+        .max(1)
+        .score(score_as_waller)
+        .behavior(|s| waller::build_waller_tree(s));
+
+    game.add_role("striker_1")
         .max(1)
         .score(score_striker)
         .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
         .behavior(|s| striker::build_striker_tree(s));
+
+    if game.ball_has_been_on_our_side_for_at_least(15.0) {
+        game.add_role("harasser_2")
+            .max(1)
+            .score(score_as_harasser)
+            .behavior(|s| harasser::build_harasser_tree(s));
+    } else {
+        game.add_role("striker_3")
+            .max(1)
+            .score(score_striker)
+            .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
+            .behavior(|s| striker::build_striker_tree(s));
+    }
 }

@@ -168,19 +168,19 @@ impl RoleAssignmentSolver {
 
         // Sort roles by priority (critical roles first)
         let mut sorted_roles: Vec<_> = problem.roles.iter().enumerate().collect();
-        sorted_roles.sort_by_key(|(_, role)| {
-            // Priority: min_count descending, then scarcity (fewer eligible robots = higher priority)
-            let eligible_count = eligible_robots
-                .get(&role.name)
-                .map(|v| v.len())
-                .unwrap_or(0);
-            let scarcity_score = if eligible_count > 0 {
-                role.min_count * 1000 / eligible_count
-            } else {
-                999999
-            };
-            (-(role.min_count as i32), scarcity_score)
-        });
+        // sorted_roles.sort_by_key(|(_, role)| {
+        //     // Priority: min_count descending, then scarcity (fewer eligible robots = higher priority)
+        //     let eligible_count = eligible_robots
+        //         .get(&role.name)
+        //         .map(|v| v.len())
+        //         .unwrap_or(0);
+        //     let scarcity_score = if eligible_count > 0 {
+        //         role.min_count * 1000 / eligible_count
+        //     } else {
+        //         999999
+        //     };
+        //     (-(role.min_count as i32), scarcity_score)
+        // });
 
         // Extract priority list (highest priority first)
         let priority_list: Vec<String> = sorted_roles
@@ -200,14 +200,14 @@ impl RoleAssignmentSolver {
                 .filter(|&&robot_id| !assigned_robots.contains(&robot_id))
                 .collect();
 
-            if available.len() < role.min_count {
-                return Err(anyhow!(
-                    "Cannot satisfy min_count {} for role '{}', only {} eligible robots available",
-                    role.min_count,
-                    role.name,
-                    available.len()
-                ));
-            }
+            // if available.len() < role.min_count {
+            //     return Err(anyhow!(
+            //         "Cannot satisfy min_count {} for role '{}', only {} eligible robots available",
+            //         role.min_count,
+            //         role.name,
+            //         available.len()
+            //     ));
+            // }
 
             // Score and assign best robots for this role
             let mut scored_robots: Vec<_> = available
@@ -436,6 +436,8 @@ mod tests {
                 freekick_kicker: None,
             },
             field_geom: None,
+            ball_on_our_side: None,
+            ball_on_opp_side: None,
         }
     }
 

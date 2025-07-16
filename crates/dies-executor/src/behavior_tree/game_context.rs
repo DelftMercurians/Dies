@@ -1,24 +1,40 @@
-use dies_core::{FieldGeometry, GameStateData, TeamData};
+use std::{sync::Arc, time::Duration};
+
+use dies_core::{GameStateData, TeamData};
 
 use crate::behavior_tree::{RoleAssignmentProblem, RoleBuilder};
 
 pub struct GameContext {
     game_state: GameStateData,
-    num_own_players: usize,
-    num_opp_players: usize,
-    field_geom: Option<FieldGeometry>,
     role_builders: Vec<RoleBuilder>,
+    team_data: Arc<TeamData>,
 }
 
 impl GameContext {
-    pub fn new(team_data: &TeamData) -> Self {
+    pub fn new(team_data: Arc<TeamData>) -> Self {
         Self {
             game_state: team_data.current_game_state.clone(),
-            num_own_players: team_data.own_players.len(),
-            num_opp_players: team_data.opp_players.len(),
-            field_geom: team_data.field_geom.clone(),
             role_builders: Vec::new(),
+            team_data,
         }
+    }
+
+    pub fn team_data(&self) -> Arc<TeamData> {
+        self.team_data.clone()
+    }
+
+    pub fn ball_has_been_on_our_side_for_at_least(&self, secs: f64) -> bool {
+        self.team_data
+            .ball_on_our_side
+            .map(|t| t > Duration::from_secs_f64(secs))
+            .unwrap_or(false)
+    }
+
+    pub fn ball_has_been_on_opp_side_for_at_least(&self, secs: f64) -> bool {
+        self.team_data
+            .ball_on_opp_side
+            .map(|t| t > Duration::from_secs_f64(secs))
+            .unwrap_or(false)
     }
 
     pub fn game_state(&self) -> GameStateData {

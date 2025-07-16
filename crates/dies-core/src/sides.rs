@@ -110,6 +110,14 @@ impl SideAssignment {
                     None
                 },
             },
+            ball_on_our_side: match color {
+                TeamColor::Blue => world_data.ball_on_blue_side,
+                TeamColor::Yellow => world_data.ball_on_yellow_side,
+            },
+            ball_on_opp_side: match color {
+                TeamColor::Blue => world_data.ball_on_yellow_side,
+                TeamColor::Yellow => world_data.ball_on_blue_side,
+            },
         }
     }
 

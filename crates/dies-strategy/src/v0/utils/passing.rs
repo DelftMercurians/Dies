@@ -248,7 +248,7 @@ pub fn pass_success_probability(s: &RobotSituation, teammate: &PlayerData) -> f6
         .get(&teammate.id)
         .cloned()
         .unwrap_or_default();
-    let teammate_striker = teammate_role == "striker";
+    let teammate_striker = teammate_role.contains("striker");
     if !teammate_striker {
         // this is a frequentist shitting which i don't fucking carea bout
         // if you say anything about "ohhh noooo your beliefs are susceptible to dutch book :((" im

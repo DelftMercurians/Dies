@@ -1,4 +1,9 @@
-use std::{collections::HashSet, fmt::Display, hash::Hash, time::Instant};
+use std::{
+    collections::HashSet,
+    fmt::Display,
+    hash::Hash,
+    time::{Duration, Instant},
+};
 
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
@@ -267,6 +272,8 @@ pub struct WorldData {
     pub field_geom: Option<FieldGeometry>,
     pub game_state: RawGameStateData,
     pub side_assignment: SideAssignment,
+    pub ball_on_blue_side: Option<Duration>,
+    pub ball_on_yellow_side: Option<Duration>,
 }
 
 impl WorldData {
@@ -306,6 +313,8 @@ pub struct TeamData {
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameStateData,
+    pub ball_on_our_side: Option<Duration>,
+    pub ball_on_opp_side: Option<Duration>,
 }
 
 impl TeamData {
@@ -724,6 +733,8 @@ pub fn mock_world_data() -> WorldData {
             yellow_team_yellow_cards: 0,
         },
         side_assignment: SideAssignment::YellowOnPositive,
+        ball_on_blue_side: None,
+        ball_on_yellow_side: None,
     }
 }
 
@@ -780,6 +791,8 @@ pub fn mock_team_data() -> TeamData {
             yellow_cards: 0,
             freekick_kicker: None,
         },
+        ball_on_our_side: None,
+        ball_on_opp_side: None,
     }
 }
 
