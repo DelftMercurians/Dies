@@ -20,6 +20,7 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 )
                 .build(),
         )
+        .add(try_receive())
         .add(
             // Pickup ball if we can
             committing_guard_node()
@@ -162,6 +163,27 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         return false;
     };
 
+    // am i closest striker
+    let strikers = s
+        .world
+        .own_players
+        .iter()
+        .filter(|p| {
+            s.role_assignments
+                .get(&p.id)
+                .cloned()
+                .unwrap_or_default()
+                .contains("striker")
+        })
+        .min_by(|a, b| {
+            let a_dist = (ball.position.xy() - a.position).norm();
+            let b_dist = (ball.position.xy() - b.position).norm();
+            a_dist
+                .partial_cmp(&b_dist)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    let closest_striker = strikers.map(|p| p.id == s.player_id).unwrap_or(false);
+
     let closest_opponent_dist = s
         .world
         .opp_players
@@ -169,5 +191,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         .map(|p| (ball.position.xy() - p.position).norm())
         .min_by(|a, b| a.partial_cmp(b).unwrap());
 
-    ball.position.x > 80.0 && closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true)
+    ball.position.x > 80.0
+        && closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true)
+        && closest_striker
 }

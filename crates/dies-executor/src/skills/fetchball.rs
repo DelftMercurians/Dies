@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use dies_core::{Angle, Vector2, BALL_RADIUS, PLAYER_RADIUS};
 
 use super::{SkillCtx, SkillProgress};
@@ -7,22 +9,22 @@ use crate::{control::Velocity, PlayerControlInput};
 #[derive(Clone)]
 pub struct FetchBall {
     dribbling_distance: f64,
-    dribbling_speed: f64,
     stop_distance: f64,
     max_relative_speed: f64,
     last_good_heading: Option<Angle>,
     starting_position: Option<Vector2>,
+    breakbeam_on: Option<Instant>,
 }
 
 impl FetchBall {
     pub fn new() -> Self {
         Self {
             dribbling_distance: 1000.0,
-            dribbling_speed: 0.6,
-            stop_distance: PLAYER_RADIUS + BALL_RADIUS + 40.0,
+            stop_distance: PLAYER_RADIUS + BALL_RADIUS + 30.0,
             max_relative_speed: 1000.0,
             last_good_heading: None,
             starting_position: None,
+            breakbeam_on: None,
         }
     }
 }
@@ -31,7 +33,7 @@ impl FetchBall {
     pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
-            input.with_dribbling(self.dribbling_speed);
+            input.with_dribbling(0.6);
 
             let ball_pos = ball.position.xy();
             let ball_speed = ball.velocity.xy().norm();
@@ -57,8 +59,32 @@ impl FetchBall {
                 ),
             );
             if ctx.player.breakbeam_ball_detected && distance < 400.0 {
-                dies_core::debug_string("fetchball_state", "done");
-                return SkillProgress::success();
+                if self.breakbeam_on.is_none() {
+                    self.breakbeam_on = Some(Instant::now());
+                }
+            }
+            if let Some(breakbeam_on) = self.breakbeam_on {
+                let elapsed = breakbeam_on.elapsed();
+                if elapsed > Duration::from_millis(100) {
+                    self.breakbeam_on = None;
+                    dies_core::debug_string("fetchball_state", "done");
+                    return SkillProgress::success();
+                } else {
+                    // let start_pos = self.starting_position.unwrap_or(player_pos);
+                    // let distance = (player_pos - start_pos).norm();
+                    // if distance > 30.0 {
+                    //     // if we moved too far we probably got stuck, so fail
+                    //     return SkillProgress::failure();
+                    // }
+                    let vel = (0.1 - elapsed.as_secs_f64()) / 0.1
+                        * 100.0
+                        * ball_angle.rotate_vector(&Vector2::x());
+                    input.velocity = Velocity::global(vel);
+                    dies_core::debug_string(
+                        "fetchball_state",
+                        format!("waiting+moving local: {:.1}", vel.norm()),
+                    );
+                }
             }
 
             if ball_speed < 100.0 {
@@ -71,9 +97,9 @@ impl FetchBall {
                     dies_core::debug_string("ft1", format!("{:.0}", target_pos.x));
                     dies_core::debug_string("ft2", format!("{:.0}", target_pos.y));
                 } else {
-                    let start_pos = self.starting_position.unwrap_or(player_pos);
+                    let start_pos = self.starting_position.get_or_insert(player_pos).clone();
                     let distance = (player_pos - start_pos).norm();
-                    if distance > 100.0 {
+                    if distance > 30.0 {
                         // if we moved too far we probably got stuck, so fail
                         return SkillProgress::failure();
                     }
@@ -81,8 +107,9 @@ impl FetchBall {
                         "fetchball_state",
                         format!("moving local: {:.1}", distance),
                     );
-                    input.velocity =
-                        Velocity::global(200.0 * ball_angle.rotate_vector(&Vector2::x()));
+                    input.velocity = Velocity::global(
+                        (1.0 / distance) * 100.0 * ball_angle.rotate_vector(&Vector2::x()),
+                    );
                 }
             } else {
                 // if ball is fast and we are far away
@@ -131,7 +158,7 @@ impl FetchBall {
                 input.with_position(intersection);
 
                 if distance < self.dribbling_distance {
-                    input.with_dribbling(self.dribbling_speed);
+                    input.with_dribbling(0.6);
                 }
 
                 // Once we're close enough, use a proptional control to approach the ball

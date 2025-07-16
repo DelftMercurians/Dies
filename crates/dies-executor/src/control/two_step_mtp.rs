@@ -118,7 +118,7 @@ impl TwoStepMTP {
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
             let proportional_velocity_magnitude =
-                (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp + 180.0)
+                (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp + 150.0)
                     .clamp(0.0, max_speed);
             let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
             let v_control = dv_magnitude;

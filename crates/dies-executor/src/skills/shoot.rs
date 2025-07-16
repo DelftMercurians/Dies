@@ -34,6 +34,7 @@ enum ShootState {
 pub struct Shoot {
     target: ShootTarget,
     state: ShootState,
+    has_set_flag: bool,
 }
 
 impl Shoot {
@@ -41,6 +42,7 @@ impl Shoot {
         Self {
             state: ShootState::None,
             target,
+            has_set_flag: false,
         }
     }
 
@@ -62,19 +64,37 @@ impl Shoot {
                         }
                         ShootTarget::Player { id, position } => {
                             let position = position.unwrap_or(ctx.world.get_player(*id).position);
-                            ctx.bt_context
-                                .set_passing_target(PassingTarget { id: *id, position });
+
                             ShootState::Face(Face::towards_position(position).with_ball())
                         }
                     };
                 }
                 ShootState::Face(face) => {
                     let progress = face.update(ctx.clone());
+                    // if face.get_last_err().unwrap_or(0.0) < 30.0f64.to_radians()
+                    //     && !self.has_set_flag
+                    // {
+                    //     if let ShootTarget::Player { id, position } = &self.target {
+                    //         ctx.bt_context.set_passing_target(PassingTarget {
+                    //             id: *id,
+                    //             position: position.unwrap_or(ctx.world.get_player(*id).position),
+                    //         });
+                    //         self.has_set_flag = true;
+                    //     }
+                    // }
                     match progress {
                         SkillProgress::Continue(input) => {
                             return SkillProgress::Continue(input);
                         }
                         SkillProgress::Done(SkillResult::Success) => {
+                            if let ShootTarget::Player { id, position } = &self.target {
+                                ctx.bt_context.set_passing_target(PassingTarget {
+                                    id: *id,
+                                    position: position
+                                        .unwrap_or(ctx.world.get_player(*id).position),
+                                });
+                                self.has_set_flag = true;
+                            }
                             self.state = ShootState::Kick(Kick::new());
                         }
                         SkillProgress::Done(SkillResult::Failure) => {

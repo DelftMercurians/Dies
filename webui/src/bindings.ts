@@ -91,6 +91,7 @@ export interface PlayerFeedbackMsg {
 export interface BasestationResponse {
 	blue_team: PlayerFeedbackMsg[];
 	yellow_team: PlayerFeedbackMsg[];
+	unknown_team: PlayerFeedbackMsg[];
 }
 
 /** Settings for the low-level controller. */
@@ -457,6 +458,8 @@ export interface TeamData {
 	ball?: BallData;
 	field_geom?: FieldGeometry;
 	current_game_state: GameStateData;
+	ball_on_our_side?: Duration;
+	ball_on_opp_side?: Duration;
 }
 
 /** The current status of the executor. */
@@ -491,6 +494,8 @@ export interface WorldData {
 	field_geom?: FieldGeometry;
 	game_state: RawGameStateData;
 	side_assignment: SideAssignment;
+	ball_on_blue_side?: Duration;
+	ball_on_yellow_side?: Duration;
 }
 
 export interface WorldUpdate {
@@ -601,6 +606,7 @@ export enum RoleType {
 	PenaltyKicker = "PenaltyKicker",
 	/** freekicker */
 	FreeKicker = "FreeKicker",
+	Waller = "Waller",
 }
 
 /** Script error types for error handling and UI display */

@@ -97,6 +97,15 @@ pub async fn get_basesation_info(state: State<Arc<ServerState>>) -> Json<Basesta
             .filter(|((color, _), _)| *color == Some(TeamColor::Yellow))
             .map(|(_, msg)| msg)
             .collect(),
+        unknown_team: state
+            .basestation_feedback
+            .read()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .filter(|((color, _), _)| color.is_none())
+            .map(|(_, msg)| msg)
+            .collect(),
     })
 }
 

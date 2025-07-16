@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use dies_core::{Angle, Vector2};
 
 use super::{PlayerControlInput, SkillCtx, SkillProgress};

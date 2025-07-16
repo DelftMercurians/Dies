@@ -26,6 +26,7 @@ impl TryReceive {
 
     pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if !self.started && ctx.bt_context.take_passing_target(ctx.player.id).is_some() {
+            println!("receive started");
             self.started = true;
         } else if !self.started {
             return SkillProgress::Done(SkillResult::Failure);
@@ -50,6 +51,7 @@ impl TryReceive {
             let wait_start = self.wait_start.get_or_insert(Instant::now());
             let wait_time = wait_start.elapsed();
             if wait_time > Duration::from_secs(1) {
+                println!("receive failed: waited too long");
                 return SkillProgress::Done(SkillResult::Failure);
             }
 
@@ -64,15 +66,21 @@ impl TryReceive {
 
         let to_robot_dir = to_robot.normalize();
         let ball_vel_dir = ball_vel.normalize();
-        let dot = to_robot_dir.dot(&ball_vel_dir);
-        // dot > 0.3 means angle < ~72deg, i.e. ball is coming towards us
-        if dot < 0.3 {
+        let angle = Angle::between_points(to_robot_dir, ball_vel_dir);
+        if angle.degrees().abs() > 30.0 && ball_vel.norm() > 50.0 {
+            println!("receive failed: ball is not coming towards us");
+            return SkillProgress::Done(SkillResult::Failure);
+        }
+
+        if ball_vel.norm() < 10.0 {
+            println!("receive failed: ball is not coming towards us");
             return SkillProgress::Done(SkillResult::Failure);
         }
 
         let line_dist = distance_to_line(ball_pos, ball_pos + to_robot, ball_pos);
         // if the ball is too far away, give up
-        if line_dist > 200.0 {
+        if line_dist > 400.0 {
+            println!("receive failed: ball is too far away");
             return SkillProgress::Done(SkillResult::Failure);
         }
 
@@ -85,6 +93,7 @@ impl TryReceive {
         // if the closest opponent is too close, give up
         if let Some(closest_opponent_dist) = closest_opponent_dist {
             if closest_opponent_dist < 120 {
+                println!("receive failed: closest opponent is too close");
                 return SkillProgress::Done(SkillResult::Failure);
             }
         }
@@ -102,11 +111,13 @@ impl TryReceive {
             input.with_position(intersection);
 
             if ctx.player.breakbeam_ball_detected {
+                println!("receive success");
                 SkillProgress::Done(SkillResult::Success)
             } else {
                 SkillProgress::Continue(input)
             }
         } else {
+            println!("receive failed: no intersection");
             SkillProgress::failure()
         }
     }

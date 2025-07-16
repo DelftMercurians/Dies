@@ -9,7 +9,7 @@ use nalgebra::{self as na, Vector4};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
 
-const BREAKBEAM_WINDOW: usize = 4;
+const BREAKBEAM_WINDOW: usize = 5;
 
 /// Stored data for a player from the last update.
 ///

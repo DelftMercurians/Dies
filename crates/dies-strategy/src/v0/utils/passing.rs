@@ -299,6 +299,7 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
     let pass_viable = best_prob_pass >= min_prob_threshold;
     let best_prob = best_prob_direct.max(best_prob_pass);
 
+    // return (best_target_pass, best_prob_pass);
     let best_target = if !direct_viable && !pass_viable {
         // If neither option is viable, default to direct shooting
         best_target_direct

@@ -17,7 +17,7 @@ impl Kick {
 impl Kick {
     pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         let mut input = PlayerControlInput::new();
-        input.with_dribbling(1.0);
+        input.with_dribbling(0.6);
 
         if self.has_kicked {
             return SkillProgress::Done(super::SkillResult::Success);
