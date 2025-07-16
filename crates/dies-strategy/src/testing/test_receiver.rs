@@ -16,5 +16,5 @@ pub fn build_test_receiver() -> BehaviorNode {
 }
 
 fn position_center(_s: &RobotSituation) -> Vector2 {
-    Vector2::new(3000.0, 500.0)
+    Vector2::new(1000.0, 500.0)
 }

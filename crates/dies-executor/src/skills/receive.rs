@@ -50,7 +50,7 @@ impl TryReceive {
         if self.waiting_for_velocity {
             let wait_start = self.wait_start.get_or_insert(Instant::now());
             let wait_time = wait_start.elapsed();
-            if wait_time > Duration::from_secs(1) {
+            if wait_time > Duration::from_secs(3) {
                 println!("receive failed: waited too long");
                 return SkillProgress::Done(SkillResult::Failure);
             }
@@ -67,13 +67,13 @@ impl TryReceive {
         let to_robot_dir = to_robot.normalize();
         let ball_vel_dir = ball_vel.normalize();
         let angle = Angle::between_points(to_robot_dir, ball_vel_dir);
-        if angle.degrees().abs() > 30.0 && ball_vel.norm() > 50.0 {
-            println!("receive failed: ball is not coming towards us");
-            return SkillProgress::Done(SkillResult::Failure);
-        }
+        // if angle.degrees().abs() > 30.0 && ball_vel.norm() > 50.0 {
+        //     println!("receive failed: ball is not coming towards us");
+        //     return SkillProgress::Done(SkillResult::Failure);
+        // }
 
-        if ball_vel.norm() < 10.0 {
-            println!("receive failed: ball is not coming towards us");
+        if ball_vel.norm() < 50.0 {
+            println!("receive failed: ball is not moving");
             return SkillProgress::Done(SkillResult::Failure);
         }
 
@@ -108,14 +108,22 @@ impl TryReceive {
             ball.position.xy(),
             ball.velocity.xy(),
         ) {
-            input.with_position(intersection);
-
-            if ctx.player.breakbeam_ball_detected {
-                println!("receive success");
-                SkillProgress::Done(SkillResult::Success)
+            // Clamp the intersection within 500mm of the starting position
+            let start_pos = intercept_line.0;
+            let to_intersection = intersection - start_pos;
+            let clamped_intersection = if to_intersection.magnitude() > 500.0 {
+                start_pos + to_intersection.normalize() * 500.0
             } else {
-                SkillProgress::Continue(input)
-            }
+                intersection
+            };
+            input.with_position(clamped_intersection);
+
+            // if ctx.player.breakbeam_ball_detected {
+            //     println!("receive success");
+            //     SkillProgress::Done(SkillResult::Success)
+            // } else {
+            SkillProgress::Continue(input)
+            // }
         } else {
             println!("receive failed: no intersection");
             SkillProgress::failure()
