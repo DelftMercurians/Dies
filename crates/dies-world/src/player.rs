@@ -103,10 +103,6 @@ impl PlayerTracker {
         };
 
         let control_val = if let Some(last_feedback) = &self.last_feedback_time {
-            dies_core::debug_string(
-                format!("player_{}_feedback_time", self.id),
-                format!("{:.2}ms", world_time.duration_since(last_feedback) / 1000.0),
-            );
             if world_time.duration_since(last_feedback) < 0.5 {
                 1.0
             } else {

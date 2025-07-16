@@ -10,6 +10,7 @@ import React, {
 import {
   QueryClient,
   QueryClientProvider,
+  skipToken,
   useMutation,
   useQuery,
   useQueryClient,
@@ -313,7 +314,7 @@ export const useWorldState = (): WorldStatus => {
   const query = useQuery({
     queryKey: ["world-state"],
     queryFn: getWorldState,
-    refetchInterval: 100,
+    refetchInterval: () => (wsConnected ? false : 100),
     enabled: !wsConnected,
   });
   const [primaryTeam] = useContext(PrimaryTeamContext);
@@ -365,7 +366,7 @@ export const useRawWorldData = () => {
   const query = useQuery({
     queryKey: ["raw-world-state"],
     queryFn: getWorldState,
-    refetchInterval: 100,
+    refetchInterval: () => (wsConnected ? false : 100),
     enabled: !wsConnected,
   });
 

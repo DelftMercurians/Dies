@@ -22,9 +22,20 @@ mod striker;
 mod waller;
 
 pub fn v0_strategy(game: &mut GameContext) {
+    let can_goalie_be_reassigned =
+        match (game.game_state().game_state, game.team_data().ball.as_ref()) {
+            (GameState::Stop | GameState::Timeout | GameState::Halt, Some(ball))
+                if ball.position.x > 0.0 =>
+            {
+                true
+            }
+            _ => false,
+        };
     // Goalkeeper - always exactly one
     game.add_role("goalkeeper")
         .count(1)
+        .can_be_reassigned(false)
+        .if_must_reassign_can_we_do_it_now(can_goalie_be_reassigned)
         .score(|_| 100000.0)
         .behavior(|s| keeper::build_goalkeeper_tree(s));
 

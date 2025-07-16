@@ -214,21 +214,6 @@ impl TeamMap {
             );
         }
     }
-
-    /// Get and clear script errors from all active team controllers
-    fn take_script_errors(&mut self) -> Vec<ScriptError> {
-        let mut errors = Vec::new();
-
-        if let Some(controller) = &mut self.blue_team {
-            errors.extend(controller.take_script_errors());
-        }
-
-        if let Some(controller) = &mut self.yellow_team {
-            errors.extend(controller.take_script_errors());
-        }
-
-        errors
-    }
 }
 
 struct PlayerOverrideState {
@@ -660,7 +645,6 @@ impl Executor {
                     }
                 }
                 _ = cmd_interval.tick() => {
-                    dies_core::debug_value("exec_cmd msg_elapsed", last_cmd_time.elapsed().as_secs_f64() * 1000.0);
                     let paused = { *self.paused_tx.borrow() };
                     if !paused {
                         for (team_color, cmd) in self.player_commands() {
@@ -817,10 +801,6 @@ impl Executor {
         let update = WorldUpdate {
             world_data: world_data.clone(),
         };
-        dies_core::debug_string(
-            "update_team_controller",
-            format!("update_tx: {:?}", update.world_data.t_received),
-        );
         if let Err(err) = self.update_tx.send(update) {
             log::error!("Failed to broadcast world update: {}", err);
         }

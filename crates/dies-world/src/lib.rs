@@ -112,11 +112,6 @@ impl TeamTracker {
                 });
                 tracker.update_from_feedback(feedback, time);
                 self.controlled = true;
-            } else {
-                log::warn!(
-                    "Received feedback for player {} that is not tracked",
-                    feedback.id
-                );
             }
         }
     }
@@ -318,9 +313,10 @@ impl WorldTracker {
                 self.game_state_tracker
                     .start_ball_movement_check(ball.position, 10);
             }
-        } else {
-            log::error!("Ball not detected, cannot update game state");
         }
+        // else {
+        //     log::error!("Ball not detected, cannot update game state");
+        // }
 
         self.blue_team_yellow_cards = data.blue.red_cards.unwrap_or_default() as usize
             + data
@@ -489,12 +485,6 @@ impl WorldTracker {
             }
             self.yellow_team
                 .update_from_feedback(feedback, time, &self.tracker_settings);
-        } else {
-            log::warn!(
-                "Received feedback for player {} that belongs to team {} but is not controlled",
-                feedback.id,
-                team_color
-            );
         }
     }
 

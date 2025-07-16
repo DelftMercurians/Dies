@@ -1,11 +1,11 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     time::{Duration, Instant},
 };
 
 use dies_core::{
-    ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
-    SideAssignment, TeamColor, TeamData, Vector2,
+    ExecutorSettings, GameState, GcRefereeMsg, Obstacle, PlayerCmd, PlayerCmdUntransformer,
+    PlayerId, RoleType, SideAssignment, TeamColor, TeamData, Vector2,
 };
 use std::sync::Arc;
 
@@ -37,8 +37,8 @@ pub struct TeamController {
     player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
     bt_context: BtContext,
     team_color: TeamColor,
-    latest_script_errors: Vec<ScriptError>,
 
+    // last_keeper_id: Option<PlayerId>,
     removing_players: HashSet<PlayerId>,
 
     warmup_timer: Option<Instant>,
@@ -64,7 +64,6 @@ impl TeamController {
             player_behavior_trees: HashMap::new(),
             bt_context: BtContext::new(),
             team_color,
-            latest_script_errors: Vec::new(),
 
             removing_players: HashSet::new(),
 
@@ -76,11 +75,6 @@ impl TeamController {
         };
         team.update_controller_settings(settings);
         team
-    }
-
-    /// Get and clear any script errors that occurred since the last call
-    pub fn take_script_errors(&mut self) -> Vec<ScriptError> {
-        std::mem::take(&mut self.latest_script_errors)
     }
 
     pub fn update_controller_settings(&mut self, settings: &ExecutorSettings) {
@@ -308,11 +302,6 @@ impl TeamController {
             player_inputs_map.insert(player_id, player_input);
         }
 
-        team_context.debug_string(
-            format!("{}_semaphores", team_color),
-            self.bt_context.debug_semaphores(),
-        );
-
         // Drive robots that are being removed to the removal position
         let mut removing_players = self.removing_players.iter().copied().collect::<Vec<_>>();
         removing_players.sort();
@@ -341,22 +330,17 @@ impl TeamController {
         for (id, input) in player_inputs_map.iter() {
             self.avoid_goal_area_flags
                 .insert(*id, input.role_type != RoleType::Goalkeeper);
-            inputs_for_comply.insert(*id, input.clone());
+            if matches!(
+                world_data.current_game_state.game_state,
+                GameState::BallReplacement(_)
+            ) {
+                // In ball placement dont do anything by default
+                inputs_for_comply.insert(*id, PlayerControlInput::default());
+            } else {
+                inputs_for_comply.insert(*id, input.clone());
+            }
         }
-
-        // let final_player_inputs = if matches!(
-        //     world_data.current_game_state.game_state,
-        //     GameState::Stop
-        //         | GameState::BallReplacement(_)
-        //         | GameState::FreeKick
-        //         | GameState::Kickoff
-        //         | GameState::PrepareKickoff
-        //         | GameState::Halt
-        // ) {
         let final_player_inputs = comply(&world_data, inputs_for_comply, &team_context);
-        // } else {
-        //     inputs_for_comply
-        // };
 
         let all_players = world_data
             .own_players
@@ -536,7 +520,7 @@ impl TeamController {
                 // Get the avoid_goal_area flag for this specific player (default to true)
                 let avoid_goal_area = if !matches!(
                     world_data.current_game_state.game_state,
-                    GameState::BallReplacement(_) | GameState::Stop
+                    GameState::BallReplacement(_)
                 ) {
                     self.avoid_goal_area_flags.get(&id).copied().unwrap_or(true)
                 } else {
@@ -593,8 +577,9 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
 
                 let mut new_input = input.clone();
 
-                if matches!(game_state, GameState::Halt) {
+                if matches!(game_state, GameState::Halt | GameState::Unknown) {
                     new_input.with_speed_limit(0.0);
+                    new_input.with_angular_speed_limit(0.0);
                     new_input.dribbling_speed = 0.0;
                 }
 
@@ -727,6 +712,11 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                         new_input.position.unwrap_or(player_data.position),
                         max_radius,
                         field,
+                    );
+                    dies_core::debug_cross(
+                        format!("ball_placement_target_{}", id),
+                        target,
+                        dies_core::DebugColor::Orange,
                     );
                     new_input.with_position(target);
                 } else {

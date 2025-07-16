@@ -84,17 +84,6 @@ impl SequenceNode {
                         )),
                         Some("All must succeed in order".to_string()),
                     );
-                    dies_core::debug_string(
-                        format!("sequence_node_{}", self.description()),
-                        format!(
-                            "Running: {}",
-                            ticker_indicies
-                                .iter()
-                                .map(|i| i.to_string())
-                                .collect::<Vec<String>>()
-                                .join(", "),
-                        ),
-                    );
                     return (BehaviorStatus::Running, input_opt);
                 }
                 (BehaviorStatus::Failure, _input_opt) => {
@@ -113,33 +102,11 @@ impl SequenceNode {
                         )),
                         Some("All must succeed in order".to_string()),
                     );
-                    dies_core::debug_string(
-                        format!("sequence_node_{}", self.description()),
-                        format!(
-                            "Failed: {}",
-                            ticker_indicies
-                                .iter()
-                                .map(|i| i.to_string())
-                                .collect::<Vec<String>>()
-                                .join(", "),
-                        ),
-                    );
                     return (BehaviorStatus::Failure, None);
                 }
             }
         }
 
-        dies_core::debug_string(
-            format!("sequence_node_{}", self.description()),
-            format!(
-                "Done: {}",
-                ticker_indicies
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", "),
-            ),
-        );
         self.current_child_index = 0;
         debug_tree_node(
             situation.debug_key(node_full_id.clone()),

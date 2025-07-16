@@ -5,7 +5,10 @@ use dies_executor::{ControlMsg, Executor, ExecutorHandle, Strategy};
 use dies_simulator::SimulationBuilder;
 use dies_ssl_client::{SslClientConfig, VisionClient};
 use tokio::{
-    sync::{broadcast, oneshot, watch},
+    sync::{
+        broadcast::{self, error::RecvError},
+        oneshot, watch,
+    },
     task::JoinHandle,
 };
 
@@ -242,19 +245,21 @@ impl ExecutorTask {
                         let mut handle = executor.handle();
 
                         // Spawn task to relay world updates
-                        let mut last_recv_time = Instant::now();
                         let update_tx_clone = update_tx.clone();
                         tokio::spawn(async move {
-                            while let Ok(update) = handle.update_rx.recv().await {
-                                dies_core::debug_string(
-                                    "executor_task_recv_dt",
-                                    format!(
-                                        "last_recv_time: {:.3}ms",
-                                        last_recv_time.elapsed().as_millis()
-                                    ),
-                                );
-                                last_recv_time = Instant::now();
-                                let _ = update_tx_clone.send(Some(update));
+                            loop {
+                                match handle.update_rx.recv().await {
+                                    Ok(update) => {
+                                        let _ = update_tx_clone.send(Some(update));
+                                    }
+                                    Err(RecvError::Lagged(_)) => {
+                                        continue;
+                                    }
+                                    Err(RecvError::Closed) => {
+                                        log::info!("Executor task update channel closed");
+                                        break;
+                                    }
+                                }
                             }
                         });
 

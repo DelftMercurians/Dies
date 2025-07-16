@@ -96,7 +96,6 @@ impl GameStateTracker {
             Command::GOAL_YELLOW | Command::GOAL_BLUE => self.game_state,
         };
         dies_core::debug_string("game_state", format!("{:?}", self.game_state));
-
         dies_core::debug_string("last_cmd", format!("{:?}", command));
 
         self.operator_is_blue = match command {
@@ -110,17 +109,6 @@ impl GameStateTracker {
             | Command::BALL_PLACEMENT_YELLOW => Some(false),
             _ => self.operator_is_blue,
         };
-        dies_core::debug_string(
-            "operating_team",
-            format!(
-                "{:?}",
-                if self.operator_is_blue.unwrap_or(true) {
-                    "Blue"
-                } else {
-                    "Yellow"
-                }
-            ),
-        );
 
         // Reset
         match self.game_state {
