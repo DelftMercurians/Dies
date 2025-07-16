@@ -11,7 +11,7 @@ pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .condition(|s| s.game_state_is(GameState::PrepareKickoff))
                 .then(
                     go_to_position(|s: &RobotSituation| {
-                        s.get_field_center() - Vector2::new(0.0, 400.0)
+                        s.get_field_center() - Vector2::new(400.0, 0.0)
                     })
                     .description("Move to center")
                     .build(),

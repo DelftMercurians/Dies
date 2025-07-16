@@ -220,11 +220,23 @@ export interface TeamConfiguration {
 	side_assignment: SideAssignment;
 }
 
+export enum Handicap {
+	NoKicker = "no_kicker",
+	NoDribbler = "no_dribbler",
+}
+
+export interface TeamSpecificSettings {
+	handicaps: Record<PlayerId, Handicap[]>;
+}
+
 /** Settings for the executor. */
 export interface ExecutorSettings {
 	controller_settings: ControllerSettings;
 	tracker_settings: TrackerSettings;
 	team_configuration: TeamConfiguration;
+	yellow_team_settings: TeamSpecificSettings;
+	blue_team_settings: TeamSpecificSettings;
+	allow_no_vision: boolean;
 }
 
 export interface ExecutorSettingsResponse {
@@ -307,6 +319,11 @@ export interface GameStateData {
 	 */
 	us_operating: boolean;
 	yellow_cards: number;
+	/**
+	 * The player who performed the freekick, if it was us (for double touch tracking)
+	 * Only Some until another player touches the ball
+	 */
+	freekick_kicker?: PlayerId;
 }
 
 export interface GetDebugMapResponse {
@@ -349,6 +366,7 @@ export interface PlayerData {
 	breakbeam_ball_detected: boolean;
 	imu_status?: SysStatus;
 	kicker_status?: SysStatus;
+	handicaps: HashSet<Handicap>;
 }
 
 export interface PostExecutorSettingsBody {

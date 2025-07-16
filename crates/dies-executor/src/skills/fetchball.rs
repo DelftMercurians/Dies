@@ -19,7 +19,7 @@ impl FetchBall {
         Self {
             dribbling_distance: 1000.0,
             dribbling_speed: 1.0,
-            stop_distance: PLAYER_RADIUS + BALL_RADIUS + 0.0,
+            stop_distance: PLAYER_RADIUS + BALL_RADIUS + 50.0,
             max_relative_speed: 1500.0,
             last_good_heading: None,
             starting_position: None,

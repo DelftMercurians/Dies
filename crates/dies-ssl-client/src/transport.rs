@@ -1,6 +1,7 @@
 use std::{
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
@@ -32,7 +33,7 @@ impl<I: Message, O> Transport<I, O> {
     pub fn mock() -> Self {
         Self {
             transport_type: TransportType::Mock,
-            buf: vec![0u8; 32 * 1024],
+            buf: vec![0u8; 64 * 1024],
             incoming_msg_type: PhantomData,
             outgoing_msg_type: PhantomData,
         }
@@ -95,7 +96,7 @@ impl<I: Message, O> Transport<I, O> {
         let socket = UdpSocket::from_std(raw_socket.into())?;
         Ok(Self {
             transport_type: TransportType::Udp { socket },
-            buf: vec![0u8; 2 * 1024],
+            buf: vec![0u8; 32 * 1024],
             incoming_msg_type: PhantomData,
             outgoing_msg_type: PhantomData,
         })
@@ -119,7 +120,10 @@ impl<I: Message, O> Transport<I, O> {
                 let msg = I::parse_from_bytes(&self.buf[..len])?;
                 Ok(msg)
             }
-            TransportType::Mock => Err(anyhow::anyhow!("Mock transport does not support recv")),
+            TransportType::Mock => {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                Err(anyhow::anyhow!("Mock transport does not support recv"))
+            }
         }
     }
 }

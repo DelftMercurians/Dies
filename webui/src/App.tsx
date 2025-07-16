@@ -19,6 +19,7 @@ import {
   useRawWorldData,
   useScriptError,
   usePrimaryTeam,
+  useWsConnectionStatus,
 } from "./api";
 import logo from "./assets/mercury-logo.svg";
 import { Button } from "./components/ui/button";
@@ -58,6 +59,7 @@ const App: React.FC = () => {
   const [collapsed, setCollapsed] = useState<Panel[]>(["left-bottom"]);
   const executorInfo = useExecutorInfo();
   const [primaryTeam] = usePrimaryTeam();
+  const [wsConnectionStatus] = useWsConnectionStatus();
 
   // Robot count sound alerts
   useRobotCountAlerts(worldState, primaryTeam);
@@ -342,7 +344,7 @@ const App: React.FC = () => {
       {/* Statusbar */}
       <div
         className={cn(
-          "w-full text-sm px-4 py-1 select-none",
+          "w-full text-sm px-4 py-1 select-none flex justify-between items-center",
           "bg-slate-800",
           executorStatus.type === "RunningExecutor" &&
             worldState.status === "connected" &&
@@ -352,13 +354,37 @@ const App: React.FC = () => {
             "bg-red-500"
         )}
       >
-        {backendLoadingState === "error"
-          ? "Failed to connect to backend"
-          : executorStatus.type === "Failed"
-          ? "Executor failed"
-          : executorStatus.type === "RunningExecutor"
-          ? "Running"
-          : "Idle"}
+        <div>
+          {backendLoadingState === "error"
+            ? "Failed to connect to backend"
+            : executorStatus.type === "Failed"
+            ? "Executor failed"
+            : executorStatus.type === "RunningExecutor"
+            ? "Running"
+            : "Idle"}
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                "w-2 h-2 rounded-full",
+                wsConnectionStatus.connected ? "bg-green-400" : "bg-red-400"
+              )}
+            />
+            <span
+              className={cn(
+                wsConnectionStatus.connected ? "text-green-400" : "text-red-400"
+              )}
+            >
+              WS: {wsConnectionStatus.connected ? "Connected" : "Disconnected"}
+            </span>
+          </div>
+          {wsConnectionStatus.connected && wsConnectionStatus.dt !== null && (
+            <div className="text-gray-300">
+              dt: {(wsConnectionStatus.dt * 1000).toFixed(1)}ms
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Script Error Dialog */}

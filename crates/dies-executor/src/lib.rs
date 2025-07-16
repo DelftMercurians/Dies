@@ -817,6 +817,10 @@ impl Executor {
         let update = WorldUpdate {
             world_data: world_data.clone(),
         };
+        dies_core::debug_string(
+            "update_team_controller",
+            format!("update_tx: {:?}", update.world_data.t_received),
+        );
         if let Err(err) = self.update_tx.send(update) {
             log::error!("Failed to broadcast world update: {}", err);
         }
@@ -827,12 +831,5 @@ impl Executor {
             .map(|(id, s)| (*id, s.advance()))
             .collect();
         self.team_controllers.update(&world_data, manual_override);
-
-        let script_errors = self.team_controllers.take_script_errors();
-        for error in script_errors {
-            if let Err(err) = self.script_error_tx.send(error) {
-                log::error!("Failed to broadcast script error: {}", err);
-            }
-        }
     }
 }

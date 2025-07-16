@@ -83,16 +83,6 @@ impl ExecutorHandle {
             .ok()
     }
 
-    pub async fn recv_script_error(&mut self) -> Option<ScriptError> {
-        self.script_error_rx
-            .recv()
-            .await
-            .map_err(|err| {
-                log::error!("Error receiving script error: {:?}", err);
-            })
-            .ok()
-    }
-
     // messages are handeled in the executor run_rt_live
     pub fn send(&self, msg: ControlMsg) {
         self.control_tx

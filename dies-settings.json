@@ -13,8 +13,8 @@
   },
   "tracker_settings": {
     "field_mask": {
-      "x_min": -1.0,
-      "x_max": -0.03,
+      "x_min": -0.05,
+      "x_max": 1.0,
       "y_min": -1.0,
       "y_max": 1.0
     },
@@ -36,5 +36,6 @@
   },
   "blue_team_settings": {
     "handicaps": {}
-  }
+  },
+  "allow_no_vision": false
 }

@@ -158,6 +158,7 @@ const convertWorldDataToTeamData = (
     current_game_state: {
       game_state: worldData.game_state.game_state,
       us_operating: worldData.game_state.operating_team === primaryTeamColor,
+      yellow_cards: 0, // TODO: Get actual yellow cards from worldData
     },
   };
 };
@@ -379,6 +380,21 @@ export const useScriptError = () => {
   return useAtom(scriptErrorAtom);
 };
 
+// WebSocket connection status and dt tracking
+const wsConnectionStatusAtom = atom<{
+  connected: boolean;
+  lastUpdateTime: number | null;
+  dt: number | null;
+}>({
+  connected: false,
+  lastUpdateTime: null,
+  dt: null,
+});
+
+export const useWsConnectionStatus = () => {
+  return useAtom(wsConnectionStatusAtom);
+};
+
 let ws: WebSocket | null = null;
 const onWsConnectedChange: ((connected: boolean) => void)[] = [];
 const addWsConnectedListener = (cb: (connected: boolean) => void) => {
@@ -408,19 +424,40 @@ export function startWsClient() {
       ws.onopen = () => {
         toast.success("WebSocket connected");
         notify(true);
+        const store = getDefaultStore();
+        store.set(wsConnectionStatusAtom, {
+          connected: true,
+          lastUpdateTime: null,
+          dt: null,
+        });
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data) as WsMessage;
+        const store = getDefaultStore();
+
         if (msg.type === "WorldUpdate") {
+          // Update world state
           queryClient.setQueryData(["world-state"], {
             type: "Loaded",
             data: msg.data,
           } satisfies UiWorldState);
+
+          // Track dt from WebSocket updates
+          const currentTime = Date.now();
+          const currentStatus = store.get(wsConnectionStatusAtom);
+          const dt = currentStatus.lastUpdateTime
+            ? (currentTime - currentStatus.lastUpdateTime) / 1000
+            : null;
+
+          store.set(wsConnectionStatusAtom, {
+            connected: true,
+            lastUpdateTime: currentTime,
+            dt: dt,
+          });
         } else if (msg.type === "Debug") {
           queryClient.setQueryData(["debug-map"], msg.data satisfies DebugMap);
         } else if (msg.type === "ScriptError") {
           const scriptError = msg.data as ScriptError;
-          const store = getDefaultStore();
           store.set(scriptErrorAtom, scriptError);
         }
       };
@@ -431,10 +468,22 @@ export function startWsClient() {
           ws.close();
         }
         notify(false);
+        const store = getDefaultStore();
+        store.set(wsConnectionStatusAtom, {
+          connected: false,
+          lastUpdateTime: null,
+          dt: null,
+        });
         reject(err);
       };
       ws.onclose = () => {
         notify(false);
+        const store = getDefaultStore();
+        store.set(wsConnectionStatusAtom, {
+          connected: false,
+          lastUpdateTime: null,
+          dt: null,
+        });
         reject(new Error("Websocket closed"));
       };
     });

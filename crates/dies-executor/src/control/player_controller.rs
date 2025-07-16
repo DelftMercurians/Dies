@@ -437,7 +437,9 @@ impl PlayerController {
         avoid_goal_area: bool,
         dt: f64,
     ) -> Vector2 {
-        let geometry = &world.field_geom.as_ref().unwrap();
+        let Some(geometry) = &world.field_geom.as_ref() else {
+            return velocity;
+        };
         let mut constrained_velocity = velocity;
 
         // Check if we're in a prohibited zone and need to push out

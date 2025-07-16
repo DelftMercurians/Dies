@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf, process::ExitCode};
+use std::{net::SocketAddr, path::PathBuf, process::ExitCode, str::FromStr};
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -313,46 +313,53 @@ pub enum SerialPort {
 }
 
 impl SerialPort {
-    const VARIANTS: &'static [Self] = &[
-        SerialPort::Disabled,
-        SerialPort::Auto,
-        SerialPort::Port(String::new()),
-    ];
-
     pub async fn select(&self) -> Result<String> {
         select_serial_port(self).await
     }
 }
 
-impl ValueEnum for SerialPort {
-    fn value_variants<'a>() -> &'a [Self] {
-        Self::VARIANTS
-    }
-
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        match self {
-            SerialPort::Disabled => Some(clap::builder::PossibleValue::new("disabled")),
-            SerialPort::Auto => Some(clap::builder::PossibleValue::new("auto")),
-            SerialPort::Port(port) => Some(clap::builder::PossibleValue::new(port)),
-        }
-    }
-
-    fn from_str(input: &str, ignore_case: bool) -> std::result::Result<Self, String> {
-        if ignore_case {
-            match input.to_lowercase().as_str() {
-                "disabled" => Ok(SerialPort::Disabled),
-                "auto" => Ok(SerialPort::Auto),
-                _ => Ok(SerialPort::Port(input.to_owned())),
-            }
+impl FromStr for SerialPort {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        if s == "disabled" {
+            Ok(SerialPort::Disabled)
+        } else if s == "auto" {
+            Ok(SerialPort::Auto)
         } else {
-            match input {
-                "disabled" => Ok(SerialPort::Disabled),
-                "auto" => Ok(SerialPort::Auto),
-                _ => Ok(SerialPort::Port(input.to_owned())),
-            }
+            Ok(SerialPort::Port(s.to_owned()))
         }
     }
 }
+
+// impl ValueEnum for SerialPort {
+//     fn value_variants<'a>() -> &'a [Self] {
+//         Self::VARIANTS
+//     }
+
+//     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+//         match self {
+//             SerialPort::Disabled => Some(clap::builder::PossibleValue::new("disabled")),
+//             SerialPort::Auto => Some(clap::builder::PossibleValue::new("auto")),
+//             SerialPort::Port(port) => Some(clap::builder::PossibleValue::new(port)),
+//         }
+//     }
+
+//     fn from_str(input: &str, ignore_case: bool) -> std::result::Result<Self, String> {
+//         if ignore_case {
+//             match input.to_lowercase().as_str() {
+//                 "disabled" => Ok(SerialPort::Disabled),
+//                 "auto" => Ok(SerialPort::Auto),
+//                 _ => Ok(SerialPort::Port(input.to_owned())),
+//             }
+//         } else {
+//             match input {
+//                 "disabled" => Ok(SerialPort::Disabled),
+//                 "auto" => Ok(SerialPort::Auto),
+//                 _ => Ok(SerialPort::Port(input.to_owned())),
+//             }
+//         }
+//     }
+// }
 
 /// Selects a serial port based on the CLI arguments. This function may prompt the user
 /// to choose a port if multiple ports are available and the `serial_port` argument is

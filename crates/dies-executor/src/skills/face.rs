@@ -55,12 +55,12 @@ impl Face {
         input.with_yaw(heading);
         input.with_care(0.7); // this compensates for flakiness of with_ball
         if self.with_ball {
-            input.with_dribbling(0.4); // turn down dribbler when turning
+            input.with_dribbling(0.6); // turn down dribbler when turning
             input.with_angular_acceleration_limit(240.0f64.to_radians());
-            input.with_angular_speed_limit(1.0); // radians
+            input.with_angular_speed_limit(1.6); // radians
         }
 
-        if (ctx.player.yaw - heading).abs() < 3.0f64.to_radians() {
+        if (ctx.player.yaw - heading).abs() < 6.0f64.to_radians() {
             return SkillProgress::success();
         }
         SkillProgress::Continue(input)

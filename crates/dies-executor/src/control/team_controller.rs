@@ -125,7 +125,7 @@ impl TeamController {
                 self.warmup_timer = None;
             }
         }
-        if !self.warmup_done {
+        if !self.warmup_done || (world_data.field_geom.is_none()) {
             if self.warmup_timer.is_none() {
                 self.warmup_timer = Some(Instant::now());
             }
@@ -339,6 +339,7 @@ impl TeamController {
                 | GameState::FreeKick
                 | GameState::Kickoff
                 | GameState::PrepareKickoff
+                | GameState::Halt
         ) {
             comply(&world_data, inputs_for_comply, &team_context)
         } else {
@@ -563,6 +564,15 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                     .expect("Player not found in world data");
 
                 let mut new_input = input.clone();
+
+                if matches!(game_state, GameState::Halt) {
+                    new_input.with_speed_limit(0.0);
+                    new_input.dribbling_speed = 0.0;
+                }
+
+                if matches!(game_state, GameState::Stop) {
+                    new_input.with_speed_limit(1500.0);
+                }
 
                 if game_state == GameState::Stop
                     || (game_state == GameState::FreeKick
