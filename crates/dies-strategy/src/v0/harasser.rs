@@ -73,7 +73,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         let ball_pos = ball.position.xy();
 
         // Only consider if ball is on our half
-        if ball_pos.x >= 0.0 {
+        if ball_pos.x >= 70.0 {
             return false;
         }
 
