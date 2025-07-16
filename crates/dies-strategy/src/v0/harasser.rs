@@ -77,14 +77,10 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
             return false;
         }
 
-        // Check if ball is close to any opponent (within 400mm)
-        let ball_threatened = s
-            .world
-            .opp_players
-            .iter()
-            .any(|opp| (opp.position - ball_pos).norm() < 400.0);
-
-        if ball_threatened {
+        // Check if we are closer to the ball than the closest opponent by a margin of 100mm
+        let our_dist = s.distance_to_position(ball_pos);
+        let closest_opp_dist = s.distance_of_closest_opp_player_to_ball();
+        if our_dist > closest_opp_dist - 100.0 {
             return false;
         }
 
@@ -101,7 +97,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
 }
 
 fn should_cancel_pickup_ball(s: &RobotSituation) -> bool {
-    s.ball_position().x > 500.0 || s.distance_of_closest_opp_player_to_ball() < 200.0
+    s.ball_position().x > 100.0 || s.distance_of_closest_opp_player_to_ball() < 150.0
 }
 
 pub fn score_as_harasser(s: &RobotSituation) -> f64 {
@@ -212,7 +208,7 @@ fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
             // Position on line from ball towards opponent heading
             let opp_heading = closest_opp.yaw.rotate_vector(&Vector2::x());
             let harass_distance = 300.0;
-            let target_pos = ball_pos + opp_heading * harass_distance;
+            let target_pos = closest_opp.position + opp_heading * harass_distance;
             let constrained_pos = s.constrain_to_field(target_pos);
             let final_pos = Vector2::new(constrained_pos.x.min(-50.0), constrained_pos.y);
 
