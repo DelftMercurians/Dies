@@ -186,15 +186,19 @@ impl TeamController {
                     .collect();
 
                 // Update behavior trees based on new assignments
-                for (player_id, role_name) in &assignments {
+                for player_id in &active_robots {
+                    let role_name = assignments
+                        .iter()
+                        .find(|(id, _)| *id == player_id)
+                        .map(|(_, role)| role.clone())
+                        .unwrap_or_default();
                     let player_context = team_context.player_context(*player_id);
-                    player_context.debug_string("role", role_name);
 
                     // Only rebuild tree if role changed
                     let needs_rebuild = self
                         .player_behavior_trees
                         .get(player_id)
-                        .map(|bt| bt.name != *role_name)
+                        .map(|bt| bt.name != role_name)
                         .unwrap_or(true);
 
                     if needs_rebuild {
@@ -206,7 +210,7 @@ impl TeamController {
                         if let Some(role) = assignment_problem
                             .roles
                             .iter()
-                            .find(|r| &r.name == role_name)
+                            .find(|r| r.name == role_name)
                         {
                             let situation = RobotSituation::new(
                                 *player_id,
@@ -225,7 +229,7 @@ impl TeamController {
                                 ),
                             );
                         } else {
-                            log::error!("Role '{}' not found for player {}", role_name, player_id);
+                            self.player_behavior_trees.remove(player_id);
                         }
                     }
                 }
@@ -259,7 +263,9 @@ impl TeamController {
 
         // Execute behavior trees
         for player_data in &world_data.own_players {
+            let player_context = team_context.player_context(player_data.id);
             if self.removing_players.contains(&player_data.id) {
+                player_context.debug_string("role", "removed");
                 continue;
             }
 
@@ -281,6 +287,7 @@ impl TeamController {
 
             // Set role type based on assignment
             if let Some(role_name) = self.role_assignments.get(&player_id) {
+                player_context.debug_string("role", role_name);
                 player_input.role_type = match role_name.as_str() {
                     "goalkeeper" => RoleType::Goalkeeper,
                     "kickoff_kicker" => RoleType::KickoffKicker,
@@ -288,9 +295,8 @@ impl TeamController {
                     "waller" => RoleType::Waller,
                     _ => RoleType::Player,
                 };
-            } else if player_id == PlayerId::new(0) {
-                player_input.role_type = RoleType::Goalkeeper;
             } else {
+                player_context.debug_string("role", "not found");
                 player_input.role_type = RoleType::Player;
             }
 
