@@ -232,7 +232,9 @@ impl PlayerTracker {
     /// Returns filtered breakbeam detection status.
     /// Returns true if there's at least one detection within the buffer.
     fn get_filtered_breakbeam_detection(&self) -> bool {
-        self.breakbeam_detections.iter().any(|&detection| detection != 0)
+        self.breakbeam_detections
+            .iter()
+            .any(|&detection| detection != 0)
     }
 
     pub fn get(&self) -> Option<PlayerData> {

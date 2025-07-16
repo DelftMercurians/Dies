@@ -2,6 +2,7 @@ pub mod skills;
 
 mod face;
 mod fetchball;
+mod fetch_ball_with_preshoot;
 mod go_to_pos;
 mod kick;
 mod receive;
@@ -10,6 +11,7 @@ mod wait;
 
 pub use face::Face;
 pub use fetchball::FetchBall;
+pub use fetch_ball_with_preshoot::FetchBallWithPreshoot;
 pub use go_to_pos::GoToPosition;
 pub use kick::Kick;
 pub use receive::TryReceive;
@@ -28,6 +30,7 @@ pub enum Skill {
     Kick(Kick),
     Wait(Wait),
     FetchBall(FetchBall),
+    FetchBallWithPreshoot(FetchBallWithPreshoot),
     Shoot(Shoot),
     TryReceive(TryReceive),
 }
@@ -40,6 +43,7 @@ impl Skill {
             Skill::Kick(skill) => skill.update(ctx),
             Skill::Wait(skill) => skill.update(ctx),
             Skill::FetchBall(skill) => skill.update(ctx),
+            Skill::FetchBallWithPreshoot(skill) => skill.update(ctx),
             Skill::Shoot(skill) => skill.update(ctx),
             Skill::TryReceive(skill) => skill.update(ctx),
         }

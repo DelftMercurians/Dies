@@ -5,7 +5,7 @@ use dies_core::{Angle, Vector2};
 use super::{PlayerControlInput, SkillCtx, SkillProgress};
 
 const DEFAULT_POS_TOLERANCE: f64 = 50.0;
-const DEFAULT_VEL_TOLERANCE: f64 = 10.0;
+const DEFAULT_VEL_TOLERANCE: f64 = 20.0;
 
 /// A skill that makes the player go to a specific position
 #[derive(Clone)]
@@ -75,6 +75,9 @@ impl GoToPosition {
         if ctx.world.ball.as_ref().is_some() {
             if self.avoid_ball {
                 input.avoid_ball = true;
+                if ctx.player.breakbeam_ball_detected { // TODO: fix
+                    return SkillProgress::success();
+                }
             } else if self.with_ball {
                 if !ctx.player.breakbeam_ball_detected {
                     return SkillProgress::failure();

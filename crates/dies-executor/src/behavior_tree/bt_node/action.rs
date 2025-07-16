@@ -8,7 +8,7 @@ use crate::{
     behavior_tree::{Argument, BehaviorNode},
     control::{PlayerContext, PlayerControlInput},
     skills::{
-        Face, FetchBall, GoToPosition, Kick, Shoot, ShootTarget, Skill, SkillCtx, SkillProgress,
+        Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, ShootTarget, Skill, SkillCtx, SkillProgress,
         SkillResult, TryReceive, Wait,
     },
 };
@@ -47,6 +47,11 @@ pub enum SkillDefinition {
         duration_secs: Argument<f64>,
     },
     FetchBall,
+    FetchBallWithPreshoot {
+        preshoot_position: Argument<Vector2>,
+        preshoot_heading: Option<Argument<Angle>>,
+        shoot_target: Argument<ShootTarget>,
+    },
     Shoot {
         target: Argument<ShootTarget>,
     },
@@ -79,6 +84,7 @@ impl ActionNode {
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
             SkillDefinition::FetchBall => "FetchBall",
+            SkillDefinition::FetchBallWithPreshoot { .. } => "FetchBallWithPreshoot",
             SkillDefinition::Shoot { .. } => "Shoot",
             SkillDefinition::TryReceive => "TryReceive",
         };
@@ -105,6 +111,7 @@ impl ActionNode {
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
             SkillDefinition::FetchBall => "FetchBall",
+            SkillDefinition::FetchBallWithPreshoot { .. } => "FetchBallWithPreshoot",
             SkillDefinition::Shoot { .. } => "Shoot",
             SkillDefinition::TryReceive => "TryReceive",
         };
@@ -159,6 +166,15 @@ impl ActionNode {
                     duration_secs.resolve(situation),
                 ))),
                 SkillDefinition::FetchBall => Some(Skill::FetchBall(FetchBall::new())),
+                SkillDefinition::FetchBallWithPreshoot { preshoot_position, preshoot_heading, shoot_target } => {
+                    let position = preshoot_position.resolve(situation);
+                    let target = shoot_target.resolve(situation);
+                    let mut skill = FetchBallWithPreshoot::new(position, target);
+                    if let Some(heading) = preshoot_heading {
+                        skill = skill.with_heading(heading.resolve(situation));
+                    }
+                    Some(Skill::FetchBallWithPreshoot(skill))
+                }
                 SkillDefinition::Shoot { target } => {
                     let target = target.resolve(situation);
                     Some(Skill::Shoot(Shoot::new(target)))
@@ -210,6 +226,8 @@ impl ActionNode {
                 },
                 if let Skill::Shoot(shoot) = skill {
                     format!(" ({})", shoot.state())
+                } else if let Skill::FetchBallWithPreshoot(fetch_ball_with_preshoot) = skill {
+                    format!(" ({})", fetch_ball_with_preshoot.state())
                 } else {
                     "".to_string()
                 },
@@ -461,6 +479,48 @@ impl FetchBallBuilder {
     }
 }
 
+pub struct FetchBallWithPreshootBuilder {
+    preshoot_position: Argument<Vector2>,
+    preshoot_heading: Option<Argument<Angle>>,
+    shoot_target: Argument<ShootTarget>,
+    description: Option<String>,
+}
+
+impl FetchBallWithPreshootBuilder {
+    pub fn new(
+        preshoot_position: impl Into<Argument<Vector2>>,
+        shoot_target: impl Into<Argument<ShootTarget>>,
+    ) -> Self {
+        Self {
+            preshoot_position: preshoot_position.into(),
+            preshoot_heading: None,
+            shoot_target: shoot_target.into(),
+            description: None,
+        }
+    }
+
+    pub fn with_heading(mut self, heading: impl Into<Argument<Angle>>) -> Self {
+        self.preshoot_heading = Some(heading.into());
+        self
+    }
+
+    pub fn description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(
+            SkillDefinition::FetchBallWithPreshoot {
+                preshoot_position: self.preshoot_position,
+                preshoot_heading: self.preshoot_heading,
+                shoot_target: self.shoot_target,
+            },
+            self.description,
+        )
+    }
+}
+
 // Convenience functions to create builders
 pub fn go_to_position(target_pos: impl Into<Argument<Vector2>>) -> GoToPositionBuilder {
     GoToPositionBuilder::new(target_pos)
@@ -488,6 +548,13 @@ pub fn wait(duration_secs: impl Into<Argument<f64>>) -> WaitBuilder {
 
 pub fn fetch_ball() -> FetchBallBuilder {
     FetchBallBuilder::new()
+}
+
+pub fn fetch_ball_with_preshoot(
+    preshoot_position: impl Into<Argument<Vector2>>,
+    shoot_target: impl Into<Argument<ShootTarget>>,
+) -> FetchBallWithPreshootBuilder {
+    FetchBallWithPreshootBuilder::new(preshoot_position, shoot_target)
 }
 
 pub fn shoot(target: impl Into<Argument<ShootTarget>>) -> ActionNode {

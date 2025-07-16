@@ -351,11 +351,11 @@ pub fn best_receiver_target_score(s: &RobotSituation) -> f64 {
     // important it is for us to support him).
     // PS: we don't have to explicitly try to get far away from other robots because we
     // already account for this in probability of passing.
-    let player_pos = s.player_data().position;
     let ball = match s.world.ball.as_ref() {
         Some(b) => b,
         None => return 0.0, // early return if ball is not found
     };
+    let player_pos = s.player_data().position;
     let ball_pos = ball.position.xy();
     let teammates = &s.world.own_players;
 
@@ -521,6 +521,46 @@ pub fn find_best_shoot_score(s: &RobotSituation) -> f64 {
 pub fn find_best_shoot_target(s: &RobotSituation) -> ShootTarget {
     let (t, _) = best_teammate_pass_or_shoot(s);
     t
+}
+
+pub fn find_best_preshoot_target_target(s: &RobotSituation) -> ShootTarget {
+    let ball = match s.world.ball.as_ref() {
+        Some(b) => b,
+        None => return dies_executor::skills::ShootTarget::Goal(Vector2::zeros()), // early return if ball is not found
+    };
+    let player_pos = s.player_data().position;
+    let ball_pos = ball.position.xy();
+    let hypothetical = force_position(s, ball_pos);
+
+    find_best_shoot_target(&hypothetical)
+}
+
+pub fn find_best_preshoot_target(s: &RobotSituation) -> Vector2 {
+    let ball = match s.world.ball.as_ref() {
+        Some(b) => b,
+        None => return Vector2::zeros(), // early return if ball is not found
+    };
+    let player_pos = s.player_data().position;
+    let ball_pos = ball.position.xy();
+    let hypothetical = force_position(s, ball_pos);
+
+    let goal_pos = s.get_opp_goal_position();
+    let target = find_best_shoot_target(&hypothetical)
+        .position()
+        .unwrap_or(goal_pos);
+    let to_target = target - ball_pos;
+
+    ball_pos - to_target.normalize() * 300.0
+}
+
+pub fn find_best_preshoot_heading(s: &RobotSituation) -> Angle {
+    let ball = match s.world.ball.as_ref() {
+        Some(b) => b,
+        None => return Angle::from_radians(0.0), // early return if ball is not found
+    };
+    let player_pos = s.player_data().position;
+    let ball_pos = ball.position.xy();
+    Angle::between_points(find_best_preshoot_target(s), ball_pos)
 }
 
 pub fn find_nearest_opponent_distance_along_direction(s: &RobotSituation, direction: Angle) -> f64 {

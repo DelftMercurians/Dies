@@ -7,7 +7,7 @@
     "max_angular_acceleration": 349.0658503988659,
     "position_kp": 2.0,
     "position_proportional_time_window": 1.1,
-    "position_cutoff_distance": 70.0,
+    "position_cutoff_distance": 20.0,
     "angle_kp": 2.8,
     "angle_cutoff_distance": 0.03490658503988659
   },

@@ -23,12 +23,14 @@ impl ShootTarget {
     }
 }
 
+#[derive(Clone)]
 enum ShootState {
     None,
     Face(Face),
     Kick(Kick),
 }
 
+#[derive(Clone)]
 pub struct Shoot {
     target: ShootTarget,
     state: ShootState,
