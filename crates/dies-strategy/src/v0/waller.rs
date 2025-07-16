@@ -179,18 +179,18 @@ impl DefenseAreaBoundary {
         vec![
             // Top horizontal line
             (
-                Vector2::new(self.goal_line_x, self.top_y + 50.0),
-                Vector2::new(self.penalty_line_x + 50.0, self.top_y + 50.0),
+                Vector2::new(self.goal_line_x + 20.0, self.top_y + 80.0),
+                Vector2::new(self.penalty_line_x + 80.0, self.top_y + 50.0),
             ),
             // Right vertical line (penalty line)
             (
-                Vector2::new(self.penalty_line_x + 50.0, self.top_y + 50.0),
-                Vector2::new(self.penalty_line_x + 50.0, self.bottom_y - 50.0),
+                Vector2::new(self.penalty_line_x + 80.0, self.top_y + 80.0),
+                Vector2::new(self.penalty_line_x + 80.0, self.bottom_y - 80.0),
             ),
             // Bottom horizontal line
             (
-                Vector2::new(self.penalty_line_x + 50.0, self.bottom_y - 50.0),
-                Vector2::new(self.goal_line_x, self.bottom_y - 50.0),
+                Vector2::new(self.penalty_line_x + 80.0, self.bottom_y - 80.0),
+                Vector2::new(self.goal_line_x + 20.0, self.bottom_y - 80.0),
             ),
         ]
     }

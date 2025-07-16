@@ -10,8 +10,10 @@ use crate::{
     PlayerControlInput,
 };
 
-pub type StatefulPositionCallback<S> = dyn Fn(&RobotSituation, Option<&S>) -> (Vector2, Option<S>) + Send + Sync;
-pub type StatefulHeadingCallback<S> = dyn Fn(&RobotSituation, Option<&S>) -> (Angle, Option<S>) + Send + Sync;
+pub type StatefulPositionCallback<S> =
+    dyn Fn(&RobotSituation, Option<&S>) -> (Vector2, Option<S>) + Send + Sync;
+pub type StatefulHeadingCallback<S> =
+    dyn Fn(&RobotSituation, Option<&S>) -> (Angle, Option<S>) + Send + Sync;
 
 pub struct StatefulContinuousNode {
     position_callback: Option<Arc<StatefulPositionCallback<Box<dyn Any + Send + Sync>>>>,
@@ -95,7 +97,7 @@ impl StatefulContinuousNode {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let has_pos_state = self.position_state.is_some();
         let has_heading_state = self.heading_state.is_some();
-        
+
         debug_tree_node(
             situation.debug_key(node_full_id.clone()),
             self.description(),
@@ -148,13 +150,15 @@ impl StatefulContinuousBuilder {
         mut self,
         callback: impl Fn(&RobotSituation, Option<&S>) -> (Vector2, Option<S>) + Send + Sync + 'static,
     ) -> Self {
-        let wrapped_callback = Arc::new(move |situation: &RobotSituation, state: Option<&Box<dyn Any + Send + Sync>>| {
-            let typed_state = state.and_then(|s| s.downcast_ref::<S>());
-            let (position, new_state) = callback(situation, typed_state);
-            let boxed_state = new_state.map(|s| Box::new(s) as Box<dyn Any + Send + Sync>);
-            (position, boxed_state)
-        });
-        
+        let wrapped_callback = Arc::new(
+            move |situation: &RobotSituation, state: Option<&Box<dyn Any + Send + Sync>>| {
+                let typed_state = state.and_then(|s| s.downcast_ref::<S>());
+                let (position, new_state) = callback(situation, typed_state);
+                let boxed_state = new_state.map(|s| Box::new(s) as Box<dyn Any + Send + Sync>);
+                (position, boxed_state)
+            },
+        );
+
         self.position_callback = Some(wrapped_callback);
         self
     }
@@ -163,13 +167,15 @@ impl StatefulContinuousBuilder {
         mut self,
         callback: impl Fn(&RobotSituation, Option<&S>) -> (Angle, Option<S>) + Send + Sync + 'static,
     ) -> Self {
-        let wrapped_callback = Arc::new(move |situation: &RobotSituation, state: Option<&Box<dyn Any + Send + Sync>>| {
-            let typed_state = state.and_then(|s| s.downcast_ref::<S>());
-            let (heading, new_state) = callback(situation, typed_state);
-            let boxed_state = new_state.map(|s| Box::new(s) as Box<dyn Any + Send + Sync>);
-            (heading, boxed_state)
-        });
-        
+        let wrapped_callback = Arc::new(
+            move |situation: &RobotSituation, state: Option<&Box<dyn Any + Send + Sync>>| {
+                let typed_state = state.and_then(|s| s.downcast_ref::<S>());
+                let (heading, new_state) = callback(situation, typed_state);
+                let boxed_state = new_state.map(|s| Box::new(s) as Box<dyn Any + Send + Sync>);
+                (heading, boxed_state)
+            },
+        );
+
         self.heading_callback = Some(wrapped_callback);
         self
     }

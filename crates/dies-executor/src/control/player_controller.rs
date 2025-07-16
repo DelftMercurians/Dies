@@ -324,18 +324,24 @@ impl PlayerController {
 
         let geom = world.field_geom.as_ref().unwrap();
         let maxdist = 400.0;
-        let add_vel_factor = if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, maxdist) {
-            let mut actual_dist = 0.0;
-            for dist in (1..=(maxdist as i32)).step_by(10) {
-                if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, dist as f64) {
-                    actual_dist = dist as f64;
-                    break;
+        let add_vel_factor =
+            if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, maxdist) {
+                let mut actual_dist = 0.0;
+                for margin in (1..=(maxdist as i32)).step_by(10) {
+                    if self.is_in_prohibited_zone(
+                        state.position,
+                        geom,
+                        avoid_goal_area,
+                        margin as f64,
+                    ) {
+                        actual_dist = margin as f64;
+                        break;
+                    }
                 }
-            }
-            (actual_dist - 50.0) / (maxdist - 50.0).max(0.0)
-        } else {
-            1.0
-        };
+                ((actual_dist - 80.0) / (maxdist - 80.0)).max(0.0)
+            } else {
+                1.0
+            };
 
         self.target_velocity_global += add_vel * add_vel_factor;
         self.target_velocity_global = self
@@ -517,14 +523,16 @@ impl PlayerController {
             let goal_area_width = geometry.penalty_area_width + 60.0;
 
             // Our goal area (negative x)
-            if position.x < -field_half_length + goal_area_depth &&
-               position.y.abs() < goal_area_width / 2.0 {
+            if position.x < -field_half_length + goal_area_depth
+                && position.y.abs() < goal_area_width / 2.0
+            {
                 push_velocity.x = 300.0;
             }
 
             // Enemy goal area (positive x)
-            if position.x > field_half_length - goal_area_depth &&
-               position.y.abs() < goal_area_width / 2.0 {
+            if position.x > field_half_length - goal_area_depth
+                && position.y.abs() < goal_area_width / 2.0
+            {
                 push_velocity.x = -300.0;
             }
         }
@@ -535,7 +543,9 @@ impl PlayerController {
         let offset = 50.0;
 
         // Our goal line (negative x)
-        if position.x <= -field_half_length + goal_depth + offset && position.y.abs() < goal_half_width + 30.0 {
+        if position.x <= -field_half_length + goal_depth + offset
+            && position.y.abs() < goal_half_width + 30.0
+        {
             if position.y > 0.0 {
                 push_velocity.y = 300.0;
             } else {
@@ -544,7 +554,9 @@ impl PlayerController {
         }
 
         // Enemy goal line (positive x)
-        if position.x >= field_half_length - goal_depth - offset && position.y.abs() < goal_half_width {
+        if position.x >= field_half_length - goal_depth - offset
+            && position.y.abs() < goal_half_width
+        {
             if position.y > 0.0 {
                 push_velocity.y = 300.0;
             } else {
@@ -560,16 +572,16 @@ impl PlayerController {
         position: Vector2,
         geometry: &dies_core::FieldGeometry,
         avoid_goal_area: bool,
-        margin: f64
+        margin: f64,
     ) -> bool {
-        let field_half_width = geometry.field_width / 2.0 - margin;
-        let field_half_length = geometry.field_length / 2.0 - margin;
+        let field_half_width = geometry.field_width / 2.0 - margin / 4.0;
+        let field_half_length = geometry.field_length / 2.0 - margin / 4.0;
 
         // Check if outside field boundaries
-        if position.x < -field_half_length
-            || position.x > field_half_length
-            || position.y < -field_half_width
-            || position.y > field_half_width
+        if position.x < -field_half_length + margin
+            || position.x > field_half_length - margin
+            || position.y < -field_half_width + margin
+            || position.y > field_half_width - margin
         {
             return true;
         }
@@ -655,7 +667,8 @@ impl PlayerController {
         if position.x <= -field_half_length + goal_depth + offset && // Close to our goal line
            position.y.abs() < goal_half_width &&
            next_pos.y.abs() > goal_half_width &&
-           ((velocity.y > 0.0 && position.y < 0.0) || (velocity.y < 0.0 && position.y > 0.0)) {
+           ((velocity.y > 0.0 && position.y < 0.0) || (velocity.y < 0.0 && position.y > 0.0))
+        {
             projected_velocity.y = 0.0;
         }
 
@@ -663,7 +676,8 @@ impl PlayerController {
         if position.x >= field_half_length - goal_depth - offset && // Close to enemy goal line
            position.y.abs() < goal_half_width &&
            next_pos.y.abs() > goal_half_width &&
-           ((velocity.y > 0.0 && position.y < 0.0) || (velocity.y < 0.0 && position.y > 0.0)) {
+           ((velocity.y > 0.0 && position.y < 0.0) || (velocity.y < 0.0 && position.y > 0.0))
+        {
             projected_velocity.y = 0.0;
         }
 

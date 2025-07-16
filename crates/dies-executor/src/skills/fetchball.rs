@@ -68,10 +68,8 @@ impl FetchBall {
                     let target_pos = ball_pos + ball_angle * Vector2::new(self.stop_distance, 0.0);
                     input.with_position(target_pos);
                     input.with_care(0.8);
-                    dies_core::debug_string(
-                        "fetchball_state",
-                        format!("moving go to pos: {:.1}", target_pos),
-                    );
+                    dies_core::debug_string("ft1", format!("{:.0}", target_pos.x));
+                    dies_core::debug_string("ft2", format!("{:.0}", target_pos.y));
                 } else {
                     let start_pos = self.starting_position.unwrap_or(player_pos);
                     let distance = (player_pos - start_pos).norm();

@@ -599,16 +599,17 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                         _ => unreachable!(),
                     };
                     let max_radius = 4000;
+                    let margin = 40.0;
                     // Opponent goal area
                     let target = dies_core::nearest_safe_pos(
                         dies_core::Avoid::Rectangle {
                             min: Vector2::new(
-                                field.field_length / 2.0 - field.penalty_area_depth,
-                                -field.penalty_area_width / 2.0,
+                                field.field_length / 2.0 - field.penalty_area_depth - margin,
+                                -field.penalty_area_width / 2.0 - margin,
                             ),
                             max: Vector2::new(
-                                field.field_length / 2.0,
-                                field.penalty_area_width / 2.0,
+                                field.field_length / 2.0 + 10_000.0,
+                                field.penalty_area_width / 2.0 + margin,
                             ),
                         },
                         min_distance,
@@ -625,17 +626,17 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                         let target = dies_core::nearest_safe_pos(
                             dies_core::Avoid::Rectangle {
                                 min: Vector2::new(
-                                    -field.field_length / 2.0,
-                                    -field.penalty_area_width / 2.0,
+                                    -field.field_length / 2.0 - 10_000.0,
+                                    -field.penalty_area_width / 2.0 - margin,
                                 ),
                                 max: Vector2::new(
-                                    -field.field_length / 2.0 + field.penalty_area_depth,
-                                    field.penalty_area_width / 2.0,
+                                    -field.field_length / 2.0 + field.penalty_area_depth + margin,
+                                    field.penalty_area_width / 2.0 + margin,
                                 ),
                             },
                             20.0,
                             player_data.position,
-                            input.position.unwrap_or(player_data.position),
+                            new_input.position.unwrap_or(player_data.position),
                             max_radius,
                             field,
                         );
@@ -659,7 +660,7 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                         dies_core::Avoid::Circle { center: ball_pos },
                         min_distance,
                         player_data.position,
-                        input.position.unwrap_or(player_data.position),
+                        new_input.position.unwrap_or(player_data.position),
                         max_radius,
                         field,
                     );
@@ -677,7 +678,7 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                             },
                             center_circle_radius + 500.0,
                             player_data.position,
-                            input.position.unwrap_or(player_data.position),
+                            new_input.position.unwrap_or(player_data.position),
                             4000,
                             field,
                         );
@@ -709,7 +710,7 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                         },
                         min_distance,
                         player_data.position,
-                        input.position.unwrap_or(player_data.position),
+                        new_input.position.unwrap_or(player_data.position),
                         max_radius,
                         field,
                     );

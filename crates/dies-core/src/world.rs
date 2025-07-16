@@ -581,33 +581,39 @@ impl Avoid {
             Avoid::Rectangle { min, max } => {
                 // Check if line segment intersects with rectangle using line-rectangle intersection
                 let line_dir = end - start;
-                
+
                 // Check intersection with each edge of the rectangle
                 let edges = [
-                    (*min, Vector2::new(max.x, min.y)),  // bottom edge
-                    (Vector2::new(max.x, min.y), *max),  // right edge
-                    (*max, Vector2::new(min.x, max.y)),  // top edge
-                    (Vector2::new(min.x, max.y), *min),  // left edge
+                    (*min, Vector2::new(max.x, min.y)), // bottom edge
+                    (Vector2::new(max.x, min.y), *max), // right edge
+                    (*max, Vector2::new(min.x, max.y)), // top edge
+                    (Vector2::new(min.x, max.y), *min), // left edge
                 ];
-                
+
                 for (edge_start, edge_end) in edges.iter() {
                     let edge_dir = *edge_end - *edge_start;
                     let denom = line_dir.x * edge_dir.y - line_dir.y * edge_dir.x;
-                    
+
                     if denom.abs() > 1e-10 {
-                        let t = ((edge_start.x - start.x) * edge_dir.y - (edge_start.y - start.y) * edge_dir.x) / denom;
-                        let u = ((edge_start.x - start.x) * line_dir.y - (edge_start.y - start.y) * line_dir.x) / denom;
-                        
+                        let t = ((edge_start.x - start.x) * edge_dir.y
+                            - (edge_start.y - start.y) * edge_dir.x)
+                            / denom;
+                        let u = ((edge_start.x - start.x) * line_dir.y
+                            - (edge_start.y - start.y) * line_dir.x)
+                            / denom;
+
                         if t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0 {
                             return true;
                         }
                     }
                 }
-                
+
                 // Check if either endpoint is inside the rectangle
-                let start_inside = start.x >= min.x && start.x <= max.x && start.y >= min.y && start.y <= max.y;
-                let end_inside = end.x >= min.x && end.x <= max.x && end.y >= min.y && end.y <= max.y;
-                
+                let start_inside =
+                    start.x >= min.x && start.x <= max.x && start.y >= min.y && start.y <= max.y;
+                let end_inside =
+                    end.x >= min.x && end.x <= max.x && end.y >= min.y && end.y <= max.y;
+
                 start_inside || end_inside
             }
         }
@@ -639,7 +645,7 @@ pub fn nearest_safe_pos(
                 let closeness_score = (position - initial_pos).norm() / distnorm;
                 let not_gay_score =
                     entity_to_avoid.intersects_line(initial_pos, position) as i32 as f64;
-                let loss = dist_score + closeness_score * 0.5 + not_gay_score;
+                let loss = dist_score + closeness_score * 0.5 + not_gay_score * 0.0;
 
                 if loss < best_loss {
                     best_loss = loss;
@@ -885,16 +891,32 @@ mod tests {
         };
 
         // Point inside rectangle
-        assert_relative_eq!(rect.distance_to(Vector2::new(50.0, 50.0)), 0.0, epsilon = 1e-6);
-        
+        assert_relative_eq!(
+            rect.distance_to(Vector2::new(50.0, 50.0)),
+            0.0,
+            epsilon = 1e-6
+        );
+
         // Point outside rectangle
-        assert_relative_eq!(rect.distance_to(Vector2::new(150.0, 150.0)), 70.71, epsilon = 0.1);
-        
+        assert_relative_eq!(
+            rect.distance_to(Vector2::new(150.0, 150.0)),
+            70.71,
+            epsilon = 0.1
+        );
+
         // Point directly to the right
-        assert_relative_eq!(rect.distance_to(Vector2::new(150.0, 50.0)), 50.0, epsilon = 1e-6);
-        
+        assert_relative_eq!(
+            rect.distance_to(Vector2::new(150.0, 50.0)),
+            50.0,
+            epsilon = 1e-6
+        );
+
         // Point directly above
-        assert_relative_eq!(rect.distance_to(Vector2::new(50.0, 150.0)), 50.0, epsilon = 1e-6);
+        assert_relative_eq!(
+            rect.distance_to(Vector2::new(50.0, 150.0)),
+            50.0,
+            epsilon = 1e-6
+        );
     }
 
     #[test]
@@ -906,16 +928,16 @@ mod tests {
 
         // Line crossing through rectangle
         assert!(rect.intersects_line(Vector2::new(-50.0, 50.0), Vector2::new(150.0, 50.0)));
-        
+
         // Line completely outside rectangle
         assert!(!rect.intersects_line(Vector2::new(-50.0, -50.0), Vector2::new(-10.0, -10.0)));
-        
+
         // Line with one endpoint inside rectangle
         assert!(rect.intersects_line(Vector2::new(50.0, 50.0), Vector2::new(150.0, 150.0)));
-        
+
         // Line touching rectangle edge
         assert!(rect.intersects_line(Vector2::new(0.0, 0.0), Vector2::new(100.0, 0.0)));
-        
+
         // Line parallel to rectangle edge but not touching
         assert!(!rect.intersects_line(Vector2::new(-50.0, -50.0), Vector2::new(50.0, -50.0)));
     }

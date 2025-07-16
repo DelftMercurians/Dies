@@ -196,6 +196,10 @@ impl TwoStepMTP {
             }
         }
 
+        player_context.debug_string("tdist", format!("{:.0}", distance_to_target));
+
+        player_context.debug_string("tmid_x", format!("{:.0}", best_point.x));
+        player_context.debug_string("tmid_y", format!("{:.0}", best_point.y));
         // Visualize the best chosen midpoint as a larger cross
         player_context.debug_circle_fill_colored(
             "two_step_best",
@@ -529,10 +533,11 @@ impl TwoStepMTP {
         avoid_goal_area: bool,
     ) -> f64 {
         let mut cost = 0.0;
+        let margin = 10.0;
 
         // Field boundaries
-        let half_width = field.field_width / 2.0;
-        let half_length = field.field_length / 2.0;
+        let half_width = field.field_width / 2.0 - margin;
+        let half_length = field.field_length / 2.0 - margin;
         let boundary_width = field.boundary_width;
 
         // Check intersection with field boundaries
@@ -568,12 +573,13 @@ impl TwoStepMTP {
             }
         }
 
+        let penalty_depth = field.penalty_area_depth + margin; // no need for margin here: already shifted
+                                                               // the field boundary
+        let penalty_width = field.penalty_area_width + 2.0 * margin;
+
         if avoid_goal_area {
-            let left_rect_min = Vector2::new(-half_length, -field.penalty_area_width / 2.0);
-            let left_rect_max = Vector2::new(
-                -half_length + field.penalty_area_depth,
-                field.penalty_area_width / 2.0,
-            );
+            let left_rect_min = Vector2::new(-half_length, -penalty_width / 2.0);
+            let left_rect_max = Vector2::new(-half_length + penalty_depth, penalty_width / 2.0);
             let left_intersection_length = self.line_rectangle_intersection_length(
                 line_start,
                 line_end,
@@ -583,11 +589,8 @@ impl TwoStepMTP {
             cost += left_intersection_length * 10.0; // Weight for left boundary area
 
             // Right side boundary rectangle (outside field)
-            let right_rect_min = Vector2::new(
-                half_length - field.penalty_area_depth,
-                -field.penalty_area_width / 2.0,
-            );
-            let right_rect_max = Vector2::new(half_length, field.penalty_area_width / 2.0);
+            let right_rect_min = Vector2::new(half_length - penalty_depth, -penalty_width / 2.0);
+            let right_rect_max = Vector2::new(half_length, penalty_width / 2.0);
             let right_intersection_length = self.line_rectangle_intersection_length(
                 line_start,
                 line_end,

@@ -166,6 +166,11 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
     let right_cdf = 0.5 * (1.0 + erf_approx(right_z));
 
     let visibility_factor = (right_cdf - left_cdf).max(0.0);
+    let visibility_factor = if visibility_factor < 0.1 {
+        0.0
+    } else {
+        visibility_factor
+    };
     prob *= visibility_factor;
 
     // Factor 3: Distance preference (closer intersection with goal line)
@@ -287,7 +292,7 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
 
     // Apply a bias factor to make the choice more interesting
     let bias_factor = 1.5; // higher -> more favor
-    let min_prob_threshold = 0.05; // Minimum probability to consider an option
+    let min_prob_threshold = 0.0; // Minimum probability to consider an option
 
     // Only consider options above minimum threshold
     let direct_viable = best_prob_direct >= min_prob_threshold;
@@ -434,7 +439,10 @@ fn calculate_line_blocking_penalty(
     1.0 // No penalty
 }
 
-pub fn find_best_receiver_target(s: &RobotSituation, last_position: Option<Vector2>) -> (Vector2, f64) {
+pub fn find_best_receiver_target(
+    s: &RobotSituation,
+    last_position: Option<Vector2>,
+) -> (Vector2, f64) {
     // we want to sample positions all around the enemy half;
     // however, this will be slow, so we limit the number to "merely" a 100 positions to consider
     // sample points (x,y) on the opponents half of the field, choose the best one
@@ -489,7 +497,8 @@ pub fn find_best_receiver_target(s: &RobotSituation, last_position: Option<Vecto
             // Add stability bonus if we have a last position
             if let Some(last_pos) = last_position {
                 let distance_to_last = (candidate_pos - last_pos).norm();
-                if distance_to_last < 50.0 { // Within 5cm
+                if distance_to_last < 50.0 {
+                    // Within 5cm
                     score *= 2.0;
                 }
             }

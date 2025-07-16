@@ -18,9 +18,7 @@ pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                 )
                 .build(),
         )
-        .add(
-            fetch_and_shoot()
-        )
+        .add(fetch_and_shoot())
         .build()
         .into()
 }
