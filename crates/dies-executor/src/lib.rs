@@ -17,12 +17,12 @@ pub use handle::{ControlMsg, ExecutorHandle};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 mod behavior_tree;
-mod control;
+pub mod control;
 mod gc_client;
 mod handle;
 pub mod skills;
 
-pub use control::{KickerControlInput, PlayerControlInput, PlayerInputs};
+pub use control::*;
 use control::{TeamController, Velocity};
 
 pub use crate::behavior_tree::Strategy;

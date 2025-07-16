@@ -15,7 +15,7 @@ pub use fetchball::FetchBall;
 pub use go_to_pos::GoToPosition;
 pub use kick::Kick;
 pub use receive::TryReceive;
-pub use shoot::{Shoot, ShootTarget};
+pub use shoot::Shoot;
 pub use wait::Wait;
 
 use crate::{

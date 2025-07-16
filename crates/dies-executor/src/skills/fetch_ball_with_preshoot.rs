@@ -1,7 +1,13 @@
-use dies_core::Vector2;
+use std::{sync::Arc, time::Duration, time::Instant};
+use dies_core::{Angle, Vector2, BALL_RADIUS, PLAYER_RADIUS};
+use crate::{control::Velocity, PlayerControlInput};
 
 use crate::skills::{
-    FetchBall, GoToPosition, Shoot, ShootTarget, SkillCtx, SkillProgress, SkillResult,
+    FetchBall, GoToPosition, Shoot, SkillCtx, SkillProgress, SkillResult,
+};
+use crate::control::{
+    find_best_preshoot_heading, find_best_preshoot_target, find_best_preshoot_target_target,
+    find_best_shoot_target, PassingStore, ShootTarget
 };
 
 #[derive(Clone)]
@@ -47,61 +53,38 @@ impl FetchBallWithPreshoot {
     }
 
     pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
-        loop {
-            match &mut self.state {
-                FetchBallWithPreshootState::None => {
-                    let mut go_to_position = GoToPosition::new(self.preshoot_position);
-                    if let Some(heading) = self.preshoot_heading {
-                        go_to_position = go_to_position.with_heading(heading);
-                    }
-                    go_to_position = go_to_position.avoid_ball();
-                    self.state = FetchBallWithPreshootState::GoToPreshoot(go_to_position);
-                }
-                FetchBallWithPreshootState::GoToPreshoot(go_to_position) => {
-                    let progress = go_to_position.update(ctx.clone());
-                    match progress {
-                        SkillProgress::Continue(input) => {
-                            return SkillProgress::Continue(input);
-                        }
-                        SkillProgress::Done(SkillResult::Success) => {
-                            self.state = FetchBallWithPreshootState::FetchBall(FetchBall::new());
-                        }
-                        SkillProgress::Done(SkillResult::Failure) => {
-                            return SkillProgress::Done(SkillResult::Failure);
-                        }
-                    }
-                }
-                FetchBallWithPreshootState::FetchBall(fetch_ball) => {
-                    let progress = fetch_ball.update(ctx.clone());
-                    match progress {
-                        SkillProgress::Continue(input) => {
-                            return SkillProgress::Continue(input);
-                        }
-                        SkillProgress::Done(SkillResult::Success) => {
-                            self.state = FetchBallWithPreshootState::Shoot(Shoot::new(
-                                self.shoot_target.clone(),
-                            ));
-                        }
-                        SkillProgress::Done(SkillResult::Failure) => {
-                            return SkillProgress::Done(SkillResult::Failure);
-                        }
-                    }
-                }
-                FetchBallWithPreshootState::Shoot(shoot) => {
-                    let progress = shoot.update(ctx.clone());
-                    match progress {
-                        SkillProgress::Continue(input) => {
-                            return SkillProgress::Continue(input);
-                        }
-                        SkillProgress::Done(SkillResult::Success) => {
-                            return SkillProgress::Done(SkillResult::Success);
-                        }
-                        SkillProgress::Done(SkillResult::Failure) => {
-                            return SkillProgress::Done(SkillResult::Failure);
-                        }
-                    }
-                }
+        // go to preshoot:
+        if let Some(ball) = ctx.world.ball.as_ref() {
+            let mut input = PlayerControlInput::new();
+            input.with_dribbling(0.6);
+
+            let ball_pos = ball.position.xy();
+            let ball_speed = ball.velocity.xy().norm();
+            let player_pos = ctx.player.position;
+
+            // let's compute the preshoot position 'correctly':
+            // if we are at the ball's position and have a ball, where would we shoot?
+            let shooting_target = find_best_preshoot_target_target(&PassingStore::new(ctx.player.id, Arc::new(ctx.world.clone()))).position().unwrap();
+            let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 200.0;
+
+            if (prep_target - player_pos).magnitude() < 50.0 {
+                return SkillProgress::Done(SkillResult::Success);
             }
+
+            // now, let's just go to prep_target
+            let target_vel = (prep_target - player_pos) * 2.0;
+            let target_vel = if target_vel.magnitude() > 2000.0 {
+                target_vel.normalize() * 2000.0
+            } else { target_vel };
+
+            input.velocity = Velocity::global(
+                target_vel,
+            );
+
+            SkillProgress::Continue(input)
+        } else {
+            // Wait for the ball to appear
+            SkillProgress::Continue(PlayerControlInput::default())
         }
     }
 }

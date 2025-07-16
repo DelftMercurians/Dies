@@ -6,9 +6,9 @@ use super::{
 };
 use crate::{
     behavior_tree::{Argument, BehaviorNode},
-    control::{PlayerContext, PlayerControlInput},
+    control::{PlayerContext, PlayerControlInput, ShootTarget},
     skills::{
-        Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, ShootTarget, Skill,
+        Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, Skill,
         SkillCtx, SkillProgress, SkillResult, TryReceive, Wait,
     },
 };

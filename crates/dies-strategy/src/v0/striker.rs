@@ -1,7 +1,7 @@
 use dies_core::{Angle, GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
-use crate::v0::utils::{
+use dies_executor::control::{
     fetch_and_shoot, fetch_and_shoot_with_prep, find_best_receiver_target, get_heading_toward_ball,
 };
 
