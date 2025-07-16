@@ -22,8 +22,19 @@ const MAX_ACCELERATION: f64 = 125000.0;
 // Enum to represent different obstacle types
 #[derive(Debug, Clone, Serialize)]
 pub enum Obstacle {
-    Circle { center: Vector2, radius: f64 },
-    Rectangle { min: Vector2, max: Vector2 },
+    Circle {
+        center: Vector2,
+        radius: f64,
+    },
+    Rectangle {
+        min: Vector2,
+        max: Vector2,
+    },
+    Line {
+        start: Vector2,
+        end: Vector2,
+        radius: f64,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]

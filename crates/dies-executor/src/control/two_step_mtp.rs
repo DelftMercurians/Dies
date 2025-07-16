@@ -274,6 +274,16 @@ impl TwoStepMTP {
                     self.line_rectangle_intersection_length(start, mid, min, max)
                         + self.line_rectangle_intersection_length(mid, end, min, max) * 0.1
                 }
+                Obstacle::Line {
+                    start: line_start,
+                    end: line_end,
+                    radius,
+                } => {
+                    self.line_stadium_intersection_length(start, mid, line_start, line_end, radius)
+                        + self.line_stadium_intersection_length(
+                            mid, end, line_start, line_end, radius,
+                        ) * 0.1
+                }
             };
             if intersection_length > 0.0 {
                 total_cost += 1500.0; // High penalty for obstacle collision
@@ -627,6 +637,74 @@ impl TwoStepMTP {
             Some(line1_start + line1_vec * t)
         } else {
             None
+        }
+    }
+
+    fn line_stadium_intersection_length(
+        &self,
+        line_start: Vector2,
+        line_end: Vector2,
+        stadium_start: Vector2,
+        stadium_end: Vector2,
+        radius: f64,
+    ) -> f64 {
+        let line_vec = line_end - line_start;
+        let line_length = line_vec.magnitude();
+
+        if line_length < f64::EPSILON {
+            return 0.0;
+        }
+
+        // Sample points along the robot's path and check distance to stadium line
+        let num_samples = 20;
+        let mut total_intersection_length = 0.0;
+        let sample_step = line_length / num_samples as f64;
+
+        for i in 0..=num_samples {
+            let t = i as f64 / num_samples as f64;
+            let sample_point = line_start + line_vec * t;
+
+            // Calculate minimum distance from sample point to stadium line segment
+            let dist_to_stadium =
+                self.point_to_line_segment_distance(sample_point, stadium_start, stadium_end);
+
+            // If within stadium radius, this segment contributes to intersection
+            if dist_to_stadium <= radius {
+                total_intersection_length += sample_step;
+            }
+        }
+
+        total_intersection_length
+    }
+
+    fn point_to_line_segment_distance(
+        &self,
+        point: Vector2,
+        line_start: Vector2,
+        line_end: Vector2,
+    ) -> f64 {
+        let line_vec = line_end - line_start;
+        let line_length_sq = line_vec.magnitude_squared();
+
+        if line_length_sq < f64::EPSILON {
+            // Line is actually a point
+            return (point - line_start).magnitude();
+        }
+
+        // Calculate projection parameter t
+        let to_point = point - line_start;
+        let t = to_point.dot(&line_vec) / line_length_sq;
+
+        if t < 0.0 {
+            // Closest point is line_start
+            (point - line_start).magnitude()
+        } else if t > 1.0 {
+            // Closest point is line_end
+            (point - line_end).magnitude()
+        } else {
+            // Closest point is on the line segment
+            let closest_point = line_start + line_vec * t;
+            (point - closest_point).magnitude()
         }
     }
 }
