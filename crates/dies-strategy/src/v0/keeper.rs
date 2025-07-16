@@ -65,9 +65,9 @@ fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
     let goal_pos = s.get_own_goal_position();
 
     // Define the three points of the shallow arc
-    let left_point = Vector2::new(goal_pos.x, -geom.goal_width / 2.0);
-    let right_point = Vector2::new(goal_pos.x, geom.goal_width / 2.0);
-    let forward_point = Vector2::new(goal_pos.x + 400.0, 0.0); // 40cm forward from goal center
+    let left_point = Vector2::new(goal_pos.x + 50.0, -geom.goal_width / 2.0);
+    let right_point = Vector2::new(goal_pos.x + 50.0, geom.goal_width / 2.0);
+    let forward_point = Vector2::new(goal_pos.x + 600.0, 0.0); // 40cm forward from goal center
 
     // Calculate circle center and radius that passes through all three points
     let (circle_center, circle_radius) =

@@ -175,6 +175,26 @@ impl DefenseAreaBoundary {
         ]
     }
 
+    fn get_extended_boundary_segments(&self) -> Vec<(Vector2, Vector2)> {
+        vec![
+            // Top horizontal line
+            (
+                Vector2::new(self.goal_line_x, self.top_y + 50.0),
+                Vector2::new(self.penalty_line_x + 50.0, self.top_y + 50.0),
+            ),
+            // Right vertical line (penalty line)
+            (
+                Vector2::new(self.penalty_line_x + 50.0, self.top_y + 50.0),
+                Vector2::new(self.penalty_line_x + 50.0, self.bottom_y - 50.0),
+            ),
+            // Bottom horizontal line
+            (
+                Vector2::new(self.penalty_line_x + 50.0, self.bottom_y - 50.0),
+                Vector2::new(self.goal_line_x, self.bottom_y - 50.0),
+            ),
+        ]
+    }
+
     fn get_back_line(&self) -> (Vector2, Vector2) {
         (
             Vector2::new(self.goal_line_x, self.top_y),
@@ -366,7 +386,7 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>
         return vec![];
     };
 
-    let segments = boundary.get_boundary_segments();
+    let segments = boundary.get_extended_boundary_segments();
 
     // Generate positions along boundary segments with 200mm spacing
     let mut boundary_positions = Vec::new();
