@@ -38,11 +38,11 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .build(),
         )
         .add(
-            continuous("zoning")
-                .position(Argument::callback(move |s| {
-                    let (target, score) = find_best_receiver_target(s);
-                    target
-                }))
+            stateful_continuous("zoning")
+                .with_stateful_position(|s, last_pos| {
+                    let (target, score) = find_best_receiver_target(s, last_pos.copied());
+                    (target, Some(target))
+                })
                 .build(),
         )
         .description("Striker")
