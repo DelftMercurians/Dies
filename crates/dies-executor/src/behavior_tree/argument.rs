@@ -1,6 +1,6 @@
 use crate::{
     behavior_tree::{BtCallback, RobotSituation},
-    skills::ShootTarget,
+    control::ShootTarget,
 };
 use std::sync::Arc;
 

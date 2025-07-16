@@ -5,23 +5,7 @@ use crate::{
     skills::{Face, Kick, SkillCtx, SkillProgress, SkillResult},
 };
 
-#[derive(Clone, Debug)]
-pub enum ShootTarget {
-    Goal(Vector2),
-    Player {
-        id: PlayerId,
-        position: Option<Vector2>,
-    },
-}
-
-impl ShootTarget {
-    pub fn position(&self) -> Option<Vector2> {
-        match self {
-            ShootTarget::Goal(position) => Some(*position),
-            ShootTarget::Player { position, .. } => *position,
-        }
-    }
-}
+use crate::control::ShootTarget;
 
 #[derive(Clone)]
 enum ShootState {

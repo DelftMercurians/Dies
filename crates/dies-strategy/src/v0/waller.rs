@@ -4,7 +4,7 @@ use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::evaluate_ball_threat;
-use crate::v0::utils::find_best_shoot_target;
+use dies_executor::control::find_best_shoot_target;
 
 pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -21,7 +21,7 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
                         .do_then(
                             sequence_node()
                                 .add(fetch_ball().description("Pickup ball".to_string()).build())
-                                .add(shoot(find_best_shoot_target))
+                                .add(shoot(|s: &RobotSituation| find_best_shoot_target(s)))
                                 .description("Pass kickoff")
                                 .build(),
                         )

@@ -1,7 +1,7 @@
 use dies_core::{Angle, GameState, Vector2};
-use dies_executor::behavior_tree_api::*;
+use dies_executor::{behavior_tree_api::*, find_best_receiver_target};
 
-use crate::v0::utils::{fetch_and_shoot, fetch_and_shoot_with_prep, find_best_receiver_target, get_heading_toward_ball};
+use crate::v0::utils::{fetch_and_shoot, fetch_and_shoot_with_prep, get_heading_toward_ball};
 
 pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -41,7 +41,7 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
         .add(
             stateful_continuous("zoning")
                 .with_stateful_position(|s, last_pos| {
-                    let (target, score) = find_best_receiver_target(s, last_pos.copied());
+                    let (target, score) = find_best_receiver_target(&s.into(), last_pos.copied());
                     (target, Some(target))
                 })
                 .build(),

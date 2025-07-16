@@ -73,7 +73,8 @@ impl GoToPosition {
         if ctx.world.ball.as_ref().is_some() {
             if self.avoid_ball {
                 input.avoid_ball = true;
-                if ctx.player.breakbeam_ball_detected { // TODO: fix
+                if ctx.player.breakbeam_ball_detected {
+                    // TODO: fix
                     return SkillProgress::success();
                 }
             } else if self.with_ball {

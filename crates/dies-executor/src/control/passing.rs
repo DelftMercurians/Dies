@@ -1,7 +1,112 @@
-use dies_core::PlayerId;
-use dies_core::{Angle, PlayerData, Vector2};
-use dies_executor::behavior_tree_api::*;
-use dies_executor::skills::ShootTarget;
+use dies_core::{Angle, FieldGeometry, PlayerData, PlayerId, TeamData, Vector2};
+use std::{sync::Arc, time::Duration};
+
+use crate::behavior_tree::RobotSituation;
+
+#[derive(Clone, Debug)]
+pub enum ShootTarget {
+    Goal(Vector2),
+    Player {
+        id: PlayerId,
+        position: Option<Vector2>,
+    },
+}
+
+impl ShootTarget {
+    pub fn position(&self) -> Option<Vector2> {
+        match self {
+            ShootTarget::Goal(position) => Some(*position),
+            ShootTarget::Player { position, .. } => *position,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PassingStore {
+    pub player_id: PlayerId,
+    pub world: Arc<TeamData>,
+}
+
+impl PassingStore {
+    pub fn new(player_id: PlayerId, world: Arc<TeamData>) -> Self {
+        Self { player_id, world }
+    }
+
+    pub fn player_data(&self) -> &PlayerData {
+        self.world
+            .own_players
+            .iter()
+            .find(|&p| p.id == self.player_id)
+            .unwrap()
+    }
+
+    pub fn field(&self) -> FieldGeometry {
+        self.world.field_geom.clone().unwrap_or_default()
+    }
+
+    pub fn get_own_goal_position(&self) -> Vector2 {
+        self.world
+            .field_geom
+            .as_ref()
+            .map(|f| Vector2::new(-f.field_length / 2.0, 0.0))
+            .unwrap_or_else(|| Vector2::new(-4500.0, 0.0))
+    }
+
+    pub fn get_opp_goal_position(&self) -> Vector2 {
+        self.world
+            .field_geom
+            .as_ref()
+            .map(|f| Vector2::new(f.field_length / 2.0, 0.0))
+            .unwrap_or_else(|| Vector2::new(4500.0, 0.0))
+    }
+
+    pub fn force_self_position(&self, pos: Vector2) -> PassingStore {
+        let mut temp = self.clone();
+        let mut world_copy = (*temp.world).clone();
+        if let Some(p) = world_copy
+            .own_players
+            .iter_mut()
+            .find(|p| p.id == self.player_id)
+        {
+            p.position = pos;
+        }
+        temp.world = world_copy.into();
+        temp
+    }
+
+    pub fn change_situation_player(&self, other_id: PlayerId) -> PassingStore {
+        let mut copy = self.clone();
+        copy.player_id = other_id;
+        copy
+    }
+}
+
+impl From<RobotSituation> for PassingStore {
+    fn from(value: RobotSituation) -> Self {
+        PassingStore {
+            player_id: value.player_id,
+            world: value.world,
+        }
+    }
+}
+
+impl<'a> From<&'a RobotSituation> for PassingStore {
+    fn from(value: &'a RobotSituation) -> Self {
+        PassingStore {
+            player_id: value.player_id,
+            world: value.world.clone(),
+        }
+    }
+}
+
+impl<'a> From<&PassingStore> for PassingStore {
+    fn from(value: &PassingStore) -> Self {
+        PassingStore {
+            player_id: value.player_id,
+            world: value.world.clone(),
+        }
+    }
+}
 
 fn erf_approx(x: f64) -> f64 {
     // Abramowitz and Stegun approximation
@@ -21,27 +126,7 @@ fn erf_approx(x: f64) -> f64 {
     sign * y
 }
 
-pub fn change_situation_player(s: &RobotSituation, other_id: PlayerId) -> RobotSituation {
-    let mut copy = s.clone();
-    copy.player_id = other_id;
-    copy
-}
-
-pub fn force_position(s: &RobotSituation, pos: Vector2) -> RobotSituation {
-    let mut temp_situation = s.clone();
-    let mut world_copy = (*temp_situation.world).clone();
-    if let Some(p) = world_copy
-        .own_players
-        .iter_mut()
-        .find(|p| p.id == s.player_id)
-    {
-        p.position = pos;
-    }
-    temp_situation.world = world_copy.into();
-    temp_situation
-}
-
-pub fn best_goal_shoot(s: &RobotSituation) -> (Vector2, f64) {
+pub fn best_goal_shoot(s: &PassingStore) -> (Vector2, f64) {
     let robot_pos = s.player_data().position;
     let goal_pos = s.get_opp_goal_position();
 
@@ -73,7 +158,7 @@ pub fn best_goal_shoot(s: &RobotSituation) -> (Vector2, f64) {
     (best_pos, best_prob)
 }
 
-fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f64 {
+fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 {
     let mut prob: f64 = 1.0;
 
     let player_pos = s.player_data().position;
@@ -201,7 +286,7 @@ fn goal_shoot_success_probability(s: &RobotSituation, target_pos: Vector2) -> f6
     prob
 }
 
-pub fn pass_success_probability(s: &RobotSituation, teammate: &PlayerData) -> f64 {
+pub fn pass_success_probability(s: &PassingStore, teammate: &PlayerData) -> f64 {
     let mut prob: f64 = 0.7;
     let player_pos = s.player_data().position;
     // score based on how far is the robot: not too close, not too far
@@ -242,24 +327,10 @@ pub fn pass_success_probability(s: &RobotSituation, teammate: &PlayerData) -> f6
 
     // println!("{} passing {}: {:.2}; clean: {:.2}", s.player_id, teammate.id, score, clean_shoot_score);
 
-    // Prefer passing to strikers
-    let teammate_role = s
-        .role_assignments
-        .get(&teammate.id)
-        .cloned()
-        .unwrap_or_default();
-    let teammate_striker = teammate_role.contains("striker");
-    if !teammate_striker {
-        // this is a frequentist shitting which i don't fucking carea bout
-        // if you say anything about "ohhh noooo your beliefs are susceptible to dutch book :((" im
-        // jumping out of the window
-        prob *= 0.3;
-    }
-
     prob
 }
 
-pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
+pub fn best_teammate_pass_or_shoot(s: &PassingStore) -> (ShootTarget, f64) {
     let teammates = &s.world.own_players;
 
     let (best_target_direct, mut best_prob_direct) = best_goal_shoot(s);
@@ -274,7 +345,7 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
         }
 
         // score is a combination of clean shoot from the teammate and passing discount
-        let (t, goal_shoot_prob) = best_goal_shoot(&change_situation_player(s, teammate.id));
+        let (t, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(teammate.id));
         let prob = goal_shoot_prob * pass_success_probability(s, teammate);
 
         if prob > best_prob_pass {
@@ -298,6 +369,7 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
     let direct_viable = best_prob_direct >= min_prob_threshold;
     let pass_viable = best_prob_pass >= min_prob_threshold;
     let best_prob = best_prob_direct.max(best_prob_pass);
+    return (best_target_pass, best_prob_pass);
 
     // return (best_target_pass, best_prob_pass);
     let best_target = if !direct_viable && !pass_viable {
@@ -346,7 +418,7 @@ pub fn best_teammate_pass_or_shoot(s: &RobotSituation) -> (ShootTarget, f64) {
     (best_target, best_prob)
 }
 
-pub fn best_receiver_target_score(s: &RobotSituation) -> f64 {
+pub fn best_receiver_target_score(s: &PassingStore) -> f64 {
     // for each teammate, check how far the ball is, and take average of their probabilityies
     // weighted by the distance to the ball (the closer our teammate to the ball, the more
     // important it is for us to support him).
@@ -362,11 +434,11 @@ pub fn best_receiver_target_score(s: &RobotSituation) -> f64 {
 
     let (_, goal_shoot_prob) = best_goal_shoot(s);
 
-    let hypothetical = force_position(s, ball_pos);
+    let hypothetical = s.force_self_position(ball_pos);
     pass_success_probability(&hypothetical, s.player_data()) * goal_shoot_prob
 }
 
-pub fn combination_discounting_for_receivers(s: &RobotSituation) -> f64 {
+pub fn combination_discounting_for_receivers(s: &PassingStore) -> f64 {
     // value between 0 and 1 that totally screws up our pure bayesian shit
     // and tries to allocate the robots such that the distance between robots are large and
     // that we are not blocking line of sight for other robots
@@ -441,7 +513,7 @@ fn calculate_line_blocking_penalty(
 }
 
 pub fn find_best_receiver_target(
-    s: &RobotSituation,
+    s: &PassingStore,
     last_position: Option<Vector2>,
 ) -> (Vector2, f64) {
     // we want to sample positions all around the enemy half;
@@ -490,7 +562,7 @@ pub fn find_best_receiver_target(
             }
 
             // Create a temporary situation with this position
-            let temp_situation = force_position(s, candidate_pos);
+            let temp_situation = s.force_self_position(candidate_pos);
 
             let dumb_heuristic = combination_discounting_for_receivers(&temp_situation);
             let mut score = best_receiver_target_score(&temp_situation) * dumb_heuristic;
@@ -514,36 +586,37 @@ pub fn find_best_receiver_target(
     (best_position, best_score)
 }
 
-pub fn find_best_shoot_score(s: &RobotSituation) -> f64 {
+pub fn find_best_shoot_score(s: &PassingStore) -> f64 {
     let (_, p) = best_teammate_pass_or_shoot(s);
     p
 }
 
-pub fn find_best_shoot_target(s: &RobotSituation) -> ShootTarget {
-    let (t, _) = best_teammate_pass_or_shoot(s);
+pub fn find_best_shoot_target(s: impl Into<PassingStore>) -> ShootTarget {
+    let s: PassingStore = s.into();
+    let (t, _) = best_teammate_pass_or_shoot(&s);
     t
 }
 
-pub fn find_best_preshoot_target_target(s: &RobotSituation) -> ShootTarget {
+pub fn find_best_preshoot_target_target(s: &PassingStore) -> ShootTarget {
     let ball = match s.world.ball.as_ref() {
         Some(b) => b,
-        None => return dies_executor::skills::ShootTarget::Goal(Vector2::zeros()), // early return if ball is not found
+        None => return ShootTarget::Goal(Vector2::zeros()), // early return if ball is not found
     };
     let player_pos = s.player_data().position;
     let ball_pos = ball.position.xy();
-    let hypothetical = force_position(s, ball_pos);
+    let hypothetical = s.force_self_position(ball_pos);
 
     find_best_shoot_target(&hypothetical)
 }
 
-pub fn find_best_preshoot_target(s: &RobotSituation) -> Vector2 {
+pub fn find_best_preshoot_target(s: &PassingStore) -> Vector2 {
     let ball = match s.world.ball.as_ref() {
         Some(b) => b,
         None => return Vector2::zeros(), // early return if ball is not found
     };
     let player_pos = s.player_data().position;
     let ball_pos = ball.position.xy();
-    let hypothetical = force_position(s, ball_pos);
+    let hypothetical = s.force_self_position(ball_pos);
 
     let goal_pos = s.get_opp_goal_position();
     let target = find_best_shoot_target(&hypothetical)
@@ -554,7 +627,7 @@ pub fn find_best_preshoot_target(s: &RobotSituation) -> Vector2 {
     ball_pos - to_target.normalize() * 150.0
 }
 
-pub fn find_best_preshoot_heading(s: &RobotSituation) -> Angle {
+pub fn find_best_preshoot_heading(s: &PassingStore) -> Angle {
     let ball = match s.world.ball.as_ref() {
         Some(b) => b,
         None => return Angle::from_radians(0.0), // early return if ball is not found
@@ -564,7 +637,7 @@ pub fn find_best_preshoot_heading(s: &RobotSituation) -> Angle {
     Angle::between_points(find_best_preshoot_target(s), ball_pos)
 }
 
-pub fn find_nearest_opponent_distance_along_direction(s: &RobotSituation, direction: Angle) -> f64 {
+pub fn find_nearest_opponent_distance_along_direction(s: &PassingStore, direction: Angle) -> f64 {
     let player_pos = s.player_data().position;
     let direction_vector = direction.to_vector();
 
