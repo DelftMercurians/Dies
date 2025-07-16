@@ -11,6 +11,7 @@ mod scoring_select;
 mod select;
 mod semaphore;
 mod sequence;
+mod stateful_continuous;
 
 pub use action::*;
 pub use committing_guard::{committing_guard_node, CommittingGuardNode};
@@ -22,6 +23,7 @@ pub use scoring_select::{scoring_select_node, ScoringSelectNode};
 pub use select::{select_node, SelectNode};
 pub use semaphore::{semaphore_node, SemaphoreNode};
 pub use sequence::{sequence_node, SequenceNode};
+pub use stateful_continuous::{stateful_continuous, StatefulContinuousNode};
 
 pub enum BehaviorNode {
     Select(SelectNode),
@@ -31,6 +33,7 @@ pub enum BehaviorNode {
     CommittingGuard(CommittingGuardNode),
     Action(ActionNode),
     Continuous(ContinuousNode),
+    StatefulContinuous(StatefulContinuousNode),
     Semaphore(SemaphoreNode),
     ScoringSelect(ScoringSelectNode),
     Repeat(RepeatNode),
@@ -50,6 +53,7 @@ impl BehaviorNode {
             BehaviorNode::CommittingGuard(node) => node.tick(situation),
             BehaviorNode::Action(node) => node.tick(situation),
             BehaviorNode::Continuous(node) => node.tick(situation),
+            BehaviorNode::StatefulContinuous(node) => node.tick(situation),
             BehaviorNode::Semaphore(node) => node.tick(situation),
             BehaviorNode::ScoringSelect(node) => node.tick(situation),
             BehaviorNode::Repeat(node) => node.tick(situation),
@@ -66,6 +70,7 @@ impl BehaviorNode {
             BehaviorNode::CommittingGuard(node) => node.debug_all_nodes(situation),
             BehaviorNode::Action(node) => node.debug_all_nodes(situation),
             BehaviorNode::Continuous(node) => node.debug_all_nodes(situation),
+            BehaviorNode::StatefulContinuous(node) => node.debug_all_nodes(situation),
             BehaviorNode::Semaphore(node) => node.debug_all_nodes(situation),
             BehaviorNode::ScoringSelect(node) => node.debug_all_nodes(situation),
             BehaviorNode::Repeat(node) => node.debug_all_nodes(situation),
@@ -84,6 +89,7 @@ impl BehaviorNode {
             BehaviorNode::CommittingGuard(node) => node.description(),
             BehaviorNode::Action(node) => node.description(),
             BehaviorNode::Continuous(node) => node.description(),
+            BehaviorNode::StatefulContinuous(node) => node.description(),
             BehaviorNode::Semaphore(node) => node.description(),
             BehaviorNode::ScoringSelect(node) => node.description(),
             BehaviorNode::Repeat(node) => node.description(),
@@ -100,6 +106,7 @@ impl BehaviorNode {
             BehaviorNode::CommittingGuard(node) => node.get_node_id_fragment(),
             BehaviorNode::Action(node) => node.get_node_id_fragment(),
             BehaviorNode::Continuous(node) => node.get_node_id_fragment(),
+            BehaviorNode::StatefulContinuous(node) => node.get_node_id_fragment(),
             BehaviorNode::Semaphore(node) => node.get_node_id_fragment(),
             BehaviorNode::ScoringSelect(node) => node.get_node_id_fragment(),
             BehaviorNode::Repeat(node) => node.get_node_id_fragment(),
@@ -125,6 +132,7 @@ impl BehaviorNode {
             BehaviorNode::CommittingGuard(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Action(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Continuous(node) => node.get_child_node_ids(current_path_prefix),
+            BehaviorNode::StatefulContinuous(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Semaphore(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::ScoringSelect(node) => node.get_child_node_ids(current_path_prefix),
             BehaviorNode::Repeat(node) => node.get_child_node_ids(current_path_prefix),

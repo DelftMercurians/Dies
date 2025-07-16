@@ -434,7 +434,7 @@ fn calculate_line_blocking_penalty(
     1.0 // No penalty
 }
 
-pub fn find_best_receiver_target(s: &RobotSituation) -> (Vector2, f64) {
+pub fn find_best_receiver_target(s: &RobotSituation, last_position: Option<Vector2>) -> (Vector2, f64) {
     // we want to sample positions all around the enemy half;
     // however, this will be slow, so we limit the number to "merely" a 100 positions to consider
     // sample points (x,y) on the opponents half of the field, choose the best one
@@ -484,7 +484,15 @@ pub fn find_best_receiver_target(s: &RobotSituation) -> (Vector2, f64) {
             let temp_situation = force_position(s, candidate_pos);
 
             let dumb_heuristic = combination_discounting_for_receivers(&temp_situation);
-            let score = best_receiver_target_score(&temp_situation) * dumb_heuristic;
+            let mut score = best_receiver_target_score(&temp_situation) * dumb_heuristic;
+
+            // Add stability bonus if we have a last position
+            if let Some(last_pos) = last_position {
+                let distance_to_last = (candidate_pos - last_pos).norm();
+                if distance_to_last < 50.0 { // Within 5cm
+                    score *= 2.0;
+                }
+            }
 
             if score > best_score {
                 best_score = score;
