@@ -1,14 +1,13 @@
-use super::super::utils::best_goal_shoot;
 use dies_core::{Angle, Vector2};
-use dies_executor::behavior_tree_api::*;
+use dies_executor::{behavior_tree_api::*, best_goal_shoot};
 
 pub fn has_clear_shot(s: &RobotSituation) -> bool {
-    let (_, p) = best_goal_shoot(s);
+    let (_, p) = best_goal_shoot(&s.into());
     p > 0.3
 }
 
 pub fn find_optimal_shot_target(s: &RobotSituation) -> Vector2 {
-    let (target, _) = best_goal_shoot(s);
+    let (target, _) = best_goal_shoot(&s.into());
     dies_core::debug_circle_fill(
         "shooting target",
         target,

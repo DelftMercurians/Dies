@@ -1,6 +1,7 @@
+use dies_core::{Angle, FieldGeometry, PlayerData, PlayerId, TeamData, Vector2};
 use std::{sync::Arc, time::Duration};
-use dies_core::{Angle, Vector2, TeamData, PlayerData, FieldGeometry, PlayerId};
 
+use crate::behavior_tree::RobotSituation;
 
 #[derive(Clone, Debug)]
 pub enum ShootTarget {
@@ -20,7 +21,6 @@ impl ShootTarget {
     }
 }
 
-
 #[derive(Clone)]
 pub struct PassingStore {
     pub player_id: PlayerId,
@@ -28,18 +28,16 @@ pub struct PassingStore {
 }
 
 impl PassingStore {
-    pub fn new(
-        player_id: PlayerId,
-        world: Arc<TeamData>,
-    ) -> Self {
-        Self {
-            player_id,
-            world,
-        }
+    pub fn new(player_id: PlayerId, world: Arc<TeamData>) -> Self {
+        Self { player_id, world }
     }
 
     pub fn player_data(&self) -> &PlayerData {
-        self.world.own_players.iter().find(|&p| p.id == self.player_id).unwrap()
+        self.world
+            .own_players
+            .iter()
+            .find(|&p| p.id == self.player_id)
+            .unwrap()
     }
 
     pub fn field(&self) -> FieldGeometry {
@@ -80,6 +78,33 @@ impl PassingStore {
         let mut copy = self.clone();
         copy.player_id = other_id;
         copy
+    }
+}
+
+impl From<RobotSituation> for PassingStore {
+    fn from(value: RobotSituation) -> Self {
+        PassingStore {
+            player_id: value.player_id,
+            world: value.world,
+        }
+    }
+}
+
+impl<'a> From<&'a RobotSituation> for PassingStore {
+    fn from(value: &'a RobotSituation) -> Self {
+        PassingStore {
+            player_id: value.player_id,
+            world: value.world.clone(),
+        }
+    }
+}
+
+impl<'a> From<&PassingStore> for PassingStore {
+    fn from(value: &PassingStore) -> Self {
+        PassingStore {
+            player_id: value.player_id,
+            world: value.world.clone(),
+        }
     }
 }
 
@@ -565,8 +590,9 @@ pub fn find_best_shoot_score(s: &PassingStore) -> f64 {
     p
 }
 
-pub fn find_best_shoot_target(s: &PassingStore) -> ShootTarget {
-    let (t, _) = best_teammate_pass_or_shoot(s);
+pub fn find_best_shoot_target(s: impl Into<PassingStore>) -> ShootTarget {
+    let s: PassingStore = s.into();
+    let (t, _) = best_teammate_pass_or_shoot(&s);
     t
 }
 

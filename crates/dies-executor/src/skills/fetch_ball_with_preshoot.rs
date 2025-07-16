@@ -1,54 +1,45 @@
-use std::{sync::Arc, time::Duration, time::Instant};
-use dies_core::{Angle, Vector2, BALL_RADIUS, PLAYER_RADIUS};
+use crate::KickerControlInput::Kick;
 use crate::{control::Velocity, PlayerControlInput};
+use dies_core::{Angle, Vector2};
+use std::sync::Arc;
 
-use crate::skills::{
-    FetchBall, GoToPosition, Shoot, SkillCtx, SkillProgress, SkillResult,
-};
-use crate::control::{
-    find_best_preshoot_heading, find_best_preshoot_target, find_best_preshoot_target_target,
-    find_best_shoot_target, PassingStore, ShootTarget
-};
+use crate::control::{find_best_preshoot_target_target, PassingStore};
+use crate::skills::{SkillCtx, SkillProgress, SkillResult};
 
 #[derive(Clone)]
 pub struct FetchBallWithPreshoot {
-    preshoot_position: Vector2,
-    preshoot_heading: Option<dies_core::Angle>,
-    shoot_target: ShootTarget,
+    preshoot_heading: Option<Angle>,
     state: FetchBallWithPreshootState,
 }
 
 #[derive(Clone)]
 enum FetchBallWithPreshootState {
-    None,
-    GoToPreshoot(GoToPosition),
-    FetchBall(FetchBall),
-    Shoot(Shoot),
+    GoToPreshoot,
+    ApproachBall {
+        start_pos: Vector2,
+        ball_pos: Vector2,
+    },
+    Done,
 }
 
 impl FetchBallWithPreshoot {
-    pub fn new(preshoot_position: Vector2, shoot_target: ShootTarget) -> Self {
+    pub fn new() -> Self {
         Self {
-            preshoot_position,
             preshoot_heading: None,
-            shoot_target,
-            state: FetchBallWithPreshootState::None,
+            state: FetchBallWithPreshootState::GoToPreshoot,
         }
     }
 
-    pub fn with_heading(mut self, heading: dies_core::Angle) -> Self {
+    pub fn with_heading(mut self, heading: Angle) -> Self {
         self.preshoot_heading = Some(heading);
         self
     }
 
     pub fn state(&self) -> String {
         match &self.state {
-            FetchBallWithPreshootState::None => "None".to_string(),
-            FetchBallWithPreshootState::GoToPreshoot(_) => {
-                format!("GoToPreshoot: {:?}", self.preshoot_position)
-            }
-            FetchBallWithPreshootState::FetchBall(_) => "FetchBall".to_string(),
-            FetchBallWithPreshootState::Shoot(_) => format!("Shoot: {:?}", self.shoot_target),
+            FetchBallWithPreshootState::GoToPreshoot => "GoToPreshoot".to_string(),
+            FetchBallWithPreshootState::ApproachBall { .. } => "ApproachBall".to_string(),
+            FetchBallWithPreshootState::Done => "Done".to_string(),
         }
     }
 
@@ -62,26 +53,57 @@ impl FetchBallWithPreshoot {
             let ball_speed = ball.velocity.xy().norm();
             let player_pos = ctx.player.position;
 
-            // let's compute the preshoot position 'correctly':
-            // if we are at the ball's position and have a ball, where would we shoot?
-            let shooting_target = find_best_preshoot_target_target(&PassingStore::new(ctx.player.id, Arc::new(ctx.world.clone()))).position().unwrap();
-            let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 200.0;
+            match &self.state {
+                FetchBallWithPreshootState::GoToPreshoot => {
+                    let shooting_target = find_best_preshoot_target_target(&PassingStore::new(
+                        ctx.player.id,
+                        Arc::new(ctx.world.clone()),
+                    ))
+                    .position()
+                    .unwrap();
+                    let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 180.0;
 
-            if (prep_target - player_pos).magnitude() < 50.0 {
-                return SkillProgress::Done(SkillResult::Success);
+                    let distance_to_prep_target = (prep_target - player_pos).magnitude();
+                    if distance_to_prep_target < 30.0 {
+                        self.state = FetchBallWithPreshootState::ApproachBall {
+                            start_pos: player_pos,
+                            ball_pos,
+                        };
+                        return SkillProgress::Continue(input);
+                    }
+
+                    input.with_position(prep_target);
+                    let ball_heading = Angle::between_points(prep_target, ball_pos);
+                    input.with_yaw(ball_heading);
+                    input.avoid_ball = true;
+
+                    SkillProgress::Continue(input)
+                }
+                FetchBallWithPreshootState::ApproachBall {
+                    start_pos,
+                    ball_pos,
+                } => {
+                    if ctx.player.breakbeam_ball_detected {
+                        input.with_kicker(Kick { force: 1.0 });
+                        self.state = FetchBallWithPreshootState::Done;
+                        return SkillProgress::Continue(input);
+                    }
+
+                    if (player_pos - start_pos).magnitude() > 160.0 {
+                        return SkillProgress::Done(SkillResult::Failure);
+                    }
+
+                    let ball_heading = Angle::between_points(player_pos, *ball_pos);
+                    input.with_yaw(ball_heading);
+                    input.avoid_ball = true;
+
+                    // Move forward towards the ball
+                    input.velocity = Velocity::global(ball_heading.to_vector() * 300.0);
+
+                    SkillProgress::Continue(input)
+                }
+                FetchBallWithPreshootState::Done => SkillProgress::Done(SkillResult::Success),
             }
-
-            // now, let's just go to prep_target
-            let target_vel = (prep_target - player_pos) * 2.0;
-            let target_vel = if target_vel.magnitude() > 2000.0 {
-                target_vel.normalize() * 2000.0
-            } else { target_vel };
-
-            input.velocity = Velocity::global(
-                target_vel,
-            );
-
-            SkillProgress::Continue(input)
         } else {
             // Wait for the ball to appear
             SkillProgress::Continue(PlayerControlInput::default())

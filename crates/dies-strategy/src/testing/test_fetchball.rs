@@ -1,13 +1,10 @@
 use dies_executor::behavior_tree_api::{
-    at_goal, fetch_ball, sequence_node, shoot, wait, Argument, BehaviorNode,
+    fetch_ball_with_preshoot, sequence_node, wait, BehaviorNode,
 };
 
 pub fn build_test_fetchball() -> BehaviorNode {
     sequence_node()
-        .add(fetch_ball().build())
-        .add(shoot(at_goal(Argument::callback(move |s| {
-            s.get_own_goal_position()
-        }))))
+        .add(fetch_ball_with_preshoot().build())
         .add(wait(1.0).build())
         .build()
         .into()

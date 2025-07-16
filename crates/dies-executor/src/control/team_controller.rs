@@ -353,7 +353,8 @@ impl TeamController {
         //         | GameState::PrepareKickoff
         //         | GameState::Halt
         // ) {
-        let final_player_inputs = comply(&world_data, inputs_for_comply, &team_context);
+        // let final_player_inputs = comply(&world_data, inputs_for_comply, &team_context);
+        let final_player_inputs = inputs_for_comply;
         // } else {
         //     inputs_for_comply
         // };

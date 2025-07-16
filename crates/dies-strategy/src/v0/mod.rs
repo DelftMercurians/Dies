@@ -10,8 +10,6 @@ use crate::v0::{
     waller::score_as_waller,
 };
 
-pub mod v0;
-
 mod utils;
 
 mod freekick_interference;

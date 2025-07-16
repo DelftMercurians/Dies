@@ -533,7 +533,7 @@ impl TwoStepMTP {
         avoid_goal_area: bool,
     ) -> f64 {
         let mut cost = 0.0;
-        let margin = 200.0;
+        let margin = 40.0;
 
         // Field boundaries
         let fmargin = margin / 2.0;
@@ -566,13 +566,6 @@ impl TwoStepMTP {
         ];
 
         for (boundary_start, boundary_end) in field_lines.iter() {
-
-            dies_core::debug_line(
-                &format!("{}{}_seg", boundary_start.x, boundary_end.y),
-                boundary_start.xy(),
-                boundary_end.xy(),
-                dies_core::DebugColor::Blue,
-            );
             if let Some(intersection) =
                 self.line_line_intersection(line_start, line_end, *boundary_start, *boundary_end)
             {
@@ -582,7 +575,7 @@ impl TwoStepMTP {
         }
 
         let penalty_depth = field.penalty_area_depth - fmargin + margin; // no need for margin here: already shifted
-                                                               // the field boundary
+                                                                         // the field boundary
         let penalty_width = field.penalty_area_width + 2.0 * margin;
 
         if avoid_goal_area {
@@ -656,6 +649,7 @@ fn cap_magnitude(v: f64, max: f64) -> f64 {
 }
 
 fn debug_rect(low: Vector2, high: Vector2) {
+    return;
     dies_core::debug_line(
         &format!("__{}{}_seg", low.x, high.y),
         low.xy(),
@@ -676,7 +670,6 @@ fn debug_rect(low: Vector2, high: Vector2) {
         Vector2::new(high.x, low.y),
         dies_core::DebugColor::Blue,
     );
-
 
     dies_core::debug_line(
         &format!("__{}{}_seg", high.x, low.x),
