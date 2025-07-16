@@ -22,7 +22,7 @@ mod striker;
 mod waller;
 
 pub fn v0_strategy(game: &mut GameContext) {
-    game.add_role("waller")
+    game.add_role("harasser")
         .count(1)
         .score(|_| 100000.0)
         .behavior(|s| harasser::build_harasser_tree(s));
