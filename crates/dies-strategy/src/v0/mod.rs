@@ -28,10 +28,10 @@ pub fn v0_strategy(game: &mut GameContext) {
     //     .behavior(|s| harasser::build_harasser_tree(s));
 
     // Goalkeeper - always exactly one
-    // game.add_role("goalkeeper")
-    //     .count(1)
-    //     .score(|_| 100000.0)
-    //     .behavior(|s| keeper::build_goalkeeper_tree(s));
+    game.add_role("goalkeeper")
+        .count(1)
+        .score(|_| 100000.0)
+        .behavior(|s| keeper::build_goalkeeper_tree(s));
 
     // Game state specific roles
     let game_state = game.game_state();

@@ -12,7 +12,7 @@ pub struct TwoStepMTP {
     proportional_time_window: Duration,
     cutoff_distance: f64,
     sample_count: usize,
-    last_intermediate_point: Option<Vector2>,
+    last_vel: Option<Vector2>,
 }
 
 impl TwoStepMTP {
@@ -23,7 +23,7 @@ impl TwoStepMTP {
             proportional_time_window: Duration::from_millis(400),
             cutoff_distance: 10.0,
             sample_count: 8,
-            last_intermediate_point: None,
+            last_vel: None,
         }
     }
 
@@ -43,7 +43,7 @@ impl TwoStepMTP {
     }
 
     pub fn update(
-        &self,
+        &mut self,
         current: Vector2,
         velocity: Vector2,
         dt: f64,
@@ -115,32 +115,35 @@ impl TwoStepMTP {
         player_context.debug_string("TwoStepMTPMaxDecel", max_decel.to_string());
         player_context.debug_string("TwoStepMTPCarefullness", carefullness.to_string());
 
-        if time_to_target <= self.proportional_time_window.as_secs_f64() {
+        let new_vel = if true {
             // Proportional control
             let proportional_velocity_magnitude =
-                (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp + 100.0)
+                (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp + 150.0)
                     .clamp(0.0, max_speed);
-            // let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
-            // player_context.debug_string("TwoStepMTPDvMagnitude", dv_magnitude.to_string());
-            // player_context.debug_string("TwoStepMTPCurrentSpeed", current_speed.to_string());
-            // player_context.debug_string("TwoStepMTPMaxSpeed", max_speed.to_string());
+            let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
 
-            // let v_control = dv_magnitude;
+            let v_control = dv_magnitude;
 
             player_context.debug_string("TwoStepMTPMode", "Proportional");
-            // let new_speed = current_speed + cap_magnitude(v_control, max_decel * dt / 10.0);
-            direction * proportional_velocity_magnitude
-        } else if current_speed < max_speed {
-            // Acceleration phase
-            player_context.debug_string("TwoStepMTPMode", "Acceleration");
-            // let last_vel = self.las.unwrap_or(velocity);
-            let new_speed = current_speed + max_accel * dt;
+            let current_vel = self.last_vel.unwrap_or(velocity);
+            let new_speed = current_vel.magnitude() + cap_magnitude(v_control, 2500.0 * dt);
             direction * new_speed
         } else {
-            // Cruise phase
-            player_context.debug_string("TwoStepMTPMode", "Cruise");
-            direction * max_speed
-        }
+            unreachable!()
+        };
+        // else if current_speed < max_speed {
+        //     // Acceleration phase
+        //     player_context.debug_string("TwoStepMTPMode", "Acceleration");
+        //     // let last_vel = self.las.unwrap_or(velocity);
+        //     let new_speed = current_speed + max_accel * dt;
+        //     direction * new_speed
+        // } else {
+        //     // Cruise phase
+        //     player_context.debug_string("TwoStepMTPMode", "Cruise");
+        //     direction * max_speed
+        // };
+        self.last_vel = Some(new_vel);
+        new_vel
     }
 
     fn find_best_intermediate_point(
