@@ -513,7 +513,14 @@ impl TeamController {
                 let obstacles = world_data.get_obstacles_for_player(role_type);
 
                 // Get the avoid_goal_area flag for this specific player (default to true)
-                let avoid_goal_area = self.avoid_goal_area_flags.get(&id).copied().unwrap_or(true);
+                let avoid_goal_area = if !matches!(
+                    world_data.current_game_state.game_state,
+                    GameState::BallReplacement(_) | GameState::Stop
+                ) {
+                    self.avoid_goal_area_flags.get(&id).copied().unwrap_or(true)
+                } else {
+                    false
+                };
 
                 controller.update(
                     player_data,
@@ -578,8 +585,6 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                     || (game_state == GameState::FreeKick
                         && input.role_type != RoleType::FreeKicker)
                 {
-                    new_input.avoid_robots = false;
-                    new_input.avoid_ball = false;
                     if game_state == GameState::Stop {
                         new_input.with_speed_limit(1300.0);
                         new_input.dribbling_speed = 0.0;
