@@ -18,9 +18,9 @@ impl FetchBall {
     pub fn new() -> Self {
         Self {
             dribbling_distance: 1000.0,
-            dribbling_speed: 1.0,
-            stop_distance: PLAYER_RADIUS + BALL_RADIUS + 50.0,
-            max_relative_speed: 1500.0,
+            dribbling_speed: 0.6,
+            stop_distance: PLAYER_RADIUS + BALL_RADIUS + 40.0,
+            max_relative_speed: 1000.0,
             last_good_heading: None,
             starting_position: None,
         }
@@ -65,16 +65,14 @@ impl FetchBall {
                 // Ball is stationary/slow, so we move to get it
                 if distance > self.stop_distance {
                     // move close to the ball
-                    let target_pos =
-                        ball_pos + ball_angle * Vector2::new(-self.stop_distance / 4.0, 0.0);
+                    let target_pos = ball_pos + ball_angle * Vector2::new(self.stop_distance, 0.0);
                     input.with_position(target_pos);
+                    input.with_care(0.8);
                     dies_core::debug_string(
                         "fetchball_state",
                         format!("moving go to pos: {:.1}", target_pos),
                     );
-                } else if (!ball.detected && distance < 300.0)
-                    || (distance < self.dribbling_distance && ball_speed < 500.0)
-                {
+                } else {
                     let start_pos = self.starting_position.unwrap_or(player_pos);
                     let distance = (player_pos - start_pos).norm();
                     // if distance > self.stop_distance * 2.0 {
@@ -85,11 +83,8 @@ impl FetchBall {
                         "fetchball_state",
                         format!("moving local: {:.1}", distance),
                     );
-                    input.velocity = Velocity::global(
-                        distance
-                            * (self.max_relative_speed / self.dribbling_distance)
-                            * (ball_pos - player_pos).normalize(),
-                    );
+                    input.velocity =
+                        Velocity::global(200.0 * ball_angle.rotate_vector(&Vector2::x()));
                 }
             } else {
                 // if ball is fast and we are far away
