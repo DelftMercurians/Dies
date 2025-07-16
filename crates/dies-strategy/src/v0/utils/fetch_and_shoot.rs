@@ -4,11 +4,7 @@ use dies_executor::{
 };
 
 pub fn fetch_and_shoot() -> BehaviorNode {
-    sequence_node()
-        .add(fetch_ball().description("Get ball".to_string()).build())
-        .add(shoot(|s: &RobotSituation| find_best_shoot_target(s)))
-        .build()
-        .into()
+    fetch_and_shoot_with_prep().into()
 }
 
 pub fn fetch_and_shoot_with_prep() -> BehaviorNode {
