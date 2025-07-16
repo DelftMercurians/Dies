@@ -75,10 +75,10 @@ impl FetchBall {
                 } else {
                     let start_pos = self.starting_position.unwrap_or(player_pos);
                     let distance = (player_pos - start_pos).norm();
-                    // if distance > self.stop_distance * 2.0 {
-                    //     // if we moved too far we probably got stuck, so fail
-                    //     return SkillProgress::failure();
-                    // }
+                    if distance > 100.0 {
+                        // if we moved too far we probably got stuck, so fail
+                        return SkillProgress::failure();
+                    }
                     dies_core::debug_string(
                         "fetchball_state",
                         format!("moving local: {:.1}", distance),

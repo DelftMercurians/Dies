@@ -22,11 +22,6 @@ mod striker;
 mod waller;
 
 pub fn v0_strategy(game: &mut GameContext) {
-    // game.add_role("harasser")
-    //     .count(1)
-    //     .score(|_| 100000.0)
-    //     .behavior(|s| harasser::build_harasser_tree(s));
-
     // Goalkeeper - always exactly one
     game.add_role("goalkeeper")
         .count(1)
@@ -76,21 +71,21 @@ pub fn v0_strategy(game: &mut GameContext) {
     }
 
     // Standard roles
-    // game.add_role("striker")
-    //     .max(2)
-    //     .score(score_striker)
-    //     .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
-    //     .behavior(|s| striker::build_striker_tree(s));
-
     game.add_role("waller")
-        .min(0)
-        .max(2)
+        .count(2)
         .score(score_as_waller)
         .behavior(|s| waller::build_waller_tree(s));
 
-    // game.add_role("harasser")
-    //     .min(2)
-    //     .max(2)
-    //     .score(score_as_harasser)
-    //     .behavior(|s| harasser::build_harasser_tree(s));
+    game.add_role("harasser")
+        .min(0)
+        .max(2)
+        .score(score_as_harasser)
+        .behavior(|s| harasser::build_harasser_tree(s));
+
+    game.add_role("striker")
+        .min(0)
+        .max(2)
+        .score(score_striker)
+        .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
+        .behavior(|s| striker::build_striker_tree(s));
 }

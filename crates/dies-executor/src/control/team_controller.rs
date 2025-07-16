@@ -332,19 +332,19 @@ impl TeamController {
             inputs_for_comply.insert(*id, input.clone());
         }
 
-        let final_player_inputs = if matches!(
-            world_data.current_game_state.game_state,
-            GameState::Stop
-                | GameState::BallReplacement(_)
-                | GameState::FreeKick
-                | GameState::Kickoff
-                | GameState::PrepareKickoff
-                | GameState::Halt
-        ) {
-            comply(&world_data, inputs_for_comply, &team_context)
-        } else {
-            inputs_for_comply
-        };
+        // let final_player_inputs = if matches!(
+        //     world_data.current_game_state.game_state,
+        //     GameState::Stop
+        //         | GameState::BallReplacement(_)
+        //         | GameState::FreeKick
+        //         | GameState::Kickoff
+        //         | GameState::PrepareKickoff
+        //         | GameState::Halt
+        // ) {
+        let final_player_inputs = comply(&world_data, inputs_for_comply, &team_context);
+        // } else {
+        //     inputs_for_comply
+        // };
 
         let all_players = world_data
             .own_players
@@ -579,6 +579,61 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
 
                 if matches!(game_state, GameState::Stop) {
                     new_input.with_speed_limit(1500.0);
+                }
+
+                if matches!(
+                    game_state,
+                    GameState::Run | GameState::Stop | GameState::FreeKick
+                ) {
+                    // Avoid goal area
+                    let min_distance = match game_state {
+                        GameState::Run => 80.0,
+                        GameState::Stop | GameState::FreeKick => 200.0,
+                        _ => unreachable!(),
+                    };
+                    let max_radius = 4000;
+                    // Opponent goal area
+                    let target = dies_core::nearest_safe_pos(
+                        dies_core::Avoid::Rectangle {
+                            min: Vector2::new(
+                                field.field_length / 2.0 - field.penalty_area_depth,
+                                -field.penalty_area_width / 2.0,
+                            ),
+                            max: Vector2::new(
+                                field.field_length / 2.0,
+                                field.penalty_area_width / 2.0,
+                            ),
+                        },
+                        min_distance,
+                        player_data.position,
+                        input.position.unwrap_or(player_data.position),
+                        max_radius,
+                        field,
+                    );
+                    new_input.with_position(target);
+
+                    // Own goal area
+                    if input.role_type != RoleType::Goalkeeper {
+                        let max_radius = 4000;
+                        let target = dies_core::nearest_safe_pos(
+                            dies_core::Avoid::Rectangle {
+                                min: Vector2::new(
+                                    -field.field_length / 2.0,
+                                    -field.penalty_area_width / 2.0,
+                                ),
+                                max: Vector2::new(
+                                    field.field_length / 2.0,
+                                    field.penalty_area_width / 2.0,
+                                ),
+                            },
+                            80.0,
+                            player_data.position,
+                            input.position.unwrap_or(player_data.position),
+                            max_radius,
+                            field,
+                        );
+                        new_input.with_position(target);
+                    }
                 }
 
                 if game_state == GameState::Stop

@@ -200,7 +200,7 @@ impl BasestationHandle {
                     if !monitor.is_connected() {
                         panic!(
                             "Base station disconnected: {:?}",
-                            monitor.has_error().unwrap()
+                            monitor.has_error().unwrap_or_default()
                         );
                     }
 
