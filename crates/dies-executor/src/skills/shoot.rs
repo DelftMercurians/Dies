@@ -34,6 +34,7 @@ enum ShootState {
 pub struct Shoot {
     target: ShootTarget,
     state: ShootState,
+    skip_face: bool,
     has_set_flag: bool,
 }
 
@@ -42,8 +43,14 @@ impl Shoot {
         Self {
             state: ShootState::None,
             target,
+            skip_face: false,
             has_set_flag: false,
         }
+    }
+
+    pub fn skip_face(mut self) -> Self {
+        self.skip_face = true;
+        self
     }
 
     pub fn state(&self) -> String {
@@ -65,7 +72,19 @@ impl Shoot {
                         ShootTarget::Player { id, position } => {
                             let position = position.unwrap_or(ctx.world.get_player(*id).position);
 
-                            ShootState::Face(Face::towards_position(position).with_ball())
+                            if !self.skip_face {
+                                ShootState::Face(Face::towards_position(position).with_ball())
+                            } else {
+                                if let ShootTarget::Player { id, position } = &self.target {
+                                    ctx.bt_context.set_passing_target(PassingTarget {
+                                        id: *id,
+                                        position: position
+                                            .unwrap_or(ctx.world.get_player(*id).position),
+                                    });
+                                    self.has_set_flag = true;
+                                }
+                                ShootState::Kick(Kick::new())
+                            }
                         }
                     };
                 }

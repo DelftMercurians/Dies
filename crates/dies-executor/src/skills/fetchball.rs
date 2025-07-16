@@ -59,6 +59,7 @@ impl FetchBall {
                 ),
             );
             if ctx.player.breakbeam_ball_detected && distance < 400.0 {
+                return SkillProgress::success();
                 if self.breakbeam_on.is_none() {
                     self.breakbeam_on = Some(Instant::now());
                 }

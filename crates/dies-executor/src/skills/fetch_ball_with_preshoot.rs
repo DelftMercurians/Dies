@@ -1,6 +1,8 @@
 use dies_core::Vector2;
 
-use crate::skills::{FetchBall, GoToPosition, Shoot, ShootTarget, SkillCtx, SkillProgress, SkillResult};
+use crate::skills::{
+    FetchBall, GoToPosition, Shoot, ShootTarget, SkillCtx, SkillProgress, SkillResult,
+};
 
 #[derive(Clone)]
 pub struct FetchBallWithPreshoot {
@@ -36,7 +38,9 @@ impl FetchBallWithPreshoot {
     pub fn state(&self) -> String {
         match &self.state {
             FetchBallWithPreshootState::None => "None".to_string(),
-            FetchBallWithPreshootState::GoToPreshoot(_) => format!("GoToPreshoot: {:?}", self.preshoot_position),
+            FetchBallWithPreshootState::GoToPreshoot(_) => {
+                format!("GoToPreshoot: {:?}", self.preshoot_position)
+            }
             FetchBallWithPreshootState::FetchBall(_) => "FetchBall".to_string(),
             FetchBallWithPreshootState::Shoot(_) => format!("Shoot: {:?}", self.shoot_target),
         }
@@ -50,6 +54,7 @@ impl FetchBallWithPreshoot {
                     if let Some(heading) = self.preshoot_heading {
                         go_to_position = go_to_position.with_heading(heading);
                     }
+                    go_to_position = go_to_position.avoid_ball();
                     self.state = FetchBallWithPreshootState::GoToPreshoot(go_to_position);
                 }
                 FetchBallWithPreshootState::GoToPreshoot(go_to_position) => {
@@ -73,7 +78,9 @@ impl FetchBallWithPreshoot {
                             return SkillProgress::Continue(input);
                         }
                         SkillProgress::Done(SkillResult::Success) => {
-                            self.state = FetchBallWithPreshootState::Shoot(Shoot::new(self.shoot_target.clone()));
+                            self.state = FetchBallWithPreshootState::Shoot(Shoot::new(
+                                self.shoot_target.clone(),
+                            ));
                         }
                         SkillProgress::Done(SkillResult::Failure) => {
                             return SkillProgress::Done(SkillResult::Failure);
