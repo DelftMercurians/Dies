@@ -9,7 +9,7 @@ use nalgebra::{self as na, Vector4};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
 
-const BREAKBEAM_WINDOW: usize = 100;
+const BREAKBEAM_WINDOW: usize = 4;
 
 /// Stored data for a player from the last update.
 ///
@@ -229,6 +229,12 @@ impl PlayerTracker {
             .update_settings(settings.player_yaw_lpf_alpha);
     }
 
+    /// Returns filtered breakbeam detection status.
+    /// Returns true if there's at least one detection within the buffer.
+    fn get_filtered_breakbeam_detection(&self) -> bool {
+        self.breakbeam_detections.iter().any(|&detection| detection != 0)
+    }
+
     pub fn get(&self) -> Option<PlayerData> {
         if self.last_detection.is_none() && self.allow_no_vision {
             return self.last_feedback.map(|f| PlayerData {
@@ -244,7 +250,7 @@ impl PlayerTracker {
                 kicker_cap_voltage: f.kicker_cap_voltage,
                 kicker_temp: f.kicker_temp,
                 pack_voltages: f.pack_voltages,
-                breakbeam_ball_detected: f.breakbeam_ball_detected.unwrap_or(false),
+                breakbeam_ball_detected: self.get_filtered_breakbeam_detection(),
                 imu_status: f.imu_status,
                 kicker_status: f.kicker_status,
                 handicaps: self.handicaps.clone(),
@@ -263,10 +269,7 @@ impl PlayerTracker {
             kicker_cap_voltage: self.last_feedback.and_then(|f| f.kicker_cap_voltage),
             kicker_temp: self.last_feedback.and_then(|f| f.kicker_temp),
             pack_voltages: self.last_feedback.and_then(|f| f.pack_voltages),
-            breakbeam_ball_detected: self
-                .last_feedback
-                .and_then(|f| f.breakbeam_ball_detected)
-                .unwrap_or(false),
+            breakbeam_ball_detected: self.get_filtered_breakbeam_detection(),
             imu_status: self.last_feedback.and_then(|f| f.imu_status),
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),
             handicaps: self.handicaps.clone(),
