@@ -395,4 +395,5 @@ pub enum RoleType {
     PenaltyKicker,
     /// freekicker
     FreeKicker,
+    Waller,
 }

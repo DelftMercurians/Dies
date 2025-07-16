@@ -1,8 +1,9 @@
-use std::{net::SocketAddr, path::PathBuf, process::ExitCode, str::FromStr};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, process::ExitCode, str::FromStr};
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
+use dies_core::{PlayerId, TeamColor};
 use dies_ssl_client::{ConnectionConfig, SslClientConfig};
 use dies_webui::{UiConfig, UiEnvironment};
 use serde::{Deserialize, Serialize};
@@ -222,6 +223,30 @@ impl Cli {
         })
     }
 
+    fn parse_robot_ids(&self) -> HashMap<(TeamColor, PlayerId), u32> {
+        // eg. "blue:0-0,blue:1-1,blue:2-2,yellow:0-3,yellow:1-4,yellow:2-5"
+        if self.robot_ids.is_empty() {
+            return HashMap::new();
+        }
+
+        let mut map = HashMap::new();
+        for id in self.robot_ids.split(',') {
+            let (color, rest) = id.split_once(':').unwrap();
+            let (player_id, robot_id) = rest.split_once('-').unwrap();
+            let color = match color.to_lowercase().as_str() {
+                "blue" => TeamColor::Blue,
+                "yellow" => TeamColor::Yellow,
+                _ => panic!("Invalid color: {}", color),
+            };
+            let player_id: u32 = player_id.parse().unwrap();
+            let player_id = PlayerId::new(player_id);
+            let robot_id: u32 = robot_id.parse().unwrap();
+            map.insert((color, player_id), robot_id);
+        }
+        println!("parsed robot ids: {:?}", map);
+        map
+    }
+
     /// Configures the serial client based on the CLI arguments. This function may prompt the user
     /// to choose a port if multiple ports are available and the `serial_port` argument is set to "auto".
     ///
@@ -232,7 +257,9 @@ impl Cli {
             .await
             .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()
-            .map(|port| BasestationClientConfig::new(port, self.protocol.into()))
+            .map(|port| {
+                BasestationClientConfig::new(port, self.protocol.into(), self.parse_robot_ids())
+            })
     }
 
     /// Configures the vision client based on the CLI arguments.

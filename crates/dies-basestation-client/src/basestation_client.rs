@@ -37,10 +37,14 @@ pub struct BasestationClientConfig {
 }
 
 impl BasestationClientConfig {
-    pub fn new(port: String, protocol: BaseStationProtocol) -> Self {
+    pub fn new(
+        port: String,
+        protocol: BaseStationProtocol,
+        robot_id_map: HashMap<(TeamColor, PlayerId), u32>,
+    ) -> Self {
         BasestationClientConfig {
             port_name: port,
-            robot_id_map: HashMap::new(),
+            robot_id_map,
             protocol,
         }
     }

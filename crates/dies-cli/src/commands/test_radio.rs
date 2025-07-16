@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
 use dies_core::{Angle, PlayerGlobalMoveCmd, PlayerId, RobotCmd, RotationDirection};
@@ -17,8 +19,11 @@ pub async fn test_radio(
     kick: bool,
 ) -> Result<()> {
     let port = port.select().await?;
-    let bs_config =
-        BasestationClientConfig::new(port, dies_basestation_client::BaseStationProtocol::V1);
+    let bs_config = BasestationClientConfig::new(
+        port,
+        dies_basestation_client::BaseStationProtocol::V1,
+        HashMap::new(),
+    );
     let mut bs_handle = BasestationHandle::spawn(bs_config)?;
 
     assert!(ids.len() > 0, "No IDs provided");

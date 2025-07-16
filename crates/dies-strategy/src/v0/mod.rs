@@ -1,4 +1,4 @@
-use dies_core::{GameState, Handicap};
+use dies_core::{GameState, Handicap, PlayerId, TeamColor};
 use dies_executor::behavior_tree_api::GameContext;
 
 use crate::v0::{
@@ -26,6 +26,13 @@ pub fn v0_strategy(game: &mut GameContext) {
     game.add_role("goalkeeper")
         .count(1)
         .score(|_| 100000.0)
+        .require(|s| {
+            if s.team_color == TeamColor::Yellow {
+                s.player_id == PlayerId::new(4)
+            } else {
+                s.player_id == PlayerId::new(5)
+            }
+        })
         .behavior(|s| keeper::build_goalkeeper_tree(s));
 
     // Game state specific roles
@@ -71,20 +78,24 @@ pub fn v0_strategy(game: &mut GameContext) {
     }
 
     // Standard roles
-    game.add_role("waller")
-        .count(2)
-        .score(score_as_waller)
-        .behavior(|s| waller::build_waller_tree(s));
+    // game.add_role("waller")
+    //     .min(1)
+    //     .count(1)
+    //     .max(1)
+    //     .score(score_as_waller)
+    //     .behavior(|s| waller::build_waller_tree(s));
 
     game.add_role("harasser")
-        .min(0)
-        .max(2)
+        .min(1)
+        .count(1)
+        .max(1)
         .score(score_as_harasser)
         .behavior(|s| harasser::build_harasser_tree(s));
 
     game.add_role("striker")
-        .min(0)
-        .max(2)
+        .min(1)
+        .count(1)
+        .max(1)
         .score(score_striker)
         .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
         .behavior(|s| striker::build_striker_tree(s));

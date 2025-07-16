@@ -19,22 +19,15 @@ impl Kick {
         let mut input = PlayerControlInput::new();
         input.with_dribbling(1.0);
 
+        if self.has_kicked {
+            return SkillProgress::Done(super::SkillResult::Success);
+        }
         if !ctx.player.breakbeam_ball_detected {
             return SkillProgress::failure();
         }
 
-        let ready = match ctx.player.kicker_status.as_ref() {
-            Some(SysStatus::Ready) => true,
-            _ => false,
-        };
-
-        if ready {
-            input.with_kicker(KickerControlInput::Kick { force: 1.0 });
-            self.has_kicked = true;
-            SkillProgress::Continue(input)
-        } else {
-            input.kicker = KickerControlInput::Arm;
-            SkillProgress::Continue(input)
-        }
+        input.with_kicker(KickerControlInput::Kick { force: 1.0 });
+        self.has_kicked = true;
+        SkillProgress::Continue(input)
     }
 }

@@ -285,6 +285,7 @@ impl TeamController {
                     "goalkeeper" => RoleType::Goalkeeper,
                     "kickoff_kicker" => RoleType::KickoffKicker,
                     "free_kick_kicker" => RoleType::FreeKicker,
+                    "waller" => RoleType::Waller,
                     _ => RoleType::Player,
                 };
             } else if player_id == PlayerId::new(0) {
@@ -626,7 +627,7 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                                     field.penalty_area_width / 2.0,
                                 ),
                             },
-                            80.0,
+                            20.0,
                             player_data.position,
                             input.position.unwrap_or(player_data.position),
                             max_radius,

@@ -114,7 +114,7 @@ impl Default for Velocity {
 }
 
 /// Input to the player controller.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PlayerControlInput {
     /// Target position. If `None`, the player will just follow the given velocity
     pub position: Option<Vector2>,
@@ -144,6 +144,29 @@ pub struct PlayerControlInput {
     pub avoid_robots: bool,
 
     pub role_type: RoleType,
+}
+
+impl Default for PlayerControlInput {
+    fn default() -> Self {
+        Self {
+            position: None,
+            velocity: Velocity::default(),
+            yaw: None,
+            angular_velocity: None,
+            dribbling_speed: 0.0,
+            kicker: KickerControlInput::default(),
+            care: 0.0,
+            acceleration_limit: None,
+            speed_limit: None,
+            angular_acceleration_limit: None,
+            angular_speed_limit: Some(3.0),
+            avoid_ball: false,
+            fan_speed: None,
+            kick_speed: None,
+            avoid_robots: false,
+            role_type: RoleType::default(),
+        }
+    }
 }
 
 impl PlayerControlInput {
