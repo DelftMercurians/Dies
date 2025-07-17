@@ -160,7 +160,7 @@ impl TwoStepMTP {
         // Sample points uniformly around the circle
         // First, sample the direct trajectory as a starting point
         let mut best_point = current + to_target.normalize() * circle_radius;
-        let mut best_cost = self.calculate_path_cost(
+        let mut best_cost = self.calculate_path_cost_into_future(
             current,
             best_point,
             target,
@@ -176,7 +176,7 @@ impl TwoStepMTP {
                 current + Vector2::new(circle_radius * angle.cos(), circle_radius * angle.sin());
 
             // Calculate cost for this sample point
-            let cost = self.calculate_path_cost(
+            let cost = self.calculate_path_cost_into_future(
                 current,
                 sample_point,
                 target,
@@ -205,6 +205,49 @@ impl TwoStepMTP {
         );
 
         best_point
+    }
+
+    fn calculate_path_cost_into_future(
+        &self,
+        start: Vector2,
+        mid: Vector2,
+        end: Vector2,
+        world_data: &TeamData,
+        current_player: &PlayerData,
+        avoid_goal_area: bool,
+        obstacles: Vec<Obstacle>
+    ) -> f64 {
+        let mut total_cost = 0.0;
+        let max_future = 0.5;
+
+        for future_step in 0..10 {
+            let future_time = (future_step as f64) * max_future / 10.0;
+            let future_world = self.world_into_future(world_data, current_player, future_time);
+            let discount = (max_future - future_time) / max_future;
+
+            total_cost += discount * self.calculate_path_cost(start, mid, end, &future_world, current_player, avoid_goal_area, obstacles.clone());
+        }
+
+        total_cost
+    }
+
+
+    fn world_into_future(&self, world: &TeamData, current_player: &PlayerData, t: f64) -> TeamData {
+        let mut world = world.clone();
+
+        for robot in world
+            .own_players
+            .iter_mut()
+            .chain(world.opp_players.iter_mut()) {
+
+            if robot.id == current_player.id {
+                continue;
+            }
+
+            robot.position = robot.position + robot.velocity * t;
+        }
+
+        world
     }
 
     fn calculate_path_cost(
