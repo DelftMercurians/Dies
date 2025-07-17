@@ -5,7 +5,7 @@ use crate::{control::Velocity, PlayerControlInput};
 use dies_core::{Angle, Vector2};
 use std::sync::Arc;
 
-use crate::control::{find_best_preshoot_target_target, PassingStore};
+use crate::control::{find_best_preshoot, PassingStore};
 use crate::skills::{SkillCtx, SkillProgress, SkillResult};
 
 #[derive(Clone)]
@@ -76,10 +76,10 @@ impl FetchBallWithPreshoot {
 
             match &self.state {
                 FetchBallWithPreshootState::GoToPreshoot => {
-                    let shooting_target = find_best_preshoot_target_target(&PassingStore::new(
+                    let shooting_target = find_best_preshoot(&PassingStore::new(
                         ctx.player.id,
                         Arc::new(ctx.world.clone()),
-                    ));
+                    ), self.shoot_target.clone());
                     self.shoot_target = Some(shooting_target.clone());
                     let shooting_target = shooting_target.position().unwrap();
                     let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 180.0;

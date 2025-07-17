@@ -351,11 +351,11 @@ fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 
     prob
 }
 
-pub fn pass_success_probability(s: &PassingStore, teammate: &PlayerData) -> f64 {
+pub fn pass_success_probability(s: &PassingStore, teammate_pos: Vector2) -> f64 {
     let mut prob: f64 = 0.7;
     let player_pos = s.player_data().position;
     // score based on how far is the robot: not too close, not too far
-    let robot_dist = (player_pos - teammate.position).norm();
+    let robot_dist = (player_pos - teammate_pos).norm();
     let no_miss_probability = if robot_dist < 400.0 {
         0.5 // not a super good idea to do short shoots
     } else if robot_dist < 800.0 {
@@ -374,7 +374,7 @@ pub fn pass_success_probability(s: &PassingStore, teammate: &PlayerData) -> f64 
     prob *= no_miss_probability;
 
     // score based on how bad is the trajectory: are there opponents on the shoot line?
-    let angle = Angle::between_points(teammate.position, player_pos);
+    let angle = Angle::between_points(teammate_pos, player_pos);
     let nearest_opponent_distance =
         find_nearest_opponent_distance_along_direction(s, angle).clamp(0.0, 1000.0);
     let no_intercept_prob = if nearest_opponent_distance < 200.0 {
@@ -411,7 +411,7 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore) -> (ShootTarget, f64) {
 
         // score is a combination of clean shoot from the teammate and passing discount
         let (t, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(teammate.id));
-        let prob = goal_shoot_prob * pass_success_probability(s, teammate);
+        let prob = goal_shoot_prob * pass_success_probability(s, teammate.position);
 
         if prob > best_prob_pass {
             best_prob_pass = prob;
@@ -500,7 +500,7 @@ pub fn best_receiver_target_score(s: &PassingStore) -> f64 {
     let (_, goal_shoot_prob) = best_goal_shoot(s);
 
     let hypothetical = s.force_self_position(ball_pos);
-    pass_success_probability(&hypothetical, s.player_data()) * goal_shoot_prob
+    pass_success_probability(&hypothetical, s.player_data().position) * goal_shoot_prob
 }
 
 pub fn combination_discounting_for_receivers(s: &PassingStore) -> f64 {
@@ -637,7 +637,7 @@ pub fn find_best_receiver_target(
                 let distance_to_last = (candidate_pos - last_pos).norm();
                 if distance_to_last < 50.0 {
                     // Within 5cm
-                    score *= 2.0;
+                    score *= 1.3;
                 }
             }
 
@@ -651,6 +651,19 @@ pub fn find_best_receiver_target(
     (best_position, best_score)
 }
 
+pub fn score_shoot_target(s: &PassingStore, target: ShootTarget) -> f64 {
+    match target {
+        ShootTarget::Goal(pos) => {
+            goal_shoot_success_probability(s, pos)
+        }
+        ShootTarget::Player { id, position } => {
+            let (t, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(id));
+            let prob = goal_shoot_prob * pass_success_probability(s, position.unwrap());
+            prob * goal_shoot_prob
+        }
+    }
+}
+
 pub fn find_best_shoot_score(s: &PassingStore) -> f64 {
     let (_, p) = best_teammate_pass_or_shoot(s);
     p
@@ -662,7 +675,7 @@ pub fn find_best_shoot_target(s: impl Into<PassingStore>) -> ShootTarget {
     t
 }
 
-pub fn find_best_preshoot_target_target(s: &PassingStore) -> ShootTarget {
+pub fn find_best_preshoot(s: &PassingStore, last_target: Option<ShootTarget>) -> ShootTarget {
     let ball = match s.world.ball.as_ref() {
         Some(b) => b,
         None => return ShootTarget::Goal(Vector2::zeros()), // early return if ball is not found
@@ -671,7 +684,18 @@ pub fn find_best_preshoot_target_target(s: &PassingStore) -> ShootTarget {
     let ball_pos = ball.position.xy();
     let hypothetical = s.force_self_position(ball_pos);
 
-    find_best_shoot_target(&hypothetical)
+
+    let (cur_target, cur_score) = best_teammate_pass_or_shoot(&hypothetical);
+
+    if let Some(last_target) = last_target {
+        let last_score = score_shoot_target(s, last_target.clone());
+        if cur_score > last_score * 1.1 {
+            return cur_target;
+        } else {
+            return last_target;
+        }
+    }
+    cur_target
 }
 
 pub fn find_best_preshoot_target(s: &PassingStore) -> Vector2 {
