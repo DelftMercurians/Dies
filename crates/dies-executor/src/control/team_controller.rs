@@ -665,25 +665,6 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                     new_input.with_position(target);
                 }
 
-                if matches!(game_state, GameState::Kickoff | GameState::PrepareKickoff) {
-                    // Avoid center circle unless we are the kicker
-                    if input.role_type != RoleType::KickoffKicker {
-                        let center_circle_center = Vector2::new(0.0, 0.0);
-                        let center_circle_radius = field.center_circle_radius;
-                        let target = dies_core::nearest_safe_pos(
-                            dies_core::Avoid::Circle {
-                                center: center_circle_center,
-                            },
-                            center_circle_radius + 500.0,
-                            player_data.position,
-                            new_input.position.unwrap_or(player_data.position),
-                            4000,
-                            field,
-                        );
-                        new_input.with_position(target);
-                    }
-                }
-
                 if let GameState::BallReplacement(pos) = game_state {
                     let line_start = ball_pos;
                     let line_end = pos;
@@ -721,6 +702,35 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                 } else {
                     team_context.debug_remove("ball_placement");
                     team_context.debug_remove("ball_placement_target");
+                }
+
+                if matches!(game_state, GameState::PrepareKickoff | GameState::Kickoff)
+                    && (input.role_type != RoleType::KickoffKicker
+                        || !world_data.current_game_state.us_operating)
+                {
+                    let mut target_pos = new_input.position.unwrap_or(player_data.position).clone();
+                    target_pos.x = target_pos.x.min(-100.0);
+                    new_input.with_position(target_pos);
+                    // we do it twice to make sure we are on the right side of the field
+
+                    let center_circle_center = Vector2::new(0.0, 0.0);
+                    let center_circle_radius = field.center_circle_radius;
+                    let target = dies_core::nearest_safe_pos(
+                        dies_core::Avoid::Circle {
+                            center: center_circle_center,
+                        },
+                        center_circle_radius + 500.0,
+                        player_data.position,
+                        new_input.position.unwrap_or(player_data.position),
+                        4000,
+                        field,
+                    );
+                    new_input.with_position(target);
+
+                    // Keep to our side of the field
+                    let mut target_pos = new_input.position.unwrap_or(player_data.position).clone();
+                    target_pos.x = target_pos.x.min(-100.0);
+                    new_input.with_position(target_pos);
                 }
 
                 (*id, new_input)

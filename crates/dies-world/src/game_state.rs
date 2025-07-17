@@ -50,6 +50,7 @@ impl GameStateTracker {
 
     pub fn update(&mut self, data: &Referee) -> GameState {
         let command = data.command();
+        let stage = data.stage();
 
         if self.last_cmd == Some(command) {
             return self.game_state;
