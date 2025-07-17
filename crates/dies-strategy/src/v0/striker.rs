@@ -1,7 +1,9 @@
-use dies_core::{Angle, GameState, Vector2};
-use dies_executor::{behavior_tree_api::*, find_best_receiver_target};
+use core::f64;
 
-use crate::v0::utils::{fetch_and_shoot, fetch_and_shoot_with_prep, get_heading_toward_ball};
+use dies_core::{GameState, Vector2};
+use dies_executor::behavior_tree_api::*;
+
+use crate::v0::utils::{fetch_and_shoot_with_prep, get_heading_toward_ball};
 
 pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -21,19 +23,10 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .build(),
         )
         .add(
-            guard_node()
-                .description("Can try recv")
-                .condition(|s| s.position().x > -100.0)
-                .then(try_receive())
-                .build(),
-        )
-        .add(
             // Pickup ball if we can
             committing_guard_node()
                 .description("Ball pickup opportunity")
-                .when(|s| should_pickup_ball(s)) // TODO: make sure that
-                // the closest robots gets it; on second thought, this is probably not
-                // implementable -> the roles are not available yet during the role assigment. so maybe not.
+                .when(|s| should_pickup_ball(s))
                 .until(|s| s.position().x < -100.0)
                 .commit_to(
                     semaphore_node()
@@ -45,13 +38,30 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .build(),
         )
         .add(
-            stateful_continuous("zoning")
-                .with_stateful_position(|s, last_pos| {
-                    let (mut target, score) =
-                        find_best_receiver_target(&s.into(), last_pos.copied());
-                    target.x = target.x.max(0.0);
-                    (target, Some(target))
-                })
+            scoring_select_node()
+                .description("Striker tactics")
+                .hysteresis_margin(0.1)
+                .add_child(
+                    semaphore_node()
+                        .semaphore_id("striker_harasser".to_string())
+                        .max_entry(1)
+                        .do_then(
+                            continuous("Harassing opponent")
+                                .position(Argument::callback(striker_harassing_position))
+                                .build(),
+                        )
+                        .build(),
+                    striker_harassing_score,
+                )
+                .add_child(
+                    stateful_continuous("Ball tracking zoning")
+                        .with_stateful_position(|s, last_pos| {
+                            let target = striker_ball_tracking_position(s, last_pos.copied());
+                            (target, Some(target))
+                        })
+                        .build(),
+                    |_| 40.0,
+                )
                 .build(),
         )
         .description("Striker")
@@ -71,33 +81,7 @@ pub fn score_striker(s: &RobotSituation) -> f64 {
         score += 20.0;
     }
 
-    // Higher score if we have the ball
-    if s.has_ball() {
-        score += 30.0;
-    }
-
     score
-}
-
-/// Build striker behavior within a specific zone
-fn build_striker_in_zone(zone: &str) -> BehaviorNode {
-    let zone_owned = zone.to_string();
-    let zone_owned_clone = zone_owned.clone();
-    go_to_position(Argument::callback(move |s| {
-        find_optimal_striker_position(s, &zone_owned_clone)
-    }))
-    .with_heading(Argument::callback(|s: &RobotSituation| {
-        if let Some(ball) = &s.world.ball {
-            let ball_pos = ball.position.xy();
-            let my_pos = s.player_data().position;
-            Angle::between_points(ball_pos, my_pos)
-        } else {
-            Angle::from_radians(0.0)
-        }
-    }))
-    .description(format!("Position in {}", zone_owned))
-    .build()
-    .into()
 }
 
 fn get_kickoff_striker_position(s: &RobotSituation) -> Vector2 {
@@ -112,51 +96,6 @@ fn get_kickoff_striker_position(s: &RobotSituation) -> Vector2 {
     };
 
     Vector2::new(spread_x, spread_y)
-}
-
-fn find_optimal_striker_position(s: &RobotSituation, zone: &str) -> Vector2 {
-    if let Some(field) = &s.world.field_geom {
-        let half_width = field.field_width / 2.0;
-        let third_height = field.field_width / 3.0;
-
-        let y_center = match zone {
-            "top" => half_width - third_height / 2.0,
-            "bottom" => -half_width + third_height / 2.0,
-            _ => 0.0, // middle
-        };
-
-        // Position in attacking third
-        let x = field.field_length / 4.0;
-        Vector2::new(x, y_center)
-    } else {
-        // Default positions
-        match zone {
-            "top" => Vector2::new(2000.0, 2000.0),
-            "bottom" => Vector2::new(2000.0, -2000.0),
-            _ => Vector2::new(2000.0, 0.0),
-        }
-    }
-}
-
-fn score_for_zone(s: &RobotSituation, zone: &str) -> f64 {
-    // Base score with some randomization for diversity
-    let hash = s.player_id_hash();
-    let base_score = 50.0 + hash * 20.0;
-
-    // Prefer zones with fewer opponents
-    let zone_center = match zone {
-        "top" => Vector2::new(2000.0, 2000.0),
-        "bottom" => Vector2::new(2000.0, -2000.0),
-        _ => Vector2::new(2000.0, 0.0),
-    };
-
-    let dist_score = (s.player_data().position - zone_center).norm() / 10.0;
-
-    let opponents_in_zone = s.get_opp_players_within_radius(zone_center, 1500.0).len();
-
-    let congestion_penalty = opponents_in_zone as f64 * 10.0;
-
-    base_score - congestion_penalty - dist_score
 }
 
 fn should_pickup_ball(s: &RobotSituation) -> bool {
@@ -198,8 +137,138 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         .iter()
         .map(|p| (ball.position.xy() - p.position).norm())
         .min_by(|a, b| a.partial_cmp(b).unwrap());
+    let my_dist = s.distance_to_ball();
+    let d = closest_opponent_dist.unwrap_or(f64::INFINITY) - my_dist;
 
     ball.position.x > -80.0
-        && closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true)
+        && (closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true) || d > 80.0)
         && closest_striker
+}
+
+fn striker_harassing_score(s: &RobotSituation) -> f64 {
+    if s.game_state_is_not(GameState::Run) {
+        return 0.0;
+    }
+
+    let ball_pos = s.ball_position();
+
+    // Only harass if ball is on opponent side
+    if ball_pos.x <= 0.0 {
+        return 0.0;
+    }
+
+    // Find closest opponent to ball
+    if let Some(closest_opp) = s.get_closest_opp_player_to_ball() {
+        let opp_to_ball_dist = (closest_opp.position - ball_pos).norm();
+
+        // Only harass if opponent is close to ball
+        if opp_to_ball_dist > 800.0 {
+            return 0.0;
+        }
+
+        let mut score = 60.0;
+
+        // Prefer being close to the opponent
+        let my_dist_to_opp = s.distance_to_position(closest_opp.position);
+        score += (1500.0 - my_dist_to_opp.min(1500.0)) / 30.0;
+
+        return score;
+    }
+
+    0.0
+}
+
+fn striker_harassing_position(s: &RobotSituation) -> Vector2 {
+    let ball_pos = s.ball_position();
+
+    if let Some(closest_opp) = s.get_closest_opp_player_to_ball() {
+        let opp_to_ball_dist = (closest_opp.position - ball_pos).norm();
+
+        if opp_to_ball_dist < 200.0 {
+            // Ball is very close to opponent: position directly in front using opponent's yaw
+            let harass_distance = 350.0;
+            let opp_yaw = closest_opp.yaw;
+            let facing_vec = opp_yaw.to_vector();
+            let target_pos = closest_opp.position + facing_vec * harass_distance;
+
+            let constrained_pos = s.constrain_to_field(target_pos);
+            return Vector2::new(constrained_pos.x.max(50.0), constrained_pos.y);
+        } else {
+            // Position between opponent and ball, maintaining distance
+            let harass_distance = 350.0;
+            let to_ball = (ball_pos - closest_opp.position).normalize();
+            let target_pos = closest_opp.position + to_ball * harass_distance;
+
+            // Ensure we stay on opponent side
+            let constrained_pos = s.constrain_to_field(target_pos);
+            return Vector2::new(constrained_pos.x.max(50.0), constrained_pos.y);
+        }
+    }
+
+    // Fallback to ball position
+    Vector2::new(ball_pos.x.max(50.0), ball_pos.y)
+}
+
+fn striker_ball_tracking_position(s: &RobotSituation, last_pos: Option<Vector2>) -> Vector2 {
+    let ball_pos = s.ball_position();
+    let goal_pos = s.get_opp_goal_position();
+
+    // Start with ball position as base target
+    let mut target_x = ball_pos.x * 0.7 + goal_pos.x * 0.3; // Gravitate towards ball but stay closer to goal
+    let mut target_y = ball_pos.y * 0.6 + goal_pos.y * 0.4;
+
+    // Apply repulsion from other strikers
+    for player in s.get_players_with_role("striker") {
+        if player.id == s.player_id {
+            continue;
+        }
+
+        let to_player = Vector2::new(target_x, target_y) - player.position;
+        let dist = to_player.norm() + f64::EPSILON;
+
+        if dist < 800.0 {
+            let repulsion_strength = (800.0 - dist) / 800.0 * 200.0;
+            let repulsion = to_player.normalize() * repulsion_strength;
+            target_x += repulsion.x;
+            target_y += repulsion.y;
+        }
+    }
+
+    let mut target = Vector2::new(target_x, target_y);
+
+    // Constrain to opponent half
+    target.x = target.x.max(50.0);
+
+    // Avoid defense area
+    if let Some(field) = &s.world.field_geom {
+        let half_length = field.field_length / 2.0;
+        let half_penalty_width = field.penalty_area_width / 2.0;
+
+        // Check opponent penalty area
+        if target.x >= half_length - field.penalty_area_depth
+            && target.y >= -half_penalty_width
+            && target.y <= half_penalty_width
+        {
+            // Push out of penalty area
+            if target.y.abs() < half_penalty_width {
+                target.y = if target.y >= 0.0 {
+                    half_penalty_width + 100.0
+                } else {
+                    -half_penalty_width - 100.0
+                };
+            }
+        }
+    }
+
+    // Apply stability - prefer staying near last position
+    if let Some(last_pos) = last_pos {
+        let distance_to_last = (target - last_pos).norm();
+        if distance_to_last < 100.0 {
+            // Small movements - interpolate for stability
+            target = last_pos * 0.7 + target * 0.3;
+        }
+    }
+
+    // Final field constraint
+    s.constrain_to_field(target)
 }

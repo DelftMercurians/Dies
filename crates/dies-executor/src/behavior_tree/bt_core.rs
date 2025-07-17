@@ -251,6 +251,10 @@ impl RobotSituation {
             .unwrap_or_default()
     }
 
+    pub fn current_role_is(&self, role: &str) -> bool {
+        self.current_role().contains(role)
+    }
+
     pub fn get_players_with_role(&self, role: &str) -> Vec<PlayerData> {
         self.world
             .own_players
@@ -360,8 +364,8 @@ impl RobotSituation {
 
     pub fn constrain_to_field(&self, pos: Vector2) -> Vector2 {
         if let Some(field) = &self.world.field_geom {
-            let half_length = field.field_length / 2.0;
-            let half_width = field.field_width / 2.0;
+            let half_length = field.boundary_width + field.field_length / 2.0;
+            let half_width = field.boundary_width + field.field_width / 2.0;
 
             let x = pos.x.max(-half_length + 100.0).min(half_length - 100.0);
             let y = pos.y.max(-half_width + 100.0).min(half_width - 100.0);

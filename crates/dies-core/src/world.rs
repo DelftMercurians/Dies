@@ -275,6 +275,7 @@ pub enum BallPrediction {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[typeshare]
 pub struct AutorefKickedBall {
     /// The initial position [m] from which the ball was kicked
     pub pos: Vector2,
@@ -289,10 +290,12 @@ pub struct AutorefKickedBall {
     pub stop_pos: Option<Vector2>,
 
     /// The robot that kicked the ball
+    #[typeshare(skip)]
     pub robot_id: Option<(TeamColor, PlayerId)>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[typeshare]
 pub struct AutorefInfo {
     pub kicked_ball: Option<AutorefKickedBall>,
 }

@@ -37,6 +37,23 @@ export type DebugMap = Record<string, DebugValue>;
 
 export type PlayerId = number;
 
+export interface AutorefKickedBall {
+	/** The initial position [m] from which the ball was kicked */
+	pos: Vector2;
+	/** The initial velocity [m/s] with which the ball was kicked */
+	vel: Vector3;
+	/** The unix timestamp [s] when the kick was performed */
+	start_timestamp: number;
+	/** The predicted unix timestamp [s] when the ball comes to a stop */
+	stop_timestamp?: number;
+	/** The predicted position [m] at which the ball will come to a stop */
+	stop_pos?: Vector2;
+}
+
+export interface AutorefInfo {
+	kicked_ball?: AutorefKickedBall;
+}
+
 /** A struct to store the ball state from a single frame. */
 export interface BallData {
 	/**
@@ -325,6 +342,8 @@ export interface GameStateData {
 	 * Only Some until another player touches the ball
 	 */
 	freekick_kicker?: PlayerId;
+	max_allowed_bots: number;
+	our_keeper_id?: PlayerId;
 }
 
 export interface GetDebugMapResponse {
@@ -435,8 +454,12 @@ export interface RawGameStateData {
 	operating_team: TeamColor;
 	/** The player who performed the freekick (for double touch tracking) */
 	freekick_kicker?: TeamPlayerId;
+	blue_team_max_allowed_bots: number;
+	yellow_team_max_allowed_bots: number;
 	blue_team_yellow_cards: number;
 	yellow_team_yellow_cards: number;
+	blue_team_keeper_id?: PlayerId;
+	yellow_team_keeper_id?: PlayerId;
 }
 
 /** A struct to store the world state from a single frame. */
@@ -460,6 +483,7 @@ export interface TeamData {
 	current_game_state: GameStateData;
 	ball_on_our_side?: Duration;
 	ball_on_opp_side?: Duration;
+	kicked_ball?: AutorefKickedBallTeam;
 }
 
 /** The current status of the executor. */
@@ -496,6 +520,7 @@ export interface WorldData {
 	side_assignment: SideAssignment;
 	ball_on_blue_side?: Duration;
 	ball_on_yellow_side?: Duration;
+	autoref_info?: AutorefInfo;
 }
 
 export interface WorldUpdate {
@@ -670,3 +695,5 @@ export type WsMessage =
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];
+export type Duration = number;
+export type HashSet<T> = Array<T>;

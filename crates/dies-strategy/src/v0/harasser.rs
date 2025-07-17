@@ -103,12 +103,14 @@ fn should_cancel_pickup_ball(s: &RobotSituation) -> bool {
 pub fn score_as_harasser(s: &RobotSituation) -> f64 {
     let mut score = 40.0;
 
+    // Strongly prefer non-wallers
+    if s.current_role_is("waller") {
+        return 0.0;
+    }
+
     // Find unmarked opponents in our half
     let unmarked_threats = find_unmarked_threats(s);
     if unmarked_threats.is_empty() {
-        // No threats to mark, but we can still be useful for fallback duties
-        score = 10.0;
-
         return score;
     }
 

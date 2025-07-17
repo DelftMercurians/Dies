@@ -35,22 +35,6 @@ pub fn build_penalty_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
         .into()
 }
 
-fn choose_penalty_target(s: &RobotSituation) -> Vector2 {
-    if let Some(field) = &s.world.field_geom {
-        let goal_x = field.field_length / 2.0;
-        let half_goal_width = field.goal_width / 2.0;
-
-        let hash = (s.player_id.as_u32() as f64 * 0.6180339887498949) % 1.0;
-        if hash > 0.5 {
-            Vector2::new(goal_x, half_goal_width)
-        } else {
-            Vector2::new(goal_x, -half_goal_width)
-        }
-    } else {
-        s.get_opp_goal_position()
-    }
-}
-
 pub fn score_penalty_kicker(s: &RobotSituation) -> f64 {
     90.0
 }
