@@ -67,7 +67,7 @@ fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
     // Define the three points of the shallow arc
     let left_point = Vector2::new(goal_pos.x + 50.0, -geom.goal_width / 2.0);
     let right_point = Vector2::new(goal_pos.x + 50.0, geom.goal_width / 2.0);
-    let forward_point = Vector2::new(goal_pos.x + 600.0, 0.0); // 40cm forward from goal center
+    let forward_point = Vector2::new(goal_pos.x + 400.0, 0.0); // 40cm forward from goal center
 
     // Calculate circle center and radius that passes through all three points
     let (circle_center, circle_radius) =
@@ -156,10 +156,11 @@ fn score_arc_position(s: &RobotSituation, position: Vector2) -> f64 {
     // be close to the classical position
     let goal_pos = s.get_own_goal_position();
     let goal_distance = (position - goal_pos).norm();
-    score -= goal_distance;
+    score -= goal_distance * 1.2;
 
     // Negative distance to ball (closer is better)
-    let ball_distance = (ball_pos - position).norm();
+
+    let ball_distance = (ball_pos + ball_vel * 0.3 - position).norm();
     score -= ball_distance;
 
     // Score based on distance to ball velocity line (if ball is moving)
@@ -180,12 +181,7 @@ fn score_arc_position(s: &RobotSituation, position: Vector2) -> f64 {
         };
 
         // Negative distance to velocity line (closer is better)
-        score -= perpendicular_dist / time_to_intersect;
-
-        // Bonus for being ahead of the ball in the velocity direction
-        if projection > 0.0 {
-            score -= projection * 0.5 / time_to_intersect;
-        }
+        score -= perpendicular_dist / time_to_intersect.max(0.5);
     }
 
     score
