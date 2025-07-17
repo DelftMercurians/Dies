@@ -288,6 +288,18 @@ fn evaluate_boundary_position(
     ball_pos: Vector2,
     goal_pos: Vector2,
 ) -> f64 {
+    let field = s.field();
+    let margin = 150.0; // at what distance the ball in penalty area is safe from attackers
+
+    if let Some(ball) = &s.world.ball {
+        let ball_pos = ball_pos + ball.velocity.xy() * 0.3;
+    }
+
+    if (ball_pos.x <= -field.field_length + field.penalty_area_depth - margin) && ball_pos.y.abs() < (field.penalty_area_width / 2.0 - margin) {
+        // in this case we actually want to just stay somewhere non-blocking
+        return (ball_pos - pos).norm(); // bigger is better thus
+    }
+
     // Higher score for positions that better block the ball-to-goal line
     let ball_to_goal = goal_pos - ball_pos;
     let ball_to_pos = pos - ball_pos;
@@ -297,8 +309,8 @@ fn evaluate_boundary_position(
     let perpendicular_dist = (ball_to_pos - ball_to_goal.normalize() * projection).norm();
 
     // Score based on being on the line and distance from ball
-    let blocking_score = 1.0 / (1.0 + perpendicular_dist);
-    let distance_score = projection.max(0.0) / ball_to_goal.norm();
+    let blocking_score = -perpendicular_dist * 2.0;
+    let distance_score = -(ball_pos - pos).magnitude();
 
     blocking_score + distance_score
 }
