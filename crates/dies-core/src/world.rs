@@ -171,6 +171,7 @@ pub struct GameStateData {
     /// The player who performed the freekick, if it was us (for double touch tracking)
     /// Only Some until another player touches the ball
     pub freekick_kicker: Option<PlayerId>,
+    pub max_allowed_bots: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -182,6 +183,8 @@ pub struct RawGameStateData {
     pub operating_team: TeamColor,
     /// The player who performed the freekick (for double touch tracking)
     pub freekick_kicker: Option<TeamPlayerId>,
+    pub blue_team_max_allowed_bots: u32,
+    pub yellow_team_max_allowed_bots: u32,
     #[typeshare(serialized_as = "u32")]
     pub blue_team_yellow_cards: usize,
     #[typeshare(serialized_as = "u32")]
@@ -731,6 +734,8 @@ pub fn mock_world_data() -> WorldData {
             freekick_kicker: None,
             blue_team_yellow_cards: 0,
             yellow_team_yellow_cards: 0,
+            blue_team_max_allowed_bots: 6,
+            yellow_team_max_allowed_bots: 6,
         },
         side_assignment: SideAssignment::YellowOnPositive,
         ball_on_blue_side: None,
@@ -790,6 +795,7 @@ pub fn mock_team_data() -> TeamData {
             us_operating: true,
             yellow_cards: 0,
             freekick_kicker: None,
+            max_allowed_bots: 6,
         },
         ball_on_our_side: None,
         ball_on_opp_side: None,

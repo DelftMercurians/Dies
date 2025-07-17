@@ -447,6 +447,18 @@ impl Executor {
     pub fn update_from_gc_msg(&mut self, message: Referee) {
         log_referee(&message);
         self.tracker.update_from_referee(&message);
+
+        // Detect side assignment from referee message
+        if let Some(blue_on_positive) = message.blue_team_on_positive_half {
+            self.team_controllers.side_assignment = if blue_on_positive {
+                SideAssignment::BlueOnPositive
+            } else {
+                SideAssignment::YellowOnPositive
+            };
+            self.tracker
+                .set_side_assignment(self.team_controllers.side_assignment);
+        }
+
         self.update_team_controller();
     }
 

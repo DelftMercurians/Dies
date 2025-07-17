@@ -1,11 +1,11 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 
 use dies_core::{
-    ExecutorSettings, GameState, GcRefereeMsg, Obstacle, PlayerCmd, PlayerCmdUntransformer,
-    PlayerId, RoleType, SideAssignment, TeamColor, TeamData, Vector2,
+    ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
+    SideAssignment, TeamColor, TeamData, Vector2,
 };
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ use crate::{
     behavior_tree::{
         BehaviorTree, BtContext, GameContext, RobotSituation, RoleAssignmentSolver, Strategy,
     },
-    PlayerControlInput, ScriptError,
+    PlayerControlInput,
 };
 
 pub struct TeamController {
@@ -238,7 +238,7 @@ impl TeamController {
             }
         };
 
-        let allowed_number_of_robots = (6 - world_data.current_game_state.yellow_cards).max(0);
+        let allowed_number_of_robots = world_data.current_game_state.max_allowed_bots;
         if active_robots.len() > allowed_number_of_robots {
             let n_robots_to_remove =
                 (active_robots.len() - allowed_number_of_robots).clamp(0, active_robots.len());
@@ -505,7 +505,6 @@ impl TeamController {
                     .map(|i| !i.velocity.is_zero())
                     .unwrap_or(false);
 
-                let role_type = input_to_use.role_type;
                 let avoid_ball = input_to_use.avoid_ball;
                 let mut obstacles = Vec::new();
                 if avoid_ball {

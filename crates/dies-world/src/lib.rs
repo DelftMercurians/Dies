@@ -165,6 +165,8 @@ pub struct WorldTracker {
     tracker_settings: TrackerSettings,
     blue_team_yellow_cards: usize,
     yellow_team_yellow_cards: usize,
+    blue_team_max_allowed_bots: u32,
+    yellow_team_max_allowed_bots: u32,
 
     blue_team_settings: TeamSpecificSettings,
     yellow_team_settings: TeamSpecificSettings,
@@ -203,6 +205,8 @@ impl WorldTracker {
             tracker_settings: settings.tracker_settings.clone(),
             blue_team_yellow_cards: 0,
             yellow_team_yellow_cards: 0,
+            blue_team_max_allowed_bots: 6,
+            yellow_team_max_allowed_bots: 6,
             blue_team_settings: settings.blue_team_settings.clone(),
             yellow_team_settings: settings.yellow_team_settings.clone(),
             ball_on_blue_side_since: None,
@@ -333,14 +337,8 @@ impl WorldTracker {
                 .filter(|t| **t > 0)
                 .count() as usize;
 
-        // Detect side assignment from referee message TODO: make this work
-        // if let Some(blue_on_positive) = data.blue_team_on_positive_half {
-        //     self.side_assignment = Some(if blue_on_positive {
-        //         SideAssignment::BlueOnPositive
-        //     } else {
-        //         SideAssignment::YellowOnPositive
-        //     });
-        // }
+        self.blue_team_max_allowed_bots = data.blue.max_allowed_bots();
+        self.yellow_team_max_allowed_bots = data.yellow.max_allowed_bots();
     }
 
     pub fn set_side_assignment(&mut self, side_assignment: SideAssignment) {
@@ -525,6 +523,8 @@ impl WorldTracker {
             freekick_kicker: self.game_state_tracker.get_freekick_kicker(),
             blue_team_yellow_cards: self.blue_team_yellow_cards,
             yellow_team_yellow_cards: self.yellow_team_yellow_cards,
+            blue_team_max_allowed_bots: self.blue_team.get_max_allowed_bots(),
+            yellow_team_max_allowed_bots: self.yellow_team.get_max_allowed_bots(),
         };
 
         WorldData {
