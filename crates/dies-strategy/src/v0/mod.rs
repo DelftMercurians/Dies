@@ -1,13 +1,8 @@
 use dies_core::{GameState, Handicap, PlayerId, TeamColor};
-use dies_executor::behavior_tree_api::GameContext;
+use dies_executor::behavior_tree_api::{GameContext, RobotSituation};
 
 use crate::v0::{
-    freekick_interference::score_free_kick_interference,
-    freekick_kicker::{score_free_kick_kicker, score_kickoff_kicker},
-    harasser::score_as_harasser,
-    penalty_kicker::score_penalty_kicker,
-    striker::score_striker,
-    waller::score_as_waller,
+    harasser::score_as_harasser, penalty_kicker::score_penalty_kicker, striker::score_striker,
 };
 
 mod utils;
@@ -35,9 +30,8 @@ pub fn v0_strategy(game: &mut GameContext) {
     game.add_role("goalkeeper")
         .count(1)
         .can_be_reassigned(false)
-        // .require(|s| s.player_id == PlayerId::new(2))
         .if_must_reassign_can_we_do_it_now(can_goalie_be_reassigned)
-        .score(|_| 100000.0)
+        .score(|s| 100.0 * s.player_id().as_u32() as f64)
         .behavior(|s| keeper::build_goalkeeper_tree(s));
 
     // Game state specific roles
@@ -49,7 +43,14 @@ pub fn v0_strategy(game: &mut GameContext) {
                 game.add_role("kickoff_kicker")
                     .count(1)
                     .exclude(|s| s.has_handicap(Handicap::NoKicker))
-                    .score(score_kickoff_kicker)
+                    .score(|s| {
+                        let score = score_for_kicker(s);
+                        if s.position().x < 0.0 {
+                            score * 2.0
+                        } else {
+                            score
+                        }
+                    })
                     .behavior(|s| kickoff_kicker::build_kickoff_kicker_tree(s));
             }
         }
@@ -59,7 +60,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                 game.add_role("free_kick_kicker")
                     .count(1)
                     .exclude(|s| s.has_handicap(Handicap::NoKicker))
-                    .score(score_free_kick_kicker)
+                    .score(score_for_kicker)
                     .behavior(|s| freekick_kicker::build_free_kick_kicker_tree(s));
             } else {
                 // Free kick interference
@@ -130,3 +131,51 @@ pub fn v0_strategy(game: &mut GameContext) {
             .behavior(|s| striker::build_striker_tree(s));
     }
 }
+
+fn score_for_kicker(s: &RobotSituation) -> f64 {
+    let current_role = s.current_role();
+    let ball_dist = s.distance_to_ball();
+    if current_role.contains("striker") {
+        10_0000.0 * ball_dist
+    } else if current_role.contains("harasser") {
+        5_000.0 * ball_dist
+    } else if !current_role.contains("goalkeeper") {
+        1_000.0 * ball_dist
+    } else {
+        0.0
+    }
+}
+
+fn score_free_kick_interference(s: &RobotSituation) -> f64 {
+    let mut score = 70.0;
+
+    // Prefer robots that can position between ball and our goal
+    if let Some(ball) = &s.world.ball {
+        let ball_pos = ball.position.xy();
+        let goal_pos = s.get_own_goal_position();
+        let my_pos = s.player_data().position;
+
+        // Calculate positioning score
+        let ball_to_goal = goal_pos - ball_pos;
+        let ball_to_me = my_pos - ball_pos;
+        let projection =
+            (ball_to_me.x * ball_to_goal.x + ball_to_me.y * ball_to_goal.y) / ball_to_goal.norm();
+        let projection_ratio = projection / ball_to_goal.norm();
+
+        if projection_ratio > 0.2 && projection_ratio < 0.8 {
+            score += 20.0;
+        }
+    }
+
+    score
+}
+
+// fn score_striker(s: &RobotSituation) -> f64 {
+//     // Smoothly prefer robots on our side, with a soft transition at x=0
+//     // Uses a logistic function to create a smooth step
+//     let x = s.position().x;
+//     let field_length = s.field().field_length;
+//     let k = 0.01; // steepness of the transition, adjust as needed
+//     let weight = 1.0 / (1.0 + ((k * x).exp())); // smoothly transitions from 1 to 0 as x goes from negative to positive
+//     1000.0 * (field_length + x) * weight
+// }

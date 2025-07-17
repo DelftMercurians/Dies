@@ -9,30 +9,6 @@ pub fn build_free_kick_interference_tree(_s: &RobotSituation) -> BehaviorNode {
         .into()
 }
 
-pub fn score_free_kick_interference(s: &RobotSituation) -> f64 {
-    let mut score = 70.0;
-
-    // Prefer robots that can position between ball and our goal
-    if let Some(ball) = &s.world.ball {
-        let ball_pos = ball.position.xy();
-        let goal_pos = s.get_own_goal_position();
-        let my_pos = s.player_data().position;
-
-        // Calculate positioning score
-        let ball_to_goal = goal_pos - ball_pos;
-        let ball_to_me = my_pos - ball_pos;
-        let projection =
-            (ball_to_me.x * ball_to_goal.x + ball_to_me.y * ball_to_goal.y) / ball_to_goal.norm();
-        let projection_ratio = projection / ball_to_goal.norm();
-
-        if projection_ratio > 0.2 && projection_ratio < 0.8 {
-            score += 20.0;
-        }
-    }
-
-    score
-}
-
 fn calculate_free_kick_defense_position(s: &RobotSituation) -> Vector2 {
     if let Some(ball) = &s.world.ball {
         let ball_pos = ball.position.xy();

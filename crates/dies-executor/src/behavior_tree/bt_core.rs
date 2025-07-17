@@ -244,6 +244,28 @@ impl RobotSituation {
             .all(|h| !handicaps.contains(h))
     }
 
+    pub fn current_role(&self) -> String {
+        self.role_assignments
+            .get(&self.player_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn get_players_with_role(&self, role: &str) -> Vec<PlayerData> {
+        self.world
+            .own_players
+            .iter()
+            .filter(|p| {
+                self.role_assignments
+                    .get(&p.id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .contains(role)
+            })
+            .map(|p| p.clone())
+            .collect()
+    }
+
     pub fn can_touch_ball(&self) -> bool {
         !matches!(self.world.current_game_state.freekick_kicker, Some(kicker) if kicker == self.player_id)
     }
