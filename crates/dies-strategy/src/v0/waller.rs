@@ -530,7 +530,8 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
         let y_bound = field.penalty_area_width / 2.0 - margin;
         if ball_pos.x < x_bound && ball_pos.y.abs() < y_bound {
             // in this case we actually want to just stay somewhere non-blocking
-            return (ball_pos - pos).norm() - (pos - s.player_data().position).norm() * 0.5; // bigger is better thus
+            return (ball_pos - pos).norm() - (pos - s.player_data().position).norm() * 0.5;
+            // bigger is better thus
         }
     }
 
