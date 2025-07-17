@@ -3,6 +3,7 @@ use dies_executor::behavior_tree_api::{GameContext, RobotSituation};
 
 use crate::v0::{
     harasser::score_as_harasser, penalty_kicker::score_penalty_kicker, striker::score_striker,
+    waller::score_as_waller,
 };
 
 mod utils;
@@ -60,7 +61,14 @@ pub fn v0_strategy(game: &mut GameContext) {
                 game.add_role("free_kick_kicker")
                     .count(1)
                     .exclude(|s| s.has_handicap(Handicap::NoKicker))
-                    .score(score_for_kicker)
+                    .score(|s| {
+                        let score = score_for_kicker(s);
+                        if s.am_closest_to_ball() {
+                            score + 5.0
+                        } else {
+                            score
+                        }
+                    })
                     .behavior(|s| freekick_kicker::build_free_kick_kicker_tree(s));
             } else {
                 // Free kick interference
@@ -84,20 +92,10 @@ pub fn v0_strategy(game: &mut GameContext) {
     }
 
     // Standard roles
-    // game.add_role("waller_1")
-    //     .max(1)
-    //     .score(score_as_waller)
-    //     .behavior(|s| waller::build_waller_tree(s));
-
-    // game.add_role("waller_2")
-    //     .max(1)
-    //     .score(score_as_waller)
-    //     .behavior(|s| waller::build_waller_tree(s));
-
-    // game.add_role("harasser_2")
-    //     .max(1)
-    //     .score(score_as_harasser)
-    //     .behavior(|s| harasser::build_harasser_tree(s));
+    game.add_role("waller_1")
+        .max(1)
+        .score(score_as_waller)
+        .behavior(|s| waller::build_waller_tree(s));
 
     if game.ball_has_been_on_opp_side_for_at_least(10.0) {
         game.add_role("striker_2")
@@ -130,17 +128,22 @@ pub fn v0_strategy(game: &mut GameContext) {
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .behavior(|s| striker::build_striker_tree(s));
     }
+
+    game.add_role("striker_5")
+        .score(score_striker)
+        .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
+        .behavior(|s| striker::build_striker_tree(s));
 }
 
 fn score_for_kicker(s: &RobotSituation) -> f64 {
     let current_role = s.current_role();
-    let ball_dist = s.distance_to_ball();
+    // let ball_dist = s.distance_to_ball();
     if current_role.contains("striker") {
-        10_0000.0 * ball_dist
+        10.0
     } else if current_role.contains("harasser") {
-        5_000.0 * ball_dist
+        5.0
     } else if !current_role.contains("goalkeeper") {
-        1_000.0 * ball_dist
+        1.0
     } else {
         0.0
     }
