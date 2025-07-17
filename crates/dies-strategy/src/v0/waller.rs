@@ -520,15 +520,17 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
     };
 
     if let Some(field) = &s.world.field_geom {
-        let pos = position_tuple.iter().sum::<Vector2>() / position_tuple.len() as f64;
-        let margin = 0.0; // at what distance the ball in penalty area is safe from attackers
+        let pos = position_tuple
+            .iter()
+            .fold(Vector2::new(0.0, 0.0), |acc, &v| acc + v)
+            / position_tuple.len() as f64;
+        let margin = 150.0; // at what distance the ball in penalty area is safe from attackers
         let ball_pos = ball.position.xy();
-        if (ball_pos.x <= -field.field_length + field.penalty_area_depth - margin)
-            && ball_pos.y.abs() < (field.penalty_area_width / 2.0 - margin)
-        {
-            println!("ball in penalty area");
+        let x_bound = -field.field_length / 2.0 + field.penalty_area_depth - margin;
+        let y_bound = field.penalty_area_width / 2.0 - margin;
+        if ball_pos.x < x_bound && ball_pos.y.abs() < y_bound {
             // in this case we actually want to just stay somewhere non-blocking
-            return (ball_pos - pos).norm(); // bigger is better thus
+            return (ball_pos - pos).norm() - (pos - s.player_data().position).norm() * 0.5; // bigger is better thus
         }
     }
 

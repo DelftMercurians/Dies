@@ -62,6 +62,19 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
 
 /// Check if a harasser should go pickup the ball
 fn should_pickup_ball(s: &RobotSituation) -> bool {
+    // if the ball is deep within our penalty area
+    if let Some(ball) = &s.world.ball {
+        let ball_pos = ball.position.xy();
+        if let Some(field) = &s.world.field_geom {
+            let margin = 150.0;
+            let x_bound = -field.field_length / 2.0 + field.penalty_area_depth - margin;
+            let y_bound = field.penalty_area_width / 2.0 - margin;
+            if ball_pos.x < x_bound && ball_pos.y.abs() < y_bound {
+                return false;
+            }
+        }
+    }
+
     if s.game_state_is_not(GameState::Run) {
         return false;
     }
@@ -97,6 +110,18 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
 }
 
 fn should_cancel_pickup_ball(s: &RobotSituation) -> bool {
+    if let Some(ball) = &s.world.ball {
+        let ball_pos = ball.position.xy();
+        if let Some(field) = &s.world.field_geom {
+            let margin = 150.0;
+            let x_bound = -field.field_length / 2.0 + field.penalty_area_depth - margin;
+            let y_bound = field.penalty_area_width / 2.0 - margin;
+            if ball_pos.x < x_bound && ball_pos.y.abs() < y_bound {
+                return true;
+            }
+        }
+    }
+
     s.ball_position().x > 100.0 || s.distance_of_closest_opp_player_to_ball() < 150.0
 }
 
@@ -203,6 +228,17 @@ fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
     let ball_pos = s.ball_position();
     let own_goal = s.get_own_goal_position();
 
+    // start by checking if the ball is in our defence area, if so -> get the fuck out of the way
+    if let Some(field) = &s.world.field_geom {
+        let margin = 150.0; // at what distance the ball in penalty area is safe from attackers
+        let x_bound = -field.field_length / 2.0 + field.penalty_area_depth - margin;
+        let y_bound = field.penalty_area_width / 2.0 - margin;
+        if ball_pos.x < x_bound && ball_pos.y.abs() < y_bound {
+            // in this case we actually want to just stay somewhere non-blocking
+            return Vector2::new(-3100.0, -1000.0);
+        }
+    }
+
     // Check if closest opponent is within 0.5m of ball
     if let Some(closest_opp) = s.get_closest_opp_player_to_ball() {
         let opp_to_ball_dist = (closest_opp.position - ball_pos).norm();
@@ -256,6 +292,17 @@ fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
 fn calculate_secondary_harasser_position(s: &RobotSituation) -> Vector2 {
     let ball_pos = s.ball_position();
     let harass_distance = 300.0;
+
+    // start by checking if the ball is in our defence area, if so -> get the fuck out of the way
+    if let Some(field) = &s.world.field_geom {
+        let margin = 150.0; // at what distance the ball in penalty area is safe from attackers
+        let x_bound = -field.field_length / 2.0 + field.penalty_area_depth - margin;
+        let y_bound = field.penalty_area_width / 2.0 - margin;
+        if ball_pos.x < x_bound && ball_pos.y.abs() < y_bound {
+            // in this case we actually want to just stay somewhere non-blocking
+            return Vector2::new(-3100.0, 1000.0);
+        }
+    }
 
     // Find unmarked opponent on our side
     let unmarked_threats = find_unmarked_threats(s);

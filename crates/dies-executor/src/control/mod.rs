@@ -1,6 +1,7 @@
 #[cfg(feature = "mpc")]
 mod mpc;
 mod mtp;
+mod passing;
 mod player_controller;
 mod player_input;
 mod rvo;
@@ -8,7 +9,6 @@ mod team_context;
 mod team_controller;
 mod two_step_mtp;
 mod yaw_control;
-mod passing;
 
 pub use team_context::*;
 

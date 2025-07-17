@@ -215,7 +215,7 @@ impl TwoStepMTP {
         world_data: &TeamData,
         current_player: &PlayerData,
         avoid_goal_area: bool,
-        obstacles: Vec<Obstacle>
+        obstacles: Vec<Obstacle>,
     ) -> f64 {
         let mut total_cost = 0.0;
         let max_future = 0.5;
@@ -225,12 +225,20 @@ impl TwoStepMTP {
             let future_world = self.world_into_future(world_data, current_player, future_time);
             let discount = (max_future - future_time) / max_future;
 
-            total_cost += discount * self.calculate_path_cost(start, mid, end, &future_world, current_player, avoid_goal_area, obstacles.clone());
+            total_cost += discount
+                * self.calculate_path_cost(
+                    start,
+                    mid,
+                    end,
+                    &future_world,
+                    current_player,
+                    avoid_goal_area,
+                    obstacles.clone(),
+                );
         }
 
         total_cost
     }
-
 
     fn world_into_future(&self, world: &TeamData, current_player: &PlayerData, t: f64) -> TeamData {
         let mut world = world.clone();
@@ -238,8 +246,8 @@ impl TwoStepMTP {
         for robot in world
             .own_players
             .iter_mut()
-            .chain(world.opp_players.iter_mut()) {
-
+            .chain(world.opp_players.iter_mut())
+        {
             if robot.id == current_player.id {
                 continue;
             }
