@@ -24,6 +24,7 @@ const MAX_ACCELERATION: f64 = 125000.0;
 pub enum Obstacle {
     Circle { center: Vector2, radius: f64 },
     Rectangle { min: Vector2, max: Vector2 },
+    Line { start: Vector2, end: Vector2 }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -484,11 +485,19 @@ impl TeamData {
 
             match self.current_game_state.game_state {
                 GameState::Stop | GameState::BallReplacement(_) => {
-                    // Add obstacle to prevent getting close to the ball
                     if let Some(ball) = &self.ball {
                         obstacles.push(Obstacle::Circle {
                             center: ball.position.xy(),
                             radius: STOP_BALL_AVOIDANCE_RADIUS,
+                        });
+
+                    }
+                }
+                GameState::BallReplacement(target_ball_pos) => {
+                    if let Some(ball) = &self.ball {
+                        obstacles.push(Obstacle::Line {
+                            start: ball.position.xy(),
+                            end: target_ball_pos
                         });
                     }
                 }

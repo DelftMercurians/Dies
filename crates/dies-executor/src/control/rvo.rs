@@ -54,6 +54,9 @@ pub fn velocity_obstacle_update(
                 let upper = Vector2::from(max + max) / 2.0;
                 compute_obstacle_velocity_obstacle_rect(player, &lower, &upper, player_radius)
             }
+            Obstacle::Line { start, end } => {
+                continue;
+            }
         };
         rvo_ba_all.push(rvo_ba);
     }

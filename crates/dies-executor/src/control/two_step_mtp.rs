@@ -226,6 +226,10 @@ impl TwoStepMTP {
         let mut total_cost = 0.1 * ((start - mid).magnitude() + (mid - end).magnitude());
         let robot_scare = 190.0; // mm - 2xrobot radius + some margin
         let ball_scare = 100.0; // mm robot_radius + ball_radius
+        //
+        let pstart = start;
+        let pmid = mid;
+        let pend = end;
 
         // Calculate intersection cost with other robots
         for robot in world_data
@@ -267,12 +271,16 @@ impl TwoStepMTP {
         for obstacle in obstacles {
             let intersection_length = match obstacle {
                 Obstacle::Circle { center, radius } => {
-                    self.line_circle_intersection_length(start, mid, center, radius)
-                        + self.line_circle_intersection_length(mid, end, center, radius) * 0.1
+                    self.line_circle_intersection_length(pstart, pmid, center, radius)
+                        + self.line_circle_intersection_length(pmid, pend, center, radius) * 0.1
                 }
                 Obstacle::Rectangle { min, max } => {
-                    self.line_rectangle_intersection_length(start, mid, min, max)
-                        + self.line_rectangle_intersection_length(mid, end, min, max) * 0.1
+                    self.line_rectangle_intersection_length(pstart, pmid, min, max)
+                        + self.line_rectangle_intersection_length(pmid, pend, min, max) * 0.1
+                }
+                Obstacle::Line {start, end} => {
+                    self.line_line_collision_avoidance(pstart, pmid, start, end) +
+                    self.line_line_collision_avoidance(pmid, pend, start, end) * 0.1
                 }
             };
             if intersection_length > 0.0 {
@@ -604,6 +612,69 @@ impl TwoStepMTP {
         }
 
         cost
+    }
+
+    fn line_line_collision_avoidance(
+        &self,
+        path_start: Vector2,
+        path_end: Vector2,
+        line_start: Vector2,
+        line_end: Vector2,
+    ) -> f64 {
+        let path_vec = path_end - path_start;
+        let path_length = path_vec.magnitude();
+
+        if path_length < f64::EPSILON {
+            return 0.0;
+        }
+
+        let path_dir = path_vec / path_length;
+        let step_size = 50.0;
+        let mut total_cost = 0.0;
+
+        // Sample circles along the path, including endpoints
+        let num_steps = (path_length / step_size).ceil() as usize;
+
+        for i in 0..=(num_steps + 1) {
+            let t = if num_steps == 0 {
+                0.0
+            } else {
+                (i as f64 / num_steps as f64) * path_length
+            };
+            let sample_point = path_start + path_dir * t;
+
+            // Calculate distance from sample point to the line obstacle
+            let distance = self.point_to_line_distance(sample_point, line_start, line_end);
+
+            // If within collision radius, add cost
+            let collision_radius = 700.0; // Similar to robot collision radius
+            if distance < collision_radius {
+                let penetration = collision_radius - distance;
+                total_cost += penetration * step_size / 500.0; // Cost proportional to penetration and step size
+            }
+        }
+
+        total_cost
+    }
+
+    fn point_to_line_distance(&self, point: Vector2, line_start: Vector2, line_end: Vector2) -> f64 {
+        let line_vec = line_end - line_start;
+        let line_length = line_vec.magnitude();
+
+        if line_length < f64::EPSILON {
+            // Line is a point
+            return (point - line_start).magnitude();
+        }
+
+        let line_dir = line_vec / line_length;
+        let to_point = point - line_start;
+        let projection = to_point.dot(&line_dir);
+
+        // Clamp projection to line segment
+        let clamped_projection = projection.clamp(0.0, line_length);
+        let closest_point = line_start + line_dir * clamped_projection;
+
+        (point - closest_point).magnitude()
     }
 
     fn line_line_intersection(

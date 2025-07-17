@@ -576,10 +576,6 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         && opponents_are_far
         && i_am_the_closest_robot;
 
-    if should {
-        println!("waller decides to go for the ball cuz it sucks lollolol");
-    }
-
     should
 }
 

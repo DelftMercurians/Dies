@@ -5,7 +5,7 @@ use std::{
 
 use dies_core::{
     ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
-    SideAssignment, TeamColor, TeamData, Vector2,
+    SideAssignment, TeamColor, TeamData, Vector2
 };
 use std::sync::Arc;
 
@@ -506,6 +506,7 @@ impl TeamController {
                     .unwrap_or(false);
 
                 let avoid_ball = input_to_use.avoid_ball;
+
                 let mut obstacles = Vec::new();
                 if avoid_ball {
                     if let Some(ball) = world_data.ball.as_ref() {
@@ -514,6 +515,18 @@ impl TeamController {
                             radius: 100.0,
                         });
                     }
+                }
+
+                match world_data.current_game_state.game_state {
+                    GameState::BallReplacement(target_ball_pos) => {
+                        if let Some(ball) = &world_data.ball {
+                            obstacles.push(Obstacle::Line {
+                                start: ball.position.xy(),
+                                end: target_ball_pos
+                            });
+                        }
+                    }
+                    _ => {}
                 }
 
                 // Get the avoid_goal_area flag for this specific player (default to true)
