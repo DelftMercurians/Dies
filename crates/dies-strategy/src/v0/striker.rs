@@ -1,7 +1,7 @@
 use core::f64;
 
 use dies_core::{Angle, GameState, Vector2};
-use dies_executor::behavior_tree_api::*;
+use dies_executor::{behavior_tree_api::*, find_best_receiver_target};
 
 use crate::v0::utils::{fetch_and_shoot_with_prep, get_heading_toward_ball};
 
@@ -125,28 +125,26 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
 }
 
 fn striker_position(s: &RobotSituation, last_pos: Option<Vector2>) -> Vector2 {
-    // Check if we need to move out of the way of a teammate's shot
     if let Some(avoid_pos) = get_out_of_shot_position(s) {
         return avoid_pos;
     }
 
-    // Get all strikers sorted
+    let closest_striker = s
+        .get_players_with_role("striker")
+        .into_iter()
+        .min_by(|a, b| {
+            let a_dist = (s.ball_position() - a.position).norm();
+            let b_dist = (s.ball_position() - b.position).norm();
+            a_dist
+                .partial_cmp(&b_dist)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    let am_closest_striker = closest_striker
+        .map(|p| p.id == s.player_id)
+        .unwrap_or(false);
+
     let ball_pos = s.ball_position();
-    let mut strikers = s.get_players_with_role("striker");
-    strikers.sort_by_key(|p| p.id);
-
-    // Find my position in the striker list
-    let my_index = strikers
-        .iter()
-        .position(|p| p.id == s.player_id)
-        .unwrap_or(0);
-    let player_hash = s.player_id_hash();
-
-    // Compute available positions in priority order
-    let mut positions = Vec::new();
-
-    // 1. Primary harasser position (if ball on opponent side and opponent close to ball)
-    if ball_pos.x > 0.0 {
+    if am_closest_striker {
         if let Some(closest_opp) = s.get_closest_opp_player_to_ball() {
             let opp_to_ball_dist = (closest_opp.position - ball_pos).norm();
             if opp_to_ball_dist < 500.0 {
@@ -154,120 +152,22 @@ fn striker_position(s: &RobotSituation, last_pos: Option<Vector2>) -> Vector2 {
                 let to_ball = (ball_pos - closest_opp.position).normalize();
                 let target_pos = closest_opp.position + to_ball * harass_distance;
                 let constrained_pos = s.constrain_to_field(target_pos);
-                positions.push(Vector2::new(constrained_pos.x.max(50.0), constrained_pos.y));
-            }
-        }
-    }
-
-    // 2. Secondary harasser position (opposite side from ball)
-    if ball_pos.x > 0.0 && s.world.opp_players.len() > 1 {
-        // Find second closest opponent to ball
-        let mut opp_distances: Vec<_> = s
-            .world
-            .opp_players
-            .iter()
-            .map(|opp| (opp, (opp.position - ball_pos).norm()))
-            .collect();
-        opp_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
-        if opp_distances.len() >= 2 {
-            let second_opp = opp_distances[1].0;
-            let harass_distance = 350.0;
-            // Position on opposite side of field from ball
-            let ball_side = ball_pos.y.signum();
-            let target_y = second_opp.position.y - ball_side * harass_distance;
-            let target_pos = Vector2::new(second_opp.position.x + 200.0, target_y);
-            let constrained_pos = s.constrain_to_field(target_pos);
-            positions.push(Vector2::new(constrained_pos.x.max(50.0), constrained_pos.y));
-        }
-    }
-
-    // 3. Coverage positions in opponent half
-    let goal_pos = s.get_opp_goal_position();
-
-    // Wide left coverage
-    let left_coverage = Vector2::new(
-        ball_pos.x * 0.6 + goal_pos.x * 0.4,
-        -1500.0 + player_hash * 500.0,
-    );
-    positions.push(s.constrain_to_field(Vector2::new(left_coverage.x.max(50.0), left_coverage.y)));
-
-    // Wide right coverage
-    let right_coverage = Vector2::new(
-        ball_pos.x * 0.6 + goal_pos.x * 0.4,
-        1500.0 - player_hash * 500.0,
-    );
-    positions
-        .push(s.constrain_to_field(Vector2::new(right_coverage.x.max(50.0), right_coverage.y)));
-
-    // Central support position
-    let central_coverage = Vector2::new(ball_pos.x * 0.7 + goal_pos.x * 0.3, ball_pos.y * 0.5);
-    positions.push(s.constrain_to_field(Vector2::new(
-        central_coverage.x.max(50.0),
-        central_coverage.y,
-    )));
-
-    // Select position based on index and hash
-    let position_index = if positions.len() > my_index {
-        my_index
-    } else {
-        // Use hash to distribute excess strikers among available positions
-        ((player_hash * positions.len() as f64) as usize) % positions.len()
-    };
-
-    let mut target = positions[position_index];
-
-    // Apply repulsion from other strikers to avoid clustering
-    for player in &s.world.own_players {
-        if player.id == s.player_id {
-            continue;
-        }
-
-        let role = s
-            .role_assignments
-            .get(&player.id)
-            .cloned()
-            .unwrap_or_default();
-        if role.contains("striker") {
-            let to_player = target - player.position;
-            let dist = to_player.norm();
-
-            if dist < 800.0 && dist > 0.0 {
-                let repulsion_strength = (800.0 - dist) / 800.0 * 400.0;
-                let repulsion = to_player.normalize() * repulsion_strength;
-                target += repulsion;
-            }
-        }
-    }
-
-    // Ensure we stay on opponent side and out of penalty area
-    target.x = target.x.max(50.0);
-
-    // Avoid opponent penalty area
-    if let Some(field) = &s.world.field_geom {
-        let half_length = field.field_length / 2.0;
-        let half_penalty_width = field.penalty_area_width / 2.0;
-
-        if target.x >= half_length - field.penalty_area_depth
-            && target.y.abs() <= half_penalty_width
-        {
-            target.y = if target.y >= 0.0 {
-                half_penalty_width + 100.0
+                return constrained_pos;
             } else {
-                -half_penalty_width - 100.0
-            };
+                // harass ball
+                let harass_distance = 350.0;
+                let ball_to_goal = (s.get_opp_goal_position() - ball_pos).normalize();
+                let target_pos = ball_pos - harass_distance * ball_to_goal;
+                let constrained_pos = s.constrain_to_field(target_pos);
+                return constrained_pos;
+            }
         }
+    } else {
+        let (target, _) = find_best_receiver_target(&s.into(), last_pos);
+        return target;
     }
 
-    // Apply stability
-    if let Some(last_pos) = last_pos {
-        let distance_to_last = (target - last_pos).norm();
-        if distance_to_last < 100.0 {
-            target = last_pos * 0.7 + target * 0.3;
-        }
-    }
-
-    s.constrain_to_field(target)
+    s.ball_position()
 }
 
 fn get_out_of_shot_position(s: &RobotSituation) -> Option<Vector2> {
