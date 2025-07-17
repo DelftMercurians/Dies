@@ -172,17 +172,17 @@ impl FetchBallWithPreshoot {
 
                     if ctx.player.breakbeam_ball_detected {
                         // Check if we should move with ball before shooting
-                        if self.should_move_with_ball(ctx, *target_pos) {
-                            self.state = FetchBallWithPreshootState::MoveWithBall {
-                                target_pos: *target_pos,
-                                start_pos: player_pos,
-                            };
-                            return SkillProgress::Continue(input);
-                        } else {
-                            input.with_kicker(Kick { force: 1.0 });
-                            self.state = FetchBallWithPreshootState::Done;
-                            return SkillProgress::Continue(input);
-                        }
+                        // if self.should_move_with_ball(ctx, *target_pos) {
+                        //     self.state = FetchBallWithPreshootState::MoveWithBall {
+                        //         target_pos: *target_pos,
+                        //         start_pos: player_pos,
+                        //     };
+                        //     return SkillProgress::Continue(input);
+                        // } else {
+                        input.with_kicker(Kick { force: 1.0 });
+                        self.state = FetchBallWithPreshootState::Done;
+                        return SkillProgress::Continue(input);
+                        // }
                     }
 
                     if (player_pos - start_pos).magnitude() > self.distance_limit {

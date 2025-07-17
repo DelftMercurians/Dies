@@ -99,6 +99,7 @@ fn get_kickoff_striker_position(s: &RobotSituation) -> Vector2 {
 }
 
 fn should_pickup_ball(s: &RobotSituation) -> bool {
+    return true;
     if s.game_state_is_not(GameState::Run) {
         return false;
     }
@@ -141,7 +142,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
     let d = closest_opponent_dist.unwrap_or(f64::INFINITY) - my_dist;
 
     ball.position.x > -80.0
-        && (closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true) || d > 80.0)
+        && (closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true))
         && closest_striker
 }
 
@@ -162,7 +163,7 @@ fn striker_harassing_score(s: &RobotSituation) -> f64 {
         let opp_to_ball_dist = (closest_opp.position - ball_pos).norm();
 
         // Only harass if opponent is close to ball
-        if opp_to_ball_dist > 800.0 {
+        if opp_to_ball_dist > 500.0 {
             return 0.0;
         }
 
@@ -237,7 +238,7 @@ fn striker_ball_tracking_position(s: &RobotSituation, last_pos: Option<Vector2>)
         let dist = to_player.norm() + f64::EPSILON;
 
         if dist < 800.0 {
-            let repulsion_strength = (800.0 - dist) / 800.0 * 200.0;
+            let repulsion_strength = (800.0 - dist) / 800.0 * 600.0;
             let repulsion = to_player.normalize() * repulsion_strength;
             target_x += repulsion.x;
             target_y += repulsion.y;

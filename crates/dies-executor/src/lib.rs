@@ -667,6 +667,16 @@ impl Executor {
                             log::error!("Failed to receive BS msg: {}", err);
                         }
                     }
+                    // while let Ok((team_color, bs_msg)) = bs_client.try_recv() {
+                    //     let team_color = team_color.or(self.team_controllers.active_teams().get(0).copied());
+                    //     if let Some(team_color) = team_color {
+                    //         self.update_from_bs_msg(
+                    //             team_color,
+                    //             bs_msg,
+                    //             WorldInstant::now_real(),
+                    //         );
+                    //     }
+                    // }
                 }
                 _ = cmd_interval.tick() => {
                     for (team_color, cmd) in self.player_commands() {

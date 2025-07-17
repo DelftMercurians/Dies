@@ -18,21 +18,28 @@ mod striker;
 mod waller;
 
 pub fn v0_strategy(game: &mut GameContext) {
-    // Goalkeeper - always exactly one
     let game_state = game.game_state();
-    game.add_role("goalkeeper")
-        .count(1)
-        // .can_be_reassigned(false)
-        .require(move |s| {
-            game_state
-                .our_keeper_id
-                .map(|id| id == s.player_id())
-                .unwrap_or(true)
-        })
-        // .exclude(|s| s.has_handicap(Handicap::NoKicker))
-        .if_must_reassign_can_we_do_it_now(true)
-        .score(|s| 10_000.0 * s.player_id().as_u32() as f64)
-        .behavior(|s| keeper::build_goalkeeper_tree(s));
+    if game.team_data().own_players.len() == 1 {
+        // Goalkeeper - always exactly one
+        game.add_role("goalkeeper")
+            .count(1)
+            // .can_be_reassigned(false)
+            .require(move |s| {
+                game_state
+                    .our_keeper_id
+                    .map(|id| id == s.player_id())
+                    .unwrap_or(true)
+            })
+            // .exclude(|s| s.has_handicap(Handicap::NoKicker))
+            .if_must_reassign_can_we_do_it_now(true)
+            .score(|s| 10_000.0 * s.player_id().as_u32() as f64)
+            .behavior(|s| keeper::build_goalkeeper_tree(s));
+        return;
+    } else {
+        game.add_role("striker")
+            .score(score_striker)
+            .behavior(|s| striker::build_striker_tree(s));
+    }
 
     // Game state specific roles
     match game_state.game_state {
