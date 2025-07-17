@@ -170,7 +170,7 @@ pub struct BallData {
     pub detected: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default)]
 #[typeshare]
 pub struct GameStateData {
     /// The state of current game
@@ -184,6 +184,7 @@ pub struct GameStateData {
     /// Only Some until another player touches the ball
     pub freekick_kicker: Option<PlayerId>,
     pub max_allowed_bots: u32,
+    pub our_keeper_id: Option<PlayerId>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -201,6 +202,9 @@ pub struct RawGameStateData {
     pub blue_team_yellow_cards: usize,
     #[typeshare(serialized_as = "u32")]
     pub yellow_team_yellow_cards: usize,
+
+    pub blue_team_keeper_id: Option<PlayerId>,
+    pub yellow_team_keeper_id: Option<PlayerId>,
 }
 
 /// A struct to store the player state from a single frame.
@@ -773,10 +777,10 @@ pub fn nearest_safe_pos(
 }
 
 pub fn is_pos_in_field(pos: Vector2, field: &FieldGeometry) -> bool {
-    const MARGIN: f64 = 100.0;
+    const MARGIN: f64 = 0.0;
     // check if pos outside field
-    if pos.x.abs() > field.field_length / 2.0 - MARGIN
-        || pos.y.abs() > field.field_width / 2.0 - MARGIN
+    if pos.x.abs() > field.boundary_width + field.field_length / 2.0 - MARGIN
+        || pos.y.abs() > field.boundary_width + field.field_width / 2.0 - MARGIN
     {
         return false;
     }
@@ -835,6 +839,8 @@ pub fn mock_world_data() -> WorldData {
             yellow_team_yellow_cards: 0,
             blue_team_max_allowed_bots: 6,
             yellow_team_max_allowed_bots: 6,
+            blue_team_keeper_id: None,
+            yellow_team_keeper_id: None,
         },
         side_assignment: SideAssignment::YellowOnPositive,
         ball_on_blue_side: None,
@@ -896,6 +902,7 @@ pub fn mock_team_data() -> TeamData {
             yellow_cards: 0,
             freekick_kicker: None,
             max_allowed_bots: 6,
+            our_keeper_id: None,
         },
         ball_on_our_side: None,
         ball_on_opp_side: None,

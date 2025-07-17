@@ -132,6 +132,7 @@ pub struct PlayerControlInput {
     /// 0 means 'as fast as possible', 1 means 'as careful as possible'
     pub care: f64,
 
+    pub aggressiveness: f64,
     pub acceleration_limit: Option<f64>,
     pub speed_limit: Option<f64>,
     pub angular_acceleration_limit: Option<f64>,
@@ -156,6 +157,7 @@ impl Default for PlayerControlInput {
             dribbling_speed: 0.0,
             kicker: KickerControlInput::default(),
             care: 0.0,
+            aggressiveness: 0.0,
             acceleration_limit: None,
             speed_limit: None,
             angular_acceleration_limit: None,

@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    Angle, AutorefKickedBallTeam, BallData, GameStateData, PlayerData, PlayerGlobalMoveCmd,
-    PlayerId, PlayerMoveCmd, RobotCmd, RotationDirection, TeamData, Vector2, Vector3, WorldData,
+    Angle, AutorefKickedBallTeam, BallData, GameState, GameStateData, PlayerData,
+    PlayerGlobalMoveCmd, PlayerId, PlayerMoveCmd, RobotCmd, RotationDirection, TeamData, Vector2,
+    Vector3, WorldData,
 };
 
 /// # Team-Specific Coordinate System
@@ -94,7 +95,13 @@ impl SideAssignment {
                 .map(|b| self.transform_to_team_coords_ball(color, &b)),
             field_geom: world_data.field_geom.clone(),
             current_game_state: GameStateData {
-                game_state: world_data.game_state.game_state,
+                game_state: if let GameState::BallReplacement(pos) =
+                    world_data.game_state.game_state
+                {
+                    GameState::BallReplacement(self.transform_vec2(color, &pos))
+                } else {
+                    world_data.game_state.game_state
+                },
                 us_operating: world_data.game_state.operating_team == color,
                 yellow_cards: match color {
                     TeamColor::Blue => world_data.game_state.blue_team_yellow_cards,
@@ -112,6 +119,10 @@ impl SideAssignment {
                 max_allowed_bots: match color {
                     TeamColor::Blue => world_data.game_state.blue_team_max_allowed_bots,
                     TeamColor::Yellow => world_data.game_state.yellow_team_max_allowed_bots,
+                },
+                our_keeper_id: match color {
+                    TeamColor::Blue => world_data.game_state.blue_team_keeper_id,
+                    TeamColor::Yellow => world_data.game_state.yellow_team_keeper_id,
                 },
             },
             ball_on_our_side: match color {

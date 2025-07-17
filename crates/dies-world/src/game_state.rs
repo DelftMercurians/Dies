@@ -1,8 +1,8 @@
 use std::time::Instant;
 
 use dies_core::{
-    GameState, PlayerData, TeamColor, TeamPlayerId, Vector2, Vector3, WorldData, BALL_RADIUS,
-    PLAYER_RADIUS,
+    GameState, PlayerData, PlayerId, TeamColor, TeamPlayerId, Vector2, Vector3, WorldData,
+    BALL_RADIUS, PLAYER_RADIUS,
 };
 use dies_protos::ssl_gc_referee_message::{referee::Command, Referee};
 
@@ -28,6 +28,8 @@ pub struct GameStateTracker {
     last_cmd: Option<Command>,
     freekick_kicker: Option<TeamPlayerId>,
     freekick_start_time: Option<Instant>,
+    blue_team_keeper_id: Option<PlayerId>,
+    yellow_team_keeper_id: Option<PlayerId>,
 }
 
 impl GameStateTracker {
@@ -45,6 +47,8 @@ impl GameStateTracker {
             last_cmd: None,
             freekick_kicker: None,
             freekick_start_time: None,
+            blue_team_keeper_id: None,
+            yellow_team_keeper_id: None,
         }
     }
 
@@ -125,7 +129,17 @@ impl GameStateTracker {
             _ => (),
         }
 
+        self.blue_team_keeper_id = Some(PlayerId::new(data.blue.goalkeeper()));
+        self.yellow_team_keeper_id = Some(PlayerId::new(data.yellow.goalkeeper()));
+
         self.game_state
+    }
+
+    pub fn get_blue_team_keeper_id(&self) -> Option<PlayerId> {
+        self.blue_team_keeper_id
+    }
+    pub fn get_yellow_team_keeper_id(&self) -> Option<PlayerId> {
+        self.yellow_team_keeper_id
     }
 
     pub fn get_operator_is_blue(&self) -> Option<bool> {
@@ -187,7 +201,7 @@ impl GameStateTracker {
 
     fn is_robot_touching_ball(&self, player: &PlayerData, ball_pos: Vector2) -> bool {
         let distance = (player.position - ball_pos).norm();
-        distance <= (PLAYER_RADIUS + BALL_RADIUS + 50.0)
+        distance <= (PLAYER_RADIUS + BALL_RADIUS + 10.0)
     }
 
     fn find_closest_robot_to_ball(
@@ -233,7 +247,7 @@ impl GameStateTracker {
         ball_data: Option<&BallData>,
     ) {
         // Only track during FreeKick state or Run state with an active kicker
-        if self.game_state != GameState::FreeKick
+        if (self.game_state != GameState::FreeKick || self.game_state != GameState::Kickoff)
             && (self.game_state != GameState::Run || self.freekick_kicker.is_none())
         {
             return;

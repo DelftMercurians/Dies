@@ -12,6 +12,8 @@ pub struct ContinuousNode {
     position: Option<Argument<Vector2>>,
     last_position: Option<Vector2>,
     heading: Option<Argument<Angle>>,
+    aggressiveness: f64,
+    carefullness: f64,
     last_heading: Option<Angle>,
     description: String,
 }
@@ -27,6 +29,8 @@ impl ContinuousNode {
             last_position: None,
             heading,
             last_heading: None,
+            aggressiveness: 0.0,
+            carefullness: 0.0,
             description,
         }
     }
@@ -41,6 +45,8 @@ impl ContinuousNode {
         let mut control_input = PlayerControlInput::default();
         control_input.position = position;
         control_input.yaw = heading;
+        control_input.aggressiveness = self.aggressiveness;
+        control_input.care = self.carefullness;
 
         self.last_position = position;
         self.last_heading = heading;
@@ -98,6 +104,8 @@ impl ContinuousNode {
 pub struct ContinuousBuilder {
     position: Option<Argument<Vector2>>,
     heading: Option<Argument<Angle>>,
+    aggressiveness: f64,
+    carefullness: f64,
     description: String,
 }
 
@@ -106,6 +114,8 @@ impl ContinuousBuilder {
         Self {
             position: None,
             heading: None,
+            aggressiveness: 0.0,
+            carefullness: 0.0,
             description: description.as_ref().to_string(),
         }
     }
@@ -117,6 +127,16 @@ impl ContinuousBuilder {
 
     pub fn heading(mut self, heading: impl Into<Argument<Angle>>) -> Self {
         self.heading = Some(heading.into());
+        self
+    }
+
+    pub fn aggressiveness(mut self, aggressiveness: f64) -> Self {
+        self.aggressiveness = aggressiveness;
+        self
+    }
+
+    pub fn carefullness(mut self, carefullness: f64) -> Self {
+        self.carefullness = carefullness;
         self
     }
 

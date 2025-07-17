@@ -1,13 +1,11 @@
 use crate::behavior_tree::PassingTarget;
 use crate::KickerControlInput::Kick;
-use crate::ShootTarget;
 use crate::{control::Velocity, PlayerControlInput};
+use crate::{find_best_preshoot, ShootTarget};
 use dies_core::{Angle, Vector2};
 use std::sync::Arc;
 
-use crate::control::{
-    find_best_preshoot_target_target, find_nearest_opponent_distance_along_direction, PassingStore,
-};
+use crate::control::{find_nearest_opponent_distance_along_direction, PassingStore};
 use crate::skills::{SkillCtx, SkillProgress, SkillResult};
 
 #[derive(Clone)]
@@ -123,7 +121,9 @@ impl FetchBallWithPreshoot {
                     let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 180.0;
 
                     let distance_to_prep_target = (prep_target - player_pos).magnitude();
-                    if distance_to_prep_target < 15.0 {
+                    if distance_to_prep_target < 15.0
+                        || (distance_to_prep_target < 80.0 && ctx.player.velocity.norm() < 30.0)
+                    {
                         self.state = FetchBallWithPreshootState::ApproachBall {
                             start_pos: player_pos,
                             ball_pos,

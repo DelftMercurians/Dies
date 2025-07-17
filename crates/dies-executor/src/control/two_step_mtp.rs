@@ -51,6 +51,7 @@ impl TwoStepMTP {
         max_speed: f64,
         max_decel: f64,
         carefullness: f64,
+        aggressiveness: f64,
         player_context: &PlayerContext,
         world_data: &TeamData,
         current_player: &PlayerData,
@@ -116,8 +117,10 @@ impl TwoStepMTP {
 
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
+            let aggressiveness = 1.0 + aggressiveness;
             let proportional_velocity_magnitude =
-                (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp
+                (f64::max(intermediate_distance - self.cutoff_distance, 0.0)
+                    * (self.kp * aggressiveness)
                     + (150.0 - 70.0 * carefullness))
                     .clamp(0.0, max_speed);
             let current_vel = self.last_vel.get_or_insert(velocity).clone();
@@ -219,7 +222,7 @@ impl TwoStepMTP {
         let mut total_cost = 0.1 * ((start - mid).magnitude() + (mid - end).magnitude());
         let robot_scare = 190.0; // mm - 2xrobot radius + some margin
         let ball_scare = 100.0; // mm robot_radius + ball_radius
-        //
+                                //
         let pstart = start;
         let pmid = mid;
         let pend = end;
@@ -271,9 +274,9 @@ impl TwoStepMTP {
                     self.line_rectangle_intersection_length(pstart, pmid, min, max)
                         + self.line_rectangle_intersection_length(pmid, pend, min, max) * 0.1
                 }
-                Obstacle::Line {start, end} => {
-                    self.line_line_collision_avoidance(pstart, pmid, start, end) +
-                    self.line_line_collision_avoidance(pmid, pend, start, end) * 0.1
+                Obstacle::Line { start, end } => {
+                    self.line_line_collision_avoidance(pstart, pmid, start, end)
+                        + self.line_line_collision_avoidance(pmid, pend, start, end) * 0.1
                 }
             };
             if intersection_length > 0.0 {
@@ -537,10 +540,9 @@ impl TwoStepMTP {
         let margin = 40.0;
 
         // Field boundaries
-        let fmargin = margin / 2.0;
-        let half_width = field.field_width / 2.0 - fmargin;
-        let half_length = field.field_length / 2.0 - fmargin;
-        let boundary_width = field.boundary_width;
+        let fmargin = 0.0;
+        let half_width = field.boundary_width + field.field_width / 2.0 - fmargin;
+        let half_length = field.boundary_width + field.field_length / 2.0 - fmargin;
 
         // Check intersection with field boundaries
         let field_lines = [
@@ -650,7 +652,12 @@ impl TwoStepMTP {
         total_cost
     }
 
-    fn point_to_line_distance(&self, point: Vector2, line_start: Vector2, line_end: Vector2) -> f64 {
+    fn point_to_line_distance(
+        &self,
+        point: Vector2,
+        line_start: Vector2,
+        line_end: Vector2,
+    ) -> f64 {
         let line_vec = line_end - line_start;
         let line_length = line_vec.magnitude();
 

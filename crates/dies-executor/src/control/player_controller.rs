@@ -287,6 +287,7 @@ impl PlayerController {
                     input.speed_limit.unwrap_or(self.max_speed),
                     input.acceleration_limit.unwrap_or(self.max_decel),
                     input.care,
+                    input.aggressiveness,
                     player_context,
                     world,
                     state,
@@ -582,8 +583,8 @@ impl PlayerController {
         avoid_goal_area: bool,
         margin: f64,
     ) -> bool {
-        let field_half_width = geometry.field_width / 2.0 - margin / 4.0;
-        let field_half_length = geometry.field_length / 2.0 - margin / 4.0;
+        let field_half_width = geometry.boundary_width + geometry.field_width / 2.0;
+        let field_half_length = geometry.boundary_width + geometry.field_length / 2.0;
 
         // Check if outside field boundaries
         if position.x < -field_half_length + margin

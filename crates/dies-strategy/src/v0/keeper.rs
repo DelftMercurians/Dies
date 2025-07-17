@@ -21,30 +21,33 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
                 .description("Ball in penalty area")
                 .condition(|s| s.ball_in_own_penalty_area() && s.ball_speed() < 500.0)
                 .then(
-                    sequence_node()
-                        .description("Clear ball")
-                        .add(fetch_ball().description("Clear Ball".to_string()).build())
-                        .add(
-                            guard_node()
-                                .description("Have ball?")
-                                .condition(|s| s.has_ball())
-                                .then(
-                                    sequence_node()
-                                        .description("Execute Clear")
-                                        .add(
-                                            face_position(|s: &RobotSituation| {
-                                                s.get_field_center()
-                                            })
-                                            .with_ball()
-                                            .description("Face Field".to_string())
-                                            .build(),
-                                        )
-                                        .add(kick().description("Clear!".to_string()).build())
-                                        .build(),
-                                )
-                                .build(),
-                        )
+                    fetch_ball_with_preshoot()
+                        .description("Clear Ball".to_string())
                         .build(),
+                    // sequence_node()
+                    //     .description("Clear ball")
+                    //     .add(fetch_ball().description("Clear Ball".to_string()).build())
+                    //     .add(
+                    //         guard_node()
+                    //             .description("Have ball?")
+                    //             .condition(|s| s.has_ball())
+                    //             .then(
+                    //                 sequence_node()
+                    //                     .description("Execute Clear")
+                    //                     .add(
+                    //                         face_position(|s: &RobotSituation| {
+                    //                             s.get_field_center()
+                    //                         })
+                    //                         .with_ball()
+                    //                         .description("Face Field".to_string())
+                    //                         .build(),
+                    //                     )
+                    //                     .add(kick().description("Clear!".to_string()).build())
+                    //                     .build(),
+                    //             )
+                    //             .build(),
+                    //     )
+                    //     .build(),
                 )
                 .build(),
         )
@@ -53,6 +56,8 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
             continuous("arc position")
                 .position(calculate_arc_position)
                 .heading(get_goalkeeper_heading)
+                .aggressiveness(6.0)
+                .carefullness(-40.0)
                 .build(),
         )
         .description("Goalkeeper")
@@ -181,7 +186,7 @@ fn score_arc_position(s: &RobotSituation, position: Vector2) -> f64 {
         };
 
         // Negative distance to velocity line (closer is better)
-        score -= perpendicular_dist / time_to_intersect.max(0.5);
+        score -= perpendicular_dist * 10.0 / time_to_intersect.max(0.5);
     }
 
     score

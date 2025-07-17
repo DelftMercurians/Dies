@@ -28,15 +28,22 @@ pub fn v0_strategy(game: &mut GameContext) {
             _ => false,
         };
     // Goalkeeper - always exactly one
+    let game_state = game.game_state();
+    let keeper_id_set = game_state.our_keeper_id.is_some();
     game.add_role("goalkeeper")
         .count(1)
         .can_be_reassigned(false)
+        .require(move |s| {
+            game_state
+                .our_keeper_id
+                .map(|id| id == s.player_id())
+                .unwrap_or(true)
+        })
         .if_must_reassign_can_we_do_it_now(can_goalie_be_reassigned)
-        .score(|s| 100.0 * s.player_id().as_u32() as f64)
+        .score(|s| 10_000.0 * s.player_id().as_u32() as f64)
         .behavior(|s| keeper::build_goalkeeper_tree(s));
 
     // Game state specific roles
-    let game_state = game.game_state();
     match game_state.game_state {
         GameState::Kickoff | GameState::PrepareKickoff => {
             if game_state.us_operating {

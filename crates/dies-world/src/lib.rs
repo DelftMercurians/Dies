@@ -544,6 +544,8 @@ impl WorldTracker {
             yellow_team_yellow_cards: self.yellow_team_yellow_cards,
             blue_team_max_allowed_bots: self.blue_team_max_allowed_bots,
             yellow_team_max_allowed_bots: self.yellow_team_max_allowed_bots,
+            blue_team_keeper_id: self.game_state_tracker.get_blue_team_keeper_id(),
+            yellow_team_keeper_id: self.game_state_tracker.get_yellow_team_keeper_id(),
         };
 
         WorldData {

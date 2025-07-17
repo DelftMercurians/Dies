@@ -19,11 +19,14 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
                         .semaphore_id("defender_pickup_ball".into())
                         .max_entry(1)
                         .do_then(
-                            sequence_node()
-                                .add(fetch_ball().description("Pickup ball".to_string()).build())
-                                .add(shoot(|s: &RobotSituation| find_best_shoot_target(s)))
-                                .description("Pass kickoff")
+                            fetch_ball_with_preshoot()
+                                .description("Pickup ball".to_string())
                                 .build(),
+                            // sequence_node()
+                            //     .add(fetch_ball().description("Pickup ball".to_string()).build())
+                            //     .add(shoot(|s: &RobotSituation| find_best_shoot_target(s)))
+                            //     .description("Pass kickoff")
+                            //     .build(),
                         )
                         .build(),
                 )
@@ -558,6 +561,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         return false;
     }
     if !s.can_touch_ball() {
+        println!("waller can't touch ball");
         return false;
     }
 
