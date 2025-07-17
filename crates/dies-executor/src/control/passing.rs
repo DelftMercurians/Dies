@@ -407,10 +407,10 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore) -> (ShootTarget, f64) {
         let random_value = pseudo_random as f64 / 1000.0;
 
         if random_value < final_direct_prob {
-            println!("chosen direct shoot with p={:.3}", final_direct_prob);
+            // println!("chosen direct shoot with p={:.3}", final_direct_prob);
             best_target_direct
         } else {
-            println!("chosen pass with p={:.3}", 1.0 - final_direct_prob);
+            // println!("chosen pass with p={:.3}", 1.0 - final_direct_prob);
             best_target_pass
         }
     };

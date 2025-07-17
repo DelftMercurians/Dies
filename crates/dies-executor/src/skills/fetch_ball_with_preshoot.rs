@@ -14,6 +14,7 @@ pub struct FetchBallWithPreshoot {
     state: FetchBallWithPreshootState,
     shoot_target: Option<ShootTarget>,
     set_flag: bool,
+    distance_limit: f64,
 }
 
 #[derive(Clone)]
@@ -34,7 +35,13 @@ impl FetchBallWithPreshoot {
             state: FetchBallWithPreshootState::GoToPreshoot,
             shoot_target: None,
             set_flag: false,
+            distance_limit: 160.0,
         }
+    }
+
+    pub fn with_distance_limit(mut self, distance_limit: f64) -> Self {
+        self.distance_limit = distance_limit;
+        self
     }
 
     pub fn with_heading(mut self, heading: Angle) -> Self {
@@ -112,8 +119,9 @@ impl FetchBallWithPreshoot {
                         return SkillProgress::Continue(input);
                     }
 
-                    if (player_pos - start_pos).magnitude() > 160.0 {
-                        return SkillProgress::Done(SkillResult::Failure);
+                    if (player_pos - start_pos).magnitude() > self.distance_limit {
+                        input.with_kicker(Kick { force: 1.0 });
+                        self.state = FetchBallWithPreshootState::Done;
                     }
 
                     // Move forward towards the ball

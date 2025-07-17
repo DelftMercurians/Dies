@@ -1,8 +1,6 @@
 use dies_core::{GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
-use super::utils::fetch_and_shoot;
-
 pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
         .add(
@@ -18,7 +16,12 @@ pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                 )
                 .build(),
         )
-        .add(fetch_and_shoot())
+        .add(
+            fetch_ball_with_preshoot()
+                .description("Fetch and shoot".to_string())
+                .with_distance_limit(45.0)
+                .build(),
+        )
         .build()
         .into()
 }

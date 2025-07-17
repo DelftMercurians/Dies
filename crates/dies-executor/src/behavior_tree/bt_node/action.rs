@@ -47,7 +47,9 @@ pub enum SkillDefinition {
         duration_secs: Argument<f64>,
     },
     FetchBall,
-    FetchBallWithPreshoot,
+    FetchBallWithPreshoot {
+        distance_limit: f64,
+    },
     Shoot {
         target: Argument<ShootTarget>,
     },
@@ -162,8 +164,8 @@ impl ActionNode {
                     duration_secs.resolve(situation),
                 ))),
                 SkillDefinition::FetchBall => Some(Skill::FetchBall(FetchBall::new())),
-                SkillDefinition::FetchBallWithPreshoot => {
-                    let skill = FetchBallWithPreshoot::new();
+                SkillDefinition::FetchBallWithPreshoot { distance_limit } => {
+                    let skill = FetchBallWithPreshoot::new().with_distance_limit(*distance_limit);
                     Some(Skill::FetchBallWithPreshoot(skill))
                 }
                 SkillDefinition::Shoot { target } => {
@@ -471,21 +473,16 @@ impl FetchBallBuilder {
 }
 
 pub struct FetchBallWithPreshootBuilder {
-    preshoot_heading: Option<Argument<Angle>>,
+    distance_limit: f64,
     description: Option<String>,
 }
 
 impl FetchBallWithPreshootBuilder {
     pub fn new() -> Self {
         Self {
-            preshoot_heading: None,
+            distance_limit: 160.0,
             description: None,
         }
-    }
-
-    pub fn with_heading(mut self, heading: impl Into<Argument<Angle>>) -> Self {
-        self.preshoot_heading = Some(heading.into());
-        self
     }
 
     pub fn description(mut self, desc: String) -> Self {
@@ -493,8 +490,18 @@ impl FetchBallWithPreshootBuilder {
         self
     }
 
+    pub fn with_distance_limit(mut self, distance_limit: f64) -> Self {
+        self.distance_limit = distance_limit;
+        self
+    }
+
     pub fn build(self) -> ActionNode {
-        ActionNode::new(SkillDefinition::FetchBallWithPreshoot, self.description)
+        ActionNode::new(
+            SkillDefinition::FetchBallWithPreshoot {
+                distance_limit: self.distance_limit,
+            },
+            self.description,
+        )
     }
 }
 
