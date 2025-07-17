@@ -18,27 +18,19 @@ mod striker;
 mod waller;
 
 pub fn v0_strategy(game: &mut GameContext) {
-    let can_goalie_be_reassigned =
-        match (game.game_state().game_state, game.team_data().ball.as_ref()) {
-            (GameState::Stop | GameState::Timeout | GameState::Halt, Some(ball))
-                if ball.position.x > 0.0 =>
-            {
-                true
-            }
-            _ => false,
-        };
     // Goalkeeper - always exactly one
     let game_state = game.game_state();
     game.add_role("goalkeeper")
         .count(1)
-        .can_be_reassigned(false)
+        // .can_be_reassigned(false)
         .require(move |s| {
             game_state
                 .our_keeper_id
                 .map(|id| id == s.player_id())
                 .unwrap_or(true)
         })
-        .if_must_reassign_can_we_do_it_now(can_goalie_be_reassigned)
+        // .exclude(|s| s.has_handicap(Handicap::NoKicker))
+        .if_must_reassign_can_we_do_it_now(true)
         .score(|s| 10_000.0 * s.player_id().as_u32() as f64)
         .behavior(|s| keeper::build_goalkeeper_tree(s));
 
@@ -97,9 +89,9 @@ pub fn v0_strategy(game: &mut GameContext) {
         _ => {}
     }
 
-    v0_offense(game);
+    // v0_offense(game);
     // v0_neutral(game);
-    // v0_defence(game);
+    v0_defence(game);
 }
 
 pub fn v0_offense(game: &mut GameContext) {
@@ -227,18 +219,13 @@ pub fn v0_defence(game: &mut GameContext) {
         .behavior(|s| waller::build_waller_tree(s));
 
     // the last one: harasser 3
-    if game.ball_has_been_on_opp_side_for_at_least(10.0) {
-        game.add_role("striker_3")
-            .max(1)
-            .score(score_striker)
-            .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
-            .behavior(|s| striker::build_striker_tree(s));
-    } else {
-        game.add_role("harasser_3")
-            .max(1)
-            .score(score_as_harasser)
-            .behavior(|s| harasser::build_harasser_tree(s));
-    }
+    // if game.ball_has_been_on_opp_side_for_at_least(10.0) {
+    game.add_role("striker_3")
+        // .max(1)
+        .score(score_striker)
+        .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
+        .behavior(|s| striker::build_striker_tree(s));
+    // }
 }
 
 fn score_for_kicker(s: &RobotSituation) -> f64 {

@@ -669,11 +669,8 @@ impl Executor {
                     }
                 }
                 _ = cmd_interval.tick() => {
-                    let paused = { *self.paused_tx.borrow() };
-                    if !paused {
-                        for (team_color, cmd) in self.player_commands() {
-                            bs_client.send_no_wait(team_color, cmd);
-                        }
+                    for (team_color, cmd) in self.player_commands() {
+                        bs_client.send_no_wait(team_color, cmd);
                     }
                 }
             }

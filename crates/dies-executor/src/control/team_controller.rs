@@ -5,7 +5,7 @@ use std::{
 
 use dies_core::{
     ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
-    SideAssignment, TeamColor, TeamData, Vector2
+    SideAssignment, TeamColor, TeamData, Vector2,
 };
 use std::sync::Arc;
 
@@ -512,7 +512,7 @@ impl TeamController {
                     if let Some(ball) = world_data.ball.as_ref() {
                         obstacles.push(Obstacle::Circle {
                             center: ball.position.xy(),
-                            radius: 100.0 + 100.0 * input_to_use.care,
+                            radius: 21.0 + 100.0 * input_to_use.care,
                         });
                     }
                 }
@@ -522,7 +522,7 @@ impl TeamController {
                         if let Some(ball) = &world_data.ball {
                             obstacles.push(Obstacle::Line {
                                 start: ball.position.xy(),
-                                end: target_ball_pos
+                                end: target_ball_pos,
                             });
                         }
                     }

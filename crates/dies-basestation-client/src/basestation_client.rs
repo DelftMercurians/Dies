@@ -133,6 +133,7 @@ impl BasestationHandle {
             let mut all_ids = HashSet::new();
             'outer: loop {
                 // Send commands
+                let send_start = std::time::Instant::now();
                 'inner: loop {
                     match cmd_rx.try_recv() {
                         Ok(Message::PlayerCmd((team_color, cmd, resp))) => match cmd {
@@ -198,6 +199,8 @@ impl BasestationHandle {
                         Err(mpsc::error::TryRecvError::Empty) => break 'inner,
                     }
                 }
+                let send_elapsed = send_start.elapsed();
+                dies_core::debug_string("bs_send_took", send_elapsed.as_millis().to_string());
 
                 // Receive feedback
                 if let Connection::V1(monitor) = &mut connection {

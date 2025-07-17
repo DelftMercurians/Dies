@@ -20,7 +20,13 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 )
                 .build(),
         )
-        .add(try_receive())
+        .add(
+            guard_node()
+                .description("Can try recv")
+                .condition(|s| s.position().x > -100.0)
+                .then(try_receive())
+                .build(),
+        )
         .add(
             // Pickup ball if we can
             committing_guard_node()
@@ -28,7 +34,7 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .when(|s| should_pickup_ball(s)) // TODO: make sure that
                 // the closest robots gets it; on second thought, this is probably not
                 // implementable -> the roles are not available yet during the role assigment. so maybe not.
-                .until(|_| false)
+                .until(|s| s.position().x < 0.0)
                 .commit_to(
                     semaphore_node()
                         .do_then(fetch_and_shoot_with_prep())
@@ -41,7 +47,9 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
         .add(
             stateful_continuous("zoning")
                 .with_stateful_position(|s, last_pos| {
-                    let (target, score) = find_best_receiver_target(&s.into(), last_pos.copied());
+                    let (mut target, score) =
+                        find_best_receiver_target(&s.into(), last_pos.copied());
+                    target.x = target.x.max(0.0);
                     (target, Some(target))
                 })
                 .build(),

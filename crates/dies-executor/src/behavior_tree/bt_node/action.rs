@@ -570,20 +570,25 @@ pub fn to_player_at_pos(target: Argument<(PlayerId, Vector2)>) -> Argument<Shoot
     })
 }
 
-pub fn try_receive() -> BehaviorNode {
-    semaphore_node()
-        .semaphore_id("try_receive".into())
-        .max_entry(1)
-        .do_then(
-            sequence_node()
-                .ignore_fail()
-                .add(ActionNode::new(
-                    SkillDefinition::TryReceive,
-                    Some("Try receive?".to_string()),
-                ))
-                .add(fetch_ball_with_preshoot().build())
-                .build(),
-        )
-        .build()
-        .into()
+pub fn try_receive() -> ActionNode {
+    return ActionNode::new(
+        SkillDefinition::TryReceive,
+        Some("Try receive?".to_string()),
+    );
+    // semaphore_node()
+    //     .semaphore_id("try_receive".into())
+    //     .max_entry(1)
+    //     .do_then(
+    // sequence_node()
+    //     // .ignore_fail()
+    //     .add(ActionNode::new(
+    //         SkillDefinition::TryReceive,
+    //         Some("Try receive?".to_string()),
+    //     ))
+    //     .add(fetch_ball_with_preshoot().build())
+    //     .build()
+    //     .into()
+    // )
+    // .build()
+    // .into()
 }

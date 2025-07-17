@@ -56,6 +56,8 @@ impl ServerState {
     ) -> Self {
         let (script_error_tx, script_error_rx) = broadcast::channel(16);
 
+        let settings = ExecutorSettings::load_or_insert(&settings_file);
+        println!("settings: {:?}", settings.yellow_team_settings.handicaps);
         Self {
             is_live_available,
             update_rx,
@@ -65,7 +67,7 @@ impl ServerState {
             ui_mode: RwLock::new(ui_mode),
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
-            executor_settings: RwLock::new(ExecutorSettings::load_or_insert(&settings_file)),
+            executor_settings: RwLock::new(settings),
             script_error_tx,
             script_error_rx,
             settings_file,

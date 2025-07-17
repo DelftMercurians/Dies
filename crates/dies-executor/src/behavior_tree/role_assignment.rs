@@ -183,6 +183,11 @@ impl RoleAssignmentSolver {
         // Pre-compute eligible robots for each role
         let mut active_robots_sorted_by_id = active_robots.to_vec();
         active_robots_sorted_by_id.sort_by_key(|&id| id);
+        let active_robots_sorted_by_id = active_robots_sorted_by_id
+            .iter()
+            .rev()
+            .copied()
+            .collect::<Vec<_>>();
         let eligible_robots = self.compute_eligible_robots(
             problem,
             &active_robots_sorted_by_id,
@@ -267,6 +272,10 @@ impl RoleAssignmentSolver {
 
         // First pass: satisfy minimum requirements
         for (_, role) in &sorted_roles {
+            let empty_vec = Vec::new();
+            let eligible = eligible_robots.get(&role.name).unwrap_or(&empty_vec);
+
+            // println!("{}: eligible: {:?}", role.name, eligible);
             let current_count = assignments
                 .values()
                 .filter(|&name| name == &role.name)
@@ -275,8 +284,6 @@ impl RoleAssignmentSolver {
                 continue;
             }
 
-            let empty_vec = Vec::new();
-            let eligible = eligible_robots.get(&role.name).unwrap_or(&empty_vec);
             let available: Vec<_> = eligible
                 .iter()
                 .filter(|&&robot_id| !assigned_robots.contains(&robot_id))

@@ -4,6 +4,7 @@ use crate::{control::Velocity, PlayerControlInput};
 use crate::{find_best_preshoot, ShootTarget};
 use dies_core::{Angle, Vector2};
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::control::{find_nearest_opponent_distance_along_direction, PassingStore};
 use crate::skills::{SkillCtx, SkillProgress, SkillResult};
@@ -16,11 +17,14 @@ pub struct FetchBallWithPreshoot {
     set_flag: bool,
     distance_limit: f64,
     avoid_ball_care: f64,
+    go_to_preshoot_timer: Option<Instant>,
 }
 
 #[derive(Clone)]
 enum FetchBallWithPreshootState {
-    GoToPreshoot,
+    GoToPreshoot {
+        start_time: Option<Instant>,
+    },
     ApproachBall {
         start_pos: Vector2,
         ball_pos: Vector2,
@@ -38,11 +42,12 @@ impl FetchBallWithPreshoot {
     pub fn new() -> Self {
         Self {
             preshoot_heading: None,
-            state: FetchBallWithPreshootState::GoToPreshoot,
+            state: FetchBallWithPreshootState::GoToPreshoot { start_time: None },
             shoot_target: None,
             set_flag: false,
             distance_limit: 160.0,
             avoid_ball_care: 0.0,
+            go_to_preshoot_timer: None,
         }
     }
 
@@ -63,7 +68,7 @@ impl FetchBallWithPreshoot {
 
     pub fn state(&self) -> String {
         match &self.state {
-            FetchBallWithPreshootState::GoToPreshoot => "GoToPreshoot".to_string(),
+            FetchBallWithPreshootState::GoToPreshoot { .. } => "GoToPreshoot".to_string(),
             FetchBallWithPreshootState::ApproachBall { .. } => "ApproachBall".to_string(),
             FetchBallWithPreshootState::MoveWithBall { .. } => "MoveWithBall".to_string(),
             FetchBallWithPreshootState::Done => "Done".to_string(),
@@ -82,6 +87,11 @@ impl FetchBallWithPreshoot {
         }) = &self.shoot_target
         {
             if player_pos.x < 0.0 && target_player_pos.x > 0.0 && player_pos.x > -900.0 {
+                return true;
+            }
+        }
+        if let Some(ShootTarget::Goal(_)) = &self.shoot_target {
+            if player_pos.x < 0.0 && player_pos.x > -900.0 {
                 return true;
             }
         }
@@ -111,18 +121,20 @@ impl FetchBallWithPreshoot {
             let player_pos = ctx.player.position;
 
             match &self.state {
-                FetchBallWithPreshootState::GoToPreshoot => {
+                FetchBallWithPreshootState::GoToPreshoot { .. } => {
+                    let start_time = self.go_to_preshoot_timer.get_or_insert(Instant::now());
                     let shooting_target = find_best_preshoot(
                         &PassingStore::new(ctx.player.id, Arc::new(ctx.world.clone())),
                         self.shoot_target.clone(),
                     );
                     self.shoot_target = Some(shooting_target.clone());
                     let shooting_target = shooting_target.position().unwrap();
-                    let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 180.0;
+                    let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 150.0;
 
                     let distance_to_prep_target = (prep_target - player_pos).magnitude();
                     if distance_to_prep_target < 15.0
-                        || (distance_to_prep_target < 80.0 && ctx.player.velocity.norm() < 30.0)
+                        || (distance_to_prep_target < 90.0 && ctx.player.velocity.norm() < 10.0)
+                        || start_time.elapsed().as_secs_f64() > 7.0
                     {
                         self.state = FetchBallWithPreshootState::ApproachBall {
                             start_pos: player_pos,
@@ -136,7 +148,6 @@ impl FetchBallWithPreshoot {
                     let ball_heading = Angle::between_points(prep_target, ball_pos);
                     input.with_yaw(ball_heading);
                     input.avoid_ball = true;
-                    input.care = self.avoid_ball_care;
 
                     SkillProgress::Continue(input)
                 }

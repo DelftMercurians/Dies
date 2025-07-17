@@ -13,8 +13,8 @@ pub fn testing_strategy(game: &mut GameContext) {
         .score(|_| 100000.0)
         .behavior(|_| test_fetchball::build_test_fetchball());
 
-    game.add_role("receiver")
-        .count(1)
-        .score(|_| 100000.0)
-        .behavior(|_| test_receiver::build_test_receiver());
+    //     game.add_role("receiver")
+    //         .count(1)
+    //         .score(|_| 100000.0)
+    //         .behavior(|_| test_receiver::build_test_receiver());
 }
