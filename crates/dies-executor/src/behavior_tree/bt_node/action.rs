@@ -5,7 +5,7 @@ use super::{
     sanitize_id_fragment,
 };
 use crate::{
-    behavior_tree::{Argument, BehaviorNode},
+    behavior_tree::{semaphore_node, sequence_node, Argument, BehaviorNode},
     control::{PlayerContext, PlayerControlInput, ShootTarget},
     skills::{
         Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, Skill, SkillCtx,
@@ -570,9 +570,20 @@ pub fn to_player_at_pos(target: Argument<(PlayerId, Vector2)>) -> Argument<Shoot
     })
 }
 
-pub fn try_receive() -> ActionNode {
-    ActionNode::new(
-        SkillDefinition::TryReceive,
-        Some("Try receive?".to_string()),
-    )
+pub fn try_receive() -> BehaviorNode {
+    semaphore_node()
+        .semaphore_id("try_receive".into())
+        .max_entry(1)
+        .do_then(
+            sequence_node()
+                .ignore_fail()
+                .add(ActionNode::new(
+                    SkillDefinition::TryReceive,
+                    Some("Try receive?".to_string()),
+                ))
+                .add(fetch_ball_with_preshoot().build())
+                .build(),
+        )
+        .build()
+        .into()
 }

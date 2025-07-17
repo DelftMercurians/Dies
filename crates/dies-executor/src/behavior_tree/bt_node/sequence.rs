@@ -13,6 +13,7 @@ pub struct SequenceNode {
     description_text: String,
     node_id_fragment: String,
     current_child_index: usize,
+    ignore_fail: bool,
 }
 
 impl SequenceNode {
@@ -23,6 +24,7 @@ impl SequenceNode {
             node_id_fragment: sanitize_id_fragment(&desc),
             description_text: desc,
             current_child_index: 0,
+            ignore_fail: false,
         }
     }
 
@@ -86,23 +88,28 @@ impl SequenceNode {
                     );
                     return (BehaviorStatus::Running, input_opt);
                 }
-                (BehaviorStatus::Failure, _input_opt) => {
-                    self.current_child_index = 0;
-                    debug_tree_node(
-                        situation.debug_key(node_full_id.clone()),
-                        self.description(),
-                        node_full_id.clone(),
-                        self.get_child_node_ids(&situation.viz_path_prefix),
-                        false,
-                        "Sequence",
-                        Some(format!(
-                            "Failed at {}.{}",
-                            self.current_child_index + 1,
-                            self.children.len()
-                        )),
-                        Some("All must succeed in order".to_string()),
-                    );
-                    return (BehaviorStatus::Failure, None);
+                (BehaviorStatus::Failure, input_opt) => {
+                    if !self.ignore_fail {
+                        self.current_child_index = 0;
+                        debug_tree_node(
+                            situation.debug_key(node_full_id.clone()),
+                            self.description(),
+                            node_full_id.clone(),
+                            self.get_child_node_ids(&situation.viz_path_prefix),
+                            false,
+                            "Sequence",
+                            Some(format!(
+                                "Failed at {}.{}",
+                                self.current_child_index + 1,
+                                self.children.len()
+                            )),
+                            Some("All must succeed in order".to_string()),
+                        );
+                        return (BehaviorStatus::Failure, None);
+                    } else {
+                        self.current_child_index += 1;
+                        last_input_on_success = input_opt;
+                    }
                 }
             }
         }
@@ -160,6 +167,7 @@ impl From<SequenceNode> for BehaviorNode {
 pub struct SequenceNodeBuilder {
     children: Vec<BehaviorNode>,
     description: Option<String>,
+    ignore_fail: bool,
 }
 
 impl SequenceNodeBuilder {
@@ -167,6 +175,7 @@ impl SequenceNodeBuilder {
         Self {
             children: Vec::new(),
             description: None,
+            ignore_fail: false,
         }
     }
 
@@ -180,8 +189,15 @@ impl SequenceNodeBuilder {
         self
     }
 
+    pub fn ignore_fail(mut self) -> Self {
+        self.ignore_fail = true;
+        self
+    }
+
     pub fn build(self) -> SequenceNode {
-        SequenceNode::new(self.children, self.description)
+        let mut node = SequenceNode::new(self.children, self.description);
+        node.ignore_fail = true;
+        node
     }
 }
 

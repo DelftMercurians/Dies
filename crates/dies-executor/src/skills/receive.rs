@@ -92,7 +92,7 @@ impl TryReceive {
             .min();
         // if the closest opponent is too close, give up
         if let Some(closest_opponent_dist) = closest_opponent_dist {
-            if closest_opponent_dist < 120 {
+            if closest_opponent_dist < 60 {
                 println!("receive failed: closest opponent is too close");
                 return SkillProgress::Done(SkillResult::Failure);
             }
@@ -117,6 +117,7 @@ impl TryReceive {
                 intersection
             };
             input.with_position(clamped_intersection);
+            input.aggressiveness = 3.0;
 
             // if ctx.player.breakbeam_ball_detected {
             //     println!("receive success");
