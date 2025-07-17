@@ -11,6 +11,7 @@ pub fn build_kickoff_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                     go_to_position(|s: &RobotSituation| {
                         s.get_field_center() - Vector2::new(400.0, 0.0)
                     })
+                    .avoid_ball()
                     .description("Move to center")
                     .build(),
                 )

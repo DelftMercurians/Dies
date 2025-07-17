@@ -15,6 +15,7 @@ pub struct FetchBallWithPreshoot {
     shoot_target: Option<ShootTarget>,
     set_flag: bool,
     distance_limit: f64,
+    avoid_ball_care: f64,
 }
 
 #[derive(Clone)]
@@ -36,6 +37,7 @@ impl FetchBallWithPreshoot {
             shoot_target: None,
             set_flag: false,
             distance_limit: 160.0,
+            avoid_ball_care: 0.0,
         }
     }
 
@@ -46,6 +48,11 @@ impl FetchBallWithPreshoot {
 
     pub fn with_heading(mut self, heading: Angle) -> Self {
         self.preshoot_heading = Some(heading);
+        self
+    }
+
+    pub fn with_avoid_ball_care(mut self, avoid_ball_care: f64) -> Self {
+        self.avoid_ball_care = avoid_ball_care;
         self
     }
 
@@ -91,6 +98,7 @@ impl FetchBallWithPreshoot {
                     let ball_heading = Angle::between_points(prep_target, ball_pos);
                     input.with_yaw(ball_heading);
                     input.avoid_ball = true;
+                    input.care = self.avoid_ball_care;
 
                     SkillProgress::Continue(input)
                 }

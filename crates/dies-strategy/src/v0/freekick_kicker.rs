@@ -5,6 +5,7 @@ use crate::v0::utils::under_pressure;
 pub fn build_free_kick_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
     fetch_ball_with_preshoot()
         .description("Fetch and shoot".to_string())
+        .with_avoid_ball_care(1.0)
         .with_distance_limit(45.0)
         .build()
         .into()

@@ -512,7 +512,7 @@ impl TeamController {
                     if let Some(ball) = world_data.ball.as_ref() {
                         obstacles.push(Obstacle::Circle {
                             center: ball.position.xy(),
-                            radius: 100.0,
+                            radius: 100.0 + 100.0 * input_to_use.care,
                         });
                     }
                 }

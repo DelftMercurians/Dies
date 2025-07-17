@@ -474,6 +474,7 @@ impl FetchBallBuilder {
 
 pub struct FetchBallWithPreshootBuilder {
     distance_limit: f64,
+    avoid_ball_care: f64,
     description: Option<String>,
 }
 
@@ -481,6 +482,7 @@ impl FetchBallWithPreshootBuilder {
     pub fn new() -> Self {
         Self {
             distance_limit: 160.0,
+            avoid_ball_care: 0.0,
             description: None,
         }
     }
@@ -492,6 +494,11 @@ impl FetchBallWithPreshootBuilder {
 
     pub fn with_distance_limit(mut self, distance_limit: f64) -> Self {
         self.distance_limit = distance_limit;
+        self
+    }
+
+    pub fn with_avoid_ball_care(mut self, avoid_ball_care: f64) -> Self {
+        self.avoid_ball_care = avoid_ball_care;
         self
     }
 

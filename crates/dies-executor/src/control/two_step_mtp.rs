@@ -95,49 +95,42 @@ impl TwoStepMTP {
         };
 
         let current_speed = velocity.magnitude();
-        let care_factor = carefullness * 0.2;
         let time_to_target = intermediate_distance / max_speed;
 
-        player_context.debug_string("TwoStepMTPTimeToTarget", time_to_target.to_string());
-        player_context.debug_string(
-            "TwoStepMTPProportionalTimeWindow",
-            self.proportional_time_window.as_secs_f64().to_string(),
-        );
-        player_context.debug_string("TwoStepMTPKp", self.kp.to_string());
-        player_context.debug_string(
-            "TwoStepMTPcutoff_distance",
-            self.cutoff_distance.to_string(),
-        );
-        player_context.debug_string("TwoStepMTPCurrentSpeed", current_speed.to_string());
-        player_context.debug_string("TwoStepMTPMaxSpeed", max_speed.to_string());
-        player_context.debug_string("TwoStepMTPMaxAccel", max_accel.to_string());
-        player_context.debug_string("TwoStepMTPDt", dt.to_string());
-        player_context.debug_string("TwoStepMTPMaxDecel", max_decel.to_string());
-        player_context.debug_string("TwoStepMTPCarefullness", carefullness.to_string());
+        // player_context.debug_string("TwoStepMTPTimeToTarget", time_to_target.to_string());
+        // player_context.debug_string(
+        //     "TwoStepMTPProportionalTimeWindow",
+        //     self.proportional_time_window.as_secs_f64().to_string(),
+        // );
+        // player_context.debug_string("TwoStepMTPKp", self.kp.to_string());
+        // player_context.debug_string(
+        //     "TwoStepMTPcutoff_distance",
+        //     self.cutoff_distance.to_string(),
+        // );
+        // player_context.debug_string("TwoStepMTPCurrentSpeed", current_speed.to_string());
+        // player_context.debug_string("TwoStepMTPMaxSpeed", max_speed.to_string());
+        // player_context.debug_string("TwoStepMTPMaxAccel", max_accel.to_string());
+        // player_context.debug_string("TwoStepMTPDt", dt.to_string());
+        // player_context.debug_string("TwoStepMTPMaxDecel", max_decel.to_string());
+        // player_context.debug_string("TwoStepMTPCarefullness", carefullness.to_string());
 
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
             let proportional_velocity_magnitude =
-                (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp + 150.0)
+                (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * self.kp
+                    + (150.0 - 70.0 * carefullness))
                     .clamp(0.0, max_speed);
-            let dv_magnitude = proportional_velocity_magnitude - velocity.magnitude();
-            let v_control = dv_magnitude;
             let current_vel = self.last_vel.get_or_insert(velocity).clone();
-
-            player_context.debug_string("TwoStepMTPMode", "Proportional");
-
             if false {
                 let target_vel = proportional_velocity_magnitude * direction;
                 let dv = cap_vec(target_vel - current_vel, 2500.0 * dt);
-
                 current_vel + dv
             } else {
-                // let new_speed = current_vel.magnitude() + cap_magnitude(v_control, 2500.0 * dt);
                 direction * proportional_velocity_magnitude
             }
         } else {
             // Cruise phase
-            player_context.debug_string("TwoStepMTPMode", "Cruise");
+            // player_context.debug_string("TwoStepMTPMode", "Cruise");
             direction * max_speed
         }
     }
