@@ -242,8 +242,7 @@ fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 
     let backward_dist = (player_pos.y - target_pos.y).max(0.0); // + when bad, - when good
     prob *= (1.2 - (5000.0 / backward_dist).min(1.0));
 
-    let nearest_opponent_distance =
-        find_nearest_opponent_distance_along_direction(s, Angle::PI - direction);
+    let nearest_opponent_distance = find_nearest_opponent_distance_along_direction(s, direction);
 
     // Factor 1: Distance to nearest opponent (larger is better, smooth curve)
     let opp_distance_factor = if nearest_opponent_distance < 100.0 {

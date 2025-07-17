@@ -1,5 +1,6 @@
 use dies_core::get_tangent_line_direction;
 use dies_core::GameState;
+use dies_core::Handicap;
 use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
 
@@ -578,8 +579,10 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
     if s.game_state_is_not(GameState::Run) {
         return false;
     }
+    if s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]) {
+        return false;
+    }
     if !s.can_touch_ball() {
-        println!("waller can't touch ball");
         return false;
     }
 

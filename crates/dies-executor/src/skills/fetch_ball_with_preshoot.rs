@@ -118,7 +118,6 @@ impl FetchBallWithPreshoot {
             input.with_dribbling(0.6);
 
             let ball_pos = ball.position.xy();
-            let ball_speed = ball.velocity.xy().norm();
             let player_pos = ctx.player.position;
 
             match &self.state {
@@ -128,6 +127,11 @@ impl FetchBallWithPreshoot {
                         &PassingStore::new(ctx.player.id, Arc::new(ctx.world.clone())),
                         self.shoot_target.clone(),
                     );
+                    dies_core::debug_cross(
+                        format!("{}.target", ctx.viz_path_prefix),
+                        shooting_target.position().unwrap_or_default(),
+                        dies_core::DebugColor::Blue,
+                    );
                     self.shoot_target = Some(shooting_target.clone());
                     let shooting_target = shooting_target.position().unwrap();
                     let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 150.0;
@@ -135,7 +139,7 @@ impl FetchBallWithPreshoot {
                     let distance_to_prep_target = (prep_target - player_pos).magnitude();
                     if distance_to_prep_target < 15.0
                         || (distance_to_prep_target < 90.0 && ctx.player.velocity.norm() < 10.0)
-                        || start_time.elapsed().as_secs_f64() > 5.0
+                        || ctx.player.breakbeam_ball_detected
                     {
                         self.state = FetchBallWithPreshootState::ApproachBall {
                             start_pos: player_pos,
@@ -143,6 +147,9 @@ impl FetchBallWithPreshoot {
                             target_pos: shooting_target,
                         };
                         return SkillProgress::Continue(input);
+                    }
+                    if start_time.elapsed().as_secs_f64() > 5.0 {
+                        return SkillProgress::Done(SkillResult::Failure);
                     }
 
                     input.with_position(prep_target);
@@ -157,6 +164,7 @@ impl FetchBallWithPreshoot {
                     ball_pos,
                     target_pos,
                 } => {
+                    let start_time = self.go_to_preshoot_timer.get_or_insert(Instant::now());
                     if let Some(ShootTarget::Player { id, position }) = &self.shoot_target {
                         if !self.set_flag {
                             self.set_flag = true;
@@ -167,17 +175,21 @@ impl FetchBallWithPreshoot {
                         }
                     }
 
-                    let ball_heading = Angle::between_points(player_pos, *target_pos);
-                    input.with_yaw(ball_heading);
+                    let target_heading = Angle::between_points(player_pos, *target_pos);
+                    input.with_yaw(target_heading);
                     input.avoid_ball = true;
 
-                    if ctx.player.breakbeam_ball_detected {
+                    let ball_heading = Angle::between_points(player_pos, *ball_pos);
+                    let ball_distance = (ball_pos - player_pos).magnitude();
+                    if ctx.player.breakbeam_ball_detected
+                        || (player_pos - start_pos).magnitude() > self.distance_limit
+                    {
                         // Check if we should move with ball before shooting
                         if self.should_move_with_ball(ctx, *target_pos) {
                             self.state = FetchBallWithPreshootState::MoveWithBall {
                                 target_pos: *target_pos,
                                 start_pos: player_pos,
-                                go_to_pos: Vector2::zeros(),
+                                go_to_pos: Vector2::new(100.0, player_pos.y),
                             };
                             return SkillProgress::Continue(input);
                         } else {
@@ -187,9 +199,11 @@ impl FetchBallWithPreshoot {
                         }
                     }
 
-                    if (player_pos - start_pos).magnitude() > self.distance_limit {
-                        input.with_kicker(Kick { force: 1.0 });
-                        self.state = FetchBallWithPreshootState::Failed;
+                    if ball_distance > 500.0
+                        || start_time.elapsed().as_secs_f64() > 5.0
+                        || (ball_heading - ctx.player.yaw).degrees().abs() > 45.0
+                    {
+                        return SkillProgress::Done(SkillResult::Failure);
                     }
 
                     // Move forward towards the ball
@@ -216,6 +230,11 @@ impl FetchBallWithPreshoot {
                         input.with_kicker(Kick { force: 1.0 });
                         self.state = FetchBallWithPreshootState::Done;
                         return SkillProgress::Continue(input);
+                    }
+
+                    let ball_distance = (ball_pos - player_pos).magnitude();
+                    if ball_distance > 200.0 {
+                        return SkillProgress::Done(SkillResult::Failure);
                     }
 
                     // Check if we've moved too far

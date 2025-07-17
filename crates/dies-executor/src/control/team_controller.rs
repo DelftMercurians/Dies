@@ -597,11 +597,11 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
 
                 let mut new_input = input.clone();
 
-                // if matches!(game_state, GameState::Halt | GameState::Unknown) {
-                //     new_input.with_speed_limit(0.0);
-                //     new_input.with_angular_speed_limit(0.0);
-                //     new_input.dribbling_speed = 0.0;
-                // }
+                if matches!(game_state, GameState::Halt | GameState::Unknown) {
+                    new_input.with_speed_limit(0.0);
+                    new_input.with_angular_speed_limit(0.0);
+                    new_input.dribbling_speed = 0.0;
+                }
 
                 if matches!(game_state, GameState::Stop) {
                     new_input.with_speed_limit(1500.0);

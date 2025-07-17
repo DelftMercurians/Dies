@@ -179,6 +179,7 @@ fn get_out_of_shot_position(s: &RobotSituation) -> Option<Vector2> {
         return None;
     }
 
+    println!("avoiding shot");
     // Calculate position to move out of the way
     Some(calculate_avoidance_position(s, &ball_carrier))
 }
