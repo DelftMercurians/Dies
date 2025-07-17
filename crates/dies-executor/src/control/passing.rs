@@ -126,6 +126,64 @@ fn erf_approx(x: f64) -> f64 {
     sign * y
 }
 
+fn would_hit_goal_planks(
+    robot_pos: Vector2,
+    target_pos: Vector2,
+    goal_pos: Vector2,
+    goal_width: f64,
+    goal_depth: f64,
+) -> bool {
+    let left_plank_start = Vector2::new(goal_pos.x + goal_depth, goal_pos.y - goal_width / 2.0);
+    let left_plank_end = Vector2::new(goal_pos.x, goal_pos.y - goal_width / 2.0);
+
+    let right_plank_start = Vector2::new(goal_pos.x + goal_depth, goal_pos.y + goal_width / 2.0);
+    let right_plank_end = Vector2::new(goal_pos.x, goal_pos.y + goal_width / 2.0);
+
+    // Check if the shot line intersects with either plank
+    line_segments_intersect(robot_pos, target_pos, left_plank_start, left_plank_end)
+        || line_segments_intersect(robot_pos, target_pos, right_plank_start, right_plank_end)
+}
+
+fn line_segments_intersect(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2) -> bool {
+    // Check if line segment p1-p2 intersects with line segment p3-p4
+    let d1 = direction(p3, p4, p1);
+    let d2 = direction(p3, p4, p2);
+    let d3 = direction(p1, p2, p3);
+    let d4 = direction(p1, p2, p4);
+
+    if ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0))
+        && ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0))
+    {
+        return true;
+    }
+
+    // Check for collinear cases
+    if d1.abs() < 1e-9 && on_segment(p3, p1, p4) {
+        return true;
+    }
+    if d2.abs() < 1e-9 && on_segment(p3, p2, p4) {
+        return true;
+    }
+    if d3.abs() < 1e-9 && on_segment(p1, p3, p2) {
+        return true;
+    }
+    if d4.abs() < 1e-9 && on_segment(p1, p4, p2) {
+        return true;
+    }
+
+    false
+}
+
+fn direction(a: Vector2, b: Vector2, c: Vector2) -> f64 {
+    // Returns > 0 for counterclockwise, < 0 for clockwise, 0 for collinear
+    (c.x - a.x) * (b.y - a.y) - (b.x - a.x) * (c.y - a.y)
+}
+
+fn on_segment(p: Vector2, q: Vector2, r: Vector2) -> bool {
+    // Check if point q lies on segment pr
+    q.x <= p.x.max(r.x) && q.x >= p.x.min(r.x) && q.y <= p.y.max(r.y) && q.y >= p.y.min(r.y)
+}
+
 pub fn best_goal_shoot(s: &PassingStore) -> (Vector2, f64) {
     let robot_pos = s.player_data().position;
     let goal_pos = s.get_opp_goal_position();
@@ -133,6 +191,7 @@ pub fn best_goal_shoot(s: &PassingStore) -> (Vector2, f64) {
     // Get goal geometry
     let geom = s.world.field_geom.clone().unwrap();
     let goal_width = geom.goal_width;
+    let goal_depth = geom.goal_depth;
 
     // Calculate goal boundaries
     let goal_left = Vector2::new(goal_pos.x, goal_pos.y - goal_width / 2.0);
@@ -147,6 +206,12 @@ pub fn best_goal_shoot(s: &PassingStore) -> (Vector2, f64) {
         let t = i as f64 / (num_samples - 1) as f64;
 
         let pos = goal_left * (1.0 - t) + goal_right * t;
+
+        // Check if shot would hit the goal planks
+        if would_hit_goal_planks(robot_pos, pos, goal_pos, goal_width, goal_depth) {
+            continue; // Skip this target if it would hit the planks
+        }
+
         let prob = goal_shoot_success_probability(s, pos);
 
         if prob > best_prob {
