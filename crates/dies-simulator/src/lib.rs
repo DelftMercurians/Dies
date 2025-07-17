@@ -8,7 +8,10 @@ use dies_core::{
     PlayerMoveCmd, RobotCmd, SideAssignment, SysStatus, TeamColor, Vector2, Vector3, WorldInstant,
 };
 use dies_protos::{
-    ssl_gc_referee_message::{referee, Referee},
+    ssl_gc_referee_message::{
+        referee::{self, TeamInfo},
+        Referee,
+    },
     ssl_vision_detection::{SSL_DetectionBall, SSL_DetectionFrame, SSL_DetectionRobot},
     ssl_vision_geometry::{
         SSL_FieldCircularArc, SSL_FieldLineSegment, SSL_GeometryData, SSL_GeometryFieldSize,
@@ -761,6 +764,12 @@ impl Simulation {
             point.set_y(position.y as f32);
             msg.designated_position = Some(point).into();
         }
+        let mut blue_team_info = TeamInfo::new();
+        blue_team_info.set_max_allowed_bots(6);
+        msg.blue = Some(blue_team_info).into();
+        let mut yellow_team_info = TeamInfo::new();
+        yellow_team_info.set_max_allowed_bots(6);
+        msg.yellow = Some(yellow_team_info).into();
         self.referee_message.push_back(msg);
     }
 

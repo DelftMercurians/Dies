@@ -523,8 +523,8 @@ impl WorldTracker {
             freekick_kicker: self.game_state_tracker.get_freekick_kicker(),
             blue_team_yellow_cards: self.blue_team_yellow_cards,
             yellow_team_yellow_cards: self.yellow_team_yellow_cards,
-            blue_team_max_allowed_bots: self.blue_team.get_max_allowed_bots(),
-            yellow_team_max_allowed_bots: self.yellow_team.get_max_allowed_bots(),
+            blue_team_max_allowed_bots: self.blue_team_max_allowed_bots,
+            yellow_team_max_allowed_bots: self.yellow_team_max_allowed_bots,
         };
 
         WorldData {

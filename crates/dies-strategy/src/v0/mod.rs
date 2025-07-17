@@ -35,6 +35,7 @@ pub fn v0_strategy(game: &mut GameContext) {
     game.add_role("goalkeeper")
         .count(1)
         .can_be_reassigned(false)
+        // .require(|s| s.player_id == PlayerId::new(2))
         .if_must_reassign_can_we_do_it_now(can_goalie_be_reassigned)
         .score(|_| 100000.0)
         .behavior(|s| keeper::build_goalkeeper_tree(s));
@@ -82,12 +83,22 @@ pub fn v0_strategy(game: &mut GameContext) {
     }
 
     // Standard roles
-    game.add_role("waller_1")
-        .max(1)
-        .score(score_as_waller)
-        .behavior(|s| waller::build_waller_tree(s));
+    // game.add_role("waller_1")
+    //     .max(1)
+    //     .score(score_as_waller)
+    //     .behavior(|s| waller::build_waller_tree(s));
 
-    if game.ball_has_been_on_opp_side_for_at_least(15.0) {
+    // game.add_role("waller_2")
+    //     .max(1)
+    //     .score(score_as_waller)
+    //     .behavior(|s| waller::build_waller_tree(s));
+
+    // game.add_role("harasser_2")
+    //     .max(1)
+    //     .score(score_as_harasser)
+    //     .behavior(|s| harasser::build_harasser_tree(s));
+
+    if game.ball_has_been_on_opp_side_for_at_least(10.0) {
         game.add_role("striker_2")
             .max(1)
             .score(score_striker)
@@ -100,18 +111,13 @@ pub fn v0_strategy(game: &mut GameContext) {
             .behavior(|s| harasser::build_harasser_tree(s));
     }
 
-    game.add_role("waller_2")
-        .max(1)
-        .score(score_as_waller)
-        .behavior(|s| waller::build_waller_tree(s));
-
     game.add_role("striker_1")
         .max(1)
         .score(score_striker)
         .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
         .behavior(|s| striker::build_striker_tree(s));
 
-    if game.ball_has_been_on_our_side_for_at_least(15.0) {
+    if game.ball_has_been_on_our_side_for_at_least(10.0) {
         game.add_role("harasser_2")
             .max(1)
             .score(score_as_harasser)

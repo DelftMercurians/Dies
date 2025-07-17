@@ -507,6 +507,7 @@ mod tests {
                 us_operating: false,
                 yellow_cards: 0,
                 freekick_kicker: None,
+                max_allowed_bots: 3,
             },
             field_geom: None,
             ball_on_our_side: None,

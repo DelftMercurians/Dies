@@ -239,9 +239,9 @@ impl TeamController {
         };
 
         let allowed_number_of_robots = world_data.current_game_state.max_allowed_bots;
-        if active_robots.len() > allowed_number_of_robots {
-            let n_robots_to_remove =
-                (active_robots.len() - allowed_number_of_robots).clamp(0, active_robots.len());
+        if active_robots.len() > allowed_number_of_robots as usize {
+            let n_robots_to_remove = (active_robots.len() - allowed_number_of_robots as usize)
+                .clamp(0, active_robots.len());
             log::info!(
                 "We have {} yellow cards and {} robots, removing {} robots",
                 world_data.current_game_state.yellow_cards,

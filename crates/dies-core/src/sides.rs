@@ -109,6 +109,10 @@ impl SideAssignment {
                 } else {
                     None
                 },
+                max_allowed_bots: match color {
+                    TeamColor::Blue => world_data.game_state.blue_team_max_allowed_bots,
+                    TeamColor::Yellow => world_data.game_state.yellow_team_max_allowed_bots,
+                },
             },
             ball_on_our_side: match color {
                 TeamColor::Blue => world_data.ball_on_blue_side,
