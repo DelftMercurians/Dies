@@ -1,6 +1,6 @@
 use core::f64;
 
-use dies_core::{GameState, Vector2};
+use dies_core::{Angle, GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::{fetch_and_shoot_with_prep, get_heading_toward_ball};
@@ -80,7 +80,6 @@ fn get_kickoff_striker_position(s: &RobotSituation) -> Vector2 {
 }
 
 fn should_pickup_ball(s: &RobotSituation) -> bool {
-    return true;
     if s.game_state_is_not(GameState::Run) {
         return false;
     }
@@ -113,18 +112,16 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         });
     let closest_striker = strikers.map(|p| p.id == s.player_id).unwrap_or(false);
 
-    let closest_opponent_dist = s
-        .world
-        .opp_players
-        .iter()
-        .map(|p| (ball.position.xy() - p.position).norm())
-        .min_by(|a, b| a.partial_cmp(b).unwrap());
-    let my_dist = s.distance_to_ball();
-    let d = closest_opponent_dist.unwrap_or(f64::INFINITY) - my_dist;
+    // let closest_opponent_dist = s
+    //     .world
+    //     .opp_players
+    //     .iter()
+    //     .map(|p| (ball.position.xy() - p.position).norm())
+    //     .min_by(|a, b| a.partial_cmp(b).unwrap());
+    // let my_dist = s.distance_to_ball();
+    // let d = closest_opponent_dist.unwrap_or(f64::INFINITY) - my_dist;
 
-    ball.position.x > -80.0
-        && (closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true))
-        && closest_striker
+    ball.position.x > -80.0 && closest_striker
 }
 
 fn striker_position(s: &RobotSituation, last_pos: Option<Vector2>) -> Vector2 {
@@ -294,18 +291,13 @@ fn find_ball_carrier_aiming_at_goal(s: &RobotSituation) -> Option<dies_core::Pla
             continue;
         }
 
-        // Check if player has the ball
-        if !player.breakbeam_ball_detected {
-            continue;
-        }
-
-        // Check if player is facing towards goal (within 45 degrees)
+        // Check if player is facing towards goal (within 30 degrees)
         let to_goal = (goal_pos - player.position).normalize();
-        let player_facing = player.yaw.to_vector();
-        let angle_diff = to_goal.dot(&player_facing).acos();
-
-        if angle_diff < 0.785 {
-            // 45 degrees in radians
+        let angle_diff = Angle::between_points(to_goal, player.yaw.to_vector())
+            .radians()
+            .abs();
+        let ball_dist = (s.ball_position() - player.position).norm();
+        if angle_diff < 30.0f64.to_radians() && ball_dist < 200.0 {
             return Some(player.clone());
         }
     }
