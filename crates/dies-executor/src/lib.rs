@@ -8,7 +8,10 @@ use dies_core::{
     WorldUpdate,
 };
 use dies_logger::{log_referee, log_vision, log_world};
-use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
+use dies_protos::{
+    ssl_gc_referee_message::Referee, ssl_vision_detection_tracked::TrackedFrame,
+    ssl_vision_wrapper::SSL_WrapperPacket, ssl_vision_wrapper_tracked::TrackerWrapperPacket,
+};
 use dies_simulator::Simulation;
 use dies_ssl_client::{SslMessage, VisionClient};
 use dies_world::WorldTracker;
@@ -462,6 +465,12 @@ impl Executor {
         self.update_team_controller();
     }
 
+    pub fn update_from_tracker_msg(&mut self, mut message: TrackerWrapperPacket) {
+        if let Some(tracked_frame) = message.tracked_frame.take() {
+            self.tracker.update_from_tracker(tracked_frame);
+        }
+    }
+
     /// Update the executor with a feedback message from the robots.
     pub fn update_from_bs_msg(
         &mut self,
@@ -624,6 +633,9 @@ impl Executor {
                         }
                         Ok(SslMessage::Referee(gc_msg)) => {
                             self.update_from_gc_msg(gc_msg);
+                        }
+                        Ok(SslMessage::Tracker(tracker_msg)) => {
+                            self.update_from_tracker_msg(tracker_msg);
                         }
                         Err(err) => {
                             if !self.settings.allow_no_vision {

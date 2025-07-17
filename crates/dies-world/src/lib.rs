@@ -3,7 +3,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use dies_protos::{ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket};
+use dies_protos::{
+    ssl_gc_referee_message::Referee, ssl_vision_detection_tracked::TrackedFrame,
+    ssl_vision_wrapper::SSL_WrapperPacket,
+};
 
 mod ball;
 mod filter;
@@ -171,8 +174,10 @@ pub struct WorldTracker {
     blue_team_settings: TeamSpecificSettings,
     yellow_team_settings: TeamSpecificSettings,
 
-    ball_on_blue_side_since: Option<Instant>,
-    ball_on_yellow_side_since: Option<Instant>,
+    ball_on_blue_side_for: Option<f64>,
+    ball_on_yellow_side_for: Option<f64>,
+
+    autoref_info: Option<(Instant, TrackedFrame)>,
 }
 
 impl WorldTracker {
@@ -209,8 +214,10 @@ impl WorldTracker {
             yellow_team_max_allowed_bots: 6,
             blue_team_settings: settings.blue_team_settings.clone(),
             yellow_team_settings: settings.yellow_team_settings.clone(),
-            ball_on_blue_side_since: None,
-            ball_on_yellow_side_since: None,
+            ball_on_blue_side_for: None,
+            ball_on_yellow_side_for: None,
+
+            autoref_info: None,
         }
     }
 
@@ -412,31 +419,39 @@ impl WorldTracker {
             );
 
             if let Some(ball) = self.ball_tracker.get() {
-                if ball.position.x < 0.0 {
-                    // Ball on negative side
-                    match self.side_assignment {
-                        Some(SideAssignment::BlueOnPositive) => {
-                            self.ball_on_blue_side_since = None;
-                            self.ball_on_yellow_side_since = Some(Instant::now());
+                let game_state = self.game_state_tracker.get();
+                if game_state.is_ball_in_play() {
+                    let dt = self.dt_received.unwrap_or(0.0);
+                    if ball.position.x < 0.0 {
+                        // Ball on negative side
+                        match self.side_assignment {
+                            Some(SideAssignment::BlueOnPositive) => {
+                                self.ball_on_blue_side_for = None;
+                                self.ball_on_yellow_side_for =
+                                    Some(self.ball_on_yellow_side_for.unwrap_or(0.0) + dt);
+                            }
+                            Some(SideAssignment::YellowOnPositive) => {
+                                self.ball_on_blue_side_for =
+                                    Some(self.ball_on_blue_side_for.unwrap_or(0.0) + dt);
+                                self.ball_on_yellow_side_for = None;
+                            }
+                            None => {}
                         }
-                        Some(SideAssignment::YellowOnPositive) => {
-                            self.ball_on_blue_side_since = Some(Instant::now());
-                            self.ball_on_yellow_side_since = None;
+                    } else {
+                        // Ball on positive side
+                        match self.side_assignment {
+                            Some(SideAssignment::BlueOnPositive) => {
+                                self.ball_on_blue_side_for =
+                                    Some(self.ball_on_blue_side_for.unwrap_or(0.0) + dt);
+                                self.ball_on_yellow_side_for = None;
+                            }
+                            Some(SideAssignment::YellowOnPositive) => {
+                                self.ball_on_blue_side_for = None;
+                                self.ball_on_yellow_side_for =
+                                    Some(self.ball_on_yellow_side_for.unwrap_or(0.0) + dt);
+                            }
+                            None => {}
                         }
-                        None => {}
-                    }
-                } else {
-                    // Ball on positive side
-                    match self.side_assignment {
-                        Some(SideAssignment::BlueOnPositive) => {
-                            self.ball_on_blue_side_since = Some(Instant::now());
-                            self.ball_on_yellow_side_since = None;
-                        }
-                        Some(SideAssignment::YellowOnPositive) => {
-                            self.ball_on_blue_side_since = None;
-                            self.ball_on_yellow_side_since = Some(Instant::now());
-                        }
-                        None => {}
                     }
                 }
             }
@@ -457,6 +472,10 @@ impl WorldTracker {
 
             self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
         }
+    }
+
+    pub fn update_from_tracker(&mut self, data: TrackedFrame) {
+        self.autoref_info = Some((Instant::now(), data));
     }
 
     pub fn update_from_feedback(
@@ -540,8 +559,16 @@ impl WorldTracker {
                 .side_assignment
                 .clone()
                 .unwrap_or(SideAssignment::YellowOnPositive),
-            ball_on_blue_side: self.ball_on_blue_side_since.map(|t| t.elapsed()),
-            ball_on_yellow_side: self.ball_on_yellow_side_since.map(|t| t.elapsed()),
+            ball_on_blue_side: self
+                .ball_on_blue_side_for
+                .map(|t| Duration::from_secs_f64(t)),
+            ball_on_yellow_side: self
+                .ball_on_yellow_side_for
+                .map(|t| Duration::from_secs_f64(t)),
+            autoref_info: self
+                .autoref_info
+                .as_ref()
+                .map(|(_, frame)| frame.clone().into()),
         }
     }
 }

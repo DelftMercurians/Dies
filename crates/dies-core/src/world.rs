@@ -2,9 +2,11 @@ use std::{
     collections::HashSet,
     fmt::Display,
     hash::Hash,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
+use dies_protos::{ssl_gc_common::Team, ssl_vision_detection_tracked::TrackedFrame};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
@@ -24,7 +26,7 @@ const MAX_ACCELERATION: f64 = 125000.0;
 pub enum Obstacle {
     Circle { center: Vector2, radius: f64 },
     Rectangle { min: Vector2, max: Vector2 },
-    Line { start: Vector2, end: Vector2 }
+    Line { start: Vector2, end: Vector2 },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -77,6 +79,15 @@ pub enum GameState {
     Penalty,
     PenaltyRun,
     Run,
+}
+
+impl GameState {
+    pub fn is_ball_in_play(&self) -> bool {
+        matches!(
+            self,
+            GameState::Kickoff | GameState::PenaltyRun | GameState::Run | GameState::FreeKick
+        )
+    }
 }
 
 impl Display for GameState {
@@ -260,6 +271,84 @@ pub enum BallPrediction {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AutorefKickedBall {
+    /// The initial position [m] from which the ball was kicked
+    pub pos: Vector2,
+    /// The initial velocity [m/s] with which the ball was kicked
+    pub vel: Vector3,
+    /// The unix timestamp [s] when the kick was performed
+    pub start_timestamp: f64,
+
+    /// The predicted unix timestamp [s] when the ball comes to a stop
+    pub stop_timestamp: Option<f64>,
+    /// The predicted position [m] at which the ball will come to a stop
+    pub stop_pos: Option<Vector2>,
+
+    /// The robot that kicked the ball
+    pub robot_id: Option<(TeamColor, PlayerId)>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct AutorefInfo {
+    pub kicked_ball: Option<AutorefKickedBall>,
+}
+
+impl From<TrackedFrame> for AutorefInfo {
+    fn from(frame: TrackedFrame) -> Self {
+        Self {
+            kicked_ball: if let Some(k) = frame.kicked_ball.as_ref() {
+                Some(AutorefKickedBall {
+                    pos: Vector2::new(k.pos.x() as f64, k.pos.y() as f64),
+                    vel: Vector3::new(k.vel.x() as f64, k.vel.y() as f64, k.vel.z() as f64),
+                    start_timestamp: k.start_timestamp.unwrap_or(0.0),
+                    stop_timestamp: k.stop_timestamp,
+                    stop_pos: if let Some(p) = k.stop_pos.as_ref() {
+                        Some(Vector2::new(p.x() as f64, p.y() as f64))
+                    } else {
+                        None
+                    },
+                    robot_id: if let Some(r) = k.robot_id.as_ref() {
+                        let team = match r.team() {
+                            Team::BLUE => Some(TeamColor::Blue),
+                            Team::YELLOW => Some(TeamColor::Yellow),
+                            Team::UNKNOWN => None,
+                        };
+                        if let (Some(team), Some(id)) = (team, r.id) {
+                            Some((team, PlayerId::new(id)))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    },
+                })
+            } else {
+                None
+            },
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AutorefKickedBallTeam {
+    /// The initial position [m] from which the ball was kicked
+    pub pos: Vector2,
+    /// The initial velocity [m/s] with which the ball was kicked
+    pub vel: Vector3,
+    /// The unix timestamp [s] when the kick was performed
+    pub start_timestamp: f64,
+
+    /// The predicted unix timestamp [s] when the ball comes to a stop
+    pub stop_timestamp: Option<f64>,
+    /// The predicted position [m] at which the ball will come to a stop
+    pub stop_pos: Option<Vector2>,
+
+    /// The robot that kicked the ball
+    pub robot_id: PlayerId,
+    pub we_kicked: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct WorldData {
     /// Timestamp of the frame, in seconds. This timestamp is relative to the time the
@@ -278,6 +367,7 @@ pub struct WorldData {
     pub side_assignment: SideAssignment,
     pub ball_on_blue_side: Option<Duration>,
     pub ball_on_yellow_side: Option<Duration>,
+    pub autoref_info: Option<AutorefInfo>,
 }
 
 impl WorldData {
@@ -319,6 +409,7 @@ pub struct TeamData {
     pub current_game_state: GameStateData,
     pub ball_on_our_side: Option<Duration>,
     pub ball_on_opp_side: Option<Duration>,
+    pub kicked_ball: Option<AutorefKickedBallTeam>,
 }
 
 impl TeamData {
@@ -490,14 +581,13 @@ impl TeamData {
                             center: ball.position.xy(),
                             radius: STOP_BALL_AVOIDANCE_RADIUS,
                         });
-
                     }
                 }
                 GameState::BallReplacement(target_ball_pos) => {
                     if let Some(ball) = &self.ball {
                         obstacles.push(Obstacle::Line {
                             start: ball.position.xy(),
-                            end: target_ball_pos
+                            end: target_ball_pos,
                         });
                     }
                 }
@@ -749,6 +839,7 @@ pub fn mock_world_data() -> WorldData {
         side_assignment: SideAssignment::YellowOnPositive,
         ball_on_blue_side: None,
         ball_on_yellow_side: None,
+        autoref_info: None,
     }
 }
 
@@ -808,6 +899,7 @@ pub fn mock_team_data() -> TeamData {
         },
         ball_on_our_side: None,
         ball_on_opp_side: None,
+        kicked_ball: None,
     }
 }
 

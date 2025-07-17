@@ -72,6 +72,9 @@ pub async fn test_vision(
                     received_gc = true;
                 }
             }
+            dies_ssl_client::SslMessage::Tracker(_) => {
+                println!("Received tracker packet");
+            }
         }
     }
 

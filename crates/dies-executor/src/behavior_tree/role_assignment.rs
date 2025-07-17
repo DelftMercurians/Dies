@@ -512,6 +512,7 @@ mod tests {
             field_geom: None,
             ball_on_our_side: None,
             ball_on_opp_side: None,
+            kicked_ball: None,
         }
     }
 

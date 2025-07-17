@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    Angle, BallData, GameStateData, PlayerData, PlayerGlobalMoveCmd, PlayerId, PlayerMoveCmd,
-    RobotCmd, RotationDirection, TeamData, Vector2, Vector3, WorldData,
+    Angle, AutorefKickedBallTeam, BallData, GameStateData, PlayerData, PlayerGlobalMoveCmd,
+    PlayerId, PlayerMoveCmd, RobotCmd, RotationDirection, TeamData, Vector2, Vector3, WorldData,
 };
 
 /// # Team-Specific Coordinate System
@@ -122,6 +122,19 @@ impl SideAssignment {
                 TeamColor::Blue => world_data.ball_on_yellow_side,
                 TeamColor::Yellow => world_data.ball_on_blue_side,
             },
+            kicked_ball: None,
+            // world_data
+            //     .autoref_info
+            //     .as_ref()
+            //     .map(|info| AutorefKickedBallTeam {
+            //         pos: info.kicked_ball.as_ref().map(|k| k.pos),
+            //         vel: info.kicked_ball.as_ref().map(|k| k.vel),
+            //         start_timestamp: info.kicked_ball.as_ref().map(|k| k.start_timestamp),
+            //         stop_timestamp: info.kicked_ball.as_ref().map(|k| k.stop_timestamp),
+            //         stop_pos: info.kicked_ball.as_ref().map(|k| k.stop_pos),
+            //         robot_id: info.kicked_ball.as_ref().map(|k| k.robot_id),
+            //         we_kicked: info.kicked_ball.as_ref().map(|k| k.we_kicked),
+            //     }),
         }
     }
 
