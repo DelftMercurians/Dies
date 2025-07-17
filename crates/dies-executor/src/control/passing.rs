@@ -245,19 +245,15 @@ fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 
     let nearest_opponent_distance =
         find_nearest_opponent_distance_along_direction(s, Angle::PI - direction);
 
-    // Factor 1: Distance to nearest opponent (larger is better, quadratic growth)
-    let opp_distance_factor = if nearest_opponent_distance < 200.0 {
-        0.05
-    } else if nearest_opponent_distance < 300.0 {
-        0.2
-    } else if nearest_opponent_distance < 400.0 {
-        0.3
-    } else if nearest_opponent_distance < 600.0 {
-        0.6
-    } else if nearest_opponent_distance < 1000.0 {
-        0.8
-    } else {
+    // Factor 1: Distance to nearest opponent (larger is better, smooth curve)
+    let opp_distance_factor = if nearest_opponent_distance < 100.0 {
+        0.03
+    } else if nearest_opponent_distance >= 1000.0 {
         1.0
+    } else {
+        let normalized_distance = (nearest_opponent_distance - 100.0) / 900.0;
+        let smooth_factor = normalized_distance * normalized_distance; // smoothstep
+        0.03 + smooth_factor * 0.97
     };
     prob *= opp_distance_factor;
 
@@ -324,11 +320,7 @@ fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 
     let right_cdf = 0.5 * (1.0 + erf_approx(right_z));
 
     let visibility_factor = (right_cdf - left_cdf).max(0.0);
-    let visibility_factor = if visibility_factor < 0.1 {
-        0.0
-    } else {
-        visibility_factor
-    };
+
     prob *= visibility_factor;
 
     // Factor 3: Distance preference (closer intersection with goal line)
@@ -349,10 +341,8 @@ fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 
         0.9
     } else if distance_to_intersection < 4000.0 {
         0.8
-    } else if distance_to_intersection < 5000.0 {
-        0.5
     } else {
-        0.3
+        0.7
     };
     prob *= goal_distance_factor;
 
