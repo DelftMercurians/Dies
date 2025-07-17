@@ -32,12 +32,23 @@ impl PassingStore {
         Self { player_id, world }
     }
 
+    pub fn player_id_hash(&self) -> f64 {
+        (self.player_id.as_u32() as f64 * 0.6180339887498949) % 1.0
+    }
+
     pub fn player_data(&self) -> &PlayerData {
         self.world
             .own_players
             .iter()
             .find(|&p| p.id == self.player_id)
             .unwrap()
+    }
+
+    pub fn get_teammate_by_id(&self, teammate_id: PlayerId) -> Option<&PlayerData> {
+        self.world
+            .own_players
+            .iter()
+            .find(|p| p.id == teammate_id)
     }
 
     pub fn field(&self) -> FieldGeometry {
@@ -463,13 +474,7 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore) -> (ShootTarget, f64) {
 
         // Use a simple random number generator based on robot position and time-like hash
         // This provides deterministic but seemingly random behavior
-        let player_pos = s.player_data().position;
-        let hash_input = (player_pos.x * 1000.0) as u64
-            + (player_pos.y * 1000.0) as u64
-            + (best_prob_direct * 10000.0) as u64
-            + (best_prob_pass * 10000.0) as u64;
-        let pseudo_random = (hash_input.wrapping_mul(1103515245).wrapping_add(12345) >> 16) % 1000;
-        let random_value = pseudo_random as f64 / 1000.0;
+        let random_value = 0.25 + s.player_id_hash() * 0.5;
 
         if random_value < final_direct_prob {
             // println!("chosen direct shoot with p={:.3}", final_direct_prob);
@@ -658,7 +663,12 @@ pub fn score_shoot_target(s: &PassingStore, target: ShootTarget) -> f64 {
         }
         ShootTarget::Player { id, position } => {
             let (t, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(id));
-            let prob = goal_shoot_prob * pass_success_probability(s, position.unwrap());
+            let pos = if let Some(p) = s.get_teammate_by_id(id) {
+                p.position
+            } else {
+                position.unwrap_or(Vector2::zeros())
+            };
+            let prob = goal_shoot_prob * pass_success_probability(s, pos);
             prob * goal_shoot_prob
         }
     }
