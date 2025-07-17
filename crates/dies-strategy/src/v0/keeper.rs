@@ -24,30 +24,6 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
                     fetch_ball_with_preshoot()
                         .description("Clear Ball".to_string())
                         .build(),
-                    // sequence_node()
-                    //     .description("Clear ball")
-                    //     .add(fetch_ball().description("Clear Ball".to_string()).build())
-                    //     .add(
-                    //         guard_node()
-                    //             .description("Have ball?")
-                    //             .condition(|s| s.has_ball())
-                    //             .then(
-                    //                 sequence_node()
-                    //                     .description("Execute Clear")
-                    //                     .add(
-                    //                         face_position(|s: &RobotSituation| {
-                    //                             s.get_field_center()
-                    //                         })
-                    //                         .with_ball()
-                    //                         .description("Face Field".to_string())
-                    //                         .build(),
-                    //                     )
-                    //                     .add(kick().description("Clear!".to_string()).build())
-                    //                     .build(),
-                    //             )
-                    //             .build(),
-                    //     )
-                    //     .build(),
                 )
                 .build(),
         )

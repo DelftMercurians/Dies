@@ -202,10 +202,11 @@ impl BasestationHandle {
                 // Receive feedback
                 if let Connection::V1(monitor) = &mut connection {
                     if !monitor.is_connected() {
-                        panic!(
+                        println!(
                             "Base station disconnected: {:?}",
                             monitor.has_error().unwrap_or_default()
                         );
+                        std::process::exit(1);
                     }
 
                     if let Some(robots) = monitor.get_robots() {

@@ -29,7 +29,6 @@ pub fn v0_strategy(game: &mut GameContext) {
         };
     // Goalkeeper - always exactly one
     let game_state = game.game_state();
-    let keeper_id_set = game_state.our_keeper_id.is_some();
     game.add_role("goalkeeper")
         .count(1)
         .can_be_reassigned(false)

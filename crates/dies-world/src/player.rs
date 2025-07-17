@@ -114,22 +114,37 @@ impl PlayerTracker {
 
         let factor = 0.96;
         self.rolling_vision = self.rolling_vision * factor + vision_val * (1.0 - factor);
+        let factor = 0.99; // slower decay for control
         self.rolling_control = self.rolling_control * factor + control_val * (1.0 - factor);
 
         // For controlled players, require both vision and control
         // For non-controlled players (opponent players), only require vision
         if self.is_controlled {
-            if self.rolling_control < 0.2 || self.rolling_vision < 0.1 {
+            if self.rolling_control < 0.1 || self.rolling_vision < 0.1 {
+                if !self.is_gone && self.rolling_control < 0.1 {
+                    println!("Player {} is gone (control)", self.id);
+                } else if !self.is_gone && self.rolling_vision < 0.1 {
+                    println!("Player {} is gone (vision)", self.id);
+                }
                 self.is_gone = true;
             }
             if self.rolling_control > 0.8 && self.rolling_vision > 0.8 {
+                if self.is_gone {
+                    println!("Player {} is back", self.id);
+                }
                 self.is_gone = false;
             }
         } else {
             if self.rolling_vision < 0.1 {
+                if !self.is_gone {
+                    println!("Player {} is gone (vision)", self.id);
+                }
                 self.is_gone = true;
             }
             if self.rolling_vision > 0.8 {
+                if self.is_gone {
+                    println!("Player {} is back", self.id);
+                }
                 self.is_gone = false;
             }
         }
