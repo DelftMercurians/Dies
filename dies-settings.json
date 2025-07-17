@@ -32,11 +32,7 @@
     "side_assignment": "YellowOnPositive"
   },
   "yellow_team_settings": {
-    "handicaps": {
-      "0": [
-        "no_kicker"
-      ]
-    }
+    "handicaps": {}
   },
   "blue_team_settings": {
     "handicaps": {}

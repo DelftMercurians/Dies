@@ -193,7 +193,7 @@ pub fn v0_defence(game: &mut GameContext) {
         game.add_role("striker_1")
             .max(1)
             .score(score_striker)
-            // .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
+            .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .behavior(|s| striker::build_striker_tree(s));
     } else {
         game.add_role("harasser_1")
@@ -212,7 +212,7 @@ pub fn v0_defence(game: &mut GameContext) {
         game.add_role("striker_2")
             .max(1)
             .score(score_striker)
-            // .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
+            .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .behavior(|s| striker::build_striker_tree(s));
     } else {
         game.add_role("harasser_2")
@@ -231,7 +231,7 @@ pub fn v0_defence(game: &mut GameContext) {
     game.add_role("striker_3")
         // .max(1)
         .score(score_striker)
-        // .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
+        .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
         .behavior(|s| striker::build_striker_tree(s));
     // }
 }
