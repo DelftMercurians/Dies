@@ -45,10 +45,7 @@ impl PassingStore {
     }
 
     pub fn get_teammate_by_id(&self, teammate_id: PlayerId) -> Option<&PlayerData> {
-        self.world
-            .own_players
-            .iter()
-            .find(|p| p.id == teammate_id)
+        self.world.own_players.iter().find(|p| p.id == teammate_id)
     }
 
     pub fn field(&self) -> FieldGeometry {
@@ -446,6 +443,7 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore) -> (ShootTarget, f64) {
     let pass_viable = best_prob_pass >= min_prob_threshold;
     let best_prob = best_prob_direct.max(best_prob_pass);
     // return (best_target_pass, best_prob_pass);
+    return (best_target_direct, best_prob_direct);
 
     // return (best_target_pass, best_prob_pass);
     let best_target = if !direct_viable && !pass_viable {
@@ -658,9 +656,7 @@ pub fn find_best_receiver_target(
 
 pub fn score_shoot_target(s: &PassingStore, target: ShootTarget) -> f64 {
     match target {
-        ShootTarget::Goal(pos) => {
-            goal_shoot_success_probability(s, pos)
-        }
+        ShootTarget::Goal(pos) => goal_shoot_success_probability(s, pos),
         ShootTarget::Player { id, position } => {
             let (t, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(id));
             let pos = if let Some(p) = s.get_teammate_by_id(id) {
@@ -693,7 +689,6 @@ pub fn find_best_preshoot(s: &PassingStore, last_target: Option<ShootTarget>) ->
     let player_pos = s.player_data().position;
     let ball_pos = ball.position.xy();
     let hypothetical = s.force_self_position(ball_pos);
-
 
     let (cur_target, cur_score) = best_teammate_pass_or_shoot(&hypothetical);
 

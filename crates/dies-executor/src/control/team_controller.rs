@@ -508,11 +508,19 @@ impl TeamController {
                 let avoid_ball = input_to_use.avoid_ball;
 
                 let mut obstacles = Vec::new();
-                if avoid_ball {
+                if avoid_ball
+                    || world_data.current_game_state.game_state == GameState::PreparePenalty
+                {
                     if let Some(ball) = world_data.ball.as_ref() {
                         obstacles.push(Obstacle::Circle {
                             center: ball.position.xy(),
-                            radius: 21.0 + 100.0 * input_to_use.care,
+                            radius: if world_data.current_game_state.game_state
+                                == GameState::PreparePenalty
+                            {
+                                1200.0
+                            } else {
+                                100.0 + 100.0 * input_to_use.care
+                            },
                         });
                     }
                 }
@@ -601,12 +609,52 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
 
                 if matches!(
                     game_state,
+                    GameState::PreparePenalty | GameState::Penalty | GameState::PenaltyRun
+                ) && input.role_type != RoleType::PenaltyKicker
+                {
+                    let sign = if world_data.current_game_state.us_operating {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    // Reposition player 1 meter behind the ball on our side (negative x direction)
+                    // Only if the player has a target position (otherwise, use current position)
+                    let mut pos = new_input.position.unwrap_or(player_data.position);
+                    let offset = sign * 1200.0;
+                    if (world_data.current_game_state.us_operating && pos.x < ball_pos.x - offset)
+                        || (!world_data.current_game_state.us_operating
+                            && pos.x > ball_pos.x - offset)
+                    {
+                        new_input.with_speed_limit(0.0);
+                        new_input.with_angular_speed_limit(0.0);
+                        new_input.dribbling_speed = 0.0;
+                    } else {
+                        pos.x = pos.x.clamp(-1000000.0, ball_pos.x - offset);
+                        new_input.with_speed_limit(1500.0);
+                        new_input.with_position(pos);
+                    }
+                }
+                if matches!(
+                    game_state,
+                    GameState::PreparePenalty | GameState::Penalty | GameState::PenaltyRun
+                ) && input.role_type != RoleType::Goalkeeper
+                    && !world_data.current_game_state.us_operating
+                {
+                    let mut pos = new_input.position.unwrap_or(player_data.position);
+                    pos.x = -field.field_length / 2.0;
+                    new_input.with_position(pos);
+                }
+
+                if matches!(
+                    game_state,
                     GameState::Run | GameState::Stop | GameState::FreeKick
                 ) {
                     // Avoid goal area
                     let min_distance = match game_state {
                         GameState::Run => 80.0,
-                        GameState::Stop | GameState::FreeKick => 200.0,
+                        GameState::Stop | GameState::FreeKick | GameState::BallReplacement(_) => {
+                            500.0
+                        }
                         _ => unreachable!(),
                     };
                     let max_radius = 4000;

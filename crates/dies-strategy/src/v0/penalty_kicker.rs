@@ -1,4 +1,4 @@
-use dies_core::Vector2;
+use dies_core::{GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::get_heading_to_goal;
@@ -17,32 +17,12 @@ pub fn build_penalty_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                     .build(),
                 )
                 .add(
-                    wait(Argument::Static(1.5))
-                        .description("Wait for setup".to_string())
-                        .build(),
-                )
-                .add(fetch_ball().description("Get ball".to_string()).build())
-                .add(
                     guard_node()
-                        .condition(|s| s.has_ball())
-                        .then(
-                            sequence_node()
-                                .add(
-                                    face_position(choose_penalty_target)
-                                        .with_ball()
-                                        .description("Aim penalty".to_string())
-                                        .build(),
-                                )
-                                .add(
-                                    wait(Argument::Static(0.8))
-                                        .description("Final aim".to_string())
-                                        .build(),
-                                )
-                                .add(kick().description("Penalty shot!".to_string()).build())
-                                .description("Execute penalty")
-                                .build(),
-                        )
-                        .description("Have ball?")
+                        .condition(|s| {
+                            s.game_state_is_one_of(&[GameState::Penalty, GameState::PenaltyRun])
+                        })
+                        .then(fetch_ball_with_preshoot().build())
+                        .description("Can go?")
                         .build(),
                 )
                 .description("Penalty sequence")

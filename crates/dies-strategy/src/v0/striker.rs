@@ -34,7 +34,7 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .when(|s| should_pickup_ball(s)) // TODO: make sure that
                 // the closest robots gets it; on second thought, this is probably not
                 // implementable -> the roles are not available yet during the role assigment. so maybe not.
-                .until(|s| s.position().x < 0.0)
+                .until(|s| s.position().x < -100.0)
                 .commit_to(
                     semaphore_node()
                         .do_then(fetch_and_shoot_with_prep())
@@ -199,7 +199,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
         .map(|p| (ball.position.xy() - p.position).norm())
         .min_by(|a, b| a.partial_cmp(b).unwrap());
 
-    ball.position.x > 80.0
+    ball.position.x > -80.0
         && closest_opponent_dist.map(|d| d > 300.0).unwrap_or(true)
         && closest_striker
 }
