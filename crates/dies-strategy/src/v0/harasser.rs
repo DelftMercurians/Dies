@@ -225,6 +225,8 @@ fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
                 );
             }
 
+            let final_pos = Vector2::new(constrained_pos.x.min(-50.0), constrained_pos.y);
+
             return final_pos;
         }
     }
@@ -233,15 +235,18 @@ fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
     let harass_distance = 300.0;
     let to_goal = (own_goal - ball_pos).normalize();
     let target_pos = ball_pos + to_goal * harass_distance;
-    let constrained_pos = s.constrain_to_field(target_pos);
-    let final_pos = Vector2::new(constrained_pos.x.min(-50.0), constrained_pos.y);
 
     // Check if the position is obstructed
-    if is_position_obstructed(s, final_pos) {
+    if is_position_obstructed(s, target_pos) {
         // Sample positions on arc around ball
         let angle_to_goal = to_goal.y.atan2(to_goal.x);
-        return find_best_position_on_arc(s, ball_pos, harass_distance, angle_to_goal, final_pos);
+        let final_pos =
+            find_best_position_on_arc(s, ball_pos, harass_distance, angle_to_goal, target_pos);
+        return Vector2::new(final_pos.x.min(-50.0), final_pos.y);
     }
+
+    // let constrained_pos = s.constrain_to_field(target_pos);
+    let final_pos = Vector2::new(target_pos.x.min(-50.0), target_pos.y);
 
     final_pos
 }
