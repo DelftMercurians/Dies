@@ -22,6 +22,7 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
                 .condition(|s| s.ball_in_own_penalty_area() && s.ball_speed() < 500.0)
                 .then(
                     fetch_ball_with_preshoot()
+                        .with_avoid_ball_care(1.0)
                         .description("Clear Ball".to_string())
                         .build(),
                 )

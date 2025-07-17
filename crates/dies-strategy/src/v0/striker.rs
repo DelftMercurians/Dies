@@ -144,7 +144,7 @@ fn striker_position(s: &RobotSituation, last_pos: Option<Vector2>) -> Vector2 {
         .unwrap_or(false);
 
     let ball_pos = s.ball_position();
-    if am_closest_striker {
+    if am_closest_striker && ball_pos.x > 80.0 {
         if let Some(closest_opp) = s.get_closest_opp_player_to_ball() {
             let opp_to_ball_dist = (closest_opp.position - ball_pos).norm();
             if opp_to_ball_dist < 500.0 {

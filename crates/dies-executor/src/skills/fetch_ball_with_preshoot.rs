@@ -6,7 +6,7 @@ use dies_core::{Angle, Vector2};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::control::{find_nearest_opponent_distance_along_direction, PassingStore};
+use crate::control::PassingStore;
 use crate::skills::{SkillCtx, SkillProgress, SkillResult};
 
 #[derive(Clone)]
@@ -33,6 +33,7 @@ enum FetchBallWithPreshootState {
     MoveWithBall {
         target_pos: Vector2,
         start_pos: Vector2,
+        go_to_pos: Vector2,
     },
     Done,
     Failed,
@@ -96,16 +97,16 @@ impl FetchBallWithPreshoot {
             }
         }
 
-        // Case 2: Direct line of sight to target is obstructed by a nearby opponent
-        let passing_store = PassingStore::new(ctx.player.id, Arc::new(ctx.world.clone()));
-        let direction = Angle::between_points(player_pos, target_pos);
-        let nearest_opponent_distance =
-            find_nearest_opponent_distance_along_direction(&passing_store, direction);
+        // // Case 2: Direct line of sight to target is obstructed by a nearby opponent
+        // let passing_store = PassingStore::new(ctx.player.id, Arc::new(ctx.world.clone()));
+        // let direction = Angle::between_points(player_pos, target_pos);
+        // let nearest_opponent_distance =
+        //     find_nearest_opponent_distance_along_direction(&passing_store, direction);
 
-        // Consider obstructed if opponent is within 300mm of the shooting line
-        if nearest_opponent_distance < 300.0 {
-            return true;
-        }
+        // // Consider obstructed if opponent is within 300mm of the shooting line
+        // if nearest_opponent_distance < 300.0 {
+        //     return true;
+        // }
 
         false
     }
@@ -134,7 +135,7 @@ impl FetchBallWithPreshoot {
                     let distance_to_prep_target = (prep_target - player_pos).magnitude();
                     if distance_to_prep_target < 15.0
                         || (distance_to_prep_target < 90.0 && ctx.player.velocity.norm() < 10.0)
-                        || start_time.elapsed().as_secs_f64() > 7.0
+                        || start_time.elapsed().as_secs_f64() > 5.0
                     {
                         self.state = FetchBallWithPreshootState::ApproachBall {
                             start_pos: player_pos,
@@ -172,17 +173,18 @@ impl FetchBallWithPreshoot {
 
                     if ctx.player.breakbeam_ball_detected {
                         // Check if we should move with ball before shooting
-                        // if self.should_move_with_ball(ctx, *target_pos) {
-                        //     self.state = FetchBallWithPreshootState::MoveWithBall {
-                        //         target_pos: *target_pos,
-                        //         start_pos: player_pos,
-                        //     };
-                        //     return SkillProgress::Continue(input);
-                        // } else {
-                        input.with_kicker(Kick { force: 1.0 });
-                        self.state = FetchBallWithPreshootState::Done;
-                        return SkillProgress::Continue(input);
-                        // }
+                        if self.should_move_with_ball(ctx, *target_pos) {
+                            self.state = FetchBallWithPreshootState::MoveWithBall {
+                                target_pos: *target_pos,
+                                start_pos: player_pos,
+                                go_to_pos: Vector2::zeros(),
+                            };
+                            return SkillProgress::Continue(input);
+                        } else {
+                            input.with_kicker(Kick { force: 1.0 });
+                            self.state = FetchBallWithPreshootState::Done;
+                            return SkillProgress::Continue(input);
+                        }
                     }
 
                     if (player_pos - start_pos).magnitude() > self.distance_limit {
@@ -198,6 +200,7 @@ impl FetchBallWithPreshoot {
                 FetchBallWithPreshootState::MoveWithBall {
                     target_pos,
                     start_pos,
+                    go_to_pos,
                 } => {
                     // Higher dribbling speed for ball control
                     input.with_dribbling(1.0);
@@ -223,7 +226,7 @@ impl FetchBallWithPreshoot {
                         return SkillProgress::Continue(input);
                     }
 
-                    input.with_position(*target_pos);
+                    input.with_position(*go_to_pos);
                     input.with_speed_limit(500.0);
 
                     SkillProgress::Continue(input)
