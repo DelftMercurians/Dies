@@ -1,7 +1,4 @@
-use dies_executor::{
-    behavior_tree_api::*, find_best_preshoot_heading, find_best_preshoot_target,
-    find_best_preshoot_target_target, find_best_shoot_target,
-};
+use dies_executor::behavior_tree_api::*;
 
 pub fn fetch_and_shoot() -> BehaviorNode {
     fetch_and_shoot_with_prep().into()

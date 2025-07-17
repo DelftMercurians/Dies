@@ -71,7 +71,7 @@ impl FetchBallWithPreshoot {
                     let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 180.0;
 
                     let distance_to_prep_target = (prep_target - player_pos).magnitude();
-                    if distance_to_prep_target < 10.0 {
+                    if distance_to_prep_target < 15.0 {
                         self.state = FetchBallWithPreshootState::ApproachBall {
                             start_pos: player_pos,
                             ball_pos,

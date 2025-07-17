@@ -1,7 +1,7 @@
 {
   "controller_settings": {
     "max_acceleration": 12500.0,
-    "max_velocity": 3000.0,
+    "max_velocity": 4000.0,
     "max_deceleration": 6340.0,
     "max_angular_velocity": 25.132741228718345,
     "max_angular_acceleration": 349.0658503988659,
@@ -14,7 +14,7 @@
   "tracker_settings": {
     "field_mask": {
       "x_min": -1.0,
-      "x_max": 0.0,
+      "x_max": 1.0,
       "y_min": -1.0,
       "y_max": 1.0
     },
@@ -25,8 +25,8 @@
     "ball_measurement_var": 0.01
   },
   "team_configuration": {
-    "blue_active": false,
-    "yellow_active": true,
+    "blue_active": true,
+    "yellow_active": false,
     "blue_script_path": null,
     "yellow_script_path": null,
     "side_assignment": "YellowOnPositive"

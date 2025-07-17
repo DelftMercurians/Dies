@@ -249,7 +249,7 @@ impl TeamController {
                 n_robots_to_remove
             );
             self.removing_players
-                .extend(priority_list.iter().take(n_robots_to_remove));
+                .extend(priority_list.iter().rev().take(n_robots_to_remove));
         }
 
         // Clean up empty semaphores periodically
