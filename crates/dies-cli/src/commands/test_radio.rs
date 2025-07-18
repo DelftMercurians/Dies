@@ -26,7 +26,7 @@ pub async fn test_radio(
     );
     let mut bs_handle = BasestationHandle::spawn(bs_config)?;
 
-    assert!(ids.len() > 0, "No IDs provided");
+    assert!(!ids.is_empty(), "No IDs provided");
 
     let mut interval = tokio::time::interval(Duration::from_secs_f64(1.0 / 30.0));
     let start = Instant::now();
