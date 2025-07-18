@@ -44,7 +44,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                     .exclude(|s| s.player_id.as_u32() == 4)
                     .exclude(|s| s.has_handicap(Handicap::NoKicker))
                     .score(|s| {
-                        let score = score_for_kicker(s);
+                        let score = score_for_kicker(s) * 10.0;
                         if s.position().x < 0.0 {
                             score * 2.0
                         } else {
@@ -61,9 +61,9 @@ pub fn v0_strategy(game: &mut GameContext) {
                     .count(1)
                     .exclude(|s| s.has_handicap(Handicap::NoKicker))
                     .score(|s| {
-                        let score = score_for_kicker(s);
+                        let score = score_for_kicker(s) * 10.0;
                         if s.am_closest_to_ball() {
-                            score + 5.0
+                            score + 50.0
                         } else {
                             score
                         }
@@ -83,7 +83,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                 game.add_role("penalty_kicker")
                     .count(1)
                     .exclude(|s| s.has_handicap(Handicap::NoKicker))
-                    .score(|s| 1.0)
+                    .score(|s| 100.0)
                     .behavior(|s| penalty_kicker::build_penalty_kicker_tree(s));
             }
         }

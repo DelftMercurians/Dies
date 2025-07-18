@@ -312,7 +312,7 @@ impl RoleAssignmentSolver {
         if let Some(prev_assignments) = previous_assignments {
             if let Some(prev_role) = prev_assignments.get(&robot_id) {
                 if prev_role == role_name {
-                    score *= self.hysteresis_bonus as i64;
+                    score -= self.hysteresis_bonus as i64;
                 }
             }
         }
