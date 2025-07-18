@@ -223,7 +223,7 @@ impl RoleAssignmentSolver {
                 );
                 let discount_factor = (role.index + 1) * j; // prefer closer to min and earlier in
                                                             // sequence roles
-                score_matrix[(j, i)] = (score * (discount_factor as f64)) as i64;
+                score_matrix[(j, i)] = (score * (discount_factor as i64));
             }
         }
 
@@ -285,7 +285,6 @@ impl RoleAssignmentSolver {
         Ok(eligible_robots)
     }
 
-    /// Get cached score for robot-role combination
     fn get_score(
         &mut self,
         robot_id: PlayerId,
@@ -294,7 +293,7 @@ impl RoleAssignmentSolver {
         team_context: TeamContext,
         team_data: Arc<TeamData>,
         previous_assignments: Option<&HashMap<PlayerId, String>>,
-    ) -> f64 {
+    ) -> i64 {
         let situation = RobotSituation::new(
             robot_id,
             team_data.clone(),
@@ -303,13 +302,18 @@ impl RoleAssignmentSolver {
             previous_assignments.cloned().unwrap_or_default().into(),
             team_context.team_color(),
         );
-        let mut score = (role.scorer)(&situation);
+        let is_eligible = !self.violates_filters(role, &situation);
+        let mut score = if is_eligible {
+            -(role.scorer)(&situation) as i64
+        } else {
+            1_000_000
+        };
 
         // Apply hysteresis bonus - strongly prefer keeping current role assignment
         if let Some(prev_assignments) = previous_assignments {
             if let Some(prev_role) = prev_assignments.get(&robot_id) {
                 if prev_role == role_name {
-                    score *= self.hysteresis_bonus;
+                    score *= self.hysteresis_bonus as i64;
                 }
             }
         }
