@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use crate::behavior_tree::NoopNode;
-use crate::PlayerControlInput;
+use crate::{PlayerControlInput, TeamContext};
 
 use super::BehaviorNode;
 
@@ -162,24 +162,27 @@ pub struct RobotSituation {
     pub viz_path_prefix: String,
     pub role_assignments: Arc<HashMap<PlayerId, String>>,
     pub team_color: TeamColor,
+    pub team_context: TeamContext,
 }
 
 impl RobotSituation {
     pub fn new(
         player_id: PlayerId,
         world: Arc<TeamData>,
-        team_context: BtContext,
+        bt_context: BtContext,
         viz_path_prefix: String,
         role_assignments: Arc<HashMap<PlayerId, String>>,
         team_color: TeamColor,
+        team_context: TeamContext,
     ) -> Self {
         Self {
             player_id,
             world,
-            bt_context: team_context,
+            bt_context,
             viz_path_prefix,
             role_assignments,
             team_color,
+            team_context,
         }
     }
 

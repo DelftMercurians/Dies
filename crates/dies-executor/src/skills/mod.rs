@@ -21,6 +21,7 @@ pub use wait::Wait;
 use crate::{
     behavior_tree::BtContext,
     control::{PlayerContext, PlayerControlInput},
+    TeamContext,
 };
 use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2};
 
@@ -56,6 +57,7 @@ pub struct SkillCtx<'a> {
     pub world: &'a TeamData,
     pub bt_context: BtContext,
     pub viz_path_prefix: String,
+    pub team_context: TeamContext,
 }
 
 /// The result of a skill execution

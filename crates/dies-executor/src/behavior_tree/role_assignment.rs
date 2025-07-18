@@ -269,6 +269,7 @@ impl RoleAssignmentSolver {
                     team_context.player_context(robot_id).key("bt"),
                     previous_assignments.cloned().unwrap_or_default().into(),
                     team_context.team_color(),
+                    team_context.clone(),
                 );
 
                 if !self.violates_filters(&role, &situation) {
@@ -298,6 +299,7 @@ impl RoleAssignmentSolver {
             team_context.player_context(robot_id).key("bt"),
             previous_assignments.cloned().unwrap_or_default().into(),
             team_context.team_color(),
+            team_context.clone(),
         );
         let is_eligible = !self.violates_filters(role, &situation);
         let mut score = if is_eligible {

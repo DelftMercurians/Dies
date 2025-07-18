@@ -144,7 +144,7 @@ impl FetchBallWithPreshoot {
                             position: position.unwrap_or(ctx.world.get_player(*id).position),
                         });
                     }
-                    dies_core::debug_cross(
+                    ctx.team_context.debug_cross_colored(
                         "shooting_target",
                         shooting_target.position().unwrap_or_default(),
                         dies_core::DebugColor::Blue,

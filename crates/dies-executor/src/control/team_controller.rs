@@ -215,6 +215,7 @@ impl TeamController {
                                 player_context.key("bt"),
                                 self.role_assignments.clone(),
                                 team_color,
+                                team_context.clone(),
                             );
 
                             self.player_behavior_trees.insert(
@@ -277,6 +278,7 @@ impl TeamController {
                 viz_path_prefix,
                 self.role_assignments.clone(),
                 team_color,
+                team_context.clone(),
             );
 
             player_context.debug_string("role_bt", &player_bt.name);
@@ -294,6 +296,8 @@ impl TeamController {
                     RoleType::FreeKicker
                 } else if role_name.contains("waller") {
                     RoleType::Waller
+                } else if role_name.contains("penalty_kicker") {
+                    RoleType::PenaltyKicker
                 } else {
                     RoleType::Player
                 };

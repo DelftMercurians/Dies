@@ -404,6 +404,9 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore, allow_passing: bool) -> (Sh
         if teammate.id == s.player_id {
             continue;
         }
+        if teammate.position.x < 0.0 {
+            continue;
+        }
 
         // score is a combination of clean shoot from the teammate and passing discount
         let (t, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(teammate.id));
@@ -495,9 +498,7 @@ pub fn best_receiver_target_score(s: &PassingStore) -> f64 {
         Some(b) => b,
         None => return 0.0, // early return if ball is not found
     };
-    let player_pos = s.player_data().position;
     let ball_pos = ball.position.xy();
-    let teammates = &s.world.own_players;
 
     let (_, goal_shoot_prob) = best_goal_shoot(s);
 
@@ -524,6 +525,9 @@ pub fn combination_discounting_for_receivers(s: &PassingStore) -> f64 {
     // Factor 1: Distance penalty - penalize being too close to teammates
     for teammate in teammates {
         if teammate.id == s.player_id {
+            continue;
+        }
+        if teammate.position.x < 0.0 {
             continue;
         }
 
@@ -737,7 +741,6 @@ pub fn find_nearest_opponent_distance_along_direction(s: &PassingStore, directio
 
     // Check all opponent robots
     for player in s.world.opp_players.iter() {
-        //.chain(s.world.own_players.iter()) {
         if player.id != s.player_data().id {
             let opp_pos = player.position;
             let to_opponent = opp_pos - player_pos;

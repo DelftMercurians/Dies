@@ -136,7 +136,7 @@ impl TryReceive {
         // .intercept_line
         // .get_or_insert((ctx.player.position, perp(passer_heading.to_vector())));
 
-        dies_core::debug_line(
+        ctx.team_context.debug_line_colored(
             "intercept_line",
             intercept_line.0,
             intercept_line.1,
@@ -160,10 +160,10 @@ impl TryReceive {
                 intersection
             };
 
-            dies_core::debug_cross(
+            ctx.team_context.debug_cross_colored(
                 "receive_target",
                 clamped_intersection,
-                dies_core::DebugColor::Red,
+                dies_core::DebugColor::Gray,
             );
 
             input.with_position(clamped_intersection);

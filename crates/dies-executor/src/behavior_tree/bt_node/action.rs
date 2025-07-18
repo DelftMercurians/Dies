@@ -193,6 +193,7 @@ impl ActionNode {
             world: &situation.world,
             bt_context: situation.bt_context.clone(),
             viz_path_prefix: situation.debug_key(""),
+            team_context: situation.team_context.clone(),
         };
 
         let (status, input) = match skill.update(skill_ctx) {

@@ -31,19 +31,7 @@
     "yellow_script_path": null,
     "side_assignment": "YellowOnPositive"
   },
-  "yellow_team_settings": {
-    "handicaps": {
-      "0": ["no_kicker"],
-      "1": ["no_kicker"],
-      "5": ["no_kicker"]
-    }
-  },
-  "blue_team_settings": {
-    "handicaps": {
-      "0": ["no_kicker"],
-      "1": ["no_kicker"],
-      "5": ["no_kicker"]
-    }
-  },
+  "yellow_team_settings": {},
+  "blue_team_settings": {},
   "allow_no_vision": false
 }

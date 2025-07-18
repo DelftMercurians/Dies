@@ -10,7 +10,7 @@ pub fn build_penalty_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .add(
                     // Move to penalty position
                     go_to_position(Argument::callback(|s| {
-                        s.get_opp_penalty_mark() + Vector2::new(-300.0, 0.0)
+                        s.get_opp_penalty_mark() + Vector2::new(300.0, 0.0)
                     }))
                     .with_heading(Argument::callback(get_heading_to_goal))
                     .description("Approach penalty".to_string())
@@ -21,7 +21,7 @@ pub fn build_penalty_kicker_tree(_s: &RobotSituation) -> BehaviorNode {
                         .condition(|s| {
                             s.game_state_is_one_of(&[GameState::Penalty, GameState::PenaltyRun])
                         })
-                        .then(fetch_ball_with_preshoot().build())
+                        .then(fetch_ball_with_preshoot().with_can_pass(false).build())
                         .description("Can go?")
                         .build(),
                 )
