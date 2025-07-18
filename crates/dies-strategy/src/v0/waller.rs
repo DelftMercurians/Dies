@@ -37,6 +37,7 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
             continuous("wall position")
                 .position(calculate_wall_position)
                 .heading(get_defender_heading)
+                .aggressiveness(3.0)
                 .build(),
         )
         .description("Waller")

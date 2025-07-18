@@ -57,6 +57,7 @@ impl TwoStepMTP {
         current_player: &PlayerData,
         avoid_goal_area: bool,
         avoid_goal_area_margin: f64,
+        avoid_robots: bool,
         obstacles: Vec<Obstacle>,
     ) -> Vector2 {
         let setpoint = match self.setpoint {
@@ -80,6 +81,7 @@ impl TwoStepMTP {
             player_context,
             avoid_goal_area,
             avoid_goal_area_margin,
+            avoid_robots,
             obstacles,
         );
 
@@ -149,6 +151,7 @@ impl TwoStepMTP {
         player_context: &PlayerContext,
         avoid_goal_area: bool,
         avoid_goal_area_margin: f64,
+        avoid_robots: bool,
         obstacles: Vec<Obstacle>,
     ) -> Vector2 {
         // Debug visualization for boundary rectangles
@@ -171,6 +174,7 @@ impl TwoStepMTP {
             current_player,
             avoid_goal_area,
             avoid_goal_area_margin,
+            avoid_robots,
             obstacles.clone(),
         );
 
@@ -188,6 +192,7 @@ impl TwoStepMTP {
                 current_player,
                 avoid_goal_area,
                 avoid_goal_area_margin,
+                avoid_robots,
                 obstacles.clone(),
             );
 
@@ -221,6 +226,7 @@ impl TwoStepMTP {
         current_player: &PlayerData,
         avoid_goal_area: bool,
         avoid_goal_area_margin: f64,
+        avoid_robots: bool,
         obstacles: Vec<Obstacle>,
     ) -> f64 {
         let mut total_cost = 0.0;
@@ -240,6 +246,7 @@ impl TwoStepMTP {
                     current_player,
                     avoid_goal_area,
                     avoid_goal_area_margin,
+                    avoid_robots,
                     obstacles.clone(),
                 );
         }
@@ -274,6 +281,7 @@ impl TwoStepMTP {
         current_player: &PlayerData,
         avoid_goal_area: bool,
         avoid_goal_area_margin: f64,
+        avoid_robots: bool,
         obstacles: Vec<Obstacle>,
     ) -> f64 {
         // total cost is multiplied by magic coeff -> lower implies we care more about
@@ -287,27 +295,29 @@ impl TwoStepMTP {
         let pend = end;
 
         // Calculate intersection cost with other robots
-        for robot in world_data
-            .own_players
-            .iter()
-            .chain(world_data.opp_players.iter())
-        {
-            if robot.id == current_player.id {
-                continue;
-            }
+        if avoid_robots {
+            for robot in world_data
+                .own_players
+                .iter()
+                .chain(world_data.opp_players.iter())
+            {
+                if robot.id == current_player.id {
+                    continue;
+                }
 
-            let intersection_length =
-                self.line_circle_intersection_length(
-                    start,
-                    mid,
-                    robot.position,
-                    robot_scare, // Robot radius
-                ) + self.line_circle_intersection_length(mid, end, robot.position, robot_scare)
-                    * 0.1;
-            if intersection_length > 0.0 {
-                total_cost += 500.0
+                let intersection_length =
+                    self.line_circle_intersection_length(
+                        start,
+                        mid,
+                        robot.position,
+                        robot_scare, // Robot radius
+                    ) + self.line_circle_intersection_length(mid, end, robot.position, robot_scare)
+                        * 0.1;
+                if intersection_length > 0.0 {
+                    total_cost += 500.0
+                }
+                total_cost += intersection_length; // Weight for robot avoidance
             }
-            total_cost += intersection_length; // Weight for robot avoidance
         }
 
         // Calculate intersection cost with field boundaries

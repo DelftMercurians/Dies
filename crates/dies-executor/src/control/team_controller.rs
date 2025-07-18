@@ -147,6 +147,7 @@ impl TeamController {
                         &player_context,
                         true,
                         0.0,
+                        true,
                     );
                 }
             }
@@ -553,6 +554,19 @@ impl TeamController {
                     _ => 0.0,
                 };
 
+                let dist_to_own_goal = player_data.position.x
+                    - world_data
+                        .field_geom
+                        .as_ref()
+                        .map(|f| f.field_length / 2.0)
+                        .unwrap_or(0.0);
+                let avoid_robots =
+                    if input_to_use.role_type == RoleType::Waller && dist_to_own_goal < 1300.0 {
+                        false
+                    } else {
+                        true
+                    };
+
                 controller.update(
                     player_data,
                     &world_data,
@@ -564,6 +578,7 @@ impl TeamController {
                     &player_context,
                     avoid_goal_area,
                     avoid_goal_area_margin,
+                    avoid_robots,
                 );
             } else {
                 controller.increment_frames_misses();
