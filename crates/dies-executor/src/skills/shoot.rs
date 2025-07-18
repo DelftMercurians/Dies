@@ -61,6 +61,7 @@ impl Shoot {
                             } else {
                                 if let ShootTarget::Player { id, position } = &self.target {
                                     ctx.bt_context.set_passing_target(PassingTarget {
+                                        shooter_id: ctx.player.id,
                                         id: *id,
                                         position: position
                                             .unwrap_or(ctx.world.get_player(*id).position),
@@ -92,6 +93,7 @@ impl Shoot {
                         SkillProgress::Done(SkillResult::Success) => {
                             if let ShootTarget::Player { id, position } = &self.target {
                                 ctx.bt_context.set_passing_target(PassingTarget {
+                                    shooter_id: ctx.player.id,
                                     id: *id,
                                     position: position
                                         .unwrap_or(ctx.world.get_player(*id).position),

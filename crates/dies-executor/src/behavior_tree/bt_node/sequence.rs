@@ -89,27 +89,22 @@ impl SequenceNode {
                     return (BehaviorStatus::Running, input_opt);
                 }
                 (BehaviorStatus::Failure, input_opt) => {
-                    if !self.ignore_fail {
-                        self.current_child_index = 0;
-                        debug_tree_node(
-                            situation.debug_key(node_full_id.clone()),
-                            self.description(),
-                            node_full_id.clone(),
-                            self.get_child_node_ids(&situation.viz_path_prefix),
-                            false,
-                            "Sequence",
-                            Some(format!(
-                                "Failed at {}.{}",
-                                self.current_child_index + 1,
-                                self.children.len()
-                            )),
-                            Some("All must succeed in order".to_string()),
-                        );
-                        return (BehaviorStatus::Failure, None);
-                    } else {
-                        self.current_child_index += 1;
-                        last_input_on_success = input_opt;
-                    }
+                    self.current_child_index = 0;
+                    debug_tree_node(
+                        situation.debug_key(node_full_id.clone()),
+                        self.description(),
+                        node_full_id.clone(),
+                        self.get_child_node_ids(&situation.viz_path_prefix),
+                        false,
+                        "Sequence",
+                        Some(format!(
+                            "Failed at {}.{}",
+                            self.current_child_index + 1,
+                            self.children.len()
+                        )),
+                        Some("All must succeed in order".to_string()),
+                    );
+                    return (BehaviorStatus::Failure, None);
                 }
             }
         }

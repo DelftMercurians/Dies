@@ -49,6 +49,7 @@ pub enum SkillDefinition {
     FetchBall,
     FetchBallWithPreshoot {
         distance_limit: f64,
+        can_pass: bool,
     },
     Shoot {
         target: Argument<ShootTarget>,
@@ -164,8 +165,13 @@ impl ActionNode {
                     duration_secs.resolve(situation),
                 ))),
                 SkillDefinition::FetchBall => Some(Skill::FetchBall(FetchBall::new())),
-                SkillDefinition::FetchBallWithPreshoot { distance_limit } => {
-                    let skill = FetchBallWithPreshoot::new().with_distance_limit(*distance_limit);
+                SkillDefinition::FetchBallWithPreshoot {
+                    distance_limit,
+                    can_pass,
+                } => {
+                    let skill = FetchBallWithPreshoot::new()
+                        .with_distance_limit(*distance_limit)
+                        .with_can_pass(*can_pass);
                     Some(Skill::FetchBallWithPreshoot(skill))
                 }
                 SkillDefinition::Shoot { target } => {
@@ -475,6 +481,7 @@ impl FetchBallBuilder {
 pub struct FetchBallWithPreshootBuilder {
     distance_limit: f64,
     avoid_ball_care: f64,
+    can_pass: bool,
     description: Option<String>,
 }
 
@@ -483,6 +490,7 @@ impl FetchBallWithPreshootBuilder {
         Self {
             distance_limit: 160.0,
             avoid_ball_care: 0.0,
+            can_pass: true,
             description: None,
         }
     }
@@ -502,10 +510,16 @@ impl FetchBallWithPreshootBuilder {
         self
     }
 
+    pub fn with_can_pass(mut self, can_pass: bool) -> Self {
+        self.can_pass = can_pass;
+        self
+    }
+
     pub fn build(self) -> ActionNode {
         ActionNode::new(
             SkillDefinition::FetchBallWithPreshoot {
                 distance_limit: self.distance_limit,
+                can_pass: self.can_pass,
             },
             self.description,
         )

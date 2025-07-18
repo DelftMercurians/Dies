@@ -15,7 +15,7 @@ pub struct FetchBallWithPreshoot {
     preshoot_heading: Option<Angle>,
     state: FetchBallWithPreshootState,
     shoot_target: Option<ShootTarget>,
-    set_flag: bool,
+    can_pass: bool,
     distance_limit: f64,
     avoid_ball_care: f64,
     go_to_preshoot_timer: Option<Instant>,
@@ -46,11 +46,16 @@ impl FetchBallWithPreshoot {
             preshoot_heading: None,
             state: FetchBallWithPreshootState::GoToPreshoot { start_time: None },
             shoot_target: None,
-            set_flag: false,
+            can_pass: true,
             distance_limit: 160.0,
             avoid_ball_care: 0.0,
             go_to_preshoot_timer: None,
         }
+    }
+
+    pub fn with_can_pass(mut self, can_pass: bool) -> Self {
+        self.can_pass = can_pass;
+        self
     }
 
     pub fn with_distance_limit(mut self, distance_limit: f64) -> Self {
@@ -122,7 +127,7 @@ impl FetchBallWithPreshoot {
             let player_heading = ctx.player.yaw;
 
             let dribbler_position = player_pos + player_heading.to_vector() * PLAYER_RADIUS;
-            let dribbler_radius = 35.0;
+            let dribbler_radius = 25.0;
 
             match &self.state {
                 FetchBallWithPreshootState::GoToPreshoot { .. } => {
@@ -130,7 +135,15 @@ impl FetchBallWithPreshoot {
                     let shooting_target = find_best_preshoot(
                         &PassingStore::new(ctx.player.id, Arc::new(ctx.world.clone())),
                         self.shoot_target.clone(),
+                        self.can_pass,
                     );
+                    if let Some(ShootTarget::Player { id, position }) = &self.shoot_target {
+                        ctx.bt_context.set_passing_target(PassingTarget {
+                            shooter_id: ctx.player.id,
+                            id: *id,
+                            position: position.unwrap_or(ctx.world.get_player(*id).position),
+                        });
+                    }
                     dies_core::debug_cross(
                         "shooting_target",
                         shooting_target.position().unwrap_or_default(),
@@ -169,13 +182,11 @@ impl FetchBallWithPreshoot {
                 } => {
                     let start_time = self.go_to_preshoot_timer.get_or_insert(Instant::now());
                     if let Some(ShootTarget::Player { id, position }) = &self.shoot_target {
-                        if !self.set_flag {
-                            self.set_flag = true;
-                            ctx.bt_context.set_passing_target(PassingTarget {
-                                id: *id,
-                                position: position.unwrap_or(ctx.world.get_player(*id).position),
-                            });
-                        }
+                        ctx.bt_context.set_passing_target(PassingTarget {
+                            shooter_id: ctx.player.id,
+                            id: *id,
+                            position: position.unwrap_or(ctx.world.get_player(*id).position),
+                        });
                     }
 
                     let target_heading = Angle::between_points(player_pos, *target_pos);
@@ -236,6 +247,14 @@ impl FetchBallWithPreshoot {
                     start_pos,
                     go_to_pos,
                 } => {
+                    if let Some(ShootTarget::Player { id, position }) = &self.shoot_target {
+                        ctx.bt_context.set_passing_target(PassingTarget {
+                            shooter_id: ctx.player.id,
+                            id: *id,
+                            position: position.unwrap_or(ctx.world.get_player(*id).position),
+                        });
+                    }
+
                     let ball_to_dribbler_distance = (ball_pos - dribbler_position).magnitude();
                     dies_core::debug_value("ball_to_dribbler_distance", ball_to_dribbler_distance);
 

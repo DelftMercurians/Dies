@@ -39,8 +39,9 @@ impl Default for BehaviorTree {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PassingTarget {
+    pub shooter_id: PlayerId,
     pub id: PlayerId,
     pub position: Vector2,
 }
@@ -85,6 +86,10 @@ impl BtContext {
     pub fn clear_semaphores(&self) {
         let mut semaphores = self.semaphores.write().unwrap();
         semaphores.clear();
+    }
+
+    pub fn clear_passing_target(&self) {
+        *self.passing_target.write().unwrap() = None;
     }
 
     pub fn clear_semaphores_for_player(&self, player_id: PlayerId) {
@@ -665,6 +670,7 @@ impl RobotSituation {
 
     pub fn set_passing_target(&mut self, player_id: PlayerId) {
         self.bt_context.set_passing_target(PassingTarget {
+            shooter_id: self.player_id,
             id: player_id,
             position: self.world.get_player(player_id).position,
         });

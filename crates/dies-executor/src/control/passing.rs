@@ -392,12 +392,11 @@ pub fn pass_success_probability(s: &PassingStore, teammate_pos: Vector2) -> f64 
     prob
 }
 
-pub fn best_teammate_pass_or_shoot(s: &PassingStore) -> (ShootTarget, f64) {
+pub fn best_teammate_pass_or_shoot(s: &PassingStore, allow_passing: bool) -> (ShootTarget, f64) {
     let teammates = &s.world.own_players;
 
-    let (best_target_direct, mut best_prob_direct) = best_goal_shoot(s);
+    let (best_target_direct, best_prob_direct) = best_goal_shoot(s);
     let best_target_direct = ShootTarget::Goal(best_target_direct);
-    // println!("{} scored as {}", s.player_id, best_score);
     let mut best_prob_pass = 0.0;
     let mut best_target_pass = best_target_direct.clone();
 
@@ -431,18 +430,23 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore) -> (ShootTarget, f64) {
     let direct_viable = best_prob_direct >= min_prob_threshold;
     let pass_viable = best_prob_pass >= min_prob_threshold;
     let best_prob = best_prob_direct.max(best_prob_pass);
-    // return (best_target_pass, best_prob_pass);
-    return (best_target_direct, best_prob_direct);
+    if !allow_passing {
+        println!("no passing, direct: {:.3}", best_prob_direct);
+        return (best_target_direct, best_prob_direct);
+    }
 
     // return (best_target_pass, best_prob_pass);
     let best_target = if !direct_viable && !pass_viable {
+        println!("no direct or pass, direct: {:.3}", best_prob_direct);
         // If neither option is viable, default to direct shooting
         best_target_direct
     } else if !pass_viable {
         // Only direct shooting is viable
+        println!("no pass, direct: {:.3}", best_prob_direct);
         best_target_direct
     } else if !direct_viable {
         // Only passing is viable
+        println!("no direct, pass: {:.3}", best_prob_pass);
         best_target_pass
     } else {
         // Both options are viable - make probabilistic choice
@@ -458,16 +462,22 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore) -> (ShootTarget, f64) {
         let biased_total = biased_direct + biased_pass;
 
         let final_direct_prob = biased_direct / biased_total;
+        println!(
+            "direct: {:.3}, pass: {:.3}",
+            final_direct_prob,
+            1.0 - final_direct_prob
+        );
 
         // Use a simple random number generator based on robot position and time-like hash
         // This provides deterministic but seemingly random behavior
         let random_value = 0.25 + s.player_id_hash() * 0.5;
+        // println!(
 
         if random_value < final_direct_prob {
-            // println!("chosen direct shoot with p={:.3}", final_direct_prob);
+            println!("chosen direct shoot with p={:.3}", final_direct_prob);
             best_target_direct
         } else {
-            // println!("chosen pass with p={:.3}", 1.0 - final_direct_prob);
+            println!("chosen pass with p={:.3}", 1.0 - final_direct_prob);
             best_target_pass
         }
     };
@@ -659,18 +669,17 @@ pub fn score_shoot_target(s: &PassingStore, target: ShootTarget) -> f64 {
     }
 }
 
-pub fn find_best_shoot_score(s: &PassingStore) -> f64 {
-    let (_, p) = best_teammate_pass_or_shoot(s);
-    p
-}
-
-pub fn find_best_shoot_target(s: impl Into<PassingStore>) -> ShootTarget {
+pub fn find_best_shoot_target(s: impl Into<PassingStore>, allow_pasing: bool) -> ShootTarget {
     let s: PassingStore = s.into();
-    let (t, _) = best_teammate_pass_or_shoot(&s);
+    let (t, _) = best_teammate_pass_or_shoot(&s, allow_pasing);
     t
 }
 
-pub fn find_best_preshoot(s: &PassingStore, last_target: Option<ShootTarget>) -> ShootTarget {
+pub fn find_best_preshoot(
+    s: &PassingStore,
+    last_target: Option<ShootTarget>,
+    allow_passing: bool,
+) -> ShootTarget {
     let ball = match s.world.ball.as_ref() {
         Some(b) => b,
         None => return ShootTarget::Goal(Vector2::zeros()), // early return if ball is not found
@@ -679,7 +688,7 @@ pub fn find_best_preshoot(s: &PassingStore, last_target: Option<ShootTarget>) ->
     let ball_pos = ball.position.xy();
     let hypothetical = s.force_self_position(ball_pos);
 
-    let (cur_target, cur_score) = best_teammate_pass_or_shoot(&hypothetical);
+    let (cur_target, cur_score) = best_teammate_pass_or_shoot(&hypothetical, allow_passing);
 
     if let Some(last_target) = last_target {
         let last_score = score_shoot_target(s, last_target.clone());
@@ -692,7 +701,7 @@ pub fn find_best_preshoot(s: &PassingStore, last_target: Option<ShootTarget>) ->
     cur_target
 }
 
-pub fn find_best_preshoot_target(s: &PassingStore) -> Vector2 {
+pub fn find_best_preshoot_target(s: &PassingStore, allow_pasing: bool) -> Vector2 {
     let ball = match s.world.ball.as_ref() {
         Some(b) => b,
         None => return Vector2::zeros(), // early return if ball is not found
@@ -702,7 +711,7 @@ pub fn find_best_preshoot_target(s: &PassingStore) -> Vector2 {
     let hypothetical = s.force_self_position(ball_pos);
 
     let goal_pos = s.get_opp_goal_position();
-    let target = find_best_shoot_target(&hypothetical)
+    let target = find_best_shoot_target(&hypothetical, allow_pasing)
         .position()
         .unwrap_or(goal_pos);
     let to_target = target - ball_pos;
@@ -710,14 +719,14 @@ pub fn find_best_preshoot_target(s: &PassingStore) -> Vector2 {
     ball_pos - to_target.normalize() * 150.0
 }
 
-pub fn find_best_preshoot_heading(s: &PassingStore) -> Angle {
+pub fn find_best_preshoot_heading(s: &PassingStore, allow_pasing: bool) -> Angle {
     let ball = match s.world.ball.as_ref() {
         Some(b) => b,
         None => return Angle::from_radians(0.0), // early return if ball is not found
     };
     let player_pos = s.player_data().position;
     let ball_pos = ball.position.xy();
-    Angle::between_points(find_best_preshoot_target(s), ball_pos)
+    Angle::between_points(find_best_preshoot_target(s, allow_pasing), ball_pos)
 }
 
 pub fn find_nearest_opponent_distance_along_direction(s: &PassingStore, direction: Angle) -> f64 {

@@ -38,10 +38,20 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .build(),
         )
         .add(
+            sequence_node()
+                .add(try_receive())
+                .add(fetch_ball_with_preshoot().with_can_pass(false).build())
+                .build(),
+        )
+        .add(
             stateful_continuous("Striker positioning")
                 .with_stateful_position(|s, last_pos| {
                     let target = striker_position(s, last_pos.copied());
                     (target, Some(target))
+                })
+                .with_stateful_heading(|s, _| {
+                    let heading = Angle::between_points(s.position(), s.ball_position());
+                    (heading, Some(heading))
                 })
                 .build(),
         )
@@ -92,25 +102,25 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
     };
 
     // am i closest striker
-    let strikers = s
-        .world
-        .own_players
-        .iter()
-        .filter(|p| {
-            s.role_assignments
-                .get(&p.id)
-                .cloned()
-                .unwrap_or_default()
-                .contains("striker")
-        })
-        .min_by(|a, b| {
-            let a_dist = (ball.position.xy() - a.position).norm();
-            let b_dist = (ball.position.xy() - b.position).norm();
-            a_dist
-                .partial_cmp(&b_dist)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-    let closest_striker = strikers.map(|p| p.id == s.player_id).unwrap_or(false);
+    // let strikers = s
+    //     .world
+    //     .own_players
+    //     .iter()
+    //     .filter(|p| {
+    //         s.role_assignments
+    //             .get(&p.id)
+    //             .cloned()
+    //             .unwrap_or_default()
+    //             .contains("striker")
+    //     })
+    //     .min_by(|a, b| {
+    //         let a_dist = (ball.position.xy() - a.position).norm();
+    //         let b_dist = (ball.position.xy() - b.position).norm();
+    //         a_dist
+    //             .partial_cmp(&b_dist)
+    //             .unwrap_or(std::cmp::Ordering::Equal)
+    //     });
+    // let closest_striker = strikers.map(|p| p.id == s.player_id).unwrap_or(false);
 
     // let closest_opponent_dist = s
     //     .world
@@ -121,7 +131,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
     // let my_dist = s.distance_to_ball();
     // let d = closest_opponent_dist.unwrap_or(f64::INFINITY) - my_dist;
 
-    ball.position.x > -80.0 && closest_striker
+    ball.position.x > -80.0 && s.am_closest_to_ball()
 }
 
 fn striker_position(s: &RobotSituation, last_pos: Option<Vector2>) -> Vector2 {

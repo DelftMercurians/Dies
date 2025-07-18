@@ -5,7 +5,6 @@ use dies_core::{Angle, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 use crate::v0::utils::evaluate_ball_threat;
-use dies_executor::control::find_best_shoot_target;
 
 pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()

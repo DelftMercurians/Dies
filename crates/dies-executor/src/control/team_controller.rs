@@ -255,6 +255,7 @@ impl TeamController {
 
         // Clean up empty semaphores periodically
         self.bt_context.cleanup_empty_semaphores();
+        self.bt_context.clear_passing_target();
 
         // Execute behavior trees
         for player_data in &world_data.own_players {
