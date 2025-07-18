@@ -46,6 +46,9 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
 }
 
 pub fn score_as_waller(s: &RobotSituation) -> f64 {
+    if s.current_role_is("waller") {
+        return 100_000.0;
+    }
     if let Some(ball) = &s.world.ball {
         let ball_pos = ball.position.xy();
         let goal_pos = s.get_own_goal_position();

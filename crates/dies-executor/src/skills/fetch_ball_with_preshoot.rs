@@ -139,7 +139,6 @@ impl FetchBallWithPreshoot {
                     let distance_to_prep_target = (prep_target - player_pos).magnitude();
                     if distance_to_prep_target < 15.0
                         || (distance_to_prep_target < 90.0 && ctx.player.velocity.norm() < 10.0)
-                        || ctx.player.breakbeam_ball_detected
                     {
                         self.state = FetchBallWithPreshootState::ApproachBall {
                             start_pos: player_pos,

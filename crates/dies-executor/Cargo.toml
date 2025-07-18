@@ -26,6 +26,7 @@ numpy = { version = "0.25", optional = true }
 rhai = { version = "1.21.0", features = ["sync", "internals", "metadata"] }
 lapjv = "0.1"
 ndarray = "0.12"
+linear_assignment = "0.0.1"
 
 
 [features]
