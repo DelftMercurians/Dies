@@ -319,9 +319,11 @@ impl RoleAssignmentSolver {
 
     /// Check if a robot violates role filters
     fn violates_filters(&self, role: &Role, situation: &RobotSituation) -> bool {
+        println!("{} {}", situation.player_id, role.name);
         // Check require filter - must return true
         if let Some(ref require_filter) = role.require_filter {
             if !require_filter(situation) {
+                println!("required");
                 return true;
             }
         }
@@ -329,6 +331,7 @@ impl RoleAssignmentSolver {
         // Check exclude filter - must return false
         if let Some(ref exclude_filter) = role.exclude_filter {
             if exclude_filter(situation) {
+                println!("excluded");
                 return true;
             }
         }
