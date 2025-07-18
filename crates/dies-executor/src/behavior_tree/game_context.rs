@@ -43,9 +43,9 @@ impl GameContext {
 
     /// Add a role and return a builder for configuration
     pub fn add_role(&mut self, name: &str) -> &mut RoleBuilder {
-        let builder = RoleBuilder::new(name);
+        let last_index = self.role_builders.len();
+        let builder = RoleBuilder::new(name, last_index);
         self.role_builders.push(builder);
-        let last_index = self.role_builders.len() - 1;
         &mut self.role_builders[last_index]
     }
 

@@ -1,15 +1,19 @@
 use anyhow::{anyhow, Result};
 use dies_core::{PlayerId, TeamData};
 use std::{collections::HashMap, sync::Arc};
+use std::time::Instant;
 
 use crate::{behavior_tree::BehaviorNode, control::TeamContext};
 
 use super::{BtCallback, RobotSituation};
+use linear_assignment::MatrixSize;
+use nalgebra::DMatrix;
 
 /// Represents a role that can be assigned to robots
 #[derive(Clone)]
 pub struct Role {
     pub name: String,
+    pub index: usize,
     pub min_count: usize,
     pub max_count: usize,
     pub can_be_reassigned: bool,
@@ -40,6 +44,7 @@ pub struct RoleAssignmentProblem {
 #[derive(Clone)]
 pub struct RoleBuilder {
     pub name: String,
+    pub index: usize,
     pub min_count: usize,
     pub max_count: usize,
     pub can_be_reassigned: bool,
@@ -52,16 +57,17 @@ pub struct RoleBuilder {
 
 impl RoleBuilder {
     /// Create a new role builder
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<String>, index: usize) -> Self {
         Self {
             name: name.into(),
+            index: index,
             min_count: 0,
-            max_count: usize::MAX,
+            max_count: 6,
             can_be_reassigned: true,
             if_must_reassign_can_we_do_it_now: false,
             scorer: None,
-            require_filter: None,
             exclude_filter: None,
+            require_filter: None,
             tree_builder: None,
         }
     }
@@ -136,6 +142,7 @@ impl RoleBuilder {
 
         Ok(Role {
             name: self.name,
+            index: self.index,
             min_count: self.min_count,
             max_count: self.max_count,
             can_be_reassigned: self.can_be_reassigned,
@@ -177,188 +184,70 @@ impl RoleAssignmentSolver {
             return Ok((HashMap::new(), Vec::new()));
         }
 
-        // Clear cache for fresh assignment
-        self.score_cache.clear();
+        let start_time = Instant::now();
 
-        // Pre-compute eligible robots for each role
-        let mut active_robots_sorted_by_id = active_robots.to_vec();
-        active_robots_sorted_by_id.sort_by_key(|&id| id);
-        let active_robots_sorted_by_id = active_robots_sorted_by_id
-            .iter()
-            .rev()
-            .copied()
-            .collect::<Vec<_>>();
-        let eligible_robots = self.compute_eligible_robots(
-            problem,
-            &active_robots_sorted_by_id,
-            team_context.clone(),
-            team_data.clone(),
-            previous_assignments,
-        )?;
+        let mut roles = Vec::<Role>::new();
+        // generate required roles
+        'outer: for role in problem.roles.iter() {
+            for i in 0..role.min_count {
+                roles.push(role.clone());
 
-        // Sort roles by priority (critical roles first)
-        let sorted_roles: Vec<_> = problem.roles.iter().enumerate().collect();
-
-        // Extract priority list (highest priority first)
-        let priority_list: Vec<String> = sorted_roles
-            .iter()
-            .map(|(_, role)| role.name.clone())
-            .collect();
-
-        let mut assignments = HashMap::new();
-        let mut assigned_robots = std::collections::HashSet::new();
-
-        // first, assign the roles that cannot be reassigned
-        if let Some(prev) = previous_assignments {
-            for (_, role) in &sorted_roles {
-                if !role.can_be_reassigned {
-                    let prev = prev
-                        .iter()
-                        .filter(|(_, r)| **r == role.name)
-                        .collect::<Vec<_>>();
-                    for (robot_id, _) in prev {
-                        let robot_id_available = eligible_robots
-                            .get(&role.name)
-                            .map(|v| v.contains(robot_id))
-                            .unwrap_or(false);
-                        if robot_id_available {
-                            assignments.insert(*robot_id, role.name.clone());
-                            assigned_robots.insert(*robot_id);
-                        } else if role.if_must_reassign_can_we_do_it_now {
-                            log::warn!(
-                                "Role {} cannot be reassigned, but robot {} is not available -- we are reassigning it",
-                                role.name,
-                                robot_id
-                            );
-                            let empty_vec = Vec::new();
-                            let eligible = eligible_robots.get(&role.name).unwrap_or(&empty_vec);
-                            let available: Vec<_> = eligible
-                                .iter()
-                                .filter(|&&rid| !assigned_robots.contains(&rid))
-                                .collect();
-
-                            // Score and assign best robots for this role
-                            let mut scored_robots: Vec<_> = available
-                                .iter()
-                                .map(|&&robot_id| {
-                                    let score = self.get_cached_score(
-                                        robot_id,
-                                        &role.name,
-                                        role,
-                                        team_context.clone(),
-                                        team_data.clone(),
-                                        previous_assignments,
-                                    );
-                                    (robot_id, score)
-                                })
-                                .collect::<Vec<_>>();
-
-                            scored_robots.sort_by(|a, b| {
-                                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-                            });
-
-                            // Assign best robot for this role
-                            if let Some((robot_id, _)) = scored_robots.first() {
-                                assignments.insert(*robot_id, role.name.clone());
-                                assigned_robots.insert(*robot_id);
-                            } else {
-                                log::error!("No robot available for role {}", role.name);
-                            }
-                        }
-                    }
+                if roles.len() == active_robots.len() {
+                    break 'outer;
                 }
             }
         }
 
-        // First pass: satisfy minimum requirements
-        for (_, role) in &sorted_roles {
-            let empty_vec = Vec::new();
-            let eligible = eligible_robots.get(&role.name).unwrap_or(&empty_vec);
+        // generate roles up to max
+        'outer: for role in problem.roles.iter() {
+            for i in role.min_count..role.max_count {
+                roles.push(role.clone());
 
-            // println!("{}: eligible: {:?}", role.name, eligible);
-            let current_count = assignments
-                .values()
-                .filter(|&name| name == &role.name)
-                .count();
-            if current_count >= role.max_count || current_count >= role.min_count {
-                continue;
-            }
-
-            let available: Vec<_> = eligible
-                .iter()
-                .filter(|&&robot_id| !assigned_robots.contains(&robot_id))
-                .collect();
-
-            // Score and assign best robots for this role
-            let mut scored_robots: Vec<_> = available
-                .iter()
-                .map(|&&robot_id| {
-                    let score = self.get_cached_score(
-                        robot_id,
-                        &role.name,
-                        role,
-                        team_context.clone(),
-                        team_data.clone(),
-                        previous_assignments,
-                    );
-                    (robot_id, score)
-                })
-                .collect::<Vec<_>>();
-
-            scored_robots
-                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-            // Assign minimum required
-            for (robot_id, _) in scored_robots.iter().take(role.min_count) {
-                assignments.insert(*robot_id, role.name.clone());
-                assigned_robots.insert(*robot_id);
+                if roles.len() == active_robots.len() {
+                    // break 'outer; - not necessary if there is weighting
+                }
             }
         }
 
-        // Second pass: fill remaining slots up to max_count
-        for (_, role) in &sorted_roles {
-            let current_count = assignments
-                .values()
-                .filter(|&name| name == &role.name)
-                .count();
-            if current_count >= role.max_count {
-                continue;
-            }
-
-            let empty_vec = Vec::new();
-            let eligible = eligible_robots.get(&role.name).unwrap_or(&empty_vec);
-            let available: Vec<_> = eligible
-                .iter()
-                .filter(|&&robot_id| !assigned_robots.contains(&robot_id))
-                .collect();
-
-            let mut scored_robots: Vec<_> = available
-                .iter()
-                .map(|robot_id| {
-                    let score = self.get_cached_score(
-                        **robot_id,
-                        &role.name,
-                        role,
-                        team_context.clone(),
-                        team_data.clone(),
-                        previous_assignments,
-                    );
-                    (**robot_id, score)
-                })
-                .collect::<Vec<_>>();
-
-            scored_robots
-                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-            // Fill remaining slots
-            let slots_to_fill = role.max_count - current_count;
-            for (robot_id, _) in scored_robots.iter().take(slots_to_fill) {
-                assignments.insert(*robot_id, role.name.clone());
-                assigned_robots.insert(*robot_id);
+        // each role is duplicated according to max count
+        let mut score_matrix = DMatrix::zeros(roles.len(), active_robots.len());
+        for (i, robot) in active_robots.iter().enumerate() {
+            for (j, role) in roles.iter().enumerate() {
+                let score = self.get_score(
+                    *robot,
+                    &role.name,
+                    role,
+                    team_context.clone(),
+                    team_data.clone(),
+                    previous_assignments,
+                );
+                let discount_factor = (role.index + 1) * j; // prefer closer to min and earlier in
+                                                            // sequence roles
+                score_matrix[(j, i)] = (score * (discount_factor as f64)) as i64;
             }
         }
 
-        Ok((assignments, priority_list))
+        let result = linear_assignment::solver(
+            &mut score_matrix.transpose(),
+            &MatrixSize {
+                columns: roles.len(),
+                rows: active_robots.len(),
+            },
+        );
+
+        let mut assignments = HashMap::new();
+        for (i, j) in result.iter() {
+            assignments.insert(active_robots[*i], roles[*j].name.clone());
+        }
+        team_context.debug_value(
+            "role_assignment_time",
+            start_time.elapsed().as_micros() as f64,
+        );
+
+        Ok((
+            assignments,
+            result.iter().map(|(_, j)| roles[*j].name.clone()).collect(),
+        ))
     }
 
     /// Compute eligible robots for each role (applying filters)
@@ -397,7 +286,7 @@ impl RoleAssignmentSolver {
     }
 
     /// Get cached score for robot-role combination
-    fn get_cached_score(
+    fn get_score(
         &mut self,
         robot_id: PlayerId,
         role_name: &str,
@@ -406,12 +295,6 @@ impl RoleAssignmentSolver {
         team_data: Arc<TeamData>,
         previous_assignments: Option<&HashMap<PlayerId, String>>,
     ) -> f64 {
-        let cache_key = (robot_id, role_name.to_string());
-
-        if let Some(&cached_score) = self.score_cache.get(&cache_key) {
-            return cached_score;
-        }
-
         let situation = RobotSituation::new(
             robot_id,
             team_data.clone(),
@@ -431,7 +314,6 @@ impl RoleAssignmentSolver {
             }
         }
 
-        self.score_cache.insert(cache_key, score);
         score
     }
 
