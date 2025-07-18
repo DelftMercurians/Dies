@@ -28,7 +28,9 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
         .add(
             // Normal wall positioning
             continuous("wall position")
-                .position(calculate_wall_position)
+                .position(Argument::callback(|s| {
+                    calculate_wall_position(s, "waller", false)
+                }))
                 .heading(get_defender_heading)
                 .build(),
         )
@@ -37,9 +39,17 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
         .into()
 }
 
-fn calculate_wall_position(s: &RobotSituation) -> Vector2 {
+pub fn calculate_wall_position(s: &RobotSituation, role_name: &str, reverse: bool) -> Vector2 {
     // Generate all position tuples
-    let position_tuples = generate_boundary_position_tuples(s);
+    let position_tuples = generate_boundary_position_tuples(s, role_name);
+    let position_tuples = if reverse {
+        position_tuples
+            .into_iter()
+            .map(|t| t.into_iter().rev().collect())
+            .collect()
+    } else {
+        position_tuples
+    };
 
     if position_tuples.is_empty() {
         return s.player_data().position;
@@ -61,7 +71,7 @@ fn calculate_wall_position(s: &RobotSituation) -> Vector2 {
     let mut wallers = s
         .role_assignments
         .iter()
-        .filter(|(_, v)| v.contains("waller"))
+        .filter(|(_, v)| v.contains(role_name))
         .collect::<Vec<_>>();
     wallers.sort_by_key(|(k, _)| *k);
 
@@ -181,11 +191,11 @@ fn is_point_on_segment(point: Vector2, start: Vector2, end: Vector2) -> bool {
 
 /// Generate candidate position tuples for all wallers
 /// Returns array of position tuples, each containing (x,y) coordinates for each waller
-pub fn generate_boundary_position_tuples(s: &RobotSituation) -> Vec<Vec<Vector2>> {
+pub fn generate_boundary_position_tuples(s: &RobotSituation, role_name: &str) -> Vec<Vec<Vector2>> {
     let mut wallers = s
         .role_assignments
         .iter()
-        .filter(|(_, v)| v.contains("waller"))
+        .filter(|(_, v)| v.contains(role_name))
         .collect::<Vec<_>>();
     wallers.sort_by_key(|(k, _)| *k);
 

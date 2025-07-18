@@ -3,7 +3,10 @@ use core::f64;
 use dies_core::{Angle, GameState, Vector2};
 use dies_executor::{behavior_tree_api::*, find_best_receiver_target};
 
-use crate::v0::utils::{fetch_and_shoot_with_prep, get_heading_toward_ball};
+use crate::v0::{
+    utils::{fetch_and_shoot_with_prep, get_heading_toward_ball},
+    waller::calculate_wall_position,
+};
 
 pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -82,17 +85,9 @@ pub fn score_striker(s: &RobotSituation) -> f64 {
 }
 
 fn get_kickoff_striker_position(s: &RobotSituation) -> Vector2 {
-    let player_hash = s.player_id_hash() - 0.5;
-
-    // Spread strikers across our half
-    let spread_x = -500.0;
-    let spread_y = if player_hash < 0.0 {
-        -1200.0 - player_hash * 1000.0
-    } else {
-        1200.0 + player_hash * 1000.0
-    };
-
-    Vector2::new(spread_x, spread_y)
+    let mut pos = calculate_wall_position(s, "striker", true);
+    pos.x = -800.0;
+    pos
 }
 
 fn should_pickup_ball(s: &RobotSituation) -> bool {
