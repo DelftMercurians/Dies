@@ -517,14 +517,13 @@ impl TeamController {
                 let mut obstacles = Vec::new();
                 if avoid_ball
                     || world_data.current_game_state.game_state == GameState::PreparePenalty
+                    || world_data.current_game_state.game_state == GameState::Stop
                 {
                     if let Some(ball) = world_data.ball.as_ref() {
                         obstacles.push(Obstacle::Circle {
                             center: ball.position.xy(),
-                            radius: if world_data.current_game_state.game_state
-                                == GameState::PreparePenalty
-                            {
-                                1200.0
+                            radius: if world_data.current_game_state.game_state == GameState::Stop {
+                                800.0
                             } else {
                                 100.0 + 100.0 * input_to_use.care
                             },

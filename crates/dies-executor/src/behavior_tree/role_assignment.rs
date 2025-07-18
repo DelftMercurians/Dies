@@ -164,7 +164,7 @@ pub struct RoleAssignmentSolver {
 impl RoleAssignmentSolver {
     pub fn new() -> Self {
         Self {
-            hysteresis_bonus: 20.0,
+            hysteresis_bonus: 40.0,
         }
     }
 

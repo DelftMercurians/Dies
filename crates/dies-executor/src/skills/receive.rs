@@ -154,8 +154,8 @@ impl TryReceive {
             // Clamp the intersection within 500mm of the starting position
             let start_pos = intercept_line.0;
             let to_intersection = intersection - start_pos;
-            let clamped_intersection = if to_intersection.magnitude() > 500.0 {
-                start_pos + to_intersection.normalize() * 500.0
+            let clamped_intersection = if to_intersection.magnitude() > 200.0 {
+                start_pos + to_intersection.normalize() * 200.0
             } else {
                 intersection
             };
