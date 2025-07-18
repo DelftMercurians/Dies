@@ -15,19 +15,19 @@ pub mod waller;
 pub fn v0_strategy(game: &mut GameContext) {
     let game_state = game.game_state();
     // Goalkeeper - always exactly one
-    // game.add_role("goalkeeper")
-    //     .count(1)
-    //     // .can_be_reassigned(false)
-    //     .require(move |s| {
-    //         game_state
-    //             .our_keeper_id
-    //             .map(|id| id == s.player_id())
-    //             .unwrap_or(true)
-    //     })
-    //     // .exclude(|s| s.has_handicap(Handicap::NoKicker))
-    //     .if_must_reassign_can_we_do_it_now(true)
-    //     .score(|s| 1.0)
-    //     .behavior(|s| keeper::build_goalkeeper_tree(s));
+    game.add_role("goalkeeper")
+        .count(1)
+        // .can_be_reassigned(false)
+        .require(move |s| {
+            game_state
+                .our_keeper_id
+                .map(|id| id == s.player_id())
+                .unwrap_or(true)
+        })
+        // .exclude(|s| s.has_handicap(Handicap::NoKicker))
+        .if_must_reassign_can_we_do_it_now(true)
+        .score(|s| 1.0)
+        .behavior(|s| keeper::build_goalkeeper_tree(s));
 
     // Game state specific roles
     match game_state.game_state {

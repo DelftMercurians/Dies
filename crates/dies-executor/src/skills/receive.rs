@@ -33,6 +33,10 @@ impl TryReceive {
         };
         let ball_pos = ball.position.xy();
         let ball_distance = (ball_pos - ctx.player.position).norm();
+        if ball_distance < 200.0 {
+            println!("receive success: ball is close");
+            return SkillProgress::Done(SkillResult::Success);
+        }
 
         let passing_target = ctx.bt_context.take_passing_target(ctx.player.id);
         if passing_target.is_none() && self.passer_heading.is_some() {
@@ -58,12 +62,6 @@ impl TryReceive {
             ));
         } else {
             return SkillProgress::failure();
-        }
-
-        let to_robot = ctx.player.position - ball.position.xy();
-        if ball_distance < 200.0 {
-            println!("receive success: ball is close");
-            return SkillProgress::Done(SkillResult::Success);
         }
 
         let mut input = PlayerControlInput::new();
@@ -107,12 +105,12 @@ impl TryReceive {
         //     return SkillProgress::Done(SkillResult::Failure);
         // }
 
-        let line_dist = distance_to_line(ball_pos, ball_pos + to_robot, ball_pos);
-        // if the ball is too far away, give up
-        if line_dist > 400.0 {
-            println!("receive failed: ball moved too far away");
-            return SkillProgress::Done(SkillResult::Failure);
-        }
+        // let line_dist = distance_to_line(ball_pos, ball_pos + to_robot, ball_pos);
+        // // if the ball is too far away, give up
+        // if line_dist > 400.0 {
+        //     println!("receive failed: ball moved too far away");
+        //     return SkillProgress::Done(SkillResult::Failure);
+        // }
 
         let closest_opponent_dist = ctx
             .world
