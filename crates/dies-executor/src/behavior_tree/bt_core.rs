@@ -360,13 +360,6 @@ impl RobotSituation {
         )
     }
 
-    pub fn is_penalty_state(&self) -> bool {
-        matches!(
-            self.world.current_game_state.game_state,
-            GameState::Penalty | GameState::PreparePenalty | GameState::PenaltyRun
-        )
-    }
-
     pub fn constrain_to_field(&self, pos: Vector2) -> Vector2 {
         if let Some(field) = &self.world.field_geom {
             let half_length = field.boundary_width + field.field_length / 2.0;

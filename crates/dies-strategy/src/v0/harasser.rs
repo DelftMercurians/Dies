@@ -270,7 +270,24 @@ fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
     }
 
     // Default: position on line from ball towards our goal
-    let harass_distance = 300.0;
+    // Check if the closest player is on of our own by a margin of 0.5
+    let closest_own = s.get_closest_own_player_to_ball();
+    let closest_opp = s.get_closest_opp_player_to_ball();
+    let closest_opp_dist = closest_opp
+        .map(|opp| (opp.position - ball_pos).norm())
+        .unwrap_or(f64::INFINITY);
+    let closest_own_dist = closest_own
+        .as_ref()
+        .map(|own| (own.position - ball_pos).norm())
+        .unwrap_or(f64::INFINITY);
+    let harass_distance = if closest_opp_dist > closest_own_dist + 500.0
+        && closest_own.map(|p| p.id != s.player_id).unwrap_or(true)
+    {
+        // Get out of the way
+        1000.0
+    } else {
+        300.0
+    };
     let to_goal = (own_goal - ball_pos).normalize();
     let target_pos = ball_pos + to_goal * harass_distance;
 

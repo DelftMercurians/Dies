@@ -1,24 +1,24 @@
-use dies_core::{Angle, Vector2};
+use dies_core::{Angle, GameState, Vector2};
 use dies_executor::behavior_tree_api::*;
 
 pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
-        .add(
-            // Penalty mode behavior
-            guard_node()
-                .condition(|s| s.is_penalty_state())
-                .then(
-                    go_to_position(|s: &RobotSituation| s.get_own_goal_position())
-                        .description("Penalty Defense")
-                        .build(),
-                )
-                .description("Penalty mode")
-                .build(),
-        )
+        // .add(
+        //     // Penalty mode behavior
+        //     guard_node()
+        //         .condition(|s| s.is_penalty_state())
+        //         .then(
+        //             go_to_position(|s: &RobotSituation| s.get_own_goal_position())
+        //                 .description("Penalty Defense")
+        //                 .build(),
+        //         )
+        //         .description("Penalty mode")
+        //         .build(),
+        // )
         .add(
             // Emergency ball clearing if ball is very close
             guard_node()
-                .description("Ball in penalty area")
+                .description("Ball in defense area")
                 .condition(|s| s.ball_in_own_penalty_area() && s.ball_speed() < 500.0)
                 .then(
                     fetch_ball_with_preshoot()
@@ -95,6 +95,16 @@ fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
             best_score = score;
             best_point = point;
         }
+    }
+
+    if s.game_state_is_one_of(&[
+        GameState::Penalty,
+        GameState::PreparePenalty,
+        GameState::PenaltyRun,
+    ]) {
+        let mut best_point = best_point;
+        best_point.x = s.get_own_goal_position().x;
+        return best_point;
     }
 
     best_point

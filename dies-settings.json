@@ -14,7 +14,7 @@
   "tracker_settings": {
     "field_mask": {
       "x_min": -1.0,
-      "x_max": 0.01,
+      "x_max": 1.0,
       "y_min": -1.0,
       "y_max": 1.0
     },

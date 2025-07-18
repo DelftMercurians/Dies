@@ -629,32 +629,23 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                     new_input.with_speed_limit(1500.0);
                 }
 
+                let us_operating = world_data.current_game_state.us_operating;
                 if matches!(
                     game_state,
                     GameState::PreparePenalty | GameState::Penalty | GameState::PenaltyRun
-                ) && input.role_type != RoleType::PenaltyKicker
+                ) && ((us_operating && input.role_type != RoleType::PenaltyKicker)
+                    || (!us_operating && input.role_type != RoleType::Goalkeeper))
                 {
-                    let sign = if world_data.current_game_state.us_operating {
-                        1.0
+                    let penalty_position_y =
+                        -field.field_width / 2.0 + 120.0 + player_data.id.as_u32() as f64 * 220.0;
+                    let penalty_positin_x = if us_operating {
+                        -field.field_length / 2.0 - 120.0
                     } else {
-                        -1.0
+                        field.field_length / 2.0 + 120.0
                     };
-                    // Reposition player 1 meter behind the ball on our side (negative x direction)
-                    // Only if the player has a target position (otherwise, use current position)
-                    let mut pos = new_input.position.unwrap_or(player_data.position);
-                    let offset = sign * 1200.0;
-                    if (world_data.current_game_state.us_operating && pos.x < ball_pos.x - offset)
-                        || (!world_data.current_game_state.us_operating
-                            && pos.x > ball_pos.x - offset)
-                    {
-                        new_input.with_speed_limit(0.0);
-                        new_input.with_angular_speed_limit(0.0);
-                        new_input.dribbling_speed = 0.0;
-                    } else {
-                        pos.x = pos.x.clamp(-1000000.0, ball_pos.x - offset);
-                        new_input.with_speed_limit(1500.0);
-                        new_input.with_position(pos);
-                    }
+                    new_input.with_position(Vector2::new(penalty_positin_x, penalty_position_y));
+                    new_input.with_speed_limit(1500.0);
+                    new_input.dribbling_speed = 0.0;
                 }
                 if matches!(
                     game_state,
