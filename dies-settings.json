@@ -33,16 +33,16 @@
   },
   "yellow_team_settings": {
     "handicaps": {
-      "0": "no_kicker",
-      "1": "no_kicker",
-      "5": "no_kicker"
+      "0": ["no_kicker"],
+      "1": ["no_kicker"],
+      "5": ["no_kicker"]
     }
   },
   "blue_team_settings": {
     "handicaps": {
-      "0": "no_kicker",
-      "1": "no_kicker",
-      "5": "no_kicker"
+      "0": ["no_kicker"],
+      "1": ["no_kicker"],
+      "5": ["no_kicker"]
     }
   },
   "allow_no_vision": false

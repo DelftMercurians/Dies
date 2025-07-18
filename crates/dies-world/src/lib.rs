@@ -429,11 +429,21 @@ impl WorldTracker {
                                 self.ball_on_blue_side_for = None;
                                 self.ball_on_yellow_side_for =
                                     Some(self.ball_on_yellow_side_for.unwrap_or(0.0) + dt);
+                                dies_core::debug_value(
+                                    "ball_on_yellow_side_for",
+                                    self.ball_on_yellow_side_for.unwrap_or(0.0),
+                                );
+                                dies_core::debug_value("ball_on_blue_side_for", 0.0);
                             }
                             Some(SideAssignment::YellowOnPositive) => {
                                 self.ball_on_blue_side_for =
                                     Some(self.ball_on_blue_side_for.unwrap_or(0.0) + dt);
                                 self.ball_on_yellow_side_for = None;
+                                dies_core::debug_value(
+                                    "ball_on_blue_side_for",
+                                    self.ball_on_blue_side_for.unwrap_or(0.0),
+                                );
+                                dies_core::debug_value("ball_on_yellow_side_for", 0.0);
                             }
                             None => {}
                         }
@@ -444,11 +454,21 @@ impl WorldTracker {
                                 self.ball_on_blue_side_for =
                                     Some(self.ball_on_blue_side_for.unwrap_or(0.0) + dt);
                                 self.ball_on_yellow_side_for = None;
+                                dies_core::debug_value(
+                                    "ball_on_blue_side_for",
+                                    self.ball_on_blue_side_for.unwrap_or(0.0),
+                                );
+                                dies_core::debug_value("ball_on_yellow_side_for", 0.0);
                             }
                             Some(SideAssignment::YellowOnPositive) => {
                                 self.ball_on_blue_side_for = None;
                                 self.ball_on_yellow_side_for =
                                     Some(self.ball_on_yellow_side_for.unwrap_or(0.0) + dt);
+                                dies_core::debug_value(
+                                    "ball_on_yellow_side_for",
+                                    self.ball_on_yellow_side_for.unwrap_or(0.0),
+                                );
+                                dies_core::debug_value("ball_on_yellow_side_for", 0.0);
                             }
                             None => {}
                         }

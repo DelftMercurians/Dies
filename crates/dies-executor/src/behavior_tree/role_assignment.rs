@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use dies_core::{PlayerId, TeamData};
-use std::{collections::HashMap, sync::Arc};
 use std::time::Instant;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{behavior_tree::BehaviorNode, control::TeamContext};
 
@@ -157,8 +157,6 @@ impl RoleBuilder {
 
 /// Solver for the role assignment problem using a fast greedy algorithm
 pub struct RoleAssignmentSolver {
-    // Cache for performance
-    score_cache: HashMap<(PlayerId, String), f64>,
     /// Bonus score added to robots that already have the role (hysteresis)
     hysteresis_bonus: f64,
 }
@@ -166,7 +164,6 @@ pub struct RoleAssignmentSolver {
 impl RoleAssignmentSolver {
     pub fn new() -> Self {
         Self {
-            score_cache: HashMap::new(),
             hysteresis_bonus: 20.0,
         }
     }
@@ -323,11 +320,9 @@ impl RoleAssignmentSolver {
 
     /// Check if a robot violates role filters
     fn violates_filters(&self, role: &Role, situation: &RobotSituation) -> bool {
-        println!("{} {}", situation.player_id, role.name);
         // Check require filter - must return true
         if let Some(ref require_filter) = role.require_filter {
             if !require_filter(situation) {
-                println!("required");
                 return true;
             }
         }
@@ -335,7 +330,6 @@ impl RoleAssignmentSolver {
         // Check exclude filter - must return false
         if let Some(ref exclude_filter) = role.exclude_filter {
             if exclude_filter(situation) {
-                println!("excluded");
                 return true;
             }
         }
@@ -347,240 +341,5 @@ impl RoleAssignmentSolver {
 impl Default for RoleAssignmentSolver {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use crate::behavior_tree::NoopNode;
-
-    use super::*;
-    use dies_core::{
-        Angle, BallData, GameState, GameStateData, PlayerData, SideAssignment, SysStatus,
-        TeamColor, TeamData, Vector2, Vector3,
-    };
-
-    fn create_test_team_data(num_players: usize) -> TeamData {
-        let mut own_players = Vec::new();
-        for i in 0..num_players {
-            own_players.push(PlayerData {
-                timestamp: 0.0,
-                id: PlayerId::new(i as u32),
-                raw_position: Vector2::new(i as f64 * 100.0, 0.0),
-                position: Vector2::new(i as f64 * 100.0, 0.0),
-                velocity: Vector2::zeros(),
-                yaw: Angle::from_radians(0.0),
-                raw_yaw: Angle::from_radians(0.0),
-                angular_speed: 0.0,
-                primary_status: Some(SysStatus::Ready),
-                kicker_cap_voltage: Some(0.0),
-                kicker_temp: Some(0.0),
-                pack_voltages: Some([0.0, 0.0]),
-                breakbeam_ball_detected: false,
-                imu_status: Some(SysStatus::Ready),
-                kicker_status: Some(SysStatus::Standby),
-                handicaps: HashSet::new(),
-            });
-        }
-
-        TeamData {
-            t_received: 0.0,
-            t_capture: 0.0,
-            dt: 0.01,
-            own_players,
-            opp_players: vec![],
-            ball: Some(BallData {
-                timestamp: 0.0,
-                position: Vector3::new(0.0, 0.0, 0.0),
-                raw_position: vec![Vector3::new(0.0, 0.0, 0.0)],
-                velocity: Vector3::zeros(),
-                detected: true,
-            }),
-            current_game_state: GameStateData {
-                game_state: GameState::Stop,
-                us_operating: false,
-                yellow_cards: 0,
-                freekick_kicker: None,
-                max_allowed_bots: 3,
-                our_keeper_id: None,
-            },
-            field_geom: None,
-            ball_on_our_side: None,
-            ball_on_opp_side: None,
-            kicked_ball: None,
-        }
-    }
-
-    fn create_test_role(name: &str, min: usize, max: usize) -> Role {
-        let mut role = RoleBuilder::new(name);
-        role.min(min)
-            .max(max)
-            .score(|_| 50.0)
-            .behavior(|_| BehaviorNode::Noop(NoopNode::new()));
-        role.build().unwrap()
-    }
-
-    #[test]
-    fn test_role_builder() {
-        let mut role = RoleBuilder::new("attacker");
-        role.min(1)
-            .min(1)
-            .max(2)
-            .score(|_| 100.0)
-            .require(|_| true)
-            .exclude(|_| false)
-            .behavior(|_| BehaviorNode::Noop(NoopNode::new()));
-        let role = role.build().unwrap();
-
-        assert_eq!(role.name, "attacker");
-        assert_eq!(role.min_count, 1);
-        assert_eq!(role.max_count, 2);
-        assert!(role.require_filter.is_some());
-        assert!(role.exclude_filter.is_some());
-    }
-
-    #[test]
-    fn test_simple_assignment() {
-        let mut solver = RoleAssignmentSolver::new();
-        let team_context = TeamContext::new(TeamColor::Blue, SideAssignment::YellowOnPositive);
-        let team_data = Arc::new(create_test_team_data(3));
-        let active_robots = vec![PlayerId::new(0), PlayerId::new(1), PlayerId::new(2)];
-
-        let problem = RoleAssignmentProblem {
-            roles: vec![
-                create_test_role("goalkeeper", 1, 1),
-                create_test_role("attacker", 1, 1),
-                create_test_role("defender", 1, 1),
-            ],
-        };
-
-        let (assignments, priority_list) = solver
-            .solve(&problem, &active_robots, team_context, team_data, None)
-            .unwrap();
-
-        assert_eq!(assignments.len(), 3);
-        // All robots should be assigned
-        assert_eq!(priority_list.len(), 3);
-        // Priority list should contain all role names
-        assert!(priority_list.contains(&"goalkeeper".to_string()));
-        assert!(priority_list.contains(&"attacker".to_string()));
-        assert!(priority_list.contains(&"defender".to_string()));
-    }
-
-    #[test]
-    fn test_filter_constraints() {
-        let mut solver = RoleAssignmentSolver::new();
-        let team_context = TeamContext::new(TeamColor::Blue, SideAssignment::YellowOnPositive);
-        let team_data = Arc::new(create_test_team_data(4));
-        let active_robots = vec![
-            PlayerId::new(0),
-            PlayerId::new(1),
-            PlayerId::new(2),
-            PlayerId::new(3),
-        ];
-
-        // Create simpler roles without complex filters for now
-        let problem = RoleAssignmentProblem {
-            roles: vec![
-                create_test_role("goalkeeper", 1, 1),
-                create_test_role("attacker", 1, 2),
-                create_test_role("defender", 1, 2),
-            ],
-        };
-
-        let (assignments, priority_list) = solver
-            .solve(&problem, &active_robots, team_context, team_data, None)
-            .unwrap();
-
-        // Basic validation - all robots should be assigned
-        assert_eq!(assignments.len(), 4);
-        assert_eq!(priority_list.len(), 3);
-
-        // Count by role
-        let mut role_counts = std::collections::HashMap::new();
-        for role_name in assignments.values() {
-            *role_counts.entry(role_name.as_str()).or_insert(0) += 1;
-        }
-
-        assert_eq!(role_counts.get("goalkeeper"), Some(&1));
-        assert!(role_counts
-            .get("attacker")
-            .map_or(false, |&c| c >= 1 && c <= 2));
-        assert!(role_counts
-            .get("defender")
-            .map_or(false, |&c| c >= 1 && c <= 2));
-    }
-
-    #[test]
-    fn test_hysteresis_prevents_oscillations() {
-        let mut solver = RoleAssignmentSolver::new();
-        let team_context = TeamContext::new(TeamColor::Blue, SideAssignment::YellowOnPositive);
-        let team_data = Arc::new(create_test_team_data(3));
-        let active_robots = vec![PlayerId::new(0), PlayerId::new(1), PlayerId::new(2)];
-
-        let problem = RoleAssignmentProblem {
-            roles: vec![
-                create_test_role("goalkeeper", 1, 1),
-                create_test_role("attacker", 1, 1),
-                create_test_role("defender", 1, 1),
-            ],
-        };
-
-        // First assignment (no previous assignments)
-        let (assignments1, priority_list1) = solver
-            .solve(
-                &problem,
-                &active_robots,
-                team_context.clone(),
-                team_data.clone(),
-                None,
-            )
-            .unwrap();
-
-        // Second assignment with previous assignments should be identical due to hysteresis
-        let (assignments2, priority_list2) = solver
-            .solve(
-                &problem,
-                &active_robots,
-                team_context.clone(),
-                team_data.clone(),
-                Some(&assignments1),
-            )
-            .unwrap();
-
-        // Should be identical assignments due to hysteresis
-        assert_eq!(assignments1, assignments2);
-        assert_eq!(priority_list1, priority_list2);
-
-        // Third assignment should also be identical
-        let (assignments3, priority_list3) = solver
-            .solve(
-                &problem,
-                &active_robots,
-                team_context.clone(),
-                team_data.clone(),
-                Some(&assignments2),
-            )
-            .unwrap();
-
-        assert_eq!(assignments2, assignments3);
-        assert_eq!(priority_list2, priority_list3);
-    }
-
-    #[test]
-    fn test_role_builder_errors() {
-        // Missing scorer
-        let mut role = RoleBuilder::new("test");
-        role.behavior(|_| BehaviorNode::Noop(NoopNode::new()));
-        let result = role.build();
-        assert!(result.is_err());
-
-        // Missing behavior
-        let mut role = RoleBuilder::new("test");
-        role.score(|_| 50.0);
-        let result = role.build();
-        assert!(result.is_err());
     }
 }

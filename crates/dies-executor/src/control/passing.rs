@@ -431,22 +431,22 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore, allow_passing: bool) -> (Sh
     let pass_viable = best_prob_pass >= min_prob_threshold;
     let best_prob = best_prob_direct.max(best_prob_pass);
     if !allow_passing {
-        println!("no passing, direct: {:.3}", best_prob_direct);
+        // println!("no passing, direct: {:.3}", best_prob_direct);
         return (best_target_direct, best_prob_direct);
     }
 
     // return (best_target_pass, best_prob_pass);
     let best_target = if !direct_viable && !pass_viable {
-        println!("no direct or pass, direct: {:.3}", best_prob_direct);
+        // println!("no direct or pass, direct: {:.3}", best_prob_direct);
         // If neither option is viable, default to direct shooting
         best_target_direct
     } else if !pass_viable {
         // Only direct shooting is viable
-        println!("no pass, direct: {:.3}", best_prob_direct);
+        // println!("no pass, direct: {:.3}", best_prob_direct);
         best_target_direct
     } else if !direct_viable {
         // Only passing is viable
-        println!("no direct, pass: {:.3}", best_prob_pass);
+        // println!("no direct, pass: {:.3}", best_prob_pass);
         best_target_pass
     } else {
         // Both options are viable - make probabilistic choice
@@ -462,11 +462,11 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore, allow_passing: bool) -> (Sh
         let biased_total = biased_direct + biased_pass;
 
         let final_direct_prob = biased_direct / biased_total;
-        println!(
-            "direct: {:.3}, pass: {:.3}",
-            final_direct_prob,
-            1.0 - final_direct_prob
-        );
+        // println!(
+        //     "direct: {:.3}, pass: {:.3}",
+        //     final_direct_prob,
+        //     1.0 - final_direct_prob
+        // );
 
         // Use a simple random number generator based on robot position and time-like hash
         // This provides deterministic but seemingly random behavior
@@ -474,10 +474,10 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore, allow_passing: bool) -> (Sh
         // println!(
 
         if random_value < final_direct_prob {
-            println!("chosen direct shoot with p={:.3}", final_direct_prob);
+            // println!("chosen direct shoot with p={:.3}", final_direct_prob);
             best_target_direct
         } else {
-            println!("chosen pass with p={:.3}", 1.0 - final_direct_prob);
+            // println!("chosen pass with p={:.3}", 1.0 - final_direct_prob);
             best_target_pass
         }
     };

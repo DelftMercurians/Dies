@@ -770,6 +770,7 @@ impl Simulation {
         let mut yellow_team_info = TeamInfo::new();
         yellow_team_info.set_max_allowed_bots(6);
         msg.yellow = Some(yellow_team_info).into();
+        msg.blue_team_on_positive_half = Some(false);
         self.referee_message.push_back(msg);
     }
 
