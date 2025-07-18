@@ -1870,24 +1870,16 @@ impl Simulation {
                 .unwrap();
             let position = ball_body.position().translation.vector;
             let x = position.x.clamp(
-                -(self.config.field_geometry.field_length
-                    - self.config.field_geometry.boundary_width
-                    - 100.0)
-                    / 2.0,
-                (self.config.field_geometry.field_length
-                    - self.config.field_geometry.boundary_width
-                    - 100.0)
-                    / 2.0,
+                -self.config.field_geometry.field_length / 2.0
+                    - self.config.field_geometry.boundary_width,
+                self.config.field_geometry.field_length / 2.0
+                    + self.config.field_geometry.boundary_width,
             );
             let y = position.y.clamp(
-                -(self.config.field_geometry.field_width
-                    - self.config.field_geometry.boundary_width
-                    - 100.0)
-                    / 2.0,
-                (self.config.field_geometry.field_width
-                    - self.config.field_geometry.boundary_width
-                    - 100.0)
-                    / 2.0,
+                -self.config.field_geometry.field_width / 2.0
+                    - self.config.field_geometry.boundary_width,
+                self.config.field_geometry.field_width / 2.0
+                    + self.config.field_geometry.boundary_width,
             );
             let z = position.z.clamp(24.0, 100.0);
             ball_body.set_position(Isometry::translation(x, y, z), true);

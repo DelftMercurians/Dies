@@ -114,31 +114,11 @@ struct DefenseAreaBoundary {
 }
 
 impl DefenseAreaBoundary {
-    fn get_boundary_segments(&self) -> Vec<(Vector2, Vector2)> {
-        vec![
-            // Top horizontal line
-            (
-                Vector2::new(self.goal_line_x, self.top_y),
-                Vector2::new(self.penalty_line_x, self.top_y),
-            ),
-            // Right vertical line (penalty line)
-            (
-                Vector2::new(self.penalty_line_x, self.top_y),
-                Vector2::new(self.penalty_line_x, self.bottom_y),
-            ),
-            // Bottom horizontal line
-            (
-                Vector2::new(self.penalty_line_x, self.bottom_y),
-                Vector2::new(self.goal_line_x, self.bottom_y),
-            ),
-        ]
-    }
-
     fn get_extended_boundary_segments(&self) -> Vec<(Vector2, Vector2)> {
         vec![
             // Top horizontal line
             (
-                Vector2::new(self.goal_line_x + 20.0, self.top_y + 80.0),
+                Vector2::new(self.goal_line_x - 10_000.0, self.top_y + 80.0), // extend beyond the field
                 Vector2::new(self.penalty_line_x + 80.0, self.top_y + 50.0),
             ),
             // Right vertical line (penalty line)
@@ -149,7 +129,7 @@ impl DefenseAreaBoundary {
             // Bottom horizontal line
             (
                 Vector2::new(self.penalty_line_x + 80.0, self.bottom_y - 80.0),
-                Vector2::new(self.goal_line_x + 20.0, self.bottom_y - 80.0),
+                Vector2::new(self.goal_line_x - 10_000.0, self.bottom_y - 80.0), // extend beyond the field
             ),
         ]
     }
@@ -351,13 +331,6 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
     };
 
     let backline = boundary.get_back_line();
-
-    let furtherts_from_goal = position_tuple
-        .iter()
-        .max_by_key(|p| (**p - goal_pos).norm() as i64)
-        .copied()
-        .unwrap_or_default();
-    let pos = furtherts_from_goal;
     for &pos in position_tuple.iter().take(1) {
         // the closer to ball - the better
         let ball_score = -(ball_pos - pos).norm() / 5_000.0;
@@ -372,6 +345,7 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
         let ball_to_pos = pos - ball_pos;
         let projection = ball_to_pos.dot(&ball_to_goal.normalize());
         let perpendicular_dist = (ball_to_pos - ball_to_goal.normalize() * projection).norm();
+
         let ray_score = -perpendicular_dist / 1000.0; // Penalize positions far from ball-goal line
         total_score += ray_score;
     }
