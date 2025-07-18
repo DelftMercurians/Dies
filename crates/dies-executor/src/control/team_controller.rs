@@ -547,7 +547,8 @@ impl TeamController {
                 let avoid_goal_area = if !matches!(
                     world_data.current_game_state.game_state,
                     GameState::BallReplacement(_)
-                ) {
+                ) && input_to_use.role_type != RoleType::Waller
+                {
                     self.avoid_goal_area_flags.get(&id).copied().unwrap_or(true)
                 } else {
                     false
@@ -668,8 +669,12 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                     // Avoid goal area
                     let min_distance = match game_state {
                         GameState::Run => 80.0,
-                        GameState::Stop | GameState::FreeKick => 500.0,
-                        _ => unreachable!(),
+                        GameState::Stop | GameState::FreeKick
+                            if input.role_type != RoleType::Waller =>
+                        {
+                            500.0
+                        }
+                        _ => 80.0,
                     };
                     let max_radius = 4000;
                     let margin = 40.0;
