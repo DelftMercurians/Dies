@@ -220,7 +220,7 @@ impl RoleAssignmentSolver {
                 );
                 let discount_factor = (role.index + 1) * j; // prefer closer to min and earlier in
                                                             // sequence roles
-                score_matrix[(j, i)] = (score * (discount_factor as i64));
+                score_matrix[(j, i)] = (score - (discount_factor as i64));
             }
         }
 
@@ -325,6 +325,11 @@ impl RoleAssignmentSolver {
         // Check require filter - must return true
         if let Some(ref require_filter) = role.require_filter {
             if !require_filter(situation) {
+                // println!(
+                //     "{} violates require filter for {}",
+                //     situation.player_id(),
+                //     role.name
+                // );
                 return true;
             }
         }
@@ -332,6 +337,11 @@ impl RoleAssignmentSolver {
         // Check exclude filter - must return false
         if let Some(ref exclude_filter) = role.exclude_filter {
             if exclude_filter(situation) {
+                // println!(
+                //     "{} violates exclude filter for {}",
+                //     situation.player_id(),
+                //     role.name
+                // );
                 return true;
             }
         }

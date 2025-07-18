@@ -31,7 +31,11 @@
     "yellow_script_path": null,
     "side_assignment": "YellowOnPositive"
   },
-  "yellow_team_settings": {},
-  "blue_team_settings": {},
+  "yellow_team_settings": { "handicaps": {} },
+  "blue_team_settings": {
+    "handicaps": {
+      "4": ["no_dribbler"]
+    }
+  },
   "allow_no_vision": false
 }

@@ -38,6 +38,7 @@ pub fn build_waller_tree(_s: &RobotSituation) -> BehaviorNode {
                 .position(calculate_wall_position)
                 .heading(get_defender_heading)
                 .aggressiveness(3.0)
+                .carefullness(-5.0)
                 .build(),
         )
         .description("Waller")
@@ -73,27 +74,6 @@ pub fn score_as_waller(s: &RobotSituation) -> f64 {
         score
     } else {
         0.0
-    }
-}
-
-fn is_ball_threatening(s: &RobotSituation) -> bool {
-    if let Some(ball) = &s.world.ball {
-        let ball_vel = ball.velocity.xy();
-        let goal_pos = s.get_own_goal_position();
-        let ball_pos = ball.position.xy();
-
-        // Check if ball is moving toward our goal
-        let ball_to_goal = (goal_pos - ball_pos).normalize();
-        let vel_direction = ball_vel.normalize();
-
-        let moving_toward_goal =
-            ball_to_goal.x * vel_direction.x + ball_to_goal.y * vel_direction.y > 0.5;
-        let in_our_half = ball_pos.x < 0.0;
-        let moving_fast = ball_vel.norm() > 500.0;
-
-        moving_toward_goal && in_our_half && moving_fast
-    } else {
-        false
     }
 }
 
@@ -549,7 +529,13 @@ pub fn score_position_tuple(s: &RobotSituation, position_tuple: &[Vector2]) -> f
 
     let backline = boundary.get_back_line();
 
-    for &pos in position_tuple {
+    let furtherts_from_goal = position_tuple
+        .iter()
+        .max_by_key(|p| (**p - goal_pos).norm() as i64)
+        .copied()
+        .unwrap_or_default();
+    let pos = furtherts_from_goal;
+    for &pos in position_tuple.iter().take(1) {
         // the closer to ball - the better
         let ball_score = -(ball_pos - pos).norm() / 5_000.0;
         total_score += ball_score;

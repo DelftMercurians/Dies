@@ -766,9 +766,11 @@ impl Simulation {
         }
         let mut blue_team_info = TeamInfo::new();
         blue_team_info.set_max_allowed_bots(6);
+        blue_team_info.set_goalkeeper(1);
         msg.blue = Some(blue_team_info).into();
         let mut yellow_team_info = TeamInfo::new();
         yellow_team_info.set_max_allowed_bots(6);
+        yellow_team_info.set_goalkeeper(1);
         msg.yellow = Some(yellow_team_info).into();
         msg.blue_team_on_positive_half = Some(false);
         self.referee_message.push_back(msg);

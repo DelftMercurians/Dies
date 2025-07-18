@@ -328,7 +328,9 @@ impl PlayerController {
             Velocity::Local(v) => self.last_yaw.rotate_vector(&v),
         };
 
-        let geom = world.field_geom.as_ref().unwrap();
+        let Some(geom) = world.field_geom.as_ref() else {
+            return;
+        };
         let maxdist = 400.0;
         let add_vel_factor =
             if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, maxdist) {

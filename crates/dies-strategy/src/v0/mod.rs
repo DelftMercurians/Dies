@@ -31,7 +31,7 @@ pub fn v0_strategy(game: &mut GameContext) {
         })
         // .exclude(|s| s.has_handicap(Handicap::NoKicker))
         .if_must_reassign_can_we_do_it_now(true)
-        .score(|s| 10_000.0 * s.player_id().as_u32() as f64)
+        .score(|s| 1.0)
         .behavior(|s| keeper::build_goalkeeper_tree(s));
 
     // Game state specific roles
@@ -73,7 +73,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                 // Free kick interference
                 game.add_role("free_kick_interference")
                     .max(1)
-                    .score(score_free_kick_interference)
+                    .score(|s| 1.0)
                     .behavior(|s| freekick_interference::build_free_kick_interference_tree(s));
             }
         }
@@ -83,7 +83,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                 game.add_role("penalty_kicker")
                     .count(1)
                     .exclude(|s| s.has_handicap(Handicap::NoKicker))
-                    .score(score_penalty_kicker)
+                    .score(|s| 1.0)
                     .behavior(|s| penalty_kicker::build_penalty_kicker_tree(s));
             }
         }
@@ -100,20 +100,20 @@ pub fn v0_defence(game: &mut GameContext) {
     if game.ball_has_been_on_opp_side_for_at_least(5.0) {
         game.add_role("striker_1")
             .max(1)
-            .score(score_striker)
+            .score(|s| 1.0)
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .behavior(|s| striker::build_striker_tree(s));
     } else {
         game.add_role("harasser_1")
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .max(1)
-            .score(score_as_harasser)
+            .score(|s| 1.0)
             .behavior(|s| harasser::build_harasser_tree(s));
     }
 
     game.add_role("waller_1")
         .max(1)
-        .score(score_as_waller)
+        .score(|s| 1.0)
         .behavior(|s| waller::build_waller_tree(s));
 
     // harasser 2
@@ -121,23 +121,23 @@ pub fn v0_defence(game: &mut GameContext) {
         game.add_role("striker_2")
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .max(1)
-            .score(score_striker)
+            .score(|s| 1.0)
             .behavior(|s| striker::build_striker_tree(s));
     } else {
         game.add_role("harasser_2")
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .max(1)
-            .score(score_as_harasser)
+            .score(|s| 1.0)
             .behavior(|s| harasser::build_harasser_tree(s));
     }
 
     game.add_role("waller_2")
         .max(1)
-        .score(score_as_waller)
+        .score(|s| 1.0)
         .behavior(|s| waller::build_waller_tree(s));
 
     game.add_role("striker_3")
-        .score(score_striker)
+        .score(|s| 1.0)
         .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
         .behavior(|s| striker::build_striker_tree(s));
 }
@@ -156,29 +156,29 @@ fn score_for_kicker(s: &RobotSituation) -> f64 {
     }
 }
 
-fn score_free_kick_interference(s: &RobotSituation) -> f64 {
-    let mut score = 70.0;
+// fn score_free_kick_interference(s: &RobotSituation) -> f64 {
+//     let mut score = 70.0;
 
-    // Prefer robots that can position between ball and our goal
-    if let Some(ball) = &s.world.ball {
-        let ball_pos = ball.position.xy();
-        let goal_pos = s.get_own_goal_position();
-        let my_pos = s.player_data().position;
+//     // Prefer robots that can position between ball and our goal
+//     if let Some(ball) = &s.world.ball {
+//         let ball_pos = ball.position.xy();
+//         let goal_pos = s.get_own_goal_position();
+//         let my_pos = s.player_data().position;
 
-        // Calculate positioning score
-        let ball_to_goal = goal_pos - ball_pos;
-        let ball_to_me = my_pos - ball_pos;
-        let projection =
-            (ball_to_me.x * ball_to_goal.x + ball_to_me.y * ball_to_goal.y) / ball_to_goal.norm();
-        let projection_ratio = projection / ball_to_goal.norm();
+//         // Calculate positioning score
+//         let ball_to_goal = goal_pos - ball_pos;
+//         let ball_to_me = my_pos - ball_pos;
+//         let projection =
+//             (ball_to_me.x * ball_to_goal.x + ball_to_me.y * ball_to_goal.y) / ball_to_goal.norm();
+//         let projection_ratio = projection / ball_to_goal.norm();
 
-        if projection_ratio > 0.2 && projection_ratio < 0.8 {
-            score += 20.0;
-        }
-    }
+//         if projection_ratio > 0.2 && projection_ratio < 0.8 {
+//             score += 20.0;
+//         }
+//     }
 
-    score
-}
+//     score
+// }
 
 // fn score_striker(s: &RobotSituation) -> f64 {
 //     // Smoothly prefer robots on our side, with a soft transition at x=0

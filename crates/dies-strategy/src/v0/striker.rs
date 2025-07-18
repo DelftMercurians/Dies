@@ -27,7 +27,7 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
             committing_guard_node()
                 .description("Ball pickup opportunity")
                 .when(|s| should_pickup_ball(s))
-                .until(|s| s.position().x < -100.0)
+                .until(|s| s.position().x < -800.0)
                 .commit_to(
                     semaphore_node()
                         .do_then(fetch_and_shoot_with_prep())
