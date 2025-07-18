@@ -56,6 +56,7 @@ impl TwoStepMTP {
         world_data: &TeamData,
         current_player: &PlayerData,
         avoid_goal_area: bool,
+        avoid_goal_area_margin: f64,
         obstacles: Vec<Obstacle>,
     ) -> Vector2 {
         let setpoint = match self.setpoint {
@@ -78,6 +79,7 @@ impl TwoStepMTP {
             current_player,
             player_context,
             avoid_goal_area,
+            avoid_goal_area_margin,
             obstacles,
         );
 
@@ -146,6 +148,7 @@ impl TwoStepMTP {
         current_player: &PlayerData,
         player_context: &PlayerContext,
         avoid_goal_area: bool,
+        avoid_goal_area_margin: f64,
         obstacles: Vec<Obstacle>,
     ) -> Vector2 {
         // Debug visualization for boundary rectangles
@@ -167,6 +170,7 @@ impl TwoStepMTP {
             world_data,
             current_player,
             avoid_goal_area,
+            avoid_goal_area_margin,
             obstacles.clone(),
         );
 
@@ -183,6 +187,7 @@ impl TwoStepMTP {
                 world_data,
                 current_player,
                 avoid_goal_area,
+                avoid_goal_area_margin,
                 obstacles.clone(),
             );
 
@@ -215,6 +220,7 @@ impl TwoStepMTP {
         world_data: &TeamData,
         current_player: &PlayerData,
         avoid_goal_area: bool,
+        avoid_goal_area_margin: f64,
         obstacles: Vec<Obstacle>,
     ) -> f64 {
         let mut total_cost = 0.0;
@@ -233,6 +239,7 @@ impl TwoStepMTP {
                     &future_world,
                     current_player,
                     avoid_goal_area,
+                    avoid_goal_area_margin,
                     obstacles.clone(),
                 );
         }
@@ -266,6 +273,7 @@ impl TwoStepMTP {
         world_data: &TeamData,
         current_player: &PlayerData,
         avoid_goal_area: bool,
+        avoid_goal_area_margin: f64,
         obstacles: Vec<Obstacle>,
     ) -> f64 {
         // total cost is multiplied by magic coeff -> lower implies we care more about
@@ -304,10 +312,19 @@ impl TwoStepMTP {
 
         // Calculate intersection cost with field boundaries
         if let Some(field) = &world_data.field_geom {
-            let intersection_length =
-                self.calculate_field_intersection_cost(start, mid, field, avoid_goal_area)
-                    + self.calculate_field_intersection_cost(mid, end, field, avoid_goal_area)
-                        * 0.1;
+            let intersection_length = self.calculate_field_intersection_cost(
+                start,
+                mid,
+                field,
+                avoid_goal_area,
+                avoid_goal_area_margin,
+            ) + self.calculate_field_intersection_cost(
+                mid,
+                end,
+                field,
+                avoid_goal_area,
+                avoid_goal_area_margin,
+            ) * 0.1;
             if intersection_length > 0.0 {
                 total_cost += 500.0
             }
@@ -586,6 +603,7 @@ impl TwoStepMTP {
         line_end: Vector2,
         field: &dies_core::FieldGeometry,
         avoid_goal_area: bool,
+        avoid_goal_area_margin: f64,
     ) -> f64 {
         let mut cost = 0.0;
         let margin = 40.0;
@@ -633,8 +651,15 @@ impl TwoStepMTP {
         let penalty_width = field.penalty_area_width + 2.0 * margin;
 
         if avoid_goal_area {
-            let left_rect_min = Vector2::new(-half_length, -penalty_width / 2.0);
-            let left_rect_max = Vector2::new(-half_length + penalty_depth, penalty_width / 2.0);
+            let penalty_half_width = penalty_width / 2.0;
+            let left_rect_min = Vector2::new(
+                -half_length - avoid_goal_area_margin,
+                -penalty_half_width - avoid_goal_area_margin,
+            );
+            let left_rect_max = Vector2::new(
+                -half_length + penalty_depth + avoid_goal_area_margin,
+                penalty_half_width + avoid_goal_area_margin,
+            );
             let left_intersection_length = self.line_rectangle_intersection_length(
                 line_start,
                 line_end,
@@ -645,8 +670,14 @@ impl TwoStepMTP {
             debug_rect(left_rect_min, left_rect_max);
 
             // Right side boundary rectangle (outside field)
-            let right_rect_min = Vector2::new(half_length - penalty_depth, -penalty_width / 2.0);
-            let right_rect_max = Vector2::new(half_length, penalty_width / 2.0);
+            let right_rect_min = Vector2::new(
+                half_length - penalty_depth - avoid_goal_area_margin,
+                -penalty_half_width - avoid_goal_area_margin,
+            );
+            let right_rect_max = Vector2::new(
+                half_length + avoid_goal_area_margin,
+                penalty_half_width + avoid_goal_area_margin,
+            );
             let right_intersection_length = self.line_rectangle_intersection_length(
                 line_start,
                 line_end,

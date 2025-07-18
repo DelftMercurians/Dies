@@ -146,6 +146,7 @@ impl TeamController {
                         &[],
                         &player_context,
                         true,
+                        0.0,
                     );
                 }
             }
@@ -546,6 +547,10 @@ impl TeamController {
                 } else {
                     false
                 };
+                let avoid_goal_area_margin = match world_data.current_game_state.game_state {
+                    GameState::Stop | GameState::FreeKick => 500.0,
+                    _ => 0.0,
+                };
 
                 controller.update(
                     player_data,
@@ -557,6 +562,7 @@ impl TeamController {
                     &all_players,
                     &player_context,
                     avoid_goal_area,
+                    avoid_goal_area_margin,
                 );
             } else {
                 controller.increment_frames_misses();
@@ -652,9 +658,7 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                     // Avoid goal area
                     let min_distance = match game_state {
                         GameState::Run => 80.0,
-                        GameState::Stop | GameState::FreeKick | GameState::BallReplacement(_) => {
-                            500.0
-                        }
+                        GameState::Stop | GameState::FreeKick => 500.0,
                         _ => unreachable!(),
                     };
                     let max_radius = 4000;

@@ -223,6 +223,7 @@ impl PlayerController {
         all_players: &[&PlayerData],
         player_context: &PlayerContext,
         avoid_goal_area: bool,
+        avoid_goal_area_margin: f64,
     ) {
         self.frame_misses = 0;
 
@@ -292,6 +293,7 @@ impl PlayerController {
                     world,
                     state,
                     avoid_goal_area,
+                    avoid_goal_area_margin,
                     obstacles,
                 )
             } else {

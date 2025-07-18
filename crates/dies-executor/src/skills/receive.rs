@@ -50,7 +50,7 @@ impl TryReceive {
         if self.waiting_for_velocity {
             let wait_start = self.wait_start.get_or_insert(Instant::now());
             let wait_time = wait_start.elapsed();
-            if wait_time > Duration::from_secs(3) {
+            if wait_time > Duration::from_secs(1) {
                 println!("receive failed: waited too long");
                 return SkillProgress::Done(SkillResult::Failure);
             }
@@ -64,9 +64,9 @@ impl TryReceive {
             self.waiting_for_velocity = false;
         }
 
-        let to_robot_dir = to_robot.normalize();
-        let ball_vel_dir = ball_vel.normalize();
-        let angle = Angle::between_points(to_robot_dir, ball_vel_dir);
+        // let to_robot_dir = to_robot.normalize();
+        // let ball_vel_dir = ball_vel.normalize();
+        // let angle = Angle::between_points(to_robot_dir, ball_vel_dir);
         // if angle.degrees().abs() > 30.0 && ball_vel.norm() > 50.0 {
         //     println!("receive failed: ball is not coming towards us");
         //     return SkillProgress::Done(SkillResult::Failure);
@@ -102,6 +102,13 @@ impl TryReceive {
             .intercept_line
             .get_or_insert((ctx.player.position, perp(ball.velocity.xy())));
 
+        dies_core::debug_line(
+            "intercept_line",
+            intercept_line.0,
+            intercept_line.1,
+            dies_core::DebugColor::Red,
+        );
+
         if let Some(intersection) = find_intersection(
             intercept_line.0,
             intercept_line.1,
@@ -116,6 +123,13 @@ impl TryReceive {
             } else {
                 intersection
             };
+
+            dies_core::debug_cross(
+                "receive_target",
+                clamped_intersection,
+                dies_core::DebugColor::Red,
+            );
+
             input.with_position(clamped_intersection);
             input.aggressiveness = 3.0;
 

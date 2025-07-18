@@ -136,13 +136,6 @@ impl BallTracker {
                             pos_v3.x, vel_v3.x, pos_v3.y, vel_v3.y, pos_v3.z, -vel_v3.z,
                         ));
                     }
-                    debug_value("ball.speed", vel_v3.xy().norm());
-                    debug_line(
-                        "ball.vel",
-                        pos_v3.xy(),
-                        pos_v3.xy() + vel_v3.xy(),
-                        dies_core::DebugColor::Orange,
-                    );
                     self.last_detection = Some(StoredData {
                         timestamp: current_time,
                         position: pos_v3,
@@ -153,6 +146,11 @@ impl BallTracker {
             }
             self.last_detection.as_mut().unwrap().raw_position = measured_positions;
         }
+
+        dies_core::debug_value(
+            "ball_speed",
+            self.last_detection.as_ref().unwrap().velocity.xy().norm(),
+        );
     }
 
     pub fn get(&self) -> Option<BallData> {
