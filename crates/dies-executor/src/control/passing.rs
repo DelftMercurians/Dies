@@ -262,9 +262,9 @@ fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 
     let angle_factor = if angle_diff <= 0.1 {
         1.0
     } else if angle_diff <= 0.3 {
-        0.9
+        0.7
     } else {
-        0.8
+        0.4
     };
     prob *= angle_factor;
 
@@ -349,7 +349,7 @@ fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 
 }
 
 pub fn pass_success_probability(s: &PassingStore, teammate_pos: Vector2) -> f64 {
-    let mut prob: f64 = 0.7;
+    let mut prob: f64 = 0.4;
     let player_pos = s.player_data().position;
     // score based on how far is the robot: not too close, not too far
     let robot_dist = (player_pos - teammate_pos).norm();

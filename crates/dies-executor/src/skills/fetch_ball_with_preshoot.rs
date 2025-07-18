@@ -127,7 +127,7 @@ impl FetchBallWithPreshoot {
             let player_heading = ctx.player.yaw;
 
             let dribbler_position = player_pos + player_heading.to_vector() * PLAYER_RADIUS;
-            let dribbler_radius = 25.0;
+            let dribbler_radius = if ball_pos.norm() < 1500.0 { 30.0 } else { 15.0 };
 
             match &self.state {
                 FetchBallWithPreshootState::GoToPreshoot { .. } => {
@@ -153,9 +153,13 @@ impl FetchBallWithPreshoot {
                     let shooting_target = shooting_target.position().unwrap();
                     let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 150.0;
 
+                    let ball_to_dribbler_distance = (ball_pos - dribbler_position).magnitude();
                     let distance_to_prep_target = (prep_target - player_pos).magnitude();
                     if distance_to_prep_target < 15.0
-                        || (distance_to_prep_target < 90.0 && ctx.player.velocity.norm() < 10.0)
+                        || (distance_to_prep_target < 90.0
+                            && ctx.player.velocity.norm() < 10.0
+                            && start_time.elapsed().as_secs_f64() > 2.0)
+                        || ball_to_dribbler_distance < dribbler_radius
                     {
                         self.state = FetchBallWithPreshootState::ApproachBall {
                             start_pos: player_pos,
@@ -199,23 +203,23 @@ impl FetchBallWithPreshoot {
                     dies_core::debug_value("ball_to_dribbler_distance", ball_to_dribbler_distance);
                     if ball_to_dribbler_distance < dribbler_radius {
                         // Check if we should move with ball before shooting
-                        if self.should_move_with_ball(ctx, *target_pos) {
-                            println!("Move with ball: target_pos={:.2}", target_pos);
-                            self.state = FetchBallWithPreshootState::MoveWithBall {
-                                target_pos: *target_pos,
-                                start_pos: player_pos,
-                                go_to_pos: Vector2::new(100.0, player_pos.y),
-                            };
-                            return SkillProgress::Continue(input);
-                        } else {
-                            println!(
-                                "Fetch ball done: ball_to_dribbler_distance<{:.2}",
-                                ball_to_dribbler_distance
-                            );
-                            input.with_kicker(Kick { force: 1.0 });
-                            self.state = FetchBallWithPreshootState::Done;
-                            return SkillProgress::Continue(input);
-                        }
+                        // if self.should_move_with_ball(ctx, *target_pos) {
+                        // println!("Move with ball: target_pos={:.2}", target_pos);
+                        // self.state = FetchBallWithPreshootState::MoveWithBall {
+                        //     target_pos: *target_pos,
+                        //     start_pos: player_pos,
+                        //     go_to_pos: Vector2::new(100.0, player_pos.y),
+                        // };
+                        // return SkillProgress::Continue(input);
+                        // } else {
+                        //     println!(
+                        //         "Fetch ball done: ball_to_dribbler_distance<{:.2}",
+                        //         ball_to_dribbler_distance
+                        //     );
+                        input.with_kicker(Kick { force: 1.0 });
+                        self.state = FetchBallWithPreshootState::Done;
+                        return SkillProgress::Continue(input);
+                        // }
                     }
 
                     if (player_pos - start_pos).magnitude() > self.distance_limit {
@@ -238,7 +242,7 @@ impl FetchBallWithPreshoot {
                     }
 
                     // Move forward towards the ball
-                    input.velocity = Velocity::global(ball_heading.to_vector() * 300.0);
+                    input.velocity = Velocity::global(ball_heading.to_vector() * 400.0);
 
                     SkillProgress::Continue(input)
                 }

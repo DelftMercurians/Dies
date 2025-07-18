@@ -23,6 +23,18 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                 .build(),
         )
         .add(
+            semaphore_node()
+                .do_then(
+                    sequence_node()
+                        .add(try_receive())
+                        .add(fetch_ball_with_preshoot().with_can_pass(false).build())
+                        .build(),
+                )
+                .semaphore_id("striker_ball_pickup".to_string())
+                .max_entry(1)
+                .build(),
+        )
+        .add(
             // Pickup ball if we can
             committing_guard_node()
                 .description("Ball pickup opportunity")
@@ -35,12 +47,6 @@ pub fn build_striker_tree(_s: &RobotSituation) -> BehaviorNode {
                         .max_entry(1)
                         .build(),
                 )
-                .build(),
-        )
-        .add(
-            sequence_node()
-                .add(try_receive())
-                .add(fetch_ball_with_preshoot().with_can_pass(false).build())
                 .build(),
         )
         .add(

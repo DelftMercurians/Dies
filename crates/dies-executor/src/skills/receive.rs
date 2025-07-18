@@ -11,7 +11,6 @@ use crate::{
 pub struct TryReceive {
     started: bool,
     wait_start: Option<Instant>,
-    waiting: bool,
     intercept_line: Option<(Vector2, Vector2)>,
     passer_position: Option<Vector2>,
     passer_heading: Option<Angle>,
@@ -22,7 +21,6 @@ impl TryReceive {
         Self {
             started: false,
             wait_start: None,
-            waiting: true,
             intercept_line: None,
             passer_position: None,
             passer_heading: None,
@@ -37,14 +35,7 @@ impl TryReceive {
         let ball_distance = (ball_pos - ctx.player.position).norm();
 
         let passing_target = ctx.bt_context.take_passing_target(ctx.player.id);
-        if !self.waiting || passing_target.is_none() {
-            return SkillProgress::Done(SkillResult::Failure);
-        }
-        if passing_target.is_none() {
-            if !self.waiting {
-                println!("receive starting wait");
-            }
-            self.waiting = true;
+        if passing_target.is_none() && self.passer_heading.is_some() {
             let wait_start = self.wait_start.get_or_insert(Instant::now()).clone();
             if wait_start.elapsed() > Duration::from_secs(1) {
                 if ball_distance < 500.0 {
@@ -55,14 +46,20 @@ impl TryReceive {
                     return SkillProgress::Done(SkillResult::Failure);
                 }
             }
-        } else {
-            let passer_id = passing_target.unwrap().shooter_id;
+        } else if let Some(passing_target) = passing_target.as_ref() {
+            let passer_id = passing_target.shooter_id;
+            if self.passer_position.is_none() {
+                println!("receive: passer_id={:?}", passer_id);
+            }
             self.passer_position = Some(ctx.world.get_player(passer_id).position);
             self.passer_heading = Some(Angle::between_points(
                 ctx.player.position,
                 ctx.world.get_player(passer_id).position,
             ));
+        } else {
+            return SkillProgress::failure();
         }
+
         let to_robot = ctx.player.position - ball.position.xy();
         if ball_distance < 200.0 {
             println!("receive success: ball is close");
