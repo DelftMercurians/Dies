@@ -14,19 +14,18 @@ pub mod waller;
 
 pub fn v0_strategy(game: &mut GameContext) {
     let game_state = game.game_state();
+
     // Goalkeeper - always exactly one
     game.add_role("goalkeeper")
         .count(1)
-        // .can_be_reassigned(false)
         .require(move |s| {
             game_state
                 .our_keeper_id
                 .map(|id| id == s.player_id())
                 .unwrap_or(true)
         })
-        // .exclude(|s| s.has_handicap(Handicap::NoKicker))
         .if_must_reassign_can_we_do_it_now(true)
-        .score(|s| 1.0)
+        .score(|_| 1.0)
         .behavior(|s| keeper::build_goalkeeper_tree(s));
 
     // Game state specific roles
@@ -36,7 +35,6 @@ pub fn v0_strategy(game: &mut GameContext) {
                 // Kickoff kicker
                 game.add_role("kickoff_kicker")
                     .count(1)
-                    .exclude(|s| s.player_id.as_u32() == 4)
                     .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
                     .score(|s| score_for_kicker(s))
                     .behavior(|s| kickoff_kicker::build_kickoff_kicker_tree(s));
@@ -54,7 +52,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                 // Free kick interference
                 game.add_role("free_kick_interference")
                     .max(1)
-                    .score(|s| 1.0)
+                    .score(|s| score_for_interference(s))
                     .behavior(|s| freekick_interference::build_free_kick_interference_tree(s));
             }
         }
@@ -64,7 +62,7 @@ pub fn v0_strategy(game: &mut GameContext) {
                 game.add_role("penalty_kicker")
                     .count(1)
                     .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
-                    .score(|s| 100.0)
+                    .score(|_| 100.0)
                     .behavior(|s| penalty_kicker::build_penalty_kicker_tree(s));
             }
         }
@@ -77,12 +75,6 @@ pub fn v0_strategy(game: &mut GameContext) {
 pub fn v0_defence(game: &mut GameContext) {
     // 5: 1 + 2w + 2h + 0a
 
-    game.add_role("striker_test")
-        .max(2)
-        .score(|s| 1.0 + favor_x_pos(s, 1.0))
-        .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
-        .behavior(|s| striker::build_striker_tree(s));
-
     // harasser 1
     if game.ball_has_been_on_opp_side_for_at_least(10.0) {
         game.add_role("striker_1")
@@ -94,7 +86,7 @@ pub fn v0_defence(game: &mut GameContext) {
         game.add_role("harasser_1")
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .max(1)
-            .score(|s| 1.0)
+            .score(|_| 1.0)
             .behavior(|s| harasser::build_harasser_tree(s));
     }
 
@@ -114,7 +106,7 @@ pub fn v0_defence(game: &mut GameContext) {
         game.add_role("harasser_2")
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .max(1)
-            .score(|s| 1.0)
+            .score(|_| 1.0)
             .behavior(|s| harasser::build_harasser_tree(s));
     }
 
@@ -135,6 +127,27 @@ fn score_for_kicker(s: &RobotSituation) -> f64 {
         10.0
     } else if current_role.contains("harasser") {
         5.0
+    } else if !current_role.contains("goalkeeper") {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+fn score_for_interference(s: &RobotSituation) -> f64 {
+    let current_role = s.current_role();
+    if current_role.contains("striker") {
+        if s.ball_position().x > 0.0 {
+            10.0
+        } else {
+            5.0
+        }
+    } else if current_role.contains("harasser") {
+        if s.ball_position().x > 0.0 {
+            5.0
+        } else {
+            10.0
+        }
     } else if !current_role.contains("goalkeeper") {
         1.0
     } else {
