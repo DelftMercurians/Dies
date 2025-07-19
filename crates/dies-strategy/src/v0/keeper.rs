@@ -1,4 +1,5 @@
 use std::f64::consts::{FRAC_PI_2, PI};
+use std::fmt::format;
 
 use dies_core::{Angle, GameState, Vector2};
 use dies_executor::control::{PassingStore, ShootTarget};
@@ -60,14 +61,19 @@ fn find_clear_exit_target(s: &RobotSituation) -> ShootTarget {
     let mut best_target = s.get_opp_goal_position();
     let mut best_score = f64::NEG_INFINITY;
 
+    let min_angle = 15.0f64.to_radians();
+    let total_angle = PI - min_angle;
     for i in 0..num_samples {
-        let angle_rad = (i as f64 / num_samples as f64) * PI - FRAC_PI_2;
+        let angle_rad = (i as f64 / num_samples as f64) * total_angle - (total_angle / 2.0);
         let direction = Angle::from_radians(angle_rad);
 
         // Project this direction to a target position well outside the penalty area
         let direction_vector = direction.to_vector();
         let target_distance = 2000.0; // 2 meters away from ball
         let target_pos = ball_pos + direction_vector * target_distance;
+
+        s.team_context
+            .debug_cross(format!("exit_{}", i), target_pos);
 
         // Score this direction
         let score = score_exit_direction(s, &passing_store, direction, target_pos);
@@ -77,6 +83,11 @@ fn find_clear_exit_target(s: &RobotSituation) -> ShootTarget {
             best_target = target_pos;
         }
     }
+    s.team_context.debug_cross_colored(
+        format!("exit_{}", 0),
+        best_target,
+        dies_core::DebugColor::Blue,
+    );
 
     ShootTarget::Goal(best_target)
 }
@@ -88,6 +99,17 @@ fn score_exit_direction(
     direction: Angle,
     target_pos: Vector2,
 ) -> f64 {
+    // Safety check: Never allow directions towards own goal
+    let own_goal = s.get_own_goal_position();
+    let ball_pos = s.ball_position();
+    let to_target = (target_pos - ball_pos).normalize();
+    let to_goal = (own_goal - ball_pos).normalize();
+
+    // If direction is towards own goal (dot product > 0.5, meaning angle < 60°), reject it
+    if to_target.dot(&to_goal) > 0.5 {
+        return f64::NEG_INFINITY;
+    }
+
     let mut score = 0.0;
 
     // Factor 1: Distance to nearest opponent in this direction (higher is better)
@@ -102,7 +124,7 @@ fn score_exit_direction(
     } else {
         0.1
     };
-    score += opponent_score * 3.0; // High weight for opponent clearance
+    score += opponent_score * 5.0; // High weight for opponent clearance
 
     // Factor 2: Prefer directions that lead away from our goal
     let own_goal = s.get_own_goal_position();
@@ -111,19 +133,6 @@ fn score_exit_direction(
     let to_goal = (own_goal - ball_pos).normalize();
     let away_from_goal_score = 1.0 - to_target.dot(&to_goal); // Range 0-2, higher when pointing away
     score += away_from_goal_score;
-
-    // Factor 3: Prefer directions that lead out of the penalty area
-    if let Some(field) = &s.world.field_geom {
-        let penalty_exit_x = -field.field_length / 2.0 + field.penalty_area_depth + 200.0; // Just outside penalty area
-        if target_pos.x > penalty_exit_x {
-            score += 2.0; // Bonus for exiting penalty area
-        }
-    }
-
-    // Factor 4: Slight preference for forward directions (towards opponent half)
-    if target_pos.x > ball_pos.x {
-        score += 0.5;
-    }
 
     score
 }

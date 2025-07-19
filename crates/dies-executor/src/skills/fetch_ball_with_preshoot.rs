@@ -139,11 +139,24 @@ impl FetchBallWithPreshoot {
             match &self.state {
                 FetchBallWithPreshootState::GoToPreshoot { .. } => {
                     let start_time = self.go_to_preshoot_timer.get_or_insert(Instant::now());
-                    let shooting_target = find_best_preshoot(
-                        &PassingStore::new(ctx.player.id, Arc::new(ctx.world.clone())),
-                        self.shoot_target.clone(),
-                        self.can_pass,
-                    );
+                    let shooting_target =
+                        if let Some(ShootTarget::Goal(pos)) = &self.override_target {
+                            ShootTarget::Goal(*pos)
+                        } else {
+                            find_best_preshoot(
+                                &PassingStore::new(ctx.player.id, Arc::new(ctx.world.clone())),
+                                self.shoot_target.clone(),
+                                self.can_pass,
+                            )
+                        };
+                    self.shoot_target = self
+                        .override_target
+                        .clone()
+                        .or(Some(shooting_target.clone()));
+                    if self.override_target.is_some() {
+                        println!("we have override");
+                    }
+
                     if let Some(ShootTarget::Player { id, position }) = &self.shoot_target {
                         ctx.bt_context.set_passing_target(PassingTarget {
                             shooter_id: ctx.player.id,
@@ -156,10 +169,7 @@ impl FetchBallWithPreshoot {
                         shooting_target.position().unwrap_or_default(),
                         dies_core::DebugColor::Blue,
                     );
-                    self.shoot_target = self
-                        .override_target
-                        .clone()
-                        .or(Some(shooting_target.clone()));
+
                     let shooting_target = shooting_target.position().unwrap();
                     let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 150.0;
 
