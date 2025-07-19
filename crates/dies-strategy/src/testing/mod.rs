@@ -7,7 +7,7 @@ mod test_receiver;
 
 pub fn testing_strategy(game: &mut GameContext) {
     game.add_role("test")
-        .count(1)
         .score(|_| 1.0)
-        .behavior(|_| test_movement::build_test_movement());
+        .require(|s| s.player_id.as_u32() == 0)
+        .behavior(|_| test_fetchball::build_test_fetchball());
 }

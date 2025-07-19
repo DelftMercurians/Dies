@@ -241,10 +241,19 @@ export interface TeamConfiguration {
 export enum Handicap {
 	NoKicker = "no_kicker",
 	NoDribbler = "no_dribbler",
+	NoBreakbeam = "no_breakbeam",
 }
 
 export interface TeamSpecificSettings {
 	handicaps: Record<PlayerId, Handicap[]>;
+}
+
+export interface SkillSettings {
+	dribbler_radius_near_center: number;
+	dribbler_radius_far_center: number;
+	dribbler_radius_breakbeam_factor: number;
+	fetch_ball_preshoot_offset: number;
+	fetch_ball_preshoot_ball_avoidance: number;
 }
 
 /** Settings for the executor. */
@@ -254,6 +263,7 @@ export interface ExecutorSettings {
 	team_configuration: TeamConfiguration;
 	yellow_team_settings: TeamSpecificSettings;
 	blue_team_settings: TeamSpecificSettings;
+	skill_settings: SkillSettings;
 	allow_no_vision: boolean;
 }
 
@@ -484,6 +494,7 @@ export interface TeamData {
 	ball_on_our_side?: Duration;
 	ball_on_opp_side?: Duration;
 	kicked_ball?: AutorefKickedBallTeam;
+	skill_settings: SkillSettings;
 }
 
 /** The current status of the executor. */
@@ -521,6 +532,7 @@ export interface WorldData {
 	ball_on_blue_side?: Duration;
 	ball_on_yellow_side?: Duration;
 	autoref_info?: AutorefInfo;
+	skill_settings: SkillSettings;
 }
 
 export interface WorldUpdate {

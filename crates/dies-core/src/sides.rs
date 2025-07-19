@@ -133,6 +133,7 @@ impl SideAssignment {
                 TeamColor::Blue => world_data.ball_on_yellow_side,
                 TeamColor::Yellow => world_data.ball_on_blue_side,
             },
+            skill_settings: world_data.skill_settings.clone(),
             kicked_ball: None,
             // world_data
             //     .autoref_info

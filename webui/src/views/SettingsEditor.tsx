@@ -113,6 +113,17 @@ const fieldConfig: FieldConfig = {
       ),
     },
   },
+  skill_settings: {
+    dribbler_radius_near_center: { min: 0, max: 100, step: 1, unit: "mm" },
+    dribbler_radius_far_center: { min: 0, max: 100, step: 1, unit: "mm" },
+    fetch_ball_preshoot_offset: { min: 0, max: 1000, step: 1, unit: "mm" },
+    fetch_ball_preshoot_ball_avoidance: {
+      min: 0,
+      max: 5,
+      step: 0.1,
+      unit: "*",
+    },
+  },
 };
 
 function SettingsEditor<K extends keyof ExecutorSettings>({
@@ -140,7 +151,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
       }
       updateSettings({
         ...allSettings,
-        [settingsKey]: { ...settings, [key]: value },
+        [settingsKey]: { ...(settings as any), [key]: value },
       });
     }
   };

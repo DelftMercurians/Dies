@@ -1,11 +1,11 @@
 {
   "controller_settings": {
-    "max_acceleration": 12500.0,
-    "max_velocity": 8000.0,
+    "max_acceleration": 2500.0,
+    "max_velocity": 5090.0,
     "max_deceleration": 6340.0,
     "max_angular_velocity": 25.132741228718345,
     "max_angular_acceleration": 349.0658503988659,
-    "position_kp": 2.3,
+    "position_kp": 2.0,
     "position_proportional_time_window": 1.1,
     "position_cutoff_distance": 15.0,
     "angle_kp": 2.8,
@@ -13,8 +13,8 @@
   },
   "tracker_settings": {
     "field_mask": {
-      "x_min": -1.0,
-      "x_max": 0.96,
+      "x_min": 0.0,
+      "x_max": 1.0,
       "y_min": -1.0,
       "y_max": 1.0
     },
@@ -26,19 +26,23 @@
   },
   "team_configuration": {
     "blue_active": true,
-    "yellow_active": true,
+    "yellow_active": false,
     "blue_script_path": null,
     "yellow_script_path": null,
     "side_assignment": "YellowOnPositive"
   },
   "yellow_team_settings": {
-    "handicaps": {
-      "2": ["no_kicker"],
-      "4": ["no_dribbler"]
-    }
+    "handicaps": {}
   },
   "blue_team_settings": {
     "handicaps": {}
   },
-  "allow_no_vision": false
+  "skill_settings": {
+    "dribbler_radius_near_center": 30.0,
+    "dribbler_radius_far_center": 25.0,
+    "dribbler_radius_breakbeam_factor": 2.0,
+    "fetch_ball_preshoot_offset": 150.0,
+    "fetch_ball_preshoot_ball_avoidance": 0.0
+  },
+  "allow_no_vision": true
 }

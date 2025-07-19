@@ -149,6 +149,7 @@ pub struct PlayerControlInput {
     pub angular_speed_limit: Option<f64>,
 
     pub avoid_ball: bool,
+    pub avoid_ball_care: f64,
 
     pub fan_speed: Option<f64>,
     pub kick_speed: Option<f64>,
@@ -173,6 +174,7 @@ impl Default for PlayerControlInput {
             angular_acceleration_limit: None,
             angular_speed_limit: Some(3.0),
             avoid_ball: false,
+            avoid_ball_care: 0.0,
             fan_speed: None,
             kick_speed: None,
             avoid_robots: false,

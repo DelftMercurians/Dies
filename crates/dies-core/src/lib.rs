@@ -6,6 +6,7 @@ mod geom;
 mod math;
 mod player;
 mod sides;
+mod skill_settings;
 mod world;
 
 pub mod workspace_utils;
@@ -19,6 +20,7 @@ pub use math::*;
 pub use player::*;
 use serde::{Deserialize, Serialize};
 pub use sides::*;
+pub use skill_settings::*;
 use typeshare::typeshare;
 pub use world::*;
 

@@ -288,6 +288,7 @@ const App: React.FC = () => {
                     <TabsList className="w-full">
                       <TabsTrigger value="controller">Controller</TabsTrigger>
                       <TabsTrigger value="tracker">Tracker</TabsTrigger>
+                      <TabsTrigger value="skill">Skill</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="controller" asChild>
@@ -295,6 +296,9 @@ const App: React.FC = () => {
                     </TabsContent>
                     <TabsContent value="tracker" asChild>
                       <SettingsEditor settingsKey="tracker_settings" />
+                    </TabsContent>
+                    <TabsContent value="skill" asChild>
+                      <SettingsEditor settingsKey="skill_settings" />
                     </TabsContent>
                   </Tabs>
                 ) : (

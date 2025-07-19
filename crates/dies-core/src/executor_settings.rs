@@ -3,7 +3,7 @@ use std::{collections::HashMap, fs, path::Path};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::{FieldGeometry, PlayerId, SideAssignment};
+use crate::{skill_settings::SkillSettings, FieldGeometry, PlayerId, SideAssignment};
 
 /// Settings for the low-level controller.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -151,6 +151,7 @@ impl Default for TeamConfiguration {
 pub enum Handicap {
     NoKicker,
     NoDribbler,
+    NoBreakbeam,
 }
 
 impl std::fmt::Display for Handicap {
@@ -158,6 +159,7 @@ impl std::fmt::Display for Handicap {
         match self {
             Handicap::NoKicker => write!(f, "No kicker"),
             Handicap::NoDribbler => write!(f, "No dribbler"),
+            Handicap::NoBreakbeam => write!(f, "No breakbeam"),
         }
     }
 }
@@ -177,6 +179,7 @@ pub struct ExecutorSettings {
     pub team_configuration: TeamConfiguration,
     pub yellow_team_settings: TeamSpecificSettings,
     pub blue_team_settings: TeamSpecificSettings,
+    pub skill_settings: SkillSettings,
     pub allow_no_vision: bool,
 }
 
@@ -223,6 +226,7 @@ impl Default for ExecutorSettings {
             team_configuration: TeamConfiguration::default(),
             yellow_team_settings: TeamSpecificSettings::default(),
             blue_team_settings: TeamSpecificSettings::default(),
+            skill_settings: SkillSettings::default(),
             allow_no_vision: true,
         }
     }

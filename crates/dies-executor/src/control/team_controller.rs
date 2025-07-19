@@ -525,7 +525,7 @@ impl TeamController {
                             radius: if world_data.current_game_state.game_state == GameState::Stop {
                                 800.0
                             } else {
-                                100.0 + 100.0 * input_to_use.care
+                                100.0 + 100.0 * (input_to_use.care + input_to_use.avoid_ball_care)
                             },
                         });
                     }
@@ -626,14 +626,14 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
 
                 let mut new_input = input.clone();
 
-                if matches!(
-                    game_state,
-                    GameState::Halt | GameState::Unknown | GameState::Timeout
-                ) {
-                    new_input.with_speed_limit(0.0);
-                    new_input.with_angular_speed_limit(0.0);
-                    new_input.dribbling_speed = 0.0;
-                }
+                // if matches!(
+                //     game_state,
+                //     GameState::Halt | GameState::Unknown | GameState::Timeout
+                // ) {
+                //     new_input.with_speed_limit(0.0);
+                //     new_input.with_angular_speed_limit(0.0);
+                //     new_input.dribbling_speed = 0.0;
+                // }
 
                 if matches!(game_state, GameState::Stop) {
                     new_input.with_speed_limit(1500.0);

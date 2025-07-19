@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    distance_to_line, player::PlayerId, Angle, FieldGeometry, Handicap, RoleType, SideAssignment,
-    SysStatus, TeamColor, TeamPlayerId, Vector2, Vector3,
+    distance_to_line, player::PlayerId, skill_settings::SkillSettings, Angle, FieldGeometry,
+    Handicap, RoleType, SideAssignment, SysStatus, TeamColor, TeamPlayerId, Vector2, Vector3,
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
@@ -375,6 +375,7 @@ pub struct WorldData {
     pub ball_on_blue_side: Option<Duration>,
     pub ball_on_yellow_side: Option<Duration>,
     pub autoref_info: Option<AutorefInfo>,
+    pub skill_settings: SkillSettings,
 }
 
 impl WorldData {
@@ -417,6 +418,7 @@ pub struct TeamData {
     pub ball_on_our_side: Option<Duration>,
     pub ball_on_opp_side: Option<Duration>,
     pub kicked_ball: Option<AutorefKickedBallTeam>,
+    pub skill_settings: SkillSettings,
 }
 
 impl TeamData {
@@ -849,6 +851,7 @@ pub fn mock_world_data() -> WorldData {
         ball_on_blue_side: None,
         ball_on_yellow_side: None,
         autoref_info: None,
+        skill_settings: SkillSettings::default(),
     }
 }
 
@@ -910,6 +913,7 @@ pub fn mock_team_data() -> TeamData {
         ball_on_our_side: None,
         ball_on_opp_side: None,
         kicked_ball: None,
+        skill_settings: SkillSettings::default(),
     }
 }
 

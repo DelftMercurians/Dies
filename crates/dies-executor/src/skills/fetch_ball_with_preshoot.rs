@@ -127,14 +127,18 @@ impl FetchBallWithPreshoot {
     pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         if let Some(ball) = ctx.world.ball.as_ref() {
             let mut input = PlayerControlInput::new();
-            input.with_dribbling(0.6);
+            input.with_dribbling(0.5);
 
             let ball_pos = ball.position.xy();
             let player_pos = ctx.player.position;
             let player_heading = ctx.player.yaw;
 
             let dribbler_position = player_pos + player_heading.to_vector() * PLAYER_RADIUS;
-            let dribbler_radius = if ball_pos.norm() < 1500.0 { 30.0 } else { 25.0 };
+            let dribbler_radius = if ball_pos.norm() < 1500.0 {
+                ctx.world.skill_settings.dribbler_radius_near_center
+            } else {
+                ctx.world.skill_settings.dribbler_radius_far_center
+            };
 
             match &self.state {
                 FetchBallWithPreshootState::GoToPreshoot { .. } => {
@@ -171,7 +175,9 @@ impl FetchBallWithPreshoot {
                     );
 
                     let shooting_target = shooting_target.position().unwrap();
-                    let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 150.0;
+                    let prep_target = ball_pos
+                        - (shooting_target - ball_pos).normalize()
+                            * ctx.world.skill_settings.fetch_ball_preshoot_offset;
 
                     let ball_to_dribbler_distance = (ball_pos - dribbler_position).magnitude();
                     let distance_to_prep_target = (prep_target - player_pos).magnitude();
@@ -194,8 +200,11 @@ impl FetchBallWithPreshoot {
 
                     input.with_position(prep_target);
                     let ball_heading = Angle::between_points(prep_target, ball_pos);
-                    input.with_yaw(ball_heading);
+                    let target_heading = Angle::between_points(player_pos, shooting_target);
+                    input.with_yaw(target_heading);
                     input.avoid_ball = true;
+                    input.avoid_ball_care =
+                        ctx.world.skill_settings.fetch_ball_preshoot_ball_avoidance;
 
                     SkillProgress::Continue(input)
                 }
@@ -221,21 +230,19 @@ impl FetchBallWithPreshoot {
                     let ball_distance = (ball_pos - player_pos).magnitude();
                     let ball_to_dribbler_distance = (ball_pos - dribbler_position).magnitude();
                     dies_core::debug_value("ball_to_dribbler_distance", ball_to_dribbler_distance);
-                    if ball_to_dribbler_distance < dribbler_radius {
-                        // Check if we should move with ball before shooting
-                        // if self.should_move_with_ball(ctx, *target_pos) {
-                        // println!("Move with ball: target_pos={:.2}", target_pos);
-                        // self.state = FetchBallWithPreshootState::MoveWithBall {
-                        //     target_pos: *target_pos,
-                        //     start_pos: player_pos,
-                        //     go_to_pos: Vector2::new(100.0, player_pos.y),
-                        // };
-                        // return SkillProgress::Continue(input);
-                        // } else {
-                        //     println!(
-                        //         "Fetch ball done: ball_to_dribbler_distance<{:.2}",
-                        //         ball_to_dribbler_distance
-                        //     );
+                    let breakbeam = ball_to_dribbler_distance
+                        < dribbler_radius
+                            * ctx.world.skill_settings.dribbler_radius_breakbeam_factor
+                        && ctx.player.breakbeam_ball_detected
+                        && !ctx
+                            .player
+                            .handicaps
+                            .contains(&dies_core::Handicap::NoBreakbeam);
+                    if ball_to_dribbler_distance < dribbler_radius || breakbeam {
+                        if breakbeam {
+                            println!("breakbea");
+                        }
+
                         let force = if matches!(self.shoot_target, Some(ShootTarget::Player { .. }))
                         {
                             0.5
@@ -245,7 +252,6 @@ impl FetchBallWithPreshoot {
                         input.with_kicker(Kick { force });
                         self.state = FetchBallWithPreshootState::Done;
                         return SkillProgress::Continue(input);
-                        // }
                     }
 
                     if (player_pos - start_pos).magnitude() > self.distance_limit {
@@ -274,7 +280,7 @@ impl FetchBallWithPreshoot {
                     }
 
                     // Move forward towards the ball
-                    input.velocity = Velocity::global(ball_heading.to_vector() * 600.0);
+                    input.velocity = Velocity::global(ball_heading.to_vector() * 800.0);
 
                     SkillProgress::Continue(input)
                 }
@@ -295,7 +301,7 @@ impl FetchBallWithPreshoot {
                     dies_core::debug_value("ball_to_dribbler_distance", ball_to_dribbler_distance);
 
                     // Higher dribbling speed for ball control
-                    input.with_dribbling(1.0);
+                    input.with_dribbling(0.0);
 
                     // Maintain heading toward target with lowered yaw rate
                     let target_heading = Angle::between_points(player_pos, *target_pos);

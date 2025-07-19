@@ -126,36 +126,43 @@ impl TwoStepMTP {
         // player_context.debug_string("TwoStepMTPMaxDecel", max_decel.to_string());
         // player_context.debug_string("TwoStepMTPCarefullness", carefullness.to_string());
 
-        if time_to_target <= self.proportional_time_window.as_secs_f64() {
-            // Proportional control
-            let kp = control_parameters.as_ref().map(|p| p.kp).unwrap_or(self.kp);
-            let thresh = control_parameters
-                .as_ref()
-                .map(|p| p.thresh)
-                .unwrap_or(250.0);
-            let antiwindup = control_parameters
-                .as_ref()
-                .map(|p| p.antiwindup)
-                .unwrap_or(40.0);
-            let aggressiveness = 1.0 + aggressiveness;
-            let proportional_velocity_magnitude =
-                (f64::max(intermediate_distance - self.cutoff_distance, 0.0)
-                    * (kp * aggressiveness)
-                    + (thresh - 70.0 * carefullness))
-                    .clamp(0.0, max_speed);
+        // if time_to_target <= self.proportional_time_window.as_secs_f64() {
+        // Proportional control
+        let kp = control_parameters.as_ref().map(|p| p.kp).unwrap_or(self.kp);
+        let thresh = control_parameters
+            .as_ref()
+            .map(|p| p.thresh)
+            .unwrap_or(100.0);
+        let antiwindup = control_parameters
+            .as_ref()
+            .map(|p| p.antiwindup)
+            .unwrap_or(40.0);
+        let aggressiveness = 1.0 + aggressiveness;
+        let proportional_velocity_magnitude =
+            (f64::max(intermediate_distance - self.cutoff_distance, 0.0) * (kp * aggressiveness)
+                + (thresh - 70.0 * carefullness))
+                .clamp(0.0, max_speed);
 
-            let measured_vel = velocity.magnitude();
-            let target_vel = direction * proportional_velocity_magnitude;
-            let error = target_vel.magnitude() - measured_vel;
-            self.integral += error * dt;
-            self.integral = self.integral.clamp(-antiwindup, antiwindup);
-            // let dv_compensation = ki * self.integral;
-            target_vel
+        let measured_vel = velocity.magnitude();
+        let target_vel = direction * proportional_velocity_magnitude;
+        let error = target_vel.magnitude() - measured_vel;
+        self.integral += error * dt;
+        self.integral = self.integral.clamp(-antiwindup, antiwindup);
+
+        let current_vel = self.last_vel.get_or_insert(Vector2::zeros()).clone();
+        let dv = if target_vel.magnitude() > current_vel.magnitude() {
+            cap_vec(target_vel - current_vel, max_accel * dt)
         } else {
-            // Cruise phase
-            // player_context.debug_string("TwoStepMTPMode", "Cruise");
-            direction * max_speed
-        }
+            target_vel - current_vel
+        };
+        let new_vel = current_vel + dv;
+        self.last_vel = Some(new_vel);
+        new_vel
+        // } else {
+        //     // Cruise phase
+        //     // player_context.debug_string("TwoStepMTPMode", "Cruise");
+        //     direction * max_speed
+        // }
     }
 
     fn find_best_intermediate_point(
@@ -817,6 +824,9 @@ impl TwoStepMTP {
 }
 
 fn cap_vec(v: Vector2, cap: f64) -> Vector2 {
+    if v.magnitude() < f64::EPSILON {
+        return v;
+    }
     v.normalize() * v.magnitude().min(cap)
 }
 
