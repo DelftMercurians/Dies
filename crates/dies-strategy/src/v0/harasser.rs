@@ -53,8 +53,9 @@ fn should_harasser_pickup_ball(s: &RobotSituation) -> bool {
             return false;
         }
 
-        // Only consider if ball is on our half
-        if ball_pos.x >= 70.0 {
+        let strikers = s.get_players_with_role("striker");
+        // Only consider if ball is on our half or there are no strikers
+        if ball_pos.x >= 70.0 || strikers.len() == 0 {
             return false;
         }
 
@@ -91,7 +92,8 @@ pub fn should_harasser_cancel_pickup_ball(s: &RobotSituation) -> bool {
         }
     }
 
-    s.ball_position().x > 100.0
+    let strikers = s.get_players_with_role("striker");
+    s.ball_position().x > 100.0 || strikers.len() > 0
 }
 
 pub fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {

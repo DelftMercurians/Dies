@@ -77,7 +77,7 @@ pub fn v0_defence(game: &mut GameContext) {
     // 5: 1 + 2w + 2h + 0a
 
     // harasser 1
-    if game.ball_has_been_on_opp_side_for_at_least(2.0) {
+    if game.ball_has_been_on_opp_side_for_at_least(1.0) {
         game.add_role("striker_1")
             .max(1)
             .score(|s| 1.0 + favor_x_pos(s, 1.0))
@@ -104,11 +104,11 @@ pub fn v0_defence(game: &mut GameContext) {
             .score(|s| 1.0 + favor_x_pos(s, 1.0))
             .behavior(|s| striker::build_striker_tree(s));
     } else {
-        game.add_role("tagging_harasser")
+        game.add_role("secondary_harasser")
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .max(1)
             .score(|s| 1.0 + prefer_not_role(s, "waller"))
-            .behavior(|s| secondary_harasser::build_secondary_harasser_tree(s));
+            .behavior(|s| harasser::build_harasser_tree(s));
     }
 
     game.add_role("waller_2")
