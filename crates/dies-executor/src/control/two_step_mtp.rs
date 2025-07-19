@@ -132,7 +132,7 @@ impl TwoStepMTP {
             let thresh = control_parameters
                 .as_ref()
                 .map(|p| p.thresh)
-                .unwrap_or(150.0);
+                .unwrap_or(250.0);
             let antiwindup = control_parameters
                 .as_ref()
                 .map(|p| p.antiwindup)

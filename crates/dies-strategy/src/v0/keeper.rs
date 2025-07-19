@@ -75,8 +75,8 @@ fn find_clear_exit_target(s: &RobotSituation) -> ShootTarget {
         let target_distance = 2000.0; // 2 meters away from ball
         let target_pos = ball_pos + direction_vector * target_distance;
 
-        s.team_context
-            .debug_cross(format!("exit_{}", i), target_pos);
+        // s.team_context
+        //     .debug_cross(format!("exit_{}", i), target_pos);
 
         // Score this direction
         let score = score_exit_direction(s, &passing_store, direction, target_pos);
@@ -86,11 +86,11 @@ fn find_clear_exit_target(s: &RobotSituation) -> ShootTarget {
             best_target = target_pos;
         }
     }
-    s.team_context.debug_cross_colored(
-        format!("exit_{}", 0),
-        best_target,
-        dies_core::DebugColor::Blue,
-    );
+    // s.team_context.debug_cross_colored(
+    //     format!("exit_{}", 0),
+    //     best_target,
+    //     dies_core::DebugColor::Blue,
+    // );
 
     ShootTarget::Goal(best_target)
 }

@@ -134,7 +134,7 @@ impl FetchBallWithPreshoot {
             let player_heading = ctx.player.yaw;
 
             let dribbler_position = player_pos + player_heading.to_vector() * PLAYER_RADIUS;
-            let dribbler_radius = if ball_pos.norm() < 1500.0 { 30.0 } else { 15.0 };
+            let dribbler_radius = if ball_pos.norm() < 1500.0 { 30.0 } else { 25.0 };
 
             match &self.state {
                 FetchBallWithPreshootState::GoToPreshoot { .. } => {
@@ -274,7 +274,7 @@ impl FetchBallWithPreshoot {
                     }
 
                     // Move forward towards the ball
-                    input.velocity = Velocity::global(ball_heading.to_vector() * 400.0);
+                    input.velocity = Velocity::global(ball_heading.to_vector() * 600.0);
 
                     SkillProgress::Continue(input)
                 }
