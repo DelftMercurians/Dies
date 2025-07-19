@@ -35,7 +35,12 @@
     "handicaps": {}
   },
   "blue_team_settings": {
-    "handicaps": {}
+    "handicaps": {
+      "2": ["no_kicker"],
+      "4": ["no_dribbler"],
+      "1": ["no_breakbeam"],
+      "3": ["no_breakbeam"]
+    }
   },
   "skill_settings": {
     "dribbler_radius_near_center": 30.0,
