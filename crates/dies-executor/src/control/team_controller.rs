@@ -30,7 +30,7 @@ pub struct TeamController {
     // mpc stuff
     start_time: std::time::Instant,
     #[cfg(feature = "mpc")]
-    mpc_controller: MPCController,
+    mpc_controller: super::mpc::MPCController,
 
     // bht stuff
     strategy: Strategy,
@@ -57,7 +57,7 @@ impl TeamController {
             role_assignments: Arc::new(HashMap::new()),
             start_time: std::time::Instant::now(),
             #[cfg(feature = "mpc")]
-            mpc_controller: MPCController::new(),
+            mpc_controller: super::mpc::MPCController::new(),
 
             // bht stuff
             strategy,
