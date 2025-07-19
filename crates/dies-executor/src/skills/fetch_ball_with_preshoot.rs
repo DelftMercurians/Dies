@@ -216,7 +216,13 @@ impl FetchBallWithPreshoot {
                         //         "Fetch ball done: ball_to_dribbler_distance<{:.2}",
                         //         ball_to_dribbler_distance
                         //     );
-                        input.with_kicker(Kick { force: 1.0 });
+                        let force = if matches!(self.shoot_target, Some(ShootTarget::Player { .. }))
+                        {
+                            0.5
+                        } else {
+                            1.0
+                        };
+                        input.with_kicker(Kick { force });
                         self.state = FetchBallWithPreshootState::Done;
                         return SkillProgress::Continue(input);
                         // }
@@ -227,7 +233,13 @@ impl FetchBallWithPreshoot {
                             "Failed to fetch ball: distance_limit<{:.2}",
                             (player_pos - start_pos).magnitude()
                         );
-                        input.with_kicker(Kick { force: 1.0 });
+                        let force = if matches!(self.shoot_target, Some(ShootTarget::Player { .. }))
+                        {
+                            0.5
+                        } else {
+                            1.0
+                        };
+                        input.with_kicker(Kick { force });
                         self.state = FetchBallWithPreshootState::Done;
                         return SkillProgress::Continue(input);
                     }
@@ -277,7 +289,13 @@ impl FetchBallWithPreshoot {
                             "Move with ball done: distance_to_target<{:.2}",
                             distance_to_target
                         );
-                        input.with_kicker(Kick { force: 1.0 });
+                        let force = if matches!(self.shoot_target, Some(ShootTarget::Player { .. }))
+                        {
+                            0.5
+                        } else {
+                            1.0
+                        };
+                        input.with_kicker(Kick { force });
                         self.state = FetchBallWithPreshootState::Done;
                         return SkillProgress::Continue(input);
                     }
@@ -295,7 +313,13 @@ impl FetchBallWithPreshoot {
                             "Failed to move after fetch ball: distance_moved={:.2}",
                             distance_moved
                         );
-                        input.with_kicker(Kick { force: 1.0 });
+                        let force = if matches!(self.shoot_target, Some(ShootTarget::Player { .. }))
+                        {
+                            0.5
+                        } else {
+                            1.0
+                        };
+                        input.with_kicker(Kick { force });
                         self.state = FetchBallWithPreshootState::Failed;
                         return SkillProgress::Continue(input);
                     }

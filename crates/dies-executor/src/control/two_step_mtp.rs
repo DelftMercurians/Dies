@@ -125,7 +125,7 @@ impl TwoStepMTP {
             let proportional_velocity_magnitude =
                 (f64::max(intermediate_distance - self.cutoff_distance, 0.0)
                     * (self.kp * aggressiveness)
-                    + (150.0 - 70.0 * carefullness))
+                    + (200.0 - 70.0 * carefullness))
                     .clamp(0.0, max_speed);
             let current_vel = self.last_vel.get_or_insert(velocity).clone();
             if false {

@@ -1,11 +1,17 @@
 use dies_core::Vector2;
 use dies_executor::behavior_tree_api::{
-    continuous, select_node, try_receive, BehaviorNode, RobotSituation,
+    continuous, fetch_ball_with_preshoot, select_node, sequence_node, try_receive, BehaviorNode,
+    RobotSituation,
 };
 
 pub fn build_test_receiver() -> BehaviorNode {
     select_node()
-        .add(try_receive())
+        .add(
+            sequence_node()
+                .add(try_receive())
+                .add(fetch_ball_with_preshoot().with_can_pass(false).build())
+                .build(),
+        )
         .add(
             continuous("position_center")
                 .position(position_center)

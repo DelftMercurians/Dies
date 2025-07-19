@@ -349,7 +349,7 @@ fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 
 }
 
 pub fn pass_success_probability(s: &PassingStore, teammate_pos: Vector2) -> f64 {
-    let mut prob: f64 = 0.4;
+    let mut prob: f64 = 0.6;
     let player_pos = s.player_data().position;
     // score based on how far is the robot: not too close, not too far
     let robot_dist = (player_pos - teammate_pos).norm();
