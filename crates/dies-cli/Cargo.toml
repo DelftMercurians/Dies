@@ -28,3 +28,6 @@ protobuf-json-mapping = "3.5.0"
 cargo-make = "0.37.23"
 dies-strategy = { version = "0.1.0", path = "../dies-strategy" }
 serde = { version = "1.0.219", features = ["derive"] }
+
+[features]
+mpc = ["dies-webui/mpc"]

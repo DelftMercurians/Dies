@@ -25,3 +25,6 @@ dies-protos = { version = "0.1.0", path = "../dies-protos" }
 chrono = "0.4.38"
 dies-logger = { version = "0.1.0", path = "../dies-logger" }
 csv = "1.3"
+
+[features]
+mpc = ["dies-executor/mpc"]
