@@ -82,6 +82,13 @@ impl PassingStore {
         temp
     }
 
+    pub fn swap_team(mut self) -> Self {
+        let mut world_copy = (*self.world).clone();
+        std::mem::swap(&mut world_copy.own_players, &mut world_copy.opp_players);
+        self.world = world_copy.into();
+        self
+    }
+
     pub fn change_situation_player(&self, other_id: PlayerId) -> PassingStore {
         let mut copy = self.clone();
         copy.player_id = other_id;
@@ -231,7 +238,7 @@ pub fn best_goal_shoot(s: &PassingStore) -> (Vector2, f64) {
     (best_pos, best_prob)
 }
 
-fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 {
+pub fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 {
     let mut prob: f64 = 1.0;
 
     let player_pos = s.player_data().position;
@@ -349,6 +356,11 @@ fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> f64 
 }
 
 pub fn pass_success_probability(s: &PassingStore, teammate_pos: Vector2) -> f64 {
+    // Disallow passing to our own half of the field (x < 0)
+    if teammate_pos.x < 0.0 {
+        return 0.0;
+    }
+
     let mut prob: f64 = 0.4;
     let player_pos = s.player_data().position;
     // score based on how far is the robot: not too close, not too far

@@ -2085,17 +2085,17 @@ impl Default for SimulationBuilder {
         let player_margin = 0.75 * player_radius;
         let sides = builder.sim.config.initial_side_assignment;
 
-        // for i in 0..6 {
-        //     let position = Vector2::new(
-        //         field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin),
-        //         field_width - player_radius - boundary_width,
-        //     );
-        //     builder = builder.add_blue_player(
-        //         sides.transform_vec2(TeamColor::Blue, &position),
-        //         Angle::from_radians(0.0),
-        //     );
-        // }
-        for i in 0..2 {
+        for i in 0..6 {
+            let position = Vector2::new(
+                field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin),
+                field_width - player_radius - boundary_width,
+            );
+            builder = builder.add_blue_player(
+                sides.transform_vec2(TeamColor::Blue, &position),
+                Angle::from_radians(0.0),
+            );
+        }
+        for i in 0..6 {
             let position = Vector2::new(
                 field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin),
                 -(field_width - player_radius - boundary_width),

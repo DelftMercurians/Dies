@@ -47,7 +47,7 @@ impl FetchBallWithPreshoot {
             state: FetchBallWithPreshootState::GoToPreshoot { start_time: None },
             shoot_target: None,
             can_pass: true,
-            distance_limit: 160.0,
+            distance_limit: 100.0,
             avoid_ball_care: 0.0,
             go_to_preshoot_timer: None,
         }

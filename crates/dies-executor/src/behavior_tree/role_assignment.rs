@@ -220,9 +220,17 @@ impl RoleAssignmentSolver {
                 );
                 let discount_factor = (role.index + 1) * j; // prefer closer to min and earlier in
                                                             // sequence roles
-                score_matrix[(j, i)] = (score - (discount_factor as i64));
+                score_matrix[(j, i)] = score - (discount_factor as i64);
             }
         }
+
+        let active_robots = if active_robots.len() > roles.len() {
+            log::error!("active_robots.len() > roles.len()");
+            // Remove robots that are not needed
+            active_robots.iter().take(roles.len()).copied().collect()
+        } else {
+            active_robots.to_vec()
+        };
 
         let result = linear_assignment::solver(
             &mut score_matrix.transpose(),

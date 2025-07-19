@@ -14,7 +14,7 @@
   "tracker_settings": {
     "field_mask": {
       "x_min": -1.0,
-      "x_max": -0.08,
+      "x_max": 0.96,
       "y_min": -1.0,
       "y_max": 1.0
     },
@@ -25,7 +25,7 @@
     "ball_measurement_var": 0.01
   },
   "team_configuration": {
-    "blue_active": false,
+    "blue_active": true,
     "yellow_active": true,
     "blue_script_path": null,
     "yellow_script_path": null,
@@ -35,11 +35,7 @@
     "handicaps": {}
   },
   "blue_team_settings": {
-    "handicaps": {
-      "4": [
-        "no_dribbler"
-      ]
-    }
+    "handicaps": {}
   },
   "allow_no_vision": false
 }

@@ -11,8 +11,8 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
         .add(
             committing_guard_node()
-                .when(|s| should_pickup_ball(s))
-                .until(should_cancel_pickup_ball)
+                .when(|s| should_harasser_pickup_ball(s))
+                .until(should_harasser_cancel_pickup_ball)
                 .commit_to(
                     semaphore_node()
                         .semaphore_id("defender_pickup_ball".to_string())
@@ -34,7 +34,7 @@ pub fn build_harasser_tree(_s: &RobotSituation) -> BehaviorNode {
 }
 
 /// Check if a harasser should go pickup the ball
-fn should_pickup_ball(s: &RobotSituation) -> bool {
+fn should_harasser_pickup_ball(s: &RobotSituation) -> bool {
     if s.game_state_is_not(GameState::Run) {
         return false;
     }
@@ -78,7 +78,7 @@ fn should_pickup_ball(s: &RobotSituation) -> bool {
     }
 }
 
-fn should_cancel_pickup_ball(s: &RobotSituation) -> bool {
+pub fn should_harasser_cancel_pickup_ball(s: &RobotSituation) -> bool {
     if let Some(ball) = &s.world.ball {
         let ball_pos = ball.position.xy();
         if let Some(field) = &s.world.field_geom {
@@ -91,10 +91,10 @@ fn should_cancel_pickup_ball(s: &RobotSituation) -> bool {
         }
     }
 
-    s.ball_position().x > 100.0 || s.distance_of_closest_opp_player_to_ball() < 150.0
+    s.ball_position().x > 100.0
 }
 
-fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
+pub fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
     let ball_pos = s.ball_position();
     let own_goal = s.get_own_goal_position();
 

@@ -9,6 +9,7 @@ pub mod harasser;
 pub mod keeper;
 pub mod kickoff_kicker;
 pub mod penalty_kicker;
+pub mod secondary_harasser;
 pub mod striker;
 pub mod waller;
 
@@ -86,13 +87,13 @@ pub fn v0_defence(game: &mut GameContext) {
         game.add_role("harasser_1")
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .max(1)
-            .score(|_| 1.0)
+            .score(|s| 1.0 + prefer_not_role(s, "waller"))
             .behavior(|s| harasser::build_harasser_tree(s));
     }
 
     game.add_role("waller_1")
         .max(1)
-        .score(|s| 1.0 + favor_x_pos(s, -1.0))
+        .score(|s| 1.0 + favor_x_pos(s, -1.0) + 10.0 * prefer_current_role(s, "waller_1"))
         .behavior(|s| waller::build_waller_tree(s));
 
     // harasser 2
@@ -103,16 +104,16 @@ pub fn v0_defence(game: &mut GameContext) {
             .score(|s| 1.0 + favor_x_pos(s, 1.0))
             .behavior(|s| striker::build_striker_tree(s));
     } else {
-        game.add_role("harasser_2")
+        game.add_role("tagging_harasser")
             .exclude(|s| s.has_any_handicap(&[Handicap::NoKicker, Handicap::NoDribbler]))
             .max(1)
-            .score(|_| 1.0)
-            .behavior(|s| harasser::build_harasser_tree(s));
+            .score(|s| 1.0 + prefer_not_role(s, "waller"))
+            .behavior(|s| secondary_harasser::build_secondary_harasser_tree(s));
     }
 
     game.add_role("waller_2")
         .max(1)
-        .score(|s| 1.0 + favor_x_pos(s, -1.0))
+        .score(|s| 1.0 + favor_x_pos(s, -1.0) + 10.0 * prefer_current_role(s, "waller_2"))
         .behavior(|s| waller::build_waller_tree(s));
 
     game.add_role("striker_3")
@@ -161,5 +162,21 @@ fn favor_x_pos(s: &RobotSituation, preferred_side: f64) -> f64 {
         1.0
     } else {
         0.0
+    }
+}
+
+fn prefer_current_role(s: &RobotSituation, role_name: &str) -> f64 {
+    if s.current_role() == role_name {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+fn prefer_not_role(s: &RobotSituation, role_name: &str) -> f64 {
+    if s.current_role_is(role_name) {
+        0.0
+    } else {
+        1.0
     }
 }
