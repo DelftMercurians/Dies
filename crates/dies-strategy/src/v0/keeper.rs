@@ -1,5 +1,8 @@
+use std::f64::consts::{FRAC_PI_2, PI};
+
 use dies_core::{Angle, GameState, Vector2};
-use dies_executor::behavior_tree_api::*;
+use dies_executor::control::{PassingStore, ShootTarget};
+use dies_executor::{behavior_tree_api::*, find_nearest_opponent_distance_along_direction};
 
 pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -23,6 +26,7 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
                 .then(
                     fetch_ball_with_preshoot()
                         .with_avoid_ball_care(1.0)
+                        .with_override_target(find_clear_exit_target)
                         .description("Clear Ball".to_string())
                         .build(),
                 )
@@ -40,6 +44,88 @@ pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
         .description("Goalkeeper")
         .build()
         .into()
+}
+
+/// Find an unobstructed direction to clear the ball out of the penalty area
+fn find_clear_exit_target(s: &RobotSituation) -> ShootTarget {
+    let Some(ball) = &s.world.ball else {
+        return ShootTarget::Goal(s.get_opp_goal_position());
+    };
+
+    let ball_pos = ball.position.xy();
+    let passing_store = PassingStore::from(s);
+
+    // Sample different angles to find the clearest exit
+    let num_samples = 36;
+    let mut best_target = s.get_opp_goal_position();
+    let mut best_score = f64::NEG_INFINITY;
+
+    for i in 0..num_samples {
+        let angle_rad = (i as f64 / num_samples as f64) * PI - FRAC_PI_2;
+        let direction = Angle::from_radians(angle_rad);
+
+        // Project this direction to a target position well outside the penalty area
+        let direction_vector = direction.to_vector();
+        let target_distance = 2000.0; // 2 meters away from ball
+        let target_pos = ball_pos + direction_vector * target_distance;
+
+        // Score this direction
+        let score = score_exit_direction(s, &passing_store, direction, target_pos);
+
+        if score > best_score {
+            best_score = score;
+            best_target = target_pos;
+        }
+    }
+
+    ShootTarget::Goal(best_target)
+}
+
+/// Score an exit direction based on how clear it is and how well it exits the penalty area
+fn score_exit_direction(
+    s: &RobotSituation,
+    passing_store: &PassingStore,
+    direction: Angle,
+    target_pos: Vector2,
+) -> f64 {
+    let mut score = 0.0;
+
+    // Factor 1: Distance to nearest opponent in this direction (higher is better)
+    let opponent_distance =
+        find_nearest_opponent_distance_along_direction(passing_store, direction);
+    let opponent_score = if opponent_distance > 1000.0 {
+        1.0
+    } else if opponent_distance > 500.0 {
+        0.7
+    } else if opponent_distance > 300.0 {
+        0.4
+    } else {
+        0.1
+    };
+    score += opponent_score * 3.0; // High weight for opponent clearance
+
+    // Factor 2: Prefer directions that lead away from our goal
+    let own_goal = s.get_own_goal_position();
+    let ball_pos = s.ball_position();
+    let to_target = (target_pos - ball_pos).normalize();
+    let to_goal = (own_goal - ball_pos).normalize();
+    let away_from_goal_score = 1.0 - to_target.dot(&to_goal); // Range 0-2, higher when pointing away
+    score += away_from_goal_score;
+
+    // Factor 3: Prefer directions that lead out of the penalty area
+    if let Some(field) = &s.world.field_geom {
+        let penalty_exit_x = -field.field_length / 2.0 + field.penalty_area_depth + 200.0; // Just outside penalty area
+        if target_pos.x > penalty_exit_x {
+            score += 2.0; // Bonus for exiting penalty area
+        }
+    }
+
+    // Factor 4: Slight preference for forward directions (towards opponent half)
+    if target_pos.x > ball_pos.x {
+        score += 0.5;
+    }
+
+    score
 }
 
 fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
@@ -68,10 +154,10 @@ fn calculate_arc_position(s: &RobotSituation) -> Vector2 {
 
     // Determine the shorter arc direction
     let mut angle_diff = end_angle - start_angle;
-    if angle_diff > std::f64::consts::PI {
-        angle_diff -= 2.0 * std::f64::consts::PI;
-    } else if angle_diff < -std::f64::consts::PI {
-        angle_diff += 2.0 * std::f64::consts::PI;
+    if angle_diff > PI {
+        angle_diff -= 2.0 * PI;
+    } else if angle_diff < -PI {
+        angle_diff += 2.0 * PI;
     }
 
     // Sample points uniformly by angle

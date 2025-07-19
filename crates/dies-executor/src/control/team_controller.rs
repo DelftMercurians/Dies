@@ -547,14 +547,17 @@ impl TeamController {
                 let avoid_goal_area = if !matches!(
                     world_data.current_game_state.game_state,
                     GameState::BallReplacement(_)
-                ) && input_to_use.role_type != RoleType::Waller
-                {
+                ) {
                     self.avoid_goal_area_flags.get(&id).copied().unwrap_or(true)
                 } else {
                     false
                 };
                 let avoid_goal_area_margin = match world_data.current_game_state.game_state {
-                    GameState::Stop | GameState::FreeKick => 500.0,
+                    GameState::Stop | GameState::FreeKick
+                        if input_to_use.role_type != RoleType::Waller =>
+                    {
+                        500.0
+                    }
                     _ => 0.0,
                 };
 
@@ -564,12 +567,12 @@ impl TeamController {
                         .as_ref()
                         .map(|f| f.field_length / 2.0)
                         .unwrap_or(0.0);
-                let avoid_robots = true;
-                // if input_to_use.role_type == RoleType::Waller && dist_to_own_goal < 1300.0 {
-                //     false
-                // } else {
-                //     true
-                // };
+                let avoid_opp_robots =
+                    if input_to_use.role_type == RoleType::Waller && dist_to_own_goal < 1300.0 {
+                        false
+                    } else {
+                        true
+                    };
 
                 controller.update(
                     player_data,
@@ -582,7 +585,7 @@ impl TeamController {
                     &player_context,
                     avoid_goal_area,
                     avoid_goal_area_margin,
-                    avoid_robots,
+                    avoid_opp_robots,
                 );
             } else {
                 controller.increment_frames_misses();
@@ -623,7 +626,10 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
 
                 let mut new_input = input.clone();
 
-                if matches!(game_state, GameState::Halt | GameState::Unknown) {
+                if matches!(
+                    game_state,
+                    GameState::Halt | GameState::Unknown | GameState::Timeout
+                ) {
                     new_input.with_speed_limit(0.0);
                     new_input.with_angular_speed_limit(0.0);
                     new_input.dribbling_speed = 0.0;
@@ -673,6 +679,11 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                             if input.role_type != RoleType::Waller =>
                         {
                             500.0
+                        }
+                        GameState::Stop | GameState::FreeKick
+                            if input.role_type == RoleType::Waller =>
+                        {
+                            120.0
                         }
                         _ => 80.0,
                     };

@@ -224,7 +224,7 @@ impl PlayerController {
         player_context: &PlayerContext,
         avoid_goal_area: bool,
         avoid_goal_area_margin: f64,
-        avoid_robots: bool,
+        avoid_opp_robots: bool,
     ) {
         self.frame_misses = 0;
 
@@ -295,7 +295,7 @@ impl PlayerController {
                     state,
                     avoid_goal_area,
                     avoid_goal_area_margin,
-                    avoid_robots,
+                    avoid_opp_robots,
                     obstacles,
                     input.control_paramer_override.clone(),
                 )

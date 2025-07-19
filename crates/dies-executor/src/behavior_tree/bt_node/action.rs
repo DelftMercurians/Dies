@@ -50,6 +50,7 @@ pub enum SkillDefinition {
     FetchBallWithPreshoot {
         distance_limit: f64,
         can_pass: bool,
+        override_target: Argument<Option<ShootTarget>>,
     },
     Shoot {
         target: Argument<ShootTarget>,
@@ -168,10 +169,12 @@ impl ActionNode {
                 SkillDefinition::FetchBallWithPreshoot {
                     distance_limit,
                     can_pass,
+                    override_target,
                 } => {
                     let skill = FetchBallWithPreshoot::new()
                         .with_distance_limit(*distance_limit)
-                        .with_can_pass(*can_pass);
+                        .with_can_pass(*can_pass)
+                        .with_override_target(override_target.resolve(situation));
                     Some(Skill::FetchBallWithPreshoot(skill))
                 }
                 SkillDefinition::Shoot { target } => {
@@ -483,6 +486,7 @@ pub struct FetchBallWithPreshootBuilder {
     distance_limit: f64,
     avoid_ball_care: f64,
     can_pass: bool,
+    override_target: Option<Argument<ShootTarget>>,
     description: Option<String>,
 }
 
@@ -492,6 +496,7 @@ impl FetchBallWithPreshootBuilder {
             distance_limit: 160.0,
             avoid_ball_care: 0.0,
             can_pass: true,
+            override_target: None,
             description: None,
         }
     }
@@ -516,11 +521,21 @@ impl FetchBallWithPreshootBuilder {
         self
     }
 
+    pub fn with_override_target(mut self, target: impl Into<Argument<ShootTarget>>) -> Self {
+        self.override_target = Some(target.into());
+        self
+    }
+
     pub fn build(self) -> ActionNode {
         ActionNode::new(
             SkillDefinition::FetchBallWithPreshoot {
                 distance_limit: self.distance_limit,
                 can_pass: self.can_pass,
+                override_target: if let Some(target) = self.override_target {
+                    target.map(|t| Some(t))
+                } else {
+                    Argument::Static(None)
+                },
             },
             self.description,
         )

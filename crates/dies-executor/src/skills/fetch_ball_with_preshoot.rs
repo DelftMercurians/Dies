@@ -15,6 +15,7 @@ pub struct FetchBallWithPreshoot {
     preshoot_heading: Option<Angle>,
     state: FetchBallWithPreshootState,
     shoot_target: Option<ShootTarget>,
+    override_target: Option<ShootTarget>,
     can_pass: bool,
     distance_limit: f64,
     avoid_ball_care: f64,
@@ -46,11 +47,17 @@ impl FetchBallWithPreshoot {
             preshoot_heading: None,
             state: FetchBallWithPreshootState::GoToPreshoot { start_time: None },
             shoot_target: None,
+            override_target: None,
             can_pass: true,
             distance_limit: 100.0,
             avoid_ball_care: 0.0,
             go_to_preshoot_timer: None,
         }
+    }
+
+    pub fn with_override_target(mut self, override_target: Option<ShootTarget>) -> Self {
+        self.override_target = override_target;
+        self
     }
 
     pub fn with_can_pass(mut self, can_pass: bool) -> Self {
@@ -149,7 +156,10 @@ impl FetchBallWithPreshoot {
                         shooting_target.position().unwrap_or_default(),
                         dies_core::DebugColor::Blue,
                     );
-                    self.shoot_target = Some(shooting_target.clone());
+                    self.shoot_target = self
+                        .override_target
+                        .clone()
+                        .or(Some(shooting_target.clone()));
                     let shooting_target = shooting_target.position().unwrap();
                     let prep_target = ball_pos - (shooting_target - ball_pos).normalize() * 150.0;
 

@@ -148,28 +148,28 @@ impl TryReceive {
         // .intercept_line
         // .get_or_insert((ctx.player.position, perp(passer_heading.to_vector())));
 
-        ctx.team_context.debug_line_colored(
-            "intercept_line",
-            intercept_line.0 - intercept_line.1 * 200.0,
-            intercept_line.0 + intercept_line.1 * 200.0,
-            dies_core::DebugColor::Red,
-        );
-        ctx.team_context.debug_line_colored(
-            "passing_line",
-            passer_position,
-            ctx.player.position,
-            dies_core::DebugColor::Blue,
-        );
-        ctx.team_context.debug_cross_colored(
-            "passer_position",
-            passer_position,
-            dies_core::DebugColor::Blue,
-        );
-        ctx.team_context.debug_cross_colored(
-            "passer_target",
-            passer_target,
-            dies_core::DebugColor::Blue,
-        );
+        // ctx.team_context.debug_line_colored(
+        //     "intercept_line",
+        //     intercept_line.0 - intercept_line.1 * 200.0,
+        //     intercept_line.0 + intercept_line.1 * 200.0,
+        //     dies_core::DebugColor::Red,
+        // );
+        // ctx.team_context.debug_line_colored(
+        //     "passing_line",
+        //     passer_position,
+        //     ctx.player.position,
+        //     dies_core::DebugColor::Blue,
+        // );
+        // ctx.team_context.debug_cross_colored(
+        //     "passer_position",
+        //     passer_position,
+        //     dies_core::DebugColor::Blue,
+        // );
+        // ctx.team_context.debug_cross_colored(
+        //     "passer_target",
+        //     passer_target,
+        //     dies_core::DebugColor::Blue,
+        // );
 
         println!("receive: ball_speed {:?}", ball_speed);
         // let dir = if ball_speed > 100.0 {
