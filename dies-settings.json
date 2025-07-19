@@ -38,8 +38,7 @@
     "handicaps": {
       "2": ["no_kicker"],
       "4": ["no_dribbler"],
-      "1": ["no_breakbeam"],
-      "3": ["no_breakbeam"]
+      "1": ["no_breakbeam"]
     }
   },
   "skill_settings": {
