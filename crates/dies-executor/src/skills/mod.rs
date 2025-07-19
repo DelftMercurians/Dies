@@ -7,6 +7,7 @@ mod go_to_pos;
 mod kick;
 mod receive;
 mod shoot;
+mod test_movement;
 mod wait;
 
 pub use face::Face;

@@ -297,6 +297,7 @@ impl PlayerController {
                     avoid_goal_area_margin,
                     avoid_robots,
                     obstacles,
+                    input.control_paramer_override.clone(),
                 )
             } else {
                 self.position_mtp.set_setpoint(pos_target);

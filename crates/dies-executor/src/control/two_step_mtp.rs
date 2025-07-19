@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use dies_core::{Obstacle, PlayerData, TeamData, Vector2};
 
+use crate::ControlParameters;
+
 use super::team_context::PlayerContext;
 
 /// Two-Step MTP Controller
@@ -13,6 +15,7 @@ pub struct TwoStepMTP {
     cutoff_distance: f64,
     sample_count: usize,
     last_vel: Option<Vector2>,
+    integral: f64,
 }
 
 impl TwoStepMTP {
@@ -24,6 +27,7 @@ impl TwoStepMTP {
             cutoff_distance: 10.0,
             sample_count: 8,
             last_vel: None,
+            integral: 0.0,
         }
     }
 
@@ -42,6 +46,7 @@ impl TwoStepMTP {
         self.cutoff_distance = cutoff_distance;
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         current: Vector2,
@@ -59,6 +64,7 @@ impl TwoStepMTP {
         avoid_goal_area_margin: f64,
         avoid_robots: bool,
         obstacles: Vec<Obstacle>,
+        control_parameters: Option<ControlParameters>,
     ) -> Vector2 {
         let setpoint = match self.setpoint {
             Some(s) => s,
@@ -69,6 +75,7 @@ impl TwoStepMTP {
         let distance = displacement.magnitude();
 
         if distance < self.cutoff_distance {
+            self.integral = 0.0;
             return Vector2::zeros();
         }
 
@@ -121,20 +128,30 @@ impl TwoStepMTP {
 
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
+            let kp = control_parameters.as_ref().map(|p| p.kp).unwrap_or(self.kp);
+            let ki = control_parameters.as_ref().map(|p| p.ki).unwrap_or(0.0);
+            let thresh = control_parameters
+                .as_ref()
+                .map(|p| p.thresh)
+                .unwrap_or(200.0);
+            let antiwindup = control_parameters
+                .as_ref()
+                .map(|p| p.antiwindup)
+                .unwrap_or(40.0);
             let aggressiveness = 1.0 + aggressiveness;
             let proportional_velocity_magnitude =
                 (f64::max(intermediate_distance - self.cutoff_distance, 0.0)
-                    * (self.kp * aggressiveness)
-                    + (200.0 - 70.0 * carefullness))
+                    * (kp * aggressiveness)
+                    + (thresh - 70.0 * carefullness))
                     .clamp(0.0, max_speed);
-            let current_vel = self.last_vel.get_or_insert(velocity).clone();
-            if false {
-                let target_vel = proportional_velocity_magnitude * direction;
-                let dv = cap_vec(target_vel - current_vel, 2500.0 * dt);
-                current_vel + dv
-            } else {
-                direction * proportional_velocity_magnitude
-            }
+
+            let measured_vel = velocity.magnitude();
+            let target_vel = direction * proportional_velocity_magnitude;
+            let error = target_vel.magnitude() - measured_vel;
+            self.integral += error * dt;
+            self.integral = self.integral.clamp(-antiwindup, antiwindup);
+            // let dv_compensation = ki * self.integral;
+            target_vel
         } else {
             // Cruise phase
             // player_context.debug_string("TwoStepMTPMode", "Cruise");

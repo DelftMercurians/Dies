@@ -113,6 +113,14 @@ impl Default for Velocity {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ControlParameters {
+    pub kp: f64,
+    pub ki: f64,
+    pub thresh: f64,
+    pub antiwindup: f64,
+}
+
 /// Input to the player controller.
 #[derive(Debug, Clone)]
 pub struct PlayerControlInput {
@@ -131,6 +139,8 @@ pub struct PlayerControlInput {
     /// How carefully do we wish to move (e.g. move further than the target)
     /// 0 means 'as fast as possible', 1 means 'as careful as possible'
     pub care: f64,
+
+    pub control_paramer_override: Option<ControlParameters>,
 
     pub aggressiveness: f64,
     pub acceleration_limit: Option<f64>,
@@ -166,6 +176,7 @@ impl Default for PlayerControlInput {
             fan_speed: None,
             kick_speed: None,
             avoid_robots: false,
+            control_paramer_override: None,
             role_type: RoleType::default(),
         }
     }
