@@ -9,7 +9,7 @@ use crate::{
     control::{PlayerContext, PlayerControlInput, ShootTarget},
     skills::{
         Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, Skill, SkillCtx,
-        SkillProgress, SkillResult, TryReceive, Wait,
+        SkillProgress, SkillResult, TestMovement, TryReceive, Wait,
     },
 };
 
@@ -56,6 +56,10 @@ pub enum SkillDefinition {
         target: Argument<ShootTarget>,
     },
     TryReceive,
+    TestMovement {
+        target1: Argument<Vector2>,
+        target2: Argument<Vector2>,
+    },
 }
 
 pub struct ActionNode {
@@ -87,6 +91,7 @@ impl ActionNode {
             SkillDefinition::FetchBallWithPreshoot { .. } => "FetchBallWithPreshoot",
             SkillDefinition::Shoot { .. } => "Shoot",
             SkillDefinition::TryReceive => "TryReceive",
+            SkillDefinition::TestMovement { .. } => "TestMovement",
         };
         let internal_state = self.active_skill.as_ref().map(|_| "Active".to_string());
         debug_tree_node(
@@ -114,6 +119,7 @@ impl ActionNode {
             SkillDefinition::FetchBallWithPreshoot { .. } => "FetchBallWithPreshoot",
             SkillDefinition::Shoot { .. } => "Shoot",
             SkillDefinition::TryReceive => "TryReceive",
+            SkillDefinition::TestMovement { .. } => "TestMovement",
         };
         // Create a new skill if there is no active one
         if self.active_skill.is_none() {
@@ -182,6 +188,11 @@ impl ActionNode {
                     Some(Skill::Shoot(Shoot::new(target)))
                 }
                 SkillDefinition::TryReceive => Some(Skill::TryReceive(TryReceive::new())),
+                SkillDefinition::TestMovement { target1, target2 } => {
+                    let target1 = target1.resolve(situation);
+                    let target2 = target2.resolve(situation);
+                    Some(Skill::TestMovement(TestMovement::new(target1, target2)))
+                }
             };
             self.active_skill = new_skill;
         }
@@ -621,4 +632,17 @@ pub fn try_receive() -> ActionNode {
     // )
     // .build()
     // .into()
+}
+
+pub fn test_movement(
+    target1: impl Into<Argument<Vector2>>,
+    target2: impl Into<Argument<Vector2>>,
+) -> ActionNode {
+    ActionNode::new(
+        SkillDefinition::TestMovement {
+            target1: target1.into(),
+            target2: target2.into(),
+        },
+        Some("Test movement".to_string()),
+    )
 }

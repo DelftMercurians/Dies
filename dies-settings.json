@@ -5,9 +5,9 @@
     "max_deceleration": 6340.0,
     "max_angular_velocity": 25.132741228718345,
     "max_angular_acceleration": 349.0658503988659,
-    "position_kp": 2.0,
+    "position_kp": 2.6,
     "position_proportional_time_window": 1.1,
-    "position_cutoff_distance": 30.0,
+    "position_cutoff_distance": 15.0,
     "angle_kp": 2.8,
     "angle_cutoff_distance": 0.03490658503988659
   },

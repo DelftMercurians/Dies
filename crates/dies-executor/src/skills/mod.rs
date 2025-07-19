@@ -17,6 +17,7 @@ pub use go_to_pos::GoToPosition;
 pub use kick::Kick;
 pub use receive::TryReceive;
 pub use shoot::Shoot;
+pub use test_movement::TestMovement;
 pub use wait::Wait;
 
 use crate::{
@@ -35,6 +36,7 @@ pub enum Skill {
     FetchBallWithPreshoot(FetchBallWithPreshoot),
     Shoot(Shoot),
     TryReceive(TryReceive),
+    TestMovement(TestMovement),
 }
 
 impl Skill {
@@ -48,6 +50,7 @@ impl Skill {
             Skill::FetchBallWithPreshoot(skill) => skill.update(ctx),
             Skill::Shoot(skill) => skill.update(ctx),
             Skill::TryReceive(skill) => skill.update(ctx),
+            Skill::TestMovement(skill) => skill.update(ctx),
         }
     }
 }

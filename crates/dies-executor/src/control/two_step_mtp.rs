@@ -129,11 +129,10 @@ impl TwoStepMTP {
         if time_to_target <= self.proportional_time_window.as_secs_f64() {
             // Proportional control
             let kp = control_parameters.as_ref().map(|p| p.kp).unwrap_or(self.kp);
-            let ki = control_parameters.as_ref().map(|p| p.ki).unwrap_or(0.0);
             let thresh = control_parameters
                 .as_ref()
                 .map(|p| p.thresh)
-                .unwrap_or(200.0);
+                .unwrap_or(150.0);
             let antiwindup = control_parameters
                 .as_ref()
                 .map(|p| p.antiwindup)

@@ -7,6 +7,7 @@ use crate::{
     ControlParameters, PlayerControlInput,
 };
 
+#[derive(Debug)]
 enum Stage {
     IncreasingThresh,
     IncreasingKp,
@@ -39,9 +40,9 @@ impl TestMovement {
             waiting: false,
             timer_start: None,
             going_to_target1: true,
-            current_kp: 1.0,
+            current_kp: 2.3,
             current_ki: 0.001,
-            current_thresh: 100.0,
+            current_thresh: 450.0,
             antiwindup: 40.0,
             stage: Stage::IncreasingKp,
             step: 0,
@@ -61,7 +62,7 @@ impl TestMovement {
         } else {
             self.target2
         };
-        let cutoff = 20.0;
+        let cutoff = 5.0;
         let error = (target - ctx.player.position).norm();
         let player_ctx = ctx.team_context.player_context(ctx.player.id);
         player_ctx.debug_value("error", error);
@@ -73,21 +74,27 @@ impl TestMovement {
             // Move to next stage
             if self.step < NUM_STEPS {
                 self.step += 1;
-            } else {
-                let new_stage = match self.stage {
+                match self.stage {
                     Stage::IncreasingThresh => {
                         self.current_thresh *= 1.2;
-                        Stage::IncreasingKp
+                        println!("Increasing thresh to {}", self.current_thresh);
                     }
                     Stage::IncreasingKp => {
                         self.current_kp *= 1.3;
-                        Stage::IncreasingKi
+                        println!("Increasing kp to {}", self.current_kp);
                     }
                     Stage::IncreasingKi => {
                         self.current_ki *= 1.3;
-                        Stage::IncreasingThresh
+                        println!("Increasing ki to {}", self.current_ki);
                     }
                 };
+            } else {
+                let new_stage = match self.stage {
+                    Stage::IncreasingThresh => Stage::IncreasingKp,
+                    Stage::IncreasingKp => Stage::IncreasingKi,
+                    Stage::IncreasingKi => Stage::IncreasingThresh,
+                };
+                println!("New stage: {:?}", new_stage);
                 self.stage = new_stage;
                 self.step = 0;
             }
