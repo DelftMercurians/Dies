@@ -773,3 +773,37 @@ pub fn find_nearest_opponent_distance_along_direction(s: &PassingStore, directio
 
     min_distance
 }
+
+pub fn find_nearest_player_distance_along_direction(s: &PassingStore, direction: Angle) -> f64 {
+    let player_pos = s.player_data().position;
+    let direction_vector = direction.to_vector();
+
+    let mut min_distance = f64::INFINITY;
+
+    // Check all opponent robots
+    for player in s
+        .world
+        .opp_players
+        .iter()
+        .chain(s.world.own_players.iter().filter(|p| p.id != s.player_id))
+    {
+        if player.id != s.player_data().id {
+            let opp_pos = player.position;
+            let to_opponent = opp_pos - player_pos;
+
+            // Project opponent position onto the shooting direction
+            let projection = to_opponent.dot(&direction_vector);
+
+            // Only consider opponents in front of us
+            if projection > 0.0 {
+                let perpendicular_distance = (to_opponent - projection * direction_vector).norm();
+
+                // Consider robot radius (approximate as 90mm)
+                let effective_distance = perpendicular_distance - 90.0;
+                min_distance = min_distance.min(effective_distance.max(0.0));
+            }
+        }
+    }
+
+    min_distance
+}

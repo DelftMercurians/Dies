@@ -3,7 +3,10 @@ use std::fmt::format;
 
 use dies_core::{Angle, GameState, Vector2};
 use dies_executor::control::{PassingStore, ShootTarget};
-use dies_executor::{behavior_tree_api::*, find_nearest_opponent_distance_along_direction};
+use dies_executor::{
+    behavior_tree_api::*, find_nearest_opponent_distance_along_direction,
+    find_nearest_player_distance_along_direction,
+};
 
 pub fn build_goalkeeper_tree(_s: &RobotSituation) -> BehaviorNode {
     select_node()
@@ -113,8 +116,7 @@ fn score_exit_direction(
     let mut score = 0.0;
 
     // Factor 1: Distance to nearest opponent in this direction (higher is better)
-    let opponent_distance =
-        find_nearest_opponent_distance_along_direction(passing_store, direction);
+    let opponent_distance = find_nearest_player_distance_along_direction(passing_store, direction);
     let opponent_score = if opponent_distance > 1000.0 {
         1.0
     } else if opponent_distance > 500.0 {
