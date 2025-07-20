@@ -8,8 +8,6 @@ mod commands;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    console_subscriber::init();
-
     println!("Dies CLI v{}", env!("CARGO_PKG_VERSION"));
 
     let res = tokio::spawn(async { Cli::parse().start().await });

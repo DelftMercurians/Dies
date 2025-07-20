@@ -110,14 +110,6 @@ impl MPCController {
             return response.controls;
         }
 
-        // Check if we should use last result or send new request
-        let elapsed = self.last_mpc_time.elapsed().as_millis();
-
-        if elapsed > 150 {
-            // If delay is too long, fall back to MTP (return empty HashMap)
-            // log::warn!("mpc took too long, switching back to a decent control");
-            return HashMap::new();
-        }
 
         // If delay is acceptable, always try to send new request unless already pending
         if !self.request_pending {
@@ -143,9 +135,19 @@ impl MPCController {
                 log::warn!("mpc thread is having troubles: {}", e);
             } else {
                 self.request_pending = true; // Mark request as pending
+                log::info!("mpc is pending");
             }
+
         }
 
+        // Check if we should use last result or send new request
+        let elapsed = self.last_mpc_time.elapsed().as_millis();
+
+        if elapsed > 400 {
+            // If delay is too long, fall back to MTP (return empty HashMap)
+            // log::warn!("mpc took too long, switching back to a decent control");
+            return HashMap::new();
+        }
         // Return interpolated control based on elapsed time or empty (let MTP handle it)
         if let Some(ref last_result) = self.last_mpc_result {
             self.interpolate_controls_at_time(elapsed as f64)
@@ -216,6 +218,9 @@ impl MPCController {
                 }
                 Err(mpsc::TryRecvError::Disconnected) => break,
             };
+
+            log::warn!("got request");
+
             let mut controller_state = request.controller_state;
 
             // Keep an untouched copy for the “panic fallback” path.
@@ -268,7 +273,7 @@ impl MPCController {
 
             // Add the mpc_jax directory to Python path
             let sys_path = sys.getattr("path")?;
-            sys_path.call_method1("insert", (0, "./.venv/lib/python3.13/site-packages"))?;
+            sys_path.call_method1("insert", (0, "./.venv/lib/python3.10/site-packages"))?;
             sys_path.call_method1("insert", (0, "./mpc_jax"))?;
             sys_path.call_method1("insert", (0, "."))?;
 

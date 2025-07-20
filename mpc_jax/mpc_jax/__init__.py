@@ -19,7 +19,7 @@ jax.config.update(
 )
 
 # jax.config.update("jax_disable_jit", True)
-# jax.config.update("jax_log_compiles", True)
+jax.config.update("jax_log_compiles", True)
 # jax.config.update("jax_debug_nans", True)
 
 from .main import solve_mpc, solve_mpc_tbwrap
