@@ -30,7 +30,7 @@ pub struct TeamController {
     // mpc stuff
     start_time: std::time::Instant,
     #[cfg(feature = "mpc")]
-    mpc_controller: super::mpc::MPCController,
+    mpc_controller: MPCController,
 
     // bht stuff
     strategy: Strategy,
@@ -57,7 +57,7 @@ impl TeamController {
             role_assignments: Arc::new(HashMap::new()),
             start_time: std::time::Instant::now(),
             #[cfg(feature = "mpc")]
-            mpc_controller: super::mpc::MPCController::new(),
+            mpc_controller: MPCController::new(),
 
             // bht stuff
             strategy,
@@ -419,14 +419,12 @@ impl TeamController {
                     avoid_goal_area_flags.push(avoid_goal_area);
                 }
 
-                log::info!("mpc is requested {:?}", mpc_robots.len());
                 mpc_controls = self.mpc_controller.compute_batch_control(
                     &mpc_robots,
                     &world_data,
                     Some(&controllable_mask),
                     &avoid_goal_area_flags,
-                );
-                log::info!("controls {:?}", mpc_controls.len());
+                )
             }
         }
         // Update the player controllers
@@ -448,8 +446,7 @@ impl TeamController {
                 if controller.use_mpc() {
                     if let Some(mpc_control) = mpc_controls.get(&id) {
                         // Use MPC control (override MTP fallback)
-                        controller.set_target_velocity(*mpc_control / 2.0);
-                        println!("{:?}", mpc_control);
+                        controller.set_target_velocity(*mpc_control);
                         // Update debug string to show MPC is being used
                         player_context.debug_string("controller", "MPC");
                         // Debug output for MPC timing
@@ -577,7 +574,6 @@ impl TeamController {
                         true
                     };
 
-                /*
                 controller.update(
                     player_data,
                     &world_data,
@@ -591,7 +587,6 @@ impl TeamController {
                     avoid_goal_area_margin,
                     avoid_opp_robots,
                 );
-                */
             } else {
                 controller.increment_frames_misses();
             }
