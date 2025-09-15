@@ -447,8 +447,8 @@ impl Simulation {
         let vision_update_step = config.vision_update_step;
         let geometry_interval = config.geometry_interval;
         let feedback_interval = config.feedback_interval;
-        let field_length = config.field_geometry.field_length;
-        let field_width = config.field_geometry.field_width;
+        let field_length = config.field_geometry.field_length + 2.0 * config.field_geometry.boundary_width;
+        let field_width = config.field_geometry.field_width + 2.0 * config.field_geometry.boundary_width;
         let geometry_packet = geometry(&config.field_geometry);
 
         let side_assignment = config.initial_side_assignment.clone();
