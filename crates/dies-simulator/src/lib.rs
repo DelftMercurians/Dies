@@ -449,6 +449,9 @@ impl Simulation {
         let feedback_interval = config.feedback_interval;
         let field_length = config.field_geometry.field_length + 2.0 * config.field_geometry.boundary_width;
         let field_width = config.field_geometry.field_width + 2.0 * config.field_geometry.boundary_width;
+        let goal_width = config.field_geometry.goal_width;
+        let goal_depth = config.field_geometry.field_length/2.0 + config.field_geometry.goal_depth;
+        let boundary_width = config.field_geometry.boundary_width;
         let geometry_packet = geometry(&config.field_geometry);
 
         let side_assignment = config.initial_side_assignment.clone();
@@ -502,10 +505,20 @@ impl Simulation {
             &mut simulation.rigid_body_set,
         );
 
-        simulation.add_wall(0.0, field_width / 2.0, field_length, WALL_THICKNESS);
-        simulation.add_wall(0.0, -field_width / 2.0, field_length, WALL_THICKNESS);
-        simulation.add_wall(field_length / 2.0, 0.0, WALL_THICKNESS, field_width);
-        simulation.add_wall(-field_length / 2.0, 0.0, WALL_THICKNESS, field_width);
+        // Create the field walls
+        simulation.add_wall(0.0, field_width / 2.0, field_length/2.0, WALL_THICKNESS);
+        simulation.add_wall(0.0, -field_width / 2.0, field_length/2.0, WALL_THICKNESS);
+        simulation.add_wall(field_length / 2.0, 0.0, WALL_THICKNESS, field_width/2.0);
+        simulation.add_wall(-field_length / 2.0, 0.0, WALL_THICKNESS, field_width/2.0);
+        // Create the goal walls
+        simulation.add_wall(-field_length/2.0 + boundary_width/2.0, goal_width/2.0, boundary_width/2.0, WALL_THICKNESS);
+        simulation.add_wall(-field_length/2.0 + boundary_width/2.0, -goal_width/2.0, boundary_width/2.0, WALL_THICKNESS);
+        simulation.add_wall(field_length/2.0 - boundary_width/2.0, goal_width/2.0, boundary_width/2.0, WALL_THICKNESS);
+        simulation.add_wall(field_length/2.0 - boundary_width/2.0, -goal_width/2.0, boundary_width/2.0, WALL_THICKNESS);
+        // //TODO: change the goal depth in the variable for cleaner code
+        simulation.add_wall(-goal_depth, 0.0, WALL_THICKNESS, goal_width/2.0);
+        simulation.add_wall(goal_depth, 0.0, WALL_THICKNESS, goal_width/2.0);
+
 
         simulation
     }
