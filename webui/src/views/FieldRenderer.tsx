@@ -53,10 +53,10 @@ export class FieldRenderer {
 
   setWorldData(world: WorldData | null) {
     this.world = world;
-    if (world) {
+    if (world && world.field_geom) {
       this.fieldSize = [
-        world.field_geom?.field_length ?? DEFAULT_FIELD_SIZE[0],
-        world.field_geom?.field_width ?? DEFAULT_FIELD_SIZE[1],
+        world.field_geom.field_length + world.field_geom.boundary_width * 2,
+        world.field_geom.field_width + world.field_geom.boundary_width * 2,
       ];
     }
   }

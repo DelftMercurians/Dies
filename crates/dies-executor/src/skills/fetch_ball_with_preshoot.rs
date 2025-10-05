@@ -228,21 +228,10 @@ impl FetchBallWithPreshoot {
 
                     let ball_heading = Angle::between_points(player_pos, *ball_pos);
                     let ball_distance = (ball_pos - player_pos).magnitude();
-                    let ball_to_dribbler_distance = (ball_pos - dribbler_position).magnitude();
-                    dies_core::debug_value("ball_to_dribbler_distance", ball_to_dribbler_distance);
-                    let breakbeam = ball_to_dribbler_distance
-                        < dribbler_radius
-                            * ctx.world.skill_settings.dribbler_radius_breakbeam_factor
-                        && ctx.player.breakbeam_ball_detected
-                        && !ctx
-                            .player
-                            .handicaps
-                            .contains(&dies_core::Handicap::NoBreakbeam);
-                    if ball_to_dribbler_distance < dribbler_radius || breakbeam {
-                        if breakbeam {
-                            println!("breakbea");
-                        }
-
+                    // let ball_to_dribbler_distance = (ball_pos - dribbler_position).magnitude();
+                    // dies_core::debug_value("ball_to_dribbler_distance", ball_to_dribbler_distance);
+                    let breakbeam = ctx.player.breakbeam_ball_detected;
+                    if breakbeam {
                         let force = if matches!(self.shoot_target, Some(ShootTarget::Player { .. }))
                         {
                             0.5
@@ -296,9 +285,6 @@ impl FetchBallWithPreshoot {
                             position: position.unwrap_or(ctx.world.get_player(*id).position),
                         });
                     }
-
-                    let ball_to_dribbler_distance = (ball_pos - dribbler_position).magnitude();
-                    dies_core::debug_value("ball_to_dribbler_distance", ball_to_dribbler_distance);
 
                     // Higher dribbling speed for ball control
                     input.with_dribbling(0.0);

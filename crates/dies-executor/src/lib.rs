@@ -225,7 +225,7 @@ struct PlayerOverrideState {
 }
 
 impl PlayerOverrideState {
-    const VELOCITY_TIMEOUT: u32 = 30;
+    const VELOCITY_TIMEOUT: u32 = 10;
 
     pub fn new() -> Self {
         Self {
@@ -260,12 +260,12 @@ impl PlayerOverrideState {
             },
             PlayerOverrideCommand::LocalVelocity {
                 velocity,
-                angular_velocity,
+                yaw,
                 dribble_speed,
                 arm_kick,
             } => PlayerControlInput {
                 velocity: Velocity::local(velocity),
-                angular_velocity: Some(angular_velocity),
+                yaw,
                 dribbling_speed: dribble_speed,
                 kicker: if arm_kick {
                     KickerControlInput::Arm
@@ -276,12 +276,12 @@ impl PlayerOverrideState {
             },
             PlayerOverrideCommand::GlobalVelocity {
                 velocity,
-                angular_velocity,
+                yaw,
                 dribble_speed,
                 arm_kick,
             } => PlayerControlInput {
                 velocity: Velocity::global(velocity),
-                angular_velocity: Some(angular_velocity),
+                yaw,
                 dribbling_speed: dribble_speed,
                 kicker: if arm_kick {
                     KickerControlInput::Arm

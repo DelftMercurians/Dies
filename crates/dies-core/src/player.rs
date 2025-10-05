@@ -244,7 +244,7 @@ pub enum PlayerOverrideCommand {
     /// Move the robot with velocity in local frame
     LocalVelocity {
         velocity: Vector2,
-        angular_velocity: f64,
+        yaw: Option<Angle>,
         /// Dribbler speed normalised to \[0, 1\]
         dribble_speed: f64,
         arm_kick: bool,
@@ -252,7 +252,7 @@ pub enum PlayerOverrideCommand {
     /// Move the robot with velocity in global frame
     GlobalVelocity {
         velocity: Vector2,
-        angular_velocity: f64,
+        yaw: Option<Angle>,
         /// Dribbler speed normalised to \[0, 1\]
         dribble_speed: f64,
         arm_kick: bool,

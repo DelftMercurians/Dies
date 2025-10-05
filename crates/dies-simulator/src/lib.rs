@@ -447,10 +447,13 @@ impl Simulation {
         let vision_update_step = config.vision_update_step;
         let geometry_interval = config.geometry_interval;
         let feedback_interval = config.feedback_interval;
-        let field_length = config.field_geometry.field_length + 2.0 * config.field_geometry.boundary_width;
-        let field_width = config.field_geometry.field_width + 2.0 * config.field_geometry.boundary_width;
+        let field_length =
+            config.field_geometry.field_length + 2.0 * config.field_geometry.boundary_width;
+        let field_width =
+            config.field_geometry.field_width + 2.0 * config.field_geometry.boundary_width;
         let goal_width = config.field_geometry.goal_width;
-        let goal_depth = config.field_geometry.field_length/2.0 + config.field_geometry.goal_depth;
+        let goal_depth =
+            config.field_geometry.field_length / 2.0 + config.field_geometry.goal_depth;
         let boundary_width = config.field_geometry.boundary_width;
         let geometry_packet = geometry(&config.field_geometry);
 
@@ -506,19 +509,38 @@ impl Simulation {
         );
 
         // Create the field walls
-        simulation.add_wall(0.0, field_width / 2.0, field_length/2.0, WALL_THICKNESS);
-        simulation.add_wall(0.0, -field_width / 2.0, field_length/2.0, WALL_THICKNESS);
-        simulation.add_wall(field_length / 2.0, 0.0, WALL_THICKNESS, field_width/2.0);
-        simulation.add_wall(-field_length / 2.0, 0.0, WALL_THICKNESS, field_width/2.0);
+        // simulation.add_wall(0.0, field_width / 2.0, field_length / 2.0, WALL_THICKNESS);
+        // simulation.add_wall(0.0, -field_width / 2.0, field_length / 2.0, WALL_THICKNESS);
+        // simulation.add_wall(field_length / 2.0, 0.0, WALL_THICKNESS, field_width / 2.0);
+        // simulation.add_wall(-field_length / 2.0, 0.0, WALL_THICKNESS, field_width / 2.0);
         // Create the goal walls
-        simulation.add_wall(-field_length/2.0 + boundary_width/2.0, goal_width/2.0, boundary_width/2.0, WALL_THICKNESS);
-        simulation.add_wall(-field_length/2.0 + boundary_width/2.0, -goal_width/2.0, boundary_width/2.0, WALL_THICKNESS);
-        simulation.add_wall(field_length/2.0 - boundary_width/2.0, goal_width/2.0, boundary_width/2.0, WALL_THICKNESS);
-        simulation.add_wall(field_length/2.0 - boundary_width/2.0, -goal_width/2.0, boundary_width/2.0, WALL_THICKNESS);
+        simulation.add_wall(
+            -field_length / 2.0 + boundary_width / 2.0,
+            goal_width / 2.0,
+            boundary_width / 2.0,
+            WALL_THICKNESS,
+        );
+        simulation.add_wall(
+            -field_length / 2.0 + boundary_width / 2.0,
+            -goal_width / 2.0,
+            boundary_width / 2.0,
+            WALL_THICKNESS,
+        );
+        simulation.add_wall(
+            field_length / 2.0 - boundary_width / 2.0,
+            goal_width / 2.0,
+            boundary_width / 2.0,
+            WALL_THICKNESS,
+        );
+        simulation.add_wall(
+            field_length / 2.0 - boundary_width / 2.0,
+            -goal_width / 2.0,
+            boundary_width / 2.0,
+            WALL_THICKNESS,
+        );
         // //TODO: change the goal depth in the variable for cleaner code
-        simulation.add_wall(-goal_depth, 0.0, WALL_THICKNESS, goal_width/2.0);
-        simulation.add_wall(goal_depth, 0.0, WALL_THICKNESS, goal_width/2.0);
-
+        simulation.add_wall(-goal_depth, 0.0, WALL_THICKNESS, goal_width / 2.0);
+        simulation.add_wall(goal_depth, 0.0, WALL_THICKNESS, goal_width / 2.0);
 
         simulation
     }
@@ -561,11 +583,11 @@ impl Simulation {
         }
     }
 
-    fn add_wall(&mut self, x: f64, y: f64, width: f64, height: f64) {
+    fn add_wall(&mut self, x: f64, y: f64, half_width: f64, half_length: f64) {
         let wall_body = RigidBodyBuilder::fixed()
             .translation(Vector::new(x, y, 0.0))
             .build();
-        let wall_collider = ColliderBuilder::cuboid(width, height, WALL_HEIGHT)
+        let wall_collider = ColliderBuilder::cuboid(half_width, half_length, WALL_HEIGHT)
             .restitution(0.0)
             .restitution_combine_rule(CoefficientCombineRule::Min)
             .build();

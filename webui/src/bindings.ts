@@ -608,7 +608,7 @@ export type PlayerOverrideCommand =
 	/** Move the robot with velocity in local frame */
 	| { type: "LocalVelocity", data: {
 	velocity: Vector2;
-	angular_velocity: number;
+	yaw?: Angle;
 	/** Dribbler speed normalised to \[0, 1\] */
 	dribble_speed: number;
 	arm_kick: boolean;
@@ -616,7 +616,7 @@ export type PlayerOverrideCommand =
 	/** Move the robot with velocity in global frame */
 	| { type: "GlobalVelocity", data: {
 	velocity: Vector2;
-	angular_velocity: number;
+	yaw?: Angle;
 	/** Dribbler speed normalised to \[0, 1\] */
 	dribble_speed: number;
 	arm_kick: boolean;

@@ -143,27 +143,6 @@ export const useBasestationInfo = () =>
     refetchInterval: 1000,
   });
 
-const convertWorldDataToTeamData = (
-  worldData: WorldData,
-  primaryTeamColor: TeamColor = TeamColor.Blue
-): TeamData => {
-  const isBlue = primaryTeamColor === TeamColor.Blue;
-  return {
-    t_received: worldData.t_received,
-    t_capture: worldData.t_capture,
-    dt: worldData.dt,
-    own_players: isBlue ? worldData.blue_team : worldData.yellow_team,
-    opp_players: isBlue ? worldData.yellow_team : worldData.blue_team,
-    ball: worldData.ball,
-    field_geom: worldData.field_geom,
-    current_game_state: {
-      game_state: worldData.game_state.game_state,
-      us_operating: worldData.game_state.operating_team === primaryTeamColor,
-      yellow_cards: 0, // TODO: Get actual yellow cards from worldData
-    },
-  };
-};
-
 // Helper function to extract player ID from TeamPlayerId
 const extractPlayerId = (teamPlayerId: TeamPlayerId): PlayerId => {
   return teamPlayerId.player_id;
@@ -526,7 +505,10 @@ export const useKeyboardControl = ({
   kick: boolean;
 }) => {
   const sendCommand = useSendCommand();
+  const worldState = useWorldState();
 
+  const worldStateRef = useRef(worldState);
+  worldStateRef.current = worldState;
   const speedRef = useRef(speed);
   speedRef.current = speed;
   const angularSpeedRef = useRef(angularSpeedDegPerSec);
@@ -553,7 +535,13 @@ export const useKeyboardControl = ({
     };
 
     const interval = setInterval(() => {
-      if (playerId === null) return;
+      if (playerId === null || worldStateRef.current?.status !== "connected")
+        return;
+      const players =
+        primaryTeam === TeamColor.Blue
+          ? worldStateRef.current?.data.blue_team
+          : worldStateRef.current?.data.yellow_team;
+      const player = players?.find((p) => p.id === playerId);
 
       // Default team ID - this should be replaced with actual primary team selection
       const defaultTeamId = 1; // TODO: Get from primary team selection
@@ -568,7 +556,7 @@ export const useKeyboardControl = ({
               modeRef.current === "global" ? "GlobalVelocity" : "LocalVelocity",
             data: {
               velocity: [0, 0] as [number, number],
-              angular_velocity: 0,
+              yaw: undefined as number | undefined,
               arm_kick: false,
               dribble_speed: 0,
             },
@@ -594,7 +582,10 @@ export const useKeyboardControl = ({
       let angular_velocity = 0;
       if (pressedKeys.has("q")) angular_velocity += angularSpeedRadPerSec;
       if (pressedKeys.has("e")) angular_velocity -= angularSpeedRadPerSec;
-      command.data.command.data.angular_velocity = angular_velocity;
+      const newYaw = player
+        ? player.yaw + angular_velocity * (1000 / 30)
+        : undefined;
+      command.data.command.data.yaw = newYaw;
 
       let dribble_speed = 0;
       if (pressedKeys.has(" ")) {
@@ -619,9 +610,7 @@ export const useKeyboardControl = ({
         sendCommand(kickCommand);
       }
 
-      if (vel_mag > 0 || angular_velocity !== 0 || dribble_speed > 0) {
-        sendCommand(command);
-      }
+      sendCommand(command);
 
       if (fanSpeed) {
         const fanCommand = {
@@ -666,7 +655,7 @@ export const useKeyboardControl = ({
       window.removeEventListener("keyup", handleKeyUp);
       clearInterval(interval);
     };
-  }, [playerId]);
+  }, [playerId, primaryTeam]);
 };
 
 export const TeamDataProvider: FC<PropsWithChildren> = ({ children }) => {

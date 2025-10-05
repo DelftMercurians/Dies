@@ -348,7 +348,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         <ContextMenuTrigger onContextMenu={handleContextMenu}>
           <canvas
             ref={canvasRef}
-            className="border-8 border-green-950 rounded"
             width={canvasWidth}
             height={canvasHeight}
             onClick={handleCanvasClick}

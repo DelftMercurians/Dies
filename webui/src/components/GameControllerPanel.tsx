@@ -212,16 +212,16 @@ const GameControllerPanel: React.FC = () => {
         <CardContent className="space-y-3 overflow-y-auto p-3">
           {Object.entries(commandGroups).map(
             ([groupName, commands], groupIndex) => (
-              <div key={groupName} className="space-y-1.5">
+              <div key={groupName + groupIndex} className="space-y-1.5">
                 <h4 className="text-xs font-medium text-muted-foreground">
                   {groupName}
                 </h4>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {commands.map((cmd) => {
+                  {commands.map((cmd, index) => {
                     const Icon = cmd.icon;
                     return (
                       <Button
-                        key={cmd.command.type}
+                        key={cmd.command.type + index}
                         variant={getButtonVariant(cmd)}
                         size="sm"
                         className={`justify-start h-8 px-2 text-xs ${getButtonClassName(
