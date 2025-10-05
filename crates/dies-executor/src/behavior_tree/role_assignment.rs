@@ -225,7 +225,6 @@ impl RoleAssignmentSolver {
         }
 
         let active_robots = if active_robots.len() > roles.len() {
-            log::error!("active_robots.len() > roles.len()");
             // Remove robots that are not needed
             active_robots.iter().take(roles.len()).copied().collect()
         } else {

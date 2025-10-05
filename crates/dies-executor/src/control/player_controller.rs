@@ -279,7 +279,7 @@ impl PlayerController {
         self.target_velocity_global = Vector2::zeros();
         if let Some(pos_target) = input.position {
             // Choose between regular MTP and two-step MTP
-            let pos_u = if self.use_two_step_mtp {
+            let pos_u = if self.use_two_step_mtp && !is_manual_override {
                 self.two_step_mtp.set_setpoint(pos_target);
                 self.two_step_mtp.update(
                     self.last_pos,
@@ -315,7 +315,7 @@ impl PlayerController {
             self.target_velocity_global = pos_u;
 
             // Debug string will be updated by team controller if MPC overrides
-            let controller_name = if self.use_two_step_mtp {
+            let controller_name = if self.use_two_step_mtp && !is_manual_override {
                 "TwoStepMTP"
             } else {
                 "MTP"
@@ -352,50 +352,14 @@ impl PlayerController {
                 1.0
             };
 
-        self.target_velocity_global += add_vel * add_vel_factor;
-        self.target_velocity_global = self
-            .target_velocity_global
-            .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
-
-        /*
-        self.target_velocity_global = self.constrain_velocity_from_prohibited_zones(
-            self.target_velocity_global,
-            state.position,
-            world,
-            avoid_goal_area,
-            dt as f64,
-        );
-        */
-
-        /*
         if !is_manual_override {
-            let obstacles = if input.avoid_ball {
-                if let Some(ball) = world.ball.as_ref() {
-                    let mut obstacles = obstacles;
-                    obstacles.push(Obstacle::Circle {
-                        center: ball.position.xy(),
-                        radius: 150.0,
-                    });
-                    obstacles
-                } else {
-                    obstacles
-                }
-            } else {
-                obstacles
-            };
-
-            self.target_velocity = velocity_obstacle_update(
-                state,
-                &self.target_velocity,
-                all_players,
-                obstacles.as_slice(),
-                super::rvo::VelocityObstacleType::VO,
-                input.avoid_robots,
-            );
-
-            println!("Obstacle avoiding trickery wtf??")
+            self.target_velocity_global += add_vel * add_vel_factor;
+            self.target_velocity_global = self
+                .target_velocity_global
+                .cap_magnitude(input.speed_limit.unwrap_or(self.max_speed));
+        } else {
+            self.target_velocity_global += add_vel;
         }
-        */
 
         // Draw the velocity
         player_context.debug_line_colored(

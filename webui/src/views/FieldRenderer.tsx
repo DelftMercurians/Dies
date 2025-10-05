@@ -17,6 +17,7 @@ export const CANVAS_PADDING = 20;
 
 const FIELD_GREEN = "#15803d";
 const FIELD_LINE = "#ffffff";
+const WALL_COLOR = "#111827";
 const BLUE_ROBOT_FILTERED = "#2563eb";
 const BLUE_ROBOT_RAW = "#7c3aed";
 const YELLOW_ROBOT_FILTERED = "#facc15";
@@ -102,6 +103,7 @@ export class FieldRenderer {
     const { blue_team, yellow_team, ball } = this.world;
 
     this.drawFieldLines();
+    this.drawWalls();
 
     blue_team.forEach((player) =>
       this.drawPlayer(
@@ -198,6 +200,59 @@ export class FieldRenderer {
       this.ctx.lineTo(x2, y2);
       this.ctx.stroke();
     });
+  }
+
+  private drawWalls() {
+    const geom = this.world?.field_geom;
+    if (!geom) return;
+
+    const {
+      field_length,
+      field_width,
+      goal_width: gw,
+      goal_depth: gd,
+      boundary_width,
+    } = geom;
+    const fl = field_length + boundary_width * 2;
+    const fw = field_width + boundary_width * 2;
+
+    // Use a visible thickness independent of geometry thickness for clarity
+    this.ctx.strokeStyle = WALL_COLOR;
+    this.ctx.lineCap = "butt";
+    this.ctx.lineJoin = "miter";
+    this.ctx.lineWidth = Math.max(2, this.convertLength(10));
+
+    const drawSeg = (p1: Vector2, p2: Vector2) => {
+      const [x1, y1] = this.fieldToCanvas(p1);
+      const [x2, y2] = this.fieldToCanvas(p2);
+      this.ctx.beginPath();
+      this.ctx.moveTo(x1, y1);
+      this.ctx.lineTo(x2, y2);
+      this.ctx.stroke();
+    };
+
+    // Top and bottom walls along touch lines
+    drawSeg([-fl / 2, fw / 2], [fl / 2, fw / 2]);
+    drawSeg([-fl / 2, -fw / 2], [fl / 2, -fw / 2]);
+
+    // Goal-line walls on left and right
+    // Left goal line (x = -fl/2): draw above and below mouth
+    drawSeg([-fl / 2, fw / 2], [-fl / 2, -fw / 2]);
+    // Right goal line (x = fl/2)
+    drawSeg([fl / 2, fw / 2], [fl / 2, -fw / 2]);
+
+    // Goal side walls (from goal line to back wall)
+    drawSeg([-field_length / 2, gw / 2], [-(field_length / 2 + gd), gw / 2]);
+    drawSeg([-field_length / 2, -gw / 2], [-(field_length / 2 + gd), -gw / 2]);
+    drawSeg([field_length / 2, gw / 2], [field_length / 2 + gd, gw / 2]);
+    drawSeg([field_length / 2, -gw / 2], [field_length / 2 + gd, -gw / 2]);
+
+    // Goal back walls
+    drawSeg(
+      [-(field_length / 2 + gd), -gw / 2],
+      [-(field_length / 2 + gd), gw / 2]
+    );
+    drawSeg([field_length / 2 + gd, -gw / 2], [field_length / 2 + gd, gw / 2]);
   }
 
   private drawPlayer(
