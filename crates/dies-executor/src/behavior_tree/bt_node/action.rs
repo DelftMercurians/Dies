@@ -9,7 +9,7 @@ use crate::{
     control::{PlayerContext, PlayerControlInput, ShootTarget},
     skills::{
         Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, Skill, SkillCtx,
-        SkillProgress, SkillResult, TestMovement, TryReceive, Wait,
+        SkillProgress, SkillResult, TestMovement, TryReceive, Wait, PickUpBall,
     },
 };
 
@@ -35,8 +35,14 @@ pub enum SkillDefinition {
         target_velocity: Argument<Vector2>,
         pos_tolerance: Argument<f64>,
         velocity_tolerance: Argument<f64>,
-        with_ball: Argument<bool>,
+        //with_ball: Argument<bool>,
         avoid_ball: Argument<bool>,
+    },
+    PickUpBall {
+        approach_angle: Argument<Angle>,
+        distance_limit: Argument<f64>,
+        pos_tolerance: Argument<f64>,
+        yaw_tolerance: Argument<f64>,
     },
     Face {
         target: FaceTarget,
@@ -84,6 +90,7 @@ impl ActionNode {
         let node_full_id = self.get_full_node_id(&situation.viz_path_prefix);
         let skill_info = match &self.skill_def {
             SkillDefinition::GoToPosition { .. } => "GoToPosition",
+            SkillDefinition::PickUpBall { .. } => "PickUpBall",
             SkillDefinition::Face { .. } => "Face",
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
@@ -112,6 +119,7 @@ impl ActionNode {
     ) -> (BehaviorStatus, Option<PlayerControlInput>) {
         let skill_info = match &self.skill_def {
             SkillDefinition::GoToPosition { .. } => "GoToPosition",
+            SkillDefinition::PickUpBall { .. } => "PickUpBall",
             SkillDefinition::Face { .. } => "Face",
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
@@ -130,26 +138,40 @@ impl ActionNode {
                     target_velocity: _,
                     pos_tolerance: _,
                     velocity_tolerance: _,
-                    with_ball,
+                    // with_ball,
                     avoid_ball,
                 } => {
                     let target = target_pos.resolve(situation);
                     let heading = target_heading.as_ref().map(|h| h.resolve(situation));
-                    let with_ball = with_ball.resolve(situation);
+                    // let with_ball = with_ball.resolve(situation);
                     let avoid_ball = avoid_ball.resolve(situation);
 
                     let mut skill = GoToPosition::new(target);
                     if let Some(heading) = heading {
                         skill = skill.with_heading(heading);
                     }
-                    if with_ball {
-                        skill = skill.with_ball();
-                    }
+                    // if with_ball {
+                    //     skill = skill.with_ball();
+                    // }
                     if avoid_ball {
                         skill = skill.avoid_ball();
                     }
 
                     Some(Skill::GoToPosition(skill))
+                }
+                SkillDefinition::PickUpBall {
+                    approach_angle,
+                    distance_limit,
+                    pos_tolerance: _,
+                    yaw_tolerance: _,
+                } => {
+                    let approach_angle = approach_angle.resolve(situation);
+                    let distance_limit = distance_limit.resolve(situation);
+
+                    let mut skill = PickUpBall::new(approach_angle)
+                        .with_distance_limit(distance_limit);
+
+                    Some(Skill::PickUpBall(skill))
                 }
                 SkillDefinition::Face { target, with_ball } => {
                     let with_ball = with_ball.resolve(situation);
@@ -305,7 +327,7 @@ pub struct GoToPositionBuilder {
     target_velocity: Argument<Vector2>,
     pos_tolerance: Argument<f64>,
     velocity_tolerance: Argument<f64>,
-    with_ball: Argument<bool>,
+    //with_ball: Argument<bool>,
     avoid_ball: Argument<bool>,
     description: Option<String>,
 }
@@ -318,7 +340,7 @@ impl GoToPositionBuilder {
             target_velocity: Argument::Static(Vector2::zeros()),
             pos_tolerance: Argument::Static(0.1),
             velocity_tolerance: Argument::Static(0.1),
-            with_ball: Argument::Static(false),
+            //with_ball: Argument::Static(false),
             avoid_ball: Argument::Static(false),
             description: None,
         }
@@ -344,10 +366,10 @@ impl GoToPositionBuilder {
         self
     }
 
-    pub fn with_ball(mut self) -> Self {
-        self.with_ball = Argument::Static(true);
-        self
-    }
+    // pub fn with_ball(mut self) -> Self {
+    //     self.with_ball = Argument::Static(true);
+    //     self
+    // }
 
     pub fn avoid_ball(mut self) -> Self {
         self.avoid_ball = Argument::Static(true);
@@ -367,8 +389,60 @@ impl GoToPositionBuilder {
                 target_velocity: self.target_velocity,
                 pos_tolerance: self.pos_tolerance,
                 velocity_tolerance: self.velocity_tolerance,
-                with_ball: self.with_ball,
+                // with_ball: self.with_ball,
                 avoid_ball: self.avoid_ball,
+            },
+            self.description,
+        )
+    }
+}
+
+pub struct PickUpBallBuilder {
+    approach_angle: Argument<Angle>,
+    distance_limit: Argument<f64>,
+    pos_tolerance: Argument<f64>,
+    yaw_tolerance: Argument<f64>,
+    description: Option<String>,
+}
+
+impl PickUpBallBuilder {
+    pub fn new(approach_angle: impl Into<Argument<Angle>>) -> Self {
+        Self {
+            approach_angle: approach_angle.into(),
+            distance_limit: Argument::Static(200.0),
+            pos_tolerance: Argument::Static(0.1),
+            yaw_tolerance: Argument::Static(0.1),
+            description: None,
+        }
+    }
+
+    pub fn with_distance_limit(mut self, limit: impl Into<Argument<f64>>) -> Self {
+        self.distance_limit = limit.into();
+        self
+    }
+
+    pub fn with_pos_tolerance(mut self, tolerance: impl Into<Argument<f64>>) -> Self {
+        self.pos_tolerance = tolerance.into();
+        self
+    }
+
+    pub fn with_yaw_tolerance(mut self, tolerance: impl Into<Argument<f64>>) -> Self {
+        self.yaw_tolerance = tolerance.into();
+        self
+    }
+
+    pub fn description(mut self, desc: impl AsRef<str>) -> Self {
+        self.description = Some(desc.as_ref().to_string());
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(
+            SkillDefinition::PickUpBall {
+                approach_angle: self.approach_angle,
+                distance_limit: self.distance_limit,
+                pos_tolerance: self.pos_tolerance,
+                yaw_tolerance: self.yaw_tolerance,
             },
             self.description,
         )
@@ -556,6 +630,10 @@ impl FetchBallWithPreshootBuilder {
 // Convenience functions to create builders
 pub fn go_to_position(target_pos: impl Into<Argument<Vector2>>) -> GoToPositionBuilder {
     GoToPositionBuilder::new(target_pos)
+}
+
+pub fn pick_up_ball(approach_angle: impl Into<Argument<Angle>>) -> PickUpBallBuilder {
+    PickUpBallBuilder::new(approach_angle)
 }
 
 pub fn face_angle(angle: impl Into<Argument<Angle>>) -> FaceBuilder {

@@ -13,7 +13,7 @@ pub struct GoToPosition {
     target_velocity: Vector2,
     pos_tolerance: f64,
     velocity_tolerance: f64,
-    with_ball: bool,
+    // with_ball: bool,
     avoid_ball: bool,
 }
 
@@ -25,7 +25,7 @@ impl GoToPosition {
             target_velocity: Vector2::zeros(),
             pos_tolerance: DEFAULT_POS_TOLERANCE,
             velocity_tolerance: DEFAULT_VEL_TOLERANCE,
-            with_ball: false,
+            //with_ball: false,
             avoid_ball: false,
         }
     }
@@ -39,10 +39,10 @@ impl GoToPosition {
     ///
     /// This activates the dribbler and makes sure the relative velocity between the
     /// player and the ball is below a certain threshold.
-    pub fn with_ball(mut self) -> Self {
-        self.with_ball = true;
-        self
-    }
+    // pub fn with_ball(mut self) -> Self {
+    //     self.with_ball = true;
+    //     self
+    // }
 
     pub fn avoid_ball(mut self) -> Self {
         self.avoid_ball = true;
@@ -77,16 +77,17 @@ impl GoToPosition {
                     // TODO: fix
                     return SkillProgress::success();
                 }
-            } else if self.with_ball {
-                if !ctx.player.breakbeam_ball_detected {
-                    return SkillProgress::failure();
-                }
+            } 
+            // else if self.with_ball {
+            //     if !ctx.player.breakbeam_ball_detected {
+            //         return SkillProgress::failure();
+            //     }
 
-                input.with_dribbling(1.0);
-                input.with_acceleration_limit(700.0);
-                input.with_angular_acceleration_limit(180.0f64.to_radians());
-                input.with_angular_speed_limit(180.0f64.to_radians());
-            }
+            //     input.with_dribbling(1.0);
+            //     input.with_acceleration_limit(700.0);
+            //     input.with_angular_acceleration_limit(180.0f64.to_radians());
+            //     input.with_angular_speed_limit(180.0f64.to_radians());
+            // }
 
             // let ball_vel = ball.velocity.xy();
             // let relative_velocity = ball_vel - ctx.player.velocity;
