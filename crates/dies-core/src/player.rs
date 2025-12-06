@@ -184,6 +184,7 @@ pub struct PlayerGlobalMoveCmd {
     pub dribble_speed: f64,
     pub kick_counter: u8,
     pub robot_cmd: RobotCmd,
+    pub w: f64,
     /// Maximum yaw rate in rad/s
     pub max_yaw_rate: f64,
     pub preferred_rotation_direction: RotationDirection,
@@ -200,6 +201,7 @@ impl PlayerGlobalMoveCmd {
             dribble_speed: 0.0,
             kick_counter: 0,
             robot_cmd: RobotCmd::None,
+            w: 0.0,
             max_yaw_rate: 0.0,
             preferred_rotation_direction: RotationDirection::NoPreference,
         }

@@ -1741,6 +1741,7 @@ impl Simulation {
                         player.target_heading = cmd.heading_setpoint;
                         player.current_dribble_speed = cmd.dribble_speed;
                         player.last_cmd_time = self.current_time;
+                        player.w = -cmd.w;
                         if cmd.kick_counter > player.last_kick_counter {
                             player.last_kick_counter = cmd.kick_counter;
                             is_kicking = true;

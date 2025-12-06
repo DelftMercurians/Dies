@@ -156,32 +156,10 @@ impl PlayerController {
             _ => RobotCmd::Arm,
         };
 
-        let _local_cmd = untransformer
-            .set_target_velocity(self.target_velocity_global)
-            .set_w(self.w)
-            .set_dribble_speed(self.dribble_speed * MAX_DRIBBLE_SPEED)
-            .set_kick_speed(self.kick_speed)
-            .set_robot_cmd(robot_cmd)
-            .untransform_move_cmd(self.id, self.last_yaw);
-        // player_context.debug_value("sx", local_cmd.sx);
-        // player_context.debug_value("sy", local_cmd.sy);
-        // player_context.debug_value("w", local_cmd.w);
-        // player_context.debug_value("dribble_speed", local_cmd.dribble_speed);
-        // player_context.debug_string("robot_cmd", format!("{:?}", local_cmd.robot_cmd));
-
-        // let global_cmd = PlayerGlobalMoveCmd {
-        //     id: self.id,
-        //     global_x: self.target_velocity_global.x / 1000.0,
-        //     global_y: self.target_velocity_global.y / 1000.0,
-        //     heading_setpoint: 0.0,
-        //     last_heading: self.last_yaw.radians(),
-        //     dribble_speed: self.dribble_speed * MAX_DRIBBLE_SPEED,
-        //     kick_counter: self.kick_counter,
-        //     robot_cmd,
-        // };
         let global_cmd = untransformer
             .set_target_velocity(self.target_velocity_global)
             .set_target_yaw(Angle::from_radians(self.target_z))
+            .set_w(self.w)
             .set_dribble_speed(self.dribble_speed * MAX_DRIBBLE_SPEED)
             .set_kick_speed(self.kick_speed)
             .set_kick_counter(self.kick_counter)
@@ -406,6 +384,11 @@ impl PlayerController {
             self.last_yaw_rate_limit = Some(last_yaw_rate + yaw_rate_output);
         } else {
             self.last_yaw_rate_limit = None;
+        }
+
+        // If there is angular speed, add it
+        if let Some(angular_velocity) = input.angular_velocity {
+            self.w = angular_velocity;
         }
 
         // Set dribbling speed

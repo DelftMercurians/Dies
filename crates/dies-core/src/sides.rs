@@ -392,6 +392,7 @@ impl PlayerCmdUntransformer {
             preferred_rotation_direction: self
                 .preferred_rotation_direction
                 .unwrap_or(RotationDirection::NoPreference),
+            w: self.w.unwrap_or(0.0),
         }
     }
 
