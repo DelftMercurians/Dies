@@ -5,6 +5,7 @@ mod fetch_ball_with_preshoot;
 mod fetchball;
 mod go_to_pos;
 mod pickup_ball;
+mod dribble;
 mod kick;
 mod receive;
 mod shoot;
@@ -21,6 +22,7 @@ pub use shoot::Shoot;
 pub use test_movement::TestMovement;
 pub use wait::Wait;
 pub use pickup_ball::PickUpBall;
+pub use dribble::Dribble;
 
 use crate::{
     behavior_tree::BtContext,
@@ -32,6 +34,7 @@ use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2};
 pub enum Skill {
     GoToPosition(GoToPosition),
     PickUpBall(PickUpBall),
+    Dribble(Dribble),
     Face(Face),
     Kick(Kick),
     Wait(Wait),
@@ -47,6 +50,7 @@ impl Skill {
         match self {
             Skill::GoToPosition(skill) => skill.update(ctx),
             Skill::PickUpBall(skill) => skill.update(ctx),
+            Skill::Dribble(skill) => skill.update(ctx),
             Skill::Face(skill) => skill.update(ctx),
             Skill::Kick(skill) => skill.update(ctx),
             Skill::Wait(skill) => skill.update(ctx),

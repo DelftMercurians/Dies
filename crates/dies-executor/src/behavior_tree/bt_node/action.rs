@@ -9,7 +9,7 @@ use crate::{
     control::{PlayerContext, PlayerControlInput, ShootTarget},
     skills::{
         Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, Skill, SkillCtx,
-        SkillProgress, SkillResult, TestMovement, TryReceive, Wait, PickUpBall,
+        SkillProgress, SkillResult, TestMovement, TryReceive, Wait, PickUpBall, Dribble,
     },
 };
 
@@ -43,6 +43,11 @@ pub enum SkillDefinition {
         distance_limit: Argument<f64>,
         pos_tolerance: Argument<f64>,
         yaw_tolerance: Argument<f64>,
+    },
+    Dribble {
+        target_pos: Argument<Vector2>,
+        target_heading: Argument<Angle>,
+        with_ball: Argument<bool>,
     },
     Face {
         target: FaceTarget,
@@ -91,6 +96,7 @@ impl ActionNode {
         let skill_info = match &self.skill_def {
             SkillDefinition::GoToPosition { .. } => "GoToPosition",
             SkillDefinition::PickUpBall { .. } => "PickUpBall",
+            SkillDefinition::Dribble { .. } => "Dribble",
             SkillDefinition::Face { .. } => "Face",
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
@@ -120,6 +126,7 @@ impl ActionNode {
         let skill_info = match &self.skill_def {
             SkillDefinition::GoToPosition { .. } => "GoToPosition",
             SkillDefinition::PickUpBall { .. } => "PickUpBall",
+            SkillDefinition::Dribble { .. } => "Dribble",
             SkillDefinition::Face { .. } => "Face",
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
@@ -173,6 +180,19 @@ impl ActionNode {
 
                     Some(Skill::PickUpBall(skill))
                 }
+                SkillDefinition::Dribble { 
+                    target_pos,
+                    target_heading,
+                    with_ball,
+                } => {
+                    let target_pos = target_pos.resolve(situation);
+                    let target_heading = target_heading.resolve(situation);
+                    let with_ball = with_ball.resolve(situation);
+
+                    let mut skill = Dribble::new(target_pos, target_heading, with_ball);
+                    Some(Skill::Dribble(skill))
+                }
+
                 SkillDefinition::Face { target, with_ball } => {
                     let with_ball = with_ball.resolve(situation);
 
@@ -449,6 +469,44 @@ impl PickUpBallBuilder {
     }
 }
 
+pub struct DribbleBuilder {
+    target_pos: Argument<Vector2>,
+    target_heading: Argument<Angle>,
+    with_ball: Argument<bool>,
+    description: Option<String>,
+}
+
+impl DribbleBuilder {
+    pub fn new(
+        target_pos: impl Into<Argument<Vector2>>,
+        target_heading: impl Into<Argument<Angle>>,
+        with_ball: impl Into<Argument<bool>>,
+    ) -> Self {
+        Self {
+            target_pos: target_pos.into(),
+            target_heading: target_heading.into(),
+            with_ball: with_ball.into(),
+            description: None,
+        }
+    }
+
+    pub fn description(mut self, desc: impl AsRef<str>) -> Self {
+        self.description = Some(desc.as_ref().to_string());
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(
+            SkillDefinition::Dribble {
+                target_pos: self.target_pos,
+                target_heading: self.target_heading,
+                with_ball: self.with_ball,
+            },
+            self.description,
+        )
+    }
+}
+
 pub struct FaceBuilder {
     target: FaceTarget,
     with_ball: Argument<bool>,
@@ -634,6 +692,14 @@ pub fn go_to_position(target_pos: impl Into<Argument<Vector2>>) -> GoToPositionB
 
 pub fn pick_up_ball(approach_angle: impl Into<Argument<Angle>>) -> PickUpBallBuilder {
     PickUpBallBuilder::new(approach_angle)
+}
+
+pub fn dribble(
+    target_pos: impl Into<Argument<Vector2>>,
+    target_heading: impl Into<Argument<Angle>>,
+    with_ball: impl Into<Argument<bool>>,
+) -> DribbleBuilder {
+    DribbleBuilder::new(target_pos, target_heading, with_ball)
 }
 
 pub fn face_angle(angle: impl Into<Argument<Angle>>) -> FaceBuilder {

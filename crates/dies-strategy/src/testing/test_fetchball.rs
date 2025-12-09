@@ -1,6 +1,6 @@
 use dies_core::Angle;
 use dies_executor::behavior_tree_api::{
-    BehaviorNode, fetch_ball_with_preshoot, pick_up_ball, sequence_node, wait, Argument
+    BehaviorNode, pick_up_ball, sequence_node, wait, Argument
 };
 
 pub fn build_test_fetchball() -> BehaviorNode {

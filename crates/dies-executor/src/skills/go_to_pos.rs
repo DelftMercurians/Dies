@@ -73,28 +73,11 @@ impl GoToPosition {
         if ctx.world.ball.as_ref().is_some() {
             if self.avoid_ball {
                 input.avoid_ball = true;
-                if ctx.player.breakbeam_ball_detected {
-                    // TODO: fix
-                    return SkillProgress::success();
-                }
+                // if ctx.player.breakbeam_ball_detected {
+                //     // TODO: fix
+                //     return SkillProgress::success();
+                // }
             } 
-            // else if self.with_ball {
-            //     if !ctx.player.breakbeam_ball_detected {
-            //         return SkillProgress::failure();
-            //     }
-
-            //     input.with_dribbling(1.0);
-            //     input.with_acceleration_limit(700.0);
-            //     input.with_angular_acceleration_limit(180.0f64.to_radians());
-            //     input.with_angular_speed_limit(180.0f64.to_radians());
-            // }
-
-            // let ball_vel = ball.velocity.xy();
-            // let relative_velocity = ball_vel - ctx.player.velocity;
-            // if relative_velocity.norm() > DEFAULT_BALL_VEL_TOLERANCE {
-            //     let correction = relative_velocity * BALL_VEL_CORRECTION;
-            //     input.add_global_velocity(correction);
-            // }
         }
 
         SkillProgress::Continue(input)

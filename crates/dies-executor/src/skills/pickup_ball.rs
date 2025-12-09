@@ -54,31 +54,22 @@ impl PickUpBall {
             input.with_position(approach_pos);
             input.with_yaw(ball_heading);
             input.avoid_ball = true;
-            //input.avoid_ball_care = 500.0; //???? doesnt do anything
+            input.avoid_ball_care = 1.5;
+            input.with_dribbling(0.5);
             //Avoiding the ball to ensure proper pickup still sabotaged by huge breakbeam range
-            
-            // log::info!(
-            //     "p_heading={:.2}, a_angle={:.2},\n player_pos={:?}, approach_pos={:?}",
-            //     player_heading.degrees(), self.approach_angle.degrees(), player_pos, approach_pos
-            // );
 
             let player_approach_heading = player_heading - self.approach_angle;
-            //^2 used as an abs value
-            if(player_approach_heading.degrees()*player_approach_heading.degrees() 
-            < self.yaw_tolerance*self.yaw_tolerance || self.go_capture == true)  {
+
+            if(player_approach_heading.degrees().abs()//*player_approach_heading.degrees() 
+            < self.yaw_tolerance || self.go_capture == true)  {
                 input.avoid_ball = false;
                 input.with_position(ball_pos);
                 input.with_dribbling(0.5);
+                input.avoid_ball_care = 0.0; 
                 self.go_capture = true;
                 log::info!("PickUpBall: Inside yaw tolerance ");
-
-                // log::info!(
-                //     "PickUpBall aligned: player_approach_heading={:.2}, player_heading={:.2}, ball_heading={:.2}",
-                //     player_approach_heading, player_heading, ball_heading
-                // );
             }
             
-            //TODO: Determine whether the robot should rotate to given angle after pickup
             let breakbeam = ctx.player.breakbeam_ball_detected;
             if(breakbeam){
                 log::info!("PickUpBall: Ball captured successfully!");
