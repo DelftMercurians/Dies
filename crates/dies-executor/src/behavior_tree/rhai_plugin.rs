@@ -391,6 +391,81 @@ pub mod bt_rhai_plugin {
         to_action_node(skill_def, description)
     }
 
+    #[rhai_fn(name = "PickUpBall", return_raw)]
+    pub fn pick_up_ball_action(
+        context: NativeCallContext,
+        approach_angle: rhai::Dynamic,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        pick_up_ball_action_impl(context, approach_angle, None, None)
+    }
+
+    #[rhai_fn(name = "PickUpBall", return_raw)]
+    pub fn pick_up_ball_action_with_options(
+        context: NativeCallContext,
+        approach_angle: rhai::Dynamic,
+        options: Map,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        pick_up_ball_action_impl(context, approach_angle, Some(options), None)
+    }
+
+    #[rhai_fn(name = "PickUpBall", return_raw)]
+    pub fn pick_up_ball_action_with_description(
+        context: NativeCallContext,
+        approach_angle: rhai::Dynamic,
+        description: &str,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        pick_up_ball_action_impl(
+            context,
+            approach_angle,
+            None,
+            Some(description.to_string()),
+        )
+    }
+
+    #[rhai_fn(name = "PickUpBall", return_raw)]
+    pub fn pick_up_ball_action_with_options_and_description(
+        context: NativeCallContext,
+        approach_angle: rhai::Dynamic,
+        options: Map,
+        description: &str,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        pick_up_ball_action_impl(
+            context,
+            approach_angle,
+            Some(options),
+            Some(description.to_string()),
+        )
+    }
+
+    fn pick_up_ball_action_impl(
+        context: NativeCallContext,
+        approach_angle: rhai::Dynamic,
+        options: Option<Map>,
+        description: Option<String>,
+    ) -> Result<BehaviorNode, Box<EvalAltResult>> {
+        let approach_angle_arg = Argument::from_rhai(approach_angle, &context)?;
+
+        let mut distance_limit_arg = Argument::Static(200.0);
+        let mut pos_tolerance_arg = Argument::Static(10.0);
+        let mut yaw_tolerance_arg = Argument::Static(1.0);
+
+        if let Some(options_map) = options {
+            if let Some(distance_limit_dyn) = options_map.get("distance_limit") {
+                distance_limit_arg = Argument::from_rhai(distance_limit_dyn.clone(), &context)?;
+            }
+        }
+
+        let skill_def = SkillDefinition::PickUpBall {
+            approach_angle: approach_angle_arg,
+            distance_limit: distance_limit_arg,
+            pos_tolerance: pos_tolerance_arg,
+            yaw_tolerance: yaw_tolerance_arg,
+        };
+
+        to_action_node(skill_def, description)
+    }
+
+
     #[rhai_fn(name = "FaceAngle", return_raw)]
     pub fn face_angle_action(
         context: NativeCallContext,

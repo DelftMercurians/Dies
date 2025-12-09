@@ -5,9 +5,10 @@ use dies_executor::behavior_tree_api::{
 };
 
 pub fn build_test_movement() -> BehaviorNode {
-    test_movement(
-        Argument::Static(Vector2::new(-1200.0, 2000.0)),
-        Argument::Static(Vector2::new(-1200.0, -2000.0)),
-    )
-    .into()
+    sequence_node()
+        .add(go_to_position(Argument::Static(Vector2::new(1000.0, 1000.0))).build())
+        .add(wait(3.0).build())
+        .add(go_to_position(Argument::Static(Vector2::new(-1000.0, -1000.0))).build())
+        .build()
+        .into()
 }
