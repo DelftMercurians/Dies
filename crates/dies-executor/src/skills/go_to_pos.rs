@@ -55,12 +55,8 @@ impl GoToPosition {
         let position = ctx.player.position;
         let distance = (self.target_pos - position).norm();
         let dv = (self.target_velocity - ctx.player.velocity).norm();
-        dies_core::debug_string(format!("goto_distance"), distance.to_string());
-        dies_core::debug_string(format!("goto_dv"), dv.to_string());
 
         if distance < self.pos_tolerance && dv < self.velocity_tolerance {
-            dies_core::debug_string(format!("goto_distance"), format!("success"));
-            dies_core::debug_string(format!("goto_dv"), format!("success"));
             return SkillProgress::success();
         }
 
@@ -87,13 +83,6 @@ impl GoToPosition {
                 input.with_angular_acceleration_limit(180.0f64.to_radians());
                 input.with_angular_speed_limit(180.0f64.to_radians());
             }
-
-            // let ball_vel = ball.velocity.xy();
-            // let relative_velocity = ball_vel - ctx.player.velocity;
-            // if relative_velocity.norm() > DEFAULT_BALL_VEL_TOLERANCE {
-            //     let correction = relative_velocity * BALL_VEL_CORRECTION;
-            //     input.add_global_velocity(correction);
-            // }
         }
 
         SkillProgress::Continue(input)
