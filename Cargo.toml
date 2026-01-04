@@ -7,9 +7,11 @@ members = [
     "crates/dies-basestation-client",
     "crates/dies-simulator",
     "crates/dies-ssl-client",
+    "crates/dies-strategy-protocol",
     "crates/dies-webui",
     "crates/dies-world",
-    "crates/dies-logger", "crates/dies-strategy",
+    "crates/dies-logger",
+    "crates/dies-strategy",
 ]
 package.edition = "2021"
 resolver = "2"
