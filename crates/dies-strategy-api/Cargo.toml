@@ -1,0 +1,20 @@
+[package]
+name = "dies-strategy-api"
+version = "0.1.0"
+edition.workspace = true
+description = "Public API for implementing dies strategies"
+
+[dependencies]
+# Protocol types (SkillCommand, SkillStatus, WorldSnapshot, etc.)
+dies-strategy-protocol = { version = "0.1.0", path = "../dies-strategy-protocol" }
+
+# Core types (Vector2, Angle, PlayerId, etc.)
+dies-core = { version = "0.1.0", path = "../dies-core" }
+
+# For thread-local debug collector
+parking_lot = "0.12"
+
+[dev-dependencies]
+# For testing
+approx = "0.5"
+
