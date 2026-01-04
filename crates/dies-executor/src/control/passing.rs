@@ -1,6 +1,7 @@
 use dies_core::{Angle, FieldGeometry, PlayerData, PlayerId, TeamData, Vector2};
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
+#[cfg(feature = "legacy-strategy")]
 use crate::behavior_tree::RobotSituation;
 
 #[derive(Clone, Debug)]
@@ -96,6 +97,7 @@ impl PassingStore {
     }
 }
 
+#[cfg(feature = "legacy-strategy")]
 impl From<RobotSituation> for PassingStore {
     fn from(value: RobotSituation) -> Self {
         PassingStore {
@@ -105,6 +107,7 @@ impl From<RobotSituation> for PassingStore {
     }
 }
 
+#[cfg(feature = "legacy-strategy")]
 impl<'a> From<&'a RobotSituation> for PassingStore {
     fn from(value: &'a RobotSituation) -> Self {
         PassingStore {

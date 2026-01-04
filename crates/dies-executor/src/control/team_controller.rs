@@ -7,38 +7,83 @@ use dies_core::{
     ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
     SideAssignment, TeamColor, TeamData, Vector2,
 };
+use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use std::sync::Arc;
 
 use super::{
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
+    skill_executor::{SkillContext, SkillExecutor},
     team_context::TeamContext,
 };
-use crate::{
-    behavior_tree::{
-        BehaviorTree, BtContext, GameContext, RobotSituation, RoleAssignmentSolver, Strategy,
-    },
-    PlayerControlInput,
+use crate::PlayerControlInput;
+
+#[cfg(feature = "legacy-strategy")]
+use crate::behavior_tree::{
+    BehaviorTree, BtContext, GameContext, RobotSituation, RoleAssignmentSolver, Strategy,
 };
+
+/// Input for the team controller from the strategy host.
+#[derive(Debug, Clone, Default)]
+pub struct StrategyInput {
+    /// Skill commands per player (None means continue previous skill).
+    pub skill_commands: HashMap<PlayerId, Option<SkillCommand>>,
+    /// Role names per player for UI display.
+    pub player_roles: HashMap<PlayerId, String>,
+}
+
+/// Mode of operation for the team controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControllerMode {
+    /// Use skill commands from strategy host.
+    Strategy,
+    /// Use legacy behavior tree path.
+    #[cfg(feature = "legacy-strategy")]
+    BehaviorTree,
+}
+
+impl Default for ControllerMode {
+    fn default() -> Self {
+        #[cfg(feature = "legacy-strategy")]
+        {
+            ControllerMode::BehaviorTree
+        }
+        #[cfg(not(feature = "legacy-strategy"))]
+        {
+            ControllerMode::Strategy
+        }
+    }
+}
 
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
-    role_solver: RoleAssignmentSolver,
-    role_assignments: Arc<HashMap<PlayerId, String>>,
+    team_color: TeamColor,
+
+    // Skill execution for strategy-controlled path
+    skill_executor: SkillExecutor,
+    /// Current strategy input (skill commands and roles).
+    strategy_input: StrategyInput,
+    /// Mode of operation.
+    mode: ControllerMode,
 
     // mpc stuff
     start_time: std::time::Instant,
     #[cfg(feature = "mpc")]
     mpc_controller: MPCController,
 
-    // bht stuff
+    // Legacy behavior tree stuff (only with legacy-strategy feature)
+    #[cfg(feature = "legacy-strategy")]
+    role_solver: RoleAssignmentSolver,
+    #[cfg(feature = "legacy-strategy")]
+    role_assignments: Arc<HashMap<PlayerId, String>>,
+    #[cfg(feature = "legacy-strategy")]
     strategy: Strategy,
+    #[cfg(feature = "legacy-strategy")]
     player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
+    #[cfg(feature = "legacy-strategy")]
     bt_context: BtContext,
-    team_color: TeamColor,
 
-    // last_keeper_id: Option<PlayerId>,
     removing_players: HashSet<PlayerId>,
 
     warmup_timer: Option<Instant>,
@@ -49,27 +94,57 @@ pub struct TeamController {
 }
 
 impl TeamController {
+    /// Create a new team controller without a legacy strategy (strategy-controlled mode).
+    pub fn new_strategy_controlled(settings: &ExecutorSettings, team_color: TeamColor) -> Self {
+        let mut team = Self {
+            player_controllers: HashMap::new(),
+            settings: settings.clone(),
+            team_color,
+            skill_executor: SkillExecutor::new(),
+            strategy_input: StrategyInput::default(),
+            mode: ControllerMode::Strategy,
+            start_time: std::time::Instant::now(),
+            #[cfg(feature = "mpc")]
+            mpc_controller: MPCController::new(),
+            #[cfg(feature = "legacy-strategy")]
+            role_solver: RoleAssignmentSolver::new(),
+            #[cfg(feature = "legacy-strategy")]
+            role_assignments: Arc::new(HashMap::new()),
+            #[cfg(feature = "legacy-strategy")]
+            strategy: |_| {},
+            #[cfg(feature = "legacy-strategy")]
+            player_behavior_trees: HashMap::new(),
+            #[cfg(feature = "legacy-strategy")]
+            bt_context: BtContext::new(),
+            removing_players: HashSet::new(),
+            avoid_goal_area_flags: HashMap::new(),
+            warmup_timer: None,
+            warmup_done: false,
+        };
+        team.update_controller_settings(settings);
+        team
+    }
+
+    /// Create a new team controller with a legacy strategy (behavior tree mode).
+    #[cfg(feature = "legacy-strategy")]
     pub fn new(settings: &ExecutorSettings, team_color: TeamColor, strategy: Strategy) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
-            role_solver: RoleAssignmentSolver::new(),
-            role_assignments: Arc::new(HashMap::new()),
+            team_color,
+            skill_executor: SkillExecutor::new(),
+            strategy_input: StrategyInput::default(),
+            mode: ControllerMode::BehaviorTree,
             start_time: std::time::Instant::now(),
             #[cfg(feature = "mpc")]
             mpc_controller: MPCController::new(),
-
-            // bht stuff
+            role_solver: RoleAssignmentSolver::new(),
+            role_assignments: Arc::new(HashMap::new()),
             strategy,
             player_behavior_trees: HashMap::new(),
             bt_context: BtContext::new(),
-            team_color,
-
             removing_players: HashSet::new(),
-
-            // per-robot flags - initialize to true by default
             avoid_goal_area_flags: HashMap::new(),
-
             warmup_timer: None,
             warmup_done: false,
         };
@@ -82,6 +157,26 @@ impl TeamController {
             controller.update_settings(&settings.controller_settings);
         }
         self.settings = settings.clone();
+    }
+
+    /// Set the mode of operation.
+    pub fn set_mode(&mut self, mode: ControllerMode) {
+        self.mode = mode;
+    }
+
+    /// Get the current mode of operation.
+    pub fn mode(&self) -> ControllerMode {
+        self.mode
+    }
+
+    /// Set strategy input (skill commands and roles from strategy host).
+    pub fn set_strategy_input(&mut self, input: StrategyInput) {
+        self.strategy_input = input;
+    }
+
+    /// Get current skill statuses for all players.
+    pub fn get_skill_statuses(&self) -> HashMap<PlayerId, SkillStatus> {
+        self.skill_executor.get_all_statuses()
     }
 
     pub fn update(
@@ -103,16 +198,7 @@ impl TeamController {
         }
         let team_context = TeamContext::new(team_color, side_assignment);
 
-        let mut player_inputs_map: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
-
-        // Get active robots
-        let active_robots: Vec<PlayerId> = world_data
-            .own_players
-            .iter()
-            .map(|p| p.id)
-            .filter(|id| !self.removing_players.contains(id))
-            .collect();
-
+        // Handle warmup period
         if let Some(warmup_timer) = self.warmup_timer {
             if warmup_timer.elapsed() > Duration::from_secs(1) {
                 self.warmup_done = true;
@@ -124,7 +210,7 @@ impl TeamController {
                 self.warmup_timer = Some(Instant::now());
             }
 
-            // Update player controllers
+            // Update player controllers with default input during warmup
             for controller in self.player_controllers.values_mut() {
                 let player_data = world_data
                     .own_players
@@ -155,92 +241,29 @@ impl TeamController {
             return;
         }
 
-        // Get role assignment problem from script
-        let mut game_context = GameContext::new(Arc::clone(&world_data));
-        (self.strategy)(&mut game_context);
-        let assignment_problem = game_context.into_role_assignment_problem();
+        // Get active robots
+        let active_robots: Vec<PlayerId> = world_data
+            .own_players
+            .iter()
+            .map(|p| p.id)
+            .filter(|id| !self.removing_players.contains(id))
+            .collect();
 
-        // Solve role assignments
-        let priority_list = match self.role_solver.solve(
-            &assignment_problem,
-            &active_robots,
-            team_context.clone(),
-            world_data.clone(),
-            Some(&self.role_assignments),
-        ) {
-            Ok((assignments, priority_list)) => {
-                self.role_assignments = Arc::new(assignments.clone());
-
-                let priority_list_ids: Vec<PlayerId> = priority_list
-                    .iter()
-                    .filter_map(|role_name| {
-                        assignments
-                            .iter()
-                            .find(|(_, role)| *role == role_name)
-                            .map(|(id, _)| *id)
-                    })
-                    .collect();
-
-                // Update behavior trees based on new assignments
-                for player_id in &active_robots {
-                    let role_name = assignments
-                        .iter()
-                        .find(|(id, _)| *id == player_id)
-                        .map(|(_, role)| role.clone())
-                        .unwrap_or_default();
-                    let player_context = team_context.player_context(*player_id);
-
-                    // Only rebuild tree if role changed
-                    let needs_rebuild = self
-                        .player_behavior_trees
-                        .get(player_id)
-                        .map(|bt| bt.name != role_name)
-                        .unwrap_or(true);
-
-                    if needs_rebuild {
-                        // println!("assigned {} to {} with rebuild", role_name, player_id);
-                        // Clear semaphores for this player before rebuilding
-                        self.bt_context.clear_semaphores_for_player(*player_id);
-
-                        // Find the role and build its tree
-                        if let Some(role) = assignment_problem
-                            .roles
-                            .iter()
-                            .find(|r| r.name == role_name)
-                        {
-                            let situation = RobotSituation::new(
-                                *player_id,
-                                world_data.clone(),
-                                self.bt_context.clone(),
-                                player_context.key("bt"),
-                                self.role_assignments.clone(),
-                                team_color,
-                                team_context.clone(),
-                            );
-
-                            self.player_behavior_trees.insert(
-                                *player_id,
-                                BehaviorTree::new(
-                                    role_name.clone(),
-                                    (role.tree_builder)(&situation),
-                                ),
-                            );
-                        } else {
-                            self.player_behavior_trees.remove(player_id);
-                        }
-                    }
-                }
-                priority_list_ids
+        // Get player inputs based on mode
+        let (player_inputs_map, role_assignments) = match self.mode {
+            ControllerMode::Strategy => {
+                self.update_strategy_path(&world_data, &team_context, &active_robots)
             }
-            Err(e) => {
-                log::error!("Failed to solve role assignments: {}", e);
-                // Fallback to sorting by id
-                let mut priority_list_ids: Vec<PlayerId> = active_robots.clone();
-                priority_list_ids.sort();
-                priority_list_ids
-            }
+            #[cfg(feature = "legacy-strategy")]
+            ControllerMode::BehaviorTree => self.update_behavior_tree_path(
+                team_color,
+                &world_data,
+                &team_context,
+                &active_robots,
+            ),
         };
 
+        // Handle yellow card robot removal
         let allowed_number_of_robots = world_data.current_game_state.max_allowed_bots;
         if active_robots.len() > allowed_number_of_robots as usize {
             let n_robots_to_remove = (active_robots.len() - allowed_number_of_robots as usize)
@@ -251,65 +274,15 @@ impl TeamController {
                 active_robots.len(),
                 n_robots_to_remove
             );
+            // Sort active robots by id for deterministic removal
+            let mut sorted_robots = active_robots.clone();
+            sorted_robots.sort();
             self.removing_players
-                .extend(priority_list.iter().rev().take(n_robots_to_remove));
-        }
-
-        // Clean up empty semaphores periodically
-        self.bt_context.cleanup_empty_semaphores();
-        self.bt_context.clear_passing_target();
-
-        // Execute behavior trees
-        for player_data in &world_data.own_players {
-            let player_context = team_context.player_context(player_data.id);
-            if self.removing_players.contains(&player_data.id) {
-                player_context.debug_string("role", "removed");
-                continue;
-            }
-
-            let player_id = player_data.id;
-            let player_bt = self.player_behavior_trees.entry(player_id).or_default();
-
-            let viz_path_prefix = team_context.player_context(player_id).key("bt");
-            let mut robot_situation = RobotSituation::new(
-                player_id,
-                world_data.clone(),
-                self.bt_context.clone(),
-                viz_path_prefix,
-                self.role_assignments.clone(),
-                team_color,
-                team_context.clone(),
-            );
-
-            player_context.debug_string("role_bt", &player_bt.name);
-            let (_status, player_input_opt) = player_bt.tick(&mut robot_situation);
-            let mut player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
-
-            // Set role type based on assignment
-            if let Some(role_name) = self.role_assignments.get(&player_id) {
-                player_context.debug_string("role", role_name);
-                player_input.role_type = if role_name.contains("goalkeeper") {
-                    RoleType::Goalkeeper
-                } else if role_name.contains("kickoff_kicker") {
-                    RoleType::KickoffKicker
-                } else if role_name.contains("free_kick_kicker") {
-                    RoleType::FreeKicker
-                } else if role_name.contains("waller") {
-                    RoleType::Waller
-                } else if role_name.contains("penalty_kicker") {
-                    RoleType::PenaltyKicker
-                } else {
-                    RoleType::Player
-                };
-            } else {
-                player_context.debug_string("role", "not found");
-                player_input.role_type = RoleType::Player;
-            }
-
-            player_inputs_map.insert(player_id, player_input);
+                .extend(sorted_robots.iter().rev().take(n_robots_to_remove));
         }
 
         // Drive robots that are being removed to the removal position
+        let mut player_inputs_map = player_inputs_map;
         let mut removing_players = self.removing_players.iter().copied().collect::<Vec<_>>();
         removing_players.sort();
         let first_removal_position = Vector2::new(
@@ -328,11 +301,27 @@ impl TeamController {
                 let mut player_input = PlayerControlInput::default();
                 player_input.with_position(removal_position);
                 player_inputs_map.insert(*player_id, player_input);
+                team_context
+                    .player_context(*player_id)
+                    .debug_string("role", "removed");
             } else {
                 self.removing_players.remove(player_id);
             }
         }
 
+        // Apply role types for compliance and debug display
+        for (player_id, input) in player_inputs_map.iter_mut() {
+            let player_context = team_context.player_context(*player_id);
+            if let Some(role_name) = role_assignments.get(player_id) {
+                player_context.debug_string("role", role_name);
+                input.role_type = role_type_from_name(role_name);
+            } else {
+                player_context.debug_string("role", "unassigned");
+                input.role_type = RoleType::Player;
+            }
+        }
+
+        // Prepare inputs for compliance
         let mut inputs_for_comply = PlayerInputs::new();
         for (id, input) in player_inputs_map.iter() {
             self.avoid_goal_area_flags
@@ -384,10 +373,8 @@ impl TeamController {
                                 vel_limit: controller.get_max_speed(),
                             });
 
-                            controllable_mask.push(true); // Robot should be controlled
+                            controllable_mask.push(true);
                         } else {
-                            // if we don't need to move - force robots to stay in place while
-                            // still putting them to mpc for continuity, which is fairly important
                             #[cfg(feature = "mpc")]
                             mpc_robots.push(super::mpc::RobotState {
                                 id: controller.id(),
@@ -396,19 +383,17 @@ impl TeamController {
                                 target_position: player_data.position,
                                 vel_limit: 0.0,
                             });
-                            controllable_mask.push(false); // Robot should not be controlled
+                            controllable_mask.push(false);
                         }
                     }
                 }
             }
 
-            // Compute batched MPC controls
             #[cfg(feature = "mpc")]
             self.mpc_controller.set_field_bounds(&world_data);
 
             #[cfg(feature = "mpc")]
             if !mpc_robots.is_empty() {
-                // Collect avoid_goal_area flags for MPC robots (in the same order as mpc_robots)
                 let mut avoid_goal_area_flags = Vec::new();
                 for robot in &mpc_robots {
                     let avoid_goal_area = self
@@ -427,8 +412,7 @@ impl TeamController {
                 )
             }
         }
-        // Update the player controllers
-        // let trajectories = self.mpc_controller.get_trajectories();
+
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
             let player_data = world_data
@@ -445,66 +429,14 @@ impl TeamController {
                 // Handle MPC vs MTP control
                 if controller.use_mpc() {
                     if let Some(mpc_control) = mpc_controls.get(&id) {
-                        // Use MPC control (override MTP fallback)
                         controller.set_target_velocity(*mpc_control);
-                        // Update debug string to show MPC is being used
                         player_context.debug_string("controller", "MPC");
-                        // Debug output for MPC timing
                         #[cfg(feature = "mpc")]
                         dies_core::debug_value(
                             format!("p{}.mpc.duration_ms", id),
                             self.mpc_controller.last_solve_time_ms(),
                         );
-
-                        // Plot MPC trajectory if available
-                        // if let Some(trajectory) = trajectories.get(&id) {
-                        //     let debug_name = format!("mpc_traj_p{}", id);
-                        // Clear previous trajectory
-                        // dies_core::debug_remove(&debug_name);
-                        // Plot trajectory as connected line segments
-                        // for i in 0..trajectory.len().saturating_sub(1) {
-                        //     if trajectory[i].len() >= 5 && trajectory[i + 1].len() >= 5 {
-                        //         let start =
-                        //             dies_core::Vector2::new(trajectory[i][1], trajectory[i][2]);
-                        //         let end = dies_core::Vector2::new(
-                        //             trajectory[i + 1][1],
-                        //             trajectory[i + 1][2],
-                        //         );
-                        //         dies_core::debug_line(
-                        //             &format!("{}_seg{}", debug_name, i),
-                        //             start,
-                        //             end,
-                        //             dies_core::DebugColor::Purple,
-                        //         );
-                        //     }
-                        // }
-                        // Mark trajectory endpoints
-                        // if !trajectory.is_empty() {
-                        //     if trajectory[0].len() >= 5 {
-                        //         let start_pos =
-                        //             dies_core::Vector2::new(trajectory[0][1], trajectory[0][2]);
-                        //         dies_core::debug_cross(
-                        //             &format!("{}_start", debug_name),
-                        //             start_pos,
-                        //             dies_core::DebugColor::Green,
-                        //         );
-                        //     }
-                        //     if let Some(last) = trajectory.last() {
-                        //         if last.len() >= 5 {
-                        //             let end_pos = dies_core::Vector2::new(last[1], last[2]);
-                        //             dies_core::debug_circle_fill(
-                        //                 &format!("{}_end", debug_name),
-                        //                 end_pos,
-                        //                 80.0,
-                        //                 dies_core::DebugColor::Purple,
-                        //             );
-                        //         }
-                        //     }
-                        // }
-                        // }
                     }
-                    // If MPC returned empty (fallback to MTP), don't call set_target_velocity
-                    // Let the controller use MTP through the regular update() call below
                 }
 
                 let is_manual = manual_override
@@ -543,7 +475,6 @@ impl TeamController {
                     _ => {}
                 }
 
-                // Get the avoid_goal_area flag for this specific player (default to true)
                 let avoid_goal_area = if !matches!(
                     world_data.current_game_state.game_state,
                     GameState::BallReplacement(_)
@@ -593,6 +524,161 @@ impl TeamController {
         }
     }
 
+    /// Update using strategy-controlled path (skill commands).
+    fn update_strategy_path(
+        &mut self,
+        world_data: &Arc<TeamData>,
+        team_context: &TeamContext,
+        active_robots: &[PlayerId],
+    ) -> (HashMap<PlayerId, PlayerControlInput>, HashMap<PlayerId, String>) {
+        let mut player_inputs = HashMap::new();
+
+        for player_id in active_robots {
+            let player_data = match world_data.own_players.iter().find(|p| p.id == *player_id) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let skill_cmd = self
+                .strategy_input
+                .skill_commands
+                .get(player_id)
+                .and_then(|opt| opt.as_ref());
+
+            let ctx = SkillContext {
+                player: player_data,
+                world: world_data,
+                team_context,
+                debug_prefix: format!("p{}", player_id),
+            };
+
+            let input = self.skill_executor.process_command(*player_id, skill_cmd, ctx);
+            player_inputs.insert(*player_id, input);
+        }
+
+        (player_inputs, self.strategy_input.player_roles.clone())
+    }
+
+    /// Update using legacy behavior tree path.
+    #[cfg(feature = "legacy-strategy")]
+    fn update_behavior_tree_path(
+        &mut self,
+        team_color: TeamColor,
+        world_data: &Arc<TeamData>,
+        team_context: &TeamContext,
+        active_robots: &[PlayerId],
+    ) -> (HashMap<PlayerId, PlayerControlInput>, HashMap<PlayerId, String>) {
+        let mut player_inputs_map = HashMap::new();
+
+        // Get role assignment problem from script
+        let mut game_context = GameContext::new(Arc::clone(world_data));
+        (self.strategy)(&mut game_context);
+        let assignment_problem = game_context.into_role_assignment_problem();
+
+        // Solve role assignments
+        let _priority_list = match self.role_solver.solve(
+            &assignment_problem,
+            active_robots,
+            team_context.clone(),
+            world_data.clone(),
+            Some(&self.role_assignments),
+        ) {
+            Ok((assignments, priority_list)) => {
+                self.role_assignments = Arc::new(assignments.clone());
+
+                // Update behavior trees based on new assignments
+                for player_id in active_robots {
+                    let role_name = assignments
+                        .iter()
+                        .find(|(id, _)| *id == player_id)
+                        .map(|(_, role)| role.clone())
+                        .unwrap_or_default();
+                    let player_context = team_context.player_context(*player_id);
+
+                    // Only rebuild tree if role changed
+                    let needs_rebuild = self
+                        .player_behavior_trees
+                        .get(player_id)
+                        .map(|bt| bt.name != role_name)
+                        .unwrap_or(true);
+
+                    if needs_rebuild {
+                        // Clear semaphores for this player before rebuilding
+                        self.bt_context.clear_semaphores_for_player(*player_id);
+
+                        // Find the role and build its tree
+                        if let Some(role) = assignment_problem
+                            .roles
+                            .iter()
+                            .find(|r| r.name == role_name)
+                        {
+                            let situation = RobotSituation::new(
+                                *player_id,
+                                world_data.clone(),
+                                self.bt_context.clone(),
+                                player_context.key("bt"),
+                                self.role_assignments.clone(),
+                                team_color,
+                                team_context.clone(),
+                            );
+
+                            self.player_behavior_trees.insert(
+                                *player_id,
+                                BehaviorTree::new(
+                                    role_name.clone(),
+                                    (role.tree_builder)(&situation),
+                                ),
+                            );
+                        } else {
+                            self.player_behavior_trees.remove(player_id);
+                        }
+                    }
+                }
+                priority_list
+            }
+            Err(e) => {
+                log::error!("Failed to solve role assignments: {}", e);
+                Vec::new()
+            }
+        };
+
+        // Clean up empty semaphores periodically
+        self.bt_context.cleanup_empty_semaphores();
+        self.bt_context.clear_passing_target();
+
+        // Execute behavior trees
+        for player_data in &world_data.own_players {
+            let player_context = team_context.player_context(player_data.id);
+            if self.removing_players.contains(&player_data.id) {
+                continue;
+            }
+
+            let player_id = player_data.id;
+            let player_bt = self.player_behavior_trees.entry(player_id).or_default();
+
+            let viz_path_prefix = team_context.player_context(player_id).key("bt");
+            let mut robot_situation = RobotSituation::new(
+                player_id,
+                world_data.clone(),
+                self.bt_context.clone(),
+                viz_path_prefix,
+                self.role_assignments.clone(),
+                team_color,
+                team_context.clone(),
+            );
+
+            player_context.debug_string("role_bt", &player_bt.name);
+            let (_status, player_input_opt) = player_bt.tick(&mut robot_situation);
+            let player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
+
+            player_inputs_map.insert(player_id, player_input);
+        }
+
+        // Convert role assignments to the expected format
+        let role_assignments: HashMap<PlayerId, String> = (*self.role_assignments).clone();
+        (player_inputs_map, role_assignments)
+    }
+
     pub fn commands(
         &mut self,
         side_assignment: SideAssignment,
@@ -607,6 +693,23 @@ impl TeamController {
                 c.command(&player_context, untransformer.clone())
             })
             .collect()
+    }
+}
+
+/// Determine role type from role name string.
+fn role_type_from_name(role_name: &str) -> RoleType {
+    if role_name.contains("goalkeeper") {
+        RoleType::Goalkeeper
+    } else if role_name.contains("kickoff_kicker") {
+        RoleType::KickoffKicker
+    } else if role_name.contains("free_kick_kicker") {
+        RoleType::FreeKicker
+    } else if role_name.contains("waller") {
+        RoleType::Waller
+    } else if role_name.contains("penalty_kicker") {
+        RoleType::PenaltyKicker
+    } else {
+        RoleType::Player
     }
 }
 

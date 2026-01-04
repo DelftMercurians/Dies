@@ -11,6 +11,7 @@ dies-basestation-client = { version = "0.1.0", path = "../dies-basestation-clien
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
 dies-world = { version = "0.1.0", path = "../dies-world" }
 dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
+dies-strategy-protocol = { version = "0.1.0", path = "../dies-strategy-protocol" }
 log = "0.4.21"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
 nalgebra = "0.32.5"
@@ -23,15 +24,22 @@ pyo3 = { version = "0.25", features = [
     "abi3-py38",
 ], optional = true }
 numpy = { version = "0.25", optional = true }
-rhai = { version = "1.21.0", features = ["sync", "internals", "metadata"] }
+rhai = { version = "1.21.0", features = ["sync", "internals", "metadata"], optional = true }
 lapjv = "0.1"
 ndarray = "0.12"
 linear_assignment = "0.0.1"
+byteorder = "1.5"
+bincode = "1.3"
+thiserror = "1.0"
+tracing = "0.1"
 
 
 [features]
-default = []
+default = ["legacy-strategy"]
 mpc = ["pyo3", "numpy"]
+# Enable legacy behavior tree strategy path. Disable to use only the new
+# strategy process architecture.
+legacy-strategy = ["rhai"]
 
 [dev-dependencies]
 approx = "0.5.1"

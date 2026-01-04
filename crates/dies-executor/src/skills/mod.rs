@@ -1,32 +1,64 @@
-pub mod skills;
+//! Skills module - contains both legacy and new executable skills.
+//!
+//! The `executable` submodule contains the new streamlined skills for the
+//! strategy-controlled path.
+//!
+//! The legacy skills (only available with `legacy-strategy` feature) use
+//! the behavior tree context.
 
+pub mod executable;
+
+// Legacy skill modules (only with legacy-strategy feature)
+#[cfg(feature = "legacy-strategy")]
+pub mod skills;
+#[cfg(feature = "legacy-strategy")]
 mod face;
+#[cfg(feature = "legacy-strategy")]
 mod fetch_ball_with_preshoot;
+#[cfg(feature = "legacy-strategy")]
 mod fetchball;
+#[cfg(feature = "legacy-strategy")]
 mod go_to_pos;
+#[cfg(feature = "legacy-strategy")]
 mod kick;
+#[cfg(feature = "legacy-strategy")]
 mod receive;
+#[cfg(feature = "legacy-strategy")]
 mod shoot;
+#[cfg(feature = "legacy-strategy")]
 mod test_movement;
+#[cfg(feature = "legacy-strategy")]
 mod wait;
 
+#[cfg(feature = "legacy-strategy")]
 pub use face::Face;
+#[cfg(feature = "legacy-strategy")]
 pub use fetch_ball_with_preshoot::FetchBallWithPreshoot;
+#[cfg(feature = "legacy-strategy")]
 pub use fetchball::FetchBall;
+#[cfg(feature = "legacy-strategy")]
 pub use go_to_pos::GoToPosition;
+#[cfg(feature = "legacy-strategy")]
 pub use kick::Kick;
+#[cfg(feature = "legacy-strategy")]
 pub use receive::TryReceive;
+#[cfg(feature = "legacy-strategy")]
 pub use shoot::Shoot;
+#[cfg(feature = "legacy-strategy")]
 pub use test_movement::TestMovement;
+#[cfg(feature = "legacy-strategy")]
 pub use wait::Wait;
 
+#[cfg(feature = "legacy-strategy")]
 use crate::{
     behavior_tree::BtContext,
     control::{PlayerContext, PlayerControlInput},
     TeamContext,
 };
+#[cfg(feature = "legacy-strategy")]
 use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2};
 
+#[cfg(feature = "legacy-strategy")]
 pub enum Skill {
     GoToPosition(GoToPosition),
     Face(Face),
@@ -39,6 +71,7 @@ pub enum Skill {
     TestMovement(TestMovement),
 }
 
+#[cfg(feature = "legacy-strategy")]
 impl Skill {
     pub fn update(&mut self, ctx: SkillCtx<'_>) -> SkillProgress {
         match self {
@@ -55,6 +88,7 @@ impl Skill {
     }
 }
 
+#[cfg(feature = "legacy-strategy")]
 #[derive(Clone)]
 pub struct SkillCtx<'a> {
     pub player: &'a PlayerData,
@@ -64,6 +98,7 @@ pub struct SkillCtx<'a> {
     pub team_context: TeamContext,
 }
 
+#[cfg(feature = "legacy-strategy")]
 /// The result of a skill execution
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillResult {
@@ -71,6 +106,7 @@ pub enum SkillResult {
     Failure,
 }
 
+#[cfg(feature = "legacy-strategy")]
 /// The progress of a skill execution
 #[derive(Debug)]
 pub enum SkillProgress {
@@ -78,6 +114,7 @@ pub enum SkillProgress {
     Done(SkillResult),
 }
 
+#[cfg(feature = "legacy-strategy")]
 impl SkillProgress {
     /// Creates a new `SkillProgress` with a `Success` result
     pub fn success() -> SkillProgress {
@@ -90,6 +127,7 @@ impl SkillProgress {
     }
 }
 
+#[cfg(feature = "legacy-strategy")]
 #[derive(Clone)]
 pub enum HeadingTarget {
     Angle(Angle),
@@ -98,6 +136,7 @@ pub enum HeadingTarget {
     OwnPlayer(PlayerId),
 }
 
+#[cfg(feature = "legacy-strategy")]
 impl HeadingTarget {
     fn heading(&self, ctx: &SkillCtx) -> Option<Angle> {
         match self {

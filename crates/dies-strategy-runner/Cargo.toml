@@ -1,0 +1,48 @@
+[package]
+name = "dies-strategy-runner"
+version = "0.1.0"
+edition.workspace = true
+description = "Process runner for dies strategy binaries"
+
+[dependencies]
+# Strategy API for Strategy trait and TeamContext
+dies-strategy-api = { version = "0.1.0", path = "../dies-strategy-api" }
+
+# Protocol types for IPC messages
+dies-strategy-protocol = { version = "0.1.0", path = "../dies-strategy-protocol" }
+
+# Core types
+dies-core = { version = "0.1.0", path = "../dies-core" }
+
+# Async runtime
+tokio = { version = "1", features = [
+    "full",
+    "io-util",
+    "net",
+    "time",
+    "sync",
+    "signal",
+    "macros",
+    "rt-multi-thread",
+] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+bincode = "1.3"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive", "env"] }
+
+# Utilities
+byteorder = "1.5"
+
+[dev-dependencies]
+tempfile = "3.10"

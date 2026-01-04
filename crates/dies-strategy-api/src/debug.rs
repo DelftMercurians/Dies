@@ -164,13 +164,13 @@ mod tests {
     #[test]
     fn test_cross() {
         cleanup();
-        
+
         cross("test.cross", Vector2::new(100.0, 200.0));
-        
+
         let entries = collect_entries();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].key, "test.cross");
-        
+
         match &entries[0].value {
             DebugValue::Shape(DebugShape::Cross { center, color }) => {
                 assert_eq!(center.x, 100.0);
@@ -184,17 +184,17 @@ mod tests {
     #[test]
     fn test_line() {
         cleanup();
-        
+
         line_colored(
             "test.line",
             Vector2::new(0.0, 0.0),
             Vector2::new(100.0, 100.0),
             DebugColor::Green,
         );
-        
+
         let entries = collect_entries();
         assert_eq!(entries.len(), 1);
-        
+
         match &entries[0].value {
             DebugValue::Shape(DebugShape::Line { start, end, color }) => {
                 assert_eq!(start.x, 0.0);
@@ -208,14 +208,24 @@ mod tests {
     #[test]
     fn test_circle() {
         cleanup();
-        
-        circle_filled("test.circle", Vector2::new(50.0, 50.0), 25.0, DebugColor::Blue);
-        
+
+        circle_filled(
+            "test.circle",
+            Vector2::new(50.0, 50.0),
+            25.0,
+            DebugColor::Blue,
+        );
+
         let entries = collect_entries();
         assert_eq!(entries.len(), 1);
-        
+
         match &entries[0].value {
-            DebugValue::Shape(DebugShape::Circle { center, radius, fill, stroke }) => {
+            DebugValue::Shape(DebugShape::Circle {
+                center,
+                radius,
+                fill,
+                stroke,
+            }) => {
                 assert_eq!(center.x, 50.0);
                 assert_eq!(*radius, 25.0);
                 assert_eq!(*fill, Some(DebugColor::Blue));
@@ -228,12 +238,12 @@ mod tests {
     #[test]
     fn test_value() {
         cleanup();
-        
+
         value("test.speed", 42.5);
-        
+
         let entries = collect_entries();
         assert_eq!(entries.len(), 1);
-        
+
         match &entries[0].value {
             DebugValue::Number(v) => assert!((*v - 42.5).abs() < 1e-6),
             _ => panic!("Expected Number value"),
@@ -243,12 +253,12 @@ mod tests {
     #[test]
     fn test_string() {
         cleanup();
-        
+
         string("test.message", "Hello");
-        
+
         let entries = collect_entries();
         assert_eq!(entries.len(), 1);
-        
+
         match &entries[0].value {
             DebugValue::String(s) => assert_eq!(s, "Hello"),
             _ => panic!("Expected String value"),
@@ -258,12 +268,12 @@ mod tests {
     #[test]
     fn test_remove() {
         cleanup();
-        
+
         cross("keep", Vector2::new(0.0, 0.0));
         cross("remove", Vector2::new(1.0, 1.0));
-        
+
         remove("remove");
-        
+
         let entries = collect_entries();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].key, "keep");
@@ -272,12 +282,12 @@ mod tests {
     #[test]
     fn test_clear() {
         cleanup();
-        
+
         cross("a", Vector2::new(0.0, 0.0));
         cross("b", Vector2::new(1.0, 1.0));
-        
+
         clear();
-        
+
         let entries = collect_entries();
         assert!(entries.is_empty());
     }
@@ -285,13 +295,12 @@ mod tests {
     #[test]
     fn test_multiple_entries() {
         cleanup();
-        
+
         cross("marker", Vector2::new(0.0, 0.0));
         line("path", Vector2::new(0.0, 0.0), Vector2::new(100.0, 100.0));
         value("speed", 10.0);
-        
+
         let entries = collect_entries();
         assert_eq!(entries.len(), 3);
     }
 }
-
