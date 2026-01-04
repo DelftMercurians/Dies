@@ -3,6 +3,14 @@ import * as SeparatorPrimitive from "@radix-ui/react-separator";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Separator component following the Dies mission control aesthetic.
+ *
+ * Design specs:
+ * - Uses border-subtle color for subtle divisions
+ * - 1px thickness
+ */
+
 const Separator = React.forwardRef<
   React.ElementRef<typeof SeparatorPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SeparatorPrimitive.Root>
@@ -16,8 +24,8 @@ const Separator = React.forwardRef<
       decorative={decorative}
       orientation={orientation}
       className={cn(
-        "shrink-0 bg-border",
-        orientation === "horizontal" ? "h-[1px] w-full" : "h-full w-[1px]",
+        "shrink-0 bg-border-subtle",
+        orientation === "horizontal" ? "h-px w-full" : "h-full w-px",
         className
       )}
       {...props}

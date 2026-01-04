@@ -4,26 +4,46 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Toggle component following the Dies mission control aesthetic.
+ *
+ * Design specs:
+ * - Sharp corners
+ * - Compact sizing
+ * - Active state: bg-overlay background, bright text
+ */
 const toggleVariants = cva(
-  "inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground",
+  // Base styles
+  [
+    "inline-flex items-center justify-center",
+    "font-medium transition-colors",
+    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan",
+    "disabled:pointer-events-none disabled:opacity-50",
+    // Default state
+    "text-text-dim hover:text-text-std hover:bg-bg-overlay",
+    // Active/pressed state
+    "data-[state=on]:bg-bg-overlay data-[state=on]:text-text-bright",
+  ],
   {
     variants: {
       variant: {
         default: "bg-transparent",
         outline:
-          "border border-input bg-transparent hover:bg-accent hover:text-accent-foreground",
+          "border border-border-muted bg-transparent hover:border-border-std data-[state=on]:border-border-std",
       },
       size: {
-        default: "h-10 px-3",
-        sm: "h-9 px-2.5",
-        lg: "h-11 px-5",
+        default: "h-6 px-2 text-[10px]",
+        sm: "h-5 px-1.5 text-[9px]",
+        lg: "h-7 px-3 text-[11px]",
+        icon: "h-6 w-6",
+        "icon-sm": "h-5 w-5",
       },
     },
     defaultVariants: {
       variant: "default",
       size: "default",
     },
-  },
+  }
 );
 
 const Toggle = React.forwardRef<

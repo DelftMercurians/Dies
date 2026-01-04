@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ChevronRight, Folder, File } from "lucide-react";
 
+/**
+ * File Path Selector for browsing and selecting files.
+ * Uses mission control aesthetic.
+ */
+
 // Unix path utilities
 const pathUtils = {
   /**
@@ -165,15 +170,15 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="w-full justify-between">
-          <span className="truncate">{value || placeholder}</span>
-          <ChevronRight className="ml-2 h-4 w-4" />
+        <Button variant="outline" size="sm" className="w-full justify-between">
+          <span className="truncate text-[10px]">{value || placeholder}</span>
+          <ChevronRight className="ml-2 h-3 w-3" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="p-0 w-80">
-        <div className="p-2 border-b flex items-center gap-2">
+        <div className="p-2 border-b border-border-subtle flex items-center gap-2">
           <Button
-            size="sm"
+            size="xs"
             variant="ghost"
             onClick={handleBack}
             disabled={history.length === 0}
@@ -182,7 +187,7 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
             ←
           </Button>
           <Button
-            size="sm"
+            size="xs"
             variant="ghost"
             onClick={handleUp}
             disabled={pathUtils.isAtRoot(currentDir)}
@@ -190,12 +195,12 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
           >
             ↑
           </Button>
-          <span className="text-xs text-muted-foreground truncate flex-1">
+          <span className="text-[9px] text-text-muted truncate flex-1">
             {currentDir}
           </span>
 
           <Button
-            size="sm"
+            size="xs"
             variant="ghost"
             onClick={() => onChange(null)}
             title="Clear"
@@ -205,12 +210,18 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
         </div>
         <Separator />
         <div className="max-h-64 overflow-y-auto">
-          {loading && <div className="p-4 text-center text-xs">Loading...</div>}
+          {loading && (
+            <div className="p-4 text-center text-[10px] text-text-dim">
+              Loading...
+            </div>
+          )}
           {error && (
-            <div className="p-4 text-center text-xs text-red-500">{error}</div>
+            <div className="p-4 text-center text-[10px] text-accent-red">
+              {error}
+            </div>
           )}
           {!loading && !error && entries.length === 0 && (
-            <div className="p-4 text-center text-xs text-muted-foreground">
+            <div className="p-4 text-center text-[10px] text-text-muted">
               No files or directories
             </div>
           )}
@@ -227,7 +238,8 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
                 <li key={entry.name}>
                   <Button
                     variant="ghost"
-                    className="w-full flex items-center justify-start gap-2 px-2 py-1 text-left"
+                    size="sm"
+                    className="w-full flex items-center justify-start gap-2 px-2 py-1 text-left h-6"
                     onClick={() =>
                       entry.is_dir
                         ? handleDirClick(entry.name)
@@ -235,11 +247,11 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
                     }
                   >
                     {entry.is_dir ? (
-                      <Folder className="h-4 w-4 text-blue-500" />
+                      <Folder className="h-3 w-3 text-accent-cyan" />
                     ) : (
-                      <File className="h-4 w-4" />
+                      <File className="h-3 w-3 text-text-dim" />
                     )}
-                    <span className="truncate">{entry.name}</span>
+                    <span className="truncate text-[10px]">{entry.name}</span>
                   </Button>
                 </li>
               ))}

@@ -3,21 +3,46 @@ import * as SwitchPrimitives from "@radix-ui/react-switch";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Switch component following the Dies mission control aesthetic.
+ *
+ * Design specs:
+ * - Sharp corners (squared off, not rounded)
+ * - Compact sizing
+ * - Cyan accent when checked
+ */
+
 const Switch = React.forwardRef<
   React.ElementRef<typeof SwitchPrimitives.Root>,
   React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root>
 >(({ className, ...props }, ref) => (
   <SwitchPrimitives.Root
     className={cn(
-      "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input",
-      className,
+      // Base: inline flex, sharp corners
+      "peer inline-flex h-4 w-7 shrink-0 cursor-pointer items-center",
+      // Border and background
+      "border border-border-muted",
+      "transition-colors",
+      // Focus state
+      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan",
+      // Disabled state
+      "disabled:cursor-not-allowed disabled:opacity-50",
+      // States
+      "data-[state=checked]:bg-accent-cyan/30 data-[state=checked]:border-accent-cyan",
+      "data-[state=unchecked]:bg-bg-surface",
+      className
     )}
     {...props}
     ref={ref}
   >
     <SwitchPrimitives.Thumb
       className={cn(
-        "pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0",
+        // Sharp corners, compact thumb
+        "pointer-events-none block h-3 w-3",
+        "transition-transform",
+        // States
+        "data-[state=checked]:translate-x-3 data-[state=unchecked]:translate-x-0.5",
+        "data-[state=checked]:bg-accent-cyan data-[state=unchecked]:bg-text-dim"
       )}
     />
   </SwitchPrimitives.Root>

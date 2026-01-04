@@ -2,23 +2,53 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Input component following the Dies mission control aesthetic.
+ *
+ * Design specs:
+ * - Default height: 24px
+ * - Compact padding: 4px 8px
+ * - Sharp borders
+ * - Dark background (bg-base)
+ * - Focus ring using accent-cyan
+ */
 export interface InputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {}
+  extends React.InputHTMLAttributes<HTMLInputElement> {
+  inputSize?: "default" | "sm" | "xs";
+}
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, inputSize = "default", ...props }, ref) => {
+    const sizeClasses = {
+      default: "h-6 px-2 py-1 text-[11px]",
+      sm: "h-5 px-1.5 py-0.5 text-[10px]",
+      xs: "h-4 px-1 py-0.5 text-[9px]",
+    };
+
     return (
       <input
         type={type}
         className={cn(
-          "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-          className,
+          // Base styles
+          "flex w-full border bg-bg-base text-text-std",
+          "border-border-muted",
+          // Placeholder
+          "placeholder:text-text-muted",
+          // Focus state - cyan ring
+          "focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-accent-cyan/50",
+          // Disabled state
+          "disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-bg-surface",
+          // File input
+          "file:border-0 file:bg-transparent file:text-[10px] file:font-medium file:text-text-dim",
+          // Size
+          sizeClasses[inputSize],
+          className
         )}
         ref={ref}
         {...props}
       />
     );
-  },
+  }
 );
 Input.displayName = "Input";
 

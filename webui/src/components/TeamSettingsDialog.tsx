@@ -7,18 +7,22 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Settings, ArrowLeftRight, Repeat } from "lucide-react";
-import { TeamColor, SideAssignment } from "@/bindings";
+import { SideAssignment } from "@/bindings";
 import {
   useExecutorInfo,
   useTeamConfiguration,
   useExecutorSettings,
 } from "@/api";
 import FilePathSelector from "./FilePathSelector";
+
+/**
+ * Team Settings Dialog for configuring team colors, sides, and scripts.
+ * Uses mission control aesthetic.
+ */
 
 interface State {
   blueActive: boolean;
@@ -154,7 +158,7 @@ const TeamSettingsDialog: React.FC = () => {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          <Settings className="h-4 w-4 mr-2" />
+          <Settings className="h-3 w-3 mr-2" />
           Team Settings
         </Button>
       </DialogTrigger>
@@ -163,10 +167,12 @@ const TeamSettingsDialog: React.FC = () => {
           <DialogTitle>Team Configuration</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="space-y-5 py-3">
           {/* Quick Actions */}
-          <div className="space-y-3">
-            <h3 className="text-lg font-semibold">Quick Actions</h3>
+          <div className="space-y-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-dim">
+              Quick Actions
+            </h3>
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -174,7 +180,7 @@ const TeamSettingsDialog: React.FC = () => {
                 onClick={handleSwapColors}
                 className="flex items-center gap-2"
               >
-                <ArrowLeftRight className="h-4 w-4" />
+                <ArrowLeftRight className="h-3 w-3" />
                 Swap Team Colors
               </Button>
               <Button
@@ -183,15 +189,17 @@ const TeamSettingsDialog: React.FC = () => {
                 onClick={handleSwapSides}
                 className="flex items-center gap-2"
               >
-                <Repeat className="h-4 w-4" />
+                <Repeat className="h-3 w-3" />
                 Swap Team Sides
               </Button>
             </div>
           </div>
 
           {/* Side Assignment */}
-          <div className="space-y-3">
-            <h3 className="text-lg font-semibold">Field Side Assignment</h3>
+          <div className="space-y-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-dim">
+              Field Side Assignment
+            </h3>
             <div className="space-y-2">
               <Label>Which team defends the positive X side (+X goal)?</Label>
               <ToggleGroup
@@ -218,8 +226,10 @@ const TeamSettingsDialog: React.FC = () => {
           </div>
 
           {/* Blue Team Configuration */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-blue-600">Blue Team</h3>
+          <div className="space-y-3">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-team-blue">
+              Blue Team
+            </h3>
             <div className="flex items-center space-x-2">
               <Switch
                 id="team-blue-active"
@@ -245,8 +255,8 @@ const TeamSettingsDialog: React.FC = () => {
           </div>
 
           {/* Yellow Team Configuration */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-yellow-600">
+          <div className="space-y-3">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-team-yellow">
               Yellow Team
             </h3>
             <div className="flex items-center space-x-2">
@@ -274,12 +284,14 @@ const TeamSettingsDialog: React.FC = () => {
           </div>
 
           {/* Actions */}
-          <div className="flex justify-between">
+          <div className="flex justify-between pt-2">
             <div className="space-x-2">
               <Button variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSave}>Save Configuration</Button>
+              <Button variant="primary" onClick={handleSave}>
+                Save Configuration
+              </Button>
             </div>
           </div>
         </div>

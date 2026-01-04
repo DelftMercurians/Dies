@@ -4,6 +4,16 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Tabs component following the Dies mission control aesthetic.
+ *
+ * Design specs:
+ * - Tab height: 24px
+ * - Uppercase 10px font
+ * - Active indicator: 2px accent-cyan underline
+ * - No background styling, minimal
+ */
+
 const tabsVariants = cva("", {
   variants: {
     size: {
@@ -17,27 +27,45 @@ const tabsVariants = cva("", {
   },
 });
 
-const tabsListVariants = cva("inline-flex items-end border-b border-border", {
-  variants: {
-    size: {
-      default: "",
-      sm: "",
-      xs: "",
-    },
-  },
-  defaultVariants: {
-    size: "default",
-  },
-});
-
-const tabsTriggerVariants = cva(
-  "inline-flex items-center justify-center font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-muted-foreground hover:text-foreground data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:-mb-px relative",
+const tabsListVariants = cva(
+  "inline-flex items-end border-b border-border-subtle gap-0",
   {
     variants: {
       size: {
-        default: "px-4 py-2 text-sm h-10",
-        sm: "px-3 py-1.5 text-xs h-8",
-        xs: "px-2 py-1 text-xs h-6",
+        default: "h-6",
+        sm: "h-5",
+        xs: "h-4",
+      },
+    },
+    defaultVariants: {
+      size: "default",
+    },
+  }
+);
+
+const tabsTriggerVariants = cva(
+  // Base: uppercase label style, sharp, minimal
+  [
+    "inline-flex items-center justify-center",
+    "font-semibold uppercase tracking-wider",
+    "transition-colors",
+    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan",
+    "disabled:pointer-events-none disabled:opacity-50",
+    // Text colors
+    "text-text-muted hover:text-text-dim",
+    // Active state: cyan underline, bright text
+    "data-[state=active]:text-text-bright",
+    "data-[state=active]:border-b-2 data-[state=active]:border-accent-cyan",
+    "data-[state=active]:-mb-px",
+    // Relative for the underline positioning
+    "relative",
+  ],
+  {
+    variants: {
+      size: {
+        default: "px-3 h-6 text-[10px]",
+        sm: "px-2 h-5 text-[9px]",
+        xs: "px-1.5 h-4 text-[8px]",
       },
     },
     defaultVariants: {
@@ -105,7 +133,7 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      "ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border-t-0",
+      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan",
       className
     )}
     {...props}

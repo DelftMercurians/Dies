@@ -16,6 +16,11 @@ import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
+/**
+ * Basestation view showing connected robots and their hardware status.
+ * Uses mission control aesthetic.
+ */
+
 const Basestation: FC<{
   className: string;
   onSelectPlayer: (id: number) => void;
@@ -34,9 +39,11 @@ const Basestation: FC<{
   ].sort((a, b) => a.id - b.id);
 
   return (
-    <div className={`${className} p-4 bg-gray-900 text-white`}>
-      <h2 className="text-2xl font-bold mb-4">Connected Robots</h2>
-      <div className="grid grid-cols-1 gap-4">
+    <div className={`${className} p-2 bg-bg-surface text-text-std`}>
+      <h2 className="text-[12px] font-semibold uppercase tracking-wider text-text-bright mb-3">
+        Connected Robots
+      </h2>
+      <div className="grid grid-cols-1 gap-2">
         {allPlayers.length > 0 ? (
           allPlayers.map((player) => (
             <PlayerStatus
@@ -47,7 +54,9 @@ const Basestation: FC<{
             />
           ))
         ) : (
-          <div className="text-center text-gray-400">No robots connected</div>
+          <div className="text-center text-text-muted text-[10px] p-4">
+            No robots connected
+          </div>
         )}
       </div>
     </div>
@@ -65,22 +74,22 @@ const StatusIndicator: FC<{
     <TooltipTrigger asChild>
       <div className="flex items-center space-x-2 cursor-help">
         <div
-          className={`w-2 h-2 rounded-full ${
+          className={`w-1.5 h-1.5 ${
             status === SysStatus.Emergency
-              ? "bg-red-500"
+              ? "bg-accent-red"
               : [
                   SysStatus.Stop,
                   SysStatus.NoReply,
                   SysStatus.Overtemp,
                   SysStatus.Armed,
                 ].includes(status as SysStatus)
-              ? "bg-yellow-500"
+              ? "bg-accent-amber"
               : status === SysStatus.Ok
-              ? "bg-green-500"
-              : "bg-gray-500"
+              ? "bg-accent-green"
+              : "bg-text-muted"
           }`}
         />
-        <span className="text-xs">{label}</span>
+        <span className="text-[9px]">{label}</span>
       </div>
     </TooltipTrigger>
 
@@ -104,24 +113,22 @@ const PlayerStatus: FC<{
   const [isMotorsExpanded, setIsMotorsExpanded] = React.useState(false);
   const [isSensorExpanded, setIsSensorExpanded] = React.useState(false);
 
-  const getTeamColorClasses = (team: TeamColor) => {
-    return team === TeamColor.Blue
-      ? "bg-blue-600 text-white"
-      : "bg-yellow-500 text-black";
-  };
-
   return (
-    <Card className="bg-gray-800 text-white">
-      <CardContent className="p-4">
-        <div className="space-y-2">
-          <div className="flex flex-row gap-6 items-center">
+    <Card className="hover:bg-bg-overlay transition-colors">
+      <CardContent className="p-2">
+        <div className="space-y-1.5">
+          <div className="flex flex-row gap-3 items-center">
             <h3
               onClick={onClick}
-              className="text-lg font-semibold cursor-pointer"
+              className="text-[11px] font-semibold cursor-pointer text-text-bright hover:text-accent-cyan"
             >
               Robot {player.id}
             </h3>
-            <Badge className={`text-xs ${getTeamColorClasses(teamColor)}`}>
+            <Badge
+              variant={
+                teamColor === TeamColor.Blue ? "team-blue" : "team-yellow"
+              }
+            >
               {teamColor}
             </Badge>
             <StatusIndicator status={player.primary_status} label="Status" />
@@ -131,15 +138,15 @@ const PlayerStatus: FC<{
             open={isMotorsExpanded}
             onOpenChange={setIsMotorsExpanded}
           >
-            <CollapsibleTrigger className="flex items-center space-x-2">
+            <CollapsibleTrigger className="flex items-center space-x-1 text-[10px] text-text-dim hover:text-text-std">
               <span>Motors</span>
               {isMotorsExpanded ? (
-                <ChevronUp size={16} />
+                <ChevronUp size={12} />
               ) : (
-                <ChevronDown size={16} />
+                <ChevronDown size={12} />
               )}
             </CollapsibleTrigger>
-            <CollapsibleContent className="AnimatedCollapsible space-y-2 ml-4 mt-2">
+            <CollapsibleContent className="AnimatedCollapsible space-y-1 ml-3 mt-1">
               {[0, 1, 2, 3, 4].map((index) => (
                 <StatusIndicator
                   key={index}
@@ -158,16 +165,16 @@ const PlayerStatus: FC<{
             open={isSensorExpanded}
             onOpenChange={setIsSensorExpanded}
           >
-            <CollapsibleTrigger className="flex items-center space-x-2">
+            <CollapsibleTrigger className="flex items-center space-x-1 text-[10px] text-text-dim hover:text-text-std">
               <span>Sensors</span>
               {isSensorExpanded ? (
-                <ChevronUp size={16} />
+                <ChevronUp size={12} />
               ) : (
-                <ChevronDown size={16} />
+                <ChevronDown size={12} />
               )}
             </CollapsibleTrigger>
 
-            <CollapsibleContent className="AnimatedCollapsible space-y-2 ml-4 mt-2">
+            <CollapsibleContent className="AnimatedCollapsible space-y-1 ml-3 mt-1">
               <StatusIndicator status={player.imu_status} label="IMU" />
               <StatusIndicator
                 status={player.kicker_status}

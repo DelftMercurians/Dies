@@ -4,6 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { TeamColor } from "@/bindings";
 import { usePrimaryTeam } from "@/api";
 
+/**
+ * Primary Team Selector for choosing which team to focus on.
+ * Uses mission control aesthetic with team colors.
+ */
 interface PrimaryTeamSelectorProps {
   className?: string;
 }
@@ -12,20 +16,14 @@ const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = () => {
   const [primaryTeam, setPrimaryTeam] = usePrimaryTeam();
   const teams = [
     {
-      name: `Blue Team`,
+      name: `Blue`,
       color: TeamColor.Blue,
     },
     {
-      name: `Yellow Team`,
+      name: `Yellow`,
       color: TeamColor.Yellow,
     },
   ];
-
-  const getColorBadgeClass = (color: TeamColor) => {
-    return color === TeamColor.Blue
-      ? "bg-blue-600 text-white hover:bg-blue-700"
-      : "bg-yellow-500 text-black hover:bg-yellow-600";
-  };
 
   return (
     <ToggleGroup
@@ -36,21 +34,23 @@ const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = () => {
           setPrimaryTeam(value as TeamColor);
         }
       }}
-      className="border border-gray-500 rounded-lg"
     >
       {teams.map((team) => (
         <ToggleGroupItem
           key={team.color.toString()}
           value={team.color}
-          className="data-[state=on]:bg-green-600 flex items-center gap-2"
+          className={`flex items-center gap-2 data-[state=on]:bg-accent-green/30 data-[state=on]:text-accent-green data-[state=on]:border-accent-green ${
+            team.color === TeamColor.Blue
+              ? "text-team-blue"
+              : "text-team-yellow"
+          }`}
         >
           <Badge
-            variant="secondary"
-            className={`text-xs ${getColorBadgeClass(team.color)}`}
+            variant={team.color === TeamColor.Blue ? "team-blue" : "team-yellow"}
           >
             {team.color}
           </Badge>
-          <span>{team.name}</span>
+          <span className="text-[10px]">{team.name}</span>
         </ToggleGroupItem>
       ))}
     </ToggleGroup>

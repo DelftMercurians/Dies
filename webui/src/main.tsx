@@ -1,3 +1,7 @@
+// JetBrains Mono font - mission control aesthetic
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/600.css";
+
 import "./index.css";
 
 import React from "react";

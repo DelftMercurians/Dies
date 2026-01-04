@@ -31,6 +31,11 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import BehaviorTreeView from "./BehaviorTreeView";
 
+/**
+ * Player Sidebar showing detailed info for a selected player.
+ * Uses mission control aesthetic.
+ */
+
 interface PlayerSidebarProps {
   selectedPlayerId: number | null;
   onClose: () => void;
@@ -129,11 +134,11 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 
   if (typeof selectedPlayerId !== "number")
     return (
-      <div className="flex-1 flex flex-col gap-6 p-4 h-full w-full">
-        <h1 className="text-2xl font-bold mb-2 text-center text-slate-300">
+      <div className="flex-1 flex flex-col gap-4 p-3 h-full w-full">
+        <h1 className="text-[12px] font-semibold uppercase tracking-wider text-text-dim text-center">
           Select a player by clicking
         </h1>
-        <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
+        <div className="bg-bg-elevated border border-border-subtle p-2 h-full overflow-auto">
           <HierarchicalList data={debugData ? Object.entries(debugData) : []} />
         </div>
       </div>
@@ -166,10 +171,12 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-full">
-      <div className="flex flex-row p-4 pb-0 items-center">
-        <h1 className="text-2xl font-bold">Player #{selectedPlayerId}</h1>
-        <Button className="ml-auto" variant="ghost" onClick={onClose}>
-          <X />
+      <div className="flex flex-row p-3 pb-0 items-center">
+        <h1 className="text-[14px] font-semibold uppercase tracking-wider text-text-bright">
+          Player #{selectedPlayerId}
+        </h1>
+        <Button className="ml-auto" variant="ghost" size="icon-sm" onClick={onClose}>
+          <X className="h-3 w-3" />
         </Button>
       </div>
 
@@ -178,20 +185,20 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
         className="flex-1 flex flex-col overflow-hidden"
         size="sm"
       >
-        <TabsList className="mx-4 mt-2">
+        <TabsList className="mx-3 mt-2">
           <TabsTrigger value="info">Info</TabsTrigger>
           <TabsTrigger value="bt">Behavior Tree</TabsTrigger>
           <TabsTrigger value="debug">Debug</TabsTrigger>
         </TabsList>
         <TabsContent value="info" className="flex-1 overflow-y-auto">
-          <div className="flex flex-col gap-6 p-4">
+          <div className="flex flex-col gap-4 p-3">
             <div className="flex flex-col gap-2">
               <div className="flex flex-row gap-2 items-center">
                 <Select
                   value={activeGraph}
                   onValueChange={(val) => setActiveGraph(val as Graphable)}
                 >
-                  <SelectTrigger className="h-full w-64 flex-1">
+                  <SelectTrigger className="h-6 w-64 flex-1">
                     <SelectValue placeholder="Select graph" />
                   </SelectTrigger>
 
@@ -208,9 +215,10 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 
                 <Button
                   variant="ghost"
+                  size="icon-sm"
                   onClick={() => setGraphPaused((p) => !p)}
                 >
-                  {graphPaused ? <Play /> : <Pause />}
+                  {graphPaused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
                 </Button>
               </div>
 
@@ -248,10 +256,10 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
             </div>
 
             <div>
-              <h2 className="text-lg font-semibold mb-2">
-                Player Specific Debug Data
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-text-dim mb-2">
+                Player Debug Data
               </h2>
-              <div className="bg-slate-800 p-2 rounded-xl max-h-[50vh] overflow-auto">
+              <div className="bg-bg-elevated border border-border-subtle p-2 max-h-[40vh] overflow-auto">
                 <HierarchicalList data={playerDebugData} expandAll />
               </div>
             </div>
@@ -298,7 +306,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                   </div>
                 </SimpleTooltip>
 
-                <div className="flex flex-row gap-2 items-center">
+                <div className="flex flex-row gap-2 items-center text-[10px]">
                   <div>Speed</div>
                   <Input
                     type="number"
@@ -307,10 +315,10 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                     value={speed}
                     onChange={(e) => setSpeed(parseInt(e.target.value))}
                   />
-                  <div>mm/s</div>
+                  <div className="text-text-dim">mm/s</div>
                 </div>
 
-                <div className="flex flex-row gap-2 items-center">
+                <div className="flex flex-row gap-2 items-center text-[10px]">
                   <div>Angular Speed</div>
                   <Input
                     type="number"
@@ -321,10 +329,10 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                       setAngularSpeedDegPerSec(parseInt(e.target.value))
                     }
                   />
-                  <div>deg/s</div>
+                  <div className="text-text-dim">deg/s</div>
                 </div>
 
-                <div className="flex flex-row gap-2 items-center">
+                <div className="flex flex-row gap-2 items-center text-[10px]">
                   <div>Fan Speed</div>
                   <Slider
                     min={0}
@@ -332,10 +340,10 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                     value={[fanSpeed]}
                     onValueChange={([newValue]) => setFanSpeed(newValue)}
                   />
-                  <div>%</div>
+                  <div className="text-text-dim">%</div>
                 </div>
 
-                <div className="flex flex-row gap-2 items-center">
+                <div className="flex flex-row gap-2 items-center text-[10px]">
                   <div>Kick Speed</div>
                   <Input
                     type="number"
@@ -344,21 +352,24 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                     value={kickSpeed}
                     onChange={(e) => setKickSpeed(parseInt(e.target.value))}
                   />
-                  <div>mm/s</div>
+                  <div className="text-text-dim">mm/s</div>
                 </div>
 
-                <div className="flex flex-row gap-2 items-center">
+                <div className="flex flex-row gap-2 items-center text-[10px]">
                   <div>Kick</div>
                   <Button
+                    size="sm"
                     onClick={() => {
                       setKick(true);
                       setTimeout(() => setKick(false), 1000 / 10);
                     }}
-                  />
+                  >
+                    Kick
+                  </Button>
                 </div>
 
                 <div className="flex justify-center">
-                  <div className="inline-block bg-slate-600 p-6 rounded-xl">
+                  <div className="inline-block bg-bg-elevated border border-border-muted p-4">
                     <div className="flex justify-center mb-2 space-x-2">
                       <SimpleTooltip title="Turn left">
                         <KeyboardKey letter="q" />
@@ -395,11 +406,11 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
         <TabsContent value="bt" className="flex-1 overflow-y-auto">
           <BehaviorTreeView
             selectedPlayerId={selectedPlayerId}
-            className="h-full p-4"
+            className="h-full p-3"
           />
         </TabsContent>
         <TabsContent value="debug" className="flex-1 overflow-y-auto p-2">
-          <div className="bg-slate-800 p-2 rounded-xl h-full overflow-auto">
+          <div className="bg-bg-elevated border border-border-subtle p-2 h-full overflow-auto">
             <HierarchicalList
               data={debugData ? Object.entries(debugData) : []}
             />
@@ -421,7 +432,7 @@ const KeyboardKey = ({
 }) => (
   <div
     className={cn(
-      "w-12 h-12 bg-gray-200 rounded-md shadow-md flex items-center justify-center text-gray-700 font-bold text-lg uppercase border-b-4 border-gray-400 hover:border-b-0  transition-all duration-100 select-none",
+      "w-10 h-10 bg-bg-overlay border border-border-std flex items-center justify-center text-text-std font-semibold text-[11px] uppercase hover:bg-bg-elevated hover:text-text-bright transition-all duration-100 select-none",
       className
     )}
   >

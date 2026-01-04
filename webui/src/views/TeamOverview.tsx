@@ -8,8 +8,14 @@ import {
 } from "@/api";
 import { PlayerData, PlayerFeedbackMsg, TeamColor, DebugMap } from "@/bindings";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { FC } from "react";
+
+/**
+ * Team Overview showing all players on the primary team.
+ * Uses mission control aesthetic with compact player cards.
+ */
 
 interface TeamOverviewProps {
   className?: string;
@@ -76,8 +82,8 @@ const TeamOverview: FC<TeamOverviewProps> = ({
 
   if (worldState.status !== "connected") {
     return (
-      <div className={cn("p-1 bg-gray-900 text-white", className)}>
-        <div className="text-center text-gray-400">
+      <div className={cn("p-2 bg-bg-surface text-text-std", className)}>
+        <div className="text-center text-text-muted text-[10px]">
           Waiting for world state...
         </div>
       </div>
@@ -97,7 +103,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
 
   return (
     <div className={cn("relative", className)}>
-      <div className="absolute inset-0 overflow-y-auto p-2 bg-slate-900">
+      <div className="absolute inset-0 overflow-y-auto p-1 bg-bg-surface">
         <div className="grid grid-cols-1 gap-1">
           {sorted_players.length > 0 ? (
             sorted_players.map((player) => {
@@ -122,7 +128,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
               );
             })
           ) : (
-            <div className="text-center text-gray-400">
+            <div className="text-center text-text-muted text-[10px] p-4">
               No players in world state.
             </div>
           )}
@@ -164,26 +170,26 @@ const PlayerCard: FC<PlayerCardProps> = ({
 
   // Determine status colors
   const getStatusColor = (status: string | null | undefined) => {
-    if (!status) return "bg-gray-500";
+    if (!status) return "bg-text-muted";
     const lowerStatus = status.toLowerCase();
     if (
       lowerStatus.includes("error") ||
       lowerStatus.includes("fail") ||
       lowerStatus.includes("timeout")
     ) {
-      return "bg-red-500";
+      return "bg-accent-red";
     }
     if (lowerStatus.includes("warn") || lowerStatus.includes("degraded")) {
-      return "bg-yellow-500";
+      return "bg-accent-amber";
     }
     if (
       lowerStatus.includes("ok") ||
       lowerStatus.includes("good") ||
       lowerStatus.includes("connected")
     ) {
-      return "bg-green-500";
+      return "bg-accent-green";
     }
-    return "bg-blue-500";
+    return "bg-accent-blue";
   };
 
   const breakbeamDetected = basestationData?.breakbeam_ball_detected;
@@ -192,41 +198,39 @@ const PlayerCard: FC<PlayerCardProps> = ({
     <Card
       onClick={onClick}
       className={cn(
-        "bg-gray-800 text-white cursor-pointer hover:bg-gray-700",
-        isSelected && "ring-2 ring-blue-500"
+        "cursor-pointer hover:bg-bg-overlay transition-colors",
+        isSelected && "ring-1 ring-accent-cyan border-accent-cyan"
       )}
     >
-      <CardContent className="px-0 py-1 text-sm">
+      <CardContent className="px-2 py-1.5">
         <div className="flex justify-between items-center mb-1">
-          <h3 className="text-sm font-semibold">Robot {player.id}</h3>
+          <h3 className="text-[11px] font-semibold text-text-bright">
+            Robot {player.id}
+          </h3>
           {isManual && (
-            <span className="text-xs bg-red-500 text-white px-2 py-1 rounded">
-              Manual
-            </span>
+            <Badge variant="destructive">Manual</Badge>
           )}
         </div>
 
         {/* Role and Skill */}
-        <div className="text-xs mb-1 flex gap-2">
+        <div className="text-[9px] mb-1 flex gap-1">
           {role && (
-            <span className="bg-blue-600 text-white px-1 rounded">{role}</span>
+            <Badge variant="team-blue">{role}</Badge>
           )}
           {skill && (
-            <span className="bg-purple-600 text-white px-1 rounded">
-              {skill}
-            </span>
+            <Badge variant="info">{skill}</Badge>
           )}
         </div>
 
         {/* Status indicators row */}
-        <div className="flex items-center gap-3 text-xs mb-1">
+        <div className="flex items-center gap-3 text-[9px] text-text-dim mb-1">
           {/* Basestation status */}
           <div className="flex items-center gap-1">
             <span>BS:</span>
             <div
               className={cn(
-                "w-2 h-2 rounded-full",
-                hasBsInfo ? "bg-green-500" : "bg-red-500"
+                "w-1.5 h-1.5",
+                hasBsInfo ? "bg-accent-green" : "bg-accent-red"
               )}
             />
           </div>
@@ -236,22 +240,22 @@ const PlayerCard: FC<PlayerCardProps> = ({
             <span>BB:</span>
             <div
               className={cn(
-                "w-2 h-2 rounded-full",
+                "w-1.5 h-1.5",
                 breakbeamDetected === true
-                  ? "bg-orange-500"
+                  ? "bg-accent-amber"
                   : breakbeamDetected === false
-                  ? "bg-gray-500"
-                  : "bg-gray-600"
+                  ? "bg-text-muted"
+                  : "bg-border-muted"
               )}
             />
           </div>
 
           {/* Motor driver status */}
           <div className="flex items-center gap-1">
-            <span>Motor:</span>
+            <span>MTR:</span>
             <div
               className={cn(
-                "w-2 h-2 rounded-full",
+                "w-1.5 h-1.5",
                 getStatusColor(motorStatus)
               )}
             />
@@ -260,16 +264,14 @@ const PlayerCard: FC<PlayerCardProps> = ({
           {/* IMU status */}
           <div className="flex items-center gap-1">
             <span>IMU:</span>
-            <div
-              className={cn("w-2 h-2 rounded-full", getStatusColor(imuStatus))}
-            />
+            <div className={cn("w-1.5 h-1.5", getStatusColor(imuStatus))} />
           </div>
         </div>
 
         {/* Position */}
-        <div className="text-xs flex items-center gap-2 font-mono">
+        <div className="text-[9px] flex items-center gap-2 text-text-dim">
           <span>Pos:</span>
-          <span>
+          <span className="text-text-std">
             ({player.position[0].toFixed(0)}, {player.position[1].toFixed(0)})
           </span>
         </div>

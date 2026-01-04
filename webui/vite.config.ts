@@ -1,5 +1,6 @@
-import { defineConfig, ViteDevServer } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import * as path from "path";
 
 // https://vitejs.dev/config/
@@ -13,7 +14,6 @@ export default defineConfig({
         "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
     },
   },
-  // logLevel: "error",
   clearScreen: false,
   optimizeDeps: {
     esbuildOptions: {
@@ -34,7 +34,7 @@ export default defineConfig({
       },
     },
   },
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

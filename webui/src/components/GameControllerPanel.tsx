@@ -8,11 +8,7 @@ import {
   Play,
   Square,
   Pause,
-  RotateCcw,
   Target,
-  AlertTriangle,
-  Clock,
-  Trophy,
   Navigation,
 } from "lucide-react";
 import { GcSimCommand, TeamColor, Vector2 } from "@/bindings";
@@ -20,6 +16,10 @@ import { atom, useAtomValue } from "jotai";
 
 export const BallPlacementPostionAtom = atom<Vector2 | null>(null);
 
+/**
+ * Game Controller Panel for sending game controller commands.
+ * Uses mission control aesthetic with team-colored buttons.
+ */
 const GameControllerPanel: React.FC = () => {
   const sendCommand = useSendCommand();
   const [lastCommand, setLastCommand] = useState<GcSimCommand | null>(null);
@@ -39,7 +39,7 @@ const GameControllerPanel: React.FC = () => {
       command: GcSimCommand;
       label: string;
       icon: React.ElementType;
-      variant?: "default" | "secondary" | "destructive" | "outline";
+      variant?: "default" | "outline" | "destructive" | "ghost";
       description: string;
       color?: "blue" | "yellow";
     }[]
@@ -56,7 +56,7 @@ const GameControllerPanel: React.FC = () => {
         command: { type: "Stop" },
         label: "Stop",
         icon: Pause,
-        variant: "secondary" as const,
+        variant: "outline" as const,
         description: "Stop game, robots may move slowly",
       },
       {
@@ -122,38 +122,6 @@ const GameControllerPanel: React.FC = () => {
         description: "Direct free kick for yellow",
       },
     ],
-    // Timeouts: [
-    //   {
-    //     command: { type: "Timeout", data: { team_color: TeamColor.Blue } },
-    //     label: "Blue Timeout",
-    //     icon: Clock,
-    //     color: "blue",
-    //     description: "Timeout for blue team",
-    //   },
-    //   {
-    //     command: "TIMEOUT_YELLOW",
-    //     label: "Yellow Timeout",
-    //     icon: Clock,
-    //     color: "yellow",
-    //     description: "Timeout for yellow team",
-    //   },
-    // ],
-    // Goals: [
-    //   {
-    //     command: "GOAL_BLUE",
-    //     label: "Blue Goal",
-    //     icon: Trophy,
-    //     color: "blue",
-    //     description: "Goal scored by blue team",
-    //   },
-    //   {
-    //     command: "GOAL_YELLOW",
-    //     label: "Yellow Goal",
-    //     icon: Trophy,
-    //     color: "yellow",
-    //     description: "Goal scored by yellow team",
-    //   },
-    // ],
     "Ball Placement": [
       {
         command: {
@@ -184,17 +152,11 @@ const GameControllerPanel: React.FC = () => {
     ],
   };
 
-  const getButtonVariant = (cmd: any) => {
-    if (cmd.variant) return cmd.variant;
-    if (cmd.color === "blue") return "default";
-    if (cmd.color === "yellow") return "secondary";
-    return "outline";
-  };
-
-  const getButtonClassName = (cmd: any) => {
-    if (cmd.color === "blue") return "bg-blue-600 hover:bg-blue-700 text-white";
+  const getButtonClassName = (cmd: { color?: "blue" | "yellow" }) => {
+    if (cmd.color === "blue")
+      return "bg-team-blue/30 hover:bg-team-blue/50 text-team-blue border-team-blue/50";
     if (cmd.color === "yellow")
-      return "bg-yellow-500 hover:bg-yellow-600 text-black";
+      return "bg-team-yellow/30 hover:bg-team-yellow/50 text-team-yellow border-team-yellow/50";
     return "";
   };
 
@@ -202,9 +164,9 @@ const GameControllerPanel: React.FC = () => {
     <div className="h-full flex flex-col">
       <Card className="flex-1">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Game Controller</CardTitle>
+          <CardTitle>Game Controller</CardTitle>
           {lastCommand && (
-            <Badge variant="outline" className="w-fit text-xs">
+            <Badge variant="outline" className="w-fit">
               Last: {lastCommand.type}
             </Badge>
           )}
@@ -213,7 +175,7 @@ const GameControllerPanel: React.FC = () => {
           {Object.entries(commandGroups).map(
             ([groupName, commands], groupIndex) => (
               <div key={groupName + groupIndex} className="space-y-1.5">
-                <h4 className="text-xs font-medium text-muted-foreground">
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-text-dim">
                   {groupName}
                 </h4>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -222,11 +184,9 @@ const GameControllerPanel: React.FC = () => {
                     return (
                       <Button
                         key={cmd.command.type + index}
-                        variant={getButtonVariant(cmd)}
+                        variant={cmd.color ? "outline" : cmd.variant}
                         size="sm"
-                        className={`justify-start h-8 px-2 text-xs ${getButtonClassName(
-                          cmd
-                        )}`}
+                        className={`justify-start h-6 px-2 text-[10px] ${getButtonClassName(cmd)}`}
                         onClick={() => sendGcCommand(cmd.command)}
                         title={cmd.description}
                       >
