@@ -3834,6 +3834,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-strategy"
+version = "0.1.0"
+dependencies = [
+ "dies-core",
+ "dies-strategy-api",
+ "dies-strategy-protocol",
+ "dies-strategy-runner",
+ "tracing",
+]
+
+[[package]]
 name = "thin-vec"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,30 @@
+[package]
+name = "test-strategy"
+version = "0.1.0"
+edition = "2021"
+description = "Simple test strategy for validating the strategy pipeline"
+
+[[bin]]
+name = "test-strategy"
+path = "src/main.rs"
+
+[lib]
+name = "test_strategy"
+path = "src/lib.rs"
+
+[dependencies]
+# Strategy API for Strategy trait, TeamContext, PlayerHandle, etc.
+dies-strategy-api = { version = "0.1.0", path = "../../crates/dies-strategy-api" }
+
+# Strategy runner for the main loop and IPC
+dies-strategy-runner = { version = "0.1.0", path = "../../crates/dies-strategy-runner" }
+
+# Protocol types for SkillCommand, SkillStatus, etc.
+dies-strategy-protocol = { version = "0.1.0", path = "../../crates/dies-strategy-protocol" }
+
+# Core types for Angle, etc.
+dies-core = { version = "0.1.0", path = "../../crates/dies-core" }
+
+# Logging
+tracing = "0.1"
+
