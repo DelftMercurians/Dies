@@ -275,7 +275,11 @@ mod tests {
 
     #[test]
     fn test_ball_state_serialization() {
-        let ball = BallState::new(Vector2::new(100.0, -200.0), Vector2::new(500.0, 300.0), true);
+        let ball = BallState::new(
+            Vector2::new(100.0, -200.0),
+            Vector2::new(500.0, 300.0),
+            true,
+        );
 
         let encoded = bincode::serialize(&ball).unwrap();
         let decoded: BallState = bincode::deserialize(&encoded).unwrap();
@@ -323,4 +327,3 @@ mod tests {
         assert!(!GameState::PreparePenalty.is_ball_in_play());
     }
 }
-

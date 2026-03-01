@@ -7,8 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use dies_core::{
-    debug_record, DebugShape, DebugValue, PlayerId, SideAssignment,
-    TeamColor, TeamData,
+    debug_record, DebugShape, DebugValue, PlayerId, SideAssignment, TeamColor, TeamData,
 };
 use dies_strategy_protocol::{DebugEntry, SkillCommand, SkillStatus, StrategyConfig};
 use tracing::{error, info, warn};
@@ -165,10 +164,7 @@ impl StrategyHost {
 
         match connection.start() {
             Ok(()) => {
-                info!(
-                    "Started strategy {:?} for team {:?}",
-                    strategy_path, team
-                );
+                info!("Started strategy {:?} for team {:?}", strategy_path, team);
                 match team {
                     TeamColor::Blue => self.blue_connection = Some(connection),
                     TeamColor::Yellow => self.yellow_connection = Some(connection),
@@ -439,4 +435,3 @@ mod tests {
         assert!(!host.has_strategy(TeamColor::Yellow));
     }
 }
-

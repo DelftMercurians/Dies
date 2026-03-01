@@ -89,10 +89,9 @@ pub fn best_pass_area(
 
             let score = min_opp_dist + 0.5 * lane_bonus;
 
-            if score > MIN_SCORE
-                && (best.is_none() || score > best.unwrap().1) {
-                    best = Some((candidate, score));
-                }
+            if score > MIN_SCORE && (best.is_none() || score > best.unwrap().1) {
+                best = Some((candidate, score));
+            }
         }
     }
 

@@ -303,26 +303,29 @@ impl From<TrackedFrame> for AutorefInfo {
     fn from(frame: TrackedFrame) -> Self {
         Self {
             kicked_ball: frame.kicked_ball.as_ref().map(|k| AutorefKickedBall {
-                    pos: Vector2::new(k.pos.x() as f64, k.pos.y() as f64),
-                    vel: Vector3::new(k.vel.x() as f64, k.vel.y() as f64, k.vel.z() as f64),
-                    start_timestamp: k.start_timestamp.unwrap_or(0.0),
-                    stop_timestamp: k.stop_timestamp,
-                    stop_pos: k.stop_pos.as_ref().map(|p| Vector2::new(p.x() as f64, p.y() as f64)),
-                    robot_id: if let Some(r) = k.robot_id.as_ref() {
-                        let team = match r.team() {
-                            Team::BLUE => Some(TeamColor::Blue),
-                            Team::YELLOW => Some(TeamColor::Yellow),
-                            Team::UNKNOWN => None,
-                        };
-                        if let (Some(team), Some(id)) = (team, r.id) {
-                            Some((team, PlayerId::new(id)))
-                        } else {
-                            None
-                        }
+                pos: Vector2::new(k.pos.x() as f64, k.pos.y() as f64),
+                vel: Vector3::new(k.vel.x() as f64, k.vel.y() as f64, k.vel.z() as f64),
+                start_timestamp: k.start_timestamp.unwrap_or(0.0),
+                stop_timestamp: k.stop_timestamp,
+                stop_pos: k
+                    .stop_pos
+                    .as_ref()
+                    .map(|p| Vector2::new(p.x() as f64, p.y() as f64)),
+                robot_id: if let Some(r) = k.robot_id.as_ref() {
+                    let team = match r.team() {
+                        Team::BLUE => Some(TeamColor::Blue),
+                        Team::YELLOW => Some(TeamColor::Yellow),
+                        Team::UNKNOWN => None,
+                    };
+                    if let (Some(team), Some(id)) = (team, r.id) {
+                        Some((team, PlayerId::new(id)))
                     } else {
                         None
-                    },
-                }),
+                    }
+                } else {
+                    None
+                },
+            }),
         }
     }
 }

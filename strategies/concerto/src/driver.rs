@@ -85,12 +85,7 @@ impl Driver {
         self.new_active.take()
     }
 
-    pub fn set_waypoint(
-        &mut self,
-        waypoint: Waypoint,
-        active_robot: PlayerId,
-        timestamp: f64,
-    ) {
+    pub fn set_waypoint(&mut self, waypoint: Waypoint, active_robot: PlayerId, timestamp: f64) {
         self.state = match &waypoint {
             Waypoint::Capture { .. } => DriverState::Approaching,
             Waypoint::Dribble { .. } => DriverState::Dribbling,

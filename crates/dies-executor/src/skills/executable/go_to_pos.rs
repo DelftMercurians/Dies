@@ -101,10 +101,7 @@ mod tests {
 
     #[test]
     fn test_go_to_pos_creation() {
-        let skill = GoToPosSkill::new(
-            Vector2::new(1000.0, 500.0),
-            Some(Angle::from_radians(1.0)),
-        );
+        let skill = GoToPosSkill::new(Vector2::new(1000.0, 500.0), Some(Angle::from_radians(1.0)));
 
         assert_eq!(skill.skill_type(), SkillType::GoToPos);
         assert_eq!(skill.status(), SkillStatus::Running);
@@ -123,4 +120,3 @@ mod tests {
         assert!(skill.target_heading.is_some());
     }
 }
-

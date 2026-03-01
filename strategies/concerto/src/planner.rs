@@ -45,9 +45,7 @@ impl Default for Planner {
 impl Planner {
     /// Create a new Planner with no initial plan.
     pub fn new() -> Self {
-        Self {
-            current_plan: None,
-        }
+        Self { current_plan: None }
     }
 
     /// Returns a reference to the current plan, if any.
@@ -79,18 +77,16 @@ impl Planner {
                 let carrier = world.own_player(robot_id)?;
                 let carrier_pos = carrier.position;
 
-                let clear = geometry::is_clear_shot(
-                    carrier_pos,
-                    goal_center,
-                    world.opp_players(),
-                    400.0,
-                );
+                let clear =
+                    geometry::is_clear_shot(carrier_pos, goal_center, world.opp_players(), 400.0);
                 let close_enough = (carrier_pos - goal_center).norm() < 3500.0;
 
                 if clear && close_enough {
                     // Branch 1: clear shot — just shoot.
                     Plan {
-                        waypoints: vec![Waypoint::Shoot { target: goal_center }],
+                        waypoints: vec![Waypoint::Shoot {
+                            target: goal_center,
+                        }],
                         active_robot: robot_id,
                     }
                 } else {
@@ -133,7 +129,12 @@ impl Planner {
                     };
 
                     Plan {
-                        waypoints: vec![first_waypoint, Waypoint::Shoot { target: goal_center }],
+                        waypoints: vec![
+                            first_waypoint,
+                            Waypoint::Shoot {
+                                target: goal_center,
+                            },
+                        ],
                         active_robot: robot_id,
                     }
                 }
@@ -148,8 +149,7 @@ impl Planner {
                     .own_players()
                     .iter()
                     .filter(|p| {
-                        Some(p.id) != keeper_id
-                            && Some(p.id) != plan_ctx.double_touch_robot
+                        Some(p.id) != keeper_id && Some(p.id) != plan_ctx.double_touch_robot
                     })
                     .min_by(|a, b| {
                         let da = (a.position - ball_pos).norm();
@@ -190,8 +190,7 @@ impl Planner {
                     .own_players()
                     .iter()
                     .filter(|p| {
-                        Some(p.id) != keeper_id
-                            && Some(p.id) != plan_ctx.double_touch_robot
+                        Some(p.id) != keeper_id && Some(p.id) != plan_ctx.double_touch_robot
                     })
                     .collect();
 

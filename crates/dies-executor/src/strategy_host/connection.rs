@@ -275,9 +275,7 @@ impl StrategyConnection {
                     }
                 }
             }
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                self.check_process_alive()
-            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => self.check_process_alive(),
             Err(e) => Err(ConnectionError::Socket(e)),
         }
     }
@@ -320,11 +318,9 @@ impl StrategyConnection {
         self.last_skill_statuses = skill_statuses.clone();
 
         // Create world snapshot
-        let world = self.transformer.create_world_snapshot(
-            team_data,
-            &skill_statuses,
-            team_data.dt,
-        );
+        let world =
+            self.transformer
+                .create_world_snapshot(team_data, &skill_statuses, team_data.dt);
 
         // Send world update
         let msg = HostMessage::WorldUpdate {
@@ -448,9 +444,7 @@ impl StrategyConnection {
         stream
             .write_u32::<LittleEndian>(len)
             .map_err(Self::convert_io_error)?;
-        stream
-            .write_all(&data)
-            .map_err(Self::convert_io_error)?;
+        stream.write_all(&data).map_err(Self::convert_io_error)?;
         stream.flush().map_err(Self::convert_io_error)?;
 
         Ok(())
@@ -526,4 +520,3 @@ impl Drop for StrategyConnection {
         self.cleanup();
     }
 }
-

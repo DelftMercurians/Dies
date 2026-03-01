@@ -2,9 +2,8 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    Angle, BallData, GameState, GameStateData, PlayerData,
-    PlayerGlobalMoveCmd, PlayerId, PlayerMoveCmd, RobotCmd, RotationDirection, TeamData, Vector2,
-    Vector3, WorldData,
+    Angle, BallData, GameState, GameStateData, PlayerData, PlayerGlobalMoveCmd, PlayerId,
+    PlayerMoveCmd, RobotCmd, RotationDirection, TeamData, Vector2, Vector3, WorldData,
 };
 
 /// # Team-Specific Coordinate System

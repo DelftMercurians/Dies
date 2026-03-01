@@ -9,13 +9,12 @@
 //! - Status reporting
 //! - Clean completion semantics
 
-mod go_to_pos;
 mod dribble;
+mod go_to_pos;
 mod pickup_ball;
 mod reflex_shoot;
 
-pub use go_to_pos::GoToPosSkill;
 pub use dribble::DribbleSkill;
+pub use go_to_pos::GoToPosSkill;
 pub use pickup_ball::PickupBallSkill;
 pub use reflex_shoot::ReflexShootSkill;
-

@@ -109,10 +109,7 @@ mod tests {
 
     #[test]
     fn test_dribble_creation() {
-        let skill = DribbleSkill::new(
-            Vector2::new(1000.0, 500.0),
-            Angle::from_radians(0.0),
-        );
+        let skill = DribbleSkill::new(Vector2::new(1000.0, 500.0), Angle::from_radians(0.0));
 
         assert_eq!(skill.skill_type(), SkillType::Dribble);
         assert_eq!(skill.status(), SkillStatus::Running);
@@ -120,10 +117,7 @@ mod tests {
 
     #[test]
     fn test_dribble_update_params() {
-        let mut skill = DribbleSkill::new(
-            Vector2::new(0.0, 0.0),
-            Angle::from_radians(0.0),
-        );
+        let mut skill = DribbleSkill::new(Vector2::new(0.0, 0.0), Angle::from_radians(0.0));
 
         skill.update_params(&SkillCommand::Dribble {
             target_pos: Vector2::new(1000.0, 1000.0),
@@ -133,4 +127,3 @@ mod tests {
         assert_eq!(skill.target_pos, Vector2::new(1000.0, 1000.0));
     }
 }
-

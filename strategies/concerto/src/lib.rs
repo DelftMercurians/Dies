@@ -70,7 +70,10 @@ impl Strategy for ConcertoStrategy {
         // ── 1. Update double-touch tracking ─────────────────────────────
         if let Some(kicker) = world.freekick_kicker() {
             self.double_touch_robot = Some(kicker);
-        } else if matches!(game_state, GameState::Halt | GameState::Stop | GameState::Timeout) {
+        } else if matches!(
+            game_state,
+            GameState::Halt | GameState::Stop | GameState::Timeout
+        ) {
             self.double_touch_robot = None;
         } else if game_state == GameState::Run && world.freekick_kicker().is_none() {
             // Framework cleared the kicker (another robot touched the ball)
@@ -98,18 +101,18 @@ impl Strategy for ConcertoStrategy {
         };
 
         // ── 4. Build PlanContext ─────────────────────────────────────────
-        let our_set_piece = us_operating
-            && matches!(
-                game_state,
-                GameState::Kickoff | GameState::FreeKick
-            );
+        let our_set_piece =
+            us_operating && matches!(game_state, GameState::Kickoff | GameState::FreeKick);
         let plan_ctx = PlanContext {
             our_set_piece,
             double_touch_robot: self.double_touch_robot,
         };
 
         // ── 5. Halt/Unknown → bail early (framework handles stopping) ───
-        if matches!(game_state, GameState::Halt | GameState::Unknown | GameState::Timeout) {
+        if matches!(
+            game_state,
+            GameState::Halt | GameState::Unknown | GameState::Timeout
+        ) {
             return;
         }
 
@@ -202,9 +205,9 @@ impl Strategy for ConcertoStrategy {
             self.field_half_width,
         );
 
-        let assignments =
-            self.formation
-                .assign_roles(&formation_robot_ids, &roles, &world);
+        let assignments = self
+            .formation
+            .assign_roles(&formation_robot_ids, &roles, &world);
 
         for (player_id, role) in &assignments {
             if let Some(player) = ctx.player(*player_id) {
@@ -229,11 +232,7 @@ impl Strategy for ConcertoStrategy {
         // Debug visualization
         dies_strategy_api::debug::cross("ball", ball_pos);
         if let Some(ctx_area) = plan_context {
-            dies_strategy_api::debug::cross_colored(
-                "plan_context",
-                ctx_area,
-                DebugColor::Yellow,
-            );
+            dies_strategy_api::debug::cross_colored("plan_context", ctx_area, DebugColor::Yellow);
         }
         for (i, role) in roles.iter().enumerate() {
             let key = format!("role_{}", i);

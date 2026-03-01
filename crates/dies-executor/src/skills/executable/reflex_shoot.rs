@@ -151,4 +151,3 @@ mod tests {
         assert_eq!(skill.target, Vector2::new(4500.0, 500.0));
     }
 }
-

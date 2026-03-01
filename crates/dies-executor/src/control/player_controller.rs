@@ -456,6 +456,4 @@ impl PlayerController {
 
         false
     }
-
 }
-

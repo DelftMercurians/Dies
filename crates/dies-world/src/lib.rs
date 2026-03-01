@@ -583,12 +583,8 @@ impl WorldTracker {
             side_assignment: self
                 .side_assignment
                 .unwrap_or(SideAssignment::YellowOnPositive),
-            ball_on_blue_side: self
-                .ball_on_blue_side_for
-                .map(Duration::from_secs_f64),
-            ball_on_yellow_side: self
-                .ball_on_yellow_side_for
-                .map(Duration::from_secs_f64),
+            ball_on_blue_side: self.ball_on_blue_side_for.map(Duration::from_secs_f64),
+            ball_on_yellow_side: self.ball_on_yellow_side_for.map(Duration::from_secs_f64),
             autoref_info: self
                 .autoref_info
                 .as_ref()

@@ -188,8 +188,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         let shutdown_rx = shutdown_rx.resubscribe();
         let state = Arc::clone(&state);
         tokio::spawn(async move {
-            let mut executor_task =
-                ExecutorTask::new(config.environment, update_tx, cmd_rx, state);
+            let mut executor_task = ExecutorTask::new(config.environment, update_tx, cmd_rx, state);
             if config.auto_start {
                 log::info!("Starting executor automatically in 2 seconds...");
                 tokio::spawn(async move {

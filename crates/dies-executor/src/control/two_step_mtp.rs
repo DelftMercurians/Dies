@@ -306,7 +306,7 @@ impl TwoStepMTP {
         let mut total_cost = 0.1 * ((start - mid).magnitude() + (mid - end).magnitude());
         let robot_scare = 190.0; // mm - 2xrobot radius + some margin
         let _ball_scare = 100.0; // mm robot_radius + ball_radius
-                                //
+                                 //
         let pstart = start;
         let pmid = mid;
         let pend = end;

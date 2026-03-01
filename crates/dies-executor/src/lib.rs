@@ -54,11 +54,7 @@ impl TeamMap {
         }
     }
 
-    fn activate_team(
-        &mut self,
-        team_color: TeamColor,
-        settings: &ExecutorSettings,
-    ) {
+    fn activate_team(&mut self, team_color: TeamColor, settings: &ExecutorSettings) {
         if team_color == TeamColor::Blue {
             if self.blue_team.is_none() {
                 self.blue_team = Some(TeamController::new(settings, TeamColor::Blue));
@@ -69,7 +65,6 @@ impl TeamMap {
             }
         }
     }
-
 
     fn update_settings(&mut self, settings: &ExecutorSettings) {
         if let Some(controller) = &mut self.blue_team {
@@ -313,12 +308,13 @@ impl Executor {
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
-        let mut strategy_host = strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
-            strategies_dir: std::path::PathBuf::from("target/debug"),
-            blue_strategy: settings.team_configuration.blue_strategy.clone(),
-            yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
-            side_assignment: settings.team_configuration.side_assignment,
-        });
+        let mut strategy_host =
+            strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
+                strategies_dir: std::path::PathBuf::from("target/debug"),
+                blue_strategy: settings.team_configuration.blue_strategy.clone(),
+                yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
+                side_assignment: settings.team_configuration.side_assignment,
+            });
         // Start configured strategies
         if let Some(ref name) = settings.team_configuration.blue_strategy {
             strategy_host.set_strategy(TeamColor::Blue, Some(name.clone()));
@@ -362,21 +358,19 @@ impl Executor {
     }
 
     /// Create a new simulation executor.
-    pub fn new_simulation(
-        settings: ExecutorSettings,
-        mut simulator: Simulation,
-    ) -> Self {
+    pub fn new_simulation(settings: ExecutorSettings, mut simulator: Simulation) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
-        let mut strategy_host = strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
-            strategies_dir: std::path::PathBuf::from("target/debug"),
-            blue_strategy: settings.team_configuration.blue_strategy.clone(),
-            yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
-            side_assignment: settings.team_configuration.side_assignment,
-        });
+        let mut strategy_host =
+            strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
+                strategies_dir: std::path::PathBuf::from("target/debug"),
+                blue_strategy: settings.team_configuration.blue_strategy.clone(),
+                yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
+                side_assignment: settings.team_configuration.side_assignment,
+            });
         // Start configured strategies
         if let Some(ref name) = settings.team_configuration.blue_strategy {
             strategy_host.set_strategy(TeamColor::Blue, Some(name.clone()));
@@ -746,7 +740,8 @@ impl Executor {
                 };
                 self.tracker
                     .set_side_assignment(self.team_controllers.side_assignment);
-                self.strategy_host.set_side_assignment(self.team_controllers.side_assignment);
+                self.strategy_host
+                    .set_side_assignment(self.team_controllers.side_assignment);
             }
             ControlMsg::Stop => {}
 
@@ -771,11 +766,13 @@ impl Executor {
         // Collect skill statuses from team controllers and feed to strategy host
         if let Some(ref controller) = self.team_controllers.blue_team {
             let statuses = controller.get_skill_statuses();
-            self.strategy_host.update_skill_statuses(TeamColor::Blue, statuses);
+            self.strategy_host
+                .update_skill_statuses(TeamColor::Blue, statuses);
         }
         if let Some(ref controller) = self.team_controllers.yellow_team {
             let statuses = controller.get_skill_statuses();
-            self.strategy_host.update_skill_statuses(TeamColor::Yellow, statuses);
+            self.strategy_host
+                .update_skill_statuses(TeamColor::Yellow, statuses);
         }
 
         // Get team data for strategy host
@@ -791,10 +788,9 @@ impl Executor {
         };
 
         // Run strategy host
-        let frame_output = self.strategy_host.update(
-            blue_team_data.as_ref(),
-            yellow_team_data.as_ref(),
-        );
+        let frame_output = self
+            .strategy_host
+            .update(blue_team_data.as_ref(), yellow_team_data.as_ref());
 
         // Feed strategy output to team controllers
         if let Some(ref mut controller) = self.team_controllers.blue_team {

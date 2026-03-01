@@ -7,14 +7,12 @@ use serde::{Deserialize, Serialize};
 use crate::{DebugEntry, PlayerId, SkillCommand, SkillStatus, WorldSnapshot};
 
 /// Configuration passed to a strategy on initialization.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct StrategyConfig {
     /// Strategy-specific configuration as a JSON string.
     /// Strategies can parse this however they need.
     pub custom_config: Option<String>,
 }
-
 
 /// Messages sent from the executor (host) to strategy processes.
 ///
@@ -153,7 +151,10 @@ mod tests {
             } => {
                 assert!(skill_commands.contains_key(&PlayerId::new(1)));
                 assert!(skill_commands.contains_key(&PlayerId::new(2)));
-                assert_eq!(player_roles.get(&PlayerId::new(1)), Some(&"Striker".to_string()));
+                assert_eq!(
+                    player_roles.get(&PlayerId::new(1)),
+                    Some(&"Striker".to_string())
+                );
             }
             _ => panic!("Expected Output message"),
         }
@@ -174,4 +175,3 @@ mod tests {
         }
     }
 }
-

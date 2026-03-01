@@ -205,7 +205,11 @@ impl SkillExecutor {
     }
 
     /// Tick the current skill for a player.
-    fn tick_current_skill(&mut self, player_id: PlayerId, ctx: SkillContext<'_>) -> PlayerControlInput {
+    fn tick_current_skill(
+        &mut self,
+        player_id: PlayerId,
+        ctx: SkillContext<'_>,
+    ) -> PlayerControlInput {
         let state = self.player_states.entry(player_id).or_default();
 
         let Some(skill) = &mut state.current_skill else {
@@ -327,4 +331,3 @@ mod tests {
         assert_eq!(executor.get_status(PlayerId::new(1)), SkillStatus::Idle);
     }
 }
-

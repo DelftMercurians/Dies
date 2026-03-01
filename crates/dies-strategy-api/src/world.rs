@@ -8,7 +8,7 @@
 //! Strategies never see absolute world coordinates or team color.
 
 use dies_core::{FieldGeometry, Vector2};
-use dies_strategy_protocol::{BallState, GameState, PlayerState, PlayerId, WorldSnapshot};
+use dies_strategy_protocol::{BallState, GameState, PlayerId, PlayerState, WorldSnapshot};
 
 /// A rectangle defined by min and max corners.
 #[derive(Clone, Copy, Debug)]
@@ -35,7 +35,10 @@ impl Rect {
 
     /// Check if a point is inside the rectangle.
     pub fn contains(&self, point: Vector2) -> bool {
-        point.x >= self.min.x && point.x <= self.max.x && point.y >= self.min.y && point.y <= self.max.y
+        point.x >= self.min.x
+            && point.x <= self.max.x
+            && point.y >= self.min.y
+            && point.y <= self.max.y
     }
 
     /// Get the center of the rectangle.
@@ -191,7 +194,10 @@ impl World {
     /// Uses simple linear prediction (ball moves in a straight line).
     /// Returns `None` if the ball is not detected.
     pub fn predict_ball_position(&self, t: f64) -> Option<Vector2> {
-        self.snapshot.ball.as_ref().map(|b| b.position + b.velocity * t)
+        self.snapshot
+            .ball
+            .as_ref()
+            .map(|b| b.position + b.velocity * t)
     }
 
     // ========== Players ==========
@@ -228,26 +234,24 @@ impl World {
 
     /// Find the closest own player to a given position.
     pub fn closest_own_player_to(&self, position: Vector2) -> Option<&PlayerState> {
-        self.snapshot
-            .own_players
-            .iter()
-            .min_by(|a, b| {
-                let dist_a = (a.position - position).norm();
-                let dist_b = (b.position - position).norm();
-                dist_a.partial_cmp(&dist_b).unwrap_or(std::cmp::Ordering::Equal)
-            })
+        self.snapshot.own_players.iter().min_by(|a, b| {
+            let dist_a = (a.position - position).norm();
+            let dist_b = (b.position - position).norm();
+            dist_a
+                .partial_cmp(&dist_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     /// Find the closest opponent player to a given position.
     pub fn closest_opp_player_to(&self, position: Vector2) -> Option<&PlayerState> {
-        self.snapshot
-            .opp_players
-            .iter()
-            .min_by(|a, b| {
-                let dist_a = (a.position - position).norm();
-                let dist_b = (b.position - position).norm();
-                dist_a.partial_cmp(&dist_b).unwrap_or(std::cmp::Ordering::Equal)
-            })
+        self.snapshot.opp_players.iter().min_by(|a, b| {
+            let dist_a = (a.position - position).norm();
+            let dist_b = (b.position - position).norm();
+            dist_a
+                .partial_cmp(&dist_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     // ========== Game State ==========
@@ -343,14 +347,14 @@ mod tests {
     #[test]
     fn test_field_geometry() {
         let world = make_test_world();
-        
+
         assert_eq!(world.field_length(), 9000.0);
         assert_eq!(world.field_width(), 6000.0);
-        
+
         // Own goal at -x
         assert!(world.own_goal_center().x < 0.0);
         assert_eq!(world.own_goal_center().y, 0.0);
-        
+
         // Opponent goal at +x
         assert!(world.opp_goal_center().x > 0.0);
         assert_eq!(world.opp_goal_center().y, 0.0);
@@ -359,38 +363,38 @@ mod tests {
     #[test]
     fn test_ball_access() {
         let world = make_test_world();
-        
+
         assert!(world.ball().is_some());
         assert!(world.ball_position().is_some());
-        
+
         let pos = world.ball_position().unwrap();
         assert_eq!(pos.x, 100.0);
         assert_eq!(pos.y, 200.0);
-        
+
         // Predict ball position
         let predicted = world.predict_ball_position(1.0).unwrap();
-        assert_eq!(predicted.x, 150.0);  // 100 + 50*1
-        assert_eq!(predicted.y, 200.0);  // 200 + 0*1
+        assert_eq!(predicted.x, 150.0); // 100 + 50*1
+        assert_eq!(predicted.y, 200.0); // 200 + 0*1
     }
 
     #[test]
     fn test_player_access() {
         let world = make_test_world();
-        
+
         assert_eq!(world.own_players().len(), 2);
         assert_eq!(world.opp_players().len(), 1);
-        
+
         assert!(world.own_player(PlayerId::new(1)).is_some());
         assert!(world.own_player(PlayerId::new(99)).is_none());
-        
+
         let closest = world.closest_own_player_to(Vector2::new(0.0, 0.0)).unwrap();
-        assert_eq!(closest.id, PlayerId::new(2));  // Player at (-500, 0) is closer to origin
+        assert_eq!(closest.id, PlayerId::new(2)); // Player at (-500, 0) is closer to origin
     }
 
     #[test]
     fn test_game_state() {
         let world = make_test_world();
-        
+
         assert_eq!(world.game_state(), GameState::Run);
         assert!(world.is_ball_in_play());
         assert!(world.us_operating());
@@ -399,17 +403,16 @@ mod tests {
     #[test]
     fn test_penalty_areas() {
         let world = make_test_world();
-        
+
         let own_penalty = world.own_penalty_area();
         let opp_penalty = world.opp_penalty_area();
-        
+
         // Own penalty area at -x
         assert!(own_penalty.min.x < 0.0);
         assert!(own_penalty.max.x < 0.0);
-        
+
         // Opponent penalty area at +x
         assert!(opp_penalty.min.x > 0.0);
         assert!(opp_penalty.max.x > 0.0);
     }
 }
-

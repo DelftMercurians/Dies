@@ -122,7 +122,9 @@ mod team;
 mod world;
 
 pub use player::PlayerHandle;
-pub use skill_builders::{DribbleBuilder, GoToBuilder, PickupBallParams, ReflexShootParams, SkillHandle, SkillParams};
+pub use skill_builders::{
+    DribbleBuilder, GoToBuilder, PickupBallParams, ReflexShootParams, SkillHandle, SkillParams,
+};
 pub use strategy::{Strategy, StrategyFactory};
 pub use team::TeamContext;
 pub use world::{Rect, World};
@@ -130,8 +132,8 @@ pub use world::{Rect, World};
 // Re-export commonly used types from protocol and core crates
 pub use dies_core::{Angle, FieldGeometry};
 pub use dies_strategy_protocol::{
-    BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState, Handicap,
-    PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2, WorldSnapshot,
+    BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState, Handicap, PlayerId,
+    PlayerState, SkillCommand, SkillStatus, Vector2, WorldSnapshot,
 };
 
 /// Prelude module for convenient imports.
@@ -201,9 +203,7 @@ macro_rules! export_strategy {
 
         /// The strategy factory function.
         #[no_mangle]
-        pub static STRATEGY_FACTORY: fn() -> Box<dyn $crate::Strategy> = || {
-            Box::new($factory())
-        };
+        pub static STRATEGY_FACTORY: fn() -> Box<dyn $crate::Strategy> = || Box::new($factory());
     };
 }
 
@@ -240,7 +240,7 @@ mod tests {
     fn test_strategy_creation() {
         // Test that we can create a strategy and it implements the trait
         let mut strategy = TestStrategy::new();
-        
+
         let snapshot = WorldSnapshot {
             timestamp: 0.0,
             dt: 0.016,
@@ -261,11 +261,10 @@ mod tests {
     #[test]
     fn test_world_rect() {
         let rect = Rect::new(Vector2::new(0.0, 0.0), Vector2::new(100.0, 50.0));
-        
+
         assert!(rect.contains(Vector2::new(50.0, 25.0)));
         assert!(!rect.contains(Vector2::new(150.0, 25.0)));
         assert_eq!(rect.width(), 100.0);
         assert_eq!(rect.height(), 50.0);
     }
 }
-

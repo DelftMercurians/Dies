@@ -161,14 +161,16 @@ async fn handle_ws_conn(
 }
 
 async fn handle_ws_msg(tx: broadcast::Sender<UiCommand>, msg: Message) {
-    if let Message::Text(text) = msg { match serde_json::from_str::<UiCommand>(&text) {
-        Ok(cmd) => {
-            let _ = tx.send(cmd);
+    if let Message::Text(text) = msg {
+        match serde_json::from_str::<UiCommand>(&text) {
+            Ok(cmd) => {
+                let _ = tx.send(cmd);
+            }
+            Err(err) => {
+                log::error!("Failed to parse command: {}", err);
+            }
         }
-        Err(err) => {
-            log::error!("Failed to parse command: {}", err);
-        }
-    } }
+    }
 }
 
 async fn handle_send_ws_world_update(

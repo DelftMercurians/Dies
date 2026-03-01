@@ -33,4 +33,3 @@ mod transform;
 pub use connection::{ConnectionError, StrategyConnection};
 pub use host::{StrategyHost, StrategyHostConfig};
 pub use transform::CoordinateTransformer;
-

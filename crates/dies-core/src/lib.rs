@@ -79,4 +79,3 @@ pub enum GcSimCommand {
         position: Vector2,
     },
 }
-

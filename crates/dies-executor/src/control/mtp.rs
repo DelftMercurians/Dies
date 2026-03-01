@@ -27,7 +27,6 @@ impl MTP {
         self.setpoint = Some(setpoint);
     }
 
-
     pub fn update_settings(
         &mut self,
         kp: f64,

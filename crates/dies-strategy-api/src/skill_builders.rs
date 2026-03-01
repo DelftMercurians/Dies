@@ -3,9 +3,9 @@
 //! This module provides builder patterns for skill commands, making the API
 //! more ergonomic while still generating the correct `SkillCommand` values.
 
+use crate::player::PlayerHandle;
 use dies_core::Angle;
 use dies_strategy_protocol::{SkillCommand, Vector2};
-use crate::player::PlayerHandle;
 
 /// Builder for `GoToPos` skill commands.
 ///
@@ -86,7 +86,11 @@ pub struct DribbleBuilder<'a> {
 
 impl<'a> DribbleBuilder<'a> {
     /// Create a new DribbleBuilder.
-    pub(crate) fn new(player: &'a mut PlayerHandle, target_pos: Vector2, target_heading: Angle) -> Self {
+    pub(crate) fn new(
+        player: &'a mut PlayerHandle,
+        target_pos: Vector2,
+        target_heading: Angle,
+    ) -> Self {
         Self {
             player,
             target_pos,
@@ -202,7 +206,7 @@ impl<S: SkillParams> SkillHandle<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dies_strategy_protocol::{PlayerState, SkillStatus, PlayerId};
+    use dies_strategy_protocol::{PlayerId, PlayerState, SkillStatus};
 
     fn make_test_player() -> PlayerHandle {
         PlayerHandle::new(
@@ -219,12 +223,12 @@ mod tests {
     #[test]
     fn test_go_to_builder_basic() {
         let mut player = make_test_player();
-        
+
         // Create and drop builder
         {
             let _ = GoToBuilder::new(&mut player, Vector2::new(100.0, 200.0));
         }
-        
+
         let cmd = player.take_pending_command().unwrap();
         match cmd {
             SkillCommand::GoToPos { position, heading } => {
@@ -239,12 +243,12 @@ mod tests {
     #[test]
     fn test_go_to_builder_with_heading() {
         let mut player = make_test_player();
-        
+
         {
             let _ = GoToBuilder::new(&mut player, Vector2::new(100.0, 200.0))
                 .with_heading(Angle::from_radians(1.5));
         }
-        
+
         let cmd = player.take_pending_command().unwrap();
         match cmd {
             SkillCommand::GoToPos { heading, .. } => {
@@ -257,13 +261,13 @@ mod tests {
     #[test]
     fn test_go_to_builder_facing() {
         let mut player = make_test_player();
-        
+
         {
             // Position at (100, 0), facing (200, 0) -> heading should be 0
             let _ = GoToBuilder::new(&mut player, Vector2::new(100.0, 0.0))
                 .facing(Vector2::new(200.0, 0.0));
         }
-        
+
         let cmd = player.take_pending_command().unwrap();
         match cmd {
             SkillCommand::GoToPos { heading, .. } => {
@@ -278,10 +282,9 @@ mod tests {
         let mut handle = SkillHandle::new(PickupBallParams {
             target_heading: Angle::from_radians(0.0),
         });
-        
+
         handle.update_with(|p| p.target_heading = Angle::from_radians(1.0));
-        
+
         assert!((handle.params().target_heading.radians() - 1.0).abs() < 1e-6);
     }
 }
-

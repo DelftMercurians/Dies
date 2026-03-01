@@ -82,9 +82,9 @@ pub type StrategyFactory = fn() -> Box<dyn Strategy>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-    use dies_strategy_protocol::{GameState, PlayerState, WorldSnapshot};
     use dies_core::Angle;
+    use dies_strategy_protocol::{GameState, PlayerState, WorldSnapshot};
+    use std::collections::HashMap;
 
     struct TestStrategy {
         init_called: bool,
@@ -109,7 +109,7 @@ mod tests {
 
         fn update(&mut self, ctx: &mut TeamContext) {
             self.update_count += 1;
-            
+
             // Issue commands to all players
             for player in ctx.players() {
                 player.go_to(dies_strategy_protocol::Vector2::new(0.0, 0.0));
@@ -145,12 +145,12 @@ mod tests {
     #[test]
     fn test_strategy_lifecycle() {
         let mut strategy = TestStrategy::new();
-        
+
         // Should start uninitialized
         assert!(!strategy.init_called);
         assert_eq!(strategy.update_count, 0);
         assert!(!strategy.shutdown_called);
-        
+
         // Call init
         let world = World::new(WorldSnapshot {
             timestamp: 0.0,
@@ -166,15 +166,15 @@ mod tests {
         });
         strategy.init(&world);
         assert!(strategy.init_called);
-        
+
         // Call update
         let mut ctx = make_test_context();
         strategy.update(&mut ctx);
         assert_eq!(strategy.update_count, 1);
-        
+
         strategy.update(&mut ctx);
         assert_eq!(strategy.update_count, 2);
-        
+
         // Call shutdown
         strategy.shutdown();
         assert!(strategy.shutdown_called);
@@ -183,15 +183,15 @@ mod tests {
     #[test]
     fn test_default_implementations() {
         struct MinimalStrategy;
-        
+
         impl Strategy for MinimalStrategy {
             fn update(&mut self, _ctx: &mut TeamContext) {
                 // Do nothing
             }
         }
-        
+
         let mut strategy = MinimalStrategy;
-        
+
         // Default init and shutdown should not panic
         let world = World::new(WorldSnapshot {
             timestamp: 0.0,
@@ -209,4 +209,3 @@ mod tests {
         strategy.shutdown();
     }
 }
-

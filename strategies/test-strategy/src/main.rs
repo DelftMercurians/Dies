@@ -9,4 +9,3 @@ use test_strategy::TestStrategy;
 fn main() {
     run_strategy(TestStrategy::new);
 }
-

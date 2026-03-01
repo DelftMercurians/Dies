@@ -187,11 +187,7 @@ impl ExecutorTask {
                     ) => {
                         let vision_client = VisionClient::new(ssl_config).await;
                         if let Ok(vision_client) = vision_client {
-                            Ok(Executor::new_live(
-                                settings,
-                                vision_client,
-                                bs_handle,
-                            ))
+                            Ok(Executor::new_live(settings, vision_client, bs_handle))
                         } else if settings.allow_no_vision {
                             log::warn!("Starting executor with mock vision client");
                             Ok(Executor::new_live(

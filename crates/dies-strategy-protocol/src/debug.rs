@@ -125,12 +125,7 @@ impl DebugEntry {
     }
 
     /// Create a debug entry with a line shape.
-    pub fn line(
-        key: impl Into<String>,
-        start: Vector2,
-        end: Vector2,
-        color: DebugColor,
-    ) -> Self {
+    pub fn line(key: impl Into<String>, start: Vector2, end: Vector2, color: DebugColor) -> Self {
         Self::new(
             key,
             DebugValue::Shape(DebugShape::Line { start, end, color }),
@@ -231,8 +226,12 @@ mod tests {
 
     #[test]
     fn test_debug_entry_circle_fill_serialization() {
-        let entry =
-            DebugEntry::circle_fill("test.circle", Vector2::new(50.0, 50.0), 25.0, DebugColor::Blue);
+        let entry = DebugEntry::circle_fill(
+            "test.circle",
+            Vector2::new(50.0, 50.0),
+            25.0,
+            DebugColor::Blue,
+        );
 
         let encoded = bincode::serialize(&entry).unwrap();
         let decoded: DebugEntry = bincode::deserialize(&encoded).unwrap();
@@ -298,4 +297,3 @@ mod tests {
         }
     }
 }
-

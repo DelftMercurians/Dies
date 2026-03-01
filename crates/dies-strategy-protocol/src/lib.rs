@@ -39,4 +39,3 @@ pub use world::*;
 
 // Re-export commonly used types from dies-core for convenience
 pub use dies_core::{Angle, FieldGeometry, PlayerId, Vector2, Vector3};
-

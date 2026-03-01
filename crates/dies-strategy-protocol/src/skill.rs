@@ -255,4 +255,3 @@ mod tests {
         assert_eq!(SkillStatus::default(), SkillStatus::Idle);
     }
 }
-

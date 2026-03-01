@@ -10,10 +10,12 @@
 //! - **Continuous skills** (`go_to`, `dribble_to`): Call each frame, parameters update smoothly
 //! - **Discrete skills** (`pickup_ball`, `reflex_shoot`): Start once, return handles for monitoring
 
+use crate::skill_builders::{
+    DribbleBuilder, GoToBuilder, PickupBallParams, ReflexShootParams, SkillHandle,
+};
 use dies_core::Angle;
 use dies_strategy_protocol::{PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2};
 use std::collections::HashSet;
-use crate::skill_builders::{DribbleBuilder, GoToBuilder, SkillHandle, PickupBallParams, ReflexShootParams};
 
 /// Per-player control interface.
 ///
@@ -325,7 +327,8 @@ mod tests {
     fn test_go_to_with_heading() {
         let mut player = make_test_player();
 
-        player.go_to(Vector2::new(2000.0, 1000.0))
+        player
+            .go_to(Vector2::new(2000.0, 1000.0))
             .with_heading(Angle::from_radians(1.0));
 
         let cmd = player.take_pending_command();
@@ -399,4 +402,3 @@ mod tests {
         }
     }
 }
-

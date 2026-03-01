@@ -425,7 +425,10 @@ impl TeamController {
         world_data: &Arc<TeamData>,
         team_context: &TeamContext,
         active_robots: &[PlayerId],
-    ) -> (HashMap<PlayerId, PlayerControlInput>, HashMap<PlayerId, String>) {
+    ) -> (
+        HashMap<PlayerId, PlayerControlInput>,
+        HashMap<PlayerId, String>,
+    ) {
         let mut player_inputs = HashMap::new();
 
         for player_id in active_robots {
@@ -447,7 +450,9 @@ impl TeamController {
                 debug_prefix: format!("p{}", player_id),
             };
 
-            let input = self.skill_executor.process_command(*player_id, skill_cmd, ctx);
+            let input = self
+                .skill_executor
+                .process_command(*player_id, skill_cmd, ctx);
             player_inputs.insert(*player_id, input);
         }
 

@@ -11,8 +11,8 @@ use std::collections::HashSet;
 
 use dies_core::{Angle, PlayerData, SideAssignment, TeamColor, TeamData, Vector2};
 use dies_strategy_protocol::{
-    BallState, DebugEntry, DebugShape, DebugValue, Handicap, PlayerState,
-    PlayerId, SkillCommand, SkillStatus, WorldSnapshot,
+    BallState, DebugEntry, DebugShape, DebugValue, Handicap, PlayerId, PlayerState, SkillCommand,
+    SkillStatus, WorldSnapshot,
 };
 
 /// Handles coordinate transformation between world and strategy frames.
@@ -117,11 +117,8 @@ impl CoordinateTransformer {
 
     /// Convert a PlayerData to PlayerState (protocol type).
     fn convert_player_state(&self, player: &PlayerData, is_own_player: bool) -> PlayerState {
-        let handicaps: HashSet<Handicap> = player
-            .handicaps
-            .iter()
-            .map(|h| h.clone().into())
-            .collect();
+        let handicaps: HashSet<Handicap> =
+            player.handicaps.iter().map(|h| h.clone().into()).collect();
 
         PlayerState {
             id: player.id,
@@ -252,14 +249,14 @@ mod tests {
     fn test_transform_skill_command_go_to_pos() {
         let transformer =
             CoordinateTransformer::new(TeamColor::Blue, SideAssignment::BlueOnPositive);
-        
+
         let cmd = SkillCommand::GoToPos {
             position: Vector2::new(1000.0, 500.0),
             heading: Some(Angle::from_radians(0.0)),
         };
-        
+
         let transformed = transformer.transform_skill_command(&cmd);
-        
+
         match transformed {
             SkillCommand::GoToPos { position, heading } => {
                 assert_eq!(position, Vector2::new(-1000.0, 500.0));
@@ -274,14 +271,14 @@ mod tests {
     fn test_transform_debug_shape_cross() {
         let transformer =
             CoordinateTransformer::new(TeamColor::Blue, SideAssignment::BlueOnPositive);
-        
+
         let shape = DebugShape::Cross {
             center: Vector2::new(100.0, 50.0),
             color: DebugColor::Red,
         };
-        
+
         let transformed = transformer.transform_debug_shape(shape);
-        
+
         match transformed {
             DebugShape::Cross { center, color } => {
                 assert_eq!(center, Vector2::new(-100.0, 50.0));
@@ -291,4 +288,3 @@ mod tests {
         }
     }
 }
-

@@ -1474,10 +1474,9 @@ impl Simulation {
                     if distance < touch_threshold
                         && (closest_touching_player.is_none()
                             || distance < closest_touching_player.unwrap().2)
-                        {
-                            closest_touching_player =
-                                Some((player.id, player.team_color, distance));
-                        }
+                    {
+                        closest_touching_player = Some((player.id, player.team_color, distance));
+                    }
                 }
 
                 if let Some((id, team_color, _)) = closest_touching_player {
