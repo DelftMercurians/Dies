@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Dies is the RoboCup SSL (Small Size League) framework for the Delft Mercurians team. It controls 11v11 soccer robots (~0.18m diameter) on a 13.4m × 10.4m field. The system processes vision data, runs strategy logic, and sends commands to robots via an RF basestation.
+Dies is the RoboCup SSL (Small Size League) framework for the Delft Mercurians team. It controls 6v6 soccer robots (~0.18m diameter) on a 6m × 9m field. The system processes vision data, runs strategy logic, and sends commands to robots via an RF basestation.
 
 ## Build & Run
 
