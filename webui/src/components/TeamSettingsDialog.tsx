@@ -42,11 +42,11 @@ type Action =
       payload: boolean;
     }
   | {
-      type: "set_blue_script_path";
+      type: "set_blue_strategy";
       payload: string | null;
     }
   | {
-      type: "set_yellow_script_path";
+      type: "set_yellow_strategy";
       payload: string | null;
     }
   | {
@@ -72,12 +72,12 @@ const reducer = (state: State, action: Action): State => {
         yellowActive: action.payload,
         yellowScriptPath: action.payload ? state.yellowScriptPath : undefined,
       };
-    case "set_blue_script_path":
+    case "set_blue_strategy":
       return {
         ...state,
         blueScriptPath: action.payload ?? undefined,
       };
-    case "set_yellow_script_path":
+    case "set_yellow_strategy":
       return {
         ...state,
         yellowScriptPath: action.payload ?? undefined,
@@ -97,7 +97,6 @@ const TeamSettingsDialog: React.FC = () => {
   const { settings } = useExecutorSettings();
   const {
     setActiveTeams,
-    setTeamScriptPaths,
     setSideAssignment,
     setTeamConfiguration,
     swapTeamColors,
@@ -109,8 +108,8 @@ const TeamSettingsDialog: React.FC = () => {
   const initialState: State = {
     blueActive: settings?.team_configuration.blue_active ?? true,
     yellowActive: settings?.team_configuration.yellow_active ?? false,
-    blueScriptPath: settings?.team_configuration.blue_script_path,
-    yellowScriptPath: settings?.team_configuration.yellow_script_path,
+    blueScriptPath: settings?.team_configuration.blue_strategy,
+    yellowScriptPath: settings?.team_configuration.yellow_strategy,
     sideAssignment:
       settings?.team_configuration.side_assignment ??
       SideAssignment.YellowOnPositive,
@@ -126,8 +125,8 @@ const TeamSettingsDialog: React.FC = () => {
         payload: {
           blueActive: settings.team_configuration.blue_active,
           yellowActive: settings.team_configuration.yellow_active,
-          blueScriptPath: settings.team_configuration.blue_script_path,
-          yellowScriptPath: settings.team_configuration.yellow_script_path,
+          blueScriptPath: settings.team_configuration.blue_strategy,
+          yellowScriptPath: settings.team_configuration.yellow_strategy,
           sideAssignment: settings.team_configuration.side_assignment,
         },
       });
@@ -139,8 +138,8 @@ const TeamSettingsDialog: React.FC = () => {
     setTeamConfiguration({
       blue_active: state.blueActive,
       yellow_active: state.yellowActive,
-      blue_script_path: state.blueScriptPath,
-      yellow_script_path: state.yellowScriptPath,
+      blue_strategy: state.blueScriptPath,
+      yellow_strategy: state.yellowScriptPath,
       side_assignment: state.sideAssignment,
     });
     setOpen(false);
@@ -246,7 +245,7 @@ const TeamSettingsDialog: React.FC = () => {
                 <FilePathSelector
                   value={state.blueScriptPath || ""}
                   onChange={(path) =>
-                    dispatch({ type: "set_blue_script_path", payload: path })
+                    dispatch({ type: "set_blue_strategy", payload: path })
                   }
                   placeholder="Select script..."
                 />
@@ -275,7 +274,7 @@ const TeamSettingsDialog: React.FC = () => {
                 <FilePathSelector
                   value={state.yellowScriptPath || ""}
                   onChange={(path) =>
-                    dispatch({ type: "set_yellow_script_path", payload: path })
+                    dispatch({ type: "set_yellow_strategy", payload: path })
                   }
                   placeholder="Select script..."
                 />

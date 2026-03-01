@@ -54,6 +54,22 @@ export interface AutorefInfo {
 	kicked_ball?: AutorefKickedBall;
 }
 
+export interface AutorefKickedBallTeam {
+	/** The initial position [m] from which the ball was kicked */
+	pos: Vector2;
+	/** The initial velocity [m/s] with which the ball was kicked */
+	vel: Vector3;
+	/** The unix timestamp [s] when the kick was performed */
+	start_timestamp: number;
+	/** The predicted unix timestamp [s] when the ball comes to a stop */
+	stop_timestamp?: number;
+	/** The predicted position [m] at which the ball will come to a stop */
+	stop_pos?: Vector2;
+	/** The robot that kicked the ball */
+	robot_id: PlayerId;
+	we_kicked: boolean;
+}
+
 /** A struct to store the ball state from a single frame. */
 export interface BallData {
 	/**
