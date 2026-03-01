@@ -331,6 +331,7 @@ impl From<TrackedFrame> for AutorefInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[typeshare]
 pub struct AutorefKickedBallTeam {
     /// The initial position [m] from which the ball was kicked
     pub pos: Vector2,

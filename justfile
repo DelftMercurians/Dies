@@ -17,7 +17,7 @@ build:
 
 # Run dies + vite dev server
 webdev strategy=default_strategy:
-    cd webui && npm run dev &
+    cd webui && pnpm run dev &
     cargo build -p {{ strategy }}
     cargo run -- --strategy {{ strategy }}
 
@@ -26,4 +26,4 @@ webbuild:
     typeshare . --lang=typescript --output-file=webui/src/bindings.ts
     printf 'export type Vector2 = [number, number];\nexport type Vector3 = [number, number, number];\nexport type Duration = number;\nexport type HashSet<T> = Array<T>;\n' >> webui/src/bindings.ts
     sed -i.bak 's/data?: undefined//g' webui/src/bindings.ts && rm webui/src/bindings.ts.bak
-    cd webui && npm run build
+    cd webui && pnpm run build

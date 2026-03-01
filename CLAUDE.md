@@ -29,7 +29,7 @@ cargo test -p dies-world      # Single crate
 cargo test test_name          # Single test by name
 cargo fmt                     # Format
 cargo clippy                  # Lint
-cd webui && npm run tsc       # TypeScript type check
+cd webui && pnpm run tsc      # TypeScript type check
 ```
 
 ## Architecture
@@ -65,7 +65,7 @@ Strategies are separate binaries that implement the `Strategy` trait from `dies-
 
 ### Web UI
 
-React/TypeScript frontend in `webui/` (Vite + Tailwind). Backend is Axum with WebSocket in `dies-webui`. TypeScript bindings are generated via `typeshare`.
+React/TypeScript frontend in `webui/` (Vite + Tailwind), using **pnpm** as package manager. Backend is Axum with WebSocket in `dies-webui`. TypeScript bindings are generated via `typeshare`.
 
 ## Conventions
 
