@@ -53,7 +53,7 @@ const TeamIndicator: React.FC = () => {
             onClick={handleClick}
             className={cn(
               "h-5 px-2 flex items-center gap-0.5 border border-border-muted",
-              "text-[9px] font-semibold uppercase tracking-wider",
+              "text-sm font-semibold uppercase tracking-wider",
               "transition-colors hover:bg-bg-overlay",
               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan"
             )}

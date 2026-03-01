@@ -19,8 +19,6 @@ use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
-#[cfg(feature = "legacy-strategy")]
-mod behavior_tree;
 pub mod control;
 mod gc_client;
 mod handle;
@@ -29,31 +27,6 @@ pub mod strategy_host;
 
 pub use control::*;
 use control::{TeamController, Velocity};
-
-#[cfg(feature = "legacy-strategy")]
-pub use crate::behavior_tree::Strategy;
-
-// Export behavior tree API for native strategies (only with legacy-strategy feature)
-#[cfg(feature = "legacy-strategy")]
-pub mod behavior_tree_api {
-    // Re-export core types
-    pub use crate::behavior_tree::{
-        Argument, BehaviorTree, BtContext, GameContext, RobotSituation, RoleAssignmentProblem,
-        RoleAssignmentSolver, RoleBuilder, Strategy,
-    };
-
-    // Re-export node types
-    pub use crate::behavior_tree::bt_node::*;
-
-    // Re-export callback types
-    pub use crate::behavior_tree::BtCallback;
-
-    // Re-export skills
-    pub use crate::skills::{Skill, SkillCtx, SkillProgress, SkillResult};
-
-    // Re-export role assignment types
-    pub use crate::behavior_tree::role_assignment::Role;
-}
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 20); // 20 Hz
@@ -72,10 +45,6 @@ struct TeamMap {
     blue_team: Option<TeamController>,
     yellow_team: Option<TeamController>,
     side_assignment: SideAssignment,
-    #[cfg(feature = "legacy-strategy")]
-    blue_script_path: Option<String>,
-    #[cfg(feature = "legacy-strategy")]
-    yellow_script_path: Option<String>,
 }
 
 impl TeamMap {
@@ -84,46 +53,21 @@ impl TeamMap {
             blue_team: None,
             yellow_team: None,
             side_assignment,
-            #[cfg(feature = "legacy-strategy")]
-            blue_script_path: None,
-            #[cfg(feature = "legacy-strategy")]
-            yellow_script_path: None,
         }
     }
 
-    /// Activate a team with a legacy strategy (behavior tree mode).
-    #[cfg(feature = "legacy-strategy")]
     fn activate_team(
         &mut self,
         team_color: TeamColor,
         settings: &ExecutorSettings,
-        strategy: Strategy,
     ) {
         if team_color == TeamColor::Blue {
             if self.blue_team.is_none() {
-                self.blue_team = Some(TeamController::new(settings, TeamColor::Blue, strategy));
+                self.blue_team = Some(TeamController::new(settings, TeamColor::Blue));
             }
         } else {
             if self.yellow_team.is_none() {
-                self.yellow_team = Some(TeamController::new(settings, TeamColor::Yellow, strategy));
-            }
-        }
-    }
-
-    /// Activate a team in strategy-controlled mode (no legacy strategy).
-    #[cfg(not(feature = "legacy-strategy"))]
-    fn activate_team_strategy_controlled(
-        &mut self,
-        team_color: TeamColor,
-        settings: &ExecutorSettings,
-    ) {
-        if team_color == TeamColor::Blue {
-            if self.blue_team.is_none() {
-                self.blue_team = Some(TeamController::new_strategy_controlled(settings, TeamColor::Blue));
-            }
-        } else {
-            if self.yellow_team.is_none() {
-                self.yellow_team = Some(TeamController::new_strategy_controlled(settings, TeamColor::Yellow));
+                self.yellow_team = Some(TeamController::new(settings, TeamColor::Yellow));
             }
         }
     }
@@ -361,6 +305,7 @@ impl PlayerOverrideState {
 /// simulation. Now supports team-agnostic operation with 0, 1, or 2 active team controllers.
 pub struct Executor {
     tracker: WorldTracker,
+    strategy_host: strategy_host::StrategyHost,
     team_controllers: TeamMap,
     gc_client: GcClient,
     environment: Option<Environment>,
@@ -376,13 +321,11 @@ pub struct Executor {
 }
 
 impl Executor {
-    /// Create a new executor with legacy strategy (behavior tree mode).
-    #[cfg(feature = "legacy-strategy")]
+    /// Create a new executor.
     pub fn new_live(
         settings: ExecutorSettings,
         ssl_client: VisionClient,
         bs_client: BasestationHandle,
-        strategy: Strategy,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
@@ -390,22 +333,37 @@ impl Executor {
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
         let (script_error_tx, _) = broadcast::channel(16);
 
+        let mut strategy_host = strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
+            strategies_dir: std::path::PathBuf::from("target/debug"),
+            blue_strategy: settings.team_configuration.blue_strategy.clone(),
+            yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
+            side_assignment: settings.team_configuration.side_assignment,
+        });
+        // Start configured strategies
+        if let Some(ref name) = settings.team_configuration.blue_strategy {
+            strategy_host.set_strategy(TeamColor::Blue, Some(name.clone()));
+        }
+        if let Some(ref name) = settings.team_configuration.yellow_strategy {
+            strategy_host.set_strategy(TeamColor::Yellow, Some(name.clone()));
+        }
+
         // Use team configuration from settings
         let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
 
         // Activate teams based on configuration
         let mut controlled_teams = Vec::new();
         if settings.team_configuration.blue_active {
-            team_controllers.activate_team(TeamColor::Blue, &settings, strategy);
+            team_controllers.activate_team(TeamColor::Blue, &settings);
             controlled_teams.push(TeamColor::Blue);
         }
         if settings.team_configuration.yellow_active {
-            team_controllers.activate_team(TeamColor::Yellow, &settings, strategy);
+            team_controllers.activate_team(TeamColor::Yellow, &settings);
             controlled_teams.push(TeamColor::Yellow);
         }
 
         Self {
             tracker: WorldTracker::new(&settings, &controlled_teams, settings.allow_no_vision),
+            strategy_host,
             team_controllers,
             gc_client: GcClient::new(),
             environment: Some(Environment::Live {
@@ -424,101 +382,7 @@ impl Executor {
         }
     }
 
-    /// Create a new executor in strategy-controlled mode (no legacy strategy).
-    #[cfg(not(feature = "legacy-strategy"))]
-    pub fn new_live(
-        settings: ExecutorSettings,
-        ssl_client: VisionClient,
-        bs_client: BasestationHandle,
-    ) -> Self {
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let (update_tx, _) = broadcast::channel(16);
-        let (paused_tx, _) = watch::channel(false);
-        let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
-        let (script_error_tx, _) = broadcast::channel(16);
-
-        // Use team configuration from settings
-        let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
-
-        // Activate teams based on configuration
-        let mut controlled_teams = Vec::new();
-        if settings.team_configuration.blue_active {
-            team_controllers.activate_team_strategy_controlled(TeamColor::Blue, &settings);
-            controlled_teams.push(TeamColor::Blue);
-        }
-        if settings.team_configuration.yellow_active {
-            team_controllers.activate_team_strategy_controlled(TeamColor::Yellow, &settings);
-            controlled_teams.push(TeamColor::Yellow);
-        }
-
-        Self {
-            tracker: WorldTracker::new(&settings, &controlled_teams, settings.allow_no_vision),
-            team_controllers,
-            gc_client: GcClient::new(),
-            environment: Some(Environment::Live {
-                ssl_client,
-                bs_client,
-            }),
-            manual_override: HashMap::new(),
-            command_tx,
-            command_rx,
-            update_tx,
-            paused_tx,
-            info_channel_rx,
-            info_channel_tx,
-            script_error_tx,
-            settings,
-        }
-    }
-
-    /// Create a new simulation executor with legacy strategy (behavior tree mode).
-    #[cfg(feature = "legacy-strategy")]
-    pub fn new_simulation(
-        settings: ExecutorSettings,
-        mut simulator: Simulation,
-        strategy: Strategy,
-    ) -> Self {
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let (update_tx, _) = broadcast::channel(16);
-        let (paused_tx, _) = watch::channel(false);
-        let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
-        let (script_error_tx, _) = broadcast::channel(16);
-
-        // Use team configuration from settings
-        let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
-
-        // Activate teams based on configuration
-        let mut controlled_teams = Vec::new();
-        if settings.team_configuration.blue_active {
-            team_controllers.activate_team(TeamColor::Blue, &settings, strategy);
-            controlled_teams.push(TeamColor::Blue);
-        }
-        if settings.team_configuration.yellow_active {
-            team_controllers.activate_team(TeamColor::Yellow, &settings, strategy);
-            controlled_teams.push(TeamColor::Yellow);
-        }
-
-        simulator.set_controlled_teams(&controlled_teams);
-
-        Self {
-            tracker: WorldTracker::new(&settings, &controlled_teams, settings.allow_no_vision),
-            team_controllers,
-            gc_client: GcClient::new(),
-            environment: Some(Environment::Simulation { simulator }),
-            manual_override: HashMap::new(),
-            command_tx,
-            command_rx,
-            update_tx,
-            paused_tx,
-            info_channel_rx,
-            info_channel_tx,
-            script_error_tx,
-            settings,
-        }
-    }
-
-    /// Create a new simulation executor in strategy-controlled mode (no legacy strategy).
-    #[cfg(not(feature = "legacy-strategy"))]
+    /// Create a new simulation executor.
     pub fn new_simulation(
         settings: ExecutorSettings,
         mut simulator: Simulation,
@@ -529,17 +393,31 @@ impl Executor {
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
         let (script_error_tx, _) = broadcast::channel(16);
 
+        let mut strategy_host = strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
+            strategies_dir: std::path::PathBuf::from("target/debug"),
+            blue_strategy: settings.team_configuration.blue_strategy.clone(),
+            yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
+            side_assignment: settings.team_configuration.side_assignment,
+        });
+        // Start configured strategies
+        if let Some(ref name) = settings.team_configuration.blue_strategy {
+            strategy_host.set_strategy(TeamColor::Blue, Some(name.clone()));
+        }
+        if let Some(ref name) = settings.team_configuration.yellow_strategy {
+            strategy_host.set_strategy(TeamColor::Yellow, Some(name.clone()));
+        }
+
         // Use team configuration from settings
         let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
 
         // Activate teams based on configuration
         let mut controlled_teams = Vec::new();
         if settings.team_configuration.blue_active {
-            team_controllers.activate_team_strategy_controlled(TeamColor::Blue, &settings);
+            team_controllers.activate_team(TeamColor::Blue, &settings);
             controlled_teams.push(TeamColor::Blue);
         }
         if settings.team_configuration.yellow_active {
-            team_controllers.activate_team_strategy_controlled(TeamColor::Yellow, &settings);
+            team_controllers.activate_team(TeamColor::Yellow, &settings);
             controlled_teams.push(TeamColor::Yellow);
         }
 
@@ -547,6 +425,7 @@ impl Executor {
 
         Self {
             tracker: WorldTracker::new(&settings, &controlled_teams, settings.allow_no_vision),
+            strategy_host,
             team_controllers,
             gc_client: GcClient::new(),
             environment: Some(Environment::Simulation { simulator }),
@@ -723,6 +602,7 @@ impl Executor {
             }
         }
 
+        self.strategy_host.shutdown();
         Ok(())
     }
 
@@ -809,6 +689,7 @@ impl Executor {
                 }
             }
         }
+        self.strategy_host.shutdown();
         Ok(())
     }
 
@@ -885,6 +766,7 @@ impl Executor {
             ControlMsg::SetSideAssignment(side_assignment) => {
                 self.team_controllers.side_assignment = side_assignment;
                 self.tracker.set_side_assignment(side_assignment);
+                self.strategy_host.set_side_assignment(side_assignment);
             }
             ControlMsg::SetTeamScriptPaths { .. } => {
                 log::warn!("Setting team script paths is not supported mid run");
@@ -932,6 +814,7 @@ impl Executor {
                 };
                 self.tracker
                     .set_side_assignment(self.team_controllers.side_assignment);
+                self.strategy_host.set_side_assignment(self.team_controllers.side_assignment);
             }
             ControlMsg::ScriptError(_) => {
                 // Script errors are sent from executor to UI, not handled by executor
@@ -958,6 +841,48 @@ impl Executor {
         };
         if let Err(err) = self.update_tx.send(update) {
             log::error!("Failed to broadcast world update: {}", err);
+        }
+
+        // Collect skill statuses from team controllers and feed to strategy host
+        if let Some(ref controller) = self.team_controllers.blue_team {
+            let statuses = controller.get_skill_statuses();
+            self.strategy_host.update_skill_statuses(TeamColor::Blue, statuses);
+        }
+        if let Some(ref controller) = self.team_controllers.yellow_team {
+            let statuses = controller.get_skill_statuses();
+            self.strategy_host.update_skill_statuses(TeamColor::Yellow, statuses);
+        }
+
+        // Get team data for strategy host
+        let blue_team_data = if self.team_controllers.blue_team.is_some() {
+            Some(world_data.get_team_data(TeamColor::Blue))
+        } else {
+            None
+        };
+        let yellow_team_data = if self.team_controllers.yellow_team.is_some() {
+            Some(world_data.get_team_data(TeamColor::Yellow))
+        } else {
+            None
+        };
+
+        // Run strategy host
+        let frame_output = self.strategy_host.update(
+            blue_team_data.as_ref(),
+            yellow_team_data.as_ref(),
+        );
+
+        // Feed strategy output to team controllers
+        if let Some(ref mut controller) = self.team_controllers.blue_team {
+            controller.set_strategy_input(StrategyInput {
+                skill_commands: frame_output.blue_commands,
+                player_roles: frame_output.blue_roles,
+            });
+        }
+        if let Some(ref mut controller) = self.team_controllers.yellow_team {
+            controller.set_strategy_input(StrategyInput {
+                skill_commands: frame_output.yellow_commands,
+                player_roles: frame_output.yellow_roles,
+            });
         }
 
         let manual_override = self

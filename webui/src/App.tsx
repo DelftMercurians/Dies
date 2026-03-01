@@ -166,7 +166,7 @@ const App: React.FC = () => {
       {/* Statusbar - simplified, most status now in toolbar */}
       <div
         className={cn(
-          "w-full text-[10px] px-3 py-0.5 select-none flex justify-between items-center",
+          "w-full text-sm px-3 py-0.5 select-none flex justify-between items-center",
           "bg-bg-surface border-t border-border-subtle font-medium uppercase tracking-wider",
           executorStatus.type === "RunningExecutor" &&
             worldState.status === "connected" &&

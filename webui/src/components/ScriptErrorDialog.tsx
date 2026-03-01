@@ -40,20 +40,20 @@ export const ScriptErrorDialog: React.FC<ScriptErrorDialogProps> = ({
           {isSyntaxError && error.type === "Syntax" && (
             <>
               <div>
-                <label className="text-sm font-medium text-gray-400">
+                <label className="text-sm font-medium text-text-dim">
                   Script File:
                 </label>
-                <p className="text-sm font-mono bg-gray-800 p-2 rounded">
+                <p className="font-mono bg-bg-elevated p-2">
                   {error.data.script_path}
                 </p>
               </div>
 
               {(error.data.line || error.data.column) && (
                 <div>
-                  <label className="text-sm font-medium text-gray-400">
+                  <label className="text-sm font-medium text-text-dim">
                     Location:
                   </label>
-                  <p className="text-sm">
+                  <p>
                     {error.data.line && `Line ${error.data.line}`}
                     {error.data.line && error.data.column && ", "}
                     {error.data.column && `Column ${error.data.column}`}
@@ -62,10 +62,10 @@ export const ScriptErrorDialog: React.FC<ScriptErrorDialogProps> = ({
               )}
 
               <div>
-                <label className="text-sm font-medium text-gray-400">
+                <label className="text-sm font-medium text-text-dim">
                   Error Message:
                 </label>
-                <div className="text-sm bg-red-900/20 border border-red-500/30 p-3 rounded font-mono whitespace-pre-wrap">
+                <div className="bg-red-900/20 border border-red-500/30 p-3 font-mono whitespace-pre-wrap">
                   {error.data.message}
                 </div>
               </div>
@@ -75,38 +75,38 @@ export const ScriptErrorDialog: React.FC<ScriptErrorDialogProps> = ({
           {!isSyntaxError && error.type === "Runtime" && (
             <>
               <div>
-                <label className="text-sm font-medium text-gray-400">
+                <label className="text-sm font-medium text-text-dim">
                   Script File:
                 </label>
-                <p className="text-sm font-mono bg-gray-800 p-2 rounded">
+                <p className="font-mono bg-bg-elevated p-2">
                   {error.data.script_path}
                 </p>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-400">
+                <label className="text-sm font-medium text-text-dim">
                   Function:
                 </label>
-                <p className="text-sm font-mono bg-gray-800 p-2 rounded">
+                <p className="font-mono bg-bg-elevated p-2">
                   {error.data.function_name}
                 </p>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-400">
+                <label className="text-sm font-medium text-text-dim">
                   Team & Player:
                 </label>
-                <p className="text-sm">
+                <p>
                   Team: {error.data.team_color}
                   {error.data.player_id && `, Player: ${error.data.player_id}`}
                 </p>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-400">
+                <label className="text-sm font-medium text-text-dim">
                   Error Message:
                 </label>
-                <div className="text-sm bg-red-900/20 border border-red-500/30 p-3 rounded font-mono whitespace-pre-wrap">
+                <div className="bg-red-900/20 border border-red-500/30 p-3 font-mono whitespace-pre-wrap">
                   {error.data.message}
                 </div>
               </div>

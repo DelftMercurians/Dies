@@ -33,6 +33,8 @@ pub struct UiConfig {
     pub auto_start: bool,
     pub controlled_teams: ControlledTeam,
     pub calibration_mode: bool,
+    /// IPC strategy binary name (None = no strategy).
+    pub strategy: Option<String>,
 }
 
 #[derive(Debug, Clone)]

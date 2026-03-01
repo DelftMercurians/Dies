@@ -20,9 +20,9 @@ export interface InputProps
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, inputSize = "default", ...props }, ref) => {
     const sizeClasses = {
-      default: "h-6 px-2 py-1 text-[11px]",
-      sm: "h-5 px-1.5 py-0.5 text-[10px]",
-      xs: "h-4 px-1 py-0.5 text-[9px]",
+      default: "h-6 px-2 py-1",
+      sm: "h-5 px-1.5 py-0.5 text-sm",
+      xs: "h-4 px-1 py-0.5 text-sm",
     };
 
     return (
@@ -39,7 +39,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           // Disabled state
           "disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-bg-surface",
           // File input
-          "file:border-0 file:bg-transparent file:text-[10px] file:font-medium file:text-text-dim",
+          "file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-text-dim",
           // Size
           sizeClasses[inputSize],
           className

@@ -210,7 +210,7 @@ const BehaviorTreeView: React.FC<BehaviorTreeViewProps> = ({
               textAnchor="middle"
               dominantBaseline="middle"
               fill="white"
-              style={{ fontSize: "10px", fontWeight: "bold" }}
+              style={{ fontSize: "12px", fontWeight: "bold" }}
             >
               {node.node_type}
             </text>
@@ -222,7 +222,7 @@ const BehaviorTreeView: React.FC<BehaviorTreeViewProps> = ({
               textAnchor="middle"
               dominantBaseline="middle"
               fill="white"
-              style={{ fontSize: "12px", fontWeight: "bold" }}
+              style={{ fontSize: "14px", fontWeight: "bold" }}
             >
               <tspan>
                 {node.name.length > 28
@@ -239,7 +239,7 @@ const BehaviorTreeView: React.FC<BehaviorTreeViewProps> = ({
                 textAnchor="middle"
                 dominantBaseline="middle"
                 fill={node.is_active ? "#d1fae5" : "#d1d5db"}
-                style={{ fontSize: "10px" }}
+                style={{ fontSize: "12px" }}
               >
                 <tspan>
                   {node.internal_state.length > 32
@@ -257,7 +257,7 @@ const BehaviorTreeView: React.FC<BehaviorTreeViewProps> = ({
                 textAnchor="middle"
                 dominantBaseline="middle"
                 fill={node.is_active ? "#a7f3d0" : "#9ca3af"}
-                style={{ fontSize: "9px" }}
+                style={{ fontSize: "12px" }}
               >
                 <tspan>
                   {node.additional_info.length > 35

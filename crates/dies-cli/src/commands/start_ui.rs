@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use dies_logger::AsyncProtobufLogger;
-use dies_strategy::StrategyDef;
 use log::{LevelFilter, Log};
 use tokio::sync::broadcast;
 
@@ -28,7 +27,6 @@ pub async fn start_ui(args: Cli) -> Result<()> {
 
     let (stop_tx, stop_rx) = broadcast::channel(1);
     let main_task = tokio::spawn(async move {
-        let strategy = StrategyDef::from_str(&args.strategy);
         let conf = match args.into_ui().await {
             Ok(conf) => conf,
             Err(err) => {
@@ -36,7 +34,7 @@ pub async fn start_ui(args: Cli) -> Result<()> {
                 return;
             }
         };
-        dies_webui::start(conf, stop_rx, strategy.get()).await;
+        dies_webui::start(conf, stop_rx).await;
     });
 
     tokio::signal::ctrl_c()

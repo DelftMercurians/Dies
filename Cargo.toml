@@ -13,9 +13,10 @@ members = [
     "crates/dies-webui",
     "crates/dies-world",
     "crates/dies-logger",
-    "crates/dies-strategy",
     # Strategy crates
     "strategies/test-strategy",
+    "strategies/concerto",
+    "strategies/v0",
 ]
 package.edition = "2021"
 resolver = "2"

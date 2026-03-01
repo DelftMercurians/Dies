@@ -1,0 +1,20 @@
+[package]
+name = "concerto"
+version = "0.1.0"
+edition = "2021"
+description = "Concerto strategy prototype — Formation + Planner + Driver vertical slice"
+
+[[bin]]
+name = "concerto"
+path = "src/main.rs"
+
+[lib]
+name = "concerto"
+path = "src/lib.rs"
+
+[dependencies]
+dies-strategy-api = { version = "0.1.0", path = "../../crates/dies-strategy-api" }
+dies-strategy-runner = { version = "0.1.0", path = "../../crates/dies-strategy-runner" }
+dies-strategy-protocol = { version = "0.1.0", path = "../../crates/dies-strategy-protocol" }
+dies-core = { version = "0.1.0", path = "../../crates/dies-core" }
+tracing = "0.1"

@@ -137,7 +137,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
   if (!allSettings)
     return (
       <div className={`space-y-6 ${className}`}>
-        <h1 className="text-2xl font-bold mb-4">Controller Settings</h1>
+        <h1 className="text-lg font-bold mb-4">Controller Settings</h1>
       </div>
     );
 
@@ -182,7 +182,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
 
           return (
             <div key={key} className="space-y-2">
-              <Label htmlFor={key} className="text-sm font-medium">
+              <Label htmlFor={key} className="font-medium">
                 {key
                   .replace(/_/g, " ")
                   .replace(/\b\w/g, (l) => l.toUpperCase())}
@@ -225,7 +225,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
                         className="w-24"
                       />
                       {unit ? (
-                        <span className="text-sm text-gray-500 ml-2">
+                        <span className="text-sm text-text-muted ml-2">
                           {unit}
                         </span>
                       ) : null}

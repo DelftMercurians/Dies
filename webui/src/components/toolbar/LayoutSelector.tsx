@@ -103,7 +103,7 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => 
   return (
     <>
       <Select value={currentLayoutName} onValueChange={handleLayoutChange}>
-        <SelectTrigger className="h-5 w-[100px] text-[9px] font-medium uppercase tracking-wider border-border-muted bg-transparent">
+        <SelectTrigger className="h-5 w-[100px] text-sm font-medium uppercase tracking-wider border-border-muted bg-transparent">
           <SelectValue placeholder="Layout" />
         </SelectTrigger>
         <SelectContent>
@@ -212,11 +212,11 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => 
                 >
                   <div className="flex items-center gap-2">
                     <Layout className="h-4 w-4 text-text-dim" />
-                    <span className="text-[11px] font-medium uppercase tracking-wider">
+                    <span className="font-medium uppercase tracking-wider">
                       {name}
                     </span>
                     {name === currentLayoutName && (
-                      <span className="text-[9px] text-accent-cyan">(active)</span>
+                      <span className="text-sm text-accent-cyan">(active)</span>
                     )}
                   </div>
                   {name !== "default" && (

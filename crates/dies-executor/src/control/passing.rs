@@ -1,9 +1,6 @@
 use dies_core::{Angle, FieldGeometry, PlayerData, PlayerId, TeamData, Vector2};
 use std::sync::Arc;
 
-#[cfg(feature = "legacy-strategy")]
-use crate::behavior_tree::RobotSituation;
-
 #[derive(Clone, Debug)]
 pub enum ShootTarget {
     Goal(Vector2),
@@ -94,26 +91,6 @@ impl PassingStore {
         let mut copy = self.clone();
         copy.player_id = other_id;
         copy
-    }
-}
-
-#[cfg(feature = "legacy-strategy")]
-impl From<RobotSituation> for PassingStore {
-    fn from(value: RobotSituation) -> Self {
-        PassingStore {
-            player_id: value.player_id,
-            world: value.world,
-        }
-    }
-}
-
-#[cfg(feature = "legacy-strategy")]
-impl<'a> From<&'a RobotSituation> for PassingStore {
-    fn from(value: &'a RobotSituation) -> Self {
-        PassingStore {
-            player_id: value.player_id,
-            world: value.world.clone(),
-        }
     }
 }
 

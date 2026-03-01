@@ -83,7 +83,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
   if (worldState.status !== "connected") {
     return (
       <div className={cn("p-2 bg-bg-surface text-text-std", className)}>
-        <div className="text-center text-text-muted text-[10px]">
+        <div className="text-center text-text-muted text-sm">
           Waiting for world state...
         </div>
       </div>
@@ -128,7 +128,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
               );
             })
           ) : (
-            <div className="text-center text-text-muted text-[10px] p-4">
+            <div className="text-center text-text-muted text-sm p-4">
               No players in world state.
             </div>
           )}
@@ -204,7 +204,7 @@ const PlayerCard: FC<PlayerCardProps> = ({
     >
       <CardContent className="px-2 py-1.5">
         <div className="flex justify-between items-center mb-1">
-          <h3 className="text-[11px] font-semibold text-text-bright">
+          <h3 className="font-semibold text-text-bright">
             Robot {player.id}
           </h3>
           {isManual && (
@@ -213,7 +213,7 @@ const PlayerCard: FC<PlayerCardProps> = ({
         </div>
 
         {/* Role and Skill */}
-        <div className="text-[9px] mb-1 flex gap-1">
+        <div className="text-sm mb-1 flex gap-1">
           {role && (
             <Badge variant="team-blue">{role}</Badge>
           )}
@@ -223,7 +223,7 @@ const PlayerCard: FC<PlayerCardProps> = ({
         </div>
 
         {/* Status indicators row */}
-        <div className="flex items-center gap-3 text-[9px] text-text-dim mb-1">
+        <div className="flex items-center gap-3 text-sm text-text-dim mb-1">
           {/* Basestation status */}
           <div className="flex items-center gap-1">
             <span>BS:</span>
@@ -269,7 +269,7 @@ const PlayerCard: FC<PlayerCardProps> = ({
         </div>
 
         {/* Position */}
-        <div className="text-[9px] flex items-center gap-2 text-text-dim">
+        <div className="text-sm flex items-center gap-2 text-text-dim">
           <span>Pos:</span>
           <span className="text-text-std">
             ({player.position[0].toFixed(0)}, {player.position[1].toFixed(0)})

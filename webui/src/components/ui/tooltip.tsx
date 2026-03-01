@@ -32,7 +32,7 @@ const TooltipContent = React.forwardRef<
       className={cn(
         "z-50 overflow-hidden",
         // Sharp corners, elevated bg, std border
-        "border border-border-std bg-bg-elevated px-2 py-1 text-[10px] text-text-std",
+        "border border-border-std bg-bg-elevated px-2 py-1 text-sm text-text-std",
         // Animations
         "animate-in fade-in-0 zoom-in-95",
         "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",

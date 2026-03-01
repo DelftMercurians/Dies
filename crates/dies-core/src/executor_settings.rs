@@ -131,6 +131,10 @@ pub struct TeamConfiguration {
     pub yellow_script_path: Option<String>,
     /// Which team defends the positive x side
     pub side_assignment: SideAssignment,
+    /// IPC strategy binary name for blue team (None = no strategy)
+    pub blue_strategy: Option<String>,
+    /// IPC strategy binary name for yellow team (None = no strategy)
+    pub yellow_strategy: Option<String>,
 }
 
 impl Default for TeamConfiguration {
@@ -141,6 +145,8 @@ impl Default for TeamConfiguration {
             blue_script_path: None,
             yellow_script_path: None,
             side_assignment: SideAssignment::YellowOnPositive,
+            blue_strategy: None,
+            yellow_strategy: None,
         }
     }
 }

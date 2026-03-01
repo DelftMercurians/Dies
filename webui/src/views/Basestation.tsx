@@ -54,7 +54,7 @@ const Basestation: FC<{
             />
           ))
         ) : (
-          <div className="text-center text-text-muted text-[10px] p-4">
+          <div className="text-center text-text-muted text-sm p-4">
             No robots connected
           </div>
         )}
@@ -89,7 +89,7 @@ const StatusIndicator: FC<{
               : "bg-text-muted"
           }`}
         />
-        <span className="text-[9px]">{label}</span>
+        <span className="text-sm">{label}</span>
       </div>
     </TooltipTrigger>
 
@@ -120,7 +120,7 @@ const PlayerStatus: FC<{
           <div className="flex flex-row gap-3 items-center">
             <h3
               onClick={onClick}
-              className="text-[11px] font-semibold cursor-pointer text-text-bright hover:text-accent-cyan"
+              className="font-semibold cursor-pointer text-text-bright hover:text-accent-cyan"
             >
               Robot {player.id}
             </h3>
@@ -138,7 +138,7 @@ const PlayerStatus: FC<{
             open={isMotorsExpanded}
             onOpenChange={setIsMotorsExpanded}
           >
-            <CollapsibleTrigger className="flex items-center space-x-1 text-[10px] text-text-dim hover:text-text-std">
+            <CollapsibleTrigger className="flex items-center space-x-1 text-sm text-text-dim hover:text-text-std">
               <span>Motors</span>
               {isMotorsExpanded ? (
                 <ChevronUp size={12} />
@@ -165,7 +165,7 @@ const PlayerStatus: FC<{
             open={isSensorExpanded}
             onOpenChange={setIsSensorExpanded}
           >
-            <CollapsibleTrigger className="flex items-center space-x-1 text-[10px] text-text-dim hover:text-text-std">
+            <CollapsibleTrigger className="flex items-center space-x-1 text-sm text-text-dim hover:text-text-std">
               <span>Sensors</span>
               {isSensorExpanded ? (
                 <ChevronUp size={12} />

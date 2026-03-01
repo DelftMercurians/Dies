@@ -13,12 +13,12 @@ import { cn } from "@/lib/utils";
  * - Optional uppercase variant
  */
 const labelVariants = cva(
-  "text-[11px] font-medium leading-none text-text-dim peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
+  "font-medium leading-none text-text-dim peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
   {
     variants: {
       variant: {
         default: "",
-        uppercase: "text-[10px] uppercase tracking-wider",
+        uppercase: "text-sm uppercase tracking-wider",
       },
     },
     defaultVariants: {

@@ -50,7 +50,7 @@ const PrimaryTeamSelector: React.FC<PrimaryTeamSelectorProps> = () => {
           >
             {team.color}
           </Badge>
-          <span className="text-[10px]">{team.name}</span>
+          <span className="text-sm">{team.name}</span>
         </ToggleGroupItem>
       ))}
     </ToggleGroup>

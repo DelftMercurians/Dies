@@ -32,9 +32,9 @@ const toggleVariants = cva(
           "border border-border-muted bg-transparent hover:border-border-std data-[state=on]:border-border-std",
       },
       size: {
-        default: "h-6 px-2 text-[10px]",
-        sm: "h-5 px-1.5 text-[9px]",
-        lg: "h-7 px-3 text-[11px]",
+        default: "h-6 px-2 text-sm",
+        sm: "h-5 px-1.5 text-sm",
+        lg: "h-7 px-3",
         icon: "h-6 w-6",
         "icon-sm": "h-5 w-5",
       },

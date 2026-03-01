@@ -35,7 +35,7 @@ const ContextMenuSubTrigger = React.forwardRef<
   <ContextMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      "flex cursor-default select-none items-center px-2 py-1 text-[11px] outline-none",
+      "flex cursor-default select-none items-center px-2 py-1 outline-none",
       "focus:bg-bg-overlay focus:text-text-bright",
       "data-[state=open]:bg-bg-overlay data-[state=open]:text-text-bright",
       inset && "pl-6",
@@ -103,7 +103,7 @@ const ContextMenuItem = React.forwardRef<
   <ContextMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center px-2 py-1 text-[11px] outline-none",
+      "relative flex cursor-default select-none items-center px-2 py-1 outline-none",
       "focus:bg-bg-overlay focus:text-text-bright",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       inset && "pl-6",
@@ -121,7 +121,7 @@ const ContextMenuCheckboxItem = React.forwardRef<
   <ContextMenuPrimitive.CheckboxItem
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center py-1 pl-6 pr-2 text-[11px] outline-none",
+      "relative flex cursor-default select-none items-center py-1 pl-6 pr-2 outline-none",
       "focus:bg-bg-overlay focus:text-text-bright",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className
@@ -147,7 +147,7 @@ const ContextMenuRadioItem = React.forwardRef<
   <ContextMenuPrimitive.RadioItem
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center py-1 pl-6 pr-2 text-[11px] outline-none",
+      "relative flex cursor-default select-none items-center py-1 pl-6 pr-2 outline-none",
       "focus:bg-bg-overlay focus:text-text-bright",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className
@@ -173,7 +173,7 @@ const ContextMenuLabel = React.forwardRef<
   <ContextMenuPrimitive.Label
     ref={ref}
     className={cn(
-      "px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-dim",
+      "px-2 py-1 text-sm font-semibold uppercase tracking-wider text-text-dim",
       inset && "pl-6",
       className
     )}
@@ -201,7 +201,7 @@ const ContextMenuShortcut = ({
   return (
     <span
       className={cn(
-        "ml-auto text-[9px] tracking-widest text-text-muted",
+        "ml-auto text-sm tracking-widest text-text-muted",
         className
       )}
       {...props}

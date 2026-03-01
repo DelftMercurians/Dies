@@ -63,8 +63,8 @@ const tabsTriggerVariants = cva(
   {
     variants: {
       size: {
-        default: "px-3 h-6 text-[10px]",
-        sm: "px-2 h-5 text-[9px]",
+        default: "px-3 h-6 text-sm",
+        sm: "px-2 h-5 text-sm",
         xs: "px-1.5 h-4 text-[8px]",
       },
     },

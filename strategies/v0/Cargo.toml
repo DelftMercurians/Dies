@@ -1,0 +1,21 @@
+[package]
+name = "v0-strategy"
+version = "0.1.0"
+edition = "2021"
+description = "V0 strategy — stub for porting legacy behavior tree strategy to IPC"
+
+[[bin]]
+name = "v0-strategy"
+path = "src/main.rs"
+
+[lib]
+name = "v0_strategy"
+path = "src/lib.rs"
+
+[dependencies]
+dies-strategy-api = { version = "0.1.0", path = "../../crates/dies-strategy-api" }
+dies-strategy-runner = { version = "0.1.0", path = "../../crates/dies-strategy-runner" }
+dies-strategy-protocol = { version = "0.1.0", path = "../../crates/dies-strategy-protocol" }
+dies-core = { version = "0.1.0", path = "../../crates/dies-core" }
+tracing = "0.1"
+nalgebra = { version = "0.33", features = ["serde-serialize"] }

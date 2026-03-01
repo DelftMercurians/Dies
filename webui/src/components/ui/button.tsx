@@ -42,13 +42,13 @@ const buttonVariants = cva(
       },
       size: {
         // Default: 28px height
-        default: "h-7 px-3 py-1 text-[11px]",
+        default: "h-7 px-3 py-1",
         // Small: 24px height
-        sm: "h-6 px-2 py-0.5 text-[10px]",
+        sm: "h-6 px-2 py-0.5 text-sm",
         // Extra small: 20px height
-        xs: "h-5 px-1.5 py-0.5 text-[9px]",
+        xs: "h-5 px-1.5 py-0.5 text-sm",
         // Large: 32px height
-        lg: "h-8 px-4 py-1.5 text-[11px]",
+        lg: "h-8 px-4 py-1.5",
         // Icon: square buttons
         icon: "h-6 w-6 p-0",
         "icon-sm": "h-5 w-5 p-0",

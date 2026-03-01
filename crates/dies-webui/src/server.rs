@@ -17,7 +17,7 @@ use dies_core::{
     DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, ScriptError,
     TeamColor, WorldUpdate,
 };
-use dies_executor::{ControlMsg, ExecutorHandle, Strategy};
+use dies_executor::{ControlMsg, ExecutorHandle};
 use tokio::sync::{broadcast, mpsc, watch};
 use tower_http::services::ServeDir;
 use tower_layer::Layer;
@@ -130,7 +130,7 @@ impl ServerState {
 }
 
 /// Start the web server and executor task.
-pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strategy: Strategy) {
+pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     // Setup state
     let (update_tx, update_rx) = watch::channel(None);
     let (cmd_tx, cmd_rx) = broadcast::channel(16);
@@ -167,6 +167,16 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
         config.controlled_teams,
         ControlledTeam::Yellow | ControlledTeam::Both
     );
+    // Set IPC strategy for active teams
+    if let Some(ref strategy) = config.strategy {
+        let mut settings = state.executor_settings.write().unwrap();
+        if settings.team_configuration.blue_active {
+            settings.team_configuration.blue_strategy = Some(strategy.clone());
+        }
+        if settings.team_configuration.yellow_active {
+            settings.team_configuration.yellow_strategy = Some(strategy.clone());
+        }
+    }
     let state = Arc::new(state);
 
     // Start debug log task -- this should probably be done elsewhere, but oh well
@@ -208,7 +218,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>, strat
         let state = Arc::clone(&state);
         tokio::spawn(async move {
             let mut executor_task =
-                ExecutorTask::new(config.environment, update_tx, cmd_rx, state, strategy);
+                ExecutorTask::new(config.environment, update_tx, cmd_rx, state);
             if config.auto_start {
                 log::info!("Starting executor automatically in 2 seconds...");
                 tokio::spawn(async move {

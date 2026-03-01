@@ -29,9 +29,9 @@ const SelectTrigger = React.forwardRef<
   }
 >(({ className, children, size = "default", ...props }, ref) => {
   const sizeClasses = {
-    default: "h-6 px-2 text-[11px]",
-    sm: "h-5 px-1.5 text-[10px]",
-    xs: "h-4 px-1 text-[9px]",
+    default: "h-6 px-2",
+    sm: "h-5 px-1.5 text-sm",
+    xs: "h-4 px-1 text-sm",
   };
 
   return (
@@ -141,7 +141,7 @@ const SelectLabel = React.forwardRef<
   <SelectPrimitive.Label
     ref={ref}
     className={cn(
-      "py-1 pl-6 pr-2 text-[10px] font-semibold uppercase tracking-wider text-text-dim",
+      "py-1 pl-6 pr-2 text-sm font-semibold uppercase tracking-wider text-text-dim",
       className
     )}
     {...props}
@@ -158,7 +158,7 @@ const SelectItem = React.forwardRef<
     className={cn(
       // Base styles
       "relative flex w-full cursor-default select-none items-center",
-      "py-1 pl-6 pr-2 text-[11px]",
+      "py-1 pl-6 pr-2",
       "outline-none",
       // Hover/focus state
       "focus:bg-bg-overlay focus:text-text-bright",

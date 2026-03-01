@@ -175,7 +175,7 @@ const GameControllerPanel: React.FC = () => {
           {Object.entries(commandGroups).map(
             ([groupName, commands], groupIndex) => (
               <div key={groupName + groupIndex} className="space-y-1.5">
-                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-text-dim">
+                <h4 className="text-sm font-semibold uppercase tracking-wider text-text-dim">
                   {groupName}
                 </h4>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -186,7 +186,7 @@ const GameControllerPanel: React.FC = () => {
                         key={cmd.command.type + index}
                         variant={cmd.color ? "outline" : cmd.variant}
                         size="sm"
-                        className={`justify-start h-6 px-2 text-[10px] ${getButtonClassName(cmd)}`}
+                        className={`justify-start h-6 px-2 text-sm ${getButtonClassName(cmd)}`}
                         onClick={() => sendGcCommand(cmd.command)}
                         title={cmd.description}
                       >

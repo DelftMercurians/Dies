@@ -24,7 +24,6 @@ pyo3 = { version = "0.25", features = [
     "abi3-py38",
 ], optional = true }
 numpy = { version = "0.25", optional = true }
-rhai = { version = "1.21.0", features = ["sync", "internals", "metadata"], optional = true }
 lapjv = "0.1"
 ndarray = "0.12"
 linear_assignment = "0.0.1"
@@ -35,11 +34,7 @@ tracing = "0.1"
 
 
 [features]
-default = ["legacy-strategy"]
 mpc = ["pyo3", "numpy"]
-# Enable legacy behavior tree strategy path. Disable to use only the new
-# strategy process architecture.
-legacy-strategy = ["rhai"]
 
 [dev-dependencies]
 approx = "0.5.1"

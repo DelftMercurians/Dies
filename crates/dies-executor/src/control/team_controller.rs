@@ -18,11 +18,6 @@ use super::{
 };
 use crate::PlayerControlInput;
 
-#[cfg(feature = "legacy-strategy")]
-use crate::behavior_tree::{
-    BehaviorTree, BtContext, GameContext, RobotSituation, RoleAssignmentSolver, Strategy,
-};
-
 /// Input for the team controller from the strategy host.
 #[derive(Debug, Clone, Default)]
 pub struct StrategyInput {
@@ -30,29 +25,6 @@ pub struct StrategyInput {
     pub skill_commands: HashMap<PlayerId, Option<SkillCommand>>,
     /// Role names per player for UI display.
     pub player_roles: HashMap<PlayerId, String>,
-}
-
-/// Mode of operation for the team controller.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ControllerMode {
-    /// Use skill commands from strategy host.
-    Strategy,
-    /// Use legacy behavior tree path.
-    #[cfg(feature = "legacy-strategy")]
-    BehaviorTree,
-}
-
-impl Default for ControllerMode {
-    fn default() -> Self {
-        #[cfg(feature = "legacy-strategy")]
-        {
-            ControllerMode::BehaviorTree
-        }
-        #[cfg(not(feature = "legacy-strategy"))]
-        {
-            ControllerMode::Strategy
-        }
-    }
 }
 
 pub struct TeamController {
@@ -64,25 +36,11 @@ pub struct TeamController {
     skill_executor: SkillExecutor,
     /// Current strategy input (skill commands and roles).
     strategy_input: StrategyInput,
-    /// Mode of operation.
-    mode: ControllerMode,
 
     // mpc stuff
     start_time: std::time::Instant,
     #[cfg(feature = "mpc")]
     mpc_controller: MPCController,
-
-    // Legacy behavior tree stuff (only with legacy-strategy feature)
-    #[cfg(feature = "legacy-strategy")]
-    role_solver: RoleAssignmentSolver,
-    #[cfg(feature = "legacy-strategy")]
-    role_assignments: Arc<HashMap<PlayerId, String>>,
-    #[cfg(feature = "legacy-strategy")]
-    strategy: Strategy,
-    #[cfg(feature = "legacy-strategy")]
-    player_behavior_trees: HashMap<PlayerId, BehaviorTree>,
-    #[cfg(feature = "legacy-strategy")]
-    bt_context: BtContext,
 
     removing_players: HashSet<PlayerId>,
 
@@ -94,55 +52,17 @@ pub struct TeamController {
 }
 
 impl TeamController {
-    /// Create a new team controller without a legacy strategy (strategy-controlled mode).
-    pub fn new_strategy_controlled(settings: &ExecutorSettings, team_color: TeamColor) -> Self {
+    /// Create a new team controller.
+    pub fn new(settings: &ExecutorSettings, team_color: TeamColor) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             team_color,
             skill_executor: SkillExecutor::new(),
             strategy_input: StrategyInput::default(),
-            mode: ControllerMode::Strategy,
             start_time: std::time::Instant::now(),
             #[cfg(feature = "mpc")]
             mpc_controller: MPCController::new(),
-            #[cfg(feature = "legacy-strategy")]
-            role_solver: RoleAssignmentSolver::new(),
-            #[cfg(feature = "legacy-strategy")]
-            role_assignments: Arc::new(HashMap::new()),
-            #[cfg(feature = "legacy-strategy")]
-            strategy: |_| {},
-            #[cfg(feature = "legacy-strategy")]
-            player_behavior_trees: HashMap::new(),
-            #[cfg(feature = "legacy-strategy")]
-            bt_context: BtContext::new(),
-            removing_players: HashSet::new(),
-            avoid_goal_area_flags: HashMap::new(),
-            warmup_timer: None,
-            warmup_done: false,
-        };
-        team.update_controller_settings(settings);
-        team
-    }
-
-    /// Create a new team controller with a legacy strategy (behavior tree mode).
-    #[cfg(feature = "legacy-strategy")]
-    pub fn new(settings: &ExecutorSettings, team_color: TeamColor, strategy: Strategy) -> Self {
-        let mut team = Self {
-            player_controllers: HashMap::new(),
-            settings: settings.clone(),
-            team_color,
-            skill_executor: SkillExecutor::new(),
-            strategy_input: StrategyInput::default(),
-            mode: ControllerMode::BehaviorTree,
-            start_time: std::time::Instant::now(),
-            #[cfg(feature = "mpc")]
-            mpc_controller: MPCController::new(),
-            role_solver: RoleAssignmentSolver::new(),
-            role_assignments: Arc::new(HashMap::new()),
-            strategy,
-            player_behavior_trees: HashMap::new(),
-            bt_context: BtContext::new(),
             removing_players: HashSet::new(),
             avoid_goal_area_flags: HashMap::new(),
             warmup_timer: None,
@@ -157,16 +77,6 @@ impl TeamController {
             controller.update_settings(&settings.controller_settings);
         }
         self.settings = settings.clone();
-    }
-
-    /// Set the mode of operation.
-    pub fn set_mode(&mut self, mode: ControllerMode) {
-        self.mode = mode;
-    }
-
-    /// Get the current mode of operation.
-    pub fn mode(&self) -> ControllerMode {
-        self.mode
     }
 
     /// Set strategy input (skill commands and roles from strategy host).
@@ -249,19 +159,9 @@ impl TeamController {
             .filter(|id| !self.removing_players.contains(id))
             .collect();
 
-        // Get player inputs based on mode
-        let (player_inputs_map, role_assignments) = match self.mode {
-            ControllerMode::Strategy => {
-                self.update_strategy_path(&world_data, &team_context, &active_robots)
-            }
-            #[cfg(feature = "legacy-strategy")]
-            ControllerMode::BehaviorTree => self.update_behavior_tree_path(
-                team_color,
-                &world_data,
-                &team_context,
-                &active_robots,
-            ),
-        };
+        // Get player inputs from strategy path
+        let (player_inputs_map, role_assignments) =
+            self.update_strategy_path(&world_data, &team_context, &active_robots);
 
         // Handle yellow card robot removal
         let allowed_number_of_robots = world_data.current_game_state.max_allowed_bots;
@@ -557,126 +457,6 @@ impl TeamController {
         }
 
         (player_inputs, self.strategy_input.player_roles.clone())
-    }
-
-    /// Update using legacy behavior tree path.
-    #[cfg(feature = "legacy-strategy")]
-    fn update_behavior_tree_path(
-        &mut self,
-        team_color: TeamColor,
-        world_data: &Arc<TeamData>,
-        team_context: &TeamContext,
-        active_robots: &[PlayerId],
-    ) -> (HashMap<PlayerId, PlayerControlInput>, HashMap<PlayerId, String>) {
-        let mut player_inputs_map = HashMap::new();
-
-        // Get role assignment problem from script
-        let mut game_context = GameContext::new(Arc::clone(world_data));
-        (self.strategy)(&mut game_context);
-        let assignment_problem = game_context.into_role_assignment_problem();
-
-        // Solve role assignments
-        let _priority_list = match self.role_solver.solve(
-            &assignment_problem,
-            active_robots,
-            team_context.clone(),
-            world_data.clone(),
-            Some(&self.role_assignments),
-        ) {
-            Ok((assignments, priority_list)) => {
-                self.role_assignments = Arc::new(assignments.clone());
-
-                // Update behavior trees based on new assignments
-                for player_id in active_robots {
-                    let role_name = assignments
-                        .iter()
-                        .find(|(id, _)| *id == player_id)
-                        .map(|(_, role)| role.clone())
-                        .unwrap_or_default();
-                    let player_context = team_context.player_context(*player_id);
-
-                    // Only rebuild tree if role changed
-                    let needs_rebuild = self
-                        .player_behavior_trees
-                        .get(player_id)
-                        .map(|bt| bt.name != role_name)
-                        .unwrap_or(true);
-
-                    if needs_rebuild {
-                        // Clear semaphores for this player before rebuilding
-                        self.bt_context.clear_semaphores_for_player(*player_id);
-
-                        // Find the role and build its tree
-                        if let Some(role) = assignment_problem
-                            .roles
-                            .iter()
-                            .find(|r| r.name == role_name)
-                        {
-                            let situation = RobotSituation::new(
-                                *player_id,
-                                world_data.clone(),
-                                self.bt_context.clone(),
-                                player_context.key("bt"),
-                                self.role_assignments.clone(),
-                                team_color,
-                                team_context.clone(),
-                            );
-
-                            self.player_behavior_trees.insert(
-                                *player_id,
-                                BehaviorTree::new(
-                                    role_name.clone(),
-                                    (role.tree_builder)(&situation),
-                                ),
-                            );
-                        } else {
-                            self.player_behavior_trees.remove(player_id);
-                        }
-                    }
-                }
-                priority_list
-            }
-            Err(e) => {
-                log::error!("Failed to solve role assignments: {}", e);
-                Vec::new()
-            }
-        };
-
-        // Clean up empty semaphores periodically
-        self.bt_context.cleanup_empty_semaphores();
-        self.bt_context.clear_passing_target();
-
-        // Execute behavior trees
-        for player_data in &world_data.own_players {
-            let player_context = team_context.player_context(player_data.id);
-            if self.removing_players.contains(&player_data.id) {
-                continue;
-            }
-
-            let player_id = player_data.id;
-            let player_bt = self.player_behavior_trees.entry(player_id).or_default();
-
-            let viz_path_prefix = team_context.player_context(player_id).key("bt");
-            let mut robot_situation = RobotSituation::new(
-                player_id,
-                world_data.clone(),
-                self.bt_context.clone(),
-                viz_path_prefix,
-                self.role_assignments.clone(),
-                team_color,
-                team_context.clone(),
-            );
-
-            player_context.debug_string("role_bt", &player_bt.name);
-            let (_status, player_input_opt) = player_bt.tick(&mut robot_situation);
-            let player_input = player_input_opt.unwrap_or_else(PlayerControlInput::default);
-
-            player_inputs_map.insert(player_id, player_input);
-        }
-
-        // Convert role assignments to the expected format
-        let role_assignments: HashMap<PlayerId, String> = (*self.role_assignments).clone();
-        (player_inputs_map, role_assignments)
     }
 
     pub fn commands(

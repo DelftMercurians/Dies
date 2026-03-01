@@ -170,7 +170,7 @@ const TeamSettingsDialog: React.FC = () => {
         <div className="space-y-5 py-3">
           {/* Quick Actions */}
           <div className="space-y-2">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-dim">
+            <h3 className="font-semibold uppercase tracking-wider text-text-dim">
               Quick Actions
             </h3>
             <div className="flex gap-2">
@@ -197,7 +197,7 @@ const TeamSettingsDialog: React.FC = () => {
 
           {/* Side Assignment */}
           <div className="space-y-2">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-dim">
+            <h3 className="font-semibold uppercase tracking-wider text-text-dim">
               Field Side Assignment
             </h3>
             <div className="space-y-2">
@@ -227,7 +227,7 @@ const TeamSettingsDialog: React.FC = () => {
 
           {/* Blue Team Configuration */}
           <div className="space-y-3">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-team-blue">
+            <h3 className="font-semibold uppercase tracking-wider text-team-blue">
               Blue Team
             </h3>
             <div className="flex items-center space-x-2">
@@ -256,7 +256,7 @@ const TeamSettingsDialog: React.FC = () => {
 
           {/* Yellow Team Configuration */}
           <div className="space-y-3">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-team-yellow">
+            <h3 className="font-semibold uppercase tracking-wider text-team-yellow">
               Yellow Team
             </h3>
             <div className="flex items-center space-x-2">

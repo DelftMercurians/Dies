@@ -82,8 +82,8 @@ export const ScriptConsole: React.FC<ScriptConsoleProps> = ({ className }) => {
       >
         <div className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-orange-400" />
-          <span className="text-sm font-medium">Script Console</span>
-          <span className="text-xs bg-red-600 text-white px-2 py-1 rounded">
+          <span className="font-medium">Script Console</span>
+          <span className="text-sm bg-red-600 text-white px-2 py-1">
             {errorCount} error{errorCount !== 1 ? "s" : ""}
           </span>
           {hasNewErrors && (
@@ -115,7 +115,7 @@ export const ScriptConsole: React.FC<ScriptConsoleProps> = ({ className }) => {
       {!isCollapsed && (
         <div
           ref={scrollRef}
-          className="max-h-60 overflow-y-auto bg-black p-2 text-xs font-mono"
+          className="max-h-60 overflow-y-auto bg-black p-2 text-sm font-mono"
         >
           {runtimeErrors.map((entry) => (
             <div key={entry.id} className="mb-3 border-l-2 border-red-500 pl-3">
@@ -142,7 +142,7 @@ export const ScriptConsole: React.FC<ScriptConsoleProps> = ({ className }) => {
                       ` | Player: ${entry.error.data.player_id}`}
                   </div>
 
-                  <div className="text-white bg-red-900/30 p-2 rounded border border-red-500/30">
+                  <div className="text-white bg-red-900/30 p-2 border border-red-500/30">
                     {entry.error.data.message}
                   </div>
                 </>
@@ -238,8 +238,8 @@ export const ScriptConsoleWithRef = React.forwardRef<
       >
         <div className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-orange-400" />
-          <span className="text-sm font-medium">Script Console</span>
-          <span className="text-xs bg-red-600 text-white px-2 py-1 rounded">
+          <span className="font-medium">Script Console</span>
+          <span className="text-sm bg-red-600 text-white px-2 py-1">
             {errorCount} error{errorCount !== 1 ? "s" : ""}
           </span>
           {hasNewErrors && (
@@ -271,7 +271,7 @@ export const ScriptConsoleWithRef = React.forwardRef<
       {!isCollapsed && (
         <div
           ref={scrollRef}
-          className="max-h-60 overflow-y-auto bg-black p-2 text-xs font-mono"
+          className="max-h-60 overflow-y-auto bg-black p-2 text-sm font-mono"
         >
           {runtimeErrors.map((entry) => (
             <div key={entry.id} className="mb-3 border-l-2 border-red-500 pl-3">

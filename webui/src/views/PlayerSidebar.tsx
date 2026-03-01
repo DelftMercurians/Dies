@@ -256,7 +256,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
             </div>
 
             <div>
-              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-text-dim mb-2">
+              <h2 className="font-semibold uppercase tracking-wider text-text-dim mb-2">
                 Player Debug Data
               </h2>
               <div className="bg-bg-elevated border border-border-subtle p-2 max-h-[40vh] overflow-auto">
@@ -306,7 +306,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                   </div>
                 </SimpleTooltip>
 
-                <div className="flex flex-row gap-2 items-center text-[10px]">
+                <div className="flex flex-row gap-2 items-center text-sm">
                   <div>Speed</div>
                   <Input
                     type="number"
@@ -318,7 +318,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                   <div className="text-text-dim">mm/s</div>
                 </div>
 
-                <div className="flex flex-row gap-2 items-center text-[10px]">
+                <div className="flex flex-row gap-2 items-center text-sm">
                   <div>Angular Speed</div>
                   <Input
                     type="number"
@@ -332,7 +332,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                   <div className="text-text-dim">deg/s</div>
                 </div>
 
-                <div className="flex flex-row gap-2 items-center text-[10px]">
+                <div className="flex flex-row gap-2 items-center text-sm">
                   <div>Fan Speed</div>
                   <Slider
                     min={0}
@@ -343,7 +343,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                   <div className="text-text-dim">%</div>
                 </div>
 
-                <div className="flex flex-row gap-2 items-center text-[10px]">
+                <div className="flex flex-row gap-2 items-center text-sm">
                   <div>Kick Speed</div>
                   <Input
                     type="number"
@@ -355,7 +355,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
                   <div className="text-text-dim">mm/s</div>
                 </div>
 
-                <div className="flex flex-row gap-2 items-center text-[10px]">
+                <div className="flex flex-row gap-2 items-center text-sm">
                   <div>Kick</div>
                   <Button
                     size="sm"
@@ -432,7 +432,7 @@ const KeyboardKey = ({
 }) => (
   <div
     className={cn(
-      "w-10 h-10 bg-bg-overlay border border-border-std flex items-center justify-center text-text-std font-semibold text-[11px] uppercase hover:bg-bg-elevated hover:text-text-bright transition-all duration-100 select-none",
+      "w-10 h-10 bg-bg-overlay border border-border-std flex items-center justify-center text-text-std font-semibold uppercase hover:bg-bg-elevated hover:text-text-bright transition-all duration-100 select-none",
       className
     )}
   >

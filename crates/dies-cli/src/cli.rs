@@ -113,7 +113,8 @@ pub struct Cli {
     #[clap(long, default_value = "blue")]
     pub controlled_teams: ControlledTeam,
 
-    #[clap(long, default_value = "v0")]
+    /// Strategy binary name (e.g. "concerto", "v0-strategy"). Use "none" for no strategy.
+    #[clap(long, default_value = "none")]
     pub strategy: String,
 
     #[clap(long, default_value = "false", action)]
@@ -202,6 +203,12 @@ impl Cli {
             _ => UiEnvironment::SimulationOnly,
         };
 
+        let strategy = if self.strategy == "none" {
+            None
+        } else {
+            Some(self.strategy.clone())
+        };
+
         Ok(UiConfig {
             settings_file: self.settings_file,
             environment,
@@ -220,6 +227,7 @@ impl Cli {
                 ControlledTeam::Both => dies_webui::ControlledTeam::Both,
             },
             calibration_mode,
+            strategy,
         })
     }
 

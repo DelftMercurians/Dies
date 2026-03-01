@@ -171,7 +171,7 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="w-full justify-between">
-          <span className="truncate text-[10px]">{value || placeholder}</span>
+          <span className="truncate text-sm">{value || placeholder}</span>
           <ChevronRight className="ml-2 h-3 w-3" />
         </Button>
       </PopoverTrigger>
@@ -195,7 +195,7 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
           >
             ↑
           </Button>
-          <span className="text-[9px] text-text-muted truncate flex-1">
+          <span className="text-sm text-text-muted truncate flex-1">
             {currentDir}
           </span>
 
@@ -211,17 +211,17 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
         <Separator />
         <div className="max-h-64 overflow-y-auto">
           {loading && (
-            <div className="p-4 text-center text-[10px] text-text-dim">
+            <div className="p-4 text-center text-sm text-text-dim">
               Loading...
             </div>
           )}
           {error && (
-            <div className="p-4 text-center text-[10px] text-accent-red">
+            <div className="p-4 text-center text-sm text-accent-red">
               {error}
             </div>
           )}
           {!loading && !error && entries.length === 0 && (
-            <div className="p-4 text-center text-[10px] text-text-muted">
+            <div className="p-4 text-center text-sm text-text-muted">
               No files or directories
             </div>
           )}
@@ -251,7 +251,7 @@ export const FilePathSelector: React.FC<FilePathSelectorProps> = ({
                     ) : (
                       <File className="h-3 w-3 text-text-dim" />
                     )}
-                    <span className="truncate text-[10px]">{entry.name}</span>
+                    <span className="truncate text-sm">{entry.name}</span>
                   </Button>
                 </li>
               ))}

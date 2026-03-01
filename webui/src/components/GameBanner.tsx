@@ -42,7 +42,7 @@ const GameBanner: React.FC<GameBannerProps> = ({
             leftTeam === TeamColor.Blue ? "bg-team-blue" : "bg-team-yellow"
           )}
         />
-        <span className="text-text-bright font-medium text-[11px] uppercase tracking-wide">
+        <span className="text-text-bright font-medium uppercase tracking-wide">
           {leftTeam === TeamColor.Blue ? "Blue" : "Yellow"}
         </span>
         <div className="flex items-center gap-1">
@@ -68,7 +68,7 @@ const GameBanner: React.FC<GameBannerProps> = ({
             />
           ))}
         </div>
-        <span className="text-text-bright font-medium text-[11px] uppercase tracking-wide">
+        <span className="text-text-bright font-medium uppercase tracking-wide">
           {rightTeam === TeamColor.Blue ? "Blue" : "Yellow"}
         </span>
         <div

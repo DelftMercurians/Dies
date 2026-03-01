@@ -42,7 +42,7 @@ const StatusCluster: React.FC = () => {
     : null;
 
   return (
-    <div className="flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-wider min-w-[90px]">
+    <div className="flex items-center gap-1.5 text-sm font-medium uppercase tracking-wider min-w-[90px]">
       {/* Connection indicator */}
       <div
         className={cn(
