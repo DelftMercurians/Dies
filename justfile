@@ -1,20 +1,29 @@
-one:
-  uv run cargo run -- --auto-start
+default_strategy := "concerto"
+all_strategies := "concerto test-strategy v0-strategy"
 
-both:
-  uv run cargo run -- --auto-start --controlled-teams=both
+# Build strategy + run dies in simulation mode
+dev strategy=default_strategy:
+    cargo build -p {{strategy}}
+    cargo run -- --auto-start --strategy {{strategy}}
 
-mpc:
-  cd mpc_jax && uv run pytest -vv -s
+# Build everything (dies + all strategies) in release mode
+build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build --release -p dies-cli
+    for s in {{all_strategies}}; do
+        cargo build --release -p "$s"
+    done
 
-# Build all strategies and copy them to target/strategies
-build-strategies:
-  cargo build -p test-strategy
-  mkdir -p target/strategies
-  cp target/debug/test-strategy target/strategies/
+# Run dies + vite dev server
+webdev strategy=default_strategy:
+    cd webui && npm run dev &
+    cargo build -p {{strategy}}
+    cargo run -- --auto-start --strategy {{strategy}}
 
-# Build strategies in release mode
-build-strategies-release:
-  cargo build -p test-strategy --release
-  mkdir -p target/strategies
-  cp target/release/test-strategy target/strategies/
+# Generate TypeScript bindings + build webui
+webbuild:
+    typeshare . --lang=typescript --output-file=webui/src/bindings.ts
+    printf 'export type Vector2 = [number, number];\nexport type Vector3 = [number, number, number];\nexport type Duration = number;\nexport type HashSet<T> = Array<T>;\n' >> webui/src/bindings.ts
+    sed -i.bak 's/data?: undefined//g' webui/src/bindings.ts && rm webui/src/bindings.ts.bak
+    cd webui && npm run build

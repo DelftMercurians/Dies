@@ -247,7 +247,7 @@ impl GameStateTracker {
         ball_data: Option<&BallData>,
     ) {
         // Only track during FreeKick state or Run state with an active kicker
-        if (self.game_state != GameState::FreeKick || self.game_state != GameState::Kickoff)
+        if (self.game_state != GameState::FreeKick && self.game_state != GameState::Kickoff)
             && (self.game_state != GameState::Run || self.freekick_kicker.is_none())
         {
             return;

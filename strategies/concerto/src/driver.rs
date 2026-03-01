@@ -54,6 +54,16 @@ impl Driver {
         &self.last_status
     }
 
+    /// Reset the driver to idle state, clearing any active waypoint.
+    pub fn clear(&mut self) {
+        self.active_robot = None;
+        self.current_waypoint = None;
+        self.state = DriverState::Idle;
+        self.last_status = WaypointStatus::Ongoing;
+        self.initial_ball_pos = None;
+        self.new_active = None;
+    }
+
     pub fn active_robot_id(&self) -> Option<PlayerId> {
         self.active_robot
     }

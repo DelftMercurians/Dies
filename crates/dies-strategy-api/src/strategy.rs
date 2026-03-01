@@ -137,6 +137,7 @@ mod tests {
             game_state: GameState::Run,
             us_operating: true,
             our_keeper_id: None,
+            freekick_kicker: None,
         };
         TeamContext::new(snapshot, HashMap::new())
     }
@@ -161,6 +162,7 @@ mod tests {
             game_state: GameState::Run,
             us_operating: true,
             our_keeper_id: None,
+            freekick_kicker: None,
         });
         strategy.init(&world);
         assert!(strategy.init_called);
@@ -201,6 +203,7 @@ mod tests {
             game_state: GameState::Run,
             us_operating: true,
             our_keeper_id: None,
+            freekick_kicker: None,
         });
         strategy.init(&world);
         strategy.shutdown();

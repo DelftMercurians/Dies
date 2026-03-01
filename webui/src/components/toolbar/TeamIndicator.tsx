@@ -1,32 +1,24 @@
 import React from "react";
-import { usePrimaryTeam, useExecutorSettings, useTeamConfiguration } from "@/api";
-import { TeamColor, SideAssignment } from "@/bindings";
-import { SimpleTooltip } from "@/components/ui/tooltip";
+import { ChevronDown, ArrowRightLeft, Repeat } from "lucide-react";
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+  usePrimaryTeam,
+  useExecutorSettings,
+  useTeamConfiguration,
+} from "@/api";
+import { TeamColor, SideAssignment } from "@/bindings";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 /**
- * Compact team/side indicator.
+ * Team/side indicator with segmented control.
  *
- * Displays: "●BLU→  YEL" or similar
- * - Shows primary team with ● prefix
- * - → indicates which team attacks positive X (right side)
- * - Click: cycles primary team
- * - Right-click: opens quick side-swap menu
- *
- * States:
- * | Primary | Attacking +X | Display       |
- * |---------|--------------|---------------|
- * | Blue    | Blue         | ●BLU→  YEL    |
- * | Blue    | Yellow       | ●BLU  →YEL    |
- * | Yellow  | Blue         | BLU→  ●YEL    |
- * | Yellow  | Yellow       | BLU  →●YEL    |
+ * - Two clickable team chips; primary has team-colored bg highlight
+ * - Arrow between them shows attack direction (+X)
+ * - Chevron dropdown for swap actions (sides, colors)
  */
 
 const TeamIndicator: React.FC = () => {
@@ -35,86 +27,85 @@ const TeamIndicator: React.FC = () => {
   const { swapTeamColors, swapTeamSides } = useTeamConfiguration();
 
   const sideAssignment =
-    settings?.team_configuration.side_assignment ?? SideAssignment.YellowOnPositive;
-
-  // Blue attacks +X means Yellow defends +X
-  const blueAttacksPositive = sideAssignment === SideAssignment.YellowOnPositive;
-
-  const handleClick = () => {
-    // Cycle primary team
-    setPrimaryTeam(primaryTeam === TeamColor.Blue ? TeamColor.Yellow : TeamColor.Blue);
-  };
+    settings?.team_configuration.side_assignment ??
+    SideAssignment.YellowOnPositive;
+  const blueAttacksPositive =
+    sideAssignment === SideAssignment.YellowOnPositive;
+  const isBlueActive = primaryTeam === TeamColor.Blue;
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <SimpleTooltip title="Click to switch primary team. Right-click for options.">
+    <div className="inline-flex items-center h-7 border border-border-muted">
+      {/* Blue team chip */}
+      <button
+        onClick={() => setPrimaryTeam(TeamColor.Blue)}
+        className={cn(
+          "h-full px-2.5 text-sm font-semibold uppercase tracking-wider transition-colors",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
+          isBlueActive
+            ? "bg-team-blue/25 text-team-blue"
+            : "text-team-blue/40 hover:text-team-blue/70 hover:bg-bg-overlay",
+        )}
+      >
+        BLU
+      </button>
+
+      <div className="w-px h-full bg-border-subtle" />
+
+      {/* Direction arrow */}
+      <div className="h-full px-1.5 flex items-center text-text-dim text-xs select-none">
+        {blueAttacksPositive ? "\u2192" : "\u2190"}
+      </div>
+
+      <div className="w-px h-full bg-border-subtle" />
+
+      {/* Yellow team chip */}
+      <button
+        onClick={() => setPrimaryTeam(TeamColor.Yellow)}
+        className={cn(
+          "h-full px-2.5 text-sm font-semibold uppercase tracking-wider transition-colors",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
+          !isBlueActive
+            ? "bg-team-yellow/25 text-team-yellow"
+            : "text-team-yellow/40 hover:text-team-yellow/70 hover:bg-bg-overlay",
+        )}
+      >
+        YEL
+      </button>
+
+      <div className="w-px h-full bg-border-subtle" />
+
+      {/* Dropdown for swap actions */}
+      <Popover>
+        <PopoverTrigger asChild>
           <button
-            onClick={handleClick}
             className={cn(
-              "h-5 px-2 flex items-center gap-0.5 border border-border-muted",
-              "text-sm font-semibold uppercase tracking-wider",
-              "transition-colors hover:bg-bg-overlay",
-              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan"
+              "h-full px-1.5 flex items-center",
+              "text-text-dim hover:text-text-std hover:bg-bg-overlay transition-colors",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan",
             )}
           >
-            {/* Blue team */}
-            <span
-              className={cn(
-                "flex items-center",
-                primaryTeam === TeamColor.Blue ? "text-team-blue" : "text-team-blue/60"
-              )}
-            >
-              {primaryTeam === TeamColor.Blue && (
-                <span className="text-accent-cyan mr-0.5">●</span>
-              )}
-              BLU
-            </span>
-
-            {/* Arrow indicator - shows who attacks +X */}
-            {blueAttacksPositive ? (
-              <>
-                <span className="text-text-dim">→</span>
-                <span className="w-2" />
-              </>
-            ) : (
-              <>
-                <span className="w-2" />
-                <span className="text-text-dim">→</span>
-              </>
-            )}
-
-            {/* Yellow team */}
-            <span
-              className={cn(
-                "flex items-center",
-                primaryTeam === TeamColor.Yellow ? "text-team-yellow" : "text-team-yellow/60"
-              )}
-            >
-              {primaryTeam === TeamColor.Yellow && (
-                <span className="text-accent-cyan mr-0.5">●</span>
-              )}
-              YEL
-            </span>
+            <ChevronDown className="w-3 h-3" />
           </button>
-        </SimpleTooltip>
-      </ContextMenuTrigger>
-
-      <ContextMenuContent>
-        <ContextMenuItem onClick={handleClick}>
-          Switch Primary Team
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => swapTeamSides()}>
-          Swap Field Sides
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => swapTeamColors()}>
-          Swap Team Colors
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-44 p-1">
+          <button
+            onClick={() => swapTeamSides()}
+            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-text-std hover:bg-bg-overlay transition-colors"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 text-text-dim" />
+            Swap Sides
+          </button>
+          <button
+            onClick={() => swapTeamColors()}
+            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-text-std hover:bg-bg-overlay transition-colors"
+          >
+            <Repeat className="w-3.5 h-3.5 text-text-dim" />
+            Swap Colors
+          </button>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 };
 
 export default TeamIndicator;
-

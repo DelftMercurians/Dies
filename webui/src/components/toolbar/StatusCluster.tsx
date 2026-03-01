@@ -37,30 +37,25 @@ const StatusCluster: React.FC = () => {
   }
 
   // Format latency
-  const latencyMs = wsConnectionStatus.dt !== null
-    ? (wsConnectionStatus.dt * 1000).toFixed(0)
-    : null;
+  const latencyMs =
+    wsConnectionStatus.dt !== null
+      ? (wsConnectionStatus.dt * 1000).toFixed(0)
+      : null;
 
   return (
     <div className="flex items-center gap-1.5 text-sm font-medium uppercase tracking-wider min-w-[90px]">
       {/* Connection indicator */}
       <div
         className={cn(
-          "w-1.5 h-1.5 shrink-0",
-          isConnected ? "bg-accent-green" : "bg-accent-red"
+          "w-2 h-2 shrink-0",
+          isConnected ? "bg-accent-green" : "bg-accent-red",
         )}
       />
 
       {/* Status text */}
       <span className={cn("shrink-0", statusColorClass)}>{statusText}</span>
-
-      {/* Latency */}
-      {latencyMs !== null && (
-        <span className="text-text-dim shrink-0">{latencyMs}ms</span>
-      )}
     </div>
   );
 };
 
 export default StatusCluster;
-

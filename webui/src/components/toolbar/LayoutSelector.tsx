@@ -103,7 +103,7 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => 
   return (
     <>
       <Select value={currentLayoutName} onValueChange={handleLayoutChange}>
-        <SelectTrigger className="h-5 w-[100px] text-sm font-medium uppercase tracking-wider border-border-muted bg-transparent">
+        <SelectTrigger className="h-7 w-[110px] text-sm font-medium uppercase tracking-wider border-border-muted bg-transparent">
           <SelectValue placeholder="Layout" />
         </SelectTrigger>
         <SelectContent>

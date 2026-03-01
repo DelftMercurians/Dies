@@ -1,0 +1,3 @@
+- [ ] Logging: revise logging file format to reduce log file size
+- [ ] Debug visualization: add new types - heatmap, curve
+- [ ] Debug visualization: allow toggling in UI

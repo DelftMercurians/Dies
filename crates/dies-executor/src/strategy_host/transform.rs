@@ -111,6 +111,7 @@ impl CoordinateTransformer {
             game_state: team_data.current_game_state.game_state.into(),
             us_operating: team_data.current_game_state.us_operating,
             our_keeper_id: team_data.current_game_state.our_keeper_id,
+            freekick_kicker: team_data.current_game_state.freekick_kicker,
         }
     }
 

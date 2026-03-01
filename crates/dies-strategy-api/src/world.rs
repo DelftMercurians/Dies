@@ -272,6 +272,12 @@ impl World {
         self.snapshot.our_keeper_id
     }
 
+    /// Get the player who performed a free kick or kickoff (for double-touch tracking).
+    /// Only `Some` until another player touches the ball.
+    pub fn freekick_kicker(&self) -> Option<PlayerId> {
+        self.snapshot.freekick_kicker
+    }
+
     // ========== Timing ==========
 
     /// Get the time since the last frame, in seconds.
@@ -330,6 +336,7 @@ mod tests {
             game_state: GameState::Run,
             us_operating: true,
             our_keeper_id: Some(PlayerId::new(1)),
+            freekick_kicker: None,
         })
     }
 

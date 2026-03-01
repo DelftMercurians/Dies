@@ -218,6 +218,27 @@ impl StrategyConnection {
             return Ok(false);
         }
 
+        // If we already have a stream (accepted previously but timed out waiting
+        // for Ready), try reading Ready from the existing stream first.
+        if self.stream.is_some() {
+            match self.receive_message()? {
+                Some(StrategyMessage::Ready) => {
+                    self.state = ConnectionState::Ready;
+                    return Ok(true);
+                }
+                Some(other) => {
+                    warn!("Expected Ready message, got {:?}", other);
+                    return Err(ConnectionError::Protocol(
+                        "Expected Ready message".to_string(),
+                    ));
+                }
+                None => {
+                    // Still waiting — check if process died
+                    return self.check_process_alive();
+                }
+            }
+        }
+
         let listener = self.listener.as_ref().ok_or(ConnectionError::NotReady)?;
 
         match listener.accept() {
@@ -249,33 +270,38 @@ impl StrategyConnection {
                         ))
                     }
                     None => {
-                        // Try again later
+                        // Ready not yet received — will retry on next call
                         Ok(false)
                     }
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                // No connection yet, check if process is still alive
-                if let Some(ref mut process) = self.process {
-                    match process.try_wait() {
-                        Ok(Some(status)) => {
-                            self.state = ConnectionState::Disconnected;
-                            return Err(ConnectionError::ProcessExited(format!(
-                                "Process exited with status: {}",
-                                status
-                            )));
-                        }
-                        Ok(None) => {
-                            // Still running
-                        }
-                        Err(e) => {
-                            warn!("Failed to check process status: {}", e);
-                        }
-                    }
-                }
-                Ok(false)
+                self.check_process_alive()
             }
             Err(e) => Err(ConnectionError::Socket(e)),
+        }
+    }
+
+    /// Check if the strategy process is still alive. Returns Ok(false) if alive,
+    /// or Err(ProcessExited) if the process has exited.
+    fn check_process_alive(&mut self) -> Result<bool, ConnectionError> {
+        if let Some(ref mut process) = self.process {
+            match process.try_wait() {
+                Ok(Some(status)) => {
+                    self.state = ConnectionState::Disconnected;
+                    Err(ConnectionError::ProcessExited(format!(
+                        "Process exited with status: {}",
+                        status
+                    )))
+                }
+                Ok(None) => Ok(false),
+                Err(e) => {
+                    warn!("Failed to check process status: {}", e);
+                    Ok(false)
+                }
+            }
+        } else {
+            Ok(false)
         }
     }
 

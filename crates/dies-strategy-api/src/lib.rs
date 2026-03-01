@@ -251,8 +251,9 @@ mod tests {
             game_state: GameState::Run,
             us_operating: true,
             our_keeper_id: None,
+            freekick_kicker: None,
         };
-        
+
         let mut ctx = TeamContext::new(snapshot, HashMap::new());
         strategy.update(&mut ctx);
     }

@@ -158,6 +158,7 @@ mod tests {
             game_state: GameState::Run,
             us_operating: true,
             our_keeper_id: None,
+            freekick_kicker: None,
         }
     }
 

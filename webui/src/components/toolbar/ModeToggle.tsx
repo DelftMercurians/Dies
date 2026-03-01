@@ -25,11 +25,11 @@ const ModeToggle: React.FC = () => {
   };
 
   return (
-    <div className="inline-flex items-center border border-border-muted h-5">
+    <div className="inline-flex items-center border border-border-muted h-7">
       <button
         onClick={() => handleModeChange(UiMode.Simulation)}
         className={cn(
-          "h-full px-2 text-sm font-semibold uppercase tracking-wider transition-colors",
+          "h-full px-3 text-sm font-semibold uppercase tracking-wider transition-colors",
           "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
           currentMode === UiMode.Simulation
             ? "bg-accent-green text-bg-base"
@@ -43,7 +43,7 @@ const ModeToggle: React.FC = () => {
         onClick={() => handleModeChange(UiMode.Live)}
         disabled={!isLiveAvailable}
         className={cn(
-          "h-full px-2 text-sm font-semibold uppercase tracking-wider transition-colors",
+          "h-full px-3 text-sm font-semibold uppercase tracking-wider transition-colors",
           "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
           "disabled:opacity-40 disabled:cursor-not-allowed",
           currentMode === UiMode.Live

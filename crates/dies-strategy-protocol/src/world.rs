@@ -42,6 +42,10 @@ pub struct WorldSnapshot {
 
     /// Our goalkeeper's player ID, if designated.
     pub our_keeper_id: Option<PlayerId>,
+
+    /// The player who performed a free kick or kickoff (for double-touch tracking).
+    /// Only `Some` until another player touches the ball.
+    pub freekick_kicker: Option<PlayerId>,
 }
 
 /// Ball state in the world.
@@ -254,6 +258,7 @@ mod tests {
             game_state: GameState::Run,
             us_operating: true,
             our_keeper_id: Some(PlayerId::new(0)),
+            freekick_kicker: None,
         };
 
         let encoded = bincode::serialize(&snapshot).unwrap();

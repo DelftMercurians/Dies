@@ -56,6 +56,8 @@ const App: React.FC = () => {
     // Clear any existing panels
     api.clear();
 
+    // Layout: [LEFT: Game Ctrl + Team (tabs)] [CENTER: Field ~60%] [RIGHT: Player Inspector]
+
     // Add Game Controller panel (left column)
     api.addPanel({
       id: PANEL_IDS.GAME_CONTROLLER,
@@ -63,24 +65,13 @@ const App: React.FC = () => {
       title: "GAME CTRL",
     });
 
-    // Add Team Overview panel (left column, below game controller)
+    // Add Team Overview as a tab in the same group as Game Controller
     api.addPanel({
       id: PANEL_IDS.TEAM_OVERVIEW,
       component: PANEL_IDS.TEAM_OVERVIEW,
       title: "TEAM",
       position: {
         referencePanel: PANEL_IDS.GAME_CONTROLLER,
-        direction: "below",
-      },
-    });
-
-    // Add Basestation as a tab in the same group as Team Overview
-    api.addPanel({
-      id: PANEL_IDS.BASESTATION,
-      component: PANEL_IDS.BASESTATION,
-      title: "BASESTATION",
-      position: {
-        referencePanel: PANEL_IDS.TEAM_OVERVIEW,
         direction: "within",
       },
     });
@@ -96,17 +87,6 @@ const App: React.FC = () => {
       },
     });
 
-    // Add Settings panel (below field)
-    api.addPanel({
-      id: PANEL_IDS.SETTINGS,
-      component: PANEL_IDS.SETTINGS,
-      title: "SETTINGS",
-      position: {
-        referencePanel: PANEL_IDS.FIELD,
-        direction: "below",
-      },
-    });
-
     // Add Player Inspector panel (right column)
     api.addPanel({
       id: PANEL_IDS.PLAYER_INSPECTOR,
@@ -117,6 +97,17 @@ const App: React.FC = () => {
         direction: "right",
       },
     });
+
+    // Set proportional widths: left 20%, field 60%, right 20%
+    const totalWidth = api.width;
+    if (totalWidth > 0) {
+      const fieldPanel = api.getPanel(PANEL_IDS.FIELD);
+      const leftPanel = api.getPanel(PANEL_IDS.GAME_CONTROLLER);
+      const rightPanel = api.getPanel(PANEL_IDS.PLAYER_INSPECTOR);
+      fieldPanel?.group?.api.setSize({ width: Math.floor(totalWidth * 0.6) });
+      leftPanel?.group?.api.setSize({ width: Math.floor(totalWidth * 0.2) });
+      rightPanel?.group?.api.setSize({ width: Math.floor(totalWidth * 0.2) });
+    }
   }, []);
 
   // Handle reset layout
@@ -162,41 +153,6 @@ const App: React.FC = () => {
           onSelectPlayer={setSelectedPlayerId}
         />
       </div>
-
-      {/* Statusbar - simplified, most status now in toolbar */}
-      <div
-        className={cn(
-          "w-full text-sm px-3 py-0.5 select-none flex justify-between items-center",
-          "bg-bg-surface border-t border-border-subtle font-medium uppercase tracking-wider",
-          executorStatus.type === "RunningExecutor" &&
-            worldState.status === "connected" &&
-            "bg-accent-green/10 border-accent-green/30",
-          (backendLoadingState === "error" ||
-            executorStatus.type === "Failed") &&
-            "bg-accent-red/10 border-accent-red/30"
-        )}
-      >
-        <div className="text-text-dim">
-          {backendLoadingState === "error"
-            ? "Backend connection failed"
-            : executorStatus.type === "Failed"
-            ? "Executor failed"
-            : executorStatus.type === "RunningExecutor"
-            ? "Executor running"
-            : "Ready"}
-        </div>
-        <div className="flex items-center gap-3 text-text-dim">
-          <span>
-            WS: {wsConnectionStatus.connected ? "Connected" : "Disconnected"}
-          </span>
-          {wsConnectionStatus.connected && wsConnectionStatus.dt !== null && (
-            <span>dt: {(wsConnectionStatus.dt * 1000).toFixed(1)}ms</span>
-          )}
-        </div>
-      </div>
-
-      {/* Script Console */}
-      <ScriptConsoleWithRef ref={scriptConsoleRef} />
     </main>
   );
 };
