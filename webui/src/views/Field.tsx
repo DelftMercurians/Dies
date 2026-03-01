@@ -1,4 +1,4 @@
-import React, { FC, useEffect, useRef, useCallback, useState } from "react";
+import React, { FC, useEffect, useRef, useCallback, useState, useMemo } from "react";
 import {
   useDebugData,
   useExecutorInfo,
@@ -34,6 +34,11 @@ import {
 import { useAtom, useSetAtom } from "jotai";
 import { BallPlacementPostionAtom } from "@/components/GameControllerPanel";
 import GameBanner from "@/components/GameBanner";
+import {
+  debugLayerVisibilityAtom,
+  debugCategoryVisibilityAtom,
+  filterDebugMap,
+} from "@/lib/debugLayers";
 
 const CONT_PADDING_PX = 8;
 
@@ -93,6 +98,12 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   }, [ballToMouse]);
 
   const debugMap = useDebugData();
+  const [layerVis] = useAtom(debugLayerVisibilityAtom);
+  const [categoryVis] = useAtom(debugCategoryVisibilityAtom);
+  const filteredDebugMap = useMemo(() => {
+    if (!debugMap) return null;
+    return filterDebugMap(debugMap, layerVis, categoryVis);
+  }, [debugMap, layerVis, categoryVis]);
 
   const [positionDisplayMode, setPositionDisplayMode] =
     useState<PositionDisplayMode>("filtered");
@@ -117,8 +128,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       rendererRef.current = new FieldRenderer(canvasRef.current);
     }
 
-    if (debugMap) {
-      rendererRef.current.setDebugData(debugMap);
+    if (filteredDebugMap) {
+      rendererRef.current.setDebugData(filteredDebugMap);
     }
     rendererRef.current.setPositionDisplayMode(positionDisplayMode);
     rendererRef.current.setWorldData(worldData);
@@ -129,7 +140,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       manualBallPlacementPosition
     );
   }, [
-    debugMap,
+    filteredDebugMap,
     worldData,
     canvasWidth,
     canvasHeight,

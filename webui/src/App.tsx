@@ -54,6 +54,17 @@ const App: React.FC = () => {
       },
     });
 
+    // Add Debug Layers as a tab in the same group
+    api.addPanel({
+      id: PANEL_IDS.DEBUG_LAYERS,
+      component: PANEL_IDS.DEBUG_LAYERS,
+      title: "LAYERS",
+      position: {
+        referencePanel: PANEL_IDS.GAME_CONTROLLER,
+        direction: "within",
+      },
+    });
+
     // Add Field panel (center, main viewport)
     api.addPanel({
       id: PANEL_IDS.FIELD,

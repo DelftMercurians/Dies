@@ -323,8 +323,8 @@ impl StrategyHost {
     /// Forward debug data to the dies-core debug system.
     fn forward_debug_data(&self, team: TeamColor, entries: Vec<DebugEntry>) {
         let prefix = match team {
-            TeamColor::Blue => "strategy_blue",
-            TeamColor::Yellow => "strategy_yellow",
+            TeamColor::Blue => "team_Blue.strategy",
+            TeamColor::Yellow => "team_Yellow.strategy",
         };
 
         for entry in entries {

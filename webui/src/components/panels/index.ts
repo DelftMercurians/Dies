@@ -11,6 +11,7 @@ import TeamOverviewPanel from "./TeamOverviewPanel";
 import PlayerInspectorPanel from "./PlayerInspectorPanel";
 import BasestationPanel from "./BasestationPanel";
 import SettingsPanel from "./SettingsPanel";
+import DebugLayerPanel from "./DebugLayerPanel";
 
 // Re-export panel components
 export {
@@ -20,6 +21,7 @@ export {
   PlayerInspectorPanel,
   BasestationPanel,
   SettingsPanel,
+  DebugLayerPanel,
 };
 
 // Panel IDs used for layout configuration
@@ -30,6 +32,7 @@ export const PANEL_IDS = {
   PLAYER_INSPECTOR: "player-inspector",
   BASESTATION: "basestation",
   SETTINGS: "settings",
+  DEBUG_LAYERS: "debug-layers",
 } as const;
 
 // Panel components map for DockviewReact
@@ -40,4 +43,5 @@ export const panelComponents = {
   [PANEL_IDS.PLAYER_INSPECTOR]: PlayerInspectorPanel,
   [PANEL_IDS.BASESTATION]: BasestationPanel,
   [PANEL_IDS.SETTINGS]: SettingsPanel,
+  [PANEL_IDS.DEBUG_LAYERS]: DebugLayerPanel,
 };
