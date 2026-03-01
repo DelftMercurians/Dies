@@ -227,7 +227,7 @@ pub fn goal_shoot_success_probability(s: &PassingStore, target_pos: Vector2) -> 
 
     // backward discounting
     let backward_dist = (player_pos.y - target_pos.y).max(0.0); // + when bad, - when good
-    prob *= (1.2 - (5000.0 / backward_dist).min(1.0));
+    prob *= 1.2 - (5000.0 / backward_dist).min(1.0);
 
     let nearest_opponent_distance = find_nearest_opponent_distance_along_direction(s, direction);
 
@@ -401,7 +401,7 @@ pub fn best_teammate_pass_or_shoot(s: &PassingStore, allow_passing: bool) -> (Sh
         }
 
         // score is a combination of clean shoot from the teammate and passing discount
-        let (t, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(teammate.id));
+        let (_, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(teammate.id));
         let prob = goal_shoot_prob * pass_success_probability(s, teammate.position);
 
         if prob > best_prob_pass {
@@ -653,7 +653,7 @@ pub fn score_shoot_target(s: &PassingStore, target: ShootTarget) -> f64 {
     match target {
         ShootTarget::Goal(pos) => goal_shoot_success_probability(s, pos),
         ShootTarget::Player { id, position } => {
-            let (t, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(id));
+            let (_, goal_shoot_prob) = best_goal_shoot(&s.change_situation_player(id));
             let pos = if let Some(p) = s.get_teammate_by_id(id) {
                 p.position
             } else {
@@ -680,7 +680,6 @@ pub fn find_best_preshoot(
         Some(b) => b,
         None => return ShootTarget::Goal(Vector2::zeros()), // early return if ball is not found
     };
-    let player_pos = s.player_data().position;
     let ball_pos = ball.position.xy();
     let hypothetical = s.force_self_position(ball_pos);
 
@@ -702,7 +701,6 @@ pub fn find_best_preshoot_target(s: &PassingStore, allow_pasing: bool) -> Vector
         Some(b) => b,
         None => return Vector2::zeros(), // early return if ball is not found
     };
-    let player_pos = s.player_data().position;
     let ball_pos = ball.position.xy();
     let hypothetical = s.force_self_position(ball_pos);
 
@@ -720,7 +718,6 @@ pub fn find_best_preshoot_heading(s: &PassingStore, allow_pasing: bool) -> Angle
         Some(b) => b,
         None => return Angle::from_radians(0.0), // early return if ball is not found
     };
-    let player_pos = s.player_data().position;
     let ball_pos = ball.position.xy();
     Angle::between_points(find_best_preshoot_target(s, allow_pasing), ball_pos)
 }

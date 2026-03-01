@@ -7,11 +7,6 @@ impl GcClient {
         Self {}
     }
 
-    #[allow(dead_code)]
-    pub fn handle_message(&mut self, message: GcRefereeMsg) {
-        log::info!("Received message from GC: {:?}", message);
-    }
-
     pub fn messages(&mut self) -> Vec<GcRefereeMsg> {
         vec![]
     }

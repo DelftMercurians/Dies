@@ -141,9 +141,7 @@ impl AsyncProtobufLogger {
                 }
                 WorkerMsg::Log(msg) => {
                     if let Some(log_file) = &mut log_file {
-                        if let Err(e) = log_file.write_log_message(&msg) {
-                            // eprintln!("Failed to write to log file: {}", e);
-                        }
+                        let _ = log_file.write_log_message(&msg);
                     }
                 }
                 WorkerMsg::Flush => {

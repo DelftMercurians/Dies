@@ -7,8 +7,6 @@ use dies_core::{
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use crate::ScriptError;
-
 #[derive(Debug)]
 pub enum ControlMsg {
     SetPlayerOverride {
@@ -32,11 +30,6 @@ pub enum ControlMsg {
         blue_active: bool,
         yellow_active: bool,
     },
-    /// Set script paths for teams
-    SetTeamScriptPaths {
-        blue_script_path: Option<String>,
-        yellow_script_path: Option<String>,
-    },
     SetSideAssignment(SideAssignment),
     /// Set complete team configuration (for pre-executor setup)
     SetTeamConfiguration(TeamConfiguration),
@@ -44,8 +37,6 @@ pub enum ControlMsg {
     SwapTeamColors,
     /// Swap team sides (BlueOnPositive <-> YellowOnPositive)
     SwapTeamSides,
-    /// Report a script error (sent from executor to UI)
-    ScriptError(ScriptError),
     Stop,
 }
 
@@ -69,7 +60,6 @@ pub struct ExecutorHandle {
     pub control_tx: mpsc::UnboundedSender<ControlMsg>,
     pub update_rx: broadcast::Receiver<WorldUpdate>,
     pub info_channel: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
-    pub script_error_rx: broadcast::Receiver<ScriptError>,
 }
 
 impl ExecutorHandle {
@@ -109,7 +99,6 @@ impl Clone for ExecutorHandle {
             control_tx: self.control_tx.clone(),
             update_rx: self.update_rx.resubscribe(),
             info_channel: self.info_channel.clone(),
-            script_error_rx: self.script_error_rx.resubscribe(),
         }
     }
 }

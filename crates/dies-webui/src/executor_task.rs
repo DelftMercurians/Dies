@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
 use dies_core::WorldUpdate;
 use dies_executor::{ControlMsg, Executor, ExecutorHandle};
@@ -102,21 +102,6 @@ impl ExecutorTask {
                     yellow_active,
                 });
             }
-            UiCommand::SetTeamScriptPaths {
-                blue_script_path,
-                yellow_script_path,
-            } => {
-                // Update team configuration in settings
-                {
-                    let mut settings = self.server_state.executor_settings.write().unwrap();
-                    settings.team_configuration.blue_script_path = blue_script_path.clone();
-                    settings.team_configuration.yellow_script_path = yellow_script_path.clone();
-                }
-                self.handle_executor_msg(ControlMsg::SetTeamScriptPaths {
-                    blue_script_path,
-                    yellow_script_path,
-                });
-            }
             UiCommand::SetSideAssignment { side_assignment } => {
                 // Update team configuration in settings
                 {
@@ -207,22 +192,20 @@ impl ExecutorTask {
                                 vision_client,
                                 bs_handle,
                             ))
+                        } else if settings.allow_no_vision {
+                            log::warn!("Starting executor with mock vision client");
+                            Ok(Executor::new_live(
+                                settings,
+                                VisionClient::new(SslClientConfig {
+                                    vision: dies_ssl_client::ConnectionConfig::Mock,
+                                    gc: dies_ssl_client::ConnectionConfig::Mock,
+                                })
+                                .await
+                                .unwrap(),
+                                bs_handle,
+                            ))
                         } else {
-                            if settings.allow_no_vision {
-                                log::warn!("Starting executor with mock vision client");
-                                Ok(Executor::new_live(
-                                    settings,
-                                    VisionClient::new(SslClientConfig {
-                                        vision: dies_ssl_client::ConnectionConfig::Mock,
-                                        gc: dies_ssl_client::ConnectionConfig::Mock,
-                                    })
-                                    .await
-                                    .unwrap(),
-                                    bs_handle,
-                                ))
-                            } else {
-                                Err(anyhow::anyhow!("Failed to connect to vision"))
-                            }
+                            Err(anyhow::anyhow!("Failed to connect to vision"))
                         }
                     }
                     (UiMode::Live, UiEnvironment::SimulationOnly) => {

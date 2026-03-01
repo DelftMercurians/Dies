@@ -230,10 +230,6 @@ export interface TeamConfiguration {
 	blue_active: boolean;
 	/** Whether the yellow team is active */
 	yellow_active: boolean;
-	/** Script path for the blue team */
-	blue_script_path?: string;
-	/** Script path for the yellow team */
-	yellow_script_path?: string;
 	/** Which team defends the positive x side */
 	side_assignment: SideAssignment;
 	/** IPC strategy binary name for blue team (None = no strategy) */
@@ -427,11 +423,6 @@ export type UiCommand =
 	| { type: "SetActiveTeams", data: {
 	blue_active: boolean;
 	yellow_active: boolean;
-}}
-	/** Set script paths for teams */
-	| { type: "SetTeamScriptPaths", data: {
-	blue_script_path?: string;
-	yellow_script_path?: string;
 }}
 	/** Set side assignment */
 	| { type: "SetSideAssignment", data: {
@@ -650,33 +641,6 @@ export enum RoleType {
 	Waller = "Waller",
 }
 
-/** Script error types for error handling and UI display */
-export type ScriptError = 
-	/** Syntax error that occurs during script compilation */
-	| { type: "Syntax", data: {
-	/** The script file path that caused the error */
-	script_path: string;
-	/** The error message from the compiler */
-	message: string;
-	/** Line number if available */
-	line?: number;
-	/** Column number if available */
-	column?: number;
-}}
-	/** Runtime error that occurs during script execution */
-	| { type: "Runtime", data: {
-	/** The script file path where the error occurred */
-	script_path: string;
-	/** The function name where the error occurred */
-	function_name: string;
-	/** The error message */
-	message: string;
-	/** The team color that encountered the error */
-	team_color: TeamColor;
-	/** The player ID that was being processed when the error occurred */
-	player_id?: PlayerId;
-}};
-
 /** Command to modify the simulator state. */
 export type SimulatorCmd = 
 	| { type: "ApplyBallForce", data: {
@@ -706,8 +670,7 @@ export type UiWorldState =
 /** WebSocket message types sent from backend to frontend */
 export type WsMessage = 
 	| { type: "WorldUpdate", data: WorldData }
-	| { type: "Debug", data: DebugMap }
-	| { type: "ScriptError", data: ScriptError };
+	| { type: "Debug", data: DebugMap };
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];

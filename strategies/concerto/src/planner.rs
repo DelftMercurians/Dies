@@ -36,6 +36,12 @@ pub struct Planner {
     current_plan: Option<Plan>,
 }
 
+impl Default for Planner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Planner {
     /// Create a new Planner with no initial plan.
     pub fn new() -> Self {

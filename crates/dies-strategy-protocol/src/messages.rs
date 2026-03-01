@@ -8,19 +8,13 @@ use crate::{DebugEntry, PlayerId, SkillCommand, SkillStatus, WorldSnapshot};
 
 /// Configuration passed to a strategy on initialization.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct StrategyConfig {
     /// Strategy-specific configuration as a JSON string.
     /// Strategies can parse this however they need.
     pub custom_config: Option<String>,
 }
 
-impl Default for StrategyConfig {
-    fn default() -> Self {
-        Self {
-            custom_config: None,
-        }
-    }
-}
 
 /// Messages sent from the executor (host) to strategy processes.
 ///

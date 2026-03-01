@@ -1,6 +1,4 @@
-use dies_core::{
-    debug_line, debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3,
-};
+use dies_core::{debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3};
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 use nalgebra::{SVector, Vector6};
 

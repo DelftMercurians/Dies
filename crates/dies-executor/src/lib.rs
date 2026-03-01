@@ -4,13 +4,12 @@ use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    ScriptError, SideAssignment, SimulatorCmd, TeamColor, TeamPlayerId, Vector3, WorldInstant,
-    WorldUpdate,
+    SideAssignment, SimulatorCmd, TeamColor, TeamPlayerId, Vector3, WorldInstant, WorldUpdate,
 };
 use dies_logger::{log_referee, log_vision, log_world};
 use dies_protos::{
-    ssl_gc_referee_message::Referee, ssl_vision_detection_tracked::TrackedFrame,
-    ssl_vision_wrapper::SSL_WrapperPacket, ssl_vision_wrapper_tracked::TrackerWrapperPacket,
+    ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket,
+    ssl_vision_wrapper_tracked::TrackerWrapperPacket,
 };
 use dies_simulator::Simulation;
 use dies_ssl_client::{SslMessage, VisionClient};
@@ -26,7 +25,6 @@ pub mod skills;
 pub mod strategy_host;
 
 pub use control::*;
-use control::{TeamController, Velocity};
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 20); // 20 Hz
@@ -72,22 +70,6 @@ impl TeamMap {
         }
     }
 
-    fn deactivate_team(&mut self, team_color: TeamColor) {
-        log::info!("deactivate_team called with team_color: {}", team_color);
-        if team_color == TeamColor::Blue {
-            log::info!(
-                "Deactivating blue team controller for team_color: {}",
-                team_color
-            );
-            self.blue_team = None;
-        } else if team_color == TeamColor::Yellow {
-            log::info!(
-                "Deactivating yellow team controller for team_color: {}",
-                team_color
-            );
-            self.yellow_team = None;
-        }
-    }
 
     fn update_settings(&mut self, settings: &ExecutorSettings) {
         if let Some(controller) = &mut self.blue_team {
@@ -316,7 +298,6 @@ pub struct Executor {
     paused_tx: watch::Sender<bool>,
     info_channel_rx: mpsc::UnboundedReceiver<oneshot::Sender<ExecutorInfo>>,
     info_channel_tx: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
-    script_error_tx: broadcast::Sender<ScriptError>,
     settings: ExecutorSettings,
 }
 
@@ -331,7 +312,6 @@ impl Executor {
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
-        let (script_error_tx, _) = broadcast::channel(16);
 
         let mut strategy_host = strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
             strategies_dir: std::path::PathBuf::from("target/debug"),
@@ -377,7 +357,6 @@ impl Executor {
             paused_tx,
             info_channel_rx,
             info_channel_tx,
-            script_error_tx,
             settings,
         }
     }
@@ -391,7 +370,6 @@ impl Executor {
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
-        let (script_error_tx, _) = broadcast::channel(16);
 
         let mut strategy_host = strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
             strategies_dir: std::path::PathBuf::from("target/debug"),
@@ -436,7 +414,6 @@ impl Executor {
             paused_tx,
             info_channel_rx,
             info_channel_tx,
-            script_error_tx,
             settings,
         }
     }
@@ -616,8 +593,6 @@ impl Executor {
         let mut cmd_interval = tokio::time::interval(CMD_INTERVAL);
 
         let mut last_bs_msg = tokio::time::Instant::now();
-        let mut last_ssl_msg = tokio::time::Instant::now();
-        let mut last_cmd_time = tokio::time::Instant::now();
         loop {
             tokio::select! {
                 Some(msg) = self.command_rx.recv() => {
@@ -630,7 +605,6 @@ impl Executor {
                     }
                 }
                 ssl_msg = ssl_client.recv() => {
-                    last_ssl_msg = tokio::time::Instant::now();
                     match ssl_msg {
                         Ok(SslMessage::Vision(vision_msg)) => {
                             self.update_from_vision_msg(vision_msg, WorldInstant::now_real());
@@ -658,7 +632,7 @@ impl Executor {
                     last_bs_msg = tokio::time::Instant::now();
                     match bs_msg {
                         Ok((team_color, bs_msg)) => {
-                            let team_color = team_color.or(self.team_controllers.active_teams().get(0).copied());
+                            let team_color = team_color.or(self.team_controllers.active_teams().first().copied());
                             if let Some(team_color) = team_color {
                                 self.update_from_bs_msg(
                                     team_color,
@@ -671,16 +645,6 @@ impl Executor {
                             log::error!("Failed to receive BS msg: {}", err);
                         }
                     }
-                    // while let Ok((team_color, bs_msg)) = bs_client.try_recv() {
-                    //     let team_color = team_color.or(self.team_controllers.active_teams().get(0).copied());
-                    //     if let Some(team_color) = team_color {
-                    //         self.update_from_bs_msg(
-                    //             team_color,
-                    //             bs_msg,
-                    //             WorldInstant::now_real(),
-                    //         );
-                    //     }
-                    // }
                 }
                 _ = cmd_interval.tick() => {
                     for (team_color, cmd) in self.player_commands() {
@@ -728,7 +692,6 @@ impl Executor {
             control_tx: self.command_tx.clone(),
             update_rx: self.update_tx.subscribe(),
             info_channel: self.info_channel_tx.clone(),
-            script_error_rx: self.script_error_tx.subscribe(),
         }
     }
 
@@ -768,39 +731,8 @@ impl Executor {
                 self.tracker.set_side_assignment(side_assignment);
                 self.strategy_host.set_side_assignment(side_assignment);
             }
-            ControlMsg::SetTeamScriptPaths { .. } => {
-                log::warn!("Setting team script paths is not supported mid run");
-            }
             ControlMsg::SetTeamConfiguration(_) => {
                 log::warn!("Setting team configuration is not supported mid run");
-                // Apply complete team configuration
-                // self.team_controllers.side_assignment = config.side_assignment;
-                // self.tracker.set_side_assignment(config.side_assignment);
-
-                // // Update active teams
-                // let mut controlled_teams = Vec::new();
-
-                // if config.blue_active {
-                //     if !self.team_controllers.blue_team.is_some() {
-                //         self.team_controllers
-                //             .activate_team(TeamColor::Blue, &self.settings);
-                //     }
-                //     controlled_teams.push(TeamColor::Blue);
-                // } else {
-                //     self.team_controllers.deactivate_team(TeamColor::Blue);
-                // }
-
-                // if config.yellow_active {
-                //     if !self.team_controllers.yellow_team.is_some() {
-                //         self.team_controllers
-                //             .activate_team(TeamColor::Yellow, &self.settings);
-                //     }
-                //     controlled_teams.push(TeamColor::Yellow);
-                // } else {
-                //     self.team_controllers.deactivate_team(TeamColor::Yellow);
-                // }
-
-                // self.tracker.set_controlled_teams(&controlled_teams);
             }
             ControlMsg::SwapTeamColors => {
                 self.team_controllers.swap_teams();
@@ -815,13 +747,6 @@ impl Executor {
                 self.tracker
                     .set_side_assignment(self.team_controllers.side_assignment);
                 self.strategy_host.set_side_assignment(self.team_controllers.side_assignment);
-            }
-            ControlMsg::ScriptError(_) => {
-                // Script errors are sent from executor to UI, not handled by executor
-                // This should not happen in normal operation
-                log::warn!(
-                    "Received ScriptError control message, but these should only be sent to UI"
-                );
             }
             ControlMsg::Stop => {}
 

@@ -38,3 +38,6 @@ mpc = ["pyo3", "numpy"]
 
 [dev-dependencies]
 approx = "0.5.1"
+
+[lints]
+workspace = true

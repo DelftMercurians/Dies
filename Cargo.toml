@@ -22,6 +22,10 @@ package.edition = "2021"
 resolver = "2"
 default-members = ["crates/dies-cli"]
 
+[workspace.lints.clippy]
+large_enum_variant = "allow"
+too_many_arguments = "allow"
+
 [profile.dev]
 opt-level = 1
 

@@ -38,7 +38,7 @@ impl YawController {
 
             // Calculate the desired angular velocity
             let desired_angular_velocity = self.kp * error.radians();
-            let acc = max_angular_acceleration * (1.0 - carefullness * 0.5);
+            let _acc = max_angular_acceleration * (1.0 - carefullness * 0.5);
             let vel = max_angular_velocity * (1.0 - carefullness * 0.8);
 
             // Limit the desired angular velocity and acceleration

@@ -54,7 +54,7 @@ impl TwoStepMTP {
         dt: f64,
         max_accel: f64,
         max_speed: f64,
-        max_decel: f64,
+        _max_decel: f64,
         carefullness: f64,
         aggressiveness: f64,
         player_context: &PlayerContext,
@@ -106,14 +106,8 @@ impl TwoStepMTP {
             Vector2::zeros()
         };
 
-        let current_speed = velocity.magnitude();
-        let time_to_target = intermediate_distance / max_speed;
-
-        // player_context.debug_string("TwoStepMTPTimeToTarget", time_to_target.to_string());
-        // player_context.debug_string(
-        //     "TwoStepMTPProportionalTimeWindow",
-        //     self.proportional_time_window.as_secs_f64().to_string(),
-        // );
+        let _current_speed = velocity.magnitude();
+        let _time_to_target = intermediate_distance / max_speed;
         // player_context.debug_string("TwoStepMTPKp", self.kp.to_string());
         // player_context.debug_string(
         //     "TwoStepMTPcutoff_distance",
@@ -311,7 +305,7 @@ impl TwoStepMTP {
         // avoiding shit, less means we are straighter (less gay)
         let mut total_cost = 0.1 * ((start - mid).magnitude() + (mid - end).magnitude());
         let robot_scare = 190.0; // mm - 2xrobot radius + some margin
-        let ball_scare = 100.0; // mm robot_radius + ball_radius
+        let _ball_scare = 100.0; // mm robot_radius + ball_radius
                                 //
         let pstart = start;
         let pmid = mid;
@@ -674,7 +668,7 @@ impl TwoStepMTP {
         ];
 
         for (boundary_start, boundary_end) in field_lines.iter() {
-            if let Some(intersection) =
+            if let Some(_intersection) =
                 self.line_line_intersection(line_start, line_end, *boundary_start, *boundary_end)
             {
                 // Add penalty for crossing field boundaries
@@ -830,43 +824,6 @@ fn cap_vec(v: Vector2, cap: f64) -> Vector2 {
     v.normalize() * v.magnitude().min(cap)
 }
 
-fn cap_magnitude(v: f64, max: f64) -> f64 {
-    if v > max {
-        max
-    } else if v < -max {
-        -max
-    } else {
-        v
-    }
-}
-
-fn debug_rect(low: Vector2, high: Vector2) {
-    return;
-    dies_core::debug_line(
-        &format!("__{}{}_seg", low.x, high.y),
-        low.xy(),
-        Vector2::new(low.x, high.y),
-        dies_core::DebugColor::Blue,
-    );
-
-    dies_core::debug_line(
-        &format!("__{}{}_seg", low.y, high.x),
-        low.xy(),
-        Vector2::new(high.x, low.y),
-        dies_core::DebugColor::Blue,
-    );
-
-    dies_core::debug_line(
-        &format!("__{}{}_seg", high.x, high.y),
-        high.xy(),
-        Vector2::new(high.x, low.y),
-        dies_core::DebugColor::Blue,
-    );
-
-    dies_core::debug_line(
-        &format!("__{}{}_seg", high.x, low.x),
-        high.xy(),
-        Vector2::new(low.x, high.y),
-        dies_core::DebugColor::Blue,
-    );
+fn debug_rect(_low: Vector2, _high: Vector2) {
+    // Debug visualization disabled
 }

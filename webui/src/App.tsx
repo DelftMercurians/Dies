@@ -1,18 +1,12 @@
 import { Loader } from "lucide-react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   useStatus,
   useWorldState,
   usePrimaryTeam,
-  useWsConnectionStatus,
-  useScriptError,
 } from "./api";
 import { Button } from "./components/ui/button";
-import { cn, useRobotCountAlerts } from "./lib/utils";
-import {
-  ScriptConsoleWithRef,
-  ScriptConsoleRef,
-} from "./components/ScriptConsole";
+import { useRobotCountAlerts } from "./lib/utils";
 import { Toolbar } from "./components/toolbar";
 import DockviewWrapper, {
   DockviewWrapperRef,
@@ -25,26 +19,10 @@ const App: React.FC = () => {
   const worldState = useWorldState();
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [primaryTeam] = usePrimaryTeam();
-  const [wsConnectionStatus] = useWsConnectionStatus();
   const dockviewRef = useRef<DockviewWrapperRef>(null);
 
   // Robot count sound alerts
   useRobotCountAlerts(worldState, primaryTeam);
-
-  // Script error handling state
-  const [scriptError, setScriptError] = useScriptError();
-  const scriptConsoleRef = useRef<ScriptConsoleRef>(null);
-  useEffect(() => {
-    if (scriptError) {
-      scriptConsoleRef.current?.addError(scriptError);
-    }
-  }, [scriptError]);
-
-  // Handle executor start - clear script console
-  const handleExecutorStart = () => {
-    scriptConsoleRef.current?.clearConsole();
-    setScriptError(null);
-  };
 
   // Handle executor stop - deselect player
   const handleExecutorStop = () => {
@@ -132,13 +110,10 @@ const App: React.FC = () => {
     );
   }
 
-  const { executor: executorStatus } = backendState;
-
   return (
     <main className="w-full h-full flex flex-col bg-bg-base text-text-std">
       {/* Compact Toolbar */}
       <Toolbar
-        onExecutorStart={handleExecutorStart}
         onExecutorStop={handleExecutorStop}
         onResetLayout={handleResetLayout}
       />

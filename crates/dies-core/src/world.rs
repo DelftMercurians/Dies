@@ -2,7 +2,6 @@ use std::{
     collections::HashSet,
     fmt::Display,
     hash::Hash,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -303,17 +302,12 @@ pub struct AutorefInfo {
 impl From<TrackedFrame> for AutorefInfo {
     fn from(frame: TrackedFrame) -> Self {
         Self {
-            kicked_ball: if let Some(k) = frame.kicked_ball.as_ref() {
-                Some(AutorefKickedBall {
+            kicked_ball: frame.kicked_ball.as_ref().map(|k| AutorefKickedBall {
                     pos: Vector2::new(k.pos.x() as f64, k.pos.y() as f64),
                     vel: Vector3::new(k.vel.x() as f64, k.vel.y() as f64, k.vel.z() as f64),
                     start_timestamp: k.start_timestamp.unwrap_or(0.0),
                     stop_timestamp: k.stop_timestamp,
-                    stop_pos: if let Some(p) = k.stop_pos.as_ref() {
-                        Some(Vector2::new(p.x() as f64, p.y() as f64))
-                    } else {
-                        None
-                    },
+                    stop_pos: k.stop_pos.as_ref().map(|p| Vector2::new(p.x() as f64, p.y() as f64)),
                     robot_id: if let Some(r) = k.robot_id.as_ref() {
                         let team = match r.team() {
                             Team::BLUE => Some(TeamColor::Blue),
@@ -328,10 +322,7 @@ impl From<TrackedFrame> for AutorefInfo {
                     } else {
                         None
                     },
-                })
-            } else {
-                None
-            },
+                }),
         }
     }
 }
@@ -584,7 +575,7 @@ impl TeamData {
             let mut obstacles = vec![];
 
             match self.current_game_state.game_state {
-                GameState::Stop | GameState::BallReplacement(_) => {
+                GameState::Stop => {
                     if let Some(ball) = &self.ball {
                         obstacles.push(Obstacle::Circle {
                             center: ball.position.xy(),
@@ -594,6 +585,10 @@ impl TeamData {
                 }
                 GameState::BallReplacement(target_ball_pos) => {
                     if let Some(ball) = &self.ball {
+                        obstacles.push(Obstacle::Circle {
+                            center: ball.position.xy(),
+                            radius: STOP_BALL_AVOIDANCE_RADIUS,
+                        });
                         obstacles.push(Obstacle::Line {
                             start: ball.position.xy(),
                             end: target_ball_pos,
@@ -681,7 +676,7 @@ impl Avoid {
                     - (start.y - line_start.y) * line_seg.x)
                     / denom;
 
-                t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0
+                (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)
             }
             Avoid::Circle { center } => {
                 // Calculate minimum distance from circle center to line segment
@@ -722,7 +717,7 @@ impl Avoid {
                             - (edge_start.y - start.y) * line_dir.x)
                             / denom;
 
-                        if t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0 {
+                        if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
                             return true;
                         }
                     }

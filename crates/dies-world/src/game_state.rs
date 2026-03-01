@@ -14,7 +14,7 @@ const FREEKICK_TIMEOUT_SECS: u64 = 10;
 pub struct GameStateTracker {
     /// Game state in vision coordinates
     game_state: GameState,
-    /// Previous game state in vision coordinates  
+    /// Previous game state in vision coordinates
     prev_state: GameState,
     /// New state on ball movement in vision coordinates
     new_state_movement: GameState,
@@ -54,14 +54,13 @@ impl GameStateTracker {
 
     pub fn update(&mut self, data: &Referee) -> GameState {
         let command = data.command();
-        let stage = data.stage();
 
         if self.last_cmd == Some(command) {
             return self.game_state;
         }
         self.last_cmd = Some(command);
 
-        let last_game_state = self.game_state;
+        self.game_state;
 
         self.game_state = match command {
             Command::HALT => GameState::Halt,

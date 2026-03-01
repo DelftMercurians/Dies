@@ -19,3 +19,6 @@ rustc-hash = "2.0"
 # For testing serialization round-trips
 approx = "0.5"
 
+
+[lints]
+workspace = true

@@ -30,7 +30,7 @@ use dies_strategy_protocol::{DebugColor, DebugEntry, DebugShape, DebugValue, Vec
 
 // Thread-local storage for debug entries collected during a frame.
 thread_local! {
-    static DEBUG_ENTRIES: RefCell<Vec<DebugEntry>> = RefCell::new(Vec::new());
+    static DEBUG_ENTRIES: RefCell<Vec<DebugEntry>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Draw a cross marker at a position (default color: red).

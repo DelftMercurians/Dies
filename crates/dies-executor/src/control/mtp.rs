@@ -27,10 +27,6 @@ impl MTP {
         self.setpoint = Some(setpoint);
     }
 
-    pub fn deceleration_window(&self, velocity: Vector2, max_decel: f64) -> f64 {
-        let current_speed = velocity.magnitude();
-        (current_speed * current_speed) / (2.0 * max_decel)
-    }
 
     pub fn update_settings(
         &mut self,

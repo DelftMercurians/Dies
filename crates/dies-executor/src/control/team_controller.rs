@@ -30,15 +30,12 @@ pub struct StrategyInput {
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
-    team_color: TeamColor,
 
     // Skill execution for strategy-controlled path
     skill_executor: SkillExecutor,
     /// Current strategy input (skill commands and roles).
     strategy_input: StrategyInput,
 
-    // mpc stuff
-    start_time: std::time::Instant,
     #[cfg(feature = "mpc")]
     mpc_controller: MPCController,
 
@@ -53,14 +50,12 @@ pub struct TeamController {
 
 impl TeamController {
     /// Create a new team controller.
-    pub fn new(settings: &ExecutorSettings, team_color: TeamColor) -> Self {
+    pub fn new(settings: &ExecutorSettings, _team_color: TeamColor) -> Self {
         let mut team = Self {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
-            team_color,
             skill_executor: SkillExecutor::new(),
             strategy_input: StrategyInput::default(),
-            start_time: std::time::Instant::now(),
             #[cfg(feature = "mpc")]
             mpc_controller: MPCController::new(),
             removing_players: HashSet::new(),

@@ -39,7 +39,6 @@ import {
   PlayerOverrideCommand,
   TeamConfiguration,
   SideAssignment,
-  ScriptError,
 } from "./bindings";
 import { toast } from "sonner";
 import { atom, getDefaultStore, useAtom } from "jotai";
@@ -177,27 +176,6 @@ export const useTeamConfiguration = () => {
     },
   });
 
-  const setTeamScriptPaths = useMutation({
-    mutationFn: ({
-      blueScriptPath,
-      yellowScriptPath,
-    }: {
-      blueScriptPath?: string;
-      yellowScriptPath?: string;
-    }) =>
-      postCommand({
-        type: "SetTeamScriptPaths",
-        data: {
-          blue_script_path: blueScriptPath ?? undefined,
-          yellow_script_path: yellowScriptPath ?? undefined,
-        },
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["executor-info"] });
-      queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
-    },
-  });
-
   const setSideAssignment = useMutation({
     mutationFn: (sideAssignment: SideAssignment) =>
       postCommand({
@@ -240,7 +218,6 @@ export const useTeamConfiguration = () => {
 
   return {
     setActiveTeams: setActiveTeams.mutate,
-    setTeamScriptPaths: setTeamScriptPaths.mutate,
     setSideAssignment: setSideAssignment.mutate,
     setTeamConfiguration: setTeamConfiguration.mutate,
     swapTeamColors: () => swapTeamColors.mutate(),
@@ -355,11 +332,6 @@ export const useRawWorldData = () => {
   return null;
 };
 
-const scriptErrorAtom = atom<ScriptError | null>(null);
-export const useScriptError = () => {
-  return useAtom(scriptErrorAtom);
-};
-
 // WebSocket connection status and dt tracking
 const wsConnectionStatusAtom = atom<{
   connected: boolean;
@@ -436,9 +408,6 @@ export function startWsClient() {
           });
         } else if (msg.type === "Debug") {
           queryClient.setQueryData(["debug-map"], msg.data satisfies DebugMap);
-        } else if (msg.type === "ScriptError") {
-          const scriptError = msg.data as ScriptError;
-          store.set(scriptErrorAtom, scriptError);
         }
       };
       ws.onerror = (err) => {

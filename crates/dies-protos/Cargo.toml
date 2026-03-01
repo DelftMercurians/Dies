@@ -14,3 +14,6 @@ protobuf-codegen = "3.3.0"
 
 [package.metadata.cargo-machete]
 ignored = ["protobuf"]
+
+[lints]
+workspace = true

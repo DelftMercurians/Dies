@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    Angle, AutorefKickedBallTeam, BallData, GameState, GameStateData, PlayerData,
+    Angle, BallData, GameState, GameStateData, PlayerData,
     PlayerGlobalMoveCmd, PlayerId, PlayerMoveCmd, RobotCmd, RotationDirection, TeamData, Vector2,
     Vector3, WorldData,
 };
@@ -92,7 +92,7 @@ impl SideAssignment {
             ball: world_data
                 .ball
                 .as_ref()
-                .map(|b| self.transform_to_team_coords_ball(color, &b)),
+                .map(|b| self.transform_to_team_coords_ball(color, b)),
             field_geom: world_data.field_geom.clone(),
             current_game_state: GameStateData {
                 game_state: if let GameState::BallReplacement(pos) =

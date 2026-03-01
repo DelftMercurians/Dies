@@ -173,7 +173,7 @@ impl TeamContext {
 #[derive(Debug, Clone)]
 pub struct PlayerContext {
     team_context: TeamContext,
-    player_id: PlayerId,
+    _player_id: PlayerId,
     debug_prefix: String,
 }
 
@@ -182,7 +182,7 @@ impl PlayerContext {
         let debug_prefix = format!("{}.p{}", team_context.debug_prefix, player_id);
         Self {
             team_context,
-            player_id,
+            _player_id: player_id,
             debug_prefix,
         }
     }

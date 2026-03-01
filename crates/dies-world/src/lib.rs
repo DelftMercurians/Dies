@@ -98,24 +98,22 @@ impl TeamTracker {
         if let Some(tracker) = self.players.get_mut(&feedback.id) {
             tracker.update_from_feedback(feedback, time);
             self.controlled = true;
-        } else {
-            if self.allow_no_vision {
-                let tracker = self.players.entry(feedback.id).or_insert_with(|| {
-                    PlayerTracker::new(
-                        feedback.id,
-                        self.handicaps
-                            .get(&feedback.id)
-                            .cloned()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .collect(),
-                        &tracker_settings,
-                        true,
-                    )
-                });
-                tracker.update_from_feedback(feedback, time);
-                self.controlled = true;
-            }
+        } else if self.allow_no_vision {
+            let tracker = self.players.entry(feedback.id).or_insert_with(|| {
+                PlayerTracker::new(
+                    feedback.id,
+                    self.handicaps
+                        .get(&feedback.id)
+                        .cloned()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect(),
+                    tracker_settings,
+                    true,
+                )
+            });
+            tracker.update_from_feedback(feedback, time);
+            self.controlled = true;
         }
     }
 
@@ -340,14 +338,14 @@ impl WorldTracker {
                 .yellow_card_times
                 .iter()
                 .filter(|t| **t > 0)
-                .count() as usize;
+                .count();
         self.yellow_team_yellow_cards = data.yellow.red_cards.unwrap_or_default() as usize
             + data
                 .yellow
                 .yellow_card_times
                 .iter()
                 .filter(|t| **t > 0)
-                .count() as usize;
+                .count();
 
         self.blue_team_max_allowed_bots = data.blue.max_allowed_bots();
         self.yellow_team_max_allowed_bots = data.yellow.max_allowed_bots();
@@ -584,14 +582,13 @@ impl WorldTracker {
             game_state,
             side_assignment: self
                 .side_assignment
-                .clone()
                 .unwrap_or(SideAssignment::YellowOnPositive),
             ball_on_blue_side: self
                 .ball_on_blue_side_for
-                .map(|t| Duration::from_secs_f64(t)),
+                .map(Duration::from_secs_f64),
             ball_on_yellow_side: self
                 .ball_on_yellow_side_for
-                .map(|t| Duration::from_secs_f64(t)),
+                .map(Duration::from_secs_f64),
             autoref_info: self
                 .autoref_info
                 .as_ref()

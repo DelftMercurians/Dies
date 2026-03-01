@@ -27,7 +27,7 @@ pub fn is_clear_shot(
         // Projection parameter along the segment.
         let t = (to_opp.x * dir.x + to_opp.y * dir.y) / len_sq;
 
-        if t < 0.0 || t > 1.0 {
+        if !(0.0..=1.0).contains(&t) {
             continue;
         }
 
@@ -89,11 +89,10 @@ pub fn best_pass_area(
 
             let score = min_opp_dist + 0.5 * lane_bonus;
 
-            if score > MIN_SCORE {
-                if best.is_none() || score > best.unwrap().1 {
+            if score > MIN_SCORE
+                && (best.is_none() || score > best.unwrap().1) {
                     best = Some((candidate, score));
                 }
-            }
         }
     }
 

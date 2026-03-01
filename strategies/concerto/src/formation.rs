@@ -15,6 +15,12 @@ pub struct Role {
 /// Stateless formation system. Recomputes roles and assignments every tick.
 pub struct Formation;
 
+impl Default for Formation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Formation {
     pub fn new() -> Self {
         Formation
@@ -67,7 +73,7 @@ impl Formation {
                 let dist = (closest_opp - *pos).norm();
                 if dist < 800.0 && dist > 1e-6 {
                     let away = (*pos - closest_opp).normalize();
-                    *pos = *pos + away * 400.0;
+                    *pos += away * 400.0;
                 }
             }
         }

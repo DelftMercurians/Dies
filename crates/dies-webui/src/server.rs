@@ -14,11 +14,11 @@ use axum::{
     Router,
 };
 use dies_core::{
-    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, ScriptError,
-    TeamColor, WorldUpdate,
+    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, TeamColor,
+    WorldUpdate,
 };
 use dies_executor::{ControlMsg, ExecutorHandle};
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, watch};
 use tower_http::services::ServeDir;
 use tower_layer::Layer;
 
@@ -37,10 +37,6 @@ pub struct ServerState {
     pub executor_status: RwLock<ExecutorStatus>,
     pub executor_handle: RwLock<Option<ExecutorHandle>>,
     pub executor_settings: RwLock<ExecutorSettings>,
-    pub script_error_tx: broadcast::Sender<ScriptError>,
-    pub script_error_rx: broadcast::Receiver<ScriptError>,
-    #[allow(dead_code)]
-    pub robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     settings_file: PathBuf,
 }
 
@@ -52,12 +48,8 @@ impl ServerState {
         debug_sub: DebugSubscriber,
         update_rx: watch::Receiver<Option<WorldUpdate>>,
         cmd_tx: broadcast::Sender<UiCommand>,
-        robot_id_map_tx: mpsc::UnboundedSender<HashMap<PlayerId, u32>>,
     ) -> Self {
-        let (script_error_tx, script_error_rx) = broadcast::channel(16);
-
         let settings = ExecutorSettings::load_or_insert(&settings_file);
-        println!("settings: {:?}", settings.yellow_team_settings.handicaps);
         Self {
             is_live_available,
             update_rx,
@@ -68,10 +60,7 @@ impl ServerState {
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
             executor_settings: RwLock::new(settings),
-            script_error_tx,
-            script_error_rx,
             settings_file,
-            robot_id_map_tx,
         }
     }
 
@@ -134,7 +123,6 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     // Setup state
     let (update_tx, update_rx) = watch::channel(None);
     let (cmd_tx, cmd_rx) = broadcast::channel(16);
-    let (id_map_tx, _id_map_rx) = mpsc::unbounded_channel();
     let debug_sub: DebugSubscriber = DebugSubscriber::spawn();
     let state = ServerState::new(
         config.is_live_available(),
@@ -147,7 +135,6 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         debug_sub.clone(),
         update_rx.clone(),
         cmd_tx.clone(),
-        id_map_tx,
     );
     state
         .executor_settings
@@ -178,22 +165,6 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         }
     }
     let state = Arc::new(state);
-
-    // Start debug log task -- this should probably be done elsewhere, but oh well
-    // let debug_log_task = {
-    //     let debug_sub = debug_sub.clone();
-    //     let mut shutdown_rx = shutdown_rx.resubscribe();
-    //     tokio::spawn(async move {
-    //         loop {
-    //             tokio::select! {
-    //                 data = debug_sub.wait_and_get_copy() => {
-    //                     dies_logger::log_debug(&data);
-    //                 }
-    //                 _ = shutdown_rx.recv() => break,
-    //             }
-    //         }
-    //     })
-    // };
 
     // Start basestation watcher
     let basestation_task = {
@@ -422,9 +393,6 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         .await
         .expect("Shutting down basestation watcher task failed");
     web_task.await.expect("Shutting down server task failed");
-    // debug_log_task
-    //     .await
-    //     .expect("Shutting down debug log task failed");
 }
 
 async fn start_webserver(

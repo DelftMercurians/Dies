@@ -4,7 +4,6 @@ mod mtp;
 mod passing;
 mod player_controller;
 mod player_input;
-mod rvo;
 pub mod skill_executor;
 mod team_context;
 mod team_controller;

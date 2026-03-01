@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, GcSimCommand, PlayerFeedbackMsg, PlayerId,
-    PlayerOverrideCommand, ScriptError, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration,
-    WorldData,
+    PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, WorldData,
 };
 use dies_ssl_client::SslClientConfig;
 use serde::{Deserialize, Serialize};
@@ -105,11 +104,6 @@ pub(crate) enum UiCommand {
         blue_active: bool,
         yellow_active: bool,
     },
-    /// Set script paths for teams
-    SetTeamScriptPaths {
-        blue_script_path: Option<String>,
-        yellow_script_path: Option<String>,
-    },
     /// Set side assignment
     SetSideAssignment {
         side_assignment: SideAssignment,
@@ -160,7 +154,6 @@ pub(crate) enum UiWorldState {
 pub(crate) enum WsMessage<'a> {
     WorldUpdate(&'a WorldData),
     Debug(&'a DebugMap),
-    ScriptError(&'a ScriptError),
 }
 
 #[derive(Debug, Clone, Serialize)]

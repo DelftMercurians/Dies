@@ -185,7 +185,7 @@ impl Strategy for TestStrategy {
         debug::cross_colored("opp_goal", opp_goal, DebugColor::Red);
 
         // Log status periodically
-        if self.frame_count % 100 == 0 {
+        if self.frame_count.is_multiple_of(100) {
             tracing::debug!(
                 frame = self.frame_count,
                 players = player_count,

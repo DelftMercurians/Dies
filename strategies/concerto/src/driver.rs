@@ -37,6 +37,12 @@ pub struct Driver {
     new_active: Option<PlayerId>,
 }
 
+impl Default for Driver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Driver {
     pub fn new() -> Self {
         Self {

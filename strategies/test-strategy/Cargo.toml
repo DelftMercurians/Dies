@@ -28,3 +28,6 @@ dies-core = { version = "0.1.0", path = "../../crates/dies-core" }
 # Logging
 tracing = "0.1"
 
+
+[lints]
+workspace = true

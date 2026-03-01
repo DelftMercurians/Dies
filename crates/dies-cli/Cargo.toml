@@ -27,3 +27,6 @@ console-subscriber = "0.3.0"
 protobuf-json-mapping = "3.5.0"
 cargo-make = "0.37.23"
 serde = { version = "1.0.219", features = ["derive"] }
+
+[lints]
+workspace = true

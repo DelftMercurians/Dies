@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use dies_core::{
     Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerCmdUntransformer,
@@ -63,6 +63,7 @@ pub struct PlayerController {
 }
 
 impl PlayerController {
+    #[cfg(feature = "mpc")]
     pub fn get_max_speed(&self) -> f64 {
         self.max_speed
     }
@@ -147,7 +148,7 @@ impl PlayerController {
         }
 
         // Priority list: 1. Kick, 2. Anything else
-        let robot_cmd = match self.kicker {
+        let _robot_cmd = match self.kicker {
             KickerState::Kicking => {
                 self.kicker = KickerState::Disarming;
                 self.kick_counter = self.kick_counter.wrapping_add(1);
@@ -198,7 +199,7 @@ impl PlayerController {
         dt: f64,
         is_manual_override: bool,
         obstacles: Vec<Obstacle>,
-        all_players: &[&PlayerData],
+        _all_players: &[&PlayerData],
         player_context: &PlayerContext,
         avoid_goal_area: bool,
         avoid_goal_area_margin: f64,
@@ -414,122 +415,6 @@ impl PlayerController {
         }
     }
 
-    fn constrain_velocity_from_prohibited_zones(
-        &self,
-        velocity: Vector2,
-        position: Vector2,
-        world: &TeamData,
-        avoid_goal_area: bool,
-        dt: f64,
-    ) -> Vector2 {
-        let Some(geometry) = &world.field_geom.as_ref() else {
-            return velocity;
-        };
-        let mut constrained_velocity = velocity;
-
-        // Check if we're in a prohibited zone and need to push out
-        let push_out_velocity =
-            self.calculate_push_out_velocity(position, geometry, avoid_goal_area);
-
-        // If we need to push out, modify the velocity
-        if push_out_velocity.magnitude() > 0.0 {
-            // Blend the push-out velocity with the desired velocity
-            // Give priority to pushing out of prohibited zones
-            constrained_velocity = push_out_velocity * 0.7 + velocity * 0.3;
-        }
-
-        // Check if the velocity would take us into a prohibited zone
-        let next_position = position + constrained_velocity * dt;
-        if self.is_in_prohibited_zone(next_position, geometry, avoid_goal_area, 50.0) {
-            // Project velocity to avoid entering prohibited zones
-            constrained_velocity = self.project_velocity_away_from_prohibited_zones(
-                constrained_velocity,
-                position,
-                geometry,
-                avoid_goal_area,
-                dt,
-            );
-            constrained_velocity += push_out_velocity;
-        }
-
-        constrained_velocity
-    }
-
-    fn calculate_push_out_velocity(
-        &self,
-        position: Vector2,
-        geometry: &dies_core::FieldGeometry,
-        avoid_goal_area: bool,
-    ) -> Vector2 {
-        let mut push_velocity = Vector2::new(0.0, 0.0);
-
-        // Check field boundaries
-        let field_half_width = geometry.field_width / 2.0;
-        let field_half_length = geometry.field_length / 2.0;
-
-        // Push away from field boundaries
-        if position.x < -field_half_length {
-            push_velocity.x += (-field_half_length - position.x) * 2.0;
-        } else if position.x > field_half_length {
-            push_velocity.x += (field_half_length - position.x) * 2.0;
-        }
-
-        if position.y < -field_half_width {
-            push_velocity.y += (-field_half_width - position.y) * 2.0;
-        } else if position.y > field_half_width {
-            push_velocity.y += (field_half_width - position.y) * 2.0;
-        }
-
-        // Check goal areas if avoidance is enabled
-        if avoid_goal_area {
-            let goal_area_depth = geometry.penalty_area_depth + 40.0;
-            let goal_area_width = geometry.penalty_area_width + 60.0;
-
-            // Our goal area (negative x)
-            if position.x < -field_half_length + goal_area_depth
-                && position.y.abs() < goal_area_width / 2.0
-            {
-                push_velocity.x = 300.0;
-            }
-
-            // Enemy goal area (positive x)
-            if position.x > field_half_length - goal_area_depth
-                && position.y.abs() < goal_area_width / 2.0
-            {
-                push_velocity.x = -300.0;
-            }
-        }
-
-        // Push out from goal line y-axis intersection
-        let goal_half_width = geometry.penalty_area_width / 2.0;
-        let goal_depth = geometry.penalty_area_depth;
-        let offset = 50.0;
-
-        // Our goal line (negative x)
-        if position.x <= -field_half_length + goal_depth + offset
-            && position.y.abs() < goal_half_width + 30.0
-        {
-            if position.y > 0.0 {
-                push_velocity.y = 300.0;
-            } else {
-                push_velocity.y = -300.0;
-            }
-        }
-
-        // Enemy goal line (positive x)
-        if position.x >= field_half_length - goal_depth - offset
-            && position.y.abs() < goal_half_width
-        {
-            if position.y > 0.0 {
-                push_velocity.y = 300.0;
-            } else {
-                push_velocity.y = -300.0;
-            }
-        }
-
-        push_velocity
-    }
-
     fn is_in_prohibited_zone(
         &self,
         position: Vector2,
@@ -572,148 +457,5 @@ impl PlayerController {
         false
     }
 
-    fn project_velocity_away_from_prohibited_zones(
-        &self,
-        velocity: Vector2,
-        position: Vector2,
-        geometry: &dies_core::FieldGeometry,
-        avoid_goal_area: bool,
-        dt: f64,
-    ) -> Vector2 {
-        let field_half_width = geometry.field_width / 2.0;
-        let field_half_length = geometry.field_length / 2.0;
-        let mut projected_velocity = velocity;
-
-        // Check field boundaries and project velocity away
-        let next_pos = position + velocity * dt;
-
-        if next_pos.x < -field_half_length && velocity.x < 0.0 {
-            projected_velocity.x = 0.0;
-        } else if next_pos.x > field_half_length && velocity.x > 0.0 {
-            projected_velocity.x = 0.0;
-        }
-
-        if next_pos.y < -field_half_width && velocity.y < 0.0 {
-            projected_velocity.y = 0.0;
-        } else if next_pos.y > field_half_width && velocity.y > 0.0 {
-            projected_velocity.y = 0.0;
-        }
-
-        let offset = 50.0;
-        // Check goal areas if avoidance is enabled
-        if avoid_goal_area {
-            let goal_area_depth = geometry.penalty_area_depth + offset;
-            let goal_area_width = geometry.penalty_area_width + offset;
-
-            // Our goal area (negative x)
-            if next_pos.x < -field_half_length + goal_area_depth
-                && next_pos.y.abs() < goal_area_width / 2.0
-                && velocity.x < 0.0
-            {
-                projected_velocity.x = 0.0;
-            }
-
-            // Enemy goal area (positive x)
-            if next_pos.x > field_half_length - goal_area_depth
-                && next_pos.y.abs() < goal_area_width / 2.0
-                && velocity.x > 0.0
-            {
-                projected_velocity.x = 0.0;
-            }
-        }
-
-        // Prohibit y-axis intersection with goal line
-        let goal_half_width = geometry.penalty_area_width / 2.0;
-        let goal_depth = geometry.penalty_area_depth;
-
-        // Our goal line (negative x)
-        if position.x <= -field_half_length + goal_depth + offset && // Close to our goal line
-           position.y.abs() < goal_half_width &&
-           next_pos.y.abs() > goal_half_width &&
-           ((velocity.y > 0.0 && position.y < 0.0) || (velocity.y < 0.0 && position.y > 0.0))
-        {
-            projected_velocity.y = 0.0;
-        }
-
-        // Enemy goal line (positive x)
-        if position.x >= field_half_length - goal_depth - offset && // Close to enemy goal line
-           position.y.abs() < goal_half_width &&
-           next_pos.y.abs() > goal_half_width &&
-           ((velocity.y > 0.0 && position.y < 0.0) || (velocity.y < 0.0 && position.y > 0.0))
-        {
-            projected_velocity.y = 0.0;
-        }
-
-        projected_velocity
-    }
-
-    pub fn update_target_velocity_with_avoidance(
-        &mut self,
-        target_velocity: Vector2,
-        player_context: &PlayerContext,
-    ) {
-        self.target_velocity_global = target_velocity;
-        player_context.debug_line_colored(
-            "target_velocity",
-            self.last_pos,
-            self.last_pos + self.target_velocity_global,
-            dies_core::DebugColor::Green,
-        );
-    }
 }
 
-fn is_about_to_collide(player: &PlayerData, world: &TeamData, time_horizon: f64) -> bool {
-    // Check if the player is about to collide with any other player
-    for other in world.own_players.iter().chain(world.opp_players.iter()) {
-        if player.position == other.position {
-            continue;
-        }
-
-        let dist = (player.position - other.position).norm();
-        let relative_velocity = player.velocity - other.velocity;
-        let time_to_collision = dist / relative_velocity.norm();
-        if time_to_collision < time_horizon && dist < 140.0 {
-            return true;
-        }
-    }
-
-    // Check if the player is about to leave the field
-    if let Some(geom) = world.field_geom.as_ref() {
-        let hw = geom.field_width / 2.0;
-        let hl = geom.field_length / 2.0;
-        let pos = player.position;
-        let vel = player.velocity;
-        let new_pos = pos + vel * time_horizon;
-        if new_pos.x.abs() > hw || new_pos.y.abs() > hl {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// A struct that triggers an event periodically at a given interval.
-struct IntervalTrigger {
-    interval: Duration,
-    next_trigger: Instant,
-}
-
-impl IntervalTrigger {
-    /// Creates a new `Interval` with the given interval.
-    fn new(interval: Duration) -> Self {
-        Self {
-            interval,
-            next_trigger: Instant::now() + interval,
-        }
-    }
-
-    /// Returns true if the event should be triggered at the given time.
-    fn trigger(&mut self) -> bool {
-        if Instant::now() >= self.next_trigger {
-            self.next_trigger += self.interval;
-            true
-        } else {
-            false
-        }
-    }
-}

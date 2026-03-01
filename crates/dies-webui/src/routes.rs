@@ -8,7 +8,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use dies_core::{DebugMap, DebugSubscriber, ScriptError, TeamColor, WorldUpdate};
+use dies_core::{DebugMap, DebugSubscriber, TeamColor, WorldUpdate};
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
@@ -121,7 +121,6 @@ pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> 
             state.cmd_tx.clone(),
             state.update_rx.clone(),
             state.debug_sub.clone(),
-            state.script_error_rx.resubscribe(),
             socket,
         )
     })
@@ -131,7 +130,6 @@ async fn handle_ws_conn(
     tx: broadcast::Sender<UiCommand>,
     mut world_rx: watch::Receiver<Option<WorldUpdate>>,
     debug_rx: DebugSubscriber,
-    mut script_error_rx: broadcast::Receiver<ScriptError>,
     mut socket: WebSocket,
 ) {
     loop {
@@ -151,12 +149,6 @@ async fn handle_ws_conn(
                     break;
                 }
             }
-            Ok(script_error) = script_error_rx.recv() => {
-                if let Err(err) = handle_send_script_error(&script_error, &mut socket).await {
-                    log::error!("Failed to send script error: {}", err);
-                    break;
-                }
-            }
             else => {
                 break;
             }
@@ -169,17 +161,14 @@ async fn handle_ws_conn(
 }
 
 async fn handle_ws_msg(tx: broadcast::Sender<UiCommand>, msg: Message) {
-    match msg {
-        Message::Text(text) => match serde_json::from_str::<UiCommand>(&text) {
-            Ok(cmd) => {
-                let _ = tx.send(cmd);
-            }
-            Err(err) => {
-                log::error!("Failed to parse command: {}", err);
-            }
-        },
-        _ => {}
-    }
+    if let Message::Text(text) = msg { match serde_json::from_str::<UiCommand>(&text) {
+        Ok(cmd) => {
+            let _ = tx.send(cmd);
+        }
+        Err(err) => {
+            log::error!("Failed to parse command: {}", err);
+        }
+    } }
 }
 
 async fn handle_send_ws_world_update(
@@ -207,15 +196,6 @@ async fn handle_send_debug_map_update(
     socket: &mut WebSocket,
 ) -> anyhow::Result<()> {
     let text_data = serde_json::to_string(&WsMessage::Debug(&debug_map))?;
-    socket.send(Message::Text(text_data)).await?;
-    Ok(())
-}
-
-async fn handle_send_script_error(
-    script_error: &ScriptError,
-    socket: &mut WebSocket,
-) -> anyhow::Result<()> {
-    let text_data = serde_json::to_string(&WsMessage::ScriptError(script_error))?;
     socket.send(Message::Text(text_data)).await?;
     Ok(())
 }
@@ -249,18 +229,13 @@ pub async fn list_files(Query(query): Query<ListQuery>) -> impl IntoResponse {
         }
     };
     let mut entries = Vec::new();
-    for entry in read_dir {
-        match entry {
-            Ok(e) => {
-                let name = e.file_name().to_string_lossy().to_string();
-                let is_dir = match e.metadata() {
-                    Ok(m) => m.is_dir(),
-                    Err(_) => false,
-                };
-                entries.push(FileEntry { name, is_dir });
-            }
-            Err(_) => {}
-        }
+    for e in read_dir.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        let is_dir = match e.metadata() {
+            Ok(m) => m.is_dir(),
+            Err(_) => false,
+        };
+        entries.push(FileEntry { name, is_dir });
     }
     axum::Json(entries).into_response()
 }

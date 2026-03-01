@@ -1,3 +1,11 @@
 - [ ] Logging: revise logging file format to reduce log file size
 - [ ] Debug visualization: add new types - heatmap, curve
 - [ ] Debug visualization: allow toggling in UI
+- [ ] Ball posession tracking
+- [ ] Fix dribble and shoot in simulator
+- [ ] Add more automated referee actions to simulator
+  - [ ] Add safe ball teleportation
+  - [ ] Stop game on ball out of bounds and do proper free kick
+  - [ ] Do kick off after goal
+  - [ ] Make sure all simulation logic supports faster than real-time simulation
+- [ ] UI: move settings to modal

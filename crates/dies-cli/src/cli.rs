@@ -180,10 +180,8 @@ impl Cli {
                     Ok(_) => ExitCode::SUCCESS,
                     Err(err) => {
                         eprintln!("Error testing vision: {}", err);
-                        // eprintln!("Mode: {}", self.mode);
                         eprintln!("vision_addr: {}", self.vision_addr);
                         eprintln!("gc_addr: {}", self.gc_addr);
-                        // eprintln!("interface: {}", self.interface);
 
                         ExitCode::FAILURE
                     }
@@ -365,36 +363,6 @@ impl FromStr for SerialPort {
         }
     }
 }
-
-// impl ValueEnum for SerialPort {
-//     fn value_variants<'a>() -> &'a [Self] {
-//         Self::VARIANTS
-//     }
-
-//     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-//         match self {
-//             SerialPort::Disabled => Some(clap::builder::PossibleValue::new("disabled")),
-//             SerialPort::Auto => Some(clap::builder::PossibleValue::new("auto")),
-//             SerialPort::Port(port) => Some(clap::builder::PossibleValue::new(port)),
-//         }
-//     }
-
-//     fn from_str(input: &str, ignore_case: bool) -> std::result::Result<Self, String> {
-//         if ignore_case {
-//             match input.to_lowercase().as_str() {
-//                 "disabled" => Ok(SerialPort::Disabled),
-//                 "auto" => Ok(SerialPort::Auto),
-//                 _ => Ok(SerialPort::Port(input.to_owned())),
-//             }
-//         } else {
-//             match input {
-//                 "disabled" => Ok(SerialPort::Disabled),
-//                 "auto" => Ok(SerialPort::Auto),
-//                 _ => Ok(SerialPort::Port(input.to_owned())),
-//             }
-//         }
-//     }
-// }
 
 /// Selects a serial port based on the CLI arguments. This function may prompt the user
 /// to choose a port if multiple ports are available and the `serial_port` argument is
