@@ -3,23 +3,23 @@ all_strategies := "concerto test-strategy v0-strategy"
 
 # Build strategy + run dies in simulation mode
 dev strategy=default_strategy:
-    cargo build -p {{strategy}}
-    cargo run -- --auto-start --strategy {{strategy}}
+    cargo build -p {{ strategy }}
+    cargo run -- --strategy {{ strategy }}
 
 # Build everything (dies + all strategies) in release mode
 build:
     #!/usr/bin/env bash
     set -euo pipefail
     cargo build --release -p dies-cli
-    for s in {{all_strategies}}; do
+    for s in {{ all_strategies }}; do
         cargo build --release -p "$s"
     done
 
 # Run dies + vite dev server
 webdev strategy=default_strategy:
     cd webui && npm run dev &
-    cargo build -p {{strategy}}
-    cargo run -- --auto-start --strategy {{strategy}}
+    cargo build -p {{ strategy }}
+    cargo run -- --strategy {{ strategy }}
 
 # Generate TypeScript bindings + build webui
 webbuild:

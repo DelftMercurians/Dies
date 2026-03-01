@@ -236,6 +236,10 @@ export interface TeamConfiguration {
 	yellow_script_path?: string;
 	/** Which team defends the positive x side */
 	side_assignment: SideAssignment;
+	/** IPC strategy binary name for blue team (None = no strategy) */
+	blue_strategy?: string;
+	/** IPC strategy binary name for yellow team (None = no strategy) */
+	yellow_strategy?: string;
 }
 
 export enum Handicap {
