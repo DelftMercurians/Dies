@@ -44,6 +44,7 @@ export class FieldRenderer {
   private world: WorldData | null = null;
   private debugShapes: DebugShape[] = [];
   private debugStrings: Record<string, string> = {};
+  private debugMap: DebugMap = {};
   private fieldSize: [number, number] = DEFAULT_FIELD_SIZE;
   private positionDisplayMode: PositionDisplayMode = "filtered";
 
@@ -63,6 +64,7 @@ export class FieldRenderer {
   }
 
   setDebugData(data: DebugMap) {
+    this.debugMap = data;
     this.debugShapes = Object.values(data)
       .filter(({ type }) => type === "Shape")
       .map(({ data }) => data as DebugShape);
@@ -96,7 +98,8 @@ export class FieldRenderer {
     selectedPlayerId: number | null,
     primaryTeam: TeamColor,
     manualControl: number[],
-    manualBallPlacementPosition: Vector2 | null
+    manualBallPlacementPosition: Vector2 | null,
+    drawCircle: boolean = false
   ) {
     this.clear();
     if (!this.world) return;
@@ -152,6 +155,31 @@ export class FieldRenderer {
         2 * Math.PI
       );
       this.ctx.fill();
+    }
+
+    if (drawCircle) {
+      // Extract and draw particles from debug map
+      const particles: Vector2[] = [];
+      Object.entries(this.debugMap).forEach(([key]) => {
+        if (key.includes("particle")) {
+          const shapeValue = this.debugMap[key];
+          if (shapeValue.type === "Shape") {
+            const shape = shapeValue.data as DebugShape;
+            if (shape.type === "Circle" || shape.type === "Cross") {
+              particles.push(shape.data.center);
+            }
+          }
+        }
+      });
+
+      // Draw a dot for each particle
+      particles.forEach((pos) => {
+        this.ctx.fillStyle = "#ff0000";
+        this.ctx.beginPath();
+        const [x, y] = this.fieldToCanvas(pos);
+        this.ctx.arc(x, y, 3, 0, 2 * Math.PI);
+        this.ctx.fill();
+      });
     }
 
     this.debugShapes.forEach((shape) => this.drawDebugShape(shape));

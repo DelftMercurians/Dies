@@ -22,7 +22,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Settings } from "lucide-react";
+import { Settings, Circle } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn, radiansToDegrees } from "@/lib/utils";
 import {
@@ -78,20 +78,21 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const ballRef = useRef(worldData?.ball);
   ballRef.current = worldData?.ball;
   const [ballToMouse, setBallToMouse] = useState<boolean>(false);
+  const [drawCircle, setDrawCircle] = useState<boolean>(false);
   useEffect(() => {
     if (ballToMouse && ballRef.current?.raw_position) {
       const interval = setInterval(() => {
-        const [ballX, ballY] = ballRef.current?.raw_position[0]!;
-        const [mouseX, mouseY] = mouseFieldRef.current;
-        sendCommand({
-          type: "SimulatorCmd",
-          data: {
-            type: "ApplyBallForce",
+          const [ballX, ballY] = ballRef.current?.raw_position[0]!;
+          const [mouseX, mouseY] = mouseFieldRef.current;
+          sendCommand({
+            type: "SimulatorCmd",
             data: {
-              force: [(mouseX - ballX) * 0.7, (mouseY - ballY) * 0.7],
+              type: "ApplyBallForce",
+              data: {
+                force: [(mouseX - ballX) * 0.7, (mouseY - ballY) * 0.7],
+              },
             },
-          },
-        });
+          });
       }, 100);
       return () => clearInterval(interval);
     }
@@ -137,7 +138,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       selectedPlayerId,
       primaryTeam,
       manualControlledPlayerIds,
-      manualBallPlacementPosition
+      manualBallPlacementPosition,
+      drawCircle
     );
   }, [
     filteredDebugMap,
@@ -147,8 +149,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     manualControlledPlayerIds,
     positionDisplayMode,
     selectedPlayerId,
-    manualBallPlacementPosition,
-  ]);
+    manualBallPlacementPosition,    
+    drawCircle]);
 
   const selectedPlayerData =
     primaryTeam === TeamColor.Blue
@@ -267,12 +269,20 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       className="relative w-full h-full flex items-center justify-center overflow-hidden"
       style={{ padding: CONT_PADDING_PX }}
     >
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button className="absolute top-0 left-0">
-            <Settings size={24} />
-          </Button>
-        </PopoverTrigger>
+      <div className="absolute top-0 left-0 flex gap-2">
+        <Button
+          onClick={() => setDrawCircle(!drawCircle)}
+          variant={drawCircle ? "default" : "outline"}
+          className="w-10 h-10 p-0"
+        >
+          <Circle size={24} />
+        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button className="w-10 h-10 p-0">
+              <Settings size={24} />
+            </Button>
+          </PopoverTrigger>
 
         <PopoverContent className="flex flex-col w-max">
           <div className="flex flex-row items-center gap-4">
@@ -298,7 +308,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
             </ToggleGroup>
           </div>
         </PopoverContent>
-      </Popover>
+        </Popover>
+      </div>
 
       {playerTooltip ? (
         <div

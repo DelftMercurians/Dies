@@ -134,19 +134,40 @@ async fn handle_ws_conn(
 ) {
     loop {
         tokio::select! {
-            Some(Ok(msg)) = socket.next() => {
-                handle_ws_msg(tx.clone(), msg).await
+            msg = socket.next() => {
+                match msg {
+                    Some(Ok(msg)) => {
+                        handle_ws_msg(tx.clone(), msg).await;
+                    }
+                    Some(Err(err)) => {
+                        // Client closed connection or error occurred
+                        log::debug!("WebSocket receive error: {}", err);
+                        break;
+                    }
+                    None => {
+                        // Stream ended
+                        break;
+                    }
+                }
             }
             Ok(()) = world_rx.changed() => {
+                // Log warning but continue connection - don't break on send failures
                 if let Err(err) = handle_send_ws_world_update(&mut world_rx, &mut socket).await {
-                    log::error!("Failed to send update: {}", err);
-                    break;
+                    log::warn!("Failed to send world update: {}", err);
+                    // Only break if this is a connection error, not a serialization error
+                    if err.to_string().contains("closed") {
+                        break;
+                    }
                 }
             }
             debug_map = debug_rx.wait_and_get_copy() => {
+                // Log warning but continue connection - don't break on send failures
                 if let Err(err) =  handle_send_debug_map_update(debug_map, &mut socket).await {
-                    log::error!("Failed to send update: {}", err);
-                    break;
+                    log::warn!("Failed to send debug update: {}", err);
+                    // Only break if this is a connection error, not a serialization error
+                    if err.to_string().contains("closed") {
+                        break;
+                    }
                 }
             }
             else => {
@@ -155,9 +176,8 @@ async fn handle_ws_conn(
         }
     }
 
-    if let Err(err) = socket.close().await {
-        log::error!("Failed to close websocket: {}", err);
-    }
+    // Attempt graceful close, but don't fail if already closed
+    let _ = socket.close().await;
 }
 
 async fn handle_ws_msg(tx: broadcast::Sender<UiCommand>, msg: Message) {

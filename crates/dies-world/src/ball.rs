@@ -2,7 +2,7 @@ use dies_core::{debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 use nalgebra::{SVector, Vector6};
 
-use crate::filter::MaybeKalman;
+use crate::filter::{MaybeKalman, ParticleFilter, ParticleFilterConfig};
 
 /// Stored data for the ball from the last update.
 ///
@@ -17,21 +17,30 @@ struct StoredData {
     velocity: Vector3,
 }
 
-/// Tracker for the ball.
+/// Tracker for the ball with particle filter integration.
 #[derive(Debug)]
 pub struct BallTracker {
-    /// Kalman filter for the ball's position and velocity
+    /// Kalman filter for the ball's position and velocity (kept for compatibility/hybrid approach)
     filter: MaybeKalman<3, 6>,
+
+    /// Particle filter for robust ball tracking
+    particle_filter: ParticleFilter,
 
     /// Result of the last vision update
     last_detection: Option<StoredData>,
 
+    /// Number of consecutive missed detections
     misses: u32,
+
+    /// Use particle filter for state estimate (if true) or Kalman (if false)
+    use_particle_filter: bool,
 }
 
 impl BallTracker {
-    /// Create a new BallTracker.
+    /// Create a new BallTracker with particle filter enabled.
     pub fn new(settings: &TrackerSettings) -> BallTracker {
+        let particle_config = ParticleFilterConfig::default();
+
         BallTracker {
             last_detection: None,
             filter: MaybeKalman::new(
@@ -39,7 +48,9 @@ impl BallTracker {
                 settings.ball_unit_transition_var,
                 settings.ball_measurement_var,
             ),
+            particle_filter: ParticleFilter::new(particle_config),
             misses: 0,
+            use_particle_filter: true,
         }
     }
 
@@ -88,36 +99,76 @@ impl BallTracker {
             .cloned()
             .collect::<Vec<_>>();
 
-        if ball_measurements.is_empty() {
-            self.misses += 1;
-            return;
-        }
-        self.misses = 0;
-
-        ball_measurements.sort_by(|a, b| b.1.cmp(&a.1));
         let current_time = frame.t_capture();
 
-        //if no last data, update with the first data
-        if self.last_detection.is_none() {
-            self.last_detection = Some(StoredData {
-                timestamp: current_time,
-                position: ball_measurements[0].0,
-                raw_position: measured_positions,
-                velocity: Vector3::zeros(),
-            });
+        log::debug!(
+            "BallTracker::update - ball_measurements: count={}, measured_positions: {:?}",
+            ball_measurements.len(),
+            measured_positions
+        );
+
+        if ball_measurements.is_empty() {
+            self.misses += 1;
+
+            // Continue prediction with particle filter even without measurements
+            if self.particle_filter.is_initialized() && self.misses <= 5 {
+                let dt = if let Some(last) = &self.last_detection {
+                    current_time - last.timestamp
+                } else {
+                    1.0 / 60.0 // Default to 60 FPS if no previous detection
+                };
+
+                self.particle_filter.predict(dt);
+
+                if let Some(pos) = self.particle_filter.get_mean_estimate() {
+                    if let Some(vel) = self.particle_filter.get_mean_velocity() {
+                        self.last_detection = Some(StoredData {
+                            timestamp: current_time,
+                            position: pos,
+                            raw_position: measured_positions,
+                            velocity: vel,
+                        });
+                    }
+                }
+            }
+            return;
+        }
+
+        self.misses = 0;
+        ball_measurements.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // If first detection or if we've lost the ball for too long, re-initialize filters
+        let should_reinitialize = self.last_detection.is_none() || self.misses > 5;
+        
+        if should_reinitialize {
+            let initial_pos = ball_measurements[0].0;
+            let initial_vel = Vector3::zeros();
+
+            self.particle_filter
+                .initialize_from_measurement(initial_pos, initial_vel);
 
             self.filter.init(
-                Vector6::new(
-                    ball_measurements[0].0.x,
-                    0.0,
-                    ball_measurements[0].0.y,
-                    0.0,
-                    ball_measurements[0].0.z,
-                    0.0,
-                ),
+                Vector6::new(initial_pos.x, 0.0, initial_pos.y, 0.0, initial_pos.z, 0.0),
                 current_time,
             );
+
+            self.last_detection = Some(StoredData {
+                timestamp: current_time,
+                position: initial_pos,
+                raw_position: measured_positions,
+                velocity: initial_vel,
+            });
         } else {
+            // Predict step with particle filter
+            let dt = current_time - self.last_detection.as_ref().unwrap().timestamp;
+            if dt > 0.0 {
+                self.particle_filter.predict(dt);
+            }
+
+            // Update particle filter with measurements
+            self.particle_filter.update(&measured_positions);
+
+            // Also update Kalman filter for comparison/fallback
             for (pos, _is_noisy) in ball_measurements.iter() {
                 let pos_ov = SVector::<f64, 3>::new(pos.x, pos.y, pos.z);
                 let z = self
@@ -125,7 +176,46 @@ impl BallTracker {
                     .as_mut()
                     .unwrap()
                     .update(pos_ov, current_time, false);
-                if let Some(z) = z {
+                if let Some(_) = z {
+                    // Kalman update successful
+                }
+            }
+
+            // Use particle filter for position/velocity estimate
+            if self.use_particle_filter {
+                if let Some(pos) = self.particle_filter.get_mean_estimate() {
+                    if let Some(vel) = self.particle_filter.get_mean_velocity() {
+                        let mut pos_v3 = pos;
+                        let vel_v3 = vel;
+
+                        // Clamp z to ground
+                        if pos_v3.z < 0.0 {
+                            pos_v3.z = 0.0;
+                        }
+
+                        log::debug!(
+                            "BallTracker::update - particle filter: pos={:?}, vel={:?}, raw_pos_count={}",
+                            pos_v3,
+                            vel_v3,
+                            measured_positions.len()
+                        );
+
+                        self.last_detection = Some(StoredData {
+                            timestamp: current_time,
+                            position: pos_v3,
+                            raw_position: measured_positions,
+                            velocity: vel_v3,
+                        });
+                    }
+                }
+            } else {
+                // Fallback: use Kalman filter estimate
+                if let Some(z) = self
+                    .filter
+                    .as_mut()
+                    .unwrap()
+                    .update(SVector::<f64, 3>::new(ball_measurements[0].0.x, ball_measurements[0].0.y, ball_measurements[0].0.z), current_time, false)
+                {
                     let mut pos_v3 = Vector3::new(z[0], z[2], z[4]);
                     let vel_v3 = Vector3::new(z[1], z[3], z[5]);
                     if pos_v3.z < 0.0 {
@@ -142,22 +232,30 @@ impl BallTracker {
                     });
                 }
             }
-            self.last_detection.as_mut().unwrap().raw_position = measured_positions;
         }
 
-        dies_core::debug_value(
-            "ball_speed",
-            self.last_detection.as_ref().unwrap().velocity.xy().norm(),
-        );
+        if let Some(last) = &self.last_detection {
+            dies_core::debug_value("ball_speed", last.velocity.xy().norm());
+        }
     }
 
     pub fn get(&self) -> Option<BallData> {
-        self.last_detection.as_ref().map(|data| BallData {
-            timestamp: data.timestamp,
-            raw_position: data.raw_position.clone(),
-            position: data.position,
-            velocity: data.velocity,
-            detected: self.misses < 5,
+        self.last_detection.as_ref().map(|data| {
+            log::debug!(
+                "BallTracker::get - raw_position: len={}, pos={:?}, vel={:?}, detected={}, misses={}",
+                data.raw_position.len(),
+                data.position,
+                data.velocity,
+                self.misses < 5,
+                self.misses
+            );
+            BallData {
+                timestamp: data.timestamp,
+                raw_position: data.raw_position.clone(),
+                position: data.position,
+                velocity: data.velocity,
+                detected: self.misses < 5,
+            }
         })
     }
 }
