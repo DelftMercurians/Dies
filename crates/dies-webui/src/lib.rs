@@ -34,6 +34,9 @@ pub struct UiConfig {
     pub calibration_mode: bool,
     /// IPC strategy binary name (None = no strategy).
     pub strategy: Option<String>,
+    /// Startup override for the low-level motion controller. When `Some`,
+    /// the persisted setting is overwritten at load time.
+    pub controller_override: Option<dies_core::ControllerMode>,
 }
 
 #[derive(Debug, Clone)]

@@ -170,6 +170,20 @@ pub struct TeamSpecificSettings {
     pub handicaps: HashMap<PlayerId, Vec<Handicap>>,
 }
 
+/// Which low-level motion controller the executor runs. Global across all
+/// robots; switched at runtime through the webui settings panel or at
+/// startup via `dies-cli --controller`.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[typeshare]
+pub enum ControllerMode {
+    /// Two-step minimum-time-path controller (default, battle-tested).
+    #[default]
+    Mtp,
+    /// iLQR MPC from `dies-mpc`.
+    Ilqr,
+}
+
 /// Settings for the executor.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
@@ -181,6 +195,8 @@ pub struct ExecutorSettings {
     pub blue_team_settings: TeamSpecificSettings,
     pub skill_settings: SkillSettings,
     pub allow_no_vision: bool,
+    #[serde(default)]
+    pub controller_mode: ControllerMode,
 }
 
 impl ExecutorSettings {
@@ -228,6 +244,7 @@ impl Default for ExecutorSettings {
             blue_team_settings: TeamSpecificSettings::default(),
             skill_settings: SkillSettings::default(),
             allow_no_vision: true,
+            controller_mode: ControllerMode::default(),
         }
     }
 }

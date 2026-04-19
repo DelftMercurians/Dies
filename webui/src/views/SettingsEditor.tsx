@@ -142,6 +142,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
     );
 
   const settings = allSettings[settingsKey];
+  if (!settings || typeof settings !== "object") return null;
   const handleChange = (key: SettingsKey, value: Value) => {
     if (allSettings && settings) {
       const config = fieldConfig[settingsKey]?.[key];
@@ -159,7 +160,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
   return (
     <div className="h-full relative">
       <div className="absolute inset-0 overflow-y-auto flex flex-col gap-4 p-4">
-        {Object.entries(settings).map(([key, _value]) => {
+        {Object.entries(settings as unknown as Record<string, unknown>).map(([key, _value]) => {
           const value = _value as Value;
           const config = fieldConfig[settingsKey]?.[key as SettingsKey] || {};
           const {

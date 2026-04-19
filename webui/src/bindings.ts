@@ -272,6 +272,18 @@ export interface SkillSettings {
 	fetch_ball_preshoot_ball_avoidance: number;
 }
 
+/**
+ * Which low-level motion controller the executor runs. Global across all
+ * robots; switched at runtime through the webui settings panel or at
+ * startup via `dies-cli --controller`.
+ */
+export enum ControllerMode {
+	/** Two-step minimum-time-path controller (default, battle-tested). */
+	Mtp = "mtp",
+	/** iLQR MPC from `dies-mpc`. */
+	Ilqr = "ilqr",
+}
+
 /** Settings for the executor. */
 export interface ExecutorSettings {
 	controller_settings: ControllerSettings;
@@ -281,6 +293,7 @@ export interface ExecutorSettings {
 	blue_team_settings: TeamSpecificSettings;
 	skill_settings: SkillSettings;
 	allow_no_vision: boolean;
+	controller_mode?: ControllerMode;
 }
 
 export interface ExecutorSettingsResponse {

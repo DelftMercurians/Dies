@@ -164,6 +164,10 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
             settings.team_configuration.yellow_strategy = Some(strategy.clone());
         }
     }
+    // CLI-supplied controller override wins over the persisted setting.
+    if let Some(mode) = config.controller_override {
+        state.executor_settings.write().unwrap().controller_mode = mode;
+    }
     let state = Arc::new(state);
 
     // Start basestation watcher

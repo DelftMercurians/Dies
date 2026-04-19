@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::SocketAddr, path::PathBuf, process::ExitCod
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
-use dies_core::{PlayerId, TeamColor};
+use dies_core::{ControllerMode, PlayerId, TeamColor};
 use dies_ssl_client::{ConnectionConfig, SslClientConfig};
 use dies_webui::{UiConfig, UiEnvironment};
 use serde::{Deserialize, Serialize};
@@ -59,6 +59,23 @@ pub enum ControlledTeam {
     Blue,
     Yellow,
     Both,
+}
+
+/// CLI-facing proxy for `dies_core::ControllerMode` (needed because we don't
+/// want to pull `clap` into `dies-core`).
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CliControllerMode {
+    Mtp,
+    Ilqr,
+}
+
+impl From<CliControllerMode> for ControllerMode {
+    fn from(v: CliControllerMode) -> Self {
+        match v {
+            CliControllerMode::Mtp => ControllerMode::Mtp,
+            CliControllerMode::Ilqr => ControllerMode::Ilqr,
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -119,6 +136,11 @@ pub struct Cli {
 
     #[clap(long, default_value = "false", action)]
     pub calibration_mode: bool,
+
+    /// Motion controller. If omitted, the value persisted in the settings
+    /// file is used (defaults to `mtp` the first time).
+    #[clap(long, value_enum)]
+    pub controller: Option<CliControllerMode>,
 }
 
 impl Cli {
@@ -207,6 +229,8 @@ impl Cli {
             Some(self.strategy.clone())
         };
 
+        let controller_override = self.controller.map(ControllerMode::from);
+
         Ok(UiConfig {
             settings_file: self.settings_file,
             environment,
@@ -226,6 +250,7 @@ impl Cli {
             },
             calibration_mode,
             strategy,
+            controller_override,
         })
     }
 

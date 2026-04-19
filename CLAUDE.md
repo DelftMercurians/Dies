@@ -32,6 +32,8 @@ cargo clippy                  # Lint
 cd webui && pnpm run tsc      # TypeScript type check
 ```
 
+For hangs, `tokio-console` (install via `cargo install --locked tokio-console`) attaches to the running process and shows task state.
+
 ## Architecture
 
 **Cargo workspace** with diamond-shaped dependency graph:
@@ -59,7 +61,7 @@ Strategies are separate binaries that implement the `Strategy` trait from `dies-
 - **dies-strategy-protocol**: IPC message types (HostMessage, StrategyMessage, SkillCommand)
 - **dies-strategy-api**: Public interface (`Strategy` trait, `TeamContext`, `PlayerHandle`)
 - **dies-strategy-runner**: Spawns strategy processes and manages IPC
-- **strategies/concerto**: Current main strategy (Formation + Plan-Execute-Replan)
+- **strategies/**: `concerto` (current main, Formation + Plan-Execute-Replan), `v0` (older strategy), `test-strategy` (smoke tests). IPC uses Unix domain sockets — Linux/macOS only.
 
 **Coordinate frame**: All strategy code uses team-relative coordinates (+x toward opponent goal). The executor handles transformation to/from absolute coordinates. Never expose absolute coordinates to strategies.
 
@@ -89,6 +91,7 @@ React/TypeScript frontend in `webui/` (Vite + Tailwind), using **pnpm** as packa
 | `dies-strategy-protocol` | IPC message serialization |
 | `dies-strategy-runner` | Strategy process spawning + IPC management |
 | `dies-webui` | Axum server + WebSocket |
+| `dies-logger` | Binary log format (protobuf + msgpack) for recording/replaying sessions |
 | `dies-cli` | Binary entry point, CLI args (clap) |
 
 ## Key dependencies

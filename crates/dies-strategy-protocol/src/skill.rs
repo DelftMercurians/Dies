@@ -71,10 +71,14 @@ pub enum SkillCommand {
     /// **Type**: Discrete - start once, wait for completion.
     ///
     /// **Parameters**:
-    /// - `target_heading`: Desired heading after ball is captured (for follow-up action)
+    /// - `target_heading`: Desired heading after ball is captured. For a
+    ///   stationary ball this also determines the approach direction —
+    ///   the robot moves to the side of the ball opposite `target_heading`
+    ///   so it ends up facing that direction at capture.
     ///
     /// **Behavior**:
-    /// 1. Move to position behind ball, facing `target_heading`
+    /// 1. Move to position behind ball (opposite side of `target_heading`),
+    ///    already facing `target_heading`
     /// 2. Slowly approach ball with dribbler on
     /// 3. Complete when breakbeam detects ball
     ///

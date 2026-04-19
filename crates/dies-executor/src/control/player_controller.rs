@@ -28,7 +28,6 @@ pub struct PlayerController {
     id: PlayerId,
     position_mtp: MTP,
     two_step_mtp: TwoStepMTP,
-    use_mpc: bool,
     use_two_step_mtp: bool,
     last_pos: Vector2,
 
@@ -63,11 +62,6 @@ pub struct PlayerController {
 }
 
 impl PlayerController {
-    #[cfg(feature = "mpc")]
-    pub fn get_max_speed(&self) -> f64 {
-        self.max_speed
-    }
-
     /// Create a new player controller with the given ID.
     pub fn new(id: PlayerId, settings: &ExecutorSettings) -> Self {
         let mut instance = Self {
@@ -75,8 +69,7 @@ impl PlayerController {
 
             position_mtp: MTP::new(),
             two_step_mtp: TwoStepMTP::new(),
-            use_mpc: cfg!(feature = "mpc"), // Default to using MPC
-            use_two_step_mtp: true,         // Default to double step MTP
+            use_two_step_mtp: true, // Default to double step MTP
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity_global: Vector2::new(0.0, 0.0),
             w: 0.0,
@@ -127,14 +120,16 @@ impl PlayerController {
         self.id
     }
 
-    /// Set the target velocity (used when MPC is computed externally)
+    /// Set the target velocity (used when the team controller overrides the
+    /// MTP output — e.g. when running in iLQR mode).
     pub fn set_target_velocity(&mut self, velocity: Vector2) {
         self.target_velocity_global = velocity;
     }
 
-    /// Check if using MPC
-    pub fn use_mpc(&self) -> bool {
-        self.use_mpc
+    /// Access to the configured maximum speed, used by the iLQR wrapper to
+    /// clip commanded velocities to robot-realistic bounds.
+    pub fn get_max_speed(&self) -> f64 {
+        self.max_speed
     }
 
     /// Get the current command for the player.

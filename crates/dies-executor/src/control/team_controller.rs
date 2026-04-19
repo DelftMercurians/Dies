@@ -4,13 +4,14 @@ use std::{
 };
 
 use dies_core::{
-    ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
-    SideAssignment, TeamColor, TeamData, Vector2,
+    ControllerMode, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer,
+    PlayerId, RoleType, SideAssignment, TeamColor, TeamData, Vector2,
 };
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use std::sync::Arc;
 
 use super::{
+    ilqr::IlqrController,
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     skill_executor::{SkillContext, SkillExecutor},
@@ -36,8 +37,7 @@ pub struct TeamController {
     /// Current strategy input (skill commands and roles).
     strategy_input: StrategyInput,
 
-    #[cfg(feature = "mpc")]
-    mpc_controller: MPCController,
+    ilqr_controller: IlqrController,
 
     removing_players: HashSet<PlayerId>,
 
@@ -56,8 +56,7 @@ impl TeamController {
             settings: settings.clone(),
             skill_executor: SkillExecutor::new(),
             strategy_input: StrategyInput::default(),
-            #[cfg(feature = "mpc")]
-            mpc_controller: MPCController::new(),
+            ilqr_controller: IlqrController::new(),
             removing_players: HashSet::new(),
             avoid_goal_area_flags: HashMap::new(),
             warmup_timer: None,
@@ -239,74 +238,30 @@ impl TeamController {
             .chain(world_data.opp_players.iter())
             .collect::<Vec<_>>();
 
-        // Collect robots that need MPC processing
-        #[allow(unused_mut)]
-        let mut mpc_controls: HashMap<PlayerId, Vector2> = HashMap::new();
-        #[cfg(feature = "mpc")]
-        {
-            let mut mpc_robots = Vec::new();
-            let mut controllable_mask = Vec::new();
-            for controller in self.player_controllers.values() {
-                if controller.use_mpc() {
-                    let player_data = world_data
-                        .own_players
-                        .iter()
-                        .find(|p| p.id == controller.id());
-
-                    if let Some(player_data) = player_data {
-                        let id = controller.id();
-                        let default_input = final_player_inputs.player(id);
-                        let input = manual_override.get(&id).unwrap_or(&default_input);
-
-                        if let Some(target_pos) = input.position {
-                            #[cfg(feature = "mpc")]
-                            mpc_robots.push(super::mpc::RobotState {
-                                id: controller.id(),
-                                position: player_data.position,
-                                velocity: player_data.velocity,
-                                target_position: target_pos,
-                                vel_limit: controller.get_max_speed(),
-                            });
-
-                            controllable_mask.push(true);
-                        } else {
-                            #[cfg(feature = "mpc")]
-                            mpc_robots.push(super::mpc::RobotState {
-                                id: controller.id(),
-                                position: player_data.position,
-                                velocity: player_data.velocity,
-                                target_position: player_data.position,
-                                vel_limit: 0.0,
-                            });
-                            controllable_mask.push(false);
-                        }
-                    }
-                }
-            }
-
-            #[cfg(feature = "mpc")]
-            self.mpc_controller.set_field_bounds(&world_data);
-
-            #[cfg(feature = "mpc")]
-            if !mpc_robots.is_empty() {
-                let mut avoid_goal_area_flags = Vec::new();
-                for robot in &mpc_robots {
-                    let avoid_goal_area = self
-                        .avoid_goal_area_flags
-                        .get(&robot.id)
-                        .copied()
-                        .unwrap_or(true);
-                    avoid_goal_area_flags.push(avoid_goal_area);
-                }
-
-                mpc_controls = self.mpc_controller.compute_batch_control(
-                    &mpc_robots,
+        // If iLQR mode is active, solve for every robot that has a position
+        // target before the per-controller update. Results override the MTP
+        // velocity computed inside `controller.update()` below. In MTP mode
+        // this map stays empty and the existing MTP path runs untouched.
+        let ilqr_overrides: HashMap<PlayerId, Vector2> = match self.settings.controller_mode {
+            ControllerMode::Ilqr => {
+                let inputs_for_ilqr: HashMap<PlayerId, PlayerControlInput> = self
+                    .player_controllers
+                    .keys()
+                    .map(|id| {
+                        let base = final_player_inputs.player(*id);
+                        let effective = manual_override.get(id).cloned().unwrap_or(base);
+                        (*id, effective)
+                    })
+                    .collect();
+                self.ilqr_controller.compute_batch_control(
+                    &self.player_controllers,
+                    &inputs_for_ilqr,
                     &world_data,
-                    Some(&controllable_mask),
-                    &avoid_goal_area_flags,
+                    &self.avoid_goal_area_flags,
                 )
             }
-        }
+            ControllerMode::Mtp => HashMap::new(),
+        };
 
         // Update the player controllers
         for controller in self.player_controllers.values_mut() {
@@ -320,19 +275,6 @@ impl TeamController {
                 let player_context = team_context.player_context(id);
                 let default_input = final_player_inputs.player(id);
                 let input_to_use = manual_override.get(&id).unwrap_or(&default_input);
-
-                // Handle MPC vs MTP control
-                if controller.use_mpc() {
-                    if let Some(mpc_control) = mpc_controls.get(&id) {
-                        controller.set_target_velocity(*mpc_control);
-                        player_context.debug_string("controller", "MPC");
-                        #[cfg(feature = "mpc")]
-                        dies_core::debug_value(
-                            format!("p{}.mpc.duration_ms", id),
-                            self.mpc_controller.last_solve_time_ms(),
-                        );
-                    }
-                }
 
                 let is_manual = manual_override
                     .get(&id)
@@ -413,6 +355,14 @@ impl TeamController {
                     avoid_goal_area_margin,
                     avoid_opp_robots,
                 );
+
+                // iLQR (when enabled) overrides the MTP velocity that
+                // `update()` just computed. We let `update()` run
+                // unconditionally so yaw/kicker/dribbler logic still fires.
+                if let Some(vel) = ilqr_overrides.get(&id) {
+                    controller.set_target_velocity(*vel);
+                    player_context.debug_string("controller", "iLQR");
+                }
             } else {
                 controller.increment_frames_misses();
             }

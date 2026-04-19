@@ -29,8 +29,13 @@ const MAX_FINAL_APPROACH_DISTANCE: f64 = 30.0;
 /// This is a discrete skill - start once and monitor status. The skill
 /// completes when the breakbeam detects the ball.
 ///
-/// The `target_heading` parameter allows pre-orienting the robot for a
-/// follow-up action (e.g., facing the goal before shooting).
+/// For a stationary ball, `target_heading` also drives the approach
+/// geometry: the robot moves to a point offset from the ball on the side
+/// opposite to `target_heading`, so that once the ball is captured the
+/// robot is already oriented for a follow-up action (e.g., facing the
+/// opponent goal before shooting). For a moving ball, `target_heading`
+/// is only the desired final yaw — the approach direction is dictated
+/// by the interception geometry.
 pub struct PickupBallSkill {
     target_heading: Angle,
     status: SkillStatus,
@@ -122,29 +127,28 @@ impl ExecutableSkill for PickupBallSkill {
         }
 
         if ball_speed < 100.0 {
-            // Ball is stationary or slow - approach it
+            // Ball is stationary: approach from the side opposite to target_heading
+            // so that post-capture the robot is already facing target_heading.
+            let approach_dir = self.target_heading.to_vector();
+            let approach_pos = ball_pos - approach_dir * STOP_DISTANCE;
+
             if distance > STOP_DISTANCE + 80.0 {
-                // Move close to the ball
-                let target_pos =
-                    ball_pos - ball_angle.rotate_vector(&Vector2::new(STOP_DISTANCE, 0.0));
-                input.with_position(target_pos);
+                input.with_position(approach_pos);
+                input.with_yaw(self.target_heading);
                 input.with_care(0.8);
             } else {
-                // Final approach - move slowly
+                // Final approach - creep forward along target_heading
                 let start_pos = *self.starting_position.get_or_insert(player_pos);
                 let moved_distance = (player_pos - start_pos).norm();
 
                 if moved_distance > MAX_FINAL_APPROACH_DISTANCE {
-                    // We've moved too far, probably stuck
                     self.status = SkillStatus::Failed;
                     return SkillProgress::failure();
                 }
 
-                input.velocity = Velocity::global(
-                    (1.0 / moved_distance.max(1.0))
-                        * 100.0
-                        * ball_angle.rotate_vector(&Vector2::x()),
-                );
+                input.velocity =
+                    Velocity::global((1.0 / moved_distance.max(1.0)) * 100.0 * approach_dir);
+                input.with_yaw(self.target_heading);
             }
         } else {
             // Ball is moving - intercept it
