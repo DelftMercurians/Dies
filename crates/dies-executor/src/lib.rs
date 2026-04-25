@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
@@ -13,6 +13,7 @@ use dies_protos::{
 };
 use dies_simulator::Simulation;
 use dies_ssl_client::{SslMessage, VisionClient};
+use dies_test_driver::{LogBus, PlayerControlSlot, TestDriver, TestEnv, TestStatus};
 use dies_world::WorldTracker;
 use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
@@ -25,6 +26,33 @@ pub mod skills;
 pub mod strategy_host;
 
 pub use control::*;
+
+/// Translate a test-driver `PlayerControlSlot` into the executor's
+/// `PlayerControlInput`. Global velocity wins over local if both set.
+fn slot_to_control_input(slot: &PlayerControlSlot) -> PlayerControlInput {
+    let mut input = PlayerControlInput::default();
+    input.position = slot.position;
+    input.yaw = slot.yaw;
+    input.velocity = if let Some(v) = slot.vel_global {
+        Velocity::Global(v)
+    } else if let Some(v) = slot.vel_local {
+        Velocity::Local(v)
+    } else {
+        Velocity::Local(dies_core::Vector2::zeros())
+    };
+    input.angular_velocity = slot.angular_velocity;
+    input.dribbling_speed = slot.dribble;
+    input.fan_speed = slot.fan;
+    input.kick_speed = slot.kick_speed;
+    input.kicker = if let Some(force) = slot.kick_force {
+        KickerControlInput::Kick { force }
+    } else if slot.disarm_kicker {
+        KickerControlInput::Disarm
+    } else {
+        KickerControlInput::Idle
+    };
+    input
+}
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 20); // 20 Hz
@@ -280,13 +308,34 @@ impl PlayerOverrideState {
 ///
 /// The executor can be used in 3 different regimes: externally driven, automatic, and
 /// simulation. Now supports team-agnostic operation with 0, 1, or 2 active team controllers.
+///
+/// At runtime, the executor's control flow can be switched between **strategy** mode
+/// (the default) and **scenario** mode via [`ControlMsg::StartScenario`] /
+/// [`ControlMsg::StopScenario`]. When a scenario is loaded, the test driver takes
+/// over for its declared team; the strategy host is preserved but skipped each tick.
 pub struct Executor {
     tracker: WorldTracker,
-    strategy_host: strategy_host::StrategyHost,
+    /// Strategy host. Always present even when a scenario is running — it's just
+    /// not ticked. None only if the executor was constructed without strategy support
+    /// (currently never).
+    strategy_host: Option<strategy_host::StrategyHost>,
+    /// Active scenario test driver. When `Some`, replaces the strategy update path
+    /// for the scenario's declared team.
+    test_driver: Option<TestDriver>,
+    /// Persistent log bus shared with every test driver and exposed via the handle.
+    log_bus: LogBus,
+    /// Broadcasts the latest scenario status (Idle / Running / Completed / etc.).
+    scenario_status_tx: watch::Sender<TestStatus>,
     team_controllers: TeamMap,
     gc_client: GcClient,
     environment: Option<Environment>,
     manual_override: HashMap<(TeamColor, PlayerId), PlayerOverrideState>,
+    /// Players whose override input is being driven by the test driver (direct path).
+    /// Separate from manual_override so operator keyboard overrides don't collide.
+    test_manual: HashMap<(TeamColor, PlayerId), PlayerControlInput>,
+    /// Queue of simulator commands produced by the test driver this tick —
+    /// drained by `run_rt_sim` each frame.
+    pending_sim_cmds: Vec<SimulatorCmd>,
     update_tx: broadcast::Sender<WorldUpdate>,
     command_tx: mpsc::UnboundedSender<ControlMsg>,
     command_rx: mpsc::UnboundedReceiver<ControlMsg>,
@@ -303,66 +352,26 @@ impl Executor {
         ssl_client: VisionClient,
         bs_client: BasestationHandle,
     ) -> Self {
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let (update_tx, _) = broadcast::channel(16);
-        let (paused_tx, _) = watch::channel(false);
-        let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
-
-        let mut strategy_host =
-            strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
-                strategies_dir: std::path::PathBuf::from("target/debug"),
-                blue_strategy: settings.team_configuration.blue_strategy.clone(),
-                yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
-                side_assignment: settings.team_configuration.side_assignment,
-            });
-        // Start configured strategies
-        if let Some(ref name) = settings.team_configuration.blue_strategy {
-            strategy_host.set_strategy(TeamColor::Blue, Some(name.clone()));
-        }
-        if let Some(ref name) = settings.team_configuration.yellow_strategy {
-            strategy_host.set_strategy(TeamColor::Yellow, Some(name.clone()));
-        }
-
-        // Use team configuration from settings
-        let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
-
-        // Activate teams based on configuration
-        let mut controlled_teams = Vec::new();
-        if settings.team_configuration.blue_active {
-            team_controllers.activate_team(TeamColor::Blue, &settings);
-            controlled_teams.push(TeamColor::Blue);
-        }
-        if settings.team_configuration.yellow_active {
-            team_controllers.activate_team(TeamColor::Yellow, &settings);
-            controlled_teams.push(TeamColor::Yellow);
-        }
-
-        Self {
-            tracker: WorldTracker::new(&settings, &controlled_teams, settings.allow_no_vision),
-            strategy_host,
-            team_controllers,
-            gc_client: GcClient::new(),
-            environment: Some(Environment::Live {
+        Self::build(
+            settings,
+            Environment::Live {
                 ssl_client,
                 bs_client,
-            }),
-            manual_override: HashMap::new(),
-            command_tx,
-            command_rx,
-            update_tx,
-            paused_tx,
-            info_channel_rx,
-            info_channel_tx,
-            settings,
-        }
+            },
+        )
     }
 
     /// Create a new simulation executor.
-    pub fn new_simulation(settings: ExecutorSettings, mut simulator: Simulation) -> Self {
+    pub fn new_simulation(settings: ExecutorSettings, simulator: Simulation) -> Self {
+        Self::build(settings, Environment::Simulation { simulator })
+    }
+
+    fn build(settings: ExecutorSettings, mut environment: Environment) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
+        let (scenario_status_tx, _) = watch::channel(TestStatus::Idle);
 
         let mut strategy_host =
             strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
@@ -371,7 +380,6 @@ impl Executor {
                 yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
                 side_assignment: settings.team_configuration.side_assignment,
             });
-        // Start configured strategies
         if let Some(ref name) = settings.team_configuration.blue_strategy {
             strategy_host.set_strategy(TeamColor::Blue, Some(name.clone()));
         }
@@ -379,10 +387,7 @@ impl Executor {
             strategy_host.set_strategy(TeamColor::Yellow, Some(name.clone()));
         }
 
-        // Use team configuration from settings
         let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
-
-        // Activate teams based on configuration
         let mut controlled_teams = Vec::new();
         if settings.team_configuration.blue_active {
             team_controllers.activate_team(TeamColor::Blue, &settings);
@@ -392,16 +397,22 @@ impl Executor {
             team_controllers.activate_team(TeamColor::Yellow, &settings);
             controlled_teams.push(TeamColor::Yellow);
         }
-
-        simulator.set_controlled_teams(&controlled_teams);
+        if let Environment::Simulation { simulator } = &mut environment {
+            simulator.set_controlled_teams(&controlled_teams);
+        }
 
         Self {
             tracker: WorldTracker::new(&settings, &controlled_teams, settings.allow_no_vision),
-            strategy_host,
+            strategy_host: Some(strategy_host),
+            test_driver: None,
+            log_bus: LogBus::new(1024),
+            scenario_status_tx,
             team_controllers,
             gc_client: GcClient::new(),
-            environment: Some(Environment::Simulation { simulator }),
+            environment: Some(environment),
             manual_override: HashMap::new(),
+            test_manual: HashMap::new(),
+            pending_sim_cmds: Vec::new(),
             command_tx,
             command_rx,
             update_tx,
@@ -550,6 +561,11 @@ impl Executor {
                         self.step_simulation(&mut simulator, dt)?;
                     }
                     _ = cmd_interval.tick() => {
+                        // Drain any simulator commands queued by the test driver.
+                        let pending = std::mem::take(&mut self.pending_sim_cmds);
+                        for cmd in pending {
+                            self.handle_simulator_cmd(&mut simulator, cmd);
+                        }
                         for (team_color, cmd) in self.player_commands() {
                             match cmd {
                                 PlayerCmd::Move(cmd) => {
@@ -573,7 +589,9 @@ impl Executor {
             }
         }
 
-        self.strategy_host.shutdown();
+        if let Some(h) = &mut self.strategy_host {
+            h.shutdown();
+        }
         Ok(())
     }
 
@@ -647,7 +665,9 @@ impl Executor {
                 }
             }
         }
-        self.strategy_host.shutdown();
+        if let Some(h) = &mut self.strategy_host {
+            h.shutdown();
+        }
         Ok(())
     }
 
@@ -686,6 +706,8 @@ impl Executor {
             control_tx: self.command_tx.clone(),
             update_rx: self.update_tx.subscribe(),
             info_channel: self.info_channel_tx.clone(),
+            log_bus: self.log_bus.clone(),
+            scenario_status_rx: self.scenario_status_tx.subscribe(),
         }
     }
 
@@ -723,7 +745,9 @@ impl Executor {
             ControlMsg::SetSideAssignment(side_assignment) => {
                 self.team_controllers.side_assignment = side_assignment;
                 self.tracker.set_side_assignment(side_assignment);
-                self.strategy_host.set_side_assignment(side_assignment);
+                if let Some(h) = &mut self.strategy_host {
+                    h.set_side_assignment(side_assignment);
+                }
             }
             ControlMsg::SetTeamConfiguration(_) => {
                 log::warn!("Setting team configuration is not supported mid run");
@@ -732,7 +756,6 @@ impl Executor {
                 self.team_controllers.swap_teams();
             }
             ControlMsg::SwapTeamSides => {
-                // Swap side assignment
                 self.team_controllers.side_assignment = match self.team_controllers.side_assignment
                 {
                     SideAssignment::BlueOnPositive => SideAssignment::YellowOnPositive,
@@ -740,8 +763,15 @@ impl Executor {
                 };
                 self.tracker
                     .set_side_assignment(self.team_controllers.side_assignment);
-                self.strategy_host
-                    .set_side_assignment(self.team_controllers.side_assignment);
+                if let Some(h) = &mut self.strategy_host {
+                    h.set_side_assignment(self.team_controllers.side_assignment);
+                }
+            }
+            ControlMsg::StartScenario { path, team } => {
+                self.handle_start_scenario(path, team);
+            }
+            ControlMsg::StopScenario => {
+                self.handle_stop_scenario();
             }
             ControlMsg::Stop => {}
 
@@ -750,6 +780,77 @@ impl Executor {
             | ControlMsg::SetActiveTeams { .. } => {
                 unreachable!();
             }
+        }
+    }
+
+    fn current_test_env(&self) -> TestEnv {
+        match self.environment.as_ref() {
+            Some(Environment::Simulation { .. }) => TestEnv::Sim,
+            Some(Environment::Live { .. }) => TestEnv::Real,
+            None => TestEnv::Either,
+        }
+    }
+
+    fn handle_start_scenario(&mut self, path: PathBuf, team_hint: Option<TeamColor>) {
+        // Stop any running scenario first; replacing in-place mid-tick is messy.
+        if self.test_driver.is_some() {
+            self.handle_stop_scenario();
+        }
+        let env = self.current_test_env();
+        // Default starting team if scenario meta doesn't override it.
+        let initial_team = team_hint
+            .or_else(|| self.team_controllers.active_teams().first().copied())
+            .unwrap_or(TeamColor::Blue);
+
+        let mut driver = match TestDriver::new(initial_team, env, self.log_bus.clone()) {
+            Ok(d) => d,
+            Err(e) => {
+                log::error!("scenario driver creation failed: {:?}", e);
+                let _ = self
+                    .scenario_status_tx
+                    .send(TestStatus::Failed { error: e.to_string() });
+                return;
+            }
+        };
+        let _ = self.scenario_status_tx.send(TestStatus::Starting);
+        match driver.load_and_start(&path) {
+            Ok(meta) => {
+                log::info!("scenario started: {} (team={:?})", meta.name, meta.team);
+                self.test_driver = Some(driver);
+                // Disable game-state compliance for the team being driven; scenarios
+                // own safety. Re-enabled in handle_stop_scenario.
+                self.set_active_team_comply(meta.team, false);
+                let _ = self.scenario_status_tx.send(TestStatus::Running { name: meta.name });
+            }
+            Err(e) => {
+                log::error!("scenario start failed: {:?}", e);
+                let _ = self
+                    .scenario_status_tx
+                    .send(TestStatus::Failed { error: e.to_string() });
+            }
+        }
+    }
+
+    fn handle_stop_scenario(&mut self) {
+        if let Some(mut driver) = self.test_driver.take() {
+            driver.abort();
+            // Re-enable compliance on whichever team it had been driving.
+            let team = driver.team_color();
+            self.set_active_team_comply(team, true);
+            self.test_manual.clear();
+            self.pending_sim_cmds.clear();
+            log::info!("scenario stopped");
+            let _ = self.scenario_status_tx.send(TestStatus::Aborted);
+        }
+    }
+
+    fn set_active_team_comply(&mut self, team: TeamColor, enabled: bool) {
+        let controller = match team {
+            TeamColor::Blue => self.team_controllers.blue_team.as_mut(),
+            TeamColor::Yellow => self.team_controllers.yellow_team.as_mut(),
+        };
+        if let Some(c) = controller {
+            c.comply_enabled = enabled;
         }
     }
 
@@ -763,19 +864,6 @@ impl Executor {
             log::error!("Failed to broadcast world update: {}", err);
         }
 
-        // Collect skill statuses from team controllers and feed to strategy host
-        if let Some(ref controller) = self.team_controllers.blue_team {
-            let statuses = controller.get_skill_statuses();
-            self.strategy_host
-                .update_skill_statuses(TeamColor::Blue, statuses);
-        }
-        if let Some(ref controller) = self.team_controllers.yellow_team {
-            let statuses = controller.get_skill_statuses();
-            self.strategy_host
-                .update_skill_statuses(TeamColor::Yellow, statuses);
-        }
-
-        // Get team data for strategy host
         let blue_team_data = if self.team_controllers.blue_team.is_some() {
             Some(world_data.get_team_data(TeamColor::Blue))
         } else {
@@ -787,30 +875,139 @@ impl Executor {
             None
         };
 
-        // Run strategy host
-        let frame_output = self
-            .strategy_host
-            .update(blue_team_data.as_ref(), yellow_team_data.as_ref());
+        if let Some(driver) = self.test_driver.as_mut() {
+            // Scenario takes over for its declared team. The other team (if any)
+            // continues to run its strategy as usual — strategies coexist with scenarios.
+            let driver_team = driver.team_color();
+            let team_data_for_driver = match driver_team {
+                TeamColor::Blue => blue_team_data.as_ref(),
+                TeamColor::Yellow => yellow_team_data.as_ref(),
+            };
+            let active_controller = match driver_team {
+                TeamColor::Blue => self.team_controllers.blue_team.as_ref(),
+                TeamColor::Yellow => self.team_controllers.yellow_team.as_ref(),
+            };
+            if let Some(ctrl) = active_controller {
+                driver.set_skill_statuses(ctrl.get_skill_statuses());
+            }
 
-        // Feed strategy output to team controllers
-        if let Some(ref mut controller) = self.team_controllers.blue_team {
-            controller.set_strategy_input(StrategyInput {
-                skill_commands: frame_output.blue_commands,
-                player_roles: frame_output.blue_roles,
-            });
-        }
-        if let Some(ref mut controller) = self.team_controllers.yellow_team {
-            controller.set_strategy_input(StrategyInput {
-                skill_commands: frame_output.yellow_commands,
-                player_roles: frame_output.yellow_roles,
-            });
+            let mut applied = false;
+            if let Some(td) = team_data_for_driver {
+                let frame = driver.tick(td);
+                if let Some(controller) = match driver_team {
+                    TeamColor::Blue => self.team_controllers.blue_team.as_mut(),
+                    TeamColor::Yellow => self.team_controllers.yellow_team.as_mut(),
+                } {
+                    controller.set_strategy_input(StrategyInput {
+                        skill_commands: frame.skill_commands,
+                        player_roles: frame.player_roles,
+                    });
+                }
+                self.test_manual.clear();
+                for (pid, slot) in frame.direct_inputs {
+                    self.test_manual
+                        .insert((driver_team, pid), slot_to_control_input(&slot));
+                }
+                self.pending_sim_cmds.extend(frame.sim_commands);
+                applied = true;
+            }
+
+            // Strategy host still drives the *other* team if one is configured.
+            let other_team = match driver_team {
+                TeamColor::Blue => TeamColor::Yellow,
+                TeamColor::Yellow => TeamColor::Blue,
+            };
+            if let Some(strategy_host) = self.strategy_host.as_mut() {
+                let other_team_data = match other_team {
+                    TeamColor::Blue => blue_team_data.as_ref(),
+                    TeamColor::Yellow => yellow_team_data.as_ref(),
+                };
+                if other_team_data.is_some() {
+                    if let Some(controller) = match other_team {
+                        TeamColor::Blue => self.team_controllers.blue_team.as_ref(),
+                        TeamColor::Yellow => self.team_controllers.yellow_team.as_ref(),
+                    } {
+                        strategy_host
+                            .update_skill_statuses(other_team, controller.get_skill_statuses());
+                    }
+                    let blue_arg = match other_team {
+                        TeamColor::Blue => other_team_data,
+                        TeamColor::Yellow => None,
+                    };
+                    let yellow_arg = match other_team {
+                        TeamColor::Yellow => other_team_data,
+                        TeamColor::Blue => None,
+                    };
+                    let frame_output = strategy_host.update(blue_arg, yellow_arg);
+                    if let Some(controller) = self.team_controllers.blue_team.as_mut() {
+                        if other_team == TeamColor::Blue {
+                            controller.set_strategy_input(StrategyInput {
+                                skill_commands: frame_output.blue_commands,
+                                player_roles: frame_output.blue_roles,
+                            });
+                        }
+                    }
+                    if let Some(controller) = self.team_controllers.yellow_team.as_mut() {
+                        if other_team == TeamColor::Yellow {
+                            controller.set_strategy_input(StrategyInput {
+                                skill_commands: frame_output.yellow_commands,
+                                player_roles: frame_output.yellow_roles,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Detect terminal state and broadcast it. The driver itself transitions
+            // to Completed/Failed inside `tick`.
+            if applied {
+                let status = driver.status();
+                if !matches!(status, TestStatus::Idle | TestStatus::Starting | TestStatus::Running { .. }) {
+                    let _ = self.scenario_status_tx.send(status);
+                    // Scenario has ended on its own — clean up.
+                    let team = driver.team_color();
+                    self.test_driver = None;
+                    self.set_active_team_comply(team, true);
+                    self.test_manual.clear();
+                }
+            }
+        } else if let Some(strategy_host) = self.strategy_host.as_mut() {
+            if let Some(ref controller) = self.team_controllers.blue_team {
+                let statuses = controller.get_skill_statuses();
+                strategy_host.update_skill_statuses(TeamColor::Blue, statuses);
+            }
+            if let Some(ref controller) = self.team_controllers.yellow_team {
+                let statuses = controller.get_skill_statuses();
+                strategy_host.update_skill_statuses(TeamColor::Yellow, statuses);
+            }
+
+            let frame_output =
+                strategy_host.update(blue_team_data.as_ref(), yellow_team_data.as_ref());
+
+            if let Some(ref mut controller) = self.team_controllers.blue_team {
+                controller.set_strategy_input(StrategyInput {
+                    skill_commands: frame_output.blue_commands,
+                    player_roles: frame_output.blue_roles,
+                });
+            }
+            if let Some(ref mut controller) = self.team_controllers.yellow_team {
+                controller.set_strategy_input(StrategyInput {
+                    skill_commands: frame_output.yellow_commands,
+                    player_roles: frame_output.yellow_roles,
+                });
+            }
+            self.test_manual.clear();
         }
 
-        let manual_override = self
+        // Merge real manual_override with test_manual, test has priority for same key.
+        let mut manual_override: HashMap<(TeamColor, PlayerId), PlayerControlInput> = self
             .manual_override
             .iter_mut()
             .map(|(id, s)| (*id, s.advance()))
             .collect();
+        for (k, v) in &self.test_manual {
+            manual_override.insert(*k, v.clone());
+        }
         self.team_controllers.update(&world_data, manual_override);
     }
 }

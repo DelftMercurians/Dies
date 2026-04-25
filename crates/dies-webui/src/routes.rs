@@ -9,6 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 use dies_core::{DebugMap, DebugSubscriber, TeamColor, WorldUpdate};
+use dies_test_driver::{TestLogEntry, TestStatus};
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
@@ -18,8 +19,8 @@ use tokio::sync::{broadcast, watch};
 
 use crate::{
     server::ServerState, BasestationResponse, ExecutorInfoResponse, ExecutorSettingsResponse,
-    GetDebugMapResponse, PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, UiCommand,
-    UiMode, UiStatus, UiWorldState, WsMessage,
+    GetDebugMapResponse, PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, ScenarioInfo,
+    ScenariosResponse, UiCommand, UiMode, UiStatus, UiWorldState, WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -121,6 +122,8 @@ pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> 
             state.cmd_tx.clone(),
             state.update_rx.clone(),
             state.debug_sub.clone(),
+            state.scenario_log_tx.subscribe(),
+            state.scenario_status.subscribe(),
             socket,
         )
     })
@@ -130,8 +133,13 @@ async fn handle_ws_conn(
     tx: broadcast::Sender<UiCommand>,
     mut world_rx: watch::Receiver<Option<WorldUpdate>>,
     debug_rx: DebugSubscriber,
+    mut log_rx: broadcast::Receiver<TestLogEntry>,
+    mut status_rx: watch::Receiver<TestStatus>,
     mut socket: WebSocket,
 ) {
+    // Send the current status snapshot once so the client doesn't have to poll.
+    let initial_status = status_rx.borrow().clone();
+    let _ = handle_send_status(&initial_status, &mut socket).await;
     loop {
         tokio::select! {
             Some(Ok(msg)) = socket.next() => {
@@ -146,6 +154,25 @@ async fn handle_ws_conn(
             debug_map = debug_rx.wait_and_get_copy() => {
                 if let Err(err) =  handle_send_debug_map_update(debug_map, &mut socket).await {
                     log::error!("Failed to send update: {}", err);
+                    break;
+                }
+            }
+            log_entry = log_rx.recv() => {
+                match log_entry {
+                    Ok(entry) => {
+                        if let Err(err) = handle_send_log(&entry, &mut socket).await {
+                            log::error!("Failed to send scenario log: {}", err);
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => {}
+                }
+            }
+            Ok(()) = status_rx.changed() => {
+                let status = status_rx.borrow().clone();
+                if let Err(err) = handle_send_status(&status, &mut socket).await {
+                    log::error!("Failed to send scenario status: {}", err);
                     break;
                 }
             }
@@ -200,6 +227,45 @@ async fn handle_send_debug_map_update(
     let text_data = serde_json::to_string(&WsMessage::Debug(&debug_map))?;
     socket.send(Message::Text(text_data)).await?;
     Ok(())
+}
+
+async fn handle_send_log(entry: &TestLogEntry, socket: &mut WebSocket) -> anyhow::Result<()> {
+    let text = serde_json::to_string(&WsMessage::ScenarioLog(entry))?;
+    socket.send(Message::Text(text)).await?;
+    Ok(())
+}
+
+async fn handle_send_status(status: &TestStatus, socket: &mut WebSocket) -> anyhow::Result<()> {
+    let text = serde_json::to_string(&WsMessage::ScenarioStatus(status))?;
+    socket.send(Message::Text(text)).await?;
+    Ok(())
+}
+
+/// Lists `.js` files in the `scenarios/` directory of the cwd. Includes the
+/// current scenario status so the UI can render in a single fetch.
+pub async fn get_scenarios(state: State<Arc<ServerState>>) -> Json<ScenariosResponse> {
+    let mut scenarios = Vec::new();
+    let dir = PathBuf::from("scenarios");
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("js") {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            scenarios.push(ScenarioInfo {
+                name: name.to_string(),
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+    scenarios.sort_by(|a, b| a.name.cmp(&b.name));
+    Json(ScenariosResponse {
+        scenarios,
+        status: state.scenario_status.borrow().clone(),
+    })
 }
 
 #[derive(Serialize)]

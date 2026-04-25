@@ -18,6 +18,7 @@ use dies_core::{
     WorldUpdate,
 };
 use dies_executor::{ControlMsg, ExecutorHandle};
+use dies_test_driver::{TestLogEntry, TestStatus};
 use tokio::sync::{broadcast, watch};
 use tower_http::services::ServeDir;
 use tower_layer::Layer;
@@ -37,6 +38,12 @@ pub struct ServerState {
     pub executor_status: RwLock<ExecutorStatus>,
     pub executor_handle: RwLock<Option<ExecutorHandle>>,
     pub executor_settings: RwLock<ExecutorSettings>,
+    /// Stable broadcast: the executor task republishes scenario log entries here so
+    /// every WS client subscribes to the same long-lived channel, not the executor's
+    /// per-run log bus (which would force resubscription on each Start).
+    pub scenario_log_tx: broadcast::Sender<TestLogEntry>,
+    /// Latest scenario status, mirrored from the active executor handle.
+    pub scenario_status: watch::Sender<TestStatus>,
     settings_file: PathBuf,
 }
 
@@ -50,6 +57,8 @@ impl ServerState {
         cmd_tx: broadcast::Sender<UiCommand>,
     ) -> Self {
         let settings = ExecutorSettings::load_or_insert(&settings_file);
+        let (scenario_log_tx, _) = broadcast::channel(256);
+        let (scenario_status, _) = watch::channel(TestStatus::Idle);
         Self {
             is_live_available,
             update_rx,
@@ -60,6 +69,8 @@ impl ServerState {
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
             executor_settings: RwLock::new(settings),
+            scenario_log_tx,
+            scenario_status,
             settings_file,
         }
     }
@@ -423,6 +434,7 @@ async fn start_webserver(
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))
         .route("/api/list", get(routes::list_files))
+        .route("/api/scenarios", get(routes::get_scenarios))
         .nest_service("/", serve_dir_with_csp.layer(serve_dir.clone()))
         .fallback_service(serve_dir)
         .with_state(Arc::clone(&state));

@@ -19,6 +19,9 @@ dies-basestation-client = { version = "0.1.0", path = "../dies-basestation-clien
 dies-ssl-client = { version = "0.1.0", path = "../dies-ssl-client" }
 log = "0.4.21"
 dies-webui = { version = "0.1.0", path = "../dies-webui" }
+dies-executor = { version = "0.1.0", path = "../dies-executor" }
+dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
+dies-test-driver = { version = "0.1.0", path = "../dies-test-driver" }
 dies-logger = { version = "0.1.0", path = "../dies-logger" }
 env_logger = "0.11.3"
 serde_json = "1.0.120"

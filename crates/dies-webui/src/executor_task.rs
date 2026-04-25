@@ -1,15 +1,14 @@
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 
 use dies_core::WorldUpdate;
 use dies_executor::{ControlMsg, Executor, ExecutorHandle};
 use dies_simulator::SimulationBuilder;
 use dies_ssl_client::{SslClientConfig, VisionClient};
-use tokio::{
-    sync::{
-        broadcast::{self, error::RecvError},
-        oneshot, watch,
-    },
-    task::JoinHandle,
+use tokio::sync::{
+    broadcast::{self, error::RecvError},
+    oneshot, watch,
 };
 
 use crate::{server::ServerState, ExecutorStatus, UiCommand, UiEnvironment, UiMode};
@@ -20,7 +19,7 @@ enum ExecutorTaskState {
     Idle,
     Starting,
     Runnning {
-        task_handle: JoinHandle<()>,
+        thread_handle: thread::JoinHandle<()>,
         executor_handle: ExecutorHandle,
     },
 }
@@ -134,17 +133,30 @@ impl ExecutorTask {
             UiCommand::GcCommand(command) => {
                 self.handle_executor_msg(ControlMsg::GcCommand { command });
             }
+            UiCommand::StartScenario { scenario, team } => {
+                let path = resolve_scenario_path(&scenario);
+                if !path.exists() {
+                    log::warn!("scenario file not found: {}", path.display());
+                    return;
+                }
+                self.handle_executor_msg(ControlMsg::StartScenario { path, team });
+            }
+            UiCommand::StopScenario => {
+                self.handle_executor_msg(ControlMsg::StopScenario);
+            }
         }
     }
 
     async fn stop_executor(&mut self) {
         match std::mem::take(&mut self.state) {
             ExecutorTaskState::Runnning {
-                task_handle,
+                thread_handle,
                 executor_handle,
             } => {
                 executor_handle.send(ControlMsg::Stop);
-                let _ = task_handle.await;
+                // Join the thread on a blocking helper so we don't stall the
+                // tokio runtime while the executor wraps up.
+                let _ = tokio::task::spawn_blocking(move || thread_handle.join()).await;
                 log::info!("Executor stopped");
             }
             ExecutorTaskState::Starting => {}
@@ -160,114 +172,145 @@ impl ExecutorTask {
         };
 
         let (handle_tx, handle_rx) = oneshot::channel::<ExecutorHandle>();
-        let task_handle = {
-            let settings = { self.server_state.executor_settings.read().unwrap().clone() };
-            let ui_env = self.ui_env.clone();
-            let server_state = Arc::clone(&self.server_state);
-            let update_tx = self.update_tx.clone();
-            let res = tokio::spawn(async move {
-                let log_file_name = {
-                    let time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-                    format!("dies-{time}.log")
-                };
-                dies_core::debug_clear();
-                dies_logger::log_start(log_file_name);
+        let settings = { self.server_state.executor_settings.read().unwrap().clone() };
+        let ui_env = self.ui_env.clone();
+        let server_state = Arc::clone(&self.server_state);
+        let update_tx = self.update_tx.clone();
 
-                let executor = match (mode, ui_env) {
-                    (UiMode::Simulation, _) => Ok(Executor::new_simulation(
-                        settings,
-                        SimulationBuilder::default().build(),
-                    )),
-                    (
-                        UiMode::Live,
-                        UiEnvironment::WithLive {
-                            ssl_config,
-                            bs_handle,
-                        },
-                    ) => {
-                        let vision_client = VisionClient::new(ssl_config).await;
-                        if let Ok(vision_client) = vision_client {
-                            Ok(Executor::new_live(settings, vision_client, bs_handle))
-                        } else if settings.allow_no_vision {
-                            log::warn!("Starting executor with mock vision client");
-                            Ok(Executor::new_live(
-                                settings,
-                                VisionClient::new(SslClientConfig {
-                                    vision: dies_ssl_client::ConnectionConfig::Mock,
-                                    gc: dies_ssl_client::ConnectionConfig::Mock,
-                                })
-                                .await
-                                .unwrap(),
+        // Run the executor on a dedicated OS thread with its own single-threaded
+        // tokio runtime. This keeps the !Send Executor (when in test mode, it
+        // holds a Boa JS context) off the main multi-threaded runtime without
+        // sprinkling LocalSet everywhere.
+        let thread_handle = thread::Builder::new()
+            .name("dies-executor".into())
+            .spawn(move || {
+                let rt = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt,
+                    Err(err) => {
+                        log::error!("Failed to build executor runtime: {}", err);
+                        return;
+                    }
+                };
+
+                rt.block_on(async move {
+                    let log_file_name = {
+                        let time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+                        format!("dies-{time}.log")
+                    };
+                    dies_core::debug_clear();
+                    dies_logger::log_start(log_file_name);
+
+                    let executor = match (mode, ui_env) {
+                        (UiMode::Simulation, _) => Ok(Executor::new_simulation(
+                            settings,
+                            SimulationBuilder::default().build(),
+                        )),
+                        (
+                            UiMode::Live,
+                            UiEnvironment::WithLive {
+                                ssl_config,
                                 bs_handle,
-                            ))
-                        } else {
-                            Err(anyhow::anyhow!("Failed to connect to vision"))
+                            },
+                        ) => {
+                            let vision_client = VisionClient::new(ssl_config).await;
+                            if let Ok(vision_client) = vision_client {
+                                Ok(Executor::new_live(settings, vision_client, bs_handle))
+                            } else if settings.allow_no_vision {
+                                log::warn!("Starting executor with mock vision client");
+                                Ok(Executor::new_live(
+                                    settings,
+                                    VisionClient::new(SslClientConfig {
+                                        vision: dies_ssl_client::ConnectionConfig::Mock,
+                                        gc: dies_ssl_client::ConnectionConfig::Mock,
+                                    })
+                                    .await
+                                    .unwrap(),
+                                    bs_handle,
+                                ))
+                            } else {
+                                Err(anyhow::anyhow!("Failed to connect to vision"))
+                            }
                         }
-                    }
-                    (UiMode::Live, UiEnvironment::SimulationOnly) => {
-                        Err(anyhow::anyhow!("Live mode not available"))
-                    }
-                };
+                        (UiMode::Live, UiEnvironment::SimulationOnly) => {
+                            Err(anyhow::anyhow!("Live mode not available"))
+                        }
+                    };
 
-                match executor {
-                    Ok(executor) => {
-                        log::info!("Executor ready");
+                    match executor {
+                        Ok(executor) => {
+                            log::info!("Executor ready");
+                            let _ = handle_tx.send(executor.handle());
+                            let mut handle = executor.handle();
 
-                        // Relay world update to the UI
-                        let _ = handle_tx.send(executor.handle());
-                        let mut handle = executor.handle();
-
-                        // Spawn task to relay world updates
-                        let update_tx_clone = update_tx.clone();
-                        tokio::spawn(async move {
-                            loop {
-                                match handle.update_rx.recv().await {
-                                    Ok(update) => {
-                                        let _ = update_tx_clone.send(Some(update));
-                                    }
-                                    Err(RecvError::Lagged(_)) => {
-                                        continue;
-                                    }
-                                    Err(RecvError::Closed) => {
-                                        log::info!("Executor task update channel closed");
-                                        break;
+                            let update_tx_clone = update_tx.clone();
+                            tokio::spawn(async move {
+                                loop {
+                                    match handle.update_rx.recv().await {
+                                        Ok(update) => {
+                                            let _ = update_tx_clone.send(Some(update));
+                                        }
+                                        Err(RecvError::Lagged(_)) => continue,
+                                        Err(RecvError::Closed) => {
+                                            log::info!("Executor update channel closed");
+                                            break;
+                                        }
                                     }
                                 }
-                            }
-                        });
+                            });
 
-                        server_state.set_executor_status(ExecutorStatus::RunningExecutor);
-                        if let Err(err) = executor.run_real_time().await {
-                            log::error!("Executor failed: {}", err);
+                            // Bridge scenario log entries into the long-lived
+                            // server-side broadcast so WS clients don't need to
+                            // resubscribe each Start.
+                            let mut log_rx = executor.handle().log_bus.subscribe();
+                            let log_tx = server_state.scenario_log_tx.clone();
+                            tokio::spawn(async move {
+                                loop {
+                                    match log_rx.recv().await {
+                                        Ok(entry) => {
+                                            let _ = log_tx.send(entry);
+                                        }
+                                        Err(RecvError::Lagged(_)) => continue,
+                                        Err(RecvError::Closed) => break,
+                                    }
+                                }
+                            });
+
+                            // Mirror scenario status into server state.
+                            let mut status_rx = executor.handle().scenario_status_rx.clone();
+                            let status_tx = server_state.scenario_status.clone();
+                            tokio::spawn(async move {
+                                let _ = status_tx.send(status_rx.borrow().clone());
+                                while status_rx.changed().await.is_ok() {
+                                    let _ = status_tx.send(status_rx.borrow().clone());
+                                }
+                            });
+
+                            server_state.set_executor_status(ExecutorStatus::RunningExecutor);
+                            if let Err(err) = executor.run_real_time().await {
+                                log::error!("Executor failed: {}", err);
+                            }
+                        }
+                        Err(err) => {
+                            log::error!("Failed to start executor: {}", err);
+                            server_state
+                                .set_executor_status(ExecutorStatus::Failed(format!("{}", err)));
                         }
                     }
-                    Err(err) => {
-                        log::error!("Failed to start executor: {}", err);
-                        server_state
-                            .set_executor_status(ExecutorStatus::Failed(format!("{}", err)));
-                    }
-                }
 
-                dies_logger::log_close();
-            });
-
-            tokio::spawn(async {
-                match res.await {
-                    Ok(_) => {}
-                    Err(err) => {
-                        log::error!("Executor task failed: {}", err);
-                        std::process::exit(1);
-                    }
-                }
+                    dies_logger::log_close();
+                });
             })
-        };
+            .expect("spawn executor thread");
 
         self.state = ExecutorTaskState::Starting;
         if let Ok(executor_handle) = handle_rx.await {
             if let ExecutorTaskState::Starting = std::mem::take(&mut self.state) {
                 *self.server_state.executor_handle.write().unwrap() = Some(executor_handle.clone());
                 self.state = ExecutorTaskState::Runnning {
-                    task_handle,
+                    thread_handle,
                     executor_handle,
                 };
             } else {
@@ -286,4 +329,18 @@ impl ExecutorTask {
             executor_handle.send(cmd);
         }
     }
+}
+
+/// Resolve a scenario name from the UI to an on-disk path. The UI sends bare
+/// names (e.g. `mpc_step_response.js`); they are resolved relative to the
+/// `scenarios/` directory in the current working directory. Absolute paths
+/// and explicit relative paths (containing `/`) are kept as-is.
+pub(crate) fn resolve_scenario_path(name: &str) -> PathBuf {
+    let p = PathBuf::from(name);
+    if p.is_absolute() || name.contains('/') || name.contains(std::path::MAIN_SEPARATOR) {
+        return p;
+    }
+    let mut full = PathBuf::from("scenarios");
+    full.push(name);
+    full
 }

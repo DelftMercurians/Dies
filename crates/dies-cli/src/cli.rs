@@ -5,13 +5,30 @@ use clap::{Parser, Subcommand, ValueEnum};
 use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
 use dies_core::{ControllerMode, PlayerId, TeamColor};
 use dies_ssl_client::{ConnectionConfig, SslClientConfig};
-use dies_webui::{UiConfig, UiEnvironment};
+use dies_webui::{UiConfig, UiEnvironment, UiMode};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::commands::{
-    convert_logs::convert_log, start_ui::start_ui, test_radio::test_radio, test_vision::test_vision,
+    convert_logs::convert_log, run_scenario::run_scenario, start_ui::start_ui,
+    test_radio::test_radio, test_vision::test_vision,
 };
+
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+enum ScenarioMode {
+    #[default]
+    Live,
+    Simulation,
+}
+
+impl Into<UiMode> for ScenarioMode {
+    fn into(self) -> UiMode {
+        match self {
+            ScenarioMode::Live => UiMode::Live,
+            ScenarioMode::Simulation => UiMode::Simulation,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Subcommand)]
 enum Command {
@@ -52,6 +69,24 @@ enum Command {
 
     #[clap(name = "test-vision")]
     TestVision,
+
+    /// Run a JS test scenario headlessly in simulation (no webui).
+    #[clap(name = "run-scenario")]
+    RunScenario {
+        /// Path to the scenario .js file.
+        scenario: PathBuf,
+
+        /// Team the scenario drives. Must match the scenario's exported `team`.
+        #[clap(long, default_value = "blue")]
+        team: ControlledTeam,
+
+        /// Stream scenario log entries to stdout.
+        #[clap(long, default_value = "true", action)]
+        stream_logs: bool,
+
+        #[clap(long, default_value = "live")]
+        mode: ScenarioMode,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ValueEnum)]
@@ -103,7 +138,7 @@ pub struct Cli {
     pub robot_ids: String,
 
     #[clap(long, default_value = "udp")]
-    pub mode: ConnectionMode,
+    pub connection_mode: ConnectionMode,
 
     #[clap(long, default_value = "224.5.23.2:10006")]
     pub vision_addr: SocketAddr,
@@ -198,13 +233,54 @@ impl Cli {
                 }
             },
             Some(Command::TestVision) => {
-                match test_vision(self.mode, self.vision_addr, self.gc_addr, self.interface).await {
+                match test_vision(
+                    self.connection_mode,
+                    self.vision_addr,
+                    self.gc_addr,
+                    self.interface,
+                )
+                .await
+                {
                     Ok(_) => ExitCode::SUCCESS,
                     Err(err) => {
                         eprintln!("Error testing vision: {}", err);
                         eprintln!("vision_addr: {}", self.vision_addr);
                         eprintln!("gc_addr: {}", self.gc_addr);
 
+                        ExitCode::FAILURE
+                    }
+                }
+            }
+            Some(Command::RunScenario {
+                ref scenario,
+                ref team,
+                stream_logs,
+                mode,
+            }) => {
+                let team = match team {
+                    ControlledTeam::Blue => TeamColor::Blue,
+                    ControlledTeam::Yellow => TeamColor::Yellow,
+                    ControlledTeam::Both => TeamColor::Blue,
+                };
+                let (bs_config, ssl_config) = match mode {
+                    ScenarioMode::Live => (self.serial_config().await, self.ssl_config()),
+                    ScenarioMode::Simulation => (None, None),
+                };
+
+                match run_scenario(
+                    scenario.to_owned(),
+                    team,
+                    stream_logs,
+                    mode.into(),
+                    bs_config,
+                    ssl_config,
+                    None,
+                )
+                .await
+                {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error running scenario: {}", err);
                         ExitCode::FAILURE
                     }
                 }
@@ -295,7 +371,7 @@ impl Cli {
 
     /// Configures the vision client based on the CLI arguments.
     pub fn ssl_config(&self) -> Option<SslClientConfig> {
-        let vision = match self.mode {
+        let vision = match self.connection_mode {
             ConnectionMode::None => None,
             ConnectionMode::Tcp => Some(ConnectionConfig::Tcp {
                 host: self.vision_addr.ip().to_string(),
@@ -307,7 +383,7 @@ impl Cli {
                 interface: self.interface.clone(),
             }),
         };
-        let gc = match self.mode {
+        let gc = match self.connection_mode {
             ConnectionMode::None => None,
             ConnectionMode::Tcp => Some(ConnectionConfig::Tcp {
                 host: self.gc_addr.ip().to_string(),

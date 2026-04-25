@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
@@ -5,7 +6,8 @@ use dies_core::{
     ExecutorInfo, ExecutorSettings, GcSimCommand, PlayerId, PlayerOverrideCommand, SideAssignment,
     SimulatorCmd, TeamColor, TeamConfiguration, WorldUpdate,
 };
-use tokio::sync::{broadcast, mpsc, oneshot};
+use dies_test_driver::{LogBus, TestStatus};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 #[derive(Debug)]
 pub enum ControlMsg {
@@ -37,6 +39,14 @@ pub enum ControlMsg {
     SwapTeamColors,
     /// Swap team sides (BlueOnPositive <-> YellowOnPositive)
     SwapTeamSides,
+    /// Load and start a JS scenario. Replaces any currently running scenario.
+    /// `team` is optional — if None, the team declared in the scenario metadata is used.
+    StartScenario {
+        path: PathBuf,
+        team: Option<TeamColor>,
+    },
+    /// Abort the currently running scenario and return control to the strategy host.
+    StopScenario,
     Stop,
 }
 
@@ -55,11 +65,17 @@ impl ExecutorInfoReceiver {
         }
     }
 }
+
 #[derive(Debug)]
 pub struct ExecutorHandle {
     pub control_tx: mpsc::UnboundedSender<ControlMsg>,
     pub update_rx: broadcast::Receiver<WorldUpdate>,
     pub info_channel: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
+    /// Bus carrying log entries from the active scenario (if any). Always
+    /// present so subscribers can attach before any scenario is loaded.
+    pub log_bus: LogBus,
+    /// Latest known scenario status. `Idle` until the first scenario is loaded.
+    pub scenario_status_rx: watch::Receiver<TestStatus>,
 }
 
 impl ExecutorHandle {
@@ -99,6 +115,8 @@ impl Clone for ExecutorHandle {
             control_tx: self.control_tx.clone(),
             update_rx: self.update_rx.resubscribe(),
             info_channel: self.info_channel.clone(),
+            log_bus: self.log_bus.clone(),
+            scenario_status_rx: self.scenario_status_rx.clone(),
         }
     }
 }

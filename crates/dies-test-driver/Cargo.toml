@@ -1,0 +1,22 @@
+[package]
+name = "dies-test-driver"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+boa_engine = { version = "0.20", features = ["annex-b"] }
+anyhow = "1"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time"] }
+tracing = "0.1"
+nalgebra = "0.32.5"
+typeshare = "1.0.3"
+
+dies-core = { version = "0.1.0", path = "../dies-core" }
+dies-strategy-protocol = { version = "0.1.0", path = "../dies-strategy-protocol" }
+dies-mpc = { version = "0.1.0", path = "../dies-mpc" }
+
+[lints]
+workspace = true

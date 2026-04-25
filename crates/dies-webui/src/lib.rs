@@ -6,6 +6,7 @@ use dies_core::{
     PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, WorldData,
 };
 use dies_ssl_client::SslClientConfig;
+use dies_test_driver::{TestLogEntry, TestStatus};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
@@ -119,6 +120,13 @@ pub(crate) enum UiCommand {
     SwapTeamColors,
     /// Swap team sides (BlueOnPositive <-> YellowOnPositive)
     SwapTeamSides,
+    /// Load and start a JS scenario by file name (resolved against `scenarios/`).
+    StartScenario {
+        scenario: String,
+        team: Option<TeamColor>,
+    },
+    /// Stop the currently running scenario and return to strategy mode.
+    StopScenario,
     Stop,
 }
 
@@ -157,6 +165,23 @@ pub(crate) enum UiWorldState {
 pub(crate) enum WsMessage<'a> {
     WorldUpdate(&'a WorldData),
     Debug(&'a DebugMap),
+    ScenarioLog(&'a TestLogEntry),
+    ScenarioStatus(&'a TestStatus),
+}
+
+/// A single scenario file available on disk.
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct ScenarioInfo {
+    pub(crate) name: String,
+    pub(crate) path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct ScenariosResponse {
+    pub(crate) scenarios: Vec<ScenarioInfo>,
+    pub(crate) status: TestStatus,
 }
 
 #[derive(Debug, Clone, Serialize)]

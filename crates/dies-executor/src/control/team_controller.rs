@@ -44,6 +44,10 @@ pub struct TeamController {
     warmup_timer: Option<Instant>,
     warmup_done: bool,
 
+    /// When false, game-state-driven compliance mutations are skipped entirely
+    /// — used in test mode so scenarios control safety themselves.
+    pub(crate) comply_enabled: bool,
+
     // per-robot flags
     avoid_goal_area_flags: HashMap<PlayerId, bool>,
 }
@@ -61,6 +65,7 @@ impl TeamController {
             avoid_goal_area_flags: HashMap::new(),
             warmup_timer: None,
             warmup_done: false,
+            comply_enabled: true,
         };
         team.update_controller_settings(settings);
         team
@@ -230,7 +235,11 @@ impl TeamController {
                 inputs_for_comply.insert(*id, input.clone());
             }
         }
-        let final_player_inputs = comply(&world_data, inputs_for_comply, &team_context);
+        let final_player_inputs = if self.comply_enabled {
+            comply(&world_data, inputs_for_comply, &team_context)
+        } else {
+            inputs_for_comply
+        };
 
         let all_players = world_data
             .own_players

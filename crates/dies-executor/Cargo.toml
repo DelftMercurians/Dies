@@ -20,6 +20,7 @@ paste = "1.0.15"
 rand = "0.8.5"
 serde = "1.0.203"
 dies-mpc = { version = "0.1.0", path = "../dies-mpc" }
+dies-test-driver = { version = "0.1.0", path = "../dies-test-driver" }
 lapjv = "0.1"
 ndarray = "0.12"
 linear_assignment = "0.0.1"
