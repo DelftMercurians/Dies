@@ -1,9 +1,5 @@
-//! Sample buffer for sysid capture.
-//!
-//! Stores per-tick `(t, cmd, heading, state)` rows and converts to the
-//! `dies_mpc::types::Sample` format used by the offline LM fit.
-
-use dies_mpc::types::{RobotState, Sample, Vec2};
+//! Sample buffer for sysid capture. Stores per-tick `(t, cmd, heading, state)`
+//! rows; the offline LM fit runs in a Python notebook against the CSV dump.
 
 #[derive(Debug, Clone)]
 pub struct CapturedSample {
@@ -17,20 +13,6 @@ pub struct CapturedSample {
     pub vel_y: f64,
 }
 
-impl CapturedSample {
-    pub fn to_mpc(&self) -> Sample {
-        Sample {
-            t: self.t,
-            cmd: Vec2::new(self.cmd_x, self.cmd_y),
-            heading: self.heading,
-            state: RobotState {
-                pos: Vec2::new(self.pos_x, self.pos_y),
-                vel: Vec2::new(self.vel_x, self.vel_y),
-            },
-        }
-    }
-}
-
 #[derive(Default, Debug)]
 pub struct CaptureBuffer {
     pub samples: Vec<CapturedSample>,
@@ -39,10 +21,6 @@ pub struct CaptureBuffer {
 impl CaptureBuffer {
     pub fn push(&mut self, s: CapturedSample) {
         self.samples.push(s);
-    }
-
-    pub fn into_mpc(self) -> Vec<Sample> {
-        self.samples.iter().map(|s| s.to_mpc()).collect()
     }
 }
 

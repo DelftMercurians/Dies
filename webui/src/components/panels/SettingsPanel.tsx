@@ -33,6 +33,25 @@ const ControllerModeSelector: React.FC = () => {
   );
 };
 
+const GoalAreaAvoidanceToggle: React.FC = () => {
+  const { settings, updateSettings } = useExecutorSettings();
+  if (!settings) return null;
+  return (
+    <div className="flex items-center justify-between px-4 py-2 border-b border-bg-muted">
+      <Label htmlFor="goal_area_avoidance" className="font-medium">
+        Goal area avoidance
+      </Label>
+      <Switch
+        id="goal_area_avoidance"
+        checked={settings.goal_area_avoidance}
+        onCheckedChange={(checked) =>
+          updateSettings({ ...settings, goal_area_avoidance: checked })
+        }
+      />
+    </div>
+  );
+};
+
 /**
  * Settings Panel - Controller, Tracker, and Skill settings.
  * Contains tabbed interface for different settings categories.
@@ -54,6 +73,7 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
         <TabsContent value="controller" className="flex-1 overflow-hidden">
           <div className="h-full flex flex-col">
             <ControllerModeSelector />
+            <GoalAreaAvoidanceToggle />
             <div className="flex-1 overflow-hidden">
               <SettingsEditor settingsKey="controller_settings" />
             </div>

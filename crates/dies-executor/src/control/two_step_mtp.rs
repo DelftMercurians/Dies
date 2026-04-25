@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use dies_core::{Obstacle, PlayerData, TeamData, Vector2};
 
 use crate::ControlParameters;
@@ -11,7 +9,6 @@ use super::team_context::PlayerContext;
 pub struct TwoStepMTP {
     setpoint: Option<Vector2>,
     kp: f64,
-    proportional_time_window: Duration,
     cutoff_distance: f64,
     sample_count: usize,
     last_vel: Option<Vector2>,
@@ -23,7 +20,6 @@ impl TwoStepMTP {
         Self {
             setpoint: None,
             kp: 1.5,
-            proportional_time_window: Duration::from_millis(400),
             cutoff_distance: 10.0,
             sample_count: 8,
             last_vel: None,
@@ -35,14 +31,8 @@ impl TwoStepMTP {
         self.setpoint = Some(setpoint);
     }
 
-    pub fn update_settings(
-        &mut self,
-        kp: f64,
-        proportional_time_window: Duration,
-        cutoff_distance: f64,
-    ) {
+    pub fn update_settings(&mut self, kp: f64, cutoff_distance: f64) {
         self.kp = kp;
-        self.proportional_time_window = proportional_time_window;
         self.cutoff_distance = cutoff_distance;
     }
 

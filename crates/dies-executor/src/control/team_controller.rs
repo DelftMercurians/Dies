@@ -221,10 +221,13 @@ impl TeamController {
         }
 
         // Prepare inputs for compliance
+        let goal_area_avoidance_enabled = self.settings.goal_area_avoidance;
         let mut inputs_for_comply = PlayerInputs::new();
         for (id, input) in player_inputs_map.iter() {
-            self.avoid_goal_area_flags
-                .insert(*id, input.role_type != RoleType::Goalkeeper);
+            self.avoid_goal_area_flags.insert(
+                *id,
+                goal_area_avoidance_enabled && input.role_type != RoleType::Goalkeeper,
+            );
             if matches!(
                 world_data.current_game_state.game_state,
                 GameState::BallReplacement(_)
@@ -236,7 +239,12 @@ impl TeamController {
             }
         }
         let final_player_inputs = if self.comply_enabled {
-            comply(&world_data, inputs_for_comply, &team_context)
+            comply(
+                &world_data,
+                inputs_for_comply,
+                &team_context,
+                goal_area_avoidance_enabled,
+            )
         } else {
             inputs_for_comply
         };
@@ -266,7 +274,6 @@ impl TeamController {
                     &self.player_controllers,
                     &inputs_for_ilqr,
                     &world_data,
-                    &self.avoid_goal_area_flags,
                 )
             }
             ControllerMode::Mtp => HashMap::new(),
@@ -369,7 +376,7 @@ impl TeamController {
                 // `update()` just computed. We let `update()` run
                 // unconditionally so yaw/kicker/dribbler logic still fires.
                 // if let Some(vel) = ilqr_overrides.get(&id) {
-                //     controller.set_target_velocity(*vel, world_data.dt);
+                //     controller.set_target_velocity(*vel);
                 //     player_context.debug_string("controller", "iLQR");
                 // }
             } else {
@@ -462,7 +469,12 @@ fn role_type_from_name(role_name: &str) -> RoleType {
     }
 }
 
-fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContext) -> PlayerInputs {
+fn comply(
+    world_data: &TeamData,
+    inputs: PlayerInputs,
+    team_context: &TeamContext,
+    goal_area_avoidance_enabled: bool,
+) -> PlayerInputs {
     if let (Some(ball), Some(field)) = (world_data.ball.as_ref(), world_data.field_geom.as_ref()) {
         let game_state = world_data.current_game_state.game_state;
         let ball_pos = ball.position.xy();
@@ -520,10 +532,12 @@ fn comply(world_data: &TeamData, inputs: PlayerInputs, team_context: &TeamContex
                     new_input.with_position(pos);
                 }
 
-                if matches!(
-                    game_state,
-                    GameState::Run | GameState::Stop | GameState::FreeKick
-                ) {
+                if goal_area_avoidance_enabled
+                    && matches!(
+                        game_state,
+                        GameState::Run | GameState::Stop | GameState::FreeKick
+                    )
+                {
                     // Avoid goal area
                     let min_distance = match game_state {
                         GameState::Run => 80.0,

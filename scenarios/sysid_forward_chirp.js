@@ -1,5 +1,6 @@
-// Open-loop forward-axis chirp with synchronized capture → offline LM fit.
-// Verifies: excitation generator, captureWhileExciting, sysid.fit.
+// Open-loop forward-axis chirp with synchronized capture; offline LM fit
+// runs in the Python notebook against the captured CSV.
+// Verifies: excitation generator, captureWhileExciting.
 
 globalThis.scenario = {
   name: "sysid_forward_chirp",
@@ -8,7 +9,7 @@ globalThis.scenario = {
   env: "either",
 };
 
-globalThis.run = async function run({ team, world, log, sysid }) {
+globalThis.run = async function run({ team, world, log }) {
   const r = team.robot(5);
   // await world.addRobot({ team: "blue", id: 1, x: -1500, y: 0, yaw: 0 });
   await r.moveTo({ x: -1500, y: 0, yaw: 0 }, { tolMm: 60, timeoutMs: 5000 });
@@ -27,10 +28,5 @@ globalThis.run = async function run({ team, world, log, sysid }) {
     durationSec: 8.0,
   });
   log.info(`captured ${samples.length} samples`);
-
-  const fit = await sysid.fit(samples);
-  log.record("fit", fit);
-  log.info(
-    `fit iters=${fit.iters} converged=${fit.converged} rms=[${fit.residualRms.join(", ")}]`,
-  );
+  log.record("samples", { samples });
 };

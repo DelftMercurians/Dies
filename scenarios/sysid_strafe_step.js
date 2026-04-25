@@ -8,7 +8,7 @@ globalThis.scenario = {
   env: "either",
 };
 
-globalThis.run = async function run({ team, world, log, sysid }) {
+globalThis.run = async function run({ team, world, log }) {
   const r = team.robot(5);
   // await world.addRobot({ team: "blue", id: 1, x: 0, y: -1000, yaw: 0 });
   await r.moveTo({ x: 0, y: -1000, yaw: 0 }, { tolMm: 60, timeoutMs: 5000 });
@@ -25,10 +25,5 @@ globalThis.run = async function run({ team, world, log, sysid }) {
     durationSec: 4.0,
   });
   log.record("samples", { samples });
-
-  const fit = await sysid.fit(samples);
-  log.record("fit", fit);
-  log.info(
-    `strafe-step fit: converged=${fit.converged} rms=[${fit.residualRms.join(", ")}]`,
-  );
+  log.info(`strafe-step: captured ${samples.length} samples`);
 };

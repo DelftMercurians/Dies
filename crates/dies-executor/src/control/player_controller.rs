@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use dies_core::{
     Angle, ControllerSettings, ExecutorSettings, Obstacle, PlayerCmd, PlayerCmdUntransformer,
     PlayerData, PlayerGlobalMoveCmd, PlayerId, RobotCmd, TeamData, Vector2,
@@ -51,6 +49,7 @@ pub struct PlayerController {
     max_accel: f64,
     max_speed: f64,
     max_decel: f64,
+    max_angular_velocity: f64,
     max_angular_acceleration: f64,
     last_yaw_rate_limit: Option<f64>,
 
@@ -89,6 +88,7 @@ impl PlayerController {
             max_accel: settings.controller_settings.max_acceleration,
             max_speed: settings.controller_settings.max_velocity,
             max_decel: settings.controller_settings.max_deceleration,
+            max_angular_velocity: settings.controller_settings.max_angular_velocity,
             max_angular_acceleration: settings.controller_settings.max_angular_acceleration,
 
             fan_speed: 0.0,
@@ -104,11 +104,8 @@ impl PlayerController {
 
     /// Update the controller settings.
     pub fn update_settings(&mut self, settings: &ControllerSettings) {
-        self.two_step_mtp.update_settings(
-            settings.position_kp,
-            Duration::from_secs_f64(settings.position_proportional_time_window),
-            settings.position_cutoff_distance,
-        );
+        self.two_step_mtp
+            .update_settings(settings.position_kp, settings.position_cutoff_distance);
         self.yaw_control
             .update_settings(settings.angle_kp, settings.angle_cutoff_distance);
         // Limits were previously only set in `new()` — the live UI sliders
@@ -116,6 +113,7 @@ impl PlayerController {
         self.max_accel = settings.max_acceleration;
         self.max_speed = settings.max_velocity;
         self.max_decel = settings.max_deceleration;
+        self.max_angular_velocity = settings.max_angular_velocity;
         self.max_angular_acceleration = settings.max_angular_acceleration;
     }
 
@@ -125,8 +123,9 @@ impl PlayerController {
     }
 
     /// Set the target velocity (used when the team controller overrides the
-    /// MTP output — e.g. when running in iLQR mode).
-    pub fn set_target_velocity(&mut self, velocity: Vector2, dt: f64) {
+    /// MTP output — e.g. when running in iLQR mode). The output-side accel
+    /// clamp in `command()` still applies to whatever is set here.
+    pub fn set_target_velocity(&mut self, velocity: Vector2) {
         self.target_velocity_global = velocity;
     }
 
@@ -170,7 +169,7 @@ impl PlayerController {
             .set_kick_speed(self.kick_speed)
             .set_kick_counter(self.kick_counter)
             .set_robot_cmd(RobotCmd::Arm)
-            .set_max_yaw_rate(self.last_yaw_rate_limit.unwrap_or(100.0))
+            .set_max_yaw_rate(self.last_yaw_rate_limit.unwrap_or(self.max_angular_velocity))
             .untransform_global_move_cmd(self.id, self.last_yaw);
 
         player_context.debug_string(
@@ -343,7 +342,7 @@ impl PlayerController {
                 dt,
                 input
                     .angular_speed_limit
-                    .unwrap_or(self.last_yaw_rate_limit.unwrap_or(100.0)),
+                    .unwrap_or(self.last_yaw_rate_limit.unwrap_or(self.max_angular_velocity)),
                 input
                     .angular_acceleration_limit
                     .unwrap_or(self.max_angular_acceleration),

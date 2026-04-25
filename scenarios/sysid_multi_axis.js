@@ -11,7 +11,7 @@ globalThis.scenario = {
 
 const HOME = { x: -1500, y: 0, yaw: 0 };
 
-globalThis.run = async function run({ team, world, log, sysid }) {
+globalThis.run = async function run({ team, world, log }) {
   const r = team.robot(4);
 
   const recenter = async () => {
@@ -68,10 +68,5 @@ globalThis.run = async function run({ team, world, log, sysid }) {
   r.stop();
 
   log.info(`captured ${allSamples.length} samples across ${passes.length} passes`);
-  log.dumpCsv("mulit_axis", allSamples);
-  const fit = await sysid.fit(allSamples);
-  log.record("fit", fit);
-  log.info(
-    `multi-axis fit: converged=${fit.converged} iters=${fit.iters} rms=[${fit.residualRms.join(", ")}]`,
-  );
+  log.dumpCsv("multi_axis", allSamples);
 };

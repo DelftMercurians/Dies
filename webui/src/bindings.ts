@@ -127,27 +127,35 @@ export interface BasestationResponse {
 	unknown_team: PlayerFeedbackMsg[];
 }
 
-/** Settings for the low-level controller. */
+/**
+ * Settings for the low-level controller.
+ * 
+ * Every field here is consumed by `PlayerController` or one of its
+ * subcontrollers (TwoStepMTP, YawController). The hard accel clamp in
+ * `PlayerController::command` reads `max_acceleration` directly and
+ * constrains the per-tick Δv for *both* MTP and iLQR outputs.
+ */
 export interface ControllerSettings {
-	/** Maximum acceleration of the robot in mm/s². */
+	/** Per-axis acceleration cap for translational motion (mm/s²). */
 	max_acceleration: number;
-	/** Maximum velocity of the robot in mm/s. */
+	/** Speed cap on the commanded velocity magnitude (mm/s). */
 	max_velocity: number;
-	/** Maximum deceleration of the robot in mm/s². */
+	/** Deceleration cap used when MTP plans braking (mm/s²). */
 	max_deceleration: number;
-	/** Maximum angular velocity of the robot in rad/s. */
+	/** Maximum angular velocity (rad/s). */
 	max_angular_velocity: number;
-	/** Maximum angular acceleration of the robot in rad/s². */
+	/**
+	 * Maximum angular acceleration (rad/s²) — passed to YawController as the
+	 * upper bound on its planned angular accel.
+	 */
 	max_angular_acceleration: number;
-	/** Proportional gain for the close-range position controller. */
+	/** Proportional gain for translational tracking inside the MTP cutoff. */
 	position_kp: number;
-	/** Time until destination in which the proportional controller is used, in seconds. */
-	position_proportional_time_window: number;
-	/** Distance used as threshold for the controller to prevent shaky behavior */
+	/** Position deadzone (mm) — MTP commands zero velocity inside this radius. */
 	position_cutoff_distance: number;
-	/** Proportional gain for the close-range angle controller. */
+	/** Proportional gain for heading tracking. */
 	angle_kp: number;
-	/** Distance used as threshold for the controller to prevent shaky behavior */
+	/** Heading deadzone (rad) — yaw control outputs zero inside this band. */
 	angle_cutoff_distance: number;
 }
 
@@ -212,18 +220,33 @@ export interface FieldMask {
 	y_max: number;
 }
 
-/** Settings for the `WorldTracker`. */
+/**
+ * Settings for the `WorldTracker`.
+ * 
+ * Kalman variances are unit-time process noise (`*_unit_transition_var`,
+ * in mm²/s for the constant-velocity model) and measurement variance
+ * (`*_measurement_var`, in mm²). Higher transition variance → tracker
+ * trusts measurements more (snappier, noisier). Higher measurement
+ * variance → tracker trusts dynamics model more (smoother, laggier).
+ */
 export interface TrackerSettings {
+	/**
+	 * Vision crop applied at the ball tracker — fractions of the field
+	 * half-extent. Defaults to the full field.
+	 */
 	field_mask: FieldMask;
-	/** Transition variance for the player Kalman filter. */
+	/** Process noise for the player position/velocity Kalman filter (mm²/s). */
 	player_unit_transition_var: number;
-	/** Measurement variance for the player Kalman filter. */
+	/** Measurement noise for the player position Kalman filter (mm²). */
 	player_measurement_var: number;
-	/** Smoothinfg factor for the yaw LPF */
+	/**
+	 * EWMA factor for the player yaw low-pass filter — 0 = no filtering,
+	 * 1 = freeze.
+	 */
 	player_yaw_lpf_alpha: number;
-	/** Transition variance for the ball Kalman filter. */
+	/** Process noise for the ball position/velocity Kalman filter (mm²/s). */
 	ball_unit_transition_var: number;
-	/** Measurement variance for the ball Kalman filter. */
+	/** Measurement noise for the ball position Kalman filter (mm²). */
 	ball_measurement_var: number;
 }
 
@@ -294,6 +317,12 @@ export interface ExecutorSettings {
 	skill_settings: SkillSettings;
 	allow_no_vision: boolean;
 	controller_mode?: ControllerMode;
+	/**
+	 * Global on/off for goal-area avoidance. When false, both compliance and
+	 * the controller skip the goal-area keep-out logic (goalkeeper exception
+	 * is irrelevant since the whole feature is off).
+	 */
+	goal_area_avoidance: boolean;
 }
 
 export interface ExecutorSettingsResponse {
@@ -413,6 +442,12 @@ export interface PlayerData {
 	raw_yaw: Angle;
 	/** Angular speed of the player (in rad/s) */
 	angular_speed: number;
+	/**
+	 * EWMA-smoothed position noise floor in mm — RMS of the Kalman innovation
+	 * (raw vision vs. constant-velocity prediction). Useful for diagnosing
+	 * whether downstream controllers are tracking sensor noise.
+	 */
+	position_noise: number;
 	/** The overall status of the robot. Only available for own players. */
 	primary_status?: SysStatus;
 	/** The voltage of the kicker capacitor (in V). Only available for own players. */

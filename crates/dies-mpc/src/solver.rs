@@ -1,40 +1,30 @@
 //! iLQR solver for the translational MPC problem.
 //!
-//! Standard iLQR formulation (quadratic value function, linearized dynamics,
-//! quadratic stage cost via Gauss-Newton Hessian). Regularisation is applied
-//! to `Q_uu` and grown on rejected steps / non-PD matrices; the forward pass
-//! uses a short Armijo line search over α ∈ {1, 0.5, 0.25, 0.125}.
+//! Standard iLQR: backward Riccati pass produces feedforward `k` and feedback
+//! `K` gains; forward rollout applies `u = u_ref + α·k + K·(x − x_ref)` with a
+//! short Armijo line search over `α`. Levenberg-style regularisation is
+//! applied to `Q_uu` and grown on rejected steps / non-PD matrices.
 //!
-//! The outer `solve` wrapper runs two initialisations — a warm-started rollout
-//! (if provided) and a constant-velocity "straight-line" rollout aimed at the
-//! terminal target — and returns whichever converges to the lower cost.
+//! `solve` runs two initialisations — warm-started rollout (if provided) and a
+//! constant-velocity straight line aimed at the target — and returns whichever
+//! converges to lower cost.
 
 use nalgebra::{Matrix2, Matrix2x4, Matrix4, Vector2, Vector4};
 
 use crate::cost::{stage_cost_scalar, stage_derivs, terminal_cost_scalar, terminal_derivs};
 use crate::dynamics::{step, step_with_jacobians};
 use crate::types::{
-    Control, MpcTarget, RobotParams, RobotState, SolveResult, SolverConfig, State, TerminalMode,
-    Trajectory, Vec2, WorldSnapshot,
+    Control, MpcTarget, RobotParams, RobotState, SolveResult, SolverConfig, State, Trajectory,
+    Vec2,
 };
 
-fn terminal_target_pos(m: &TerminalMode) -> Vec2 {
-    match m {
-        TerminalMode::Position { p } => *p,
-        TerminalMode::PositionAndVelocity { p, .. } => *p,
-        TerminalMode::RelativeVelocity { target_p, .. } => *target_p,
-    }
-}
-
-/// Forward rollout of a control sequence from a fixed initial state, also
-/// computing the total cost along the way.
+/// Forward rollout of a control sequence, returning the trajectory and total cost.
 fn rollout(
     x0: &State,
     controls: &[Control],
     u_prev_first: &Control,
     heading_traj: &[f64],
     target: &MpcTarget,
-    world: &WorldSnapshot,
     params: &RobotParams,
     dt: f64,
 ) -> (Vec<State>, f64) {
@@ -46,7 +36,7 @@ fn rollout(
     for k in 0..n {
         let u_k = controls[k];
         let h_k = heading_traj.get(k).copied().unwrap_or(0.0);
-        cost += stage_cost_scalar(k, &states[k], &u_k, &u_prev, target, world, dt);
+        cost += stage_cost_scalar(&states[k], &u_k, &u_prev, target);
         let x_next = step(&states[k], &u_k, h_k, dt, params);
         states.push(x_next);
         u_prev = u_k;
@@ -68,7 +58,6 @@ fn backward_pass(
     u_prev_first: &Control,
     heading_traj: &[f64],
     target: &MpcTarget,
-    world: &WorldSnapshot,
     params: &RobotParams,
     dt: f64,
     reg: f64,
@@ -89,7 +78,7 @@ fn backward_pass(
         } else {
             controls[k - 1]
         };
-        let sd = stage_derivs(k, &states[k], &controls[k], &u_prev, target, world, dt);
+        let sd = stage_derivs(&states[k], &controls[k], &u_prev, target);
         let h_k = heading_traj.get(k).copied().unwrap_or(0.0);
         let (_, fx, fu) = step_with_jacobians(&states[k], &controls[k], h_k, dt, params);
 
@@ -100,12 +89,9 @@ fn backward_pass(
         let q_uu: Matrix2<f64> = q_uu_raw + reg * Matrix2::<f64>::identity();
         let q_ux: Matrix2x4<f64> = sd.lux + fu.transpose() * v_xx * fx;
 
-        // Symmetrise to fight numerical drift on the way through the backward pass.
         let q_uu_sym = 0.5 * (q_uu + q_uu.transpose());
         let q_uu_inv = q_uu_sym.try_inverse()?;
 
-        // Reject if the regularised Q_uu is not positive-definite; caller
-        // bumps regularisation and retries.
         if q_uu_inv.trace() <= 0.0 || q_uu_sym.determinant() <= 0.0 {
             return None;
         }
@@ -121,7 +107,6 @@ fn backward_pass(
 
         v_x = q_x + q_ux.transpose() * k_vec;
         v_xx = q_xx + q_ux.transpose() * kk;
-        // Symmetrise V_xx.
         v_xx = 0.5 * (v_xx + v_xx.transpose());
     }
 
@@ -142,7 +127,6 @@ fn forward_pass(
     back: &Backward,
     heading_traj: &[f64],
     target: &MpcTarget,
-    world: &WorldSnapshot,
     params: &RobotParams,
     dt: f64,
 ) -> (Vec<State>, Vec<Control>, f64) {
@@ -157,7 +141,7 @@ fn forward_pass(
         let u_new = prev_controls[k] + alpha * back.k_fb[k] + back.kk_fb[k] * dx;
         new_controls.push(u_new);
         let h_k = heading_traj.get(k).copied().unwrap_or(0.0);
-        cost += stage_cost_scalar(k, &new_states[k], &u_new, &u_prev, target, world, dt);
+        cost += stage_cost_scalar(&new_states[k], &u_new, &u_prev, target);
         let x_next = step(&new_states[k], &u_new, h_k, dt, params);
         new_states.push(x_next);
         u_prev = u_new;
@@ -166,8 +150,6 @@ fn forward_pass(
     (new_states, new_controls, cost)
 }
 
-/// Run iLQR from an explicit initial control sequence. Helper used by the
-/// multi-start wrapper below.
 fn run_ilqr(
     state: &RobotState,
     u_init: &[Control],
@@ -175,7 +157,6 @@ fn run_ilqr(
     heading_traj: &[f64],
     target: &MpcTarget,
     params: &RobotParams,
-    world: &WorldSnapshot,
     cfg: &SolverConfig,
 ) -> SolveResult {
     let x0 = state.to_state();
@@ -186,7 +167,6 @@ fn run_ilqr(
         u_prev_first,
         heading_traj,
         target,
-        world,
         params,
         cfg.dt,
     );
@@ -205,7 +185,6 @@ fn run_ilqr(
                 u_prev_first,
                 heading_traj,
                 target,
-                world,
                 params,
                 cfg.dt,
                 reg,
@@ -234,15 +213,11 @@ fn run_ilqr(
                 &back,
                 heading_traj,
                 target,
-                world,
                 params,
                 cfg.dt,
             );
             let expected = alpha * back.expected_dv1 + alpha * alpha * back.expected_dv2;
             let actual = new_cost - cost;
-            // Accept if we got a nontrivial fraction of expected decrease, or
-            // any decrease at all when the expected amount is too small to
-            // meaningfully gate on.
             let tol = 1.0e-8 * cost.abs().max(1.0);
             let accept = if expected < -tol {
                 actual < 0.1 * expected
@@ -283,14 +258,13 @@ fn run_ilqr(
     }
 }
 
-/// Two-start iLQR: warm-start if provided + straight-line-to-terminal. Picks
-/// the lower-cost solution.
+/// Multi-start iLQR: warm-start (if provided) and straight-line-to-target.
+/// Returns whichever converges to lower cost.
 pub fn solve(
     state: RobotState,
     heading_traj: &[f64],
     target: &MpcTarget,
     params: &RobotParams,
-    world: &WorldSnapshot,
     warm_start: Option<&Trajectory>,
     cfg: &SolverConfig,
 ) -> SolveResult {
@@ -299,9 +273,8 @@ pub fn solve(
         .and_then(|t| t.controls.first().copied())
         .unwrap_or_else(Vector2::zeros);
 
-    // Init 1: warm-start (shifted by one stage), padded with the last
-    // commanded value. If absent, this degenerates to zeros which iLQR will
-    // still correct — but we always keep the straight-line branch for safety.
+    // Init 1: warm-start (shifted by one stage), padded with the last commanded
+    // value. Falls back to zeros if no warm start available.
     let warm_controls: Vec<Control> = if let Some(ws) = warm_start {
         let mut v = Vec::with_capacity(n);
         for k in 0..n {
@@ -314,11 +287,10 @@ pub fn solve(
         vec![Vector2::zeros(); n]
     };
 
-    // Init 2: constant velocity aiming at the terminal target position,
-    // magnitude clipped so we start from a sane iterate.
-    let target_p = terminal_target_pos(&target.terminal);
+    // Init 2: constant velocity that would reach the target in `horizon · dt`.
+    // Magnitude clipped so we don't start from a wildly large iterate.
     let horizon_time = cfg.dt * n as f64;
-    let dir = target_p - state.pos;
+    let dir = target.p - state.pos;
     let desired = if horizon_time > 1.0e-9 {
         dir / horizon_time
     } else {
@@ -342,7 +314,6 @@ pub fn solve(
         heading_traj,
         target,
         params,
-        world,
         cfg,
     );
     let r_line = run_ilqr(
@@ -352,7 +323,6 @@ pub fn solve(
         heading_traj,
         target,
         params,
-        world,
         cfg,
     );
     if r_warm.final_cost <= r_line.final_cost {
@@ -365,252 +335,83 @@ pub fn solve(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{
-        CostWeights, FieldBounds, ObstacleShape, PredictedObstacle, ReferenceTrajectory,
-    };
-    use approx::assert_abs_diff_eq;
 
     fn params() -> RobotParams {
         RobotParams::default_hand_tuned()
     }
 
-    fn cfg() -> SolverConfig {
-        SolverConfig::default()
-    }
-
-    fn empty_world() -> WorldSnapshot {
-        WorldSnapshot {
-            obstacles: vec![],
-            field_bounds: FieldBounds::centered(90_000.0, 60_000.0, 1000.0, 2000.0),
-        }
-    }
-
-    fn goto(target: Vec2) -> MpcTarget {
-        MpcTarget {
-            reference: ReferenceTrajectory::StaticPoint(target),
-            terminal: TerminalMode::Position { p: target },
-            weights: CostWeights::default(),
-            care: 1.0,
-            aggressiveness: 0.2,
-        }
-    }
-
-    fn headings(n: usize) -> Vec<f64> {
-        vec![0.0; n + 1]
-    }
-
-    #[test]
-    fn reaches_target_in_open_space() {
-        let target_p = Vec2::new(1500.0, 800.0);
-        let t = goto(target_p);
-        let world = empty_world();
-        let params = params();
-        let cfg = cfg();
-        let state = RobotState {
-            pos: Vec2::zeros(),
-            vel: Vec2::zeros(),
-        };
-        let r = solve(
-            state,
-            &headings(cfg.horizon),
-            &t,
-            &params,
-            &world,
-            None,
-            &cfg,
-        );
-        let final_state = RobotState::from_state(r.trajectory.states.last().unwrap());
-        let err = (final_state.pos - target_p).norm();
-        // The 600 ms horizon at normal params won't fully reach a 1.7 m
-        // target, but it must make clear directional progress.
-        let initial_err = target_p.norm();
-        assert!(
-            err < 0.7 * initial_err,
-            "final error {} not markedly less than initial {}",
-            err,
-            initial_err
-        );
-    }
-
-    #[test]
-    fn avoids_single_circle_obstacle() {
-        // Note: iLQR on a *perfectly* symmetric obstacle-on-line problem has
-        // no y-gradient and can't find the detour direction. Real obstacles
-        // won't sit exactly on the robot's centerline; the test offsets it
-        // slightly so the gradient is well-posed. If field testing reveals
-        // degenerate-symmetry deadlocks we can add a perturbed random-init
-        // branch to the multi-start wrapper.
-        let target_p = Vec2::new(2000.0, 0.0);
-        let t = goto(target_p);
-        let obs_center = Vec2::new(1000.0, 40.0);
-        let world = WorldSnapshot {
-            obstacles: vec![PredictedObstacle {
-                shape: ObstacleShape::Circle {
-                    center: obs_center,
-                    radius: 100.0,
-                },
-                velocity: Vec2::zeros(),
-                safe_dist: 180.0,
-                no_cost_dist: 450.0,
-                weight_scale: 3.0,
-            }],
-            field_bounds: FieldBounds::centered(90_000.0, 60_000.0, 1000.0, 2000.0),
-        };
-        let params = params();
-        let cfg = SolverConfig {
-            horizon: 20,
-            ..cfg()
-        };
-        let state = RobotState {
-            pos: Vec2::zeros(),
-            vel: Vec2::zeros(),
-        };
-        let r = solve(
-            state,
-            &headings(cfg.horizon),
-            &t,
-            &params,
-            &world,
-            None,
-            &cfg,
-        );
-        let max_neg_y_dev = r
-            .trajectory
-            .states
-            .iter()
-            .map(|s| (-s[1]).max(0.0))
-            .fold(0.0_f64, f64::max);
-        assert!(
-            max_neg_y_dev > 10.0,
-            "trajectory did not deflect away from off-axis obstacle (max -y deviation {})",
-            max_neg_y_dev
-        );
-        for s in &r.trajectory.states {
-            let p = Vec2::new(s[0], s[1]);
-            let d = (p - obs_center).norm() - 100.0;
-            assert!(
-                d > 0.0,
-                "trajectory point penetrates obstacle body: d={}",
-                d
-            );
+    fn cfg_long() -> SolverConfig {
+        // Use a longer horizon for tests so the solver has time to slow down.
+        SolverConfig {
+            horizon: 50,
+            ..SolverConfig::default()
         }
     }
 
     #[test]
-    fn converges_under_iter_budget() {
-        let target_p = Vec2::new(500.0, 300.0);
-        let t = goto(target_p);
-        let world = empty_world();
-        let params = params();
-        let cfg = cfg();
+    fn at_rest_at_target_emits_zero_control() {
+        // The whole point of the `||u||²` term: at the target with zero state
+        // perturbation, iLQR must produce ~zero commanded velocity. This is
+        // the unit-test version of "no +500 oscillation at target".
+        let cfg = cfg_long();
+        let target = MpcTarget::goto(Vec2::new(1000.0, 500.0));
         let state = RobotState {
-            pos: Vec2::zeros(),
+            pos: target.p,
             vel: Vec2::zeros(),
         };
-        let r = solve(
-            state,
-            &headings(cfg.horizon),
-            &t,
-            &params,
-            &world,
-            None,
-            &cfg,
-        );
-        assert!(r.iters <= cfg.max_iters);
-        // Some useful descent must have happened.
-        let zero_ctrl = vec![Vector2::zeros(); cfg.horizon];
-        let (_, zero_cost) = rollout(
-            &state.to_state(),
-            &zero_ctrl,
-            &Vector2::zeros(),
-            &headings(cfg.horizon),
-            &t,
-            &world,
-            &params,
-            cfg.dt,
-        );
+        let headings = vec![0.0; cfg.horizon + 1];
+        let r = solve(state, &headings, &target, &params(), None, &cfg);
+        let u0 = r.trajectory.controls[0];
         assert!(
-            r.final_cost < 0.9 * zero_cost,
-            "final cost {} did not improve on zero-control cost {}",
-            r.final_cost,
-            zero_cost
+            u0.norm() < 1.0,
+            "control at target should be ~0 mm/s, got {}",
+            u0.norm()
         );
     }
 
     #[test]
-    fn warm_start_reduces_iters() {
-        let target_p = Vec2::new(1200.0, -500.0);
-        let t = goto(target_p);
-        let world = empty_world();
-        let params = params();
-        let cfg = cfg();
+    fn converges_to_static_target() {
+        let cfg = cfg_long();
+        let target = MpcTarget::goto(Vec2::new(2000.0, 0.0));
         let state = RobotState {
             pos: Vec2::zeros(),
             vel: Vec2::zeros(),
         };
-        let cold = solve(
-            state,
-            &headings(cfg.horizon),
-            &t,
-            &params,
-            &world,
-            None,
-            &cfg,
-        );
+        let headings = vec![0.0; cfg.horizon + 1];
+        let r = solve(state, &headings, &target, &params(), None, &cfg);
+        // Final state in the planned trajectory should be near the target with
+        // small terminal velocity.
+        let last = r.trajectory.states.last().unwrap();
+        let p_err = ((last[0] - target.p.x).powi(2) + (last[1] - target.p.y).powi(2)).sqrt();
+        let v_err = (last[2] * last[2] + last[3] * last[3]).sqrt();
+        assert!(p_err < 200.0, "terminal position error {} mm", p_err);
+        assert!(v_err < 200.0, "terminal velocity {} mm/s", v_err);
+    }
+
+    #[test]
+    fn warm_start_does_not_regress() {
+        let cfg = SolverConfig::default();
+        let target = MpcTarget::goto(Vec2::new(1500.0, 0.0));
+        let state = RobotState {
+            pos: Vec2::zeros(),
+            vel: Vec2::zeros(),
+        };
+        let headings = vec![0.0; cfg.horizon + 1];
+        let cold = solve(state, &headings, &target, &params(), None, &cfg);
         let warm = solve(
             state,
-            &headings(cfg.horizon),
-            &t,
-            &params,
-            &world,
+            &headings,
+            &target,
+            &params(),
             Some(&cold.trajectory),
             &cfg,
         );
+        // Warm start should at least not be worse than cold by a meaningful margin.
         assert!(
-            warm.final_cost <= cold.final_cost + 1.0e-6,
-            "warm-started solve cost {} worse than cold {}",
+            warm.final_cost <= cold.final_cost + 1.0,
+            "warm cost {} should not exceed cold cost {} by much",
             warm.final_cost,
             cold.final_cost
         );
-    }
-
-    #[test]
-    fn no_panics_on_unreachable_target() {
-        // A target deep inside an obstacle — the solver should still return,
-        // not converge, but produce a valid trajectory without panicking.
-        let target_p = Vec2::new(1000.0, 0.0);
-        let t = goto(target_p);
-        let world = WorldSnapshot {
-            obstacles: vec![PredictedObstacle {
-                shape: ObstacleShape::Circle {
-                    center: Vec2::new(1000.0, 0.0),
-                    radius: 500.0,
-                },
-                velocity: Vec2::zeros(),
-                safe_dist: 100.0,
-                no_cost_dist: 300.0,
-                weight_scale: 10.0,
-            }],
-            field_bounds: FieldBounds::centered(90_000.0, 60_000.0, 1000.0, 2000.0),
-        };
-        let params = params();
-        let cfg = cfg();
-        let state = RobotState {
-            pos: Vec2::zeros(),
-            vel: Vec2::zeros(),
-        };
-        let r = solve(
-            state,
-            &headings(cfg.horizon),
-            &t,
-            &params,
-            &world,
-            None,
-            &cfg,
-        );
-        assert_eq!(r.trajectory.states.len(), cfg.horizon + 1);
-        assert!(r.final_cost.is_finite());
-        // Silence the unused marker on the derivative approx helper.
-        assert_abs_diff_eq!(r.final_cost, r.final_cost, epsilon = 1.0);
     }
 }

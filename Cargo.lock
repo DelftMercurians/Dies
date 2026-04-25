@@ -1226,7 +1226,6 @@ dependencies = [
  "anyhow",
  "boa_engine",
  "dies-core",
- "dies-mpc",
  "dies-strategy-protocol",
  "nalgebra 0.32.6",
  "serde",

@@ -16,7 +16,6 @@ typeshare = "1.0.3"
 
 dies-core = { version = "0.1.0", path = "../dies-core" }
 dies-strategy-protocol = { version = "0.1.0", path = "../dies-strategy-protocol" }
-dies-mpc = { version = "0.1.0", path = "../dies-mpc" }
 
 [lints]
 workspace = true

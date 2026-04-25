@@ -6,44 +6,55 @@ use typeshare::typeshare;
 use crate::{skill_settings::SkillSettings, FieldGeometry, PlayerId, SideAssignment};
 
 /// Settings for the low-level controller.
+///
+/// Every field here is consumed by `PlayerController` or one of its
+/// subcontrollers (TwoStepMTP, YawController). The hard accel clamp in
+/// `PlayerController::command` reads `max_acceleration` directly and
+/// constrains the per-tick Δv for *both* MTP and iLQR outputs.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
 pub struct ControllerSettings {
-    /// Maximum acceleration of the robot in mm/s².
+    // --- Translational limits (hard caps applied at the player-controller
+    // boundary; iLQR/MTP both go through them).
+    /// Per-axis acceleration cap for translational motion (mm/s²).
     pub max_acceleration: f64,
-    /// Maximum velocity of the robot in mm/s.
+    /// Speed cap on the commanded velocity magnitude (mm/s).
     pub max_velocity: f64,
-    /// Maximum deceleration of the robot in mm/s².
+    /// Deceleration cap used when MTP plans braking (mm/s²).
     pub max_deceleration: f64,
-    /// Maximum angular velocity of the robot in rad/s.
+
+    // --- Rotational limits (used by YawController).
+    /// Maximum angular velocity (rad/s).
     pub max_angular_velocity: f64,
-    /// Maximum angular acceleration of the robot in rad/s².
+    /// Maximum angular acceleration (rad/s²) — passed to YawController as the
+    /// upper bound on its planned angular accel.
     pub max_angular_acceleration: f64,
-    /// Proportional gain for the close-range position controller.
+
+    // --- TwoStepMTP gains.
+    /// Proportional gain for translational tracking inside the MTP cutoff.
     pub position_kp: f64,
-    /// Time until destination in which the proportional controller is used, in seconds.
-    pub position_proportional_time_window: f64,
-    /// Distance used as threshold for the controller to prevent shaky behavior
+    /// Position deadzone (mm) — MTP commands zero velocity inside this radius.
     pub position_cutoff_distance: f64,
-    /// Proportional gain for the close-range angle controller.
+
+    // --- YawController gains.
+    /// Proportional gain for heading tracking.
     pub angle_kp: f64,
-    /// Distance used as threshold for the controller to prevent shaky behavior
+    /// Heading deadzone (rad) — yaw control outputs zero inside this band.
     pub angle_cutoff_distance: f64,
 }
 
 impl Default for ControllerSettings {
     fn default() -> Self {
         Self {
-            max_acceleration: 1200.0,
-            max_velocity: 3120.0,
-            max_deceleration: 6340.0,
-            max_angular_velocity: 25.132741228718345,
-            max_angular_acceleration: 349.0658503988659,
-            position_kp: 10.0,
-            position_proportional_time_window: 1.1,
-            position_cutoff_distance: 70.0,
+            max_acceleration: 4000.0,
+            max_velocity: 3000.0,
+            max_deceleration: 6000.0,
+            max_angular_velocity: 25.132741228718345, // 8π rad/s
+            max_angular_acceleration: 349.0658503988659, // ~20π rad/s²
+            position_kp: 2.0,
+            position_cutoff_distance: 15.0,
             angle_kp: 2.8,
-            angle_cutoff_distance: 0.03490658503988659,
+            angle_cutoff_distance: 0.03490658503988659, // 2°
         }
     }
 }
@@ -86,21 +97,30 @@ impl Default for FieldMask {
 }
 
 /// Settings for the `WorldTracker`.
+///
+/// Kalman variances are unit-time process noise (`*_unit_transition_var`,
+/// in mm²/s for the constant-velocity model) and measurement variance
+/// (`*_measurement_var`, in mm²). Higher transition variance → tracker
+/// trusts measurements more (snappier, noisier). Higher measurement
+/// variance → tracker trusts dynamics model more (smoother, laggier).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
 pub struct TrackerSettings {
+    /// Vision crop applied at the ball tracker — fractions of the field
+    /// half-extent. Defaults to the full field.
     pub field_mask: FieldMask,
 
-    /// Transition variance for the player Kalman filter.
+    /// Process noise for the player position/velocity Kalman filter (mm²/s).
     pub player_unit_transition_var: f64,
-    /// Measurement variance for the player Kalman filter.
+    /// Measurement noise for the player position Kalman filter (mm²).
     pub player_measurement_var: f64,
-    /// Smoothinfg factor for the yaw LPF
+    /// EWMA factor for the player yaw low-pass filter — 0 = no filtering,
+    /// 1 = freeze.
     pub player_yaw_lpf_alpha: f64,
 
-    /// Transition variance for the ball Kalman filter.
+    /// Process noise for the ball position/velocity Kalman filter (mm²/s).
     pub ball_unit_transition_var: f64,
-    /// Measurement variance for the ball Kalman filter.
+    /// Measurement noise for the ball position Kalman filter (mm²).
     pub ball_measurement_var: f64,
 }
 
@@ -197,6 +217,15 @@ pub struct ExecutorSettings {
     pub allow_no_vision: bool,
     #[serde(default)]
     pub controller_mode: ControllerMode,
+    /// Global on/off for goal-area avoidance. When false, both compliance and
+    /// the controller skip the goal-area keep-out logic (goalkeeper exception
+    /// is irrelevant since the whole feature is off).
+    #[serde(default = "default_true")]
+    pub goal_area_avoidance: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl ExecutorSettings {
@@ -245,6 +274,7 @@ impl Default for ExecutorSettings {
             skill_settings: SkillSettings::default(),
             allow_no_vision: true,
             controller_mode: ControllerMode::default(),
+            goal_area_avoidance: true,
         }
     }
 }

@@ -395,13 +395,12 @@ fn get_obj_opt(obj_val: &JsValue, key: &str, ctx: &mut Context) -> JsResult<Opti
 // ---------------------------------------------------------------------------
 
 /// Register the full scenario API on the context: `team`, `world`, `log`,
-/// `sysid`, `sleep`, `waitUntil`, `chirp`, `step`, `prbs`, `ramp`.
+/// `sleep`, `waitUntil`, `chirp`, `step`, `prbs`, `ramp`.
 pub fn register_api(ctx: &mut Context, state: StateRef) -> JsResult<()> {
     register_globals(ctx, state.clone())?;
     register_world(ctx, state.clone())?;
     register_team(ctx, state.clone())?;
     register_log(ctx, state.clone())?;
-    register_sysid(ctx, state.clone())?;
     register_excitation_builders(ctx)?;
     Ok(())
 }
@@ -725,28 +724,6 @@ fn register_log(ctx: &mut Context, state: StateRef) -> JsResult<()> {
     let obj = init.build();
     ctx.register_global_property(
         js_string!("log"),
-        obj,
-        Attribute::WRITABLE | Attribute::CONFIGURABLE,
-    )?;
-    Ok(())
-}
-
-fn register_sysid(ctx: &mut Context, _state: StateRef) -> JsResult<()> {
-    let mut init = ObjectInitializer::new(ctx);
-    let f = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let arr_val = args.first().cloned().unwrap_or(JsValue::undefined());
-            let samples = js_array_to_samples(&arr_val, ctx)?;
-            let opts = dies_mpc::types::FitOptions::default();
-            let init_params = dies_mpc::types::RobotParams::default_hand_tuned();
-            let res = dies_mpc::sysid::fit_params(&samples, init_params, opts);
-            Ok(fit_result_to_js(&res, ctx)?.into())
-        })
-    };
-    init.function(f, js_string!("fit"), 2);
-    let obj = init.build();
-    ctx.register_global_property(
-        js_string!("sysid"),
         obj,
         Attribute::WRITABLE | Attribute::CONFIGURABLE,
     )?;
@@ -1470,86 +1447,6 @@ fn js_array_to_captured(arr: &JsValue, ctx: &mut Context) -> JsResult<Vec<Captur
         });
     }
     Ok(out)
-}
-
-fn js_array_to_samples(arr: &JsValue, ctx: &mut Context) -> JsResult<Vec<dies_mpc::types::Sample>> {
-    use dies_mpc::types::{RobotState, Sample, Vec2};
-    let obj = arr
-        .as_object()
-        .cloned()
-        .ok_or_else(|| JsNativeError::typ().with_message("sysid.fit: expected array"))?;
-    let arr = JsArray::from_object(obj)
-        .map_err(|_| JsNativeError::typ().with_message("sysid.fit: expected Array"))?;
-    let len = arr.length(ctx)?;
-    let mut out = Vec::with_capacity(len as usize);
-    for i in 0..len {
-        let item = arr.get(i, ctx)?;
-        let t = get_num(&item, "t", ctx)?;
-        let cmd = get_obj_opt(&item, "cmd", ctx)?
-            .ok_or_else(|| JsNativeError::typ().with_message("sample missing cmd"))?;
-        let heading = get_num(&item, "heading", ctx)?;
-        let state = get_obj_opt(&item, "state", ctx)?
-            .ok_or_else(|| JsNativeError::typ().with_message("sample missing state"))?;
-        let pos = get_obj_opt(&state, "pos", ctx)?
-            .ok_or_else(|| JsNativeError::typ().with_message("sample.state missing pos"))?;
-        let vel = get_obj_opt(&state, "vel", ctx)?
-            .ok_or_else(|| JsNativeError::typ().with_message("sample.state missing vel"))?;
-        out.push(Sample {
-            t,
-            cmd: Vec2::new(get_num(&cmd, "x", ctx)?, get_num(&cmd, "y", ctx)?),
-            heading,
-            state: RobotState {
-                pos: Vec2::new(get_num(&pos, "x", ctx)?, get_num(&pos, "y", ctx)?),
-                vel: Vec2::new(get_num(&vel, "x", ctx)?, get_num(&vel, "y", ctx)?),
-            },
-        });
-    }
-    Ok(out)
-}
-
-fn fit_result_to_js(res: &dies_mpc::types::FitResult, ctx: &mut Context) -> JsResult<JsObject> {
-    let obj = JsObject::with_object_proto(ctx.intrinsics());
-    let params = JsObject::with_object_proto(ctx.intrinsics());
-    let arr = JsArray::new(ctx);
-    for v in res.params.tau.iter() {
-        arr.push(JsValue::new(*v), ctx)?;
-    }
-    params.set(js_string!("tau"), arr, false, ctx)?;
-    let arr = JsArray::new(ctx);
-    for v in res.params.a_max.iter() {
-        arr.push(JsValue::new(*v), ctx)?;
-    }
-    params.set(js_string!("aMax"), arr, false, ctx)?;
-    let arr = JsArray::new(ctx);
-    for v in res.params.stiction.iter() {
-        arr.push(JsValue::new(*v), ctx)?;
-    }
-    params.set(js_string!("stiction"), arr, false, ctx)?;
-    params.set(
-        js_string!("vEps"),
-        JsValue::new(res.params.v_eps),
-        false,
-        ctx,
-    )?;
-    obj.set(js_string!("params"), params, false, ctx)?;
-    let rms = JsArray::new(ctx);
-    for v in res.residual_rms_per_axis.iter() {
-        rms.push(JsValue::new(*v), ctx)?;
-    }
-    obj.set(js_string!("residualRms"), rms, false, ctx)?;
-    obj.set(
-        js_string!("iters"),
-        JsValue::new(res.iters as f64),
-        false,
-        ctx,
-    )?;
-    obj.set(
-        js_string!("converged"),
-        JsValue::new(res.converged),
-        false,
-        ctx,
-    )?;
-    Ok(obj)
 }
 
 fn js_value_to_json(v: &JsValue, ctx: &mut Context) -> String {
