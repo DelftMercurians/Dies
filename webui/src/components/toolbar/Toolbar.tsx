@@ -1,5 +1,6 @@
 import React from "react";
 import { Settings } from "lucide-react";
+import { DockviewApi } from "dockview";
 import { Button } from "@/components/ui/button";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import ModeToggle from "./ModeToggle";
@@ -7,13 +8,14 @@ import ExecutorControls from "./ExecutorControls";
 import TeamIndicator from "./TeamIndicator";
 import StatusCluster from "./StatusCluster";
 import LayoutSelector from "./LayoutSelector";
+import AddPanelMenu from "./AddPanelMenu";
 import logo from "@/assets/mercury-logo.svg";
 
 /**
  * Compact 32px toolbar following Dies mission control aesthetic.
  *
  * Layout:
- * [Logo] | [SIM|LIV] | [▶ ⏸ ⏹] | [Team/Side] | ═══ spacer ═══ | [Layout ▼] | [⚙] | [● STATUS dt]
+ * [Logo] | [SIM|LIV] | [▶ ⏸ ⏹] | [Team/Side] | ═══ spacer ═══ | [+] [Layout ▼] | [⚙] | [● STATUS dt]
  */
 
 interface ToolbarProps {
@@ -21,6 +23,7 @@ interface ToolbarProps {
   onExecutorStart?: () => void;
   onExecutorStop?: () => void;
   onResetLayout?: () => void;
+  getDockviewApi?: () => DockviewApi | null;
 }
 
 const Toolbar: React.FC<ToolbarProps> = ({
@@ -28,6 +31,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onExecutorStart,
   onExecutorStop,
   onResetLayout,
+  getDockviewApi,
 }) => {
   return (
     <div className="h-10 min-h-10 flex items-center gap-2.5 bg-bg-surface border-b border-border-subtle px-3 select-none">
@@ -57,6 +61,9 @@ const Toolbar: React.FC<ToolbarProps> = ({
       {/* Spacer */}
       <div className="flex-1" />
 
+      {/* Add Panel Menu */}
+      {getDockviewApi && <AddPanelMenu getApi={getDockviewApi} />}
+
       {/* Layout Selector */}
       <LayoutSelector onResetToDefault={onResetLayout} />
 
@@ -64,7 +71,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
       <div className="w-px h-5 bg-border-muted" />
 
       {/* Settings Button */}
-      <SimpleTooltip title="Settings">
+      <SimpleTooltip title="Settings (Motion controller, tracker, skills)">
         <Button
           variant="ghost"
           size="icon-sm"

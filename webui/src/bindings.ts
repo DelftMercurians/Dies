@@ -465,6 +465,13 @@ export type UiCommand =
 	| { type: "SwapTeamColors",  }
 	/** Swap team sides (BlueOnPositive <-> YellowOnPositive) */
 	| { type: "SwapTeamSides",  }
+	/** Load and start a JS scenario by file name (resolved against `scenarios/`). */
+	| { type: "StartScenario", data: {
+	scenario: string;
+	team?: TeamColor;
+}}
+	/** Stop the currently running scenario and return to strategy mode. */
+	| { type: "StopScenario",  }
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
@@ -496,6 +503,36 @@ export interface RawGameStateData {
 	yellow_team_keeper_id?: PlayerId;
 }
 
+export interface ScenarioArtifact {
+	tag: string;
+	value_json: string;
+}
+
+/** A single scenario file available on disk. */
+export interface ScenarioInfo {
+	name: string;
+	path: string;
+}
+
+export type TestStatus = 
+	| { state: "Idle",  }
+	| { state: "Starting",  }
+	| { state: "Running", data: {
+	name: string;
+}}
+	| { state: "Completed", data: {
+	artifacts: ScenarioArtifact[];
+}}
+	| { state: "Failed", data: {
+	error: string;
+}}
+	| { state: "Aborted",  };
+
+export interface ScenariosResponse {
+	scenarios: ScenarioInfo[];
+	status: TestStatus;
+}
+
 /** A struct to store the world state from a single frame. */
 export interface TeamData {
 	/**
@@ -519,6 +556,23 @@ export interface TeamData {
 	ball_on_opp_side?: Duration;
 	kicked_ball?: AutorefKickedBallTeam;
 	skill_settings: SkillSettings;
+}
+
+export enum TestLogLevel {
+	Info = "Info",
+	Warn = "Warn",
+	Error = "Error",
+	Record = "Record",
+}
+
+export interface TestLogEntry {
+	level: TestLogLevel;
+	tag?: string;
+	message: string;
+	/** Optional structured payload (JSON-serialized). `log.record` uses this. */
+	value_json?: string;
+	/** Milliseconds since UNIX epoch at emission time. */
+	ts_ms: number;
 }
 
 /** The current status of the executor. */
@@ -699,7 +753,9 @@ export type UiWorldState =
 /** WebSocket message types sent from backend to frontend */
 export type WsMessage = 
 	| { type: "WorldUpdate", data: WorldData }
-	| { type: "Debug", data: DebugMap };
+	| { type: "Debug", data: DebugMap }
+	| { type: "ScenarioLog", data: TestLogEntry }
+	| { type: "ScenarioStatus", data: TestStatus };
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];

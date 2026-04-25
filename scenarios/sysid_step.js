@@ -2,27 +2,26 @@
 // y-axis dynamics separately from forward.
 
 globalThis.scenario = {
-  name: "sysid_strafe_step",
+  name: "sysid_step",
   team: "blue",
-  robots: [1],
+  robots: [4],
   env: "either",
 };
 
 globalThis.run = async function run({ team, world, log, sysid }) {
-  const r = team.robot(5);
+  const r = team.robot(4);
   // await world.addRobot({ team: "blue", id: 1, x: 0, y: -1000, yaw: 0 });
-  await r.moveTo({ x: 0, y: -1000, yaw: 0 }, { tolMm: 60, timeoutMs: 5000 });
-  await r.waitStopped({ timeoutMs: 2000 });
+  await r.moveTo({ x: -2500, y: 0, yaw: 0 }, { tolMm: 60 });
+  await r.waitStopped({ timeoutMs: 1000 });
 
   const samples = await r.captureWhileExciting({
     excitation: step({
-      axis: "strafe",
-      magnitude: 50000,
-      holdSec: 4.0,
-      duration: 1.0,
+      axis: "forward",
+      magnitude: 5000,
+      holdSec: 2.0,
     }),
-    rateHz: 20,
-    durationSec: 4.0,
+    rateHz: 10,
+    durationSec: 10.0,
   });
   log.record("samples", { samples });
 

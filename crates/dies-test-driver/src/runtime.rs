@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use boa_engine::builtins::promise::PromiseState;
 use boa_engine::object::builtins::JsPromise;
-use boa_engine::{js_string, Context, JsError, JsNativeError, JsString, JsValue, Source};
+use boa_engine::{js_string, Context, JsError, JsNativeError, JsObject, JsString, JsValue, Source};
 use dies_core::{Angle, PlayerId, TeamColor, TeamData, Vector2};
 use dies_strategy_protocol::SkillStatus;
 use serde::{Deserialize, Serialize};
@@ -100,6 +100,7 @@ pub struct TestDriver {
     ctx: Context,
     state: StateRef,
     entry_promise: Option<JsPromise>,
+    pending_entry: Option<(JsObject, JsObject)>,
     status: TestStatus,
     scenario_path: Option<PathBuf>,
 }
@@ -113,6 +114,7 @@ impl TestDriver {
             ctx,
             state,
             entry_promise: None,
+            pending_entry: None,
             status: TestStatus::Idle,
             scenario_path: None,
         })
@@ -173,16 +175,12 @@ impl TestDriver {
                 .map_err(js_err)?;
         }
 
-        let ret = run_obj
-            .call(&JsValue::undefined(), &[args_obj.into()], &mut self.ctx)
-            .map_err(js_err)?;
-
-        let promise = match ret.as_object() {
-            Some(obj) => JsPromise::from_object(obj.clone())
-                .unwrap_or_else(|_| JsPromise::resolve(ret.clone(), &mut self.ctx)),
-            None => JsPromise::resolve(ret.clone(), &mut self.ctx),
-        };
-        self.entry_promise = Some(promise);
+        // Defer the entry call until the first `tick()` so that `world.t` is
+        // initialized from real team data before any JS runs. Otherwise the JS
+        // captures `world.t = 0.0` for things like `moveTo` deadlines, and the
+        // deadline check fires immediately when the world jumps to the
+        // executor's monotonic clock on the first tick.
+        self.pending_entry = Some((run_obj, args_obj));
         self.status = TestStatus::Running {
             name: meta.name.clone(),
         };
@@ -219,8 +217,20 @@ impl TestDriver {
         self.state.borrow_mut().skill_statuses = statuses;
     }
 
+    /// Push the executor's per-player computed velocity setpoints (global frame,
+    /// mm/s) into the driver. Called once per tick from the host so recordings
+    /// can capture the controller's actual cmd during position-controlled motion.
+    pub fn set_actual_cmds_global(
+        &mut self,
+        cmds: std::collections::HashMap<PlayerId, Vector2>,
+    ) {
+        self.state.borrow_mut().actual_cmds_global = cmds;
+    }
+
     pub fn tick(&mut self, team_data: &TeamData) -> TestFrameOutput {
         self.state.borrow_mut().world.update_from(team_data);
+
+        self.start_pending_entry();
 
         let aborted_now = self.state.borrow().aborted
             && !matches!(self.status, TestStatus::Aborted | TestStatus::Failed { .. });
@@ -230,6 +240,7 @@ impl TestDriver {
         }
 
         self.poll_wakers();
+        self.state.borrow_mut().tick_recordings();
         self.ctx.run_jobs();
         self.check_entry_promise();
 
@@ -241,6 +252,33 @@ impl TestDriver {
             direct_inputs: st.slots.direct.clone(),
             sim_commands: sim_cmds,
             cleared_direct: Vec::new(),
+        }
+    }
+
+    fn start_pending_entry(&mut self) {
+        let Some((run_obj, args_obj)) = self.pending_entry.take() else {
+            return;
+        };
+        match run_obj.call(&JsValue::undefined(), &[args_obj.into()], &mut self.ctx) {
+            Ok(ret) => {
+                let promise = match ret.as_object() {
+                    Some(obj) => JsPromise::from_object(obj.clone())
+                        .unwrap_or_else(|_| JsPromise::resolve(ret.clone(), &mut self.ctx)),
+                    None => JsPromise::resolve(ret.clone(), &mut self.ctx),
+                };
+                self.entry_promise = Some(promise);
+            }
+            Err(e) => {
+                let err_text = js_value_message(&e.to_opaque(&mut self.ctx), &mut self.ctx);
+                self.state.borrow().log.emit(TestLogEntry {
+                    level: TestLogLevel::Error,
+                    tag: None,
+                    message: format!("scenario failed: {}", err_text),
+                    value_json: None,
+                    ts_ms: crate::log_bus::now_ms(),
+                });
+                self.status = TestStatus::Failed { error: err_text };
+            }
         }
     }
 
@@ -466,6 +504,7 @@ impl TestDriver {
                 player,
                 profile,
                 start_s,
+                hold_yaw,
                 resolve,
             } => {
                 let t_rel = now - start_s;
@@ -486,11 +525,12 @@ impl TestDriver {
                     let sample = profile.sample(t_rel);
                     self.state
                         .borrow_mut()
-                        .apply_excitation_tick(player, sample);
+                        .apply_excitation_tick(player, sample, hold_yaw);
                     WakerAction::Keep(Waker::Excite {
                         player,
                         profile,
                         start_s,
+                        hold_yaw,
                         resolve,
                     })
                 }
@@ -503,6 +543,7 @@ impl TestDriver {
                 start_s,
                 last_sample_s,
                 mut buffer,
+                hold_yaw,
                 resolve,
             } => {
                 let t_rel = now - start_s;
@@ -510,7 +551,7 @@ impl TestDriver {
                     let sample = prof.sample(t_rel.max(0.0));
                     self.state
                         .borrow_mut()
-                        .apply_excitation_tick(player, sample);
+                        .apply_excitation_tick(player, sample, hold_yaw);
                 }
                 let interval = if rate_hz > 0.0 { 1.0 / rate_hz } else { 0.05 };
                 let snap = self.state.borrow().snapshot_player(player);
@@ -557,6 +598,7 @@ impl TestDriver {
                         start_s,
                         last_sample_s: new_last,
                         buffer,
+                        hold_yaw,
                         resolve,
                     })
                 }

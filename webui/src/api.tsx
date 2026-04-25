@@ -39,9 +39,15 @@ import {
   PlayerOverrideCommand,
   TeamConfiguration,
   SideAssignment,
+  ScenariosResponse,
+  ScenarioInfo,
+  TestStatus,
+  TestLogEntry,
 } from "./bindings";
 import { toast } from "sonner";
 import { atom, getDefaultStore, useAtom } from "jotai";
+
+export const selectedPlayerIdAtom = atom<number | null>(null);
 
 export type Status =
   | { status: "loading" }
@@ -347,6 +353,28 @@ export const useWsConnectionStatus = () => {
   return useAtom(wsConnectionStatusAtom);
 };
 
+// Scenario state — populated from WS messages emitted by the executor.
+const scenarioStatusAtom = atom<TestStatus>({ state: "Idle" });
+const scenarioLogsAtom = atom<TestLogEntry[]>([]);
+const SCENARIO_LOG_LIMIT = 500;
+
+export const useScenarioStatus = () => useAtom(scenarioStatusAtom)[0];
+export const useScenarioLogs = () => useAtom(scenarioLogsAtom)[0];
+export const useClearScenarioLogs = () => {
+  const set = useAtom(scenarioLogsAtom)[1];
+  return () => set([]);
+};
+
+const getScenarios = (): Promise<ScenariosResponse> =>
+  fetch("/api/scenarios").then((res) => res.json());
+
+export const useScenarios = () =>
+  useQuery({
+    queryKey: ["scenarios"],
+    queryFn: getScenarios,
+    refetchInterval: 5000,
+  });
+
 let ws: WebSocket | null = null;
 const onWsConnectedChange: ((connected: boolean) => void)[] = [];
 const addWsConnectedListener = (cb: (connected: boolean) => void) => {
@@ -408,6 +436,21 @@ export function startWsClient() {
           });
         } else if (msg.type === "Debug") {
           queryClient.setQueryData(["debug-map"], msg.data satisfies DebugMap);
+        } else if (msg.type === "ScenarioStatus") {
+          store.set(scenarioStatusAtom, msg.data);
+          // A new run started — clear the previous run's logs.
+          if (msg.data.state === "Starting" || msg.data.state === "Running") {
+            const existing = store.get(scenarioLogsAtom);
+            if (existing.length > 0 && msg.data.state === "Starting") {
+              store.set(scenarioLogsAtom, []);
+            }
+          }
+        } else if (msg.type === "ScenarioLog") {
+          const cur = store.get(scenarioLogsAtom);
+          const next = cur.length >= SCENARIO_LOG_LIMIT
+            ? [...cur.slice(cur.length - SCENARIO_LOG_LIMIT + 1), msg.data]
+            : [...cur, msg.data];
+          store.set(scenarioLogsAtom, next);
         }
       };
       ws.onerror = (err) => {

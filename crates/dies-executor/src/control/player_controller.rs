@@ -6,7 +6,6 @@ use dies_core::{
 };
 
 use super::{
-    mtp::MTP,
     player_input::{KickerControlInput, PlayerControlInput},
     team_context::PlayerContext,
     two_step_mtp::TwoStepMTP,
@@ -26,9 +25,7 @@ enum KickerState {
 
 pub struct PlayerController {
     id: PlayerId,
-    position_mtp: MTP,
     two_step_mtp: TwoStepMTP,
-    use_two_step_mtp: bool,
     last_pos: Vector2,
 
     /// Output velocity \[mm/s\]
@@ -57,6 +54,12 @@ pub struct PlayerController {
     max_angular_acceleration: f64,
     last_yaw_rate_limit: Option<f64>,
 
+    /// Most recent measured global-frame velocity, captured at the start of
+    /// `update()`. Used by the output-side acceleration clamp in `command()`.
+    last_velocity: Vector2,
+    /// dt corresponding to `last_velocity`. Same purpose.
+    last_dt: f64,
+
     fan_speed: f64,
     kick_speed: f64,
 }
@@ -67,9 +70,7 @@ impl PlayerController {
         let mut instance = Self {
             id,
 
-            position_mtp: MTP::new(),
             two_step_mtp: TwoStepMTP::new(),
-            use_two_step_mtp: true, // Default to double step MTP
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity_global: Vector2::new(0.0, 0.0),
             w: 0.0,
@@ -94,6 +95,8 @@ impl PlayerController {
             kick_speed: 0.0,
 
             last_yaw_rate_limit: None,
+            last_velocity: Vector2::zeros(),
+            last_dt: 0.0,
         };
         instance.update_settings(&settings.controller_settings);
         instance
@@ -101,11 +104,6 @@ impl PlayerController {
 
     /// Update the controller settings.
     pub fn update_settings(&mut self, settings: &ControllerSettings) {
-        self.position_mtp.update_settings(
-            settings.position_kp,
-            Duration::from_secs_f64(settings.position_proportional_time_window),
-            settings.position_cutoff_distance,
-        );
         self.two_step_mtp.update_settings(
             settings.position_kp,
             Duration::from_secs_f64(settings.position_proportional_time_window),
@@ -113,6 +111,12 @@ impl PlayerController {
         );
         self.yaw_control
             .update_settings(settings.angle_kp, settings.angle_cutoff_distance);
+        // Limits were previously only set in `new()` — the live UI sliders
+        // didn't take effect until restart. Apply them here too.
+        self.max_accel = settings.max_acceleration;
+        self.max_speed = settings.max_velocity;
+        self.max_decel = settings.max_deceleration;
+        self.max_angular_acceleration = settings.max_angular_acceleration;
     }
 
     /// Get the ID of the player.
@@ -122,7 +126,7 @@ impl PlayerController {
 
     /// Set the target velocity (used when the team controller overrides the
     /// MTP output — e.g. when running in iLQR mode).
-    pub fn set_target_velocity(&mut self, velocity: Vector2) {
+    pub fn set_target_velocity(&mut self, velocity: Vector2, dt: f64) {
         self.target_velocity_global = velocity;
     }
 
@@ -130,6 +134,12 @@ impl PlayerController {
     /// clip commanded velocities to robot-realistic bounds.
     pub fn get_max_speed(&self) -> f64 {
         self.max_speed
+    }
+
+    /// Last computed velocity setpoint in **global** frame (mm/s). Reflects the
+    /// MTP / iLQR / manual-velocity output from the most recent `update`.
+    pub fn target_velocity_global(&self) -> Vector2 {
+        self.target_velocity_global
     }
 
     /// Get the current command for the player.
@@ -240,62 +250,35 @@ impl PlayerController {
         // Calculate velocity using MTP controller (MPC is handled at team level)
         self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
-        if let Some(pos_target) = input.position {
-            self.position_mtp.set_setpoint(pos_target);
-            player_context.debug_cross_colored(
-                "control.target",
-                pos_target,
-                dies_core::DebugColor::Red,
-            );
-        }
+
+        self.last_velocity = state.velocity;
+        self.last_dt = dt;
 
         // Always compute MTP first as fallback
-        self.target_velocity_global = Vector2::zeros();
         if let Some(pos_target) = input.position {
             // Choose between regular MTP and two-step MTP
-            let pos_u = if self.use_two_step_mtp && !is_manual_override {
-                self.two_step_mtp.set_setpoint(pos_target);
-                self.two_step_mtp.update(
-                    self.last_pos,
-                    state.velocity,
-                    dt,
-                    input.acceleration_limit.unwrap_or(self.max_accel),
-                    input.speed_limit.unwrap_or(self.max_speed),
-                    input.acceleration_limit.unwrap_or(self.max_decel),
-                    input.care,
-                    input.aggressiveness,
-                    player_context,
-                    world,
-                    state,
-                    avoid_goal_area,
-                    avoid_goal_area_margin,
-                    avoid_opp_robots,
-                    obstacles,
-                    input.control_paramer_override.clone(),
-                )
-            } else {
-                self.position_mtp.set_setpoint(pos_target);
-                self.position_mtp.update(
-                    self.last_pos,
-                    state.velocity,
-                    dt,
-                    input.acceleration_limit.unwrap_or(self.max_accel),
-                    input.speed_limit.unwrap_or(self.max_speed),
-                    input.acceleration_limit.unwrap_or(self.max_decel),
-                    input.care,
-                    player_context,
-                )
-            };
+            self.two_step_mtp.set_setpoint(pos_target);
+            let pos_u = self.two_step_mtp.update(
+                self.last_pos,
+                state.velocity,
+                dt,
+                input.acceleration_limit.unwrap_or(self.max_accel),
+                input.speed_limit.unwrap_or(self.max_speed),
+                input.acceleration_limit.unwrap_or(self.max_decel),
+                input.care,
+                input.aggressiveness,
+                player_context,
+                world,
+                state,
+                avoid_goal_area,
+                avoid_goal_area_margin,
+                avoid_opp_robots,
+                obstacles,
+                input.control_paramer_override.clone(),
+            );
             self.target_velocity_global = pos_u;
-
-            // Debug string will be updated by team controller if MPC overrides
-            let controller_name = if self.use_two_step_mtp && !is_manual_override {
-                "TwoStepMTP"
-            } else {
-                "MTP"
-            };
-            player_context.debug_string("controller", controller_name);
         } else {
+            self.target_velocity_global = Vector2::zeros();
             dies_core::debug_remove(format!("p{}.control.target", self.id));
         }
         let add_vel = match input.velocity {

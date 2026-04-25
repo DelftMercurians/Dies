@@ -25,3 +25,5 @@ docs/book
 docs/src/api
 logs
 log*.json
+.dies
+.claude

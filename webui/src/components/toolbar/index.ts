@@ -4,4 +4,5 @@ export { default as ExecutorControls } from "./ExecutorControls";
 export { default as TeamIndicator } from "./TeamIndicator";
 export { default as StatusCluster } from "./StatusCluster";
 export { default as LayoutSelector } from "./LayoutSelector";
+export { default as AddPanelMenu } from "./AddPanelMenu";
 

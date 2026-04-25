@@ -306,6 +306,7 @@ impl BasestationHandle {
         let (tx, _) = oneshot::channel();
         self.cmd_tx
             .try_send(Message::PlayerCmd((team_color, msg, tx)))
+            .map_err(|e| eprintln!("Failed to send message to serial port: {:?}", e))
             .ok();
     }
 

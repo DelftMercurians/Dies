@@ -228,6 +228,10 @@ pub struct PlayerData {
     pub raw_yaw: Angle,
     /// Angular speed of the player (in rad/s)
     pub angular_speed: f64,
+    /// EWMA-smoothed position noise floor in mm — RMS of the Kalman innovation
+    /// (raw vision vs. constant-velocity prediction). Useful for diagnosing
+    /// whether downstream controllers are tracking sensor noise.
+    pub position_noise: f64,
 
     /// The overall status of the robot. Only available for own players.
     pub primary_status: Option<SysStatus>,
@@ -256,6 +260,7 @@ impl PlayerData {
             yaw: Angle::default(),
             raw_yaw: Angle::default(),
             angular_speed: 0.0,
+            position_noise: 0.0,
             primary_status: None,
             kicker_cap_voltage: None,
             kicker_temp: None,
@@ -806,6 +811,7 @@ pub fn mock_world_data() -> WorldData {
             yaw: Angle::default(),
             raw_yaw: Angle::default(),
             angular_speed: 0.0,
+            position_noise: 0.0,
             primary_status: Some(SysStatus::Ready),
             kicker_cap_voltage: Some(0.0),
             kicker_temp: Some(0.0),
@@ -824,6 +830,7 @@ pub fn mock_world_data() -> WorldData {
             yaw: Angle::default(),
             raw_yaw: Angle::default(),
             angular_speed: 0.0,
+            position_noise: 0.0,
             primary_status: Some(SysStatus::Ready),
             kicker_cap_voltage: Some(0.0),
             kicker_temp: Some(0.0),
@@ -865,6 +872,7 @@ pub fn mock_team_data() -> TeamData {
             yaw: Angle::default(),
             raw_yaw: Angle::default(),
             angular_speed: 0.0,
+            position_noise: 0.0,
             primary_status: Some(SysStatus::Ready),
             kicker_cap_voltage: Some(0.0),
             kicker_temp: Some(0.0),
@@ -883,6 +891,7 @@ pub fn mock_team_data() -> TeamData {
             yaw: Angle::default(),
             raw_yaw: Angle::default(),
             angular_speed: 0.0,
+            position_noise: 0.0,
             primary_status: Some(SysStatus::Ready),
             kicker_cap_voltage: Some(0.0),
             kicker_temp: Some(0.0),

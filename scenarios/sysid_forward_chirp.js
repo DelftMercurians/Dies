@@ -5,12 +5,12 @@ globalThis.scenario = {
   name: "sysid_forward_chirp",
   team: "blue",
   robots: [1],
-  env: "sim",
+  env: "either",
 };
 
 globalThis.run = async function run({ team, world, log, sysid }) {
-  const r = team.robot(1);
-  await world.addRobot({ team: "blue", id: 1, x: -1500, y: 0, yaw: 0 });
+  const r = team.robot(5);
+  // await world.addRobot({ team: "blue", id: 1, x: -1500, y: 0, yaw: 0 });
   await r.moveTo({ x: -1500, y: 0, yaw: 0 }, { tolMm: 60, timeoutMs: 5000 });
   await r.waitStopped({ thresholdMmPerSec: 40, timeoutMs: 2000 });
 

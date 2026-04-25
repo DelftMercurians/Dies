@@ -1,5 +1,4 @@
 mod ilqr;
-mod mtp;
 mod passing;
 mod player_controller;
 mod player_input;

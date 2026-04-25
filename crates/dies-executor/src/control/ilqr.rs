@@ -10,11 +10,11 @@
 //! Robots with no position target are omitted from the returned map —
 //! callers fall through to the existing velocity-passthrough path.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fs, path::Path};
 
 use dies_core::{
-    Angle, BallData, FieldGeometry, GameState, PlayerData, PlayerId, TeamData, Vector2,
-    BALL_RADIUS, PLAYER_RADIUS,
+    Angle, BallData, DebugColor, FieldGeometry, GameState, PlayerData, PlayerId, TeamData,
+    Vector2, BALL_RADIUS, PLAYER_RADIUS,
 };
 use dies_mpc::{
     self, CostWeights, FieldBounds, MpcTarget, ObstacleShape, PredictedObstacle,
@@ -33,10 +33,58 @@ pub struct IlqrController {
 
 impl IlqrController {
     pub fn new() -> Self {
+        Self::with_params(RobotParams::default_hand_tuned())
+    }
+
+    pub fn with_params(params: RobotParams) -> Self {
         Self {
-            params: RobotParams::default_hand_tuned(),
+            params,
             cfg: SolverConfig::default(),
             warm_starts: HashMap::new(),
+        }
+    }
+
+    /// Load `RobotParams` from a JSON file. On success, returns a controller
+    /// using those params. On parse error or any IO error other than "not
+    /// found", logs and falls back to hand-tuned defaults. If the file is
+    /// missing, writes the current defaults to that path so it's easy to
+    /// edit by hand or overwrite from sysid.
+    pub fn load_or_insert(path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref();
+        match fs::read_to_string(path) {
+            Ok(contents) => match serde_json::from_str::<RobotParams>(&contents) {
+                Ok(params) => {
+                    tracing::info!("Loaded iLQR RobotParams from {}", path.display());
+                    Self::with_params(params)
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to parse iLQR params at {}: {} — using defaults",
+                        path.display(),
+                        err
+                    );
+                    Self::new()
+                }
+            },
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                let params = RobotParams::default_hand_tuned();
+                if let Err(err) = fs::write(path, serde_json::to_string_pretty(&params).unwrap()) {
+                    tracing::warn!(
+                        "Failed to seed iLQR params file {}: {}",
+                        path.display(),
+                        err
+                    );
+                }
+                Self::with_params(params)
+            }
+            Err(err) => {
+                tracing::warn!(
+                    "Failed to read iLQR params at {}: {} — using defaults",
+                    path.display(),
+                    err
+                );
+                Self::new()
+            }
         }
     }
 
@@ -80,7 +128,10 @@ impl IlqrController {
 
             let target = MpcTarget {
                 reference: ReferenceTrajectory::StaticPoint(target_p),
-                terminal: TerminalMode::Position { p: target_p },
+                terminal: TerminalMode::PositionAndVelocity {
+                    p: target_p,
+                    v: Vector2::zeros(),
+                },
                 weights: CostWeights::default(),
                 care: input.care,
                 aggressiveness: input.aggressiveness,
@@ -115,6 +166,18 @@ impl IlqrController {
             let nrm = cmd.norm();
             if nrm > max_speed {
                 cmd *= max_speed / nrm;
+            }
+
+            // Publish the predicted trajectory as a chain of debug lines so
+            // the webui field canvas can render it. World-frame coordinates,
+            // matching the initial state we fed in.
+            for (i, window) in result.trajectory.states.windows(2).enumerate() {
+                dies_core::debug_line(
+                    format!("p{}.ilqr.trajectory.seg{:02}", id, i),
+                    window[0].xy(),
+                    window[1].xy(),
+                    DebugColor::Purple,
+                );
             }
 
             self.warm_starts.insert(*id, result.trajectory);

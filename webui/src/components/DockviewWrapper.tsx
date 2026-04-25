@@ -1,4 +1,4 @@
-import React, {
+import {
   useRef,
   useEffect,
   useCallback,
@@ -57,8 +57,6 @@ export interface DockviewWrapperRef {
 interface DockviewWrapperProps {
   components: PanelComponentsMap;
   onCreateDefaultLayout: (api: DockviewApi) => void;
-  selectedPlayerId: number | null;
-  onSelectPlayer: (id: number | null) => void;
 }
 
 // ============================================================================
@@ -66,10 +64,7 @@ interface DockviewWrapperProps {
 // ============================================================================
 
 const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
-  (
-    { components, onCreateDefaultLayout, selectedPlayerId, onSelectPlayer },
-    ref
-  ) => {
+  ({ components, onCreateDefaultLayout }, ref) => {
     const apiRef = useRef<DockviewApi | null>(null);
     const [savedLayouts, setSavedLayouts] = useAtom(savedLayoutsAtom);
     const [currentLayoutName] = useAtom(currentLayoutNameAtom);
@@ -87,24 +82,6 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
       }),
       [onCreateDefaultLayout]
     );
-
-    // Wrap components to pass props
-    const wrappedComponents = React.useMemo(() => {
-      const wrapped: PanelComponentsMap = {};
-      for (const [key, Component] of Object.entries(components)) {
-        wrapped[key] = (props: IDockviewPanelProps) => (
-          <Component
-            {...props}
-            params={{
-              ...props.params,
-              selectedPlayerId,
-              onSelectPlayer,
-            }}
-          />
-        );
-      }
-      return wrapped;
-    }, [components, selectedPlayerId, onSelectPlayer]);
 
     // Handle Dockview ready
     const handleReady = useCallback(
@@ -177,7 +154,7 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
     return (
       <DockviewReact
         className="dockview-theme-dies"
-        components={wrappedComponents}
+        components={components}
         onReady={handleReady}
         disableFloatingGroups={false}
       />

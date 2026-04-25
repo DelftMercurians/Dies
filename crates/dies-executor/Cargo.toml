@@ -19,6 +19,7 @@ dies-logger = { version = "0.1.0", path = "../dies-logger" }
 paste = "1.0.15"
 rand = "0.8.5"
 serde = "1.0.203"
+serde_json = "1.0"
 dies-mpc = { version = "0.1.0", path = "../dies-mpc" }
 dies-test-driver = { version = "0.1.0", path = "../dies-test-driver" }
 lapjv = "0.1"

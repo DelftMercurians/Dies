@@ -8,26 +8,30 @@
       "type": "lldb",
       "request": "launch",
       "name": "Launch",
-      "program": "${workspaceFolder}/target/debug/dies-cli",
+      "program": "/target/debug/dies-cli",
       "args": [],
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
     },
     {
       "name": "Debug Dies with webui",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceRoot}/target/debug/dies-cli",
+      "program": "target/debug/dies-cli",
       "miDebuggerPath": "${env:HOME}/.cargo/bin/rust-gdb",
-      "args": ["--interface", "enp4s0"],
-      "cwd": "${workspaceRoot}",
+      "args": [
+        "--interface",
+        "en8",
+        "--serial-port",
+        "/dev/cu.usbmodem4983466939361",
+      ],
       "setupCommands": [
         {
           "description": "Enable pretty-printing for gdb",
           "text": "-enable-pretty-printing",
-          "ignoreFailures": false
-        }
-      ]
+          "ignoreFailures": false,
+        },
+      ],
       // "preLaunchTask": "cargo build"
-    }
-  ]
+    },
+  ],
 }

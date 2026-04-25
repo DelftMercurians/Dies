@@ -21,7 +21,7 @@ use boa_engine::{
 use dies_core::{Angle, FieldGeometry, PlayerId, SimulatorCmd, TeamColor, TeamData, Vector2};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
-use crate::capture::{CaptureBuffer, CapturedSample};
+use crate::capture::{samples_to_csv, CaptureBuffer, CapturedSample, Recording};
 use crate::log_bus::{now_ms, LogBus, TestLogEntry, TestLogLevel};
 use crate::primitives::{ExcitationProfile, ExcitationSample};
 use crate::runtime::{PlayerControlSlot, ScenarioMeta, TestEnv};
@@ -148,6 +148,9 @@ pub enum Waker {
         player: PlayerId,
         profile: ExcitationProfile,
         start_s: f64,
+        /// Yaw setpoint to hold during translational excitations. `None` when
+        /// the profile drives yaw itself (yaw-axis chirp/step/etc.).
+        hold_yaw: Option<Angle>,
         resolve: JsFunction,
     },
     CaptureActive {
@@ -158,6 +161,8 @@ pub enum Waker {
         start_s: f64,
         last_sample_s: f64,
         buffer: CaptureBuffer,
+        /// See `Waker::Excite::hold_yaw`. `None` for capture-only (no excitation).
+        hold_yaw: Option<Angle>,
         resolve: JsFunction,
     },
     WaitUntil {
@@ -184,6 +189,14 @@ pub struct InnerState {
     pub log: LogBus,
     pub aborted: bool,
     pub record_artifacts: Vec<(String, String)>,
+    /// Active free-form recordings (one per player), driven each tick from
+    /// `tick_recordings`.
+    pub recordings: HashMap<PlayerId, Recording>,
+    /// Per-player **actual** velocity command (global frame, mm/s) computed by
+    /// the executor's PlayerController on the previous tick. Pushed in by the
+    /// host before `tick`. Used as the recorded `cmd` so position-controlled
+    /// motion (moveTo / goToPos) records the MTP/iLQR output instead of zero.
+    pub actual_cmds_global: HashMap<PlayerId, Vector2>,
 }
 
 pub type StateRef = Rc<RefCell<InnerState>>;
@@ -203,6 +216,8 @@ impl InnerState {
             log,
             aborted: false,
             record_artifacts: Vec::new(),
+            recordings: HashMap::new(),
+            actual_cmds_global: HashMap::new(),
         }
     }
 
@@ -222,12 +237,26 @@ impl InnerState {
         });
     }
 
-    pub fn apply_excitation_tick(&mut self, player: PlayerId, sample: ExcitationSample) {
+    pub fn apply_excitation_tick(
+        &mut self,
+        player: PlayerId,
+        sample: ExcitationSample,
+        hold_yaw: Option<Angle>,
+    ) {
         let mut slot = self.slots.direct.get(&player).cloned().unwrap_or_default();
         slot.position = None;
         slot.vel_local = Some(sample.vel);
         if sample.angular.abs() > 1e-9 {
+            // Yaw-axis excitation: drive angular velocity directly, leave the
+            // yaw setpoint unset so the PD controller doesn't fight us.
             slot.angular_velocity = Some(sample.angular);
+            slot.yaw = None;
+        } else {
+            // Translational excitation: hold the captured heading. Without this
+            // the robot drifts in yaw (asymmetric wheel response) and the
+            // body→world rotation used by sysid is wrong.
+            slot.angular_velocity = None;
+            slot.yaw = hold_yaw;
         }
         self.slots.direct.insert(player, slot);
     }
@@ -235,6 +264,82 @@ impl InnerState {
     pub fn snapshot_player(&self, player: PlayerId) -> Option<PlayerSnap> {
         self.world.players.get(&player).cloned()
     }
+
+    /// Sample any active recordings using the current world snapshot. Should be
+    /// called once per tick after wakers (which may write to slots) have run.
+    pub fn tick_recordings(&mut self) {
+        let now = self.world.t;
+        let player_ids: Vec<PlayerId> = self.recordings.keys().copied().collect();
+        for player in player_ids {
+            let interval = {
+                let r = self.recordings.get(&player).expect("just iterated");
+                if r.rate_hz > 0.0 {
+                    1.0 / r.rate_hz
+                } else {
+                    0.05
+                }
+            };
+            let last = self.recordings.get(&player).expect("just iterated").last_sample_s;
+            if now - last < interval {
+                continue;
+            }
+            let Some(snap) = self.world.players.get(&player).cloned() else {
+                continue;
+            };
+            // Cmd resolution priority:
+            //   1. Controller's actual computed velocity (global, rotated to
+            //      body) — captures MTP / iLQR output during moveTo/goToPos.
+            //   2. Slot vel_local (already body-frame) — set by setLocalVelocity
+            //      and excitation profiles.
+            //   3. Slot vel_global rotated to body — setGlobalVelocity.
+            //   4. Zero.
+            let (cmd_x, cmd_y) = if let Some(v_global) = self.actual_cmds_global.get(&player) {
+                let body = snap.yaw.inv().rotate_vector(v_global);
+                (body.x, body.y)
+            } else {
+                match self.slots.direct.get(&player) {
+                    Some(slot) => {
+                        if let Some(v) = slot.vel_local {
+                            (v.x, v.y)
+                        } else if let Some(v) = slot.vel_global {
+                            let body = snap.yaw.inv().rotate_vector(&v);
+                            (body.x, body.y)
+                        } else {
+                            (0.0, 0.0)
+                        }
+                    }
+                    None => (0.0, 0.0),
+                }
+            };
+            let sample = CapturedSample {
+                t: now,
+                cmd_x,
+                cmd_y,
+                heading: snap.yaw.radians(),
+                pos_x: snap.position.x,
+                pos_y: snap.position.y,
+                vel_x: snap.velocity.x,
+                vel_y: snap.velocity.y,
+            };
+            let r = self.recordings.get_mut(&player).expect("just iterated");
+            r.buffer.push(sample);
+            r.last_sample_s = now;
+        }
+    }
+}
+
+/// Write samples to `./.dies/recordings/<label>_<unix_ms>.csv` and return the
+/// absolute path. Creates the directory if needed.
+pub fn dump_samples_csv(label: &str, samples: &[CapturedSample]) -> std::io::Result<std::path::PathBuf> {
+    let safe_label: String = label
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    let dir = std::path::Path::new(".dies").join("recordings");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{}_{}.csv", safe_label, now_ms()));
+    std::fs::write(&path, samples_to_csv(samples))?;
+    Ok(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -586,6 +691,35 @@ fn register_log(ctx: &mut Context, state: StateRef) -> JsResult<()> {
             })
         };
         init.function(f, js_string!("record"), 2);
+    }
+
+    {
+        let state = state.clone();
+        let f = unsafe {
+            NativeFunction::from_closure(move |_this, args, ctx| {
+                let label = args
+                    .first()
+                    .cloned()
+                    .unwrap_or(JsValue::undefined())
+                    .to_string(ctx)?
+                    .to_std_string_escaped();
+                let arr_val = args.get(1).cloned().unwrap_or(JsValue::undefined());
+                let samples = js_array_to_captured(&arr_val, ctx)?;
+                let path = dump_samples_csv(&label, &samples).map_err(|e| {
+                    JsNativeError::typ()
+                        .with_message(format!("log.dumpCsv: {}", e))
+                })?;
+                let path_str = path.to_string_lossy().to_string();
+                state.borrow().emit_log(
+                    TestLogLevel::Info,
+                    Some(&label),
+                    &format!("dumped {} samples to {}", samples.len(), path_str),
+                    None,
+                );
+                Ok(JsValue::from(JsString::from(path_str)))
+            })
+        };
+        init.function(f, js_string!("dumpCsv"), 2);
     }
 
     let obj = init.build();
@@ -1000,6 +1134,7 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                 let mut st = state.borrow_mut();
                 let id_w = st.alloc_waker_id();
                 let start_s = st.world.t;
+                let hold_yaw = st.world.players.get(&id).map(|p| p.yaw);
                 st.slots
                     .route_direct(id, PlayerControlSlot::default(), "excite");
                 st.wakers.insert(
@@ -1008,6 +1143,7 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                         player: id,
                         profile,
                         start_s,
+                        hold_yaw,
                         resolve: resolvers.resolve,
                     },
                 );
@@ -1032,6 +1168,7 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                 let mut st = state.borrow_mut();
                 let id_w = st.alloc_waker_id();
                 let start_s = st.world.t;
+                let hold_yaw = st.world.players.get(&id).map(|p| p.yaw);
                 st.slots
                     .route_direct(id, PlayerControlSlot::default(), "capture");
                 st.wakers.insert(
@@ -1044,6 +1181,7 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                         start_s,
                         last_sample_s: start_s - 1.0 / rate,
                         buffer: CaptureBuffer::default(),
+                        hold_yaw,
                         resolve: resolvers.resolve,
                     },
                 );
@@ -1074,6 +1212,7 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                         start_s,
                         last_sample_s: start_s - 1.0 / rate,
                         buffer: CaptureBuffer::default(),
+                        hold_yaw: None,
                         resolve: resolvers.resolve,
                     },
                 );
@@ -1081,6 +1220,54 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
             })
         };
         init.function(f, js_string!("capture"), 1);
+    }
+
+    // --- free-form recording ---
+    {
+        let state = state.clone();
+        let f = unsafe {
+            NativeFunction::from_closure(move |_this, args, ctx| {
+                let opts = args.first().cloned().unwrap_or(JsValue::undefined());
+                let rate_hz = if opts.is_object() {
+                    get_num_opt(&opts, "rateHz", ctx)?.unwrap_or(50.0)
+                } else {
+                    50.0
+                };
+                let mut st = state.borrow_mut();
+                let now = st.world.t;
+                if st.recordings.contains_key(&id) {
+                    return Err(JsNativeError::typ()
+                        .with_message(format!(
+                            "startRecording: player {} already recording (call stopRecording first)",
+                            id.as_u32()
+                        ))
+                        .into());
+                }
+                st.recordings.insert(id, Recording::new(rate_hz, now));
+                Ok(JsValue::undefined())
+            })
+        };
+        init.function(f, js_string!("startRecording"), 1);
+    }
+
+    {
+        let state = state.clone();
+        let f = unsafe {
+            NativeFunction::from_closure(move |_this, _args, ctx| {
+                let recording = state.borrow_mut().recordings.remove(&id);
+                let Some(rec) = recording else {
+                    return Err(JsNativeError::typ()
+                        .with_message(format!(
+                            "stopRecording: player {} has no active recording",
+                            id.as_u32()
+                        ))
+                        .into());
+                };
+                let arr = samples_to_js_array(&rec.buffer.samples, ctx)?;
+                Ok(arr.into())
+            })
+        };
+        init.function(f, js_string!("stopRecording"), 0);
     }
 
     Ok(init.build())
@@ -1251,6 +1438,38 @@ pub fn samples_to_js_array(samples: &[CapturedSample], ctx: &mut Context) -> JsR
         arr.push(obj, ctx)?;
     }
     Ok(arr)
+}
+
+fn js_array_to_captured(arr: &JsValue, ctx: &mut Context) -> JsResult<Vec<CapturedSample>> {
+    let obj = arr.as_object().cloned().ok_or_else(|| {
+        JsNativeError::typ().with_message("dumpCsv: expected samples array")
+    })?;
+    let arr = JsArray::from_object(obj)
+        .map_err(|_| JsNativeError::typ().with_message("dumpCsv: expected Array"))?;
+    let len = arr.length(ctx)?;
+    let mut out = Vec::with_capacity(len as usize);
+    for i in 0..len {
+        let item = arr.get(i, ctx)?;
+        let cmd = get_obj_opt(&item, "cmd", ctx)?
+            .ok_or_else(|| JsNativeError::typ().with_message("sample missing cmd"))?;
+        let state = get_obj_opt(&item, "state", ctx)?
+            .ok_or_else(|| JsNativeError::typ().with_message("sample missing state"))?;
+        let pos = get_obj_opt(&state, "pos", ctx)?
+            .ok_or_else(|| JsNativeError::typ().with_message("sample.state missing pos"))?;
+        let vel = get_obj_opt(&state, "vel", ctx)?
+            .ok_or_else(|| JsNativeError::typ().with_message("sample.state missing vel"))?;
+        out.push(CapturedSample {
+            t: get_num(&item, "t", ctx)?,
+            cmd_x: get_num(&cmd, "x", ctx)?,
+            cmd_y: get_num(&cmd, "y", ctx)?,
+            heading: get_num(&item, "heading", ctx)?,
+            pos_x: get_num(&pos, "x", ctx)?,
+            pos_y: get_num(&pos, "y", ctx)?,
+            vel_x: get_num(&vel, "x", ctx)?,
+            vel_y: get_num(&vel, "y", ctx)?,
+        });
+    }
+    Ok(out)
 }
 
 fn js_array_to_samples(arr: &JsValue, ctx: &mut Context) -> JsResult<Vec<dies_mpc::types::Sample>> {

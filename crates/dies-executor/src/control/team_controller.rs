@@ -60,7 +60,7 @@ impl TeamController {
             settings: settings.clone(),
             skill_executor: SkillExecutor::new(),
             strategy_input: StrategyInput::default(),
-            ilqr_controller: IlqrController::new(),
+            ilqr_controller: IlqrController::load_or_insert("x"),
             removing_players: HashSet::new(),
             avoid_goal_area_flags: HashMap::new(),
             warmup_timer: None,
@@ -368,10 +368,10 @@ impl TeamController {
                 // iLQR (when enabled) overrides the MTP velocity that
                 // `update()` just computed. We let `update()` run
                 // unconditionally so yaw/kicker/dribbler logic still fires.
-                if let Some(vel) = ilqr_overrides.get(&id) {
-                    controller.set_target_velocity(*vel);
-                    player_context.debug_string("controller", "iLQR");
-                }
+                // if let Some(vel) = ilqr_overrides.get(&id) {
+                //     controller.set_target_velocity(*vel, world_data.dt);
+                //     player_context.debug_string("controller", "iLQR");
+                // }
             } else {
                 controller.increment_frames_misses();
             }
@@ -416,6 +416,16 @@ impl TeamController {
         }
 
         (player_inputs, self.strategy_input.player_roles.clone())
+    }
+
+    /// Per-player last computed velocity setpoint in global frame (mm/s).
+    /// Used by the test driver to record the controller's actual cmd during
+    /// position-controlled motion.
+    pub fn target_velocities_global(&self) -> HashMap<PlayerId, Vector2> {
+        self.player_controllers
+            .iter()
+            .map(|(id, c)| (*id, c.target_velocity_global()))
+            .collect()
     }
 
     pub fn commands(

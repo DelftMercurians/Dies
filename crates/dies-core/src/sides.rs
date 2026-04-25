@@ -215,6 +215,7 @@ impl SideAssignment {
             velocity: self.transform_vec2(color, &player.velocity),
             yaw: self.transform_angle(color, player.yaw),
             angular_speed: player.angular_speed * self.attacking_direction_sign(color),
+            position_noise: player.position_noise,
             raw_position: self.transform_vec2(color, &player.raw_position),
             raw_yaw: self.transform_angle(color, player.raw_yaw),
             primary_status: player.primary_status,

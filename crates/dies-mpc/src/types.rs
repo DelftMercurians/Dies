@@ -1,4 +1,5 @@
 use nalgebra::{Matrix2, Matrix4, Matrix4x2, Vector2, Vector4};
+use serde::{Deserialize, Serialize};
 
 pub type Vec2 = Vector2<f64>;
 pub type Mat2 = Matrix2<f64>;
@@ -15,7 +16,7 @@ pub const STRAFE: usize = 1;
 /// The design doc specifies "9 globals"; the mass-normalized form here fuses
 /// μ/m into a single `stiction` term per axis because only their ratio is
 /// identifiable from velocity data, leaving 7 free scalars.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RobotParams {
     /// Velocity-lag time constant per body axis [s]. Index: [FWD, STRAFE].
     pub tau: [f64; 2],
@@ -31,7 +32,7 @@ impl RobotParams {
     /// Hand-tuned default starting point for real SSL robots — useful before sysid has run.
     pub fn default_hand_tuned() -> Self {
         Self {
-            tau: [0.08, 0.10],
+            tau: [0.2675723803899231, 2.19482099],
             a_max: [6000.0, 4500.0],
             stiction: [150.0, 200.0],
             v_eps: 30.0,

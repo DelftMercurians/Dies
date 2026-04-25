@@ -1,6 +1,6 @@
 {
   "controller_settings": {
-    "max_acceleration": 2500.0,
+    "max_acceleration": 1000.0,
     "max_velocity": 5090.0,
     "max_deceleration": 6340.0,
     "max_angular_velocity": 25.132741228718345,
@@ -27,18 +27,24 @@
   "team_configuration": {
     "blue_active": true,
     "yellow_active": false,
-    "blue_script_path": null,
-    "yellow_script_path": null,
-    "side_assignment": "YellowOnPositive"
+    "side_assignment": "YellowOnPositive",
+    "blue_strategy": null,
+    "yellow_strategy": null
   },
   "yellow_team_settings": {
     "handicaps": {}
   },
   "blue_team_settings": {
     "handicaps": {
-      "2": ["no_kicker"],
-      "4": ["no_dribbler"],
-      "1": ["no_breakbeam"]
+      "1": [
+        "no_breakbeam"
+      ],
+      "4": [
+        "no_dribbler"
+      ],
+      "2": [
+        "no_kicker"
+      ]
     }
   },
   "skill_settings": {
@@ -48,5 +54,6 @@
     "fetch_ball_preshoot_offset": 100.0,
     "fetch_ball_preshoot_ball_avoidance": 0.0
   },
-  "allow_no_vision": true
+  "allow_no_vision": true,
+  "controller_mode": "mtp"
 }

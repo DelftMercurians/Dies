@@ -55,7 +55,7 @@ fn slot_to_control_input(slot: &PlayerControlSlot) -> PlayerControlInput {
 }
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
-const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 20); // 20 Hz
+const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 40); // 40 Hz
 
 enum Environment {
     Live {
@@ -806,9 +806,9 @@ impl Executor {
             Ok(d) => d,
             Err(e) => {
                 log::error!("scenario driver creation failed: {:?}", e);
-                let _ = self
-                    .scenario_status_tx
-                    .send(TestStatus::Failed { error: e.to_string() });
+                let _ = self.scenario_status_tx.send(TestStatus::Failed {
+                    error: e.to_string(),
+                });
                 return;
             }
         };
@@ -820,13 +820,15 @@ impl Executor {
                 // Disable game-state compliance for the team being driven; scenarios
                 // own safety. Re-enabled in handle_stop_scenario.
                 self.set_active_team_comply(meta.team, false);
-                let _ = self.scenario_status_tx.send(TestStatus::Running { name: meta.name });
+                let _ = self
+                    .scenario_status_tx
+                    .send(TestStatus::Running { name: meta.name });
             }
             Err(e) => {
                 log::error!("scenario start failed: {:?}", e);
-                let _ = self
-                    .scenario_status_tx
-                    .send(TestStatus::Failed { error: e.to_string() });
+                let _ = self.scenario_status_tx.send(TestStatus::Failed {
+                    error: e.to_string(),
+                });
             }
         }
     }
@@ -889,6 +891,7 @@ impl Executor {
             };
             if let Some(ctrl) = active_controller {
                 driver.set_skill_statuses(ctrl.get_skill_statuses());
+                driver.set_actual_cmds_global(ctrl.target_velocities_global());
             }
 
             let mut applied = false;
@@ -962,7 +965,10 @@ impl Executor {
             // to Completed/Failed inside `tick`.
             if applied {
                 let status = driver.status();
-                if !matches!(status, TestStatus::Idle | TestStatus::Starting | TestStatus::Running { .. }) {
+                if !matches!(
+                    status,
+                    TestStatus::Idle | TestStatus::Starting | TestStatus::Running { .. }
+                ) {
                     let _ = self.scenario_status_tx.send(status);
                     // Scenario has ended on its own — clean up.
                     let team = driver.team_color();

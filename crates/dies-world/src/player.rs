@@ -54,6 +54,12 @@ pub struct PlayerTracker {
     rolling_control: f64,
     rolling_vision: f64,
 
+    /// EWMA of squared innovation magnitude (mm²). The Kalman innovation is
+    /// `raw_measurement − model_prediction`; in steady state its RMS is the
+    /// noise floor that downstream consumers (MPC, planners) actually see.
+    /// Use `position_noise_rms()` for a human-readable mm value.
+    position_noise_var: f64,
+
     handicaps: HashSet<Handicap>,
 }
 
@@ -83,6 +89,7 @@ impl PlayerTracker {
             last_feedback_time: None,
             rolling_vision: 1.0,
             rolling_control: 1.0,
+            position_noise_var: 0.0,
             handicaps,
         }
     }
@@ -176,6 +183,21 @@ impl PlayerTracker {
                         self.last_detection.as_mut().unwrap()
                     };
                     let dt = t_capture - last_data.timestamp;
+                    // Innovation = raw measurement − constant-velocity prediction
+                    // from the previous filtered state. EWMA over ~20 frames
+                    // (~0.3 s at 60 Hz vision). Skipped on the bootstrap frame
+                    // where dt = 0 and last_data was just constructed from `x`.
+                    if dt > 0.0 {
+                        let predicted = last_data.position + last_data.velocity * dt;
+                        let innovation = raw_position - predicted;
+                        const ALPHA: f64 = 0.05;
+                        self.position_noise_var = (1.0 - ALPHA) * self.position_noise_var
+                            + ALPHA * innovation.norm_squared();
+                        dies_core::debug_value(
+                            format!("p{}.position_noise_rms", self.id),
+                            self.position_noise_var.sqrt(),
+                        );
+                    }
                     last_data.raw_position = raw_position;
                     last_data.velocity = na::convert(Vector2::new(x[1], x[3]));
                     last_data.position = na::convert(Vector2::new(x[0], x[2]));
@@ -257,6 +279,7 @@ impl PlayerTracker {
                 velocity: Vector2::zeros(),
                 yaw: Angle::from_radians(0.0),
                 angular_speed: 0.0,
+                position_noise: 0.0,
                 raw_position: Vector2::zeros(),
                 raw_yaw: Angle::from_radians(0.0),
                 primary_status: f.primary_status,
@@ -276,6 +299,7 @@ impl PlayerTracker {
             velocity: data.velocity,
             yaw: data.yaw,
             angular_speed: data.angular_speed,
+            position_noise: self.position_noise_var.sqrt(),
             raw_position: data.raw_position,
             raw_yaw: data.raw_yaw,
             primary_status: self.last_feedback.and_then(|f| f.primary_status),

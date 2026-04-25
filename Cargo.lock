@@ -1113,6 +1113,7 @@ dependencies = [
  "paste",
  "rand 0.8.5",
  "serde",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -1144,6 +1145,7 @@ dependencies = [
  "nalgebra 0.32.6",
  "rand 0.8.5",
  "rand_distr",
+ "serde",
  "tracing",
 ]
 
@@ -1693,8 +1695,8 @@ dependencies = [
 
 [[package]]
 name = "glue"
-version = "0.7.8"
-source = "git+https://github.com/DelftMercurians/glue.git?tag=v0.7.8#ded4a364cdefc97b6142a79c01dad7f5c3466896"
+version = "0.7.9"
+source = "git+https://github.com/DelftMercurians/glue.git?tag=v0.7.10#36eff5802c50e70580e635bab97c27b25cd9169a"
 dependencies = [
  "bindgen",
  "chrono",

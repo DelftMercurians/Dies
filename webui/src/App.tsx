@@ -1,23 +1,26 @@
 import { Loader } from "lucide-react";
-import { useState, useRef, useCallback } from "react";
+import { useRef, useCallback } from "react";
+import { useSetAtom } from "jotai";
 import {
   useStatus,
   useWorldState,
   usePrimaryTeam,
+  selectedPlayerIdAtom,
 } from "./api";
 import { Button } from "./components/ui/button";
 import { useRobotCountAlerts } from "./lib/utils";
 import { Toolbar } from "./components/toolbar";
+import { openOrFocusPanel } from "./components/toolbar/AddPanelMenu";
 import DockviewWrapper, {
   DockviewWrapperRef,
 } from "./components/DockviewWrapper";
-import { panelComponents, PANEL_IDS } from "./components/panels";
+import { panelComponents, PANEL_IDS, PANEL_TITLES } from "./components/panels";
 import { DockviewApi } from "dockview";
 
 const App: React.FC = () => {
   const { data: backendState, status: backendLoadingState } = useStatus();
   const worldState = useWorldState();
-  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
+  const setSelectedPlayerId = useSetAtom(selectedPlayerIdAtom);
   const [primaryTeam] = usePrimaryTeam();
   const dockviewRef = useRef<DockviewWrapperRef>(null);
 
@@ -65,6 +68,28 @@ const App: React.FC = () => {
       },
     });
 
+    // Add Scenario panel as a tab in the same group
+    api.addPanel({
+      id: PANEL_IDS.SCENARIO,
+      component: PANEL_IDS.SCENARIO,
+      title: "SCENARIO",
+      position: {
+        referencePanel: PANEL_IDS.GAME_CONTROLLER,
+        direction: "within",
+      },
+    });
+
+    // Add Settings panel as a tab in the same group (exposes MPC/MTP toggle)
+    api.addPanel({
+      id: PANEL_IDS.SETTINGS,
+      component: PANEL_IDS.SETTINGS,
+      title: PANEL_TITLES[PANEL_IDS.SETTINGS],
+      position: {
+        referencePanel: PANEL_IDS.GAME_CONTROLLER,
+        direction: "within",
+      },
+    });
+
     // Add Field panel (center, main viewport)
     api.addPanel({
       id: PANEL_IDS.FIELD,
@@ -104,6 +129,17 @@ const App: React.FC = () => {
     dockviewRef.current?.resetToDefault();
   }, []);
 
+  const getDockviewApi = useCallback(
+    () => dockviewRef.current?.api ?? null,
+    []
+  );
+
+  const handleOpenSettings = useCallback(() => {
+    const api = dockviewRef.current?.api;
+    if (!api) return;
+    openOrFocusPanel(api, PANEL_IDS.SETTINGS, PANEL_TITLES[PANEL_IDS.SETTINGS]);
+  }, []);
+
   if (!backendState) {
     return (
       <div className="w-full h-full flex justify-center items-center bg-bg-base">
@@ -127,6 +163,8 @@ const App: React.FC = () => {
       <Toolbar
         onExecutorStop={handleExecutorStop}
         onResetLayout={handleResetLayout}
+        onOpenSettings={handleOpenSettings}
+        getDockviewApi={getDockviewApi}
       />
 
       {/* Main content - Dockview */}
@@ -135,8 +173,6 @@ const App: React.FC = () => {
           ref={dockviewRef}
           components={panelComponents}
           onCreateDefaultLayout={createDefaultLayout}
-          selectedPlayerId={selectedPlayerId}
-          onSelectPlayer={setSelectedPlayerId}
         />
       </div>
     </main>

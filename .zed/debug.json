@@ -1,0 +1,25 @@
+// Project-local debug tasks
+//
+// For more documentation on how to configure debug tasks,
+// see: https://zed.dev/docs/debugger
+
+[
+  {
+    "label": "Build & Debug native binary",
+    "build": {
+      "command": "cargo",
+      "args": ["build"],
+    },
+    "args": [
+      "--interface",
+      "en8",
+      "--serial-port",
+      "/dev/cu.usbmodem4983466939361",
+    ],
+    "program": "$ZED_WORKTREE_ROOT/target/debug/dies-cli",
+    // sourceLanguages is required for CodeLLDB (not GDB) when using Rust
+    "sourceLanguages": ["rust"],
+    "request": "launch",
+    "adapter": "CodeLLDB",
+  },
+]

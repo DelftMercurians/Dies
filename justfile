@@ -21,6 +21,17 @@ webdev strategy=default_strategy:
     cargo build -p {{ strategy }}
     cargo run -- --strategy {{ strategy }}
 
+# Run a JS test scenario headlessly (no webui). Scenario path is resolved
+# against scenarios/<name>.js if it doesn't contain a path separator.
+test-sim scenario:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    path="{{ scenario }}"
+    if [[ "$path" != */* ]]; then
+        path="scenarios/${path}.js"
+    fi
+    cargo run -- run-scenario "$path"
+
 # Generate TypeScript bindings + build webui
 webbuild:
     typeshare . --lang=typescript --output-file=webui/src/bindings.ts

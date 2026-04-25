@@ -170,7 +170,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         onSelectPlayer(clickedPlayer[1]);
       }
     },
-    [onSelectPlayer]
+    [onSelectPlayer, primaryTeam]
   );
 
   const handleMouseMove = useCallback(
