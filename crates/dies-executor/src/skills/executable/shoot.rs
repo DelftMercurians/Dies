@@ -108,7 +108,7 @@ impl ExecutableSkill for ShootSkill {
             }
             ShootState::Kicking => {
                 input.with_yaw(target_heading);
-                input.with_kicker(KickerControlInput::Kick { force: 1.0 });
+                input.with_kicker(KickerControlInput::Kick);
                 self.state = ShootState::KickCommanded;
             }
             ShootState::KickCommanded => {

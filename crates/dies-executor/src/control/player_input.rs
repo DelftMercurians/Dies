@@ -258,15 +258,15 @@ impl PlayerControlInput {
 }
 
 /// Kicker state in the current update.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum KickerControlInput {
     /// Kicker is not used
     #[default]
     Idle,
     /// Charge the kicker capacitor
     Arm,
-    /// Engage the kicker. Should be sent after ~10s of charging and only once.
-    Kick { force: f64 },
+    /// Engage the kicker
+    Kick,
     /// Discharge the kicker capacitor without kicking
     Disarm,
 }

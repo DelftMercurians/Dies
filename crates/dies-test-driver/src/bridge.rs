@@ -815,9 +815,7 @@ fn pick_auto_robot(state: StateRef, opts: &JsValue, ctx: &mut Context) -> JsResu
         candidates.sort_by_key(|p| p.as_u32());
         let Some(id) = candidates.first().copied() else {
             return Err(JsNativeError::typ()
-                .with_message(
-                    "team.autoRobot: no robot has both vision and basestation status",
-                )
+                .with_message("team.autoRobot: no robot has both vision and basestation status")
                 .into());
         };
         st.auto_claimed_ids.insert(id);
@@ -1176,7 +1174,6 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                 };
                 let mut st = state.borrow_mut();
                 let mut existing = st.slots.direct.get(&id).cloned().unwrap_or_default();
-                existing.kick_force = Some(speed);
                 existing.kick_speed = Some(speed);
                 st.slots.route_direct(id, existing, "kick");
                 Ok(resolved_undefined(ctx).into())

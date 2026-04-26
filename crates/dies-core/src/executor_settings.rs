@@ -35,6 +35,7 @@ pub struct ControllerSettings {
     pub position_kp: f64,
     /// Position deadzone (mm) — MTP commands zero velocity inside this radius.
     pub position_cutoff_distance: f64,
+    pub thresh: f64,
 
     // --- YawController gains.
     /// Proportional gain for heading tracking.
@@ -54,6 +55,7 @@ impl Default for ControllerSettings {
             position_kp: 2.0,
             position_cutoff_distance: 15.0,
             angle_kp: 2.8,
+            thresh: 100.0,
             angle_cutoff_distance: 0.03490658503988659, // 2°
         }
     }

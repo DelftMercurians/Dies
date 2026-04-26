@@ -104,12 +104,14 @@ impl PlayerController {
 
     /// Update the controller settings.
     pub fn update_settings(&mut self, settings: &ControllerSettings) {
-        self.two_step_mtp
-            .update_settings(settings.position_kp, settings.position_cutoff_distance);
+        self.two_step_mtp.update_settings(
+            settings.position_kp,
+            settings.position_cutoff_distance,
+            settings.thresh,
+        );
         self.yaw_control
             .update_settings(settings.angle_kp, settings.angle_cutoff_distance);
-        // Limits were previously only set in `new()` — the live UI sliders
-        // didn't take effect until restart. Apply them here too.
+
         self.max_accel = settings.max_acceleration;
         self.max_speed = settings.max_velocity;
         self.max_decel = settings.max_deceleration;
@@ -169,7 +171,10 @@ impl PlayerController {
             .set_kick_speed(self.kick_speed)
             .set_kick_counter(self.kick_counter)
             .set_robot_cmd(RobotCmd::Arm)
-            .set_max_yaw_rate(self.last_yaw_rate_limit.unwrap_or(self.max_angular_velocity))
+            .set_max_yaw_rate(
+                self.last_yaw_rate_limit
+                    .unwrap_or(self.max_angular_velocity),
+            )
             .untransform_global_move_cmd(self.id, self.last_yaw);
 
         player_context.debug_string(
@@ -340,9 +345,10 @@ impl PlayerController {
                 self.last_yaw,
                 state.angular_speed,
                 dt,
-                input
-                    .angular_speed_limit
-                    .unwrap_or(self.last_yaw_rate_limit.unwrap_or(self.max_angular_velocity)),
+                input.angular_speed_limit.unwrap_or(
+                    self.last_yaw_rate_limit
+                        .unwrap_or(self.max_angular_velocity),
+                ),
                 input
                     .angular_acceleration_limit
                     .unwrap_or(self.max_angular_acceleration),
@@ -377,7 +383,7 @@ impl PlayerController {
             KickerControlInput::Arm => {
                 self.kicker = KickerState::Arming;
             }
-            KickerControlInput::Kick { .. } => match self.kicker {
+            KickerControlInput::Kick => match self.kicker {
                 KickerState::Disarming | KickerState::Arming => {
                     self.kicker = KickerState::Kicking;
                 }

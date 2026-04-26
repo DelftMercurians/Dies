@@ -3,6 +3,7 @@
 //! This is a discrete skill that approaches the ball from behind and
 //! captures it using the dribbler.
 
+use std::fmt::format;
 use std::time::{Duration, Instant};
 
 use dies_core::{Angle, Vector2, BALL_RADIUS, PLAYER_RADIUS};
@@ -14,34 +15,30 @@ use crate::control::{PlayerControlInput, Velocity};
 /// Distance from ball at which we start slowing down and using the dribbler
 const DRIBBLING_DISTANCE: f64 = 1000.0;
 /// Distance to maintain when close to a stationary ball
-const STOP_DISTANCE: f64 = PLAYER_RADIUS + BALL_RADIUS + 30.0;
+const STOP_DISTANCE: f64 = PLAYER_RADIUS + BALL_RADIUS + 10.0;
 /// Maximum relative speed when approaching the ball
 const MAX_RELATIVE_SPEED: f64 = 1000.0;
 /// Dribbler speed during pickup
-const DRIBBLER_SPEED: f64 = 0.6;
+const DRIBBLER_SPEED: f64 = 0.2;
 /// Time after breakbeam triggers before declaring success
 const BREAKBEAM_CONFIRM_DURATION: Duration = Duration::from_millis(100);
 /// Maximum distance we allow robot to move during final approach
-const MAX_FINAL_APPROACH_DISTANCE: f64 = 30.0;
+const MAX_FINAL_APPROACH_DISTANCE: f64 = 80.0;
 
-/// A skill that approaches and captures the ball.
-///
-/// This is a discrete skill - start once and monitor status. The skill
-/// completes when the breakbeam detects the ball.
-///
-/// For a stationary ball, `target_heading` also drives the approach
-/// geometry: the robot moves to a point offset from the ball on the side
-/// opposite to `target_heading`, so that once the ball is captured the
-/// robot is already oriented for a follow-up action (e.g., facing the
-/// opponent goal before shooting). For a moving ball, `target_heading`
-/// is only the desired final yaw — the approach direction is dictated
-/// by the interception geometry.
+enum PickupState {
+    Uninitialized,
+    GoingToApproachPos,
+    FinalApproach,
+    Capturing,
+}
+
 pub struct PickupBallSkill {
     target_heading: Angle,
-    status: SkillStatus,
+    skill_status: SkillStatus,
     last_good_heading: Option<Angle>,
     starting_position: Option<Vector2>,
     breakbeam_on: Option<Instant>,
+    state: PickupState,
 }
 
 impl PickupBallSkill {
@@ -49,10 +46,11 @@ impl PickupBallSkill {
     pub fn new(target_heading: Angle) -> Self {
         Self {
             target_heading,
-            status: SkillStatus::Running,
+            skill_status: SkillStatus::Running,
             last_good_heading: None,
             starting_position: None,
             breakbeam_on: None,
+            state: PickupState::Uninitialized,
         }
     }
 }
@@ -79,6 +77,10 @@ impl ExecutableSkill for PickupBallSkill {
         let ball_speed = ball.velocity.xy().norm();
         let player_pos = ctx.player.position;
         let distance = (ball_pos - player_pos).norm();
+        dies_core::debug_value(
+            format!("{}.ball_dist", ctx.debug_prefix),
+            distance - PLAYER_RADIUS - BALL_RADIUS,
+        );
 
         // Calculate heading toward ball
         let ball_angle = {
@@ -95,28 +97,38 @@ impl ExecutableSkill for PickupBallSkill {
         input.with_dribbling(DRIBBLER_SPEED);
         input.with_yaw(ball_angle);
 
+        let has_ball =
+            ctx.player.breakbeam_ball_detected || (distance - PLAYER_RADIUS - BALL_RADIUS) < -2.0;
+
         // Check if breakbeam has been triggered
-        if ctx.player.breakbeam_ball_detected && distance < 400.0 {
-            self.status = SkillStatus::Succeeded;
+        if has_ball {
+            self.skill_status = SkillStatus::Succeeded;
             return SkillProgress::success();
         }
 
         // Handle breakbeam confirmation with timeout
-        if ctx.player.breakbeam_ball_detected {
-            if self.breakbeam_on.is_none() {
-                self.breakbeam_on = Some(Instant::now());
-            }
-        } else {
-            self.breakbeam_on = None;
-        }
+        // if ctx.player.breakbeam_ball_detected {
+        //     if self.breakbeam_on.is_none() {
+        //         self.breakbeam_on = Some(Instant::now());
+        //     }
+        // } else {
+        //     self.breakbeam_on = None;
+        // }
 
         if let Some(breakbeam_on) = self.breakbeam_on {
             let elapsed = breakbeam_on.elapsed();
             if elapsed > BREAKBEAM_CONFIRM_DURATION {
                 self.breakbeam_on = None;
-                self.status = SkillStatus::Succeeded;
+                self.skill_status = SkillStatus::Succeeded;
                 return SkillProgress::success();
             } else {
+                dies_core::debug_string(
+                    format!("{}.pickup_ball.status", ctx.debug_prefix),
+                    format!(
+                        "breakbeam triggered, confirming... ({:.0} ms)",
+                        elapsed.as_secs_f64() * 1000.0
+                    ),
+                );
                 // Move slowly toward ball while waiting for confirmation
                 let vel = (0.1 - elapsed.as_secs_f64()) / 0.1
                     * 100.0
@@ -132,23 +144,43 @@ impl ExecutableSkill for PickupBallSkill {
             let approach_dir = self.target_heading.to_vector();
             let approach_pos = ball_pos - approach_dir * STOP_DISTANCE;
 
-            if distance > STOP_DISTANCE + 80.0 {
+            let dist_to_approach = (approach_pos - player_pos).norm();
+            if dist_to_approach > STOP_DISTANCE + 15.0 {
+                dies_core::debug_string(
+                    format!("{}.pickup_ball.status", ctx.debug_prefix),
+                    "go to pos",
+                );
                 input.with_position(approach_pos);
                 input.with_yaw(self.target_heading);
                 input.with_care(0.8);
+                input.avoid_ball = true;
+                input.avoid_ball_care = 1.5;
             } else {
                 // Final approach - creep forward along target_heading
                 let start_pos = *self.starting_position.get_or_insert(player_pos);
                 let moved_distance = (player_pos - start_pos).norm();
 
-                if moved_distance > MAX_FINAL_APPROACH_DISTANCE {
-                    self.status = SkillStatus::Failed;
-                    return SkillProgress::failure();
-                }
+                // if moved_distance > MAX_FINAL_APPROACH_DISTANCE {
+                //     self.status = SkillStatus::Failed;
+                //     return SkillProgress::failure();
+                // }
 
-                input.velocity =
-                    Velocity::global((1.0 / moved_distance.max(1.0)) * 100.0 * approach_dir);
+                let global_approach_vel = (1.0 / moved_distance.max(1.0)) * 3000.0 * approach_dir;
+                input.velocity = Velocity::global(global_approach_vel);
+                dies_core::debug_string(
+                    format!("{}.pickup_ball.status", ctx.debug_prefix),
+                    format!(
+                        "approach ball: {:.1}, {:.1}",
+                        global_approach_vel[0], global_approach_vel[1]
+                    ),
+                );
                 input.with_yaw(self.target_heading);
+                dies_core::debug_line(
+                    format!("{}.pickup_ball.approach_line", ctx.debug_prefix),
+                    player_pos,
+                    player_pos + global_approach_vel,
+                    dies_core::DebugColor::Orange,
+                );
             }
         } else {
             // Ball is moving - intercept it
@@ -198,11 +230,11 @@ impl ExecutableSkill for PickupBallSkill {
             }
         }
 
-        self.status = SkillStatus::Running;
+        self.skill_status = SkillStatus::Running;
         SkillProgress::Continue(input)
     }
 
     fn status(&self) -> SkillStatus {
-        self.status
+        self.skill_status
     }
 }

@@ -44,12 +44,12 @@ fn slot_to_control_input(slot: &PlayerControlSlot) -> PlayerControlInput {
     input.dribbling_speed = slot.dribble;
     input.fan_speed = slot.fan;
     input.kick_speed = slot.kick_speed;
-    input.kicker = if let Some(force) = slot.kick_force {
-        KickerControlInput::Kick { force }
+    input.kicker = if let Some(_) = slot.kick_speed {
+        KickerControlInput::Kick
     } else if slot.disarm_kicker {
         KickerControlInput::Disarm
     } else {
-        KickerControlInput::Idle
+        KickerControlInput::Arm
     };
     input
 }
@@ -268,7 +268,7 @@ impl PlayerOverrideState {
                 ..Default::default()
             },
             PlayerOverrideCommand::Kick { speed } => PlayerControlInput {
-                kicker: KickerControlInput::Kick { force: speed },
+                kicker: KickerControlInput::Kick,
                 kick_speed: Some(speed),
                 ..Default::default()
             },

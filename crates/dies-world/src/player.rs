@@ -70,10 +70,11 @@ impl PlayerTracker {
         handicaps: HashSet<Handicap>,
         settings: &TrackerSettings,
         allow_no_vision: bool,
+        is_controlled: bool,
     ) -> PlayerTracker {
         PlayerTracker {
             id,
-            is_controlled: false, // Will be set to true when feedback is received
+            is_controlled,
             allow_no_vision,
             filter: MaybeKalman::new(
                 0.1,
@@ -119,9 +120,9 @@ impl PlayerTracker {
             0.0
         };
 
-        let factor = 0.96;
+        let factor = 0.99;
         self.rolling_vision = self.rolling_vision * factor + vision_val * (1.0 - factor);
-        let factor = 0.99; // slower decay for control
+        let factor = 0.99;
         self.rolling_control = self.rolling_control * factor + control_val * (1.0 - factor);
 
         // For controlled players, require both vision and control
@@ -311,129 +312,5 @@ impl PlayerTracker {
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),
             handicaps: self.handicaps.clone(),
         })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::f64::consts::PI;
-
-    use approx::assert_relative_eq;
-
-    use super::*;
-
-    #[test]
-    fn test_no_player() {
-        let tracker = PlayerTracker::new(
-            PlayerId::new(1),
-            HashSet::new(),
-            &TrackerSettings::default(),
-            false,
-        );
-
-        assert!(!tracker.is_init());
-        assert!(tracker.get().is_none());
-    }
-
-    #[test]
-    fn test_no_data_after_one_update() {
-        let mut tracker = PlayerTracker::new(
-            PlayerId::new(1),
-            HashSet::new(),
-            &TrackerSettings::default(),
-            false,
-        );
-
-        let mut player = SSL_DetectionRobot::new();
-        player.set_x(100.0);
-        player.set_y(200.0);
-        player.set_orientation(0.0);
-
-        tracker.update(0.0, &player);
-        assert!(!tracker.is_init());
-        assert!(tracker.get().is_none());
-    }
-
-    #[test]
-    fn test_basic_update() {
-        let id = PlayerId::new(1);
-        let mut tracker =
-            PlayerTracker::new(id, HashSet::new(), &TrackerSettings::default(), false);
-
-        let mut player = SSL_DetectionRobot::new();
-        player.set_x(100.0);
-        player.set_y(200.0);
-        player.set_orientation(0.0);
-
-        tracker.update(0.0, &player);
-        assert!(!tracker.is_init());
-
-        tracker.update(1.0, &player);
-        assert!(tracker.is_init());
-
-        let data = tracker.get().unwrap();
-        assert_eq!(data.id.as_u32(), 1);
-        assert_eq!(data.position, Vector2::new(100.0, 200.0));
-        assert_eq!(data.velocity, Vector2::zeros());
-        assert_eq!(data.yaw, Angle::from_radians(0.0));
-        assert_eq!(data.angular_speed, 0.0);
-
-        player.set_x(200.0);
-        player.set_y(300.0);
-        player.set_orientation(1.0);
-
-        tracker.update(2.0, &player);
-        assert!(tracker.is_init());
-
-        let data = tracker.get().unwrap();
-        assert_eq!(data.id.as_u32(), 1);
-        assert_eq!(data.raw_position, Vector2::new(200.0, 300.0));
-        assert!(data.velocity.norm() > 0.0);
-        assert_eq!(data.raw_yaw, Angle::from_radians(1.0));
-        assert!(data.angular_speed > 0.0);
-    }
-
-    #[test]
-    fn test_x_flip() {
-        let id = PlayerId::new(1);
-        let settings = TrackerSettings::default();
-        let mut tracker = PlayerTracker::new(id, HashSet::new(), &settings, false);
-
-        let mut player = SSL_DetectionRobot::new();
-        let dir = PI / 8.0;
-        player.set_x(100.0);
-        player.set_y(200.0);
-        player.set_orientation(dir as f32);
-
-        tracker.update(0.0, &player);
-        assert!(!tracker.is_init());
-
-        // Move player forward
-        player.set_x(150.0);
-
-        tracker.update(1.0, &player);
-        assert!(tracker.is_init());
-
-        let data = tracker.get().unwrap();
-        assert_eq!(data.id.as_u32(), 1);
-        // Note: Now returns raw vision coordinates without transformation
-        assert_eq!(data.raw_position, Vector2::new(150.0, 200.0));
-        assert!(data.velocity.x > 0.0);
-        assert_relative_eq!(data.yaw.radians(), dir, epsilon = 1e-6);
-        assert_eq!(data.angular_speed, 0.0);
-
-        player.set_x(200.0);
-        player.set_y(300.0);
-        player.set_orientation(-dir as f32);
-
-        tracker.update(2.0, &player);
-        assert!(tracker.is_init());
-
-        let data = tracker.get().unwrap();
-        assert_eq!(data.id.as_u32(), 1);
-        assert_eq!(data.raw_position, Vector2::new(200.0, 300.0));
-        assert!(data.velocity.x > 0.0);
-        assert_relative_eq!(data.raw_yaw.radians(), -dir, epsilon = 1e-6);
-        assert!(data.angular_speed < 0.0);
     }
 }

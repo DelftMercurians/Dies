@@ -153,6 +153,7 @@ export interface ControllerSettings {
 	position_kp: number;
 	/** Position deadzone (mm) — MTP commands zero velocity inside this radius. */
 	position_cutoff_distance: number;
+	thresh: number;
 	/** Proportional gain for heading tracking. */
 	angle_kp: number;
 	/** Heading deadzone (rad) — yaw control outputs zero inside this band. */

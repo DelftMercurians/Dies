@@ -91,7 +91,6 @@ pub struct PlayerControlSlot {
     pub angular_velocity: Option<f64>,
     pub dribble: f64,
     pub fan: Option<f64>,
-    pub kick_force: Option<f64>,
     pub kick_speed: Option<f64>,
     pub disarm_kicker: bool,
 }
@@ -220,10 +219,7 @@ impl TestDriver {
     /// Push the executor's per-player computed velocity setpoints (global frame,
     /// mm/s) into the driver. Called once per tick from the host so recordings
     /// can capture the controller's actual cmd during position-controlled motion.
-    pub fn set_actual_cmds_global(
-        &mut self,
-        cmds: std::collections::HashMap<PlayerId, Vector2>,
-    ) {
+    pub fn set_actual_cmds_global(&mut self, cmds: std::collections::HashMap<PlayerId, Vector2>) {
         self.state.borrow_mut().actual_cmds_global = cmds;
     }
 

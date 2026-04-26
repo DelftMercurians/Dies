@@ -9,6 +9,7 @@ use super::team_context::PlayerContext;
 pub struct TwoStepMTP {
     setpoint: Option<Vector2>,
     kp: f64,
+    thresh: f64,
     cutoff_distance: f64,
     sample_count: usize,
     last_vel: Option<Vector2>,
@@ -21,6 +22,7 @@ impl TwoStepMTP {
             setpoint: None,
             kp: 1.5,
             cutoff_distance: 10.0,
+            thresh: 100.0,
             sample_count: 8,
             last_vel: None,
             integral: 0.0,
@@ -31,9 +33,10 @@ impl TwoStepMTP {
         self.setpoint = Some(setpoint);
     }
 
-    pub fn update_settings(&mut self, kp: f64, cutoff_distance: f64) {
+    pub fn update_settings(&mut self, kp: f64, cutoff_distance: f64, thresh: f64) {
         self.kp = kp;
         self.cutoff_distance = cutoff_distance;
+        self.thresh = thresh;
     }
 
     #[allow(clippy::too_many_arguments)]

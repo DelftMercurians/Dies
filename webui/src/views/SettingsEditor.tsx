@@ -46,10 +46,17 @@ const fieldConfig: FieldConfig = {
       unit: "deg/s²",
       isAngle: true,
     },
+    thresh: { min: 0, max: 1000, step: 10, unit: "mm/s" },
     position_kp: { min: 0, max: 10, step: 0.05 },
     position_cutoff_distance: { min: 0, max: 200, step: 1, unit: "mm" },
     angle_kp: { min: 0, max: 10, step: 0.05 },
-    angle_cutoff_distance: { min: 0, max: 30, step: 0.1, unit: "deg", isAngle: true },
+    angle_cutoff_distance: {
+      min: 0,
+      max: 30,
+      step: 0.1,
+      unit: "deg",
+      isAngle: true,
+    },
   },
   tracker_settings: {
     player_measurement_var: { min: 0, max: 10, step: 0.01, unit: "mm²" },
@@ -159,93 +166,95 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
   return (
     <div className="h-full relative">
       <div className="absolute inset-0 overflow-y-auto flex flex-col gap-4 p-4">
-        {Object.entries(settings as unknown as Record<string, unknown>).map(([key, _value]) => {
-          const value = _value as Value;
-          const config = fieldConfig[settingsKey]?.[key as SettingsKey] || {};
-          const {
-            hidden = false,
-            min = 0,
-            max = 100,
-            step,
-            unit = null,
-            disableSlider = false,
-            isAngle = false,
-            customComponent: CustomComponent,
-          } = config;
+        {Object.entries(settings as unknown as Record<string, unknown>).map(
+          ([key, _value]) => {
+            const value = _value as Value;
+            const config = fieldConfig[settingsKey]?.[key as SettingsKey] || {};
+            const {
+              hidden = false,
+              min = 0,
+              max = 100,
+              step,
+              unit = null,
+              disableSlider = false,
+              isAngle = false,
+              customComponent: CustomComponent,
+            } = config;
 
-          if (hidden) return null;
+            if (hidden) return null;
 
-          const displayValue =
-            isAngle && typeof value === "number"
-              ? value * (180 / Math.PI)
-              : value;
+            const displayValue =
+              isAngle && typeof value === "number"
+                ? value * (180 / Math.PI)
+                : value;
 
-          return (
-            <div key={key} className="space-y-2">
-              <Label htmlFor={key} className="font-medium">
-                {key
-                  .replace(/_/g, " ")
-                  .replace(/\b\w/g, (l) => l.toUpperCase())}
-              </Label>
-              <div className="flex items-center gap-2 flex-wrap">
-                {typeof CustomComponent === "function" ? (
-                  <CustomComponent
-                    id={key}
-                    value={value}
-                    onChange={(value) =>
-                      handleChange(key as SettingsKey, value)
-                    }
-                  />
-                ) : typeof displayValue === "number" ? (
-                  <>
-                    {!disableSlider ? (
-                      <Slider
-                        id={`${key}-slider`}
-                        min={min}
-                        max={max}
-                        step={step ?? (max - min) / 100}
-                        value={[displayValue]}
-                        onValueChange={([newValue]) =>
-                          handleChange(key as SettingsKey, newValue as Value)
-                        }
-                        className="flex-1 min-w-24"
-                      />
-                    ) : null}
-                    <div className="flex items-center">
-                      <Input
-                        id={key}
-                        type="number"
-                        value={displayValue}
-                        onChange={(e) =>
-                          handleChange(
-                            key as SettingsKey,
-                            parseFloat(e.target.value) as Value
-                          )
-                        }
-                        className="w-24"
-                      />
-                      {unit ? (
-                        <span className="text-sm text-text-muted ml-2">
-                          {unit}
-                        </span>
+            return (
+              <div key={key} className="space-y-2">
+                <Label htmlFor={key} className="font-medium">
+                  {key
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (l) => l.toUpperCase())}
+                </Label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {typeof CustomComponent === "function" ? (
+                    <CustomComponent
+                      id={key}
+                      value={value}
+                      onChange={(value) =>
+                        handleChange(key as SettingsKey, value)
+                      }
+                    />
+                  ) : typeof displayValue === "number" ? (
+                    <>
+                      {!disableSlider ? (
+                        <Slider
+                          id={`${key}-slider`}
+                          min={min}
+                          max={max}
+                          step={step ?? (max - min) / 100}
+                          value={[displayValue]}
+                          onValueChange={([newValue]) =>
+                            handleChange(key as SettingsKey, newValue as Value)
+                          }
+                          className="flex-1 min-w-24"
+                        />
                       ) : null}
-                    </div>
-                  </>
-                ) : typeof displayValue === "boolean" ? (
-                  <Switch
-                    id={key}
-                    checked={displayValue}
-                    onCheckedChange={(newValue) =>
-                      handleChange(key as SettingsKey, newValue as Value)
-                    }
-                  />
-                ) : (
-                  <span>{`${displayValue}`}</span>
-                )}
+                      <div className="flex items-center">
+                        <Input
+                          id={key}
+                          type="number"
+                          value={displayValue}
+                          onChange={(e) =>
+                            handleChange(
+                              key as SettingsKey,
+                              parseFloat(e.target.value) as Value,
+                            )
+                          }
+                          className="w-24"
+                        />
+                        {unit ? (
+                          <span className="text-sm text-text-muted ml-2">
+                            {unit}
+                          </span>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : typeof displayValue === "boolean" ? (
+                    <Switch
+                      id={key}
+                      checked={displayValue}
+                      onCheckedChange={(newValue) =>
+                        handleChange(key as SettingsKey, newValue as Value)
+                      }
+                    />
+                  ) : (
+                    <span>{`${displayValue}`}</span>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          },
+        )}
       </div>
     </div>
   );

@@ -84,6 +84,7 @@ impl TeamTracker {
                     .collect(),
                 tracker_settings,
                 self.allow_no_vision,
+                self.controlled,
             )
         });
         tracker.update(t_capture, player);
@@ -110,6 +111,7 @@ impl TeamTracker {
                         .collect(),
                     tracker_settings,
                     true,
+                    self.controlled,
                 )
             });
             tracker.update_from_feedback(feedback, time);

@@ -413,7 +413,7 @@ impl TeamController {
                 player: player_data,
                 world: world_data,
                 team_context,
-                debug_prefix: format!("p{}", player_id),
+                debug_prefix: team_context.key(format!("p{}", player_id)),
             };
 
             let input = self
