@@ -26,10 +26,10 @@ const BREAKBEAM_CONFIRM_DURATION: Duration = Duration::from_millis(100);
 const MAX_FINAL_APPROACH_DISTANCE: f64 = 80.0;
 
 enum PickupState {
-    Uninitialized,
-    GoingToApproachPos,
+    Approaching,
     FinalApproach,
-    Capturing,
+    Intercepting,
+    ConfirmingBreakbeam,
 }
 
 pub struct PickupBallSkill {
@@ -50,7 +50,7 @@ impl PickupBallSkill {
             last_good_heading: None,
             starting_position: None,
             breakbeam_on: None,
-            state: PickupState::Uninitialized,
+            state: PickupState::Approaching,
         }
     }
 }
@@ -115,37 +115,47 @@ impl ExecutableSkill for PickupBallSkill {
         //     self.breakbeam_on = None;
         // }
 
-        if let Some(breakbeam_on) = self.breakbeam_on {
-            let elapsed = breakbeam_on.elapsed();
-            if elapsed > BREAKBEAM_CONFIRM_DURATION {
-                self.breakbeam_on = None;
-                self.skill_status = SkillStatus::Succeeded;
-                return SkillProgress::success();
-            } else {
-                dies_core::debug_string(
-                    format!("{}.pickup_ball.status", ctx.debug_prefix),
-                    format!(
-                        "breakbeam triggered, confirming... ({:.0} ms)",
-                        elapsed.as_secs_f64() * 1000.0
-                    ),
-                );
-                // Move slowly toward ball while waiting for confirmation
-                let vel = (0.1 - elapsed.as_secs_f64()) / 0.1
-                    * 100.0
-                    * ball_angle.rotate_vector(&Vector2::x());
-                input.velocity = Velocity::global(vel);
-                return SkillProgress::Continue(input);
+        // Ball is stationary: approach from the side opposite to target_heading
+        // so that post-capture the robot is already facing target_heading.
+        let approach_dir = self.target_heading.to_vector();
+        let approach_pos = ball_pos - approach_dir * STOP_DISTANCE;
+        let dist_to_approach = (approach_pos - player_pos).norm();
+
+        self.state = if self.breakbeam_on.is_some() {
+            PickupState::ConfirmingBreakbeam
+        } else if ball_speed >= 100.0 {
+            PickupState::Intercepting
+        } else if dist_to_approach > STOP_DISTANCE + 15.0 {
+            PickupState::Approaching
+        } else {
+            PickupState::FinalApproach
+        };
+
+        match self.state {
+            PickupState::ConfirmingBreakbeam => {
+                let breakbeam_on = self.breakbeam_on.unwrap();
+                let elapsed = breakbeam_on.elapsed();
+                if elapsed > BREAKBEAM_CONFIRM_DURATION {
+                    self.breakbeam_on = None;
+                    self.skill_status = SkillStatus::Succeeded;
+                    return SkillProgress::success();
+                } else {
+                    dies_core::debug_string(
+                        format!("{}.pickup_ball.status", ctx.debug_prefix),
+                        format!(
+                            "breakbeam triggered, confirming... ({:.0} ms)",
+                            elapsed.as_secs_f64() * 1000.0
+                        ),
+                    );
+                    // Move slowly toward ball while waiting for confirmation
+                    let vel = (0.1 - elapsed.as_secs_f64()) / 0.1
+                        * 100.0
+                        * ball_angle.rotate_vector(&Vector2::x());
+                    input.velocity = Velocity::global(vel);
+                    return SkillProgress::Continue(input);
+                }
             }
-        }
-
-        if ball_speed < 100.0 {
-            // Ball is stationary: approach from the side opposite to target_heading
-            // so that post-capture the robot is already facing target_heading.
-            let approach_dir = self.target_heading.to_vector();
-            let approach_pos = ball_pos - approach_dir * STOP_DISTANCE;
-
-            let dist_to_approach = (approach_pos - player_pos).norm();
-            if dist_to_approach > STOP_DISTANCE + 15.0 {
+            PickupState::Approaching => {
                 dies_core::debug_string(
                     format!("{}.pickup_ball.status", ctx.debug_prefix),
                     "go to pos",
@@ -155,7 +165,8 @@ impl ExecutableSkill for PickupBallSkill {
                 input.with_care(0.8);
                 input.avoid_ball = true;
                 input.avoid_ball_care = 1.5;
-            } else {
+            }
+            PickupState::FinalApproach => {
                 // Final approach - creep forward along target_heading
                 let start_pos = *self.starting_position.get_or_insert(player_pos);
                 let moved_distance = (player_pos - start_pos).norm();
@@ -182,51 +193,52 @@ impl ExecutableSkill for PickupBallSkill {
                     dies_core::DebugColor::Orange,
                 );
             }
-        } else {
-            // Ball is moving - intercept it
-            // Sample points on the ball trajectory and find where we can intercept
-            let points_schedule = [
-                0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 1.0,
-                1.2, 1.5, 2.0,
-            ];
-            let friction_factor = 1.5;
+            PickupState::Intercepting => {
+                // Ball is moving - intercept it
+                // Sample points on the ball trajectory and find where we can intercept
+                let points_schedule = [
+                    0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 1.0,
+                    1.2, 1.5, 2.0,
+                ];
+                let friction_factor = 1.5;
 
-            let ball_points: Vec<Vector2> = points_schedule
-                .iter()
-                .map(|t| {
-                    ball_pos
-                        + ball.velocity.xy() * (*t) * (1.0 - f64::min(1.0, (*t) / friction_factor))
-                })
-                .collect();
+                let ball_points: Vec<Vector2> = points_schedule
+                    .iter()
+                    .map(|t| {
+                        ball_pos
+                            + ball.velocity.xy() * (*t) * (1.0 - f64::min(1.0, (*t) / friction_factor))
+                    })
+                    .collect();
 
-            let mut intersection = ball_points[ball_points.len() - 1];
-            for i in 0..ball_points.len() - 1 {
-                let a = ball_points[i];
-                let b = ball_points[i + 1];
-                let must_be_reached_before = points_schedule[i];
+                let mut intersection = ball_points[ball_points.len() - 1];
+                for i in 0..ball_points.len() - 1 {
+                    let a = ball_points[i];
+                    let b = ball_points[i + 1];
+                    let must_be_reached_before = points_schedule[i];
 
-                let mut time_to_reach = f64::min(
-                    ctx.world.time_to_reach_point(ctx.player, a),
-                    ctx.world.time_to_reach_point(ctx.player, b),
-                );
-                // Add margin for accuracy
-                time_to_reach = time_to_reach * 1.2 + 0.1;
+                    let mut time_to_reach = f64::min(
+                        ctx.world.time_to_reach_point(ctx.player, a),
+                        ctx.world.time_to_reach_point(ctx.player, b),
+                    );
+                    // Add margin for accuracy
+                    time_to_reach = time_to_reach * 1.2 + 0.1;
 
-                if time_to_reach < must_be_reached_before {
-                    intersection = b;
-                    break;
+                    if time_to_reach < must_be_reached_before {
+                        intersection = b;
+                        break;
+                    }
                 }
-            }
 
-            input.with_position(intersection);
+                input.with_position(intersection);
 
-            // Once close, use proportional control
-            if distance < DRIBBLING_DISTANCE {
-                input.position = None;
-                input.velocity = Velocity::global(
-                    (ball_speed * 0.8 + distance * (MAX_RELATIVE_SPEED / DRIBBLING_DISTANCE))
-                        * (ball_pos - player_pos).normalize(),
-                );
+                // Once close, use proportional control
+                if distance < DRIBBLING_DISTANCE {
+                    input.position = None;
+                    input.velocity = Velocity::global(
+                        (ball_speed * 0.8 + distance * (MAX_RELATIVE_SPEED / DRIBBLING_DISTANCE))
+                            * (ball_pos - player_pos).normalize(),
+                    );
+                }
             }
         }
 
