@@ -2120,7 +2120,7 @@ impl Default for SimulationBuilder {
         let player_margin = 0.75 * player_radius;
         let sides = builder.sim.config.initial_side_assignment;
 
-        for i in 0..1 {
+        for i in 0..2 {
             let position = Vector2::new(
                 field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin),
                 field_width - player_radius - boundary_width,

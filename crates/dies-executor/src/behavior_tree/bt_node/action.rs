@@ -9,7 +9,7 @@ use crate::{
     control::{PlayerContext, PlayerControlInput, ShootTarget},
     skills::{
         Face, FetchBall, FetchBallWithPreshoot, GoToPosition, Kick, Shoot, Skill, SkillCtx,
-        SkillProgress, SkillResult, TestMovement, TryReceive, Wait, PickUpBall, Dribble,
+        SkillProgress, SkillResult, TestMovement, TryReceive, Wait, PickUpBall, Dribble, RecieveV2,
     },
 };
 
@@ -48,6 +48,12 @@ pub enum SkillDefinition {
         target_pos: Argument<Vector2>,
         target_heading: Argument<Angle>,
         with_ball: Argument<bool>,
+    },
+    ReceiveV2 {
+        from_pos: Argument<Vector2>,
+        target_pos: Argument<Vector2>,
+        capture_limit: Argument<f64>,
+        cushion: Argument<bool>,
     },
     Face {
         target: FaceTarget,
@@ -97,6 +103,7 @@ impl ActionNode {
             SkillDefinition::GoToPosition { .. } => "GoToPosition",
             SkillDefinition::PickUpBall { .. } => "PickUpBall",
             SkillDefinition::Dribble { .. } => "Dribble",
+            SkillDefinition::ReceiveV2 { .. } => "ReceiveV2",
             SkillDefinition::Face { .. } => "Face",
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
@@ -127,6 +134,7 @@ impl ActionNode {
             SkillDefinition::GoToPosition { .. } => "GoToPosition",
             SkillDefinition::PickUpBall { .. } => "PickUpBall",
             SkillDefinition::Dribble { .. } => "Dribble",
+            SkillDefinition::ReceiveV2 { .. } => "ReceiveV2",
             SkillDefinition::Face { .. } => "Face",
             SkillDefinition::Kick => "Kick",
             SkillDefinition::Wait { .. } => "Wait",
@@ -191,6 +199,20 @@ impl ActionNode {
 
                     let mut skill = Dribble::new(target_pos, target_heading, with_ball);
                     Some(Skill::Dribble(skill))
+                }
+                SkillDefinition::ReceiveV2 { 
+                    from_pos,
+                    target_pos,
+                    capture_limit,
+                    cushion,
+                } => {
+                    let from_pos = from_pos.resolve(situation);
+                    let target_pos = target_pos.resolve(situation);
+                    let capture_limit = capture_limit.resolve(situation);
+                    let cushion = cushion.resolve(situation);
+
+                    let skill = RecieveV2::new(from_pos, target_pos, capture_limit, cushion);
+                    Some(Skill::RecieveV2(skill))
                 }
 
                 SkillDefinition::Face { target, with_ball } => {
@@ -507,6 +529,48 @@ impl DribbleBuilder {
     }
 }
 
+pub struct RecieveV2Builder {
+    from_pos: Argument<Vector2>,
+    target_pos: Argument<Vector2>,
+    capture_limit: Argument<f64>,
+    cushion: Argument<bool>,
+    description: Option<String>,
+}
+
+impl RecieveV2Builder {
+    pub fn new(
+        from_pos: impl Into<Argument<Vector2>>,
+        target_pos: impl Into<Argument<Vector2>>,
+        capture_limit: impl Into<Argument<f64>>,
+        cushion: impl Into<Argument<bool>>,
+    ) -> Self {
+        Self {
+            from_pos: from_pos.into(),
+            target_pos: target_pos.into(),
+            capture_limit: capture_limit.into(),
+            cushion: cushion.into(),
+            description: None,
+        }
+    }
+
+    pub fn description(mut self, desc: impl AsRef<str>) -> Self {
+        self.description = Some(desc.as_ref().to_string());
+        self
+    }
+
+    pub fn build(self) -> ActionNode {
+        ActionNode::new(
+            SkillDefinition::ReceiveV2 {
+                from_pos: self.from_pos,
+                target_pos: self.target_pos,
+                capture_limit: self.capture_limit,
+                cushion: self.cushion,
+            },
+            self.description,
+        )
+    }
+}
+
 pub struct FaceBuilder {
     target: FaceTarget,
     with_ball: Argument<bool>,
@@ -700,6 +764,15 @@ pub fn dribble(
     with_ball: impl Into<Argument<bool>>,
 ) -> DribbleBuilder {
     DribbleBuilder::new(target_pos, target_heading, with_ball)
+}
+
+pub fn receive_v2(
+    from_pos: impl Into<Argument<Vector2>>,
+    target_pos: impl Into<Argument<Vector2>>,
+    capture_limit: impl Into<Argument<f64>>,
+    cushion: impl Into<Argument<bool>>,
+) -> RecieveV2Builder {
+    RecieveV2Builder::new(from_pos, target_pos, capture_limit, cushion)
 }
 
 pub fn face_angle(angle: impl Into<Argument<Angle>>) -> FaceBuilder {

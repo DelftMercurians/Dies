@@ -8,6 +8,7 @@ mod pickup_ball;
 mod dribble;
 mod kick;
 mod receive;
+mod receivev2;
 mod shoot;
 mod test_movement;
 mod wait;
@@ -18,6 +19,7 @@ pub use fetchball::FetchBall;
 pub use go_to_pos::GoToPosition;
 pub use kick::Kick;
 pub use receive::TryReceive;
+pub use receivev2::RecieveV2;
 pub use shoot::Shoot;
 pub use test_movement::TestMovement;
 pub use wait::Wait;
@@ -35,6 +37,7 @@ pub enum Skill {
     GoToPosition(GoToPosition),
     PickUpBall(PickUpBall),
     Dribble(Dribble),
+    RecieveV2(RecieveV2),
     Face(Face),
     Kick(Kick),
     Wait(Wait),
@@ -51,6 +54,7 @@ impl Skill {
             Skill::GoToPosition(skill) => skill.update(ctx),
             Skill::PickUpBall(skill) => skill.update(ctx),
             Skill::Dribble(skill) => skill.update(ctx),
+            Skill::RecieveV2(skill) => skill.update(ctx),
             Skill::Face(skill) => skill.update(ctx),
             Skill::Kick(skill) => skill.update(ctx),
             Skill::Wait(skill) => skill.update(ctx),
