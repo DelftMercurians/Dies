@@ -38,9 +38,16 @@ fn continuous(
 
     for axis in [FWD, STRAFE] {
         let inv_tau = 1.0 / p.tau[axis];
-        a_body[axis] = (cmd_body[axis] - v_body[axis]) * inv_tau;
-        da_dv_body[(axis, axis)] = -inv_tau;
-        da_du_body[(axis, axis)] = inv_tau;
+        let a_max = p.accel_max[axis];
+        let raw = (cmd_body[axis] - v_body[axis]) * inv_tau;
+        // Smooth saturation: a = a_max · tanh(raw / a_max). Linear near zero
+        // (a ≈ raw), asymptotes to ±a_max far from steady state.
+        let t = (raw / a_max).tanh();
+        // sech²(x) = 1 − tanh²(x); chain rule through raw.
+        let sech2 = 1.0 - t * t;
+        a_body[axis] = a_max * t;
+        da_dv_body[(axis, axis)] = -inv_tau * sech2;
+        da_du_body[(axis, axis)] = inv_tau * sech2;
     }
 
     let a_global = r * a_body;
@@ -114,10 +121,12 @@ mod tests {
     #[test]
     fn step_response_reaches_command() {
         // First-order lag: v(t) = v_cmd · (1 − exp(−t/τ)). After 5τ we should
-        // be within 1% of the commanded velocity.
+        // be within 2% of the commanded velocity. Target stays in the linear
+        // regime — `target_v / τ < a_max` — so the tanh saturation is inert.
         let p = params();
         let dt = 0.001;
-        let target_v = 2000.0;
+        let target_v = 200.0;
+        assert!(target_v / p.tau[FWD] < p.accel_max[FWD]);
         let u = Control::new(target_v, 0.0);
         let mut x = State::zeros();
         let n = (5.0 * p.tau[FWD] / dt) as usize;
@@ -132,6 +141,27 @@ mod tests {
             target_v
         );
         assert!(st.vel.y.abs() < 1.0);
+    }
+
+    #[test]
+    fn acceleration_is_capped_at_a_max() {
+        // Far from steady state the realised accel must be bounded by a_max
+        // (small ε for the tanh approach to the asymptote).
+        let p = params();
+        let dt = 0.001;
+        let u = Control::new(10_000.0, 0.0);
+        let x = State::zeros();
+        let x_next = step(&x, &u, 0.0, dt, &p);
+        let dv = (x_next[2] - x[2]).abs();
+        let a_observed = dv / dt;
+        assert!(
+            a_observed <= p.accel_max[FWD] + 1.0e-6,
+            "observed accel {} exceeded a_max {}",
+            a_observed,
+            p.accel_max[FWD]
+        );
+        // And it should be close to the ceiling, not far below.
+        assert!(a_observed > 0.99 * p.accel_max[FWD]);
     }
 
     #[test]

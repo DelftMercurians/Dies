@@ -331,13 +331,6 @@ impl PlayerController {
         );
 
         if let Some(yaw) = input.yaw {
-            player_context.debug_line_colored(
-                "target_yaw_line",
-                self.last_pos,
-                self.last_pos + yaw.rotate_vector(&Vector2::new(30.0, 0.0)),
-                dies_core::DebugColor::Purple,
-            );
-
             self.target_z = yaw.radians();
 
             self.yaw_control.set_setpoint(yaw);

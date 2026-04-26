@@ -24,7 +24,7 @@ use dies_core::{
 };
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
-use crate::capture::{samples_to_csv, CaptureBuffer, CapturedSample, Recording};
+use crate::capture::{self, samples_to_csv, CaptureBuffer, CapturedSample, Recording};
 use crate::log_bus::{now_ms, LogBus, TestLogEntry, TestLogLevel};
 use crate::primitives::{ExcitationProfile, ExcitationSample};
 use crate::runtime::{PlayerControlSlot, ScenarioMeta, TestEnv};
@@ -1255,18 +1255,45 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
         let f = unsafe {
             NativeFunction::from_closure(move |_this, args, ctx| {
                 let opts = args.first().cloned().unwrap_or(JsValue::undefined());
-                let target_val = get_obj_opt(&opts, "target", ctx)?.ok_or_else(|| {
-                    JsNativeError::typ().with_message("reflexShoot: target required")
-                })?;
+                let target_val = get_obj_opt(&opts, "target", ctx)?
+                    .ok_or_else(|| JsNativeError::typ().with_message("shoot: target required"))?;
                 let tx = get_num(&target_val, "x", ctx)?;
                 let ty = get_num(&target_val, "y", ctx)?;
                 let cmd = SkillCommand::Shoot {
                     target: Vector2::new(tx, ty),
                 };
-                register_skill_and_await(state.clone(), id, cmd, "reflexShoot", ctx)
+                register_skill_and_await(state.clone(), id, cmd, "shoot", ctx)
             })
         };
-        init.function(f, js_string!("reflexShoot"), 1);
+        init.function(f, js_string!("shoot"), 1);
+    }
+
+    {
+        let state = state.clone();
+        let f = unsafe {
+            NativeFunction::from_closure(move |_this, args, ctx| {
+                let opts = args.first().cloned().unwrap_or(JsValue::undefined());
+                let from_val = get_obj_opt(&opts, "from", ctx)?
+                    .ok_or_else(|| JsNativeError::typ().with_message("receive: from required"))?;
+                let fx = get_num(&from_val, "x", ctx)?;
+                let fy = get_num(&from_val, "y", ctx)?;
+                let target_val = get_obj_opt(&opts, "target", ctx)?
+                    .ok_or_else(|| JsNativeError::typ().with_message("receive: target required"))?;
+                let tx = get_num(&target_val, "x", ctx)?;
+                let ty = get_num(&target_val, "y", ctx)?;
+
+                let capture_limit = get_num_opt(&opts, "captureLimit", ctx)?.unwrap_or(5.0);
+
+                let cmd = SkillCommand::Receive {
+                    from_pos: Vector2::new(fx, fy),
+                    target_pos: Vector2::new(tx, ty),
+                    capture_limit: capture_limit,
+                    cushion: false,
+                };
+                register_skill_and_await(state.clone(), id, cmd, "receive", ctx)
+            })
+        };
+        init.function(f, js_string!("receive"), 1);
     }
 
     {

@@ -11,18 +11,29 @@ pub type ControlJac = Matrix4x2<f64>;
 pub const FWD: usize = 0;
 pub const STRAFE: usize = 1;
 
-/// Per-axis first-order velocity-lag time constants. Units: seconds.
+/// Per-axis first-order velocity-lag time constants and acceleration ceilings.
 ///
-/// Body-frame dynamics: `v̇_b[i] = (v_cmd_b[i] − v_b[i]) / τ[i]`.
-/// Two parameters total — identifiable from a single step response by eye.
+/// Body-frame dynamics: `v̇_b[i] = a_max[i] · tanh((v_cmd_b[i] − v_b[i]) / (τ[i] · a_max[i]))`.
+/// In the linear regime (small error) this collapses to the first-order lag
+/// `(v_cmd − v) / τ`; far from steady-state the smooth saturation caps the
+/// realised accel at ±a_max, modelling motor torque/current limits.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RobotParams {
     pub tau: [f64; 2],
+    #[serde(default = "default_accel_max")]
+    pub accel_max: [f64; 2],
+}
+
+fn default_accel_max() -> [f64; 2] {
+    [3000.0, 3000.0]
 }
 
 impl RobotParams {
     pub fn default_hand_tuned() -> Self {
-        Self { tau: [0.08, 0.10] }
+        Self {
+            tau: [0.08, 0.10],
+            accel_max: default_accel_max(),
+        }
     }
 }
 

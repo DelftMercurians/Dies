@@ -3,20 +3,20 @@
 //! This is a discrete skill that rotates to face a target position
 //! and kicks the ball.
 
-use dies_core::{Angle, Vector2};
+use dies_core::{Angle, Vector2, BALL_RADIUS, PLAYER_RADIUS};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{KickerControlInput, PlayerControlInput, Velocity};
 
 /// Angle tolerance for considering the robot "aligned" with target
-const ALIGNMENT_TOLERANCE: f64 = 6.0 * std::f64::consts::PI / 180.0; // 6 degrees
+const ALIGNMENT_TOLERANCE: f64 = 10.0 * std::f64::consts::PI / 180.0; // 6 degrees
 /// Angular speed limit while turning with ball
 const ANGULAR_SPEED_LIMIT: f64 = 1.3; // radians/s
 /// Angular acceleration limit while turning with ball
 const ANGULAR_ACCELERATION_LIMIT: f64 = 240.0 * std::f64::consts::PI / 180.0;
 /// Dribbler speed during shot
-const DRIBBLER_SPEED: f64 = 0.6;
+const DRIBBLER_SPEED: f64 = 0.2;
 /// Maximum distance from ball before declaring failure
 const MAX_BALL_DISTANCE: f64 = 350.0;
 
@@ -66,19 +66,23 @@ impl ExecutableSkill for ShootSkill {
 
     fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
         // Check if we still have the ball
-        if let Some(ball) = ctx.world.ball.as_ref() {
-            let ball_dist = (ball.position.xy() - ctx.player.position).norm();
-            if ball_dist > MAX_BALL_DISTANCE {
-                self.status = SkillStatus::Failed;
-                return SkillProgress::failure();
-            }
-        }
+        let Some(ball) = ctx.world.ball.as_ref() else {
+            // If the ball is missing, we might have lost it - fail the skill
+            self.status = SkillStatus::Failed;
+            return SkillProgress::failure();
+        };
 
-        // Check breakbeam
-        if !ctx.player.breakbeam_ball_detected && self.state != ShootState::KickCommanded {
+        let ball_dist = (ball.position.xy() - ctx.player.position).norm();
+        if ball_dist > MAX_BALL_DISTANCE {
             self.status = SkillStatus::Failed;
             return SkillProgress::failure();
         }
+
+        // Check breakbeam
+        // if !ctx.player.breakbeam_ball_detected && self.state != ShootState::KickCommanded {
+        //     self.status = SkillStatus::Failed;
+        //     return SkillProgress::failure();
+        // }
 
         let mut input = PlayerControlInput::new();
         input.with_dribbling(DRIBBLER_SPEED);
@@ -91,8 +95,8 @@ impl ExecutableSkill for ShootSkill {
             ShootState::Facing => {
                 input.with_yaw(target_heading);
                 input.with_care(0.7);
-                input.with_angular_acceleration_limit(ANGULAR_ACCELERATION_LIMIT);
-                input.with_angular_speed_limit(ANGULAR_SPEED_LIMIT);
+                // input.with_angular_acceleration_limit(ANGULAR_ACCELERATION_LIMIT);
+                // input.with_angular_speed_limit(ANGULAR_SPEED_LIMIT);
 
                 // Move slowly toward ball to maintain contact
                 if let Some(ball) = ctx.world.ball.as_ref() {
@@ -102,13 +106,14 @@ impl ExecutableSkill for ShootSkill {
                     input.velocity = Velocity::global(dir * 50.0);
                 }
 
-                if heading_error < ALIGNMENT_TOLERANCE {
+                if true {
                     self.state = ShootState::Kicking;
                 }
             }
             ShootState::Kicking => {
                 input.with_yaw(target_heading);
                 input.with_kicker(KickerControlInput::Kick);
+                input.kick_speed = Some(4000.0);
                 self.state = ShootState::KickCommanded;
             }
             ShootState::KickCommanded => {

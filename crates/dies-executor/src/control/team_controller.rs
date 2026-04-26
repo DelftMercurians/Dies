@@ -310,7 +310,7 @@ impl TeamController {
                             radius: if world_data.current_game_state.game_state == GameState::Stop {
                                 800.0
                             } else {
-                                100.0 + 100.0 * (input_to_use.care + input_to_use.avoid_ball_care)
+                                100.0 + 100.0 * input_to_use.avoid_ball_care
                             },
                         });
                     }

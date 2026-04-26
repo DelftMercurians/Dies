@@ -274,7 +274,7 @@ impl Default for ExecutorSettings {
             yellow_team_settings: TeamSpecificSettings::default(),
             blue_team_settings: TeamSpecificSettings::default(),
             skill_settings: SkillSettings::default(),
-            allow_no_vision: true,
+            allow_no_vision: false,
             controller_mode: ControllerMode::default(),
             goal_area_avoidance: true,
         }

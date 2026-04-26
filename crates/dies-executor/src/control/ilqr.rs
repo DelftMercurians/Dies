@@ -19,6 +19,7 @@ use std::{collections::HashMap, fs, path::Path};
 
 use dies_core::{DebugColor, PlayerId, TeamData, Vector2};
 use dies_mpc::{self, MpcTarget, RobotParams, RobotState, SolverConfig, Trajectory};
+use nalgebra::Matrix2;
 
 use super::{player_controller::PlayerController, player_input::PlayerControlInput};
 
@@ -27,6 +28,11 @@ pub struct IlqrController {
     params: RobotParams,
     cfg: SolverConfig,
     warm_starts: HashMap<PlayerId, Trajectory>,
+    /// Previously *commanded* setpoint per player, global frame. Used for the
+    /// hard per-axis acceleration cap on the solver output (mirrors the
+    /// `last_vel` pattern in `two_step_mtp`: rate-limit the setpoint, not the
+    /// measured velocity).
+    last_cmd: HashMap<PlayerId, Vector2>,
 }
 
 impl IlqrController {
@@ -39,6 +45,7 @@ impl IlqrController {
             params,
             cfg: SolverConfig::default(),
             warm_starts: HashMap::new(),
+            last_cmd: HashMap::new(),
         }
     }
 
@@ -92,10 +99,13 @@ impl IlqrController {
     ) -> HashMap<PlayerId, Vector2> {
         let mut out = HashMap::new();
 
-        // Drop warm-starts for players we no longer control so we don't leak
-        // memory across substitutions.
+        // Drop warm-starts and last-command state for players we no longer
+        // control so we don't leak memory across substitutions.
         self.warm_starts
             .retain(|id, _| controllers.contains_key(id));
+        self.last_cmd.retain(|id, _| controllers.contains_key(id));
+
+        let dt = world.dt.max(1.0e-6);
 
         for (id, controller) in controllers.iter() {
             let Some(input) = inputs.get(id) else {
@@ -138,6 +148,28 @@ impl IlqrController {
             if nrm > max_speed {
                 cmd *= max_speed / nrm;
             }
+
+            // Hard per-axis acceleration cap on the *commanded setpoint* (not
+            // measured velocity — same pattern as `two_step_mtp::last_vel`).
+            // Body-frame so fwd/strafe limits map to motor reality.
+            let last = self
+                .last_cmd
+                .get(id)
+                .copied()
+                .unwrap_or_else(Vector2::zeros);
+            let yaw = player_data.yaw.radians();
+            let (cy, sy) = (yaw.cos(), yaw.sin());
+            let r = Matrix2::new(cy, -sy, sy, cy);
+            let rt = r.transpose();
+            let dv_global = cmd - last;
+            let mut dv_body = rt * dv_global;
+            for axis in 0..2 {
+                let cap = self.params.accel_max[axis] * dt;
+                dv_body[axis] = dv_body[axis].clamp(-cap, cap);
+            }
+            let new_cmd = last + r * dv_body;
+            self.last_cmd.insert(*id, new_cmd);
+            cmd = new_cmd;
 
             // Render the planned trajectory as debug line segments so the field
             // canvas can show it.

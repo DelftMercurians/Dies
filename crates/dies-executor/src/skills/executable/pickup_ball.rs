@@ -15,7 +15,7 @@ use crate::control::{PlayerControlInput, Velocity};
 /// Distance from ball at which we start slowing down and using the dribbler
 const DRIBBLING_DISTANCE: f64 = 1000.0;
 /// Distance to maintain when close to a stationary ball
-const STOP_DISTANCE: f64 = PLAYER_RADIUS + BALL_RADIUS + 10.0;
+const STOP_DISTANCE: f64 = PLAYER_RADIUS + BALL_RADIUS + 80.0;
 /// Maximum relative speed when approaching the ball
 const MAX_RELATIVE_SPEED: f64 = 1000.0;
 /// Dribbler speed during pickup
@@ -121,52 +121,44 @@ impl ExecutableSkill for PickupBallSkill {
         let approach_pos = ball_pos - approach_dir * STOP_DISTANCE;
         let dist_to_approach = (approach_pos - player_pos).norm();
 
-        self.state = if self.breakbeam_on.is_some() {
-            PickupState::ConfirmingBreakbeam
-        } else if ball_speed >= 100.0 {
-            PickupState::Intercepting
-        } else if dist_to_approach > STOP_DISTANCE + 15.0 {
-            PickupState::Approaching
-        } else {
-            PickupState::FinalApproach
-        };
-
         match self.state {
             PickupState::ConfirmingBreakbeam => {
-                let breakbeam_on = self.breakbeam_on.unwrap();
-                let elapsed = breakbeam_on.elapsed();
-                if elapsed > BREAKBEAM_CONFIRM_DURATION {
-                    self.breakbeam_on = None;
-                    self.skill_status = SkillStatus::Succeeded;
-                    return SkillProgress::success();
-                } else {
-                    dies_core::debug_string(
-                        format!("{}.pickup_ball.status", ctx.debug_prefix),
-                        format!(
-                            "breakbeam triggered, confirming... ({:.0} ms)",
-                            elapsed.as_secs_f64() * 1000.0
-                        ),
-                    );
-                    // Move slowly toward ball while waiting for confirmation
-                    let vel = (0.1 - elapsed.as_secs_f64()) / 0.1
-                        * 100.0
-                        * ball_angle.rotate_vector(&Vector2::x());
-                    input.velocity = Velocity::global(vel);
-                    return SkillProgress::Continue(input);
-                }
+                todo!()
             }
             PickupState::Approaching => {
+                if dist_to_approach < 10.0 {
+                    self.state = PickupState::FinalApproach;
+                }
+                // else if ball_speed >= 100.0 {
+                //     self.state = PickupState::Intercepting;
+                // }
+
                 dies_core::debug_string(
                     format!("{}.pickup_ball.status", ctx.debug_prefix),
                     "go to pos",
                 );
                 input.with_position(approach_pos);
                 input.with_yaw(self.target_heading);
-                input.with_care(0.8);
                 input.avoid_ball = true;
-                input.avoid_ball_care = 1.5;
+                input.avoid_ball_care = 0.4;
+
+                dies_core::debug_cross(
+                    format!("{}.approach", ctx.debug_prefix),
+                    approach_pos,
+                    dies_core::DebugColor::Orange,
+                );
+                dies_core::debug_line(
+                    format!("{}.approach_vec", ctx.debug_prefix),
+                    approach_pos,
+                    approach_pos + approach_dir * 200.0,
+                    dies_core::DebugColor::Blue,
+                );
             }
             PickupState::FinalApproach => {
+                dies_core::debug_string(
+                    format!("{}.pickup_ball.status", ctx.debug_prefix),
+                    "final approach",
+                );
                 // Final approach - creep forward along target_heading
                 let start_pos = *self.starting_position.get_or_insert(player_pos);
                 let moved_distance = (player_pos - start_pos).norm();
@@ -178,22 +170,13 @@ impl ExecutableSkill for PickupBallSkill {
 
                 let global_approach_vel = (1.0 / moved_distance.max(1.0)) * 3000.0 * approach_dir;
                 input.velocity = Velocity::global(global_approach_vel);
-                dies_core::debug_string(
-                    format!("{}.pickup_ball.status", ctx.debug_prefix),
-                    format!(
-                        "approach ball: {:.1}, {:.1}",
-                        global_approach_vel[0], global_approach_vel[1]
-                    ),
-                );
                 input.with_yaw(self.target_heading);
-                dies_core::debug_line(
-                    format!("{}.pickup_ball.approach_line", ctx.debug_prefix),
-                    player_pos,
-                    player_pos + global_approach_vel,
-                    dies_core::DebugColor::Orange,
-                );
             }
             PickupState::Intercepting => {
+                dies_core::debug_string(
+                    format!("{}.pickup_ball.status", ctx.debug_prefix),
+                    "intercepting",
+                );
                 // Ball is moving - intercept it
                 // Sample points on the ball trajectory and find where we can intercept
                 let points_schedule = [
@@ -206,7 +189,9 @@ impl ExecutableSkill for PickupBallSkill {
                     .iter()
                     .map(|t| {
                         ball_pos
-                            + ball.velocity.xy() * (*t) * (1.0 - f64::min(1.0, (*t) / friction_factor))
+                            + ball.velocity.xy()
+                                * (*t)
+                                * (1.0 - f64::min(1.0, (*t) / friction_factor))
                     })
                     .collect();
 

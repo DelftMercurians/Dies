@@ -45,6 +45,6 @@
     "fetch_ball_preshoot_ball_avoidance": 0.0
   },
   "allow_no_vision": true,
-  "controller_mode": "mtp",
+  "controller_mode": "ilqr",
   "goal_area_avoidance": false
 }

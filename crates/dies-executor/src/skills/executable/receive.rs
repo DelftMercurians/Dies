@@ -57,11 +57,11 @@ impl ExecutableSkill for ReceiveSkill {
 
         // Calculate angle to look at from_pos
         let look_direction = self.from_pos - current_pos;
-        let target_heading = Angle::from_radians(look_direction.y.atan2(look_direction.x));
+        let target_heading = Angle::from_vector(look_direction);
 
         // Move towards target
         //input.velocity = Velocity::Global(diff.normalize() * 100.0);
-        input.with_dribbling(0.6);
+        input.with_dribbling(0.2);
         input.with_yaw(target_heading);
 
         // Project ball onto the normal line (perpendicular to from->target line, passing through target)
@@ -105,6 +105,7 @@ impl ExecutableSkill for ReceiveSkill {
             //     }
             // }
 
+            input.aggressiveness = 2.0;
             input.with_position(target_position);
             // }
         }
