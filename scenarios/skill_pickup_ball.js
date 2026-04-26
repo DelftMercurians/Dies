@@ -1,5 +1,3 @@
-// Exercise the SkillExecutor.PickupBall path without a strategy binary.
-
 globalThis.scenario = {
   name: "skill_pickup_ball",
   team: "blue",

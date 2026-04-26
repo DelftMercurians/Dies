@@ -9,7 +9,7 @@ globalThis.scenario = {
 };
 
 globalThis.run = async function run({ team, world, log }) {
-  const r = team.robot(5);
+  const r = team.robot(0);
 
   // Drop the robot in sim at a known starting pose.
   // await world.addRobot({ team: "blue", id: 4, x: 0, y: 0, yaw: 0 });
@@ -17,10 +17,10 @@ globalThis.run = async function run({ team, world, log }) {
   const HOME = { x: -1500, y: 0, yaw: 0 };
   const side = 1000; // mm
   const waypoints = [
-    { x: HOME.x - side, y: HOME.y - side, yaw: 0 },
-    { x: HOME.x + side, y: HOME.y + side, yaw: 0 },
-    // { x: HOME.x + side, y: HOME.y + side, yaw: 0 },
-    // { x: HOME.x + side, y: HOME.y - side, yaw: 0 },
+    { x: HOME.x - side, y: HOME.y - side, yaw: Math.PI },
+    { x: HOME.x - side, y: HOME.y + side, yaw: Math.PI },
+    { x: HOME.x + side, y: HOME.y + side, yaw: Math.PI },
+    { x: HOME.x + side, y: HOME.y - side, yaw: Math.PI },
   ];
 
   r.startRecording({ rateHz: 10 });

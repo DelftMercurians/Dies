@@ -10,24 +10,13 @@ use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgres
 use crate::control::{PlayerControlInput, Velocity};
 
 const DEFAULT_POS_TOLERANCE: f64 = 50.0;
-const DEFAULT_VEL_TOLERANCE: f64 = 20.0;
-const DRIBBLE_ACCELERATION_LIMIT: f64 = 700.0;
-const DRIBBLE_ANGULAR_ACCELERATION_LIMIT: f64 = 180.0_f64 * std::f64::consts::PI / 180.0;
-const DRIBBLE_ANGULAR_SPEED_LIMIT: f64 = 180.0_f64 * std::f64::consts::PI / 180.0;
-const DRIBBLER_SPEED: f64 = 1.0;
+const DEFAULT_YAW_TOLERANCE: f64 = 5.0;
 
-/// Enter pivot-around-ball phase when heading error exceeds this (radians).
-const PIVOT_ENTRY_THRESHOLD: f64 = 25.0_f64 * std::f64::consts::PI / 180.0;
-/// Exit pivot phase when heading error drops below this (radians). Hysteresis
-/// prevents oscillation at the boundary.
-const PIVOT_EXIT_THRESHOLD: f64 = 5.0_f64 * std::f64::consts::PI / 180.0;
-/// Translational speed while pivoting around the ball (mm/s). Values matched
-/// to the PR #48 implementation that was validated in simulation.
-const PIVOT_SPEED: f64 = 300.0;
-/// Distance from robot center to the ball while dribbling (mm). Tuned
-/// empirically in PR #48; nominally ~111 mm (PLAYER_RADIUS + BALL_RADIUS)
-/// but 140 mm was found to work better in sim.
-const BALL_DISTANCE_FROM_ROBOT: f64 = 140.0;
+//to be fined tuned
+const ACCELERATION_LIMIT: f64 = 500.0; // mm/s^2
+const ROTATE_AROUND_BALL_SPEED: f64 = 300.0;
+const BALL_TO_ROBOT_DISTANCE: f64 = 140.0; //111.335 based on real measurements // mm, distance from center of robot to middle of the ball
+const MAX_ANGULAR_SPEED: f64 = 1.5; // rad/s
 
 /// A skill that moves the robot to a target position while carrying the ball.
 ///
@@ -43,24 +32,23 @@ const BALL_DISTANCE_FROM_ROBOT: f64 = 140.0;
 /// The skill fails immediately if the robot doesn't have the ball (breakbeam
 /// not triggered).
 pub struct DribbleSkill {
+    status: SkillStatus,
     target_pos: Vector2,
     target_heading: Angle,
-    pos_tolerance: f64,
-    vel_tolerance: f64,
-    status: SkillStatus,
-    pivoting: bool,
+    with_ball: bool,
+    last_acceleration: f64,
+    last_angular_acceleration: f64,
 }
 
 impl DribbleSkill {
-    /// Create a new Dribble skill.
     pub fn new(target_pos: Vector2, target_heading: Angle) -> Self {
         Self {
+            status: SkillStatus::Running,
             target_pos,
             target_heading,
-            pos_tolerance: DEFAULT_POS_TOLERANCE,
-            vel_tolerance: DEFAULT_VEL_TOLERANCE,
-            status: SkillStatus::Running,
-            pivoting: false,
+            with_ball: true,
+            last_acceleration: 0.0,
+            last_angular_acceleration: 0.0,
         }
     }
 }
@@ -78,75 +66,64 @@ impl ExecutableSkill for DribbleSkill {
         {
             self.target_pos = *target_pos;
             self.target_heading = *target_heading;
-            // Reset status to Running if we were completed
-            if matches!(self.status, SkillStatus::Succeeded | SkillStatus::Failed) {
-                self.status = SkillStatus::Running;
-            }
         }
     }
 
     fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
-        // Check if we have the ball
-        if !ctx.player.breakbeam_ball_detected {
+        // log::info!("Dribbling towards position: {:?}, heading: {:?}, with_ball: {}", self.target_pos, self.target_heading, self.with_ball);
+        // Check whether the robot holds the ball
+        let breakbeam = ctx.player.breakbeam_ball_detected;
+        if !breakbeam {
+            log::warn!("Dribble skill failed: ball not captured");
             self.status = SkillStatus::Failed;
             return SkillProgress::failure();
         }
 
-        let position = ctx.player.position;
-        let velocity = ctx.player.velocity;
+        let mut input = PlayerControlInput::new();
+        let player_pos = ctx.player.position;
+        let to_target = player_pos - self.target_pos;
 
-        let distance = (self.target_pos - position).norm();
-        let speed = velocity.norm();
-
-        // Heading error sign matches PR #48: current minus target. Pivot
-        // velocity and angular velocity signs are paired to this convention
-        // — do not flip without running in sim; the command pipeline has
-        // non-obvious sign conventions downstream.
-        let yaw_err = (ctx.player.yaw - self.target_heading).radians();
-
-        // Update pivoting state with hysteresis.
-        if self.pivoting && yaw_err.abs() < PIVOT_EXIT_THRESHOLD {
-            self.pivoting = false;
-        } else if !self.pivoting && yaw_err.abs() > PIVOT_ENTRY_THRESHOLD {
-            self.pivoting = true;
+        //Dribble around ball set by velocity control
+        //First rotates to face target position then moves
+        let heading_err =
+            Angle::from_degrees(ctx.player.yaw.degrees() - self.target_heading.degrees());
+        if (self.with_ball == false && heading_err.degrees().abs() > DEFAULT_YAW_TOLERANCE) {
+            // Velocity 90 degrees to the left or right of current heading
+            let direction = if heading_err.radians() > 0.0 {
+                Vector2::new(0.0, 1.0) // Rotate to the left
+            } else {
+                Vector2::new(0.0, -1.0) // Rotate to the right
+            };
+            //let direction = Vector2::new(0.0, 1.0);
+            input.velocity = Velocity::local(direction * ROTATE_AROUND_BALL_SPEED);
+            input.angular_velocity =
+                Some(direction.y * ROTATE_AROUND_BALL_SPEED / BALL_TO_ROBOT_DISTANCE); // v = w*d and d is distance from the centre of robot to ball
+            return SkillProgress::Continue(input);
         }
 
-        // Only declare arrival when heading is also aligned — otherwise the
-        // caller's follow-up (e.g., ReflexShoot) would be set up wrong.
-        if !self.pivoting
-            && distance < self.pos_tolerance
-            && speed < self.vel_tolerance
-            && yaw_err.abs() < PIVOT_EXIT_THRESHOLD
+        self.with_ball = true; // switch to normal dribbling once heading is correct
+        input.with_dribbling(0.5);
+
+        input.with_position(self.target_pos);
+        input.with_yaw(self.target_heading);
+        //log::info!("cur_vel{:.2}, exp_vel{:.2}", current_velocity.magnitude(), ACCELERATION_LIMIT*distance_to_target);
+
+        input.with_acceleration_limit(ACCELERATION_LIMIT);
+        input.with_angular_speed_limit(MAX_ANGULAR_SPEED);
+        // input.with_angular_acceleration_limit(ANGULAR_ACCELERATION_LIMIT);
+
+        //TODO: implement rotating around ball when with_ball = false
+
+        //        log::info!("to_target magnitude: {:.2}", to_target.magnitude());
+        if to_target.magnitude() < DEFAULT_POS_TOLERANCE
+            && heading_err.degrees().abs() < DEFAULT_YAW_TOLERANCE
         {
+            log::info!("Dribble: At the target position with correct heading.");
             self.status = SkillStatus::Succeeded;
             return SkillProgress::success();
         }
 
-        self.status = SkillStatus::Running;
-
-        let mut input = PlayerControlInput::new();
-        input.with_dribbling(DRIBBLER_SPEED);
-
-        if self.pivoting {
-            // Pivot around the ball: translate perpendicular to current
-            // heading while rotating, so the ball stays at the dribbler.
-            // Signs mirror PR #48 (tested in simulation).
-            let dir_sign = yaw_err.signum();
-            let v_local = Vector2::new(0.0, dir_sign * PIVOT_SPEED);
-            let omega = dir_sign * PIVOT_SPEED / BALL_DISTANCE_FROM_ROBOT;
-            input.velocity = Velocity::local(v_local);
-            input.angular_velocity = Some(omega);
-            input.with_angular_speed_limit(omega.abs() * 1.5);
-        } else {
-            input.with_position(self.target_pos);
-            input.with_yaw(self.target_heading);
-            // Use limited acceleration to avoid losing the ball
-            input.with_acceleration_limit(DRIBBLE_ACCELERATION_LIMIT);
-            input.with_angular_acceleration_limit(DRIBBLE_ANGULAR_ACCELERATION_LIMIT);
-            input.with_angular_speed_limit(DRIBBLE_ANGULAR_SPEED_LIMIT);
-        }
-
-        SkillProgress::Continue(input)
+        return SkillProgress::Continue(input);
     }
 
     fn status(&self) -> SkillStatus {

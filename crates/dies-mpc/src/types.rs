@@ -25,7 +25,7 @@ pub struct RobotParams {
 }
 
 fn default_accel_max() -> [f64; 2] {
-    [3000.0, 3000.0]
+    [3500.0, 3500.0]
 }
 
 impl RobotParams {
@@ -80,11 +80,9 @@ impl Default for CostWeights {
         Self {
             // Positions are mm so squared errors are huge; keep weights small.
             position: 1.0e-3,
-            velocity: 5.0e-4,
-            // Floor on Q_uu eigenvalues — prevents the runaway feedback gain
-            // we hit with no `||u||²` penalty (commanded ±500 mm/s at the
-            // target with vision noise as input).
-            control: 5.0e-4,
+            velocity: 0.0,
+            // velocity: 5.0e-4,
+            control: 5.0e-5,
             control_smoothness: 1.0e-4,
             terminal_position: 5.0e-2,
             terminal_velocity: 5.0e-2,
@@ -153,7 +151,7 @@ pub struct SolverConfig {
 impl Default for SolverConfig {
     fn default() -> Self {
         Self {
-            horizon: 10,
+            horizon: 150,
             dt: 0.06,
             max_iters: 15,
             cost_tol: 1.0e-3,

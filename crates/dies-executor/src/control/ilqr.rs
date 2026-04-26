@@ -105,7 +105,17 @@ impl IlqrController {
             .retain(|id, _| controllers.contains_key(id));
         self.last_cmd.retain(|id, _| controllers.contains_key(id));
 
-        let dt = world.dt.max(1.0e-6);
+        // Loop dt from the latest vision frame. Drives both the solver's
+        // integration step and the per-tick body-frame accel cap. Pinning the
+        // solver's `dt` here is critical: with 50 Hz vision (~20 ms ticks) and
+        // a hardcoded 60 ms solver dt, the planner's `controls[0]` is sized for
+        // 60 ms but applied for 20 ms, producing systematic over-correction
+        // and the visible decel→accel→decel lurching.
+        let dt = world.dt.clamp(1.0e-3, 0.5);
+        let cfg = SolverConfig {
+            dt,
+            ..self.cfg.clone()
+        };
 
         for (id, controller) in controllers.iter() {
             let Some(input) = inputs.get(id) else {
@@ -119,7 +129,7 @@ impl IlqrController {
             };
 
             let target = MpcTarget::goto(target_p);
-            let heading_traj = vec![player_data.yaw.radians(); self.cfg.horizon + 1];
+            let heading_traj = vec![player_data.yaw.radians(); cfg.horizon + 1];
             let state = RobotState {
                 pos: player_data.position,
                 vel: player_data.velocity,
@@ -131,7 +141,7 @@ impl IlqrController {
                 &target,
                 &self.params,
                 self.warm_starts.get(id),
-                &self.cfg,
+                &cfg,
             );
 
             let mut cmd = result
