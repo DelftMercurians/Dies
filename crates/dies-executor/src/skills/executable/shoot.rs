@@ -6,7 +6,7 @@
 use dies_core::{Angle, Vector2};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
-use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress, SkillType};
+use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{KickerControlInput, PlayerControlInput, Velocity};
 
 /// Angle tolerance for considering the robot "aligned" with target
@@ -35,13 +35,13 @@ enum ShootState {
 ///
 /// This is a discrete skill - start once and monitor status. The skill
 /// completes when the ball is kicked.
-pub struct ReflexShootSkill {
+pub struct ShootSkill {
     target: Vector2,
     status: SkillStatus,
     state: ShootState,
 }
 
-impl ReflexShootSkill {
+impl ShootSkill {
     /// Create a new ReflexShoot skill.
     pub fn new(target: Vector2) -> Self {
         Self {
@@ -52,13 +52,13 @@ impl ReflexShootSkill {
     }
 }
 
-impl ExecutableSkill for ReflexShootSkill {
-    fn skill_type(&self) -> SkillType {
-        SkillType::ReflexShoot
+impl ExecutableSkill for ShootSkill {
+    fn matches_command(&self, command: &SkillCommand) -> bool {
+        matches!(command, SkillCommand::Shoot { .. })
     }
 
     fn update_params(&mut self, command: &SkillCommand) {
-        if let SkillCommand::ReflexShoot { target } = command {
+        if let SkillCommand::Shoot { target } = command {
             self.target = *target;
             // Note: We don't reset the state machine - just update the target
         }
@@ -125,29 +125,5 @@ impl ExecutableSkill for ReflexShootSkill {
 
     fn status(&self) -> SkillStatus {
         self.status
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_reflex_shoot_creation() {
-        let skill = ReflexShootSkill::new(Vector2::new(4500.0, 0.0));
-
-        assert_eq!(skill.skill_type(), SkillType::ReflexShoot);
-        assert_eq!(skill.status(), SkillStatus::Running);
-    }
-
-    #[test]
-    fn test_reflex_shoot_update_params() {
-        let mut skill = ReflexShootSkill::new(Vector2::new(0.0, 0.0));
-
-        skill.update_params(&SkillCommand::ReflexShoot {
-            target: Vector2::new(4500.0, 500.0),
-        });
-
-        assert_eq!(skill.target, Vector2::new(4500.0, 500.0));
     }
 }

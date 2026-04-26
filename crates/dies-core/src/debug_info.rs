@@ -10,6 +10,7 @@ use typeshare::typeshare;
 use crate::Vector2;
 
 static DEBUG_MESSAGES: OnceLock<mpsc::UnboundedSender<UpdateMsg>> = OnceLock::new();
+static DEBUG_SUBSCRIBER: OnceLock<DebugSubscriber> = OnceLock::new();
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -90,16 +91,21 @@ enum UpdateMsg {
 }
 
 impl DebugSubscriber {
-    /// Spawns a new debug subscriber.
+    /// Get a handle to the process-wide debug subscriber, spawning the backing
+    /// task on the first call. Multiple consumers (webui, test driver, ...)
+    /// share one map.
     ///
-    /// # Panics
-    ///
-    /// Panics if another debug subscriber has already been spawned.
-    pub fn spawn() -> Self {
+    /// Must be called inside a tokio runtime — the first call spawns an async
+    /// task that drains the channel.
+    pub fn instance() -> Self {
+        DEBUG_SUBSCRIBER.get_or_init(Self::spawn_inner).clone()
+    }
+
+    fn spawn_inner() -> Self {
         let (record_tx, mut record_rx) = mpsc::unbounded_channel();
         DEBUG_MESSAGES
             .set(record_tx)
-            .expect("Only one debug subscriber can be created");
+            .expect("DEBUG_MESSAGES already initialized");
         let map = Arc::new(RwLock::new(HashMap::new()));
         let notify = Arc::new(Notify::new());
         {

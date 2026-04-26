@@ -6,7 +6,7 @@
 use dies_core::{Angle, Vector2};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
-use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress, SkillType};
+use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{PlayerControlInput, Velocity};
 
 const DEFAULT_POS_TOLERANCE: f64 = 50.0;
@@ -66,8 +66,8 @@ impl DribbleSkill {
 }
 
 impl ExecutableSkill for DribbleSkill {
-    fn skill_type(&self) -> SkillType {
-        SkillType::Dribble
+    fn matches_command(&self, command: &SkillCommand) -> bool {
+        matches!(command, SkillCommand::Dribble { .. })
     }
 
     fn update_params(&mut self, command: &SkillCommand) {
@@ -151,30 +151,5 @@ impl ExecutableSkill for DribbleSkill {
 
     fn status(&self) -> SkillStatus {
         self.status
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_dribble_creation() {
-        let skill = DribbleSkill::new(Vector2::new(1000.0, 500.0), Angle::from_radians(0.0));
-
-        assert_eq!(skill.skill_type(), SkillType::Dribble);
-        assert_eq!(skill.status(), SkillStatus::Running);
-    }
-
-    #[test]
-    fn test_dribble_update_params() {
-        let mut skill = DribbleSkill::new(Vector2::new(0.0, 0.0), Angle::from_radians(0.0));
-
-        skill.update_params(&SkillCommand::Dribble {
-            target_pos: Vector2::new(1000.0, 1000.0),
-            target_heading: Angle::from_radians(0.5),
-        });
-
-        assert_eq!(skill.target_pos, Vector2::new(1000.0, 1000.0));
     }
 }

@@ -60,7 +60,7 @@ impl TeamController {
             settings: settings.clone(),
             skill_executor: SkillExecutor::new(),
             strategy_input: StrategyInput::default(),
-            ilqr_controller: IlqrController::load_or_insert("x"),
+            ilqr_controller: IlqrController::load_or_insert("dies-irql-settings.json"),
             removing_players: HashSet::new(),
             avoid_goal_area_flags: HashMap::new(),
             warmup_timer: None,
@@ -375,10 +375,10 @@ impl TeamController {
                 // iLQR (when enabled) overrides the MTP velocity that
                 // `update()` just computed. We let `update()` run
                 // unconditionally so yaw/kicker/dribbler logic still fires.
-                // if let Some(vel) = ilqr_overrides.get(&id) {
-                //     controller.set_target_velocity(*vel);
-                //     player_context.debug_string("controller", "iLQR");
-                // }
+                if let Some(vel) = ilqr_overrides.get(&id) {
+                    controller.set_target_velocity(*vel);
+                    player_context.debug_string("controller", "iLQR");
+                }
             } else {
                 controller.increment_frames_misses();
             }

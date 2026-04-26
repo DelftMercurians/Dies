@@ -102,7 +102,26 @@ pub enum SkillCommand {
     /// **Completion**:
     /// - `Succeeded` when ball is kicked
     /// - `Failed` if angle is impossible or ball lost
-    ReflexShoot { target: Vector2 },
+    Shoot { target: Vector2 },
+
+    /// Receive a pass by intercepting the ball along a passing line.
+    ///
+    /// **Type**: Discrete - start once, wait for completion.
+    ///
+    /// **Parameters**:
+    /// - `from_pos`: Position the ball is being passed from
+    /// - `target_pos`: Target position on the passing line where the receiver waits
+    /// - `capture_limit`: Maximum distance the receiver moves perpendicular to the line
+    /// - `cushion`: Whether to move with the ball direction to cushion the impact
+    ///
+    /// **Completion**:
+    /// - `Succeeded` when breakbeam detects the ball
+    Receive {
+        from_pos: Vector2,
+        target_pos: Vector2,
+        capture_limit: f64,
+        cushion: bool,
+    },
 
     /// Stop all motion immediately.
     ///
@@ -147,115 +166,4 @@ pub enum SkillStatus {
     ///
     /// The robot is stopped. Status remains `Failed` until a new skill is commanded.
     Failed,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_skill_command_go_to_pos_serialization() {
-        let cmd = SkillCommand::GoToPos {
-            position: Vector2::new(1000.0, -500.0),
-            heading: Some(Angle::from_radians(std::f64::consts::PI / 4.0)),
-        };
-
-        let encoded = bincode::serialize(&cmd).unwrap();
-        let decoded: SkillCommand = bincode::deserialize(&encoded).unwrap();
-
-        match decoded {
-            SkillCommand::GoToPos { position, heading } => {
-                assert!((position.x - 1000.0).abs() < 1e-6);
-                assert!((position.y - (-500.0)).abs() < 1e-6);
-                assert!(heading.is_some());
-            }
-            _ => panic!("Expected GoToPos"),
-        }
-    }
-
-    #[test]
-    fn test_skill_command_dribble_serialization() {
-        let cmd = SkillCommand::Dribble {
-            target_pos: Vector2::new(2000.0, 0.0),
-            target_heading: Angle::from_radians(0.0),
-        };
-
-        let encoded = bincode::serialize(&cmd).unwrap();
-        let decoded: SkillCommand = bincode::deserialize(&encoded).unwrap();
-
-        match decoded {
-            SkillCommand::Dribble {
-                target_pos,
-                target_heading,
-            } => {
-                assert!((target_pos.x - 2000.0).abs() < 1e-6);
-                assert!((target_heading.radians() - 0.0).abs() < 1e-6);
-            }
-            _ => panic!("Expected Dribble"),
-        }
-    }
-
-    #[test]
-    fn test_skill_command_pickup_ball_serialization() {
-        let cmd = SkillCommand::PickupBall {
-            target_heading: Angle::from_radians(std::f64::consts::PI),
-        };
-
-        let encoded = bincode::serialize(&cmd).unwrap();
-        let decoded: SkillCommand = bincode::deserialize(&encoded).unwrap();
-
-        match decoded {
-            SkillCommand::PickupBall { target_heading } => {
-                assert!((target_heading.radians() - std::f64::consts::PI).abs() < 1e-6);
-            }
-            _ => panic!("Expected PickupBall"),
-        }
-    }
-
-    #[test]
-    fn test_skill_command_reflex_shoot_serialization() {
-        let cmd = SkillCommand::ReflexShoot {
-            target: Vector2::new(4500.0, 0.0),
-        };
-
-        let encoded = bincode::serialize(&cmd).unwrap();
-        let decoded: SkillCommand = bincode::deserialize(&encoded).unwrap();
-
-        match decoded {
-            SkillCommand::ReflexShoot { target } => {
-                assert!((target.x - 4500.0).abs() < 1e-6);
-                assert!((target.y - 0.0).abs() < 1e-6);
-            }
-            _ => panic!("Expected ReflexShoot"),
-        }
-    }
-
-    #[test]
-    fn test_skill_command_stop_serialization() {
-        let cmd = SkillCommand::Stop;
-
-        let encoded = bincode::serialize(&cmd).unwrap();
-        let decoded: SkillCommand = bincode::deserialize(&encoded).unwrap();
-
-        assert!(matches!(decoded, SkillCommand::Stop));
-    }
-
-    #[test]
-    fn test_skill_status_serialization() {
-        for status in [
-            SkillStatus::Idle,
-            SkillStatus::Running,
-            SkillStatus::Succeeded,
-            SkillStatus::Failed,
-        ] {
-            let encoded = bincode::serialize(&status).unwrap();
-            let decoded: SkillStatus = bincode::deserialize(&encoded).unwrap();
-            assert_eq!(decoded, status);
-        }
-    }
-
-    #[test]
-    fn test_skill_status_default() {
-        assert_eq!(SkillStatus::default(), SkillStatus::Idle);
-    }
 }

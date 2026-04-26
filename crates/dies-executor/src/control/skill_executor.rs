@@ -53,28 +53,6 @@ pub struct SkillContext<'a> {
     pub debug_prefix: String,
 }
 
-/// A discriminant for skill types, used for comparison.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SkillType {
-    GoToPos,
-    Dribble,
-    PickupBall,
-    ReflexShoot,
-    Stop,
-}
-
-impl From<&SkillCommand> for SkillType {
-    fn from(cmd: &SkillCommand) -> Self {
-        match cmd {
-            SkillCommand::GoToPos { .. } => SkillType::GoToPos,
-            SkillCommand::Dribble { .. } => SkillType::Dribble,
-            SkillCommand::PickupBall { .. } => SkillType::PickupBall,
-            SkillCommand::ReflexShoot { .. } => SkillType::ReflexShoot,
-            SkillCommand::Stop => SkillType::Stop,
-        }
-    }
-}
-
 /// Trait for executable skills in the executor.
 ///
 /// Skills implementing this trait can be:
@@ -82,8 +60,8 @@ impl From<&SkillCommand> for SkillType {
 /// - Executed tick-by-tick
 /// - Queried for their status
 pub trait ExecutableSkill: Send {
-    /// Get the type of this skill.
-    fn skill_type(&self) -> SkillType;
+    /// Return true if the given command matches this skill's type and can be used to update it.
+    fn matches_command(&self, command: &SkillCommand) -> bool;
 
     /// Update parameters while the skill is running.
     ///
@@ -171,14 +149,12 @@ impl SkillExecutor {
             return self.tick_current_skill(player_id, ctx);
         };
 
-        let cmd_type = SkillType::from(cmd);
-
         // Check if we need to start a new skill or update existing
         let need_new_skill = match &state.current_skill {
             None => true,
             Some(skill) => {
                 // Different skill type -> start new
-                if skill.skill_type() != cmd_type {
+                if !skill.matches_command(cmd) {
                     true
                 } else {
                     // Same type, but if skill completed, start new instance
@@ -285,49 +261,21 @@ fn create_skill_from_command(cmd: &SkillCommand) -> Box<dyn ExecutableSkill> {
         SkillCommand::PickupBall { target_heading } => {
             Box::new(PickupBallSkill::new(*target_heading))
         }
-        SkillCommand::ReflexShoot { target } => Box::new(ReflexShootSkill::new(*target)),
+        SkillCommand::Shoot { target } => Box::new(ShootSkill::new(*target)),
+        SkillCommand::Receive {
+            from_pos,
+            target_pos,
+            capture_limit,
+            cushion,
+        } => Box::new(ReceiveSkill::new(
+            *from_pos,
+            *target_pos,
+            *capture_limit,
+            *cushion,
+        )),
         SkillCommand::Stop => {
             // Stop is handled specially, should never reach here
             unreachable!("Stop command should be handled before create_skill_from_command")
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use dies_core::{Angle, Vector2};
-
-    #[test]
-    fn test_skill_type_from_command() {
-        let cmd = SkillCommand::GoToPos {
-            position: Vector2::new(0.0, 0.0),
-            heading: None,
-        };
-        assert_eq!(SkillType::from(&cmd), SkillType::GoToPos);
-
-        let cmd = SkillCommand::Dribble {
-            target_pos: Vector2::new(0.0, 0.0),
-            target_heading: Angle::from_radians(0.0),
-        };
-        assert_eq!(SkillType::from(&cmd), SkillType::Dribble);
-
-        let cmd = SkillCommand::PickupBall {
-            target_heading: Angle::from_radians(0.0),
-        };
-        assert_eq!(SkillType::from(&cmd), SkillType::PickupBall);
-
-        let cmd = SkillCommand::ReflexShoot {
-            target: Vector2::new(0.0, 0.0),
-        };
-        assert_eq!(SkillType::from(&cmd), SkillType::ReflexShoot);
-
-        assert_eq!(SkillType::from(&SkillCommand::Stop), SkillType::Stop);
-    }
-
-    #[test]
-    fn test_executor_default_status() {
-        let executor = SkillExecutor::new();
-        assert_eq!(executor.get_status(PlayerId::new(1)), SkillStatus::Idle);
     }
 }

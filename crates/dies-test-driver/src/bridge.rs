@@ -7,7 +7,7 @@
 //! the `JsFunction` resolvers alive for as long as we need them.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use boa_engine::object::builtins::{JsArray, JsFunction, JsPromise};
@@ -18,7 +18,10 @@ use boa_engine::{
     js_string, Context, JsError, JsNativeError, JsObject, JsResult, JsString, JsValue,
     NativeFunction,
 };
-use dies_core::{Angle, FieldGeometry, PlayerId, SimulatorCmd, TeamColor, TeamData, Vector2};
+use dies_core::{
+    Angle, DebugSubscriber, DebugValue, FieldGeometry, PlayerId, SimulatorCmd, SysStatus,
+    TeamColor, TeamData, Vector2,
+};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
 use crate::capture::{samples_to_csv, CaptureBuffer, CapturedSample, Recording};
@@ -88,6 +91,21 @@ pub struct PlayerSnap {
     pub velocity: Vector2,
     pub yaw: Angle,
     pub angular_speed: f64,
+    /// Latest basestation feedback status. `None` means we have never received
+    /// telemetry for this robot — used by `team.autoRobot()` in real mode to
+    /// only pick robots that are actually responsive.
+    pub primary_status: Option<SysStatus>,
+}
+
+impl PlayerSnap {
+    /// True if the robot has both vision (it's in the snapshot at all) and a
+    /// usable basestation reply. Used as the "auto-pickable" filter.
+    pub fn is_basestation_responsive(&self) -> bool {
+        match self.primary_status {
+            None | Some(SysStatus::NoReply) | Some(SysStatus::NotInstalled) => false,
+            Some(_) => true,
+        }
+    }
 }
 
 impl WorldSnap {
@@ -110,6 +128,7 @@ impl WorldSnap {
                     velocity: p.velocity,
                     yaw: p.raw_yaw,
                     angular_speed: p.angular_speed,
+                    primary_status: p.primary_status,
                 },
             );
         }
@@ -197,6 +216,16 @@ pub struct InnerState {
     /// host before `tick`. Used as the recorded `cmd` so position-controlled
     /// motion (moveTo / goToPos) records the MTP/iLQR output instead of zero.
     pub actual_cmds_global: HashMap<PlayerId, Vector2>,
+    /// Process-wide debug-value subscriber. Used by `tick_recordings` to read
+    /// tag values written via `dies_core::debug_value(...)`.
+    pub debug_sub: DebugSubscriber,
+    /// Next id handed out by `team.autoRobot()` in sim mode. Bumped on every
+    /// call so consecutive autos get distinct ids regardless of when the
+    /// queued `SimulatorCmd::AddRobot` lands in the next world snapshot.
+    pub next_auto_id: u32,
+    /// Player ids that `team.autoRobot()` has handed out (sim or real). Lets
+    /// real-mode picks avoid handing the same robot out twice within a run.
+    pub auto_claimed_ids: HashSet<PlayerId>,
 }
 
 pub type StateRef = Rc<RefCell<InnerState>>;
@@ -218,6 +247,9 @@ impl InnerState {
             record_artifacts: Vec::new(),
             recordings: HashMap::new(),
             actual_cmds_global: HashMap::new(),
+            debug_sub: DebugSubscriber::instance(),
+            next_auto_id: 0,
+            auto_claimed_ids: HashSet::new(),
         }
     }
 
@@ -270,6 +302,13 @@ impl InnerState {
     pub fn tick_recordings(&mut self) {
         let now = self.world.t;
         let player_ids: Vec<PlayerId> = self.recordings.keys().copied().collect();
+        // Snapshot the debug map once per tick (only if any recording has tags)
+        // so we don't clone it per player.
+        let debug_snapshot = if self.recordings.values().any(|r| !r.tags.is_empty()) {
+            Some(self.debug_sub.get_copy())
+        } else {
+            None
+        };
         for player in player_ids {
             let interval = {
                 let r = self.recordings.get(&player).expect("just iterated");
@@ -279,7 +318,11 @@ impl InnerState {
                     0.05
                 }
             };
-            let last = self.recordings.get(&player).expect("just iterated").last_sample_s;
+            let last = self
+                .recordings
+                .get(&player)
+                .expect("just iterated")
+                .last_sample_s;
             if now - last < interval {
                 continue;
             }
@@ -311,6 +354,23 @@ impl InnerState {
                     None => (0.0, 0.0),
                 }
             };
+            let tag_values: Vec<f64> = {
+                let r = self.recordings.get(&player).expect("just iterated");
+                if r.tags.is_empty() {
+                    Vec::new()
+                } else {
+                    let snap_map = debug_snapshot
+                        .as_ref()
+                        .expect("snapshot exists when tags present");
+                    r.tags
+                        .iter()
+                        .map(|key| match snap_map.get(key) {
+                            Some(DebugValue::Number(n)) => *n,
+                            _ => f64::NAN,
+                        })
+                        .collect()
+                }
+            };
             let sample = CapturedSample {
                 t: now,
                 cmd_x,
@@ -320,6 +380,7 @@ impl InnerState {
                 pos_y: snap.position.y,
                 vel_x: snap.velocity.x,
                 vel_y: snap.velocity.y,
+                tags: tag_values,
             };
             let r = self.recordings.get_mut(&player).expect("just iterated");
             r.buffer.push(sample);
@@ -330,15 +391,25 @@ impl InnerState {
 
 /// Write samples to `./.dies/recordings/<label>_<unix_ms>.csv` and return the
 /// absolute path. Creates the directory if needed.
-pub fn dump_samples_csv(label: &str, samples: &[CapturedSample]) -> std::io::Result<std::path::PathBuf> {
+pub fn dump_samples_csv(
+    label: &str,
+    samples: &[CapturedSample],
+    tag_names: &[String],
+) -> std::io::Result<std::path::PathBuf> {
     let safe_label: String = label
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let dir = std::path::Path::new(".dies").join("recordings");
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{}_{}.csv", safe_label, now_ms()));
-    std::fs::write(&path, samples_to_csv(samples))?;
+    std::fs::write(&path, samples_to_csv(samples, tag_names))?;
     Ok(path)
 }
 
@@ -387,6 +458,42 @@ fn get_obj_opt(obj_val: &JsValue, key: &str, ctx: &mut Context) -> JsResult<Opti
         Ok(None)
     } else {
         Ok(Some(v))
+    }
+}
+
+/// Extract an optional array-of-strings property.
+fn get_string_array_opt(
+    obj_val: &JsValue,
+    key: &str,
+    ctx: &mut Context,
+) -> JsResult<Option<Vec<String>>> {
+    let obj = expect_object(obj_val, "get_string_array_opt")?;
+    let v = obj.get(JsString::from(key), ctx)?;
+    if v.is_undefined() || v.is_null() {
+        return Ok(None);
+    }
+    let arr_obj = v
+        .as_object()
+        .cloned()
+        .ok_or_else(|| JsNativeError::typ().with_message(format!("{}: expected array", key)))?;
+    let arr = JsArray::from_object(arr_obj)
+        .map_err(|_| JsNativeError::typ().with_message(format!("{}: expected Array", key)))?;
+    let len = arr.length(ctx)?;
+    let mut out = Vec::with_capacity(len as usize);
+    for i in 0..len {
+        let item = arr.get(i, ctx)?;
+        out.push(item.to_string(ctx)?.to_std_string_escaped());
+    }
+    Ok(Some(out))
+}
+
+/// Expand the `p.{tag}` shorthand to `p{id}.{tag}`. All other keys pass
+/// through unchanged so callers can record global tags or another player's.
+fn resolve_tag(tag: &str, player: PlayerId) -> String {
+    if let Some(rest) = tag.strip_prefix("p.") {
+        format!("p{}.{}", player.as_u32(), rest)
+    } else {
+        tag.to_string()
     }
 }
 
@@ -617,20 +724,35 @@ fn register_world(ctx: &mut Context, state: StateRef) -> JsResult<()> {
 
 fn register_team(ctx: &mut Context, state: StateRef) -> JsResult<()> {
     let mut init = ObjectInitializer::new(ctx);
-    let state_clone = state.clone();
-    let robot_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, ctx| {
-            let id_num = args
-                .first()
-                .cloned()
-                .unwrap_or(JsValue::undefined())
-                .to_number(ctx)? as u32;
-            let id = PlayerId::new(id_num);
-            let handle = build_robot_handle(ctx, state_clone.clone(), id)?;
-            Ok(handle.into())
-        })
-    };
-    init.function(robot_fn, js_string!("robot"), 1);
+    {
+        let state = state.clone();
+        let robot_fn = unsafe {
+            NativeFunction::from_closure(move |_this, args, ctx| {
+                let id_num = args
+                    .first()
+                    .cloned()
+                    .unwrap_or(JsValue::undefined())
+                    .to_number(ctx)? as u32;
+                let id = PlayerId::new(id_num);
+                let handle = build_robot_handle(ctx, state.clone(), id)?;
+                Ok(handle.into())
+            })
+        };
+        init.function(robot_fn, js_string!("robot"), 1);
+    }
+
+    {
+        let state = state.clone();
+        let auto_fn = unsafe {
+            NativeFunction::from_closure(move |_this, args, ctx| {
+                let opts = args.first().cloned().unwrap_or(JsValue::undefined());
+                let id = pick_auto_robot(state.clone(), &opts, ctx)?;
+                let handle = build_robot_handle(ctx, state.clone(), id)?;
+                Ok(handle.into())
+            })
+        };
+        init.function(auto_fn, js_string!("autoRobot"), 1);
+    }
     let team_obj = init.build();
     ctx.register_global_property(
         js_string!("team"),
@@ -638,6 +760,69 @@ fn register_team(ctx: &mut Context, state: StateRef) -> JsResult<()> {
         Attribute::WRITABLE | Attribute::CONFIGURABLE,
     )?;
     Ok(())
+}
+
+/// Pick (or spawn, in sim) a robot id for `team.autoRobot`.
+///
+/// **Sim / Either**: uses the next id from `next_auto_id`, queues an
+/// `AddRobot` simulator command at the (optionally provided) pose, and
+/// returns the id. The counter is bumped unconditionally so consecutive calls
+/// never collide even if the queued spawns haven't appeared in the world
+/// snapshot yet.
+///
+/// **Real**: scans the current world snapshot for a player that has both
+/// vision (it's in `world.players`) and a usable basestation reply
+/// (`primary_status` set and not `NoReply` / `NotInstalled`), and that hasn't
+/// already been claimed by an earlier `autoRobot` call. Returns the smallest
+/// such id, or throws if none exists.
+fn pick_auto_robot(state: StateRef, opts: &JsValue, ctx: &mut Context) -> JsResult<PlayerId> {
+    let (x, y, yaw) = if opts.is_object() {
+        (
+            get_num_opt(opts, "x", ctx)?.unwrap_or(0.0),
+            get_num_opt(opts, "y", ctx)?.unwrap_or(0.0),
+            get_num_opt(opts, "yaw", ctx)?.unwrap_or(0.0),
+        )
+    } else {
+        (0.0, 0.0, 0.0)
+    };
+    let mut st = state.borrow_mut();
+    if env_allows_sim_mutation(&st.env) {
+        let id_num = st.next_auto_id;
+        st.next_auto_id = id_num.wrapping_add(1);
+        let id = PlayerId::new(id_num);
+        let team = st.team_color;
+        st.pending_sim_cmds.push(SimulatorCmd::AddRobot {
+            team_color: team,
+            player_id: id,
+            position: Vector2::new(x, y),
+            yaw: Angle::from_radians(yaw),
+        });
+        st.auto_claimed_ids.insert(id);
+        Ok(id)
+    } else {
+        // Real mode: pick the smallest visible+responsive id we haven't
+        // already handed out. Sort to make the choice deterministic across
+        // runs since HashMap iteration order isn't stable.
+        let mut candidates: Vec<PlayerId> = st
+            .world
+            .players
+            .iter()
+            .filter(|(id, snap)| {
+                !st.auto_claimed_ids.contains(id) && snap.is_basestation_responsive()
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        candidates.sort_by_key(|p| p.as_u32());
+        let Some(id) = candidates.first().copied() else {
+            return Err(JsNativeError::typ()
+                .with_message(
+                    "team.autoRobot: no robot has both vision and basestation status",
+                )
+                .into());
+        };
+        st.auto_claimed_ids.insert(id);
+        Ok(id)
+    }
 }
 
 fn register_log(ctx: &mut Context, state: StateRef) -> JsResult<()> {
@@ -703,10 +888,9 @@ fn register_log(ctx: &mut Context, state: StateRef) -> JsResult<()> {
                     .to_string(ctx)?
                     .to_std_string_escaped();
                 let arr_val = args.get(1).cloned().unwrap_or(JsValue::undefined());
-                let samples = js_array_to_captured(&arr_val, ctx)?;
-                let path = dump_samples_csv(&label, &samples).map_err(|e| {
-                    JsNativeError::typ()
-                        .with_message(format!("log.dumpCsv: {}", e))
+                let (samples, tag_names) = js_array_to_captured(&arr_val, ctx)?;
+                let path = dump_samples_csv(&label, &samples, &tag_names).map_err(|e| {
+                    JsNativeError::typ().with_message(format!("log.dumpCsv: {}", e))
                 })?;
                 let path_str = path.to_string_lossy().to_string();
                 state.borrow().emit_log(
@@ -1079,7 +1263,7 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                 })?;
                 let tx = get_num(&target_val, "x", ctx)?;
                 let ty = get_num(&target_val, "y", ctx)?;
-                let cmd = SkillCommand::ReflexShoot {
+                let cmd = SkillCommand::Shoot {
                     target: Vector2::new(tx, ty),
                 };
                 register_skill_and_await(state.clone(), id, cmd, "reflexShoot", ctx)
@@ -1205,10 +1389,16 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
         let f = unsafe {
             NativeFunction::from_closure(move |_this, args, ctx| {
                 let opts = args.first().cloned().unwrap_or(JsValue::undefined());
-                let rate_hz = if opts.is_object() {
-                    get_num_opt(&opts, "rateHz", ctx)?.unwrap_or(50.0)
+                let (rate_hz, tags) = if opts.is_object() {
+                    let rate = get_num_opt(&opts, "rateHz", ctx)?.unwrap_or(50.0);
+                    let tags = get_string_array_opt(&opts, "tags", ctx)?
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|t| resolve_tag(&t, id))
+                        .collect();
+                    (rate, tags)
                 } else {
-                    50.0
+                    (50.0, Vec::new())
                 };
                 let mut st = state.borrow_mut();
                 let now = st.world.t;
@@ -1220,7 +1410,7 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                         ))
                         .into());
                 }
-                st.recordings.insert(id, Recording::new(rate_hz, now));
+                st.recordings.insert(id, Recording::new(rate_hz, now, tags));
                 Ok(JsValue::undefined())
             })
         };
@@ -1240,7 +1430,7 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                         ))
                         .into());
                 };
-                let arr = samples_to_js_array(&rec.buffer.samples, ctx)?;
+                let arr = samples_to_js_array(&rec.buffer.samples, &rec.tags, ctx)?;
                 Ok(arr.into())
             })
         };
@@ -1392,7 +1582,11 @@ fn excitation_axis(v: &JsValue, ctx: &mut Context) -> JsResult<crate::primitives
     })
 }
 
-pub fn samples_to_js_array(samples: &[CapturedSample], ctx: &mut Context) -> JsResult<JsArray> {
+pub fn samples_to_js_array(
+    samples: &[CapturedSample],
+    tag_names: &[String],
+    ctx: &mut Context,
+) -> JsResult<JsArray> {
     let arr = JsArray::new(ctx);
     for s in samples {
         let obj = JsObject::with_object_proto(ctx.intrinsics());
@@ -1412,18 +1606,46 @@ pub fn samples_to_js_array(samples: &[CapturedSample], ctx: &mut Context) -> JsR
         vel.set(js_string!("y"), JsValue::new(s.vel_y), false, ctx)?;
         state.set(js_string!("vel"), vel, false, ctx)?;
         obj.set(js_string!("state"), state, false, ctx)?;
+        if !tag_names.is_empty() {
+            let tags_obj = JsObject::with_object_proto(ctx.intrinsics());
+            for (name, &v) in tag_names.iter().zip(&s.tags) {
+                tags_obj.set(JsString::from(name.as_str()), JsValue::new(v), false, ctx)?;
+            }
+            obj.set(js_string!("tags"), tags_obj, false, ctx)?;
+        }
         arr.push(obj, ctx)?;
     }
     Ok(arr)
 }
 
-fn js_array_to_captured(arr: &JsValue, ctx: &mut Context) -> JsResult<Vec<CapturedSample>> {
-    let obj = arr.as_object().cloned().ok_or_else(|| {
-        JsNativeError::typ().with_message("dumpCsv: expected samples array")
-    })?;
+/// Convert a JS samples array back into Rust. Tag column order is taken from
+/// the first sample's `tags` object key order — this matches the order in which
+/// tags were declared at `startRecording`.
+fn js_array_to_captured(
+    arr: &JsValue,
+    ctx: &mut Context,
+) -> JsResult<(Vec<CapturedSample>, Vec<String>)> {
+    let obj = arr
+        .as_object()
+        .cloned()
+        .ok_or_else(|| JsNativeError::typ().with_message("dumpCsv: expected samples array"))?;
     let arr = JsArray::from_object(obj)
         .map_err(|_| JsNativeError::typ().with_message("dumpCsv: expected Array"))?;
     let len = arr.length(ctx)?;
+    let mut tag_names: Vec<String> = Vec::new();
+    if len > 0 {
+        let first = arr.get(0, ctx)?;
+        if let Some(tags_val) = get_obj_opt(&first, "tags", ctx)? {
+            if let Some(tags_obj) = tags_val.as_object().cloned() {
+                let keys = tags_obj.own_property_keys(ctx)?;
+                for k in keys {
+                    if let PropertyKey::String(s) = &k {
+                        tag_names.push(s.to_std_string_escaped());
+                    }
+                }
+            }
+        }
+    }
     let mut out = Vec::with_capacity(len as usize);
     for i in 0..len {
         let item = arr.get(i, ctx)?;
@@ -1435,6 +1657,26 @@ fn js_array_to_captured(arr: &JsValue, ctx: &mut Context) -> JsResult<Vec<Captur
             .ok_or_else(|| JsNativeError::typ().with_message("sample.state missing pos"))?;
         let vel = get_obj_opt(&state, "vel", ctx)?
             .ok_or_else(|| JsNativeError::typ().with_message("sample.state missing vel"))?;
+        let tag_values: Vec<f64> = if tag_names.is_empty() {
+            Vec::new()
+        } else {
+            let tags_val = get_obj_opt(&item, "tags", ctx)?;
+            let tags_obj = tags_val.as_ref().and_then(|v| v.as_object().cloned());
+            tag_names
+                .iter()
+                .map(|name| -> JsResult<f64> {
+                    let Some(ref t) = tags_obj else {
+                        return Ok(f64::NAN);
+                    };
+                    let v = t.get(JsString::from(name.as_str()), ctx)?;
+                    if v.is_undefined() || v.is_null() {
+                        Ok(f64::NAN)
+                    } else {
+                        v.to_number(ctx)
+                    }
+                })
+                .collect::<JsResult<Vec<f64>>>()?
+        };
         out.push(CapturedSample {
             t: get_num(&item, "t", ctx)?,
             cmd_x: get_num(&cmd, "x", ctx)?,
@@ -1444,9 +1686,10 @@ fn js_array_to_captured(arr: &JsValue, ctx: &mut Context) -> JsResult<Vec<Captur
             pos_y: get_num(&pos, "y", ctx)?,
             vel_x: get_num(&vel, "x", ctx)?,
             vel_y: get_num(&vel, "y", ctx)?,
+            tags: tag_values,
         });
     }
-    Ok(out)
+    Ok((out, tag_names))
 }
 
 fn js_value_to_json(v: &JsValue, ctx: &mut Context) -> String {

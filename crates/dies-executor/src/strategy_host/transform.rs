@@ -152,8 +152,19 @@ impl CoordinateTransformer {
             SkillCommand::PickupBall { target_heading } => SkillCommand::PickupBall {
                 target_heading: self.angle_strategy_to_world(*target_heading),
             },
-            SkillCommand::ReflexShoot { target } => SkillCommand::ReflexShoot {
+            SkillCommand::Shoot { target } => SkillCommand::Shoot {
                 target: self.strategy_to_world(*target),
+            },
+            SkillCommand::Receive {
+                from_pos,
+                target_pos,
+                capture_limit,
+                cushion,
+            } => SkillCommand::Receive {
+                from_pos: self.strategy_to_world(*from_pos),
+                target_pos: self.strategy_to_world(*target_pos),
+                capture_limit: *capture_limit,
+                cushion: *cushion,
             },
             SkillCommand::Stop => SkillCommand::Stop,
         }

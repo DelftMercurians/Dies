@@ -134,7 +134,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     // Setup state
     let (update_tx, update_rx) = watch::channel(None);
     let (cmd_tx, cmd_rx) = broadcast::channel(16);
-    let debug_sub: DebugSubscriber = DebugSubscriber::spawn();
+    let debug_sub: DebugSubscriber = DebugSubscriber::instance();
     let state = ServerState::new(
         config.is_live_available(),
         if config.is_live_available() {

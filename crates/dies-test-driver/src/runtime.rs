@@ -572,6 +572,7 @@ impl TestDriver {
                             pos_y: s.position.y,
                             vel_x: s.velocity.x,
                             vel_y: s.velocity.y,
+                            tags: Vec::new(),
                         });
                     }
                     new_last = now;
@@ -582,11 +583,14 @@ impl TestDriver {
                         st.slots
                             .route_direct(player, PlayerControlSlot::default(), "captureDone");
                     }
-                    let arr =
-                        match crate::bridge::samples_to_js_array(&buffer.samples, &mut self.ctx) {
-                            Ok(a) => JsValue::from(a),
-                            Err(_) => JsValue::undefined(),
-                        };
+                    let arr = match crate::bridge::samples_to_js_array(
+                        &buffer.samples,
+                        &[],
+                        &mut self.ctx,
+                    ) {
+                        Ok(a) => JsValue::from(a),
+                        Err(_) => JsValue::undefined(),
+                    };
                     let _ = resolve.call(&JsValue::undefined(), &[arr], &mut self.ctx);
                     WakerAction::Done
                 } else {

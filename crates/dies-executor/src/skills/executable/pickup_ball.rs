@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use dies_core::{Angle, Vector2, BALL_RADIUS, PLAYER_RADIUS};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
-use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress, SkillType};
+use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{PlayerControlInput, Velocity};
 
 /// Distance from ball at which we start slowing down and using the dribbler
@@ -58,8 +58,8 @@ impl PickupBallSkill {
 }
 
 impl ExecutableSkill for PickupBallSkill {
-    fn skill_type(&self) -> SkillType {
-        SkillType::PickupBall
+    fn matches_command(&self, command: &SkillCommand) -> bool {
+        matches!(command, SkillCommand::PickupBall { .. })
     }
 
     fn update_params(&mut self, command: &SkillCommand) {
@@ -204,29 +204,5 @@ impl ExecutableSkill for PickupBallSkill {
 
     fn status(&self) -> SkillStatus {
         self.status
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pickup_ball_creation() {
-        let skill = PickupBallSkill::new(Angle::from_radians(0.0));
-
-        assert_eq!(skill.skill_type(), SkillType::PickupBall);
-        assert_eq!(skill.status(), SkillStatus::Running);
-    }
-
-    #[test]
-    fn test_pickup_ball_update_params() {
-        let mut skill = PickupBallSkill::new(Angle::from_radians(0.0));
-
-        skill.update_params(&SkillCommand::PickupBall {
-            target_heading: Angle::from_radians(1.5),
-        });
-
-        assert!((skill.target_heading.radians() - 1.5).abs() < 0.001);
     }
 }

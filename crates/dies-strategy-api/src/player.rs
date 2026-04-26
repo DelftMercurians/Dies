@@ -11,7 +11,7 @@
 //! - **Discrete skills** (`pickup_ball`, `reflex_shoot`): Start once, return handles for monitoring
 
 use crate::skill_builders::{
-    DribbleBuilder, GoToBuilder, PickupBallParams, ReflexShootParams, SkillHandle,
+    DribbleBuilder, GoToBuilder, PickupBallParams, ReceiveParams, ReflexShootParams, SkillHandle,
 };
 use dies_core::Angle;
 use dies_strategy_protocol::{PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2};
@@ -228,8 +228,40 @@ impl PlayerHandle {
     /// }
     /// ```
     pub fn reflex_shoot(&mut self, target: Vector2) -> SkillHandle<ReflexShootParams> {
-        self.pending_command = Some(SkillCommand::ReflexShoot { target });
+        self.pending_command = Some(SkillCommand::Shoot { target });
         SkillHandle::new(ReflexShootParams { target })
+    }
+
+    /// Receive a pass by intercepting along the passing line.
+    ///
+    /// This is a **discrete skill** - start once and wait for completion.
+    /// Returns a handle for monitoring and updating parameters.
+    ///
+    /// # Parameters
+    ///
+    /// - `from_pos`: Position the ball is being passed from
+    /// - `target_pos`: Target position on the passing line where the receiver waits
+    /// - `capture_limit`: Maximum perpendicular distance the receiver moves to intercept
+    /// - `cushion`: Whether to cushion the ball on impact
+    pub fn receive(
+        &mut self,
+        from_pos: Vector2,
+        target_pos: Vector2,
+        capture_limit: f64,
+        cushion: bool,
+    ) -> SkillHandle<ReceiveParams> {
+        self.pending_command = Some(SkillCommand::Receive {
+            from_pos,
+            target_pos,
+            capture_limit,
+            cushion,
+        });
+        SkillHandle::new(ReceiveParams {
+            from_pos,
+            target_pos,
+            capture_limit,
+            cushion,
+        })
     }
 
     // ========== Control ==========
@@ -395,7 +427,7 @@ mod tests {
         assert!(cmd.is_some());
 
         match cmd.unwrap() {
-            SkillCommand::ReflexShoot { target } => {
+            SkillCommand::Shoot { target } => {
                 assert_eq!(target, Vector2::new(4500.0, 0.0));
             }
             _ => panic!("Expected ReflexShoot command"),

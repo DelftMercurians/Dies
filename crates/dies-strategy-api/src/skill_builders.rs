@@ -150,8 +150,32 @@ pub struct ReflexShootParams {
 
 impl SkillParams for ReflexShootParams {
     fn to_command(&self) -> SkillCommand {
-        SkillCommand::ReflexShoot {
+        SkillCommand::Shoot {
             target: self.target,
+        }
+    }
+}
+
+/// Parameters for `Receive` skill.
+#[derive(Clone, Debug)]
+pub struct ReceiveParams {
+    /// Position the ball is being passed from.
+    pub from_pos: Vector2,
+    /// Target position on the passing line.
+    pub target_pos: Vector2,
+    /// Maximum perpendicular distance the receiver moves to intercept.
+    pub capture_limit: f64,
+    /// Whether to cushion the ball on impact.
+    pub cushion: bool,
+}
+
+impl SkillParams for ReceiveParams {
+    fn to_command(&self) -> SkillCommand {
+        SkillCommand::Receive {
+            from_pos: self.from_pos,
+            target_pos: self.target_pos,
+            capture_limit: self.capture_limit,
+            cushion: self.cushion,
         }
     }
 }

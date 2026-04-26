@@ -12,9 +12,11 @@
 mod dribble;
 mod go_to_pos;
 mod pickup_ball;
-mod reflex_shoot;
+mod receive;
+mod shoot;
 
 pub use dribble::DribbleSkill;
 pub use go_to_pos::GoToPosSkill;
 pub use pickup_ball::PickupBallSkill;
-pub use reflex_shoot::ReflexShootSkill;
+pub use receive::ReceiveSkill;
+pub use shoot::ShootSkill;
