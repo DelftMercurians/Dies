@@ -6,8 +6,8 @@ globalThis.scenario = {
 };
 
 globalThis.run = async function run({ team, world, log }) {
-  const R1_ID = 5;
-  const R2_ID = 1;
+  const R1_ID = 0;
+  const R2_ID = 5;
   let r1 = team.robot(R1_ID);
   let r2 = team.robot(R2_ID);
 
@@ -48,9 +48,9 @@ globalThis.run = async function run({ team, world, log }) {
 
       await sleep(2000);
       [r1, r2] = [r2, r1];
+      [R1_ID, R2_ID] = [R2_ID, R1_ID];
     }
   } catch (e) {
-    log.warn(`pickupBall failed: ${e}`);
-    log.record("skill_pickup_ball", { result: "failed", error: String(e) });
+    log.warn(`${e}`);
   }
 };

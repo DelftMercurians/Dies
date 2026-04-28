@@ -48,7 +48,6 @@ impl ExecutableSkill for ReceiveSkill {
     fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
         let breakbeam = ctx.player.breakbeam_ball_detected;
         if breakbeam {
-            log::info!("ReceiveV2: Ball captured successfully");
             return SkillProgress::success();
         }
 
@@ -57,11 +56,11 @@ impl ExecutableSkill for ReceiveSkill {
 
         // Calculate angle to look at from_pos
         let look_direction = self.from_pos - current_pos;
-        let target_heading = Angle::from_vector(look_direction);
+        let target_heading = Angle::from_radians(look_direction.y.atan2(look_direction.x));
 
         // Move towards target
         //input.velocity = Velocity::Global(diff.normalize() * 100.0);
-        input.with_dribbling(0.2);
+        input.with_dribbling(0.6);
         input.with_yaw(target_heading);
 
         // Project ball onto the normal line (perpendicular to from->target line, passing through target)
@@ -82,30 +81,27 @@ impl ExecutableSkill for ReceiveSkill {
             // Calculate ball's projected position on the normal line
             let ball_projection = self.target_pos + normal * distance_along_normal;
 
-            // Claude calculation - super duper shit shit
+            // Claude calculation - maybe smart verified
             let mut target_position = ball_projection;
 
-            // let dot_product = to_ball.dot(&normal) * ball_vel.dot(&normal);
-            // log::info!("ball magnitude: {:.3}, velocity: ({:.3}, {:.3}), dot_product: {:.3}", ball.velocity.magnitude(), ball.velocity.x, ball.velocity.y, dot_product);
-            // // If ball has significant velocity and is moving towards the line, predict intersection
-            // if ball_vel.magnitude() > 1500.0 && dot_product < 0.0 {
-            //     // Ball is moving away from line (towards it) - predict where it will intersect
-            //     let line_direction = line_vec.normalize();
-            //     let denominator = ball_vel.dot(&line_direction);
+            let dot_product = to_ball.dot(&normal) * ball_vel.dot(&normal);
+            // Ball is moving away from line (towards it) - predict where it will intersect
+            let line_direction = line_vec.normalize();
+            let denominator = ball_vel.dot(&line_direction);
 
-            //     if denominator.abs() > 1e-6 {
-            //         let t = -to_ball.dot(&line_direction) / denominator;
+            if denominator.abs() > 1e-6 {
+                let t = -to_ball.dot(&line_direction) / denominator;
 
-            //         if t > 0.0 && t < 10.0 {
-            //             let future_ball_pos = ball_pos + ball_vel * t;
-            //             let to_future = future_ball_pos - self.target_pos;
-            //             let intercept_distance = to_future.dot(&normal).clamp(-self.capture_limit, self.capture_limit);
-            //             target_position = self.target_pos + normal * intercept_distance;
-            //         }
-            //     }
-            // }
+                if t > 0.0 && t < 10.0 {
+                    let future_ball_pos = ball_pos + ball_vel * t;
+                    let to_future = future_ball_pos - self.target_pos;
+                    let intercept_distance = to_future
+                        .dot(&normal)
+                        .clamp(-self.capture_limit, self.capture_limit);
+                    target_position = self.target_pos + normal * intercept_distance;
+                }
+            }
 
-            input.aggressiveness = 2.0;
             input.with_position(target_position);
             // }
         }

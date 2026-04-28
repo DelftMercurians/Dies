@@ -97,8 +97,7 @@ impl ExecutableSkill for PickupBallSkill {
         input.with_dribbling(DRIBBLER_SPEED);
         input.with_yaw(ball_angle);
 
-        let has_ball =
-            ctx.player.breakbeam_ball_detected || (distance - PLAYER_RADIUS - BALL_RADIUS) < -2.0;
+        let has_ball = (distance - PLAYER_RADIUS - BALL_RADIUS) < -2.0;
 
         // Check if breakbeam has been triggered
         if has_ball {
