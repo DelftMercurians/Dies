@@ -3,6 +3,12 @@ use dies_core::{Angle, Vector2};
 use crate::{control::Velocity, PlayerControlInput};
 use super::{SkillCtx, SkillProgress};
 
+
+const TARGET_DEADZONE: f64 = 100.0;
+const DAMPING_TRIGGER_DISTANCE: f64 = 500.0; // Distance at which damping starts
+const DAMPING_MIN_SPEED: f64 = 500.0; // Minimum ball speed to trigger damping (mm/s)
+const DAMPING_COEFFICIENT: f64 = 0.2; // How much to dampen (0.0-1.0): lower = more damping
+
 #[derive(Clone)]
 // A skill that receives the ball by moving left or right to the target position and capturing the ball
 // with capture_limit being the distance from the target position
@@ -12,6 +18,7 @@ pub struct RecieveV2 {
     target_pos: Vector2,
     capture_limit: f64,
     cushion: bool,
+    damping_active: bool,
 }
 
 impl RecieveV2 {
@@ -21,6 +28,7 @@ impl RecieveV2 {
             target_pos,
             capture_limit,
             cushion,
+            damping_active: false,
         }
     }
     
@@ -63,11 +71,9 @@ impl RecieveV2 {
             // Calculate ball's projected position on the normal line
             let ball_projection = self.target_pos + normal * distance_along_normal;
             
-            // Claude calculation - maybe smart verified
+            // Claude calculation - smart verified
             let mut target_position = ball_projection;
             
-            
-            let dot_product = to_ball.dot(&normal) * ball_vel.dot(&normal);
             // Ball is moving away from line (towards it) - predict where it will intersect
             let line_direction = line_vec.normalize();
             let denominator = ball_vel.dot(&line_direction);
@@ -82,9 +88,48 @@ impl RecieveV2 {
                     target_position = self.target_pos + normal * intercept_distance;
                 }
             }
+
+            // Check damping conditions
+            let dist_to_ball = (ball_pos - current_pos).norm();
+            let ball_speed = ball_vel.norm();
+            let should_damping_continue = dist_to_ball < DAMPING_TRIGGER_DISTANCE && ball_speed > DAMPING_MIN_SPEED;
+            
+            if self.cushion && should_damping_continue {
+                // Direction from robot to ball
+                let to_ball_dir = (ball_pos - current_pos).normalize();
+                
+                // How much of the ball velocity is directed toward us
+                let approach_velocity = -ball_vel.dot(&to_ball_dir); // Negative means approaching
+                
+                if approach_velocity > 0.0 {
+                    // Ball is approaching! Activate damping
+                    self.damping_active = true;
+                    
+                    // Calculate damping velocity
+                    let damping_velocity = approach_velocity * DAMPING_COEFFICIENT;
+                    let damping_direction = -to_ball_dir; // Move away from ball
+                    let damping_vector = damping_direction * damping_velocity;
+                    
+                    log::info!("ReceiveV2: Ball damping active - dist: {:.1}mm, approach_vel: {:.1}mm/s, damping_vel: {:.1}mm/s", 
+                        dist_to_ball, approach_velocity, damping_velocity);
+                    
+                    input.velocity = Velocity::Global(damping_vector);
+                } else {
+                    // Ball no longer approaching
+                    self.damping_active = false;
+                }
+            } else {
+                // Damping conditions no longer met
+                self.damping_active = false;
+            }
+
+            let dist_to_target = (target_position - current_pos).norm();
+            if dist_to_target < TARGET_DEADZONE || self.damping_active {
+                log::info!("ReceiveV2: Within deadzone, waiting for ball to come in");
+                return SkillProgress::Continue(input);
+            }
             
             input.with_position(target_position);
-            // }
         }
 
         SkillProgress::Continue(input)
