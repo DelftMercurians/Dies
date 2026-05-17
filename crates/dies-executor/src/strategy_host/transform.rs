@@ -145,9 +145,11 @@ impl CoordinateTransformer {
             SkillCommand::Dribble {
                 target_pos,
                 target_heading,
+                with_ball,
             } => SkillCommand::Dribble {
                 target_pos: self.strategy_to_world(*target_pos),
                 target_heading: self.angle_strategy_to_world(*target_heading),
+                with_ball: *with_ball,
             },
             SkillCommand::PickupBall { target_heading } => SkillCommand::PickupBall {
                 target_heading: self.angle_strategy_to_world(*target_heading),

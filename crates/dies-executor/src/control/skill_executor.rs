@@ -257,7 +257,8 @@ fn create_skill_from_command(cmd: &SkillCommand) -> Box<dyn ExecutableSkill> {
         SkillCommand::Dribble {
             target_pos,
             target_heading,
-        } => Box::new(DribbleSkill::new(*target_pos, *target_heading)),
+            with_ball,
+        } => Box::new(DribbleSkill::new(*target_pos, *target_heading, *with_ball)),
         SkillCommand::PickupBall { target_heading } => {
             Box::new(PickupBallSkill::new(*target_heading))
         }

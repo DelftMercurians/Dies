@@ -53,6 +53,7 @@ pub enum SkillCommand {
     /// **Parameters**:
     /// - `target_pos`: Target position in mm
     /// - `target_heading`: Heading to maintain while dribbling
+    /// - `with_ball`: If true, dribble normally. If false, rotate around ball.
     ///
     /// **Behavior**:
     /// - Dribbler is activated
@@ -64,6 +65,7 @@ pub enum SkillCommand {
     Dribble {
         target_pos: Vector2,
         target_heading: Angle,
+        with_ball: bool,
     },
 
     /// Approach and capture the ball.

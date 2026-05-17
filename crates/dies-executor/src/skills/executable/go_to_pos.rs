@@ -18,6 +18,7 @@ pub struct GoToPosSkill {
     target_heading: Option<Angle>,
     pos_tolerance: f64,
     vel_tolerance: f64,
+    avoid_ball: bool,
     status: SkillStatus,
 }
 
@@ -29,6 +30,7 @@ impl GoToPosSkill {
             target_heading,
             pos_tolerance: DEFAULT_POS_TOLERANCE,
             vel_tolerance: DEFAULT_VEL_TOLERANCE,
+            avoid_ball: false,
             status: SkillStatus::Running,
         }
     }
@@ -42,6 +44,11 @@ impl GoToPosSkill {
     /// Set the velocity tolerance.
     pub fn with_vel_tolerance(mut self, tolerance: f64) -> Self {
         self.vel_tolerance = tolerance;
+        self
+    }
+
+    pub fn avoid_ball(mut self) -> Self {
+        self.avoid_ball = true;
         self
     }
 }
@@ -82,6 +89,12 @@ impl ExecutableSkill for GoToPosSkill {
 
         if let Some(heading) = self.target_heading {
             input.with_yaw(heading);
+        }
+
+        if ctx.world.ball.as_ref().is_some() {
+            if self.avoid_ball {
+                input.avoid_ball = true;
+            }
         }
 
         SkillProgress::Continue(input)

@@ -97,10 +97,12 @@ impl ExecutableSkill for PickupBallSkill {
         input.with_dribbling(DRIBBLER_SPEED);
         input.with_yaw(ball_angle);
 
-        let has_ball = (distance - PLAYER_RADIUS - BALL_RADIUS) < -2.0;
+        let has_ball = (distance - PLAYER_RADIUS - BALL_RADIUS) < -2.0; // -2.0 twente testing
+        let breakbeam_triggered = ctx.player.breakbeam_ball_detected;
+        //log::info!("PickupBall: distance to ball: {:.1}, has_ball: {}, breakbeam: {}", (distance - PLAYER_RADIUS - BALL_RADIUS), has_ball, breakbeam_triggered);
 
         // Check if breakbeam has been triggered
-        if has_ball {
+        if has_ball || breakbeam_triggered {
             self.skill_status = SkillStatus::Succeeded;
             return SkillProgress::success();
         }
