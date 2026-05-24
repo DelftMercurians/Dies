@@ -13,72 +13,11 @@
 //! the global-frame dynamics nonlinear in `(x, u)` only through the heading
 //! input. We integrate with forward Euler at the MPC stage `dt`.
 
-use crate::types::{Control, ControlJac, Mat2, RobotParams, State, StateJac, Vec2, FWD, STRAFE};
-
-/// Continuous-time state derivative and its Jacobians, evaluated at `(x, u, θ)`.
-///
-/// Returns `(ẋ, ∂ẋ/∂x, ∂ẋ/∂u)`.
-fn continuous(
-    x: &State,
-    u: &Control,
-    heading: f64,
-    p: &RobotParams,
-) -> (State, StateJac, ControlJac) {
-    let v_global = Vec2::new(x[2], x[3]);
-    let (c, s) = (heading.cos(), heading.sin());
-    let r = Mat2::new(c, -s, s, c);
-    let rt = r.transpose();
-
-    let v_body = rt * v_global;
-    let cmd_body = rt * u;
-
-    let mut a_body = Vec2::zeros();
-    let mut da_dv_body = Mat2::zeros();
-    let mut da_du_body = Mat2::zeros();
-
-    for axis in [FWD, STRAFE] {
-        let inv_tau = 1.0 / p.tau[axis];
-        let a_max = p.accel_max[axis];
-        let raw = (cmd_body[axis] - v_body[axis]) * inv_tau;
-        // Smooth saturation: a = a_max · tanh(raw / a_max). Linear near zero
-        // (a ≈ raw), asymptotes to ±a_max far from steady state.
-        let t = (raw / a_max).tanh();
-        // sech²(x) = 1 − tanh²(x); chain rule through raw.
-        let sech2 = 1.0 - t * t;
-        a_body[axis] = a_max * t;
-        da_dv_body[(axis, axis)] = -inv_tau * sech2;
-        da_du_body[(axis, axis)] = inv_tau * sech2;
-    }
-
-    let a_global = r * a_body;
-    let da_dv_global = r * da_dv_body * rt;
-    let da_du_global = r * da_du_body * rt;
-
-    let f = State::new(v_global.x, v_global.y, a_global.x, a_global.y);
-
-    let mut fx = StateJac::zeros();
-    fx[(0, 2)] = 1.0;
-    fx[(1, 3)] = 1.0;
-    for i in 0..2 {
-        for j in 0..2 {
-            fx[(2 + i, 2 + j)] = da_dv_global[(i, j)];
-        }
-    }
-
-    let mut fu = ControlJac::zeros();
-    for i in 0..2 {
-        for j in 0..2 {
-            fu[(2 + i, j)] = da_du_global[(i, j)];
-        }
-    }
-
-    (f, fx, fu)
-}
+use crate::types::{Control, ControlJac, RobotParams, State, StateJac};
 
 /// One forward-Euler dynamics step.
 pub fn step(x: &State, u: &Control, heading: f64, dt: f64, p: &RobotParams) -> State {
-    let (f, _, _) = continuous(x, u, heading, p);
-    x + f * dt
+    crate::generated::dynamics::step(x, u, heading, dt, p)
 }
 
 /// One Euler step together with analytic discrete-time Jacobians
@@ -90,16 +29,13 @@ pub fn step_with_jacobians(
     dt: f64,
     p: &RobotParams,
 ) -> (State, StateJac, ControlJac) {
-    let (f, fx_c, fu_c) = continuous(x, u, heading, p);
-    let fx = StateJac::identity() + fx_c * dt;
-    let fu = fu_c * dt;
-    (x + f * dt, fx, fu)
+    crate::generated::dynamics::step_with_jacobians(x, u, heading, dt, p)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::RobotState;
+    use crate::types::{RobotState, FWD};
     use approx::assert_abs_diff_eq;
 
     fn params() -> RobotParams {

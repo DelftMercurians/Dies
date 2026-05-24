@@ -13,6 +13,7 @@ serde = { version = "1", features = ["derive"] }
 approx = "0.5.1"
 rand = "0.8"
 rand_distr = "0.4"
+serde_json = "1"
 
 [lints]
 workspace = true

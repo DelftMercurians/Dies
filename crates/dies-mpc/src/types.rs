@@ -69,10 +69,6 @@ pub struct CostWeights {
     pub control: f64,
     /// Stage `||u − u_prev||²`. Damps high-frequency control oscillation.
     pub control_smoothness: f64,
-    /// Terminal `||pos_N − target_p||²`.
-    pub terminal_position: f64,
-    /// Terminal `||vel_N − target_v||²`. Encourages stopping at the target.
-    pub terminal_velocity: f64,
 }
 
 impl Default for CostWeights {
@@ -84,8 +80,6 @@ impl Default for CostWeights {
             // velocity: 5.0e-4,
             control: 5.0e-5,
             control_smoothness: 1.0e-4,
-            terminal_position: 5.0e-2,
-            terminal_velocity: 5.0e-2,
         }
     }
 }

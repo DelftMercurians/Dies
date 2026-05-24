@@ -1,3 +1,14 @@
+- [ ] Clean up and streamline settings system. Make settings declarative in Rust with generated UI
+  - [ ] Controller Settings
+  - [ ] Tracker Settings
+  - [ ] Skills Settings
+  - [ ] Strategy Settings
+  - [ ] No more sliders
+
+- [ ] Simplify logging format, make it easier to parse and visualize logs.
+  - [ ] No more protobuf
+  - [ ] Need to come up with a way to make massive debug tree data
+
 UI
 
 - [ ] Add keyboard shorcuts to UI
@@ -8,6 +19,7 @@ UI
 
 iLQR
 
+- [ ] Change cost function to not use terminal position cost
 - [ ] Obstacle avoidance
 - [ ] Visualize cost function and dynamics, look at parameters
 - [ ] Come up with tuning procedure

@@ -11,11 +11,10 @@
 
 use nalgebra::{Matrix2, Matrix2x4, Matrix4, Vector2, Vector4};
 
-use crate::cost::{stage_cost_scalar, stage_derivs, terminal_cost_scalar, terminal_derivs};
+use crate::cost::{stage_cost_scalar, stage_derivs};
 use crate::dynamics::{step, step_with_jacobians};
 use crate::types::{
-    Control, MpcTarget, RobotParams, RobotState, SolveResult, SolverConfig, State, Trajectory,
-    Vec2,
+    Control, MpcTarget, RobotParams, RobotState, SolveResult, SolverConfig, State, Trajectory, Vec2,
 };
 
 /// Forward rollout of a control sequence, returning the trajectory and total cost.
@@ -41,7 +40,6 @@ fn rollout(
         states.push(x_next);
         u_prev = u_k;
     }
-    cost += terminal_cost_scalar(&states[n], target);
     (states, cost)
 }
 
@@ -63,9 +61,8 @@ fn backward_pass(
     reg: f64,
 ) -> Option<Backward> {
     let n = controls.len();
-    let term = terminal_derivs(&states[n], target);
-    let mut v_x = term.lx;
-    let mut v_xx = term.lxx;
+    let mut v_x = Vector4::<f64>::zeros();
+    let mut v_xx = Matrix4::<f64>::zeros();
 
     let mut k_fb = vec![Vector2::<f64>::zeros(); n];
     let mut kk_fb = vec![Matrix2x4::<f64>::zeros(); n];
@@ -146,7 +143,6 @@ fn forward_pass(
         new_states.push(x_next);
         u_prev = u_new;
     }
-    cost += terminal_cost_scalar(&new_states[n], target);
     (new_states, new_controls, cost)
 }
 

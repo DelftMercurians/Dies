@@ -1,9 +1,9 @@
 # dies-mpc
 
 Pure-Rust model-predictive controller for translational motion of the Delft
-Mercurians SSL robots. No Python, no external optimiser, no automatic
-differentiation — everything is hand-rolled on top of small dense `nalgebra`
-matrices so it's fully auditable and fast.
+Mercurians SSL robots. The runtime has no Python dependency: dynamics and
+cost derivative code is generated offline with SymPy, checked in as Rust, and
+called through small `nalgebra` wrappers.
 
 This document explains what the crate does, the math behind it, and — most
 importantly — **how to extend the cost function** when a new skill needs a
@@ -60,13 +60,29 @@ Three things are decoupled from the core math and live at the boundary:
 | File | Purpose |
 |---|---|
 | `types.rs` | All public data types. No behaviour. |
-| `dynamics.rs` | 4-state / 2-input dynamics `f(x, u, heading)` + analytic Jacobians. |
+| `dynamics.rs` | Public wrapper for 4-state / 2-input dynamics `f(x, u, heading)` + analytic Jacobians. |
+| `generated/dynamics.rs` | Generated scalar dynamics and Jacobian implementation. Do not edit manually. |
 | `barrier.rs` | Smooth soft-barrier function + signed distances for Circle / Rectangle / Line. |
-| `cost.rs` | Stage and terminal cost, residual-by-residual with Gauss-Newton Hessian. |
+| `cost.rs` | Public wrapper for stage cost derivatives. |
+| `generated/cost.rs` | Generated scalar cost, gradient, and Hessian implementation. Do not edit manually. |
 | `solver.rs` | iLQR backward/forward passes, regularisation, multi-start wrapper. |
 | `sysid.rs` | Levenberg-Marquardt fit of the 7 dynamics parameters. |
 | `lib.rs` | Thin re-export shell. |
 | `examples/goto_target.rs` | Sanity-check binary that dumps a trajectory as TSV. |
+
+### 1.3 Regenerating derivatives
+
+The symbolic source of truth lives in `codegen/generate.py`. Generated Rust
+files are committed so normal Rust builds do not need Python or SymPy.
+
+```bash
+uv run --project crates/dies-mpc/codegen python crates/dies-mpc/codegen/generate.py
+uv run --project crates/dies-mpc/codegen python crates/dies-mpc/codegen/generate.py --check
+```
+
+Generated files are marked with `@generated` and `DO NOT EDIT`. Manual edits
+belong in the wrapper modules (`cost.rs`, `dynamics.rs`) or the Python symbolic
+definition, not under `src/generated/`.
 
 ---
 
@@ -152,15 +168,11 @@ Stage cost `ℓ(x_k, u_k, u_{k-1}, k)` is the sum of:
 | Obstacle barrier | `b(d(p_k, obs))` per obstacle | `weights.obstacle · care · obs.weight_scale` |
 | Field boundary | 4× `b(d_plane)` half-plane | `weights.field_boundary · care` |
 
-Terminal cost `ℓ_N(x_N)` dispatches on `TerminalMode`:
-
-| Mode | Residual |
-|---|---|
-| `Position { p }` | `p_N − p` (2-D) |
-| `PositionAndVelocity { p, v }` | `[p_N − p; v_N − v]` (4-D) |
-| `RelativeVelocity { target_p, target_v }` | `[p_N − target_p; v_N − target_v]` (4-D) |
-
-All scaled by `weights.terminal`.
+There is no terminal cost — `V` is initialised to zero at stage `N` and
+the backward pass relies entirely on the stage cost. Targets shift
+faster than the horizon resolves (we replan every tick, horizon ≫
+replan interval), so a fixed terminal target adds bias without adding
+useful curvature.
 
 ---
 
@@ -179,11 +191,11 @@ Each iteration:
 
 ### 3.1 Backward pass (in `solver.rs::backward_pass`)
 
-Starting at the terminal stage:
+Starting at the terminal stage with no terminal cost:
 
 ```text
-V_x  = ℓ_N,x   (gradient of terminal cost)
-V_xx = ℓ_N,xx  (Gauss-Newton Hessian)
+V_x  = 0
+V_xx = 0
 ```
 
 Walking back through stages `k = N-1 .. 0`, define the stage Q-function:
@@ -299,17 +311,11 @@ Multiple residuals from different cost terms just stack.
 residual and its two gradients (w.r.t. `x` and `u`). You never write a
 Hessian by hand — the Gauss-Newton outer-product handles that.
 
-### 4.2 Stage vs terminal
+### 4.2 Stage cost only
 
-- **Stage cost** acts at every `k ∈ [0, N-1]` with access to the state,
-  control, previous control, and stage index. Added to `StageDerivs`.
-- **Terminal cost** acts only at `k = N` with access to just the state.
-  Added to `TerminalDerivs` (no `lu`, `luu`, `lux`).
-
-Use stage cost for anything you want enforced *throughout* the trajectory
-(e.g. "stay away from this obstacle"). Use terminal cost for anything
-that matters specifically *at the end of the horizon* (e.g. "be at this
-point moving at this velocity").
+Stage cost acts at every `k ∈ [0, N-1]` with access to the state,
+control, and previous control. Added to `StageDerivs`. There is no
+terminal cost; `V` is initialised to zero at stage `N`.
 
 ### 4.3 Reference trajectory
 
