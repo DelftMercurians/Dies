@@ -65,6 +65,7 @@ pub enum SimulatorCmd {
 pub enum GcSimCommand {
     Stop,
     Halt,
+    Timeout,
     NormalStart,
     ForceStart,
     KickOff {

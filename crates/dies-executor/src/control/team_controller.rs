@@ -484,6 +484,58 @@ fn role_type_from_name(role_name: &str) -> RoleType {
     }
 }
 
+/// Calculate triangle formation positions for a given number of robots.
+/// Robots form a right-pointing triangle (play button shape).
+fn calculate_triangle_positions(num_robots: usize, center_x: f64, center_y: f64, spacing: f64) -> Vec<(f64, f64)> {
+    match num_robots {
+        1 => vec![
+            (center_x, center_y), // Center
+        ],
+        2 => vec![
+            (center_x - spacing, center_y),            // Upper right
+            (center_x, center_y),                      // Lower right
+        ],
+        3 => vec![
+            (center_x - spacing * 0.4, center_y + spacing*0.55),    // Left point
+            (center_x + spacing * 0.4, center_y),                   // Upper right
+            (center_x - spacing * 0.4, center_y - spacing*0.55),    // Lower right
+        ],
+        4 => vec![
+            (center_x - spacing * 0.8, center_y + spacing), // Upper middle
+            (center_x, center_y),                           // Middle
+            (center_x - spacing * 0.8, center_y - spacing), // Bottom middle
+            (center_x + spacing * 0.8, center_y),           // Left peak
+        ],
+        5 => vec![
+            (center_x - spacing * 0.8, center_y + spacing), // Upper middle
+            (center_x, center_y + spacing * 0.5),           // Middle top
+            (center_x - spacing * 0.8, center_y - spacing), // Bottom middle
+            (center_x, center_y - spacing * 0.5),           // Middle bottom
+            (center_x + spacing * 0.8, center_y),           // Left peak
+        ],
+        6 => vec![
+            (center_x - spacing * 0.8, center_y),           // Right middle
+            (center_x - spacing * 0.8, center_y + spacing), // Upper middle
+            (center_x, center_y + spacing * 0.5),           // Middle top
+            (center_x - spacing * 0.8, center_y - spacing), // Bottom middle
+            (center_x, center_y - spacing * 0.5),           // Middle bottom
+            (center_x + spacing * 0.8, center_y),           // Left peak
+        ],
+        _ => {
+            // Default: distribute robots evenly in a triangle
+            let mut positions = Vec::new();
+            for i in 0..num_robots {
+                let row = (i as f64).sqrt() as usize;
+                let col = i % (row + 1);
+                let x = center_x + (col as f64 - row as f64 / 2.0) * spacing * 0.4;
+                let y = center_y - row as f64 * spacing * 0.5;
+                positions.push((x, y));
+            }
+            positions
+        }
+    }
+}
+
 fn comply(
     world_data: &TeamData,
     inputs: PlayerInputs,
@@ -507,10 +559,27 @@ fn comply(
 
                 if matches!(
                     game_state,
-                    GameState::Halt | GameState::Unknown | GameState::Timeout
+                    GameState::Halt | GameState::Unknown
                 ) {
                     new_input.with_speed_limit(0.0);
                     new_input.with_angular_speed_limit(0.0);
+                    new_input.dribbling_speed = 0.0;
+                }
+
+                if matches!(game_state, GameState::Timeout) {
+                    // Go into a triangle formation like the scenario
+                    let center_x = -2000.0;
+                    let center_y = 0.0;
+                    let spacing = 800.0;
+                    let num_robots = world_data.own_players.len();
+                    
+                    let triangle_positions = calculate_triangle_positions(num_robots, center_x, center_y, spacing);
+                    
+                    if let Some((x, y)) = triangle_positions.get(player_data.id.as_u32() as usize) {
+                        new_input.with_position(Vector2::new(*x, *y));
+                        new_input.with_yaw(Angle::from_degrees(0.0));
+                    }
+                    new_input.with_speed_limit(1000.0);
                     new_input.dribbling_speed = 0.0;
                 }
 
