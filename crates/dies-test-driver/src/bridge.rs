@@ -1240,9 +1240,15 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                 let tx = get_num(&target_val, "x", ctx)?;
                 let ty = get_num(&target_val, "y", ctx)?;
                 let heading = get_num(&opts, "heading", ctx)?;
+                let with_ball = if let Some(val) = get_obj_opt(&opts, "withBall", ctx)? {
+                    val.to_boolean()
+                } else {
+                    false
+                };
                 let cmd = SkillCommand::Dribble {
                     target_pos: Vector2::new(tx, ty),
                     target_heading: Angle::from_radians(heading),
+                    with_ball,
                 };
                 register_skill_and_await(state.clone(), id, cmd, "dribble", ctx)
             })
@@ -1283,12 +1289,17 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                 let ty = get_num(&target_val, "y", ctx)?;
 
                 let capture_limit = get_num_opt(&opts, "captureLimit", ctx)?.unwrap_or(5.0);
+                let cushion = if let Some(val) = get_obj_opt(&opts, "cushion", ctx)? {
+                    val.to_boolean()
+                } else {
+                    false
+                };
 
                 let cmd = SkillCommand::Receive {
                     from_pos: Vector2::new(fx, fy),
                     target_pos: Vector2::new(tx, ty),
                     capture_limit: capture_limit,
-                    cushion: false,
+                    cushion,
                 };
                 register_skill_and_await(state.clone(), id, cmd, "receive", ctx)
             })

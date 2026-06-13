@@ -82,6 +82,7 @@ pub struct DribbleBuilder<'a> {
     player: &'a mut PlayerHandle,
     target_pos: Vector2,
     target_heading: Angle,
+    with_ball: bool,
 }
 
 impl<'a> DribbleBuilder<'a> {
@@ -95,6 +96,7 @@ impl<'a> DribbleBuilder<'a> {
             player,
             target_pos,
             target_heading,
+            with_ball: false,
         }
     }
 
@@ -109,6 +111,12 @@ impl<'a> DribbleBuilder<'a> {
         self.target_heading = heading;
         self
     }
+
+    /// Set whether to dribble with ball or rotate around ball first.
+    pub fn with_ball(mut self, with_ball: bool) -> Self {
+        self.with_ball = with_ball;
+        self
+    }
 }
 
 impl Drop for DribbleBuilder<'_> {
@@ -116,6 +124,7 @@ impl Drop for DribbleBuilder<'_> {
         self.player.set_pending_command(SkillCommand::Dribble {
             target_pos: self.target_pos,
             target_heading: self.target_heading,
+            with_ball: self.with_ball,
         });
     }
 }

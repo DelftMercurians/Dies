@@ -41,12 +41,12 @@ pub struct DribbleSkill {
 }
 
 impl DribbleSkill {
-    pub fn new(target_pos: Vector2, target_heading: Angle) -> Self {
+    pub fn new(target_pos: Vector2, target_heading: Angle, with_ball: bool) -> Self {
         Self {
             status: SkillStatus::Running,
             target_pos,
             target_heading,
-            with_ball: true,
+            with_ball,
             last_acceleration: 0.0,
             last_angular_acceleration: 0.0,
         }
@@ -62,10 +62,12 @@ impl ExecutableSkill for DribbleSkill {
         if let SkillCommand::Dribble {
             target_pos,
             target_heading,
+            with_ball,
         } = command
         {
             self.target_pos = *target_pos;
             self.target_heading = *target_heading;
+            self.with_ball = *with_ball;
         }
     }
 
@@ -87,7 +89,7 @@ impl ExecutableSkill for DribbleSkill {
         //First rotates to face target position then moves
         let heading_err =
             Angle::from_degrees(ctx.player.yaw.degrees() - self.target_heading.degrees());
-        if (self.with_ball == false && heading_err.degrees().abs() > DEFAULT_YAW_TOLERANCE) {
+        if self.with_ball == false && heading_err.degrees().abs() > DEFAULT_YAW_TOLERANCE {
             // Velocity 90 degrees to the left or right of current heading
             let direction = if heading_err.radians() > 0.0 {
                 Vector2::new(0.0, 1.0) // Rotate to the left
@@ -112,13 +114,11 @@ impl ExecutableSkill for DribbleSkill {
         input.with_angular_speed_limit(MAX_ANGULAR_SPEED);
         // input.with_angular_acceleration_limit(ANGULAR_ACCELERATION_LIMIT);
 
-        //TODO: implement rotating around ball when with_ball = false
-
         //        log::info!("to_target magnitude: {:.2}", to_target.magnitude());
         if to_target.magnitude() < DEFAULT_POS_TOLERANCE
             && heading_err.degrees().abs() < DEFAULT_YAW_TOLERANCE
         {
-            log::info!("Dribble: At the target position with correct heading.");
+            //log::info!("Dribble: At the target position with correct heading.");
             self.status = SkillStatus::Succeeded;
             return SkillProgress::success();
         }
