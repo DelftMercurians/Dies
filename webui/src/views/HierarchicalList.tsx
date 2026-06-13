@@ -3,7 +3,7 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible";
-import { cn, prettyPrintSnakeCases } from "@/lib/utils";
+import { cn, formatDebugString, formatNumber, prettyPrintSnakeCases } from "@/lib/utils";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { FC, useState, useMemo } from "react";
 
@@ -39,11 +39,15 @@ const HierarchicalList: FC<HierarchicalListProps> = ({
 
   const formatValue = (value: any): string => {
     if (typeof value === "number") {
-      return value.toFixed(2);
+      return formatNumber(value);
     }
     if (typeof value === "object") {
       if (Array.isArray(value) && value.every((v) => typeof v === "number")) {
-        return `[${value.map((v: number) => v.toFixed(2)).join(", ")}]`;
+        // 2-number arrays are treated as mm positions/vectors -> whole numbers.
+        const isPosition = value.length === 2;
+        return `[${value
+          .map((v: number) => formatNumber(v, isPosition))
+          .join(", ")}]`;
       }
       if (value === null) {
         return "null";
@@ -62,7 +66,7 @@ const HierarchicalList: FC<HierarchicalListProps> = ({
         .join(", ")}}`;
     }
     if (typeof value === "string") {
-      return value;
+      return formatDebugString(value);
     }
     return JSON.stringify(value);
   };
@@ -81,7 +85,10 @@ const HierarchicalList: FC<HierarchicalListProps> = ({
             {prettyPrintSnakeCases(key)}:
           </div>
           <div className="w-full flex items-center overflow-x-auto">
-            <span className="min-w-max font-mono whitespace-nowrap">
+            <span
+              className="min-w-max font-mono whitespace-nowrap"
+              title={rawTitle(group.data)}
+            >
               {formatValue(group.data)}
             </span>
           </div>
@@ -134,6 +141,18 @@ const HierarchicalList: FC<HierarchicalListProps> = ({
 };
 
 export default HierarchicalList;
+
+/** Full-precision representation of a leaf value, shown on hover. */
+const rawTitle = (value: any): string => {
+  if (typeof value === "number") return String(value);
+  if (Array.isArray(value)) return `[${value.join(", ")}]`;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
 
 const sortKeys = (group: Record<string, any>): [string, any][] => {
   return Object.entries(group).sort(([keyA, valueA], [keyB, valueB]) => {

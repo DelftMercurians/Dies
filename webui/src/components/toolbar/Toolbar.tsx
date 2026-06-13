@@ -9,6 +9,7 @@ import TeamIndicator from "./TeamIndicator";
 import StatusCluster from "./StatusCluster";
 import LayoutSelector from "./LayoutSelector";
 import AddPanelMenu from "./AddPanelMenu";
+import ShortcutIndicator from "./ShortcutIndicator";
 import logo from "@/assets/mercury-logo.svg";
 
 /**
@@ -60,6 +61,9 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Keyboard shortcut indicator + cheat sheet */}
+      <ShortcutIndicator />
 
       {/* Add Panel Menu */}
       {getDockviewApi && <AddPanelMenu getApi={getDockviewApi} />}

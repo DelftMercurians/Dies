@@ -49,6 +49,18 @@ import { atom, getDefaultStore, useAtom } from "jotai";
 
 export const selectedPlayerIdAtom = atom<number | null>(null);
 
+/** Keyboard-driving toggle (lifted so global shortcuts can toggle it). */
+export const keyboardControlAtom = atom<boolean>(false);
+/** Keyboard-driving frame: global vs local. */
+export const keyboardModeAtom = atom<"local" | "global">("global");
+
+/** Transient feedback for the last triggered shortcut/command (toolbar flash). */
+export interface ShortcutFeedback {
+  label: string;
+  ts: number;
+}
+export const lastShortcutAtom = atom<ShortcutFeedback | null>(null);
+
 export type Status =
   | { status: "loading" }
   | { status: "connected"; data: UiStatus }
@@ -145,7 +157,7 @@ export const useBasestationInfo = () =>
   useQuery({
     queryKey: ["basestation"],
     queryFn: getBasestationInfo,
-    refetchInterval: 1000,
+    refetchInterval: 250,
   });
 
 // Helper function to extract player ID from TeamPlayerId

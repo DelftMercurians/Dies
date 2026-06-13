@@ -9,6 +9,7 @@ import {
 } from "./api";
 import { Button } from "./components/ui/button";
 import { useRobotCountAlerts } from "./lib/utils";
+import { useGlobalShortcuts } from "./lib/useGlobalShortcuts";
 import { Toolbar } from "./components/toolbar";
 import { openOrFocusPanel } from "./components/toolbar/AddPanelMenu";
 import DockviewWrapper, {
@@ -46,22 +47,11 @@ const App: React.FC = () => {
       title: "GAME CTRL",
     });
 
-    // Add Team Overview as a tab in the same group as Game Controller
-    api.addPanel({
-      id: PANEL_IDS.TEAM_OVERVIEW,
-      component: PANEL_IDS.TEAM_OVERVIEW,
-      title: "TEAM",
-      position: {
-        referencePanel: PANEL_IDS.GAME_CONTROLLER,
-        direction: "within",
-      },
-    });
-
-    // Add Debug Layers as a tab in the same group
+    // Add Debug panel as a tab in the same group
     api.addPanel({
       id: PANEL_IDS.DEBUG_LAYERS,
       component: PANEL_IDS.DEBUG_LAYERS,
-      title: "LAYERS",
+      title: "DEBUG",
       position: {
         referencePanel: PANEL_IDS.GAME_CONTROLLER,
         direction: "within",
@@ -105,7 +95,7 @@ const App: React.FC = () => {
     api.addPanel({
       id: PANEL_IDS.PLAYER_INSPECTOR,
       component: PANEL_IDS.PLAYER_INSPECTOR,
-      title: "PLAYER",
+      title: "INSPECTOR",
       position: {
         referencePanel: PANEL_IDS.FIELD,
         direction: "right",
@@ -133,6 +123,11 @@ const App: React.FC = () => {
     () => dockviewRef.current?.api ?? null,
     []
   );
+
+  // Global keyboard shortcuts (robot switch, manual/keyboard toggles, panel
+  // focus, kill executor, …). Shares the command registry with the toolbar
+  // cheat sheet and the upcoming command palette.
+  useGlobalShortcuts(getDockviewApi);
 
   const handleOpenSettings = useCallback(() => {
     const api = dockviewRef.current?.api;

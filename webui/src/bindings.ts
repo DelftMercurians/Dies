@@ -70,6 +70,84 @@ export interface AutorefKickedBallTeam {
 	we_kicked: boolean;
 }
 
+/**
+ * Tuning for the two-layer collision-avoidance stack (global planner + ORCA)
+ * and the shared obstacle model they both read.
+ * 
+ * All distances are millimetres, times are seconds. A single `AvoidanceConfig`
+ * is shared across the whole team and applied live from settings updates.
+ */
+export interface AvoidanceConfig {
+	/** Extra clearance added on top of the two-robot contact distance [mm]. */
+	robot_clearance: number;
+	/** Inset of the robot centre from the physical field walls [mm]. */
+	wall_margin: number;
+	/** Keep-out margin grown around each defense area [mm]. */
+	defense_margin: number;
+	/** Ball keep-out radius during `Stop` [mm] (rule: stay 500 mm clear). */
+	ball_stop_radius: number;
+	/** Base ball keep-out radius when `avoid_ball` is set [mm]. */
+	ball_base_radius: number;
+	/** Additional ball keep-out radius scaled by `avoid_ball_care` [mm]. */
+	ball_care_scale: number;
+	/** How far ahead moving robots are extrapolated at constant velocity [s]. */
+	robot_extrapolation: number;
+	/**
+	 * ORCA time horizon τ [s]: how far ahead reciprocal collisions are
+	 * resolved. Larger ⇒ ORCA reacts earlier but brakes harder near obstacles;
+	 * smaller ⇒ later but smoother. The planner margin (below) keeps planned
+	 * paths outside ORCA's braking zone so this can stay modest.
+	 */
+	time_horizon: number;
+	/**
+	 * Speed below which a robot counts as "stationary" for reciprocity gating
+	 * [mm/s]. A stationary robot does not yield to a moving one — the mover
+	 * takes the full avoidance burden.
+	 */
+	stationary_speed: number;
+	/**
+	 * Prefer steering around obstacles over braking for them: drop ORCA's
+	 * cut-off-circle projection so a constrained velocity is deflected (turned)
+	 * rather than slowed. Avoids the "sticky crawl" where ORCA suppresses speed
+	 * near an obstacle. Falls back to the 3-D LP when genuinely boxed in.
+	 */
+	prefer_steering: boolean;
+	/** Only robots within this distance are considered ORCA neighbours [mm]. */
+	neighbor_dist: number;
+	/** Cap on the number of neighbours folded into a single ORCA LP. */
+	max_neighbors: number;
+	/** Grid cell size for the planner's any-angle search [mm]. */
+	grid_resolution: number;
+	/**
+	 * Extra clearance the planner leaves around robots **on top of** ORCA's
+	 * hard combined radius [mm], so planned paths sit outside the band where
+	 * ORCA actively brakes and the two layers don't fight each other.
+	 */
+	planner_margin: number;
+	/**
+	 * Distance at which the robot is considered to have reached an intermediate
+	 * waypoint and advances to the next [mm]. Wider than the final-target
+	 * cutoff so the robot flows through corners (pass-through) instead of
+	 * braking to each one. The final target still decelerates normally.
+	 */
+	waypoint_tolerance: number;
+	/**
+	 * Replan only when the target has moved more than this [mm] (hysteresis to
+	 * suppress path flicker).
+	 */
+	replan_target_tol: number;
+	/**
+	 * Run the global path planner. When false, MTP steers straight at the
+	 * target and only ORCA provides avoidance.
+	 */
+	planner_enabled: boolean;
+	/**
+	 * Run ORCA reciprocal avoidance. When false, the MTP velocity passes
+	 * through untouched (useful for isolating layers when debugging).
+	 */
+	orca_enabled: boolean;
+}
+
 /** A struct to store the ball state from a single frame. */
 export interface BallData {
 	/**
@@ -138,6 +216,12 @@ export interface BasestationResponse {
 export interface ControllerSettings {
 	/** Per-axis acceleration cap for translational motion (mm/s²). */
 	max_acceleration: number;
+	/**
+	 * Per-axis jerk cap (mm/s³) for the output velocity tracker. Bounds how
+	 * fast acceleration itself changes, turning velocity steps (e.g. when ORCA
+	 * engages/disengages) into smooth S-curve ramps instead of lurches.
+	 */
+	max_jerk: number;
 	/** Speed cap on the commanded velocity magnitude (mm/s). */
 	max_velocity: number;
 	/** Deceleration cap used when MTP plans braking (mm/s²). */
@@ -158,40 +242,6 @@ export interface ControllerSettings {
 	angle_kp: number;
 	/** Heading deadzone (rad) — yaw control outputs zero inside this band. */
 	angle_cutoff_distance: number;
-}
-
-/** Quadratic cost weights. All terms are `½ · w · ||residual||²`. */
-export interface CostWeights {
-	/** Stage `||pos − target_p||²`. Pulls the trajectory toward the target. */
-	position: number;
-	/**
-	 * Stage `||vel − target_v||²`. Pulls the trajectory toward the velocity
-	 * reference (zero by default → "arrive and stop"). The main anti-overshoot
-	 * knob: nonzero values damp arrival velocity.
-	 */
-	velocity: number;
-	/**
-	 * Stage `||u||²`. Critical: keeps `Q_uu` non-degenerate so iLQR feedback
-	 * gains don't blow up when every other term has zero curvature in `u`.
-	 */
-	control: number;
-	/**
-	 * Stage `||u − u_prev||²` (translational controls only). Damps
-	 * high-frequency control oscillation.
-	 */
-	control_smoothness: number;
-	/**
-	 * Stage `1 − cos(theta − theta_d)`. Attracts the robot heading toward the
-	 * target heading. Zero ⇒ heading is left free for the planner to optimise
-	 * purely in service of translation.
-	 */
-	heading: number;
-	/**
-	 * Stage `½·(theta_cmd − theta)²`. Regularises the heading setpoint (the
-	 * turn effort) and keeps `Q_uu` non-degenerate in the `theta_cmd` axis —
-	 * the heading analogue of the `control` term.
-	 */
-	heading_control: number;
 }
 
 /**
@@ -330,71 +380,6 @@ export interface SkillSettings {
 	fetch_ball_preshoot_ball_avoidance: number;
 }
 
-/**
- * Which low-level motion controller the executor runs. Global across all
- * robots; switched at runtime through the webui settings panel or at
- * startup via `dies-cli --controller`.
- */
-export enum ControllerMode {
-	/** Two-step minimum-time-path controller (default, battle-tested). */
-	Mtp = "mtp",
-	/** iLQR MPC from `dies-mpc`. */
-	Ilqr = "ilqr",
-}
-
-/**
- * Tunable parameters for the soft obstacle barriers the integration layer
- * builds around each robot (robots, field walls, defense areas). A single
- * `weight` / `influence` pair is shared across obstacle types; per-type
- * geometry margins are kept separate.
- */
-export interface ObstacleConfig {
-	/** Barrier stiffness `w` shared by every obstacle term. */
-	weight: number;
-	/** Influence distance `δ` [mm]: how far out the barrier starts to push. */
-	influence: number;
-	/** Extra clearance added on top of the two-robot contact distance [mm]. */
-	robot_clearance: number;
-	/** How far ahead to extrapolate moving robots at constant velocity [s]. */
-	robot_extrapolation: number;
-	/** Inset of the robot centre from the physical field walls [mm]. */
-	wall_margin: number;
-	/** Keep-out margin grown around each defense area [mm]. */
-	defense_margin: number;
-}
-
-/**
- * Per-axis first-order velocity-lag time constants and acceleration ceilings.
- * 
- * Body-frame dynamics: `v̇_b[i] = a_max[i] · tanh((v_cmd_b[i] − v_b[i]) / (τ[i] · a_max[i]))`.
- * In the linear regime (small error) this collapses to the first-order lag
- * `(v_cmd − v) / τ`; far from steady-state the smooth saturation caps the
- * realised accel at ±a_max, modelling motor torque/current limits.
- * 
- * Index `0` is the forward (FWD) body axis, `1` is the strafe (STRAFE) axis.
- */
-export interface RobotParams {
-	tau: [number, number];
-	accel_max: [number, number];
-	/**
-	 * First-order heading-lag time constant [s]. Models the onboard IMU yaw
-	 * loop slewing toward the commanded heading setpoint.
-	 */
-	tau_yaw: number;
-	/** Heading slew-rate ceiling [rad/s] — the tanh saturation on `thetȧ`. */
-	omega_max: number;
-	/**
-	 * Soft obstacle-avoidance knobs. Defaulted so older params files (which
-	 * only carried `tau` / `accel_max`) keep parsing.
-	 */
-	obstacles?: ObstacleConfig;
-	/**
-	 * Quadratic tracking-cost weights. Defaulted so older params files keep
-	 * parsing; applied to every solve via `MpcTarget`.
-	 */
-	weights?: CostWeights;
-}
-
 /** Settings for the executor. */
 export interface ExecutorSettings {
 	controller_settings: ControllerSettings;
@@ -404,7 +389,6 @@ export interface ExecutorSettings {
 	blue_team_settings: TeamSpecificSettings;
 	skill_settings: SkillSettings;
 	allow_no_vision: boolean;
-	controller_mode?: ControllerMode;
 	/**
 	 * Global on/off for goal-area avoidance. When false, both compliance and
 	 * the controller skip the goal-area keep-out logic (goalkeeper exception
@@ -412,10 +396,10 @@ export interface ExecutorSettings {
 	 */
 	goal_area_avoidance: boolean;
 	/**
-	 * iLQR/MPC tuning (dynamics model + cost weights + obstacle barriers).
-	 * Applied live to the iLQR controller; only active in `controller_mode = Ilqr`.
+	 * Collision-avoidance tuning (obstacle margins + global planner + ORCA).
+	 * Applied live to the planner and ORCA solver.
 	 */
-	ilqr_params?: RobotParams;
+	avoidance?: AvoidanceConfig;
 }
 
 export interface ExecutorSettingsResponse {
@@ -476,18 +460,18 @@ export interface FieldGeometry {
 
 /** The game state, as reported by the referee. */
 export type GameState = 
-	| { type: "Unknown", data?: undefined }
-	| { type: "Halt", data?: undefined }
-	| { type: "Timeout", data?: undefined }
-	| { type: "Stop", data?: undefined }
-	| { type: "PrepareKickoff", data?: undefined }
+	| { type: "Unknown",  }
+	| { type: "Halt",  }
+	| { type: "Timeout",  }
+	| { type: "Stop",  }
+	| { type: "PrepareKickoff",  }
 	| { type: "BallReplacement", data: Vector2 }
-	| { type: "PreparePenalty", data?: undefined }
-	| { type: "Kickoff", data?: undefined }
-	| { type: "FreeKick", data?: undefined }
-	| { type: "Penalty", data?: undefined }
-	| { type: "PenaltyRun", data?: undefined }
-	| { type: "Run", data?: undefined };
+	| { type: "PreparePenalty",  }
+	| { type: "Kickoff",  }
+	| { type: "FreeKick",  }
+	| { type: "Penalty",  }
+	| { type: "PenaltyRun",  }
+	| { type: "Run",  };
 
 export interface GameStateData {
 	/** The state of current game */
@@ -574,7 +558,7 @@ export type UiCommand =
 }}
 	| { type: "SimulatorCmd", data: SimulatorCmd }
 	| { type: "SetPause", data: boolean }
-	| { type: "Start", data?: undefined }
+	| { type: "Start",  }
 	| { type: "GcCommand", data: GcSimCommand }
 	/** Control which teams are active */
 	| { type: "SetActiveTeams", data: {
@@ -590,17 +574,17 @@ export type UiCommand =
 	configuration: TeamConfiguration;
 }}
 	/** Swap team colors (Blue <-> Yellow) */
-	| { type: "SwapTeamColors", data?: undefined }
+	| { type: "SwapTeamColors",  }
 	/** Swap team sides (BlueOnPositive <-> YellowOnPositive) */
-	| { type: "SwapTeamSides", data?: undefined }
+	| { type: "SwapTeamSides",  }
 	/** Load and start a JS scenario by file name (resolved against `scenarios/`). */
 	| { type: "StartScenario", data: {
 	scenario: string;
 	team?: TeamColor;
 }}
 	/** Stop the currently running scenario and return to strategy mode. */
-	| { type: "StopScenario", data?: undefined }
-	| { type: "Stop", data?: undefined };
+	| { type: "StopScenario",  }
+	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
 	command: UiCommand;
@@ -643,8 +627,8 @@ export interface ScenarioInfo {
 }
 
 export type TestStatus = 
-	| { state: "Idle", data?: undefined }
-	| { state: "Starting", data?: undefined }
+	| { state: "Idle",  }
+	| { state: "Starting",  }
 	| { state: "Running", data: {
 	name: string;
 }}
@@ -654,7 +638,7 @@ export type TestStatus =
 	| { state: "Failed", data: {
 	error: string;
 }}
-	| { state: "Aborted", data?: undefined };
+	| { state: "Aborted",  };
 
 export interface ScenariosResponse {
 	scenarios: ScenarioInfo[];
@@ -705,8 +689,8 @@ export interface TestLogEntry {
 
 /** The current status of the executor. */
 export type ExecutorStatus = 
-	| { type: "None", data?: undefined }
-	| { type: "RunningExecutor", data?: undefined }
+	| { type: "None",  }
+	| { type: "RunningExecutor",  }
 	| { type: "Failed", data: string };
 
 /** The current status of the UI. */
@@ -781,10 +765,10 @@ export type DebugShape =
 }};
 
 export type GcSimCommand = 
-	| { type: "Stop", data?: undefined }
-	| { type: "Halt", data?: undefined }
-	| { type: "NormalStart", data?: undefined }
-	| { type: "ForceStart", data?: undefined }
+	| { type: "Stop",  }
+	| { type: "Halt",  }
+	| { type: "NormalStart",  }
+	| { type: "ForceStart",  }
 	| { type: "KickOff", data: {
 	team_color: TeamColor;
 }}
@@ -802,7 +786,7 @@ export type GcSimCommand =
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
 	/** Do nothing */
-	| { type: "Stop", data?: undefined }
+	| { type: "Stop",  }
 	/** Move the robot to a globel position and yaw */
 	| { type: "MoveTo", data: {
 	position: Vector2;
@@ -832,7 +816,7 @@ export type PlayerOverrideCommand =
 	speed: number;
 }}
 	/** Discharge the kicker safely */
-	| { type: "DischargeKicker", data?: undefined }
+	| { type: "DischargeKicker",  }
 	| { type: "SetFanSpeed", data: {
 	speed: number;
 }};
@@ -876,7 +860,7 @@ export type SimulatorCmd =
 
 export type UiWorldState = 
 	| { type: "Loaded", data: WorldData }
-	| { type: "None", data?: undefined };
+	| { type: "None",  };
 
 /** WebSocket message types sent from backend to frontend */
 export type WsMessage = 
@@ -885,3 +869,7 @@ export type WsMessage =
 	| { type: "ScenarioLog", data: TestLogEntry }
 	| { type: "ScenarioStatus", data: TestStatus };
 
+export type Vector2 = [number, number];
+export type Vector3 = [number, number, number];
+export type Duration = number;
+export type HashSet<T> = Array<T>;

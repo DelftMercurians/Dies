@@ -10,6 +10,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDebugData } from "@/api";
 import { prettyPrintSnakeCases, cn } from "@/lib/utils";
+import HierarchicalList from "@/views/HierarchicalList";
+
+/** True for keys that belong to a specific player (e.g. `team_Blue.p3.role`). */
+const isPlayerKey = (key: string): boolean =>
+  /^team_(Blue|Yellow)\.p\d+(\.|$)/.test(key);
 import {
   debugLayerVisibilityAtom,
   debugCategoryVisibilityAtom,
@@ -191,6 +196,19 @@ const DebugLayerPanel: React.FC<IDockviewPanelProps> = () => {
 
   const tree = useMemo(() => buildLayerTree(allKeys), [allKeys]);
 
+  // Non-player, non-shape tag values (global + team-level scalars/strings).
+  // Player tags are shown in the right-hand Inspector instead — here we only
+  // surface their *visibility* toggles via the tree below.
+  const nonPlayerValues = useMemo(
+    () =>
+      debugMap
+        ? Object.entries(debugMap).filter(
+            ([key, val]) => !isPlayerKey(key) && val.type !== "Shape",
+          )
+        : [],
+    [debugMap],
+  );
+
   const [openPaths, setOpenPaths] = React.useState<Set<string>>(new Set());
   const handleOpenChange = useCallback((path: string, open: boolean) => {
     setOpenPaths((prev) => {
@@ -240,12 +258,22 @@ const DebugLayerPanel: React.FC<IDockviewPanelProps> = () => {
     <div className="w-full h-full bg-bg-surface flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-dim shrink-0">
-        <span className="text-sm font-semibold text-text-std">
-          Debug Layers
-        </span>
+        <span className="text-sm font-semibold text-text-std">Debug</span>
         <Button variant="ghost" size="sm" onClick={handleReset}>
           Reset
         </Button>
+      </div>
+
+      {/* Non-player values (global + team-level) */}
+      <div className="border-b border-border-dim shrink-0 max-h-[40%] flex flex-col">
+        <div className="px-3 pt-2 text-xs text-text-dim shrink-0">Values</div>
+        <div className="overflow-auto px-1 pb-1">
+          {nonPlayerValues.length === 0 ? (
+            <div className="px-2 py-1 text-sm text-text-dim">No values</div>
+          ) : (
+            <HierarchicalList data={nonPlayerValues} className="p-1 text-sm" />
+          )}
+        </div>
       </div>
 
       {/* Categories */}
@@ -273,7 +301,10 @@ const DebugLayerPanel: React.FC<IDockviewPanelProps> = () => {
       </div>
 
       {/* Tree */}
-      <div className="flex-1 overflow-auto px-3 py-2">
+      <div className="px-3 pt-2 text-xs text-text-dim shrink-0">
+        Layers (visibility)
+      </div>
+      <div className="flex-1 overflow-auto px-3 pb-2">
         {tree.length === 0 ? (
           <div className="text-sm text-text-dim">No debug data</div>
         ) : (

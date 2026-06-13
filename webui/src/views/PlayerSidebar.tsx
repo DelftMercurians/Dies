@@ -1,4 +1,5 @@
 import {
+  useBasestationInfo,
   useDebugData,
   useExecutorInfo,
   useKeyboardControl,
@@ -6,7 +7,10 @@ import {
   useWorldState,
   isPlayerManuallyControlled,
   usePrimaryTeam,
+  keyboardControlAtom,
+  keyboardModeAtom,
 } from "@/api";
+import { useAtom } from "jotai";
 import * as math from "mathjs";
 import { DebugValue, PlayerData, TeamColor } from "@/bindings";
 import { Button } from "@/components/ui/button";
@@ -19,25 +23,45 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
 import { SimpleTooltip } from "@/components/ui/tooltip";
-import { cn, prettyPrintSnakeCases, radiansToDegrees } from "@/lib/utils";
-import { Pause, Play, X } from "lucide-react";
+import {
+  cn,
+  formatDebugString,
+  formatNumber,
+  prettyPrintSnakeCases,
+  radiansToDegrees,
+} from "@/lib/utils";
+import { ChevronDown, ChevronRight, Pause, Play, X } from "lucide-react";
 import { FC, useState } from "react";
 import CodeEditor from "./CodeEditor";
-import HierarchicalList from "./HierarchicalList";
+import HardwareReadout from "./HardwareReadout";
+import TargetVelCrosshair from "./TargetVelCrosshair";
 import TimeSeriesChart from "./TimeSeriesChart";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import BehaviorTreeView from "./BehaviorTreeView";
+
+/** Parse a vec2 debug string ("x y") into [x, y], or null. */
+const parseVec2 = (s: unknown): [number, number] | null => {
+  if (typeof s !== "string") return null;
+  const m = /^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$/.exec(s);
+  return m ? [Number(m[1]), Number(m[2])] : null;
+};
 
 /**
  * Player Sidebar showing detailed info for a selected player.
- * Uses mission control aesthetic.
+ * Layout (top -> bottom): quick switcher, hardware readout, debug table,
+ * collapsible plot (collapsed by default), collapsible behavior tree, and
+ * manual control.
  */
 
 interface PlayerSidebarProps {
-  selectedPlayerId: number | null;
+  selectedPlayerId: number;
   onClose: () => void;
+  onSelectPlayer: (id: number) => void;
 }
 
 interface GraphData {
@@ -77,32 +101,30 @@ const axisLabels: AxisLabels = {
 const PlayerSidebar: FC<PlayerSidebarProps> = ({
   selectedPlayerId,
   onClose,
+  onSelectPlayer,
 }) => {
   const world = useWorldState();
   const executorInfo = useExecutorInfo();
   const sendCommand = useSendCommand();
+  const { data: bsInfo } = useBasestationInfo();
   const [activeGraph, setActiveGraph] = useState<Graphable>("velocity");
   const [graphPaused, setGraphPaused] = useState(true);
   const [speed, setSpeed] = useState(1000);
   const [angularSpeedDegPerSec, setAngularSpeedDegPerSec] = useState(100);
-  const [keyboardControl, setKeyboardControl] = useState(false);
+  const [keyboardControl, setKeyboardControl] = useAtom(keyboardControlAtom);
   const [customFunction, setCustomFunction] = useState<
     ((data: GraphData) => number) | null
   >(null);
-  const [keyboardMode, setKeyboardMode] = useState<"local" | "global">(
-    "global"
-  );
+  const [keyboardMode, setKeyboardMode] = useAtom(keyboardModeAtom);
   const [fanSpeed, setFanSpeed] = useState(0);
   const [kickSpeed, setKickSpeed] = useState(0);
   const [kick, setKick] = useState(false);
   const [primaryTeam] = usePrimaryTeam();
 
-  const manualControl =
-    typeof selectedPlayerId === "number" &&
-    isPlayerManuallyControlled(
-      selectedPlayerId,
-      executorInfo?.manual_controlled_players ?? []
-    );
+  const manualControl = isPlayerManuallyControlled(
+    selectedPlayerId,
+    executorInfo?.manual_controlled_players ?? []
+  );
   useKeyboardControl({
     playerId: manualControl && keyboardControl ? selectedPlayerId : null,
     speed,
@@ -115,40 +137,35 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 
   const debugData = useDebugData();
   const teamColor = primaryTeam === TeamColor.Blue ? "Blue" : "Yellow";
+  const prefix = `team_${teamColor}.p${selectedPlayerId}`;
   const playerDebugData = debugData
     ? (Object.entries(debugData)
         .filter(
-          ([key, val]) =>
-            key.startsWith(`team_${teamColor}.p${selectedPlayerId}`) &&
-            val.type !== "Shape"
+          ([key, val]) => key.startsWith(prefix) && val.type !== "Shape"
         )
-        .map(([key, val]) => [
-          key.slice(`team_${teamColor}.p${selectedPlayerId}`.length + 1),
-          val,
-        ]) as PlayerDebugValues)
+        .map(([key, val]) => [key.slice(prefix.length + 1), val]) as PlayerDebugValues)
     : [];
   const playerDebugMap = Object.fromEntries(
     playerDebugData.map(([k, v]) => [k, v.data])
   );
 
-  if (typeof selectedPlayerId !== "number")
-    return (
-      <div className="flex-1 flex flex-col gap-4 p-3 h-full w-full">
-        <h1 className="text-[12px] font-semibold uppercase tracking-wider text-text-dim text-center">
-          Select a player by clicking
-        </h1>
-        <div className="bg-bg-elevated border border-border-subtle p-2 h-full overflow-auto">
-          <HierarchicalList data={debugData ? Object.entries(debugData) : []} />
-        </div>
-      </div>
-    );
-
-  const selectedPlayer =
+  const own_players =
     world.status === "connected"
       ? primaryTeam === TeamColor.Blue
-        ? world.data.blue_team.find((p) => p.id === selectedPlayerId)
-        : world.data.yellow_team.find((p) => p.id === selectedPlayerId)
-      : null;
+        ? world.data.blue_team
+        : world.data.yellow_team
+      : [];
+  const sortedPlayers = [...own_players].sort((a, b) => a.id - b.id);
+  const selectedPlayer = own_players.find((p) => p.id === selectedPlayerId);
+
+  const bsPlayers = bsInfo
+    ? bsInfo.blue_team.length === 0 && bsInfo.yellow_team.length === 0
+      ? bsInfo.unknown_team
+      : primaryTeam === TeamColor.Blue
+      ? bsInfo.blue_team
+      : bsInfo.yellow_team
+    : [];
+  const feedback = bsPlayers.find((p) => p.id === selectedPlayerId);
 
   const handleToggleManual = (val: boolean) => {
     sendCommand({
@@ -162,243 +179,315 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
   };
 
   const graphData: GraphData | null = selectedPlayer
-    ? {
-        player: selectedPlayer,
-        playerDebug: playerDebugMap,
-      }
+    ? { player: selectedPlayer, playerDebug: playerDebugMap }
     : null;
 
   return (
-    <div className="flex-1 flex flex-col h-full">
-      <div className="flex flex-row p-3 pb-0 items-center">
-        <h1 className="text-[14px] font-semibold uppercase tracking-wider text-text-bright">
-          Player #{selectedPlayerId}
-        </h1>
-        <Button className="ml-auto" variant="ghost" size="icon-sm" onClick={onClose}>
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* Header: quick switcher + close */}
+      <div className="flex flex-row gap-2 p-2 items-center border-b border-border-subtle shrink-0">
+        <Select
+          value={String(selectedPlayerId)}
+          onValueChange={(val) => {
+            if (val === "__overview") onClose();
+            else onSelectPlayer(Number(val));
+          }}
+        >
+          <SelectTrigger className="h-7 flex-1">
+            <SelectValue placeholder="Select player" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__overview">← Team overview</SelectItem>
+            {sortedPlayers.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>
+                Player #{p.id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" size="icon-sm" onClick={onClose}>
           <X className="h-3 w-3" />
         </Button>
       </div>
 
-      <Tabs
-        defaultValue="info"
-        className="flex-1 flex flex-col overflow-hidden"
-        size="sm"
-      >
-        <TabsList className="mx-3 mt-2">
-          <TabsTrigger value="info">Info</TabsTrigger>
-          <TabsTrigger value="bt">Behavior Tree</TabsTrigger>
-          <TabsTrigger value="debug">Debug</TabsTrigger>
-        </TabsList>
-        <TabsContent value="info" className="flex-1 overflow-y-auto">
-          <div className="flex flex-col gap-4 p-3">
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-row gap-2 items-center">
-                <Select
-                  value={activeGraph}
-                  onValueChange={(val) => setActiveGraph(val as Graphable)}
-                >
-                  <SelectTrigger className="h-6 w-64 flex-1">
-                    <SelectValue placeholder="Select graph" />
-                  </SelectTrigger>
+      <div className="flex-1 overflow-y-auto flex flex-col gap-3 p-3">
+        {/* Hardware readout (above debug table) */}
+        <HardwareReadout
+          id={selectedPlayerId}
+          team={primaryTeam}
+          feedback={feedback}
+          breakbeamBall={selectedPlayer?.breakbeam_ball_detected}
+        />
 
-                  <SelectContent>
-                    {graphableLabels.map((v) => (
-                      <SelectItem key={v} value={v}>
-                        {prettyPrintSnakeCases(v)}
-                      </SelectItem>
-                    ))}
+        {/* Target velocity crosshair */}
+        {(() => {
+          const tv = parseVec2(playerDebugMap["target_vel"]);
+          return tv ? (
+            <div className="flex flex-col gap-1">
+              <div className="text-[11px] uppercase tracking-wider text-text-dim">
+                Target Velocity
+              </div>
+              <TargetVelCrosshair vx={tv[0]} vy={tv[1]} />
+            </div>
+          ) : null;
+        })()}
 
-                    <SelectItem value={"custom"}>Custom function</SelectItem>
-                  </SelectContent>
-                </Select>
+        {/* Debug data table */}
+        <div className="flex flex-col gap-1">
+          <div className="text-[11px] uppercase tracking-wider text-text-dim">
+            Debug Data
+          </div>
+          <DebugTable data={playerDebugData} />
+        </div>
 
+        {/* Plot — collapsible, collapsed by default */}
+        <CollapsibleSection title="Plot">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-row gap-2 items-center">
+              <Select
+                value={activeGraph}
+                onValueChange={(val) => setActiveGraph(val as Graphable)}
+              >
+                <SelectTrigger className="h-6 w-64 flex-1">
+                  <SelectValue placeholder="Select graph" />
+                </SelectTrigger>
+                <SelectContent>
+                  {graphableLabels.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {prettyPrintSnakeCases(v)}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={"custom"}>Custom function</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setGraphPaused((p) => !p)}
+              >
+                {graphPaused ? (
+                  <Play className="h-3 w-3" />
+                ) : (
+                  <Pause className="h-3 w-3" />
+                )}
+              </Button>
+            </div>
+
+            {(activeGraph as string) === "custom" && graphData ? (
+              <CodeEditor
+                globals={graphData}
+                onRun={(code) => {
+                  setCustomFunction(() =>
+                    createCustomFunction(code, Object.keys(graphData))
+                  );
+                }}
+              />
+            ) : null}
+
+            {graphData && selectedPlayer ? (
+              <TimeSeriesChart
+                paused={graphPaused}
+                objectId={`${selectedPlayerId}${activeGraph}`}
+                newDataPoint={{
+                  timestamp: selectedPlayer.timestamp,
+                  ...graphData,
+                }}
+                getData={(data) =>
+                  activeGraph === "custom"
+                    ? customFunction?.(data) ?? 0
+                    : graphableValues[activeGraph](data)
+                }
+                axisLabel={axisLabels[activeGraph]}
+              />
+            ) : null}
+          </div>
+        </CollapsibleSection>
+
+        {/* Manual control */}
+        <div className="flex flex-col gap-3">
+          <SimpleTooltip title="Set this player to manual control -- it will stop following the strategy">
+            <div className="flex flex-row gap-2 items-center">
+              <Switch
+                id="manual-control"
+                checked={manualControl}
+                disabled={typeof manualControl !== "boolean"}
+                onCheckedChange={handleToggleManual}
+              />
+              <Label htmlFor="manual-control">Manual Control</Label>
+            </div>
+          </SimpleTooltip>
+
+          {manualControl ? (
+            <>
+              <SimpleTooltip title="Control the robot using the keyboard">
+                <div className="flex flex-row gap-2 items-center">
+                  <Switch
+                    id="keyboard-control"
+                    checked={keyboardControl}
+                    disabled={typeof keyboardControl !== "boolean"}
+                    onCheckedChange={setKeyboardControl}
+                  />
+                  <Label htmlFor="keyboard-control">Keyboard Control</Label>
+                </div>
+              </SimpleTooltip>
+
+              <SimpleTooltip title="Whether to control the robot in local or global frame">
+                <div className="flex flex-row gap-2 items-center">
+                  <Switch
+                    id="keyboard-mode"
+                    checked={keyboardMode === "global"}
+                    disabled={keyboardControl !== true}
+                    onCheckedChange={(checked) =>
+                      setKeyboardMode(checked ? "global" : "local")
+                    }
+                  />
+                  <Label htmlFor="keyboard-mode">Global keyboard control</Label>
+                </div>
+              </SimpleTooltip>
+
+              <div className="flex flex-row gap-2 items-center text-sm">
+                <div>Speed</div>
+                <NumberInput value={speed} onChange={setSpeed} />
+                <div className="text-text-dim">mm/s</div>
+              </div>
+
+              <div className="flex flex-row gap-2 items-center text-sm">
+                <div>Angular Speed</div>
+                <NumberInput
+                  value={angularSpeedDegPerSec}
+                  onChange={setAngularSpeedDegPerSec}
+                />
+                <div className="text-text-dim">deg/s</div>
+              </div>
+
+              <div className="flex flex-row gap-2 items-center text-sm">
+                <div>Fan Speed</div>
+                <NumberInput value={fanSpeed} onChange={setFanSpeed} />
+                <div className="text-text-dim">%</div>
+              </div>
+
+              <div className="flex flex-row gap-2 items-center text-sm">
+                <div>Kick Speed</div>
+                <NumberInput value={kickSpeed} onChange={setKickSpeed} />
+                <div className="text-text-dim">mm/s</div>
+              </div>
+
+              <div className="flex flex-row gap-2 items-center text-sm">
+                <div>Kick</div>
                 <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setGraphPaused((p) => !p)}
+                  size="sm"
+                  onClick={() => {
+                    setKick(true);
+                    setTimeout(() => setKick(false), 1000 / 10);
+                  }}
                 >
-                  {graphPaused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+                  Kick
                 </Button>
               </div>
 
-              {(activeGraph as string) === "custom" && graphData ? (
-                <div>
-                  <CodeEditor
-                    globals={graphData}
-                    onRun={(code) => {
-                      setCustomFunction(() =>
-                        createCustomFunction(code, Object.keys(graphData))
-                      );
-                    }}
-                  />
+              <div className="flex justify-center">
+                <div className="inline-block bg-bg-elevated border border-border-muted p-4">
+                  <div className="flex justify-center mb-2 space-x-2">
+                    <SimpleTooltip title="Turn left">
+                      <KeyboardKey letter="q" />
+                    </SimpleTooltip>
+                    <SimpleTooltip title="Go forward (global coordinates)">
+                      <KeyboardKey letter="w" />
+                    </SimpleTooltip>
+                    <SimpleTooltip title="Turn right">
+                      <KeyboardKey letter="e" />
+                    </SimpleTooltip>
+                  </div>
+                  <div className="flex justify-center mb-2 space-x-2">
+                    <SimpleTooltip title="Go left (global coordinates)">
+                      <KeyboardKey letter="a" />
+                    </SimpleTooltip>
+                    <SimpleTooltip title="Go backward (global coordinates)">
+                      <KeyboardKey letter="s" />
+                    </SimpleTooltip>
+                    <SimpleTooltip title="Go right (global coordinates)">
+                      <KeyboardKey letter="d" />
+                    </SimpleTooltip>
+                  </div>
+                  <div className="flex justify-center space-x-2 w-full">
+                    <SimpleTooltip title="Dribble" className="w-full">
+                      <KeyboardKey letter="Space" className="w-full" />
+                    </SimpleTooltip>
+                  </div>
                 </div>
-              ) : null}
-
-              {graphData && selectedPlayer ? (
-                <TimeSeriesChart
-                  paused={graphPaused}
-                  objectId={`${selectedPlayerId}${activeGraph}`}
-                  newDataPoint={{
-                    timestamp: selectedPlayer.timestamp,
-                    ...graphData,
-                  }}
-                  getData={(data) => {
-                    let value =
-                      activeGraph === "custom"
-                        ? customFunction?.(data) ?? 0
-                        : graphableValues[activeGraph](data);
-                    return value;
-                  }}
-                  axisLabel={axisLabels[activeGraph]}
-                />
-              ) : null}
-            </div>
-
-            <div>
-              <h2 className="font-semibold uppercase tracking-wider text-text-dim mb-2">
-                Player Debug Data
-              </h2>
-              <div className="bg-bg-elevated border border-border-subtle p-2 max-h-[40vh] overflow-auto">
-                <HierarchicalList data={playerDebugData} expandAll />
               </div>
-            </div>
-
-            <SimpleTooltip title="Set this player to manual control -- it will stop following the strategy">
-              <div className="flex flex-row gap-2 items-center">
-                <Switch
-                  id="manual-control"
-                  checked={manualControl}
-                  disabled={typeof manualControl !== "boolean"}
-                  onCheckedChange={handleToggleManual}
-                />
-                <Label htmlFor="manual-control">Manual Control</Label>
-              </div>
-            </SimpleTooltip>
-
-            {manualControl ? (
-              <>
-                <SimpleTooltip title="Control the robot using the keyboard">
-                  <div className="flex flex-row gap-2 items-center">
-                    <Switch
-                      id="keyboard-control"
-                      checked={keyboardControl}
-                      disabled={typeof keyboardControl !== "boolean"}
-                      onCheckedChange={setKeyboardControl}
-                    />
-                    <Label htmlFor="keyboard-control">Keyboard Control</Label>
-                  </div>
-                </SimpleTooltip>
-
-                <SimpleTooltip title="Whether to control the robot in local or global frame">
-                  <div className="flex flex-row gap-2 items-center">
-                    <Switch
-                      id="keyboard-mode"
-                      checked={keyboardMode === "global"}
-                      disabled={keyboardControl !== true}
-                      onCheckedChange={(checked) =>
-                        setKeyboardMode(checked ? "global" : "local")
-                      }
-                    />
-                    <Label htmlFor="keyboard-mode">
-                      Global keyboard control
-                    </Label>
-                  </div>
-                </SimpleTooltip>
-
-                <div className="flex flex-row gap-2 items-center text-sm">
-                  <div>Speed</div>
-                  <NumberInput value={speed} onChange={setSpeed} />
-                  <div className="text-text-dim">mm/s</div>
-                </div>
-
-                <div className="flex flex-row gap-2 items-center text-sm">
-                  <div>Angular Speed</div>
-                  <NumberInput
-                    value={angularSpeedDegPerSec}
-                    onChange={setAngularSpeedDegPerSec}
-                  />
-                  <div className="text-text-dim">deg/s</div>
-                </div>
-
-                <div className="flex flex-row gap-2 items-center text-sm">
-                  <div>Fan Speed</div>
-                  <NumberInput value={fanSpeed} onChange={setFanSpeed} />
-                  <div className="text-text-dim">%</div>
-                </div>
-
-                <div className="flex flex-row gap-2 items-center text-sm">
-                  <div>Kick Speed</div>
-                  <NumberInput value={kickSpeed} onChange={setKickSpeed} />
-                  <div className="text-text-dim">mm/s</div>
-                </div>
-
-                <div className="flex flex-row gap-2 items-center text-sm">
-                  <div>Kick</div>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setKick(true);
-                      setTimeout(() => setKick(false), 1000 / 10);
-                    }}
-                  >
-                    Kick
-                  </Button>
-                </div>
-
-                <div className="flex justify-center">
-                  <div className="inline-block bg-bg-elevated border border-border-muted p-4">
-                    <div className="flex justify-center mb-2 space-x-2">
-                      <SimpleTooltip title="Turn left">
-                        <KeyboardKey letter="q" />
-                      </SimpleTooltip>
-                      <SimpleTooltip title="Go forward (global coordinates)">
-                        <KeyboardKey letter="w" />
-                      </SimpleTooltip>
-                      <SimpleTooltip title="Turn right">
-                        <KeyboardKey letter="e" />
-                      </SimpleTooltip>
-                    </div>
-                    <div className="flex justify-center mb-2 space-x-2">
-                      <SimpleTooltip title="Go left (global coordinates)">
-                        <KeyboardKey letter="a" />
-                      </SimpleTooltip>
-                      <SimpleTooltip title="Go backward (global coordinates)">
-                        <KeyboardKey letter="s" />
-                      </SimpleTooltip>
-                      <SimpleTooltip title="Go right (global coordinates)">
-                        <KeyboardKey letter="d" />
-                      </SimpleTooltip>
-                    </div>
-                    <div className="flex justify-center space-x-2 w-full">
-                      <SimpleTooltip title="Dribble" className="w-full">
-                        <KeyboardKey letter="Space" className="w-full" />
-                      </SimpleTooltip>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : null}
-          </div>
-        </TabsContent>
-        <TabsContent value="bt" className="flex-1 overflow-y-auto">
-          <BehaviorTreeView
-            selectedPlayerId={selectedPlayerId}
-            className="h-full p-3"
-          />
-        </TabsContent>
-        <TabsContent value="debug" className="flex-1 overflow-y-auto p-2">
-          <div className="bg-bg-elevated border border-border-subtle p-2 h-full overflow-auto">
-            <HierarchicalList
-              data={debugData ? Object.entries(debugData) : []}
-            />
-          </div>
-        </TabsContent>
-      </Tabs>
+            </>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 };
 
 export default PlayerSidebar;
+
+/** A collapsible section, collapsed by default. */
+const CollapsibleSection: FC<{
+  title: string;
+  children: React.ReactNode;
+}> = ({ title, children }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="flex flex-col">
+      <CollapsibleTrigger className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-text-dim hover:text-text-std py-1">
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        {title}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-1">{children}</CollapsibleContent>
+    </Collapsible>
+  );
+};
+
+/** Flat two-column key|value table of player debug data (bt.* excluded). */
+const DebugTable: FC<{ data: PlayerDebugValues }> = ({ data }) => {
+  const rows = data
+    .filter(
+      ([key]) =>
+        key !== "bt" && !key.startsWith("bt.") && key !== "target_vel"
+    )
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  if (rows.length === 0) {
+    return (
+      <div className="bg-bg-elevated border border-border-subtle p-2 text-xs text-text-dim">
+        No debug data
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-bg-elevated border border-border-subtle overflow-x-auto">
+      <table className="w-full text-xs">
+        <tbody>
+          {rows.map(([key, val]) => (
+            <tr key={key} className="border-b border-border-subtle last:border-0">
+              <td className="px-2 py-1 align-top text-text-dim whitespace-nowrap">
+                {key}
+              </td>
+              <td className="px-2 py-1 font-mono text-text-std break-all">
+                <DebugCell value={val} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const DebugCell: FC<{ value: Exclude<DebugValue, { type: "Shape" }> }> = ({
+  value,
+}) => {
+  if (value.type === "Number") {
+    return <span title={String(value.data)}>{formatNumber(value.data)}</span>;
+  }
+  return <span title={value.data}>{formatDebugString(value.data)}</span>;
+};
 
 const KeyboardKey = ({
   letter,

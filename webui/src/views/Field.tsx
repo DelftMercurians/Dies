@@ -7,7 +7,9 @@ import {
   useWorldState,
   extractPlayerId,
   usePrimaryTeam,
+  lastShortcutAtom,
 } from "../api";
+import { isTypingTarget } from "@/lib/commands";
 import { TeamColor, Vector2, WorldData } from "../bindings";
 import { useResizeObserver } from "@/lib/useResizeObserver";
 import {
@@ -62,6 +64,14 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     null
   );
   const contextMenuPosRef = useRef([0, 0] as [number, number]);
+  const isOverFieldRef = useRef(false);
+  const mouseContRef = useRef<[number, number]>([0, 0]);
+  // Popover for choosing a player to target when none is selected (H key).
+  const [targetPicker, setTargetPicker] = useState<{
+    field: [number, number];
+    at: [number, number];
+  } | null>(null);
+  const setLastShortcut = useSetAtom(lastShortcutAtom);
 
   const executorInfo = useExecutorInfo();
   const manualControlledPlayerIds =
@@ -155,6 +165,72 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       ? worldData?.blue_team.find((p) => p.id === selectedPlayerId) ?? null
       : worldData?.yellow_team.find((p) => p.id === selectedPlayerId) ?? null;
 
+  const ownPlayers =
+    (primaryTeam === TeamColor.Blue
+      ? worldData?.blue_team
+      : worldData?.yellow_team) ?? [];
+
+  // Send a MoveTo target to a player, enabling manual control first (MoveTo
+  // overrides only take effect for manually-controlled robots). Kept in a ref
+  // so the global 'h' key handler always sees fresh state.
+  const sendTargetRef = useRef<(id: number, pos: [number, number]) => void>(
+    () => {}
+  );
+  sendTargetRef.current = (playerId, pos) => {
+    const yaw = ownPlayers.find((p) => p.id === playerId)?.yaw ?? 0;
+    if (!manualControlledPlayerIds.includes(playerId)) {
+      sendCommand({
+        type: "SetManualOverride",
+        data: {
+          team_color: primaryTeam,
+          player_id: playerId,
+          manual_override: true,
+        },
+      });
+    }
+    sendCommand({
+      type: "OverrideCommand",
+      data: {
+        team_color: primaryTeam,
+        player_id: playerId,
+        command: {
+          type: "MoveTo",
+          data: { position: pos, yaw, dribble_speed: 0, arm_kick: false },
+        },
+      },
+    });
+  };
+
+  const selectedPlayerIdRef = useRef(selectedPlayerId);
+  selectedPlayerIdRef.current = selectedPlayerId;
+
+  // 'H' over the field: set target for the current player, or open a picker.
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if (
+        ev.key.toLowerCase() !== "h" ||
+        ev.shiftKey ||
+        ev.ctrlKey ||
+        ev.metaKey ||
+        ev.altKey
+      )
+        return;
+      if (isTypingTarget(document.activeElement)) return;
+      if (!isOverFieldRef.current) return;
+      ev.preventDefault();
+      const pos = mouseFieldRef.current;
+      const sel = selectedPlayerIdRef.current;
+      if (sel !== null) {
+        sendTargetRef.current(sel, pos);
+        setLastShortcut({ label: `Target → #${sel}`, ts: Date.now() });
+      } else {
+        setTargetPicker({ field: pos, at: mouseContRef.current });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!canvasRef.current || !rendererRef.current) return;
@@ -183,6 +259,12 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       const y = event.clientY - rect.top;
       const fieldXY = rendererRef.current.canvasToField([x, y]);
       setMouseField(fieldXY);
+
+      const contRect0 = contRef.current.getBoundingClientRect();
+      mouseContRef.current = [
+        event.clientX - contRect0.left,
+        event.clientY - contRect0.top,
+      ];
 
       const player = rendererRef.current.getPlayerAt(fieldXY[0], fieldXY[1]);
       if (player !== null) {
@@ -266,6 +348,10 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       ref={contRef}
       className="relative w-full h-full flex items-center justify-center overflow-hidden"
       style={{ padding: CONT_PADDING_PX }}
+      onMouseEnter={() => (isOverFieldRef.current = true)}
+      onMouseLeave={() => {
+        isOverFieldRef.current = false;
+      }}
     >
       <Popover>
         <PopoverTrigger asChild>
@@ -333,6 +419,54 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {/* Target-player picker (opened by H when no player is selected) */}
+      {targetPicker ? (
+        <>
+          <div
+            className="absolute inset-0 z-20"
+            onClick={() => setTargetPicker(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setTargetPicker(null);
+            }}
+          />
+          <div
+            className="absolute z-30 bg-bg-elevated border border-border-std shadow-lg p-1 flex flex-col min-w-28"
+            style={{
+              left: Math.min(targetPicker.at[0], (contWidth || 0) - 130),
+              top: Math.min(targetPicker.at[1], (contHeight || 0) - 200),
+            }}
+          >
+            <div className="px-2 py-1 text-[11px] uppercase tracking-wider text-text-dim">
+              Target robot →
+            </div>
+            {ownPlayers.length === 0 ? (
+              <div className="px-2 py-1 text-sm text-text-dim">No robots</div>
+            ) : (
+              [...ownPlayers]
+                .sort((a, b) => a.id - b.id)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    className="text-left px-2 py-1 text-sm text-text-std hover:bg-bg-overlay"
+                    onClick={() => {
+                      sendTargetRef.current(p.id, targetPicker.field);
+                      onSelectPlayer(p.id);
+                      setLastShortcut({
+                        label: `Target → #${p.id}`,
+                        ts: Date.now(),
+                      });
+                      setTargetPicker(null);
+                    }}
+                  >
+                    Player #{p.id}
+                  </button>
+                ))
+            )}
+          </div>
+        </>
       ) : null}
 
       {/* Yellow Card Banner */}

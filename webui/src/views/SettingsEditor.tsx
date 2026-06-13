@@ -33,6 +33,7 @@ interface SettingsEditorProps<K> {
 const fieldConfig: FieldConfig = {
   controller_settings: {
     max_acceleration: { min: 0, max: 10000, step: 50, unit: "mm/s²" },
+    max_jerk: { min: 0, max: 200000, step: 500, unit: "mm/s³" },
     max_velocity: { min: 0, max: 6000, step: 50, unit: "mm/s" },
     max_deceleration: { min: 0, max: 10000, step: 50, unit: "mm/s²" },
     max_angular_velocity: {

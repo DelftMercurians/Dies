@@ -4,35 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import SettingsEditor from "@/views/SettingsEditor";
-import IlqrSettingsEditor from "@/views/IlqrSettingsEditor";
+import AvoidanceSettingsEditor from "@/views/AvoidanceSettingsEditor";
 import { useExecutorSettings } from "@/api";
-import { ControllerMode } from "@/bindings";
-
-const ControllerModeSelector: React.FC = () => {
-  const { settings, updateSettings } = useExecutorSettings();
-  if (!settings) return null;
-  const mode = settings.controller_mode ?? ControllerMode.Mtp;
-  const isIlqr = mode === ControllerMode.Ilqr;
-  return (
-    <div className="flex items-center justify-between px-4 py-2 border-b border-bg-muted">
-      <Label htmlFor="controller_mode" className="font-medium">
-        Motion controller: {isIlqr ? "iLQR" : "MTP"}
-      </Label>
-      <Switch
-        id="controller_mode"
-        checked={isIlqr}
-        onCheckedChange={(checked) =>
-          updateSettings({
-            ...settings,
-            controller_mode: checked
-              ? ControllerMode.Ilqr
-              : ControllerMode.Mtp,
-          })
-        }
-      />
-    </div>
-  );
-};
 
 const GoalAreaAvoidanceToggle: React.FC = () => {
   const { settings, updateSettings } = useExecutorSettings();
@@ -54,7 +27,7 @@ const GoalAreaAvoidanceToggle: React.FC = () => {
 };
 
 /**
- * Settings Panel - Controller, Tracker, and Skill settings.
+ * Settings Panel - Controller, Avoidance, Tracker, and Skill settings.
  * Contains tabbed interface for different settings categories.
  */
 const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
@@ -67,27 +40,21 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
       >
         <TabsList className="w-full">
           <TabsTrigger value="controller">Controller</TabsTrigger>
-          <TabsTrigger value="ilqr">iLQR</TabsTrigger>
+          <TabsTrigger value="avoidance">Avoidance</TabsTrigger>
           <TabsTrigger value="tracker">Tracker</TabsTrigger>
           <TabsTrigger value="skill">Skill</TabsTrigger>
         </TabsList>
 
         <TabsContent value="controller" className="flex-1 overflow-hidden">
           <div className="h-full flex flex-col">
-            <ControllerModeSelector />
             <GoalAreaAvoidanceToggle />
             <div className="flex-1 overflow-hidden">
               <SettingsEditor settingsKey="controller_settings" />
             </div>
           </div>
         </TabsContent>
-        <TabsContent value="ilqr" className="flex-1 overflow-hidden">
-          <div className="h-full flex flex-col">
-            <ControllerModeSelector />
-            <div className="flex-1 overflow-hidden">
-              <IlqrSettingsEditor />
-            </div>
-          </div>
+        <TabsContent value="avoidance" className="flex-1 overflow-hidden">
+          <AvoidanceSettingsEditor />
         </TabsContent>
         <TabsContent value="tracker" className="flex-1 overflow-hidden">
           <SettingsEditor settingsKey="tracker_settings" />
@@ -101,4 +68,3 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
 };
 
 export default SettingsPanel;
-

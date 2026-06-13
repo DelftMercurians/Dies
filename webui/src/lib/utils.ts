@@ -48,6 +48,39 @@ export const radiansToDegrees = (radians: number): number => {
   return (radians * 180) / Math.PI;
 };
 
+/**
+ * Format a debug number for display. Positions (mm) are rounded to whole
+ * numbers; all other numbers are shown with 2 decimals. The full-precision
+ * value is meant to be surfaced via a `title` attribute on hover — see
+ * {@link fullNumber}.
+ */
+export const formatNumber = (n: number, isPosition = false): string => {
+  if (!Number.isFinite(n)) return String(n);
+  if (isPosition) return Math.round(n).toString();
+  if (Number.isInteger(n)) return n.toString();
+  return n.toFixed(2);
+};
+
+/** Full-precision string for hover tooltips. */
+export const fullNumber = (n: number): string => String(n);
+
+const VEC2_STRING_RE = /^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$/;
+
+/**
+ * Format a debug *string* value. Vec2s are emitted as two space-separated
+ * floats (e.g. `target_vel` -> "123.4 -56.7"); render those as integer tuples
+ * `(123, -57)`. All other strings pass through unchanged.
+ */
+export const formatDebugString = (s: string): string => {
+  const m = VEC2_STRING_RE.exec(s);
+  if (m) return `(${Math.round(Number(m[1]))}, ${Math.round(Number(m[2]))})`;
+  return s;
+};
+
+/** Magnitude of a 2D vector given as a tuple. */
+export const magnitude2 = ([x, y]: readonly [number, number]): number =>
+  Math.sqrt(x * x + y * y);
+
 import { useEffect, useRef } from "react";
 
 export const useWarningSound = (triggerValue: boolean) => {

@@ -28,7 +28,6 @@ export interface DebugCategory {
 
 export const CATEGORIES: DebugCategory[] = [
   { id: "roles", label: "Roles", pattern: /\.role$/ },
-  { id: "bt", label: "Behavior Trees", pattern: /\.bt(\..*)?$/ },
   { id: "strategy", label: "Strategy", pattern: /\.strategy(\..*)?$/ },
 ];
 

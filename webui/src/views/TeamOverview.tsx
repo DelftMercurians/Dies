@@ -7,14 +7,23 @@ import {
   useDebugData,
 } from "@/api";
 import { PlayerData, PlayerFeedbackMsg, TeamColor, DebugMap } from "@/bindings";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { FC } from "react";
+import { SimpleTooltip } from "@/components/ui/tooltip";
+import { cn, magnitude2 } from "@/lib/utils";
+import {
+  playerHealth,
+  severityDotClass,
+  severityTextClass,
+} from "@/lib/hardware";
+import { FC, useEffect, useRef } from "react";
+import PatternIcon from "./PatternIcon";
+import Sparkline from "./Sparkline";
 
 /**
- * Team Overview showing all players on the primary team.
- * Uses mission control aesthetic with compact player cards.
+ * Superdense, glanceable team overview shown in the Inspector when no player is
+ * selected. One compact row per own-team player: pattern icon, worst-of health
+ * dot (quiet unless there's an issue), speed + acceleration sparklines, and the
+ * strategy role. Clicking a row selects that player.
  */
 
 interface TeamOverviewProps {
@@ -23,51 +32,65 @@ interface TeamOverviewProps {
   selectedPlayerId: number | null;
 }
 
-// Helper functions to extract debug data for a player
-const getPlayerDebugValue = (
+const getRole = (
   debugData: DebugMap | null,
   playerId: number,
-  teamColor: TeamColor,
-  key: string
+  teamColor: TeamColor
 ): string | null => {
   if (!debugData) return null;
   const teamColorStr = teamColor === TeamColor.Blue ? "Blue" : "Yellow";
-  const debugKey = `team_${teamColorStr}.p${playerId}.${key}`;
-  const debugValue = debugData[debugKey];
-  return debugValue?.type === "String" ? (debugValue.data as string) : null;
+  const v = debugData[`team_${teamColorStr}.p${playerId}.role`];
+  return v?.type === "String" ? (v.data as string) : null;
 };
 
-const getPlayerRole = (
-  debugData: DebugMap | null,
-  playerId: number,
-  teamColor: TeamColor
-): string | null => {
-  return getPlayerDebugValue(debugData, playerId, teamColor, "role");
-};
+// ---- per-player rolling history for sparklines ----
 
-const getPlayerSkill = (
-  debugData: DebugMap | null,
-  playerId: number,
-  teamColor: TeamColor
-): string | null => {
-  return getPlayerDebugValue(debugData, playerId, teamColor, "skill");
-};
+interface HistEntry {
+  speed: number[];
+  accel: number[];
+  lastSpeed: number;
+  lastT: number;
+}
 
-const getPlayerMotorStatus = (
-  debugData: DebugMap | null,
-  playerId: number,
-  teamColor: TeamColor
-): string | null => {
-  return getPlayerDebugValue(debugData, playerId, teamColor, "motor_driver");
-};
+const MAX_SAMPLES = 50;
 
-const getPlayerIMUStatus = (
-  debugData: DebugMap | null,
-  playerId: number,
-  teamColor: TeamColor
-): string | null => {
-  return getPlayerDebugValue(debugData, playerId, teamColor, "imu");
-};
+/**
+ * Maintains a rolling buffer of speed & acceleration magnitude per player,
+ * fed from the world stream. Mutates a ref (no re-render side effects); the
+ * component re-renders on the next world tick and reads the updated buffers,
+ * which is plenty smooth for sparklines.
+ */
+function usePlayerHistories(
+  players: PlayerData[]
+): Record<number, { speed: number[]; accel: number[] }> {
+  const ref = useRef<Record<number, HistEntry>>({});
+
+  useEffect(() => {
+    const store = ref.current;
+    for (const p of players) {
+      const speed = magnitude2(p.velocity as [number, number]);
+      let e = store[p.id];
+      if (!e) {
+        e = store[p.id] = {
+          speed: [],
+          accel: [],
+          lastSpeed: speed,
+          lastT: p.timestamp,
+        };
+      }
+      // Skip duplicate frames (same timestamp re-render).
+      if (p.timestamp === e.lastT && e.speed.length > 0) continue;
+      const dt = p.timestamp - e.lastT;
+      const accel = dt > 0 ? Math.abs(speed - e.lastSpeed) / dt : 0;
+      e.speed = [...e.speed, speed].slice(-MAX_SAMPLES);
+      e.accel = [...e.accel, accel].slice(-MAX_SAMPLES);
+      e.lastSpeed = speed;
+      e.lastT = p.timestamp;
+    }
+  });
+
+  return ref.current;
+}
 
 const TeamOverview: FC<TeamOverviewProps> = ({
   className,
@@ -80,7 +103,23 @@ const TeamOverview: FC<TeamOverviewProps> = ({
   const executorInfo = useExecutorInfo();
   const [primaryTeam] = usePrimaryTeam();
 
-  if (worldState.status !== "connected") {
+  const connected = worldState.status === "connected";
+  const blue_team = connected ? worldState.data.blue_team : [];
+  const yellow_team = connected ? worldState.data.yellow_team : [];
+  const own_players = primaryTeam === TeamColor.Blue ? blue_team : yellow_team;
+  const sorted_players = [...own_players].sort((a, b) => a.id - b.id);
+
+  const histories = usePlayerHistories(sorted_players);
+
+  const bsPlayers = bsInfo
+    ? bsInfo.blue_team.length === 0 && bsInfo.yellow_team.length === 0
+      ? bsInfo.unknown_team
+      : primaryTeam === TeamColor.Blue
+      ? bsInfo.blue_team
+      : bsInfo.yellow_team
+    : [];
+
+  if (!connected) {
     return (
       <div className={cn("p-2 bg-bg-surface text-text-std", className)}>
         <div className="text-center text-text-muted text-sm">
@@ -90,49 +129,36 @@ const TeamOverview: FC<TeamOverviewProps> = ({
     );
   }
 
-  const { blue_team, yellow_team } = worldState.data;
-  const own_players = primaryTeam === TeamColor.Blue ? blue_team : yellow_team;
-  const sorted_players = [...own_players].sort((a, b) => a.id - b.id);
-  const bsPlayers = bsInfo
-    ? bsInfo.blue_team.length === 0 && bsInfo.yellow_team.length === 0
-      ? bsInfo.unknown_team
-      : primaryTeam === TeamColor.Blue
-      ? bsInfo.blue_team
-      : bsInfo.yellow_team
-    : [];
-
   return (
     <div className={cn("relative", className)}>
-      <div className="absolute inset-0 overflow-y-auto p-1 bg-bg-surface">
-        <div className="grid grid-cols-1 gap-1">
-          {sorted_players.length > 0 ? (
-            sorted_players.map((player) => {
-              const basestationData = bsPlayers.find((p) => p.id === player.id);
-              const isManual = isPlayerManuallyControlled(
-                player.id,
-                executorInfo?.manual_controlled_players ?? []
-              );
-              const isSelected = player.id === selectedPlayerId;
-
-              return (
-                <PlayerCard
-                  key={player.id}
-                  player={player}
-                  basestationData={basestationData}
-                  isManual={isManual}
-                  isSelected={isSelected}
-                  onClick={() => onSelectPlayer(player.id)}
-                  debugData={debugData}
-                  teamColor={primaryTeam}
-                />
-              );
-            })
-          ) : (
-            <div className="text-center text-text-muted text-sm p-4">
-              No players in world state.
-            </div>
-          )}
+      <div className="absolute inset-0 overflow-y-auto bg-bg-surface">
+        <div className="px-2 py-1.5 text-[11px] uppercase tracking-wider text-text-dim border-b border-border-subtle">
+          {primaryTeam} team — {sorted_players.length} players
         </div>
+        {sorted_players.length > 0 ? (
+          <div className="divide-y divide-border-subtle">
+            {sorted_players.map((player) => (
+              <OverviewRow
+                key={player.id}
+                player={player}
+                feedback={bsPlayers.find((p) => p.id === player.id)}
+                role={getRole(debugData, player.id, primaryTeam)}
+                team={primaryTeam}
+                isManual={isPlayerManuallyControlled(
+                  player.id,
+                  executorInfo?.manual_controlled_players ?? []
+                )}
+                isSelected={player.id === selectedPlayerId}
+                history={histories[player.id]}
+                onClick={() => onSelectPlayer(player.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center text-text-muted text-sm p-4">
+            No players in world state.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -140,142 +166,102 @@ const TeamOverview: FC<TeamOverviewProps> = ({
 
 export default TeamOverview;
 
-interface PlayerCardProps {
+const OverviewRow: FC<{
   player: PlayerData;
-  basestationData?: PlayerFeedbackMsg;
+  feedback?: PlayerFeedbackMsg;
+  role: string | null;
+  team: TeamColor;
   isManual: boolean;
   isSelected: boolean;
+  history?: { speed: number[]; accel: number[] };
   onClick: () => void;
-  debugData: DebugMap | null;
-  teamColor: TeamColor;
-}
-
-const PlayerCard: FC<PlayerCardProps> = ({
+}> = ({
   player,
-  basestationData,
+  feedback,
+  role,
+  team,
   isManual,
   isSelected,
+  history,
   onClick,
-  debugData,
-  teamColor,
 }) => {
-  const bsStatus = basestationData?.primary_status;
-  const hasBsInfo = !!basestationData;
-
-  // Extract debug information
-  const role = getPlayerRole(debugData, player.id, teamColor);
-  const skill = getPlayerSkill(debugData, player.id, teamColor);
-  const motorStatus = getPlayerMotorStatus(debugData, player.id, teamColor);
-  const imuStatus = getPlayerIMUStatus(debugData, player.id, teamColor);
-
-  // Determine status colors
-  const getStatusColor = (status: string | null | undefined) => {
-    if (!status) return "bg-text-muted";
-    const lowerStatus = status.toLowerCase();
-    if (
-      lowerStatus.includes("error") ||
-      lowerStatus.includes("fail") ||
-      lowerStatus.includes("timeout")
-    ) {
-      return "bg-accent-red";
-    }
-    if (lowerStatus.includes("warn") || lowerStatus.includes("degraded")) {
-      return "bg-accent-amber";
-    }
-    if (
-      lowerStatus.includes("ok") ||
-      lowerStatus.includes("good") ||
-      lowerStatus.includes("connected")
-    ) {
-      return "bg-accent-green";
-    }
-    return "bg-accent-blue";
-  };
-
-  const breakbeamDetected = basestationData?.breakbeam_ball_detected;
+  const health = playerHealth(feedback);
+  const speed = magnitude2(player.velocity as [number, number]);
 
   return (
-    <Card
+    <button
       onClick={onClick}
       className={cn(
-        "cursor-pointer hover:bg-bg-overlay transition-colors",
-        isSelected && "ring-1 ring-accent-cyan border-accent-cyan"
+        "w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-bg-overlay transition-colors",
+        isSelected && "bg-bg-overlay ring-1 ring-inset ring-accent-cyan"
       )}
     >
-      <CardContent className="px-2 py-1.5">
-        <div className="flex justify-between items-center mb-1">
-          <h3 className="font-semibold text-text-bright">
-            Robot {player.id}
-          </h3>
-          {isManual && (
-            <Badge variant="destructive">Manual</Badge>
+      <PatternIcon id={player.id} team={team} size={16} />
+      <span className="font-mono text-xs text-text-std w-5 shrink-0">
+        {player.id}
+      </span>
+
+      {/* worst-of health dot — quiet unless there's an issue */}
+      <SimpleTooltip
+        title={
+          health.online
+            ? health.issues.length > 0
+              ? `Issues: ${health.issues.join(", ")}`
+              : "OK"
+            : "No basestation feedback"
+        }
+      >
+        <span
+          className={cn(
+            "w-1.5 h-1.5 rounded-full shrink-0",
+            severityDotClass(health.severity)
           )}
-        </div>
+        />
+      </SimpleTooltip>
 
-        {/* Role and Skill */}
-        <div className="text-sm mb-1 flex gap-1">
-          {role && (
-            <Badge variant="team-blue">{role}</Badge>
-          )}
-          {skill && (
-            <Badge variant="info">{skill}</Badge>
-          )}
-        </div>
+      {/* role */}
+      <span className="text-xs text-text-dim truncate flex-1 min-w-0">
+        {role ?? "—"}
+      </span>
 
-        {/* Status indicators row */}
-        <div className="flex items-center gap-3 text-sm text-text-dim mb-1">
-          {/* Basestation status */}
-          <div className="flex items-center gap-1">
-            <span>BS:</span>
-            <div
-              className={cn(
-                "w-1.5 h-1.5",
-                hasBsInfo ? "bg-accent-green" : "bg-accent-red"
-              )}
-            />
-          </div>
+      {isManual && (
+        <Badge variant="destructive" className="px-1 py-0 text-[10px]">
+          M
+        </Badge>
+      )}
 
-          {/* Breakbeam with orange circle when detected */}
-          <div className="flex items-center gap-1">
-            <span>BB:</span>
-            <div
-              className={cn(
-                "w-1.5 h-1.5",
-                breakbeamDetected === true
-                  ? "bg-accent-amber"
-                  : breakbeamDetected === false
-                  ? "bg-text-muted"
-                  : "bg-border-muted"
-              )}
-            />
-          </div>
+      {/* sparklines — fixed y-limits: speed 0-3000 mm/s, accel 0-3000 mm/s² */}
+      <SimpleTooltip title={`Speed ${Math.round(speed)} mm/s`}>
+        <span className="flex items-center text-text-dim">
+          <Sparkline
+            data={history?.speed ?? []}
+            width={48}
+            height={14}
+            min={0}
+            max={3000}
+          />
+        </span>
+      </SimpleTooltip>
+      <SimpleTooltip title="Acceleration magnitude (mm/s²)">
+        <span className="flex items-center text-text-muted">
+          <Sparkline
+            data={history?.accel ?? []}
+            width={48}
+            height={14}
+            min={0}
+            max={3000}
+          />
+        </span>
+      </SimpleTooltip>
 
-          {/* Motor driver status */}
-          <div className="flex items-center gap-1">
-            <span>MTR:</span>
-            <div
-              className={cn(
-                "w-1.5 h-1.5",
-                getStatusColor(motorStatus)
-              )}
-            />
-          </div>
-
-          {/* IMU status */}
-          <div className="flex items-center gap-1">
-            <span>IMU:</span>
-            <div className={cn("w-1.5 h-1.5", getStatusColor(imuStatus))} />
-          </div>
-        </div>
-
-        {/* Position */}
-        <div className="text-sm flex items-center gap-2 text-text-dim">
-          <span>Pos:</span>
-          <span className="text-text-std">
-            ({player.position[0].toFixed(0)}, {player.position[1].toFixed(0)})
-          </span>
-        </div>
-      </CardContent>
-    </Card>
+      <span
+        className={cn(
+          "font-mono text-[10px] w-10 text-right shrink-0",
+          severityTextClass("ok")
+        )}
+      >
+        {Math.round(speed)}
+      </span>
+    </button>
   );
 };

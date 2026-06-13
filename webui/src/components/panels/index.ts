@@ -7,7 +7,6 @@
 
 import FieldPanel from "./FieldPanel";
 import GameControllerPanel from "./GameControllerPanel";
-import TeamOverviewPanel from "./TeamOverviewPanel";
 import PlayerInspectorPanel from "./PlayerInspectorPanel";
 import BasestationPanel from "./BasestationPanel";
 import SettingsPanel from "./SettingsPanel";
@@ -18,7 +17,6 @@ import ScenarioPanel from "./ScenarioPanel";
 export {
   FieldPanel,
   GameControllerPanel,
-  TeamOverviewPanel,
   PlayerInspectorPanel,
   BasestationPanel,
   SettingsPanel,
@@ -30,7 +28,6 @@ export {
 export const PANEL_IDS = {
   FIELD: "field",
   GAME_CONTROLLER: "game-controller",
-  TEAM_OVERVIEW: "team-overview",
   PLAYER_INSPECTOR: "player-inspector",
   BASESTATION: "basestation",
   SETTINGS: "settings",
@@ -44,11 +41,10 @@ export type PanelId = (typeof PANEL_IDS)[keyof typeof PANEL_IDS];
 export const PANEL_TITLES: Record<PanelId, string> = {
   [PANEL_IDS.FIELD]: "FIELD",
   [PANEL_IDS.GAME_CONTROLLER]: "GAME CTRL",
-  [PANEL_IDS.TEAM_OVERVIEW]: "TEAM",
-  [PANEL_IDS.PLAYER_INSPECTOR]: "PLAYER",
+  [PANEL_IDS.PLAYER_INSPECTOR]: "INSPECTOR",
   [PANEL_IDS.BASESTATION]: "BASESTATION",
   [PANEL_IDS.SETTINGS]: "SETTINGS",
-  [PANEL_IDS.DEBUG_LAYERS]: "LAYERS",
+  [PANEL_IDS.DEBUG_LAYERS]: "DEBUG",
   [PANEL_IDS.SCENARIO]: "SCENARIO",
 };
 
@@ -61,7 +57,6 @@ export const ALL_PANELS: { id: PanelId; title: string }[] = (
 export const panelComponents = {
   [PANEL_IDS.FIELD]: FieldPanel,
   [PANEL_IDS.GAME_CONTROLLER]: GameControllerPanel,
-  [PANEL_IDS.TEAM_OVERVIEW]: TeamOverviewPanel,
   [PANEL_IDS.PLAYER_INSPECTOR]: PlayerInspectorPanel,
   [PANEL_IDS.BASESTATION]: BasestationPanel,
   [PANEL_IDS.SETTINGS]: SettingsPanel,

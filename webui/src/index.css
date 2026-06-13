@@ -332,18 +332,13 @@ body,
   border-bottom: 2px solid var(--color-accent-cyan);
 }
 
-/* Tab close button styling */
-.dockview-theme-dies .tab .dv-default-tab-action {
-  opacity: 0;
-  transition: opacity 0.15s ease;
+/* Tab close button removed (dockview v4 uses .dv-tab / .dv-default-tab-action) */
+.dockview-theme-dies .dv-default-tab-action {
+  display: none !important;
 }
 
 .dockview-theme-dies .dv-default-tab-content {
   font-size: 0.857rem;
-}
-
-.dockview-theme-dies .tab:hover .dv-default-tab-action {
-  opacity: 1;
 }
 
 .dockview-theme-dies .tab .dv-default-tab-action svg {
