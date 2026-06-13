@@ -61,6 +61,9 @@ export interface ShortcutFeedback {
 }
 export const lastShortcutAtom = atom<ShortcutFeedback | null>(null);
 
+/** Whether the command palette (⌘K) is open. */
+export const commandPaletteOpenAtom = atom<boolean>(false);
+
 export type Status =
   | { status: "loading" }
   | { status: "connected"; data: UiStatus }

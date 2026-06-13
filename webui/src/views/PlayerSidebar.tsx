@@ -37,7 +37,8 @@ import {
   prettyPrintSnakeCases,
   radiansToDegrees,
 } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Pause, Play, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Pause, Pin, PinOff, Play, X } from "lucide-react";
+import { pinnedDebugKeysAtom } from "@/lib/pinnedDebug";
 import { FC, useState } from "react";
 import CodeEditor from "./CodeEditor";
 import HardwareReadout from "./HardwareReadout";
@@ -445,12 +446,18 @@ const CollapsibleSection: FC<{
 
 /** Flat two-column key|value table of player debug data (bt.* excluded). */
 const DebugTable: FC<{ data: PlayerDebugValues }> = ({ data }) => {
+  const [pinned, setPinned] = useAtom(pinnedDebugKeysAtom);
   const rows = data
     .filter(
       ([key]) =>
         key !== "bt" && !key.startsWith("bt.") && key !== "target_vel"
     )
     .sort(([a], [b]) => a.localeCompare(b));
+
+  const togglePin = (key: string) =>
+    setPinned((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
 
   if (rows.length === 0) {
     return (
@@ -464,16 +471,36 @@ const DebugTable: FC<{ data: PlayerDebugValues }> = ({ data }) => {
     <div className="bg-bg-elevated border border-border-subtle overflow-x-auto">
       <table className="w-full text-xs">
         <tbody>
-          {rows.map(([key, val]) => (
-            <tr key={key} className="border-b border-border-subtle last:border-0">
-              <td className="px-2 py-1 align-top text-text-dim whitespace-nowrap">
-                {key}
-              </td>
-              <td className="px-2 py-1 font-mono text-text-std break-all">
-                <DebugCell value={val} />
-              </td>
-            </tr>
-          ))}
+          {rows.map(([key, val]) => {
+            const isPinned = pinned.includes(key);
+            return (
+              <tr
+                key={key}
+                className="border-b border-border-subtle last:border-0 group"
+              >
+                <td className="px-1 w-5 align-top">
+                  <button
+                    onClick={() => togglePin(key)}
+                    title={isPinned ? "Unpin from overview" : "Pin to overview"}
+                    className={cn(
+                      "py-1 text-text-muted hover:text-accent-cyan transition-opacity",
+                      isPinned
+                        ? "text-accent-cyan opacity-100"
+                        : "opacity-0 group-hover:opacity-100"
+                    )}
+                  >
+                    {isPinned ? <PinOff size={11} /> : <Pin size={11} />}
+                  </button>
+                </td>
+                <td className="px-1 py-1 align-top text-text-dim whitespace-nowrap">
+                  {key}
+                </td>
+                <td className="px-2 py-1 font-mono text-text-std break-all">
+                  <DebugCell value={val} />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

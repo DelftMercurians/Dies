@@ -6,6 +6,7 @@ import {
   keyboardControlAtom,
   keyboardModeAtom,
   lastShortcutAtom,
+  commandPaletteOpenAtom,
   useWorldState,
   useExecutorInfo,
   useSendCommand,
@@ -31,6 +32,7 @@ export function useCommandContext(
   const setKeyboardMode = useSetAtom(keyboardModeAtom);
   const keyboardControl = useAtomValue(keyboardControlAtom);
   const setLastShortcut = useSetAtom(lastShortcutAtom);
+  const setCommandPaletteOpen = useSetAtom(commandPaletteOpenAtom);
   const world = useWorldState();
   const executorInfo = useExecutorInfo();
   const sendCommand = useSendCommand();
@@ -67,6 +69,7 @@ export function useCommandContext(
       const api = getDockviewApi();
       if (api) openOrFocusPanel(api, id, PANEL_TITLES[id]);
     },
+    toggleCommandPalette: () => setCommandPaletteOpen((v) => !v),
     drivingActive,
     feedback: (label: string) => setLastShortcut({ label, ts: Date.now() }),
   };
@@ -82,10 +85,27 @@ export function useGlobalShortcuts(getDockviewApi: () => DockviewApi | null) {
   ctxRef.current = ctx;
 
   useEffect(() => {
+    // True for the command-palette combo (⌘K / Ctrl+K, no other modifiers).
+    const isPaletteCombo = (ev: KeyboardEvent) =>
+      (ev.metaKey || ev.ctrlKey) &&
+      !ev.shiftKey &&
+      !ev.altKey &&
+      ev.key.toLowerCase() === "k";
+
     const onKeyDown = (ev: KeyboardEvent) => {
       if (ev.repeat) return;
-      if (isTypingTarget(document.activeElement)) return;
       const c = ctxRef.current;
+
+      // Command palette (⌘K / Ctrl+K) — works even while typing. Capture phase
+      // + preventDefault to beat Firefox's search-bar accelerator.
+      if (isPaletteCombo(ev)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        c.toggleCommandPalette();
+        return;
+      }
+
+      if (isTypingTarget(document.activeElement)) return;
 
       // Number keys: quick-switch to robot by id.
       if (
@@ -111,8 +131,23 @@ export function useGlobalShortcuts(getDockviewApi: () => DockviewApi | null) {
       cmd.run(c);
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // Firefox fires the search-bar accelerator for Ctrl/Cmd+K; swallow the
+    // matching keypress/keyup too so only the palette opens.
+    const swallowPalette = (ev: KeyboardEvent) => {
+      if (isPaletteCombo(ev)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    window.addEventListener("keypress", swallowPalette, { capture: true });
+    window.addEventListener("keyup", swallowPalette, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+      window.removeEventListener("keypress", swallowPalette, { capture: true });
+      window.removeEventListener("keyup", swallowPalette, { capture: true });
+    };
   }, []);
 }
 

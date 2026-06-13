@@ -11,10 +11,18 @@ import { Badge } from "@/components/ui/badge";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn, magnitude2 } from "@/lib/utils";
 import {
+  batterySeverity,
+  capVoltageSeverity,
+  motorTempSeverity,
   playerHealth,
+  Severity,
   severityDotClass,
   severityTextClass,
+  sysStatusSeverity,
+  worstSeverity,
 } from "@/lib/hardware";
+import { pinnedDebugKeysAtom, formatPlayerDebugValue } from "@/lib/pinnedDebug";
+import { useAtomValue } from "jotai";
 import { FC, useEffect, useRef } from "react";
 import PatternIcon from "./PatternIcon";
 import Sparkline from "./Sparkline";
@@ -102,6 +110,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
   const debugData = useDebugData();
   const executorInfo = useExecutorInfo();
   const [primaryTeam] = usePrimaryTeam();
+  const pinnedKeys = useAtomValue(pinnedDebugKeysAtom);
 
   const connected = worldState.status === "connected";
   const blue_team = connected ? worldState.data.blue_team : [];
@@ -150,6 +159,8 @@ const TeamOverview: FC<TeamOverviewProps> = ({
                 )}
                 isSelected={player.id === selectedPlayerId}
                 history={histories[player.id]}
+                debugData={debugData}
+                pinnedKeys={pinnedKeys}
                 onClick={() => onSelectPlayer(player.id)}
               />
             ))}
@@ -174,6 +185,8 @@ const OverviewRow: FC<{
   isManual: boolean;
   isSelected: boolean;
   history?: { speed: number[]; accel: number[] };
+  debugData: DebugMap | null;
+  pinnedKeys: string[];
   onClick: () => void;
 }> = ({
   player,
@@ -183,6 +196,8 @@ const OverviewRow: FC<{
   isManual,
   isSelected,
   history,
+  debugData,
+  pinnedKeys,
   onClick,
 }) => {
   const health = playerHealth(feedback);
@@ -192,76 +207,178 @@ const OverviewRow: FC<{
     <button
       onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-bg-overlay transition-colors",
+        "w-full flex flex-col gap-1 px-2 py-1.5 text-left hover:bg-bg-overlay transition-colors",
         isSelected && "bg-bg-overlay ring-1 ring-inset ring-accent-cyan"
       )}
     >
-      <PatternIcon id={player.id} team={team} size={16} />
-      <span className="font-mono text-xs text-text-std w-5 shrink-0">
-        {player.id}
-      </span>
+      {/* top line: icon, id, role, manual, health */}
+      <div className="flex items-center gap-2 w-full">
+        <PatternIcon id={player.id} team={team} size={20} />
+        <span className="font-mono text-sm text-text-bright w-5 shrink-0">
+          {player.id}
+        </span>
+        <span className="text-xs text-text-std truncate flex-1 min-w-0">
+          {role ?? "—"}
+        </span>
+        {isManual && (
+          <Badge variant="destructive" className="px-1 py-0 text-[10px]">
+            M
+          </Badge>
+        )}
+        <SimpleTooltip
+          title={
+            health.online
+              ? health.issues.length > 0
+                ? `Issues: ${health.issues.join(", ")}`
+                : "OK"
+              : "No basestation feedback"
+          }
+        >
+          <span
+            className={cn(
+              "w-2 h-2 rounded-full shrink-0",
+              severityDotClass(health.severity)
+            )}
+          />
+        </SimpleTooltip>
+      </div>
 
-      {/* worst-of health dot — quiet unless there's an issue */}
-      <SimpleTooltip
-        title={
-          health.online
-            ? health.issues.length > 0
-              ? `Issues: ${health.issues.join(", ")}`
-              : "OK"
-            : "No basestation feedback"
-        }
-      >
-        <span
-          className={cn(
-            "w-1.5 h-1.5 rounded-full shrink-0",
-            severityDotClass(health.severity)
-          )}
-        />
-      </SimpleTooltip>
+      {/* hardware strip */}
+      <HardwareStrip feedback={feedback} />
 
-      {/* role */}
-      <span className="text-xs text-text-dim truncate flex-1 min-w-0">
-        {role ?? "—"}
-      </span>
-
-      {isManual && (
-        <Badge variant="destructive" className="px-1 py-0 text-[10px]">
-          M
-        </Badge>
-      )}
+      {/* pinned debug values */}
+      {pinnedKeys.length > 0 ? (
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-mono">
+          {pinnedKeys.map((key) => {
+            const val = formatPlayerDebugValue(debugData, player.id, team, key);
+            return (
+              <span key={key} className="flex items-center gap-1">
+                <span className="text-text-muted">{key}</span>
+                <span className="text-text-std">{val ?? "—"}</span>
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
 
       {/* sparklines — fixed y-limits: speed 0-3000 mm/s, accel 0-3000 mm/s² */}
-      <SimpleTooltip title={`Speed ${Math.round(speed)} mm/s`}>
-        <span className="flex items-center text-text-dim">
-          <Sparkline
-            data={history?.speed ?? []}
-            width={48}
-            height={14}
-            min={0}
-            max={3000}
-          />
+      <div className="flex items-center gap-2">
+        <SimpleTooltip title={`Speed ${Math.round(speed)} mm/s`}>
+          <span className="flex items-center text-text-dim">
+            <Sparkline
+              data={history?.speed ?? []}
+              width={56}
+              height={14}
+              min={0}
+              max={3000}
+            />
+          </span>
+        </SimpleTooltip>
+        <SimpleTooltip title="Acceleration magnitude (mm/s²)">
+          <span className="flex items-center text-text-muted">
+            <Sparkline
+              data={history?.accel ?? []}
+              width={56}
+              height={14}
+              min={0}
+              max={3000}
+            />
+          </span>
+        </SimpleTooltip>
+        <span className="font-mono text-[10px] text-text-dim w-12 text-right">
+          {Math.round(speed)}
         </span>
-      </SimpleTooltip>
-      <SimpleTooltip title="Acceleration magnitude (mm/s²)">
-        <span className="flex items-center text-text-muted">
-          <Sparkline
-            data={history?.accel ?? []}
-            width={48}
-            height={14}
-            min={0}
-            max={3000}
-          />
-        </span>
-      </SimpleTooltip>
-
-      <span
-        className={cn(
-          "font-mono text-[10px] w-10 text-right shrink-0",
-          severityTextClass("ok")
-        )}
-      >
-        {Math.round(speed)}
-      </span>
+      </div>
     </button>
   );
 };
+
+/**
+ * Compact one-line hardware status: 5 motor dots (worst of status+temp),
+ * battery & capacitor voltages, IMU and kicker status dots. Quiet when
+ * healthy; colored only on issues. Shows a muted placeholder without feedback.
+ */
+const HardwareStrip: FC<{ feedback?: PlayerFeedbackMsg }> = ({ feedback }) => {
+  if (!feedback) {
+    return (
+      <div className="text-[10px] text-text-muted italic">no telemetry</div>
+    );
+  }
+
+  const battery =
+    feedback.pack_voltages && feedback.pack_voltages.length > 0
+      ? Math.min(...feedback.pack_voltages)
+      : undefined;
+  const batterySev = feedback.pack_voltages
+    ? worstSeverity(...feedback.pack_voltages.map(batterySeverity))
+    : "idle";
+  const cap = feedback.kicker_cap_voltage;
+
+  return (
+    <div className="flex items-center gap-2 text-[10px] text-text-dim">
+      {/* motors */}
+      <span className="flex items-center gap-1">
+        <span className="text-text-muted">M</span>
+        <span className="flex items-center gap-0.5">
+          {[0, 1, 2, 3, 4].map((i) => {
+            const sev = worstSeverity(
+              sysStatusSeverity(feedback.motor_statuses?.[i]),
+              motorTempSeverity(feedback.motor_temps?.[i])
+            );
+            return (
+              <SimpleTooltip
+                key={i}
+                title={`${i === 4 ? "Dribbler" : `Motor ${i}`}: ${
+                  feedback.motor_statuses?.[i] ?? "n/a"
+                }${
+                  feedback.motor_temps?.[i] !== undefined
+                    ? ` · ${Math.round(feedback.motor_temps[i])}°C`
+                    : ""
+                }`}
+              >
+                <span
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full",
+                    severityDotClass(sev)
+                  )}
+                />
+              </SimpleTooltip>
+            );
+          })}
+        </span>
+      </span>
+
+      {/* battery */}
+      <Stat label="bat" sev={batterySev}>
+        {battery !== undefined ? `${battery.toFixed(1)}V` : "—"}
+      </Stat>
+
+      {/* capacitor */}
+      <Stat label="cap" sev={capVoltageSeverity(cap)}>
+        {cap !== undefined ? `${Math.round(cap)}V` : "—"}
+      </Stat>
+
+      {/* imu + kicker dots */}
+      <DotStat label="imu" sev={sysStatusSeverity(feedback.imu_status)} />
+      <DotStat label="kick" sev={sysStatusSeverity(feedback.kicker_status)} />
+    </div>
+  );
+};
+
+const Stat: FC<{ label: string; sev: Severity; children: React.ReactNode }> = ({
+  label,
+  sev,
+  children,
+}) => (
+  <span className="flex items-center gap-1">
+    <span className="text-text-muted">{label}</span>
+    <span className={cn("font-mono", severityTextClass(sev))}>{children}</span>
+  </span>
+);
+
+const DotStat: FC<{ label: string; sev: Severity }> = ({ label, sev }) => (
+  <span className="flex items-center gap-1">
+    <span className="text-text-muted">{label}</span>
+    <span className={cn("w-1.5 h-1.5 rounded-full", severityDotClass(sev))} />
+  </span>
+);

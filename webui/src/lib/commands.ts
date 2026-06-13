@@ -1,5 +1,5 @@
 import { TeamColor, UiCommand } from "@/bindings";
-import { PanelId, PANEL_IDS } from "@/components/panels";
+import { ALL_PANELS, PanelId, PANEL_IDS } from "@/components/panels";
 
 /**
  * Central command registry. Each command is a self-contained action with a
@@ -20,6 +20,7 @@ export interface CommandContext {
   toggleKeyboardControl: () => void;
   toggleKeyboardMode: () => void;
   focusPanel: (id: PanelId) => void;
+  toggleCommandPalette: () => void;
   /** True when manual keyboard-driving is active (suppresses plain-letter keys). */
   drivingActive: boolean;
   feedback: (label: string) => void;
@@ -161,6 +162,67 @@ export const COMMANDS: Command[] = [
 
 /** Extra display-only entries for the cheat sheet (handled outside COMMANDS). */
 export const EXTRA_SHORTCUTS: { keys: string; title: string }[] = [
+  { keys: "⌘K", title: "Command palette" },
   { keys: "0–9", title: "Select robot by id" },
   { keys: "H", title: "Set target at cursor (over field)" },
 ];
+
+// --- command palette ---
+
+export interface PaletteEntry {
+  id: string;
+  title: string;
+  section: string;
+  keys?: string;
+  run: () => void;
+}
+
+/**
+ * Build the flat list of runnable entries for the command palette from the
+ * shared registry plus dynamic items (robots, panels). The palette and the
+ * keyboard handler thus stay in sync — both driven by {@link CommandContext}.
+ */
+export const buildPaletteEntries = (ctx: CommandContext): PaletteEntry[] => {
+  const entries: PaletteEntry[] = [];
+
+  // Static commands (panel-focus ones are covered by the Panels section).
+  for (const cmd of COMMANDS) {
+    if (cmd.id.startsWith("focus-")) continue;
+    if (cmd.enabled && !cmd.enabled(ctx)) continue;
+    entries.push({
+      id: cmd.id,
+      title: cmd.title,
+      section: "Commands",
+      keys: cmd.keys,
+      run: () => cmd.run(ctx),
+    });
+  }
+
+  // Robots.
+  for (const id of [...ctx.ownPlayerIds].sort((a, b) => a - b)) {
+    entries.push({
+      id: `select-robot-${id}`,
+      title: `Select robot #${id}`,
+      section: "Robots",
+      run: () => {
+        ctx.setSelectedPlayerId(id);
+        ctx.feedback(`Select #${id}`);
+      },
+    });
+  }
+
+  // Panels.
+  for (const panel of ALL_PANELS) {
+    entries.push({
+      id: `panel-${panel.id}`,
+      title: `Focus ${panel.title}`,
+      section: "Panels",
+      run: () => {
+        ctx.focusPanel(panel.id);
+        ctx.feedback(`Focus ${panel.title}`);
+      },
+    });
+  }
+
+  return entries;
+};

@@ -16,6 +16,7 @@ import DockviewWrapper, {
   DockviewWrapperRef,
 } from "./components/DockviewWrapper";
 import { panelComponents, PANEL_IDS, PANEL_TITLES } from "./components/panels";
+import CommandPalette from "./components/CommandPalette";
 import { DockviewApi } from "dockview";
 
 const App: React.FC = () => {
@@ -170,6 +171,9 @@ const App: React.FC = () => {
           onCreateDefaultLayout={createDefaultLayout}
         />
       </div>
+
+      {/* Command palette (⌘K) */}
+      <CommandPalette getDockviewApi={getDockviewApi} />
     </main>
   );
 };
