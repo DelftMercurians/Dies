@@ -10,6 +10,7 @@ import {
   Pause,
   Target,
   Navigation,
+  Clock,
 } from "lucide-react";
 import { GcSimCommand, TeamColor, Vector2 } from "@/bindings";
 import { atom, useAtomValue } from "jotai";
@@ -58,6 +59,13 @@ const GameControllerPanel: React.FC = () => {
         icon: Pause,
         variant: "outline" as const,
         description: "Stop game, robots may move slowly",
+      },
+      {
+        command: { type: "Timeout" },
+        label: "Timeout",
+        icon: Clock,
+        variant: "outline" as const,
+        description: "Call a timeout",
       },
       {
         command: { type: "NormalStart" },

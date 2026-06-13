@@ -743,6 +743,7 @@ impl Simulation {
                 self.game_state = SimulationGameState::stop();
             }
             GcSimCommand::Halt => self.update_referee_command(referee::Command::HALT),
+            GcSimCommand::Timeout => self.update_referee_command(referee::Command::TIMEOUT_BLUE),
             GcSimCommand::NormalStart => {
                 self.update_referee_command(referee::Command::NORMAL_START)
             }
