@@ -29,6 +29,8 @@ fn weights_to_json(w: &CostWeights) -> Value {
         "velocity":            w.velocity,
         "control":             w.control,
         "control_smoothness":  w.control_smoothness,
+        "heading":             w.heading,
+        "heading_control":     w.heading_control,
     })
 }
 
@@ -49,6 +51,7 @@ fn target_to_json(t: &MpcTarget) -> Value {
     json!({
         "p":       [t.p.x, t.p.y],
         "v":       [t.v.x, t.v.y],
+        "heading": t.heading,
         "weights": weights_to_json(&t.weights),
     })
 }
@@ -57,19 +60,26 @@ fn params_to_json(p: &RobotParams) -> Value {
     json!({
         "tau":       p.tau,
         "accel_max": p.accel_max,
+        "tau_yaw":   p.tau_yaw,
+        "omega_max": p.omega_max,
     })
 }
 
 fn state_to_json(s: &RobotState) -> Value {
     json!({
-        "pos": [s.pos.x, s.pos.y],
-        "vel": [s.vel.x, s.vel.y],
+        "pos":     [s.pos.x, s.pos.y],
+        "vel":     [s.vel.x, s.vel.y],
+        "heading": s.heading,
     })
 }
 
 fn traj_to_json(t: &Trajectory) -> Value {
-    let states: Vec<[f64; 4]> = t.states.iter().map(|s| [s[0], s[1], s[2], s[3]]).collect();
-    let controls: Vec<[f64; 2]> = t.controls.iter().map(|u| [u[0], u[1]]).collect();
+    let states: Vec<[f64; 5]> = t
+        .states
+        .iter()
+        .map(|s| [s[0], s[1], s[2], s[3], s[4]])
+        .collect();
+    let controls: Vec<[f64; 3]> = t.controls.iter().map(|u| [u[0], u[1], u[2]]).collect();
     json!({ "states": states, "controls": controls })
 }
 
@@ -79,14 +89,12 @@ struct Case {
     target: MpcTarget,
     params: RobotParams,
     cfg: SolverConfig,
-    headings: Vec<f64>,
     warm_start: Option<Trajectory>,
 }
 
 fn run_case(case: &Case) -> Value {
     let result = solve(
         case.state,
-        &case.headings,
         &case.target,
         &case.params,
         case.warm_start.as_ref(),
@@ -100,7 +108,6 @@ fn run_case(case: &Case) -> Value {
             "target":       target_to_json(&case.target),
             "params":       params_to_json(&case.params),
             "cfg":          cfg_to_json(&case.cfg),
-            "heading_traj": case.headings,
             "warm_start":   case.warm_start.as_ref().map(traj_to_json),
         },
         "outputs": {
@@ -122,10 +129,6 @@ fn dump_golden() {
         ..SolverConfig::default()
     };
 
-    // Common heading trajectories sized for each cfg's horizon.
-    let h_default: Vec<f64> = vec![0.0; cfg_default.horizon + 1];
-    let h_short: Vec<f64> = vec![0.0; cfg_short.horizon + 1];
-
     // Scenario 1: solver should produce ~zero control at target.
     let target_a = MpcTarget::goto(Vec2::new(1000.0, 500.0));
     let case_at_rest = Case {
@@ -133,11 +136,11 @@ fn dump_golden() {
         state: RobotState {
             pos: target_a.p,
             vel: Vec2::zeros(),
+            heading: 0.0,
         },
         target: target_a,
         params: p.clone(),
         cfg: cfg_short.clone(),
-        headings: h_short.clone(),
         warm_start: None,
     };
 
@@ -147,25 +150,28 @@ fn dump_golden() {
         state: RobotState {
             pos: Vec2::zeros(),
             vel: Vec2::zeros(),
+            heading: 0.0,
         },
         target: MpcTarget::goto(Vec2::new(2000.0, 0.0)),
         params: p.clone(),
         cfg: cfg_short.clone(),
-        headings: h_short.clone(),
         warm_start: None,
     };
 
-    // Scenario 3: off-axis target — exercises full 2-D dynamics.
+    // Scenario 3: off-axis target with a nonzero start/desired heading —
+    // exercises full 2-D dynamics plus the heading lag.
+    let mut target_off = MpcTarget::goto(Vec2::new(1500.0, -800.0));
+    target_off.heading = 0.9;
     let case_off_axis = Case {
         name: "goto_1500_-800_short",
         state: RobotState {
             pos: Vec2::new(-200.0, 100.0),
             vel: Vec2::new(300.0, -100.0),
+            heading: -0.4,
         },
-        target: MpcTarget::goto(Vec2::new(1500.0, -800.0)),
+        target: target_off,
         params: p.clone(),
         cfg: cfg_short.clone(),
-        headings: h_short.clone(),
         warm_start: None,
     };
 
@@ -175,18 +181,17 @@ fn dump_golden() {
         state: RobotState {
             pos: Vec2::zeros(),
             vel: Vec2::zeros(),
+            heading: 0.0,
         },
         target: MpcTarget::goto(Vec2::new(1500.0, 0.0)),
         params: p.clone(),
         cfg: cfg_default.clone(),
-        headings: h_default.clone(),
         warm_start: None,
     };
 
     // Scenario 5: warm start derived from scenario 4's result.
     let warm_seed = solve(
         case_default_horizon.state,
-        &case_default_horizon.headings,
         &case_default_horizon.target,
         &case_default_horizon.params,
         None,
@@ -197,11 +202,11 @@ fn dump_golden() {
         state: RobotState {
             pos: Vec2::zeros(),
             vel: Vec2::zeros(),
+            heading: 0.0,
         },
         target: MpcTarget::goto(Vec2::new(1500.0, 0.0)),
         params: p.clone(),
         cfg: cfg_default.clone(),
-        headings: h_default.clone(),
         warm_start: Some(warm_seed.trajectory),
     };
 

@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import SettingsEditor from "@/views/SettingsEditor";
+import IlqrSettingsEditor from "@/views/IlqrSettingsEditor";
 import { useExecutorSettings } from "@/api";
 import { ControllerMode } from "@/bindings";
 
@@ -66,6 +67,7 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
       >
         <TabsList className="w-full">
           <TabsTrigger value="controller">Controller</TabsTrigger>
+          <TabsTrigger value="ilqr">iLQR</TabsTrigger>
           <TabsTrigger value="tracker">Tracker</TabsTrigger>
           <TabsTrigger value="skill">Skill</TabsTrigger>
         </TabsList>
@@ -76,6 +78,14 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
             <GoalAreaAvoidanceToggle />
             <div className="flex-1 overflow-hidden">
               <SettingsEditor settingsKey="controller_settings" />
+            </div>
+          </div>
+        </TabsContent>
+        <TabsContent value="ilqr" className="flex-1 overflow-hidden">
+          <div className="h-full flex flex-col">
+            <ControllerModeSelector />
+            <div className="flex-1 overflow-hidden">
+              <IlqrSettingsEditor />
             </div>
           </div>
         </TabsContent>

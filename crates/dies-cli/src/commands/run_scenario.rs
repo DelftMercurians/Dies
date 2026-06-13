@@ -120,9 +120,7 @@ pub async fn run_scenario(
             let s = status_rx.borrow().clone();
             match s {
                 TestStatus::Running { .. } => saw_running = true,
-                TestStatus::Completed { .. }
-                | TestStatus::Failed { .. }
-                | TestStatus::Aborted => {
+                TestStatus::Completed { .. } | TestStatus::Failed { .. } | TestStatus::Aborted => {
                     if saw_running {
                         // Give pending log lines a moment to flush, then stop.
                         tokio::time::sleep(Duration::from_millis(50)).await;

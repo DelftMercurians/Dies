@@ -62,7 +62,6 @@ pub async fn test_vision(
         match packet {
             dies_ssl_client::SslMessage::Vision(_) => {
                 if !received_vision {
-                    println!("Received vision packet");
                     received_vision = true;
                 }
             }

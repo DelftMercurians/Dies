@@ -26,8 +26,9 @@ _CRATE_TYPES = {
     "FWD", "STRAFE",
 }
 _NALGEBRA_TYPES = {
-    "Vector2", "Vector4",
-    "Matrix2", "Matrix4", "Matrix2x4", "Matrix4x2",
+    "Vector2", "Vector3", "Vector4", "Vector5",
+    "Matrix2", "Matrix3", "Matrix4", "Matrix5",
+    "Matrix2x4", "Matrix4x2", "Matrix3x5", "Matrix5x3",
 }
 
 _IDENT = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")

@@ -3,7 +3,10 @@ use std::{collections::HashMap, fs, path::Path};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::{skill_settings::SkillSettings, FieldGeometry, PlayerId, SideAssignment};
+use crate::{
+    ilqr_params::RobotParams, skill_settings::SkillSettings, FieldGeometry, PlayerId,
+    SideAssignment,
+};
 
 /// Settings for the low-level controller.
 ///
@@ -224,6 +227,10 @@ pub struct ExecutorSettings {
     /// is irrelevant since the whole feature is off).
     #[serde(default = "default_true")]
     pub goal_area_avoidance: bool,
+    /// iLQR/MPC tuning (dynamics model + cost weights + obstacle barriers).
+    /// Applied live to the iLQR controller; only active in `controller_mode = Ilqr`.
+    #[serde(default)]
+    pub ilqr_params: RobotParams,
 }
 
 fn default_true() -> bool {
@@ -277,6 +284,7 @@ impl Default for ExecutorSettings {
             allow_no_vision: false,
             controller_mode: ControllerMode::default(),
             goal_area_avoidance: true,
+            ilqr_params: RobotParams::default(),
         }
     }
 }

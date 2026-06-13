@@ -1,6 +1,6 @@
 import { useExecutorSettings } from "@/api";
 import { ExecutorSettings } from "@/bindings";
-import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -9,11 +9,12 @@ type FieldConfig = {
   [K in keyof ExecutorSettings]?: {
     [M in keyof ExecutorSettings[K]]?: {
       hidden?: boolean;
+      /** Retained for the field_mask slider custom component; ignored by the
+       * default number-input renderer. */
       min?: number;
       max?: number;
       step?: number;
       unit?: string;
-      disableSlider?: boolean;
       isAngle?: boolean;
       customComponent?: React.ComponentType<{
         id: string;
@@ -172,11 +173,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
             const config = fieldConfig[settingsKey]?.[key as SettingsKey] || {};
             const {
               hidden = false,
-              min = 0,
-              max = 100,
-              step,
               unit = null,
-              disableSlider = false,
               isAngle = false,
               customComponent: CustomComponent,
             } = config;
@@ -205,40 +202,21 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
                       }
                     />
                   ) : typeof displayValue === "number" ? (
-                    <>
-                      {!disableSlider ? (
-                        <Slider
-                          id={`${key}-slider`}
-                          min={min}
-                          max={max}
-                          step={step ?? (max - min) / 100}
-                          value={[displayValue]}
-                          onValueChange={([newValue]) =>
-                            handleChange(key as SettingsKey, newValue as Value)
-                          }
-                          className="flex-1 min-w-24"
-                        />
+                    <div className="flex items-center">
+                      <NumberInput
+                        id={key}
+                        value={displayValue}
+                        onChange={(newValue) =>
+                          handleChange(key as SettingsKey, newValue as Value)
+                        }
+                        className="w-24"
+                      />
+                      {unit ? (
+                        <span className="text-sm text-text-muted ml-2">
+                          {unit}
+                        </span>
                       ) : null}
-                      <div className="flex items-center">
-                        <Input
-                          id={key}
-                          type="number"
-                          value={displayValue}
-                          onChange={(e) =>
-                            handleChange(
-                              key as SettingsKey,
-                              parseFloat(e.target.value) as Value,
-                            )
-                          }
-                          className="w-24"
-                        />
-                        {unit ? (
-                          <span className="text-sm text-text-muted ml-2">
-                            {unit}
-                          </span>
-                        ) : null}
-                      </div>
-                    </>
+                    </div>
                   ) : typeof displayValue === "boolean" ? (
                     <Switch
                       id={key}

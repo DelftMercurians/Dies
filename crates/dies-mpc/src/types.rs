@@ -1,85 +1,43 @@
-use nalgebra::{Matrix2, Matrix4, Matrix4x2, Vector2, Vector4};
-use serde::{Deserialize, Serialize};
+use nalgebra::{Matrix2, Matrix5, Matrix5x3, Vector2, Vector3, Vector5};
+
+use crate::obstacle::Obstacle;
+
+// iLQR tuning parameters live in `dies-core` so they can sit on
+// `ExecutorSettings` and flow through the standard settings pipeline. Re-export
+// them here so solver-side paths (`crate::types::RobotParams`, …) keep working.
+pub use dies_core::{CostWeights, ObstacleConfig, RobotParams};
 
 pub type Vec2 = Vector2<f64>;
 pub type Mat2 = Matrix2<f64>;
-pub type State = Vector4<f64>;
-pub type Control = Vector2<f64>;
-pub type StateJac = Matrix4<f64>;
-pub type ControlJac = Matrix4x2<f64>;
+/// Optimised state `[px, py, vx, vy, theta]` (global frame; heading in rad).
+pub type State = Vector5<f64>;
+/// Control `[vx_cmd, vy_cmd, theta_cmd]` (global frame; heading setpoint in rad).
+pub type Control = Vector3<f64>;
+pub type StateJac = Matrix5<f64>;
+pub type ControlJac = Matrix5x3<f64>;
 
 pub const FWD: usize = 0;
 pub const STRAFE: usize = 1;
 
-/// Per-axis first-order velocity-lag time constants and acceleration ceilings.
-///
-/// Body-frame dynamics: `v̇_b[i] = a_max[i] · tanh((v_cmd_b[i] − v_b[i]) / (τ[i] · a_max[i]))`.
-/// In the linear regime (small error) this collapses to the first-order lag
-/// `(v_cmd − v) / τ`; far from steady-state the smooth saturation caps the
-/// realised accel at ±a_max, modelling motor torque/current limits.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RobotParams {
-    pub tau: [f64; 2],
-    #[serde(default = "default_accel_max")]
-    pub accel_max: [f64; 2],
-}
-
-fn default_accel_max() -> [f64; 2] {
-    [3500.0, 3500.0]
-}
-
-impl RobotParams {
-    pub fn default_hand_tuned() -> Self {
-        Self {
-            tau: [0.08, 0.10],
-            accel_max: default_accel_max(),
-        }
-    }
-}
-
-/// Robot kinematic state — global-frame position and velocity.
+/// Robot kinematic state — global-frame position, velocity, and heading.
 #[derive(Clone, Copy, Debug)]
 pub struct RobotState {
     pub pos: Vec2,
     pub vel: Vec2,
+    /// Current heading in radians (global frame).
+    pub heading: f64,
 }
 
 impl RobotState {
     pub fn to_state(&self) -> State {
-        State::new(self.pos.x, self.pos.y, self.vel.x, self.vel.y)
+        State::new(self.pos.x, self.pos.y, self.vel.x, self.vel.y, self.heading)
     }
 
     pub fn from_state(s: &State) -> Self {
         Self {
             pos: Vec2::new(s[0], s[1]),
             vel: Vec2::new(s[2], s[3]),
-        }
-    }
-}
-
-/// Quadratic cost weights. All terms are `½ · w · ||residual||²`.
-#[derive(Clone, Debug)]
-pub struct CostWeights {
-    /// Stage `||pos − target_p||²`. Pulls the trajectory toward the target.
-    pub position: f64,
-    /// Stage `||vel − target_v||²`. Pulls the trajectory toward the velocity reference.
-    pub velocity: f64,
-    /// Stage `||u||²`. Critical: keeps `Q_uu` non-degenerate so iLQR feedback
-    /// gains don't blow up when every other term has zero curvature in `u`.
-    pub control: f64,
-    /// Stage `||u − u_prev||²`. Damps high-frequency control oscillation.
-    pub control_smoothness: f64,
-}
-
-impl Default for CostWeights {
-    fn default() -> Self {
-        Self {
-            // Positions are mm so squared errors are huge; keep weights small.
-            position: 1.0e-3,
-            velocity: 0.0,
-            // velocity: 5.0e-4,
-            control: 5.0e-5,
-            control_smoothness: 1.0e-4,
+            heading: s[4],
         }
     }
 }
@@ -90,16 +48,26 @@ impl Default for CostWeights {
 pub struct MpcTarget {
     pub p: Vec2,
     pub v: Vec2,
+    /// Desired heading in radians (global frame). Only attracts the trajectory
+    /// when `weights.heading > 0`; set the weight to zero to leave heading free
+    /// so the planner picks whatever orientation best serves translation.
+    pub heading: f64,
     pub weights: CostWeights,
+    /// Soft obstacles active for this solve, in the solver's (team-relative)
+    /// frame. Empty by default — the bare tracking problem.
+    pub obstacles: Vec<Obstacle>,
 }
 
 impl MpcTarget {
-    /// Convenience: go to `p` and come to rest, default weights.
+    /// Convenience: go to `p` and come to rest, default weights, no obstacles,
+    /// heading free.
     pub fn goto(p: Vec2) -> Self {
         Self {
             p,
             v: Vec2::zeros(),
+            heading: 0.0,
             weights: CostWeights::default(),
+            obstacles: Vec::new(),
         }
     }
 }
@@ -145,7 +113,7 @@ pub struct SolverConfig {
 impl Default for SolverConfig {
     fn default() -> Self {
         Self {
-            horizon: 150,
+            horizon: 100,
             dt: 0.06,
             max_iters: 15,
             cost_tol: 1.0e-3,

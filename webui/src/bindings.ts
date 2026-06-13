@@ -160,6 +160,40 @@ export interface ControllerSettings {
 	angle_cutoff_distance: number;
 }
 
+/** Quadratic cost weights. All terms are `½ · w · ||residual||²`. */
+export interface CostWeights {
+	/** Stage `||pos − target_p||²`. Pulls the trajectory toward the target. */
+	position: number;
+	/**
+	 * Stage `||vel − target_v||²`. Pulls the trajectory toward the velocity
+	 * reference (zero by default → "arrive and stop"). The main anti-overshoot
+	 * knob: nonzero values damp arrival velocity.
+	 */
+	velocity: number;
+	/**
+	 * Stage `||u||²`. Critical: keeps `Q_uu` non-degenerate so iLQR feedback
+	 * gains don't blow up when every other term has zero curvature in `u`.
+	 */
+	control: number;
+	/**
+	 * Stage `||u − u_prev||²` (translational controls only). Damps
+	 * high-frequency control oscillation.
+	 */
+	control_smoothness: number;
+	/**
+	 * Stage `1 − cos(theta − theta_d)`. Attracts the robot heading toward the
+	 * target heading. Zero ⇒ heading is left free for the planner to optimise
+	 * purely in service of translation.
+	 */
+	heading: number;
+	/**
+	 * Stage `½·(theta_cmd − theta)²`. Regularises the heading setpoint (the
+	 * turn effort) and keeps `Q_uu` non-degenerate in the `theta_cmd` axis —
+	 * the heading analogue of the `control` term.
+	 */
+	heading_control: number;
+}
+
 /**
  * # Team-Specific Coordinate System
  * 
@@ -308,6 +342,59 @@ export enum ControllerMode {
 	Ilqr = "ilqr",
 }
 
+/**
+ * Tunable parameters for the soft obstacle barriers the integration layer
+ * builds around each robot (robots, field walls, defense areas). A single
+ * `weight` / `influence` pair is shared across obstacle types; per-type
+ * geometry margins are kept separate.
+ */
+export interface ObstacleConfig {
+	/** Barrier stiffness `w` shared by every obstacle term. */
+	weight: number;
+	/** Influence distance `δ` [mm]: how far out the barrier starts to push. */
+	influence: number;
+	/** Extra clearance added on top of the two-robot contact distance [mm]. */
+	robot_clearance: number;
+	/** How far ahead to extrapolate moving robots at constant velocity [s]. */
+	robot_extrapolation: number;
+	/** Inset of the robot centre from the physical field walls [mm]. */
+	wall_margin: number;
+	/** Keep-out margin grown around each defense area [mm]. */
+	defense_margin: number;
+}
+
+/**
+ * Per-axis first-order velocity-lag time constants and acceleration ceilings.
+ * 
+ * Body-frame dynamics: `v̇_b[i] = a_max[i] · tanh((v_cmd_b[i] − v_b[i]) / (τ[i] · a_max[i]))`.
+ * In the linear regime (small error) this collapses to the first-order lag
+ * `(v_cmd − v) / τ`; far from steady-state the smooth saturation caps the
+ * realised accel at ±a_max, modelling motor torque/current limits.
+ * 
+ * Index `0` is the forward (FWD) body axis, `1` is the strafe (STRAFE) axis.
+ */
+export interface RobotParams {
+	tau: [number, number];
+	accel_max: [number, number];
+	/**
+	 * First-order heading-lag time constant [s]. Models the onboard IMU yaw
+	 * loop slewing toward the commanded heading setpoint.
+	 */
+	tau_yaw: number;
+	/** Heading slew-rate ceiling [rad/s] — the tanh saturation on `thetȧ`. */
+	omega_max: number;
+	/**
+	 * Soft obstacle-avoidance knobs. Defaulted so older params files (which
+	 * only carried `tau` / `accel_max`) keep parsing.
+	 */
+	obstacles?: ObstacleConfig;
+	/**
+	 * Quadratic tracking-cost weights. Defaulted so older params files keep
+	 * parsing; applied to every solve via `MpcTarget`.
+	 */
+	weights?: CostWeights;
+}
+
 /** Settings for the executor. */
 export interface ExecutorSettings {
 	controller_settings: ControllerSettings;
@@ -324,6 +411,11 @@ export interface ExecutorSettings {
 	 * is irrelevant since the whole feature is off).
 	 */
 	goal_area_avoidance: boolean;
+	/**
+	 * iLQR/MPC tuning (dynamics model + cost weights + obstacle barriers).
+	 * Applied live to the iLQR controller; only active in `controller_mode = Ilqr`.
+	 */
+	ilqr_params?: RobotParams;
 }
 
 export interface ExecutorSettingsResponse {
@@ -384,18 +476,18 @@ export interface FieldGeometry {
 
 /** The game state, as reported by the referee. */
 export type GameState = 
-	| { type: "Unknown",  }
-	| { type: "Halt",  }
-	| { type: "Timeout",  }
-	| { type: "Stop",  }
-	| { type: "PrepareKickoff",  }
+	| { type: "Unknown", data?: undefined }
+	| { type: "Halt", data?: undefined }
+	| { type: "Timeout", data?: undefined }
+	| { type: "Stop", data?: undefined }
+	| { type: "PrepareKickoff", data?: undefined }
 	| { type: "BallReplacement", data: Vector2 }
-	| { type: "PreparePenalty",  }
-	| { type: "Kickoff",  }
-	| { type: "FreeKick",  }
-	| { type: "Penalty",  }
-	| { type: "PenaltyRun",  }
-	| { type: "Run",  };
+	| { type: "PreparePenalty", data?: undefined }
+	| { type: "Kickoff", data?: undefined }
+	| { type: "FreeKick", data?: undefined }
+	| { type: "Penalty", data?: undefined }
+	| { type: "PenaltyRun", data?: undefined }
+	| { type: "Run", data?: undefined };
 
 export interface GameStateData {
 	/** The state of current game */
@@ -482,7 +574,7 @@ export type UiCommand =
 }}
 	| { type: "SimulatorCmd", data: SimulatorCmd }
 	| { type: "SetPause", data: boolean }
-	| { type: "Start",  }
+	| { type: "Start", data?: undefined }
 	| { type: "GcCommand", data: GcSimCommand }
 	/** Control which teams are active */
 	| { type: "SetActiveTeams", data: {
@@ -498,17 +590,17 @@ export type UiCommand =
 	configuration: TeamConfiguration;
 }}
 	/** Swap team colors (Blue <-> Yellow) */
-	| { type: "SwapTeamColors",  }
+	| { type: "SwapTeamColors", data?: undefined }
 	/** Swap team sides (BlueOnPositive <-> YellowOnPositive) */
-	| { type: "SwapTeamSides",  }
+	| { type: "SwapTeamSides", data?: undefined }
 	/** Load and start a JS scenario by file name (resolved against `scenarios/`). */
 	| { type: "StartScenario", data: {
 	scenario: string;
 	team?: TeamColor;
 }}
 	/** Stop the currently running scenario and return to strategy mode. */
-	| { type: "StopScenario",  }
-	| { type: "Stop",  };
+	| { type: "StopScenario", data?: undefined }
+	| { type: "Stop", data?: undefined };
 
 export interface PostUiCommandBody {
 	command: UiCommand;
@@ -551,8 +643,8 @@ export interface ScenarioInfo {
 }
 
 export type TestStatus = 
-	| { state: "Idle",  }
-	| { state: "Starting",  }
+	| { state: "Idle", data?: undefined }
+	| { state: "Starting", data?: undefined }
 	| { state: "Running", data: {
 	name: string;
 }}
@@ -562,7 +654,7 @@ export type TestStatus =
 	| { state: "Failed", data: {
 	error: string;
 }}
-	| { state: "Aborted",  };
+	| { state: "Aborted", data?: undefined };
 
 export interface ScenariosResponse {
 	scenarios: ScenarioInfo[];
@@ -613,8 +705,8 @@ export interface TestLogEntry {
 
 /** The current status of the executor. */
 export type ExecutorStatus = 
-	| { type: "None",  }
-	| { type: "RunningExecutor",  }
+	| { type: "None", data?: undefined }
+	| { type: "RunningExecutor", data?: undefined }
 	| { type: "Failed", data: string };
 
 /** The current status of the UI. */
@@ -689,10 +781,10 @@ export type DebugShape =
 }};
 
 export type GcSimCommand = 
-	| { type: "Stop",  }
-	| { type: "Halt",  }
-	| { type: "NormalStart",  }
-	| { type: "ForceStart",  }
+	| { type: "Stop", data?: undefined }
+	| { type: "Halt", data?: undefined }
+	| { type: "NormalStart", data?: undefined }
+	| { type: "ForceStart", data?: undefined }
 	| { type: "KickOff", data: {
 	team_color: TeamColor;
 }}
@@ -710,7 +802,7 @@ export type GcSimCommand =
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
 	/** Do nothing */
-	| { type: "Stop",  }
+	| { type: "Stop", data?: undefined }
 	/** Move the robot to a globel position and yaw */
 	| { type: "MoveTo", data: {
 	position: Vector2;
@@ -740,7 +832,7 @@ export type PlayerOverrideCommand =
 	speed: number;
 }}
 	/** Discharge the kicker safely */
-	| { type: "DischargeKicker",  }
+	| { type: "DischargeKicker", data?: undefined }
 	| { type: "SetFanSpeed", data: {
 	speed: number;
 }};
@@ -784,7 +876,7 @@ export type SimulatorCmd =
 
 export type UiWorldState = 
 	| { type: "Loaded", data: WorldData }
-	| { type: "None",  };
+	| { type: "None", data?: undefined };
 
 /** WebSocket message types sent from backend to frontend */
 export type WsMessage = 
@@ -793,7 +885,3 @@ export type WsMessage =
 	| { type: "ScenarioLog", data: TestLogEntry }
 	| { type: "ScenarioStatus", data: TestStatus };
 
-export type Vector2 = [number, number];
-export type Vector3 = [number, number, number];
-export type Duration = number;
-export type HashSet<T> = Array<T>;

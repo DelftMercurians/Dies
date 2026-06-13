@@ -6,9 +6,18 @@
 //
 #![allow(clippy::type_complexity)]
 
-// Quadratic stage cost for the iLQR solver.
+// Stage cost: quadratic translational tracking + smooth heading tracking.
 //
-// Stage L = ½·w_pos·‖pos−tp‖² + ½·w_vel·‖vel−tv‖² + ½·w_ctrl·‖u‖² + ½·w_dctrl·‖u−u_prev‖²
+// L = ½·w_pos·‖pos−tp‖² + ½·w_vel·‖vel−tv‖²
+//   + ½·w_ctrl·‖u_trans‖² + ½·w_dctrl·‖u_trans − u_prev_trans‖²
+//   + w_yaw·(1 − cos(theta − theta_d))
+//   + ½·w_yawctrl·(theta_cmd − theta)²
+//
+// The translational control terms apply to `u_trans = [vx_cmd, vy_cmd]` only — the
+// heading setpoint `theta_cmd` is regularised by the `(theta_cmd − theta)²` turn
+// term instead (absolute heading has no meaningful magnitude). Heading tracking
+// uses the wrap-aware `1 − cos` residual so the target heading attracts the short
+// way around.
 //
 //   L =
 //            ⎛  2     2⎞           ⎛           2              2⎞        ⎛               2                   2⎞        ⎛      ↪
@@ -16,106 +25,129 @@
 //     ────────────────── + ───────────────────────────────────── + ─────────────────────────────────────────── + ─────────── ↪
 //             2                              2                                          2                                    ↪
 //
-//     ↪            2                    2⎞
-//     ↪ getᵥₓ + vx)  + (-target_vy + vy) ⎠
-//     ↪ ──────────────────────────────────
-//     ↪            2
+//     ↪            2                    2⎞                                                            2
+//     ↪ getᵥₓ + vx)  + (-target_vy + vy) ⎠                                      w_yawctrl⋅(-θ + θ_cmd)
+//     ↪ ────────────────────────────────── + w_yaw⋅(1 - cos(targetₜₕₑₜₐ - θ)) + ───────────────────────
+//     ↪            2                                                                       2
 //
 // Outputs:
 //   cost : f64
-//   lx : Vector4<f64>
-//   lu : Vector2<f64>
-//   lxx : Matrix4<f64>
-//   luu : Matrix2<f64>
-//   lux : Matrix2x4<f64>
+//   lx : Vector5<f64>
+//   lu : Vector3<f64>
+//   lxx : Matrix5<f64>
+//   luu : Matrix3<f64>
+//   lux : Matrix3x5<f64>
 //
 
 use crate::types::MpcTarget;
-use nalgebra::{Matrix2, Matrix2x4, Matrix4, Vector2, Vector4};
+use nalgebra::{Matrix3, Matrix3x5, Matrix5, Vector3, Vector5};
 
 pub(crate) fn stage_derivs(
-    x: &Vector4<f64>,
-    u: &Vector2<f64>,
-    u_prev: &Vector2<f64>,
+    x: &Vector5<f64>,
+    u: &Vector3<f64>,
+    u_prev: &Vector3<f64>,
     target: &MpcTarget,
 ) -> (
     f64,
-    Vector4<f64>,
-    Vector2<f64>,
-    Matrix4<f64>,
-    Matrix2<f64>,
-    Matrix2x4<f64>,
+    Vector5<f64>,
+    Vector3<f64>,
+    Matrix5<f64>,
+    Matrix3<f64>,
+    Matrix3x5<f64>,
 ) {
     let px = x[0];
     let py = x[1];
     let vx = x[2];
     let vy = x[3];
+    let theta = x[4];
     let ux = u[0];
     let uy = u[1];
+    let theta_cmd = u[2];
     let upx = u_prev[0];
     let upy = u_prev[1];
     let target_px = target.p.x;
     let target_py = target.p.y;
     let target_vx = target.v.x;
     let target_vy = target.v.y;
+    let target_theta = target.heading;
     let w_pos = target.weights.position;
     let w_vel = target.weights.velocity;
     let w_ctrl = target.weights.control;
     let w_dctrl = target.weights.control_smoothness;
-    let z0 = 0.5 * w_dctrl;
-    let z1 = 0.5 * w_pos;
-    let z2 = 0.5 * w_vel;
-    let z3 = w_ctrl + w_dctrl;
+    let w_yaw = target.weights.heading;
+    let w_yawctrl = target.weights.heading_control;
+    let z0 = 0.5 * w_yawctrl;
+    let z1 = target_theta - theta;
+    let z2 = z1.cos();
+    let z3 = 0.5 * w_dctrl;
+    let z4 = 0.5 * w_pos;
+    let z5 = 0.5 * w_vel;
+    let z6 = 2.0 * theta - 2.0 * theta_cmd;
+    let z7 = w_ctrl + w_dctrl;
     let cost = 0.5 * w_ctrl * (ux.powi(2) + uy.powi(2))
-        + z0 * ((-upx + ux).powi(2) + (-upy + uy).powi(2))
-        + z1 * ((px - target_px).powi(2) + (py - target_py).powi(2))
-        + z2 * ((-target_vx + vx).powi(2) + (-target_vy + vy).powi(2));
-    let lx = Vector4::new(
-        z1 * (2.0 * px - 2.0 * target_px),
-        z1 * (2.0 * py - 2.0 * target_py),
-        z2 * (-2.0 * target_vx + 2.0 * vx),
-        z2 * (-2.0 * target_vy + 2.0 * vy),
+        + w_yaw * (1.0 - z2)
+        + z0 * (-theta + theta_cmd).powi(2)
+        + z3 * ((-upx + ux).powi(2) + (-upy + uy).powi(2))
+        + z4 * ((px - target_px).powi(2) + (py - target_py).powi(2))
+        + z5 * ((-target_vx + vx).powi(2) + (-target_vy + vy).powi(2));
+    let lx = Vector5::new(
+        z4 * (2.0 * px - 2.0 * target_px),
+        z4 * (2.0 * py - 2.0 * target_py),
+        z5 * (-2.0 * target_vx + 2.0 * vx),
+        z5 * (-2.0 * target_vy + 2.0 * vy),
+        -w_yaw * z1.sin() + 0.5 * w_yawctrl * z6,
     );
-    let lu = Vector2::new(
-        ux * w_ctrl + z0 * (-2.0 * upx + 2.0 * ux),
-        uy * w_ctrl + z0 * (-2.0 * upy + 2.0 * uy),
+    let lu = Vector3::new(
+        ux * w_ctrl + z3 * (-2.0 * upx + 2.0 * ux),
+        uy * w_ctrl + z3 * (-2.0 * upy + 2.0 * uy),
+        -z0 * z6,
     );
-    let mut lxx = Matrix4::zeros();
+    let mut lxx = Matrix5::zeros();
     lxx[(0, 0)] = w_pos;
     lxx[(1, 1)] = w_pos;
     lxx[(2, 2)] = w_vel;
     lxx[(3, 3)] = w_vel;
-    let mut luu = Matrix2::zeros();
-    luu[(0, 0)] = z3;
-    luu[(1, 1)] = z3;
-    let lux = Matrix2x4::zeros();
+    lxx[(4, 4)] = w_yaw * z2 + w_yawctrl;
+    let mut luu = Matrix3::zeros();
+    luu[(0, 0)] = z7;
+    luu[(1, 1)] = z7;
+    luu[(2, 2)] = w_yawctrl;
+    let mut lux = Matrix3x5::zeros();
+    lux[(2, 4)] = -w_yawctrl;
     (cost, lx, lu, lxx, luu, lux)
 }
 
 pub(crate) fn stage_cost_scalar(
-    x: &Vector4<f64>,
-    u: &Vector2<f64>,
-    u_prev: &Vector2<f64>,
+    x: &Vector5<f64>,
+    u: &Vector3<f64>,
+    u_prev: &Vector3<f64>,
     target: &MpcTarget,
 ) -> f64 {
     let px = x[0];
     let py = x[1];
     let vx = x[2];
     let vy = x[3];
+    let theta = x[4];
     let ux = u[0];
     let uy = u[1];
+    let theta_cmd = u[2];
     let upx = u_prev[0];
     let upy = u_prev[1];
     let target_px = target.p.x;
     let target_py = target.p.y;
     let target_vx = target.v.x;
     let target_vy = target.v.y;
+    let target_theta = target.heading;
     let w_pos = target.weights.position;
     let w_vel = target.weights.velocity;
     let w_ctrl = target.weights.control;
     let w_dctrl = target.weights.control_smoothness;
+    let w_yaw = target.weights.heading;
+    let w_yawctrl = target.weights.heading_control;
     0.5 * w_ctrl * (ux.powi(2) + uy.powi(2))
         + 0.5 * w_dctrl * ((-upx + ux).powi(2) + (-upy + uy).powi(2))
         + 0.5 * w_pos * ((px - target_px).powi(2) + (py - target_py).powi(2))
         + 0.5 * w_vel * ((-target_vx + vx).powi(2) + (-target_vy + vy).powi(2))
+        + w_yaw * (1.0 - (target_theta - theta).cos())
+        + 0.5 * w_yawctrl * (-theta + theta_cmd).powi(2)
 }

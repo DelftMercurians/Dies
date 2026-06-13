@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+dies-core = { version = "0.1.0", path = "../dies-core" }
 nalgebra = "0.32.3"
 anyhow = "1"
 tracing = "0.1"

@@ -4,14 +4,14 @@ use std::{
 };
 
 use dies_core::{
-    ControllerMode, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer,
+    Angle, ControllerMode, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer,
     PlayerId, RoleType, SideAssignment, TeamColor, TeamData, Vector2,
 };
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use std::sync::Arc;
 
 use super::{
-    ilqr::IlqrController,
+    ilqr::{IlqrCommand, IlqrController},
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     skill_executor::{SkillContext, SkillExecutor},
@@ -60,7 +60,7 @@ impl TeamController {
             settings: settings.clone(),
             skill_executor: SkillExecutor::new(),
             strategy_input: StrategyInput::default(),
-            ilqr_controller: IlqrController::load_or_insert("dies-irql-settings.json"),
+            ilqr_controller: IlqrController::with_params(settings.ilqr_params.clone()),
             removing_players: HashSet::new(),
             avoid_goal_area_flags: HashMap::new(),
             warmup_timer: None,
@@ -75,6 +75,7 @@ impl TeamController {
         for controller in self.player_controllers.values_mut() {
             controller.update_settings(&settings.controller_settings);
         }
+        self.ilqr_controller.set_params(settings.ilqr_params.clone());
         self.settings = settings.clone();
     }
 
@@ -259,14 +260,18 @@ impl TeamController {
         // target before the per-controller update. Results override the MTP
         // velocity computed inside `controller.update()` below. In MTP mode
         // this map stays empty and the existing MTP path runs untouched.
-        let ilqr_overrides: HashMap<PlayerId, Vector2> = match self.settings.controller_mode {
+        let ilqr_overrides: HashMap<PlayerId, IlqrCommand> = match self.settings.controller_mode {
             ControllerMode::Ilqr => {
                 let inputs_for_ilqr: HashMap<PlayerId, PlayerControlInput> = self
                     .player_controllers
                     .keys()
                     .map(|id| {
                         let base = final_player_inputs.player(*id);
-                        let effective = manual_override.get(id).cloned().unwrap_or(base);
+                        let mut effective = manual_override.get(id).cloned().unwrap_or(base);
+                        // Defense-area avoidance follows the same flag the MTP
+                        // path uses (enabled globally, off for the goalkeeper).
+                        effective.avoid_defense_area =
+                            self.avoid_goal_area_flags.get(id).copied().unwrap_or(false);
                         (*id, effective)
                     })
                     .collect();
@@ -289,8 +294,17 @@ impl TeamController {
             if let Some(player_data) = player_data {
                 let id = controller.id();
                 let player_context = team_context.player_context(id);
-                let default_input = final_player_inputs.player(id);
-                let input_to_use = manual_override.get(&id).unwrap_or(&default_input);
+                // Owned so the planned iLQR heading can be injected as the yaw
+                // setpoint before `update()` (keeps yaw-rate feedforward
+                // consistent with the commanded heading).
+                let mut effective_input = manual_override
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or_else(|| final_player_inputs.player(id));
+                if let Some(cmd) = ilqr_overrides.get(&id) {
+                    effective_input.yaw = Some(Angle::from_radians(cmd.heading));
+                }
+                let input_to_use = &effective_input;
 
                 let is_manual = manual_override
                     .get(&id)
@@ -373,10 +387,11 @@ impl TeamController {
                 );
 
                 // iLQR (when enabled) overrides the MTP velocity that
-                // `update()` just computed. We let `update()` run
-                // unconditionally so yaw/kicker/dribbler logic still fires.
-                if let Some(vel) = ilqr_overrides.get(&id) {
-                    controller.set_target_velocity(*vel);
+                // `update()` just computed; the planned heading was already
+                // injected as the yaw setpoint above. We let `update()` run
+                // unconditionally so kicker/dribbler logic still fires.
+                if let Some(cmd) = ilqr_overrides.get(&id) {
+                    controller.set_target_velocity(cmd.velocity);
                     player_context.debug_string("controller", "iLQR");
                 }
             } else {

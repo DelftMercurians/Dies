@@ -10,7 +10,7 @@ import {
 import * as math from "mathjs";
 import { DebugValue, PlayerData, TeamColor } from "@/bindings";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -27,7 +27,6 @@ import { FC, useState } from "react";
 import CodeEditor from "./CodeEditor";
 import HierarchicalList from "./HierarchicalList";
 import TimeSeriesChart from "./TimeSeriesChart";
-import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import BehaviorTreeView from "./BehaviorTreeView";
 
@@ -308,50 +307,28 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 
                 <div className="flex flex-row gap-2 items-center text-sm">
                   <div>Speed</div>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="10000"
-                    value={speed}
-                    onChange={(e) => setSpeed(parseInt(e.target.value))}
-                  />
+                  <NumberInput value={speed} onChange={setSpeed} />
                   <div className="text-text-dim">mm/s</div>
                 </div>
 
                 <div className="flex flex-row gap-2 items-center text-sm">
                   <div>Angular Speed</div>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="360"
+                  <NumberInput
                     value={angularSpeedDegPerSec}
-                    onChange={(e) =>
-                      setAngularSpeedDegPerSec(parseInt(e.target.value))
-                    }
+                    onChange={setAngularSpeedDegPerSec}
                   />
                   <div className="text-text-dim">deg/s</div>
                 </div>
 
                 <div className="flex flex-row gap-2 items-center text-sm">
                   <div>Fan Speed</div>
-                  <Slider
-                    min={0}
-                    max={100}
-                    value={[fanSpeed]}
-                    onValueChange={([newValue]) => setFanSpeed(newValue)}
-                  />
+                  <NumberInput value={fanSpeed} onChange={setFanSpeed} />
                   <div className="text-text-dim">%</div>
                 </div>
 
                 <div className="flex flex-row gap-2 items-center text-sm">
                   <div>Kick Speed</div>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="10000"
-                    value={kickSpeed}
-                    onChange={(e) => setKickSpeed(parseInt(e.target.value))}
-                  />
+                  <NumberInput value={kickSpeed} onChange={setKickSpeed} />
                   <div className="text-text-dim">mm/s</div>
                 </div>
 

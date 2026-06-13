@@ -6,16 +6,22 @@
 //
 #![allow(clippy::type_complexity)]
 
-// Robot translational dynamics — first-order velocity lag per body axis.
+// Robot dynamics — translational first-order velocity lag + heading lag.
 //
-// State `x = [px, py, vx, vy]` global frame.
-// Control `u = [vx_cmd, vy_cmd]` global frame.
-// Heading θ is exogenous per stage. Forward-Euler integration at MPC stage dt.
+// State `x = [px, py, vx, vy, theta]` global frame.
+// Control `u = [vx_cmd, vy_cmd, theta_cmd]` global frame.
+//
+// Heading is now part of the optimised state. The onboard IMU yaw loop (which
+// tracks a commanded global heading setpoint) is modelled as a first-order lag of
+// `theta` toward `theta_cmd`, saturated at `omega_max` via tanh — exactly mirroring
+// the per-axis translational velocity lag. Because `theta` enters the body↔global
+// rotation `R(theta)`, the planner can now rotate the robot to exploit the
+// anisotropic translational acceleration limits. Forward-Euler at MPC stage dt.
 //
 //   R(θ) =
-//     ⎡cos(heading)  -sin(heading)⎤
-//     ⎢                           ⎥
-//     ⎣sin(heading)  cos(heading) ⎦
+//     ⎡cos(θ)  -sin(θ)⎤
+//     ⎢               ⎥
+//     ⎣sin(θ)  cos(θ) ⎦
 //   v_body =
 //     ⎡R₀ ₀⋅vx + R₁ ₀⋅vy⎤
 //     ⎢                 ⎥
@@ -32,6 +38,10 @@
 //     ⎢                 ⎛ u_body_1 - v_body_1 ⎞⎥
 //     ⎢accel_strafe⋅tanh⎜─────────────────────⎟⎥
 //     ⎣                 ⎝accel_strafe⋅τ_strafe⎠⎦
+//   theta_dot =
+//              ⎛-θ + θ_cmd⎞
+//     ωₘₐₓ⋅tanh⎜──────────⎟
+//              ⎝ωₘₐₓ⋅τ_yaw⎠
 //   xdot =
 //     ⎡             vx              ⎤
 //     ⎢                             ⎥
@@ -39,7 +49,9 @@
 //     ⎢                             ⎥
 //     ⎢R₀ ₀⋅a_body_0 + R₀ ₁⋅a_body_1⎥
 //     ⎢                             ⎥
-//     ⎣R₁ ₀⋅a_body_0 + R₁ ₁⋅a_body_1⎦
+//     ⎢R₁ ₀⋅a_body_0 + R₁ ₁⋅a_body_1⎥
+//     ⎢                             ⎥
+//     ⎣            θ_dot            ⎦
 //   x_next =
 //     ⎡dt⋅ẋ₀ + px⎤
 //     ⎢          ⎥
@@ -47,7 +59,9 @@
 //     ⎢          ⎥
 //     ⎢dt⋅ẋ₂ + vx⎥
 //     ⎢          ⎥
-//     ⎣dt⋅ẋ₃ + vy⎦
+//     ⎢dt⋅ẋ₃ + vy⎥
+//     ⎢          ⎥
+//     ⎣dt⋅ẋ₄ + θ ⎦
 //
 // Outputs:
 //   x_next : State
@@ -57,19 +71,23 @@
 
 use crate::types::{Control, ControlJac, RobotParams, State, StateJac, FWD, STRAFE};
 
-pub(crate) fn step(x: &State, u: &Control, heading: f64, dt: f64, p: &RobotParams) -> State {
+pub(crate) fn step(x: &State, u: &Control, dt: f64, p: &RobotParams) -> State {
     let px = x[0];
     let py = x[1];
     let vx = x[2];
     let vy = x[3];
+    let theta = x[4];
     let ux = u[0];
     let uy = u[1];
+    let theta_cmd = u[2];
     let tau_fwd = p.tau[FWD];
     let tau_strafe = p.tau[STRAFE];
     let accel_fwd = p.accel_max[FWD];
     let accel_strafe = p.accel_max[STRAFE];
-    let z0 = heading.cos();
-    let z1 = heading.sin();
+    let tau_yaw = p.tau_yaw;
+    let omega_max = p.omega_max;
+    let z0 = theta.cos();
+    let z1 = theta.sin();
     let z2 = accel_fwd
         * (accel_fwd.recip() * tau_fwd.recip() * (ux * z0 + uy * z1 - vx * z0 - vy * z1)).tanh();
     let z3 = accel_strafe
@@ -80,13 +98,14 @@ pub(crate) fn step(x: &State, u: &Control, heading: f64, dt: f64, p: &RobotParam
         dt * vy + py,
         dt * (z0 * z2 - z1 * z3) + vx,
         dt * (z0 * z3 + z1 * z2) + vy,
+        dt * omega_max * (omega_max.recip() * tau_yaw.recip() * (-theta + theta_cmd)).tanh()
+            + theta,
     )
 }
 
 pub(crate) fn step_with_jacobians(
     x: &State,
     u: &Control,
-    heading: f64,
     dt: f64,
     p: &RobotParams,
 ) -> (State, StateJac, ControlJac) {
@@ -94,49 +113,67 @@ pub(crate) fn step_with_jacobians(
     let py = x[1];
     let vx = x[2];
     let vy = x[3];
+    let theta = x[4];
     let ux = u[0];
     let uy = u[1];
+    let theta_cmd = u[2];
     let tau_fwd = p.tau[FWD];
     let tau_strafe = p.tau[STRAFE];
     let accel_fwd = p.accel_max[FWD];
     let accel_strafe = p.accel_max[STRAFE];
-    let z0 = heading.cos();
+    let tau_yaw = p.tau_yaw;
+    let omega_max = p.omega_max;
+    let z0 = theta.cos();
     let z1 = tau_fwd.recip();
-    let z2 = heading.sin();
-    let z3 = (accel_fwd.recip() * z1 * (ux * z0 + uy * z2 - vx * z0 - vy * z2)).tanh();
-    let z4 = accel_fwd * z3;
-    let z5 = tau_strafe.recip();
-    let z6 = (accel_strafe.recip() * z5 * (-ux * z2 + uy * z0 + vx * z2 - vy * z0)).tanh();
-    let z7 = accel_strafe * z6;
-    let z8 = z0.powi(2);
-    let z9 = z1 * (1.0 - z3.powi(2));
-    let z10 = z2.powi(2);
-    let z11 = z5 * (1.0 - z6.powi(2));
-    let z12 = z10 * z11 + z8 * z9;
-    let z13 = z0 * z2;
-    let z14 = z11 * z13 - z13 * z9;
-    let z15 = dt * z14;
-    let z16 = z10 * z9 + z11 * z8;
-    let z17 = -dt * z14;
+    let z2 = theta.sin();
+    let z3 = ux * z0 + uy * z2 - vx * z0 - vy * z2;
+    let z4 = (accel_fwd.recip() * z1 * z3).tanh();
+    let z5 = accel_fwd * z4;
+    let z6 = tau_strafe.recip();
+    let z7 = -ux * z2 + uy * z0 + vx * z2 - vy * z0;
+    let z8 = (accel_strafe.recip() * z6 * z7).tanh();
+    let z9 = accel_strafe * z8;
+    let z10 = z0 * z5 - z2 * z9;
+    let z11 = z0 * z9 + z2 * z5;
+    let z12 = tau_yaw.recip();
+    let z13 = (omega_max.recip() * z12 * (-theta + theta_cmd)).tanh();
+    let z14 = z0.powi(2);
+    let z15 = 1.0 - z4.powi(2);
+    let z16 = z1 * z15;
+    let z17 = z2.powi(2);
+    let z18 = z6 * (1.0 - z8.powi(2));
+    let z19 = z14 * z16 + z17 * z18;
+    let z20 = z0 * z2;
+    let z21 = -z16 * z20 + z18 * z20;
+    let z22 = dt * z21;
+    let z23 = -z18 * z3;
+    let z24 = z14 * z18 + z16 * z17;
+    let z25 = dt * z12 * (1.0 - z13.powi(2));
+    let z26 = -dt * z21;
     let x_next = State::new(
         dt * vx + px,
         dt * vy + py,
-        dt * (z0 * z4 - z2 * z7) + vx,
-        dt * (z0 * z7 + z2 * z4) + vy,
+        dt * z10 + vx,
+        dt * z11 + vy,
+        dt * omega_max * z13 + theta,
     );
     let mut fx = StateJac::zeros();
     fx[(0, 0)] = 1.0;
     fx[(0, 2)] = dt;
     fx[(1, 1)] = 1.0;
     fx[(1, 3)] = dt;
-    fx[(2, 2)] = -dt * z12 + 1.0;
-    fx[(2, 3)] = z15;
-    fx[(3, 2)] = z15;
-    fx[(3, 3)] = -dt * z16 + 1.0;
+    fx[(2, 2)] = -dt * z19 + 1.0;
+    fx[(2, 3)] = z22;
+    fx[(2, 4)] = dt * (z0 * z1 * z15 * z7 - z11 - z2 * z23);
+    fx[(3, 2)] = z22;
+    fx[(3, 3)] = -dt * z24 + 1.0;
+    fx[(3, 4)] = dt * (z0 * z23 + z10 + z16 * z2 * z7);
+    fx[(4, 4)] = 1.0 - z25;
     let mut fu = ControlJac::zeros();
-    fu[(2, 0)] = dt * z12;
-    fu[(2, 1)] = z17;
-    fu[(3, 0)] = z17;
-    fu[(3, 1)] = dt * z16;
+    fu[(2, 0)] = dt * z19;
+    fu[(2, 1)] = z26;
+    fu[(3, 0)] = z26;
+    fu[(3, 1)] = dt * z24;
+    fu[(4, 2)] = z25;
     (x_next, fx, fu)
 }

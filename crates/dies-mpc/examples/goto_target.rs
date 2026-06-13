@@ -16,9 +16,9 @@ fn main() {
     let state = RobotState {
         pos: Vec2::zeros(),
         vel: Vec2::zeros(),
+        heading: 0.0,
     };
-    let headings = vec![0.0; cfg.horizon + 1];
-    let result = solve(state, &headings, &target, &params, None, &cfg);
+    let result = solve(state, &target, &params, None, &cfg);
 
     eprintln!(
         "# solve: iters={} converged={} cost={:.4} time={}us",

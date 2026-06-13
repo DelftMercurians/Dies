@@ -14,11 +14,17 @@ from .rust import rust_expr
 # Type aliases (State, Control, StateJac, ControlJac) double as constructors.
 _TYPE_CTOR: dict[str, str] = {
     "Vector2<f64>": "Vector2",
+    "Vector3<f64>": "Vector3",
     "Vector4<f64>": "Vector4",
+    "Vector5<f64>": "Vector5",
     "Matrix2<f64>": "Matrix2",
+    "Matrix3<f64>": "Matrix3",
     "Matrix4<f64>": "Matrix4",
+    "Matrix5<f64>": "Matrix5",
     "Matrix2x4<f64>": "Matrix2x4",
     "Matrix4x2<f64>": "Matrix4x2",
+    "Matrix3x5<f64>": "Matrix3x5",
+    "Matrix5x3<f64>": "Matrix5x3",
 }
 
 

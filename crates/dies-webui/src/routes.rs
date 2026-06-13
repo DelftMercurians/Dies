@@ -15,7 +15,17 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::sync::{broadcast, watch};
+use tokio::time::MissedTickBehavior;
+
+/// Max rate at which the debug map is pushed to a connected client.
+///
+/// The debug map is rebuilt many times per executor tick (every `debug_*`
+/// call notifies subscribers), so sending on every notification floods the
+/// browser faster than it can parse + re-render, and the WS backlog grows
+/// without bound. We coalesce to the latest snapshot at a fixed rate instead.
+const DEBUG_SEND_HZ: u64 = 30;
 
 use crate::{
     server::ServerState, BasestationResponse, ExecutorInfoResponse, ExecutorSettingsResponse,
@@ -140,6 +150,12 @@ async fn handle_ws_conn(
     // Send the current status snapshot once so the client doesn't have to poll.
     let initial_status = status_rx.borrow().clone();
     let _ = handle_send_status(&initial_status, &mut socket).await;
+
+    // Rate-limit debug pushes: tick at a fixed rate and send the latest
+    // snapshot, coalescing the many per-tick debug updates into one message.
+    let mut debug_interval = tokio::time::interval(Duration::from_millis(1000 / DEBUG_SEND_HZ));
+    debug_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
     loop {
         tokio::select! {
             Some(Ok(msg)) = socket.next() => {
@@ -151,7 +167,8 @@ async fn handle_ws_conn(
                     break;
                 }
             }
-            debug_map = debug_rx.wait_and_get_copy() => {
+            _ = debug_interval.tick() => {
+                let debug_map = debug_rx.get_copy();
                 if let Err(err) =  handle_send_debug_map_update(debug_map, &mut socket).await {
                     log::error!("Failed to send update: {}", err);
                     break;

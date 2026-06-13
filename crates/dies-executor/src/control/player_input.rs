@@ -154,6 +154,9 @@ pub struct PlayerControlInput {
     pub fan_speed: Option<f64>,
     pub kick_speed: Option<f64>,
     pub avoid_robots: bool,
+    /// Whether the iLQR controller should keep this robot out of the defense
+    /// areas. Set per-robot by the team controller (off for the goalkeeper).
+    pub avoid_defense_area: bool,
 
     pub role_type: RoleType,
 }
@@ -178,6 +181,7 @@ impl Default for PlayerControlInput {
             fan_speed: None,
             kick_speed: None,
             avoid_robots: false,
+            avoid_defense_area: false,
             control_paramer_override: None,
             role_type: RoleType::default(),
         }

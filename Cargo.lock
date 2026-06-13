@@ -1142,6 +1142,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "approx",
+ "dies-core",
  "nalgebra 0.32.6",
  "rand 0.8.5",
  "rand_distr",
