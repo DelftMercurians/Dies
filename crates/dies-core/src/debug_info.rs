@@ -1,6 +1,6 @@
 use std::{
-    collections::HashMap,
-    sync::{Arc, OnceLock, RwLock},
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex, OnceLock, RwLock},
 };
 
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use crate::Vector2;
 static DEBUG_MESSAGES: OnceLock<mpsc::UnboundedSender<UpdateMsg>> = OnceLock::new();
 static DEBUG_SUBSCRIBER: OnceLock<DebugSubscriber> = OnceLock::new();
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[typeshare]
 pub enum DebugColor {
@@ -150,13 +150,47 @@ pub fn debug_clear() {
     }
 }
 
+/// Tracks loose player keys we've already warned about, so the log isn't spammed.
+static WARNED_LOOSE_KEYS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+/// Returns true if `key` looks like a loose, un-grouped player tag, i.e. it
+/// starts with `p<digits>` followed by end-of-key or a `.` separator
+/// (e.g. `p0`, `p3.control.target`). Such keys must instead be grouped under a
+/// team via `PlayerContext` so they become `team_{color}.p{id}.*`.
+fn is_loose_player_key(key: &str) -> bool {
+    let rest = match key.strip_prefix('p') {
+        Some(r) => r,
+        None => return false,
+    };
+    let digits_end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    if digits_end == 0 {
+        return false; // no digits after 'p'
+    }
+    matches!(rest.as_bytes().get(digits_end), None | Some(b'.'))
+}
+
 /// Record a debug message.
+///
+/// Loose player keys (`p{id}.*`) are rejected: every player-associated tag must
+/// be grouped under its team via `PlayerContext` (`team_{color}.p{id}.*`).
 pub fn debug_record(key: impl Into<String>, value: DebugValue) {
+    let key = key.into();
+    if is_loose_player_key(&key) {
+        let warned = WARNED_LOOSE_KEYS.get_or_init(|| Mutex::new(HashSet::new()));
+        let is_new = warned.lock().unwrap().insert(key.clone());
+        if is_new {
+            log::warn!(
+                "rejected loose player debug tag {:?}: player tags must be grouped under a team \
+                 (use PlayerContext so the key becomes `team_{{color}}.p{{id}}.*`)",
+                key
+            );
+        }
+        return;
+    }
     if let Some(sender) = DEBUG_MESSAGES.get() {
-        let _ = sender.send(UpdateMsg::InsertRecord {
-            key: key.into(),
-            value,
-        });
+        let _ = sender.send(UpdateMsg::InsertRecord { key, value });
     }
 }
 
@@ -340,4 +374,27 @@ macro_rules! dbg_draw {
     ($key:tt, circle_stroke, $center:expr, $radius:expr) => {
         dies_core::debug_circle_stroke($key, $center, $radius, dies_core::DebugColor::default())
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_loose_player_key;
+
+    #[test]
+    fn loose_player_keys_are_detected() {
+        assert!(is_loose_player_key("p0"));
+        assert!(is_loose_player_key("p3.control.target"));
+        assert!(is_loose_player_key("p12.ilqr.cost"));
+    }
+
+    #[test]
+    fn grouped_and_global_keys_are_allowed() {
+        assert!(!is_loose_player_key("team_Blue.p0.foo"));
+        assert!(!is_loose_player_key("team_Yellow.p3.control.target"));
+        assert!(!is_loose_player_key("game_state"));
+        assert!(!is_loose_player_key("dt"));
+        // `p` not followed by digits is not a player key.
+        assert!(!is_loose_player_key("path.length"));
+        assert!(!is_loose_player_key("ball_placement_target_0"));
+    }
 }

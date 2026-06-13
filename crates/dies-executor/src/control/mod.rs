@@ -1,4 +1,4 @@
-mod ilqr;
+mod avoidance;
 mod passing;
 mod player_controller;
 mod player_input;

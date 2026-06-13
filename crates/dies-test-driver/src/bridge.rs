@@ -487,11 +487,12 @@ fn get_string_array_opt(
     Ok(Some(out))
 }
 
-/// Expand the `p.{tag}` shorthand to `p{id}.{tag}`. All other keys pass
+/// Expand the `p.{tag}` shorthand to the team-grouped key
+/// `team_{color}.p{id}.{tag}` (the canonical hierarchy). All other keys pass
 /// through unchanged so callers can record global tags or another player's.
-fn resolve_tag(tag: &str, player: PlayerId) -> String {
+fn resolve_tag(tag: &str, team: TeamColor, player: PlayerId) -> String {
     if let Some(rest) = tag.strip_prefix("p.") {
-        format!("p{}.{}", player.as_u32(), rest)
+        format!("team_{}.p{}.{}", team, player.as_u32(), rest)
     } else {
         tag.to_string()
     }
@@ -1414,11 +1415,12 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
             NativeFunction::from_closure(move |_this, args, ctx| {
                 let opts = args.first().cloned().unwrap_or(JsValue::undefined());
                 let (rate_hz, tags) = if opts.is_object() {
+                    let team = state.borrow().team_color;
                     let rate = get_num_opt(&opts, "rateHz", ctx)?.unwrap_or(50.0);
                     let tags = get_string_array_opt(&opts, "tags", ctx)?
                         .unwrap_or_default()
                         .into_iter()
-                        .map(|t| resolve_tag(&t, id))
+                        .map(|t| resolve_tag(&t, team, id))
                         .collect();
                     (rate, tags)
                 } else {

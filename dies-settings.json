@@ -1,7 +1,8 @@
 {
   "controller_settings": {
     "max_acceleration": 10000.0,
-    "max_velocity": 10000.0,
+    "max_jerk": 800000000000.0,
+    "max_velocity": 3000.0,
     "max_deceleration": 10000.0,
     "max_angular_velocity": 25.132741228718345,
     "max_angular_acceleration": 349.0658503988659,
@@ -45,34 +46,25 @@
     "fetch_ball_preshoot_ball_avoidance": 0.0
   },
   "allow_no_vision": true,
-  "controller_mode": "ilqr",
   "goal_area_avoidance": true,
-  "ilqr_params": {
-    "tau": [
-      0.0,
-      0.0
-    ],
-    "accel_max": [
-      10000.0,
-      10000.0
-    ],
-    "tau_yaw": 0.01,
-    "omega_max": 20.0,
-    "obstacles": {
-      "weight": 0.0,
-      "influence": 2500.0,
-      "robot_clearance": 80.0,
-      "robot_extrapolation": 0.5,
-      "wall_margin": 120.0,
-      "defense_margin": 50.0
-    },
-    "weights": {
-      "position": 1.0,
-      "velocity": 0.0,
-      "control": 0.00005,
-      "control_smoothness": 0.001,
-      "heading": 0.0,
-      "heading_control": 0.01
-    }
+  "avoidance": {
+    "robot_clearance": 25.0,
+    "wall_margin": 0.0,
+    "defense_margin": 25.0,
+    "ball_stop_radius": 800.0,
+    "ball_base_radius": 100.0,
+    "ball_care_scale": 100.0,
+    "robot_extrapolation": 0.5,
+    "time_horizon": 1.0,
+    "stationary_speed": 50.0,
+    "prefer_steering": false,
+    "neighbor_dist": 2000.0,
+    "max_neighbors": 8,
+    "grid_resolution": 100.0,
+    "planner_margin": 0.0,
+    "waypoint_tolerance": 200.0,
+    "replan_target_tol": 150.0,
+    "planner_enabled": true,
+    "orca_enabled": true
   }
 }

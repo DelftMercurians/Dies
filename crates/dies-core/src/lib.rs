@@ -1,9 +1,9 @@
 mod angle;
+mod avoidance_config;
 mod debug_info;
 mod executor_info;
 mod executor_settings;
 mod geom;
-mod ilqr_params;
 mod math;
 mod player;
 mod sides;
@@ -13,11 +13,11 @@ mod world;
 pub mod workspace_utils;
 
 pub use angle::*;
+pub use avoidance_config::*;
 pub use debug_info::*;
 pub use executor_info::*;
 pub use executor_settings::*;
 pub use geom::*;
-pub use ilqr_params::*;
 pub use math::*;
 pub use player::*;
 use serde::{Deserialize, Serialize};

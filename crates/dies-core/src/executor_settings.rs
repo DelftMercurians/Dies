@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    ilqr_params::RobotParams, skill_settings::SkillSettings, FieldGeometry, PlayerId,
+    avoidance_config::AvoidanceConfig, skill_settings::SkillSettings, FieldGeometry, PlayerId,
     SideAssignment,
 };
 
@@ -21,6 +21,11 @@ pub struct ControllerSettings {
     // boundary; iLQR/MTP both go through them).
     /// Per-axis acceleration cap for translational motion (mm/s²).
     pub max_acceleration: f64,
+    /// Per-axis jerk cap (mm/s³) for the output velocity tracker. Bounds how
+    /// fast acceleration itself changes, turning velocity steps (e.g. when ORCA
+    /// engages/disengages) into smooth S-curve ramps instead of lurches.
+    #[serde(default = "default_max_jerk")]
+    pub max_jerk: f64,
     /// Speed cap on the commanded velocity magnitude (mm/s).
     pub max_velocity: f64,
     /// Deceleration cap used when MTP plans braking (mm/s²).
@@ -47,10 +52,15 @@ pub struct ControllerSettings {
     pub angle_cutoff_distance: f64,
 }
 
+fn default_max_jerk() -> f64 {
+    30000.0
+}
+
 impl Default for ControllerSettings {
     fn default() -> Self {
         Self {
             max_acceleration: 4000.0,
+            max_jerk: default_max_jerk(),
             max_velocity: 3000.0,
             max_deceleration: 6000.0,
             max_angular_velocity: 25.132741228718345, // 8π rad/s
@@ -195,20 +205,6 @@ pub struct TeamSpecificSettings {
     pub handicaps: HashMap<PlayerId, Vec<Handicap>>,
 }
 
-/// Which low-level motion controller the executor runs. Global across all
-/// robots; switched at runtime through the webui settings panel or at
-/// startup via `dies-cli --controller`.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[typeshare]
-pub enum ControllerMode {
-    /// Two-step minimum-time-path controller (default, battle-tested).
-    #[default]
-    Mtp,
-    /// iLQR MPC from `dies-mpc`.
-    Ilqr,
-}
-
 /// Settings for the executor.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
@@ -220,17 +216,15 @@ pub struct ExecutorSettings {
     pub blue_team_settings: TeamSpecificSettings,
     pub skill_settings: SkillSettings,
     pub allow_no_vision: bool,
-    #[serde(default)]
-    pub controller_mode: ControllerMode,
     /// Global on/off for goal-area avoidance. When false, both compliance and
     /// the controller skip the goal-area keep-out logic (goalkeeper exception
     /// is irrelevant since the whole feature is off).
     #[serde(default = "default_true")]
     pub goal_area_avoidance: bool,
-    /// iLQR/MPC tuning (dynamics model + cost weights + obstacle barriers).
-    /// Applied live to the iLQR controller; only active in `controller_mode = Ilqr`.
+    /// Collision-avoidance tuning (obstacle margins + global planner + ORCA).
+    /// Applied live to the planner and ORCA solver.
     #[serde(default)]
-    pub ilqr_params: RobotParams,
+    pub avoidance: AvoidanceConfig,
 }
 
 fn default_true() -> bool {
@@ -282,9 +276,8 @@ impl Default for ExecutorSettings {
             blue_team_settings: TeamSpecificSettings::default(),
             skill_settings: SkillSettings::default(),
             allow_no_vision: false,
-            controller_mode: ControllerMode::default(),
             goal_area_avoidance: true,
-            ilqr_params: RobotParams::default(),
+            avoidance: AvoidanceConfig::default(),
         }
     }
 }

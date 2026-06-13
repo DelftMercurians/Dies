@@ -194,10 +194,8 @@ impl PlayerTracker {
                         const ALPHA: f64 = 0.05;
                         self.position_noise_var = (1.0 - ALPHA) * self.position_noise_var
                             + ALPHA * innovation.norm_squared();
-                        dies_core::debug_value(
-                            format!("p{}.position_noise_rms", self.id),
-                            self.position_noise_var.sqrt(),
-                        );
+                        // Note: the RMS is surfaced to the UI via `PlayerData.position_noise`;
+                        // no separate debug tag is emitted (avoids a loose `p{id}.*` key).
                     }
                     last_data.raw_position = raw_position;
                     last_data.velocity = na::convert(Vector2::new(x[1], x[3]));

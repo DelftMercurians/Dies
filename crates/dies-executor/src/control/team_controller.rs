@@ -4,14 +4,17 @@ use std::{
 };
 
 use dies_core::{
-    Angle, ControllerMode, ExecutorSettings, GameState, Obstacle, PlayerCmd, PlayerCmdUntransformer,
-    PlayerId, RoleType, SideAssignment, TeamColor, TeamData, Vector2,
+    DebugColor, ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
+    SideAssignment, TeamColor, TeamData, Vector2, PLAYER_RADIUS,
 };
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use std::sync::Arc;
 
 use super::{
-    ilqr::{IlqrCommand, IlqrController},
+    avoidance::{
+        orca_solve_batch, AvoidanceGates, GlobalPlanner, ObstacleSet, OrcaAgent, OrcaSolver,
+        PlanStep,
+    },
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     skill_executor::{SkillContext, SkillExecutor},
@@ -37,7 +40,10 @@ pub struct TeamController {
     /// Current strategy input (skill commands and roles).
     strategy_input: StrategyInput,
 
-    ilqr_controller: IlqrController,
+    /// Global path planner (owns per-robot path cache for hysteresis).
+    planner: GlobalPlanner,
+    /// ORCA reciprocal velocity-space avoidance.
+    orca: OrcaSolver,
 
     removing_players: HashSet<PlayerId>,
 
@@ -60,7 +66,8 @@ impl TeamController {
             settings: settings.clone(),
             skill_executor: SkillExecutor::new(),
             strategy_input: StrategyInput::default(),
-            ilqr_controller: IlqrController::with_params(settings.ilqr_params.clone()),
+            planner: GlobalPlanner::new(&settings.avoidance),
+            orca: OrcaSolver::new(&settings.avoidance),
             removing_players: HashSet::new(),
             avoid_goal_area_flags: HashMap::new(),
             warmup_timer: None,
@@ -75,7 +82,8 @@ impl TeamController {
         for controller in self.player_controllers.values_mut() {
             controller.update_settings(&settings.controller_settings);
         }
-        self.ilqr_controller.set_params(settings.ilqr_params.clone());
+        self.planner.update_settings(&settings.avoidance);
+        self.orca.update_settings(&settings.avoidance);
         self.settings = settings.clone();
     }
 
@@ -136,13 +144,14 @@ impl TeamController {
                         player_data,
                         &world_data,
                         input_to_use,
+                        input_to_use.position.map(|p| PlanStep {
+                            waypoint: p,
+                            is_final: true,
+                            speed_frac: 0.0,
+                        }),
                         world_data.dt,
                         false,
-                        Vec::new(),
-                        &[],
                         &player_context,
-                        true,
-                        0.0,
                         true,
                     );
                 }
@@ -250,152 +259,188 @@ impl TeamController {
             inputs_for_comply
         };
 
-        let all_players = world_data
-            .own_players
-            .iter()
-            .chain(world_data.opp_players.iter())
-            .collect::<Vec<_>>();
+        let cfg = self.settings.avoidance.clone();
+        let game_state = world_data.current_game_state.game_state;
+        let dt = world_data.dt.clamp(1.0e-3, 0.5);
 
-        // If iLQR mode is active, solve for every robot that has a position
-        // target before the per-controller update. Results override the MTP
-        // velocity computed inside `controller.update()` below. In MTP mode
-        // this map stays empty and the existing MTP path runs untouched.
-        let ilqr_overrides: HashMap<PlayerId, IlqrCommand> = match self.settings.controller_mode {
-            ControllerMode::Ilqr => {
-                let inputs_for_ilqr: HashMap<PlayerId, PlayerControlInput> = self
-                    .player_controllers
-                    .keys()
-                    .map(|id| {
-                        let base = final_player_inputs.player(*id);
-                        let mut effective = manual_override.get(id).cloned().unwrap_or(base);
-                        // Defense-area avoidance follows the same flag the MTP
-                        // path uses (enabled globally, off for the goalkeeper).
-                        effective.avoid_defense_area =
-                            self.avoid_goal_area_flags.get(id).copied().unwrap_or(false);
-                        (*id, effective)
-                    })
-                    .collect();
-                self.ilqr_controller.compute_batch_control(
-                    &self.player_controllers,
-                    &inputs_for_ilqr,
-                    &world_data,
-                )
-            }
-            ControllerMode::Mtp => HashMap::new(),
+        // Drop cached planner paths for robots we no longer control.
+        let live_ids: HashSet<PlayerId> = self.player_controllers.keys().copied().collect();
+        self.planner.retain(&live_ids);
+
+        // Debug (team-scoped): keep-out radii around each robot. The inner circle
+        // is ORCA's hard combined radius (2·PLAYER_RADIUS + clearance) — within
+        // it, robot centres collide. The outer circle is what the planner routes
+        // around (+ planner_margin), kept wider so it sits outside ORCA's braking
+        // band. Own robots blue, opponents red; planner radius in orange.
+        let orca_keepout = 2.0 * PLAYER_RADIUS + cfg.robot_clearance;
+        let planner_keepout = orca_keepout + cfg.planner_margin;
+        for p in world_data.own_players.iter() {
+            team_context.debug_circle_stroke_colored(
+                format!("avoid.keepout.own{}", p.id),
+                p.position,
+                orca_keepout,
+                DebugColor::Blue,
+            );
+            team_context.debug_circle_stroke_colored(
+                format!("avoid.plankeepout.own{}", p.id),
+                p.position,
+                planner_keepout,
+                DebugColor::Orange,
+            );
+        }
+        for p in world_data.opp_players.iter() {
+            team_context.debug_circle_stroke_colored(
+                format!("avoid.keepout.opp{}", p.id),
+                p.position,
+                orca_keepout,
+                DebugColor::Red,
+            );
+            team_context.debug_circle_stroke_colored(
+                format!("avoid.plankeepout.opp{}", p.id),
+                p.position,
+                planner_keepout,
+                DebugColor::Orange,
+            );
+        }
+
+        // PASS 1 — per robot: build the obstacle set, plan a waypoint, then run
+        // MTP to get the preferred velocity. Collected into ORCA agents so the
+        // reciprocal batch solve below can see every robot at once.
+        let mut orca_agents: Vec<OrcaAgent> = Vec::new();
+        for controller in self.player_controllers.values_mut() {
+            let id = controller.id();
+            let Some(player_data) = world_data.own_players.iter().find(|p| p.id == id) else {
+                controller.increment_frames_misses();
+                continue;
+            };
+            let player_context = team_context.player_context(id);
+
+            let effective_input = manual_override
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| final_player_inputs.player(id));
+            let is_manual = manual_override
+                .get(&id)
+                .map(|i| !i.velocity.is_zero())
+                .unwrap_or(false);
+
+            // Goal-area avoidance is off during ball placement and for the
+            // goalkeeper (via the per-robot flag).
+            let avoid_goal_area = if !matches!(game_state, GameState::BallReplacement(_)) {
+                self.avoid_goal_area_flags.get(&id).copied().unwrap_or(true)
+            } else {
+                false
+            };
+
+            // A waller hugging our own goal is allowed to ignore opponents so it
+            // can hold the line.
+            let dist_to_own_goal = player_data.position.x
+                - world_data
+                    .field_geom
+                    .as_ref()
+                    .map(|f| f.field_length / 2.0)
+                    .unwrap_or(0.0);
+            let avoid_opp_robots =
+                !(effective_input.role_type == RoleType::Waller && dist_to_own_goal < 1300.0);
+
+            let gates = AvoidanceGates {
+                avoid_defense_area: avoid_goal_area,
+                avoid_ball: effective_input.avoid_ball,
+                avoid_ball_care: effective_input.avoid_ball_care,
+                avoid_opp_robots,
+            };
+            let obstacles = ObstacleSet::build(&world_data, id, gates, game_state, &cfg);
+
+            // Global planner → next waypoint + whether it's the final target
+            // (decelerate) or an intermediate corner (cruise through). LOS fast
+            // path inside. Draws the route under the player's `plan.*` keys.
+            let waypoint = effective_input.position.map(|target| {
+                if cfg.planner_enabled {
+                    self.planner.plan(
+                        id,
+                        player_data.position,
+                        target,
+                        PLAYER_RADIUS,
+                        &obstacles,
+                        &player_context,
+                    )
+                } else {
+                    PlanStep {
+                        waypoint: target,
+                        is_final: true,
+                        speed_frac: 0.0,
+                    }
+                }
+            });
+
+            controller.update(
+                player_data,
+                &world_data,
+                &effective_input,
+                waypoint,
+                dt,
+                is_manual,
+                &player_context,
+                avoid_goal_area,
+            );
+
+            orca_agents.push(OrcaAgent {
+                id,
+                position: player_data.position,
+                velocity: player_data.velocity,
+                pref_velocity: controller.target_velocity_global(),
+                radius: PLAYER_RADIUS,
+                max_speed: effective_input
+                    .speed_limit
+                    .unwrap_or(controller.get_max_speed()),
+                neighbors: obstacles.agents.clone(),
+                statics: obstacles.statics.clone(),
+            });
+        }
+
+        // PASS 2 — ORCA batch across all robots. Reciprocity couples them, so
+        // every preferred velocity must be known before solving any single one.
+        let safe_velocities: HashMap<PlayerId, Vector2> = if cfg.orca_enabled {
+            orca_solve_batch(&self.orca, &orca_agents, dt)
+        } else {
+            orca_agents
+                .iter()
+                .map(|a| (a.id, a.pref_velocity))
+                .collect()
         };
 
-        // Update the player controllers
-        for controller in self.player_controllers.values_mut() {
-            let player_data = world_data
-                .own_players
-                .iter()
-                .find(|p| p.id == controller.id());
+        // Debug: ORCA effect per robot — preferred (MTP, gray) vs safe
+        // (post-ORCA, green) velocity arrows from the robot, scaled down so they
+        // read as direction hints rather than full-length vectors.
+        const ORCA_VIZ_SCALE: f64 = 0.3;
+        for a in &orca_agents {
+            let pctx = team_context.player_context(a.id);
+            let safe = safe_velocities
+                .get(&a.id)
+                .copied()
+                .unwrap_or(a.pref_velocity);
+            pctx.debug_line_colored(
+                "orca.pref",
+                a.position,
+                a.position + a.pref_velocity * ORCA_VIZ_SCALE,
+                DebugColor::Gray,
+            );
+            pctx.debug_line_colored(
+                "orca.safe",
+                a.position,
+                a.position + safe * ORCA_VIZ_SCALE,
+                DebugColor::Green,
+            );
+            pctx.debug_value("orca.deflection", (safe - a.pref_velocity).norm());
+            pctx.debug_value("orca.neighbors", a.neighbors.len() as f64);
+        }
 
-            if let Some(player_data) = player_data {
-                let id = controller.id();
-                let player_context = team_context.player_context(id);
-                // Owned so the planned iLQR heading can be injected as the yaw
-                // setpoint before `update()` (keeps yaw-rate feedforward
-                // consistent with the commanded heading).
-                let mut effective_input = manual_override
-                    .get(&id)
-                    .cloned()
-                    .unwrap_or_else(|| final_player_inputs.player(id));
-                if let Some(cmd) = ilqr_overrides.get(&id) {
-                    effective_input.yaw = Some(Angle::from_radians(cmd.heading));
-                }
-                let input_to_use = &effective_input;
-
-                let is_manual = manual_override
-                    .get(&id)
-                    .map(|i| !i.velocity.is_zero())
-                    .unwrap_or(false);
-
-                let avoid_ball = input_to_use.avoid_ball;
-
-                let mut obstacles = Vec::new();
-                if avoid_ball
-                    || world_data.current_game_state.game_state == GameState::PreparePenalty
-                    || world_data.current_game_state.game_state == GameState::Stop
-                {
-                    if let Some(ball) = world_data.ball.as_ref() {
-                        obstacles.push(Obstacle::Circle {
-                            center: ball.position.xy(),
-                            radius: if world_data.current_game_state.game_state == GameState::Stop {
-                                800.0
-                            } else {
-                                100.0 + 100.0 * input_to_use.avoid_ball_care
-                            },
-                        });
-                    }
-                }
-
-                match world_data.current_game_state.game_state {
-                    GameState::BallReplacement(target_ball_pos) => {
-                        if let Some(ball) = &world_data.ball {
-                            obstacles.push(Obstacle::Line {
-                                start: ball.position.xy(),
-                                end: target_ball_pos,
-                            });
-                        }
-                    }
-                    _ => {}
-                }
-
-                let avoid_goal_area = if !matches!(
-                    world_data.current_game_state.game_state,
-                    GameState::BallReplacement(_)
-                ) {
-                    self.avoid_goal_area_flags.get(&id).copied().unwrap_or(true)
-                } else {
-                    false
-                };
-                let avoid_goal_area_margin = match world_data.current_game_state.game_state {
-                    GameState::Stop | GameState::FreeKick
-                        if input_to_use.role_type != RoleType::Waller =>
-                    {
-                        500.0
-                    }
-                    _ => 0.0,
-                };
-
-                let dist_to_own_goal = player_data.position.x
-                    - world_data
-                        .field_geom
-                        .as_ref()
-                        .map(|f| f.field_length / 2.0)
-                        .unwrap_or(0.0);
-                let avoid_opp_robots =
-                    if input_to_use.role_type == RoleType::Waller && dist_to_own_goal < 1300.0 {
-                        false
-                    } else {
-                        true
-                    };
-
-                controller.update(
-                    player_data,
-                    &world_data,
-                    input_to_use,
-                    world_data.dt,
-                    is_manual,
-                    obstacles,
-                    &all_players,
-                    &player_context,
-                    avoid_goal_area,
-                    avoid_goal_area_margin,
-                    avoid_opp_robots,
-                );
-
-                // iLQR (when enabled) overrides the MTP velocity that
-                // `update()` just computed; the planned heading was already
-                // injected as the yaw setpoint above. We let `update()` run
-                // unconditionally so kicker/dribbler logic still fires.
-                if let Some(cmd) = ilqr_overrides.get(&id) {
-                    controller.set_target_velocity(cmd.velocity);
-                    player_context.debug_string("controller", "iLQR");
-                }
-            } else {
-                controller.increment_frames_misses();
+        // PASS 3 — apply the collision-free velocities through the per-robot
+        // jerk-limited tracker, so engaging/disengaging ORCA produces a smooth
+        // S-curve ramp instead of a velocity step (no lurch).
+        for (id, v) in safe_velocities {
+            if let Some(controller) = self.player_controllers.get_mut(&id) {
+                controller.commit_tracked_velocity(v, dt);
             }
         }
     }
@@ -665,7 +710,7 @@ fn comply(
                         max_radius,
                         field,
                     );
-                    dies_core::debug_cross(
+                    team_context.debug_cross_colored(
                         format!("ball_placement_target_{}", id),
                         target,
                         dies_core::DebugColor::Orange,
