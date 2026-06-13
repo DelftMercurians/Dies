@@ -33,9 +33,12 @@ interface SettingsEditorProps<K> {
 const fieldConfig: FieldConfig = {
   controller_settings: {
     max_acceleration: { min: 0, max: 10000, step: 50, unit: "mm/s²" },
-    max_jerk: { min: 0, max: 200000, step: 500, unit: "mm/s³" },
-    max_velocity: { min: 0, max: 6000, step: 50, unit: "mm/s" },
     max_deceleration: { min: 0, max: 10000, step: 50, unit: "mm/s²" },
+    max_velocity: { min: 0, max: 6000, step: 50, unit: "mm/s" },
+    lateral_acceleration: { min: 0, max: 10000, step: 50, unit: "mm/s²" },
+    approach_kp: { min: 0, max: 20, step: 0.1, unit: "1/s" },
+    lookahead_min: { min: 0, max: 1000, step: 10, unit: "mm" },
+    lookahead_time: { min: 0, max: 1, step: 0.01, unit: "s" },
     max_angular_velocity: {
       min: 0,
       max: 720,
@@ -48,9 +51,6 @@ const fieldConfig: FieldConfig = {
       unit: "deg/s²",
       isAngle: true,
     },
-    thresh: { min: 0, max: 1000, step: 10, unit: "mm/s" },
-    position_kp: { min: 0, max: 10, step: 0.05 },
-    position_cutoff_distance: { min: 0, max: 200, step: 1, unit: "mm" },
     angle_kp: { min: 0, max: 10, step: 0.05 },
     angle_cutoff_distance: {
       min: 0,

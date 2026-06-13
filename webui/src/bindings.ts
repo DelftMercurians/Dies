@@ -78,7 +78,12 @@ export interface AutorefKickedBallTeam {
  * is shared across the whole team and applied live from settings updates.
  */
 export interface AvoidanceConfig {
-	/** Extra clearance added on top of the two-robot contact distance [mm]. */
+	/**
+	 * ORCA's emergency margin on top of the two-robot contact distance [mm].
+	 * ORCA is a last-resort reactive backstop, so keep this small (≈0) — the
+	 * planner does the real avoidance with `planner_margin`. The planner inflates
+	 * robots by `robot_clearance + planner_margin`; ORCA only by this.
+	 */
 	robot_clearance: number;
 	/** Inset of the robot centre from the physical field walls [mm]. */
 	wall_margin: number;
@@ -94,9 +99,8 @@ export interface AvoidanceConfig {
 	robot_extrapolation: number;
 	/**
 	 * ORCA time horizon τ [s]: how far ahead reciprocal collisions are
-	 * resolved. Larger ⇒ ORCA reacts earlier but brakes harder near obstacles;
-	 * smaller ⇒ later but smoother. The planner margin (below) keeps planned
-	 * paths outside ORCA's braking zone so this can stay modest.
+	 * resolved. Kept short so ORCA only fires for imminent collisions, not in
+	 * normal play (planned avoidance handles the rest).
 	 */
 	time_horizon: number;
 	/**
@@ -119,31 +123,24 @@ export interface AvoidanceConfig {
 	/** Grid cell size for the planner's any-angle search [mm]. */
 	grid_resolution: number;
 	/**
-	 * Extra clearance the planner leaves around robots **on top of** ORCA's
-	 * hard combined radius [mm], so planned paths sit outside the band where
-	 * ORCA actively brakes and the two layers don't fight each other.
+	 * The planner's robot-avoidance margin [mm]: it routes paths clear of
+	 * robots by `robot_clearance + planner_margin`. This is the primary
+	 * avoidance — keep it comfortable so ORCA rarely needs to engage.
 	 */
 	planner_margin: number;
-	/**
-	 * Distance at which the robot is considered to have reached an intermediate
-	 * waypoint and advances to the next [mm]. Wider than the final-target
-	 * cutoff so the robot flows through corners (pass-through) instead of
-	 * braking to each one. The final target still decelerates normally.
-	 */
-	waypoint_tolerance: number;
 	/**
 	 * Replan only when the target has moved more than this [mm] (hysteresis to
 	 * suppress path flicker).
 	 */
 	replan_target_tol: number;
 	/**
-	 * Run the global path planner. When false, MTP steers straight at the
-	 * target and only ORCA provides avoidance.
+	 * Run the global path planner. When false, the follower steers straight at
+	 * the target and only ORCA provides avoidance.
 	 */
 	planner_enabled: boolean;
 	/**
-	 * Run ORCA reciprocal avoidance. When false, the MTP velocity passes
-	 * through untouched (useful for isolating layers when debugging).
+	 * Run ORCA reciprocal avoidance. When false, the path-follower velocity
+	 * passes through untouched (useful for isolating layers when debugging).
 	 */
 	orca_enabled: boolean;
 }
@@ -209,23 +206,37 @@ export interface BasestationResponse {
  * Settings for the low-level controller.
  * 
  * Every field here is consumed by `PlayerController` or one of its
- * subcontrollers (TwoStepMTP, YawController). The hard accel clamp in
- * `PlayerController::command` reads `max_acceleration` directly and
- * constrains the per-tick Δv for *both* MTP and iLQR outputs.
+ * subcontrollers (`PathFollower`, `YawController`).
+ * Low-level controller limits and path-follower tuning. The translational path
+ * follower (`PathFollower`) produces a speed profile (cruise / cornering /
+ * braking-to-goal) and the player controller applies a first-order asymmetric
+ * acceleration clamp; `YawController` handles heading.
  */
 export interface ControllerSettings {
-	/** Per-axis acceleration cap for translational motion (mm/s²). */
+	/** Acceleration cap when speeding up (mm/s²). */
 	max_acceleration: number;
 	/**
-	 * Per-axis jerk cap (mm/s³) for the output velocity tracker. Bounds how
-	 * fast acceleration itself changes, turning velocity steps (e.g. when ORCA
-	 * engages/disengages) into smooth S-curve ramps instead of lurches.
+	 * Deceleration cap when slowing down (mm/s²); also the braking authority the
+	 * follower's speed profile plans against.
 	 */
-	max_jerk: number;
+	max_deceleration: number;
 	/** Speed cap on the commanded velocity magnitude (mm/s). */
 	max_velocity: number;
-	/** Deceleration cap used when MTP plans braking (mm/s²). */
-	max_deceleration: number;
+	/**
+	 * Lateral (cornering) acceleration cap (mm/s²) — sets how fast the robot may
+	 * carry through a path corner.
+	 */
+	lateral_acceleration: number;
+	/**
+	 * Proportional arrival gain (1/s): commanded speed eases off as `kp ×
+	 * remaining distance` into corners and the goal. Over-damped (no overshoot);
+	 * lower = gentler/earlier braking, higher = later/snappier.
+	 */
+	approach_kp: number;
+	/** Minimum pure-pursuit lookahead distance (mm), used at low speed. */
+	lookahead_min: number;
+	/** Pure-pursuit lookahead time (s): lookahead = clamp(time·speed, min, max). */
+	lookahead_time: number;
 	/** Maximum angular velocity (rad/s). */
 	max_angular_velocity: number;
 	/**
@@ -233,11 +244,6 @@ export interface ControllerSettings {
 	 * upper bound on its planned angular accel.
 	 */
 	max_angular_acceleration: number;
-	/** Proportional gain for translational tracking inside the MTP cutoff. */
-	position_kp: number;
-	/** Position deadzone (mm) — MTP commands zero velocity inside this radius. */
-	position_cutoff_distance: number;
-	thresh: number;
 	/** Proportional gain for heading tracking. */
 	angle_kp: number;
 	/** Heading deadzone (rad) — yaw control outputs zero inside this band. */

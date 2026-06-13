@@ -11,10 +11,7 @@ use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use std::sync::Arc;
 
 use super::{
-    avoidance::{
-        orca_solve_batch, AvoidanceGates, GlobalPlanner, ObstacleSet, OrcaAgent, OrcaSolver,
-        PlanStep,
-    },
+    avoidance::{AvoidanceGates, GlobalPlanner, ObstacleSet, OrcaSolver},
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     skill_executor::{SkillContext, SkillExecutor},
@@ -144,15 +141,14 @@ impl TeamController {
                         player_data,
                         &world_data,
                         input_to_use,
-                        input_to_use.position.map(|p| PlanStep {
-                            waypoint: p,
-                            is_final: true,
-                            speed_frac: 0.0,
-                        }),
+                        input_to_use.position.map(|p| vec![p]),
                         world_data.dt,
                         false,
                         &player_context,
                         true,
+                        &[],
+                        &[],
+                        None,
                     );
                 }
             }
@@ -303,10 +299,16 @@ impl TeamController {
             );
         }
 
-        // PASS 1 — per robot: build the obstacle set, plan a waypoint, then run
-        // MTP to get the preferred velocity. Collected into ORCA agents so the
-        // reciprocal batch solve below can see every robot at once.
-        let mut orca_agents: Vec<OrcaAgent> = Vec::new();
+        // Per robot: build the obstacle set, plan a path, then run the controller
+        // — which follows the path, deflects the result through ORCA against the
+        // obstacle set's agents, and acceleration-clamps the command, all in one
+        // place. ORCA is gated here; each per-controller solve is independent
+        // (reciprocity works through neighbours' observed velocities).
+        let orca = if cfg.orca_enabled {
+            Some(&self.orca)
+        } else {
+            None
+        };
         for controller in self.player_controllers.values_mut() {
             let id = controller.id();
             let Some(player_data) = world_data.own_players.iter().find(|p| p.id == id) else {
@@ -351,10 +353,9 @@ impl TeamController {
             };
             let obstacles = ObstacleSet::build(&world_data, id, gates, game_state, &cfg);
 
-            // Global planner → next waypoint + whether it's the final target
-            // (decelerate) or an intermediate corner (cruise through). LOS fast
-            // path inside. Draws the route under the player's `plan.*` keys.
-            let waypoint = effective_input.position.map(|target| {
+            // Global planner → full path to follow (LOS fast path inside).
+            // Draws the route under the player's `plan.*` keys.
+            let path = effective_input.position.map(|target| {
                 if cfg.planner_enabled {
                     self.planner.plan(
                         id,
@@ -365,11 +366,7 @@ impl TeamController {
                         &player_context,
                     )
                 } else {
-                    PlanStep {
-                        waypoint: target,
-                        is_final: true,
-                        speed_frac: 0.0,
-                    }
+                    vec![target]
                 }
             });
 
@@ -377,71 +374,15 @@ impl TeamController {
                 player_data,
                 &world_data,
                 &effective_input,
-                waypoint,
+                path,
                 dt,
                 is_manual,
                 &player_context,
                 avoid_goal_area,
+                &obstacles.agents,
+                &obstacles.statics,
+                orca,
             );
-
-            orca_agents.push(OrcaAgent {
-                id,
-                position: player_data.position,
-                velocity: player_data.velocity,
-                pref_velocity: controller.target_velocity_global(),
-                radius: PLAYER_RADIUS,
-                max_speed: effective_input
-                    .speed_limit
-                    .unwrap_or(controller.get_max_speed()),
-                neighbors: obstacles.agents.clone(),
-                statics: obstacles.statics.clone(),
-            });
-        }
-
-        // PASS 2 — ORCA batch across all robots. Reciprocity couples them, so
-        // every preferred velocity must be known before solving any single one.
-        let safe_velocities: HashMap<PlayerId, Vector2> = if cfg.orca_enabled {
-            orca_solve_batch(&self.orca, &orca_agents, dt)
-        } else {
-            orca_agents
-                .iter()
-                .map(|a| (a.id, a.pref_velocity))
-                .collect()
-        };
-
-        // Debug: ORCA effect per robot — preferred (MTP, gray) vs safe
-        // (post-ORCA, green) velocity arrows from the robot, scaled down so they
-        // read as direction hints rather than full-length vectors.
-        const ORCA_VIZ_SCALE: f64 = 0.3;
-        for a in &orca_agents {
-            let pctx = team_context.player_context(a.id);
-            let safe = safe_velocities
-                .get(&a.id)
-                .copied()
-                .unwrap_or(a.pref_velocity);
-            pctx.debug_line_colored(
-                "orca.pref",
-                a.position,
-                a.position + a.pref_velocity * ORCA_VIZ_SCALE,
-                DebugColor::Gray,
-            );
-            pctx.debug_line_colored(
-                "orca.safe",
-                a.position,
-                a.position + safe * ORCA_VIZ_SCALE,
-                DebugColor::Green,
-            );
-            pctx.debug_value("orca.deflection", (safe - a.pref_velocity).norm());
-            pctx.debug_value("orca.neighbors", a.neighbors.len() as f64);
-        }
-
-        // PASS 3 — apply the collision-free velocities through the per-robot
-        // jerk-limited tracker, so engaging/disengaging ORCA produces a smooth
-        // S-curve ramp instead of a velocity step (no lurch).
-        for (id, v) in safe_velocities {
-            if let Some(controller) = self.player_controllers.get_mut(&id) {
-                controller.commit_tracked_velocity(v, dt);
-            }
         }
     }
 

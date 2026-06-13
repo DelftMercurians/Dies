@@ -11,6 +11,7 @@ import {
   useExecutorInfo,
   useSendCommand,
   usePrimaryTeam,
+  useStatus,
   isPlayerManuallyControlled,
 } from "@/api";
 import { TeamColor } from "@/bindings";
@@ -37,6 +38,8 @@ export function useCommandContext(
   const executorInfo = useExecutorInfo();
   const sendCommand = useSendCommand();
   const [primaryTeam] = usePrimaryTeam();
+  const { data: status } = useStatus();
+  const executorRunning = status?.executor?.type === "RunningExecutor";
 
   const ownPlayers =
     world.status === "connected"
@@ -71,6 +74,7 @@ export function useCommandContext(
     },
     toggleCommandPalette: () => setCommandPaletteOpen((v) => !v),
     drivingActive,
+    executorRunning,
     feedback: (label: string) => setLastShortcut({ label, ts: Date.now() }),
   };
 }

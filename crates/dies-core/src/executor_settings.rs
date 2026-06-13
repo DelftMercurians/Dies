@@ -11,25 +11,35 @@ use crate::{
 /// Settings for the low-level controller.
 ///
 /// Every field here is consumed by `PlayerController` or one of its
-/// subcontrollers (TwoStepMTP, YawController). The hard accel clamp in
-/// `PlayerController::command` reads `max_acceleration` directly and
-/// constrains the per-tick Δv for *both* MTP and iLQR outputs.
+/// subcontrollers (`PathFollower`, `YawController`).
+/// Low-level controller limits and path-follower tuning. The translational path
+/// follower (`PathFollower`) produces a speed profile (cruise / cornering /
+/// braking-to-goal) and the player controller applies a first-order asymmetric
+/// acceleration clamp; `YawController` handles heading.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare]
 pub struct ControllerSettings {
-    // --- Translational limits (hard caps applied at the player-controller
-    // boundary; iLQR/MTP both go through them).
-    /// Per-axis acceleration cap for translational motion (mm/s²).
+    // --- Translational limits.
+    /// Acceleration cap when speeding up (mm/s²).
     pub max_acceleration: f64,
-    /// Per-axis jerk cap (mm/s³) for the output velocity tracker. Bounds how
-    /// fast acceleration itself changes, turning velocity steps (e.g. when ORCA
-    /// engages/disengages) into smooth S-curve ramps instead of lurches.
-    #[serde(default = "default_max_jerk")]
-    pub max_jerk: f64,
+    /// Deceleration cap when slowing down (mm/s²); also the braking authority the
+    /// follower's speed profile plans against.
+    pub max_deceleration: f64,
     /// Speed cap on the commanded velocity magnitude (mm/s).
     pub max_velocity: f64,
-    /// Deceleration cap used when MTP plans braking (mm/s²).
-    pub max_deceleration: f64,
+    /// Lateral (cornering) acceleration cap (mm/s²) — sets how fast the robot may
+    /// carry through a path corner.
+    pub lateral_acceleration: f64,
+    /// Proportional arrival gain (1/s): commanded speed eases off as `kp ×
+    /// remaining distance` into corners and the goal. Over-damped (no overshoot);
+    /// lower = gentler/earlier braking, higher = later/snappier.
+    pub approach_kp: f64,
+
+    // --- Pure-pursuit path following.
+    /// Minimum pure-pursuit lookahead distance (mm), used at low speed.
+    pub lookahead_min: f64,
+    /// Pure-pursuit lookahead time (s): lookahead = clamp(time·speed, min, max).
+    pub lookahead_time: f64,
 
     // --- Rotational limits (used by YawController).
     /// Maximum angular velocity (rad/s).
@@ -38,13 +48,6 @@ pub struct ControllerSettings {
     /// upper bound on its planned angular accel.
     pub max_angular_acceleration: f64,
 
-    // --- TwoStepMTP gains.
-    /// Proportional gain for translational tracking inside the MTP cutoff.
-    pub position_kp: f64,
-    /// Position deadzone (mm) — MTP commands zero velocity inside this radius.
-    pub position_cutoff_distance: f64,
-    pub thresh: f64,
-
     // --- YawController gains.
     /// Proportional gain for heading tracking.
     pub angle_kp: f64,
@@ -52,23 +55,19 @@ pub struct ControllerSettings {
     pub angle_cutoff_distance: f64,
 }
 
-fn default_max_jerk() -> f64 {
-    30000.0
-}
-
 impl Default for ControllerSettings {
     fn default() -> Self {
         Self {
             max_acceleration: 4000.0,
-            max_jerk: default_max_jerk(),
-            max_velocity: 3000.0,
             max_deceleration: 6000.0,
+            max_velocity: 3000.0,
+            lateral_acceleration: 4000.0,
+            approach_kp: 4.0,
+            lookahead_min: 200.0,
+            lookahead_time: 0.2,
             max_angular_velocity: 25.132741228718345, // 8π rad/s
             max_angular_acceleration: 349.0658503988659, // ~20π rad/s²
-            position_kp: 2.0,
-            position_cutoff_distance: 15.0,
             angle_kp: 2.8,
-            thresh: 100.0,
             angle_cutoff_distance: 0.03490658503988659, // 2°
         }
     }

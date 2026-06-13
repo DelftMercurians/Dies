@@ -69,11 +69,15 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
     const [savedLayouts, setSavedLayouts] = useAtom(savedLayoutsAtom);
     const [currentLayoutName] = useAtom(currentLayoutNameAtom);
 
-    // Expose API via ref
+    // Expose API via ref. `api` is a getter so it always reflects the current
+    // value — the DockviewApi only exists after `handleReady`, well after this
+    // handle is first created.
     useImperativeHandle(
       ref,
       () => ({
-        api: apiRef.current,
+        get api() {
+          return apiRef.current;
+        },
         resetToDefault: () => {
           if (apiRef.current) {
             onCreateDefaultLayout(apiRef.current);

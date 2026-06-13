@@ -6,6 +6,6 @@ mod obstacle;
 mod orca;
 mod planner;
 
-pub use obstacle::{AvoidanceGates, ObstacleSet};
-pub use orca::{orca_solve_batch, OrcaAgent, OrcaSolver};
-pub use planner::{GlobalPlanner, PlanStep};
+pub use obstacle::{AvoidanceGates, DynamicAgent, ObstacleSet, StaticObstacle};
+pub use orca::{OrcaAgent, OrcaSolver};
+pub use planner::GlobalPlanner;

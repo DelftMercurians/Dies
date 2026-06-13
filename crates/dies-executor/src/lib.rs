@@ -54,6 +54,33 @@ fn slot_to_control_input(slot: &PlayerControlSlot) -> PlayerControlInput {
     input
 }
 
+/// Manual override inputs from the webui (MoveTo position, global velocity, yaw)
+/// arrive in absolute world coordinates, matching the absolute world data the UI
+/// renders. The team controller works in team-relative coordinates, so these
+/// field-frame fields must be transformed into team coordinates before use --
+/// otherwise the x axis is flipped for whichever team is attacking towards -x.
+/// Local velocities are robot-relative and left untouched.
+fn override_to_team_coords(
+    side_assignment: SideAssignment,
+    color: TeamColor,
+    mut input: PlayerControlInput,
+) -> PlayerControlInput {
+    if let Some(pos) = input.position {
+        input.position = Some(side_assignment.transform_vec2(color, &pos));
+    }
+    input.velocity = match input.velocity {
+        Velocity::Global(v) => Velocity::Global(side_assignment.transform_vec2(color, &v)),
+        local @ Velocity::Local(_) => local,
+    };
+    if let Some(yaw) = input.yaw {
+        input.yaw = Some(side_assignment.transform_angle(color, yaw));
+    }
+    if let Some(av) = input.angular_velocity {
+        input.angular_velocity = Some(av * side_assignment.attacking_direction_sign(color));
+    }
+    input
+}
+
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 40); // 40 Hz
 
@@ -1006,10 +1033,20 @@ impl Executor {
         }
 
         // Merge real manual_override with test_manual, test has priority for same key.
+        // Webui overrides arrive in absolute world coordinates (matching the absolute
+        // world data the UI renders), so transform them into team-relative coordinates
+        // here. Test-driver inputs are already team-relative (the driver ticks on
+        // team-relative data) and are merged afterwards untouched.
+        let side_assignment = self.team_controllers.side_assignment;
         let mut manual_override: HashMap<(TeamColor, PlayerId), PlayerControlInput> = self
             .manual_override
             .iter_mut()
-            .map(|(id, s)| (*id, s.advance()))
+            .map(|((color, id), s)| {
+                (
+                    (*color, *id),
+                    override_to_team_coords(side_assignment, *color, s.advance()),
+                )
+            })
             .collect();
         for (k, v) in &self.test_manual {
             manual_override.insert(*k, v.clone());

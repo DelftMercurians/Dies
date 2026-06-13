@@ -24,12 +24,28 @@ export interface DebugCategory {
   id: string;
   label: string;
   pattern: RegExp;
+  /** Whether keys in this category are shown when the user has no override. Default true. */
+  defaultVisible?: boolean;
 }
 
 export const CATEGORIES: DebugCategory[] = [
   { id: "roles", label: "Roles", pattern: /\.role$/ },
   { id: "strategy", label: "Strategy", pattern: /\.strategy(\..*)?$/ },
+  {
+    id: "avoidance",
+    label: "Collision Avoidance",
+    pattern: /\.(plan|orca)(\..*)?$/,
+    defaultVisible: false,
+  },
 ];
+
+/** Effective visibility of a category given the user's override map. */
+export function categoryVisible(
+  cat: DebugCategory,
+  categoryVisibility: Record<string, boolean>,
+): boolean {
+  return categoryVisibility[cat.id] ?? cat.defaultVisible ?? true;
+}
 
 // ============================================================================
 // Visibility logic
@@ -53,9 +69,9 @@ export function isKeyVisible(
     }
   }
 
-  // Check categories — if any matching category is false, hidden
+  // Check categories — if any matching category resolves to hidden, hidden
   for (const cat of CATEGORIES) {
-    if (cat.pattern.test(key) && categoryVisibility[cat.id] === false) {
+    if (cat.pattern.test(key) && !categoryVisible(cat, categoryVisibility)) {
       return false;
     }
   }

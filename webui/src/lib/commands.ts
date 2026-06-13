@@ -23,6 +23,8 @@ export interface CommandContext {
   toggleCommandPalette: () => void;
   /** True when manual keyboard-driving is active (suppresses plain-letter keys). */
   drivingActive: boolean;
+  /** Whether the executor is currently running. */
+  executorRunning: boolean;
   feedback: (label: string) => void;
 }
 
@@ -119,9 +121,20 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    id: "start-executor",
+    title: "Start executor",
+    keys: "Shift+S",
+    enabled: (c) => !c.executorRunning,
+    run: (c) => {
+      c.sendCommand({ type: "Start" });
+      c.feedback("Start executor");
+    },
+  },
+  {
     id: "kill-executor",
     title: "Kill executor",
     keys: "Shift+X",
+    enabled: (c) => c.executorRunning,
     run: (c) => {
       c.sendCommand({ type: "Stop" });
       c.setSelectedPlayerId(null);

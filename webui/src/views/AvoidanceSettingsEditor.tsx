@@ -15,21 +15,20 @@ import { Switch } from "@/components/ui/switch";
 // Mirrors `AvoidanceConfig::default()` — used to fill in fields if the backend
 // sends a partial object (serde marks the whole struct optional).
 const DEFAULTS: AvoidanceConfig = {
-  robot_clearance: 50.0,
+  robot_clearance: 0.0,
   wall_margin: 120.0,
   defense_margin: 50.0,
   ball_stop_radius: 800.0,
   ball_base_radius: 100.0,
   ball_care_scale: 100.0,
   robot_extrapolation: 0.5,
-  time_horizon: 1.0,
+  time_horizon: 0.5,
   stationary_speed: 50.0,
   prefer_steering: false,
   neighbor_dist: 2000.0,
   max_neighbors: 8,
   grid_resolution: 100.0,
-  planner_margin: 100.0,
-  waypoint_tolerance: 200.0,
+  planner_margin: 150.0,
   replan_target_tol: 150.0,
   planner_enabled: true,
   orca_enabled: true,
@@ -144,11 +143,11 @@ const AvoidanceSettingsEditor: React.FC<{ className?: string }> = ({
         <Section title="Obstacle margins">
           <NumberField
             id="avoid-robot-clearance"
-            label="Robot clearance"
+            label="Robot clearance (ORCA)"
             value={cfg.robot_clearance}
             onChange={(v) => set("robot_clearance", v)}
             unit="mm"
-            hint="Extra gap on top of the two-robot contact distance."
+            hint="ORCA's emergency margin on top of robot contact. Keep ~0 — the planner does the real avoidance."
           />
           <NumberField
             id="avoid-wall-margin"
@@ -243,15 +242,7 @@ const AvoidanceSettingsEditor: React.FC<{ className?: string }> = ({
             value={cfg.planner_margin}
             onChange={(v) => set("planner_margin", v)}
             unit="mm"
-            hint="Extra clearance the planner leaves around robots on top of ORCA's hard radius, so paths sit outside ORCA's braking band."
-          />
-          <NumberField
-            id="avoid-waypoint-tolerance"
-            label="Waypoint tolerance"
-            value={cfg.waypoint_tolerance}
-            onChange={(v) => set("waypoint_tolerance", v)}
-            unit="mm"
-            hint="How close to an intermediate corner counts as reached. Wider ⇒ the robot cuts corners and flows through; the final target still decelerates."
+            hint="Primary avoidance: how much clearance the planner routes around robots. Keep comfortable so ORCA rarely engages."
           />
           <NumberField
             id="avoid-replan-target-tol"

@@ -20,6 +20,7 @@ import {
   debugCategoryVisibilityAtom,
   buildLayerTree,
   isKeyVisible,
+  categoryVisible,
   CATEGORIES,
   TreeNode,
 } from "@/lib/debugLayers";
@@ -241,8 +242,9 @@ const DebugLayerPanel: React.FC<IDockviewPanelProps> = () => {
 
   const handleToggleCategory = useCallback(
     (catId: string) => {
+      const cat = CATEGORIES.find((c) => c.id === catId);
       setCategoryVis((prev) => {
-        const current = prev[catId] ?? true;
+        const current = cat ? categoryVisible(cat, prev) : (prev[catId] ?? true);
         return { ...prev, [catId]: !current };
       });
     },
@@ -281,7 +283,7 @@ const DebugLayerPanel: React.FC<IDockviewPanelProps> = () => {
         <div className="text-xs text-text-dim mb-1.5">Categories</div>
         <div className="flex flex-wrap gap-1.5">
           {CATEGORIES.map((cat) => {
-            const isOn = categoryVis[cat.id] ?? true;
+            const isOn = categoryVisible(cat, categoryVis);
             return (
               <button
                 key={cat.id}

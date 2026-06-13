@@ -26,31 +26,6 @@ use super::obstacle::{ObstacleSet, ObstacleShape};
 /// cleared each frame so a shrinking path doesn't leave ghosts.
 const MAX_DEBUG_SEGS: usize = 32;
 
-/// Floor on the corner-speed fraction so the robot never stops at an
-/// intermediate waypoint, even for a near-reversal.
-const MIN_CORNER_SPEED_FRAC: f64 = 0.1;
-
-/// One planning step handed to the controller: where to steer, whether it is the
-/// final target (decelerate to a stop) or an intermediate corner, and — for a
-/// corner — the fraction of max speed to carry through it (smaller for sharper
-/// turns) so the robot doesn't overshoot the corner.
-#[derive(Clone, Copy, Debug)]
-pub struct PlanStep {
-    pub waypoint: Vector2,
-    pub is_final: bool,
-    pub speed_frac: f64,
-}
-
-impl PlanStep {
-    fn final_target(waypoint: Vector2) -> Self {
-        Self {
-            waypoint,
-            is_final: true,
-            speed_frac: 0.0,
-        }
-    }
-}
-
 /// How far past the start↔target bounding box the local search grid extends, to
 /// give Theta* room to detour around obstacles [mm].
 const GRID_MARGIN: f64 = 1500.0;
@@ -64,7 +39,6 @@ pub struct GlobalPlanner {
     /// planner_margin`, so the planner clears robots by more than ORCA's hard
     /// radius and routes outside ORCA's braking band.
     clearance: f64,
-    waypoint_tolerance: f64,
     replan_target_tol: f64,
     cached: HashMap<PlayerId, CachedPath>,
 }
@@ -81,7 +55,6 @@ impl GlobalPlanner {
         Self {
             grid_resolution: cfg.grid_resolution.max(10.0),
             clearance: cfg.robot_clearance + cfg.planner_margin,
-            waypoint_tolerance: cfg.waypoint_tolerance,
             replan_target_tol: cfg.replan_target_tol,
             cached: HashMap::new(),
         }
@@ -90,7 +63,6 @@ impl GlobalPlanner {
     pub fn update_settings(&mut self, cfg: &AvoidanceConfig) {
         self.grid_resolution = cfg.grid_resolution.max(10.0);
         self.clearance = cfg.robot_clearance + cfg.planner_margin;
-        self.waypoint_tolerance = cfg.waypoint_tolerance;
         self.replan_target_tol = cfg.replan_target_tol;
     }
 
@@ -104,6 +76,10 @@ impl GlobalPlanner {
     /// at cruise). Falls back to `target` (straight line) whenever the direct
     /// path is clear or planning fails. Draws the planned route (player-scoped
     /// debug under `plan.*`).
+    /// The remaining path the robot should follow: a polyline from the next
+    /// waypoint to the final target (`[target]` for a clear line-of-sight or a
+    /// planning failure). The path-follower consumes the whole thing. Draws the
+    /// route under the player's `plan.*` debug keys.
     pub fn plan(
         &mut self,
         id: PlayerId,
@@ -112,17 +88,16 @@ impl GlobalPlanner {
         ego_radius: f64,
         obstacles: &ObstacleSet,
         ctx: &PlayerContext,
-    ) -> PlanStep {
+    ) -> Vec<Vector2> {
         let shapes: Vec<ObstacleShape> = obstacles.as_planner_shapes(self.clearance).collect();
         let step = self.grid_resolution * 0.5;
 
-        // 1. Line-of-sight fast path: direct shot is clear → go straight at the
-        //    final target.
+        // 1. Line-of-sight fast path: direct shot is clear → straight to target.
         if segment_clear(start, target, &shapes, ego_radius, step) {
             self.cached.remove(&id);
             ctx.debug_string("plan.status", "direct");
             self.draw_route(ctx, start, &[target], DebugColor::Green);
-            return PlanStep::final_target(target);
+            return vec![target];
         }
 
         // 2. Hysteresis: reuse the committed path while the target is stable and
@@ -130,7 +105,7 @@ impl GlobalPlanner {
         if let Some(route) = self.try_cached(id, start, target, &shapes, ego_radius, step) {
             ctx.debug_string("plan.status", "cached");
             self.draw_route(ctx, start, &route, DebugColor::Orange);
-            return self.step_from_route(start, &route);
+            return route;
         }
 
         // 3. Full Theta* search.
@@ -138,15 +113,14 @@ impl GlobalPlanner {
             Some(path) => {
                 ctx.debug_string("plan.status", "planned");
                 self.draw_route(ctx, start, &path, DebugColor::Orange);
-                let step_out = self.step_from_route(start, &path);
                 self.cached.insert(
                     id,
                     CachedPath {
-                        waypoints: path,
+                        waypoints: path.clone(),
                         target,
                     },
                 );
-                step_out
+                path
             }
             None => {
                 self.cached.remove(&id);
@@ -154,30 +128,8 @@ impl GlobalPlanner {
                 // red to flag that the robot is heading straight at obstacles.
                 ctx.debug_string("plan.status", "no_path");
                 self.draw_route(ctx, start, &[target], DebugColor::Red);
-                PlanStep::final_target(target)
+                vec![target]
             }
-        }
-    }
-
-    /// Build the step for the next waypoint of a route. The last waypoint is the
-    /// final target (stop); an intermediate corner carries a speed fraction set
-    /// by how sharply the path turns at it — straight-through keeps full speed, a
-    /// hard turn slows (floored so it never stops).
-    fn step_from_route(&self, start: Vector2, route: &[Vector2]) -> PlanStep {
-        let next = route[0];
-        if route.len() == 1 {
-            return PlanStep::final_target(next);
-        }
-        let incoming = (next - start).try_normalize(1.0e-6);
-        let outgoing = (route[1] - next).try_normalize(1.0e-6);
-        let speed_frac = match (incoming, outgoing) {
-            (Some(i), Some(o)) => i.dot(&o).clamp(MIN_CORNER_SPEED_FRAC, 1.0),
-            _ => 1.0,
-        };
-        PlanStep {
-            waypoint: next,
-            is_final: false,
-            speed_frac,
         }
     }
 
@@ -196,11 +148,10 @@ impl GlobalPlanner {
         if (cached.target - target).norm() > self.replan_target_tol {
             return None;
         }
-        // Drop intermediate waypoints we've effectively reached. Uses the wider
-        // pass-through tolerance so the robot advances to the next corner before
-        // arriving, flowing through instead of braking. The final target (last
-        // entry) is never dropped here — it decelerates via MTP.
-        let arrive = self.waypoint_tolerance.max(self.grid_resolution);
+        // Prune intermediate waypoints we've passed (cache hygiene only — the
+        // follower projects onto the whole polyline anyway). The final target
+        // (last entry) is never dropped here.
+        let arrive = self.grid_resolution;
         while cached.waypoints.len() > 1 && (cached.waypoints[0] - start).norm() < arrive {
             cached.waypoints.remove(0);
         }
@@ -495,7 +446,7 @@ mod tests {
         let cfg = AvoidanceConfig::default();
         let mut p = GlobalPlanner::new(&cfg);
         let target = Vector2::new(1000.0, 0.0);
-        let step = p.plan(
+        let path = p.plan(
             PlayerId::new(0),
             Vector2::new(-1000.0, 0.0),
             target,
@@ -503,8 +454,8 @@ mod tests {
             &ObstacleSet::default(),
             &ctx(),
         );
-        assert!((step.waypoint - target).norm() < 1e-6, "got {:?}", step);
-        assert!(step.is_final, "a direct shot is the final target");
+        assert_eq!(path.len(), 1, "direct shot is a single-point path");
+        assert!((path[0] - target).norm() < 1e-6, "got {:?}", path);
     }
 
     #[test]
@@ -515,15 +466,19 @@ mod tests {
         let target = Vector2::new(1000.0, 0.0);
         // Disc squarely blocking the direct path.
         let obs = disc(Vector2::new(0.0, 0.0), 400.0);
-        let step = p.plan(PlayerId::new(0), start, target, 90.0, &obs, &ctx());
-        let wp = step.waypoint;
+        let path = p.plan(PlayerId::new(0), start, target, 90.0, &obs, &ctx());
+        let wp = path[0];
 
+        assert!(
+            path.len() >= 2,
+            "a detour has intermediate waypoints: {:?}",
+            path
+        );
         assert!(
             (wp - target).norm() > 1e-6,
             "should not go straight: {:?}",
             wp
         );
-        assert!(!step.is_final, "a detour corner is intermediate, not final");
         // The first leg toward the chosen waypoint must itself be collision-free.
         let shapes: Vec<ObstacleShape> = obs.as_planner_shapes(cfg.robot_clearance).collect();
         assert!(

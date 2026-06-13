@@ -195,7 +195,7 @@ impl SideAssignment {
         Vector3::new(vec.x * self.attacking_direction_sign(color), vec.y, vec.z)
     }
 
-    fn transform_angle(&self, color: TeamColor, angle: Angle) -> Angle {
+    pub fn transform_angle(&self, color: TeamColor, angle: Angle) -> Angle {
         let sign = self.attacking_direction_sign(color);
         if sign > 0.0 {
             angle

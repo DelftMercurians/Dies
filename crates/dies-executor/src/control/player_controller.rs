@@ -1,13 +1,13 @@
 use dies_core::{
-    Angle, ControllerSettings, ExecutorSettings, PlayerCmd, PlayerCmdUntransformer, PlayerData,
-    PlayerGlobalMoveCmd, PlayerId, RobotCmd, TeamData, Vector2,
+    Angle, ControllerSettings, DebugColor, ExecutorSettings, PlayerCmd, PlayerCmdUntransformer,
+    PlayerData, PlayerGlobalMoveCmd, PlayerId, RobotCmd, TeamData, Vector2, PLAYER_RADIUS,
 };
 
 use super::{
-    avoidance::PlanStep,
+    avoidance::{DynamicAgent, OrcaAgent, OrcaSolver, StaticObstacle},
+    path_follower::PathFollower,
     player_input::{KickerControlInput, PlayerControlInput},
     team_context::PlayerContext,
-    two_step_mtp::TwoStepMTP,
     yaw_control::YawController,
     Velocity,
 };
@@ -24,10 +24,12 @@ enum KickerState {
 
 pub struct PlayerController {
     id: PlayerId,
-    two_step_mtp: TwoStepMTP,
+    path_follower: PathFollower,
     last_pos: Vector2,
 
-    /// Output velocity \[mm/s\]
+    /// Output velocity \[mm/s\]: the post-ORCA, acceleration-clamped command from
+    /// the most recent `update`. Also serves as the previous-command reference
+    /// for the next tick's first-order acceleration clamp.
     target_velocity_global: Vector2,
 
     yaw_control: YawController,
@@ -48,24 +50,11 @@ pub struct PlayerController {
     dribble_speed: f64,
 
     max_accel: f64,
-    max_jerk: f64,
     max_speed: f64,
     max_decel: f64,
     max_angular_velocity: f64,
     max_angular_acceleration: f64,
     last_yaw_rate_limit: Option<f64>,
-
-    /// Jerk-limited output tracker state: the actually-commanded velocity and its
-    /// acceleration, slewed toward the desired (post-ORCA) velocity so the
-    /// command stays C1 (no acceleration steps → no lurch).
-    cmd_velocity: Vector2,
-    cmd_accel: Vector2,
-
-    /// Most recent measured global-frame velocity, captured at the start of
-    /// `update()`. Used by the output-side acceleration clamp in `command()`.
-    last_velocity: Vector2,
-    /// dt corresponding to `last_velocity`. Same purpose.
-    last_dt: f64,
 
     fan_speed: f64,
     kick_speed: f64,
@@ -77,7 +66,7 @@ impl PlayerController {
         let mut instance = Self {
             id,
 
-            two_step_mtp: TwoStepMTP::new(),
+            path_follower: PathFollower::new(&settings.controller_settings),
             last_pos: Vector2::new(0.0, 0.0),
             target_velocity_global: Vector2::new(0.0, 0.0),
             w: 0.0,
@@ -94,7 +83,6 @@ impl PlayerController {
             dribble_speed: 0.0,
 
             max_accel: settings.controller_settings.max_acceleration,
-            max_jerk: settings.controller_settings.max_jerk,
             max_speed: settings.controller_settings.max_velocity,
             max_decel: settings.controller_settings.max_deceleration,
             max_angular_velocity: settings.controller_settings.max_angular_velocity,
@@ -104,11 +92,6 @@ impl PlayerController {
             kick_speed: 0.0,
 
             last_yaw_rate_limit: None,
-            last_velocity: Vector2::zeros(),
-            last_dt: 0.0,
-
-            cmd_velocity: Vector2::zeros(),
-            cmd_accel: Vector2::zeros(),
         };
         instance.update_settings(&settings.controller_settings);
         instance
@@ -116,16 +99,11 @@ impl PlayerController {
 
     /// Update the controller settings.
     pub fn update_settings(&mut self, settings: &ControllerSettings) {
-        self.two_step_mtp.update_settings(
-            settings.position_kp,
-            settings.position_cutoff_distance,
-            settings.thresh,
-        );
+        self.path_follower.update_settings(settings);
         self.yaw_control
             .update_settings(settings.angle_kp, settings.angle_cutoff_distance);
 
         self.max_accel = settings.max_acceleration;
-        self.max_jerk = settings.max_jerk;
         self.max_speed = settings.max_velocity;
         self.max_decel = settings.max_deceleration;
         self.max_angular_velocity = settings.max_angular_velocity;
@@ -137,50 +115,9 @@ impl PlayerController {
         self.id
     }
 
-    /// Set the target velocity (used when the team controller overrides the
-    /// MTP output with the ORCA-filtered velocity). The output-side accel
-    /// clamp in `command()` still applies to whatever is set here.
-    pub fn set_target_velocity(&mut self, velocity: Vector2) {
-        self.target_velocity_global = velocity;
-    }
-
-    /// Commit a desired (post-ORCA) velocity through the jerk-limited output
-    /// tracker and store the smoothed result as the command velocity. Runs once
-    /// per control tick. Per-axis S-curve: acceleration is slewed toward the
-    /// value that lets it ramp back to zero exactly as the velocity error
-    /// closes, so the command is acceleration-continuous (no lurch) and
-    /// overshoot-free.
-    pub fn commit_tracked_velocity(&mut self, desired: Vector2, dt: f64) {
-        let dt = dt.clamp(1.0e-3, 0.5);
-        let a_max = self.max_accel;
-        let j_max = self.max_jerk;
-        for i in 0..2 {
-            let err = desired[i] - self.cmd_velocity[i];
-            // Acceleration that can still decelerate to 0 right at err = 0 under
-            // the jerk limit: a = sqrt(2·j·|err|), capped at a_max.
-            let a_target = err.signum() * a_max.min((2.0 * j_max * err.abs()).sqrt());
-            let da = (a_target - self.cmd_accel[i]).clamp(-j_max * dt, j_max * dt);
-            self.cmd_accel[i] = (self.cmd_accel[i] + da).clamp(-a_max, a_max);
-            self.cmd_velocity[i] += self.cmd_accel[i] * dt;
-        }
-        self.cmd_velocity = self.cmd_velocity.cap_magnitude(self.max_speed);
-        // Snap to a clean stop once both the target and the residual command are
-        // negligible, so a holding robot doesn't keep a sub-mm/s creep alive.
-        if desired.norm() < 1.0e-3 && self.cmd_velocity.norm() < 1.0 {
-            self.cmd_velocity = Vector2::zeros();
-            self.cmd_accel = Vector2::zeros();
-        }
-        self.target_velocity_global = self.cmd_velocity;
-    }
-
-    /// Access to the configured maximum speed, used by the team controller to
-    /// bound ORCA preferred velocities.
-    pub fn get_max_speed(&self) -> f64 {
-        self.max_speed
-    }
-
     /// Last computed velocity setpoint in **global** frame (mm/s). Reflects the
-    /// MTP / ORCA / manual-velocity output from the most recent `update`.
+    /// path-follower / ORCA / manual-velocity output from the most recent
+    /// `update`.
     pub fn target_velocity_global(&self) -> Vector2 {
         self.target_velocity_global
     }
@@ -243,22 +180,27 @@ impl PlayerController {
 
     /// Update the controller with the current state of the player.
     ///
-    /// `step` is the planner-chosen setpoint to steer toward (with its
-    /// final/intermediate flag and corner speed), or `None` when the robot has
-    /// no position target. Collision avoidance is applied separately: the team
-    /// controller overrides the resulting velocity with the ORCA solution via
-    /// `set_target_velocity`.
+    /// `path` is the planner's full remaining polyline to follow, or `None` when
+    /// the robot has no position target. The path-follower turns it into a
+    /// dynamically-shaped preferred velocity, ORCA deflects it around
+    /// `neighbors` to a collision-free velocity, and a first-order acceleration
+    /// clamp smooths the result — all in this one place. `orca` is `None` when
+    /// reciprocal avoidance is disabled, in which case the preferred velocity
+    /// passes through unchanged.
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         state: &PlayerData,
         world: &TeamData,
         input: &PlayerControlInput,
-        step: Option<PlanStep>,
+        path: Option<Vec<Vector2>>,
         dt: f64,
         is_manual_override: bool,
         player_context: &PlayerContext,
         avoid_goal_area: bool,
+        neighbors: &[DynamicAgent],
+        statics: &[StaticObstacle],
+        orca: Option<&OrcaSolver>,
     ) {
         self.frame_misses = 0;
 
@@ -297,31 +239,20 @@ impl PlayerController {
             ),
         );
 
-        // Calculate velocity using MTP controller (MPC is handled at team level)
         self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
 
-        self.last_velocity = state.velocity;
-        self.last_dt = dt;
+        // Previous command (set last tick by the team controller to the post-ORCA
+        // velocity) — the reference for this tick's acceleration clamp and the
+        // speed used to scale the pure-pursuit lookahead.
+        let last_cmd = self.target_velocity_global;
 
-        // MTP velocity toward the planner waypoint. The team controller then
-        // overrides this with the ORCA-filtered velocity.
-        if let Some(step) = step {
-            self.two_step_mtp.set_setpoint(step.waypoint);
-            let pos_u = self.two_step_mtp.update(
-                self.last_pos,
-                state.velocity,
-                dt,
-                input.acceleration_limit.unwrap_or(self.max_accel),
-                input.speed_limit.unwrap_or(self.max_speed),
-                input.acceleration_limit.unwrap_or(self.max_decel),
-                input.care,
-                input.aggressiveness,
-                input.control_paramer_override.clone(),
-                step.is_final,
-                step.speed_frac,
-            );
-            self.target_velocity_global = pos_u;
+        // Path-following preferred velocity (cruise / cornering / braking-to-goal
+        // are all intrinsic). The team controller reconciles it with ORCA.
+        if let Some(path) = path.as_deref() {
+            self.target_velocity_global =
+                self.path_follower
+                    .follow(path, self.last_pos, last_cmd.norm());
         } else {
             self.target_velocity_global = Vector2::zeros();
             player_context.debug_remove("control.target");
@@ -362,6 +293,63 @@ impl PlayerController {
         } else {
             self.target_velocity_global += add_vel;
         }
+
+        // Reciprocal collision avoidance (ORCA). The velocity built above is the
+        // *preferred* velocity; ORCA returns the closest collision-free velocity
+        // given this robot's neighbours. Folded in here — rather than overridden
+        // at the team level — so the acceleration clamp below applies to the ORCA
+        // output instead of bypassing it. Each agent's solve is data-independent
+        // (it reads neighbours' observed velocities, not their intent), so doing
+        // it per-controller is equivalent to the old team-level batch.
+        if let Some(orca) = orca {
+            let pref = self.target_velocity_global;
+            let agent = OrcaAgent {
+                id: self.id,
+                position: state.position,
+                velocity: state.velocity,
+                pref_velocity: pref,
+                radius: PLAYER_RADIUS,
+                max_speed: input.speed_limit.unwrap_or(self.max_speed),
+                neighbors: neighbors.to_vec(),
+                statics: statics.to_vec(),
+            };
+            let safe = orca.solve(&agent, dt);
+            self.target_velocity_global = safe;
+
+            // Debug: preferred (gray) vs safe (green) velocity hints, scaled down
+            // so they read as direction hints rather than full-length vectors.
+            const ORCA_VIZ_SCALE: f64 = 0.3;
+            player_context.debug_line_colored(
+                "orca.pref",
+                state.position,
+                state.position + pref * ORCA_VIZ_SCALE,
+                DebugColor::Gray,
+            );
+            player_context.debug_line_colored(
+                "orca.safe",
+                state.position,
+                state.position + safe * ORCA_VIZ_SCALE,
+                DebugColor::Green,
+            );
+            player_context.debug_value("orca.deflection", (safe - pref).norm());
+            player_context.debug_value("orca.neighbors", neighbors.len() as f64);
+        }
+
+        // First-order asymmetric acceleration clamp toward the desired velocity
+        // (accel when speeding up, decel when slowing). This is the only output
+        // smoothing — no jerk stage. ORCA may step the command in an emergency;
+        // that's intentional and rare.
+        let desired = self.target_velocity_global;
+        let a = if desired.norm() >= last_cmd.norm() {
+            self.max_accel
+        } else {
+            self.max_decel
+        };
+        let mut new_cmd = last_cmd + cap_vec(desired - last_cmd, a * dt.max(1.0e-3));
+        if desired.norm() < 1.0 && new_cmd.norm() < 1.0 {
+            new_cmd = Vector2::zeros();
+        }
+        self.target_velocity_global = new_cmd;
 
         // Draw the velocity
         player_context.debug_line_colored(
@@ -472,5 +460,15 @@ impl PlayerController {
         }
 
         false
+    }
+}
+
+/// Clamp a vector's magnitude to `cap` (preserving direction).
+fn cap_vec(v: Vector2, cap: f64) -> Vector2 {
+    let n = v.norm();
+    if n > cap && n > f64::EPSILON {
+        v * (cap / n)
+    } else {
+        v
     }
 }

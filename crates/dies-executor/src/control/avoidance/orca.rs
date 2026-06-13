@@ -20,8 +20,6 @@
 //! velocity jump larger than `max_accel·dt` — that's intentional; the downstream
 //! per-tick acceleration clamp in the player controller tracks toward it.
 
-use std::collections::HashMap;
-
 use dies_core::{AvoidanceConfig, PlayerId, Vector2};
 
 use super::obstacle::{DynamicAgent, StaticObstacle};
@@ -283,16 +281,6 @@ impl OrcaSolver {
     }
 }
 
-/// Solve ORCA for every agent (reciprocity couples them, but each LP reads the
-/// others' current velocities, so the solves themselves are independent).
-pub fn orca_solve_batch(
-    solver: &OrcaSolver,
-    agents: &[OrcaAgent],
-    dt: f64,
-) -> HashMap<PlayerId, Vector2> {
-    agents.iter().map(|a| (a.id, solver.solve(a, dt))).collect()
-}
-
 /// A directed constraint line; feasible region is to the left of `direction`.
 #[derive(Clone, Copy, Default)]
 struct Line {
@@ -552,24 +540,5 @@ mod tests {
         let v = solver().solve(&a, 0.02);
         assert!(v.x.is_finite() && v.y.is_finite(), "got {:?}", v);
         assert!(v.norm() <= a.max_speed + 1.0);
-    }
-
-    #[test]
-    fn static_wall_blocks_approach() {
-        // Wall at x = 100 (forbidden side +x); robot at x = 50 wants to drive
-        // into it. ORCA must reverse the x component.
-        let mut a = agent(
-            Vector2::new(50.0, 0.0),
-            Vector2::zeros(),
-            Vector2::new(1000.0, 0.0),
-        );
-        a.statics.push(StaticObstacle {
-            shape: ObstacleShape::HalfPlane {
-                normal: Vector2::new(1.0, 0.0),
-                offset: 100.0,
-            },
-        });
-        let v = solver().solve(&a, 0.02);
-        assert!(v.x < 0.0, "expected push away from wall, got {:?}", v);
     }
 }
