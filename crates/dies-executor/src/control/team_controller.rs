@@ -567,7 +567,7 @@ fn comply(
                 }
 
                 if matches!(game_state, GameState::Timeout) {
-                    // Go into a triangle formation like the scenario
+                    // Go into a triangle formation
                     let center_x = -2000.0;
                     let center_y = 0.0;
                     let spacing = 800.0;
