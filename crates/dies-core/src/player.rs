@@ -238,7 +238,7 @@ pub enum PlayerOverrideCommand {
     /// Move the robot to a globel position and yaw
     MoveTo {
         position: Vector2,
-        yaw: Angle,
+        yaw: Option<Angle>,
         /// Dribbler speed normalised to \[0, 1\]
         dribble_speed: f64,
         arm_kick: bool,

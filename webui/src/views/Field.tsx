@@ -177,7 +177,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     () => {}
   );
   sendTargetRef.current = (playerId, pos) => {
-    const yaw = ownPlayers.find((p) => p.id === playerId)?.yaw ?? 0;
     if (!manualControlledPlayerIds.includes(playerId)) {
       sendCommand({
         type: "SetManualOverride",
@@ -195,7 +194,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         player_id: playerId,
         command: {
           type: "MoveTo",
-          data: { position: pos, yaw, dribble_speed: 0, arm_kick: false },
+          data: { position: pos, yaw: undefined, dribble_speed: 0, arm_kick: false },
         },
       },
     });
@@ -310,7 +309,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           data: {
             position: contextMenuPosRef.current,
             arm_kick: false,
-            yaw: headingRef.current ?? 0,
+            yaw: headingRef.current ?? undefined,
             dribble_speed: 0,
           },
         },

@@ -253,7 +253,7 @@ impl PlayerOverrideState {
                 arm_kick,
             } => PlayerControlInput {
                 position: Some(position),
-                yaw: Some(yaw),
+                yaw,
                 dribbling_speed: dribble_speed,
                 kicker: if arm_kick {
                     KickerControlInput::Arm

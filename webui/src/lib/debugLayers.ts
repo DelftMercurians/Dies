@@ -34,7 +34,9 @@ export const CATEGORIES: DebugCategory[] = [
   {
     id: "avoidance",
     label: "Collision Avoidance",
-    pattern: /\.(plan|orca)(\..*)?$/,
+    // Matches plan/orca/avoid as a whole path segment, at player or team level:
+    // team_Blue.pN.plan.*, .orca.*, team_Blue.avoid.keepout.*, .avoid.plankeepout.*
+    pattern: /(^|\.)(plan|orca|avoid)(\.|$)/,
     defaultVisible: false,
   },
 ];

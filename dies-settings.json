@@ -2,7 +2,7 @@
   "controller_settings": {
     "max_acceleration": 30000.0,
     "max_deceleration": 20000.0,
-    "max_velocity": 4000.0,
+    "max_velocity": 3500.0,
     "lateral_acceleration": 1500.0,
     "approach_kp": 1.6,
     "lookahead_min": 200.0,
@@ -45,7 +45,7 @@
     "fetch_ball_preshoot_offset": 150.0,
     "fetch_ball_preshoot_ball_avoidance": 0.0
   },
-  "allow_no_vision": true,
+  "allow_no_vision": false,
   "goal_area_avoidance": false,
   "avoidance": {
     "robot_clearance": 20.0,
@@ -61,7 +61,7 @@
     "neighbor_dist": 2000.0,
     "max_neighbors": 8,
     "grid_resolution": 100.0,
-    "planner_margin": 150.0,
+    "planner_margin": 70.0,
     "replan_target_tol": 150.0,
     "planner_enabled": true,
     "orca_enabled": true

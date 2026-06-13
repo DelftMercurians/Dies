@@ -1,3 +1,9 @@
+Controls
+- 
+ 
+ 
+
+
 - [ ] Clean up and streamline settings system. Make settings declarative in Rust with generated UI
   - [ ] Controller Settings
   - [ ] Tracker Settings

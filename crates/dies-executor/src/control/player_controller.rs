@@ -378,8 +378,20 @@ impl PlayerController {
             );
             self.w = head_u;
         } else {
-            self.target_z = f64::NAN;
-            self.w = 0.0;
+            if self.target_velocity_global.norm() > 1000.0 {
+                // Face the direction of movement (or inveser if thats closer - we just want to be moving along the forward body axis) when moving faster and have no other heading SP
+                let current_yaw = self.last_yaw;
+                let velocity_heading = Angle::from_vector(self.target_velocity_global);
+                let inverse_velocity_heading = Angle::from_vector(self.target_velocity_global) + Angle::from_degrees(180.0);
+                if (current_yaw - inverse_velocity_heading).abs() < (current_yaw - velocity_heading).abs() {
+                    self.target_z = inverse_velocity_heading.radians();
+                } else {
+                    self.target_z = velocity_heading.radians();
+                }
+            } else {
+                self.target_z = f64::NAN;
+                self.w = 0.0;
+            }
         }
 
         // Ramp up yaw rate with proprtional control

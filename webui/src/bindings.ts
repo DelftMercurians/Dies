@@ -796,7 +796,7 @@ export type PlayerOverrideCommand =
 	/** Move the robot to a globel position and yaw */
 	| { type: "MoveTo", data: {
 	position: Vector2;
-	yaw: Angle;
+	yaw?: Angle;
 	/** Dribbler speed normalised to \[0, 1\] */
 	dribble_speed: number;
 	arm_kick: boolean;
