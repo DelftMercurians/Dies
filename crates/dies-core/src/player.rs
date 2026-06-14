@@ -140,11 +140,14 @@ impl From<PlayerMoveCmd> for glue::Radio_Command {
                 y: val.sy as f32,
                 z: val.w as f32,
             },
-            dribbler_speed: val.dribble_speed as f32,
-            robot_command: val.robot_cmd.into(),
-            kick_time: 5_000.0 * val.kick_speed as f32,
-            fan_speed: 0.0,
-            _pad: [0, 0, 0],
+            gen_command: glue::Radio_GenericCommand {
+                dribbler_speed_i: val.dribble_speed as i16,
+                kick_time_i: (5_000.0 * val.kick_speed as f32) as u16,
+                time_to_kick: 0,
+                smart_kick_couter: 0,
+                robot_command: val.robot_cmd.into(),
+            },
+            _pad: [0, 0, 0, 0, 0, 0, 0, 0],
         }
     }
 }
@@ -215,14 +218,16 @@ impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
             global_speed_y: val.global_y as f32,
             heading_last_measurement: val.last_heading as f32,
             heading_setpoint: val.heading_setpoint as f32,
-            dribbler_speed_i: val.dribble_speed as i16,
-            kick_time_i: 5_000,
-            robot_command: val.robot_cmd.into(),
-            smart_kick_couter: val.kick_counter,
-            time_to_kick: 0,
+            gen_command: glue::Radio_GenericCommand {
+                dribbler_speed_i: val.dribble_speed as i16,
+                kick_time_i: 5_000,
+                time_to_kick: 0,
+                smart_kick_couter: val.kick_counter,
+                robot_command: val.robot_cmd.into(),
+            },
             max_yaw_rate: (val.max_yaw_rate * 10.0) as u16,
             preferred_rotation_direction: val.preferred_rotation_direction.as_i8(),
-            _pad2: 0,
+            _pad: 0,
         }
     }
 }
@@ -350,7 +355,7 @@ pub struct PlayerFeedbackMsg {
     pub primary_status: Option<SysStatus>,
     pub kicker_status: Option<SysStatus>,
     pub imu_status: Option<SysStatus>,
-    pub fan_status: Option<SysStatus>,
+    pub tof_status: Option<SysStatus>,
     pub kicker_cap_voltage: Option<f32>,
     pub kicker_temp: Option<f32>,
     pub motor_statuses: Option<[SysStatus; 5]>,
@@ -369,7 +374,7 @@ impl PlayerFeedbackMsg {
             primary_status: None,
             kicker_status: None,
             imu_status: None,
-            fan_status: None,
+            tof_status: None,
             kicker_cap_voltage: None,
             kicker_temp: None,
             motor_statuses: None,
