@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DebugEntry, PlayerId, SkillCommand, SkillStatus, WorldSnapshot};
+use crate::{DebugEntry, PassResult, PlayerId, SkillCommand, SkillStatus, WorldSnapshot};
 
 /// Configuration passed to a strategy on initialization.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -36,6 +36,12 @@ pub enum HostMessage {
         world: WorldSnapshot,
         /// Current skill status for each player.
         skill_statuses: HashMap<PlayerId, SkillStatus>,
+        /// Rich result for players involved in a pass, on the frame it terminates.
+        ///
+        /// Keyed by player id; both members of a pass get an entry. Empty for
+        /// players not in a pass. This is the out-of-band channel for the typed
+        /// [`PassResult`] that the generic `skill_statuses` map cannot carry.
+        pass_results: HashMap<PlayerId, PassResult>,
     },
 
     /// Request graceful shutdown.

@@ -273,6 +273,11 @@ fn create_skill_from_command(cmd: &SkillCommand) -> Box<dyn ExecutableSkill> {
             *capture_limit,
             *cushion,
         )),
+        SkillCommand::Pass { .. } => {
+            // Pass is a joint skill handled by the JointSkillExecutor; the team
+            // controller partitions it away from the per-player path.
+            unreachable!("Pass command must be routed to the JointSkillExecutor")
+        }
         SkillCommand::Stop => {
             // Stop is handled specially, should never reach here
             unreachable!("Stop command should be handled before create_skill_from_command")

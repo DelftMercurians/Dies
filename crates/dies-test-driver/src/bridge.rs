@@ -22,7 +22,7 @@ use dies_core::{
     Angle, DebugSubscriber, DebugValue, FieldGeometry, PlayerId, SimulatorCmd, SysStatus,
     TeamColor, TeamData, Vector2,
 };
-use dies_strategy_protocol::{SkillCommand, SkillStatus};
+use dies_strategy_protocol::{PassResult, PassRole, SkillCommand, SkillStatus};
 
 use crate::capture::{self, samples_to_csv, CaptureBuffer, CapturedSample, Recording};
 use crate::log_bus::{now_ms, LogBus, TestLogEntry, TestLogLevel};
@@ -163,6 +163,14 @@ pub enum Waker {
         resolve: JsFunction,
         reject: JsFunction,
     },
+    /// Joint pass completion. Resolves when the pass succeeds, rejects with the
+    /// typed `PassFailure` reason when it fails.
+    PassDone {
+        passer: PlayerId,
+        receiver: PlayerId,
+        resolve: JsFunction,
+        reject: JsFunction,
+    },
     Excite {
         player: PlayerId,
         profile: ExcitationProfile,
@@ -203,6 +211,9 @@ pub struct InnerState {
     pub next_waker_id: u64,
     pub world: WorldSnap,
     pub skill_statuses: HashMap<PlayerId, SkillStatus>,
+    /// Rich pass results, keyed by player (set by the host each tick). Used by
+    /// the `team.pass(...)` binding to reject with a typed reason.
+    pub pass_results: HashMap<PlayerId, PassResult>,
     pub slots: SlotStore,
     pub pending_sim_cmds: Vec<SimulatorCmd>,
     pub log: LogBus,
@@ -240,6 +251,7 @@ impl InnerState {
             next_waker_id: 1,
             world: WorldSnap::default(),
             skill_statuses: HashMap::new(),
+            pass_results: HashMap::new(),
             slots: SlotStore::default(),
             pending_sim_cmds: Vec::new(),
             log,
@@ -754,6 +766,62 @@ fn register_team(ctx: &mut Context, state: StateRef) -> JsResult<()> {
         };
         init.function(auto_fn, js_string!("autoRobot"), 1);
     }
+
+    // team.pass({ passer, receiver, targetHint? }) -> Promise
+    //
+    // Commands the atomic joint pass into BOTH robots' skill slots. Resolves when
+    // the pass succeeds; rejects with the typed PassFailure reason otherwise.
+    {
+        let state = state.clone();
+        let pass_fn = unsafe {
+            NativeFunction::from_closure(move |_this, args, ctx| {
+                let opts = args.first().cloned().unwrap_or(JsValue::undefined());
+                let passer = PlayerId::new(get_num(&opts, "passer", ctx)? as u32);
+                let receiver = PlayerId::new(get_num(&opts, "receiver", ctx)? as u32);
+                let target_hint = match get_obj_opt(&opts, "targetHint", ctx)? {
+                    Some(v) => Some(Vector2::new(get_num(&v, "x", ctx)?, get_num(&v, "y", ctx)?)),
+                    None => None,
+                };
+                let (promise, resolvers) = JsPromise::new_pending(ctx);
+                let mut st = state.borrow_mut();
+                st.skill_statuses.insert(passer, SkillStatus::Running);
+                st.skill_statuses.insert(receiver, SkillStatus::Running);
+                st.pass_results.remove(&passer);
+                st.pass_results.remove(&receiver);
+                st.slots.route_skill(
+                    passer,
+                    SkillCommand::Pass {
+                        partner: receiver,
+                        role: PassRole::Passer,
+                        target_hint,
+                    },
+                    "pass:passer",
+                );
+                st.slots.route_skill(
+                    receiver,
+                    SkillCommand::Pass {
+                        partner: passer,
+                        role: PassRole::Receiver,
+                        target_hint,
+                    },
+                    "pass:receiver",
+                );
+                let wid = st.alloc_waker_id();
+                st.wakers.insert(
+                    wid,
+                    Waker::PassDone {
+                        passer,
+                        receiver,
+                        resolve: resolvers.resolve,
+                        reject: resolvers.reject,
+                    },
+                );
+                Ok(promise.into())
+            })
+        };
+        init.function(pass_fn, js_string!("pass"), 1);
+    }
+
     let team_obj = init.build();
     ctx.register_global_property(
         js_string!("team"),

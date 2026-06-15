@@ -11,8 +11,8 @@ use std::collections::HashSet;
 
 use dies_core::{Angle, PlayerData, SideAssignment, TeamColor, TeamData, Vector2};
 use dies_strategy_protocol::{
-    BallState, DebugEntry, DebugShape, DebugValue, Handicap, PlayerId, PlayerState, SkillCommand,
-    SkillStatus, WorldSnapshot,
+    BallState, DebugEntry, DebugShape, DebugValue, Handicap, PassBallState, PassResult, PlayerId,
+    PlayerState, SkillCommand, SkillStatus, WorldSnapshot,
 };
 
 /// Handles coordinate transformation between world and strategy frames.
@@ -166,7 +166,33 @@ impl CoordinateTransformer {
                 capture_limit: *capture_limit,
                 cushion: *cushion,
             },
+            SkillCommand::Pass {
+                partner,
+                role,
+                target_hint,
+            } => SkillCommand::Pass {
+                partner: *partner,
+                role: *role,
+                target_hint: target_hint.map(|p| self.strategy_to_world(p)),
+            },
             SkillCommand::Stop => SkillCommand::Stop,
+        }
+    }
+
+    /// Transform a pass result from world coordinates back to strategy
+    /// coordinates (only the loose-ball position carries a coordinate).
+    pub fn transform_pass_result(&self, result: PassResult) -> PassResult {
+        match result {
+            PassResult::Failure {
+                reason,
+                ball_state: PassBallState::Loose { position },
+            } => PassResult::Failure {
+                reason,
+                ball_state: PassBallState::Loose {
+                    position: self.world_to_strategy(position),
+                },
+            },
+            other => other,
         }
     }
 

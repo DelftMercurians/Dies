@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use dies_core::{
     debug_record, DebugShape, DebugValue, PlayerId, SideAssignment, TeamColor, TeamData,
 };
-use dies_strategy_protocol::{DebugEntry, SkillCommand, SkillStatus, StrategyConfig};
+use dies_strategy_protocol::{DebugEntry, PassResult, SkillCommand, SkillStatus, StrategyConfig};
 use tracing::{error, info, warn};
 
 use super::connection::{ConnectionError, ConnectionState, StrategyConnection};
@@ -70,6 +70,10 @@ pub struct StrategyHost {
     blue_skill_statuses: HashMap<PlayerId, SkillStatus>,
     /// Skill statuses for yellow team.
     yellow_skill_statuses: HashMap<PlayerId, SkillStatus>,
+    /// Rich pass results for blue team.
+    blue_pass_results: HashMap<PlayerId, PassResult>,
+    /// Rich pass results for yellow team.
+    yellow_pass_results: HashMap<PlayerId, PassResult>,
 }
 
 impl StrategyHost {
@@ -81,6 +85,8 @@ impl StrategyHost {
             yellow_connection: None,
             blue_skill_statuses: HashMap::new(),
             yellow_skill_statuses: HashMap::new(),
+            blue_pass_results: HashMap::new(),
+            yellow_pass_results: HashMap::new(),
         }
     }
 
@@ -217,6 +223,18 @@ impl StrategyHost {
         }
     }
 
+    /// Update rich pass results from the executor.
+    pub fn update_pass_results(
+        &mut self,
+        team: TeamColor,
+        results: HashMap<PlayerId, PassResult>,
+    ) {
+        match team {
+            TeamColor::Blue => self.blue_pass_results = results,
+            TeamColor::Yellow => self.yellow_pass_results = results,
+        }
+    }
+
     /// Check and accept pending connections.
     ///
     /// Should be called periodically to accept connections from starting strategies.
@@ -271,7 +289,11 @@ impl StrategyHost {
         if let Some(team_data) = blue_team_data {
             if let Some(ref mut conn) = self.blue_connection {
                 if conn.state() == ConnectionState::Ready {
-                    match conn.update(team_data, self.blue_skill_statuses.clone()) {
+                    match conn.update(
+                        team_data,
+                        self.blue_skill_statuses.clone(),
+                        self.blue_pass_results.clone(),
+                    ) {
                         Ok(Some(strategy_output)) => {
                             output.blue_commands = strategy_output.skill_commands;
                             output.blue_roles = strategy_output.player_roles;
@@ -296,7 +318,11 @@ impl StrategyHost {
         if let Some(team_data) = yellow_team_data {
             if let Some(ref mut conn) = self.yellow_connection {
                 if conn.state() == ConnectionState::Ready {
-                    match conn.update(team_data, self.yellow_skill_statuses.clone()) {
+                    match conn.update(
+                        team_data,
+                        self.yellow_skill_statuses.clone(),
+                        self.yellow_pass_results.clone(),
+                    ) {
                         Ok(Some(strategy_output)) => {
                             output.yellow_commands = strategy_output.skill_commands;
                             output.yellow_roles = strategy_output.player_roles;

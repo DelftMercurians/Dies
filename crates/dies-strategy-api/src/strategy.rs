@@ -139,7 +139,7 @@ mod tests {
             our_keeper_id: None,
             freekick_kicker: None,
         };
-        TeamContext::new(snapshot, HashMap::new())
+        TeamContext::new(snapshot, HashMap::new(), HashMap::new())
     }
 
     #[test]

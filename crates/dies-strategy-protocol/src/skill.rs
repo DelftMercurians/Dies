@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Angle, Vector2};
+use crate::{Angle, PlayerId, Vector2};
 
 /// A command to execute a skill on a player.
 ///
@@ -123,6 +123,30 @@ pub enum SkillCommand {
         cushion: bool,
     },
 
+    /// Coordinate a pass between two players.
+    ///
+    /// **Type**: Joint - this command occupies the skill slot of BOTH the passer
+    /// and the receiver. The same logical pass is commanded to each robot, with the
+    /// other named as `partner`. A dedicated joint coordinator (ticked once per
+    /// frame, not per-player) owns both robots through one state machine.
+    ///
+    /// **Parameters**:
+    /// - `partner`: The other robot in the pass (receiver if this is the passer,
+    ///   passer if this is the receiver)
+    /// - `role`: Whether this robot is the `Passer` or `Receiver`
+    /// - `target_hint`: Optional bias for where the receiver should end up; if
+    ///   `None`, the coordinator computes the intercept geometry itself
+    ///
+    /// **Completion** (joint - both robots report the same status):
+    /// - `Succeeded` when the receiver's breakbeam (or vision fallback) confirms possession
+    /// - `Failed` with a typed [`PassResult`] reason otherwise (the coordinator
+    ///   never leaves a robot stuck; both are released on any terminal outcome)
+    Pass {
+        partner: PlayerId,
+        role: PassRole,
+        target_hint: Option<Vector2>,
+    },
+
     /// Stop all motion immediately.
     ///
     /// **Type**: Immediate
@@ -132,6 +156,70 @@ pub enum SkillCommand {
     /// - Disables dribbler
     /// - Transitions to `Idle` status
     Stop,
+}
+
+/// The role a robot plays in a [`SkillCommand::Pass`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PassRole {
+    /// Secures the ball, aims, and kicks toward the receiver.
+    Passer,
+    /// Moves to the intercept point and captures the ball.
+    Receiver,
+}
+
+/// The rich, typed outcome of a pass.
+///
+/// Unlike the generic [`SkillStatus`] (which collapses to `Succeeded`/`Failed`),
+/// this carries *why* a pass failed and where the ball ended up, so the strategy
+/// can react intelligently. It is delivered to the strategy out-of-band via the
+/// `pass_results` map on the world update.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PassResult {
+    /// The receiver captured the ball.
+    Success { receiver: PlayerId },
+    /// The pass failed; see `reason`. Both robots have been released cleanly.
+    Failure {
+        reason: PassFailure,
+        ball_state: PassBallState,
+    },
+}
+
+/// Why a pass failed. The only unambiguous success is the receiver's breakbeam;
+/// every other terminal condition is one of these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PassFailure {
+    /// The passer never secured the ball (not within secure distance, or lost it
+    /// before the kick). The pass never chases a loose ball.
+    BallLost,
+    /// The ball was kicked but the receiver could not reach the intercept point
+    /// (trajectory diverged beyond the capture window).
+    ReceiverMissed,
+    /// The ball was kicked but stopped short of the receiver.
+    StoppedShort,
+    /// An opponent intercepted the ball in flight.
+    Intercepted,
+    /// A phase exceeded its time budget (aim, receiver positioning, or flight).
+    Timeout,
+    /// The partner's slot stopped referencing this pass (reassigned/stopped by the
+    /// strategy). The orphaned side releases cleanly.
+    PartnerLeft,
+    /// The strategy explicitly cancelled (e.g. `Stop`) before completion.
+    Cancelled,
+}
+
+/// A minimal snapshot of where the ball ended up when a pass terminated.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PassBallState {
+    /// The receiver has the ball.
+    WithReceiver,
+    /// The passer still has the ball (failed before/at kick).
+    WithPasser,
+    /// The ball is loose at the given position.
+    Loose { position: Vector2 },
+    /// An opponent has/controls the ball.
+    WithOpponent,
+    /// Possession could not be determined.
+    Unknown,
 }
 
 /// The status of a skill's execution.

@@ -23,6 +23,26 @@ impl ReceiveSkill {
             status: SkillStatus::Running,
         }
     }
+
+    /// The pass-line origin this receiver is intercepting from.
+    pub fn from_pos(&self) -> Vector2 {
+        self.from_pos
+    }
+
+    /// Update the geometry in place (used when composed inside the pass
+    /// coordinator, which feeds fresh passer/intercept positions each frame).
+    pub fn reconfigure(
+        &mut self,
+        from_pos: Vector2,
+        target_pos: Vector2,
+        capture_limit: f64,
+        cushion: bool,
+    ) {
+        self.from_pos = from_pos;
+        self.target_pos = target_pos;
+        self.capture_limit = capture_limit;
+        self.cushion = cushion;
+    }
 }
 
 impl ExecutableSkill for ReceiveSkill {

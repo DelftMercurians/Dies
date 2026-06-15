@@ -126,14 +126,15 @@ pub use skill_builders::{
     DribbleBuilder, GoToBuilder, PickupBallParams, ReflexShootParams, SkillHandle, SkillParams,
 };
 pub use strategy::{Strategy, StrategyFactory};
-pub use team::TeamContext;
+pub use team::{PassBuilder, TeamContext};
 pub use world::{Rect, World};
 
 // Re-export commonly used types from protocol and core crates
 pub use dies_core::{Angle, FieldGeometry};
 pub use dies_strategy_protocol::{
-    BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState, Handicap, PlayerId,
-    PlayerState, SkillCommand, SkillStatus, Vector2, WorldSnapshot,
+    BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState, Handicap, PassBallState,
+    PassFailure, PassResult, PassRole, PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2,
+    WorldSnapshot,
 };
 
 /// Prelude module for convenient imports.
@@ -254,7 +255,7 @@ mod tests {
             freekick_kicker: None,
         };
 
-        let mut ctx = TeamContext::new(snapshot, HashMap::new());
+        let mut ctx = TeamContext::new(snapshot, HashMap::new(), HashMap::new());
         strategy.update(&mut ctx);
     }
 

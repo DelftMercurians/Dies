@@ -12,12 +12,15 @@ use std::sync::Arc;
 
 use super::{
     avoidance::{AvoidanceGates, GlobalPlanner, ObstacleSet, OrcaSolver},
+    joint_skill_executor::JointSkillExecutor,
+    pass_coordinator::PassContext,
     player_controller::PlayerController,
     player_input::{KickerControlInput, PlayerInputs},
     skill_executor::{SkillContext, SkillExecutor},
     team_context::TeamContext,
 };
 use crate::PlayerControlInput;
+use dies_strategy_protocol::PassResult;
 
 /// Input for the team controller from the strategy host.
 #[derive(Debug, Clone, Default)]
@@ -34,6 +37,8 @@ pub struct TeamController {
 
     // Skill execution for strategy-controlled path
     skill_executor: SkillExecutor,
+    /// Joint (multi-robot) skill execution — currently pass coordination.
+    joint_skill_executor: JointSkillExecutor,
     /// Current strategy input (skill commands and roles).
     strategy_input: StrategyInput,
 
@@ -62,6 +67,7 @@ impl TeamController {
             player_controllers: HashMap::new(),
             settings: settings.clone(),
             skill_executor: SkillExecutor::new(),
+            joint_skill_executor: JointSkillExecutor::new(),
             strategy_input: StrategyInput::default(),
             planner: GlobalPlanner::new(&settings.avoidance),
             orca: OrcaSolver::new(&settings.avoidance),
@@ -90,8 +96,20 @@ impl TeamController {
     }
 
     /// Get current skill statuses for all players.
+    ///
+    /// Joint (pass) statuses override per-player skill statuses for robots
+    /// currently or recently in a pass.
     pub fn get_skill_statuses(&self) -> HashMap<PlayerId, SkillStatus> {
-        self.skill_executor.get_all_statuses()
+        let mut statuses = self.skill_executor.get_all_statuses();
+        for (id, status) in self.joint_skill_executor.statuses() {
+            statuses.insert(*id, *status);
+        }
+        statuses
+    }
+
+    /// Get rich pass results for players involved in a pass (empty otherwise).
+    pub fn get_pass_results(&self) -> HashMap<PlayerId, PassResult> {
+        self.joint_skill_executor.pass_results().clone()
     }
 
     pub fn update(
@@ -398,11 +416,28 @@ impl TeamController {
     ) {
         let mut player_inputs = HashMap::new();
 
+        // Joint (pass) coordination runs first, as a single first-class tick. It
+        // claims a set of robots (`managed`); those are skipped below so the
+        // per-player skill executor never sees a `Pass` command.
+        let pass_ctx = PassContext {
+            world: world_data,
+            team_context,
+        };
+        let joint = self
+            .joint_skill_executor
+            .tick_all(&self.strategy_input.skill_commands, &pass_ctx);
+
         for player_id in active_robots {
             let player_data = match world_data.own_players.iter().find(|p| p.id == *player_id) {
                 Some(p) => p,
                 None => continue,
             };
+
+            if joint.managed.contains(player_id) {
+                let input = joint.inputs.get(player_id).cloned().unwrap_or_default();
+                player_inputs.insert(*player_id, input);
+                continue;
+            }
 
             let skill_cmd = self
                 .strategy_input

@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 
-use dies_strategy_protocol::{PlayerId, SkillCommand, SkillStatus, WorldSnapshot};
+use dies_strategy_protocol::{
+    PassResult, PassRole, PlayerId, SkillCommand, SkillStatus, Vector2, WorldSnapshot,
+};
 
 use crate::player::PlayerHandle;
 use crate::world::World;
@@ -34,11 +36,17 @@ pub struct TeamContext {
     world: World,
     players: HashMap<PlayerId, PlayerHandle>,
     player_ids: Vec<PlayerId>,
+    pass_results: HashMap<PlayerId, PassResult>,
 }
 
 impl TeamContext {
-    /// Create a new TeamContext from a world snapshot and skill statuses.
-    pub fn new(snapshot: WorldSnapshot, skill_statuses: HashMap<PlayerId, SkillStatus>) -> Self {
+    /// Create a new TeamContext from a world snapshot, skill statuses, and pass
+    /// results.
+    pub fn new(
+        snapshot: WorldSnapshot,
+        skill_statuses: HashMap<PlayerId, SkillStatus>,
+        pass_results: HashMap<PlayerId, PassResult>,
+    ) -> Self {
         let player_ids: Vec<PlayerId> = snapshot.own_players.iter().map(|p| p.id).collect();
 
         let players = snapshot
@@ -57,6 +65,7 @@ impl TeamContext {
             world: World::new(snapshot),
             players,
             player_ids,
+            pass_results,
         }
     }
 
@@ -94,6 +103,57 @@ impl TeamContext {
         self.players.get(&id)
     }
 
+    /// Command an atomic pass between two players.
+    ///
+    /// This is a *joint* action: the same pass is written into the skill slots of
+    /// both the passer and the receiver, and a single executor-side coordinator
+    /// drives both robots. Poll the joint outcome via either member's
+    /// [`skill_status()`](PlayerHandle::skill_status) and read the typed reason via
+    /// [`pass_result()`](Self::pass_result).
+    ///
+    /// Cancel it like any skill — command anything else on either robot.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ctx.pass(passer_id, receiver_id);              // coordinator picks geometry
+    /// ctx.pass(passer_id, receiver_id).target_hint(p); // bias the receive point
+    /// ```
+    pub fn pass(&mut self, passer: PlayerId, receiver: PlayerId) -> PassBuilder<'_> {
+        PassBuilder {
+            ctx: self,
+            passer,
+            receiver,
+            target_hint: None,
+        }
+    }
+
+    /// The rich result for a player involved in a pass, if any.
+    ///
+    /// Present on (and retained after) the frame the pass terminates, for both
+    /// members. Use this to branch on the typed [`PassFailure`] reason that the
+    /// generic [`SkillStatus`] cannot carry.
+    pub fn pass_result(&self, id: PlayerId) -> Option<&PassResult> {
+        self.pass_results.get(&id)
+    }
+
+    /// Write a pass command into both members' slots (used by [`PassBuilder`]).
+    fn commit_pass(&mut self, passer: PlayerId, receiver: PlayerId, target_hint: Option<Vector2>) {
+        if let Some(h) = self.players.get_mut(&passer) {
+            h.set_pending_command(SkillCommand::Pass {
+                partner: receiver,
+                role: PassRole::Passer,
+                target_hint,
+            });
+        }
+        if let Some(h) = self.players.get_mut(&receiver) {
+            h.set_pending_command(SkillCommand::Pass {
+                partner: passer,
+                role: PassRole::Receiver,
+                target_hint,
+            });
+        }
+    }
+
     /// Get the list of own player IDs.
     ///
     /// This is useful for iterating over player IDs without borrowing the context mutably.
@@ -129,6 +189,31 @@ impl TeamContext {
         }
 
         (skill_commands, player_roles)
+    }
+}
+
+/// Builder for [`TeamContext::pass`]. Commits the pass into both players' slots
+/// when dropped (matching the commit-on-drop idiom of the continuous skills).
+pub struct PassBuilder<'a> {
+    ctx: &'a mut TeamContext,
+    passer: PlayerId,
+    receiver: PlayerId,
+    target_hint: Option<Vector2>,
+}
+
+impl PassBuilder<'_> {
+    /// Bias where the receiver should end up. If unset, the coordinator computes
+    /// the intercept point from the receiver's position.
+    pub fn target_hint(mut self, target: Vector2) -> Self {
+        self.target_hint = Some(target);
+        self
+    }
+}
+
+impl Drop for PassBuilder<'_> {
+    fn drop(&mut self) {
+        self.ctx
+            .commit_pass(self.passer, self.receiver, self.target_hint);
     }
 }
 
@@ -175,7 +260,7 @@ mod tests {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let ctx = TeamContext::new(snapshot, skill_statuses);
+        let ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
 
         assert_eq!(ctx.player_count(), 2);
         assert_eq!(ctx.player_ids().len(), 2);
@@ -186,7 +271,7 @@ mod tests {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let mut ctx = TeamContext::new(snapshot, skill_statuses);
+        let mut ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
 
         assert!(ctx.player(PlayerId::new(1)).is_some());
         assert!(ctx.player(PlayerId::new(2)).is_some());
@@ -198,7 +283,7 @@ mod tests {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let mut ctx = TeamContext::new(snapshot, skill_statuses);
+        let mut ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
 
         // Issue commands
         if let Some(player) = ctx.player(PlayerId::new(1)) {
@@ -223,7 +308,7 @@ mod tests {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let ctx = TeamContext::new(snapshot, skill_statuses);
+        let ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
 
         let world = ctx.world();
         assert!(world.ball().is_some());
@@ -235,7 +320,7 @@ mod tests {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let mut ctx = TeamContext::new(snapshot, skill_statuses);
+        let mut ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
 
         let mut count = 0;
         for player in ctx.players() {

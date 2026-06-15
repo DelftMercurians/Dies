@@ -107,12 +107,13 @@ impl<S: Strategy> StrategyRunner<S> {
             HostMessage::WorldUpdate {
                 world,
                 skill_statuses,
+                pass_results,
             } => {
                 let frame_start = Instant::now();
                 self.frame_count += 1;
 
                 // Create TeamContext from world snapshot
-                let mut ctx = TeamContext::new(world.clone(), skill_statuses);
+                let mut ctx = TeamContext::new(world.clone(), skill_statuses, pass_results);
 
                 // Call strategy update
                 self.strategy.update(&mut ctx);
@@ -280,7 +281,7 @@ where
     }
 
     // Process the first frame
-    let mut ctx = TeamContext::new(first_world, std::collections::HashMap::new());
+    let mut ctx = TeamContext::new(first_world, std::collections::HashMap::new(), std::collections::HashMap::new());
     strategy.update(&mut ctx);
 
     let (skill_commands, player_roles) = ctx.collect_output();
@@ -370,7 +371,7 @@ mod tests {
         };
 
         let skill_statuses = HashMap::new();
-        let ctx = TeamContext::new(snapshot, skill_statuses);
+        let ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
 
         assert_eq!(ctx.player_count(), 0);
     }

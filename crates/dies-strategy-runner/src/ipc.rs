@@ -317,6 +317,7 @@ mod tests {
             let msg = HostMessage::WorldUpdate {
                 world,
                 skill_statuses: HashMap::new(),
+                pass_results: HashMap::new(),
             };
 
             let data = bincode::serialize(&msg).unwrap();

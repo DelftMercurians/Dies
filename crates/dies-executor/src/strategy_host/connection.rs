@@ -12,7 +12,8 @@ use std::time::{Duration, Instant};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use dies_core::{SideAssignment, TeamColor, TeamData};
 use dies_strategy_protocol::{
-    DebugEntry, HostMessage, PlayerId, SkillCommand, SkillStatus, StrategyConfig, StrategyMessage,
+    DebugEntry, HostMessage, PassResult, PlayerId, SkillCommand, SkillStatus, StrategyConfig,
+    StrategyMessage,
 };
 use thiserror::Error;
 use tracing::{debug, error, info, trace, warn};
@@ -310,6 +311,7 @@ impl StrategyConnection {
         &mut self,
         team_data: &TeamData,
         skill_statuses: HashMap<PlayerId, SkillStatus>,
+        pass_results: HashMap<PlayerId, PassResult>,
     ) -> Result<Option<StrategyOutput>, ConnectionError> {
         if self.state != ConnectionState::Ready {
             return Ok(None);
@@ -322,10 +324,17 @@ impl StrategyConnection {
             self.transformer
                 .create_world_snapshot(team_data, &skill_statuses, team_data.dt);
 
+        // Transform pass-result positions to the team-relative frame.
+        let pass_results = pass_results
+            .into_iter()
+            .map(|(id, r)| (id, self.transformer.transform_pass_result(r)))
+            .collect();
+
         // Send world update
         let msg = HostMessage::WorldUpdate {
             world,
             skill_statuses,
+            pass_results,
         };
         self.send_message(&msg)?;
 

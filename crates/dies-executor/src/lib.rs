@@ -918,6 +918,7 @@ impl Executor {
             };
             if let Some(ctrl) = active_controller {
                 driver.set_skill_statuses(ctrl.get_skill_statuses());
+                driver.set_pass_results(ctrl.get_pass_results());
                 driver.set_actual_cmds_global(ctrl.target_velocities_global());
             }
 
@@ -959,6 +960,8 @@ impl Executor {
                     } {
                         strategy_host
                             .update_skill_statuses(other_team, controller.get_skill_statuses());
+                        strategy_host
+                            .update_pass_results(other_team, controller.get_pass_results());
                     }
                     let blue_arg = match other_team {
                         TeamColor::Blue => other_team_data,
@@ -1008,10 +1011,12 @@ impl Executor {
             if let Some(ref controller) = self.team_controllers.blue_team {
                 let statuses = controller.get_skill_statuses();
                 strategy_host.update_skill_statuses(TeamColor::Blue, statuses);
+                strategy_host.update_pass_results(TeamColor::Blue, controller.get_pass_results());
             }
             if let Some(ref controller) = self.team_controllers.yellow_team {
                 let statuses = controller.get_skill_statuses();
                 strategy_host.update_skill_statuses(TeamColor::Yellow, statuses);
+                strategy_host.update_pass_results(TeamColor::Yellow, controller.get_pass_results());
             }
 
             let frame_output =

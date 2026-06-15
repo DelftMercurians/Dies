@@ -216,6 +216,13 @@ impl TestDriver {
         self.state.borrow_mut().skill_statuses = statuses;
     }
 
+    pub fn set_pass_results(
+        &mut self,
+        results: std::collections::HashMap<PlayerId, dies_strategy_protocol::PassResult>,
+    ) {
+        self.state.borrow_mut().pass_results = results;
+    }
+
     /// Push the executor's per-player computed velocity setpoints (global frame,
     /// mm/s) into the driver. Called once per tick from the host so recordings
     /// can capture the controller's actual cmd during position-controlled motion.
@@ -332,6 +339,7 @@ impl TestDriver {
                 Waker::MoveTo { reject, .. }
                 | Waker::WaitStopped { reject, .. }
                 | Waker::SkillDone { reject, .. }
+                | Waker::PassDone { reject, .. }
                 | Waker::WaitUntil { reject, .. } => {
                     reject.call(&JsValue::undefined(), &[err_val], &mut self.ctx)
                 }
@@ -494,6 +502,59 @@ impl TestDriver {
                             reject,
                         })
                     }
+                }
+            }
+            Waker::PassDone {
+                passer,
+                receiver,
+                resolve,
+                reject,
+            } => {
+                // Both members carry the joint status; the passer is canonical.
+                let status = self
+                    .state
+                    .borrow()
+                    .skill_statuses
+                    .get(&passer)
+                    .copied()
+                    .unwrap_or(SkillStatus::Running);
+                match status {
+                    SkillStatus::Succeeded => {
+                        let _ = resolve.call(
+                            &JsValue::undefined(),
+                            &[JsValue::undefined()],
+                            &mut self.ctx,
+                        );
+                        WakerAction::Done
+                    }
+                    SkillStatus::Failed => {
+                        let reason = self
+                            .state
+                            .borrow()
+                            .pass_results
+                            .get(&passer)
+                            .and_then(|r| match r {
+                                dies_strategy_protocol::PassResult::Failure { reason, .. } => {
+                                    Some(format!("{reason:?}"))
+                                }
+                                _ => None,
+                            })
+                            .unwrap_or_else(|| "Unknown".to_string());
+                        let msg: JsValue = JsString::from(format!(
+                            "pass failed: {reason} (passer {} -> receiver {})",
+                            passer.as_u32(),
+                            receiver.as_u32()
+                        ))
+                        .into();
+                        let _ = reject.call(&JsValue::undefined(), &[msg], &mut self.ctx);
+                        WakerAction::Done
+                    }
+                    SkillStatus::Running | SkillStatus::Idle => WakerAction::Keep(Waker::PassDone {
+                        passer,
+                        receiver,
+                        resolve,
+                        reject,
+                    }),
                 }
             }
             Waker::Excite {

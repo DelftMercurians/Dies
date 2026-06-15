@@ -53,6 +53,12 @@ impl PickupBallSkill {
             state: PickupState::Approaching,
         }
     }
+
+    /// Update the post-capture heading in place (used when composed inside the
+    /// pass coordinator's `Secure` phase).
+    pub fn set_target_heading(&mut self, target_heading: Angle) {
+        self.target_heading = target_heading;
+    }
 }
 
 impl ExecutableSkill for PickupBallSkill {
