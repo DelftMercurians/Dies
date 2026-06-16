@@ -318,6 +318,7 @@ pub enum SysStatus {
     Safe,
     NotInstalled,
     Standby,
+    Cooldown,
 }
 
 impl SysStatus {
@@ -341,6 +342,7 @@ impl From<glue::HG_Status> for SysStatus {
             glue::HG_Status::SAFE => SysStatus::Safe,
             glue::HG_Status::NOT_INSTALLED => SysStatus::NotInstalled,
             glue::HG_Status::STANDBY => SysStatus::Standby,
+            glue::HG_Status::COOLDOWN => SysStatus::Cooldown,
         }
     }
 }
