@@ -358,6 +358,11 @@ pub struct Executor {
     team_controllers: TeamMap,
     gc_client: GcClient,
     environment: Option<Environment>,
+    /// The kind of environment this executor was built with. Retained separately
+    /// from `environment` because `run_real_time` takes the environment out, after
+    /// which scenario start (processed inside the run loop) can no longer tell sim
+    /// from live from `environment` alone.
+    env_kind: TestEnv,
     manual_override: HashMap<(TeamColor, PlayerId), PlayerOverrideState>,
     /// Players whose override input is being driven by the test driver (direct path).
     /// Separate from manual_override so operator keyboard overrides don't collide.
@@ -405,6 +410,10 @@ impl Executor {
     }
 
     fn build(settings: ExecutorSettings, mut environment: Environment) -> Self {
+        let env_kind = match &environment {
+            Environment::Simulation { .. } => TestEnv::Sim,
+            Environment::Live { .. } => TestEnv::Real,
+        };
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
         let (paused_tx, _) = watch::channel(false);
@@ -448,6 +457,7 @@ impl Executor {
             team_controllers,
             gc_client: GcClient::new(),
             environment: Some(environment),
+            env_kind,
             manual_override: HashMap::new(),
             test_manual: HashMap::new(),
             pending_sim_cmds: Vec::new(),
@@ -886,11 +896,7 @@ impl Executor {
     }
 
     fn current_test_env(&self) -> TestEnv {
-        match self.environment.as_ref() {
-            Some(Environment::Simulation { .. }) => TestEnv::Sim,
-            Some(Environment::Live { .. }) => TestEnv::Real,
-            None => TestEnv::Either,
-        }
+        self.env_kind
     }
 
     fn handle_start_scenario(&mut self, path: PathBuf, team_hint: Option<TeamColor>) {
