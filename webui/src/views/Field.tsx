@@ -36,6 +36,8 @@ import {
 import { useAtom, useSetAtom } from "jotai";
 import { BallPlacementPostionAtom } from "@/components/GameControllerPanel";
 import GameBanner from "@/components/GameBanner";
+import { FrameCounter } from "@/components/FrameCounter";
+import { ReplayTransport } from "@/components/ReplayTransport";
 import {
   debugLayerVisibilityAtom,
   debugCategoryVisibilityAtom,
@@ -476,6 +478,10 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           sideAssignment={worldData.side_assignment}
         />
       )}
+
+      {/* Frame number (top-right) + replay transport (bottom, when replaying) */}
+      <FrameCounter />
+      <ReplayTransport />
 
       <div className="absolute bottom-0 right-0 bg-slate-950 bg-opacity-70 p-2 rounded">
         <div className="flex flex-row font-mono">

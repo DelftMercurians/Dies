@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use anyhow::{bail, Result};
-use dies_logger::AsyncProtobufLogger;
-use log::{LevelFilter, Log};
+use dies_logger::worker::ArrowLogger;
+use log::LevelFilter;
 use tokio::sync::broadcast;
 
 use crate::cli::Cli;
@@ -21,8 +21,8 @@ pub async fn start_ui(args: Cli) -> Result<()> {
         .format_timestamp(None)
         .format_module_path(false)
         .build();
-    let logger = AsyncProtobufLogger::init_with_env_logger(log_dir_path.clone(), stdout_env);
-    log::set_logger(logger).unwrap(); // Safe to unwrap because we know no logger has been set yet
+    let logger = ArrowLogger::init_with_env_logger(log_dir_path.clone(), stdout_env);
+    log::set_logger(logger).unwrap(); // Safe to unwrap: no logger set yet
     log::set_max_level(log::LevelFilter::Debug);
 
     let (stop_tx, stop_rx) = broadcast::channel(1);
@@ -41,14 +41,15 @@ pub async fn start_ui(args: Cli) -> Result<()> {
         .await
         .expect("Failed to listen for ctrl-c");
 
-    logger.flush();
-    println!("Shutting down (timeout 3 seconds)... Press ctrl-c again to force shutdown");
+    log::logger().flush();
+    println!("Shutting down (timeout 30 seconds)... Press ctrl-c again to force shutdown");
     // Allow the logger to flush before shutting down
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
-    // Fool-proof timeout for shutdown
+    // Fool-proof timeout for shutdown. Generous enough to let the columnar
+    // logger finish compacting the log to Parquet on close.
     std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_secs(3));
+        std::thread::sleep(std::time::Duration::from_secs(30));
         eprintln!("Shutdown timed out");
         std::process::exit(1);
     });

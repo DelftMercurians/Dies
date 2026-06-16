@@ -501,6 +501,24 @@ export interface GetDebugMapResponse {
 	debug_map: DebugMap;
 }
 
+/** A recorded log available for replay (directory or `.dieslog` zip). */
+export interface LogInfo {
+	name: string;
+	path: string;
+	session_start_unix: number;
+	duration_s?: number;
+	end_unix?: number;
+	frame_count: number;
+	is_simulation: boolean;
+	blue_strategy?: string;
+	yellow_strategy?: string;
+	is_zip: boolean;
+}
+
+export interface LogsResponse {
+	logs: LogInfo[];
+}
+
 /** A struct to store the player state from a single frame. */
 export interface PlayerData {
 	/**
@@ -590,6 +608,23 @@ export type UiCommand =
 }}
 	/** Stop the currently running scenario and return to strategy mode. */
 	| { type: "StopScenario",  }
+	/** Drop a point-of-interest marker at the current live frame (double-space). */
+	| { type: "AddMarker", data: {
+	label?: string;
+}}
+	/** Load a recorded log (directory or `.dieslog` zip) for replay. */
+	| { type: "LoadLog", data: {
+	path: string;
+}}
+	/** Replay transport controls. */
+	| { type: "ReplayPlay",  }
+	| { type: "ReplayPause",  }
+	| { type: "ReplaySeek", data: {
+	t: number;
+}}
+	| { type: "ReplaySetSpeed", data: {
+	speed: number;
+}}
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
@@ -619,6 +654,26 @@ export interface RawGameStateData {
 	yellow_team_yellow_cards: number;
 	blue_team_keeper_id?: PlayerId;
 	yellow_team_keeper_id?: PlayerId;
+}
+
+/** A user point-of-interest marker, surfaced to the replay scrubber. */
+export interface ReplayMarker {
+	frame_id: number;
+	t: number;
+	label?: string;
+}
+
+/** State of the replay player, pushed to the frontend on change. */
+export interface ReplayState {
+	loaded: boolean;
+	playing: boolean;
+	speed: number;
+	t_min: number;
+	t_max: number;
+	current_t: number;
+	current_frame_id: number;
+	frame_count: number;
+	markers: ReplayMarker[];
 }
 
 export interface ScenarioArtifact {
@@ -733,6 +788,11 @@ export interface WorldData {
 
 export interface WorldUpdate {
 	world_data: WorldData;
+	/**
+	 * Monotonic id of this world frame (minted by the executor). Exposed to the
+	 * UI for the frame counter and used as the join key in recorded logs.
+	 */
+	frame_id: number;
 }
 
 export enum DebugColor {
@@ -870,10 +930,15 @@ export type UiWorldState =
 
 /** WebSocket message types sent from backend to frontend */
 export type WsMessage = 
-	| { type: "WorldUpdate", data: WorldData }
+	/**
+	 * Carries the full `WorldUpdate` (world data + frame id) so the frontend can
+	 * show the current frame number for both live and replay.
+	 */
+	| { type: "WorldUpdate", data: WorldUpdate }
 	| { type: "Debug", data: DebugMap }
 	| { type: "ScenarioLog", data: TestLogEntry }
-	| { type: "ScenarioStatus", data: TestStatus };
+	| { type: "ScenarioStatus", data: TestStatus }
+	| { type: "ReplayState", data: ReplayState };
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];

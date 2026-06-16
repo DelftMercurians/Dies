@@ -14,6 +14,7 @@ dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 dies-strategy-protocol = { version = "0.1.0", path = "../dies-strategy-protocol" }
 log = "0.4.21"
 dies-protos = { version = "0.1.0", path = "../dies-protos" }
+protobuf = "3.3.0"
 nalgebra = "0.32.5"
 dies-logger = { version = "0.1.0", path = "../dies-logger" }
 paste = "1.0.15"

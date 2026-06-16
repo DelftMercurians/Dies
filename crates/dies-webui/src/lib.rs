@@ -4,6 +4,7 @@ use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugMap, ExecutorInfo, ExecutorSettings, GcSimCommand, PlayerFeedbackMsg, PlayerId,
     PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, WorldData,
+    WorldUpdate,
 };
 use dies_ssl_client::SslClientConfig;
 use dies_test_driver::{TestLogEntry, TestStatus};
@@ -11,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 mod executor_task;
+mod replay_controller;
 mod routes;
 mod server;
 
@@ -35,6 +37,8 @@ pub struct UiConfig {
     pub calibration_mode: bool,
     /// IPC strategy binary name (None = no strategy).
     pub strategy: Option<String>,
+    /// Directory where session logs are written/browsed for replay.
+    pub log_directory: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +128,23 @@ pub(crate) enum UiCommand {
     },
     /// Stop the currently running scenario and return to strategy mode.
     StopScenario,
+    /// Drop a point-of-interest marker at the current live frame (double-space).
+    AddMarker {
+        label: Option<String>,
+    },
+    /// Load a recorded log (directory or `.dieslog` zip) for replay.
+    LoadLog {
+        path: String,
+    },
+    /// Replay transport controls.
+    ReplayPlay,
+    ReplayPause,
+    ReplaySeek {
+        t: f64,
+    },
+    ReplaySetSpeed {
+        speed: f64,
+    },
     Stop,
 }
 
@@ -155,15 +176,68 @@ pub(crate) enum UiWorldState {
     None,
 }
 
+/// A user point-of-interest marker, surfaced to the replay scrubber.
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct ReplayMarker {
+    #[typeshare(serialized_as = "number")]
+    pub frame_id: u64,
+    pub t: f64,
+    pub label: Option<String>,
+}
+
+/// State of the replay player, pushed to the frontend on change.
+#[derive(Debug, Clone, Serialize, Default)]
+#[typeshare]
+pub(crate) struct ReplayState {
+    pub loaded: bool,
+    pub playing: bool,
+    pub speed: f64,
+    pub t_min: f64,
+    pub t_max: f64,
+    pub current_t: f64,
+    #[typeshare(serialized_as = "number")]
+    pub current_frame_id: u64,
+    #[typeshare(serialized_as = "number")]
+    pub frame_count: u64,
+    pub markers: Vec<ReplayMarker>,
+}
+
 /// WebSocket message types sent from backend to frontend
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
 pub(crate) enum WsMessage<'a> {
-    WorldUpdate(&'a WorldData),
+    /// Carries the full `WorldUpdate` (world data + frame id) so the frontend can
+    /// show the current frame number for both live and replay.
+    WorldUpdate(&'a WorldUpdate),
     Debug(&'a DebugMap),
     ScenarioLog(&'a TestLogEntry),
     ScenarioStatus(&'a TestStatus),
+    ReplayState(&'a ReplayState),
+}
+
+/// A recorded log available for replay (directory or `.dieslog` zip).
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct LogInfo {
+    pub(crate) name: String,
+    pub(crate) path: String,
+    pub(crate) session_start_unix: f64,
+    pub(crate) duration_s: Option<f64>,
+    pub(crate) end_unix: Option<f64>,
+    #[typeshare(serialized_as = "number")]
+    pub(crate) frame_count: Option<u64>,
+    pub(crate) is_simulation: bool,
+    pub(crate) blue_strategy: Option<String>,
+    pub(crate) yellow_strategy: Option<String>,
+    pub(crate) is_zip: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct LogsResponse {
+    pub(crate) logs: Vec<LogInfo>,
 }
 
 /// A single scenario file available on disk.

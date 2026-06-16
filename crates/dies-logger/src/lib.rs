@@ -1,15 +1,18 @@
-mod log_codec;
-mod logger;
-mod playback;
+//! Columnar (Apache Arrow / Parquet) match logger.
+//!
+//! A log is a directory of per-table Arrow IPC streams keyed on a monotonic
+//! `frame_id`, compacted to Parquet + a STORED `.dieslog` zip on close. The
+//! public write API lives in [`worker`]; the read/replay side in [`replay`].
 
-use dies_core::{DebugMap, WorldData};
-pub use log_codec::*;
-pub use logger::*;
-pub use playback::*;
-use serde::{Deserialize, Serialize};
+mod builders;
+mod compact;
+mod flatten;
+mod frame;
+mod meta;
+mod schema;
+mod writer;
+pub mod replay;
+pub mod worker;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DataLog {
-    World(WorldData),
-    Debug(DebugMap),
-}
+pub use frame::side_assignment_str;
+pub use meta::{MetaJson, FORMAT_VERSION};

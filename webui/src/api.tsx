@@ -43,6 +43,9 @@ import {
   ScenarioInfo,
   TestStatus,
   TestLogEntry,
+  ReplayState,
+  LogsResponse,
+  LogInfo,
 } from "./bindings";
 import { toast } from "sonner";
 import { atom, getDefaultStore, useAtom } from "jotai";
@@ -63,6 +66,15 @@ export const lastShortcutAtom = atom<ShortcutFeedback | null>(null);
 
 /** Whether the command palette (⌘K) is open. */
 export const commandPaletteOpenAtom = atom<boolean>(false);
+
+/** Current world-frame id, from each WorldUpdate (live + replay). */
+export const currentFrameIdAtom = atom<number>(0);
+
+/** Latest replay-player state (null when not replaying). */
+export const replayStateAtom = atom<ReplayState | null>(null);
+
+/** Whether a recorded log is loaded for replay. */
+export const isReplayingAtom = atom((get) => !!get(replayStateAtom)?.loaded);
 
 export type Status =
   | { status: "loading" }
@@ -353,6 +365,21 @@ export const useRawWorldData = () => {
   return null;
 };
 
+/** Fetch the list of recorded logs available for replay. */
+export const useLogs = (enabled: boolean) => {
+  const query = useQuery({
+    queryKey: ["logs"],
+    queryFn: async (): Promise<LogInfo[]> => {
+      const res = await fetch("/api/logs");
+      const body = (await res.json()) as LogsResponse;
+      return body.logs;
+    },
+    enabled,
+    refetchInterval: enabled ? 5000 : false,
+  });
+  return query.data ?? [];
+};
+
 // WebSocket connection status and dt tracking
 const wsConnectionStatusAtom = atom<{
   connected: boolean;
@@ -431,11 +458,12 @@ export function startWsClient() {
         const store = getDefaultStore();
 
         if (msg.type === "WorldUpdate") {
-          // Update world state
+          // msg.data is now the full WorldUpdate { world_data, frame_id }.
           queryClient.setQueryData(["world-state"], {
             type: "Loaded",
-            data: msg.data,
+            data: msg.data.world_data,
           } satisfies UiWorldState);
+          store.set(currentFrameIdAtom, msg.data.frame_id);
 
           // Track dt from WebSocket updates
           const currentTime = Date.now();
@@ -466,6 +494,8 @@ export function startWsClient() {
             ? [...cur.slice(cur.length - SCENARIO_LOG_LIMIT + 1), msg.data]
             : [...cur, msg.data];
           store.set(scenarioLogsAtom, next);
+        } else if (msg.type === "ReplayState") {
+          store.set(replayStateAtom, msg.data.loaded ? msg.data : null);
         }
       };
       ws.onerror = (err) => {

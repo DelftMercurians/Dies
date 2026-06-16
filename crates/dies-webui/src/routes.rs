@@ -29,8 +29,9 @@ const DEBUG_SEND_HZ: u64 = 30;
 
 use crate::{
     server::ServerState, BasestationResponse, ExecutorInfoResponse, ExecutorSettingsResponse,
-    GetDebugMapResponse, PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, ScenarioInfo,
-    ScenariosResponse, UiCommand, UiMode, UiStatus, UiWorldState, WsMessage,
+    GetDebugMapResponse, LogInfo, LogsResponse, PostExecutorSettingsBody, PostUiCommandBody,
+    PostUiModeBody, ReplayState, ScenarioInfo, ScenariosResponse, UiCommand, UiMode, UiStatus,
+    UiWorldState, WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -126,6 +127,66 @@ pub async fn get_debug_map(state: State<Arc<ServerState>>) -> Json<GetDebugMapRe
     })
 }
 
+/// List recorded logs (directories and `.dieslog` zips) under the log dir, with
+/// metadata read cheaply from each `meta.json`. When a log directory and its
+/// sibling zip both exist, only the directory is listed (faster to load).
+pub async fn get_logs(state: State<Arc<ServerState>>) -> Json<LogsResponse> {
+    let mut logs = Vec::new();
+    if let Ok(entries) = fs::read_dir(&state.log_directory) {
+        let entries: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        let dir_names: std::collections::HashSet<String> = entries
+            .iter()
+            .filter(|p| p.is_dir())
+            .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(String::from))
+            .collect();
+
+        for path in &entries {
+            let is_zip = path.extension().map(|e| e == "dieslog").unwrap_or(false);
+            let is_dir = path.is_dir();
+            if !is_zip && !is_dir {
+                continue;
+            }
+            // Skip a zip if its sibling directory is also present.
+            if is_zip {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if dir_names.contains(stem) {
+                        continue;
+                    }
+                }
+            }
+            let meta = match dies_logger::MetaJson::read_any(path) {
+                Ok(m) => m,
+                Err(_) => continue, // not a log dir / unreadable
+            };
+            let duration_s = meta.duration_s();
+            let end_unix = duration_s.map(|d| meta.session_start_unix + d);
+            logs.push(LogInfo {
+                name: path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                path: path.to_string_lossy().to_string(),
+                session_start_unix: meta.session_start_unix,
+                duration_s,
+                end_unix,
+                frame_count: meta.frame_count,
+                is_simulation: meta.is_simulation,
+                blue_strategy: meta.blue_strategy,
+                yellow_strategy: meta.yellow_strategy,
+                is_zip,
+            });
+        }
+    }
+    // Newest first.
+    logs.sort_by(|a, b| {
+        b.session_start_unix
+            .partial_cmp(&a.session_start_unix)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Json(LogsResponse { logs })
+}
+
 pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| {
         handle_ws_conn(
@@ -134,17 +195,20 @@ pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> 
             state.debug_sub.clone(),
             state.scenario_log_tx.subscribe(),
             state.scenario_status.subscribe(),
+            state.replay_state.subscribe(),
             socket,
         )
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_ws_conn(
     tx: broadcast::Sender<UiCommand>,
     mut world_rx: watch::Receiver<Option<WorldUpdate>>,
     debug_rx: DebugSubscriber,
     mut log_rx: broadcast::Receiver<TestLogEntry>,
     mut status_rx: watch::Receiver<TestStatus>,
+    mut replay_rx: watch::Receiver<ReplayState>,
     mut socket: WebSocket,
 ) {
     // Send the current status snapshot once so the client doesn't have to poll.
@@ -193,6 +257,15 @@ async fn handle_ws_conn(
                     break;
                 }
             }
+            Ok(()) = replay_rx.changed() => {
+                let replay = replay_rx.borrow_and_update().clone();
+                let text = serde_json::to_string(&WsMessage::ReplayState(&replay));
+                if let Ok(text) = text {
+                    if socket.send(Message::Text(text)).await.is_err() {
+                        break;
+                    }
+                }
+            }
             else => {
                 break;
             }
@@ -223,9 +296,7 @@ async fn handle_send_ws_world_update(
 ) -> anyhow::Result<()> {
     let text_data = {
         if let Some(data) = rx.borrow_and_update().as_ref() {
-            Some(serde_json::to_string(&WsMessage::WorldUpdate(
-                &data.world_data,
-            ))?)
+            Some(serde_json::to_string(&WsMessage::WorldUpdate(data))?)
         } else {
             None
         }

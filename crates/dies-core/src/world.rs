@@ -58,6 +58,10 @@ impl WorldInstant {
 #[typeshare]
 pub struct WorldUpdate {
     pub world_data: WorldData,
+    /// Monotonic id of this world frame (minted by the executor). Exposed to the
+    /// UI for the frame counter and used as the join key in recorded logs.
+    #[typeshare(serialized_as = "number")]
+    pub frame_id: u64,
 }
 
 /// The game state, as reported by the referee.

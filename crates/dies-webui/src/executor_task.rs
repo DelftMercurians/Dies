@@ -11,7 +11,10 @@ use tokio::sync::{
     oneshot, watch,
 };
 
-use crate::{server::ServerState, ExecutorStatus, UiCommand, UiEnvironment, UiMode};
+use crate::{
+    replay_controller::ReplayController, server::ServerState, ExecutorStatus, UiCommand,
+    UiEnvironment, UiMode,
+};
 
 #[derive(Default)]
 enum ExecutorTaskState {
@@ -21,6 +24,9 @@ enum ExecutorTaskState {
     Runnning {
         thread_handle: thread::JoinHandle<()>,
         executor_handle: ExecutorHandle,
+    },
+    Replaying {
+        controller: ReplayController,
     },
 }
 
@@ -144,6 +150,46 @@ impl ExecutorTask {
             UiCommand::StopScenario => {
                 self.handle_executor_msg(ControlMsg::StopScenario);
             }
+            UiCommand::AddMarker { label } => {
+                self.handle_executor_msg(ControlMsg::AddMarker { label });
+            }
+            UiCommand::LoadLog { path } => self.load_replay(path).await,
+            UiCommand::ReplayPlay => {
+                if let ExecutorTaskState::Replaying { controller } = &self.state {
+                    controller.play();
+                }
+            }
+            UiCommand::ReplayPause => {
+                if let ExecutorTaskState::Replaying { controller } = &self.state {
+                    controller.pause();
+                }
+            }
+            UiCommand::ReplaySeek { t } => {
+                if let ExecutorTaskState::Replaying { controller } = &self.state {
+                    controller.seek(t);
+                }
+            }
+            UiCommand::ReplaySetSpeed { speed } => {
+                if let ExecutorTaskState::Replaying { controller } = &self.state {
+                    controller.set_speed(speed);
+                }
+            }
+        }
+    }
+
+    /// Stop any running executor/replay and load a recorded log for replay.
+    async fn load_replay(&mut self, path: String) {
+        self.stop_executor().await;
+        match ReplayController::load(
+            &path,
+            self.update_tx.clone(),
+            self.server_state.replay_state.clone(),
+        ) {
+            Ok(controller) => {
+                log::info!("Loaded replay log: {path}");
+                self.state = ExecutorTaskState::Replaying { controller };
+            }
+            Err(err) => log::error!("Failed to load replay log {path}: {err}"),
         }
     }
 
@@ -158,6 +204,10 @@ impl ExecutorTask {
                 // tokio runtime while the executor wraps up.
                 let _ = tokio::task::spawn_blocking(move || thread_handle.join()).await;
                 log::info!("Executor stopped");
+            }
+            ExecutorTaskState::Replaying { controller } => {
+                controller.stop(&self.server_state.replay_state);
+                log::info!("Replay stopped");
             }
             ExecutorTaskState::Starting => {}
             ExecutorTaskState::Idle => {}
@@ -196,12 +246,21 @@ impl ExecutorTask {
                 };
 
                 rt.block_on(async move {
-                    let log_file_name = {
+                    let session_name = {
                         let time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-                        format!("dies-{time}.log")
+                        format!("dies-{time}")
                     };
                     dies_core::debug_clear();
-                    dies_logger::log_start(log_file_name);
+                    let meta = dies_logger::MetaJson::new(
+                        chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+                        matches!(mode, UiMode::Simulation),
+                        settings.team_configuration.blue_strategy.clone(),
+                        settings.team_configuration.yellow_strategy.clone(),
+                        dies_logger::side_assignment_str(settings.team_configuration.side_assignment)
+                            .to_string(),
+                    );
+                    dies_logger::worker::log_start(&session_name, meta);
+                    dies_logger::worker::log_settings_baseline(0, &settings);
 
                     let executor = match (mode, ui_env) {
                         (UiMode::Simulation, _) => Ok(Executor::new_simulation(
@@ -300,7 +359,8 @@ impl ExecutorTask {
                         }
                     }
 
-                    dies_logger::log_close();
+                    // Block so the process doesn't exit mid-compaction.
+                    dies_logger::worker::log_close_blocking(std::time::Duration::from_secs(25));
                 });
             })
             .expect("spawn executor thread");

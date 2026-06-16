@@ -47,6 +47,11 @@ pub enum ControlMsg {
     },
     /// Abort the currently running scenario and return control to the strategy host.
     StopScenario,
+    /// Drop a user point-of-interest marker at the current frame (double-space
+    /// in the UI). `label` is optional.
+    AddMarker {
+        label: Option<String>,
+    },
     Stop,
 }
 

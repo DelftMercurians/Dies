@@ -24,8 +24,8 @@ use tower_http::services::ServeDir;
 use tower_layer::Layer;
 
 use crate::{
-    executor_task::ExecutorTask, routes, ControlledTeam, ExecutorStatus, UiCommand, UiConfig,
-    UiEnvironment, UiMode, UiStatus,
+    executor_task::ExecutorTask, routes, ControlledTeam, ExecutorStatus, ReplayState, UiCommand,
+    UiConfig, UiEnvironment, UiMode, UiStatus,
 };
 
 pub struct ServerState {
@@ -44,6 +44,10 @@ pub struct ServerState {
     pub scenario_log_tx: broadcast::Sender<TestLogEntry>,
     /// Latest scenario status, mirrored from the active executor handle.
     pub scenario_status: watch::Sender<TestStatus>,
+    /// Latest replay-player state, pushed to WS clients on change.
+    pub replay_state: watch::Sender<ReplayState>,
+    /// Directory where session logs live (for the replay browser).
+    pub log_directory: PathBuf,
     settings_file: PathBuf,
 }
 
@@ -52,6 +56,7 @@ impl ServerState {
         is_live_available: bool,
         ui_mode: UiMode,
         settings_file: PathBuf,
+        log_directory: PathBuf,
         debug_sub: DebugSubscriber,
         update_rx: watch::Receiver<Option<WorldUpdate>>,
         cmd_tx: broadcast::Sender<UiCommand>,
@@ -59,6 +64,7 @@ impl ServerState {
         let settings = ExecutorSettings::load_or_insert(&settings_file);
         let (scenario_log_tx, _) = broadcast::channel(256);
         let (scenario_status, _) = watch::channel(TestStatus::Idle);
+        let (replay_state, _) = watch::channel(ReplayState::default());
         Self {
             is_live_available,
             update_rx,
@@ -71,6 +77,8 @@ impl ServerState {
             executor_settings: RwLock::new(settings),
             scenario_log_tx,
             scenario_status,
+            replay_state,
+            log_directory,
             settings_file,
         }
     }
@@ -143,6 +151,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
             UiMode::Simulation
         },
         config.settings_file,
+        config.log_directory.clone(),
         debug_sub.clone(),
         update_rx.clone(),
         cmd_tx.clone(),
@@ -430,6 +439,7 @@ async fn start_webserver(
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))
         .route("/api/list", get(routes::list_files))
+        .route("/api/logs", get(routes::get_logs))
         .route("/api/scenarios", get(routes::get_scenarios))
         .nest_service("/", serve_dir_with_csp.layer(serve_dir.clone()))
         .fallback_service(serve_dir)

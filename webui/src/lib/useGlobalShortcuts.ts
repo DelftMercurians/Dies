@@ -1,12 +1,15 @@
 import { useEffect, useRef } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { DockviewApi } from "dockview";
+import { toast } from "sonner";
 import {
   selectedPlayerIdAtom,
   keyboardControlAtom,
   keyboardModeAtom,
   lastShortcutAtom,
   commandPaletteOpenAtom,
+  currentFrameIdAtom,
+  isReplayingAtom,
   useWorldState,
   useExecutorInfo,
   useSendCommand,
@@ -17,7 +20,11 @@ import {
 import { TeamColor } from "@/bindings";
 import { PanelId, PANEL_IDS, PANEL_TITLES } from "@/components/panels";
 import { openOrFocusPanel } from "@/components/toolbar/AddPanelMenu";
+import { openMarkerToast } from "@/components/MarkerToast";
 import { CommandContext, isTypingTarget, matchKeyboard } from "./commands";
+
+/** Max gap (ms) between the two spaces of the double-space marker shortcut. */
+const DOUBLE_SPACE_MS = 400;
 
 /**
  * Builds the live {@link CommandContext} from app state. Recomputed each render
@@ -88,6 +95,15 @@ export function useGlobalShortcuts(getDockviewApi: () => DockviewApi | null) {
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
 
+  // Live current-frame + replay flag, read by the double-space marker handler.
+  const currentFrameId = useAtomValue(currentFrameIdAtom);
+  const isReplaying = useAtomValue(isReplayingAtom);
+  const frameRef = useRef(currentFrameId);
+  frameRef.current = currentFrameId;
+  const replayingRef = useRef(isReplaying);
+  replayingRef.current = isReplaying;
+  const lastSpaceRef = useRef(0);
+
   useEffect(() => {
     // True for the command-palette combo (⌘K / Ctrl+K, no other modifiers).
     const isPaletteCombo = (ev: KeyboardEvent) =>
@@ -110,6 +126,37 @@ export function useGlobalShortcuts(getDockviewApi: () => DockviewApi | null) {
       }
 
       if (isTypingTarget(document.activeElement)) return;
+
+      // Double-space drops a point-of-interest marker (live recording only).
+      // The second space within the window opens the label toast.
+      if (
+        ev.code === "Space" &&
+        !ev.shiftKey &&
+        !ev.ctrlKey &&
+        !ev.metaKey &&
+        !ev.altKey
+      ) {
+        const now = ev.timeStamp;
+        if (now - lastSpaceRef.current < DOUBLE_SPACE_MS) {
+          lastSpaceRef.current = 0;
+          ev.preventDefault();
+          if (!replayingRef.current) {
+            openMarkerToast((label) => {
+              c.sendCommand({
+                type: "AddMarker",
+                data: { label: label ?? undefined },
+              });
+              const f = Math.round(frameRef.current / 50) * 50;
+              toast.success(
+                label ? `Marker "${label}" @ f≈${f}` : `Marker @ f≈${f}`
+              );
+            });
+          }
+          return;
+        }
+        lastSpaceRef.current = now;
+        return;
+      }
 
       // Number keys: quick-switch to robot by id.
       if (

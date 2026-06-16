@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::commands::{
-    convert_logs::convert_log, run_scenario::run_scenario, start_ui::start_ui,
-    test_radio::test_radio, test_vision::test_vision,
+    run_scenario::run_scenario, start_ui::start_ui, test_radio::test_radio,
+    test_vision::test_vision,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
@@ -32,18 +32,6 @@ impl Into<UiMode> for ScenarioMode {
 
 #[derive(Debug, Clone, Subcommand)]
 enum Command {
-    #[clap(name = "convert")]
-    Convert {
-        #[clap(short, long)]
-        input: PathBuf,
-        #[clap(short, long)]
-        output: PathBuf,
-    },
-
-    /// Convert the last log file in the logs directory to JSON, writing the output to log.json.
-    #[clap(name = "convert-last")]
-    ConvertLast,
-
     #[clap(name = "test-radio")]
     TestRadio {
         #[clap(long, default_value = "3.0")]
@@ -166,22 +154,6 @@ impl Cli {
                     ExitCode::FAILURE
                 }
             },
-            Some(Command::Convert { input, output }) => match convert_log(&input, &output) {
-                Ok(_) => ExitCode::SUCCESS,
-                Err(err) => {
-                    eprintln!("Error converting logs: {}", err);
-                    ExitCode::FAILURE
-                }
-            },
-            Some(Command::ConvertLast) => {
-                match crate::commands::convert_last_log::convert_last_log() {
-                    Ok(_) => ExitCode::SUCCESS,
-                    Err(err) => {
-                        eprintln!("Error converting logs: {}", err);
-                        ExitCode::FAILURE
-                    }
-                }
-            }
             Some(Command::TestRadio {
                 duration,
                 ids: id,
@@ -302,6 +274,7 @@ impl Cli {
             },
             calibration_mode,
             strategy,
+            log_directory: PathBuf::from(self.log_directory),
         })
     }
 

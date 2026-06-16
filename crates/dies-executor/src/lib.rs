@@ -3,14 +3,16 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
-    SideAssignment, SimulatorCmd, TeamColor, TeamPlayerId, Vector3, WorldInstant, WorldUpdate,
+    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId,
+    PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamPlayerId, Vector3,
+    WorldInstant, WorldUpdate,
 };
-use dies_logger::{log_referee, log_vision, log_world};
+use dies_logger::worker;
 use dies_protos::{
     ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket,
     ssl_vision_wrapper_tracked::TrackerWrapperPacket,
 };
+use protobuf::Message as _;
 use dies_simulator::Simulation;
 use dies_ssl_client::{SslMessage, VisionClient};
 use dies_test_driver::{LogBus, PlayerControlSlot, TestDriver, TestEnv, TestStatus};
@@ -370,6 +372,15 @@ pub struct Executor {
     info_channel_rx: mpsc::UnboundedReceiver<oneshot::Sender<ExecutorInfo>>,
     info_channel_tx: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
     settings: ExecutorSettings,
+    /// Monotonic world-frame counter, minted on each vision-driven frame. Used
+    /// as the log join key and exposed to the UI via `WorldUpdate`.
+    frame_counter: u64,
+    /// Timestamp (relative seconds) of the most recent frame, used to stamp
+    /// settings/events/markers logged between frames.
+    last_t: f64,
+    /// Whether to record raw received vision/GC wire bytes (ground truth). On
+    /// for live matches via `DIES_LOG_RAW`, off for routine testing.
+    log_raw_vision: bool,
 }
 
 impl Executor {
@@ -447,20 +458,35 @@ impl Executor {
             info_channel_rx,
             info_channel_tx,
             settings,
+            frame_counter: 0,
+            last_t: 0.0,
+            log_raw_vision: std::env::var("DIES_LOG_RAW")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
         }
     }
 
     /// Update the executor with a vision message.
     pub fn update_from_vision_msg(&mut self, message: SSL_WrapperPacket, time: WorldInstant) {
-        log_vision(&message);
+        // The processed world is recorded as a single frame in
+        // `update_team_controller`; the raw packet is recorded only when the
+        // gated raw-vision stream is enabled.
+        if self.log_raw_vision {
+            if let Ok(bytes) = message.write_to_bytes() {
+                worker::log_raw(self.frame_counter, self.last_t, "vision", &bytes);
+            }
+        }
         self.tracker.update_from_vision(&message, time);
-        log_world(&self.tracker.get());
-        self.update_team_controller();
+        self.update_team_controller(true);
     }
 
     /// Update the executor with a referee message.
     pub fn update_from_gc_msg(&mut self, message: Referee) {
-        log_referee(&message);
+        if self.log_raw_vision {
+            if let Ok(bytes) = message.write_to_bytes() {
+                worker::log_raw(self.frame_counter, self.last_t, "referee", &bytes);
+            }
+        }
         self.tracker.update_from_referee(&message);
 
         // Detect side assignment from referee message
@@ -474,7 +500,10 @@ impl Executor {
                 .set_side_assignment(self.team_controllers.side_assignment);
         }
 
-        self.update_team_controller();
+        // A referee update re-runs the controllers but does not produce a new
+        // vision frame, so it reuses the current `frame_counter` and is not
+        // logged as a separate frame.
+        self.update_team_controller(false);
     }
 
     pub fn update_from_tracker_msg(&mut self, mut message: TrackerWrapperPacket) {
@@ -658,7 +687,7 @@ impl Executor {
                             if !self.settings.allow_no_vision {
                                 log::error!("Failed to receive vision/gc msg: {}", err);
                             } else {
-                                self.update_team_controller();
+                                self.update_team_controller(true);
                             }
                         }
                     }
@@ -738,10 +767,23 @@ impl Executor {
         }
     }
 
+    /// Log a discrete event to the columnar log (no-op on the legacy path).
+    fn log_event(&self, event_type: &str, payload: serde_json::Value) {
+        if worker::is_active() {
+            worker::log_event(
+                self.frame_counter,
+                self.last_t,
+                event_type,
+                payload.to_string(),
+            );
+        }
+    }
+
     fn handle_control_msg(&mut self, msg: ControlMsg) {
         match msg {
             ControlMsg::SetPause(pause) => {
                 self.paused_tx.send(pause).ok();
+                self.log_event("pause", serde_json::json!({ "paused": pause }));
             }
             ControlMsg::SetPlayerOverride {
                 team_color,
@@ -754,6 +796,14 @@ impl Executor {
                 } else {
                     self.manual_override.remove(&(team_color, player_id));
                 }
+                self.log_event(
+                    "player_override",
+                    serde_json::json!({
+                        "team": format!("{team_color:?}"),
+                        "player_id": player_id.as_u32(),
+                        "active": override_active,
+                    }),
+                );
             }
             ControlMsg::PlayerOverrideCommand {
                 team_color,
@@ -761,13 +811,27 @@ impl Executor {
                 command,
             } => {
                 if let Some(state) = self.manual_override.get_mut(&(team_color, player_id)) {
-                    state.set_cmd(command);
+                    state.set_cmd(command.clone());
                 }
+                self.log_event(
+                    "player_override_command",
+                    serde_json::json!({
+                        "team": format!("{team_color:?}"),
+                        "player_id": player_id.as_u32(),
+                        "command": serde_json::to_value(&command).unwrap_or_default(),
+                    }),
+                );
             }
             ControlMsg::UpdateSettings(settings) => {
                 self.team_controllers.update_settings(&settings);
                 self.tracker.update_settings(&settings);
                 self.settings = settings;
+                if worker::is_active() {
+                    worker::log_settings_diff(self.frame_counter, self.last_t, &self.settings);
+                }
+            }
+            ControlMsg::AddMarker { label } => {
+                worker::log_marker(self.frame_counter, self.last_t, label);
             }
             ControlMsg::SetSideAssignment(side_assignment) => {
                 self.team_controllers.side_assignment = side_assignment;
@@ -775,12 +839,17 @@ impl Executor {
                 if let Some(h) = &mut self.strategy_host {
                     h.set_side_assignment(side_assignment);
                 }
+                self.log_event(
+                    "side_assignment",
+                    serde_json::json!({ "side_assignment": format!("{side_assignment:?}") }),
+                );
             }
             ControlMsg::SetTeamConfiguration(_) => {
                 log::warn!("Setting team configuration is not supported mid run");
             }
             ControlMsg::SwapTeamColors => {
                 self.team_controllers.swap_teams();
+                self.log_event("swap_team_colors", serde_json::Value::Null);
             }
             ControlMsg::SwapTeamSides => {
                 self.team_controllers.side_assignment = match self.team_controllers.side_assignment
@@ -793,6 +862,12 @@ impl Executor {
                 if let Some(h) = &mut self.strategy_host {
                     h.set_side_assignment(self.team_controllers.side_assignment);
                 }
+                self.log_event(
+                    "swap_team_sides",
+                    serde_json::json!({
+                        "side_assignment": format!("{:?}", self.team_controllers.side_assignment),
+                    }),
+                );
             }
             ControlMsg::StartScenario { path, team } => {
                 self.handle_start_scenario(path, team);
@@ -883,11 +958,18 @@ impl Executor {
         }
     }
 
-    fn update_team_controller(&mut self) {
+    /// Run the controllers for the current world state and broadcast it. When
+    /// `new_frame` is set (a vision-driven or no-vision tick), the frame is
+    /// recorded to the columnar log and the frame counter advances; referee
+    /// updates pass `false` and reuse the current frame id.
+    fn update_team_controller(&mut self, new_frame: bool) {
         let world_data = self.tracker.get();
+        let frame_id = self.frame_counter;
+        self.last_t = world_data.t_received;
 
         let update = WorldUpdate {
             world_data: world_data.clone(),
+            frame_id,
         };
         if let Err(err) = self.update_tx.send(update) {
             log::error!("Failed to broadcast world update: {}", err);
@@ -1057,5 +1139,16 @@ impl Executor {
             manual_override.insert(*k, v.clone());
         }
         self.team_controllers.update(&world_data, manual_override);
+
+        // Record the frame after the controllers (and strategy) have produced
+        // this tick's debug output. The debug map is snapshotted here so it is
+        // stamped with the same frame id as the world state.
+        if new_frame {
+            if worker::is_active() {
+                let debug = DebugSubscriber::instance().get_copy();
+                worker::log_frame(frame_id, &world_data, &debug);
+            }
+            self.frame_counter = self.frame_counter.wrapping_add(1);
+        }
     }
 }

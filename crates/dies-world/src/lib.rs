@@ -495,7 +495,10 @@ impl WorldTracker {
                 return;
             }
 
-            self.field_geometry = Some(FieldGeometry::from_protobuf(&geometry.field));
+            let geom = FieldGeometry::from_protobuf(&geometry.field);
+            // First (and only) time we learn the geometry — record it to the log.
+            dies_logger::worker::log_set_field_geom(&geom);
+            self.field_geometry = Some(geom);
         }
     }
 
