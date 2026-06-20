@@ -1,8 +1,9 @@
 // Smoke test for the joint pass coordinator (ctx.pass / team.pass).
 //
-// Exercises the atomic pass and its clean-release failure modes. Each drill
-// teleports the robots into a known pose first; assertions check the typed
-// PassFailure reason surfaced by the rejected promise.
+// Each drill resets the ball + robots to a known pose, then exercises one
+// aspect of the atomic pass: the happy path, a clean mid-pass cancel, and the
+// ball-not-secured failure. Assertions check the typed PassFailure reason
+// surfaced by the rejected promise.
 //
 // Run: just test-sim skill_pass
 
@@ -20,19 +21,23 @@ globalThis.run = async function run({ team, world, log }) {
   const passer = team.robot(PASSER);
   const receiver = team.robot(RECEIVER);
 
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
   // Wait until vision has both robots and a ball.
   await waitUntil(
     () => world.ball() && world.robot(PASSER) && world.robot(RECEIVER),
     { pollMs: 50, timeoutMs: 5000 }
   );
 
-  // Teleport the passer just behind the ball (opposite the receiver) so the weak
-  // Secure phase can pick it up, and the receiver downfield on the +x side.
-  async function setupForPass() {
-    const b = world.ball().position;
-    await passer.teleport({ x: b.x - 350, y: b.y, yaw: 0 });
+  // Reset to a clean pose: ball at center, passer just behind it (aimed at the
+  // receiver downfield), receiver waiting downfield. The ball is teleported back
+  // so each drill starts from the same geometry instead of wherever the previous
+  // drill left it.
+  async function reset({ passerX = -350, passerY = 0 } = {}) {
+    world.setBall({ x: 0, y: 0 });
+    await passer.teleport({ x: passerX, y: passerY, yaw: 0 });
     await receiver.teleport({ x: 1500, y: 0, yaw: Math.PI });
-    await sleep(300);
+    await sleep(400);
   }
 
   function reasonOf(e) {
@@ -41,7 +46,7 @@ globalThis.run = async function run({ team, world, log }) {
 
   // --- Drill 1: happy path -------------------------------------------------
   log.info("=== Drill 1: happy path ===");
-  await setupForPass();
+  await reset();
   try {
     await team.pass({ passer: PASSER, receiver: RECEIVER });
     log.info("drill1 PASS: pass succeeded");
@@ -52,12 +57,28 @@ globalThis.run = async function run({ team, world, log }) {
 
   // --- Drill 2: cancel mid-pass (clean release / PartnerLeft) ---------------
   log.info("=== Drill 2: cancel mid-pass ===");
-  await setupForPass();
+  await reset();
   {
-    const p = team.pass({ passer: PASSER, receiver: RECEIVER });
-    // Reassign the receiver to something else shortly after starting — this
-    // replaces its pass slot, orphaning the passer's half.
-    await sleep(300);
+    // Aim far downfield on the approach line so the receiver has to travel to
+    // get ready — this keeps the pass in its cancellable Setup phase long
+    // enough for the passer to actually secure the ball before we cancel.
+    const p = team.pass({
+      passer: PASSER,
+      receiver: RECEIVER,
+      targetHint: { x: 3000, y: 0 },
+    });
+    // Let the passer actually engage the ball first, so the cancel is a real
+    // mid-pass abort rather than a no-op on an idle robot.
+    await waitUntil(
+      () => {
+        const pp = world.robot(PASSER);
+        const b = world.ball();
+        return pp && b && dist(pp.position, b.position) < 160;
+      },
+      { pollMs: 50, timeoutMs: 3000 }
+    );
+    // Reassign the receiver to something else — this replaces its pass slot,
+    // orphaning the passer's half.
     receiver.goToPos({ x: -2000, y: 2000 });
     try {
       await p;
@@ -82,11 +103,12 @@ globalThis.run = async function run({ team, world, log }) {
   // --- Drill 3: ball not secured (BallLost) ---------------------------------
   log.info("=== Drill 3: ball not secured ===");
   {
-    // Put the passer far from the ball so Secure fails immediately.
-    const b = world.ball().position;
-    await passer.teleport({ x: b.x + 3000, y: b.y + 2000, yaw: 0 });
+    // Passer starts beyond the secure range: the weak Secure phase never chases
+    // a loose ball, so it must decline and fail cleanly with BallLost.
+    world.setBall({ x: 0, y: 0 });
+    await passer.teleport({ x: 1000, y: 0, yaw: 0 });
     await receiver.teleport({ x: 1500, y: 0, yaw: Math.PI });
-    await sleep(300);
+    await sleep(400);
     try {
       await team.pass({ passer: PASSER, receiver: RECEIVER });
       log.error("drill3 FAIL: expected BallLost");
@@ -100,5 +122,10 @@ globalThis.run = async function run({ team, world, log }) {
     }
   }
 
+  // Stop the skill on both robots so they don't keep running their last skill
+  // (drill 2's goToPos) after the scenario ends.
+  passer.skillStop();
+  receiver.skillStop();
+  await sleep(200);
   log.info("skill_pass scenario complete");
 };

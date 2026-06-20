@@ -159,6 +159,21 @@ impl Kalman<2, 4> {
         new_filter.posteriori_covariance = self.posteriori_covariance;
         *self = new_filter;
     }
+
+    /// Hard-reset the filter to a measured position with zero velocity.
+    ///
+    /// Used when a position *discontinuity* (a teleport in sim, or a robot
+    /// picked up and replaced / a vision id relabel on real hardware) makes the
+    /// constant-velocity model invalid. Without this, the filter explains the
+    /// jump as motion and injects a huge spurious velocity, so the filtered
+    /// position over- and undershoots ("teleports") for ~1 s and the velocity
+    /// estimate spikes — which corrupts every consumer (skills, controllers).
+    /// Covariance is inflated so the next few measurements re-converge quickly.
+    pub fn reset_to(&mut self, x: f64, y: f64, t: f64) {
+        self.x = SVector::<f64, 4>::new(x, 0.0, y, 0.0);
+        self.posteriori_covariance = SMatrix::<f64, 4, 4>::identity() * 100.0;
+        self.t = t;
+    }
 }
 
 impl MaybeKalman<2, 4> {

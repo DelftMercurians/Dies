@@ -13,6 +13,7 @@ members = [
     "crates/dies-webui",
     "crates/dies-world",
     "crates/dies-logger",
+    "crates/dies-logana",
     "crates/dies-test-driver",
     # Strategy crates
     "strategies/test-strategy",

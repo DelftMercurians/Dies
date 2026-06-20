@@ -11,6 +11,14 @@ use crate::filter::{AngleLowPassFilter, MaybeKalman};
 
 const BREAKBEAM_WINDOW: usize = 5;
 
+/// Upper bound on plausible robot speed (mm/s) used for teleport detection. Well
+/// above the controller cap (~3 m/s) and the simulator's max (6 m/s), so real
+/// motion is never mistaken for a discontinuity.
+const MAX_PLAUSIBLE_SPEED: f64 = 8000.0;
+/// Absolute slack (mm) added to the per-frame travel budget so vision noise on a
+/// stationary robot never trips the teleport reset.
+const TELEPORT_MARGIN: f64 = 150.0;
+
 /// Stored data for a player from the last update.
 ///
 /// This type contains **vision coordinates**, meaning the x axis is unchanged -- it may point towards our or the enemy goal.
@@ -165,8 +173,40 @@ impl PlayerTracker {
         let raw_yaw = Angle::from_radians(raw_yaw_f64);
         let yaw = Angle::from_radians(self.yaw_filter.update(raw_yaw_f64));
 
+        // Teleport / discontinuity detection. If the new measurement is too far
+        // from the constant-velocity prediction to be real motion, the filter
+        // would otherwise absorb the jump as a huge velocity and ring for ~1 s
+        // (breaking skills and looking like the robot teleports). Hard-reset the
+        // filter to the measurement with zero velocity instead.
+        let teleported = if let Some(last) = &self.last_detection {
+            let dt = t_capture - last.timestamp;
+            if dt > 0.0 {
+                let predicted = last.position + last.velocity * dt;
+                let jump = (raw_position - predicted).norm();
+                jump > MAX_PLAUSIBLE_SPEED * dt + TELEPORT_MARGIN
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
         match &mut self.filter {
             MaybeKalman::Init(filter) => {
+                if teleported {
+                    filter.reset_to(raw_position.x, raw_position.y, t_capture);
+                    if let Some(last) = &mut self.last_detection {
+                        last.timestamp = t_capture;
+                        last.raw_position = raw_position;
+                        last.position = raw_position;
+                        last.velocity = Vector2::zeros();
+                        last.yaw = yaw;
+                        last.raw_yaw = raw_yaw;
+                        last.angular_speed = 0.0;
+                    }
+                    self.velocity_samples.clear();
+                    return;
+                }
                 let z = na::convert(Vector2::new(raw_position.x, raw_position.y));
                 if let Some(x) = filter.update(z, t_capture, false) {
                     let last_data = if let Some(last_data) = &mut self.last_detection {

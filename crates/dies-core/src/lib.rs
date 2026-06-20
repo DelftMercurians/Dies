@@ -41,6 +41,9 @@ pub enum SimulatorCmd {
     ApplyBallForce {
         force: Vector2,
     },
+    TeleportBall {
+        position: Vector2,
+    },
     TeleportRobot {
         team_color: TeamColor,
         player_id: PlayerId,

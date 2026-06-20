@@ -726,6 +726,28 @@ fn register_world(ctx: &mut Context, state: StateRef) -> JsResult<()> {
         init.function(f, js_string!("setBallForce"), 1);
     }
 
+    {
+        let state = state.clone();
+        let f = unsafe {
+            NativeFunction::from_closure(move |_this, args, ctx| {
+                let opts = args.first().cloned().unwrap_or(JsValue::undefined());
+                let x = get_num(&opts, "x", ctx)?;
+                let y = get_num(&opts, "y", ctx)?;
+                let mut st = state.borrow_mut();
+                if !env_allows_sim_mutation(&st.env) {
+                    return Err(JsNativeError::typ()
+                        .with_message("world.setBall: sim only")
+                        .into());
+                }
+                st.pending_sim_cmds.push(SimulatorCmd::TeleportBall {
+                    position: Vector2::new(x, y),
+                });
+                Ok(resolved_undefined(ctx).into())
+            })
+        };
+        init.function(f, js_string!("setBall"), 1);
+    }
+
     let world_obj = init.build();
     ctx.register_global_property(
         js_string!("world"),

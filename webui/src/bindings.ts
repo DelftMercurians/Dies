@@ -907,6 +907,9 @@ export type SimulatorCmd =
 	| { type: "ApplyBallForce", data: {
 	force: Vector2;
 }}
+	| { type: "TeleportBall", data: {
+	position: Vector2;
+}}
 	| { type: "TeleportRobot", data: {
 	team_color: TeamColor;
 	player_id: PlayerId;

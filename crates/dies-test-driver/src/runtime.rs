@@ -518,8 +518,18 @@ impl TestDriver {
                     .get(&passer)
                     .copied()
                     .unwrap_or(SkillStatus::Running);
+                // A settled pass is a finished atomic action: release both
+                // robots' skill slots. Without this the `Pass` command lingers
+                // and the joint executor respawns a fresh coordinator every tick
+                // (spamming instant BallLost, or even a spurious success that
+                // would resolve the *next* pass's promise prematurely).
+                let release_slots = |st: &mut crate::bridge::InnerState| {
+                    st.slots.clear_player(passer);
+                    st.slots.clear_player(receiver);
+                };
                 match status {
                     SkillStatus::Succeeded => {
+                        release_slots(&mut self.state.borrow_mut());
                         let _ = resolve.call(
                             &JsValue::undefined(),
                             &[JsValue::undefined()],
@@ -546,6 +556,7 @@ impl TestDriver {
                             receiver.as_u32()
                         ))
                         .into();
+                        release_slots(&mut self.state.borrow_mut());
                         let _ = reject.call(&JsValue::undefined(), &[msg], &mut self.ctx);
                         WakerAction::Done
                     }

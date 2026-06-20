@@ -40,7 +40,9 @@ pub async fn run_scenario(
                 .build()
                 .expect("build executor runtime");
             rt.block_on(async move {
-                let settings = ExecutorSettings::default();
+                let settings = ExecutorSettings::load_or_insert(
+                    &std::path::PathBuf::from("dies-settings.json"),
+                );
                 let executor = match mode {
                     UiMode::Live => {
                         let bs_client =

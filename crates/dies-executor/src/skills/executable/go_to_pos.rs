@@ -6,8 +6,13 @@ use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::PlayerControlInput;
 
-const DEFAULT_POS_TOLERANCE: f64 = 10.0;
-const DEFAULT_VEL_TOLERANCE: f64 = 20.0;
+// Must be ≥ the path-follower's `ARRIVE_DEADBAND` (15 mm): the controller
+// commands a full stop once within the deadband, so the robot settles a little
+// short of the exact goal. A tolerance below the deadband is unsatisfiable in
+// steady state — the skill would never report success and any `await` on it
+// hangs forever.
+const DEFAULT_POS_TOLERANCE: f64 = 30.0;
+const DEFAULT_VEL_TOLERANCE: f64 = 50.0;
 
 /// A skill that moves the robot to a target position.
 ///

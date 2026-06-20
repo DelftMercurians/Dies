@@ -59,8 +59,12 @@ pub struct SimulationConfig {
     pub dribbler_strength: f64,
     /// Delay for the execution of the command
     pub command_delay: f64,
-    /// Maximum lateral acceleration in mm/s^2
+    /// Maximum lateral acceleration in mm/s^2 (speeding up — sluggish).
     pub max_accel: f64,
+    /// Maximum lateral deceleration in mm/s^2 (braking — much harder than
+    /// acceleration on the real robots, which is why they stop without
+    /// overshoot even when starting is slow).
+    pub max_decel: f64,
     /// Maximum lateral speed in mm/s
     pub max_vel: f64,
     /// Maximum angular acceleration in rad/s^2
@@ -106,8 +110,14 @@ impl Default for SimulationConfig {
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 30.0 / 1000.0,
-            max_accel: 15000.0,
-            max_vel: 6000.0,
+            // Match real-hardware limits (measured): ~2.8 m/s top speed,
+            // ~1.5 m/s^2 to accelerate but much harder braking (~6 m/s^2), so
+            // the robot is sluggish to start yet stops without overshoot. The
+            // controller may *command* more aggressively; the simulated robot,
+            // like the real one, can't exceed these.
+            max_accel: 1500.0,
+            max_decel: 6000.0,
+            max_vel: 2800.0,
             max_ang_accel: 50.0 * 720.0f64.to_radians(),
             max_ang_vel: 0.5 * 720.0f64.to_radians(),
             velocity_treshold: 1.0,
@@ -596,6 +606,22 @@ impl Simulation {
                 .get_mut(ball._rigid_body_handle)
                 .unwrap();
             ball_body.apply_impulse(force, true);
+        }
+    }
+
+    /// Teleport the ball to a field position (z held at rest height) and zero
+    /// its velocity. Used by scenarios to reset to a clean state between drills.
+    pub fn teleport_ball(&mut self, position: Vector2) {
+        if let Some(ball) = self.ball.as_ref() {
+            let handle = ball._rigid_body_handle;
+            if let Some(ball_body) = self.rigid_body_set.get_mut(handle) {
+                ball_body.set_position(
+                    Isometry::translation(position.x, position.y, BALL_RADIUS),
+                    true,
+                );
+                ball_body.set_linvel(Vector::zeros(), true);
+                ball_body.set_angvel(Vector::zeros(), true);
+            }
         }
     }
 
@@ -1634,7 +1660,16 @@ impl Simulation {
             let vel_err = target_velocity - velocity;
 
             let new_vel = {
-                let acc = (vel_err / dt).cap_magnitude(self.config.max_accel);
+                // Asymmetric limit: braking (commanding a lower speed) is much
+                // stronger than accelerating, matching the real robots. Without
+                // this, the robot can't shed cruise speed fast enough near a
+                // target and overshoots it.
+                let limit = if target_velocity.norm() >= velocity.norm() {
+                    self.config.max_accel
+                } else {
+                    self.config.max_decel
+                };
+                let acc = (vel_err / dt).cap_magnitude(limit);
                 velocity + acc * dt
             };
             let new_vel = new_vel.cap_magnitude(self.config.max_vel);

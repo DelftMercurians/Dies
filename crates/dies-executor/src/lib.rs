@@ -742,6 +742,9 @@ impl Executor {
             SimulatorCmd::ApplyBallForce { force } => {
                 sim.apply_force_to_ball(Vector3::new(force.x, force.y, 0.0));
             }
+            SimulatorCmd::TeleportBall { position } => {
+                sim.teleport_ball(position);
+            }
             SimulatorCmd::TeleportRobot {
                 team_color,
                 player_id,

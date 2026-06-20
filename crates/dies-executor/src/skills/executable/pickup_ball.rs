@@ -124,28 +124,48 @@ impl ExecutableSkill for PickupBallSkill {
         // so that post-capture the robot is already facing target_heading.
         let approach_dir = self.target_heading.to_vector();
         let approach_pos = ball_pos - approach_dir * STOP_DISTANCE;
-        let dist_to_approach = (approach_pos - player_pos).norm();
 
         match self.state {
             PickupState::ConfirmingBreakbeam => {
                 todo!()
             }
             PickupState::Approaching => {
-                if dist_to_approach < 10.0 {
-                    self.state = PickupState::FinalApproach;
-                }
-                // else if ball_speed >= 100.0 {
-                //     self.state = PickupState::Intercepting;
-                // }
+                // Are we already behind the ball (on the side opposite the
+                // target heading) and roughly on the approach line? `along < 0`
+                // means we're on the correct side; `perp` is the lateral offset
+                // from the straight approach line through the ball.
+                let to_player = player_pos - ball_pos;
+                let along = to_player.dot(&approach_dir);
+                let perp = (to_player - approach_dir * along).norm();
+                let behind_and_aligned = along < 0.0 && perp < 120.0;
 
-                dies_core::debug_string(
-                    format!("{}.pickup_ball.status", ctx.debug_prefix),
-                    "go to pos",
-                );
-                input.with_position(approach_pos);
-                input.with_yaw(self.target_heading);
-                input.avoid_ball = true;
-                input.avoid_ball_care = 0.4;
+                if behind_and_aligned && distance < DRIBBLING_DISTANCE {
+                    // Capture: drive straight into the ball with the dribbler on.
+                    // Ball avoidance MUST be off here — its keep-out (≈ ball
+                    // radius + robot radius) is larger than the dribbler contact
+                    // distance, so leaving it on stalls the robot short of the
+                    // ball and it can never secure it. A speed cap keeps the
+                    // approach gentle so we seat the ball instead of knocking it.
+                    dies_core::debug_string(
+                        format!("{}.pickup_ball.status", ctx.debug_prefix),
+                        "capture",
+                    );
+                    input.with_position(ball_pos);
+                    input.with_yaw(self.target_heading);
+                    input.with_speed_limit(800.0);
+                } else {
+                    // Far away or on the wrong side: route to the behind-ball
+                    // approach point, routing *around* the ball so we don't
+                    // bump it from the wrong angle.
+                    dies_core::debug_string(
+                        format!("{}.pickup_ball.status", ctx.debug_prefix),
+                        "go to pos",
+                    );
+                    input.with_position(approach_pos);
+                    input.with_yaw(self.target_heading);
+                    input.avoid_ball = true;
+                    input.avoid_ball_care = 0.4;
+                }
 
                 dies_core::debug_cross(
                     format!("{}.approach", ctx.debug_prefix),
