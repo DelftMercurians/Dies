@@ -27,6 +27,10 @@ mod utils;
 
 // Simulation constants - these are in mm
 const BALL_RADIUS: f64 = 21.45;
+/// How far inside the field lines the ball is placed after it leaves the field.
+/// Must be large enough that a robot can fully get behind the ball to take the
+/// free kick (otherwise it would stay pinned against the boundary wall).
+const FREE_KICK_PLACEMENT_MARGIN: f64 = 200.0;
 const GROUND_THICKNESS: f64 = 10.0;
 const WALL_HEIGHT: f64 = 1000.0;
 const WALL_THICKNESS: f64 = 1.0;
@@ -934,6 +938,11 @@ impl Simulation {
                     self.last_kicker_info = None;
                     self.kick_ball_position = None;
 
+                    // Re-center the ball for the kick-off so the match keeps
+                    // running (otherwise it stays in the goal and re-triggers
+                    // the goal check every frame).
+                    self.place_ball(0.0, 0.0);
+
                     if ball_pos.x > 0.0 && self.side_assignment == SideAssignment::BlueOnPositive {
                         self.update_referee_command(referee::Command::PREPARE_KICKOFF_BLUE);
                         SimulationGameState::prepare_kickoff(TeamColor::Blue)
@@ -946,6 +955,13 @@ impl Simulation {
                     self.kick_in_progress = false;
                     self.last_kicker_info = None;
                     self.kick_ball_position = None;
+
+                    // Snap the ball back onto a reachable spot inside the field
+                    // so the free kick can actually be taken. Without this the
+                    // ball stays pinned against the boundary wall and the match
+                    // gets stuck.
+                    let placement = self.designated_ball_position;
+                    self.place_ball(placement.x, placement.y);
 
                     if let Some((_kicker_id, kicker_color)) = self.last_touch_info {
                         if kicker_color == TeamColor::Blue {
@@ -988,9 +1004,17 @@ impl Simulation {
             } => {
                 // Check if positions are valid
                 if !self.check_free_kick_positions(team_color) {
-                    // Reset timer when positions are invalid
-                    kick_timer.reset();
-                    game_state
+                    // Defending robots are crowding the ball. Don't wait forever:
+                    // tick the kick timer as a hard ceiling and force the game
+                    // back to running if they never clear out, so self-play can't
+                    // stall on a free kick.
+                    if kick_timer.tick(self.integration_parameters.dt) {
+                        self.update_referee_command(referee::Command::FORCE_START);
+                        self.kick_in_progress = false;
+                        SimulationGameState::run()
+                    } else {
+                        game_state
+                    }
                 } else {
                     // Initialize kick tracking if not already done
                     if !self.kick_in_progress {
@@ -1154,6 +1178,17 @@ impl Simulation {
         }
     }
 
+    /// Place the ball at rest at the given (x, y) position. Used to reset the
+    /// ball onto a reachable spot after it leaves the field or after a goal, so
+    /// the match keeps running in self-play.
+    fn place_ball(&mut self, x: f64, y: f64) {
+        if let Some(ball) = self.ball.as_ref() {
+            let ball_body = self.rigid_body_set.get_mut(ball._rigid_body_handle).unwrap();
+            ball_body.set_position(Isometry::translation(x, y, BALL_RADIUS), true);
+            ball_body.set_linvel(Vector::zeros(), true);
+        }
+    }
+
     fn ball_out(&mut self) -> bool {
         let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
         if let Some(ball_handle) = ball_handle {
@@ -1182,12 +1217,14 @@ impl Simulation {
                     let mut designated = ball_position + (next_ball_position - ball_position) * 0.5;
                     // Constrain designated position to the field
                     designated.x = designated.x.clamp(
-                        -(self.config.field_geometry.field_length / 2.0 - test_boundary),
-                        self.config.field_geometry.field_length / 2.0 - test_boundary,
+                        -(self.config.field_geometry.field_length / 2.0
+                            - FREE_KICK_PLACEMENT_MARGIN),
+                        self.config.field_geometry.field_length / 2.0 - FREE_KICK_PLACEMENT_MARGIN,
                     );
                     designated.y = designated.y.clamp(
-                        -(self.config.field_geometry.field_width / 2.0 - test_boundary),
-                        self.config.field_geometry.field_width / 2.0 - test_boundary,
+                        -(self.config.field_geometry.field_width / 2.0
+                            - FREE_KICK_PLACEMENT_MARGIN),
+                        self.config.field_geometry.field_width / 2.0 - FREE_KICK_PLACEMENT_MARGIN,
                     );
                     self.designated_ball_position = designated;
                 }
@@ -1197,22 +1234,9 @@ impl Simulation {
                     "RefereeMessage",
                     format!("Ball out of bounds at position: {:?}", ball_position),
                 );
-                // Wait a few frames before resetting the ball's position (default: 0.2s)
-                if let SimulationGameState::Run { wait_timer, .. } = &mut self.game_state {
-                    if wait_timer.tick(self.integration_parameters.dt) {
-                        // Reset the ball's position to the free kick position
-                        ball_body.set_position(
-                            Isometry::translation(
-                                self.designated_ball_position.x,
-                                self.designated_ball_position.y,
-                                self.designated_ball_position.z,
-                            ),
-                            true,
-                        );
-                        ball_body.set_linvel(Vector::zeros(), true);
-                    }
-                }
-
+                // The actual reposition happens in `update_game_state` once the
+                // free kick is awarded (see `place_ball`); here we only report
+                // that the ball has left the field.
                 return true;
             }
         }
@@ -1244,16 +1268,8 @@ impl Simulation {
                     format!("Goal scored at {}", scoring_side),
                 );
 
-                // Wait a few frames before resetting the ball's position (default: 0.2s)
-                if let SimulationGameState::Run { wait_timer, .. } = &mut self.game_state {
-                    if wait_timer.tick(self.integration_parameters.dt) {
-                        wait_timer.reset();
-                    }
-                }
-
-                // Reset the ball's position to the kick off position (center)
-                // ball_body.set_position(Isometry::translation(0.0, 0.0, 20.0), true);
-                // ball_body.set_linvel(Vector::zeros(), true);
+                // The ball is re-centered for the kick-off in `update_game_state`
+                // (see `place_ball`); here we only report that a goal was scored.
                 return true;
             }
         }
