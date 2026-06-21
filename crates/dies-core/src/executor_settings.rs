@@ -159,6 +159,15 @@ pub struct TrackerSettings {
     pub ball_unit_transition_var: f64,
     /// Measurement noise for the ball position Kalman filter (mm²).
     pub ball_measurement_var: f64,
+    /// Minimum vision confidence for a ball detection to be accepted. Some camera
+    /// setups report near-zero confidence even for a clean ball, so this defaults
+    /// low — raise it only if your vision reports trustworthy confidence values.
+    #[serde(default = "default_ball_confidence_threshold")]
+    pub ball_confidence_threshold: f64,
+}
+
+fn default_ball_confidence_threshold() -> f64 {
+    0.0
 }
 
 fn default_player_ca_var() -> f64 {
@@ -188,6 +197,7 @@ impl Default for TrackerSettings {
             player_yaw_lpf_alpha: 0.15,
             ball_unit_transition_var: 20.48,
             ball_measurement_var: 0.01,
+            ball_confidence_threshold: default_ball_confidence_threshold(),
             field_mask: FieldMask::default(),
         }
     }

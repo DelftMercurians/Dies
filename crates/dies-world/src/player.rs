@@ -275,28 +275,28 @@ impl PlayerTracker {
         if self.is_controlled {
             if self.rolling_control < 0.1 || self.rolling_vision < 0.1 {
                 if !self.is_gone && self.rolling_control < 0.1 {
-                    println!("Player {} is gone (control)", self.id);
+                    log::warn!("Player {} is gone (control)", self.id);
                 } else if !self.is_gone && self.rolling_vision < 0.1 {
-                    println!("Player {} is gone (vision)", self.id);
+                    log::warn!("Player {} is gone (vision)", self.id);
                 }
                 self.is_gone = true;
             }
             if self.rolling_control > 0.8 && self.rolling_vision > 0.8 {
                 if self.is_gone {
-                    println!("Player {} is back", self.id);
+                    log::warn!("Player {} is back", self.id);
                 }
                 self.is_gone = false;
             }
         } else {
             if self.rolling_vision < 0.1 {
                 if !self.is_gone {
-                    println!("Player {} is gone (vision)", self.id);
+                    log::warn!("Player {} is gone (vision)", self.id);
                 }
                 self.is_gone = true;
             }
             if self.rolling_vision > 0.8 {
                 if self.is_gone {
-                    println!("Player {} is back", self.id);
+                    log::warn!("Player {} is back", self.id);
                 }
                 self.is_gone = false;
             }

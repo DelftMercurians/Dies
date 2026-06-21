@@ -24,8 +24,8 @@ mprocs                        # Dev: vite dev server + dies (--watch). Old `just
 cargo build -p dies-cli       # Build main binary only
 cargo build -p concerto       # Build a specific strategy
 
-# Release build of dies-cli + all strategies (the frontend bundle is produced by
-# dies-webui's build.rs in release; needs `typeshare` + `pnpm` on PATH):
+# Release build of dies-cli + all strategies (build.rs produces the frontend
+# bundle; needs `typeshare` + `pnpm` on PATH):
 cargo build --release -p dies-cli -p concerto -p test-strategy -p v0-strategy
 ```
 
@@ -33,7 +33,8 @@ cargo build --release -p dies-cli -p concerto -p test-strategy -p v0-strategy
 sources and runs `cargo build -p <strategy>` on change; the executor notices the
 rebuilt binary (mtime) and hot-swaps the strategy process. `dies-webui/build.rs`
 regenerates `webui/src/bindings.ts` on every build and runs `vite build` (into
-`crates/dies-webui/static`) only for release builds — dev uses the vite dev server.
+`crates/dies-webui/static`) whenever the hash of the frontend inputs changes (any
+profile) — dev iteration normally uses the vite dev server instead.
 
 ## Testing & Linting
 

@@ -69,8 +69,10 @@ pub async fn start_ui(args: Cli) -> Result<()> {
     });
 
     let shutdown_fut = async move {
+        log::info!("Shutdown: broadcasting stop signal");
         stop_tx.send(()).expect("Failed to send stop signal");
         main_task.await.expect("Executor task failed");
+        log::info!("Shutdown: main task joined, exiting cleanly");
     };
     tokio::select! {
         _ = shutdown_fut => {}

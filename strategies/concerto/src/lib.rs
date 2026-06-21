@@ -5,9 +5,6 @@
 //!   (plan-controlled) robot.
 //! - **Planner → Driver** moves the ball toward the opponent goal via
 //!   ball-state-transition waypoints, re-deciding only on discrete events.
-//!
-//! Stability comes from physics and decision cadence, never stay-bonuses. See the
-//! module docs for details. Passing is deferred but its seams are in place.
 
 pub mod config;
 pub mod driver;
@@ -122,6 +119,8 @@ impl Strategy for ConcertoStrategy {
                 let inputs = PlanInputs {
                     keeper_id: world.our_keeper_id(),
                     double_touch_robot: self.double_touch_robot,
+                    our_attacking_restart: us_operating
+                        && matches!(game_state, GameState::Kickoff | GameState::FreeKick),
                     now,
                 };
                 match self.planner.replan(&world, &possession, &inputs) {
@@ -159,10 +158,13 @@ impl Strategy for ConcertoStrategy {
         }
 
         // ── Our set-piece preparation: designate & position a kicker ─────
+        // Covers states that are not yet ball-in-play but where comply() would
+        // otherwise clamp/sideline our kicker: PrepareKickoff, PreparePenalty, and
+        // the brief Penalty state before PenaltyRun.
         if us_operating
             && matches!(
                 game_state,
-                GameState::PrepareKickoff | GameState::PreparePenalty
+                GameState::PrepareKickoff | GameState::PreparePenalty | GameState::Penalty
             )
         {
             if let Some(id) = self.designate_prep_kicker(&world, ctx, game_state) {

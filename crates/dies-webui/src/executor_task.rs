@@ -199,6 +199,7 @@ impl ExecutorTask {
                 thread_handle,
                 executor_handle,
             } => {
+                log::info!("Shutdown: sending Stop to executor, joining executor thread");
                 executor_handle.send(ControlMsg::Stop);
                 // Join the thread on a blocking helper so we don't stall the
                 // tokio runtime while the executor wraps up.
@@ -362,7 +363,9 @@ impl ExecutorTask {
                     }
 
                     // Block so the process doesn't exit mid-compaction.
+                    log::info!("Shutdown: executor run loop ended, closing log (blocking, up to 25s)");
                     dies_logger::worker::log_close_blocking(std::time::Duration::from_secs(25));
+                    log::info!("Shutdown: log close complete, executor thread exiting");
                 });
             })
             .expect("spawn executor thread");

@@ -4,4 +4,6 @@ rustflags = [
     "tokio_unstable",
     "-C",
     "link-args=-Wl,-rpath,/Library/Developer/CommandLineTools/Library/Frameworks",
+    "-A",
+    "warnings",
 ]

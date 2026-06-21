@@ -58,6 +58,9 @@ pub struct Plan {
 pub struct PlanInputs {
     pub keeper_id: Option<PlayerId>,
     pub double_touch_robot: Option<PlayerId>,
+    /// True during our in-play kickoff/free kick, where the kicker must release the
+    /// ball forward (not dribble) to bring it into play and respect double-touch.
+    pub our_attacking_restart: bool,
     pub now: f64,
 }
 
@@ -127,21 +130,36 @@ impl Planner {
                 let carrier = world.own_player(id)?;
                 let carrier_pos = carrier.position;
 
-                let clear = geometry::is_clear_shot(
-                    carrier_pos,
-                    opp_goal,
-                    world.opp_players(),
-                    config::CLEAR_SHOT_CORRIDOR,
-                );
-                let in_range = (carrier_pos - opp_goal).norm() < config::SHOOT_RANGE;
+                // Our attacking restart: this carrier is the kicker (it touched
+                // first, or nobody has yet). It must release the ball forward — a
+                // directed kick toward an open downfield zone — rather than dribble,
+                // to bring the ball into play and avoid a double-touch. A teammate
+                // then collects and normal play resumes. (Becomes a Pass in M4.)
+                let is_kicker = inputs.our_attacking_restart
+                    && (inputs.double_touch_robot.is_none()
+                        || inputs.double_touch_robot == Some(id));
 
-                let waypoint = if clear && in_range {
-                    Waypoint::Shoot { target: opp_goal }
+                let waypoint = if is_kicker {
+                    Waypoint::Shoot {
+                        target: self.release_target(carrier_pos, opp_goal, world),
+                    }
                 } else {
-                    // *** PASS SEAM ***: future milestone inserts a Pass waypoint
-                    // here (we-have-ball, no clear shot). v1 advances by dribbling.
-                    Waypoint::Dribble {
-                        target_area: self.advance_point(carrier_pos, opp_goal, world),
+                    let clear = geometry::is_clear_shot(
+                        carrier_pos,
+                        opp_goal,
+                        world.opp_players(),
+                        config::CLEAR_SHOT_CORRIDOR,
+                    );
+                    let in_range = (carrier_pos - opp_goal).norm() < config::SHOOT_RANGE;
+
+                    if clear && in_range {
+                        Waypoint::Shoot { target: opp_goal }
+                    } else {
+                        // *** PASS SEAM ***: future milestone inserts a Pass waypoint
+                        // here (we-have-ball, no clear shot). v1 advances by dribbling.
+                        Waypoint::Dribble {
+                            target_area: self.advance_point(carrier_pos, opp_goal, world),
+                        }
                     }
                 };
                 Plan {
@@ -224,6 +242,30 @@ impl Planner {
 
         // Prefer a robot not in cooldown; if everyone is stuck, allow reuse.
         pick(false).or_else(|| pick(true))
+    }
+
+    /// Target for an attacking-restart release kick: the most open forward zone
+    /// (toward a support teammate's area), falling back to the opponent half.
+    fn release_target(&self, from: Vector2, opp_goal: Vector2, world: &World) -> Vector2 {
+        let half_len = world.field_length() / 2.0;
+        let half_wid = world.field_width() / 2.0;
+        geometry::best_pass_area(from, world.opp_players(), half_len, half_wid).unwrap_or_else(
+            || {
+                // Fallback: a point well into the opponent half, biased toward goal.
+                let dir = opp_goal - from;
+                let n = dir.norm();
+                let step = if n > 1e-6 {
+                    dir / n * (half_len * 0.6)
+                } else {
+                    Vector2::new(half_len * 0.6, 0.0)
+                };
+                let raw = from + step;
+                Vector2::new(
+                    raw.x.clamp(-half_len + 200.0, half_len - 200.0),
+                    raw.y.clamp(-half_wid + 200.0, half_wid - 200.0),
+                )
+            },
+        )
     }
 
     /// A point toward the opponent goal to dribble to, clamped to the field.

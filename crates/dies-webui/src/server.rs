@@ -216,14 +216,27 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     let basestation_task = {
         let state = Arc::clone(&state);
         let env = config.environment.clone();
+        let mut shutdown_rx = shutdown_rx.resubscribe();
         tokio::spawn(async move {
             match env {
-                UiEnvironment::WithLive { mut bs_handle, .. } => {
-                    while let Ok((color, msg)) = bs_handle.recv().await {
-                        let mut feedback = state.basestation_feedback.write().unwrap();
-                        feedback.insert((color, msg.id), msg);
+                UiEnvironment::WithLive { mut bs_handle, .. } => loop {
+                    tokio::select! {
+                        msg = bs_handle.recv() => match msg {
+                            Ok((color, msg)) => {
+                                let mut feedback = state.basestation_feedback.write().unwrap();
+                                feedback.insert((color, msg.id), msg);
+                            }
+                            Err(_) => {
+                                log::info!("Shutdown: basestation watcher loop exited (bs_handle closed)");
+                                break;
+                            }
+                        },
+                        _ = shutdown_rx.recv() => {
+                            log::info!("Shutdown: basestation watcher got stop signal, exiting");
+                            break;
+                        }
                     }
-                }
+                },
                 UiEnvironment::SimulationOnly => {}
             }
         })
@@ -431,13 +444,17 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         tokio::spawn(async move { start_webserver(config.port, state, shutdown_rx).await });
 
     // Graceful shutdown
+    log::info!("Shutdown: joining executor task");
     executor_task
         .await
         .expect("Shutting down executor task failed");
+    log::info!("Shutdown: executor task joined; joining basestation task");
     basestation_task
         .await
         .expect("Shutting down basestation watcher task failed");
+    log::info!("Shutdown: basestation task joined; joining web task");
     web_task.await.expect("Shutting down server task failed");
+    log::info!("Shutdown: web task joined; dies_webui::start returning");
 }
 
 async fn start_webserver(
@@ -480,12 +497,14 @@ async fn start_webserver(
 
     let shutdown_fut = async move {
         let _ = shutdown_rx.recv().await;
+        log::info!("Shutdown: web server got stop signal, starting graceful shutdown (waiting for open connections, e.g. WebSockets)");
     };
     log::info!("Webui running at http://localhost:{}", port);
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_fut)
         .await
         .unwrap();
+    log::info!("Shutdown: axum::serve graceful shutdown complete");
 }
 
 async fn add_csp_header(req: Request<Body>, next: axum::middleware::Next) -> impl IntoResponse {

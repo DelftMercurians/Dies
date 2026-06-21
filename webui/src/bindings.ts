@@ -389,6 +389,12 @@ export interface TrackerSettings {
 	ball_unit_transition_var: number;
 	/** Measurement noise for the ball position Kalman filter (mm²). */
 	ball_measurement_var: number;
+	/**
+	 * Minimum vision confidence for a ball detection to be accepted. Some camera
+	 * setups report near-zero confidence even for a clean ball, so this defaults
+	 * low — raise it only if your vision reports trustworthy confidence values.
+	 */
+	ball_confidence_threshold: number;
 }
 
 /**

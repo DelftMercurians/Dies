@@ -4,7 +4,7 @@ use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId,
-    PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamPlayerId, Vector3,
+    PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamPlayerId, Vector2, Vector3,
     WorldInstant, WorldUpdate,
 };
 use dies_logger::worker;
