@@ -245,7 +245,7 @@ impl BasestationHandle {
                                                 msg.kicker_status(),
                                             ),
                                             imu_status: SysStatus::from_option(msg.imu_status()),
-                                            fan_status: SysStatus::from_option(msg.fan_status()),
+                                            tof_status: SysStatus::from_option(msg.tof_status()),
                                             kicker_cap_voltage: msg.kicker_cap_voltage(),
                                             kicker_temp: msg.kicker_temperature(),
                                             motor_statuses: msg
