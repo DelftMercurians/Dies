@@ -25,7 +25,7 @@
     "player_use_acceleration": true,
     "player_use_command_feedforward": true,
     "player_command_tau": 0.15,
-    "player_yaw_lpf_alpha": 0.15,
+    "player_yaw_lpf_alpha": 0.5,
     "ball_unit_transition_var": 20.48,
     "ball_measurement_var": 0.01,
     "ball_confidence_threshold": 0.0

@@ -87,6 +87,42 @@ const HardwareReadout: FC<{
             />
           </Section>
 
+          {/* imu */}
+          {feedback.imu_readings && (
+            <Section title="IMU">
+              <Metric
+                label="θx"
+                value={feedback.imu_readings[0]}
+                unit=" rad"
+              />
+              <Metric
+                label="θy"
+                value={feedback.imu_readings[1]}
+                unit=" rad"
+              />
+              <Metric
+                label="θz"
+                value={feedback.imu_readings[2]}
+                unit=" rad"
+              />
+              <Metric
+                label="ωx"
+                value={feedback.imu_readings[3]}
+                unit=" rad/s"
+              />
+              <Metric
+                label="ωy"
+                value={feedback.imu_readings[4]}
+                unit=" rad/s"
+              />
+              <Metric
+                label="ωz"
+                value={feedback.imu_readings[5]}
+                unit=" rad/s"
+              />
+            </Section>
+          )}
+
           {/* motors */}
           <Section title="Motors">
             <div className="grid grid-cols-[auto_1fr_1fr_1fr] gap-x-3 gap-y-0.5 text-xs">

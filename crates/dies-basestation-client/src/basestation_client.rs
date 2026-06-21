@@ -256,6 +256,12 @@ impl BasestationHandle {
                                             breakbeam_ball_detected: msg.breakbeam_ball_detected(),
                                             breakbeam_sensor_ok: msg.breakbeam_sensor_ok(),
                                             pack_voltages: msg.pack_voltages(),
+                                            imu_readings: msg.imu_reading().map(|r| {
+                                                [
+                                                    r.ang_x, r.ang_y, r.ang_z, r.ang_wx, r.ang_wy,
+                                                    r.ang_wz,
+                                                ]
+                                            }),
                                         },
                                     ))
                                 } else {

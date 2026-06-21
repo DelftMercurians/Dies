@@ -477,6 +477,7 @@ impl PlayerTracker {
                 pack_voltages: f.pack_voltages,
                 breakbeam_ball_detected: self.get_filtered_breakbeam_detection(),
                 imu_status: f.imu_status,
+                imu_readings: f.imu_readings,
                 kicker_status: f.kicker_status,
                 handicaps: self.handicaps.clone(),
             });
@@ -497,6 +498,7 @@ impl PlayerTracker {
             pack_voltages: self.last_feedback.and_then(|f| f.pack_voltages),
             breakbeam_ball_detected: self.get_filtered_breakbeam_detection(),
             imu_status: self.last_feedback.and_then(|f| f.imu_status),
+            imu_readings: self.last_feedback.and_then(|f| f.imu_readings),
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),
             handicaps: self.handicaps.clone(),
         })

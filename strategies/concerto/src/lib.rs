@@ -150,6 +150,11 @@ impl Strategy for ConcertoStrategy {
                 if let WaypointStatus::Failed(reason) = status {
                     self.planner.record_failure(active_id, reason, now);
                 }
+                // Kick feedforward: if we just fired a kick, tell possession the ball
+                // is released so the next replan doesn't re-task the shooter.
+                if let Some(kicker) = self.driver.take_kick_event() {
+                    self.tracker.notify_release(kicker, now);
+                }
                 // Pass seam: a completed pass would hand off to the receiver here.
                 if let Some(_next) = self.driver.take_new_active() {
                     // Unused in v1 (no waypoint sets it).

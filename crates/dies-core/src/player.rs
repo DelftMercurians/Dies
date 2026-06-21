@@ -367,6 +367,9 @@ pub struct PlayerFeedbackMsg {
     pub breakbeam_ball_detected: Option<bool>,
     pub breakbeam_sensor_ok: Option<bool>,
     pub pack_voltages: Option<[f32; 2]>,
+
+    /// IMU readings: [ang_x, ang_y, ang_z, ang_wx, ang_wy, ang_wz]
+    pub imu_readings: Option<[f32; 6]>,
 }
 
 impl PlayerFeedbackMsg {
@@ -385,6 +388,7 @@ impl PlayerFeedbackMsg {
             breakbeam_ball_detected: None,
             breakbeam_sensor_ok: None,
             pack_voltages: None,
+            imu_readings: None,
         }
     }
 }

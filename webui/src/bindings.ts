@@ -195,6 +195,8 @@ export interface PlayerFeedbackMsg {
 	breakbeam_ball_detected?: boolean;
 	breakbeam_sensor_ok?: boolean;
 	pack_voltages?: [number, number];
+	/** IMU readings: [ang_x, ang_y, ang_z, ang_wx, ang_wy, ang_wz] */
+	imu_readings?: [number, number, number, number, number, number];
 }
 
 export interface BasestationResponse {
@@ -647,6 +649,7 @@ export interface PlayerData {
 	/** Whether the breakbeam sensor detected a ball. Only available for own players. */
 	breakbeam_ball_detected: boolean;
 	imu_status?: SysStatus;
+	imu_readings?: [number, number, number, number, number, number];
 	kicker_status?: SysStatus;
 	handicaps: HashSet<Handicap>;
 }

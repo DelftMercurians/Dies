@@ -54,6 +54,9 @@ pub struct Driver {
     engage_ball_pos: Option<Vector2>,
     /// Next active robot hint (set by a completed pass; consumed by orchestrator).
     new_active: Option<PlayerId>,
+    /// The robot that just fired a kick this tick (consumed by the orchestrator to
+    /// feed the release forward into possession). Set when a Shoot/Pass kick fires.
+    kick_event: Option<PlayerId>,
 }
 
 impl Default for Driver {
@@ -72,6 +75,7 @@ impl Driver {
             last_status: WaypointStatus::Ongoing,
             engage_ball_pos: None,
             new_active: None,
+            kick_event: None,
         }
     }
 
@@ -97,6 +101,12 @@ impl Driver {
         self.new_active.take()
     }
 
+    /// Consume the "we just kicked" event (the kicker's id) for possession
+    /// feedforward. Set the tick a Shoot/Pass kick fires; cleared on read.
+    pub fn take_kick_event(&mut self) -> Option<PlayerId> {
+        self.kick_event.take()
+    }
+
     /// Reset to idle, dropping any active waypoint.
     pub fn clear(&mut self) {
         self.active_robot = None;
@@ -105,6 +115,7 @@ impl Driver {
         self.last_status = WaypointStatus::Ongoing;
         self.engage_ball_pos = None;
         self.new_active = None;
+        self.kick_event = None;
     }
 
     /// Begin executing a waypoint with the given active robot.
@@ -121,6 +132,7 @@ impl Driver {
         self.last_status = WaypointStatus::Ongoing;
         self.engage_ball_pos = None;
         self.new_active = None;
+        self.kick_event = None;
     }
 
     /// Tick the active robot's skill; returns the waypoint status.
@@ -217,7 +229,12 @@ impl Driver {
                 player.reflex_shoot(*target);
                 player.set_role("shooting");
                 match skill_status {
-                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
+                    SkillStatus::Succeeded => {
+                        // Kick fired: the ball is released. Feed this forward into
+                        // possession so the post-kick replan doesn't re-task us.
+                        self.kick_event = Some(active_id);
+                        WaypointStatus::Succeeded
+                    }
                     SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
                     _ if elapsed > config::SHOOT_TIMEOUT => {
                         WaypointStatus::Failed(FailReason::Timeout)

@@ -227,6 +227,7 @@ impl SideAssignment {
             kicker_status: player.kicker_status,
             id: player.id,
             timestamp: player.timestamp,
+            imu_readings: player.imu_readings,
             handicaps: player.handicaps.clone(),
         }
     }

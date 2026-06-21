@@ -175,7 +175,24 @@ const PlayerStatus: FC<{
             </CollapsibleTrigger>
 
             <CollapsibleContent className="AnimatedCollapsible space-y-1 ml-3 mt-1">
-              <StatusIndicator status={player.imu_status} label="IMU" />
+              <StatusIndicator
+                status={player.imu_status}
+                label="IMU"
+                details={
+                  player.imu_readings
+                    ? {
+                        "θ (x,y,z)": player.imu_readings
+                          .slice(0, 3)
+                          .map((v) => `${v.toFixed(2)} rad`)
+                          .join(", "),
+                        "ω (x,y,z)": player.imu_readings
+                          .slice(3, 6)
+                          .map((v) => `${v.toFixed(2)} rad/s`)
+                          .join(", "),
+                      }
+                    : undefined
+                }
+              />
               <StatusIndicator
                 status={player.kicker_status}
                 label="Kicker"

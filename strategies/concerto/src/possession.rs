@@ -59,6 +59,13 @@ pub fn classify_raw(world: &World) -> RawPossession {
         };
     }
 
+    // A fast ball can't be possessed by proximity — only the breakbeam (above)
+    // can claim a fast-moving ball (a robot genuinely carrying it).
+    let ball_speed = world.ball_velocity().map(|v| v.norm()).unwrap_or(0.0);
+    if ball_speed >= config::POSSESSION_MAX_BALL_SPEED {
+        return RawPossession::Loose;
+    }
+
     // Soft evidence: nearest teammate within possession range.
     if let Some(p) = world.closest_own_player_to(ball_pos) {
         if (p.position - ball_pos).norm() < config::WE_POSSESSION_DIST {
@@ -86,6 +93,10 @@ pub struct PossessionTracker {
     candidate_count: u32,
     last_concrete_ts: f64,
     changed_this_tick: bool,
+    /// The robot whose kick we were just told about (efference copy). While within
+    /// `RELEASE_SUPPRESS_SECS`, its *proximity* re-acquisition of `We` is ignored.
+    released_by: Option<PlayerId>,
+    released_at: f64,
 }
 
 impl Default for PossessionTracker {
@@ -102,6 +113,8 @@ impl PossessionTracker {
             candidate_count: 0,
             last_concrete_ts: 0.0,
             changed_this_tick: false,
+            released_by: None,
+            released_at: 0.0,
         }
     }
 
@@ -131,7 +144,16 @@ impl PossessionTracker {
             }
             RawPossession::We { id, breakbeam } => {
                 self.last_concrete_ts = now;
-                self.accumulate(Possession::We(id), breakbeam);
+                // Suppress proximity re-acquisition by a robot that just kicked
+                // (efference copy). Breakbeam is hard evidence and always passes.
+                let suppressed = !breakbeam
+                    && self.released_by == Some(id)
+                    && now - self.released_at < config::RELEASE_SUPPRESS_SECS;
+                if suppressed {
+                    self.accumulate(Possession::Loose, false);
+                } else {
+                    self.accumulate(Possession::We(id), breakbeam);
+                }
             }
             RawPossession::Opp(id) => {
                 self.last_concrete_ts = now;
@@ -144,6 +166,20 @@ impl PossessionTracker {
         }
 
         self.stable
+    }
+
+    /// Tell the tracker we commanded `kicker` to release the ball (efference copy).
+    ///
+    /// Immediately drops `We(kicker)` — bypassing the loss-debounce, because this
+    /// loss is commanded, not sensed — and opens a short window during which the
+    /// kicker can't re-acquire `We` by proximity (breakbeam still can, so a misfire
+    /// where the ball never left self-corrects within a frame).
+    pub fn notify_release(&mut self, kicker: PlayerId, now: f64) {
+        self.released_by = Some(kicker);
+        self.released_at = now;
+        if self.stable == Possession::We(kicker) {
+            self.commit(Possession::Loose);
+        }
     }
 
     /// Accumulate evidence toward `observed`; commit once it is stable enough.
@@ -250,5 +286,124 @@ mod tests {
         );
         // Past hold window: decay to Loose.
         assert_eq!(t.update(RawPossession::Unknown, 1.0), Possession::Loose);
+    }
+
+    fn world_one_own(ball_pos: Vector2, ball_vel: Vector2, robot_pos: Vector2) -> World {
+        use dies_strategy_protocol::WorldSnapshot;
+        World::new(WorldSnapshot {
+            timestamp: 0.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: ball_pos,
+                velocity: ball_vel,
+                detected: true,
+            }),
+            own_players: vec![PlayerState::new(
+                pid(1),
+                robot_pos,
+                Vector2::new(0.0, 0.0),
+                Angle::from_radians(0.0),
+            )],
+            opp_players: vec![],
+            game_state: GameState::Run,
+            us_operating: true,
+            our_keeper_id: None,
+            freekick_kicker: None,
+        })
+    }
+
+    #[test]
+    fn fast_ball_near_robot_is_not_possessed() {
+        // Robot right on the ball, but ball is rocketing away → Loose, not We.
+        let w = world_one_own(
+            Vector2::new(0.0, 0.0),
+            Vector2::new(3000.0, 0.0),
+            Vector2::new(50.0, 0.0),
+        );
+        assert_eq!(classify_raw(&w), RawPossession::Loose);
+    }
+
+    #[test]
+    fn slow_ball_near_robot_is_we_by_proximity() {
+        let w = world_one_own(
+            Vector2::new(0.0, 0.0),
+            Vector2::new(50.0, 0.0),
+            Vector2::new(50.0, 0.0),
+        );
+        assert_eq!(
+            classify_raw(&w),
+            RawPossession::We {
+                id: pid(1),
+                breakbeam: false,
+            }
+        );
+    }
+
+    #[test]
+    fn notify_release_drops_we_immediately() {
+        let mut t = PossessionTracker::new();
+        t.update(
+            RawPossession::We {
+                id: pid(1),
+                breakbeam: true,
+            },
+            0.0,
+        );
+        t.notify_release(pid(1), 0.1);
+        assert_eq!(t.possession(), Possession::Loose);
+        assert!(t.changed_this_tick());
+    }
+
+    #[test]
+    fn release_suppresses_proximity_but_not_breakbeam() {
+        let mut t = PossessionTracker::new();
+        t.update(
+            RawPossession::We {
+                id: pid(1),
+                breakbeam: true,
+            },
+            0.0,
+        );
+        t.notify_release(pid(1), 0.1);
+
+        // Proximity re-acquire by the kicker within the window is ignored.
+        for i in 0..(config::DEBOUNCE_FRAMES + 2) {
+            let p = t.update(
+                RawPossession::We {
+                    id: pid(1),
+                    breakbeam: false,
+                },
+                0.1 + i as f64 * 0.005,
+            );
+            assert_eq!(p, Possession::Loose);
+        }
+        // But a breakbeam re-acquire (ball never left / real re-catch) overrides.
+        let p = t.update(
+            RawPossession::We {
+                id: pid(1),
+                breakbeam: true,
+            },
+            0.13,
+        );
+        assert_eq!(p, Possession::We(pid(1)));
+    }
+
+    #[test]
+    fn suppression_expires() {
+        let mut t = PossessionTracker::new();
+        t.notify_release(pid(1), 0.0);
+        // After the window, proximity We re-acquires (debounced as normal).
+        let mut last = Possession::Loose;
+        for i in 0..config::DEBOUNCE_FRAMES {
+            last = t.update(
+                RawPossession::We {
+                    id: pid(1),
+                    breakbeam: false,
+                },
+                1.0 + i as f64 * 0.016,
+            );
+        }
+        assert_eq!(last, Possession::We(pid(1)));
     }
 }

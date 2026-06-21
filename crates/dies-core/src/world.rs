@@ -248,6 +248,7 @@ pub struct PlayerData {
     /// Whether the breakbeam sensor detected a ball. Only available for own players.
     pub breakbeam_ball_detected: bool,
     pub imu_status: Option<SysStatus>,
+    pub imu_readings: Option<[f32; 6]>,
     pub kicker_status: Option<SysStatus>,
 
     pub handicaps: HashSet<Handicap>,
@@ -272,6 +273,7 @@ impl PlayerData {
             imu_status: None,
             breakbeam_ball_detected: false,
             kicker_status: None,
+            imu_readings: None,
             handicaps: HashSet::new(),
         }
     }
@@ -822,6 +824,7 @@ pub fn mock_world_data() -> WorldData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
+            imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
             handicaps: HashSet::new(),
         }],
@@ -841,6 +844,7 @@ pub fn mock_world_data() -> WorldData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
+            imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
             handicaps: HashSet::new(),
         }],
@@ -883,6 +887,7 @@ pub fn mock_team_data() -> TeamData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
+            imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
             handicaps: HashSet::new(),
         }],
@@ -902,6 +907,7 @@ pub fn mock_team_data() -> TeamData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
+            imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
             handicaps: HashSet::new(),
         }],
