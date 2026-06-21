@@ -20,6 +20,15 @@ fn block_diag_3(a: &SMatrix<f64, 2, 2>) -> SMatrix<f64, 6, 6> {
     result
 }
 
+/// Create a 6x6 block diagonal matrix from two 3x3 blocks (two axes, each with a
+/// 3-element [pos, vel, acc] sub-state). Used by the constant-acceleration model.
+fn block_diag2_3x3(a: &SMatrix<f64, 3, 3>) -> SMatrix<f64, 6, 6> {
+    let mut result = SMatrix::<f64, 6, 6>::zeros();
+    result.fixed_view_mut::<3, 3>(0, 0).copy_from(a);
+    result.fixed_view_mut::<3, 3>(3, 3).copy_from(a);
+    result
+}
+
 pub trait MatrixCreator<const D1: usize, const D2: usize>: Debug + Send {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, D1, D2>;
 }
@@ -116,6 +125,50 @@ impl MatrixCreator<6, 6> for ULMotionModel {
     fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 6, 6> {
         let m = SMatrix::<f64, 2, 2>::new(1.0, delta_t, 0.0, 1.0);
         block_diag_3(&m)
+    }
+}
+
+#[derive(Debug)]
+pub struct CAMotionModel;
+
+/// 2D constant-acceleration transition. Per axis, the [pos, vel, acc] sub-state
+/// evolves as pos += vel·dt + acc·dt²/2, vel += acc·dt, acc constant.
+impl MatrixCreator<6, 6> for CAMotionModel {
+    fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 6, 6> {
+        let m = SMatrix::<f64, 3, 3>::new(
+            1.0,
+            delta_t,
+            delta_t.powi(2) / 2.0,
+            0.0,
+            1.0,
+            delta_t,
+            0.0,
+            0.0,
+            1.0,
+        );
+        block_diag2_3x3(&m)
+    }
+}
+
+#[derive(Debug)]
+pub struct WhiteNoiseJerk;
+
+/// Process noise for the constant-acceleration model: continuous white noise on
+/// jerk (the Wiener-process-acceleration / "white noise jerk" Q, per axis).
+impl MatrixCreator<6, 6> for WhiteNoiseJerk {
+    fn create_matrix(&self, delta_t: f64) -> SMatrix<f64, 6, 6> {
+        let m = SMatrix::<f64, 3, 3>::new(
+            delta_t.powi(5) / 20.0,
+            delta_t.powi(4) / 8.0,
+            delta_t.powi(3) / 6.0,
+            delta_t.powi(4) / 8.0,
+            delta_t.powi(3) / 3.0,
+            delta_t.powi(2) / 2.0,
+            delta_t.powi(3) / 6.0,
+            delta_t.powi(2) / 2.0,
+            delta_t,
+        );
+        block_diag2_3x3(&m)
     }
 }
 

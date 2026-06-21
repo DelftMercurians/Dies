@@ -533,6 +533,19 @@ impl WorldTracker {
         }
     }
 
+    /// Feed a player's latest commanded velocity (world/vision frame, mm/s) to its
+    /// tracker for command feedforward. No-op if the player has no tracker yet or
+    /// feedforward is disabled in settings.
+    pub fn set_player_command(&mut self, team: TeamColor, id: PlayerId, vel_world: Vector2) {
+        let team_tracker = match team {
+            TeamColor::Blue => &mut self.blue_team,
+            TeamColor::Yellow => &mut self.yellow_team,
+        };
+        if let Some(pt) = team_tracker.players.get_mut(&id) {
+            pt.set_command(vel_world);
+        }
+    }
+
     /// Get the detected side assignment, if available.
     pub fn get_side_assignment(&self) -> Option<&SideAssignment> {
         self.side_assignment.as_ref()

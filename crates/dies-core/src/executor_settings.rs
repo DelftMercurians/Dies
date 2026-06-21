@@ -124,10 +124,33 @@ pub struct TrackerSettings {
     /// half-extent. Defaults to the full field.
     pub field_mask: FieldMask,
 
-    /// Process noise for the player position/velocity Kalman filter (mm²/s).
+    /// Constant-velocity process noise (white-noise *acceleration* PSD). Used when
+    /// `player_use_acceleration` is false.
     pub player_unit_transition_var: f64,
-    /// Measurement noise for the player position Kalman filter (mm²).
+    /// Constant-acceleration process noise (white-noise *jerk* PSD). Used when
+    /// `player_use_acceleration` is true. On a totally different numeric scale from
+    /// the CV value, which is why it is a separate field — toggling the model must
+    /// not silently leave the wrong process-noise magnitude in place.
+    #[serde(default = "default_player_ca_var")]
+    pub player_ca_unit_transition_var: f64,
+    /// Measurement noise for the player position Kalman filter (mm²). Should match
+    /// the real vision noise floor (~0.4 mm² measured on hardware).
     pub player_measurement_var: f64,
+    /// Use a constant-acceleration motion model (state x,vx,ax,…) for players
+    /// instead of constant-velocity. The CA model anticipates sustained
+    /// acceleration, cutting the onset/transient velocity lag in hard maneuvers.
+    #[serde(default = "default_player_use_acceleration")]
+    pub player_use_acceleration: bool,
+    /// Feed the commanded velocity into the filter's predict step as a first-order
+    /// lag toward the setpoint (feedforward). Reduces lag further during commanded
+    /// maneuvers. EXPERIMENTAL — needs field tuning of `player_command_tau`.
+    #[serde(default)]
+    pub player_use_command_feedforward: bool,
+    /// First-order time constant (s) for command feedforward: the predicted velocity
+    /// relaxes toward the commanded velocity with this τ. ~robot velocity-loop
+    /// response time. Only used when `player_use_command_feedforward` is true.
+    #[serde(default = "default_player_command_tau")]
+    pub player_command_tau: f64,
     /// EWMA factor for the player yaw low-pass filter — 0 = no filtering,
     /// 1 = freeze.
     pub player_yaw_lpf_alpha: f64,
@@ -138,11 +161,30 @@ pub struct TrackerSettings {
     pub ball_measurement_var: f64,
 }
 
+fn default_player_ca_var() -> f64 {
+    1.0e6
+}
+
+fn default_player_use_acceleration() -> bool {
+    true
+}
+
+fn default_player_command_tau() -> f64 {
+    0.15
+}
+
 impl Default for TrackerSettings {
     fn default() -> Self {
         Self {
-            player_unit_transition_var: 95.75,
-            player_measurement_var: 0.01,
+            // Tuned against 2026-06-13 logs (replay-harness Pareto): R≈measured
+            // vision noise (0.4 mm²). CA model on by default — it eliminates the
+            // hard-maneuver onset lag; CV values retained for toggling back.
+            player_unit_transition_var: 3000.0,
+            player_ca_unit_transition_var: default_player_ca_var(),
+            player_measurement_var: 0.4,
+            player_use_acceleration: true,
+            player_use_command_feedforward: false,
+            player_command_tau: default_player_command_tau(),
             player_yaw_lpf_alpha: 0.15,
             ball_unit_transition_var: 20.48,
             ball_measurement_var: 0.01,

@@ -2,7 +2,8 @@ use na::{SMatrix, SVector};
 use nalgebra::{self as na};
 
 use crate::filter::matrix_gen::{
-    GravityControl, MatrixCreator, Piecewise1stOrder, ULMotionModel, WhiteNoise1stOrder,
+    CAMotionModel, GravityControl, MatrixCreator, Piecewise1stOrder, ULMotionModel,
+    WhiteNoise1stOrder, WhiteNoiseJerk,
 };
 
 #[derive(Debug)]
@@ -74,6 +75,16 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         true
     }
 
+    /// The time of the last update (seconds).
+    pub fn last_t(&self) -> f64 {
+        self.t
+    }
+
+    /// The current state estimate.
+    pub fn state(&self) -> SVector<f64, SS> {
+        self.x
+    }
+
     /// update the filter with a new measurement
     /// return None if the measurement is old
     /// return the priori state if the measurement is bad
@@ -84,6 +95,20 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         newt: f64,
         use_gate: bool,
     ) -> Option<SVector<f64, SS>> {
+        self.update_with_control(z, newt, use_gate, None)
+    }
+
+    /// As [`Self::update`], but adds an extra additive control increment to the
+    /// predicted state (already integrated over the step by the caller). Used for
+    /// command feedforward, where the caller pushes the predicted velocity toward
+    /// the commanded setpoint.
+    pub fn update_with_control(
+        &mut self,
+        z: SVector<f64, OS>,
+        newt: f64,
+        use_gate: bool,
+        control_increment: Option<&SVector<f64, SS>>,
+    ) -> Option<SVector<f64, SS>> {
         let dt = newt - self.t;
         if dt <= 0.0 {
             return None;
@@ -93,6 +118,9 @@ impl<const OS: usize, const SS: usize> Kalman<OS, SS> {
         let mut x = transition_matrix * self.x;
         if let Some(control) = &self.control {
             x += control.create_matrix(dt);
+        }
+        if let Some(ci) = control_increment {
+            x += ci;
         }
         let r = z - self.transformation_matrix * x;
         if use_gate && !self.gating(r.clone_owned()) {
@@ -186,6 +214,75 @@ impl MaybeKalman<2, 4> {
         } = self
         {
             *self = Self::Init(Kalman::new_player_filter(
+                *init_var,
+                *unit_transition_var,
+                *measurement_var,
+                init_pos,
+                int_time,
+            ))
+        }
+    }
+}
+
+impl Kalman<2, 6> {
+    /// Create a new constant-acceleration Kalman filter for a player.
+    /// The state is `(x, vx, ax, y, vy, ay)`; only position is measured.
+    /// White-noise-jerk process model (acceleration random-walks).
+    pub fn new_player_filter_ca(
+        init_var: f64,
+        unit_transition_var: f64,
+        measurement_var: f64,
+        init_pos: SVector<f64, 6>,
+        int_time: f64,
+    ) -> Self {
+        Kalman {
+            var: unit_transition_var,
+            t: int_time,
+            transition_matrix: Box::new(CAMotionModel),
+            transformation_matrix: SMatrix::<f64, 2, 6>::new(
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, // x
+                0.0, 0.0, 0.0, 1.0, 0.0, 0.0, // y
+            ),
+            process_noise: Box::new(WhiteNoiseJerk),
+            measurement_noise: SMatrix::<f64, 2, 2>::new(
+                measurement_var,
+                0.0,
+                0.0,
+                measurement_var,
+            ),
+            posteriori_covariance: SMatrix::<f64, 6, 6>::identity() * init_var,
+            x: init_pos,
+            control: None,
+        }
+    }
+
+    /// Update the unit transition variance and measurement variance.
+    pub fn update_settings(&mut self, unit_transition_var: f64, measurement_var: f64) {
+        let mut new_filter =
+            Kalman::new_player_filter_ca(0.1, unit_transition_var, measurement_var, self.x, self.t);
+        new_filter.posteriori_covariance = self.posteriori_covariance;
+        *self = new_filter;
+    }
+
+    /// Hard-reset to a measured position with zero velocity and acceleration.
+    /// See [`Kalman<2, 4>::reset_to`] for the rationale (teleport / relabel).
+    pub fn reset_to(&mut self, x: f64, y: f64, t: f64) {
+        self.x = SVector::<f64, 6>::new(x, 0.0, 0.0, y, 0.0, 0.0);
+        self.posteriori_covariance = SMatrix::<f64, 6, 6>::identity() * 100.0;
+        self.t = t;
+    }
+}
+
+impl MaybeKalman<2, 6> {
+    /// Initialize the constant-acceleration filter if it is not initialized.
+    pub fn init(&mut self, init_pos: SVector<f64, 6>, int_time: f64) {
+        if let MaybeKalman::Uninit {
+            init_var,
+            unit_transition_var,
+            measurement_var,
+        } = self
+        {
+            *self = Self::Init(Kalman::new_player_filter_ca(
                 *init_var,
                 *unit_transition_var,
                 *measurement_var,

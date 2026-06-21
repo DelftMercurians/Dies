@@ -326,10 +326,41 @@ export interface TrackerSettings {
 	 * half-extent. Defaults to the full field.
 	 */
 	field_mask: FieldMask;
-	/** Process noise for the player position/velocity Kalman filter (mm²/s). */
+	/**
+	 * Constant-velocity process noise (white-noise *acceleration* PSD). Used when
+	 * `player_use_acceleration` is false.
+	 */
 	player_unit_transition_var: number;
-	/** Measurement noise for the player position Kalman filter (mm²). */
+	/**
+	 * Constant-acceleration process noise (white-noise *jerk* PSD). Used when
+	 * `player_use_acceleration` is true. On a totally different numeric scale from
+	 * the CV value, which is why it is a separate field — toggling the model must
+	 * not silently leave the wrong process-noise magnitude in place.
+	 */
+	player_ca_unit_transition_var: number;
+	/**
+	 * Measurement noise for the player position Kalman filter (mm²). Should match
+	 * the real vision noise floor (~0.4 mm² measured on hardware).
+	 */
 	player_measurement_var: number;
+	/**
+	 * Use a constant-acceleration motion model (state x,vx,ax,…) for players
+	 * instead of constant-velocity. The CA model anticipates sustained
+	 * acceleration, cutting the onset/transient velocity lag in hard maneuvers.
+	 */
+	player_use_acceleration: boolean;
+	/**
+	 * Feed the commanded velocity into the filter's predict step as a first-order
+	 * lag toward the setpoint (feedforward). Reduces lag further during commanded
+	 * maneuvers. EXPERIMENTAL — needs field tuning of `player_command_tau`.
+	 */
+	player_use_command_feedforward?: boolean;
+	/**
+	 * First-order time constant (s) for command feedforward: the predicted velocity
+	 * relaxes toward the commanded velocity with this τ. ~robot velocity-loop
+	 * response time. Only used when `player_use_command_feedforward` is true.
+	 */
+	player_command_tau: number;
 	/**
 	 * EWMA factor for the player yaw low-pass filter — 0 = no filtering,
 	 * 1 = freeze.

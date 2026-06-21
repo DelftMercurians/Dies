@@ -160,6 +160,26 @@ impl TeamMap {
         commands
     }
 
+    /// Per-player world-frame velocity setpoints from both controllers, for
+    /// command feedforward into the tracker. World frame == vision/absolute frame
+    /// (the controllers' inputs are already transformed strategy→world).
+    fn target_velocities_global(&self) -> Vec<(TeamColor, PlayerId, dies_core::Vector2)> {
+        let mut out = Vec::new();
+        for (color, ctrl) in [
+            (TeamColor::Blue, &self.blue_team),
+            (TeamColor::Yellow, &self.yellow_team),
+        ] {
+            if let Some(ctrl) = ctrl {
+                out.extend(
+                    ctrl.target_velocities_global()
+                        .into_iter()
+                        .map(|(id, v)| (color, id, v)),
+                );
+            }
+        }
+        out
+    }
+
     /// Get list of active team colors
     fn active_teams(&self) -> Vec<TeamColor> {
         let mut teams = Vec::new();
@@ -1148,6 +1168,17 @@ impl Executor {
             manual_override.insert(*k, v.clone());
         }
         self.team_controllers.update(&world_data, manual_override);
+
+        // Feed this tick's velocity setpoints to the tracker for command
+        // feedforward (consumed on the next vision update). The controllers run in
+        // team-relative coordinates, but the tracker's filter runs in vision/
+        // absolute coordinates — untransform each setpoint back to absolute (the
+        // x-flip is its own inverse). A no-op unless `player_use_command_feedforward`.
+        let side_assignment = self.team_controllers.side_assignment;
+        for (color, id, vel) in self.team_controllers.target_velocities_global() {
+            let vel_abs = side_assignment.transform_vec2(color, &vel);
+            self.tracker.set_player_command(color, id, vel_abs);
+        }
 
         // Record the frame after the controllers (and strategy) have produced
         // this tick's debug output. The debug map is snapshotted here so it is
