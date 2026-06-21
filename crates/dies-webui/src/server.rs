@@ -470,7 +470,6 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         tokio::spawn(async move { start_webserver(config.port, state, shutdown_rx).await });
 
     // Graceful shutdown
-    log::info!("Shutdown: joining executor task");
     executor_task
         .await
         .expect("Shutting down executor task failed");

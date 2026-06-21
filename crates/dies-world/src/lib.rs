@@ -330,9 +330,6 @@ impl WorldTracker {
                     .start_ball_movement_check(ball.position, 10);
             }
         }
-        // else {
-        //     log::error!("Ball not detected, cannot update game state");
-        // }
 
         self.blue_team_yellow_cards = data.blue.red_cards.unwrap_or_default() as usize
             + data

@@ -135,48 +135,17 @@ impl CoordinateTransformer {
         }
     }
 
-    /// Transform a skill command from strategy coordinates to world coordinates.
+    /// Pass a skill command through unchanged, keeping its coordinates in the
+    /// team-relative frame.
+    ///
+    /// Skill commands are consumed by the team controller, which runs entirely
+    /// in team-relative coordinates and applies the single authoritative
+    /// team→world untransform (`PlayerCmdUntransformer`) when emitting the final
+    /// robot command. Flipping coordinates here as well would apply the per-color
+    /// x-flip twice (`sign² = 1`), collapsing both teams onto the same side — so
+    /// this is a deliberate identity on positions/headings.
     pub fn transform_skill_command(&self, cmd: &SkillCommand) -> SkillCommand {
-        match cmd {
-            SkillCommand::GoToPos { position, heading } => SkillCommand::GoToPos {
-                position: self.strategy_to_world(*position),
-                heading: heading.map(|h| self.angle_strategy_to_world(h)),
-            },
-            SkillCommand::Dribble {
-                target_pos,
-                target_heading,
-            } => SkillCommand::Dribble {
-                target_pos: self.strategy_to_world(*target_pos),
-                target_heading: self.angle_strategy_to_world(*target_heading),
-            },
-            SkillCommand::PickupBall { target_heading } => SkillCommand::PickupBall {
-                target_heading: self.angle_strategy_to_world(*target_heading),
-            },
-            SkillCommand::Shoot { target } => SkillCommand::Shoot {
-                target: self.strategy_to_world(*target),
-            },
-            SkillCommand::Receive {
-                from_pos,
-                target_pos,
-                capture_limit,
-                cushion,
-            } => SkillCommand::Receive {
-                from_pos: self.strategy_to_world(*from_pos),
-                target_pos: self.strategy_to_world(*target_pos),
-                capture_limit: *capture_limit,
-                cushion: *cushion,
-            },
-            SkillCommand::Pass {
-                partner,
-                role,
-                target_hint,
-            } => SkillCommand::Pass {
-                partner: *partner,
-                role: *role,
-                target_hint: target_hint.map(|p| self.strategy_to_world(p)),
-            },
-            SkillCommand::Stop => SkillCommand::Stop,
-        }
+        cmd.clone()
     }
 
     /// Transform a pass result from world coordinates back to strategy
@@ -283,9 +252,13 @@ mod tests {
     }
 
     #[test]
-    fn test_transform_skill_command_go_to_pos() {
+    fn test_transform_skill_command_keeps_team_relative() {
+        // Even for a team whose attacking direction is -x (sign = -1), skill
+        // commands must pass through unchanged: the team controller owns the
+        // single team→world untransform. Flipping here would double-apply it.
         let transformer =
             CoordinateTransformer::new(TeamColor::Blue, SideAssignment::BlueOnPositive);
+        assert_eq!(transformer.direction_sign(), -1.0);
 
         let cmd = SkillCommand::GoToPos {
             position: Vector2::new(1000.0, 500.0),
@@ -296,9 +269,8 @@ mod tests {
 
         match transformed {
             SkillCommand::GoToPos { position, heading } => {
-                assert_eq!(position, Vector2::new(-1000.0, 500.0));
-                // 0 radians flipped -> PI radians
-                assert!(heading.is_some());
+                assert_eq!(position, Vector2::new(1000.0, 500.0));
+                assert_eq!(heading, Some(Angle::from_radians(0.0)));
             }
             _ => panic!("Expected GoToPos"),
         }
