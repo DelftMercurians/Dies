@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 use dies_core::{
     Angle, Handicap, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2,
@@ -8,8 +8,6 @@ use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
 
 use crate::filter::{AngleLowPassFilter, MaybeKalman};
-
-const BREAKBEAM_WINDOW: usize = 5;
 
 /// Upper bound on plausible robot speed (mm/s) used for teleport detection. Well
 /// above the controller cap (~3 m/s) and the simulator's max (6 m/s), so real
@@ -179,9 +177,6 @@ pub struct PlayerTracker {
 
     velocity_samples: Vec<Vector2>,
 
-    /// How many positive breakbeam detections have been received in the past
-    breakbeam_detections: VecDeque<usize>,
-
     pub is_gone: bool,
     rolling_control: f64,
     rolling_vision: f64,
@@ -230,7 +225,6 @@ impl PlayerTracker {
             velocity_samples: Vec::new(),
             last_feedback: None,
             last_detection: None,
-            breakbeam_detections: VecDeque::with_capacity(BREAKBEAM_WINDOW),
             is_gone: false,
             last_feedback_time: None,
             rolling_vision: 1.0,
@@ -420,13 +414,6 @@ impl PlayerTracker {
             }
             self.is_controlled = true; // Mark as controlled when we receive feedback
             self.last_feedback_time = Some(time);
-            if let Some(breakbeam) = feedback.breakbeam_ball_detected {
-                self.breakbeam_detections.push_back(breakbeam as usize);
-                if self.breakbeam_detections.len() > BREAKBEAM_WINDOW {
-                    self.breakbeam_detections.pop_front();
-                }
-            }
-
             self.last_feedback = Some(*feedback);
         }
     }
@@ -451,12 +438,12 @@ impl PlayerTracker {
         self.last_command = Some(vel_vision);
     }
 
-    /// Returns filtered breakbeam detection status.
-    /// Returns true if there's at least one detection within the buffer.
-    fn get_filtered_breakbeam_detection(&self) -> bool {
-        self.breakbeam_detections
-            .iter()
-            .any(|&detection| detection != 0)
+    /// Latest raw breakbeam reading from feedback (false if none). Temporal
+    /// conditioning now lives in the unified possession tracker, not here.
+    fn raw_breakbeam(&self) -> bool {
+        self.last_feedback
+            .and_then(|f| f.breakbeam_ball_detected)
+            .unwrap_or(false)
     }
 
     pub fn get(&self) -> Option<PlayerData> {
@@ -475,7 +462,8 @@ impl PlayerTracker {
                 kicker_cap_voltage: f.kicker_cap_voltage,
                 kicker_temp: f.kicker_temp,
                 pack_voltages: f.pack_voltages,
-                breakbeam_ball_detected: self.get_filtered_breakbeam_detection(),
+                breakbeam_ball_detected: self.raw_breakbeam(),
+                has_ball: false,
                 imu_status: f.imu_status,
                 imu_readings: f.imu_readings,
                 kicker_status: f.kicker_status,
@@ -496,7 +484,8 @@ impl PlayerTracker {
             kicker_cap_voltage: self.last_feedback.and_then(|f| f.kicker_cap_voltage),
             kicker_temp: self.last_feedback.and_then(|f| f.kicker_temp),
             pack_voltages: self.last_feedback.and_then(|f| f.pack_voltages),
-            breakbeam_ball_detected: self.get_filtered_breakbeam_detection(),
+            breakbeam_ball_detected: self.raw_breakbeam(),
+            has_ball: false,
             imu_status: self.last_feedback.and_then(|f| f.imu_status),
             imu_readings: self.last_feedback.and_then(|f| f.imu_readings),
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),

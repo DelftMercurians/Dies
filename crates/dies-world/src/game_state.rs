@@ -4,13 +4,16 @@ use dies_core::{
     GameState, PlayerData, PlayerId, TeamColor, TeamPlayerId, Vector2, Vector3, WorldData,
     BALL_RADIUS, PLAYER_RADIUS,
 };
-use dies_protos::ssl_gc_referee_message::{referee::Command, Referee};
+use dies_protos::ssl_gc_referee_message::{
+    referee::{Command, Stage},
+    Referee,
+};
 
 use crate::BallData;
 
 const FREEKICK_TIMEOUT_SECS: u64 = 10;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct GameStateTracker {
     /// Game state in vision coordinates
     game_state: GameState,
@@ -30,6 +33,17 @@ pub struct GameStateTracker {
     freekick_start_time: Option<Instant>,
     blue_team_keeper_id: Option<PlayerId>,
     yellow_team_keeper_id: Option<PlayerId>,
+
+    // --- Enriched referee detail, captured every referee message ---
+    stage: Option<Stage>,
+    /// Seconds left in the stage at the moment it was captured.
+    stage_time_left_s: Option<f64>,
+    /// Seconds remaining for the current action at the moment it was captured.
+    action_time_remaining_s: Option<f64>,
+    /// When the time-remaining values above were captured, for interpolation.
+    referee_capture: Option<Instant>,
+    next_command: Option<Command>,
+    status_message: Option<String>,
 }
 
 impl GameStateTracker {
@@ -49,11 +63,38 @@ impl GameStateTracker {
             freekick_start_time: None,
             blue_team_keeper_id: None,
             yellow_team_keeper_id: None,
+            stage: None,
+            stage_time_left_s: None,
+            action_time_remaining_s: None,
+            referee_capture: None,
+            next_command: None,
+            status_message: None,
         }
     }
 
     pub fn update(&mut self, data: &Referee) -> GameState {
         let command = data.command();
+
+        // Capture the per-message referee detail (these change on every packet,
+        // independent of command transitions, so do it before the early return).
+        self.stage = Some(data.stage());
+        self.stage_time_left_s = data
+            .stage_time_left
+            .map(|us| us as f64 / 1_000_000.0);
+        self.action_time_remaining_s = data
+            .current_action_time_remaining
+            .map(|us| us as f64 / 1_000_000.0);
+        self.next_command = if data.has_next_command() {
+            Some(data.next_command())
+        } else {
+            None
+        };
+        self.status_message = if data.has_status_message() {
+            Some(data.status_message().to_string())
+        } else {
+            None
+        };
+        self.referee_capture = Some(Instant::now());
 
         if self.last_cmd == Some(command) {
             return self.game_state;
@@ -143,6 +184,40 @@ impl GameStateTracker {
 
     pub fn get_operator_is_blue(&self) -> Option<bool> {
         self.operator_is_blue
+    }
+
+    /// The coarse game stage as a display string, if known.
+    pub fn get_stage_display(&self) -> Option<String> {
+        self.stage.map(|s| stage_display(s).to_string())
+    }
+
+    /// Seconds left in the stage, interpolated to the current instant.
+    pub fn get_stage_time_left(&self) -> Option<f64> {
+        self.interpolate(self.stage_time_left_s)
+    }
+
+    /// Seconds remaining for the current action (free kick / placement /
+    /// kickoff), interpolated to the current instant. Can be negative.
+    pub fn get_action_time_remaining(&self) -> Option<f64> {
+        self.interpolate(self.action_time_remaining_s)
+    }
+
+    pub fn get_next_command_display(&self) -> Option<String> {
+        self.next_command.map(command_display)
+    }
+
+    pub fn get_status_message(&self) -> Option<String> {
+        self.status_message.clone()
+    }
+
+    /// Subtract the time elapsed since the last referee capture from a captured
+    /// countdown value, so the UI shows a smooth tick between referee packets.
+    fn interpolate(&self, captured: Option<f64>) -> Option<f64> {
+        match (captured, self.referee_capture) {
+            (Some(v), Some(t)) => Some(v - t.elapsed().as_secs_f64()),
+            (Some(v), None) => Some(v),
+            _ => None,
+        }
     }
 
     pub fn start_ball_movement_check(&mut self, ball_pos: Vector3, timeout: u64) {
@@ -321,6 +396,51 @@ impl GameStateTracker {
             }
         }
     }
+}
+
+/// Human-readable label for a referee stage.
+fn stage_display(stage: Stage) -> &'static str {
+    match stage {
+        Stage::NORMAL_FIRST_HALF_PRE => "Pre first half",
+        Stage::NORMAL_FIRST_HALF => "First half",
+        Stage::NORMAL_HALF_TIME => "Half time",
+        Stage::NORMAL_SECOND_HALF_PRE => "Pre second half",
+        Stage::NORMAL_SECOND_HALF => "Second half",
+        Stage::EXTRA_TIME_BREAK => "Extra time break",
+        Stage::EXTRA_FIRST_HALF_PRE => "Pre extra first half",
+        Stage::EXTRA_FIRST_HALF => "Extra first half",
+        Stage::EXTRA_HALF_TIME => "Extra half time",
+        Stage::EXTRA_SECOND_HALF_PRE => "Pre extra second half",
+        Stage::EXTRA_SECOND_HALF => "Extra second half",
+        Stage::PENALTY_SHOOTOUT_BREAK => "Shootout break",
+        Stage::PENALTY_SHOOTOUT => "Penalty shootout",
+        Stage::POST_GAME => "Post game",
+    }
+}
+
+/// Human-readable label for a referee command ("what's next").
+pub fn command_display(command: Command) -> String {
+    match command {
+        Command::HALT => "Halt",
+        Command::STOP => "Stop",
+        Command::NORMAL_START => "Normal start",
+        Command::FORCE_START => "Force start",
+        Command::PREPARE_KICKOFF_YELLOW => "Kick-off (Yellow)",
+        Command::PREPARE_KICKOFF_BLUE => "Kick-off (Blue)",
+        Command::PREPARE_PENALTY_YELLOW => "Penalty (Yellow)",
+        Command::PREPARE_PENALTY_BLUE => "Penalty (Blue)",
+        Command::DIRECT_FREE_YELLOW => "Free kick (Yellow)",
+        Command::DIRECT_FREE_BLUE => "Free kick (Blue)",
+        Command::INDIRECT_FREE_YELLOW => "Indirect free kick (Yellow)",
+        Command::INDIRECT_FREE_BLUE => "Indirect free kick (Blue)",
+        Command::TIMEOUT_YELLOW => "Timeout (Yellow)",
+        Command::TIMEOUT_BLUE => "Timeout (Blue)",
+        Command::GOAL_YELLOW => "Goal (Yellow)",
+        Command::GOAL_BLUE => "Goal (Blue)",
+        Command::BALL_PLACEMENT_YELLOW => "Ball placement (Yellow)",
+        Command::BALL_PLACEMENT_BLUE => "Ball placement (Blue)",
+    }
+    .to_string()
 }
 
 #[cfg(test)]

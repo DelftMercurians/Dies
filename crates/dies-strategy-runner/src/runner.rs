@@ -362,6 +362,8 @@ mod tests {
             us_operating: true,
             our_keeper_id: None,
             freekick_kicker: None,
+            possession: dies_strategy_protocol::Possession::Loose,
+            possession_stale: false,
         };
 
         let ctx = TeamContext::new(snapshot, HashMap::new(), HashMap::new(), HashMap::new());

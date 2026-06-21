@@ -777,6 +777,11 @@ fn build_world(
         yellow_team_yellow_cards: 0,
         blue_team_keeper_id: None,
         yellow_team_keeper_id: None,
+        stage: None,
+        stage_time_left: None,
+        action_time_remaining: None,
+        next_command: None,
+        status_message: None,
     };
 
     WorldData {
@@ -796,6 +801,8 @@ fn build_world(
         // skill_settings live in the settings_changes stream; replay uses the
         // default (the field view does not depend on it).
         skill_settings: SkillSettings::default(),
+        // Possession is recomputed live, not stored; replay defaults it.
+        possession: Default::default(),
     }
 }
 

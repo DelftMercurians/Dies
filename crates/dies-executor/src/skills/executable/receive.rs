@@ -66,8 +66,7 @@ impl ExecutableSkill for ReceiveSkill {
     }
 
     fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
-        let breakbeam = ctx.player.breakbeam_ball_detected;
-        if breakbeam {
+        if ctx.player.has_ball {
             return SkillProgress::success();
         }
 

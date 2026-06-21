@@ -46,6 +46,27 @@ pub struct WorldSnapshot {
     /// The player who performed a free kick or kickoff (for double-touch tracking).
     /// Only `Some` until another player touches the ball.
     pub freekick_kicker: Option<PlayerId>,
+
+    /// Unified ball-possession metric, team-relative (`We`/`Opp`/`Loose`/`Contested`).
+    pub possession: Possession,
+
+    /// Whether the possession belief is currently being coasted through a
+    /// vision/contact dropout (held, not backed by a fresh observation).
+    pub possession_stale: bool,
+}
+
+/// Who controls the ball, from this team's perspective.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Possession {
+    /// Nobody clearly controls the ball.
+    #[default]
+    Loose,
+    /// One of our robots controls the ball.
+    We(PlayerId),
+    /// An opponent controls the ball.
+    Opp(PlayerId),
+    /// Multiple robots are equally plausible owners; can't be disambiguated.
+    Contested,
 }
 
 /// Ball state in the world.
@@ -259,6 +280,8 @@ mod tests {
             us_operating: true,
             our_keeper_id: Some(PlayerId::new(0)),
             freekick_kicker: None,
+            possession: Possession::We(PlayerId::new(1)),
+            possession_stale: false,
         };
 
         let encoded = bincode::serialize(&snapshot).unwrap();

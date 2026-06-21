@@ -3,7 +3,7 @@ use typeshare::typeshare;
 
 use crate::{PlayerId, TeamColor, TeamStrategyParams};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[typeshare]
 pub struct TeamPlayerId {
     pub team_color: TeamColor,

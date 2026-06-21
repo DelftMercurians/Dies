@@ -115,6 +115,12 @@ impl PlayerController {
         self.id
     }
 
+    /// Whether this controller will emit a kick on this tick's `command()`. Used
+    /// as an efference copy for the possession metric.
+    pub fn is_kicking(&self) -> bool {
+        matches!(self.kicker, KickerState::Kicking)
+    }
+
     /// Last computed velocity setpoint in **global** frame (mm/s). Reflects the
     /// path-follower / ORCA / manual-velocity output from the most recent
     /// `update`.

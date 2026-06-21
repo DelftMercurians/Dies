@@ -133,6 +133,7 @@ impl SideAssignment {
                 TeamColor::Yellow => world_data.ball_on_blue_side,
             },
             skill_settings: world_data.skill_settings.clone(),
+            possession: world_data.possession.clone(),
             kicked_ball: None,
             // world_data
             //     .autoref_info
@@ -223,6 +224,7 @@ impl SideAssignment {
             kicker_temp: player.kicker_temp,
             pack_voltages: player.pack_voltages,
             breakbeam_ball_detected: player.breakbeam_ball_detected,
+            has_ball: player.has_ball,
             imu_status: player.imu_status,
             kicker_status: player.kicker_status,
             id: player.id,

@@ -12,17 +12,19 @@ mod ball;
 mod filter;
 mod game_state;
 mod player;
+mod possession;
 
 use ball::BallTracker;
 pub use dies_core::{
     BallData, FieldCircularArc, FieldGeometry, FieldLineSegment, GameStateData, PlayerData,
 };
 use dies_core::{
-    ExecutorSettings, FieldMask, GameState, Handicap, PlayerFeedbackMsg, PlayerId,
-    RawGameStateData, SideAssignment, SkillSettings, TeamColor, TeamSpecificSettings,
-    TrackerSettings, Vector2, WorldData, WorldInstant,
+    ExecutorSettings, FieldMask, GameState, Handicap, PlayerFeedbackMsg, PlayerId, Possession,
+    PossessionConfig, RawGameStateData, SideAssignment, SkillSettings, TeamColor, TeamPlayerId,
+    TeamSpecificSettings, TrackerSettings, Vector2, WorldData, WorldInstant,
 };
 use player::PlayerTracker;
+use possession::PossessionTracker;
 
 use crate::game_state::GameStateTracker;
 
@@ -180,6 +182,12 @@ pub struct WorldTracker {
     skill_settings: SkillSettings,
 
     autoref_info: Option<(Instant, TrackedFrame)>,
+
+    /// Unified ball-possession metric: the stateful tracker, its config, and the
+    /// latest computed value (recomputed once per vision frame).
+    possession_tracker: PossessionTracker,
+    possession_config: PossessionConfig,
+    possession: Possession,
 }
 
 impl WorldTracker {
@@ -222,7 +230,20 @@ impl WorldTracker {
             skill_settings: settings.skill_settings.clone(),
 
             autoref_info: None,
+
+            possession_tracker: PossessionTracker::new(),
+            possession_config: settings.possession_config.clone(),
+            possession: Possession::default(),
         }
+    }
+
+    /// Tell the possession metric that `id` on `team` was commanded to kick
+    /// (efference copy). Mirrors `set_player_command`; consumed on the next frame.
+    pub fn notify_kick(&mut self, team: TeamColor, id: PlayerId) {
+        self.possession_tracker.notify_kick(TeamPlayerId {
+            team_color: team,
+            player_id: id,
+        });
     }
 
     /// Get the list of controlled team IDs.
@@ -249,6 +270,7 @@ impl WorldTracker {
         self.blue_team_settings = settings.blue_team_settings.clone();
         self.yellow_team_settings = settings.yellow_team_settings.clone();
         self.skill_settings = settings.skill_settings.clone();
+        self.possession_config = settings.possession_config.clone();
 
         // Log the field mask lines
         if let Some(geom) = self.field_geometry.as_ref() {
@@ -481,6 +503,28 @@ impl WorldTracker {
             self.game_state_tracker
                 .update_ball_movement_check(self.ball_tracker.get().as_ref());
 
+            // Recompute the unified possession metric once per vision frame, now
+            // that ball + player trackers are up to date for this frame.
+            let blue_players = self.blue_team.get_players();
+            let yellow_players = self.yellow_team.get_players();
+            let ball = self.ball_tracker.get();
+            let now = self.last_t_received.unwrap_or(0.0);
+            self.possession = self.possession_tracker.update(
+                ball.as_ref(),
+                &blue_players,
+                &yellow_players,
+                &self.possession_config,
+                now,
+            );
+            dies_core::debug_string(
+                "world.possession".to_string(),
+                format!(
+                    "{:?}{}",
+                    self.possession.state,
+                    if self.possession.stale { " (stale)" } else { "" }
+                ),
+            );
+
             // Update freekick double touch tracking
             let world_data = self.get();
             self.game_state_tracker
@@ -509,22 +553,12 @@ impl WorldTracker {
         feedback: &PlayerFeedbackMsg,
         time: WorldInstant,
     ) {
+        // Raw breakbeam telemetry is surfaced by the webui; possession is logged
+        // centrally once per frame (see `update_from_vision`).
         if team_color == TeamColor::Blue && self.blue_team.controlled {
-            if let Some(breakbeam) = feedback.breakbeam_ball_detected {
-                dies_core::debug_string(
-                    format!("team_{}.p{}.breakbeam", team_color, feedback.id.as_u32()),
-                    format!("{}", breakbeam),
-                );
-            }
             self.blue_team
                 .update_from_feedback(feedback, time, &self.tracker_settings);
         } else if team_color == TeamColor::Yellow && self.yellow_team.controlled {
-            if let Some(breakbeam) = feedback.breakbeam_ball_detected {
-                dies_core::debug_string(
-                    format!("team_{}.p{}.breakbeam", team_color, feedback.id.as_u32()),
-                    format!("{}", breakbeam),
-                );
-            }
             self.yellow_team
                 .update_from_feedback(feedback, time, &self.tracker_settings);
         }
@@ -567,8 +601,25 @@ impl WorldTracker {
     pub fn get(&mut self) -> WorldData {
         let field_geom = self.field_geometry.clone();
 
-        let blue_players = self.blue_team.get_players();
-        let yellow_players = self.yellow_team.get_players();
+        let mut blue_players = self.blue_team.get_players();
+        let mut yellow_players = self.yellow_team.get_players();
+
+        // Stamp the unified per-player `has_ball` from the single possession truth.
+        let owner = self.possession.state.owner();
+        for p in blue_players.iter_mut() {
+            p.has_ball = owner
+                == Some(TeamPlayerId {
+                    team_color: TeamColor::Blue,
+                    player_id: p.id,
+                });
+        }
+        for p in yellow_players.iter_mut() {
+            p.has_ball = owner
+                == Some(TeamPlayerId {
+                    team_color: TeamColor::Yellow,
+                    player_id: p.id,
+                });
+        }
 
         let game_state = RawGameStateData {
             game_state: self.game_state_tracker.get(),
@@ -584,6 +635,11 @@ impl WorldTracker {
             yellow_team_max_allowed_bots: self.yellow_team_max_allowed_bots,
             blue_team_keeper_id: self.game_state_tracker.get_blue_team_keeper_id(),
             yellow_team_keeper_id: self.game_state_tracker.get_yellow_team_keeper_id(),
+            stage: self.game_state_tracker.get_stage_display(),
+            stage_time_left: self.game_state_tracker.get_stage_time_left(),
+            action_time_remaining: self.game_state_tracker.get_action_time_remaining(),
+            next_command: self.game_state_tracker.get_next_command_display(),
+            status_message: self.game_state_tracker.get_status_message(),
         };
 
         WorldData {
@@ -605,6 +661,7 @@ impl WorldTracker {
                 .as_ref()
                 .map(|(_, frame)| frame.clone().into()),
             skill_settings: self.skill_settings.clone(),
+            possession: self.possession.clone(),
         }
     }
 }

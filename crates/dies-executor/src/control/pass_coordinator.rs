@@ -29,9 +29,6 @@ use crate::skills::executable::{PickupBallSkill, ReceiveSkill};
 /// attempt a pickup. Beyond this the pass fails immediately with `BallLost` — the
 /// pass never chases a loose ball.
 const SECURE_DISTANCE: f64 = 600.0;
-/// Distance margin (mm) for the vision-based "has ball" check: the player mouth
-/// overlaps the ball by at least this much. Matches `PickupBallSkill`.
-const HAS_BALL_MARGIN: f64 = -2.0;
 /// Heading error (rad) below which the passer is considered aligned to kick.
 const ALIGNMENT_TOLERANCE: f64 = 10.0 * std::f64::consts::PI / 180.0;
 /// Time budget for the `Secure` phase.
@@ -51,14 +48,8 @@ const PASS_SPEED_ESTIMATE: f64 = 2500.0;
 const FLIGHT_TIMEOUT_MARGIN: f64 = 2.5;
 const FLIGHT_TIMEOUT_BASE: f64 = 0.6;
 /// Distance (mm) within which the ball counts as "at the receiver" for the
-/// stopped-short / vision-possession checks.
+/// stopped-short check.
 const NEAR_RECEIVER_DIST: f64 = 200.0;
-/// Consecutive frames of close, low-relative-velocity contact needed for the
-/// vision-possession success fallback (covers `Handicap::NoBreakbeam`).
-const VISION_POSSESSION_FRAMES: u32 = 5;
-/// Relative speed (mm/s) below which ball+receiver count as "together" for the
-/// vision fallback.
-const VISION_POSSESSION_REL_SPEED: f64 = 350.0;
 /// Distance (mm) at which an opponent is considered to control the ball.
 const OPPONENT_POSSESSION_DIST: f64 = PLAYER_RADIUS + BALL_RADIUS + 30.0;
 /// Fraction of the pass-line length past the intercept point beyond which an
@@ -147,8 +138,6 @@ pub struct PassCoordinator {
     pickup: PickupBallSkill,
     /// Sub-skill driving the receiver from `Setup` onward.
     receive: ReceiveSkill,
-    /// Consecutive frames satisfying the vision-possession fallback.
-    possession_frames: u32,
 
     /// Terminal result, set once when `phase == Done`.
     result: Option<PassResult>,
@@ -167,7 +156,6 @@ impl PassCoordinator {
             // Sub-skills are seeded with placeholder params and reconfigured on use.
             pickup: PickupBallSkill::new(Angle::from_radians(0.0)),
             receive: ReceiveSkill::new(Vector2::zeros(), Vector2::zeros(), CAPTURE_LIMIT, false),
-            possession_frames: 0,
             result: None,
         }
     }
@@ -277,7 +265,7 @@ impl PassCoordinator {
         match self.phase {
             PassPhase::Secure => {
                 // Already have it? proceed.
-                if has_ball(&passer, ball_pos) {
+                if passer.has_ball {
                     self.enter(PassPhase::Setup);
                     self.intercept_point = Some(self.target_hint.unwrap_or(receiver.position));
                     // fall through to Setup next frame; hold this frame
@@ -319,7 +307,7 @@ impl PassCoordinator {
 
             PassPhase::Setup => {
                 // Lost the ball before kicking → clean abort.
-                if !has_ball(&passer, ball_pos) {
+                if !passer.has_ball {
                     result = Some(
                         self.finish(PassResult::Failure {
                             reason: PassFailure::BallLost,
@@ -417,7 +405,7 @@ impl PassCoordinator {
         let sctx = self.skill_ctx(ctx, receiver);
         match self.receive.tick(sctx) {
             SkillProgress::Continue(input) => input,
-            // ReceiveSkill only "completes" on breakbeam; the coordinator owns
+            // ReceiveSkill only "completes" on possession; the coordinator owns
             // the real success decision, so just hold on completion.
             SkillProgress::Done(_) => PlayerControlInput::new(),
         }
@@ -430,7 +418,6 @@ impl PassCoordinator {
         receiver: &PlayerData,
         target_point: Vector2,
     ) -> Option<PassResult> {
-        // Success: breakbeam, or the vision-possession fallback.
         let Some(ball) = ctx.world.ball.as_ref() else {
             // Ball lost from vision during flight — can't track; time out via guard.
             if self.phase_elapsed > self.flight_timeout(target_point) {
@@ -444,23 +431,12 @@ impl PassCoordinator {
         let ball_pos = ball.position.xy();
         let ball_vel = ball.velocity.xy();
 
-        if receiver.breakbeam_ball_detected {
+        // Success: the unified possession metric credits the receiver (its
+        // proximity + breakbeam fusion subsumes the old vision fallback).
+        if receiver.has_ball {
             return Some(PassResult::Success {
                 receiver: self.receiver,
             });
-        }
-        // Vision fallback: ball at the mouth and moving with the receiver.
-        let near = (ball_pos - receiver.position).norm() < NEAR_RECEIVER_DIST;
-        let rel_speed = (ball_vel - receiver.velocity).norm();
-        if near && rel_speed < VISION_POSSESSION_REL_SPEED {
-            self.possession_frames += 1;
-            if self.possession_frames >= VISION_POSSESSION_FRAMES {
-                return Some(PassResult::Success {
-                    receiver: self.receiver,
-                });
-            }
-        } else {
-            self.possession_frames = 0;
         }
 
         // Opponent intercepted?
@@ -567,7 +543,7 @@ impl PassCoordinator {
         let receiver_dist = (receiver.position - target_point).norm();
         let aligned = heading_error < ALIGNMENT_TOLERANCE;
         let ready = receiver_dist < RECEIVER_READY_DIST;
-        let has = has_ball(passer, ball_pos);
+        let has = passer.has_ball;
 
         tc.debug_string(format!("{pair}.passer_has_ball"), bool_str(has));
         tc.debug_string(format!("{pair}.passer_aligned"), bool_str(aligned));
@@ -580,10 +556,6 @@ impl PassCoordinator {
         tc.debug_value(format!("{pair}.pass_distance_mm"), pass_distance);
         tc.debug_value(format!("{pair}.receiver_dist_mm"), receiver_dist);
         tc.debug_value(format!("{pair}.kick_speed"), pass_kick_speed(pass_distance));
-        tc.debug_value(
-            format!("{pair}.possession_frames"),
-            self.possession_frames as f64,
-        );
         if let Some(PassResult::Failure { reason, .. }) = &self.result {
             tc.debug_string(format!("{pair}.result"), format!("{reason:?}"));
         } else if let Some(PassResult::Success { .. }) = &self.result {
@@ -632,19 +604,6 @@ impl PassCoordinator {
         } else {
             dies_core::debug_remove(tc.key(format!("{pair}.secure")));
         }
-    }
-}
-
-/// Vision/breakbeam "has ball" predicate, matching `PickupBallSkill`.
-fn has_ball(player: &PlayerData, ball_pos: Option<Vector2>) -> bool {
-    if player.breakbeam_ball_detected {
-        return true;
-    }
-    if let Some(bp) = ball_pos {
-        let distance = (bp - player.position).norm();
-        (distance - PLAYER_RADIUS - BALL_RADIUS) < HAS_BALL_MARGIN
-    } else {
-        false
     }
 }
 
@@ -714,6 +673,7 @@ pub(crate) mod test_support {
             ball_on_opp_side: None,
             kicked_ball: None,
             skill_settings: SkillSettings::default(),
+            possession: Default::default(),
         }
     }
 
@@ -757,7 +717,7 @@ mod tests {
     #[test]
     fn secure_advances_to_setup_with_ball() {
         let mut passer = player(0, Vector2::new(0.0, 0.0), 0.0);
-        passer.breakbeam_ball_detected = true;
+        passer.has_ball = true;
         let w = world(
             vec![passer, player(1, Vector2::new(2000.0, 0.0), 0.0)],
             Some(Vector2::new(60.0, 0.0)),
@@ -778,7 +738,7 @@ mod tests {
         // Passer has the ball, is aimed at the receiver, and the receiver is on
         // the intercept point -> the barrier passes and we reach Commit.
         let mut passer = player(0, Vector2::new(0.0, 0.0), 0.0); // facing +x toward receiver
-        passer.breakbeam_ball_detected = true;
+        passer.has_ball = true;
         let receiver = player(1, Vector2::new(2000.0, 0.0), std::f64::consts::PI);
         let tc = team_ctx();
         let mut c = PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None);
@@ -807,7 +767,7 @@ mod tests {
     #[test]
     fn not_aligned_stays_in_setup() {
         let mut passer = player(0, Vector2::new(0.0, 0.0), std::f64::consts::FRAC_PI_2); // facing +y, not the receiver
-        passer.breakbeam_ball_detected = true;
+        passer.has_ball = true;
         let receiver = player(1, Vector2::new(2000.0, 0.0), std::f64::consts::PI);
         let tc = team_ctx();
         let mut c = PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None);

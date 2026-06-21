@@ -37,6 +37,80 @@ export type DebugMap = Record<string, DebugValue>;
 
 export type PlayerId = number;
 
+/** Coarse classification of an announcer line, used by the UI for icon/color. */
+export enum AnnouncementCategory {
+	/** Generic state/info transition (Halt, Stop, Run, Force start, Timeout). */
+	Info = "Info",
+	/** A stoppage reason (ball out of field, no progress). */
+	Stoppage = "Stoppage",
+	FreeKick = "FreeKick",
+	Kickoff = "Kickoff",
+	Penalty = "Penalty",
+	/** Ball placement related. */
+	Placement = "Placement",
+	/** A foul or rule violation. */
+	Foul = "Foul",
+	/** A card was issued. */
+	Card = "Card",
+	Goal = "Goal",
+}
+
+/**
+ * # Team-Specific Coordinate System
+ * 
+ * This module provides coordinate system transformations to create a consistent
+ * team-specific reference frame where the +x axis always points towards the
+ * enemy goal, regardless of which side of the field the team is defending.
+ * 
+ * ## Coordinate System Philosophy
+ * 
+ * In RoboCup SSL, teams can be assigned to defend either the positive or negative
+ * x side of the field. To simplify strategy code, we transform all coordinates
+ * into a team-specific coordinate system where:
+ * 
+ * - **+x axis**: Always points towards the enemy goal (attacking direction)
+ * - **-x axis**: Always points towards our own goal (defending direction)
+ * - **y axis**: Remains unchanged (left/right from team perspective)
+ * 
+ * ## How It Works
+ * 
+ * The transformation is based on two key pieces of information:
+ * 1. **SideAssignment**: Which team (Blue/Yellow) defends the positive x side
+ * 2. **TeamColor**: The color of our team (Blue/Yellow)
+ * 
+ * ### Transformation Rules
+ * 
+ * - If our team attacks in the same direction as world +x: coordinates remain unchanged
+ * - If our team attacks in the opposite direction: x coordinates are negated, angles are mirrored
+ */
+export enum TeamColor {
+	Blue = "Blue",
+	Yellow = "Yellow",
+}
+
+/**
+ * A single line in the announcer commentary feed, formatted backend-side from
+ * referee commands, game events, and (in sim) the simulator's own events so it
+ * reads identically for sim and live matches.
+ */
+export interface Announcement {
+	/**
+	 * Monotonic id, unique within a session. The UI uses it to dedupe and to
+	 * detect freshly-arrived lines (which animate in at full opacity).
+	 */
+	id: number;
+	/** World time (seconds) when the line was minted. */
+	timestamp: number;
+	category: AnnouncementCategory;
+	/** The team the line concerns, if any — used to tint the line. */
+	team?: TeamColor;
+	/**
+	 * Human-readable commentary, e.g. "Free kick — Blue" or
+	 * "Throw-in: ball left field, last touched by Yellow".
+	 */
+	text: string;
+}
+
 export interface AutorefKickedBall {
 	/** The initial position [m] from which the ball was kicked */
 	pos: Vector2;
@@ -271,39 +345,6 @@ export interface ControllerSettings {
 	angle_cutoff_distance: number;
 }
 
-/**
- * # Team-Specific Coordinate System
- * 
- * This module provides coordinate system transformations to create a consistent
- * team-specific reference frame where the +x axis always points towards the
- * enemy goal, regardless of which side of the field the team is defending.
- * 
- * ## Coordinate System Philosophy
- * 
- * In RoboCup SSL, teams can be assigned to defend either the positive or negative
- * x side of the field. To simplify strategy code, we transform all coordinates
- * into a team-specific coordinate system where:
- * 
- * - **+x axis**: Always points towards the enemy goal (attacking direction)
- * - **-x axis**: Always points towards our own goal (defending direction)
- * - **y axis**: Remains unchanged (left/right from team perspective)
- * 
- * ## How It Works
- * 
- * The transformation is based on two key pieces of information:
- * 1. **SideAssignment**: Which team (Blue/Yellow) defends the positive x side
- * 2. **TeamColor**: The color of our team (Blue/Yellow)
- * 
- * ### Transformation Rules
- * 
- * - If our team attacks in the same direction as world +x: coordinates remain unchanged
- * - If our team attacks in the opposite direction: x coordinates are negated, angles are mirrored
- */
-export enum TeamColor {
-	Blue = "Blue",
-	Yellow = "Yellow",
-}
-
 export interface TeamPlayerId {
 	team_color: TeamColor;
 	player_id: PlayerId;
@@ -475,6 +516,51 @@ export interface SkillSettings {
 	fetch_ball_preshoot_ball_avoidance: number;
 }
 
+/**
+ * Tunable parameters for the unified possession metric. One central home for
+ * every threshold that used to be scattered across the strategy and the pass
+ * coordinator. Distances in mm, times in seconds, speeds in mm/s.
+ */
+export interface PossessionConfig {
+	/** Ball-to-robot distance at which a robot *gains* possession (near band). */
+	acquire_dist: number;
+	/**
+	 * Looser distance at which the current owner *retains* possession. Must be
+	 * `>= acquire_dist`; the gap is the hysteresis that prevents oscillation.
+	 */
+	release_dist: number;
+	/**
+	 * Breakbeam is ignored unless the ball is within this distance of the robot
+	 * (rejects spurious sensor triggers with the ball nowhere near).
+	 */
+	breakbeam_gate_dist: number;
+	/**
+	 * Frames a proximity-only possession change must persist before it commits.
+	 * Breakbeam-confirmed gains bypass this and commit in one frame.
+	 */
+	acquire_frames: number;
+	/**
+	 * If the second-closest candidate is within this margin of the closest, the
+	 * state is `Contested` instead of `Owned`.
+	 */
+	ambiguity_margin: number;
+	/**
+	 * A ball faster than this can't be claimed by proximity (breakbeam still can,
+	 * for a robot genuinely carrying it).
+	 */
+	max_ball_speed: number;
+	/**
+	 * How long to hold the last stable possession while the ball is undetected
+	 * before decaying to `Loose`. The belief is marked `stale` while holding.
+	 */
+	hold_secs: number;
+	/**
+	 * After a commanded kick, suppress the kicker's *proximity* re-acquisition for
+	 * this long (breakbeam re-acquisition is never suppressed).
+	 */
+	release_suppress_secs: number;
+}
+
 /** Settings for the executor. */
 export interface ExecutorSettings {
 	controller_settings: ControllerSettings;
@@ -483,6 +569,8 @@ export interface ExecutorSettings {
 	yellow_team_settings: TeamSpecificSettings;
 	blue_team_settings: TeamSpecificSettings;
 	skill_settings: SkillSettings;
+	/** Tuning for the unified ball-possession metric (computed in the world tracker). */
+	possession_config?: PossessionConfig;
 	allow_no_vision: boolean;
 	/**
 	 * Global on/off for goal-area avoidance. When false, both compliance and
@@ -646,12 +734,44 @@ export interface PlayerData {
 	kicker_temp?: number;
 	/** The voltages of the battery packs. Only available for own players. */
 	pack_voltages?: [number, number];
-	/** Whether the breakbeam sensor detected a ball. Only available for own players. */
+	/**
+	 * Raw breakbeam sensor reading (only meaningful for own players). An *input*
+	 * to the possession metric and kept for logging — not a consumer-facing
+	 * signal. Use `has_ball` (or `WorldData::possession`) instead.
+	 */
 	breakbeam_ball_detected: boolean;
+	/**
+	 * Unified "this player has the ball" signal, derived from
+	 * `WorldData::possession` (true iff this player is the confident owner).
+	 */
+	has_ball: boolean;
 	imu_status?: SysStatus;
 	imu_readings?: [number, number, number, number, number, number];
 	kicker_status?: SysStatus;
 	handicaps: HashSet<Handicap>;
+}
+
+/** Who controls the ball, in absolute (team-tagged) terms. */
+export type PossessionState = 
+	/** Nobody clearly controls the ball. */
+	| { type: "Loose",  }
+	/** A single robot confidently controls the ball. */
+	| { type: "Owned", data: {
+	owner: TeamPlayerId;
+}}
+	/** Multiple robots are equally plausible owners and can't be disambiguated. */
+	| { type: "Contested", data: {
+	candidates: TeamPlayerId[];
+}};
+
+/** Stable, debounced possession with a staleness flag. */
+export interface Possession {
+	state: PossessionState;
+	/**
+	 * True while the belief is being coasted through a vision/contact dropout
+	 * (held, but not currently backed by a fresh observation).
+	 */
+	stale: boolean;
 }
 
 export interface PostExecutorSettingsBody {
@@ -750,6 +870,22 @@ export interface RawGameStateData {
 	yellow_team_yellow_cards: number;
 	blue_team_keeper_id?: PlayerId;
 	yellow_team_keeper_id?: PlayerId;
+	/** The coarse game stage, e.g. "First half" (display string). */
+	stage?: string;
+	/** Seconds left in the current stage (can be negative). Interpolated. */
+	stage_time_left?: number;
+	/**
+	 * Seconds remaining for the current action — free kick / placement /
+	 * kickoff countdown (can be negative). Interpolated frame-by-frame.
+	 */
+	action_time_remaining?: number;
+	/**
+	 * The command that will resume play after the current stoppage ("what's
+	 * next"), as a display string.
+	 */
+	next_command?: string;
+	/** A human-readable reason for the current stoppage, if provided. */
+	status_message?: string;
 }
 
 /** A user point-of-interest marker, surfaced to the replay scrubber. */
@@ -844,6 +980,11 @@ export interface TeamData {
 	ball_on_opp_side?: Duration;
 	kicked_ball?: AutorefKickedBallTeam;
 	skill_settings: SkillSettings;
+	/**
+	 * Unified possession metric (absolute / team-tagged — the same value as on
+	 * `WorldData`). Converted to a team-relative view at the strategy boundary.
+	 */
+	possession: Possession;
 }
 
 export enum TestLogLevel {
@@ -899,6 +1040,11 @@ export interface WorldData {
 	ball_on_yellow_side?: Duration;
 	autoref_info?: AutorefInfo;
 	skill_settings: SkillSettings;
+	/**
+	 * Unified ball-possession metric (absolute / team-tagged). Computed once in
+	 * the world tracker; the single source of truth for who has the ball.
+	 */
+	possession: Possession;
 }
 
 export interface WorldUpdate {
@@ -908,6 +1054,12 @@ export interface WorldUpdate {
 	 * UI for the frame counter and used as the join key in recorded logs.
 	 */
 	frame_id: number;
+	/**
+	 * Announcer feed items minted since the previous broadcast. The UI
+	 * accumulates these into a scrolling commentary log (deduped by `id`).
+	 * Empty on most frames; only populated when something happens.
+	 */
+	announcements?: Announcement[];
 }
 
 export enum DebugColor {

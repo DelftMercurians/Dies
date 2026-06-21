@@ -90,6 +90,7 @@ async fn playback_loop(
             let _ = update_tx.send(Some(WorldUpdate {
                 world_data: world,
                 frame_id: frames[idx],
+                announcements: Vec::new(),
             }));
             // Re-publish this frame's debug overlay through the global subscriber.
             debug_clear();

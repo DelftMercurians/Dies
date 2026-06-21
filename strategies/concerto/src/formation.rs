@@ -393,6 +393,8 @@ mod tests {
             us_operating: true,
             our_keeper_id: Some(PlayerId::new(keeper)),
             freekick_kicker: None,
+            possession: Possession::Loose,
+            possession_stale: false,
         })
     }
 

@@ -134,7 +134,7 @@ pub use dies_core::{Angle, FieldGeometry};
 pub use dies_strategy_protocol::{
     BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState, Handicap, ParamKind,
     ParamSpec, ParamValue, PassBallState, PassFailure, PassResult, PassRole, PlayerId, PlayerState,
-    SkillCommand, SkillStatus, StrategyParams, Vector2, WorldSnapshot,
+    Possession, SkillCommand, SkillStatus, StrategyParams, Vector2, WorldSnapshot,
 };
 
 /// Prelude module for convenient imports.
@@ -156,7 +156,7 @@ pub mod prelude {
     pub use dies_core::{Angle, FieldGeometry};
     pub use dies_strategy_protocol::{
         BallState, DebugColor, GameState, Handicap, ParamKind, ParamSpec, ParamValue, PlayerId,
-        PlayerState, SkillCommand, SkillStatus, Vector2,
+        PlayerState, Possession, SkillCommand, SkillStatus, Vector2,
     };
 }
 
@@ -253,6 +253,8 @@ mod tests {
             us_operating: true,
             our_keeper_id: None,
             freekick_kicker: None,
+            possession: dies_strategy_protocol::Possession::Loose,
+            possession_stale: false,
         };
 
         let mut ctx = TeamContext::new(snapshot, HashMap::new(), HashMap::new(), HashMap::new());

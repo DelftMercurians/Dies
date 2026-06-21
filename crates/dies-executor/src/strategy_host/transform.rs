@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use dies_core::{Angle, PlayerData, SideAssignment, TeamColor, TeamData, Vector2};
 use dies_strategy_protocol::{
     BallState, DebugEntry, DebugShape, DebugValue, Handicap, PassBallState, PassResult, PlayerId,
-    PlayerState, SkillCommand, SkillStatus, WorldSnapshot,
+    PlayerState, Possession, SkillCommand, SkillStatus, WorldSnapshot,
 };
 
 /// Handles coordinate transformation between world and strategy frames.
@@ -112,6 +112,24 @@ impl CoordinateTransformer {
             us_operating: team_data.current_game_state.us_operating,
             our_keeper_id: team_data.current_game_state.our_keeper_id,
             freekick_kicker: team_data.current_game_state.freekick_kicker,
+            possession: self.team_relative_possession(&team_data.possession.state),
+            possession_stale: team_data.possession.stale,
+        }
+    }
+
+    /// Convert the absolute (team-tagged) possession into this team's relative view.
+    fn team_relative_possession(&self, state: &dies_core::PossessionState) -> Possession {
+        use dies_core::PossessionState;
+        match state {
+            PossessionState::Loose => Possession::Loose,
+            PossessionState::Contested { .. } => Possession::Contested,
+            PossessionState::Owned { owner } => {
+                if owner.team_color == self.team_color {
+                    Possession::We(owner.player_id)
+                } else {
+                    Possession::Opp(owner.player_id)
+                }
+            }
         }
     }
 
@@ -126,11 +144,9 @@ impl CoordinateTransformer {
             velocity: Vector2::new(player.velocity.x, player.velocity.y),
             heading: player.yaw,
             angular_velocity: player.angular_speed,
-            has_ball: if is_own_player {
-                player.breakbeam_ball_detected
-            } else {
-                false
-            },
+            // Unified possession signal (own players only; opponents never report
+            // `has_ball` to a strategy — they surface via `possession` as `Opp`).
+            has_ball: is_own_player && player.has_ball,
             handicaps,
         }
     }

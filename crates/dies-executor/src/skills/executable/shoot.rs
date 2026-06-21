@@ -78,12 +78,6 @@ impl ExecutableSkill for ShootSkill {
             return SkillProgress::failure();
         }
 
-        // Check breakbeam
-        // if !ctx.player.breakbeam_ball_detected && self.state != ShootState::KickCommanded {
-        //     self.status = SkillStatus::Failed;
-        //     return SkillProgress::failure();
-        // }
-
         let mut input = PlayerControlInput::new();
         input.with_dribbling(DRIBBLER_SPEED);
 

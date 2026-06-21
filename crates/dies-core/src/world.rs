@@ -11,7 +11,8 @@ use typeshare::typeshare;
 
 use crate::{
     distance_to_line, player::PlayerId, skill_settings::SkillSettings, Angle, FieldGeometry,
-    Handicap, RoleType, SideAssignment, SysStatus, TeamColor, TeamPlayerId, Vector2, Vector3,
+    Handicap, Possession, RoleType, SideAssignment, SysStatus, TeamColor, TeamPlayerId, Vector2,
+    Vector3,
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
@@ -62,6 +63,51 @@ pub struct WorldUpdate {
     /// UI for the frame counter and used as the join key in recorded logs.
     #[typeshare(serialized_as = "number")]
     pub frame_id: u64,
+    /// Announcer feed items minted since the previous broadcast. The UI
+    /// accumulates these into a scrolling commentary log (deduped by `id`).
+    /// Empty on most frames; only populated when something happens.
+    #[serde(default)]
+    pub announcements: Vec<Announcement>,
+}
+
+/// A single line in the announcer commentary feed, formatted backend-side from
+/// referee commands, game events, and (in sim) the simulator's own events so it
+/// reads identically for sim and live matches.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct Announcement {
+    /// Monotonic id, unique within a session. The UI uses it to dedupe and to
+    /// detect freshly-arrived lines (which animate in at full opacity).
+    #[typeshare(serialized_as = "number")]
+    pub id: u64,
+    /// World time (seconds) when the line was minted.
+    pub timestamp: f64,
+    pub category: AnnouncementCategory,
+    /// The team the line concerns, if any — used to tint the line.
+    pub team: Option<TeamColor>,
+    /// Human-readable commentary, e.g. "Free kick — Blue" or
+    /// "Throw-in: ball left field, last touched by Yellow".
+    pub text: String,
+}
+
+/// Coarse classification of an announcer line, used by the UI for icon/color.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare]
+pub enum AnnouncementCategory {
+    /// Generic state/info transition (Halt, Stop, Run, Force start, Timeout).
+    Info,
+    /// A stoppage reason (ball out of field, no progress).
+    Stoppage,
+    FreeKick,
+    Kickoff,
+    Penalty,
+    /// Ball placement related.
+    Placement,
+    /// A foul or rule violation.
+    Foul,
+    /// A card was issued.
+    Card,
+    Goal,
 }
 
 /// The game state, as reported by the referee.
@@ -208,6 +254,20 @@ pub struct RawGameStateData {
 
     pub blue_team_keeper_id: Option<PlayerId>,
     pub yellow_team_keeper_id: Option<PlayerId>,
+
+    // --- Enriched referee detail (for the game-state overlay panel) ---
+    /// The coarse game stage, e.g. "First half" (display string).
+    pub stage: Option<String>,
+    /// Seconds left in the current stage (can be negative). Interpolated.
+    pub stage_time_left: Option<f64>,
+    /// Seconds remaining for the current action — free kick / placement /
+    /// kickoff countdown (can be negative). Interpolated frame-by-frame.
+    pub action_time_remaining: Option<f64>,
+    /// The command that will resume play after the current stoppage ("what's
+    /// next"), as a display string.
+    pub next_command: Option<String>,
+    /// A human-readable reason for the current stoppage, if provided.
+    pub status_message: Option<String>,
 }
 
 /// A struct to store the player state from a single frame.
@@ -245,8 +305,13 @@ pub struct PlayerData {
     pub kicker_temp: Option<f32>,
     /// The voltages of the battery packs. Only available for own players.
     pub pack_voltages: Option<[f32; 2]>,
-    /// Whether the breakbeam sensor detected a ball. Only available for own players.
+    /// Raw breakbeam sensor reading (only meaningful for own players). An *input*
+    /// to the possession metric and kept for logging — not a consumer-facing
+    /// signal. Use `has_ball` (or `WorldData::possession`) instead.
     pub breakbeam_ball_detected: bool,
+    /// Unified "this player has the ball" signal, derived from
+    /// `WorldData::possession` (true iff this player is the confident owner).
+    pub has_ball: bool,
     pub imu_status: Option<SysStatus>,
     pub imu_readings: Option<[f32; 6]>,
     pub kicker_status: Option<SysStatus>,
@@ -272,6 +337,7 @@ impl PlayerData {
             pack_voltages: None,
             imu_status: None,
             breakbeam_ball_detected: false,
+            has_ball: false,
             kicker_status: None,
             imu_readings: None,
             handicaps: HashSet::new(),
@@ -382,6 +448,9 @@ pub struct WorldData {
     pub ball_on_yellow_side: Option<Duration>,
     pub autoref_info: Option<AutorefInfo>,
     pub skill_settings: SkillSettings,
+    /// Unified ball-possession metric (absolute / team-tagged). Computed once in
+    /// the world tracker; the single source of truth for who has the ball.
+    pub possession: Possession,
 }
 
 impl WorldData {
@@ -425,6 +494,9 @@ pub struct TeamData {
     pub ball_on_opp_side: Option<Duration>,
     pub kicked_ball: Option<AutorefKickedBallTeam>,
     pub skill_settings: SkillSettings,
+    /// Unified possession metric (absolute / team-tagged — the same value as on
+    /// `WorldData`). Converted to a team-relative view at the strategy boundary.
+    pub possession: Possession,
 }
 
 impl TeamData {
@@ -823,6 +895,7 @@ pub fn mock_world_data() -> WorldData {
             kicker_temp: Some(0.0),
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
+            has_ball: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -843,6 +916,7 @@ pub fn mock_world_data() -> WorldData {
             kicker_temp: Some(0.0),
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
+            has_ball: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -860,12 +934,18 @@ pub fn mock_world_data() -> WorldData {
             yellow_team_max_allowed_bots: 6,
             blue_team_keeper_id: None,
             yellow_team_keeper_id: None,
+            stage: None,
+            stage_time_left: None,
+            action_time_remaining: None,
+            next_command: None,
+            status_message: None,
         },
         side_assignment: SideAssignment::YellowOnPositive,
         ball_on_blue_side: None,
         ball_on_yellow_side: None,
         autoref_info: None,
         skill_settings: SkillSettings::default(),
+        possession: Possession::default(),
     }
 }
 
@@ -886,6 +966,7 @@ pub fn mock_team_data() -> TeamData {
             kicker_temp: Some(0.0),
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
+            has_ball: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -906,6 +987,7 @@ pub fn mock_team_data() -> TeamData {
             kicker_temp: Some(0.0),
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
+            has_ball: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -932,6 +1014,7 @@ pub fn mock_team_data() -> TeamData {
         ball_on_opp_side: None,
         kicked_ball: None,
         skill_settings: SkillSettings::default(),
+        possession: Possession::default(),
     }
 }
 

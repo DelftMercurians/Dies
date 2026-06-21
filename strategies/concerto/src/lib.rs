@@ -13,7 +13,6 @@ pub mod geometry;
 pub mod keeper;
 pub mod matching;
 pub mod planner;
-pub mod possession;
 
 use dies_strategy_api::prelude::*;
 use dies_strategy_api::World;
@@ -21,11 +20,12 @@ use dies_strategy_api::World;
 use driver::{Driver, WaypointStatus};
 use formation::Formation;
 use planner::{PlanInputs, Planner};
-use possession::{classify_raw, Possession, PossessionTracker};
 
 /// The Concerto strategy.
 pub struct ConcertoStrategy {
-    tracker: PossessionTracker,
+    /// Previous frame's possession, for detecting changes (the metric itself is
+    /// the framework's single source of truth — `World::possession`).
+    last_possession: Possession,
     planner: Planner,
     driver: Driver,
     formation: Formation,
@@ -39,7 +39,7 @@ pub struct ConcertoStrategy {
 impl ConcertoStrategy {
     pub fn new() -> Self {
         Self {
-            tracker: PossessionTracker::new(),
+            last_possession: Possession::Loose,
             planner: Planner::new(),
             driver: Driver::new(),
             formation: Formation::new(),
@@ -108,10 +108,10 @@ impl Strategy for ConcertoStrategy {
             return;
         }
 
-        // ── Possession (root stability surface) ─────────────────────────
-        let raw = classify_raw(&world);
-        let possession = self.tracker.update(raw, now);
-        let possession_changed = self.tracker.changed_this_tick();
+        // ── Possession (computed centrally by the framework) ────────────
+        let possession = world.possession();
+        let possession_changed = possession != self.last_possession;
+        self.last_possession = possession;
 
         // Track the dribble contact point: stamp it when we gain the ball, clear it
         // when we don't hold it. `carried` = how far we've dribbled since contact.
@@ -169,11 +169,6 @@ impl Strategy for ConcertoStrategy {
                 let status = self.driver.update(&world, ctx);
                 if let WaypointStatus::Failed(reason) = status {
                     self.planner.record_failure(active_id, reason, now);
-                }
-                // Kick feedforward: if we just fired a kick, tell possession the ball
-                // is released so the next replan doesn't re-task the shooter.
-                if let Some(kicker) = self.driver.take_kick_event() {
-                    self.tracker.notify_release(kicker, now);
                 }
                 // Pass seam: a completed pass would hand off to the receiver here.
                 if let Some(_next) = self.driver.take_new_active() {
@@ -284,6 +279,7 @@ impl ConcertoStrategy {
             Possession::We(id) => format!("We({})", id.as_u32()),
             Possession::Opp(id) => format!("Opp({})", id.as_u32()),
             Possession::Loose => "Loose".to_string(),
+            Possession::Contested => "Contested".to_string(),
         };
         debug::string("possession", &poss_str);
 

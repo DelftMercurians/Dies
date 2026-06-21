@@ -71,9 +71,8 @@ impl ExecutableSkill for DribbleSkill {
 
     fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
         // log::info!("Dribbling towards position: {:?}, heading: {:?}, with_ball: {}", self.target_pos, self.target_heading, self.with_ball);
-        // Check whether the robot holds the ball
-        let breakbeam = ctx.player.breakbeam_ball_detected;
-        if !breakbeam {
+        // Check whether the robot holds the ball (unified possession signal).
+        if !ctx.player.has_ball {
             log::warn!("Dribble skill failed: ball not captured");
             self.status = SkillStatus::Failed;
             return SkillProgress::failure();

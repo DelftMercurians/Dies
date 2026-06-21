@@ -9,23 +9,8 @@ pub const V_MAX: f64 = 3000.0;
 /// Assumed acceleration for time-to-target estimates.
 pub const A_MAX: f64 = 3000.0;
 
-// ── Possession classification ───────────────────────────────────────────────
-/// A teammate without breakbeam is treated as possessing the ball within this range.
-pub const WE_POSSESSION_DIST: f64 = 120.0;
-/// An opponent is treated as possessing the ball within this range.
-pub const OPP_POSSESSION_DIST: f64 = 150.0;
-/// Frames a non-breakbeam possession change must persist before it commits.
-pub const DEBOUNCE_FRAMES: u32 = 4;
-/// How long to hold the last stable possession while the ball is undetected
-/// before forcing `Loose`.
-pub const POSSESSION_HOLD_SECS: f64 = 0.25;
-/// A ball faster than this can't be "possessed" by proximity (breakbeam still
-/// authoritative). Keeps a kicked/whizzing ball from registering as controlled.
-/// Load-bearing for normal possession too — watch in sim.
-pub const POSSESSION_MAX_BALL_SPEED: f64 = 1000.0;
-/// After we command a kick, suppress proximity re-acquisition of `We(kicker)` for
-/// this long (breakbeam re-acquisition is never suppressed).
-pub const RELEASE_SUPPRESS_SECS: f64 = 0.2;
+// Possession classification now lives in the framework (`dies-world`), tuned via
+// `PossessionConfig` in the executor settings — not here.
 
 // ── Planner ─────────────────────────────────────────────────────────────────
 // Offense policy: dribbling is unreliable and bounded by the 1m excessive-dribbling

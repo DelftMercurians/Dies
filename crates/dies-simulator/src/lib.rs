@@ -306,6 +306,17 @@ pub enum RefereeMessage {
     PenaltyRobotPositionViolation,
     PenaltyBallDirectionViolation,
     PenaltyTimeExceeded,
+    NoProgress,
+    Goal,
+}
+
+/// A simulator-internal referee event together with the team it concerns (if
+/// any). Surfaced to the executor so sim matches narrate the same class of
+/// events (fouls, violations, goals) that a real autoref would report.
+#[derive(Debug, Clone)]
+pub struct SimRefereeEvent {
+    pub kind: RefereeMessage,
+    pub team: Option<TeamColor>,
 }
 
 impl fmt::Display for RefereeMessage {
@@ -332,6 +343,8 @@ impl fmt::Display for RefereeMessage {
                 write!(f, "Penalty ball direction violation")
             }
             RefereeMessage::PenaltyTimeExceeded => write!(f, "Penalty time exceeded"),
+            RefereeMessage::NoProgress => write!(f, "No progress"),
+            RefereeMessage::Goal => write!(f, "Goal"),
         }
     }
 }
@@ -458,6 +471,12 @@ pub struct Simulation {
     geometry_interval: IntervalTrigger,
     geometry_packet: SSL_WrapperPacket,
     referee_message: VecDeque<Referee>,
+    /// Monotonic counter advertised in the referee `command_counter` field so
+    /// consumers can tell distinct commands apart.
+    command_counter: u32,
+    /// Simulator-internal referee events (fouls/violations/goals) awaiting drain
+    /// into the announcer feed.
+    referee_events: VecDeque<SimRefereeEvent>,
     feedback_interval: IntervalTrigger,
     feedback_queue: HashMap<(TeamColor, PlayerId), PlayerFeedbackMsg>,
     game_state: SimulationGameState,
@@ -513,6 +532,8 @@ impl Simulation {
             geometry_interval: IntervalTrigger::new(geometry_interval),
             geometry_packet,
             referee_message: VecDeque::new(),
+            command_counter: 0,
+            referee_events: VecDeque::new(),
             feedback_interval: IntervalTrigger::new(feedback_interval),
             feedback_queue: HashMap::new(),
             game_state: SimulationGameState::default(),
@@ -826,12 +847,33 @@ impl Simulation {
     }
 
     fn update_referee_command(&mut self, command: referee::Command) {
+        self.update_referee_command_full(command, None, None);
+    }
+
+    /// Like [`update_referee_command`], but also advertises the command that will
+    /// resume play (`next_command`) and how long the current action has left
+    /// (`action_time_s`). This is what lets the UI's game-state panel show a live
+    /// "Next: … in N s" countdown in sim, where there is no real game controller.
+    fn update_referee_command_full(
+        &mut self,
+        command: referee::Command,
+        next_command: Option<referee::Command>,
+        action_time_s: Option<f64>,
+    ) {
         let mut msg = Referee::new();
         msg.set_command(command);
         msg.packet_timestamp = Some(0);
         msg.set_stage(referee::Stage::NORMAL_FIRST_HALF);
-        msg.command_counter = Some(1);
+        // Increment so consumers can detect distinct commands (the real GC does).
+        self.command_counter = self.command_counter.wrapping_add(1);
+        msg.command_counter = Some(self.command_counter);
         msg.command_timestamp = Some(0);
+        if let Some(next) = next_command {
+            msg.set_next_command(next);
+        }
+        if let Some(t) = action_time_s {
+            msg.current_action_time_remaining = Some((t * 1_000_000.0) as i64);
+        }
         if let SimulationGameState::BallPlacement { position, .. } = &self.game_state {
             let mut point = referee::Point::new();
             point.set_x(position.x as f32);
@@ -848,6 +890,19 @@ impl Simulation {
         msg.yellow = Some(yellow_team_info).into();
         msg.blue_team_on_positive_half = Some(false);
         self.referee_message.push_back(msg);
+    }
+
+    /// Record a simulator-internal referee event (foul, violation, goal, …) so the
+    /// executor can surface it in the announcer feed. Drained via
+    /// [`take_referee_events`].
+    fn push_referee_event(&mut self, kind: RefereeMessage, team: Option<TeamColor>) {
+        dies_core::debug_string("RefereeMessage", kind.to_string());
+        self.referee_events.push_back(SimRefereeEvent { kind, team });
+    }
+
+    /// Drain the simulator-internal referee events accumulated since the last call.
+    pub fn take_referee_events(&mut self) -> Vec<SimRefereeEvent> {
+        self.referee_events.drain(..).collect()
     }
 
     pub fn gc_message(&mut self) -> Option<Referee> {
@@ -872,7 +927,11 @@ impl Simulation {
         let mut game_state = std::mem::take(&mut self.game_state);
         self.game_state = match game_state {
             SimulationGameState::StartGame => {
-                self.update_referee_command(referee::Command::STOP);
+                self.update_referee_command_full(
+                    referee::Command::STOP,
+                    Some(referee::Command::PREPARE_KICKOFF_BLUE),
+                    Some(STOP_DURATION),
+                );
                 SimulationGameState::stop_and_kickoff(TeamColor::Blue)
             }
             SimulationGameState::Stop => game_state,
@@ -883,14 +942,15 @@ impl Simulation {
             } => {
                 // Wait for 1s before starting the game
                 if stop_timer.tick(self.integration_parameters.dt) {
-                    match team_color {
-                        TeamColor::Blue => {
-                            self.update_referee_command(referee::Command::PREPARE_KICKOFF_BLUE);
-                        }
-                        TeamColor::Yellow => {
-                            self.update_referee_command(referee::Command::PREPARE_KICKOFF_YELLOW);
-                        }
-                    }
+                    let cmd = match team_color {
+                        TeamColor::Blue => referee::Command::PREPARE_KICKOFF_BLUE,
+                        TeamColor::Yellow => referee::Command::PREPARE_KICKOFF_YELLOW,
+                    };
+                    self.update_referee_command_full(
+                        cmd,
+                        Some(referee::Command::NORMAL_START),
+                        Some(10.0),
+                    );
                     SimulationGameState::prepare_kickoff(team_color)
                 } else {
                     game_state
@@ -911,14 +971,11 @@ impl Simulation {
             } => {
                 // Wait out the stop period, then award the free kick.
                 if stop_timer.tick(self.integration_parameters.dt) {
-                    match team_color {
-                        TeamColor::Blue => {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
-                        }
-                        TeamColor::Yellow => {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
-                        }
-                    }
+                    let cmd = match team_color {
+                        TeamColor::Blue => referee::Command::DIRECT_FREE_BLUE,
+                        TeamColor::Yellow => referee::Command::DIRECT_FREE_YELLOW,
+                    };
+                    self.update_referee_command_full(cmd, None, Some(10.0));
                     SimulationGameState::free_kick(team_color)
                 } else {
                     game_state
@@ -977,13 +1034,8 @@ impl Simulation {
                     self.last_kicker_info = None;
                     self.kick_ball_position = None;
 
-                    // Re-center the ball for the kick-off so the match keeps
-                    // running (otherwise it stays in the goal and re-triggers
-                    // the goal check every frame). Go through a Stop period
-                    // first so robots slow down before the kick-off.
-                    self.place_ball(0.0, 0.0);
-                    self.update_referee_command(referee::Command::STOP);
-
+                    // The team that restarts with a kick-off is the one that was
+                    // scored on; the scorer is the opponent.
                     let kickoff_team =
                         if ball_pos.x > 0.0 && self.side_assignment == SideAssignment::BlueOnPositive
                         {
@@ -991,6 +1043,22 @@ impl Simulation {
                         } else {
                             TeamColor::Yellow
                         };
+                    self.push_referee_event(RefereeMessage::Goal, Some(kickoff_team.opposite()));
+
+                    // Re-center the ball for the kick-off so the match keeps
+                    // running (otherwise it stays in the goal and re-triggers
+                    // the goal check every frame). Go through a Stop period
+                    // first so robots slow down before the kick-off.
+                    self.place_ball(0.0, 0.0);
+                    let next = match kickoff_team {
+                        TeamColor::Blue => referee::Command::PREPARE_KICKOFF_BLUE,
+                        TeamColor::Yellow => referee::Command::PREPARE_KICKOFF_YELLOW,
+                    };
+                    self.update_referee_command_full(
+                        referee::Command::STOP,
+                        Some(next),
+                        Some(STOP_DURATION),
+                    );
                     SimulationGameState::stop_and_kickoff(kickoff_team)
                 } else if self.ball_out() {
                     // Clear kick tracking
@@ -1005,13 +1073,27 @@ impl Simulation {
                     // down and back off before the free kick.
                     let placement = self.designated_ball_position;
                     self.place_ball(placement.x, placement.y);
-                    self.update_referee_command(referee::Command::STOP);
 
                     if let Some((_kicker_id, kicker_color)) = self.last_touch_info {
                         // Free kick is awarded to the opponent of the last toucher.
-                        SimulationGameState::stop_and_free_kick(kicker_color.opposite())
+                        let awarded = kicker_color.opposite();
+                        let next = match awarded {
+                            TeamColor::Blue => referee::Command::DIRECT_FREE_BLUE,
+                            TeamColor::Yellow => referee::Command::DIRECT_FREE_YELLOW,
+                        };
+                        self.update_referee_command_full(
+                            referee::Command::STOP,
+                            Some(next),
+                            Some(STOP_DURATION),
+                        );
+                        SimulationGameState::stop_and_free_kick(awarded)
                     } else {
                         // No known last toucher — neutral restart with a force start.
+                        self.update_referee_command_full(
+                            referee::Command::STOP,
+                            Some(referee::Command::FORCE_START),
+                            Some(STOP_DURATION),
+                        );
                         SimulationGameState::stop_and_force_start()
                     }
                 } else {
@@ -1024,7 +1106,12 @@ impl Simulation {
                             last_ball_position.as_ref().unwrap_or(&ball_position_2d);
                         if (ball_position_2d - last_ball_position_unwrapped).norm() < 10.0 {
                             if no_progress_timer.tick(self.integration_parameters.dt) {
-                                self.update_referee_command(referee::Command::STOP);
+                                self.push_referee_event(RefereeMessage::NoProgress, None);
+                                self.update_referee_command_full(
+                                    referee::Command::STOP,
+                                    Some(referee::Command::FORCE_START),
+                                    Some(STOP_DURATION),
+                                );
                                 SimulationGameState::stop_and_force_start()
                             } else {
                                 game_state
@@ -1044,10 +1131,15 @@ impl Simulation {
             } => {
                 // Check if positions are valid
                 if !self.check_free_kick_positions(team_color) {
-                    // Defending robots are crowding the ball. Don't wait forever:
-                    // tick the kick timer as a hard ceiling and force the game
-                    // back to running if they never clear out, so self-play can't
-                    // stall on a free kick.
+                    // Defending robots are crowding the ball (announcer dedupes
+                    // the repeated frames into a single line).
+                    self.push_referee_event(
+                        RefereeMessage::DefenderTooCloseToBall,
+                        Some(team_color.opposite()),
+                    );
+                    // Don't wait forever: tick the kick timer as a hard ceiling
+                    // and force the game back to running if they never clear out,
+                    // so self-play can't stall on a free kick.
                     if kick_timer.tick(self.integration_parameters.dt) {
                         self.update_referee_command(referee::Command::FORCE_START);
                         self.kick_in_progress = false;
@@ -1085,10 +1177,7 @@ impl Simulation {
                         SimulationGameState::run()
                     } else if is_free_kick_time_exceeded {
                         // Original timer logic - keep for compatibility
-                        dies_core::debug_string(
-                            "RefereeMessage",
-                            RefereeMessage::FreekickTimeExceeded.to_string(),
-                        );
+                        self.push_referee_event(RefereeMessage::FreekickTimeExceeded, None);
                         self.kick_in_progress = false;
                         SimulationGameState::run()
                     } else {
@@ -1129,10 +1218,7 @@ impl Simulation {
                     let direction_valid = self.check_penalty_ball_direction(team_color);
 
                     if time_exceeded {
-                        dies_core::debug_string(
-                            "RefereeMessage",
-                            RefereeMessage::PenaltyTimeExceeded.to_string(),
-                        );
+                        self.push_referee_event(RefereeMessage::PenaltyTimeExceeded, None);
                         self.kick_in_progress = false;
                         // Award goal kick to defending team
                         let defending_team = if team_color == TeamColor::Blue {
@@ -1570,17 +1656,23 @@ impl Simulation {
                             self.last_kicker_info = None;
                             self.kick_ball_position = None;
 
+                            self.push_referee_event(
+                                RefereeMessage::DoubleTouchViolation,
+                                Some(team_color),
+                            );
+
                             let opponent_team = if team_color == TeamColor::Blue {
                                 TeamColor::Yellow
                             } else {
                                 TeamColor::Blue
                             };
                             self.game_state = SimulationGameState::free_kick(opponent_team);
-                            self.update_referee_command(if opponent_team == TeamColor::Blue {
+                            let cmd = if opponent_team == TeamColor::Blue {
                                 referee::Command::DIRECT_FREE_BLUE
                             } else {
                                 referee::Command::DIRECT_FREE_YELLOW
-                            });
+                            };
+                            self.update_referee_command_full(cmd, None, Some(10.0));
                         } else if self.last_kicker_info.is_none() {
                             // Set the first kicker
                             self.last_kicker_info = Some((id, team_color));

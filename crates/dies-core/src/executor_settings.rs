@@ -5,7 +5,7 @@ use typeshare::typeshare;
 
 use crate::{
     avoidance_config::AvoidanceConfig, skill_settings::SkillSettings, FieldGeometry, PlayerId,
-    SideAssignment,
+    PossessionConfig, SideAssignment,
 };
 
 /// Settings for the low-level controller.
@@ -266,6 +266,9 @@ pub struct ExecutorSettings {
     pub yellow_team_settings: TeamSpecificSettings,
     pub blue_team_settings: TeamSpecificSettings,
     pub skill_settings: SkillSettings,
+    /// Tuning for the unified ball-possession metric (computed in the world tracker).
+    #[serde(default)]
+    pub possession_config: PossessionConfig,
     pub allow_no_vision: bool,
     /// Global on/off for goal-area avoidance. When false, both compliance and
     /// the controller skip the goal-area keep-out logic (goalkeeper exception
@@ -333,6 +336,7 @@ impl Default for ExecutorSettings {
             yellow_team_settings: TeamSpecificSettings::default(),
             blue_team_settings: TeamSpecificSettings::default(),
             skill_settings: SkillSettings::default(),
+            possession_config: PossessionConfig::default(),
             allow_no_vision: false,
             goal_area_avoidance: true,
             avoidance: AvoidanceConfig::default(),

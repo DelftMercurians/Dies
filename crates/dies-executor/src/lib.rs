@@ -21,6 +21,7 @@ pub use handle::{ControlMsg, ExecutorHandle};
 use protobuf::Message as _;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
+mod announcer;
 pub mod control;
 mod gc_client;
 mod handle;
@@ -175,6 +176,20 @@ impl TeamMap {
                         .into_iter()
                         .map(|(id, v)| (color, id, v)),
                 );
+            }
+        }
+        out
+    }
+
+    /// Players kicking this tick on both teams (efference copy for possession).
+    fn kicking_players(&self) -> Vec<(TeamColor, PlayerId)> {
+        let mut out = Vec::new();
+        for (color, ctrl) in [
+            (TeamColor::Blue, &self.blue_team),
+            (TeamColor::Yellow, &self.yellow_team),
+        ] {
+            if let Some(ctrl) = ctrl {
+                out.extend(ctrl.kicking_players().into_iter().map(|id| (color, id)));
             }
         }
         out
@@ -406,6 +421,8 @@ pub struct Executor {
     /// Whether to record raw received vision/GC wire bytes (ground truth). On
     /// for live matches via `DIES_LOG_RAW`, off for routine testing.
     log_raw_vision: bool,
+    /// Builds the scrolling announcer commentary feed sent to the UI.
+    announcer: announcer::Announcer,
 }
 
 impl Executor {
@@ -494,6 +511,7 @@ impl Executor {
             log_raw_vision: std::env::var("DIES_LOG_RAW")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
+            announcer: announcer::Announcer::new(),
         }
     }
 
@@ -519,6 +537,7 @@ impl Executor {
             }
         }
         self.tracker.update_from_referee(&message);
+        self.announcer.on_referee(&message, self.last_t);
 
         // Detect side assignment from referee message
         if let Some(blue_on_positive) = message.blue_team_on_positive_half {
@@ -613,6 +632,9 @@ impl Executor {
         }
         if let Some(gc_message) = simulator.gc_message() {
             self.update_from_gc_msg(gc_message);
+        }
+        for ev in simulator.take_referee_events() {
+            self.announcer.on_sim_event(&ev, self.last_t);
         }
         for ((team_color, _), feedback) in simulator.feedback().into_iter() {
             self.update_from_bs_msg(team_color, feedback, simulator.time());
@@ -1027,6 +1049,7 @@ impl Executor {
         let update = WorldUpdate {
             world_data: world_data.clone(),
             frame_id,
+            announcements: self.announcer.drain(),
         };
         if let Err(err) = self.update_tx.send(update) {
             log::error!("Failed to broadcast world update: {}", err);
@@ -1206,6 +1229,12 @@ impl Executor {
         for (color, id, vel) in self.team_controllers.target_velocities_global() {
             let vel_abs = side_assignment.transform_vec2(color, &vel);
             self.tracker.set_player_command(color, id, vel_abs);
+        }
+
+        // Efference copy: tell the possession metric who is kicking this tick so a
+        // kicker isn't immediately re-credited with the ball it just released.
+        for (color, id) in self.team_controllers.kicking_players() {
+            self.tracker.notify_kick(color, id);
         }
 
         // Record the frame after the controllers (and strategy) have produced

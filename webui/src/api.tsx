@@ -33,6 +33,7 @@ import {
   DebugMap,
   GetDebugMapResponse,
   WorldData,
+  Announcement,
   TeamColor,
   TeamPlayerId,
   PlayerId,
@@ -72,6 +73,22 @@ export const commandPaletteOpenAtom = atom<boolean>(false);
 
 /** Current world-frame id, from each WorldUpdate (live + replay). */
 export const currentFrameIdAtom = atom<number>(0);
+
+/**
+ * An announcer line as held in the UI. Extends the backend {@link Announcement}
+ * with client-side bookkeeping: backend ids reset when the executor restarts, so
+ * we mint our own stable key, and we stamp wall-clock arrival time to drive the
+ * fade-in/translucency animation independent of backend/world time.
+ */
+export interface AnnouncementFeedItem extends Announcement {
+  clientKey: number;
+  arrivedAt: number;
+}
+
+/** Rolling announcer commentary feed (newest last). Capped to avoid growth. */
+export const announcementsAtom = atom<AnnouncementFeedItem[]>([]);
+const MAX_ANNOUNCEMENTS = 60;
+let announcementSeq = 0;
 
 /** Latest replay-player state (null when not replaying). */
 export const replayStateAtom = atom<ReplayState | null>(null);
@@ -525,6 +542,24 @@ export function startWsClient() {
             data: msg.data.world_data,
           } satisfies UiWorldState);
           store.set(currentFrameIdAtom, msg.data.frame_id);
+
+          // Accumulate announcer lines. Each WorldUpdate carries only the lines
+          // minted since the previous broadcast, so we simply append (no dedupe
+          // needed) and cap the rolling buffer.
+          const incoming = msg.data.announcements ?? [];
+          if (incoming.length > 0) {
+            const arrivedAt = Date.now();
+            const prev = store.get(announcementsAtom);
+            const added = incoming.map((a) => ({
+              ...a,
+              clientKey: announcementSeq++,
+              arrivedAt,
+            }));
+            store.set(
+              announcementsAtom,
+              [...prev, ...added].slice(-MAX_ANNOUNCEMENTS)
+            );
+          }
 
           // Track dt from WebSocket updates
           const currentTime = Date.now();

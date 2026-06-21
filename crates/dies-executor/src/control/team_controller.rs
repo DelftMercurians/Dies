@@ -471,6 +471,15 @@ impl TeamController {
             .collect()
     }
 
+    /// Players that will kick on this tick (efference copy for possession).
+    pub fn kicking_players(&self) -> Vec<PlayerId> {
+        self.player_controllers
+            .values()
+            .filter(|c| c.is_kicking())
+            .map(|c| c.id())
+            .collect()
+    }
+
     pub fn commands(
         &mut self,
         side_assignment: SideAssignment,

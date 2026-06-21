@@ -8,7 +8,9 @@
 //! Strategies never see absolute world coordinates or team color.
 
 use dies_core::{FieldGeometry, Vector2};
-use dies_strategy_protocol::{BallState, GameState, PlayerId, PlayerState, WorldSnapshot};
+use dies_strategy_protocol::{
+    BallState, GameState, PlayerId, PlayerState, Possession, WorldSnapshot,
+};
 
 /// A rectangle defined by min and max corners.
 #[derive(Clone, Copy, Debug)]
@@ -200,6 +202,22 @@ impl World {
             .map(|b| b.position + b.velocity * t)
     }
 
+    // ========== Possession ==========
+
+    /// The unified ball-possession metric, team-relative
+    /// (`We`/`Opp`/`Loose`/`Contested`). The single source of truth for who has
+    /// the ball — prefer this (and `PlayerState::has_ball`) over any ad-hoc
+    /// distance/breakbeam check.
+    pub fn possession(&self) -> Possession {
+        self.snapshot.possession
+    }
+
+    /// Whether the possession belief is currently being held through a
+    /// vision/contact dropout (stale, not backed by a fresh observation).
+    pub fn possession_stale(&self) -> bool {
+        self.snapshot.possession_stale
+    }
+
     // ========== Players ==========
 
     /// Get all own players (our team's robots).
@@ -341,6 +359,8 @@ mod tests {
             us_operating: true,
             our_keeper_id: Some(PlayerId::new(1)),
             freekick_kicker: None,
+            possession: dies_strategy_protocol::Possession::Loose,
+            possession_stale: false,
         })
     }
 

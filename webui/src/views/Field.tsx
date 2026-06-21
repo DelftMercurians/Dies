@@ -38,6 +38,7 @@ import {
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { BallPlacementPostionAtom } from "@/components/GameControllerPanel";
 import GameBanner from "@/components/GameBanner";
+import FieldAnnouncerOverlay from "@/components/FieldAnnouncerOverlay";
 import { FrameCounter } from "@/components/FrameCounter";
 import { ReplayTransport } from "@/components/ReplayTransport";
 import {
@@ -712,6 +713,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           sideAssignment={worldData.side_assignment}
         />
       )}
+
+      {/* Right-edge game-state panel + GC quick actions + announcer feed */}
+      {worldData && <FieldAnnouncerOverlay gameState={worldData.game_state} />}
 
       {/* Frame number (top-right) + replay transport (bottom, when replaying) */}
       <FrameCounter />

@@ -13,7 +13,6 @@ use dies_strategy_api::World;
 use crate::config;
 use crate::driver::FailReason;
 use crate::geometry;
-use crate::possession::Possession;
 
 /// How a capture is performed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,8 +181,8 @@ impl Planner {
                 }
             }
 
-            // ── Ball is loose ───────────────────────────────────────────
-            Possession::Loose => {
+            // ── Ball is loose (or contested — go win it) ────────────────
+            Possession::Loose | Possession::Contested => {
                 let robot = self.select_capturer(world, ball_pos, inputs)?;
                 Plan {
                     waypoints: vec![Waypoint::Capture {
