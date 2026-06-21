@@ -307,6 +307,35 @@ export interface TeamPlayerId {
 	player_id: PlayerId;
 }
 
+/** Which control the UI should render for a parameter. */
+export enum ParamKind {
+	Bool = "Bool",
+	Float = "Float",
+	Int = "Int",
+	Text = "Text",
+}
+
+/**
+ * A strategy's declaration of one parameter: how to label/render it, and its
+ * default value (used when no override has been pushed yet).
+ */
+export interface ParamSpec {
+	key: string;
+	label: string;
+	kind: ParamKind;
+	default: ParamValue;
+}
+
+/**
+ * One team's strategy parameters (declared specs + current values), surfaced to
+ * the UI via `ExecutorInfo`.
+ */
+export interface TeamStrategyParams {
+	team: TeamColor;
+	specs: ParamSpec[];
+	values: Record<string, ParamValue>;
+}
+
 /** Runtime information about the active executor. */
 export interface ExecutorInfo {
 	/** Whether the executor is currently paused. */
@@ -315,6 +344,8 @@ export interface ExecutorInfo {
 	manual_controlled_players: TeamPlayerId[];
 	/** Which teams are currently active/controlled. */
 	active_teams: TeamColor[];
+	/** Declared parameters + current values for each active team's strategy. */
+	strategy_params: TeamStrategyParams[];
 }
 
 /** Runtime information about the active executor. */
@@ -667,6 +698,12 @@ export type UiCommand =
 	/** Drop a point-of-interest marker at the current live frame (double-space). */
 	| { type: "AddMarker", data: {
 	label?: string;
+}}
+	/** Set a single runtime strategy parameter for a team. */
+	| { type: "SetStrategyParam", data: {
+	team_color: TeamColor;
+	key: string;
+	value: ParamValue;
 }}
 	/** Load a recorded log (directory or `.dieslog` zip) for replay. */
 	| { type: "LoadLog", data: {
@@ -1024,3 +1061,8 @@ export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];
 export type Duration = number;
 export type HashSet<T> = Array<T>;
+export type ParamValue =
+  | { Bool: boolean }
+  | { Float: number }
+  | { Int: number }
+  | { Text: string };

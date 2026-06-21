@@ -93,16 +93,6 @@ impl BallTracker {
         field_mask: &FieldMask,
         field_geom: Option<&FieldGeometry>,
     ) {
-        for (idx, ball) in frame.balls.iter().enumerate() {
-            dies_core::debug_circle_fill(
-                "ball_dbg",
-                Vector2::new(ball.x() as f64, ball.y() as f64),
-                10.0,
-                dies_core::DebugColor::Purple,
-            );
-            dies_core::debug_value(format!("ball_{}_confidence", idx), ball.confidence() as f64);
-        }
-
         frame
             .balls
             .iter()

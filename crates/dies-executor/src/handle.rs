@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 use dies_core::{
     ExecutorInfo, ExecutorSettings, GcSimCommand, PlayerId, PlayerOverrideCommand, SideAssignment,
-    SimulatorCmd, TeamColor, TeamConfiguration, WorldUpdate,
+    SimulatorCmd, StrategyParams, TeamColor, TeamConfiguration, WorldUpdate,
 };
 use dies_test_driver::{LogBus, TestStatus};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
@@ -51,6 +51,11 @@ pub enum ControlMsg {
     /// in the UI). `label` is optional.
     AddMarker {
         label: Option<String>,
+    },
+    /// Set runtime strategy parameters for a team (from the UI).
+    SetStrategyParams {
+        team: TeamColor,
+        params: StrategyParams,
     },
     Stop,
 }

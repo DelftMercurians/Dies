@@ -10,6 +10,7 @@ import GameControllerPanel from "./GameControllerPanel";
 import PlayerInspectorPanel from "./PlayerInspectorPanel";
 import BasestationPanel from "./BasestationPanel";
 import SettingsPanel from "./SettingsPanel";
+import StrategyPanel from "./StrategyPanel";
 import DebugLayerPanel from "./DebugLayerPanel";
 import ScenarioPanel from "./ScenarioPanel";
 import ConsolePanel from "./ConsolePanel";
@@ -21,6 +22,7 @@ export {
   PlayerInspectorPanel,
   BasestationPanel,
   SettingsPanel,
+  StrategyPanel,
   DebugLayerPanel,
   ScenarioPanel,
   ConsolePanel,
@@ -33,6 +35,7 @@ export const PANEL_IDS = {
   PLAYER_INSPECTOR: "player-inspector",
   BASESTATION: "basestation",
   SETTINGS: "settings",
+  STRATEGY: "strategy",
   DEBUG_LAYERS: "debug-layers",
   SCENARIO: "scenario",
   CONSOLE: "console",
@@ -47,6 +50,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   [PANEL_IDS.PLAYER_INSPECTOR]: "INSPECTOR",
   [PANEL_IDS.BASESTATION]: "BASESTATION",
   [PANEL_IDS.SETTINGS]: "SETTINGS",
+  [PANEL_IDS.STRATEGY]: "STRATEGY",
   [PANEL_IDS.DEBUG_LAYERS]: "DEBUG",
   [PANEL_IDS.SCENARIO]: "SCENARIO",
   [PANEL_IDS.CONSOLE]: "CONSOLE",
@@ -64,6 +68,7 @@ export const panelComponents = {
   [PANEL_IDS.PLAYER_INSPECTOR]: PlayerInspectorPanel,
   [PANEL_IDS.BASESTATION]: BasestationPanel,
   [PANEL_IDS.SETTINGS]: SettingsPanel,
+  [PANEL_IDS.STRATEGY]: StrategyPanel,
   [PANEL_IDS.DEBUG_LAYERS]: DebugLayerPanel,
   [PANEL_IDS.SCENARIO]: ScenarioPanel,
   [PANEL_IDS.CONSOLE]: ConsolePanel,

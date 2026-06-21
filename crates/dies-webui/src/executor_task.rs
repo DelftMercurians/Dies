@@ -174,6 +174,18 @@ impl ExecutorTask {
                     controller.set_speed(speed);
                 }
             }
+            UiCommand::SetStrategyParam {
+                team_color,
+                key,
+                value,
+            } => {
+                let mut params = std::collections::HashMap::new();
+                params.insert(key, value);
+                self.handle_executor_msg(ControlMsg::SetStrategyParams {
+                    team: team_color,
+                    params,
+                });
+            }
         }
     }
 
@@ -363,7 +375,9 @@ impl ExecutorTask {
                     }
 
                     // Block so the process doesn't exit mid-compaction.
-                    log::info!("Shutdown: executor run loop ended, closing log (blocking, up to 25s)");
+                    log::info!(
+                        "Shutdown: executor run loop ended, closing log (blocking, up to 25s)"
+                    );
                     dies_logger::worker::log_close_blocking(std::time::Duration::from_secs(25));
                     log::info!("Shutdown: log close complete, executor thread exiting");
                 });

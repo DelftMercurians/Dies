@@ -8,8 +8,11 @@ use std::path::{Path, PathBuf};
 
 use dies_core::{
     debug_record, DebugShape, DebugValue, PlayerId, SideAssignment, TeamColor, TeamData,
+    TeamStrategyParams,
 };
-use dies_strategy_protocol::{DebugEntry, PassResult, SkillCommand, SkillStatus, StrategyConfig};
+use dies_strategy_protocol::{
+    DebugEntry, PassResult, SkillCommand, SkillStatus, StrategyConfig, StrategyParams,
+};
 use tracing::{error, info, warn};
 
 use super::connection::{ConnectionError, ConnectionState, StrategyConnection};
@@ -78,6 +81,11 @@ pub struct StrategyHost {
     blue_pass_results: HashMap<PlayerId, PassResult>,
     /// Rich pass results for yellow team.
     yellow_pass_results: HashMap<PlayerId, PassResult>,
+    /// Current strategy parameter values for blue team (cached so they survive
+    /// reconnect/hot-reload — re-sent once the strategy is Ready again).
+    blue_params: StrategyParams,
+    /// Current strategy parameter values for yellow team.
+    yellow_params: StrategyParams,
 }
 
 impl StrategyHost {
@@ -91,7 +99,50 @@ impl StrategyHost {
             yellow_skill_statuses: HashMap::new(),
             blue_pass_results: HashMap::new(),
             yellow_pass_results: HashMap::new(),
+            blue_params: HashMap::new(),
+            yellow_params: HashMap::new(),
         }
+    }
+
+    /// Set runtime parameters for a team's strategy (from the UI). Merges the new
+    /// values into the cache and pushes the full value map to the strategy.
+    pub fn set_strategy_params(&mut self, team: TeamColor, params: StrategyParams) {
+        let (cache, conn) = match team {
+            TeamColor::Blue => (&mut self.blue_params, &mut self.blue_connection),
+            TeamColor::Yellow => (&mut self.yellow_params, &mut self.yellow_connection),
+        };
+        for (key, value) in params {
+            cache.insert(key, value);
+        }
+        if let Some(conn) = conn {
+            if let Err(e) = conn.send_params(cache) {
+                warn!("Failed to push params to {:?} strategy: {}", team, e);
+            }
+        }
+    }
+
+    /// Declared specs + current values for each ready strategy, for the UI.
+    pub fn param_state(&self) -> Vec<TeamStrategyParams> {
+        let mut out = Vec::new();
+        for (team, conn, values) in [
+            (TeamColor::Blue, &self.blue_connection, &self.blue_params),
+            (
+                TeamColor::Yellow,
+                &self.yellow_connection,
+                &self.yellow_params,
+            ),
+        ] {
+            if let Some(conn) = conn {
+                if conn.state() == ConnectionState::Ready {
+                    out.push(TeamStrategyParams {
+                        team,
+                        specs: conn.declared_params().to_vec(),
+                        values: values.clone(),
+                    });
+                }
+            }
+        }
+        out
     }
 
     /// Get the strategies directory.
@@ -246,6 +297,8 @@ impl StrategyHost {
                 match conn.try_accept() {
                     Ok(true) => {
                         info!("Blue team strategy connected and ready");
+                        // Restore any cached parameter overrides.
+                        let _ = conn.send_params(&self.blue_params);
                     }
                     Ok(false) => {}
                     Err(e) => {
@@ -262,6 +315,7 @@ impl StrategyHost {
                 match conn.try_accept() {
                     Ok(true) => {
                         info!("Yellow team strategy connected and ready");
+                        let _ = conn.send_params(&self.yellow_params);
                     }
                     Ok(false) => {}
                     Err(e) => {

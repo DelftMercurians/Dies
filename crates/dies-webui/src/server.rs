@@ -508,7 +508,10 @@ async fn start_webserver(
             "/api/settings/snapshots",
             get(routes::get_settings_snapshots),
         )
-        .route("/api/settings/baseline", post(routes::post_settings_baseline))
+        .route(
+            "/api/settings/baseline",
+            post(routes::post_settings_baseline),
+        )
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))
         .route("/api/list", get(routes::list_files))

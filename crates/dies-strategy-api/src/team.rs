@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 
 use dies_strategy_protocol::{
-    PassResult, PassRole, PlayerId, SkillCommand, SkillStatus, Vector2, WorldSnapshot,
+    ParamValue, PassResult, PassRole, PlayerId, SkillCommand, SkillStatus, StrategyParams, Vector2,
+    WorldSnapshot,
 };
 
 use crate::player::PlayerHandle;
@@ -37,6 +38,7 @@ pub struct TeamContext {
     players: HashMap<PlayerId, PlayerHandle>,
     player_ids: Vec<PlayerId>,
     pass_results: HashMap<PlayerId, PassResult>,
+    params: StrategyParams,
 }
 
 impl TeamContext {
@@ -46,6 +48,7 @@ impl TeamContext {
         snapshot: WorldSnapshot,
         skill_statuses: HashMap<PlayerId, SkillStatus>,
         pass_results: HashMap<PlayerId, PassResult>,
+        params: StrategyParams,
     ) -> Self {
         let player_ids: Vec<PlayerId> = snapshot.own_players.iter().map(|p| p.id).collect();
 
@@ -66,7 +69,41 @@ impl TeamContext {
             players,
             player_ids,
             pass_results,
+            params,
         }
+    }
+
+    /// Read a boolean runtime parameter (`false` if unset / not a bool).
+    pub fn param_bool(&self, key: &str) -> bool {
+        self.params
+            .get(key)
+            .and_then(ParamValue::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Read a float runtime parameter (`0.0` if unset / not numeric).
+    pub fn param_float(&self, key: &str) -> f64 {
+        self.params
+            .get(key)
+            .and_then(ParamValue::as_float)
+            .unwrap_or(0.0)
+    }
+
+    /// Read an integer runtime parameter (`0` if unset / not numeric).
+    pub fn param_int(&self, key: &str) -> i32 {
+        self.params
+            .get(key)
+            .and_then(ParamValue::as_int)
+            .unwrap_or(0)
+    }
+
+    /// Read a text runtime parameter (empty string if unset / not text).
+    pub fn param_text(&self, key: &str) -> String {
+        self.params
+            .get(key)
+            .and_then(ParamValue::as_text)
+            .unwrap_or("")
+            .to_string()
     }
 
     /// Read-only access to world state.
@@ -260,7 +297,7 @@ mod tests {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
+        let ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new(), HashMap::new());
 
         assert_eq!(ctx.player_count(), 2);
         assert_eq!(ctx.player_ids().len(), 2);
@@ -271,7 +308,7 @@ mod tests {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let mut ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
+        let mut ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new(), HashMap::new());
 
         assert!(ctx.player(PlayerId::new(1)).is_some());
         assert!(ctx.player(PlayerId::new(2)).is_some());
@@ -283,7 +320,7 @@ mod tests {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let mut ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
+        let mut ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new(), HashMap::new());
 
         // Issue commands
         if let Some(player) = ctx.player(PlayerId::new(1)) {
@@ -308,7 +345,7 @@ mod tests {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
+        let ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new(), HashMap::new());
 
         let world = ctx.world();
         assert!(world.ball().is_some());
@@ -316,11 +353,30 @@ mod tests {
     }
 
     #[test]
+    fn test_param_accessors() {
+        let snapshot = make_test_snapshot();
+        let mut params = HashMap::new();
+        params.insert("defense_only".to_string(), ParamValue::Bool(true));
+        params.insert("aggression".to_string(), ParamValue::Float(0.7));
+
+        let ctx = TeamContext::new(snapshot, HashMap::new(), HashMap::new(), params);
+
+        // Set values are returned.
+        assert!(ctx.param_bool("defense_only"));
+        assert_eq!(ctx.param_float("aggression"), 0.7);
+        // Unset keys fall back to zero-defaults.
+        assert!(!ctx.param_bool("missing"));
+        assert_eq!(ctx.param_float("missing"), 0.0);
+        assert_eq!(ctx.param_int("missing"), 0);
+        assert_eq!(ctx.param_text("missing"), "");
+    }
+
+    #[test]
     fn test_players_iterator() {
         let snapshot = make_test_snapshot();
         let skill_statuses = HashMap::new();
 
-        let mut ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
+        let mut ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new(), HashMap::new());
 
         let mut count = 0;
         for player in ctx.players() {

@@ -5,6 +5,7 @@
 
 use crate::team::TeamContext;
 use crate::world::World;
+use dies_strategy_protocol::ParamSpec;
 
 /// The interface that strategy implementations must implement.
 ///
@@ -66,6 +67,16 @@ pub trait Strategy: Send + 'static {
     /// - Issue skill commands via player handles
     /// - Set player roles for visualization
     fn update(&mut self, ctx: &mut TeamContext);
+
+    /// Declare runtime parameters the UI can render and toggle live.
+    ///
+    /// Each [`ParamSpec`] gives a key, a label, a type, and a default. The web UI
+    /// renders a control per spec; the chosen values are pushed back and readable
+    /// via `ctx.param_bool(key)` / `param_float` / `param_int` / `param_text`.
+    /// The default implementation declares none.
+    fn params(&self) -> Vec<ParamSpec> {
+        Vec::new()
+    }
 
     /// Called when the strategy is about to be unloaded.
     ///
@@ -139,7 +150,7 @@ mod tests {
             our_keeper_id: None,
             freekick_kicker: None,
         };
-        TeamContext::new(snapshot, HashMap::new(), HashMap::new())
+        TeamContext::new(snapshot, HashMap::new(), HashMap::new(), HashMap::new())
     }
 
     #[test]

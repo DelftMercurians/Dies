@@ -67,6 +67,7 @@ const App: React.FC = () => {
       PANEL_IDS.DEBUG_LAYERS,
       PANEL_IDS.SCENARIO,
       PANEL_IDS.SETTINGS,
+      PANEL_IDS.STRATEGY,
     ] as const) {
       api.addPanel({
         id,

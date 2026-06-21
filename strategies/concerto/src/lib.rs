@@ -57,12 +57,24 @@ impl Strategy for ConcertoStrategy {
         tracing::info!("Concerto strategy initialized");
     }
 
+    fn params(&self) -> Vec<ParamSpec> {
+        vec![ParamSpec::bool(
+            "defense_only",
+            "Defense only (suppress offense)",
+            false,
+        )]
+    }
+
     fn update(&mut self, ctx: &mut TeamContext) {
         // Owned snapshot so reads don't borrow `ctx` while we issue commands.
         let world = World::new(ctx.world().raw_snapshot().clone());
         let game_state = world.game_state();
         let us_operating = world.us_operating();
         let now = world.timestamp();
+
+        // Runtime toggle: when on, skip the offensive loop so every field robot
+        // stays Formation-controlled (for testing defence in isolation).
+        let defense_only = ctx.param_bool("defense_only");
 
         // ── Double-touch tracking ───────────────────────────────────────
         if let Some(kicker) = world.freekick_kicker() {
@@ -106,7 +118,7 @@ impl Strategy for ConcertoStrategy {
 
         // ── Offensive loop: plan on events, then drive the active robot ──
         let mut plan_slots: Vec<PlayerId> = Vec::new();
-        if ball_present && world.is_ball_in_play() && we_may_act {
+        if !defense_only && ball_present && world.is_ball_in_play() && we_may_act {
             let needs_replan = self.planner.current_plan().is_none()
                 || matches!(
                     self.driver.status(),

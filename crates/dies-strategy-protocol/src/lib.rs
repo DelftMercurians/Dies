@@ -38,4 +38,7 @@ pub use skill::*;
 pub use world::*;
 
 // Re-export commonly used types from dies-core for convenience
-pub use dies_core::{Angle, FieldGeometry, PlayerId, Vector2, Vector3};
+pub use dies_core::{
+    Angle, FieldGeometry, ParamKind, ParamSpec, ParamValue, PlayerId, StrategyParams,
+    TeamStrategyParams, Vector2, Vector3,
+};

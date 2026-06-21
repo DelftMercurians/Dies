@@ -12,8 +12,8 @@ use std::time::{Duration, Instant, SystemTime};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use dies_core::{SideAssignment, TeamColor, TeamData};
 use dies_strategy_protocol::{
-    DebugEntry, HostMessage, PassResult, PlayerId, SkillCommand, SkillStatus, StrategyConfig,
-    StrategyMessage,
+    DebugEntry, HostMessage, ParamSpec, PassResult, PlayerId, SkillCommand, SkillStatus,
+    StrategyConfig, StrategyMessage, StrategyParams,
 };
 use thiserror::Error;
 use tracing::{debug, error, info, trace, warn};
@@ -120,6 +120,8 @@ pub struct StrategyConnection {
     state: ConnectionState,
     /// Configuration to send on connect.
     config: StrategyConfig,
+    /// Parameters the strategy declared in its `Ready` message.
+    declared_params: Vec<ParamSpec>,
     /// Last skill statuses reported.
     last_skill_statuses: HashMap<PlayerId, SkillStatus>,
     /// Read buffer.
@@ -163,6 +165,7 @@ impl StrategyConnection {
             transformer: CoordinateTransformer::new(team_color, side_assignment),
             state: ConnectionState::Disconnected,
             config,
+            declared_params: Vec::new(),
             last_skill_statuses: HashMap::new(),
             read_buffer: Vec::with_capacity(64 * 1024),
             hot_reload,
@@ -210,6 +213,20 @@ impl StrategyConnection {
     /// Get the team color.
     pub fn team_color(&self) -> TeamColor {
         self.team_color
+    }
+
+    /// The parameters the strategy declared in its `Ready` message.
+    pub fn declared_params(&self) -> &[ParamSpec] {
+        &self.declared_params
+    }
+
+    /// Push updated runtime parameter values to the strategy. No-op if the
+    /// connection is not yet ready.
+    pub fn send_params(&mut self, params: &StrategyParams) -> Result<(), ConnectionError> {
+        if self.state != ConnectionState::Ready {
+            return Ok(());
+        }
+        self.send_message(&HostMessage::SetParams(params.clone()))
     }
 
     /// Update the side assignment.
@@ -268,7 +285,8 @@ impl StrategyConnection {
         // for Ready), try reading Ready from the existing stream first.
         if self.stream.is_some() {
             match self.receive_message()? {
-                Some(StrategyMessage::Ready) => {
+                Some(StrategyMessage::Ready { params }) => {
+                    self.declared_params = params;
                     self.state = ConnectionState::Ready;
                     return Ok(true);
                 }
@@ -305,7 +323,8 @@ impl StrategyConnection {
 
                 // Wait for ready response
                 match self.receive_message()? {
-                    Some(StrategyMessage::Ready) => {
+                    Some(StrategyMessage::Ready { params }) => {
+                        self.declared_params = params;
                         self.state = ConnectionState::Ready;
                         Ok(true)
                     }
@@ -420,7 +439,7 @@ impl StrategyConnection {
                 // Return empty output - we'll get the real output next frame
                 Ok(None)
             }
-            Some(StrategyMessage::Ready) => {
+            Some(StrategyMessage::Ready { .. }) => {
                 warn!("Received unexpected Ready message");
                 Ok(None)
             }

@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    DebugMap, ExecutorInfo, ExecutorSettings, GcSimCommand, PlayerFeedbackMsg, PlayerId,
-    PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, WorldData,
-    WorldUpdate,
+    DebugMap, ExecutorInfo, ExecutorSettings, GcSimCommand, ParamValue, PlayerFeedbackMsg,
+    PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration,
+    WorldData, WorldUpdate,
 };
 use dies_ssl_client::SslClientConfig;
 use dies_test_driver::{TestLogEntry, TestStatus};
@@ -136,6 +136,12 @@ pub(crate) enum UiCommand {
     /// Drop a point-of-interest marker at the current live frame (double-space).
     AddMarker {
         label: Option<String>,
+    },
+    /// Set a single runtime strategy parameter for a team.
+    SetStrategyParam {
+        team_color: TeamColor,
+        key: String,
+        value: ParamValue,
     },
     /// Load a recorded log (directory or `.dieslog` zip) for replay.
     LoadLog {

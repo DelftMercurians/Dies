@@ -578,6 +578,11 @@ impl Executor {
                 })
                 .collect(),
             active_teams: self.team_controllers.active_teams(),
+            strategy_params: self
+                .strategy_host
+                .as_ref()
+                .map(|h| h.param_state())
+                .unwrap_or_default(),
         }
     }
 
@@ -883,6 +888,11 @@ impl Executor {
             }
             ControlMsg::AddMarker { label } => {
                 worker::log_marker(self.frame_counter, self.last_t, label);
+            }
+            ControlMsg::SetStrategyParams { team, params } => {
+                if let Some(h) = &mut self.strategy_host {
+                    h.set_strategy_params(team, params);
+                }
             }
             ControlMsg::SetSideAssignment(side_assignment) => {
                 self.team_controllers.side_assignment = side_assignment;

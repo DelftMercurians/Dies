@@ -4,7 +4,10 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DebugEntry, PassResult, PlayerId, SkillCommand, SkillStatus, WorldSnapshot};
+use crate::{
+    DebugEntry, ParamSpec, PassResult, PlayerId, SkillCommand, SkillStatus, StrategyParams,
+    WorldSnapshot,
+};
 
 /// Configuration passed to a strategy on initialization.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -44,6 +47,13 @@ pub enum HostMessage {
         pass_results: HashMap<PlayerId, PassResult>,
     },
 
+    /// Update the strategy's runtime parameters.
+    ///
+    /// Sent whenever the UI changes a parameter, and re-sent after `Init` on
+    /// reconnect/hot-reload so toggles persist. Carries the full current value
+    /// map (keyed by `ParamSpec::key`); the strategy merges it.
+    SetParams(StrategyParams),
+
     /// Request graceful shutdown.
     ///
     /// Strategy should clean up and exit.
@@ -65,8 +75,9 @@ pub enum LogLevel {
 pub enum StrategyMessage {
     /// Indicates the strategy is ready to receive world updates.
     ///
-    /// Sent once after receiving the `Init` message.
-    Ready,
+    /// Sent once after receiving the `Init` message. Carries the parameters the
+    /// strategy declares, so the host can advertise them to the UI.
+    Ready { params: Vec<ParamSpec> },
 
     /// Response to a world update.
     ///
@@ -116,15 +127,43 @@ mod tests {
         let encoded = bincode::serialize(&shutdown).unwrap();
         let decoded: HostMessage = bincode::deserialize(&encoded).unwrap();
         assert!(matches!(decoded, HostMessage::Shutdown));
+
+        // Test SetParams message round-trips over bincode (externally-tagged
+        // ParamValue must be bincode-safe).
+        let mut params = std::collections::HashMap::new();
+        params.insert("defense_only".to_string(), crate::ParamValue::Bool(true));
+        params.insert("aggression".to_string(), crate::ParamValue::Float(0.7));
+        let msg = HostMessage::SetParams(params);
+        let encoded = bincode::serialize(&msg).unwrap();
+        let decoded: HostMessage = bincode::deserialize(&encoded).unwrap();
+        match decoded {
+            HostMessage::SetParams(p) => {
+                assert_eq!(p.get("defense_only"), Some(&crate::ParamValue::Bool(true)));
+                assert_eq!(p.get("aggression"), Some(&crate::ParamValue::Float(0.7)));
+            }
+            _ => panic!("Expected SetParams message"),
+        }
     }
 
     #[test]
     fn test_strategy_message_serialization() {
-        // Test Ready message
-        let ready = StrategyMessage::Ready;
+        // Test Ready message (with declared params)
+        let ready = StrategyMessage::Ready {
+            params: vec![crate::ParamSpec::bool(
+                "defense_only",
+                "Defense only",
+                false,
+            )],
+        };
         let encoded = bincode::serialize(&ready).unwrap();
         let decoded: StrategyMessage = bincode::deserialize(&encoded).unwrap();
-        assert!(matches!(decoded, StrategyMessage::Ready));
+        match decoded {
+            StrategyMessage::Ready { params } => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0].key, "defense_only");
+            }
+            _ => panic!("Expected Ready message"),
+        }
 
         // Test Output message
         let mut skill_commands = HashMap::new();

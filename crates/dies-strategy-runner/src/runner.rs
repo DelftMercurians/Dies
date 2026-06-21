@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use dies_strategy_api::{debug as strategy_debug, Strategy, TeamContext};
-use dies_strategy_protocol::{HostMessage, StrategyConfig, StrategyMessage};
+use dies_strategy_api::{debug as strategy_debug, Strategy, TeamContext, World};
+use dies_strategy_protocol::{HostMessage, StrategyConfig, StrategyMessage, StrategyParams};
 use tracing::{debug, error, info, warn};
 
 use crate::ipc::{Connection, ConnectionError};
@@ -44,6 +44,10 @@ pub struct StrategyRunner<S: Strategy> {
     log_receiver: Receiver<LogEntry>,
     running: bool,
     frame_count: u64,
+    /// Current runtime parameter values (declared defaults + UI overrides).
+    params: StrategyParams,
+    /// Whether `strategy.init` has been called (on the first world update).
+    initialized: bool,
 }
 
 impl<S: Strategy> StrategyRunner<S> {
@@ -53,6 +57,7 @@ impl<S: Strategy> StrategyRunner<S> {
         connection: Connection,
         config: StrategyConfig,
         log_receiver: Receiver<LogEntry>,
+        params: StrategyParams,
     ) -> Self {
         Self {
             strategy,
@@ -61,6 +66,8 @@ impl<S: Strategy> StrategyRunner<S> {
             log_receiver,
             running: true,
             frame_count: 0,
+            params,
+            initialized: false,
         }
     }
 
@@ -104,6 +111,14 @@ impl<S: Strategy> StrategyRunner<S> {
                 self.config = config;
             }
 
+            HostMessage::SetParams(params) => {
+                // Merge overrides on top of current values (keeps declared defaults
+                // for keys the UI hasn't touched).
+                for (key, value) in params {
+                    self.params.insert(key, value);
+                }
+            }
+
             HostMessage::WorldUpdate {
                 world,
                 skill_statuses,
@@ -112,8 +127,16 @@ impl<S: Strategy> StrategyRunner<S> {
                 let frame_start = Instant::now();
                 self.frame_count += 1;
 
-                // Create TeamContext from world snapshot
-                let mut ctx = TeamContext::new(world.clone(), skill_statuses, pass_results);
+                // Lazily call init on the first world update.
+                if !self.initialized {
+                    let init_world = World::new(world.clone());
+                    self.strategy.init(&init_world);
+                    self.initialized = true;
+                }
+
+                // Create TeamContext from world snapshot + current params
+                let mut ctx =
+                    TeamContext::new(world, skill_statuses, pass_results, self.params.clone());
 
                 // Call strategy update
                 self.strategy.update(&mut ctx);
@@ -246,61 +269,28 @@ where
         }
     };
 
-    // Send Ready
+    // Create the strategy so we can advertise its declared parameters.
+    let strategy = factory();
+    let specs = strategy.params();
+
+    // Seed current values with the declared defaults; UI overrides arrive later
+    // via `HostMessage::SetParams` (including the host's cached re-send).
+    let params: StrategyParams = specs
+        .iter()
+        .map(|s| (s.key.clone(), s.default.clone()))
+        .collect();
+
+    // Send Ready, advertising the parameters to the host/UI.
     connection
-        .send(&StrategyMessage::Ready)
-        .context("failed to send Ready message")?;
-    info!("sent Ready to host");
-
-    // Create strategy
-    let mut strategy = factory();
-
-    // Get initial world state for init
-    // We need to wait for the first WorldUpdate to call init
-    let first_world = match connection
-        .receive()
-        .context("failed to receive first WorldUpdate")?
-    {
-        HostMessage::WorldUpdate { world, .. } => world,
-        HostMessage::Shutdown => {
-            info!("received Shutdown before first WorldUpdate, exiting");
-            return Ok(());
-        }
-        other => {
-            anyhow::bail!(
-                "expected WorldUpdate message, got {:?}",
-                std::mem::discriminant(&other)
-            );
-        }
-    };
-
-    // Initialize strategy with world state
-    {
-        let init_world = dies_strategy_api::World::new(first_world.clone());
-        strategy.init(&init_world);
-    }
-
-    // Process the first frame
-    let mut ctx = TeamContext::new(
-        first_world,
-        std::collections::HashMap::new(),
-        std::collections::HashMap::new(),
-    );
-    strategy.update(&mut ctx);
-
-    let (skill_commands, player_roles) = ctx.collect_output();
-    let debug_data = strategy_debug::collect_entries();
-
-    connection
-        .send(&StrategyMessage::Output {
-            skill_commands,
-            debug_data,
-            player_roles,
+        .send(&StrategyMessage::Ready {
+            params: specs.clone(),
         })
-        .context("failed to send first output")?;
+        .context("failed to send Ready message")?;
+    info!("sent Ready to host ({} params)", specs.len());
 
-    // Create runner and run main loop
-    let mut runner = StrategyRunner::new(strategy, connection, config, log_receiver);
+    // Create runner and run the main loop. `init` and the first frame are handled
+    // lazily inside the loop, so params pushed before the first WorldUpdate apply.
+    let mut runner = StrategyRunner::new(strategy, connection, config, log_receiver, params);
 
     // Set up signal handling for graceful shutdown
     setup_signal_handler()?;
@@ -323,7 +313,7 @@ fn setup_signal_handler() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dies_strategy_protocol::{GameState, SkillStatus, WorldSnapshot};
+    use dies_strategy_protocol::{GameState, WorldSnapshot};
     use std::collections::HashMap;
 
     struct TestStrategy {
@@ -374,8 +364,7 @@ mod tests {
             freekick_kicker: None,
         };
 
-        let skill_statuses = HashMap::new();
-        let ctx = TeamContext::new(snapshot, skill_statuses, HashMap::new());
+        let ctx = TeamContext::new(snapshot, HashMap::new(), HashMap::new(), HashMap::new());
 
         assert_eq!(ctx.player_count(), 0);
     }

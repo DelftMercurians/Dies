@@ -132,9 +132,9 @@ pub use world::{Rect, World};
 // Re-export commonly used types from protocol and core crates
 pub use dies_core::{Angle, FieldGeometry};
 pub use dies_strategy_protocol::{
-    BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState, Handicap, PassBallState,
-    PassFailure, PassResult, PassRole, PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2,
-    WorldSnapshot,
+    BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState, Handicap, ParamKind,
+    ParamSpec, ParamValue, PassBallState, PassFailure, PassResult, PassRole, PlayerId, PlayerState,
+    SkillCommand, SkillStatus, StrategyParams, Vector2, WorldSnapshot,
 };
 
 /// Prelude module for convenient imports.
@@ -155,8 +155,8 @@ pub mod prelude {
     // Core types
     pub use dies_core::{Angle, FieldGeometry};
     pub use dies_strategy_protocol::{
-        BallState, DebugColor, GameState, Handicap, PlayerId, PlayerState, SkillCommand,
-        SkillStatus, Vector2,
+        BallState, DebugColor, GameState, Handicap, ParamKind, ParamSpec, ParamValue, PlayerId,
+        PlayerState, SkillCommand, SkillStatus, Vector2,
     };
 }
 
@@ -255,7 +255,7 @@ mod tests {
             freekick_kicker: None,
         };
 
-        let mut ctx = TeamContext::new(snapshot, HashMap::new(), HashMap::new());
+        let mut ctx = TeamContext::new(snapshot, HashMap::new(), HashMap::new(), HashMap::new());
         strategy.update(&mut ctx);
     }
 

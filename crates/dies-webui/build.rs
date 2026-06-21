@@ -120,7 +120,12 @@ fn generate_bindings(root: &Path) {
         "\nexport type Vector2 = [number, number];\n\
          export type Vector3 = [number, number, number];\n\
          export type Duration = number;\n\
-         export type HashSet<T> = Array<T>;\n",
+         export type HashSet<T> = Array<T>;\n\
+         export type ParamValue =\n\
+         \x20 | { Bool: boolean }\n\
+         \x20 | { Float: number }\n\
+         \x20 | { Int: number }\n\
+         \x20 | { Text: string };\n",
     );
 
     // Only write when changed, to avoid churning mtime / vite reloads.

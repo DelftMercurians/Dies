@@ -272,7 +272,7 @@ mod tests {
             stream.read_exact(&mut buf).unwrap();
 
             let msg: StrategyMessage = bincode::deserialize(&buf).unwrap();
-            assert!(matches!(msg, StrategyMessage::Ready));
+            assert!(matches!(msg, StrategyMessage::Ready { .. }));
 
             // Send response
             let response = HostMessage::Init {
@@ -285,7 +285,8 @@ mod tests {
 
         // Client side
         let mut conn = Connection::connect(&path).unwrap();
-        conn.send(&StrategyMessage::Ready).unwrap();
+        conn.send(&StrategyMessage::Ready { params: vec![] })
+            .unwrap();
         let response = conn.receive().unwrap();
 
         assert!(matches!(response, HostMessage::Init { .. }));
