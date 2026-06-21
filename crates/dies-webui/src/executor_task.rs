@@ -256,8 +256,10 @@ impl ExecutorTask {
                         matches!(mode, UiMode::Simulation),
                         settings.team_configuration.blue_strategy.clone(),
                         settings.team_configuration.yellow_strategy.clone(),
-                        dies_logger::side_assignment_str(settings.team_configuration.side_assignment)
-                            .to_string(),
+                        dies_logger::side_assignment_str(
+                            settings.team_configuration.side_assignment,
+                        )
+                        .to_string(),
                     );
                     dies_logger::worker::log_start(&session_name, meta);
                     dies_logger::worker::log_settings_baseline(0, &settings);

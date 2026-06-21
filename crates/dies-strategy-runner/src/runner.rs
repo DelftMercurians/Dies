@@ -281,7 +281,11 @@ where
     }
 
     // Process the first frame
-    let mut ctx = TeamContext::new(first_world, std::collections::HashMap::new(), std::collections::HashMap::new());
+    let mut ctx = TeamContext::new(
+        first_world,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
     strategy.update(&mut ctx);
 
     let (skill_commands, player_roles) = ctx.collect_output();

@@ -43,7 +43,8 @@ impl FramesBuilder {
         self.operating_team.append_value(&r.operating_team);
         self.side_assignment.append_value(&r.side_assignment);
         self.ball_on_blue_side.append_option(r.ball_on_blue_side);
-        self.ball_on_yellow_side.append_option(r.ball_on_yellow_side);
+        self.ball_on_yellow_side
+            .append_option(r.ball_on_yellow_side);
         self.len += 1;
     }
 
@@ -152,7 +153,8 @@ impl PlayersBuilder {
         self.raw_yaw.append_value(r.raw_yaw);
         self.angular_speed.append_value(r.angular_speed);
         self.position_noise.append_value(r.position_noise);
-        self.primary_status.append_option(r.primary_status.as_deref());
+        self.primary_status
+            .append_option(r.primary_status.as_deref());
         self.kicker_cap_voltage.append_option(r.kicker_cap_voltage);
         self.kicker_temp.append_option(r.kicker_temp);
         self.pack_voltage_0.append_option(r.pack_voltage_0);
@@ -334,8 +336,10 @@ impl DebugTreeBuilder {
         self.children_ids.append(true);
         self.is_active.append_value(r.is_active);
         self.node_type.append_value(&r.node_type);
-        self.internal_state.append_option(r.internal_state.as_deref());
-        self.additional_info.append_option(r.additional_info.as_deref());
+        self.internal_state
+            .append_option(r.internal_state.as_deref());
+        self.additional_info
+            .append_option(r.additional_info.as_deref());
         self.len += 1;
     }
 

@@ -266,6 +266,11 @@ pub struct ExecutorSettings {
     /// Applied live to the planner and ORCA solver.
     #[serde(default)]
     pub avoidance: AvoidanceConfig,
+    /// Dev-only: when set, the strategy host watches each strategy binary on
+    /// disk and hot-swaps the process when it is rebuilt. Runtime flag set by
+    /// the CLI (`--strategy-mode watch`); never persisted.
+    #[serde(skip)]
+    pub hot_reload: bool,
 }
 
 fn default_true() -> bool {
@@ -319,6 +324,7 @@ impl Default for ExecutorSettings {
             allow_no_vision: false,
             goal_area_avoidance: true,
             avoidance: AvoidanceConfig::default(),
+            hot_reload: false,
         }
     }
 }

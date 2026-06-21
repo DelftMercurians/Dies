@@ -1,0 +1,9 @@
+# Dev workflow: vite dev server (frontend HMR) + dies with strategy hot-reload.
+# Run with `mprocs`. Override the strategy via the DIES_STRATEGY env var, e.g.
+# `DIES_STRATEGY=v0-strategy mprocs`.
+procs:
+  vite:
+    shell: "pnpm dev"
+    cwd: "webui"
+  dies:
+    shell: "cargo run -- --strategy ${DIES_STRATEGY:-concerto} --watch"

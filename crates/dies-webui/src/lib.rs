@@ -37,6 +37,8 @@ pub struct UiConfig {
     pub calibration_mode: bool,
     /// IPC strategy binary name (None = no strategy).
     pub strategy: Option<String>,
+    /// Dev-only: hot-reload the strategy process when its binary is rebuilt.
+    pub hot_reload: bool,
     /// Directory where session logs are written/browsed for replay.
     pub log_directory: PathBuf,
 }

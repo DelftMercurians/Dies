@@ -79,8 +79,8 @@ impl LogWriter {
         let mut streams = HashMap::new();
         for &table in schema::TABLES {
             let path = dir.join(format!("{table}.arrow"));
-            let file = File::create(&path)
-                .with_context(|| format!("creating {}", path.display()))?;
+            let file =
+                File::create(&path).with_context(|| format!("creating {}", path.display()))?;
             let s = schema::schema_for(table).expect("known table");
             let writer = StreamWriter::try_new(BufWriter::new(file), &s)?;
             streams.insert(table, writer);
@@ -126,7 +126,9 @@ impl LogWriter {
     /// only keys that differ from the last snapshot are emitted.
     pub fn push_settings(&mut self, frame_id: u64, t: f64, flat: FlatSettings, baseline: bool) {
         let changes = if baseline {
-            flat.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect()
+            flat.iter()
+                .map(|(k, v)| (k.clone(), Some(v.clone())))
+                .collect()
         } else {
             flatten::diff(&self.settings_state, &flat)
         };
@@ -245,7 +247,13 @@ mod tests {
     fn writes_a_valid_log_dir() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("session");
-        let meta = MetaJson::new(0.0, true, Some("concerto".into()), None, "yellow_on_positive".into());
+        let meta = MetaJson::new(
+            0.0,
+            true,
+            Some("concerto".into()),
+            None,
+            "yellow_on_positive".into(),
+        );
         let mut w = LogWriter::open(dir.clone(), meta, Instant::now()).unwrap();
 
         let settings = ExecutorSettings::default();

@@ -560,12 +560,14 @@ impl TestDriver {
                         let _ = reject.call(&JsValue::undefined(), &[msg], &mut self.ctx);
                         WakerAction::Done
                     }
-                    SkillStatus::Running | SkillStatus::Idle => WakerAction::Keep(Waker::PassDone {
-                        passer,
-                        receiver,
-                        resolve,
-                        reject,
-                    }),
+                    SkillStatus::Running | SkillStatus::Idle => {
+                        WakerAction::Keep(Waker::PassDone {
+                            passer,
+                            receiver,
+                            resolve,
+                            reject,
+                        })
+                    }
                 }
             }
             Waker::Excite {

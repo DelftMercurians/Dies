@@ -8,18 +8,32 @@ Dies is the RoboCup SSL (Small Size League) framework for the Delft Mercurians t
 
 ## Build & Run
 
-Uses `just` (justfile) for task automation and Cargo workspaces.
+Plain Cargo workspace — no `just`/justfile anymore. The CLI manages the
+strategy build, and `dies-webui`'s `build.rs` handles TS bindings + frontend.
 
 ```bash
-just dev [strategy]           # Build strategy + run dies in simulation (default: concerto)
-just build                    # Release build of dies-cli + all strategies
-just webdev [strategy]        # Run Vite dev server + dies
-just webbuild                 # Generate TS bindings + build webui
+# Run dies in sim. How the strategy binary is managed (mutually exclusive flags):
+#   --launch = use existing binary, --build = build once (default), --watch = hot-reload
+cargo run -- --strategy concerto                      # build once + run (= old `just dev`)
+cargo run -- --strategy concerto --watch              # build + hot-reload on rebuild
+cargo run -- --strategy concerto --launch             # run existing binary, no build
+cargo run -- --auto-start --strategy concerto         # auto-start the executor
+
+mprocs                        # Dev: vite dev server + dies (--watch). Old `just webdev`.
 
 cargo build -p dies-cli       # Build main binary only
 cargo build -p concerto       # Build a specific strategy
-cargo run -- --auto-start --strategy concerto  # Run with options
+
+# Release build of dies-cli + all strategies (the frontend bundle is produced by
+# dies-webui's build.rs in release; needs `typeshare` + `pnpm` on PATH):
+cargo build --release -p dies-cli -p concerto -p test-strategy -p v0-strategy
 ```
+
+**Strategy hot-reload:** with `--watch`, the CLI watches strategy
+sources and runs `cargo build -p <strategy>` on change; the executor notices the
+rebuilt binary (mtime) and hot-swaps the strategy process. `dies-webui/build.rs`
+regenerates `webui/src/bindings.ts` on every build and runs `vite build` (into
+`crates/dies-webui/static`) only for release builds — dev uses the vite dev server.
 
 ## Testing & Linting
 

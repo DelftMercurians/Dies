@@ -5,7 +5,7 @@ use dies_logger::worker::ArrowLogger;
 use log::LevelFilter;
 use tokio::sync::broadcast;
 
-use crate::cli::Cli;
+use crate::cli::{Cli, StrategyMode};
 
 pub async fn start_ui(args: Cli) -> Result<()> {
     // Set up logging
@@ -24,6 +24,20 @@ pub async fn start_ui(args: Cli) -> Result<()> {
     let logger = ArrowLogger::init_with_env_logger(log_dir_path.clone(), stdout_env);
     log::set_logger(logger).unwrap(); // Safe to unwrap: no logger set yet
     log::set_max_level(log::LevelFilter::Debug);
+
+    // Build / watch the selected strategy before the executor launches it. The
+    // executor reads the binary from `target/debug`; in watch mode it also
+    // hot-swaps the process whenever the binary is rebuilt.
+    if args.strategy != "none" {
+        match args.strategy_mode() {
+            StrategyMode::Launch => {}
+            StrategyMode::Build => crate::strategy::build_strategy(&args.strategy)?,
+            StrategyMode::Watch => {
+                crate::strategy::build_strategy(&args.strategy)?;
+                crate::strategy::spawn_watcher(args.strategy.clone());
+            }
+        }
+    }
 
     let (stop_tx, stop_rx) = broadcast::channel(1);
     let main_task = tokio::spawn(async move {

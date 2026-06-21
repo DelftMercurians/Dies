@@ -154,7 +154,13 @@ impl FrameRecord {
         let (mut debug_values, mut debug_shapes, mut debug_tree) =
             (Vec::new(), Vec::new(), Vec::new());
         for (key, value) in debug.iter() {
-            classify_debug(key, value, &mut debug_values, &mut debug_shapes, &mut debug_tree);
+            classify_debug(
+                key,
+                value,
+                &mut debug_values,
+                &mut debug_shapes,
+                &mut debug_tree,
+            );
         }
 
         Self {

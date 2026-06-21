@@ -5,6 +5,7 @@ use cli::Cli;
 
 mod cli;
 mod commands;
+mod strategy;
 
 #[tokio::main]
 async fn main() -> ExitCode {

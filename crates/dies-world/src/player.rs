@@ -31,13 +31,7 @@ enum PlayerFilter {
 }
 
 impl PlayerFilter {
-    fn new(
-        use_accel: bool,
-        init_var: f64,
-        cv_var: f64,
-        ca_var: f64,
-        measurement_var: f64,
-    ) -> Self {
+    fn new(use_accel: bool, init_var: f64, cv_var: f64, ca_var: f64, measurement_var: f64) -> Self {
         if use_accel {
             PlayerFilter::Ca(MaybeKalman::new(init_var, ca_var, measurement_var))
         } else {
@@ -57,9 +51,10 @@ impl PlayerFilter {
     fn init(&mut self, pos: Vector2, t: f64) {
         match self {
             PlayerFilter::Cv(k) => k.init(Vector4::new(pos.x, 0.0, pos.y, 0.0), t),
-            PlayerFilter::Ca(k) => {
-                k.init(na::SVector::<f64, 6>::new(pos.x, 0.0, 0.0, pos.y, 0.0, 0.0), t)
-            }
+            PlayerFilter::Ca(k) => k.init(
+                na::SVector::<f64, 6>::new(pos.x, 0.0, 0.0, pos.y, 0.0, 0.0),
+                t,
+            ),
         }
     }
 
@@ -340,7 +335,8 @@ impl PlayerTracker {
         }
 
         if teleported {
-            self.filter.reset_to(raw_position.x, raw_position.y, t_capture);
+            self.filter
+                .reset_to(raw_position.x, raw_position.y, t_capture);
             if let Some(last) = &mut self.last_detection {
                 last.timestamp = t_capture;
                 last.raw_position = raw_position;
@@ -360,7 +356,8 @@ impl PlayerTracker {
             None
         };
         if let Some((position, velocity)) =
-            self.filter.update(raw_position, t_capture, false, feedforward)
+            self.filter
+                .update(raw_position, t_capture, false, feedforward)
         {
             let last_data = if let Some(last_data) = &mut self.last_detection {
                 last_data
@@ -385,8 +382,8 @@ impl PlayerTracker {
                 let predicted = last_data.position + last_data.velocity * dt;
                 let innovation = raw_position - predicted;
                 const ALPHA: f64 = 0.05;
-                self.position_noise_var = (1.0 - ALPHA) * self.position_noise_var
-                    + ALPHA * innovation.norm_squared();
+                self.position_noise_var =
+                    (1.0 - ALPHA) * self.position_noise_var + ALPHA * innovation.norm_squared();
                 // Note: the RMS is surfaced to the UI via `PlayerData.position_noise`;
                 // no separate debug tag is emitted (avoids a loose `p{id}.*` key).
             }

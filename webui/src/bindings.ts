@@ -176,6 +176,7 @@ export enum SysStatus {
 	Safe = "Safe",
 	NotInstalled = "NotInstalled",
 	Standby = "Standby",
+	Cooldown = "Cooldown",
 }
 
 /** A message from one of our robots to the AI */
@@ -185,7 +186,7 @@ export interface PlayerFeedbackMsg {
 	primary_status?: SysStatus;
 	kicker_status?: SysStatus;
 	imu_status?: SysStatus;
-	fan_status?: SysStatus;
+	tof_status?: SysStatus;
 	kicker_cap_voltage?: number;
 	kicker_temp?: number;
 	motor_statuses?: [SysStatus, SysStatus, SysStatus, SysStatus, SysStatus];
@@ -992,6 +993,7 @@ export type WsMessage =
 	| { type: "ScenarioStatus", data: TestStatus }
 	| { type: "ReplayState", data: ReplayState }
 	| { type: "ConsoleLog", data: ConsoleLogMessage };
+
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];

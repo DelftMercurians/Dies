@@ -137,10 +137,15 @@ mod tests {
     #[test]
     fn diff_reports_removals_as_none() {
         let mut prev = FlatSettings::new();
-        prev.insert("blue_team_settings.handicaps.3".into(), Scalar::Str("no_kicker".into()));
+        prev.insert(
+            "blue_team_settings.handicaps.3".into(),
+            Scalar::Str("no_kicker".into()),
+        );
         let next = FlatSettings::new();
         let changes = diff(&prev, &next);
-        assert_eq!(changes, vec![("blue_team_settings.handicaps.3".to_string(), None)]);
+        assert_eq!(
+            changes,
+            vec![("blue_team_settings.handicaps.3".to_string(), None)]
+        );
     }
-
 }

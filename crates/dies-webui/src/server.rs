@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, RwLock},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -208,6 +208,8 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
             settings.team_configuration.yellow_strategy = Some(strategy.clone());
         }
     }
+    // Propagate the dev-only hot-reload flag into the executor settings.
+    state.executor_settings.write().unwrap().hot_reload = config.hot_reload;
     let state = Arc::new(state);
 
     // Start basestation watcher
@@ -443,11 +445,10 @@ async fn start_webserver(
     state: Arc<ServerState>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
-    let path = std::env::current_dir()
-        .unwrap()
-        .join("crates")
-        .join("dies-webui")
-        .join("static");
+    // Resolve relative to this crate's source dir (baked at compile time) rather
+    // than the process cwd, so the binary serves the bundle regardless of where
+    // it's launched from. The bundle is produced by build.rs for release builds.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("static");
     let serve_dir = ServeDir::new(path);
     let serve_dir_with_csp = middleware::from_fn(add_csp_header);
 

@@ -7,7 +7,7 @@ use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use dies_core::{SideAssignment, TeamColor, TeamData};
@@ -124,6 +124,12 @@ pub struct StrategyConnection {
     last_skill_statuses: HashMap<PlayerId, SkillStatus>,
     /// Read buffer.
     read_buffer: Vec<u8>,
+    /// Dev-only: hot-reload the process when the binary on disk changes.
+    hot_reload: bool,
+    /// Last observed modification time of the strategy binary (hot-reload).
+    binary_mtime: Option<SystemTime>,
+    /// Last time we stat'd the binary, to throttle the mtime check (hot-reload).
+    last_mtime_check: Option<Instant>,
 }
 
 impl StrategyConnection {
@@ -135,6 +141,7 @@ impl StrategyConnection {
         strategy_path: PathBuf,
         side_assignment: SideAssignment,
         config: StrategyConfig,
+        hot_reload: bool,
     ) -> Self {
         // Create a unique socket path
         let socket_path = std::env::temp_dir().join(format!(
@@ -158,6 +165,40 @@ impl StrategyConnection {
             config,
             last_skill_statuses: HashMap::new(),
             read_buffer: Vec::with_capacity(64 * 1024),
+            hot_reload,
+            binary_mtime: None,
+            last_mtime_check: None,
+        }
+    }
+
+    /// Read the strategy binary's modification time, if available.
+    fn read_binary_mtime(&self) -> Option<SystemTime> {
+        std::fs::metadata(&self.strategy_path)
+            .and_then(|m| m.modified())
+            .ok()
+    }
+
+    /// Returns true if hot-reload is enabled and the strategy binary on disk has
+    /// been modified since the process was started.
+    ///
+    /// Throttled to a few checks per second so we don't stat the binary on every
+    /// frame. The caller is expected to restart the connection on `true`.
+    pub fn binary_changed(&mut self) -> bool {
+        if !self.hot_reload {
+            return false;
+        }
+
+        let now = Instant::now();
+        if let Some(last) = self.last_mtime_check {
+            if now.duration_since(last) < Duration::from_millis(500) {
+                return false;
+            }
+        }
+        self.last_mtime_check = Some(now);
+
+        match (self.read_binary_mtime(), self.binary_mtime) {
+            (Some(current), Some(known)) => current != known,
+            _ => false,
         }
     }
 
@@ -207,6 +248,10 @@ impl StrategyConnection {
 
         self.process = Some(process);
         self.state = ConnectionState::Starting;
+
+        // Snapshot the binary mtime so hot-reload can detect future rebuilds.
+        self.binary_mtime = self.read_binary_mtime();
+        self.last_mtime_check = Some(Instant::now());
 
         Ok(())
     }

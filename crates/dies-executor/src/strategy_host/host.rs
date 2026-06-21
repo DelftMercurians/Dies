@@ -25,6 +25,9 @@ pub struct StrategyHostConfig {
     pub yellow_strategy: Option<String>,
     /// Current side assignment.
     pub side_assignment: SideAssignment,
+    /// Dev-only: watch strategy binaries on disk and hot-swap the process when
+    /// they are rebuilt.
+    pub hot_reload: bool,
 }
 
 impl Default for StrategyHostConfig {
@@ -34,6 +37,7 @@ impl Default for StrategyHostConfig {
             blue_strategy: None,
             yellow_strategy: None,
             side_assignment: SideAssignment::BlueOnPositive,
+            hot_reload: false,
         }
     }
 }
@@ -166,6 +170,7 @@ impl StrategyHost {
             strategy_path.clone(),
             self.config.side_assignment,
             config,
+            self.config.hot_reload,
         );
 
         match connection.start() {
@@ -224,11 +229,7 @@ impl StrategyHost {
     }
 
     /// Update rich pass results from the executor.
-    pub fn update_pass_results(
-        &mut self,
-        team: TeamColor,
-        results: HashMap<PlayerId, PassResult>,
-    ) {
+    pub fn update_pass_results(&mut self, team: TeamColor, results: HashMap<PlayerId, PassResult>) {
         match team {
             TeamColor::Blue => self.blue_pass_results = results,
             TeamColor::Yellow => self.yellow_pass_results = results,
@@ -272,6 +273,31 @@ impl StrategyHost {
         }
     }
 
+    /// In hot-reload mode, swap any strategy whose binary on disk has changed.
+    ///
+    /// The actual rebuild is driven externally (by the CLI in `--strategy-mode
+    /// watch`); here we only notice that the binary's mtime moved and restart
+    /// the process so it picks up the new code.
+    fn check_hot_reload(&mut self) {
+        if !self.config.hot_reload {
+            return;
+        }
+        for team in [TeamColor::Blue, TeamColor::Yellow] {
+            let changed = match team {
+                TeamColor::Blue => self.blue_connection.as_mut(),
+                TeamColor::Yellow => self.yellow_connection.as_mut(),
+            }
+            .map(|conn| conn.binary_changed())
+            .unwrap_or(false);
+
+            if changed {
+                let name = self.strategy_name(team).map(str::to_owned);
+                info!("Strategy binary for team {:?} changed, hot-reloading", team);
+                self.set_strategy(team, name);
+            }
+        }
+    }
+
     /// Process a frame for both teams.
     ///
     /// Sends world updates to connected strategies and collects skill commands.
@@ -282,6 +308,9 @@ impl StrategyHost {
     ) -> FrameOutput {
         // Check for pending connections
         self.poll_connections();
+
+        // Hot-swap rebuilt strategy binaries (dev mode).
+        self.check_hot_reload();
 
         let mut output = FrameOutput::default();
 

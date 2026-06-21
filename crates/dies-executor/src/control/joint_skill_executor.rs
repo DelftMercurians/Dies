@@ -23,7 +23,9 @@
 use std::collections::{HashMap, HashSet};
 
 use dies_core::PlayerId;
-use dies_strategy_protocol::{PassBallState, PassFailure, PassResult, PassRole, SkillCommand, SkillStatus};
+use dies_strategy_protocol::{
+    PassBallState, PassFailure, PassResult, PassRole, SkillCommand, SkillStatus,
+};
 
 use super::pass_coordinator::{PassContext, PassCoordinator};
 use super::PlayerControlInput;
@@ -170,7 +172,8 @@ impl JointSkillExecutor {
                         PassRole::Passer => (id, partner),
                         PassRole::Receiver => (partner, id),
                     };
-                    self.coordinators.push(PassCoordinator::new(p, r, target_hint));
+                    self.coordinators
+                        .push(PassCoordinator::new(p, r, target_hint));
                     covered.insert(id);
                     covered.insert(partner);
                     // Fresh pass — drop any stale terminal status/result.

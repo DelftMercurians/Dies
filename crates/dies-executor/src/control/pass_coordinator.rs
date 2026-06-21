@@ -17,9 +17,7 @@
 //! reimplemented: [`PickupBallSkill`] for `Secure`, [`ReceiveSkill`] for the
 //! receiver's positioning + interception.
 
-use dies_core::{
-    Angle, PlayerData, PlayerId, TeamData, Vector2, BALL_RADIUS, PLAYER_RADIUS,
-};
+use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2, BALL_RADIUS, PLAYER_RADIUS};
 use dies_strategy_protocol::{PassBallState, PassFailure, PassResult, SkillStatus};
 
 use super::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
@@ -225,11 +223,7 @@ impl PassCoordinator {
     }
 
     /// Build a `SkillContext` for one of our robots so we can tick a sub-skill.
-    fn skill_ctx<'a>(
-        &self,
-        ctx: &'a PassContext<'a>,
-        player: &'a PlayerData,
-    ) -> SkillContext<'a> {
+    fn skill_ctx<'a>(&self, ctx: &'a PassContext<'a>, player: &'a PlayerData) -> SkillContext<'a> {
         SkillContext {
             player,
             world: ctx.world,
@@ -285,8 +279,7 @@ impl PassCoordinator {
                 // Already have it? proceed.
                 if has_ball(&passer, ball_pos) {
                     self.enter(PassPhase::Setup);
-                    self.intercept_point =
-                        Some(self.target_hint.unwrap_or(receiver.position));
+                    self.intercept_point = Some(self.target_hint.unwrap_or(receiver.position));
                     // fall through to Setup next frame; hold this frame
                     passer_input = PlayerControlInput::new();
                 } else if let Some(bp) = ball_pos {
@@ -305,8 +298,7 @@ impl PassCoordinator {
                         // Run the pickup sub-skill, aiming the post-capture
                         // heading toward the receiver.
                         let heading = Angle::between_points(bp, receiver.position);
-                        self.pickup
-                            .set_target_heading(heading);
+                        self.pickup.set_target_heading(heading);
                         let sctx = self.skill_ctx(ctx, &passer);
                         match self.pickup.tick(sctx) {
                             SkillProgress::Continue(input) => passer_input = input,
@@ -328,12 +320,14 @@ impl PassCoordinator {
             PassPhase::Setup => {
                 // Lost the ball before kicking → clean abort.
                 if !has_ball(&passer, ball_pos) {
-                    result = Some(self.finish(PassResult::Failure {
-                        reason: PassFailure::BallLost,
-                        ball_state: ball_pos
-                            .map(|p| PassBallState::Loose { position: p })
-                            .unwrap_or(PassBallState::Unknown),
-                    }));
+                    result = Some(
+                        self.finish(PassResult::Failure {
+                            reason: PassFailure::BallLost,
+                            ball_state: ball_pos
+                                .map(|p| PassBallState::Loose { position: p })
+                                .unwrap_or(PassBallState::Unknown),
+                        }),
+                    );
                 } else if self.phase_elapsed > SETUP_TIMEOUT {
                     result = Some(self.finish(PassResult::Failure {
                         reason: PassFailure::Timeout,
@@ -347,8 +341,7 @@ impl PassCoordinator {
                     // Receiver gets ready (positions on the line, faces the ball).
                     receiver_input = self.tick_receive(ctx, &receiver, target_point);
 
-                    let aligned =
-                        (passer.yaw - target_heading).abs() < ALIGNMENT_TOLERANCE;
+                    let aligned = (passer.yaw - target_heading).abs() < ALIGNMENT_TOLERANCE;
                     let ready = (receiver.position - target_point).norm() < RECEIVER_READY_DIST;
                     if aligned && ready {
                         self.enter(PassPhase::Commit);
@@ -419,7 +412,8 @@ impl PassCoordinator {
             .player(ctx.world, self.passer)
             .map(|p| p.position)
             .unwrap_or(receiver.position);
-        self.receive.reconfigure(from, target_point, CAPTURE_LIMIT, false);
+        self.receive
+            .reconfigure(from, target_point, CAPTURE_LIMIT, false);
         let sctx = self.skill_ctx(ctx, receiver);
         match self.receive.tick(sctx) {
             SkillProgress::Continue(input) => input,
@@ -656,7 +650,11 @@ fn has_ball(player: &PlayerData, ball_pos: Option<Vector2>) -> bool {
 
 /// Build the passer's aim input: face the target while creeping into the ball to
 /// keep contact. Mirrors `ShootSkill`'s `Facing` behaviour.
-fn aim_input(passer: &PlayerData, ball_pos: Option<Vector2>, target_heading: Angle) -> PlayerControlInput {
+fn aim_input(
+    passer: &PlayerData,
+    ball_pos: Option<Vector2>,
+    target_heading: Angle,
+) -> PlayerControlInput {
     let mut input = PlayerControlInput::new();
     input.with_dribbling(0.3);
     input.with_yaw(target_heading);
@@ -813,11 +811,7 @@ mod tests {
         let receiver = player(1, Vector2::new(2000.0, 0.0), std::f64::consts::PI);
         let tc = team_ctx();
         let mut c = PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None);
-        let w = world(
-            vec![passer, receiver],
-            Some(Vector2::new(60.0, 0.0)),
-            0.016,
-        );
+        let w = world(vec![passer, receiver], Some(Vector2::new(60.0, 0.0)), 0.016);
         c.tick(&PassContext {
             world: &w,
             team_context: &tc,

@@ -37,9 +37,14 @@ pub fn set_console_observer(f: impl Fn(&Record) + Send + Sync + 'static) {
 }
 
 enum WorkerMsg {
-    StartLog { dir: PathBuf, meta: Box<MetaJson> },
+    StartLog {
+        dir: PathBuf,
+        meta: Box<MetaJson>,
+    },
     SetFieldGeom(Box<FieldGeometry>),
-    CloseLog { ack: Option<Sender<()>> },
+    CloseLog {
+        ack: Option<Sender<()>>,
+    },
     Frame(Box<FrameRecord>),
     Settings {
         frame_id: u64,

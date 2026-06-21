@@ -1,7 +1,7 @@
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, process::ExitCode, str::FromStr};
 
 use anyhow::{bail, Result};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
 use dies_core::{PlayerId, TeamColor};
 use dies_ssl_client::{ConnectionConfig, SslClientConfig};
@@ -19,6 +19,20 @@ enum ScenarioMode {
     #[default]
     Live,
     Simulation,
+}
+
+/// How the strategy binary is managed for the duration of the run. Derived from
+/// the mutually-exclusive `--launch` / `--build` / `--watch` flags.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StrategyMode {
+    /// Launch the existing binary as-is; never build.
+    Launch,
+    /// Build the strategy once before launching; abort on build failure.
+    #[default]
+    Build,
+    /// Build once, then watch the sources and hot-swap the running strategy on
+    /// every successful rebuild (dev mode).
+    Watch,
 }
 
 impl Into<UiMode> for ScenarioMode {
@@ -86,6 +100,7 @@ pub enum ControlledTeam {
 
 #[derive(Debug, Parser)]
 #[command(name = "dies-cli")]
+#[command(group(ArgGroup::new("strategy_mode").args(["launch", "build", "watch"]).multiple(false)))]
 pub struct Cli {
     #[clap(subcommand)]
     command: Option<Command>,
@@ -140,11 +155,37 @@ pub struct Cli {
     #[clap(long, default_value = "none")]
     pub strategy: String,
 
+    /// Launch the existing strategy binary as-is; never build.
+    #[clap(long, action)]
+    pub launch: bool,
+
+    /// Build the strategy once before launching, aborting on failure (default).
+    #[clap(long, action)]
+    pub build: bool,
+
+    /// Build once, then watch the sources and hot-swap the running strategy on
+    /// every successful rebuild (dev mode).
+    #[clap(long, action)]
+    pub watch: bool,
+
     #[clap(long, default_value = "false", action)]
     pub calibration_mode: bool,
 }
 
 impl Cli {
+    /// Resolve the strategy management mode from the mutually-exclusive
+    /// `--launch` / `--build` / `--watch` flags (defaults to `Build`). Exclusivity
+    /// is enforced by clap via the `strategy_mode` arg group.
+    pub fn strategy_mode(&self) -> StrategyMode {
+        if self.watch {
+            StrategyMode::Watch
+        } else if self.launch {
+            StrategyMode::Launch
+        } else {
+            StrategyMode::Build
+        }
+    }
+
     pub async fn start(self) -> ExitCode {
         match self.command {
             None => match start_ui(self).await {
@@ -241,6 +282,7 @@ impl Cli {
     /// Converts the CLI arguments into a `UiConfig` object that can be used to start the web UI.
     pub async fn into_ui(self) -> Result<UiConfig> {
         let calibration_mode = self.calibration_mode;
+        let hot_reload = self.strategy_mode() == StrategyMode::Watch;
         let environment = match (self.serial_config().await, self.ssl_config()) {
             (Some(bs_config), Some(ssl_config)) => UiEnvironment::WithLive {
                 bs_handle: BasestationHandle::spawn(bs_config)?,
@@ -274,6 +316,7 @@ impl Cli {
             },
             calibration_mode,
             strategy,
+            hot_reload,
             log_directory: PathBuf::from(self.log_directory),
         })
     }

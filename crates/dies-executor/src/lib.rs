@@ -12,13 +12,13 @@ use dies_protos::{
     ssl_gc_referee_message::Referee, ssl_vision_wrapper::SSL_WrapperPacket,
     ssl_vision_wrapper_tracked::TrackerWrapperPacket,
 };
-use protobuf::Message as _;
 use dies_simulator::Simulation;
 use dies_ssl_client::{SslMessage, VisionClient};
 use dies_test_driver::{LogBus, PlayerControlSlot, TestDriver, TestEnv, TestStatus};
 use dies_world::WorldTracker;
 use gc_client::GcClient;
 pub use handle::{ControlMsg, ExecutorHandle};
+use protobuf::Message as _;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 pub mod control;
@@ -446,6 +446,7 @@ impl Executor {
                 blue_strategy: settings.team_configuration.blue_strategy.clone(),
                 yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
                 side_assignment: settings.team_configuration.side_assignment,
+                hot_reload: settings.hot_reload,
             });
         if let Some(ref name) = settings.team_configuration.blue_strategy {
             strategy_host.set_strategy(TeamColor::Blue, Some(name.clone()));
