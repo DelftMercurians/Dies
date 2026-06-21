@@ -868,6 +868,9 @@ export interface RawGameStateData {
 	yellow_team_max_allowed_bots: number;
 	blue_team_yellow_cards: number;
 	yellow_team_yellow_cards: number;
+	/** Goals scored, from the referee `TeamInfo` (tracked in sim, real in live). */
+	blue_team_score: number;
+	yellow_team_score: number;
 	blue_team_keeper_id?: PlayerId;
 	yellow_team_keeper_id?: PlayerId;
 	/** The coarse game stage, e.g. "First half" (display string). */

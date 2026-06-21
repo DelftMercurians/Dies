@@ -505,23 +505,80 @@ const removeWsConnectedListener = (cb: (connected: boolean) => void) => {
   if (idx >= 0) onWsConnectedChange.splice(idx, 1);
 };
 export const sendWsCommand = (command: UiCommand) => {
-  if (ws) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(command));
   } else {
     throw new Error("Websocket not connected");
   }
 };
+
+/** Last-resort backstop: force-close a socket still stuck in CONNECTING after
+ * this long so a wedged handshake eventually retries. Kept long (Firefox can
+ * legitimately take tens of seconds to open a localhost WS when proxy
+ * resolution is in play) so it never kills a slow-but-viable connect. */
+const WS_CONNECT_TIMEOUT_MS = 60000;
+const WS_BACKOFF_MIN_MS = 1000;
+const WS_BACKOFF_MAX_MS = 10000;
+
+/** Same-origin WS URL derived from the page location (correct scheme + host +
+ * port), so it works behind the vite dev proxy and over https/wss in prod
+ * instead of a hardcoded `ws://127.0.0.1:5555`. */
+const wsUrl = (): string => {
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${proto}://${window.location.host}/api/ws`;
+};
+
 export function startWsClient() {
   const notify = (connected: boolean) => {
     onWsConnectedChange.forEach((cb) => cb(connected));
   };
+  const markDisconnected = () => {
+    notify(false);
+    getDefaultStore().set(wsConnectionStatusAtom, {
+      connected: false,
+      lastUpdateTime: null,
+      dt: null,
+    });
+  };
 
-  const connectAndListen = (): Promise<void> => {
-    if (ws) return Promise.resolve();
-    return new Promise((_, reject) => {
-      ws = new WebSocket(`ws://127.0.0.1:5555/api/ws`);
+  // Resolves with whether the socket ever reached OPEN, so the run loop can
+  // reset its backoff after a real connection and grow it only on outright
+  // connect failures. A stuck CONNECTING socket is force-closed by the
+  // watchdog so we never block on the browser's own connect timeout.
+  const connectAndListen = (): Promise<boolean> =>
+    new Promise((resolve) => {
+      const socket = new WebSocket(wsUrl());
+      ws = socket;
+      let settled = false;
+      let opened = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(watchdog);
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        if (ws === socket) ws = null;
+        try {
+          socket.close();
+        } catch {
+          /* already closing/closed */
+        }
+        markDisconnected();
+        resolve(opened);
+      };
 
-      ws.onopen = () => {
+      const watchdog = setTimeout(() => {
+        if (socket.readyState !== WebSocket.OPEN) {
+          console.warn("WebSocket connect timed out, retrying");
+          done();
+        }
+      }, WS_CONNECT_TIMEOUT_MS);
+
+      socket.onopen = () => {
+        opened = true;
+        clearTimeout(watchdog);
         toast.success("WebSocket connected");
         notify(true);
         const store = getDefaultStore();
@@ -531,7 +588,7 @@ export function startWsClient() {
           dt: null,
         });
       };
-      ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
         const msg = JSON.parse(event.data) as WsMessage;
         const store = getDefaultStore();
 
@@ -543,22 +600,36 @@ export function startWsClient() {
           } satisfies UiWorldState);
           store.set(currentFrameIdAtom, msg.data.frame_id);
 
-          // Accumulate announcer lines. Each WorldUpdate carries only the lines
-          // minted since the previous broadcast, so we simply append (no dedupe
-          // needed) and cap the rolling buffer.
+          // Announcer feed: the backend re-sends a rolling window every frame
+          // (the watch channel to us coalesces, so deltas would be lost).
+          // Reconcile by id — keep arrival time/key for already-seen lines so
+          // their fade animation continues, mint fresh ones for new ids.
           const incoming = msg.data.announcements ?? [];
-          if (incoming.length > 0) {
-            const arrivedAt = Date.now();
-            const prev = store.get(announcementsAtom);
-            const added = incoming.map((a) => ({
-              ...a,
-              clientKey: announcementSeq++,
-              arrivedAt,
-            }));
-            store.set(
-              announcementsAtom,
-              [...prev, ...added].slice(-MAX_ANNOUNCEMENTS)
-            );
+          const prev = store.get(announcementsAtom);
+          const prevMaxId = prev.length ? prev[prev.length - 1].id : -1;
+          const incomingMaxId = incoming.length
+            ? incoming[incoming.length - 1].id
+            : -1;
+          // Skip the common case: window unchanged since last frame.
+          const unchanged =
+            incoming.length === prev.length && incomingMaxId === prevMaxId;
+          if (!unchanged) {
+            // Executor restart (ids reset): drop stale arrival bookkeeping.
+            const restart = incomingMaxId < prevMaxId;
+            const byId = new Map<number, AnnouncementFeedItem>();
+            if (!restart) for (const i of prev) byId.set(i.id, i);
+            const now = Date.now();
+            const next = incoming.slice(-MAX_ANNOUNCEMENTS).map((a) => {
+              const existing = byId.get(a.id);
+              return (
+                existing ?? {
+                  ...a,
+                  clientKey: announcementSeq++,
+                  arrivedAt: now,
+                }
+              );
+            });
+            store.set(announcementsAtom, next);
           }
 
           // Track dt from WebSocket updates
@@ -600,50 +671,30 @@ export function startWsClient() {
           store.set(replayStateAtom, msg.data.loaded ? msg.data : null);
         }
       };
-      ws.onerror = (err) => {
-        if (ws) {
-          ws.onmessage = () => {};
-          ws.onclose = () => {};
-          ws.close();
-        }
-        notify(false);
-        const store = getDefaultStore();
-        store.set(wsConnectionStatusAtom, {
-          connected: false,
-          lastUpdateTime: null,
-          dt: null,
-        });
-        reject(err);
-      };
-      ws.onclose = () => {
-        notify(false);
-        const store = getDefaultStore();
-        store.set(wsConnectionStatusAtom, {
-          connected: false,
-          lastUpdateTime: null,
-          dt: null,
-        });
-        reject(new Error("Websocket closed"));
-      };
+      socket.onerror = () => done();
+      socket.onclose = () => done();
     });
-  };
 
   const run = async () => {
+    let backoff = WS_BACKOFF_MIN_MS;
     while (true) {
-      try {
-        await connectAndListen();
-      } catch (err) {
-        toast.error("WebSocket unexpectadly closed");
-        console.error("Error in WebSocket connection", err);
-      }
-      if (ws) {
-        ws.close();
-        ws = null;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const opened = await connectAndListen();
+      // A connection that actually opened resets the backoff; a failed
+      // connect grows it (capped) so a down server isn't hammered.
+      if (opened) backoff = WS_BACKOFF_MIN_MS;
+      await new Promise((resolve) => setTimeout(resolve, backoff));
+      if (!opened) backoff = Math.min(backoff * 2, WS_BACKOFF_MAX_MS);
     }
   };
-  run();
+
+  // Firefox aborts WebSockets opened while the document is still loading
+  // ("interrupted while the page was loading"). Defer the first connect until
+  // after the load event so the initial attempt isn't thrown away.
+  if (document.readyState === "complete") {
+    run();
+  } else {
+    window.addEventListener("load", () => run(), { once: true });
+  }
 }
 
 export const useKeyboardControl = ({

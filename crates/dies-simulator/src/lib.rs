@@ -140,7 +140,11 @@ impl Default for SimulationConfig {
             // TEAM CONFIGURATION
             blue_controlled: true,
             yellow_controlled: false,
-            initial_side_assignment: SideAssignment::BlueOnPositive,
+            // Must match what the sim reports via `blue_team_on_positive_half`
+            // (and therefore how the executor/strategies place and play the
+            // teams), otherwise goal attribution and penalty checks are computed
+            // against the opposite side from reality.
+            initial_side_assignment: SideAssignment::YellowOnPositive,
         }
     }
 }
@@ -477,6 +481,9 @@ pub struct Simulation {
     /// Simulator-internal referee events (fouls/violations/goals) awaiting drain
     /// into the announcer feed.
     referee_events: VecDeque<SimRefereeEvent>,
+    /// Running match score, incremented on each goal and reported via `TeamInfo`.
+    blue_score: u32,
+    yellow_score: u32,
     feedback_interval: IntervalTrigger,
     feedback_queue: HashMap<(TeamColor, PlayerId), PlayerFeedbackMsg>,
     game_state: SimulationGameState,
@@ -534,6 +541,8 @@ impl Simulation {
             referee_message: VecDeque::new(),
             command_counter: 0,
             referee_events: VecDeque::new(),
+            blue_score: 0,
+            yellow_score: 0,
             feedback_interval: IntervalTrigger::new(feedback_interval),
             feedback_queue: HashMap::new(),
             game_state: SimulationGameState::default(),
@@ -883,12 +892,17 @@ impl Simulation {
         let mut blue_team_info = TeamInfo::new();
         blue_team_info.set_max_allowed_bots(6);
         blue_team_info.set_goalkeeper(1);
+        blue_team_info.set_score(self.blue_score);
         msg.blue = Some(blue_team_info).into();
         let mut yellow_team_info = TeamInfo::new();
         yellow_team_info.set_max_allowed_bots(6);
         yellow_team_info.set_goalkeeper(1);
+        yellow_team_info.set_score(self.yellow_score);
         msg.yellow = Some(yellow_team_info).into();
-        msg.blue_team_on_positive_half = Some(false);
+        // Report the sim's true side so the executor/strategies and the sim's own
+        // goal/penalty checks all agree on which team defends which half.
+        msg.blue_team_on_positive_half =
+            Some(self.side_assignment == SideAssignment::BlueOnPositive);
         self.referee_message.push_back(msg);
     }
 
@@ -1034,16 +1048,26 @@ impl Simulation {
                     self.last_kicker_info = None;
                     self.kick_ball_position = None;
 
-                    // The team that restarts with a kick-off is the one that was
-                    // scored on; the scorer is the opponent.
-                    let kickoff_team =
-                        if ball_pos.x > 0.0 && self.side_assignment == SideAssignment::BlueOnPositive
-                        {
-                            TeamColor::Blue
-                        } else {
-                            TeamColor::Yellow
-                        };
-                    self.push_referee_event(RefereeMessage::Goal, Some(kickoff_team.opposite()));
+                    // Attribute the goal. The goal the ball entered belongs to the
+                    // team defending that side; that team conceded, the opponent
+                    // scored, and the conceding team restarts with a kick-off.
+                    let positive_defender = match self.side_assignment {
+                        SideAssignment::BlueOnPositive => TeamColor::Blue,
+                        SideAssignment::YellowOnPositive => TeamColor::Yellow,
+                    };
+                    let conceding = if ball_pos.x > 0.0 {
+                        positive_defender
+                    } else {
+                        positive_defender.opposite()
+                    };
+                    let scorer = conceding.opposite();
+                    let kickoff_team = conceding;
+
+                    match scorer {
+                        TeamColor::Blue => self.blue_score += 1,
+                        TeamColor::Yellow => self.yellow_score += 1,
+                    }
+                    self.push_referee_event(RefereeMessage::Goal, Some(scorer));
 
                     // Re-center the ball for the kick-off so the match keeps
                     // running (otherwise it stays in the goal and re-triggers

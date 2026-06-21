@@ -775,6 +775,8 @@ fn build_world(
         yellow_team_max_allowed_bots: 11,
         blue_team_yellow_cards: 0,
         yellow_team_yellow_cards: 0,
+        blue_team_score: 0,
+        yellow_team_score: 0,
         blue_team_keeper_id: None,
         yellow_team_keeper_id: None,
         stage: None,

@@ -520,11 +520,22 @@ async fn start_webserver(
         .fallback_service(serve_dir)
         .with_state(Arc::clone(&state));
 
-    let listener = match tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await {
+    // Prefer a dual-stack ([::]) listener so Firefox — which resolves `localhost`
+    // to IPv6 `::1` first — doesn't hit a refused connection and fall back to
+    // IPv4 (a per-request stall). Fall back to IPv4-only if IPv6 is unavailable.
+    let listener = match bind_dual_stack(port) {
         Ok(listener) => listener,
         Err(err) => {
-            log::error!("Failed to bind to port {port}: {err}");
-            return;
+            log::warn!(
+                "Dual-stack bind on [::]:{port} failed ({err}); falling back to 0.0.0.0:{port}"
+            );
+            match tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await {
+                Ok(listener) => listener,
+                Err(err) => {
+                    log::error!("Failed to bind to port {port}: {err}");
+                    return;
+                }
+            }
         }
     };
 
@@ -538,6 +549,22 @@ async fn start_webserver(
         .await
         .unwrap();
     log::info!("Shutdown: axum::serve graceful shutdown complete");
+}
+
+/// Bind a dual-stack TCP listener on `[::]:port` accepting both IPv6 and
+/// IPv4-mapped connections (`IPV6_V6ONLY=false`), returned as a tokio listener.
+fn bind_dual_stack(port: u16) -> std::io::Result<tokio::net::TcpListener> {
+    use socket2::{Domain, Protocol, Socket, Type};
+    use std::net::{Ipv6Addr, SocketAddr};
+
+    let addr: SocketAddr = (Ipv6Addr::UNSPECIFIED, port).into();
+    let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))?;
+    socket.set_only_v6(false)?;
+    socket.set_reuse_address(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&addr.into())?;
+    socket.listen(1024)?;
+    tokio::net::TcpListener::from_std(socket.into())
 }
 
 async fn add_csp_header(req: Request<Body>, next: axum::middleware::Next) -> impl IntoResponse {

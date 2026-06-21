@@ -12,6 +12,11 @@ use crate::Vector2;
 static DEBUG_MESSAGES: OnceLock<mpsc::UnboundedSender<UpdateMsg>> = OnceLock::new();
 static DEBUG_SUBSCRIBER: OnceLock<DebugSubscriber> = OnceLock::new();
 
+/// Number of frames a debug key may go un-refreshed before it is evicted as
+/// stale. Every producer is expected to re-emit its keys each frame; one-shot
+/// keys therefore disappear shortly after they stop being recorded.
+const DEBUG_TTL_FRAMES: u64 = 5;
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[typeshare]
@@ -88,6 +93,8 @@ enum UpdateMsg {
     InsertRecord { key: String, value: DebugValue },
     RemoveRecord { key: String },
     Clear,
+    /// Advance the frame clock and evict keys not refreshed within the TTL.
+    Tick,
 }
 
 impl DebugSubscriber {
@@ -112,16 +119,36 @@ impl DebugSubscriber {
             let map = map.clone();
             let notify = notify.clone();
             tokio::spawn(async move {
+                // Frame clock + per-key last-seen frame, owned solely by this
+                // task. Used to evict keys that stop being refreshed.
+                let mut generation: u64 = 0;
+                let mut last_seen: HashMap<String, u64> = HashMap::new();
                 while let Some(record) = record_rx.recv().await {
                     match record {
                         UpdateMsg::RemoveRecord { key } => {
                             map.write().unwrap().remove(&key);
+                            last_seen.remove(&key);
                         }
                         UpdateMsg::InsertRecord { key, value } => {
+                            last_seen.insert(key.clone(), generation);
                             map.write().unwrap().insert(key, value);
                         }
                         UpdateMsg::Clear => {
                             map.write().unwrap().clear();
+                            last_seen.clear();
+                        }
+                        UpdateMsg::Tick => {
+                            generation += 1;
+                            let gen = generation;
+                            let mut map_w = map.write().unwrap();
+                            last_seen.retain(|key, seen| {
+                                if gen - *seen > DEBUG_TTL_FRAMES {
+                                    map_w.remove(key);
+                                    false
+                                } else {
+                                    true
+                                }
+                            });
                         }
                     }
                     notify.notify_waiters();
@@ -147,6 +174,18 @@ impl DebugSubscriber {
 pub fn debug_clear() {
     if let Some(sender) = DEBUG_MESSAGES.get() {
         let _ = sender.send(UpdateMsg::Clear);
+    }
+}
+
+/// Advance the debug frame clock by one tick, evicting any key that has not been
+/// re-recorded within the last [`DEBUG_TTL_FRAMES`] frames.
+///
+/// Call exactly once per frame, after all of the frame's debug has been
+/// recorded. Replay does not call this (it clears and republishes each logged
+/// snapshot wholesale), so eviction only runs on the live/sim executor loop.
+pub fn debug_tick() {
+    if let Some(sender) = DEBUG_MESSAGES.get() {
+        let _ = sender.send(UpdateMsg::Tick);
     }
 }
 

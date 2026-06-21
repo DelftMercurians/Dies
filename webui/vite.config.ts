@@ -8,7 +8,9 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     proxy: {
-      "/api": `http://127.0.0.1:5555`,
+      // `ws: true` lets the WebSocket at /api/ws ride the same proxy, so in dev
+      // the socket is same-origin with the page (localhost:5173) just like prod.
+      "/api": { target: `http://127.0.0.1:5555`, ws: true },
     },
     headers: {
       "Content-Security-Policy":

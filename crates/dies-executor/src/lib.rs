@@ -1049,7 +1049,9 @@ impl Executor {
         let update = WorldUpdate {
             world_data: world_data.clone(),
             frame_id,
-            announcements: self.announcer.drain(),
+            // Full rolling window every frame: the watch channel to the UI
+            // coalesces, so deltas would be dropped. The UI dedupes by id.
+            announcements: self.announcer.snapshot(),
         };
         if let Err(err) = self.update_tx.send(update) {
             log::error!("Failed to broadcast world update: {}", err);
@@ -1241,6 +1243,9 @@ impl Executor {
         // this tick's debug output. The debug map is snapshotted here so it is
         // stamped with the same frame id as the world state.
         if new_frame {
+            // Age out stale debug keys before snapshotting, so logs and the
+            // live UI only carry keys refreshed within the TTL window.
+            dies_core::debug_tick();
             if worker::is_active() {
                 let debug = DebugSubscriber::instance().get_copy();
                 worker::log_frame(frame_id, &world_data, &debug);

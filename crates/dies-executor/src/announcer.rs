@@ -6,7 +6,7 @@
 //! here means sim and live matches narrate identically and the rich game-event
 //! detail stays where the protobuf data already lives.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use dies_core::{Announcement, AnnouncementCategory, TeamColor};
 use dies_protos::{
@@ -24,6 +24,12 @@ const DEDUPE_SECS: f64 = 3.0;
 /// distinct lines that can occur within `DEDUPE_SECS`).
 const MAX_DEDUPE_KEYS: usize = 64;
 
+/// Size of the rolling window of announcements re-sent on every world frame. The
+/// feed rides a coalescing `watch` channel to the UI, so we can't send deltas —
+/// the latest frame must always carry the full recent window. The UI dedupes by
+/// id.
+const WINDOW: usize = 32;
+
 #[derive(Default)]
 pub struct Announcer {
     next_id: u64,
@@ -33,9 +39,9 @@ pub struct Announcer {
     /// accumulated array every packet until the next RUNNING state).
     seen_event_ids: std::collections::HashSet<String>,
     /// Last emit time per line text, for short-window dedupe.
-    recent: HashMap<String, f64>,
-    /// Lines minted since the last `drain`.
-    pending: Vec<Announcement>,
+    recent_texts: HashMap<String, f64>,
+    /// Rolling window of recent lines, re-sent in full every frame.
+    window: VecDeque<Announcement>,
 }
 
 impl Announcer {
@@ -84,9 +90,10 @@ impl Announcer {
         }
     }
 
-    /// Take the lines minted since the previous call.
-    pub fn drain(&mut self) -> Vec<Announcement> {
-        std::mem::take(&mut self.pending)
+    /// The current rolling window of recent lines. Re-sent on every world frame
+    /// so the feed survives the coalescing `watch` channel to the UI.
+    pub fn snapshot(&self) -> Vec<Announcement> {
+        self.window.iter().cloned().collect()
     }
 
     fn emit(
@@ -97,30 +104,37 @@ impl Announcer {
         t: f64,
     ) {
         // Short-window dedupe by text.
-        if let Some(&last) = self.recent.get(&text) {
+        if let Some(&last) = self.recent_texts.get(&text) {
             if (t - last).abs() < DEDUPE_SECS {
                 return;
             }
         }
-        self.recent.insert(text.clone(), t);
-        if self.recent.len() > MAX_DEDUPE_KEYS {
+        self.recent_texts.insert(text.clone(), t);
+        if self.recent_texts.len() > MAX_DEDUPE_KEYS {
             // Drop the oldest half (cheap, infrequent).
-            let mut entries: Vec<_> = self.recent.iter().map(|(k, v)| (k.clone(), *v)).collect();
+            let mut entries: Vec<_> = self
+                .recent_texts
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect();
             entries.sort_by(|a, b| a.1.total_cmp(&b.1));
             for (k, _) in entries.into_iter().take(MAX_DEDUPE_KEYS / 2) {
-                self.recent.remove(&k);
+                self.recent_texts.remove(&k);
             }
         }
 
         let id = self.next_id;
         self.next_id += 1;
-        self.pending.push(Announcement {
+        self.window.push_back(Announcement {
             id,
             timestamp: t,
             category,
             team,
             text,
         });
+        while self.window.len() > WINDOW {
+            self.window.pop_front();
+        }
     }
 }
 

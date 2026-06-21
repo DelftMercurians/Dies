@@ -6,6 +6,7 @@ import { SimpleTooltip } from "@/components/ui/tooltip";
 import { toggleDrawer } from "@/lib/drawer";
 import ModeToggle from "./ModeToggle";
 import ExecutorControls from "./ExecutorControls";
+import GcControls from "./GcControls";
 import TeamIndicator from "./TeamIndicator";
 import StatusCluster from "./StatusCluster";
 import LayoutSelector from "./LayoutSelector";
@@ -37,7 +38,13 @@ const Toolbar: React.FC<ToolbarProps> = ({
   getDockviewApi,
 }) => {
   return (
-    <div className="h-10 min-h-10 flex items-center gap-2.5 bg-bg-surface border-b border-border-subtle px-3 select-none">
+    <div className="relative h-10 min-h-10 flex items-center gap-2.5 bg-bg-surface border-b border-border-subtle px-3 select-none">
+      {/* Game-controller quick actions (Stop/Continue) — sim only, centered in
+          the bar directly above the score banner */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+        <GcControls />
+      </div>
+
       {/* Logo */}
       <div className="flex items-center justify-center w-7 h-7 shrink-0">
         <img src={logo} alt="Dies" className="w-6 h-6" />

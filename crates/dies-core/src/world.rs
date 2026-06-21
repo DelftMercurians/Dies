@@ -251,6 +251,9 @@ pub struct RawGameStateData {
     pub blue_team_yellow_cards: usize,
     #[typeshare(serialized_as = "u32")]
     pub yellow_team_yellow_cards: usize,
+    /// Goals scored, from the referee `TeamInfo` (tracked in sim, real in live).
+    pub blue_team_score: u32,
+    pub yellow_team_score: u32,
 
     pub blue_team_keeper_id: Option<PlayerId>,
     pub yellow_team_keeper_id: Option<PlayerId>,
@@ -930,6 +933,8 @@ pub fn mock_world_data() -> WorldData {
             freekick_kicker: None,
             blue_team_yellow_cards: 0,
             yellow_team_yellow_cards: 0,
+            blue_team_score: 0,
+            yellow_team_score: 0,
             blue_team_max_allowed_bots: 6,
             yellow_team_max_allowed_bots: 6,
             blue_team_keeper_id: None,

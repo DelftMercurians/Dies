@@ -1,5 +1,5 @@
 import { atomWithStorage } from "jotai/utils";
-import { DebugMap } from "../bindings";
+import { DebugMap, TeamColor } from "../bindings";
 
 // ============================================================================
 // Atoms
@@ -82,15 +82,31 @@ export function isKeyVisible(
 }
 
 /**
- * Filter a DebugMap, removing entries whose keys are hidden.
+ * Whether a key belongs to a team other than `primaryTeam`. Team-scoped keys are
+ * prefixed `team_Blue.` / `team_Yellow.`; un-prefixed (global) keys never match.
+ */
+function isOtherTeamKey(key: string, primaryTeam: TeamColor): boolean {
+  const other =
+    primaryTeam === TeamColor.Blue ? TeamColor.Yellow : TeamColor.Blue;
+  return key.startsWith(`team_${other}.`);
+}
+
+/**
+ * Filter a DebugMap, removing entries whose keys are hidden. When `primaryTeam`
+ * is given, all of the other team's keys are dropped so the field only shows the
+ * active team's visualizations.
  */
 export function filterDebugMap(
   debugMap: DebugMap,
   layerVisibility: Record<string, boolean>,
   categoryVisibility: Record<string, boolean>,
+  primaryTeam?: TeamColor,
 ): DebugMap {
   const result: DebugMap = {};
   for (const key of Object.keys(debugMap)) {
+    if (primaryTeam !== undefined && isOtherTeamKey(key, primaryTeam)) {
+      continue;
+    }
     if (isKeyVisible(key, layerVisibility, categoryVisibility)) {
       result[key] = debugMap[key];
     }

@@ -1468,6 +1468,7 @@ dependencies = [
  "log 0.4.27",
  "serde",
  "serde_json",
+ "socket2",
  "tokio",
  "tower-http",
  "tower-layer",

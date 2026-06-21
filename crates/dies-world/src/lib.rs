@@ -170,6 +170,8 @@ pub struct WorldTracker {
     tracker_settings: TrackerSettings,
     blue_team_yellow_cards: usize,
     yellow_team_yellow_cards: usize,
+    blue_team_score: u32,
+    yellow_team_score: u32,
     blue_team_max_allowed_bots: u32,
     yellow_team_max_allowed_bots: u32,
 
@@ -220,6 +222,8 @@ impl WorldTracker {
             tracker_settings: settings.tracker_settings.clone(),
             blue_team_yellow_cards: 0,
             yellow_team_yellow_cards: 0,
+            blue_team_score: 0,
+            yellow_team_score: 0,
             blue_team_max_allowed_bots: 6,
             yellow_team_max_allowed_bots: 6,
             blue_team_settings: settings.blue_team_settings.clone(),
@@ -370,6 +374,9 @@ impl WorldTracker {
 
         self.blue_team_max_allowed_bots = data.blue.max_allowed_bots();
         self.yellow_team_max_allowed_bots = data.yellow.max_allowed_bots();
+
+        self.blue_team_score = data.blue.score();
+        self.yellow_team_score = data.yellow.score();
     }
 
     pub fn set_side_assignment(&mut self, side_assignment: SideAssignment) {
@@ -631,6 +638,8 @@ impl WorldTracker {
             freekick_kicker: self.game_state_tracker.get_freekick_kicker(),
             blue_team_yellow_cards: self.blue_team_yellow_cards,
             yellow_team_yellow_cards: self.yellow_team_yellow_cards,
+            blue_team_score: self.blue_team_score,
+            yellow_team_score: self.yellow_team_score,
             blue_team_max_allowed_bots: self.blue_team_max_allowed_bots,
             yellow_team_max_allowed_bots: self.yellow_team_max_allowed_bots,
             blue_team_keeper_id: self.game_state_tracker.get_blue_team_keeper_id(),

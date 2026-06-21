@@ -125,17 +125,17 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     }
   }, [ballToMouse]);
 
+  const [primaryTeam] = usePrimaryTeam();
   const debugMap = useDebugData();
   const [layerVis] = useAtom(debugLayerVisibilityAtom);
   const [categoryVis] = useAtom(debugCategoryVisibilityAtom);
   const filteredDebugMap = useMemo(() => {
     if (!debugMap) return null;
-    return filterDebugMap(debugMap, layerVis, categoryVis);
-  }, [debugMap, layerVis, categoryVis]);
+    return filterDebugMap(debugMap, layerVis, categoryVis, primaryTeam);
+  }, [debugMap, layerVis, categoryVis, primaryTeam]);
 
   const [positionDisplayMode, setPositionDisplayMode] =
     useState<PositionDisplayMode>("filtered");
-  const [primaryTeam] = usePrimaryTeam();
 
   // --- Field mask (vision crop) -------------------------------------------
   const { settings: executorSettings, updateSettings } = useExecutorSettings();
@@ -705,17 +705,16 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         </>
       ) : null}
 
-      {/* Yellow Card Banner */}
+      {/* Central status banner: score + game state + what's next */}
       {worldData && (
         <GameBanner
-          blueTeamYellowCards={worldData.game_state.blue_team_yellow_cards}
-          yellowTeamYellowCards={worldData.game_state.yellow_team_yellow_cards}
+          gameState={worldData.game_state}
           sideAssignment={worldData.side_assignment}
         />
       )}
 
       {/* Right-edge game-state panel + GC quick actions + announcer feed */}
-      {worldData && <FieldAnnouncerOverlay gameState={worldData.game_state} />}
+      <FieldAnnouncerOverlay />
 
       {/* Frame number (top-right) + replay transport (bottom, when replaying) */}
       <FrameCounter />
