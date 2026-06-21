@@ -39,80 +39,89 @@ const App: React.FC = () => {
     // Clear any existing panels
     api.clear();
 
-    // Layout: [LEFT: Game Ctrl + Team (tabs)] [CENTER: Field ~60%] [RIGHT: Player Inspector]
+    // Layout:
+    //   ┌──────────────────────┬────────────┐
+    //   │ FIELD                │ INSPECTOR  │   top row
+    //   ├──────────────────────┴────────────┤
+    //   │ [GameCtrl/Debug/…]   │ CONSOLE    │   full-width bottom drawer
+    //   └──────────────────────┴────────────┘
+    //
+    // Build order matters: adding the drawer BELOW the field before splitting
+    // the field horizontally makes the root vertical, so the drawer spans the
+    // full width under both field and inspector.
 
-    // Add Game Controller panel (left column)
-    api.addPanel({
-      id: PANEL_IDS.GAME_CONTROLLER,
-      component: PANEL_IDS.GAME_CONTROLLER,
-      title: "GAME CTRL",
-    });
-
-    // Add Debug panel as a tab in the same group
-    api.addPanel({
-      id: PANEL_IDS.DEBUG_LAYERS,
-      component: PANEL_IDS.DEBUG_LAYERS,
-      title: "DEBUG",
-      position: {
-        referencePanel: PANEL_IDS.GAME_CONTROLLER,
-        direction: "within",
-      },
-    });
-
-    // Add Scenario panel as a tab in the same group
-    api.addPanel({
-      id: PANEL_IDS.SCENARIO,
-      component: PANEL_IDS.SCENARIO,
-      title: "SCENARIO",
-      position: {
-        referencePanel: PANEL_IDS.GAME_CONTROLLER,
-        direction: "within",
-      },
-    });
-
-    // Add Settings panel as a tab in the same group (exposes MPC/MTP toggle)
-    api.addPanel({
-      id: PANEL_IDS.SETTINGS,
-      component: PANEL_IDS.SETTINGS,
-      title: PANEL_TITLES[PANEL_IDS.SETTINGS],
-      position: {
-        referencePanel: PANEL_IDS.GAME_CONTROLLER,
-        direction: "within",
-      },
-    });
-
-    // Add Field panel (center, main viewport)
     api.addPanel({
       id: PANEL_IDS.FIELD,
       component: PANEL_IDS.FIELD,
       title: "FIELD",
+    });
+
+    // Bottom drawer, left slot — migrated sidebar panels as tabs.
+    api.addPanel({
+      id: PANEL_IDS.GAME_CONTROLLER,
+      component: PANEL_IDS.GAME_CONTROLLER,
+      title: "GAME CTRL",
+      position: { referencePanel: PANEL_IDS.FIELD, direction: "below" },
+    });
+    for (const id of [
+      PANEL_IDS.DEBUG_LAYERS,
+      PANEL_IDS.SCENARIO,
+      PANEL_IDS.SETTINGS,
+    ] as const) {
+      api.addPanel({
+        id,
+        component: id,
+        title: PANEL_TITLES[id],
+        position: {
+          referencePanel: PANEL_IDS.GAME_CONTROLLER,
+          direction: "within",
+        },
+      });
+    }
+
+    // Bottom drawer, right slot — the console.
+    api.addPanel({
+      id: PANEL_IDS.CONSOLE,
+      component: PANEL_IDS.CONSOLE,
+      title: PANEL_TITLES[PANEL_IDS.CONSOLE],
       position: {
         referencePanel: PANEL_IDS.GAME_CONTROLLER,
         direction: "right",
       },
     });
 
-    // Add Player Inspector panel (right column)
+    // Player Inspector — splits the top row, leaving the drawer full-width.
     api.addPanel({
       id: PANEL_IDS.PLAYER_INSPECTOR,
       component: PANEL_IDS.PLAYER_INSPECTOR,
       title: "INSPECTOR",
-      position: {
-        referencePanel: PANEL_IDS.FIELD,
-        direction: "right",
-      },
+      position: { referencePanel: PANEL_IDS.FIELD, direction: "right" },
     });
 
-    // Set proportional widths: left 20%, field 60%, right 20%
+    // Proportions: top row field ~75% / inspector ~25%; drawer ~30% height.
     const totalWidth = api.width;
     if (totalWidth > 0) {
-      const fieldPanel = api.getPanel(PANEL_IDS.FIELD);
-      const leftPanel = api.getPanel(PANEL_IDS.GAME_CONTROLLER);
-      const rightPanel = api.getPanel(PANEL_IDS.PLAYER_INSPECTOR);
-      fieldPanel?.group?.api.setSize({ width: Math.floor(totalWidth * 0.6) });
-      leftPanel?.group?.api.setSize({ width: Math.floor(totalWidth * 0.2) });
-      rightPanel?.group?.api.setSize({ width: Math.floor(totalWidth * 0.2) });
+      api
+        .getPanel(PANEL_IDS.PLAYER_INSPECTOR)
+        ?.group?.api.setSize({ width: Math.floor(totalWidth * 0.25) });
     }
+    const totalHeight = api.height;
+    if (totalHeight > 0) {
+      const drawerHeight = Math.floor(totalHeight * 0.3);
+      api
+        .getPanel(PANEL_IDS.CONSOLE)
+        ?.group?.api.setSize({ height: drawerHeight });
+      // Split the drawer row evenly between the two slots.
+      api
+        .getPanel(PANEL_IDS.CONSOLE)
+        ?.group?.api.setSize({ width: Math.floor(totalWidth * 0.5) });
+    }
+
+    // The field is the only panel in its group — its tab rail is wasted space.
+    // Hide the header to give the visualization the full height. (Persisted in
+    // the layout JSON via `hideHeader`.)
+    const fieldGroup = api.getPanel(PANEL_IDS.FIELD)?.group;
+    if (fieldGroup) fieldGroup.header.hidden = true;
   }, []);
 
   // Handle reset layout

@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, RwLock},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -24,8 +25,8 @@ use tower_http::services::ServeDir;
 use tower_layer::Layer;
 
 use crate::{
-    executor_task::ExecutorTask, routes, ControlledTeam, ExecutorStatus, ReplayState, UiCommand,
-    UiConfig, UiEnvironment, UiMode, UiStatus,
+    executor_task::ExecutorTask, routes, ConsoleLogMessage, ControlledTeam, ExecutorStatus,
+    ReplayState, UiCommand, UiConfig, UiEnvironment, UiMode, UiStatus,
 };
 
 pub struct ServerState {
@@ -42,6 +43,9 @@ pub struct ServerState {
     /// every WS client subscribes to the same long-lived channel, not the executor's
     /// per-run log bus (which would force resubscription on each Start).
     pub scenario_log_tx: broadcast::Sender<TestLogEntry>,
+    /// Stable broadcast of backend log lines, fed by the global logger's console
+    /// observer, consumed by WS clients for the console panel.
+    pub console_log_tx: broadcast::Sender<ConsoleLogMessage>,
     /// Latest scenario status, mirrored from the active executor handle.
     pub scenario_status: watch::Sender<TestStatus>,
     /// Latest replay-player state, pushed to WS clients on change.
@@ -63,6 +67,25 @@ impl ServerState {
     ) -> Self {
         let settings = ExecutorSettings::load_or_insert(&settings_file);
         let (scenario_log_tx, _) = broadcast::channel(256);
+        // Higher capacity than scenario logs: backend logs are far chattier. A
+        // lagging WS client drops old entries (handled in the WS loop) rather
+        // than blocking the logging thread.
+        let (console_log_tx, _) = broadcast::channel::<ConsoleLogMessage>(1024);
+        {
+            let tx = console_log_tx.clone();
+            dies_logger::set_console_observer(move |record| {
+                let ts_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+                let _ = tx.send(ConsoleLogMessage {
+                    level: record.level().into(),
+                    target: record.target().to_string(),
+                    message: format!("{}", record.args()),
+                    ts_ms,
+                });
+            });
+        }
         let (scenario_status, _) = watch::channel(TestStatus::Idle);
         let (replay_state, _) = watch::channel(ReplayState::default());
         Self {
@@ -76,6 +99,7 @@ impl ServerState {
             executor_handle: RwLock::new(None),
             executor_settings: RwLock::new(settings),
             scenario_log_tx,
+            console_log_tx,
             scenario_status,
             replay_state,
             log_directory,

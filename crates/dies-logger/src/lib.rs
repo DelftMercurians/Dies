@@ -9,10 +9,11 @@ mod compact;
 mod flatten;
 mod frame;
 mod meta;
-mod schema;
-mod writer;
 pub mod replay;
+mod schema;
 pub mod worker;
+mod writer;
 
 pub use frame::side_assignment_str;
 pub use meta::{MetaJson, FORMAT_VERSION};
+pub use worker::set_console_observer;

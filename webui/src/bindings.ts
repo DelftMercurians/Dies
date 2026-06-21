@@ -202,6 +202,24 @@ export interface BasestationResponse {
 	unknown_team: PlayerFeedbackMsg[];
 }
 
+export enum ConsoleLogLevel {
+	Trace = "Trace",
+	Debug = "Debug",
+	Info = "Info",
+	Warn = "Warn",
+	Error = "Error",
+}
+
+/** A single backend log line streamed to the console panel. */
+export interface ConsoleLogMessage {
+	level: ConsoleLogLevel;
+	/** Log target (module path). */
+	target: string;
+	message: string;
+	/** Milliseconds since UNIX epoch at emission time. */
+	ts_ms: number;
+}
+
 /**
  * Settings for the low-level controller.
  * 
@@ -972,7 +990,8 @@ export type WsMessage =
 	| { type: "Debug", data: DebugMap }
 	| { type: "ScenarioLog", data: TestLogEntry }
 	| { type: "ScenarioStatus", data: TestStatus }
-	| { type: "ReplayState", data: ReplayState };
+	| { type: "ReplayState", data: ReplayState }
+	| { type: "ConsoleLog", data: ConsoleLogMessage };
 
 export type Vector2 = [number, number];
 export type Vector3 = [number, number, number];

@@ -12,6 +12,7 @@ import BasestationPanel from "./BasestationPanel";
 import SettingsPanel from "./SettingsPanel";
 import DebugLayerPanel from "./DebugLayerPanel";
 import ScenarioPanel from "./ScenarioPanel";
+import ConsolePanel from "./ConsolePanel";
 
 // Re-export panel components
 export {
@@ -22,6 +23,7 @@ export {
   SettingsPanel,
   DebugLayerPanel,
   ScenarioPanel,
+  ConsolePanel,
 };
 
 // Panel IDs used for layout configuration
@@ -33,6 +35,7 @@ export const PANEL_IDS = {
   SETTINGS: "settings",
   DEBUG_LAYERS: "debug-layers",
   SCENARIO: "scenario",
+  CONSOLE: "console",
 } as const;
 
 export type PanelId = (typeof PANEL_IDS)[keyof typeof PANEL_IDS];
@@ -46,6 +49,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   [PANEL_IDS.SETTINGS]: "SETTINGS",
   [PANEL_IDS.DEBUG_LAYERS]: "DEBUG",
   [PANEL_IDS.SCENARIO]: "SCENARIO",
+  [PANEL_IDS.CONSOLE]: "CONSOLE",
 };
 
 // All panels in a stable order for menus
@@ -62,4 +66,5 @@ export const panelComponents = {
   [PANEL_IDS.SETTINGS]: SettingsPanel,
   [PANEL_IDS.DEBUG_LAYERS]: DebugLayerPanel,
   [PANEL_IDS.SCENARIO]: ScenarioPanel,
+  [PANEL_IDS.CONSOLE]: ConsolePanel,
 };

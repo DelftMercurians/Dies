@@ -28,10 +28,10 @@ use tokio::time::MissedTickBehavior;
 const DEBUG_SEND_HZ: u64 = 30;
 
 use crate::{
-    server::ServerState, BasestationResponse, ExecutorInfoResponse, ExecutorSettingsResponse,
-    GetDebugMapResponse, LogInfo, LogsResponse, PostExecutorSettingsBody, PostUiCommandBody,
-    PostUiModeBody, ReplayState, ScenarioInfo, ScenariosResponse, UiCommand, UiMode, UiStatus,
-    UiWorldState, WsMessage,
+    server::ServerState, BasestationResponse, ConsoleLogMessage, ExecutorInfoResponse,
+    ExecutorSettingsResponse, GetDebugMapResponse, LogInfo, LogsResponse, PostExecutorSettingsBody,
+    PostUiCommandBody, PostUiModeBody, ReplayState, ScenarioInfo, ScenariosResponse, UiCommand,
+    UiMode, UiStatus, UiWorldState, WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -194,6 +194,7 @@ pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> 
             state.update_rx.clone(),
             state.debug_sub.clone(),
             state.scenario_log_tx.subscribe(),
+            state.console_log_tx.subscribe(),
             state.scenario_status.subscribe(),
             state.replay_state.subscribe(),
             socket,
@@ -207,6 +208,7 @@ async fn handle_ws_conn(
     mut world_rx: watch::Receiver<Option<WorldUpdate>>,
     debug_rx: DebugSubscriber,
     mut log_rx: broadcast::Receiver<TestLogEntry>,
+    mut console_rx: broadcast::Receiver<ConsoleLogMessage>,
     mut status_rx: watch::Receiver<TestStatus>,
     mut replay_rx: watch::Receiver<ReplayState>,
     mut socket: WebSocket,
@@ -243,6 +245,18 @@ async fn handle_ws_conn(
                     Ok(entry) => {
                         if let Err(err) = handle_send_log(&entry, &mut socket).await {
                             log::error!("Failed to send scenario log: {}", err);
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => {}
+                }
+            }
+            console_entry = console_rx.recv() => {
+                match console_entry {
+                    Ok(entry) => {
+                        if let Err(err) = handle_send_console_log(&entry, &mut socket).await {
+                            log::error!("Failed to send console log: {}", err);
                             break;
                         }
                     }
@@ -319,6 +333,15 @@ async fn handle_send_debug_map_update(
 
 async fn handle_send_log(entry: &TestLogEntry, socket: &mut WebSocket) -> anyhow::Result<()> {
     let text = serde_json::to_string(&WsMessage::ScenarioLog(entry))?;
+    socket.send(Message::Text(text)).await?;
+    Ok(())
+}
+
+async fn handle_send_console_log(
+    entry: &ConsoleLogMessage,
+    socket: &mut WebSocket,
+) -> anyhow::Result<()> {
+    let text = serde_json::to_string(&WsMessage::ConsoleLog(entry))?;
     socket.send(Message::Text(text)).await?;
     Ok(())
 }

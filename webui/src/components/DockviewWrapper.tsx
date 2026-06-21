@@ -31,6 +31,11 @@ export interface LayoutConfig {
   data: object;
 }
 
+// Bumped whenever the built-in default layout changes shape. A stored version
+// below this discards the persisted "default" layout so users pick up the new
+// arrangement (e.g. the bottom drawer + console) instead of their stale one.
+const LAYOUT_SCHEMA_VERSION = 3;
+
 // Atom for storing layouts with localStorage persistence
 export const savedLayoutsAtom = atomWithStorage<Record<string, object>>(
   "dies-saved-layouts",
@@ -39,6 +44,10 @@ export const savedLayoutsAtom = atomWithStorage<Record<string, object>>(
 export const currentLayoutNameAtom = atomWithStorage<string>(
   "dies-current-layout",
   "default"
+);
+export const layoutSchemaVersionAtom = atomWithStorage<number>(
+  "dies-layout-version",
+  0
 );
 
 // ============================================================================
@@ -68,6 +77,7 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
     const apiRef = useRef<DockviewApi | null>(null);
     const [savedLayouts, setSavedLayouts] = useAtom(savedLayoutsAtom);
     const [currentLayoutName] = useAtom(currentLayoutNameAtom);
+    const [layoutVersion, setLayoutVersion] = useAtom(layoutSchemaVersionAtom);
 
     // Expose API via ref. `api` is a getter so it always reflects the current
     // value — the DockviewApi only exists after `handleReady`, well after this
@@ -92,11 +102,23 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
       (event: DockviewReadyEvent) => {
         apiRef.current = event.api;
 
+        // One-time migration: if the persisted default predates the current
+        // layout schema, rebuild from the new default instead of restoring it.
+        const outdated =
+          layoutVersion < LAYOUT_SCHEMA_VERSION &&
+          currentLayoutName === "default";
+        if (outdated) {
+          setLayoutVersion(LAYOUT_SCHEMA_VERSION);
+          onCreateDefaultLayout(event.api);
+          return;
+        }
+
         // Try to restore saved layout
         const savedLayout = savedLayouts[currentLayoutName];
         if (savedLayout) {
           try {
             event.api.fromJSON(savedLayout as any);
+            setLayoutVersion(LAYOUT_SCHEMA_VERSION);
             return;
           } catch (error) {
             console.error("Failed to restore layout:", error);
@@ -104,9 +126,16 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
         }
 
         // Fall back to default layout
+        setLayoutVersion(LAYOUT_SCHEMA_VERSION);
         onCreateDefaultLayout(event.api);
       },
-      [savedLayouts, currentLayoutName, onCreateDefaultLayout]
+      [
+        savedLayouts,
+        currentLayoutName,
+        onCreateDefaultLayout,
+        layoutVersion,
+        setLayoutVersion,
+      ]
     );
 
     // Save layout on changes

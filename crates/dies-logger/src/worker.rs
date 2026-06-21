@@ -22,6 +22,20 @@ use crate::writer::{LogWriter, FLUSH_INTERVAL};
 
 static ARROW_LOGGER: OnceLock<ArrowLogger> = OnceLock::new();
 
+/// Optional observer invoked for every emitted log record. Installed by the web
+/// UI to stream backend logs into the console panel. Kept here (not in
+/// `dies-webui`) so the hook fires from the global `log::Log` backend without
+/// `dies-logger` depending on tokio or the webui crate.
+#[allow(clippy::type_complexity)]
+static CONSOLE_OBSERVER: OnceLock<Box<dyn Fn(&Record) + Send + Sync>> = OnceLock::new();
+
+/// Register a callback invoked for every log record the [`ArrowLogger`] emits.
+/// Set-once: later calls are ignored. The callback runs on the logging thread,
+/// so it must be cheap and non-blocking (e.g. a bounded broadcast send).
+pub fn set_console_observer(f: impl Fn(&Record) + Send + Sync + 'static) {
+    let _ = CONSOLE_OBSERVER.set(Box::new(f));
+}
+
 enum WorkerMsg {
     StartLog { dir: PathBuf, meta: Box<MetaJson> },
     SetFieldGeom(Box<FieldGeometry>),
@@ -288,6 +302,9 @@ impl Log for ArrowLogger {
 
     fn log(&self, record: &Record) {
         self.env_logger.log(record);
+        if let Some(obs) = CONSOLE_OBSERVER.get() {
+            obs(record);
+        }
         let rec = LogLineRecord {
             t: self.start.elapsed().as_secs_f64(),
             level: record.level().to_string(),

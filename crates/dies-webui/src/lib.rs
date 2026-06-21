@@ -203,6 +203,41 @@ pub(crate) struct ReplayState {
     pub markers: Vec<ReplayMarker>,
 }
 
+/// A single backend log line streamed to the console panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct ConsoleLogMessage {
+    pub level: ConsoleLogLevel,
+    /// Log target (module path).
+    pub target: String,
+    pub message: String,
+    /// Milliseconds since UNIX epoch at emission time.
+    #[typeshare(serialized_as = "number")]
+    pub ts_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[typeshare]
+pub enum ConsoleLogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl From<log::Level> for ConsoleLogLevel {
+    fn from(level: log::Level) -> Self {
+        match level {
+            log::Level::Trace => ConsoleLogLevel::Trace,
+            log::Level::Debug => ConsoleLogLevel::Debug,
+            log::Level::Info => ConsoleLogLevel::Info,
+            log::Level::Warn => ConsoleLogLevel::Warn,
+            log::Level::Error => ConsoleLogLevel::Error,
+        }
+    }
+}
+
 /// WebSocket message types sent from backend to frontend
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "data")]
@@ -215,6 +250,7 @@ pub(crate) enum WsMessage<'a> {
     ScenarioLog(&'a TestLogEntry),
     ScenarioStatus(&'a TestStatus),
     ReplayState(&'a ReplayState),
+    ConsoleLog(&'a ConsoleLogMessage),
 }
 
 /// A recorded log available for replay (directory or `.dieslog` zip).

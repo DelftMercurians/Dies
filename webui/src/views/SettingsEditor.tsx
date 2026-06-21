@@ -167,7 +167,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
 
   return (
     <div className="h-full relative">
-      <div className="absolute inset-0 overflow-y-auto flex flex-col gap-4 p-4">
+      <div className="absolute inset-0 overflow-y-auto grid grid-cols-2 gap-x-6 gap-y-4 p-4 auto-rows-max">
         {Object.entries(settings as unknown as Record<string, unknown>).map(
           ([key, _value]) => {
             const value = _value as Value;
@@ -187,7 +187,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
                 : value;
 
             return (
-              <div key={key} className="space-y-2">
+              <div key={key} className="space-y-2 min-w-0">
                 <Label htmlFor={key} className="font-medium">
                   {key
                     .replace(/_/g, " ")

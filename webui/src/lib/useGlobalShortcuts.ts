@@ -21,6 +21,7 @@ import { TeamColor } from "@/bindings";
 import { PanelId, PANEL_IDS, PANEL_TITLES } from "@/components/panels";
 import { openOrFocusPanel } from "@/components/toolbar/AddPanelMenu";
 import { openMarkerToast } from "@/components/MarkerToast";
+import { toggleDrawer } from "./drawer";
 import { CommandContext, isTypingTarget, matchKeyboard } from "./commands";
 
 /** Max gap (ms) between the two spaces of the double-space marker shortcut. */
@@ -80,6 +81,10 @@ export function useCommandContext(
       if (api) openOrFocusPanel(api, id, PANEL_TITLES[id]);
     },
     toggleCommandPalette: () => setCommandPaletteOpen((v) => !v),
+    toggleDrawer: () => {
+      const api = getDockviewApi();
+      if (api) toggleDrawer(api);
+    },
     drivingActive,
     executorRunning,
     feedback: (label: string) => setLastShortcut({ label, ts: Date.now() }),
@@ -112,6 +117,14 @@ export function useGlobalShortcuts(getDockviewApi: () => DockviewApi | null) {
       !ev.altKey &&
       ev.key.toLowerCase() === "k";
 
+    // ⌘J / Ctrl+J toggles the bottom drawer. The combo parser rejects meta/ctrl,
+    // so (like the palette) it's matched here instead of via the COMMANDS table.
+    const isDrawerCombo = (ev: KeyboardEvent) =>
+      (ev.metaKey || ev.ctrlKey) &&
+      !ev.shiftKey &&
+      !ev.altKey &&
+      ev.key.toLowerCase() === "j";
+
     const onKeyDown = (ev: KeyboardEvent) => {
       if (ev.repeat) return;
       const c = ctxRef.current;
@@ -122,6 +135,15 @@ export function useGlobalShortcuts(getDockviewApi: () => DockviewApi | null) {
         ev.preventDefault();
         ev.stopPropagation();
         c.toggleCommandPalette();
+        return;
+      }
+
+      // Bottom drawer toggle (⌘J / Ctrl+J) — works even while typing.
+      if (isDrawerCombo(ev)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        c.toggleDrawer();
+        c.feedback("Toggle drawer");
         return;
       }
 

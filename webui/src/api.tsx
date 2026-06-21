@@ -46,6 +46,7 @@ import {
   ReplayState,
   LogsResponse,
   LogInfo,
+  ConsoleLogMessage,
 } from "./bindings";
 import { toast } from "sonner";
 import { atom, getDefaultStore, useAtom } from "jotai";
@@ -407,6 +408,16 @@ export const useClearScenarioLogs = () => {
   return () => set([]);
 };
 
+// Console state — backend log lines streamed over the WS for the console panel.
+const consoleLogsAtom = atom<ConsoleLogMessage[]>([]);
+const CONSOLE_LOG_LIMIT = 1000;
+
+export const useConsoleLogs = () => useAtom(consoleLogsAtom)[0];
+export const useClearConsoleLogs = () => {
+  const set = useAtom(consoleLogsAtom)[1];
+  return () => set([]);
+};
+
 const getScenarios = (): Promise<ScenariosResponse> =>
   fetch("/api/scenarios").then((res) => res.json());
 
@@ -494,6 +505,12 @@ export function startWsClient() {
             ? [...cur.slice(cur.length - SCENARIO_LOG_LIMIT + 1), msg.data]
             : [...cur, msg.data];
           store.set(scenarioLogsAtom, next);
+        } else if (msg.type === "ConsoleLog") {
+          const cur = store.get(consoleLogsAtom);
+          const next = cur.length >= CONSOLE_LOG_LIMIT
+            ? [...cur.slice(cur.length - CONSOLE_LOG_LIMIT + 1), msg.data]
+            : [...cur, msg.data];
+          store.set(consoleLogsAtom, next);
         } else if (msg.type === "ReplayState") {
           store.set(replayStateAtom, msg.data.loaded ? msg.data : null);
         }
