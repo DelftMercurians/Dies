@@ -1,5 +1,34 @@
 use dies_strategy_api::prelude::*;
 
+/// Momentum-aware estimate of the time (seconds) for a robot at `pos` moving with
+/// `vel` to reach `target`, given top speed `v_max` and acceleration `a_max`.
+///
+/// Unlike Euclidean distance, this credits velocity already pointing at the target
+/// and penalises velocity that must be reversed or bled off sideways. A robot
+/// driving toward a target has genuinely low cost to continue and high cost to
+/// turn around — the physical basis for assignment/selection stability (no
+/// artificial stay-bonus).
+pub fn redirect_time(pos: Vector2, vel: Vector2, target: Vector2, v_max: f64, a_max: f64) -> f64 {
+    let d = target - pos;
+    let dist = d.norm();
+    if dist < 1e-3 {
+        return 0.0;
+    }
+    let dir = d / dist;
+
+    let v_along = vel.dot(&dir); // + toward target, - away
+    let t_cruise = dist / v_max;
+
+    let v_against = (-v_along).max(0.0); // wrong-way speed to reverse
+    let v_cross = (vel - dir * v_along).norm(); // sideways speed to bleed off
+    let t_redirect = (2.0 * v_against + v_cross) / a_max;
+
+    // Small head-start credit for velocity already toward the target.
+    let t_credit = v_along.max(0.0).min(v_max) / (2.0 * a_max);
+
+    (t_cruise + t_redirect - t_credit).max(0.0)
+}
+
 /// Check whether the corridor from `ball_pos` to `goal_center` is free of opponents.
 ///
 /// The corridor is a rectangle of the given `corridor_width` (perpendicular to the
@@ -49,6 +78,9 @@ pub fn is_clear_shot(
 /// clear passing lane from `ball_pos`.
 ///
 /// Returns `None` if every candidate scores below the minimum threshold (500 mm).
+///
+/// Reserved for the passing milestone (planner's no-clear-shot branch).
+#[allow(dead_code)]
 pub fn best_pass_area(
     ball_pos: Vector2,
     opponents: &[PlayerState],
@@ -102,6 +134,9 @@ pub fn best_pass_area(
 ///
 /// Projects `point` onto the infinite line through `from` and `to` and checks whether
 /// the parameter *t* falls in [0, 1].
+///
+/// Reserved for the M3 conservative steal gate (is a defender between threat and goal?).
+#[allow(dead_code)]
 pub fn is_between(point: Vector2, from: Vector2, to: Vector2) -> bool {
     let dir = to - from;
     let len_sq = dir.x * dir.x + dir.y * dir.y;
@@ -116,37 +151,153 @@ pub fn is_between(point: Vector2, from: Vector2, to: Vector2) -> bool {
     (0.0..=1.0).contains(&t)
 }
 
-/// Compute two defensive "shadow" positions between the ball and our own goal.
+/// Smooth Hermite step: 0 below `edge0`, 1 above `edge1`, C¹-continuous between.
+/// Used everywhere a hard threshold would otherwise cause formation discontinuities.
+pub fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
+    if (edge1 - edge0).abs() < 1e-9 {
+        return if x < edge0 { 0.0 } else { 1.0 };
+    }
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Continuous threat a field position poses to our goal, in [0, 1].
 ///
-/// 1. `direction` = normalize(own_goal − ball_pos).
-/// 2. Place a centre point at `ball_pos + direction * offset_distance`.
-/// 3. Perpendicular = direction rotated 90°.
-/// 4. Return `(centre + perp * spread, centre − perp * spread)`.
+/// Combines proximity to our goal (closer = higher) with a directional term
+/// (square-on to the goal mouth is worse than wide). Smooth in `pos`.
+pub fn threat(pos: Vector2, own_goal: Vector2, goal_near: f64, goal_far: f64) -> f64 {
+    let to_goal = own_goal - pos;
+    let dist = to_goal.norm();
+    let prox = 1.0 - smoothstep(goal_near, goal_far, dist);
+    if dist < 1e-6 {
+        return prox;
+    }
+    // Directional cosine toward our goal (pos on the -x side aiming at goal = 1).
+    let aim = (to_goal / dist).dot(&Vector2::new(-1.0, 0.0)).max(0.0);
+    prox * (0.5 + 0.5 * aim)
+}
+
+/// Continuous openness in [0, 1] of the lane from `from` to `to` w.r.t. opponents.
 ///
-/// `offset_distance` is clamped so the shadow positions don't end up behind the goal line.
-pub fn compute_shadow_positions(
-    ball_pos: Vector2,
+/// 1 if no opponent is near the segment, decaying toward 0 as the nearest in-corridor
+/// opponent approaches the line. The smooth analogue of [`is_clear_shot`].
+pub fn lane_openness(from: Vector2, to: Vector2, opponents: &[PlayerState], corridor: f64) -> f64 {
+    let dir = to - from;
+    let len = dir.norm();
+    if len < 1e-6 {
+        return 1.0;
+    }
+    let mut min_perp = f64::INFINITY;
+    for opp in opponents {
+        let to_opp = opp.position - from;
+        let t = to_opp.dot(&dir) / (len * len);
+        if !(0.0..=1.0).contains(&t) {
+            continue;
+        }
+        let perp = (to_opp.x * dir.y - to_opp.y * dir.x).abs() / len;
+        min_perp = min_perp.min(perp);
+    }
+    if min_perp.is_infinite() {
+        return 1.0;
+    }
+    // 0 when on the line, 1 when at/over the corridor edge.
+    smoothstep(0.0, corridor, min_perp)
+}
+
+/// Distribute `k` shadow positions across the goal-mouth coverage arc as seen from
+/// `ball`, on a standoff line in front of our goal.
+///
+/// Positions vary continuously with the ball; ordered left→right so slot identity
+/// is stable as the fan rotates. `standoff` is how far in front of the goal the
+/// shadows sit (clamped so they stay in front of the ball).
+pub fn shadow_arc(
+    ball: Vector2,
     own_goal: Vector2,
-    offset_distance: f64,
-    spread: f64,
-) -> (Vector2, Vector2) {
-    let diff = own_goal - ball_pos;
-    let dist_to_goal = diff.norm();
+    k: usize,
+    standoff: f64,
+    half_goal: f64,
+) -> Vec<Vector2> {
+    if k == 0 {
+        return Vec::new();
+    }
+    let dist = (own_goal - ball).norm();
+    let line_x = own_goal.x + standoff.min(dist * 0.8);
 
-    // Avoid placing shadows behind the goal.
-    let clamped_offset = offset_distance.min(dist_to_goal * 0.8);
+    // Aim points span the goal mouth; each shadow blocks the ball→aim ray at line_x.
+    (0..k)
+        .map(|i| {
+            // Spread aim across the mouth, left→right. Single shadow → centre.
+            let frac = if k == 1 {
+                0.5
+            } else {
+                i as f64 / (k as f64 - 1.0)
+            };
+            let aim_y = -half_goal + 2.0 * half_goal * frac;
+            let aim = Vector2::new(own_goal.x, aim_y);
+            // Intersect ball→aim with x = line_x.
+            let d = aim - ball;
+            let y = if d.x.abs() < 1e-6 {
+                ball.y
+            } else {
+                let t = (line_x - ball.x) / d.x;
+                ball.y + t * d.y
+            };
+            Vector2::new(line_x, y)
+        })
+        .collect()
+}
 
-    let direction = if dist_to_goal > 1e-6 {
-        Vector2::new(diff.x / dist_to_goal, diff.y / dist_to_goal)
-    } else {
-        // Fallback: point toward −x (our goal side).
-        Vector2::new(-1.0, 0.0)
-    };
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let center = ball_pos + direction * clamped_offset;
+    #[test]
+    fn redirect_time_prefers_continuing_over_reversing() {
+        let pos = Vector2::new(0.0, 0.0);
+        let target = Vector2::new(1000.0, 0.0);
+        let toward = redirect_time(pos, Vector2::new(2000.0, 0.0), target, 3000.0, 3000.0);
+        let away = redirect_time(pos, Vector2::new(-2000.0, 0.0), target, 3000.0, 3000.0);
+        let still = redirect_time(pos, Vector2::new(0.0, 0.0), target, 3000.0, 3000.0);
+        assert!(
+            toward < still,
+            "moving toward should be cheaper than stationary"
+        );
+        assert!(
+            still < away,
+            "stationary should be cheaper than moving away"
+        );
+    }
 
-    // Rotate direction 90° counter-clockwise for the perpendicular.
-    let perp = Vector2::new(-direction.y, direction.x);
+    #[test]
+    fn smoothstep_is_monotonic_and_clamped() {
+        assert_eq!(smoothstep(0.0, 1.0, -1.0), 0.0);
+        assert_eq!(smoothstep(0.0, 1.0, 2.0), 1.0);
+        let a = smoothstep(0.0, 1.0, 0.25);
+        let b = smoothstep(0.0, 1.0, 0.75);
+        assert!(a < b);
+    }
 
-    (center + perp * spread, center - perp * spread)
+    #[test]
+    fn threat_is_higher_near_our_goal() {
+        let own_goal = Vector2::new(-4500.0, 0.0);
+        let near = threat(Vector2::new(-3500.0, 0.0), own_goal, 1500.0, 6000.0);
+        let far = threat(Vector2::new(3000.0, 0.0), own_goal, 1500.0, 6000.0);
+        assert!(near > far);
+    }
+
+    #[test]
+    fn lane_openness_drops_when_blocked() {
+        let from = Vector2::new(0.0, 0.0);
+        let to = Vector2::new(2000.0, 0.0);
+        let blocker = PlayerState::new(
+            PlayerId::new(9),
+            Vector2::new(1000.0, 0.0),
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let blocked = lane_openness(from, to, std::slice::from_ref(&blocker), 500.0);
+        let clear = lane_openness(from, to, &[], 500.0);
+        assert!(blocked < clear);
+        assert_eq!(clear, 1.0);
+    }
 }

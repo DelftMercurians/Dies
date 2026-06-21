@@ -1,39 +1,58 @@
-use dies_strategy_api::prelude::*;
+//! Driver — realizes the current waypoint via skill commands and reports status.
+//!
+//! The planner decides *what* should happen to the ball; the Driver makes it
+//! happen for the active robot and reports Ongoing / Succeeded / Failed(reason)
+//! so the orchestrator can replan. Failure reasons are rich enough for the
+//! planner to react differently (e.g. NoProgress → try another robot).
 
+use dies_strategy_api::prelude::*;
+use dies_strategy_api::World;
+
+use crate::config;
 use crate::planner::Waypoint;
 
-#[derive(Debug, Clone, PartialEq)]
+/// Outcome of the current waypoint this tick.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaypointStatus {
     Ongoing,
     Succeeded,
     Failed(FailReason),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// Why a waypoint failed. Distinct reasons let the planner respond differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailReason {
     Timeout,
     BallMoved,
     PossessionLost,
+    /// Approach made no headway (unlocks the planner's anti-loop). Emitted in M3.
+    NoProgress,
     SkillFailed,
+    /// Pass had no viable receiver. Pass seam — emitted in the passing milestone.
+    #[allow(dead_code)]
+    NoReceiver,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum DriverState {
+/// Internal phase of the active robot's execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Phase {
     Idle,
-    Approaching,
-    Picking,
-    Dribbling,
-    Kicking,
-    WaitingForBallSettle,
+    Approach,
+    Pickup,
+    Dribble,
+    Shoot,
+    // PassExec / PassSettle added in the passing milestone.
 }
 
 pub struct Driver {
     active_robot: Option<PlayerId>,
-    current_waypoint: Option<Waypoint>,
-    state: DriverState,
-    state_entered_at: f64,
+    waypoint: Option<Waypoint>,
+    phase: Phase,
+    phase_entered: f64,
     last_status: WaypointStatus,
-    initial_ball_pos: Option<Vector2>,
+    /// Ball position when the current waypoint started (for ball-moved detection).
+    engage_ball_pos: Option<Vector2>,
+    /// Next active robot hint (set by a completed pass; consumed by orchestrator).
     new_active: Option<PlayerId>,
 }
 
@@ -47,11 +66,11 @@ impl Driver {
     pub fn new() -> Self {
         Self {
             active_robot: None,
-            current_waypoint: None,
-            state: DriverState::Idle,
-            state_entered_at: 0.0,
+            waypoint: None,
+            phase: Phase::Idle,
+            phase_entered: 0.0,
             last_status: WaypointStatus::Ongoing,
-            initial_ball_pos: None,
+            engage_ball_pos: None,
             new_active: None,
         }
     }
@@ -60,142 +79,133 @@ impl Driver {
         &self.last_status
     }
 
-    /// Reset the driver to idle state, clearing any active waypoint.
-    pub fn clear(&mut self) {
-        self.active_robot = None;
-        self.current_waypoint = None;
-        self.state = DriverState::Idle;
-        self.last_status = WaypointStatus::Ongoing;
-        self.initial_ball_pos = None;
-        self.new_active = None;
-    }
-
     pub fn active_robot_id(&self) -> Option<PlayerId> {
         self.active_robot
     }
 
+    /// The area Formation should staff with a receiver (Pass waypoints only).
+    /// Always `None` in v1; the formation reads this to build the receiver role.
     pub fn plan_context_area(&self) -> Option<Vector2> {
-        match &self.current_waypoint {
-            Some(Waypoint::Pass { target_area }) => Some(*target_area),
+        match &self.waypoint {
+            Some(Waypoint::Pass { target_area, .. }) => Some(*target_area),
             _ => None,
         }
     }
 
-    pub fn new_active_robot(&mut self) -> Option<PlayerId> {
+    /// Consume the next-active hint (set when a pass succeeds). `None` in v1.
+    pub fn take_new_active(&mut self) -> Option<PlayerId> {
         self.new_active.take()
     }
 
-    pub fn set_waypoint(&mut self, waypoint: Waypoint, active_robot: PlayerId, timestamp: f64) {
-        self.state = match &waypoint {
-            Waypoint::Capture { .. } => DriverState::Approaching,
-            Waypoint::Dribble { .. } => DriverState::Dribbling,
-            Waypoint::Shoot { .. } => DriverState::Kicking,
-            Waypoint::Pass { .. } => DriverState::Kicking,
-        };
-        self.current_waypoint = Some(waypoint);
-        self.active_robot = Some(active_robot);
-        self.state_entered_at = timestamp;
+    /// Reset to idle, dropping any active waypoint.
+    pub fn clear(&mut self) {
+        self.active_robot = None;
+        self.waypoint = None;
+        self.phase = Phase::Idle;
         self.last_status = WaypointStatus::Ongoing;
+        self.engage_ball_pos = None;
         self.new_active = None;
-        self.initial_ball_pos = None;
     }
 
+    /// Begin executing a waypoint with the given active robot.
+    pub fn set_waypoint(&mut self, waypoint: Waypoint, active_robot: PlayerId, now: f64) {
+        self.phase = match &waypoint {
+            Waypoint::Capture { .. } => Phase::Approach,
+            Waypoint::Dribble { .. } => Phase::Dribble,
+            Waypoint::Shoot { .. } => Phase::Shoot,
+            Waypoint::Pass { .. } => Phase::Idle, // passing milestone wires this
+        };
+        self.waypoint = Some(waypoint);
+        self.active_robot = Some(active_robot);
+        self.phase_entered = now;
+        self.last_status = WaypointStatus::Ongoing;
+        self.engage_ball_pos = None;
+        self.new_active = None;
+    }
+
+    /// Tick the active robot's skill; returns the waypoint status.
     pub fn update(&mut self, world: &World, ctx: &mut TeamContext) -> WaypointStatus {
-        let waypoint = match self.current_waypoint.clone() {
+        let waypoint = match self.waypoint.clone() {
             Some(w) => w,
             None => return self.last_status.clone(),
         };
-
         let active_id = match self.active_robot {
             Some(id) => id,
             None => return self.last_status.clone(),
         };
 
-        // Get ball position; fall back to last known if unavailable
         let ball_pos = world
             .ball_position()
-            .or(self.initial_ball_pos)
-            .unwrap_or(Vector2::new(0.0, 0.0));
-
-        // Store initial ball position on first update
-        if self.initial_ball_pos.is_none() {
-            self.initial_ball_pos = Some(ball_pos);
+            .or(self.engage_ball_pos)
+            .unwrap_or_else(|| Vector2::new(0.0, 0.0));
+        if self.engage_ball_pos.is_none() {
+            self.engage_ball_pos = Some(ball_pos);
         }
-
-        let timestamp = world.timestamp();
+        let now = world.timestamp();
         let opp_goal = world.opp_goal_center();
 
-        // Get the player handle; fail if it doesn't exist
+        // ── Global failure: ball left the engagement area, and not ours ─────
+        if let (Some(engage), Some(bp)) = (self.engage_ball_pos, world.ball_position()) {
+            let ours = world
+                .own_player(active_id)
+                .map(|p| p.has_ball)
+                .unwrap_or(false);
+            if !ours && (bp - engage).norm() > config::BALL_MOVED_DIST {
+                return self.finish(WaypointStatus::Failed(FailReason::BallMoved));
+            }
+        }
+
         let player = match ctx.player(active_id) {
             Some(p) => p,
-            None => {
-                self.last_status = WaypointStatus::Failed(FailReason::SkillFailed);
-                self.current_waypoint = None;
-                self.state = DriverState::Idle;
-                return self.last_status.clone();
-            }
+            None => return self.finish(WaypointStatus::Failed(FailReason::SkillFailed)),
         };
 
-        // Read all immutable player state before issuing mutable commands
+        // Snapshot immutable state before issuing mutable commands.
         let player_pos = player.position();
         let skill_status = player.skill_status();
         let has_ball = player.has_ball();
+        let elapsed = now - self.phase_entered;
 
-        let status = match (&waypoint, &self.state) {
-            // ── Capture: Approaching ────────────────────────────────────
-            (Waypoint::Capture { .. }, DriverState::Approaching) => {
+        let status = match (&waypoint, self.phase) {
+            // ── Capture: Approach ───────────────────────────────────────
+            (Waypoint::Capture { .. }, Phase::Approach) => {
                 player.go_to(ball_pos).facing(ball_pos);
-                player.set_role("Capturing");
-
-                let dist_to_ball = (player_pos - ball_pos).norm();
-                if dist_to_ball < 500.0 {
-                    self.state = DriverState::Picking;
-                    self.state_entered_at = timestamp;
+                player.set_role("capturing");
+                if (player_pos - ball_pos).norm() < config::CAPTURE_PICKUP_DIST {
+                    self.enter(Phase::Pickup, now);
                     WaypointStatus::Ongoing
-                } else if timestamp - self.state_entered_at > 3.0 {
+                } else if elapsed > config::APPROACH_TIMEOUT {
                     WaypointStatus::Failed(FailReason::Timeout)
-                } else if let Some(initial) = self.initial_ball_pos {
-                    if (ball_pos - initial).norm() > 2000.0 {
-                        WaypointStatus::Failed(FailReason::BallMoved)
-                    } else {
-                        WaypointStatus::Ongoing
-                    }
                 } else {
                     WaypointStatus::Ongoing
                 }
             }
 
-            // ── Capture: Picking ────────────────────────────────────────
-            (Waypoint::Capture { .. }, DriverState::Picking) => {
-                let dir = opp_goal - ball_pos;
-                let heading = Angle::from_radians(dir.y.atan2(dir.x));
+            // ── Capture: Pickup ─────────────────────────────────────────
+            (Waypoint::Capture { .. }, Phase::Pickup) => {
+                let heading = heading_toward(ball_pos, opp_goal);
                 player.pickup_ball(heading);
-                player.set_role("Picking");
-
-                if skill_status == SkillStatus::Succeeded {
-                    WaypointStatus::Succeeded
-                } else if skill_status == SkillStatus::Failed {
-                    WaypointStatus::Failed(FailReason::SkillFailed)
-                } else if timestamp - self.state_entered_at > 2.0 {
-                    WaypointStatus::Failed(FailReason::Timeout)
-                } else {
-                    WaypointStatus::Ongoing
+                player.set_role("picking");
+                match skill_status {
+                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
+                    SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
+                    _ if elapsed > config::PICKUP_TIMEOUT => {
+                        WaypointStatus::Failed(FailReason::Timeout)
+                    }
+                    _ => WaypointStatus::Ongoing,
                 }
             }
 
             // ── Dribble ─────────────────────────────────────────────────
-            (Waypoint::Dribble { target_area }, DriverState::Dribbling) => {
-                let dir = opp_goal - *target_area;
-                let heading = Angle::from_radians(dir.y.atan2(dir.x));
+            (Waypoint::Dribble { target_area }, Phase::Dribble) => {
+                let heading = heading_toward(*target_area, opp_goal);
                 player.dribble_to(*target_area, heading);
-                player.set_role("Dribbling");
-
-                let dist_to_target = (player_pos - *target_area).norm();
-                if has_ball && dist_to_target < 500.0 {
+                player.set_role("dribbling");
+                if has_ball && (player_pos - *target_area).norm() < config::DRIBBLE_ARRIVE_DIST {
                     WaypointStatus::Succeeded
                 } else if skill_status == SkillStatus::Failed {
                     WaypointStatus::Failed(FailReason::PossessionLost)
-                } else if timestamp - self.state_entered_at > 4.0 {
+                } else if elapsed > config::DRIBBLE_TIMEOUT {
                     WaypointStatus::Failed(FailReason::Timeout)
                 } else {
                     WaypointStatus::Ongoing
@@ -203,77 +213,48 @@ impl Driver {
             }
 
             // ── Shoot ───────────────────────────────────────────────────
-            (Waypoint::Shoot { target }, DriverState::Kicking) => {
+            (Waypoint::Shoot { target }, Phase::Shoot) => {
                 player.reflex_shoot(*target);
-                player.set_role("Shooting");
-
-                if skill_status == SkillStatus::Succeeded {
-                    WaypointStatus::Succeeded
-                } else if skill_status == SkillStatus::Failed {
-                    WaypointStatus::Failed(FailReason::SkillFailed)
-                } else if timestamp - self.state_entered_at > 2.0 {
-                    WaypointStatus::Failed(FailReason::Timeout)
-                } else {
-                    WaypointStatus::Ongoing
-                }
-            }
-
-            // ── Pass: Kicking ───────────────────────────────────────────
-            (Waypoint::Pass { target_area }, DriverState::Kicking) => {
-                player.reflex_shoot(*target_area);
-                player.set_role("Passing");
-
-                if skill_status == SkillStatus::Succeeded {
-                    self.state = DriverState::WaitingForBallSettle;
-                    self.state_entered_at = timestamp;
-                    WaypointStatus::Ongoing
-                } else if skill_status == SkillStatus::Failed {
-                    WaypointStatus::Failed(FailReason::SkillFailed)
-                } else if timestamp - self.state_entered_at > 2.0 {
-                    WaypointStatus::Failed(FailReason::Timeout)
-                } else {
-                    WaypointStatus::Ongoing
-                }
-            }
-
-            // ── Pass: WaitingForBallSettle ──────────────────────────────
-            (Waypoint::Pass { target_area }, DriverState::WaitingForBallSettle) => {
-                player.set_role("Waiting");
-
-                // Check if any own player received the ball near the target area
-                let mut pass_succeeded = false;
-                for p in world.own_players() {
-                    if p.has_ball && (p.position - *target_area).norm() < 1000.0 {
-                        self.new_active = Some(p.id);
-                        pass_succeeded = true;
-                        break;
+                player.set_role("shooting");
+                match skill_status {
+                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
+                    SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
+                    _ if elapsed > config::SHOOT_TIMEOUT => {
+                        WaypointStatus::Failed(FailReason::Timeout)
                     }
-                }
-
-                if pass_succeeded {
-                    WaypointStatus::Succeeded
-                } else if timestamp - self.state_entered_at > 1.5 {
-                    WaypointStatus::Failed(FailReason::PossessionLost)
-                } else {
-                    WaypointStatus::Ongoing
+                    _ => WaypointStatus::Ongoing,
                 }
             }
 
-            // Invalid waypoint/state combination — stay ongoing
+            // Invalid combination — stay ongoing (defensive; should not happen).
             _ => WaypointStatus::Ongoing,
         };
 
-        self.last_status = status;
-
-        // Terminal status: clear waypoint and go idle
         if matches!(
-            self.last_status,
+            status,
             WaypointStatus::Succeeded | WaypointStatus::Failed(_)
         ) {
-            self.current_waypoint = None;
-            self.state = DriverState::Idle;
+            return self.finish(status);
         }
-
-        self.last_status.clone()
+        self.last_status = status.clone();
+        status
     }
+
+    fn enter(&mut self, phase: Phase, now: f64) {
+        self.phase = phase;
+        self.phase_entered = now;
+    }
+
+    fn finish(&mut self, status: WaypointStatus) -> WaypointStatus {
+        self.last_status = status.clone();
+        self.waypoint = None;
+        self.phase = Phase::Idle;
+        status
+    }
+}
+
+/// Heading pointing from `from` toward `to`.
+fn heading_toward(from: Vector2, to: Vector2) -> Angle {
+    let d = to - from;
+    Angle::from_radians(d.y.atan2(d.x))
 }

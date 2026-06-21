@@ -1,39 +1,70 @@
+//! Planner — deliberately dumb, event-driven, pass-ready.
+//!
+//! Given the stable possession, it picks at most one ball-state-transition
+//! waypoint and the active robot. It runs only on discrete events (see `lib.rs`),
+//! so plan continuity falls out for free. Stability of the active-robot choice
+//! comes from physics (momentum-aware time-to-ball), not a stay-bonus.
+
+use std::collections::HashMap;
+
 use dies_strategy_api::prelude::*;
+use dies_strategy_api::World;
 
+use crate::config;
+use crate::driver::FailReason;
 use crate::geometry;
-use crate::possession::PossessionState;
+use crate::possession::Possession;
 
-/// A single step in a plan.
-#[derive(Debug, Clone)]
-pub enum Waypoint {
-    /// Go to the ball and capture it.
-    Capture { robot_id: PlayerId },
-    /// Dribble the ball toward a target area.
-    Dribble { target_area: Vector2 },
-    /// Pass the ball to a target area.
-    Pass { target_area: Vector2 },
-    /// Shoot the ball at a specific target (typically the goal).
-    Shoot { target: Vector2 },
+/// How a capture is performed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureKind {
+    /// Ball is loose — drive to it and pick it up.
+    Loose,
+    /// Ball is held by an opponent — challenge from a favourable angle.
+    Steal { from: PlayerId },
 }
 
-/// A sequence of waypoints assigned to an active robot.
+/// A desired ball-state transition.
+#[derive(Debug, Clone)]
+pub enum Waypoint {
+    Capture {
+        kind: CaptureKind,
+        robot: PlayerId,
+    },
+    Dribble {
+        target_area: Vector2,
+    },
+    Shoot {
+        target: Vector2,
+    },
+    /// Pass seam — defined for the future passing milestone, never emitted in v1.
+    #[allow(dead_code)]
+    Pass {
+        passer: PlayerId,
+        receiver_hint: Option<PlayerId>,
+        target_area: Vector2,
+    },
+}
+
+/// A plan: a sequence of waypoints driven by one active robot. v1 emits length-1;
+/// replan-after-each makes any tail advisory.
 #[derive(Debug, Clone)]
 pub struct Plan {
     pub waypoints: Vec<Waypoint>,
     pub active_robot: PlayerId,
 }
 
-/// Context passed to the planner for game-state-aware decisions.
-pub struct PlanContext {
-    /// True when we're taking a kickoff or free kick.
-    pub our_set_piece: bool,
-    /// Robot excluded from active robot selection (double-touch rule).
+/// Inputs the planner needs beyond the world snapshot.
+pub struct PlanInputs {
+    pub keeper_id: Option<PlayerId>,
     pub double_touch_robot: Option<PlayerId>,
+    pub now: f64,
 }
 
-/// The Planner selects a plan based on the current world state and possession.
+/// Selects plans on events; remembers recent per-robot failures to avoid loops.
 pub struct Planner {
     current_plan: Option<Plan>,
+    recent_failures: HashMap<PlayerId, (FailReason, f64)>,
 }
 
 impl Default for Planner {
@@ -43,223 +74,173 @@ impl Default for Planner {
 }
 
 impl Planner {
-    /// Create a new Planner with no initial plan.
     pub fn new() -> Self {
-        Self { current_plan: None }
+        Self {
+            current_plan: None,
+            recent_failures: HashMap::new(),
+        }
     }
 
-    /// Returns a reference to the current plan, if any.
     pub fn current_plan(&self) -> Option<&Plan> {
         self.current_plan.as_ref()
     }
 
-    /// Clear the current plan, forcing a replan on the next tick.
     pub fn clear_plan(&mut self) {
         self.current_plan = None;
     }
 
-    /// Re-evaluate the situation and produce a new plan.
-    ///
-    /// Returns `None` when the ball is not visible (nothing to plan around).
+    /// Record a waypoint failure so the next selection can avoid this robot
+    /// briefly (used by the no-progress anti-loop in M3).
+    pub fn record_failure(&mut self, robot: PlayerId, reason: FailReason, now: f64) {
+        self.recent_failures.insert(robot, (reason, now));
+    }
+
+    /// Drop expired failure records; clear all on possession change.
+    fn prune_failures(&mut self, now: f64) {
+        self.recent_failures
+            .retain(|_, (_, ts)| now - *ts < config::NOPROGRESS_TTL);
+    }
+
+    /// True if `id` recently failed with NoProgress and is still in the cooldown.
+    fn recently_stuck(&self, id: PlayerId) -> bool {
+        matches!(
+            self.recent_failures.get(&id),
+            Some((FailReason::NoProgress, _))
+        )
+    }
+
+    /// Re-evaluate and produce a plan, or `None` to defer to Formation (defend).
     pub fn replan(
         &mut self,
         world: &World,
-        possession: &PossessionState,
-        plan_ctx: &PlanContext,
-    ) -> Option<&Plan> {
-        let ball_pos = world.ball_position()?;
-        let goal_center = world.opp_goal_center();
+        possession: &Possession,
+        inputs: &PlanInputs,
+    ) -> Option<Plan> {
+        self.prune_failures(inputs.now);
 
-        let plan = match possession {
-            // ── Branch 1 & 2: We have the ball ──────────────────────────
-            PossessionState::We(robot_id) => {
-                let robot_id = *robot_id;
-                let carrier = world.own_player(robot_id)?;
+        let ball_pos = world.ball_position()?;
+        let opp_goal = world.opp_goal_center();
+
+        let plan = match *possession {
+            // ── We have the ball ────────────────────────────────────────
+            Possession::We(id) => {
+                let carrier = world.own_player(id)?;
                 let carrier_pos = carrier.position;
 
-                let clear =
-                    geometry::is_clear_shot(carrier_pos, goal_center, world.opp_players(), 400.0);
-                let close_enough = (carrier_pos - goal_center).norm() < 3500.0;
+                let clear = geometry::is_clear_shot(
+                    carrier_pos,
+                    opp_goal,
+                    world.opp_players(),
+                    config::CLEAR_SHOT_CORRIDOR,
+                );
+                let in_range = (carrier_pos - opp_goal).norm() < config::SHOOT_RANGE;
 
-                if clear && close_enough {
-                    // Branch 1: clear shot — just shoot.
-                    Plan {
-                        waypoints: vec![Waypoint::Shoot {
-                            target: goal_center,
-                        }],
-                        active_robot: robot_id,
-                    }
+                let waypoint = if clear && in_range {
+                    Waypoint::Shoot { target: opp_goal }
                 } else {
-                    // Branch 2: no clear shot — pass or dribble forward, then shoot.
-                    let field_half_length = world.field_length() / 2.0;
-                    let field_half_width = world.field_width() / 2.0;
-                    let keeper_id = world.our_keeper_id();
-
-                    let first_waypoint = if let Some(pass_area) = geometry::best_pass_area(
-                        carrier_pos,
-                        world.opp_players(),
-                        field_half_length,
-                        field_half_width,
-                    ) {
-                        Waypoint::Pass {
-                            target_area: pass_area,
-                        }
-                    } else if plan_ctx.our_set_piece {
-                        // During a set piece, dribbling is illegal (double-touch).
-                        // Force a short pass to the nearest eligible teammate.
-                        let pass_target = find_short_pass_target(
-                            world,
-                            carrier_pos,
-                            keeper_id,
-                            plan_ctx.double_touch_robot,
-                        );
-                        Waypoint::Pass {
-                            target_area: pass_target,
-                        }
-                    } else {
-                        // No good pass — dribble toward opponent goal, clamped to field.
-                        let raw_target = carrier_pos + Vector2::new(1500.0, 0.0);
-                        let clamped = Vector2::new(
-                            raw_target.x.clamp(-field_half_length, field_half_length),
-                            raw_target.y.clamp(-field_half_width, field_half_width),
-                        );
-                        Waypoint::Dribble {
-                            target_area: clamped,
-                        }
-                    };
-
-                    Plan {
-                        waypoints: vec![
-                            first_waypoint,
-                            Waypoint::Shoot {
-                                target: goal_center,
-                            },
-                        ],
-                        active_robot: robot_id,
+                    // *** PASS SEAM ***: future milestone inserts a Pass waypoint
+                    // here (we-have-ball, no clear shot). v1 advances by dribbling.
+                    Waypoint::Dribble {
+                        target_area: self.advance_point(carrier_pos, opp_goal, world),
                     }
-                }
-            }
-
-            // ── Branch 3: Ball is loose ─────────────────────────────────
-            PossessionState::Loose => {
-                let keeper_id = world.our_keeper_id();
-
-                // Prefer non-keeper, non-double-touch players; fall back to any player.
-                let closest = world
-                    .own_players()
-                    .iter()
-                    .filter(|p| {
-                        Some(p.id) != keeper_id && Some(p.id) != plan_ctx.double_touch_robot
-                    })
-                    .min_by(|a, b| {
-                        let da = (a.position - ball_pos).norm();
-                        let db = (b.position - ball_pos).norm();
-                        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .or_else(|| {
-                        // Fall back: exclude only keeper
-                        world
-                            .own_players()
-                            .iter()
-                            .filter(|p| Some(p.id) != keeper_id)
-                            .min_by(|a, b| {
-                                let da = (a.position - ball_pos).norm();
-                                let db = (b.position - ball_pos).norm();
-                                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-                            })
-                    })
-                    .or_else(|| world.closest_own_player_to(ball_pos))?;
-
-                Plan {
-                    waypoints: vec![Waypoint::Capture {
-                        robot_id: closest.id,
-                    }],
-                    active_robot: closest.id,
-                }
-            }
-
-            // ── Branch 4: Opponent has the ball ─────────────────────────
-            PossessionState::Opponent(opp_id) => {
-                let opp = world.opp_player(*opp_id)?;
-                let opp_pos = opp.position;
-                let own_goal = world.own_goal_center();
-                let keeper_id = world.our_keeper_id();
-
-                // Candidates: own players excluding goalkeeper and double-touch robot.
-                let candidates: Vec<&PlayerState> = world
-                    .own_players()
-                    .iter()
-                    .filter(|p| {
-                        Some(p.id) != keeper_id && Some(p.id) != plan_ctx.double_touch_robot
-                    })
-                    .collect();
-
-                // Prefer a player that is between the opponent and our goal.
-                let between_players: Vec<&&PlayerState> = candidates
-                    .iter()
-                    .filter(|p| geometry::is_between(p.position, opp_pos, own_goal))
-                    .collect();
-
-                let interceptor = if !between_players.is_empty() {
-                    // Among "between" players, pick the closest to the opponent.
-                    between_players
-                        .into_iter()
-                        .min_by(|a, b| {
-                            let da = (a.position - opp_pos).norm();
-                            let db = (b.position - opp_pos).norm();
-                            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                        .copied()
-                } else if !candidates.is_empty() {
-                    // No player between — pick the closest to the opponent.
-                    candidates
-                        .iter()
-                        .min_by(|a, b| {
-                            let da = (a.position - opp_pos).norm();
-                            let db = (b.position - opp_pos).norm();
-                            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                        .copied()
-                } else {
-                    // All players are keepers (edge case) — use closest overall.
-                    world.closest_own_player_to(opp_pos)
                 };
+                Plan {
+                    waypoints: vec![waypoint],
+                    active_robot: id,
+                }
+            }
 
-                let interceptor = interceptor?;
-
+            // ── Ball is loose ───────────────────────────────────────────
+            Possession::Loose => {
+                let robot = self.select_capturer(world, ball_pos, inputs)?;
                 Plan {
                     waypoints: vec![Waypoint::Capture {
-                        robot_id: interceptor.id,
+                        kind: CaptureKind::Loose,
+                        robot,
                     }],
-                    active_robot: interceptor.id,
+                    active_robot: robot,
+                }
+            }
+
+            // ── Opponent has the ball ───────────────────────────────────
+            Possession::Opp(oid) => {
+                // M1 crude steal gate: only commit a challenger that is reasonably
+                // close to the ball; otherwise defer to Formation. (M3 replaces this
+                // with a proper conservative gate that protects deep defenders.)
+                let robot = self.select_capturer(world, ball_pos, inputs)?;
+                let robot_pos = world.own_player(robot)?.position;
+                if (robot_pos - ball_pos).norm() > config::STEAL_MAX_DIST {
+                    self.current_plan = None;
+                    return None;
+                }
+                Plan {
+                    waypoints: vec![Waypoint::Capture {
+                        kind: CaptureKind::Steal { from: oid },
+                        robot,
+                    }],
+                    active_robot: robot,
                 }
             }
         };
 
-        self.current_plan = Some(plan);
-        self.current_plan.as_ref()
+        self.current_plan = Some(plan.clone());
+        Some(plan)
     }
-}
 
-/// Find the nearest eligible teammate as a short pass target.
-/// Excludes the keeper and the double-touch robot.
-fn find_short_pass_target(
-    world: &World,
-    carrier_pos: Vector2,
-    keeper_id: Option<PlayerId>,
-    double_touch_robot: Option<PlayerId>,
-) -> Vector2 {
-    world
-        .own_players()
-        .iter()
-        .filter(|p| Some(p.id) != keeper_id && Some(p.id) != double_touch_robot)
-        .filter(|p| (p.position - carrier_pos).norm() > 50.0) // exclude self
-        .min_by(|a, b| {
-            let da = (a.position - carrier_pos).norm();
-            let db = (b.position - carrier_pos).norm();
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|p| p.position)
-        // Fallback: pass forward if no eligible teammate found
-        .unwrap_or(carrier_pos + Vector2::new(1000.0, 0.0))
+    /// Choose the robot that can reach the ball soonest (momentum-aware), excluding
+    /// the keeper, the double-touch robot, and robots in a no-progress cooldown.
+    fn select_capturer(
+        &self,
+        world: &World,
+        ball_pos: Vector2,
+        inputs: &PlanInputs,
+    ) -> Option<PlayerId> {
+        let pick = |relax_stuck: bool| -> Option<PlayerId> {
+            world
+                .own_players()
+                .iter()
+                .filter(|p| Some(p.id) != inputs.keeper_id)
+                .filter(|p| Some(p.id) != inputs.double_touch_robot)
+                .filter(|p| relax_stuck || !self.recently_stuck(p.id))
+                .min_by(|a, b| {
+                    let ta = geometry::redirect_time(
+                        a.position,
+                        a.velocity,
+                        ball_pos,
+                        config::V_MAX,
+                        config::A_MAX,
+                    );
+                    let tb = geometry::redirect_time(
+                        b.position,
+                        b.velocity,
+                        ball_pos,
+                        config::V_MAX,
+                        config::A_MAX,
+                    );
+                    ta.partial_cmp(&tb).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|p| p.id)
+        };
+
+        // Prefer a robot not in cooldown; if everyone is stuck, allow reuse.
+        pick(false).or_else(|| pick(true))
+    }
+
+    /// A point toward the opponent goal to dribble to, clamped to the field.
+    fn advance_point(&self, from: Vector2, opp_goal: Vector2, world: &World) -> Vector2 {
+        let half_len = world.field_length() / 2.0;
+        let half_wid = world.field_width() / 2.0;
+        let dir = opp_goal - from;
+        let n = dir.norm();
+        let step = if n > 1e-6 {
+            dir / n * config::DRIBBLE_ADVANCE
+        } else {
+            Vector2::new(config::DRIBBLE_ADVANCE, 0.0)
+        };
+        let raw = from + step;
+        Vector2::new(
+            raw.x.clamp(-half_len + 200.0, half_len - 200.0),
+            raw.y.clamp(-half_wid + 200.0, half_wid - 200.0),
+        )
+    }
 }

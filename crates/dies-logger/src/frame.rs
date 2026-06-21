@@ -345,6 +345,7 @@ pub fn sys_status_str(s: SysStatus) -> &'static str {
         SysStatus::Safe => "safe",
         SysStatus::NotInstalled => "not_installed",
         SysStatus::Standby => "standby",
+        SysStatus::Cooldown => "cooldown",
     }
 }
 

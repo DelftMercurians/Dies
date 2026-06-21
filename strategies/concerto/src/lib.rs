@@ -1,26 +1,37 @@
+//! Concerto — a formation/planner-split RoboCup SSL strategy.
+//!
+//! Two layers above the skills:
+//! - **Formation** positions every field robot except the keeper and the active
+//!   (plan-controlled) robot.
+//! - **Planner → Driver** moves the ball toward the opponent goal via
+//!   ball-state-transition waypoints, re-deciding only on discrete events.
+//!
+//! Stability comes from physics and decision cadence, never stay-bonuses. See the
+//! module docs for details. Passing is deferred but its seams are in place.
+
+pub mod config;
 pub mod driver;
 pub mod formation;
 pub mod geometry;
+pub mod keeper;
+pub mod matching;
 pub mod planner;
 pub mod possession;
 
 use dies_strategy_api::prelude::*;
 use dies_strategy_api::World;
 
-use driver::Driver;
+use driver::{Driver, WaypointStatus};
 use formation::Formation;
-use planner::{PlanContext, Planner};
-use possession::{detect_possession, PossessionCategory};
+use planner::{PlanInputs, Planner};
+use possession::{classify_raw, Possession, PossessionTracker};
 
-/// Main Concerto strategy struct implementing the Strategy trait.
+/// The Concerto strategy.
 pub struct ConcertoStrategy {
+    tracker: PossessionTracker,
     planner: Planner,
     driver: Driver,
     formation: Formation,
-    field_half_length: f64,
-    field_half_width: f64,
-    goal_width: f64,
-    last_possession_category: PossessionCategory,
     last_game_state: GameState,
     double_touch_robot: Option<PlayerId>,
 }
@@ -28,13 +39,10 @@ pub struct ConcertoStrategy {
 impl ConcertoStrategy {
     pub fn new() -> Self {
         Self {
+            tracker: PossessionTracker::new(),
             planner: Planner::new(),
             driver: Driver::new(),
             formation: Formation::new(),
-            field_half_length: 4500.0,
-            field_half_width: 3000.0,
-            goal_width: 1000.0,
-            last_possession_category: PossessionCategory::Loose,
             last_game_state: GameState::Unknown,
             double_touch_robot: None,
         }
@@ -48,39 +56,30 @@ impl Default for ConcertoStrategy {
 }
 
 impl Strategy for ConcertoStrategy {
-    fn init(&mut self, world: &World) {
-        self.field_half_length = world.field_length() / 2.0;
-        self.field_half_width = world.field_width() / 2.0;
-        self.goal_width = world.goal_width();
+    fn init(&mut self, _world: &World) {
         tracing::info!("Concerto strategy initialized");
     }
 
     fn update(&mut self, ctx: &mut TeamContext) {
-        // Clone the world snapshot so we have an owned World that doesn't borrow ctx.
+        // Owned snapshot so reads don't borrow `ctx` while we issue commands.
         let world = World::new(ctx.world().raw_snapshot().clone());
-
-        // Update cached field geometry
-        self.field_half_length = world.field_length() / 2.0;
-        self.field_half_width = world.field_width() / 2.0;
-        self.goal_width = world.goal_width();
-
         let game_state = world.game_state();
         let us_operating = world.us_operating();
+        let now = world.timestamp();
 
-        // ── 1. Update double-touch tracking ─────────────────────────────
+        // ── Double-touch tracking ───────────────────────────────────────
         if let Some(kicker) = world.freekick_kicker() {
             self.double_touch_robot = Some(kicker);
         } else if matches!(
             game_state,
-            GameState::Halt | GameState::Stop | GameState::Timeout
+            GameState::Halt | GameState::Stop | GameState::Timeout | GameState::Run
         ) {
-            self.double_touch_robot = None;
-        } else if game_state == GameState::Run && world.freekick_kicker().is_none() {
-            // Framework cleared the kicker (another robot touched the ball)
+            // Reset on stoppages, and on Run once the framework clears the kicker
+            // (another robot has touched the ball).
             self.double_touch_robot = None;
         }
 
-        // ── 2. Game state transition → clear plan + driver ──────────────
+        // ── Game-state transition → clear plan + driver ─────────────────
         let game_state_changed = game_state != self.last_game_state;
         if game_state_changed {
             self.planner.clear_plan();
@@ -88,27 +87,7 @@ impl Strategy for ConcertoStrategy {
         }
         self.last_game_state = game_state;
 
-        // ── 3. Get ball position ────────────────────────────────────────
-        let ball_pos = match world.ball_position() {
-            Some(p) => p,
-            None => {
-                for player in ctx.players() {
-                    player.stop();
-                    player.set_role("NoBall");
-                }
-                return;
-            }
-        };
-
-        // ── 4. Build PlanContext ─────────────────────────────────────────
-        let our_set_piece =
-            us_operating && matches!(game_state, GameState::Kickoff | GameState::FreeKick);
-        let plan_ctx = PlanContext {
-            our_set_piece,
-            double_touch_robot: self.double_touch_robot,
-        };
-
-        // ── 5. Halt/Unknown → bail early (framework handles stopping) ───
+        // ── Hard stops: let the executor halt the robots ────────────────
         if matches!(
             game_state,
             GameState::Halt | GameState::Unknown | GameState::Timeout
@@ -116,132 +95,185 @@ impl Strategy for ConcertoStrategy {
             return;
         }
 
-        // ── 6. Detect possession ────────────────────────────────────────
-        let possession = detect_possession(&world);
-        let possession_category = PossessionCategory::from(&possession);
+        // ── Possession (root stability surface) ─────────────────────────
+        let raw = classify_raw(&world);
+        let possession = self.tracker.update(raw, now);
+        let possession_changed = self.tracker.changed_this_tick();
 
-        // ── 7. Replan triggers ──────────────────────────────────────────
-        let driver_status = self.driver.status().clone();
-        let needs_replan = self.planner.current_plan().is_none()
-            || matches!(
-                driver_status,
-                driver::WaypointStatus::Succeeded | driver::WaypointStatus::Failed(_)
+        let ball_present = world.ball_position().is_some();
+        let we_may_act = match game_state {
+            GameState::Run => true,
+            GameState::Kickoff | GameState::FreeKick | GameState::PenaltyRun => us_operating,
+            _ => false,
+        };
+
+        // ── Offensive loop: plan on events, then drive the active robot ──
+        let mut plan_slots: Vec<PlayerId> = Vec::new();
+        if ball_present && world.is_ball_in_play() && we_may_act {
+            let needs_replan = self.planner.current_plan().is_none()
+                || matches!(
+                    self.driver.status(),
+                    WaypointStatus::Succeeded | WaypointStatus::Failed(_)
+                )
+                || possession_changed
+                || game_state_changed;
+
+            if needs_replan {
+                let inputs = PlanInputs {
+                    keeper_id: world.our_keeper_id(),
+                    double_touch_robot: self.double_touch_robot,
+                    now,
+                };
+                match self.planner.replan(&world, &possession, &inputs) {
+                    Some(plan) => {
+                        self.driver
+                            .set_waypoint(plan.waypoints[0].clone(), plan.active_robot, now)
+                    }
+                    None => self.driver.clear(),
+                }
+            }
+
+            if let Some(active_id) = self.driver.active_robot_id() {
+                plan_slots.push(active_id);
+                let status = self.driver.update(&world, ctx);
+                if let WaypointStatus::Failed(reason) = status {
+                    self.planner.record_failure(active_id, reason, now);
+                }
+                // Pass seam: a completed pass would hand off to the receiver here.
+                if let Some(_next) = self.driver.take_new_active() {
+                    // Unused in v1 (no waypoint sets it).
+                }
+
+                // Compliance: name the active robot as the kicker during our restarts
+                // so the executor exempts it and positions everyone else.
+                if let Some(role) = our_kicker_role(game_state, us_operating) {
+                    if let Some(p) = ctx.player(active_id) {
+                        p.set_role(role);
+                    }
+                }
+            }
+        } else {
+            // Not acting offensively — replan fresh when play resumes.
+            self.planner.clear_plan();
+            self.driver.clear();
+        }
+
+        // ── Our set-piece preparation: designate & position a kicker ─────
+        if us_operating
+            && matches!(
+                game_state,
+                GameState::PrepareKickoff | GameState::PreparePenalty
             )
-            || possession_category != self.last_possession_category
-            || game_state_changed;
-
-        self.last_possession_category = possession_category;
-
-        // ── 8. Replan if needed ─────────────────────────────────────────
-        if needs_replan {
-            if let Some(plan) = self.planner.replan(&world, &possession, &plan_ctx) {
-                self.driver.set_waypoint(
-                    plan.waypoints[0].clone(),
-                    plan.active_robot,
-                    world.timestamp(),
-                );
+        {
+            if let Some(id) = self.designate_prep_kicker(&world, ctx, game_state) {
+                plan_slots.push(id);
             }
         }
 
-        // ── 9. Collect IDs before mutable borrow of ctx ─────────────────
-        let keeper_id = world.our_keeper_id();
-        let active_robot_id = self.driver.active_robot_id();
         let plan_context = self.driver.plan_context_area();
-        let own_player_ids: Vec<PlayerId> = ctx.player_ids().to_vec();
 
-        // Run the driver — produces skill commands for the active robot
-        let _waypoint_status = self.driver.update(&world, ctx);
-
-        // ── 10. Override active robot role name for compliance ───────────
-        if let Some(active_id) = active_robot_id {
-            let role_override = match game_state {
-                GameState::Kickoff | GameState::PrepareKickoff if us_operating => {
-                    Some("kickoff_kicker")
-                }
-                GameState::FreeKick if us_operating => Some("free_kick_kicker"),
-                _ => None,
-            };
-            if let Some(role_name) = role_override {
-                if let Some(player) = ctx.player(active_id) {
-                    player.set_role(role_name);
-                }
-            }
-        }
-
-        // ── 11. Handle PrepareKickoff (ours): designate a kicker ────────
-        // During PrepareKickoff, there's no ball to capture yet, but we need
-        // a robot with the kickoff_kicker role so it's exempt from own-half clamping.
-        if game_state == GameState::PrepareKickoff && us_operating && active_robot_id.is_none() {
-            // Pick the closest robot to the center (ball position) as the designated kicker
-            let kicker = world
-                .own_players()
-                .iter()
-                .filter(|p| Some(p.id) != keeper_id)
-                .min_by(|a, b| {
-                    let da = (a.position - ball_pos).norm();
-                    let db = (b.position - ball_pos).norm();
-                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-                });
-            if let Some(k) = kicker {
-                let kicker_id = k.id;
-                if let Some(player) = ctx.player(kicker_id) {
-                    player.go_to(ball_pos).facing(ball_pos);
-                    player.set_role("kickoff_kicker");
-                }
-            }
-        }
-
-        // ── 12. Formation + goalkeeper (unchanged) ──────────────────────
-        let formation_robot_ids: Vec<PlayerId> = own_player_ids
-            .iter()
-            .copied()
-            .filter(|id| Some(*id) != keeper_id && Some(*id) != active_robot_id)
-            .collect();
-
-        let roles = self.formation.compute_roles(
-            &world,
-            plan_context,
-            self.field_half_length,
-            self.field_half_width,
-        );
-
-        let assignments = self
+        // ── Formation (all field robots except keeper + plan slots) ─────
+        let commands = self
             .formation
-            .assign_roles(&formation_robot_ids, &roles, &world);
-
-        for (player_id, role) in &assignments {
-            if let Some(player) = ctx.player(*player_id) {
-                player.go_to(role.position).facing(ball_pos);
-                player.set_role(role.name);
+            .update(&world, &plan_slots, plan_context, now);
+        for cmd in &commands {
+            if let Some(p) = ctx.player(cmd.id) {
+                p.go_to(cmd.target).facing(cmd.face);
+                p.set_role(cmd.role);
             }
         }
 
-        // Goalkeeper
-        if let Some(kid) = keeper_id {
-            if let Some(keeper) = ctx.player(kid) {
-                let keeper_pos = self.formation.compute_goalkeeper_position(
-                    ball_pos,
-                    self.field_half_length,
-                    self.goal_width,
-                );
-                keeper.go_to(keeper_pos).facing(ball_pos);
-                keeper.set_role("Goalkeeper");
+        // ── Goalkeeper ──────────────────────────────────────────────────
+        if let Some(kid) = world.our_keeper_id() {
+            let kpos = keeper::keeper_target(&world, config::KEEPER_DEPTH);
+            let face = world
+                .ball_position()
+                .unwrap_or_else(|| world.opp_goal_center());
+            if let Some(k) = ctx.player(kid) {
+                k.go_to(kpos).facing(face);
+                k.set_role("goalkeeper");
             }
         }
 
-        // Debug visualization
-        dies_strategy_api::debug::cross("ball", ball_pos);
-        if let Some(ctx_area) = plan_context {
-            dies_strategy_api::debug::cross_colored("plan_context", ctx_area, DebugColor::Yellow);
+        self.draw_debug(&world, &possession, &commands);
+    }
+}
+
+impl ConcertoStrategy {
+    /// Pick the nearest eligible robot to the ball as the set-piece kicker, send it
+    /// to the ball, and name it so the executor exempts it from restart clamping.
+    fn designate_prep_kicker(
+        &self,
+        world: &World,
+        ctx: &mut TeamContext,
+        game_state: GameState,
+    ) -> Option<PlayerId> {
+        let ball_pos = world.ball_position()?;
+        let keeper_id = world.our_keeper_id();
+        let kicker = world
+            .own_players()
+            .iter()
+            .filter(|p| Some(p.id) != keeper_id)
+            .min_by(|a, b| {
+                let da = (a.position - ball_pos).norm();
+                let db = (b.position - ball_pos).norm();
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            })?;
+        let id = kicker.id;
+        let role = if game_state == GameState::PrepareKickoff {
+            "kickoff_kicker"
+        } else {
+            "penalty_kicker"
+        };
+        if let Some(p) = ctx.player(id) {
+            p.go_to(ball_pos).facing(world.opp_goal_center());
+            p.set_role(role);
         }
-        for (i, role) in roles.iter().enumerate() {
-            let key = format!("role_{}", i);
-            dies_strategy_api::debug::cross_colored(&key, role.position, DebugColor::Blue);
+        Some(id)
+    }
+
+    fn draw_debug(
+        &self,
+        world: &World,
+        possession: &Possession,
+        commands: &[formation::FormationCommand],
+    ) {
+        if let Some(ball) = world.ball_position() {
+            debug::cross("ball", ball);
         }
-        if let Some(active_id) = active_robot_id {
-            if let Some(p) = world.own_player(active_id) {
-                dies_strategy_api::debug::circle("active_robot", p.position, 200.0);
+        let poss_str = match possession {
+            Possession::We(id) => format!("We({})", id.as_u32()),
+            Possession::Opp(id) => format!("Opp({})", id.as_u32()),
+            Possession::Loose => "Loose".to_string(),
+        };
+        debug::string("possession", &poss_str);
+
+        if let Some(active) = self.driver.active_robot_id() {
+            if let Some(p) = world.own_player(active) {
+                debug::circle("active_robot", p.position, 200.0);
             }
         }
+        for cmd in commands {
+            debug::cross_colored(
+                &format!("formation_{}", cmd.id.as_u32()),
+                cmd.target,
+                DebugColor::Blue,
+            );
+        }
+    }
+}
+
+/// Role name to apply to the active robot when it's the kicker for our restart.
+fn our_kicker_role(game_state: GameState, us_operating: bool) -> Option<&'static str> {
+    if !us_operating {
+        return None;
+    }
+    match game_state {
+        GameState::Kickoff | GameState::PrepareKickoff => Some("kickoff_kicker"),
+        GameState::FreeKick => Some("free_kick_kicker"),
+        GameState::Penalty | GameState::PreparePenalty | GameState::PenaltyRun => {
+            Some("penalty_kicker")
+        }
+        _ => None,
     }
 }
