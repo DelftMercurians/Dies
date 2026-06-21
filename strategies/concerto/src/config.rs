@@ -28,12 +28,26 @@ pub const POSSESSION_MAX_BALL_SPEED: f64 = 1000.0;
 pub const RELEASE_SUPPRESS_SECS: f64 = 0.2;
 
 // ── Planner ─────────────────────────────────────────────────────────────────
+// Offense policy: dribbling is unreliable and bounded by the 1m excessive-dribbling
+// rule, so the PRIMARY advancement action is a kick-ahead (Shoot at a supporter or
+// open forward space). Dribbling is only a small, rare correction.
 /// Corridor width for the "clear shot to goal" check.
 pub const CLEAR_SHOT_CORRIDOR: f64 = 700.0;
 /// Maximum distance to goal from which we attempt a direct shot.
 pub const SHOOT_RANGE: f64 = 4000.0;
-/// How far toward the opponent goal a dribble waypoint advances the ball.
-pub const DRIBBLE_ADVANCE: f64 = 1500.0;
+/// A kick-ahead target teammate must be at least this far forward of the carrier.
+pub const SUPPORTER_FWD_MARGIN: f64 = 400.0;
+/// Corridor width for the carrier→supporter lane-openness check.
+pub const KICK_LANE_CORRIDOR: f64 = 400.0;
+/// Minimum lane openness (0..1) for a supporter to be a viable kick-ahead target.
+pub const SUPPORTER_MIN_OPENNESS: f64 = 0.5;
+/// Lead the kick-ahead this far past the supporter toward goal (kick into space).
+pub const SUPPORTER_LEAD: f64 = 350.0;
+/// Per-step distance of a corrective dribble.
+pub const DRIBBLE_CORRECTION_STEP: f64 = 250.0;
+/// Hard cap on how far the ball may be carried from the contact point before we
+/// must kick (well under the 1m excessive-dribbling limit).
+pub const DRIBBLE_CORRECTION_LIMIT: f64 = 350.0;
 /// Maximum distance to the ball for a steal to be worth attempting (M1 crude gate).
 pub const STEAL_MAX_DIST: f64 = 2500.0;
 /// How long a robot is excluded from re-selection after a NoProgress failure.
@@ -42,8 +56,10 @@ pub const NOPROGRESS_TTL: f64 = 1.0;
 // ── Driver ──────────────────────────────────────────────────────────────────
 /// Distance to the ball at which the capture switches from driving to picking up.
 pub const CAPTURE_PICKUP_DIST: f64 = 500.0;
-/// Distance to the target area at which a dribble is considered arrived.
-pub const DRIBBLE_ARRIVE_DIST: f64 = 500.0;
+/// Distance to the target area at which a dribble is considered arrived. Kept
+/// below the correction step so a corrective dribble is a real move, not an
+/// instant "already there" that would spin the replan loop.
+pub const DRIBBLE_ARRIVE_DIST: f64 = 150.0;
 /// Ball displacement from the engagement point that aborts any waypoint.
 pub const BALL_MOVED_DIST: f64 = 2000.0;
 /// Per-phase timeouts.

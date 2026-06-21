@@ -61,6 +61,9 @@ pub struct PlanInputs {
     /// True during our in-play kickoff/free kick, where the kicker must release the
     /// ball forward (not dribble) to bring it into play and respect double-touch.
     pub our_attacking_restart: bool,
+    /// Linear distance the ball has been carried from the contact point this
+    /// possession (for the excessive-dribbling cap). 0 if we don't hold the ball.
+    pub carried: f64,
     pub now: f64,
 }
 
@@ -139,27 +142,38 @@ impl Planner {
                     && (inputs.double_touch_robot.is_none()
                         || inputs.double_touch_robot == Some(id));
 
-                let waypoint = if is_kicker {
-                    Waypoint::Shoot {
-                        target: self.release_target(carrier_pos, opp_goal, world),
-                    }
-                } else {
-                    let clear = geometry::is_clear_shot(
-                        carrier_pos,
-                        opp_goal,
-                        world.opp_players(),
-                        config::CLEAR_SHOT_CORRIDOR,
-                    );
-                    let in_range = (carrier_pos - opp_goal).norm() < config::SHOOT_RANGE;
+                let clear = geometry::is_clear_shot(
+                    carrier_pos,
+                    opp_goal,
+                    world.opp_players(),
+                    config::CLEAR_SHOT_CORRIDOR,
+                );
+                let in_range = (carrier_pos - opp_goal).norm() < config::SHOOT_RANGE;
 
-                    if clear && in_range {
-                        Waypoint::Shoot { target: opp_goal }
-                    } else {
-                        // *** PASS SEAM ***: future milestone inserts a Pass waypoint
-                        // here (we-have-ball, no clear shot). v1 advances by dribbling.
-                        Waypoint::Dribble {
-                            target_area: self.advance_point(carrier_pos, opp_goal, world),
+                let waypoint = if is_kicker {
+                    // Restart: always release forward (never dribble — double-touch).
+                    // Kick at a supporter if one is well placed, else open space.
+                    let target = self
+                        .best_kickahead_target(world, id, inputs)
+                        .unwrap_or_else(|| self.release_target(carrier_pos, opp_goal, world));
+                    Waypoint::Shoot { target }
+                } else if clear && in_range {
+                    Waypoint::Shoot { target: opp_goal }
+                } else {
+                    // Primary advancement is a kick-ahead toward a supporter or open
+                    // space (dribbling is unreliable and rule-capped). Dribble only as
+                    // a small correction, and only while we're under the carry cap.
+                    // *** PASS SEAM ***: M4 upgrades the supporter kick-ahead to a Pass.
+                    match self.best_kickahead_target(world, id, inputs) {
+                        Some(t) => Waypoint::Shoot { target: t },
+                        None if inputs.carried < config::DRIBBLE_CORRECTION_LIMIT => {
+                            Waypoint::Dribble {
+                                target_area: self.correction_target(carrier_pos, opp_goal, world),
+                            }
                         }
+                        None => Waypoint::Shoot {
+                            target: self.release_target(carrier_pos, opp_goal, world),
+                        },
                     }
                 };
                 Plan {
@@ -268,16 +282,66 @@ impl Planner {
         )
     }
 
-    /// A point toward the opponent goal to dribble to, clamped to the field.
-    fn advance_point(&self, from: Vector2, opp_goal: Vector2, world: &World) -> Vector2 {
+    /// Best kick-ahead target: a well-placed forward supporter (preferred) or open
+    /// forward space toward goal. `None` only when congested (no supporter and no
+    /// open area) — the rare case where a small corrective dribble is warranted.
+    fn best_kickahead_target(
+        &self,
+        world: &World,
+        carrier: PlayerId,
+        inputs: &PlanInputs,
+    ) -> Option<Vector2> {
+        let carrier_pos = world.own_player(carrier)?.position;
+        let opp_goal = world.opp_goal_center();
+        let opps = world.opp_players();
+
+        // 1. Forward supporter with an open lane from the ball. Score by how far
+        //    forward (goalward) it is, weighted by lane openness.
+        let best_supporter = world
+            .own_players()
+            .iter()
+            .filter(|p| p.id != carrier)
+            .filter(|p| Some(p.id) != inputs.keeper_id)
+            .filter(|p| Some(p.id) != inputs.double_touch_robot)
+            .filter(|p| p.position.x > carrier_pos.x + config::SUPPORTER_FWD_MARGIN)
+            .filter_map(|p| {
+                let open = geometry::lane_openness(
+                    carrier_pos,
+                    p.position,
+                    opps,
+                    config::KICK_LANE_CORRIDOR,
+                );
+                (open >= config::SUPPORTER_MIN_OPENNESS).then_some((p, open))
+            })
+            .max_by(|(a, oa), (b, ob)| {
+                let sa = a.position.x + oa * 1000.0;
+                let sb = b.position.x + ob * 1000.0;
+                sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+        if let Some((p, _)) = best_supporter {
+            // Lead the kick past the supporter toward goal (kick into space to run onto).
+            let lead = (opp_goal - p.position).normalize() * config::SUPPORTER_LEAD;
+            return Some(p.position + lead);
+        }
+
+        // 2. Open forward space toward goal.
+        let half_len = world.field_length() / 2.0;
+        let half_wid = world.field_width() / 2.0;
+        geometry::best_pass_area(carrier_pos, opps, half_len, half_wid)
+    }
+
+    /// A small step toward the opponent goal for a corrective dribble, clamped to
+    /// the field. Kept short — dribbling is a correction, not advancement.
+    fn correction_target(&self, from: Vector2, opp_goal: Vector2, world: &World) -> Vector2 {
         let half_len = world.field_length() / 2.0;
         let half_wid = world.field_width() / 2.0;
         let dir = opp_goal - from;
         let n = dir.norm();
         let step = if n > 1e-6 {
-            dir / n * config::DRIBBLE_ADVANCE
+            dir / n * config::DRIBBLE_CORRECTION_STEP
         } else {
-            Vector2::new(config::DRIBBLE_ADVANCE, 0.0)
+            Vector2::new(config::DRIBBLE_CORRECTION_STEP, 0.0)
         };
         let raw = from + step;
         Vector2::new(

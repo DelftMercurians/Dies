@@ -31,6 +31,10 @@ const BALL_RADIUS: f64 = 21.45;
 /// Must be large enough that a robot can fully get behind the ball to take the
 /// free kick (otherwise it would stay pinned against the boundary wall).
 const FREE_KICK_PLACEMENT_MARGIN: f64 = 200.0;
+/// How long the game sits in a `Stop` (robots slowed, ball being placed) before
+/// resuming after the ball leaves the field, a goal, or a no-progress stoppage.
+/// Tune this to make self-play matches more/less leisurely.
+const STOP_DURATION: f64 = 2.0;
 const GROUND_THICKNESS: f64 = 10.0;
 const WALL_HEIGHT: f64 = 1000.0;
 const WALL_THICKNESS: f64 = 1.0;
@@ -154,6 +158,10 @@ pub enum SimulationGameState {
     StopAndForceStart {
         stop_timer: Timer,
     },
+    StopAndFreeKick {
+        team_color: TeamColor,
+        stop_timer: Timer,
+    },
     PrepareKickOff {
         team_color: TeamColor,
     },
@@ -192,14 +200,21 @@ impl SimulationGameState {
 
     fn stop_and_kickoff(team_color: TeamColor) -> Self {
         SimulationGameState::StopAndKickOff {
-            stop_timer: Timer::new(1.0),
+            stop_timer: Timer::new(STOP_DURATION),
             team_color,
         }
     }
 
     fn stop_and_force_start() -> Self {
         SimulationGameState::StopAndForceStart {
-            stop_timer: Timer::new(1.0),
+            stop_timer: Timer::new(STOP_DURATION),
+        }
+    }
+
+    fn stop_and_free_kick(team_color: TeamColor) -> Self {
+        SimulationGameState::StopAndFreeKick {
+            stop_timer: Timer::new(STOP_DURATION),
+            team_color,
         }
     }
 
@@ -238,6 +253,10 @@ impl PartialEq for SimulationGameState {
                 SimulationGameState::StopAndKickOff { .. },
             ) => true,
             (
+                SimulationGameState::StopAndFreeKick { .. },
+                SimulationGameState::StopAndFreeKick { .. },
+            ) => true,
+            (
                 SimulationGameState::PrepareKickOff { .. },
                 SimulationGameState::PrepareKickOff { .. },
             ) => true,
@@ -261,6 +280,7 @@ impl fmt::Display for SimulationGameState {
             SimulationGameState::Halt => write!(f, "Halt"),
             SimulationGameState::StopAndKickOff { .. } => write!(f, "Stop and kick off"),
             SimulationGameState::StopAndForceStart { .. } => write!(f, "Stop and force start"),
+            SimulationGameState::StopAndFreeKick { .. } => write!(f, "Stop and free kick"),
             SimulationGameState::PrepareKickOff { .. } => write!(f, "Prepare kick off"),
             SimulationGameState::Run { .. } => write!(f, "Run"),
             SimulationGameState::FreeKick { .. } => write!(f, "Free kick"),
@@ -877,10 +897,29 @@ impl Simulation {
                 }
             }
             SimulationGameState::StopAndForceStart { ref mut stop_timer } => {
-                // Wait for 1s before starting the game
+                // Wait out the stop period before resuming the game.
                 if stop_timer.tick(self.integration_parameters.dt) {
                     self.update_referee_command(referee::Command::FORCE_START);
                     SimulationGameState::run()
+                } else {
+                    game_state
+                }
+            }
+            SimulationGameState::StopAndFreeKick {
+                team_color,
+                ref mut stop_timer,
+            } => {
+                // Wait out the stop period, then award the free kick.
+                if stop_timer.tick(self.integration_parameters.dt) {
+                    match team_color {
+                        TeamColor::Blue => {
+                            self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
+                        }
+                        TeamColor::Yellow => {
+                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
+                        }
+                    }
+                    SimulationGameState::free_kick(team_color)
                 } else {
                     game_state
                 }
@@ -940,16 +979,19 @@ impl Simulation {
 
                     // Re-center the ball for the kick-off so the match keeps
                     // running (otherwise it stays in the goal and re-triggers
-                    // the goal check every frame).
+                    // the goal check every frame). Go through a Stop period
+                    // first so robots slow down before the kick-off.
                     self.place_ball(0.0, 0.0);
+                    self.update_referee_command(referee::Command::STOP);
 
-                    if ball_pos.x > 0.0 && self.side_assignment == SideAssignment::BlueOnPositive {
-                        self.update_referee_command(referee::Command::PREPARE_KICKOFF_BLUE);
-                        SimulationGameState::prepare_kickoff(TeamColor::Blue)
-                    } else {
-                        self.update_referee_command(referee::Command::PREPARE_KICKOFF_YELLOW);
-                        SimulationGameState::prepare_kickoff(TeamColor::Yellow)
-                    }
+                    let kickoff_team =
+                        if ball_pos.x > 0.0 && self.side_assignment == SideAssignment::BlueOnPositive
+                        {
+                            TeamColor::Blue
+                        } else {
+                            TeamColor::Yellow
+                        };
+                    SimulationGameState::stop_and_kickoff(kickoff_team)
                 } else if self.ball_out() {
                     // Clear kick tracking
                     self.kick_in_progress = false;
@@ -959,20 +1001,18 @@ impl Simulation {
                     // Snap the ball back onto a reachable spot inside the field
                     // so the free kick can actually be taken. Without this the
                     // ball stays pinned against the boundary wall and the match
-                    // gets stuck.
+                    // gets stuck. Go through a Stop period first so robots slow
+                    // down and back off before the free kick.
                     let placement = self.designated_ball_position;
                     self.place_ball(placement.x, placement.y);
+                    self.update_referee_command(referee::Command::STOP);
 
                     if let Some((_kicker_id, kicker_color)) = self.last_touch_info {
-                        if kicker_color == TeamColor::Blue {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_YELLOW);
-                            SimulationGameState::free_kick(TeamColor::Yellow)
-                        } else {
-                            self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
-                            SimulationGameState::free_kick(TeamColor::Blue)
-                        }
+                        // Free kick is awarded to the opponent of the last toucher.
+                        SimulationGameState::stop_and_free_kick(kicker_color.opposite())
                     } else {
-                        game_state
+                        // No known last toucher — neutral restart with a force start.
+                        SimulationGameState::stop_and_force_start()
                     }
                 } else {
                     // Check for no progress

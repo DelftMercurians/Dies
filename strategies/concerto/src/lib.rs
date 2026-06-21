@@ -31,6 +31,9 @@ pub struct ConcertoStrategy {
     formation: Formation,
     last_game_state: GameState,
     double_touch_robot: Option<PlayerId>,
+    /// Ball position when we gained possession (the dribble contact point), for the
+    /// excessive-dribbling carry cap. Cleared whenever we don't hold the ball.
+    dribble_origin: Option<Vector2>,
 }
 
 impl ConcertoStrategy {
@@ -42,6 +45,7 @@ impl ConcertoStrategy {
             formation: Formation::new(),
             last_game_state: GameState::Unknown,
             double_touch_robot: None,
+            dribble_origin: None,
         }
     }
 }
@@ -109,6 +113,21 @@ impl Strategy for ConcertoStrategy {
         let possession = self.tracker.update(raw, now);
         let possession_changed = self.tracker.changed_this_tick();
 
+        // Track the dribble contact point: stamp it when we gain the ball, clear it
+        // when we don't hold it. `carried` = how far we've dribbled since contact.
+        match possession {
+            Possession::We(_) => {
+                if self.dribble_origin.is_none() {
+                    self.dribble_origin = world.ball_position();
+                }
+            }
+            _ => self.dribble_origin = None,
+        }
+        let carried = match (self.dribble_origin, world.ball_position()) {
+            (Some(origin), Some(ball)) => (ball - origin).norm(),
+            _ => 0.0,
+        };
+
         let ball_present = world.ball_position().is_some();
         let we_may_act = match game_state {
             GameState::Run => true,
@@ -133,6 +152,7 @@ impl Strategy for ConcertoStrategy {
                     double_touch_robot: self.double_touch_robot,
                     our_attacking_restart: us_operating
                         && matches!(game_state, GameState::Kickoff | GameState::FreeKick),
+                    carried,
                     now,
                 };
                 match self.planner.replan(&world, &possession, &inputs) {
