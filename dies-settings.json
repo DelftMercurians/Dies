@@ -4,7 +4,7 @@
     "max_deceleration": 20000.0,
     "max_velocity": 3500.0,
     "lateral_acceleration": 1500.0,
-    "approach_kp": 1.6,
+    "approach_kp": 2.6,
     "lookahead_min": 200.0,
     "lookahead_time": 0.2,
     "max_angular_velocity": 25.132741228718345,
@@ -23,17 +23,18 @@
     "player_ca_unit_transition_var": 1000000.0,
     "player_measurement_var": 0.4,
     "player_use_acceleration": true,
-    "player_use_command_feedforward": false,
+    "player_use_command_feedforward": true,
     "player_command_tau": 0.15,
     "player_yaw_lpf_alpha": 0.15,
     "ball_unit_transition_var": 20.48,
-    "ball_measurement_var": 0.01
+    "ball_measurement_var": 0.01,
+    "ball_confidence_threshold": 0.0
   },
   "team_configuration": {
     "blue_active": true,
     "yellow_active": false,
     "side_assignment": "YellowOnPositive",
-    "blue_strategy": null,
+    "blue_strategy": "concerto",
     "yellow_strategy": null
   },
   "yellow_team_settings": {
@@ -52,7 +53,7 @@
   "allow_no_vision": false,
   "goal_area_avoidance": false,
   "avoidance": {
-    "robot_clearance": 20.0,
+    "robot_clearance": 0.0,
     "wall_margin": 0.0,
     "defense_margin": 25.0,
     "ball_stop_radius": 800.0,
@@ -65,7 +66,7 @@
     "neighbor_dist": 2000.0,
     "max_neighbors": 8,
     "grid_resolution": 100.0,
-    "planner_margin": 70.0,
+    "planner_margin": 10.0,
     "replan_target_tol": 150.0,
     "planner_enabled": true,
     "orca_enabled": true

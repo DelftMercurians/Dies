@@ -30,8 +30,9 @@ const DEBUG_SEND_HZ: u64 = 30;
 use crate::{
     server::ServerState, BasestationResponse, ConsoleLogMessage, ExecutorInfoResponse,
     ExecutorSettingsResponse, GetDebugMapResponse, LogInfo, LogsResponse, PostExecutorSettingsBody,
-    PostUiCommandBody, PostUiModeBody, ReplayState, ScenarioInfo, ScenariosResponse, UiCommand,
-    UiMode, UiStatus, UiWorldState, WsMessage,
+    PostUiCommandBody, PostUiModeBody, ReplayState, ScenarioInfo, ScenariosResponse,
+    SettingsSnapshot, SettingsSnapshotsResponse, UiCommand, UiMode, UiStatus, UiWorldState,
+    WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -87,6 +88,18 @@ pub async fn post_executor_settings(
 ) -> StatusCode {
     state.update_executor_settings(data.settings);
     StatusCode::OK
+}
+
+/// Baseline + auto-captured history for the settings explore/revert UI.
+pub async fn get_settings_snapshots(
+    state: State<Arc<ServerState>>,
+) -> Json<SettingsSnapshotsResponse> {
+    Json(state.settings_snapshots())
+}
+
+/// Mark the current live config as the known-good baseline.
+pub async fn post_settings_baseline(state: State<Arc<ServerState>>) -> Json<SettingsSnapshot> {
+    Json(state.set_settings_baseline())
 }
 
 pub async fn get_basesation_info(state: State<Arc<ServerState>>) -> Json<BasestationResponse> {

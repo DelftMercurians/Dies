@@ -15,6 +15,29 @@ export const pinnedDebugKeysAtom = atomWithStorage<string[]>(
   []
 );
 
+/**
+ * Full debug keys (global + team-level values, e.g. `team_Blue.possession`)
+ * pinned to the floating field overlay. Distinct from {@link pinnedDebugKeysAtom},
+ * which holds player-relative sub-keys for the team overview.
+ */
+export const pinnedFieldKeysAtom = atomWithStorage<string[]>(
+  "dies-pinned-field-keys",
+  []
+);
+
+/** Format an arbitrary debug value for the field overlay. Null if unshowable. */
+export const formatFieldDebugValue = (
+  debugData: DebugMap | null,
+  key: string
+): string | null => {
+  if (!debugData) return null;
+  const v = debugData[key];
+  if (!v) return null;
+  if (v.type === "Number") return formatNumber(v.data);
+  if (v.type === "String") return formatDebugString(v.data);
+  return null;
+};
+
 /** Look up + format a player's value for a pinned sub-key. Null if absent/shape. */
 export const formatPlayerDebugValue = (
   debugData: DebugMap | null,

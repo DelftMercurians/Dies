@@ -2,7 +2,15 @@
 name = "dies-analysis"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["numpy", "pyarrow", "matplotlib", "ipykernel", "jupyterlab"]
+dependencies = [
+    "numpy",
+    "pyarrow",
+    "matplotlib",
+    "ipykernel",
+    "jupyterlab",
+    "pandas>=2.3.3",
+    "scipy>=1.15.3",
+]
 
 [build-system]
 requires = ["hatchling"]

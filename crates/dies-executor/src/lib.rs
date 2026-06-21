@@ -691,9 +691,18 @@ impl Executor {
     ) -> Result<()> {
         let mut cmd_interval = tokio::time::interval(CMD_INTERVAL);
 
+        let vision_delay = self.settings.vision_delay_ms;
+        if vision_delay > 0 {
+            log::warn!("\n\n  ############################################################\n  ##                                                      ##\n  ##   !!!  SIMULATED VISION DELAY ACTIVE: {:>4} ms  !!!    ##\n  ##                                                      ##\n  ############################################################\n", vision_delay);
+        }
+        let (delayed_vision_tx, mut delayed_vision_rx) = tokio::sync::mpsc::unbounded_channel();
+
         let mut last_bs_msg = tokio::time::Instant::now();
         loop {
             tokio::select! {
+                Some(vision_msg) = delayed_vision_rx.recv() => {
+                    self.update_from_vision_msg(vision_msg, WorldInstant::now_real());
+                }
                 Some(msg) = self.command_rx.recv() => {
                     match msg {
                         ControlMsg::Stop => break,
@@ -706,7 +715,15 @@ impl Executor {
                 ssl_msg = ssl_client.recv() => {
                     match ssl_msg {
                         Ok(SslMessage::Vision(vision_msg)) => {
-                            self.update_from_vision_msg(vision_msg, WorldInstant::now_real());
+                            if vision_delay > 0 {
+                                let tx = delayed_vision_tx.clone();
+                                tokio::spawn(async move {
+                                    tokio::time::sleep(std::time::Duration::from_millis(vision_delay as u64)).await;
+                                    let _ = tx.send(vision_msg);
+                                });
+                            } else {
+                                self.update_from_vision_msg(vision_msg, WorldInstant::now_real());
+                            }
                         }
                         Ok(SslMessage::Referee(gc_msg)) => {
                             self.update_from_gc_msg(gc_msg);

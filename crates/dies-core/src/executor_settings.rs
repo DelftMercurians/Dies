@@ -281,6 +281,8 @@ pub struct ExecutorSettings {
     /// the CLI (`--strategy-mode watch`); never persisted.
     #[serde(skip)]
     pub hot_reload: bool,
+    #[serde(skip)]
+    pub vision_delay_ms: u32,
 }
 
 fn default_true() -> bool {
@@ -335,6 +337,7 @@ impl Default for ExecutorSettings {
             goal_area_avoidance: true,
             avoidance: AvoidanceConfig::default(),
             hot_reload: false,
+            vision_delay_ms: 0,
         }
     }
 }

@@ -25,8 +25,9 @@ use tower_http::services::ServeDir;
 use tower_layer::Layer;
 
 use crate::{
-    executor_task::ExecutorTask, routes, ConsoleLogMessage, ControlledTeam, ExecutorStatus,
-    ReplayState, UiCommand, UiConfig, UiEnvironment, UiMode, UiStatus,
+    executor_task::ExecutorTask, routes, settings_store::SettingsStore, ConsoleLogMessage,
+    ControlledTeam, ExecutorStatus, ReplayState, SettingsSnapshot, SettingsSnapshotsResponse,
+    UiCommand, UiConfig, UiEnvironment, UiMode, UiStatus,
 };
 
 pub struct ServerState {
@@ -53,6 +54,8 @@ pub struct ServerState {
     /// Directory where session logs live (for the replay browser).
     pub log_directory: PathBuf,
     settings_file: PathBuf,
+    /// Local store backing the settings baseline + auto-history (explore/revert).
+    settings_store: SettingsStore,
 }
 
 impl ServerState {
@@ -66,6 +69,14 @@ impl ServerState {
         cmd_tx: broadcast::Sender<UiCommand>,
     ) -> Self {
         let settings = ExecutorSettings::load_or_insert(&settings_file);
+        // Snapshots live in a gitignored `.dies-settings/` next to the settings
+        // file, so the explore/revert history stays machine-local.
+        let snapshot_dir = settings_file
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."))
+            .join(".dies-settings");
+        let settings_store = SettingsStore::load(snapshot_dir);
         let (scenario_log_tx, _) = broadcast::channel(256);
         // Higher capacity than scenario logs: backend logs are far chattier. A
         // lagging WS client drops old entries (handled in the WS loop) rather
@@ -104,6 +115,7 @@ impl ServerState {
             replay_state,
             log_directory,
             settings_file,
+            settings_store,
         }
     }
 
@@ -154,10 +166,23 @@ impl ServerState {
         if let Some(handle) = self.executor_handle.read().unwrap().as_ref() {
             handle.send(ControlMsg::UpdateSettings(settings.clone()));
         }
+        // Record into the (debounced) explore/revert history.
+        self.settings_store.note_edit(settings.clone());
         let settings2 = settings.clone();
         *self.executor_settings.write().unwrap() = settings;
         let settings_file = self.settings_file.clone();
         tokio::spawn(async move { settings2.store(settings_file).await });
+    }
+
+    /// Mark the current live config as the known-good baseline.
+    pub fn set_settings_baseline(&self) -> SettingsSnapshot {
+        let current = self.executor_settings.read().unwrap().clone();
+        self.settings_store.set_baseline(current)
+    }
+
+    /// Current baseline + auto-history for the explore/revert UI.
+    pub fn settings_snapshots(&self) -> SettingsSnapshotsResponse {
+        self.settings_store.snapshots()
     }
 }
 
@@ -210,6 +235,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     }
     // Propagate the dev-only hot-reload flag into the executor settings.
     state.executor_settings.write().unwrap().hot_reload = config.hot_reload;
+    state.executor_settings.write().unwrap().vision_delay_ms = config.vision_delay_ms;
     let state = Arc::new(state);
 
     // Start basestation watcher
@@ -478,6 +504,11 @@ async fn start_webserver(
         .route("/api/basestation", get(routes::get_basesation_info))
         .route("/api/debug", get(routes::get_debug_map))
         .route("/api/settings", post(routes::post_executor_settings))
+        .route(
+            "/api/settings/snapshots",
+            get(routes::get_settings_snapshots),
+        )
+        .route("/api/settings/baseline", post(routes::post_settings_baseline))
         .route("/api/ui-mode", post(routes::post_ui_mode))
         .route("/api/command", post(routes::post_command))
         .route("/api/list", get(routes::list_files))

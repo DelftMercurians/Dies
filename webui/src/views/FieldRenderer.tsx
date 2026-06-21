@@ -2,13 +2,19 @@ import {
   DebugColor,
   DebugMap,
   DebugShape,
+  FieldMask,
   PlayerData,
   Vector2,
   Vector3,
-  TeamData,
   WorldData,
   TeamColor,
 } from "../bindings";
+
+/** A manual MoveTo target to draw: a line from the robot to the target. */
+export interface ManualTargetMarker {
+  from: Vector2 | null;
+  to: Vector2;
+}
 
 const ROBOT_RADIUS = 0.08 * 1000;
 const BALL_RADIUS = 0.043 * 1000;
@@ -26,6 +32,10 @@ const BALL_FILTERED = "#fb923c";
 const BALL_RAW = "#eab308";
 const MANUAL_OUTLINE = "#dc2626";
 const SELECTED_OUTLINE = "#ffffff";
+const MASK_OUTLINE = "#22d3ee";
+const MASK_DRAFT = "#ffffff";
+const MASK_SHADE = "#0008";
+const TARGET_COLOR = "#dc2626";
 
 const DEBUG_COLORS: Record<DebugColor, string> = {
   green: "#14b8a688",
@@ -46,10 +56,26 @@ export class FieldRenderer {
   private debugStrings: Record<string, string> = {};
   private fieldSize: [number, number] = DEFAULT_FIELD_SIZE;
   private positionDisplayMode: PositionDisplayMode = "filtered";
+  private fieldMask: FieldMask | null = null;
+  /** In-progress mask drag rectangle, in field mm: [x1, y1, x2, y2]. */
+  private maskDraft: [number, number, number, number] | null = null;
+  private manualTargets: ManualTargetMarker[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d")!;
+  }
+
+  setFieldMask(mask: FieldMask | null) {
+    this.fieldMask = mask;
+  }
+
+  setMaskDraft(rect: [number, number, number, number] | null) {
+    this.maskDraft = rect;
+  }
+
+  setManualTargets(targets: ManualTargetMarker[]) {
+    this.manualTargets = targets;
   }
 
   setWorldData(world: WorldData | null) {
@@ -104,6 +130,7 @@ export class FieldRenderer {
 
     this.drawFieldLines();
     this.drawWalls();
+    this.drawFieldMask();
 
     blue_team.forEach((player) =>
       this.drawPlayer(
@@ -155,6 +182,100 @@ export class FieldRenderer {
     }
 
     this.debugShapes.forEach((shape) => this.drawDebugShape(shape));
+
+    this.manualTargets.forEach((t) => this.drawManualTarget(t));
+    this.drawMaskDraft();
+  }
+
+  /** Shade the region excluded by the field mask + outline the kept region. */
+  private drawFieldMask() {
+    const m = this.fieldMask;
+    if (!m) return;
+    const hx = this.fieldSize[0] / 2;
+    const hy = this.fieldSize[1] / 2;
+    const xMin = m.x_min * hx;
+    const xMax = m.x_max * hx;
+    const yMin = m.y_min * hy;
+    const yMax = m.y_max * hy;
+    // Skip drawing entirely when the mask is (effectively) the whole field.
+    const full =
+      m.x_min <= -0.999 &&
+      m.x_max >= 0.999 &&
+      m.y_min <= -0.999 &&
+      m.y_max >= 0.999;
+    if (full) return;
+
+    // Shade everything outside [xMin,xMax]x[yMin,yMax] using four bands.
+    this.ctx.fillStyle = MASK_SHADE;
+    const band = (x1: number, y1: number, x2: number, y2: number) => {
+      const [cx1, cy1] = this.fieldToCanvas([x1, y1]);
+      const [cx2, cy2] = this.fieldToCanvas([x2, y2]);
+      this.ctx.fillRect(
+        Math.min(cx1, cx2),
+        Math.min(cy1, cy2),
+        Math.abs(cx2 - cx1),
+        Math.abs(cy2 - cy1)
+      );
+    };
+    band(-hx, hy, xMin, -hy); // left
+    band(xMax, hy, hx, -hy); // right
+    band(xMin, hy, xMax, yMax); // top (between mask sides)
+    band(xMin, yMin, xMax, -hy); // bottom
+
+    // Outline the kept region.
+    const [rx1, ry1] = this.fieldToCanvas([xMin, yMax]);
+    const [rx2, ry2] = this.fieldToCanvas([xMax, yMin]);
+    this.ctx.save();
+    this.ctx.strokeStyle = MASK_OUTLINE;
+    this.ctx.lineWidth = 1.5;
+    this.ctx.setLineDash([6, 4]);
+    this.ctx.strokeRect(rx1, ry1, rx2 - rx1, ry2 - ry1);
+    this.ctx.restore();
+  }
+
+  /** Draw the live drag rectangle while editing the mask. */
+  private drawMaskDraft() {
+    const d = this.maskDraft;
+    if (!d) return;
+    const [x1, y1] = this.fieldToCanvas([d[0], d[1]]);
+    const [x2, y2] = this.fieldToCanvas([d[2], d[3]]);
+    this.ctx.save();
+    this.ctx.fillStyle = "#22d3ee22";
+    this.ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+    this.ctx.strokeStyle = MASK_DRAFT;
+    this.ctx.lineWidth = 1.5;
+    this.ctx.setLineDash([4, 3]);
+    this.ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    this.ctx.restore();
+  }
+
+  private drawManualTarget({ from, to }: ManualTargetMarker) {
+    const [tx, ty] = this.fieldToCanvas(to);
+    this.ctx.save();
+    if (from) {
+      const [fx, fy] = this.fieldToCanvas(from);
+      this.ctx.strokeStyle = TARGET_COLOR + "aa";
+      this.ctx.lineWidth = 1.5;
+      this.ctx.setLineDash([5, 4]);
+      this.ctx.beginPath();
+      this.ctx.moveTo(fx, fy);
+      this.ctx.lineTo(tx, ty);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+    }
+    // Ring + cross marker at the target.
+    this.ctx.strokeStyle = TARGET_COLOR;
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.arc(tx, ty, 7, 0, 2 * Math.PI);
+    this.ctx.stroke();
+    this.ctx.beginPath();
+    this.ctx.moveTo(tx - 10, ty);
+    this.ctx.lineTo(tx + 10, ty);
+    this.ctx.moveTo(tx, ty - 10);
+    this.ctx.lineTo(tx, ty + 10);
+    this.ctx.stroke();
+    this.ctx.restore();
   }
 
   public fieldToCanvas(coords: Vector2 | Vector3): Vector2 {

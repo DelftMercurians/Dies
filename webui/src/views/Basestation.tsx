@@ -78,15 +78,15 @@ const StatusIndicator: FC<{
             status === SysStatus.Emergency
               ? "bg-accent-red"
               : [
-                  SysStatus.Stop,
-                  SysStatus.NoReply,
-                  SysStatus.Overtemp,
-                  SysStatus.Armed,
-                ].includes(status as SysStatus)
-              ? "bg-accent-amber"
-              : status === SysStatus.Ok
-              ? "bg-accent-green"
-              : "bg-text-muted"
+                    SysStatus.Stop,
+                    SysStatus.NoReply,
+                    SysStatus.Overtemp,
+                    SysStatus.Armed,
+                  ].includes(status as SysStatus)
+                ? "bg-accent-amber"
+                : status === SysStatus.Ok
+                  ? "bg-accent-green"
+                  : "bg-text-muted"
           }`}
         />
         <span className="text-sm">{label}</span>
@@ -184,8 +184,6 @@ const PlayerStatus: FC<{
                   CapV: `${player.kicker_cap_voltage || "0.0"}V`,
                 }}
               />
-
-              <StatusIndicator status={player.fan_status} label="Fan" />
 
               <StatusIndicator
                 status={

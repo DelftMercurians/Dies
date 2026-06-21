@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import SettingsEditor from "@/views/SettingsEditor";
 import AvoidanceSettingsEditor from "@/views/AvoidanceSettingsEditor";
+import SettingsBaselineBar from "@/views/SettingsBaselineBar";
 import { useExecutorSettings } from "@/api";
 
 const GoalAreaAvoidanceToggle: React.FC = () => {
@@ -32,16 +33,18 @@ const GoalAreaAvoidanceToggle: React.FC = () => {
  */
 const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
   return (
-    <div className="w-full h-full bg-bg-surface">
+    <div className="w-full h-full bg-bg-surface flex flex-col">
       <Tabs
         size="sm"
         defaultValue="controller"
-        className="h-full w-full flex flex-col gap-2 p-2"
+        className="flex-1 min-h-0 w-full flex flex-col gap-2 p-2"
       >
         <TabsList className="w-full">
           <TabsTrigger value="controller">Controller</TabsTrigger>
           <TabsTrigger value="avoidance">Avoidance</TabsTrigger>
-          <TabsTrigger value="tracker">Tracker</TabsTrigger>
+          <TabsTrigger value="player">Player</TabsTrigger>
+          <TabsTrigger value="ball">Ball</TabsTrigger>
+          <TabsTrigger value="field_mask">Field Mask</TabsTrigger>
           <TabsTrigger value="skill">Skill</TabsTrigger>
         </TabsList>
 
@@ -56,13 +59,38 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
         <TabsContent value="avoidance" className="flex-1 overflow-hidden">
           <AvoidanceSettingsEditor />
         </TabsContent>
-        <TabsContent value="tracker" className="flex-1 overflow-hidden">
-          <SettingsEditor settingsKey="tracker_settings" />
+        <TabsContent value="player" className="flex-1 overflow-hidden">
+          <SettingsEditor
+            settingsKey="tracker_settings"
+            include={[
+              "player_use_acceleration",
+              "player_use_command_feedforward",
+              "player_command_tau",
+              "player_measurement_var",
+              "player_unit_transition_var",
+              "player_ca_unit_transition_var",
+              "player_yaw_lpf_alpha",
+            ]}
+          />
+        </TabsContent>
+        <TabsContent value="ball" className="flex-1 overflow-hidden">
+          <SettingsEditor
+            settingsKey="tracker_settings"
+            include={[
+              "ball_measurement_var",
+              "ball_unit_transition_var",
+              "ball_confidence_threshold",
+            ]}
+          />
+        </TabsContent>
+        <TabsContent value="field_mask" className="flex-1 overflow-hidden">
+          <SettingsEditor settingsKey="tracker_settings" include={["field_mask"]} />
         </TabsContent>
         <TabsContent value="skill" className="flex-1 overflow-hidden">
           <SettingsEditor settingsKey="skill_settings" />
         </TabsContent>
       </Tabs>
+      <SettingsBaselineBar />
     </div>
   );
 };

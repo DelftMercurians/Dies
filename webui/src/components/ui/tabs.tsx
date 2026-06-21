@@ -32,9 +32,9 @@ const tabsListVariants = cva(
   {
     variants: {
       size: {
-        default: "h-6",
-        sm: "h-5",
-        xs: "h-4",
+        default: "h-5",
+        sm: "h-[18px]",
+        xs: "h-[14px]",
       },
     },
     defaultVariants: {
@@ -46,7 +46,7 @@ const tabsListVariants = cva(
 const tabsTriggerVariants = cva(
   // Base: uppercase label style, sharp, minimal
   [
-    "inline-flex items-center justify-center",
+    "inline-flex items-center justify-center leading-none",
     "font-semibold uppercase tracking-wider",
     "transition-colors",
     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan",
@@ -63,9 +63,9 @@ const tabsTriggerVariants = cva(
   {
     variants: {
       size: {
-        default: "px-3 h-6 text-sm",
-        sm: "px-2 h-5 text-sm",
-        xs: "px-1.5 h-4 text-[8px]",
+        default: "px-2.5 h-5 text-[13px]",
+        sm: "px-2 h-[18px] text-[11px]",
+        xs: "px-1.5 h-[14px] text-[8px]",
       },
     },
     defaultVariants: {

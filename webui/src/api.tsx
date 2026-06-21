@@ -47,6 +47,8 @@ import {
   LogsResponse,
   LogInfo,
   ConsoleLogMessage,
+  SettingsSnapshot,
+  SettingsSnapshotsResponse,
 } from "./bindings";
 import { toast } from "sonner";
 import { atom, getDefaultStore, useAtom } from "jotai";
@@ -117,6 +119,14 @@ const postExecutorSettings = (settings: ExecutorSettings) =>
     },
     body: JSON.stringify({ settings } satisfies PostExecutorSettingsBody),
   });
+
+const getSettingsSnapshots = (): Promise<SettingsSnapshotsResponse> =>
+  fetch("/api/settings/snapshots").then((res) => res.json());
+
+const postSettingsBaseline = (): Promise<SettingsSnapshot> =>
+  fetch("/api/settings/baseline", { method: "POST" }).then((res) =>
+    res.json(),
+  );
 
 const getDebugMap = (): Promise<DebugMap> =>
   fetch("/api/debug")
@@ -342,12 +352,52 @@ export const useExecutorSettings = () => {
     mutationFn: postExecutorSettings,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
+      // The diff-vs-baseline depends on current settings; refresh the history
+      // too (a debounced auto-snapshot may have just landed).
+      queryClient.invalidateQueries({ queryKey: ["settings-snapshots"] });
     },
   });
 
   return {
     settings: query.data,
     updateSettings: mutation.mutate,
+  };
+};
+
+/**
+ * Settings explore/revert state: the known-good baseline + auto-captured
+ * history, plus actions to mark a new baseline and restore any snapshot.
+ */
+export const useSettingsSnapshots = () => {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ["settings-snapshots"],
+    queryFn: getSettingsSnapshots,
+    // Poll lightly so debounced auto-snapshots show up without a manual edit.
+    refetchInterval: 3000,
+  });
+
+  const setBaseline = useMutation({
+    mutationFn: postSettingsBaseline,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings-snapshots"] });
+    },
+  });
+
+  // Restoring a snapshot is just re-applying its settings through the normal path.
+  const restore = useMutation({
+    mutationFn: postExecutorSettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["controller-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["settings-snapshots"] });
+    },
+  });
+
+  return {
+    baseline: query.data?.baseline ?? null,
+    history: query.data?.history ?? [],
+    markBaseline: setBaseline.mutate,
+    restore: restore.mutate,
   };
 };
 

@@ -15,6 +15,7 @@ mod executor_task;
 mod replay_controller;
 mod routes;
 mod server;
+mod settings_store;
 
 pub use server::start;
 
@@ -39,6 +40,8 @@ pub struct UiConfig {
     pub strategy: Option<String>,
     /// Dev-only: hot-reload the strategy process when its binary is rebuilt.
     pub hot_reload: bool,
+    /// Dev-only: artificial delay (ms) applied to incoming vision packets.
+    pub vision_delay_ms: u32,
     /// Directory where session logs are written/browsed for replay.
     pub log_directory: PathBuf,
 }
@@ -309,6 +312,28 @@ pub(crate) struct ExecutorSettingsResponse {
 #[typeshare]
 pub(crate) struct PostExecutorSettingsBody {
     pub(crate) settings: ExecutorSettings,
+}
+
+/// A captured settings configuration with provenance. `kind` is a free-form
+/// tag: `"edit"` (debounced auto-snapshot of a live edit), `"baseline"` (the
+/// user-declared known-good config), or `"revert"`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[typeshare]
+pub(crate) struct SettingsSnapshot {
+    /// Unix epoch milliseconds.
+    #[typeshare(serialized_as = "number")]
+    pub(crate) ts: i64,
+    pub(crate) kind: String,
+    pub(crate) settings: ExecutorSettings,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct SettingsSnapshotsResponse {
+    /// The current known-good config, or null if none has been marked yet.
+    pub(crate) baseline: Option<SettingsSnapshot>,
+    /// Auto-captured history, newest first.
+    pub(crate) history: Vec<SettingsSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize)]

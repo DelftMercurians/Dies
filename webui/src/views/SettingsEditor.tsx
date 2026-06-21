@@ -1,9 +1,66 @@
 import { useExecutorSettings } from "@/api";
-import { ExecutorSettings } from "@/bindings";
+import { ExecutorSettings, FieldMask } from "@/bindings";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { SimpleTooltip } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { useAtom } from "jotai";
+import { maskEditModeAtom } from "@/lib/fieldEditing";
+import { cn } from "@/lib/utils";
+
+const FULL_FIELD_MASK: FieldMask = { x_min: -1, x_max: 1, y_min: -1, y_max: 1 };
+
+/**
+ * Field-mask editor: Edit toggles drag-to-draw mode on the field canvas; Clear
+ * resets to the full field. The four fractions remain numerically editable.
+ */
+const FieldMaskEditor: React.FC<{
+  value: FieldMask;
+  onChange: (v: FieldMask) => void;
+}> = ({ value, onChange }) => {
+  const [editing, setEditing] = useAtom(maskEditModeAtom);
+  const num = (k: keyof FieldMask, label: string) => (
+    <div className="flex items-center gap-1">
+      <span className="text-xs text-text-muted w-9">{label}</span>
+      <NumberInput
+        value={value[k]}
+        onChange={(v) => onChange({ ...value, [k]: v as number })}
+        className="w-16"
+      />
+    </div>
+  );
+  return (
+    <div className="w-full space-y-2">
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant={editing ? "default" : "outline"}
+          className={cn(editing && "ring-1 ring-accent-cyan")}
+          onClick={() => setEditing((e) => !e)}
+        >
+          {editing ? "Drawing… (drag on field)" : "Edit on field"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            onChange(FULL_FIELD_MASK);
+            setEditing(false);
+          }}
+        >
+          Clear
+        </Button>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        {num("x_min", "X min")}
+        {num("x_max", "X max")}
+        {num("y_min", "Y min")}
+        {num("y_max", "Y max")}
+      </div>
+    </div>
+  );
+};
 
 type FieldConfig = {
   [K in keyof ExecutorSettings]?: {
@@ -16,6 +73,8 @@ type FieldConfig = {
       step?: number;
       unit?: string;
       isAngle?: boolean;
+      /** Tooltip shown on the field label: what it does + which way to tune. */
+      help?: string;
       customComponent?: React.ComponentType<{
         id: string;
         value: ExecutorSettings[K][M];
@@ -25,111 +84,126 @@ type FieldConfig = {
   };
 };
 
-interface SettingsEditorProps<K> {
+interface SettingsEditorProps<K extends keyof ExecutorSettings> {
   settingsKey: K;
   className?: string;
+  /** Restrict (and order) which fields are shown; defaults to all. */
+  include?: (keyof ExecutorSettings[K])[];
 }
 
 const fieldConfig: FieldConfig = {
   controller_settings: {
-    max_acceleration: { min: 0, max: 10000, step: 50, unit: "mm/s²" },
-    max_deceleration: { min: 0, max: 10000, step: 50, unit: "mm/s²" },
-    max_velocity: { min: 0, max: 6000, step: 50, unit: "mm/s" },
-    lateral_acceleration: { min: 0, max: 10000, step: 50, unit: "mm/s²" },
-    approach_kp: { min: 0, max: 20, step: 0.1, unit: "1/s" },
-    lookahead_min: { min: 0, max: 1000, step: 10, unit: "mm" },
-    lookahead_time: { min: 0, max: 1, step: 0.01, unit: "s" },
+    max_acceleration: {
+      min: 0, max: 10000, step: 50, unit: "mm/s²",
+      help: "Cap on acceleration when speeding up. Higher = snappier starts but more wheel slip (which vision can't see → tracking error). Lower = gentler launches.",
+    },
+    max_deceleration: {
+      min: 0, max: 10000, step: 50, unit: "mm/s²",
+      help: "Cap on braking, and the braking authority the path follower plans its stop against. Higher = later, harder stops (overshoot if the robot can't actually brake that hard).",
+    },
+    max_velocity: {
+      min: 0, max: 6000, step: 50, unit: "mm/s",
+      help: "Top commanded speed magnitude. Keep at/below what the robots can actually hold.",
+    },
+    lateral_acceleration: {
+      min: 0, max: 10000, step: 50, unit: "mm/s²",
+      help: "Cornering acceleration budget — how much speed the robot carries through a path corner. Higher = faster corners but wider drift; lower = slows more for turns.",
+    },
+    approach_kp: {
+      min: 0, max: 20, step: 0.1, unit: "1/s",
+      help: "Arrival gain: commanded speed eases off as kp × remaining distance into corners and the goal. Lower = gentler/earlier braking; higher = later/snappier stops (risk overshoot).",
+    },
+    lookahead_min: {
+      min: 0, max: 1000, step: 10, unit: "mm",
+      help: "Minimum pure-pursuit lookahead, used at low speed. Higher = smoother but cuts corners; lower = tighter path tracking but can wobble.",
+    },
+    lookahead_time: {
+      min: 0, max: 1, step: 0.01, unit: "s",
+      help: "Lookahead = clamp(time × speed, min, max). Higher = smoother at speed and wider corner cuts; lower = hugs the path more closely.",
+    },
     max_angular_velocity: {
-      min: 0,
-      max: 720,
-      unit: "deg/s",
-      isAngle: true,
+      min: 0, max: 720, unit: "deg/s", isAngle: true,
+      help: "Maximum turn rate.",
     },
     max_angular_acceleration: {
-      min: 0,
-      max: 7200,
-      unit: "deg/s²",
-      isAngle: true,
+      min: 0, max: 7200, unit: "deg/s²", isAngle: true,
+      help: "Maximum angular acceleration. Higher = snappier heading changes.",
     },
-    angle_kp: { min: 0, max: 10, step: 0.05 },
+    angle_kp: {
+      min: 0, max: 10, step: 0.05,
+      help: "Proportional gain for heading tracking. Higher = snappier heading, but too high oscillates/hunts.",
+    },
     angle_cutoff_distance: {
-      min: 0,
-      max: 30,
-      step: 0.1,
-      unit: "deg",
-      isAngle: true,
+      min: 0, max: 30, step: 0.1, unit: "deg", isAngle: true,
+      help: "Heading deadzone: yaw control outputs zero inside this band. Raise to stop hunting/jitter near the target heading; too high leaves a visible heading error.",
     },
   },
   tracker_settings: {
-    player_measurement_var: { min: 0, max: 10, step: 0.01, unit: "mm²" },
-    player_unit_transition_var: { min: 0, max: 500, step: 1, unit: "mm²/s" },
-    ball_measurement_var: { min: 0, max: 10, step: 0.01, unit: "mm²" },
-    ball_unit_transition_var: { min: 0, max: 500, step: 1, unit: "mm²/s" },
-    player_yaw_lpf_alpha: { min: 0, max: 1, step: 0.01 },
+    player_use_acceleration: {
+      help: "Player motion model. ON = constant-acceleration: the filter tracks acceleration, so it doesn't lag during hard starts/stops. OFF = constant-velocity: smoother but lags any acceleration. Leave ON; toggle OFF only to compare.",
+    },
+    player_use_command_feedforward: {
+      help: "Feed the commanded velocity into the filter's predict step so the estimate anticipates commanded moves (less lag, leads the vision). EXPERIMENTAL — depends on a good Command Tau. Turn OFF if the estimate overshoots or oscillates.",
+    },
+    player_command_tau: {
+      min: 0, max: 1, step: 0.01, unit: "s",
+      help: "Feedforward time constant: how fast the estimate is pulled toward the command (~the robot's velocity-loop response time). Lower = more aggressive anticipation (less lag, more noise/overshoot); higher = gentler. Start ~0.15 and raise if it overshoots.",
+    },
+    player_measurement_var: {
+      min: 0, max: 10, step: 0.01, unit: "mm²",
+      help: "Assumed vision position-noise variance. Set near the real noise floor (~0.4 mm²). Lower = trust vision more (snappier, noisier); higher = trust the model more (smoother, laggier).",
+    },
+    player_unit_transition_var: {
+      unit: "mm²/s³ (CV)",
+      help: "Constant-velocity process noise (acceleration PSD). Used only when CA is OFF. Higher = filter accepts velocity changes faster (less lag, noisier); lower = smoother/laggier.",
+    },
+    player_ca_unit_transition_var: {
+      unit: "mm²/s⁵ (CA)",
+      help: "Constant-acceleration process noise (jerk PSD). Used when CA is ON. Higher = accepts acceleration changes faster (less lag, more velocity noise); lower = smoother. ~1e6 nominal. (Different scale from the CV value — don't copy between them.)",
+    },
+    player_yaw_lpf_alpha: {
+      min: 0, max: 1, step: 0.01,
+      help: "Yaw low-pass smoothing (0–1). 0 = no smoothing (responsive but noisy heading); higher = smoother but laggier; 1 = frozen.",
+    },
+    ball_measurement_var: {
+      min: 0, max: 10, step: 0.01, unit: "mm²",
+      help: "Assumed ball vision-noise variance. Lower = trust vision more (snappier, noisier); higher = smoother/laggier.",
+    },
+    ball_unit_transition_var: {
+      min: 0, max: 500, step: 1, unit: "mm²/s",
+      help: "Ball process noise. Higher = tracks abrupt speed changes (kicks, deflections) faster but noisier; lower = smoother but lags sudden ball motion.",
+    },
+    ball_confidence_threshold: {
+      min: 0, max: 1, step: 0.01,
+      help: "Minimum vision confidence to accept a ball detection. Raise to reject false balls IF your vision reports trustworthy confidence; many setups report ~0 even for a clean ball, so default 0 accepts all.",
+    },
     field_mask: {
+      help: "Vision crop as fractions of the field half-extent — detections outside the box are ignored. Click 'Edit on field' and drag a rectangle, or set the fractions directly.",
       customComponent: ({ value, onChange }) => (
-        <div className="w-full">
-          <div>X min</div>
-          <Slider
-            id="field_mask_x_min"
-            min={-1}
-            max={1}
-            step={0.01}
-            value={[value.x_min]}
-            onValueChange={([newValue]) =>
-              onChange({ ...value, x_min: newValue })
-            }
-            className="w-full flex-1 min-w-24"
-          />
-          <div>X max</div>
-          <Slider
-            id="field_mask_x_max"
-            min={-1}
-            max={1}
-            step={0.01}
-            value={[value.x_max]}
-            onValueChange={([newValue]) =>
-              onChange({ ...value, x_max: newValue })
-            }
-            className="w-full flex-1 min-w-24"
-          />
-          <div>Y min</div>
-          <Slider
-            id="field_mask_y_min"
-            min={-1}
-            max={1}
-            step={0.01}
-            value={[value.y_min]}
-            onValueChange={([newValue]) =>
-              onChange({ ...value, y_min: newValue })
-            }
-            className="w-full flex-1 min-w-24"
-          />
-          <div>Y max</div>
-          <Slider
-            id="field_mask_y_max"
-            min={-1}
-            max={1}
-            step={0.01}
-            value={[value.y_max]}
-            onValueChange={([newValue]) =>
-              onChange({ ...value, y_max: newValue })
-            }
-            className="w-full flex-1 min-w-24"
-          />
-        </div>
+        <FieldMaskEditor value={value} onChange={onChange} />
       ),
     },
   },
   skill_settings: {
-    dribbler_radius_near_center: { min: 0, max: 100, step: 1, unit: "mm" },
-    dribbler_radius_far_center: { min: 0, max: 100, step: 1, unit: "mm" },
-    fetch_ball_preshoot_offset: { min: 0, max: 1000, step: 1, unit: "mm" },
+    dribbler_radius_near_center: {
+      min: 0, max: 100, step: 1, unit: "mm",
+      help: "Ball-capture radius when the ball is near the robot center. Larger = grabs sooner but may false-trigger.",
+    },
+    dribbler_radius_far_center: {
+      min: 0, max: 100, step: 1, unit: "mm",
+      help: "Ball-capture radius when the ball is off to the side. Larger = more forgiving capture at an angle.",
+    },
+    dribbler_radius_breakbeam_factor: {
+      min: 0, max: 5, step: 0.1,
+      help: "Multiplier on the capture radius once the breakbeam sees the ball — keeps 'have ball' latched through small wobbles. Higher = stickier possession.",
+    },
+    fetch_ball_preshoot_offset: {
+      min: 0, max: 1000, step: 1, unit: "mm",
+      help: "How far behind the ball the robot lines up before driving through to shoot. Larger = straighter approach but slower.",
+    },
     fetch_ball_preshoot_ball_avoidance: {
-      min: 0,
-      max: 5,
-      step: 0.1,
-      unit: "*",
+      min: 0, max: 5, step: 0.1, unit: "*",
+      help: "How much the pre-shoot approach curves around the ball to avoid bumping it. Higher = wider, gentler arc.",
     },
   },
 };
@@ -137,6 +211,7 @@ const fieldConfig: FieldConfig = {
 function SettingsEditor<K extends keyof ExecutorSettings>({
   settingsKey,
   className = "",
+  include,
 }: SettingsEditorProps<K>) {
   type SettingsKey = keyof ExecutorSettings[K];
   type Value = ExecutorSettings[K][SettingsKey];
@@ -168,7 +243,12 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
   return (
     <div className="h-full relative">
       <div className="absolute inset-0 overflow-y-auto grid grid-cols-2 gap-x-6 gap-y-4 p-4 auto-rows-max">
-        {Object.entries(settings as unknown as Record<string, unknown>).map(
+        {(include
+          ? include
+              .filter((k) => k in (settings as object))
+              .map((k) => [k as string, (settings as any)[k]] as [string, unknown])
+          : Object.entries(settings as unknown as Record<string, unknown>)
+        ).map(
           ([key, _value]) => {
             const value = _value as Value;
             const config = fieldConfig[settingsKey]?.[key as SettingsKey] || {};
@@ -176,6 +256,7 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
               hidden = false,
               unit = null,
               isAngle = false,
+              help = null,
               customComponent: CustomComponent,
             } = config;
 
@@ -186,13 +267,21 @@ function SettingsEditor<K extends keyof ExecutorSettings>({
                 ? value * (180 / Math.PI)
                 : value;
 
+            const label = (
+              <Label htmlFor={key} className="font-medium">
+                {key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+              </Label>
+            );
+
             return (
               <div key={key} className="space-y-2 min-w-0">
-                <Label htmlFor={key} className="font-medium">
-                  {key
-                    .replace(/_/g, " ")
-                    .replace(/\b\w/g, (l) => l.toUpperCase())}
-                </Label>
+                {help ? (
+                  <SimpleTooltip title={help} className="w-fit cursor-help">
+                    {label}
+                  </SimpleTooltip>
+                ) : (
+                  label
+                )}
                 <div className="flex items-center gap-2 flex-wrap">
                   {typeof CustomComponent === "function" ? (
                     <CustomComponent

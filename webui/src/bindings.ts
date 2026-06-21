@@ -762,6 +762,25 @@ export interface ScenariosResponse {
 	status: TestStatus;
 }
 
+/**
+ * A captured settings configuration with provenance. `kind` is a free-form
+ * tag: `"edit"` (debounced auto-snapshot of a live edit), `"baseline"` (the
+ * user-declared known-good config), or `"revert"`.
+ */
+export interface SettingsSnapshot {
+	/** Unix epoch milliseconds. */
+	ts: number;
+	kind: string;
+	settings: ExecutorSettings;
+}
+
+export interface SettingsSnapshotsResponse {
+	/** The current known-good config, or null if none has been marked yet. */
+	baseline?: SettingsSnapshot;
+	/** Auto-captured history, newest first. */
+	history: SettingsSnapshot[];
+}
+
 /** A struct to store the world state from a single frame. */
 export interface TeamData {
 	/**

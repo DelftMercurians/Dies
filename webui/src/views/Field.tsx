@@ -2,6 +2,7 @@ import React, { FC, useEffect, useRef, useCallback, useState, useMemo } from "re
 import {
   useDebugData,
   useExecutorInfo,
+  useExecutorSettings,
   useSendCommand,
   useStatus,
   useWorldState,
@@ -16,6 +17,7 @@ import {
   CANVAS_PADDING,
   DEFAULT_FIELD_SIZE,
   FieldRenderer,
+  ManualTargetMarker,
   PositionDisplayMode,
 } from "./FieldRenderer";
 import {
@@ -26,14 +28,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { cn, radiansToDegrees } from "@/lib/utils";
+import { cn, radiansToDegrees, prettyPrintSnakeCases } from "@/lib/utils";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { BallPlacementPostionAtom } from "@/components/GameControllerPanel";
 import GameBanner from "@/components/GameBanner";
 import { FrameCounter } from "@/components/FrameCounter";
@@ -43,6 +45,19 @@ import {
   debugCategoryVisibilityAtom,
   filterDebugMap,
 } from "@/lib/debugLayers";
+import DebugVisibilityControls from "./DebugVisibilityControls";
+import {
+  pinnedFieldKeysAtom,
+  formatFieldDebugValue,
+  pinnedDebugKeysAtom,
+  formatPlayerDebugValue,
+} from "@/lib/pinnedDebug";
+import {
+  maskEditModeAtom,
+  manualTargetsAtom,
+  manualTargetKey,
+} from "@/lib/fieldEditing";
+import { X } from "lucide-react";
 
 const CONT_PADDING_PX = 8;
 
@@ -119,6 +134,86 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
 
   const [positionDisplayMode, setPositionDisplayMode] =
     useState<PositionDisplayMode>("filtered");
+  const [primaryTeam] = usePrimaryTeam();
+
+  // --- Field mask (vision crop) -------------------------------------------
+  const { settings: executorSettings, updateSettings } = useExecutorSettings();
+  const fieldMask = executorSettings?.tracker_settings.field_mask ?? null;
+  const [maskEditMode, setMaskEditMode] = useAtom(maskEditModeAtom);
+  const maskEditRef = useRef(maskEditMode);
+  maskEditRef.current = maskEditMode;
+  // In-progress drag rectangle in field mm: [x1, y1, x2, y2].
+  const [maskDraft, setMaskDraft] = useState<
+    [number, number, number, number] | null
+  >(null);
+  const maskDragStartRef = useRef<[number, number] | null>(null);
+
+  // Field half-extents in mm (matches the backend FieldMask scaling).
+  const halfExtents = useMemo<[number, number]>(() => {
+    const geom = worldData?.field_geom;
+    if (geom) {
+      return [
+        geom.field_length / 2 + geom.boundary_width,
+        geom.field_width / 2 + geom.boundary_width,
+      ];
+    }
+    return [DEFAULT_FIELD_SIZE[0] / 2, DEFAULT_FIELD_SIZE[1] / 2];
+  }, [worldData?.field_geom]);
+
+  const commitMask = useCallback(
+    (rect: [number, number, number, number]) => {
+      if (!executorSettings) return;
+      const [hx, hy] = halfExtents;
+      const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+      const mask = {
+        x_min: clamp(Math.min(rect[0], rect[2]) / hx),
+        x_max: clamp(Math.max(rect[0], rect[2]) / hx),
+        y_min: clamp(Math.min(rect[1], rect[3]) / hy),
+        y_max: clamp(Math.max(rect[1], rect[3]) / hy),
+      };
+      updateSettings({
+        ...executorSettings,
+        tracker_settings: { ...executorSettings.tracker_settings, field_mask: mask },
+      });
+    },
+    [executorSettings, halfExtents, updateSettings]
+  );
+
+  // --- Manual MoveTo targets (tracked client-side) ------------------------
+  const [manualTargets, setManualTargets] = useAtom(manualTargetsAtom);
+  // Prune targets for players no longer under manual control.
+  const manualControlKeys = (executorInfo?.manual_controlled_players ?? []).map(
+    (p) => manualTargetKey(p.team_color, p.player_id)
+  );
+  const manualControlKeysStr = manualControlKeys.join(",");
+  useEffect(() => {
+    setManualTargets((prev) => {
+      const next: typeof prev = {};
+      for (const k of Object.keys(prev)) {
+        if (manualControlKeys.includes(k)) next[k] = prev[k];
+      }
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualControlKeysStr]);
+
+  const manualTargetMarkers = useMemo<ManualTargetMarker[]>(() => {
+    const team =
+      primaryTeam === TeamColor.Blue
+        ? worldData?.blue_team
+        : worldData?.yellow_team;
+    return Object.entries(manualTargets)
+      .filter(([key]) => key.startsWith(`${primaryTeam}:`))
+      .map(([key, to]) => {
+        const id = Number(key.split(":")[1]);
+        const player = team?.find((p) => p.id === id);
+        return { from: player ? player.position : null, to };
+      });
+  }, [manualTargets, primaryTeam, worldData]);
+
+  // --- Floating overlay pins ----------------------------------------------
+  const [pinnedFieldKeys, setPinnedFieldKeys] = useAtom(pinnedFieldKeysAtom);
+  const pinnedPlayerKeys = useAtomValue(pinnedDebugKeysAtom);
 
   const { width: contWidth = 0, height: contHeight = 0 } = useResizeObserver({
     ref: contRef,
@@ -128,7 +223,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     contWidth,
     contHeight
   );
-  const [primaryTeam] = usePrimaryTeam();
   const [manualBallPlacementPosition, setManualBallPlacementPosition] = useAtom(
     BallPlacementPostionAtom
   );
@@ -145,6 +239,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     }
     rendererRef.current.setPositionDisplayMode(positionDisplayMode);
     rendererRef.current.setWorldData(worldData);
+    rendererRef.current.setFieldMask(fieldMask);
+    rendererRef.current.setMaskDraft(maskDraft);
+    rendererRef.current.setManualTargets(manualTargetMarkers);
     rendererRef.current.render(
       selectedPlayerId,
       primaryTeam,
@@ -160,6 +257,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     positionDisplayMode,
     selectedPlayerId,
     manualBallPlacementPosition,
+    fieldMask,
+    maskDraft,
+    manualTargetMarkers,
   ]);
 
   const selectedPlayerData =
@@ -200,6 +300,10 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         },
       },
     });
+    setManualTargets((prev) => ({
+      ...prev,
+      [manualTargetKey(primaryTeam, playerId)]: pos,
+    }));
   };
 
   const selectedPlayerIdRef = useRef(selectedPlayerId);
@@ -232,8 +336,35 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Esc cancels mask editing.
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape" && maskEditRef.current) {
+        setMaskEditMode(false);
+        maskDragStartRef.current = null;
+        setMaskDraft(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setMaskEditMode]);
+
+  /** Canvas-pixel event → field-mm coordinates. */
+  const eventToField = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>): [number, number] | null => {
+      if (!canvasRef.current || !rendererRef.current) return null;
+      const rect = canvasRef.current.getBoundingClientRect();
+      return rendererRef.current.canvasToField([
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+      ]);
+    },
+    []
+  );
+
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (maskEditRef.current) return;
       if (!canvasRef.current || !rendererRef.current) return;
 
       const rect = canvasRef.current.getBoundingClientRect();
@@ -250,6 +381,34 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     [onSelectPlayer, primaryTeam]
   );
 
+  const handleMaskMouseDown = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!maskEditRef.current) return;
+      const f = eventToField(event);
+      if (!f) return;
+      event.preventDefault();
+      maskDragStartRef.current = f;
+      setMaskDraft([f[0], f[1], f[0], f[1]]);
+    },
+    [eventToField]
+  );
+
+  const handleMaskMouseUp = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!maskEditRef.current || !maskDragStartRef.current) return;
+      const end = eventToField(event) ?? maskDragStartRef.current;
+      const [sx, sy] = maskDragStartRef.current;
+      maskDragStartRef.current = null;
+      setMaskDraft(null);
+      // Ignore trivial drags (a stray click).
+      if (Math.abs(end[0] - sx) > 50 && Math.abs(end[1] - sy) > 50) {
+        commitMask([sx, sy, end[0], end[1]]);
+      }
+      setMaskEditMode(false);
+    },
+    [eventToField, commitMask, setMaskEditMode]
+  );
+
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!canvasRef.current || !contRef.current || !rendererRef.current)
@@ -260,6 +419,11 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       const y = event.clientY - rect.top;
       const fieldXY = rendererRef.current.canvasToField([x, y]);
       setMouseField(fieldXY);
+
+      if (maskEditRef.current && maskDragStartRef.current) {
+        const [sx, sy] = maskDragStartRef.current;
+        setMaskDraft([sx, sy, fieldXY[0], fieldXY[1]]);
+      }
 
       const contRect0 = contRef.current.getBoundingClientRect();
       mouseContRef.current = [
@@ -317,6 +481,11 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         },
       },
     });
+    setManualTargets((prev) => ({
+      ...prev,
+      [manualTargetKey(primaryTeam, manualControlledPlayerIds[0])]:
+        contextMenuPosRef.current,
+    }));
   };
 
   const handleTargetHeading = () => {
@@ -361,9 +530,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           </Button>
         </PopoverTrigger>
 
-        <PopoverContent className="flex flex-col w-max">
-          <div className="flex flex-row items-center gap-4">
-            <div>Position Display Mode</div>
+        <PopoverContent className="flex flex-col gap-3 w-80 max-h-[80vh] overflow-y-auto">
+          <div className="flex flex-row items-center justify-between gap-4">
+            <div className="text-sm">Position Display</div>
             <ToggleGroup
               type="multiple"
               value={
@@ -384,8 +553,73 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
               <ToggleGroupItem value="filtered">Filtered</ToggleGroupItem>
             </ToggleGroup>
           </div>
+          <div className="border-t border-border-dim pt-2">
+            <DebugVisibilityControls />
+          </div>
         </PopoverContent>
       </Popover>
+
+      {/* Mask edit hint */}
+      {maskEditMode ? (
+        <div className="absolute top-9 left-1/2 -translate-x-1/2 z-30 bg-accent-cyan/90 text-black text-xs font-medium px-3 py-1 rounded shadow">
+          Drag on the field to set the vision mask — Esc to cancel
+        </div>
+      ) : null}
+
+      {/* Pinned debug overlay (top-left, under the view-settings button) */}
+      {(pinnedFieldKeys.length > 0 ||
+        (selectedPlayerId !== null && pinnedPlayerKeys.length > 0)) && (
+        <div className="absolute top-10 left-0 z-10 bg-black/45 backdrop-blur-sm rounded px-2 py-1.5 text-xs font-mono max-w-[16rem] pointer-events-auto">
+          {pinnedFieldKeys.map((key) => {
+            const val = formatFieldDebugValue(debugMap, key);
+            return (
+              <div key={key} className="flex items-center gap-2 group/pin py-px">
+                <span className="text-text-dim truncate">
+                  {prettyPrintSnakeCases(key.split(".").slice(-2).join("."))}
+                </span>
+                <span className="ml-auto text-text-bright tabular-nums">
+                  {val ?? "—"}
+                </span>
+                <button
+                  onClick={() =>
+                    setPinnedFieldKeys((prev) => prev.filter((k) => k !== key))
+                  }
+                  title="Unpin"
+                  className="opacity-0 group-hover/pin:opacity-100 text-text-muted hover:text-red-400"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            );
+          })}
+          {selectedPlayerId !== null && pinnedPlayerKeys.length > 0 && (
+            <>
+              {pinnedFieldKeys.length > 0 && (
+                <div className="border-t border-white/10 my-1" />
+              )}
+              <div className="text-text-muted">#{selectedPlayerId}</div>
+              {pinnedPlayerKeys.map((subkey) => {
+                const val = formatPlayerDebugValue(
+                  debugMap,
+                  selectedPlayerId,
+                  primaryTeam,
+                  subkey
+                );
+                return (
+                  <div key={subkey} className="flex items-center gap-2 py-px">
+                    <span className="text-text-dim truncate">
+                      {prettyPrintSnakeCases(subkey)}
+                    </span>
+                    <span className="ml-auto text-text-bright tabular-nums">
+                      {val ?? "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
 
       {playerTooltip ? (
         <div
@@ -502,6 +736,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
             height={canvasHeight}
             onClick={handleCanvasClick}
             onMouseMove={handleMouseMove}
+            onMouseDown={handleMaskMouseDown}
+            onMouseUp={handleMaskMouseUp}
+            style={maskEditMode ? { cursor: "crosshair" } : undefined}
           />
         </ContextMenuTrigger>
 

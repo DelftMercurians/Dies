@@ -21,7 +21,7 @@ const SEVERITY_RANK: Record<Severity, number> = {
 export const worstSeverity = (...severities: Severity[]): Severity =>
   severities.reduce<Severity>(
     (worst, s) => (SEVERITY_RANK[s] > SEVERITY_RANK[worst] ? s : worst),
-    "idle"
+    "idle",
   );
 
 /** Tailwind text color for a severity. "ok"/"idle" are intentionally quiet. */
@@ -122,16 +122,15 @@ export const playerHealth = (fb?: PlayerFeedbackMsg): PlayerHealth => {
   severities.push(note(sysStatusSeverity(fb.primary_status), "primary status"));
   severities.push(note(sysStatusSeverity(fb.kicker_status), "kicker"));
   severities.push(note(sysStatusSeverity(fb.imu_status), "imu"));
-  severities.push(note(sysStatusSeverity(fb.fan_status), "fan"));
 
   fb.motor_statuses?.forEach((s, i) => {
     severities.push(
-      note(sysStatusSeverity(s), i === 4 ? "dribbler" : `motor ${i}`)
+      note(sysStatusSeverity(s), i === 4 ? "dribbler" : `motor ${i}`),
     );
   });
   fb.motor_temps?.forEach((t, i) => {
     severities.push(
-      note(motorTempSeverity(t), i === 4 ? "dribbler temp" : `motor ${i} temp`)
+      note(motorTempSeverity(t), i === 4 ? "dribbler temp" : `motor ${i} temp`),
     );
   });
   fb.pack_voltages?.forEach((v, i) => {
@@ -142,7 +141,5 @@ export const playerHealth = (fb?: PlayerFeedbackMsg): PlayerHealth => {
 };
 
 /** Zero-padded pattern image path for a robot id + team. */
-export const patternSrc = (
-  id: number,
-  team: "blue" | "yellow"
-): string => `/patterns/team_${team}/${String(id).padStart(2, "0")}.png`;
+export const patternSrc = (id: number, team: "blue" | "yellow"): string =>
+  `/patterns/team_${team}/${String(id).padStart(2, "0")}.png`;

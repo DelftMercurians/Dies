@@ -81,7 +81,10 @@ const HardwareReadout: FC<{
             <StatusDot status={feedback.primary_status} label="Primary" />
             <StatusDot status={feedback.imu_status} label="IMU" />
             <StatusDot status={feedback.kicker_status} label="Kicker" />
-            <StatusDot status={feedback.fan_status} label="Fan" />
+            <StatusDot
+              status={feedback.tof_status}
+              label="Time of Flight Sensor"
+            />
           </Section>
 
           {/* motors */}
@@ -107,7 +110,6 @@ const HardwareReadout: FC<{
               })}
             </div>
           </Section>
-
         </>
       )}
     </div>
@@ -131,7 +133,7 @@ const BreakbeamBall: FC<{ detected: boolean; sensorError?: boolean }> = ({
         className={cn(
           "w-4 h-4 rounded-full border",
           sensorError ? "border-accent-red" : "border-border-muted",
-          !detected && "bg-transparent"
+          !detected && "bg-transparent",
         )}
         style={
           detected
@@ -207,7 +209,7 @@ const MotorRow: FC<{
       <span
         className={cn(
           "w-1.5 h-1.5 rounded-full",
-          severityDotClass(sysStatusSeverity(status))
+          severityDotClass(sysStatusSeverity(status)),
         )}
       />
       <span className="text-text-dim" title={status}>

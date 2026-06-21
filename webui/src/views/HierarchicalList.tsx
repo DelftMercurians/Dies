@@ -4,19 +4,25 @@ import {
   CollapsibleContent,
 } from "@/components/ui/collapsible";
 import { cn, formatDebugString, formatNumber, prettyPrintSnakeCases } from "@/lib/utils";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Pin, PinOff } from "lucide-react";
 import { FC, useState, useMemo } from "react";
 
 interface HierarchicalListProps {
   data: [string, any][];
   className?: string;
   expandAll?: boolean;
+  /** Full keys currently pinned (enables pin buttons on leaf rows). */
+  pinnedKeys?: string[];
+  /** Toggle a leaf's pinned state by full dotted key. */
+  onTogglePin?: (key: string) => void;
 }
 
 const HierarchicalList: FC<HierarchicalListProps> = ({
   data,
   className,
   expandAll = false,
+  pinnedKeys,
+  onTogglePin,
 }) => {
   const [openKeys, setOpenKeys] = useState<string[]>(
     expandAll ? data.map(([key]) => key) : []
@@ -79,8 +85,26 @@ const HierarchicalList: FC<HierarchicalListProps> = ({
   ) => {
     const isLeaf = typeof group.data !== "undefined";
     if (isLeaf) {
+      const isPinned = !!pinnedKeys?.includes(fullKey);
       return (
-        <div key={key} className="flex flex-row items-stretch py-1 w-full">
+        <div
+          key={key}
+          className="flex flex-row items-stretch py-1 w-full group/row"
+        >
+          {onTogglePin ? (
+            <button
+              onClick={() => onTogglePin(fullKey)}
+              title={isPinned ? "Unpin from field overlay" : "Pin to field overlay"}
+              className={cn(
+                "mr-1 shrink-0 text-text-muted hover:text-accent-cyan transition-opacity",
+                isPinned
+                  ? "text-accent-cyan opacity-100"
+                  : "opacity-0 group-hover/row:opacity-100"
+              )}
+            >
+              {isPinned ? <PinOff size={11} /> : <Pin size={11} />}
+            </button>
+          ) : null}
           <div className="font-semibold mr-2 min-w-max">
             {prettyPrintSnakeCases(key)}:
           </div>
