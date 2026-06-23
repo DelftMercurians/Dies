@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Notify};
 use typeshare::typeshare;
 
-use crate::Vector2;
+use crate::{PlayerId, Vector2};
 
 static DEBUG_MESSAGES: OnceLock<mpsc::UnboundedSender<UpdateMsg>> = OnceLock::new();
 static DEBUG_SUBSCRIBER: OnceLock<DebugSubscriber> = OnceLock::new();
@@ -30,6 +30,19 @@ pub enum DebugColor {
     Gray,
 }
 
+/// Semantic kind of a [`DebugShape::Marker`], controlling which glyph the UI draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[typeshare]
+pub enum MarkerKind {
+    /// A robot's final destination.
+    Target,
+    /// An intermediate point along a path.
+    Waypoint,
+    /// A kick / shot aim point.
+    KickTarget,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
@@ -37,6 +50,14 @@ pub enum DebugShape {
     Cross {
         center: Vector2,
         color: DebugColor,
+    },
+    /// A semantic marker drawn with a distinct glyph, optionally tethered to its
+    /// owning robot in the UI.
+    Marker {
+        kind: MarkerKind,
+        center: Vector2,
+        color: DebugColor,
+        owner: Option<PlayerId>,
     },
     Circle {
         center: Vector2,

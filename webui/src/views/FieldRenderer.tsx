@@ -3,6 +3,7 @@ import {
   DebugMap,
   DebugShape,
   FieldMask,
+  MarkerKind,
   PlayerData,
   Vector2,
   Vector3,
@@ -36,6 +37,10 @@ const MASK_OUTLINE = "#22d3ee";
 const MASK_DRAFT = "#ffffff";
 const MASK_SHADE = "#0008";
 const TARGET_COLOR = "#dc2626";
+
+// Below this robot→target distance (mm) a tether is pure noise — the target
+// already sits on its robot — so it's only drawn when the robot is selected.
+const TETHER_MIN_DIST = ROBOT_RADIUS * 2;
 
 const DEBUG_COLORS: Record<DebugColor, string> = {
   green: "#14b8a688",
@@ -132,6 +137,10 @@ export class FieldRenderer {
     this.drawWalls();
     this.drawFieldMask();
 
+    // Tethers are drawn first so they sit *under* the robots/ball/glyphs and
+    // never occlude them.
+    this.drawTethers(primaryTeam, selectedPlayerId);
+
     blue_team.forEach((player) =>
       this.drawPlayer(
         player,
@@ -181,7 +190,22 @@ export class FieldRenderer {
       this.ctx.fill();
     }
 
-    this.debugShapes.forEach((shape) => this.drawDebugShape(shape));
+    this.debugShapes.forEach((shape) => {
+      // When a player is selected, fade other players' markers so the focused
+      // robot's targets stand out.
+      let alpha = 1;
+      if (
+        shape.type === "Marker" &&
+        shape.data.owner != null &&
+        selectedPlayerId !== null
+      ) {
+        alpha = selectedPlayerId === shape.data.owner ? 1 : 0.25;
+      }
+      this.ctx.save();
+      this.ctx.globalAlpha = alpha;
+      this.drawDebugShape(shape);
+      this.ctx.restore();
+    });
 
     this.manualTargets.forEach((t) => this.drawManualTarget(t));
     this.drawMaskDraft();
@@ -476,6 +500,51 @@ export class FieldRenderer {
     this.ctx.fill();
   }
 
+  /**
+   * Draw a thin tether from each owned target marker back to its robot, so
+   * ownership is unambiguous in a crowd. Kept calm by: only target markers (one
+   * per robot), low opacity underneath everything, a distance gate that skips
+   * targets sitting on their robot, and promotion of the selected robot's tether
+   * while the rest recede.
+   */
+  private drawTethers(primaryTeam: TeamColor, selectedPlayerId: number | null) {
+    if (!this.world) return;
+    const team =
+      primaryTeam === TeamColor.Blue
+        ? this.world.blue_team
+        : this.world.yellow_team;
+    const someoneSelected = selectedPlayerId !== null;
+
+    for (const shape of this.debugShapes) {
+      if (shape.type !== "Marker") continue;
+      const m = shape.data;
+      if (m.kind !== MarkerKind.Target || m.owner == null) continue;
+      const player = team.find((p) => p.id === m.owner);
+      if (!player) continue;
+
+      const isSelected = selectedPlayerId === m.owner;
+      const dist = Math.hypot(
+        player.position[0] - m.center[0],
+        player.position[1] - m.center[1]
+      );
+      if (!isSelected && dist < TETHER_MIN_DIST) continue;
+
+      const [px, py] = this.fieldToCanvas(player.position);
+      const [tx, ty] = this.fieldToCanvas(m.center);
+      const alpha = isSelected ? 0.9 : someoneSelected ? 0.08 : 0.28;
+
+      this.ctx.save();
+      this.ctx.globalAlpha = alpha;
+      this.ctx.strokeStyle = DEBUG_COLORS[m.color].slice(0, 7);
+      this.ctx.lineWidth = isSelected ? 2 : 1;
+      this.ctx.beginPath();
+      this.ctx.moveTo(px, py);
+      this.ctx.lineTo(tx, ty);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+  }
+
   private drawDebugShape(shape: DebugShape) {
     if (shape.type === "Line") {
       const { start, end, color } = shape.data;
@@ -513,6 +582,52 @@ export class FieldRenderer {
       this.ctx.moveTo(x + 10, y - 10);
       this.ctx.lineTo(x - 10, y + 10);
       this.ctx.stroke();
+    } else if (shape.type === "Marker") {
+      this.drawMarker(shape.data);
+    }
+  }
+
+  /**
+   * Draw a semantic marker glyph. Shape encodes *kind* (target / waypoint /
+   * kick target); color is left to carry purpose/state; ownership is shown by
+   * the tether (see `drawTethers`). Glyphs are screen-space sized so they stay
+   * legible at any zoom.
+   */
+  private drawMarker(m: Extract<DebugShape, { type: "Marker" }>["data"]) {
+    const [x, y] = this.fieldToCanvas(m.center);
+    const c = DEBUG_COLORS[m.color].slice(0, 7);
+    this.ctx.strokeStyle = c;
+    this.ctx.fillStyle = c;
+    this.ctx.lineWidth = 2;
+
+    if (m.kind === MarkerKind.Target) {
+      // Crosshair inside a ring — the "go here" destination.
+      const r = 9;
+      this.ctx.beginPath();
+      this.ctx.moveTo(x - r, y);
+      this.ctx.lineTo(x + r, y);
+      this.ctx.moveTo(x, y - r);
+      this.ctx.lineTo(x, y + r);
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, r, 0, 2 * Math.PI);
+      this.ctx.stroke();
+    } else if (m.kind === MarkerKind.Waypoint) {
+      // Small hollow dot — clearly subordinate to a target.
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, 3.5, 0, 2 * Math.PI);
+      this.ctx.stroke();
+    } else if (m.kind === MarkerKind.KickTarget) {
+      // Concentric reticle with a center dot — a shot aim point.
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, 9, 0, 2 * Math.PI);
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, 4, 0, 2 * Math.PI);
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, 1.5, 0, 2 * Math.PI);
+      this.ctx.fill();
     }
   }
 

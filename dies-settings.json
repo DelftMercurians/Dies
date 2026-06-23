@@ -32,7 +32,7 @@
   },
   "team_configuration": {
     "blue_active": true,
-    "yellow_active": false,
+    "yellow_active": true,
     "side_assignment": "YellowOnPositive",
     "blue_strategy": "concerto",
     "yellow_strategy": "concerto"
@@ -50,8 +50,18 @@
     "fetch_ball_preshoot_offset": 150.0,
     "fetch_ball_preshoot_ball_avoidance": 0.0
   },
+  "possession_config": {
+    "acquire_dist": 120.0,
+    "release_dist": 180.0,
+    "breakbeam_gate_dist": 200.0,
+    "acquire_frames": 4,
+    "ambiguity_margin": 60.0,
+    "max_ball_speed": 1000.0,
+    "hold_secs": 0.25,
+    "release_suppress_secs": 0.2
+  },
   "allow_no_vision": false,
-  "goal_area_avoidance": false,
+  "goal_area_avoidance": true,
   "avoidance": {
     "robot_clearance": 0.0,
     "wall_margin": 0.0,

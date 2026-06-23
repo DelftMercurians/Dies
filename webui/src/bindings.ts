@@ -1079,6 +1079,16 @@ export type DebugShape =
 	center: Vector2;
 	color: DebugColor;
 }}
+	/**
+	 * A semantic marker drawn with a distinct glyph, optionally tethered to its
+	 * owning robot in the UI.
+	 */
+	| { type: "Marker", data: {
+	kind: MarkerKind;
+	center: Vector2;
+	color: DebugColor;
+	owner?: PlayerId;
+}}
 	| { type: "Circle", data: {
 	center: Vector2;
 	radius: number;
@@ -1118,6 +1128,16 @@ export type GcSimCommand =
 	team_color: TeamColor;
 	position: Vector2;
 }};
+
+/** Semantic kind of a [`DebugShape::Marker`], controlling which glyph the UI draws. */
+export enum MarkerKind {
+	/** A robot's final destination. */
+	Target = "target",
+	/** An intermediate point along a path. */
+	Waypoint = "waypoint",
+	/** A kick / shot aim point. */
+	KickTarget = "kick_target",
+}
 
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 

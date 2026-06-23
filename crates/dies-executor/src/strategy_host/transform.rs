@@ -208,6 +208,17 @@ impl CoordinateTransformer {
                 center: self.strategy_to_world(center),
                 color,
             },
+            DebugShape::Marker {
+                kind,
+                center,
+                color,
+                owner,
+            } => DebugShape::Marker {
+                kind,
+                center: self.strategy_to_world(center),
+                color,
+                owner,
+            },
             DebugShape::Line { start, end, color } => DebugShape::Line {
                 start: self.strategy_to_world(start),
                 end: self.strategy_to_world(end),

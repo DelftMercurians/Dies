@@ -461,6 +461,17 @@ impl StrategyHost {
                 center,
                 color: color.into(),
             },
+            dies_strategy_protocol::DebugShape::Marker {
+                kind,
+                center,
+                color,
+                owner,
+            } => DebugShape::Marker {
+                kind: kind.into(),
+                center,
+                color: color.into(),
+                owner,
+            },
             dies_strategy_protocol::DebugShape::Line { start, end, color } => DebugShape::Line {
                 start,
                 end,

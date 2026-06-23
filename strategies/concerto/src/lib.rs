@@ -289,8 +289,9 @@ impl ConcertoStrategy {
             }
         }
         for cmd in commands {
-            debug::cross_colored(
+            debug::target_colored(
                 &format!("formation_{}", cmd.id.as_u32()),
+                cmd.id,
                 cmd.target,
                 DebugColor::Blue,
             );

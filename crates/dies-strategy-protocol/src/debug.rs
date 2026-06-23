@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::Vector2;
+use crate::{PlayerId, Vector2};
 
 /// A color for debug visualization.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,11 +56,43 @@ impl From<DebugColor> for dies_core::DebugColor {
     }
 }
 
+/// Semantic kind of a [`DebugShape::Marker`], controlling which glyph the UI
+/// draws and how it is associated with a robot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MarkerKind {
+    /// A robot's final destination.
+    Target,
+    /// An intermediate point along a path.
+    Waypoint,
+    /// A kick / shot aim point.
+    KickTarget,
+}
+
+impl From<MarkerKind> for dies_core::MarkerKind {
+    fn from(k: MarkerKind) -> Self {
+        match k {
+            MarkerKind::Target => dies_core::MarkerKind::Target,
+            MarkerKind::Waypoint => dies_core::MarkerKind::Waypoint,
+            MarkerKind::KickTarget => dies_core::MarkerKind::KickTarget,
+        }
+    }
+}
+
 /// A debug shape to draw on the field.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum DebugShape {
     /// A cross marker at a position.
     Cross { center: Vector2, color: DebugColor },
+
+    /// A semantic marker drawn with a distinct glyph and optionally tethered to
+    /// its owning robot in the UI.
+    Marker {
+        kind: MarkerKind,
+        center: Vector2,
+        color: DebugColor,
+        /// The robot this marker belongs to, if any (drives the UI tether).
+        owner: Option<PlayerId>,
+    },
 
     /// A line between two points.
     Line {

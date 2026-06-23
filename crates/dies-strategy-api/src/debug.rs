@@ -26,7 +26,9 @@
 
 use std::cell::RefCell;
 
-use dies_strategy_protocol::{DebugColor, DebugEntry, DebugShape, DebugValue, Vector2};
+use dies_strategy_protocol::{
+    DebugColor, DebugEntry, DebugShape, DebugValue, MarkerKind, PlayerId, Vector2,
+};
 
 // Thread-local storage for debug entries collected during a frame.
 thread_local! {
@@ -45,6 +47,53 @@ pub fn cross_colored(key: &str, position: Vector2, color: DebugColor) {
         DebugValue::Shape(DebugShape::Cross {
             center: position,
             color,
+        }),
+    ));
+}
+
+/// Draw a target marker — a robot's final destination — owned by `owner`.
+///
+/// Rendered with a distinct glyph and tethered to its robot in the UI, so it
+/// stays legible when many targets are on the field (default color: red).
+pub fn target(key: &str, owner: PlayerId, position: Vector2) {
+    target_colored(key, owner, position, DebugColor::Red);
+}
+
+/// Draw a target marker with a specific color. See [`target`].
+pub fn target_colored(key: &str, owner: PlayerId, position: Vector2, color: DebugColor) {
+    add_entry(DebugEntry::new(
+        key,
+        DebugValue::Shape(DebugShape::Marker {
+            kind: MarkerKind::Target,
+            center: position,
+            color,
+            owner: Some(owner),
+        }),
+    ));
+}
+
+/// Draw a waypoint marker — an intermediate point along a path (default: gray).
+pub fn waypoint(key: &str, position: Vector2) {
+    add_entry(DebugEntry::new(
+        key,
+        DebugValue::Shape(DebugShape::Marker {
+            kind: MarkerKind::Waypoint,
+            center: position,
+            color: DebugColor::Gray,
+            owner: None,
+        }),
+    ));
+}
+
+/// Draw a kick / shot aim marker owned by `owner` (default color: orange).
+pub fn kick_target(key: &str, owner: PlayerId, position: Vector2) {
+    add_entry(DebugEntry::new(
+        key,
+        DebugValue::Shape(DebugShape::Marker {
+            kind: MarkerKind::KickTarget,
+            center: position,
+            color: DebugColor::Orange,
+            owner: Some(owner),
         }),
     ));
 }

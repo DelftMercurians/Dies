@@ -61,7 +61,7 @@ const HierarchicalList: FC<HierarchicalListProps> = ({
       if (
         "type" in value &&
         "data" in value &&
-        ["Line", "Circle", "Cross"].includes(value.type)
+        ["Line", "Circle", "Cross", "Marker"].includes(value.type)
       ) {
         return `${value.type}(${formatValue(value.data).slice(1, -1)})`;
       }

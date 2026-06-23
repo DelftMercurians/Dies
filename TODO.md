@@ -1,47 +1,19 @@
-Controls
-- 
- 
- 
-
-
-- [ ] Clean up and streamline settings system. Make settings declarative in Rust with generated UI
-  - [ ] Controller Settings
-  - [ ] Tracker Settings
-  - [ ] Skills Settings
-  - [ ] Strategy Settings
-  - [ ] No more sliders
-
-- [ ] Simplify logging format, make it easier to parse and visualize logs.
-  - [ ] No more protobuf
-  - [ ] Need to come up with a way to make massive debug tree data
-
-UI
-
-- [ ] Add keyboard shorcuts to UI
-- [ ] Make it easier to access debug values, remove mini scrollbars
-- [ ] Clean up debug tags, make sure everything is properly grouped
-- [ ] Sim: make it possible to directly move the ball or robots by dragging them
-- [ ] More knobs for togglging GC, obstacle avoidance, white/blacklisting robots, etc
-
-iLQR
-
-- [ ] Change cost function to not use terminal position cost
-- [ ] Obstacle avoidance
-- [ ] Visualize cost function and dynamics, look at parameters
-- [ ] Come up with tuning procedure
-
-Refactoring
-
-- [ ] Clean up executor/strategy/test-driver/controller path. minimize in between layers
-- [ ] Clean up test driver JS bridge, add macros for defining exposed functions, generate JSDoc or TS types
-- [ ] Clean up iLQR integration. it shouldnt be an override
-
-Fixes
-
-- [ ] Test and fix ghost rejection, make sure robots not in vision are properly handled
-- [ ] Look into fixed control loop rate - should we enforce it?
-
 Skills
 
-- [ ] Come up with a way to coordinate passes on the skill level
-- [ ] Pickup ball interception
+- ball handling
+  - pickup ball
+    - with heading, or quickest appraoch (aiming handed over to shoot skill)
+    - todo: remove intercept arm; approach only when ball is in the dribbler cone; tune ball avoidance care
+    - maybe: allow kicking right after approach?
+  - dribblet shoot
+    - aim first (either turn with ball or orbit) then kick either on correct heading or fallback trigger
+    - optionally allow moving to target with dribbling (extra)
+    - todo: implement and test orbit; switch between turn and orbit based on available space;
+  - reflex shoot
+    - maintain heading, kick on breakbream trigger
+    - tof repositioning (extra)
+    - todo: test, map out angle response
+  - receive pass
+    - move to intercept, track ball, cushion receive
+- movement
+-

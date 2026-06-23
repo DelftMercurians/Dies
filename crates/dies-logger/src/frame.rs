@@ -257,6 +257,16 @@ fn classify_debug(
                 color: Some(debug_color_str(*color).to_string()),
                 ..Default::default()
             }),
+            // Markers are logged as plain crosses (kind/owner are live-view only;
+            // replays render them as a cross at the marker position).
+            DebugShape::Marker { center, color, .. } => shapes.push(DebugShapeRow {
+                key: key.to_string(),
+                shape_type: "cross",
+                cx: Some(center.x),
+                cy: Some(center.y),
+                color: Some(debug_color_str(*color).to_string()),
+                ..Default::default()
+            }),
             DebugShape::Circle {
                 center,
                 radius,
