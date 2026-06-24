@@ -261,8 +261,7 @@ impl ObstacleSet {
 
         if let GameState::BallReplacement(target) = game_state {
             // Keep-out corridor between the ball and its placement target. Discs
-            // along the segment approximate the swept tube faithfully (Box would
-            // be a loose AABB for a diagonal placement).
+            // along the segment approximate the swept tube faithfully
             let radius = cfg.ball_stop_radius;
             let seg = target - ball_pos;
             let len = seg.norm();

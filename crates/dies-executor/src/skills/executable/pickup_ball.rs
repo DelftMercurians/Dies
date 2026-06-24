@@ -12,30 +12,21 @@ use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{PlayerControlInput, Velocity};
 
-/// Distance from ball at which we start slowing down and using the dribbler
-const DRIBBLING_DISTANCE: f64 = 1000.0;
-/// Distance to maintain when close to a stationary ball
-const STOP_DISTANCE: f64 = PLAYER_RADIUS + BALL_RADIUS + 80.0;
-/// Maximum relative speed when approaching the ball
-const MAX_RELATIVE_SPEED: f64 = 1000.0;
-/// Dribbler speed during pickup
-const DRIBBLER_SPEED: f64 = 0.2;
-/// Time after breakbeam triggers before declaring success
-const BREAKBEAM_CONFIRM_DURATION: Duration = Duration::from_millis(100);
-/// Maximum distance we allow robot to move during final approach
-const MAX_FINAL_APPROACH_DISTANCE: f64 = 80.0;
+const DRIBBLING_DISTANCE: f64 = 300.0;
+const BALL_MOVED_FAIL_DISTANCE: f64 = 100.0;
+const DRIBBLER_SPEED: f64 = 0.6;
 
 enum PickupState {
     Approaching,
-    FinalApproach,
-    Intercepting,
-    ConfirmingBreakbeam,
+    FinalApproach {
+        last_good_ball_pos: Vector2,
+        starting_position: Vector2,
+    },
 }
 
 pub struct PickupBallSkill {
     target_heading: Angle,
     skill_status: SkillStatus,
-    last_good_heading: Option<Angle>,
     starting_position: Option<Vector2>,
     breakbeam_on: Option<Instant>,
     state: PickupState,
@@ -47,7 +38,6 @@ impl PickupBallSkill {
         Self {
             target_heading,
             skill_status: SkillStatus::Running,
-            last_good_heading: None,
             starting_position: None,
             breakbeam_on: None,
             state: PickupState::Approaching,
@@ -83,171 +73,85 @@ impl ExecutableSkill for PickupBallSkill {
         let ball_speed = ball.velocity.xy().norm();
         let player_pos = ctx.player.position;
         let distance = (ball_pos - player_pos).norm();
-        dies_core::debug_value(
-            format!("{}.ball_dist", ctx.debug_prefix),
-            distance - PLAYER_RADIUS - BALL_RADIUS,
-        );
-
-        // Calculate heading toward ball
-        let ball_angle = {
-            let angle = Angle::between_points(player_pos, ball_pos);
-            if distance > 50.0 {
-                self.last_good_heading = Some(angle);
-                angle
-            } else {
-                self.last_good_heading.unwrap_or(angle)
-            }
-        };
-
-        let mut input = PlayerControlInput::new();
-        input.with_dribbling(DRIBBLER_SPEED);
-        input.with_yaw(ball_angle);
-
-        let has_ball = ctx.player.has_ball;
 
         // Check if breakbeam has been triggered
-        if has_ball {
+        if ctx.player.has_ball {
             self.skill_status = SkillStatus::Succeeded;
             return SkillProgress::success();
         }
 
-        // Handle breakbeam confirmation with timeout
-        // if ctx.player.breakbeam_ball_detected {
-        //     if self.breakbeam_on.is_none() {
-        //         self.breakbeam_on = Some(Instant::now());
-        //     }
-        // } else {
-        //     self.breakbeam_on = None;
-        // }
-
-        // Ball is stationary: approach from the side opposite to target_heading
-        // so that post-capture the robot is already facing target_heading.
-        let approach_dir = self.target_heading.to_vector();
-        let approach_pos = ball_pos - approach_dir * STOP_DISTANCE;
-
+        let mut input = PlayerControlInput::new();
         match self.state {
-            PickupState::ConfirmingBreakbeam => {
-                todo!()
-            }
             PickupState::Approaching => {
-                // Are we already behind the ball (on the side opposite the
-                // target heading) and roughly on the approach line? `along < 0`
-                // means we're on the correct side; `perp` is the lateral offset
-                // from the straight approach line through the ball.
-                let to_player = player_pos - ball_pos;
-                let along = to_player.dot(&approach_dir);
-                let perp = (to_player - approach_dir * along).norm();
-                let behind_and_aligned = along < 0.0 && perp < 120.0;
-
-                if behind_and_aligned && distance < DRIBBLING_DISTANCE {
-                    // Capture: drive straight into the ball with the dribbler on.
-                    // Ball avoidance MUST be off here — its keep-out (≈ ball
-                    // radius + robot radius) is larger than the dribbler contact
-                    // distance, so leaving it on stalls the robot short of the
-                    // ball and it can never secure it. A speed cap keeps the
-                    // approach gentle so we seat the ball instead of knocking it.
-                    dies_core::debug_string(
-                        format!("{}.pickup_ball.status", ctx.debug_prefix),
-                        "capture",
-                    );
-                    input.with_position(ball_pos);
-                    input.with_yaw(self.target_heading);
-                    input.with_speed_limit(800.0);
-                } else {
-                    // Far away or on the wrong side: route to the behind-ball
-                    // approach point, routing *around* the ball so we don't
-                    // bump it from the wrong angle.
-                    dies_core::debug_string(
-                        format!("{}.pickup_ball.status", ctx.debug_prefix),
-                        "go to pos",
-                    );
-                    input.with_position(approach_pos);
-                    input.with_yaw(self.target_heading);
-                    input.avoid_ball = true;
-                    input.avoid_ball_care = 0.4;
-                }
-
+                let approach_dir = self.target_heading.to_vector();
+                let approach_pos = ball_pos - approach_dir * (PLAYER_RADIUS + BALL_RADIUS + 80.0);
                 dies_core::debug_cross(
-                    format!("{}.approach", ctx.debug_prefix),
+                    "pickup_ball_target",
                     approach_pos,
-                    dies_core::DebugColor::Orange,
-                );
-                dies_core::debug_line(
-                    format!("{}.approach_vec", ctx.debug_prefix),
-                    approach_pos,
-                    approach_pos + approach_dir * 200.0,
                     dies_core::DebugColor::Blue,
                 );
-            }
-            PickupState::FinalApproach => {
-                dies_core::debug_string(
-                    format!("{}.pickup_ball.status", ctx.debug_prefix),
-                    "final approach",
-                );
-                // Final approach - creep forward along target_heading
-                let start_pos = *self.starting_position.get_or_insert(player_pos);
-                let moved_distance = (player_pos - start_pos).norm();
 
-                // if moved_distance > MAX_FINAL_APPROACH_DISTANCE {
-                //     self.status = SkillStatus::Failed;
-                //     return SkillProgress::failure();
-                // }
-
-                let global_approach_vel = (1.0 / moved_distance.max(1.0)) * 3000.0 * approach_dir;
-                input.velocity = Velocity::global(global_approach_vel);
+                input.with_position(approach_pos);
                 input.with_yaw(self.target_heading);
-            }
-            PickupState::Intercepting => {
+                input.avoid_ball = true;
+                input.avoid_ball_care = 0.0;
+
+                let to_ball_heading = Angle::from_vector(ball_pos - player_pos);
+                let cone_err = (ctx.player.yaw - to_ball_heading).abs();
                 dies_core::debug_string(
-                    format!("{}.pickup_ball.status", ctx.debug_prefix),
-                    "intercepting",
+                    "pickup_ball_state",
+                    format!(
+                        "approach: cone_err: {:.1}deg; distance: {:.1}",
+                        cone_err, distance
+                    ),
                 );
-                // Ball is moving - intercept it
-                // Sample points on the ball trajectory and find where we can intercept
-                let points_schedule = [
-                    0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 1.0,
-                    1.2, 1.5, 2.0,
-                ];
-                let friction_factor = 1.5;
-
-                let ball_points: Vec<Vector2> = points_schedule
-                    .iter()
-                    .map(|t| {
-                        ball_pos
-                            + ball.velocity.xy()
-                                * (*t)
-                                * (1.0 - f64::min(1.0, (*t) / friction_factor))
-                    })
-                    .collect();
-
-                let mut intersection = ball_points[ball_points.len() - 1];
-                for i in 0..ball_points.len() - 1 {
-                    let a = ball_points[i];
-                    let b = ball_points[i + 1];
-                    let must_be_reached_before = points_schedule[i];
-
-                    let mut time_to_reach = f64::min(
-                        ctx.world.time_to_reach_point(ctx.player, a),
-                        ctx.world.time_to_reach_point(ctx.player, b),
-                    );
-                    // Add margin for accuracy
-                    time_to_reach = time_to_reach * 1.2 + 0.1;
-
-                    if time_to_reach < must_be_reached_before {
-                        intersection = b;
-                        break;
+                if cone_err < 10.0_f64.to_radians()
+                    && distance < (PLAYER_RADIUS + BALL_RADIUS + 100.0)
+                {
+                    self.state = PickupState::FinalApproach {
+                        last_good_ball_pos: ball_pos,
+                        starting_position: player_pos,
+                    };
+                }
+            }
+            PickupState::FinalApproach {
+                last_good_ball_pos,
+                starting_position,
+            } => {
+                // If ball detected, update last good position and heading
+                if ball.detected {
+                    self.state = PickupState::FinalApproach {
+                        last_good_ball_pos: ball_pos,
+                        starting_position,
+                    };
+                    // Go back to approaching if the ball is too far away
+                    let cone_err =
+                        (ctx.player.yaw - Angle::from_vector(ball_pos - player_pos)).abs();
+                    if cone_err > 10.0_f64.to_radians() {
+                        self.state = PickupState::Approaching;
                     }
                 }
 
-                input.with_position(intersection);
+                let approach_vector = if ball.detected {
+                    ball_pos - ctx.player.position
+                } else {
+                    last_good_ball_pos - ctx.player.position
+                };
+                let approach_distance = approach_vector.norm();
+                input.add_global_velocity(
+                    approach_vector.normalize() * (approach_distance + 70.0) * 1.0,
+                );
+                input.with_yaw(Angle::from_vector(approach_vector));
+                input.with_dribbling(DRIBBLER_SPEED);
+                input.avoid_ball = false;
+                dies_core::debug_string("pickup_ball_state", format!("final_approach"));
 
-                // Once close, use proportional control
-                if distance < DRIBBLING_DISTANCE {
-                    input.position = None;
-                    input.velocity = Velocity::global(
-                        (ball_speed * 0.8 + distance * (MAX_RELATIVE_SPEED / DRIBBLING_DISTANCE))
-                            * (ball_pos - player_pos).normalize(),
-                    );
+                let ball_dist = (ball_pos - last_good_ball_pos).norm();
+                if ball_dist > BALL_MOVED_FAIL_DISTANCE
+                    || (player_pos - starting_position).norm() > 300.0
+                {
+                    self.skill_status = SkillStatus::Failed;
+                    return SkillProgress::failure();
                 }
             }
         }

@@ -52,6 +52,7 @@ pub struct PlayerController {
     max_accel: f64,
     max_speed: f64,
     max_decel: f64,
+    brake_gain: f64,
     max_angular_velocity: f64,
     max_angular_acceleration: f64,
     last_yaw_rate_limit: Option<f64>,
@@ -85,6 +86,7 @@ impl PlayerController {
             max_accel: settings.controller_settings.max_acceleration,
             max_speed: settings.controller_settings.max_velocity,
             max_decel: settings.controller_settings.max_deceleration,
+            brake_gain: settings.controller_settings.brake_gain,
             max_angular_velocity: settings.controller_settings.max_angular_velocity,
             max_angular_acceleration: settings.controller_settings.max_angular_acceleration,
 
@@ -106,6 +108,7 @@ impl PlayerController {
         self.max_accel = settings.max_acceleration;
         self.max_speed = settings.max_velocity;
         self.max_decel = settings.max_deceleration;
+        self.brake_gain = settings.brake_gain;
         self.max_angular_velocity = settings.max_angular_velocity;
         self.max_angular_acceleration = settings.max_angular_acceleration;
     }
@@ -255,10 +258,20 @@ impl PlayerController {
 
         // Path-following preferred velocity (cruise / cornering / braking-to-goal
         // are all intrinsic). The team controller reconciles it with ORCA.
+        // `hard_brake` requests bypassing the acceleration slew clamp for the
+        // terminal active-braking maneuver.
+        let mut hard_brake = false;
         if let Some(path) = path.as_deref() {
-            self.target_velocity_global =
-                self.path_follower
-                    .follow(path, self.last_pos, last_cmd.norm());
+            let brake_gain = input.brake_gain.unwrap_or(self.brake_gain);
+            let cmd = self.path_follower.follow(
+                path,
+                self.last_pos,
+                state.velocity,
+                last_cmd.norm(),
+                brake_gain,
+            );
+            self.target_velocity_global = cmd.velocity;
+            hard_brake = cmd.hard_brake;
         } else {
             self.target_velocity_global = Vector2::zeros();
             player_context.debug_remove("control.target");
@@ -344,14 +357,20 @@ impl PlayerController {
         // First-order asymmetric acceleration clamp toward the desired velocity
         // (accel when speeding up, decel when slowing). This is the only output
         // smoothing — no jerk stage. ORCA may step the command in an emergency;
-        // that's intentional and rare.
+        // that's intentional and rare. The terminal active-braking maneuver
+        // (`hard_brake`) bypasses the clamp so the reverse command lands in one
+        // tick and the firmware reverse-thrusts to a crisp stop.
         let desired = self.target_velocity_global;
-        let a = if desired.norm() >= last_cmd.norm() {
-            self.max_accel
+        let mut new_cmd = if hard_brake {
+            desired
         } else {
-            self.max_decel
+            let a = if desired.norm() >= last_cmd.norm() {
+                self.max_accel
+            } else {
+                self.max_decel
+            };
+            last_cmd + cap_vec(desired - last_cmd, a * dt.max(1.0e-3))
         };
-        let mut new_cmd = last_cmd + cap_vec(desired - last_cmd, a * dt.max(1.0e-3));
         if desired.norm() < 1.0 && new_cmd.norm() < 1.0 {
             new_cmd = Vector2::zeros();
         }
@@ -384,23 +403,23 @@ impl PlayerController {
             );
             self.w = head_u;
         } else {
-            if self.target_velocity_global.norm() > 1000.0 {
-                // Face the direction of movement (or inveser if thats closer - we just want to be moving along the forward body axis) when moving faster and have no other heading SP
-                let current_yaw = self.last_yaw;
-                let velocity_heading = Angle::from_vector(self.target_velocity_global);
-                let inverse_velocity_heading =
-                    Angle::from_vector(self.target_velocity_global) + Angle::from_degrees(180.0);
-                if (current_yaw - inverse_velocity_heading).abs()
-                    < (current_yaw - velocity_heading).abs()
-                {
-                    self.target_z = inverse_velocity_heading.radians();
-                } else {
-                    self.target_z = velocity_heading.radians();
-                }
-            } else {
-                self.target_z = f64::NAN;
-                self.w = 0.0;
-            }
+            // if self.target_velocity_global.norm() > 1000.0 {
+            //     // Face the direction of movement (or inveser if thats closer - we just want to be moving along the forward body axis) when moving faster and have no other heading SP
+            //     let current_yaw = self.last_yaw;
+            //     let velocity_heading = Angle::from_vector(self.target_velocity_global);
+            //     let inverse_velocity_heading =
+            //         Angle::from_vector(self.target_velocity_global) + Angle::from_degrees(180.0);
+            //     if (current_yaw - inverse_velocity_heading).abs()
+            //         < (current_yaw - velocity_heading).abs()
+            //     {
+            //         self.target_z = inverse_velocity_heading.radians();
+            //     } else {
+            //         self.target_z = velocity_heading.radians();
+            //     }
+            // } else {
+            self.target_z = f64::NAN;
+            self.w = 0.0;
+            // }
         }
 
         // Ramp up yaw rate with proprtional control

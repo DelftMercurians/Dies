@@ -34,6 +34,15 @@ pub struct ControllerSettings {
     /// remaining distance` into corners and the goal. Over-damped (no overshoot);
     /// lower = gentler/earlier braking, higher = later/snappier.
     pub approach_kp: f64,
+    /// Active-braking gain for the terminal approach. When the robot is
+    /// overspeeding relative to the proportional arrival profile, the commanded
+    /// velocity is pushed *below* the profile (and may reverse) by `brake_gain ×
+    /// overspeed`, and the acceleration slew clamp is bypassed so the firmware
+    /// reverse-thrusts to a hard stop. `0` = disabled (gentle proportional only);
+    /// `1` roughly mirrors the overspeed into a reverse command. Per-robot
+    /// overridable via `PlayerControlInput::brake_gain`.
+    #[serde(default)]
+    pub brake_gain: f64,
 
     // --- Pure-pursuit path following.
     /// Minimum pure-pursuit lookahead distance (mm), used at low speed.
@@ -63,6 +72,7 @@ impl Default for ControllerSettings {
             max_velocity: 3000.0,
             lateral_acceleration: 4000.0,
             approach_kp: 4.0,
+            brake_gain: 0.0,
             lookahead_min: 200.0,
             lookahead_time: 0.2,
             max_angular_velocity: 25.132741228718345, // 8π rad/s

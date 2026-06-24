@@ -23,10 +23,12 @@ const HardwareReadout: FC<{
   id: number;
   team: TeamColor;
   feedback?: PlayerFeedbackMsg;
-  /** Ball-in-dribbler from the world stream (works in sim + live). */
+  /** Raw hardware breakbeam (ball-in-dribbler) from the world stream. */
   breakbeamBall?: boolean;
+  /** Unified possession signal (`has_ball`) — true iff this player is the owner. */
+  hasBall?: boolean;
   className?: string;
-}> = ({ id, team, feedback, breakbeamBall, className }) => {
+}> = ({ id, team, feedback, breakbeamBall, hasBall, className }) => {
   const sensorError = feedback?.breakbeam_sensor_ok === false;
   return (
     <div className={cn("flex flex-col gap-2 text-sm", className)}>
@@ -39,6 +41,7 @@ const HardwareReadout: FC<{
         </Badge>
         <div className="ml-auto flex items-center gap-3">
           <BreakbeamBall detected={!!breakbeamBall} sensorError={sensorError} />
+          <PossessionBall hasBall={!!hasBall} />
           <StatusDot status={feedback?.primary_status} label="Status" />
         </div>
       </div>
@@ -154,17 +157,24 @@ const HardwareReadout: FC<{
 
 export default HardwareReadout;
 
-/** Orange ball indicator for the breakbeam (ball-in-dribbler) flag. */
+/** Orange ball indicator for the raw hardware breakbeam (ball-in-dribbler). */
 const BreakbeamBall: FC<{ detected: boolean; sensorError?: boolean }> = ({
   detected,
   sensorError,
 }) => (
   <SimpleTooltip
     title={
-      sensorError ? "Breakbeam sensor error" : detected ? "Ball" : "No ball"
+      sensorError
+        ? "Breakbeam sensor error"
+        : detected
+        ? "Breakbeam: ball detected"
+        : "Breakbeam: no ball"
     }
   >
-    <span className="flex items-center">
+    <span className="flex items-center gap-1">
+      <span className="text-[9px] uppercase tracking-wider text-text-dim">
+        BB
+      </span>
       <span
         className={cn(
           "w-4 h-4 rounded-full border",
@@ -177,6 +187,34 @@ const BreakbeamBall: FC<{ detected: boolean; sensorError?: boolean }> = ({
                 border: "none",
                 background:
                   "radial-gradient(circle at 35% 30%, #ffb066, #ff7a00)",
+              }
+            : undefined
+        }
+      />
+    </span>
+  </SimpleTooltip>
+);
+
+/** Green ball indicator for the unified possession signal (`has_ball`). */
+const PossessionBall: FC<{ hasBall: boolean }> = ({ hasBall }) => (
+  <SimpleTooltip
+    title={hasBall ? "Possession: has ball" : "Possession: no ball"}
+  >
+    <span className="flex items-center gap-1">
+      <span className="text-[9px] uppercase tracking-wider text-text-dim">
+        POS
+      </span>
+      <span
+        className={cn(
+          "w-4 h-4 rounded-full border",
+          hasBall ? "border-none" : "border-border-muted bg-transparent",
+        )}
+        style={
+          hasBall
+            ? {
+                border: "none",
+                background:
+                  "radial-gradient(circle at 35% 30%, #6ee7a8, #16a34a)",
               }
             : undefined
         }

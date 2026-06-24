@@ -113,6 +113,10 @@ const fieldConfig: FieldConfig = {
       min: 0, max: 20, step: 0.1, unit: "1/s",
       help: "Arrival gain: commanded speed eases off as kp × remaining distance into corners and the goal. Lower = gentler/earlier braking; higher = later/snappier stops (risk overshoot).",
     },
+    brake_gain: {
+      min: 0, max: 5, step: 0.1,
+      help: "Terminal active braking. When overspeeding into the goal, the command is pushed below the arrival profile (and may reverse) by gain × overspeed, bypassing the accel clamp so the firmware reverse-thrusts to a crisp stop. 0 = off (gentle proportional only); ~1 mirrors overspeed into a reverse command; higher = more aggressive (risk of over-braking/jerk).",
+    },
     lookahead_min: {
       min: 0, max: 1000, step: 10, unit: "mm",
       help: "Minimum pure-pursuit lookahead, used at low speed. Higher = smoother but cuts corners; lower = tighter path tracking but can wobble.",

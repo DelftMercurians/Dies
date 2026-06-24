@@ -328,6 +328,16 @@ export interface ControllerSettings {
 	 * lower = gentler/earlier braking, higher = later/snappier.
 	 */
 	approach_kp: number;
+	/**
+	 * Active-braking gain for the terminal approach. When the robot is
+	 * overspeeding relative to the proportional arrival profile, the commanded
+	 * velocity is pushed *below* the profile (and may reverse) by `brake_gain ×
+	 * overspeed`, and the acceleration slew clamp is bypassed so the firmware
+	 * reverse-thrusts to a hard stop. `0` = disabled (gentle proportional only);
+	 * `1` roughly mirrors the overspeed into a reverse command. Per-robot
+	 * overridable via `PlayerControlInput::brake_gain`.
+	 */
+	brake_gain?: number;
 	/** Minimum pure-pursuit lookahead distance (mm), used at low speed. */
 	lookahead_min: number;
 	/** Pure-pursuit lookahead time (s): lookahead = clamp(time·speed, min, max). */

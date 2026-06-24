@@ -520,6 +520,8 @@ impl WorldTracker {
                 ball.as_ref(),
                 &blue_players,
                 &yellow_players,
+                self.blue_team.controlled,
+                self.yellow_team.controlled,
                 &self.possession_config,
                 now,
             );

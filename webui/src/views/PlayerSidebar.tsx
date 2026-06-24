@@ -218,6 +218,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
           team={primaryTeam}
           feedback={feedback}
           breakbeamBall={selectedPlayer?.breakbeam_ball_detected}
+          hasBall={selectedPlayer?.has_ball}
         />
 
         {/* Target velocity crosshair */}

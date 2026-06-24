@@ -5,6 +5,7 @@
     "max_velocity": 3500.0,
     "lateral_acceleration": 1500.0,
     "approach_kp": 2.6,
+    "brake_gain": 0.0,
     "lookahead_min": 200.0,
     "lookahead_time": 0.2,
     "max_angular_velocity": 25.132741228718345,
@@ -32,7 +33,7 @@
   },
   "team_configuration": {
     "blue_active": true,
-    "yellow_active": true,
+    "yellow_active": false,
     "side_assignment": "YellowOnPositive",
     "blue_strategy": "concerto",
     "yellow_strategy": "concerto"
@@ -61,7 +62,7 @@
     "release_suppress_secs": 0.2
   },
   "allow_no_vision": false,
-  "goal_area_avoidance": true,
+  "goal_area_avoidance": false,
   "avoidance": {
     "robot_clearance": 0.0,
     "wall_margin": 0.0,

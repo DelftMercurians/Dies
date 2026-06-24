@@ -1364,6 +1364,21 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
         let f = unsafe {
             NativeFunction::from_closure(move |_this, args, ctx| {
                 let opts = args.first().cloned().unwrap_or(JsValue::undefined());
+                let heading = get_num(&opts, "heading", ctx)?;
+                let cmd = SkillCommand::DribbleShoot {
+                    target_heading: Angle::from_radians(heading),
+                };
+                register_skill_and_await(state.clone(), id, cmd, "dribbleShoot", ctx)
+            })
+        };
+        init.function(f, js_string!("dribbleShoot"), 1);
+    }
+
+    {
+        let state = state.clone();
+        let f = unsafe {
+            NativeFunction::from_closure(move |_this, args, ctx| {
+                let opts = args.first().cloned().unwrap_or(JsValue::undefined());
                 let from_val = get_obj_opt(&opts, "from", ctx)?
                     .ok_or_else(|| JsNativeError::typ().with_message("receive: from required"))?;
                 let fx = get_num(&from_val, "x", ctx)?;

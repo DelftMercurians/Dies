@@ -143,6 +143,9 @@ pub struct PlayerControlInput {
     pub control_paramer_override: Option<ControlParameters>,
 
     pub aggressiveness: f64,
+    /// Per-robot override for the terminal active-braking gain
+    /// (`ControllerSettings::brake_gain`). `None` = use the global default.
+    pub brake_gain: Option<f64>,
     pub acceleration_limit: Option<f64>,
     pub speed_limit: Option<f64>,
     pub angular_acceleration_limit: Option<f64>,
@@ -172,6 +175,7 @@ impl Default for PlayerControlInput {
             kicker: KickerControlInput::default(),
             care: 0.0,
             aggressiveness: 0.0,
+            brake_gain: None,
             acceleration_limit: None,
             speed_limit: None,
             angular_acceleration_limit: None,
@@ -222,6 +226,12 @@ impl PlayerControlInput {
     /// Set the kicker control input.
     pub fn with_kicker(&mut self, kicker: KickerControlInput) -> &mut Self {
         self.kicker = kicker;
+        self
+    }
+
+    /// Override the terminal active-braking gain for this robot.
+    pub fn with_brake_gain(&mut self, gain: f64) -> &mut Self {
+        self.brake_gain = Some(gain);
         self
     }
 

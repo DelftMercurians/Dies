@@ -30,6 +30,25 @@ pub struct PathFollower {
     lookahead_time: f64,
 }
 
+/// Output of the path follower: the preferred velocity plus a flag requesting
+/// the caller bypass its acceleration slew clamp. `hard_brake` is set only during
+/// the terminal active-braking maneuver, where the command may jump (or reverse)
+/// in one tick so the firmware reverse-thrusts to a crisp stop.
+#[derive(Debug, Clone, Copy)]
+pub struct FollowCmd {
+    pub velocity: Vector2,
+    pub hard_brake: bool,
+}
+
+impl FollowCmd {
+    fn cruise(velocity: Vector2) -> Self {
+        Self {
+            velocity,
+            hard_brake: false,
+        }
+    }
+}
+
 impl PathFollower {
     pub fn new(s: &ControllerSettings) -> Self {
         let mut f = Self {
@@ -53,18 +72,27 @@ impl PathFollower {
 
     /// Preferred path-following velocity \[mm/s\]: pure-pursuit direction × a
     /// speed envelope. A pure target — the caller applies acceleration limiting.
-    /// `speed` is the robot's current command speed, used to scale the lookahead.
-    pub fn follow(&self, path: &[Vector2], pos: Vector2, speed: f64) -> Vector2 {
+    /// `speed` is the robot's current command speed, used to scale the lookahead;
+    /// `velocity` is the robot's measured velocity, used by terminal active
+    /// braking; `brake_gain` is the effective active-braking gain for this robot.
+    pub fn follow(
+        &self,
+        path: &[Vector2],
+        pos: Vector2,
+        velocity: Vector2,
+        speed: f64,
+        brake_gain: f64,
+    ) -> FollowCmd {
         match path.len() {
-            0 => return Vector2::zeros(),
-            1 => return self.seek_point(path[0], pos),
+            0 => return FollowCmd::cruise(Vector2::zeros()),
+            1 => return self.seek_point(path[0], pos, velocity, brake_gain),
             _ => {}
         }
 
         let (seg, foot) = project_onto_path(pos, path);
         let s_goal = arc_to_goal(foot, seg, path);
         if s_goal < ARRIVE_DEADBAND {
-            return Vector2::zeros();
+            return FollowCmd::cruise(Vector2::zeros());
         }
 
         // Final approach: once close to the goal, seek it directly. Pure pursuit
@@ -72,7 +100,7 @@ impl PathFollower {
         // straight proportional approach that converges cleanly.
         let goal = path[path.len() - 1];
         if s_goal < self.lookahead_min {
-            return self.seek_point(goal, pos);
+            return self.seek_point(goal, pos, velocity, brake_gain);
         }
 
         // Pure-pursuit steering direction.
@@ -83,19 +111,43 @@ impl PathFollower {
             .or_else(|| (goal - pos).try_normalize(1.0e-6))
             .unwrap_or_else(Vector2::zeros);
 
-        dir * self.speed_envelope(foot, seg, path, s_goal)
+        FollowCmd::cruise(dir * self.speed_envelope(foot, seg, path, s_goal))
     }
 
     /// Straight proportional approach to a point: velocity ∝ distance (capped at
-    /// cruise), which is over-damped and converges without overshoot — no orbit.
-    fn seek_point(&self, target: Vector2, pos: Vector2) -> Vector2 {
+    /// cruise), over-damped so it converges without overshoot.
+    ///
+    /// Active braking: if the robot is overspeeding relative to that proportional
+    /// profile, push the commanded speed *below* the profile by `brake_gain ×
+    /// overspeed` (allowed to go negative → reverse) and flag `hard_brake` so the
+    /// caller bypasses its slew clamp and the firmware reverse-thrusts to a crisp
+    /// stop. As speed bleeds off, overspeed → 0 and it eases back into the plain
+    /// proportional settle. `brake_gain = 0` disables this entirely.
+    fn seek_point(
+        &self,
+        target: Vector2,
+        pos: Vector2,
+        velocity: Vector2,
+        brake_gain: f64,
+    ) -> FollowCmd {
         let to = target - pos;
         let dist = to.norm();
         if dist < ARRIVE_DEADBAND {
-            return Vector2::zeros();
+            return FollowCmd::cruise(Vector2::zeros());
         }
-        let v = self.v_max.min(self.approach_kp * dist);
-        to / dist * v
+        let dir = to / dist;
+        let v_profile = self.v_max.min(self.approach_kp * dist);
+
+        let overspeed = velocity.dot(&dir) - v_profile;
+        if brake_gain > 0.0 && overspeed > 0.0 {
+            let mag = (v_profile - brake_gain * overspeed).max(-self.v_max);
+            return FollowCmd {
+                velocity: dir * mag,
+                hard_brake: true,
+            };
+        }
+
+        FollowCmd::cruise(dir * v_profile)
     }
 
     /// Speed cap at the current position: the min of cruise, the proportional
@@ -204,15 +256,21 @@ mod tests {
         PathFollower::new(&s)
     }
 
+    // Convenience: follow with zero measured velocity and braking disabled — the
+    // pre-active-braking behaviour, for the path-shape assertions.
+    fn vel(f: &PathFollower, path: &[Vector2], pos: Vector2, speed: f64) -> Vector2 {
+        f.follow(path, pos, Vector2::zeros(), speed, 0.0).velocity
+    }
+
     #[test]
     fn cruises_on_a_straight_then_brakes_to_goal() {
         let f = follower();
         let path = [Vector2::new(0.0, 0.0), Vector2::new(5000.0, 0.0)];
         // Far from goal at cruise speed → full speed, +x.
-        let v = f.follow(&path, Vector2::new(1000.0, 0.0), 3000.0);
+        let v = vel(&f, &path, Vector2::new(1000.0, 0.0), 3000.0);
         assert!(v.x > 2500.0 && v.y.abs() < 1.0, "got {:?}", v);
         // Near goal → braking envelope reduces speed.
-        let v_near = f.follow(&path, Vector2::new(4950.0, 0.0), 3000.0);
+        let v_near = vel(&f, &path, Vector2::new(4950.0, 0.0), 3000.0);
         assert!(v_near.x < v.x, "should brake near goal: {:?}", v_near);
     }
 
@@ -220,7 +278,7 @@ mod tests {
     fn stops_within_deadband() {
         let f = follower();
         let path = [Vector2::new(0.0, 0.0), Vector2::new(1000.0, 0.0)];
-        let v = f.follow(&path, Vector2::new(995.0, 0.0), 1000.0);
+        let v = vel(&f, &path, Vector2::new(995.0, 0.0), 1000.0);
         assert!(v.norm() < 1.0e-6, "should stop at goal: {:?}", v);
     }
 
@@ -233,8 +291,8 @@ mod tests {
             Vector2::new(2000.0, 0.0),
             Vector2::new(2000.0, 2000.0),
         ];
-        let near_corner = f.follow(&path, Vector2::new(1950.0, 0.0), 3000.0);
-        let on_straight = f.follow(&path, Vector2::new(200.0, 0.0), 3000.0);
+        let near_corner = vel(&f, &path, Vector2::new(1950.0, 0.0), 3000.0);
+        let on_straight = vel(&f, &path, Vector2::new(200.0, 0.0), 3000.0);
         assert!(
             near_corner.norm() < on_straight.norm(),
             "should slow into the corner: near={:?} straight={:?}",
@@ -249,7 +307,45 @@ mod tests {
         let f = follower();
         let path = [Vector2::new(0.0, 0.0), Vector2::new(4000.0, 0.0)];
         // Off the path in +y; velocity should have a -y component to converge.
-        let v = f.follow(&path, Vector2::new(1000.0, 400.0), 2000.0);
+        let v = vel(&f, &path, Vector2::new(1000.0, 400.0), 2000.0);
         assert!(v.y < 0.0, "should steer back toward the path: {:?}", v);
+    }
+
+    #[test]
+    fn active_braking_reverses_when_overspeeding_into_goal() {
+        let f = follower();
+        let path = [Vector2::new(0.0, 0.0), Vector2::new(1000.0, 0.0)];
+        // Near the goal (within proportional range) but barreling in at full tilt.
+        let pos = Vector2::new(950.0, 0.0);
+        let fast = Vector2::new(3000.0, 0.0);
+        // gain 0 → plain proportional, forward, no clamp bypass.
+        let gentle = f.follow(&path, pos, fast, 3000.0, 0.0);
+        assert!(
+            gentle.velocity.x > 0.0 && !gentle.hard_brake,
+            "{:?}",
+            gentle
+        );
+        // gain 1 → command reverses (−x) and requests the slew-clamp bypass.
+        let brake = f.follow(&path, pos, fast, 3000.0, 1.0);
+        assert!(
+            brake.velocity.x < 0.0 && brake.hard_brake,
+            "should reverse-thrust: {:?}",
+            brake
+        );
+    }
+
+    #[test]
+    fn no_active_braking_when_below_profile() {
+        let f = follower();
+        let path = [Vector2::new(0.0, 0.0), Vector2::new(1000.0, 0.0)];
+        // Near goal but already slow → no overspeed, plain proportional.
+        let cmd = f.follow(
+            &path,
+            Vector2::new(950.0, 0.0),
+            Vector2::new(50.0, 0.0),
+            50.0,
+            1.0,
+        );
+        assert!(cmd.velocity.x > 0.0 && !cmd.hard_brake, "{:?}", cmd);
     }
 }

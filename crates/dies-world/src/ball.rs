@@ -1,10 +1,8 @@
-use dies_core::{
-    debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector2, Vector3,
-};
+use dies_core::{debug_value, BallData, FieldGeometry, FieldMask, TrackerSettings, Vector3};
 use dies_protos::ssl_vision_detection::SSL_DetectionFrame;
 use nalgebra::{SVector, Vector6};
 
-use crate::{ball, filter::MaybeKalman};
+use crate::filter::MaybeKalman;
 
 /// Stored data for the ball from the last update.
 ///
@@ -25,15 +23,19 @@ pub struct BallTracker {
     /// Kalman filter for the ball's position and velocity
     filter: MaybeKalman<3, 6>,
 
-    /// Result of the last vision update
+    /// Last reported ball state. **Sticky**: once the ball has been seen it is
+    /// never cleared, only overwritten by a newer accepted measurement. This is
+    /// what `get()` reports, so we never stop emitting a ball position just
+    /// because vision lost sight of it (e.g. a robot covering the ball). The
+    /// `detected` flag on the returned `BallData` carries freshness instead.
     last_detection: Option<StoredData>,
 
-    /// Consecutive frames without an accepted measurement. Used both for the
-    /// `detected` flag and to decay a stale track (see `update`).
+    /// Consecutive frames without an accepted measurement. Drives the `detected`
+    /// freshness flag and triggers a filter re-acquisition after a long dropout.
     misses: u32,
 
-    /// Filter variances, kept so the filter can be rebuilt when a stale track is
-    /// dropped (`MaybeKalman::init` is a no-op once initialized).
+    /// Filter variances, kept so the filter can be rebuilt when the active track
+    /// is reset (`MaybeKalman::init` is a no-op once initialized).
     init_var: f64,
     transition_var: f64,
     measurement_var: f64,
@@ -72,16 +74,20 @@ impl BallTracker {
         }
     }
 
-    /// Drop the current track and reset the filter, so the next confident
-    /// detection re-initializes cleanly instead of being gated against a stale
-    /// position.
-    fn drop_track(&mut self) {
-        self.last_detection = None;
+    /// Reset the Kalman filter so the next confident detection re-initializes it
+    /// cleanly, anywhere on the field, instead of being gated against a stale
+    /// position. The reported position (`last_detection`) is **kept** — only the
+    /// active filter track is dropped — and its velocity is zeroed since we no
+    /// longer have evidence the ball is moving.
+    fn reset_filter(&mut self) {
         self.filter = MaybeKalman::new(self.init_var, self.transition_var, self.measurement_var);
+        if let Some(data) = self.last_detection.as_mut() {
+            data.velocity = Vector3::zeros();
+        }
     }
 
-    /// Whether the tracker has been initialized (i.e. the ball has been detected at
-    /// least twice)
+    /// Whether the ball has been seen at least once. Sticky: stays true after the
+    /// first sighting (see `last_detection`).
     pub fn is_init(&self) -> bool {
         self.last_detection.is_some()
     }
@@ -120,21 +126,31 @@ impl BallTracker {
 
         let current_time = frame.t_capture();
 
+        // Gate against the *active filter track* (not the sticky reported
+        // position): with a live track we trust nearby measurements; once the
+        // track has been reset after a long dropout there is no reference and we
+        // re-acquire freely.
+        let gate_ref = if self.filter.is_init() {
+            self.last_detection.as_ref().map(|d| d.position)
+        } else {
+            None
+        };
+
         // Pick the measurement to feed the filter:
-        //  - with an existing track: the one nearest the current estimate, but
+        //  - with an active track: the one nearest the current estimate, but
         //    only if it's within the gate radius (rejects a far-away blob from
         //    yanking the track);
         //  - without a track: the highest-confidence candidate (preferred), so a
         //    real ball wins over a low-confidence phantom at acquisition.
         const GATE_RADIUS: f64 = 500.0; // mm
-        let accepted = match self.last_detection.as_ref() {
+        let accepted = match gate_ref {
             Some(prev) => ball_measurements
                 .iter()
                 .map(|(pos, _)| *pos)
-                .filter(|pos| (pos - prev.position).norm() < GATE_RADIUS)
+                .filter(|pos| (pos - prev).norm() < GATE_RADIUS)
                 .min_by(|a, b| {
-                    let da = (a - prev.position).norm();
-                    let db = (b - prev.position).norm();
+                    let da = (a - prev).norm();
+                    let db = (b - prev).norm();
                     da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                 }),
             None => {
@@ -149,19 +165,19 @@ impl BallTracker {
             None => {
                 // No usable measurement this frame.
                 self.misses += 1;
-                // Decay: once a track has been stale for too long, drop it so the
-                // filter doesn't stay frozen on an old position and can re-acquire
-                // the ball wherever it next appears.
-                const DROP_AFTER_MISSES: u32 = 30; // ~0.5s at 60Hz
-                if self.misses > DROP_AFTER_MISSES {
-                    self.drop_track();
+                // After a long dropout, reset the *filter* so it can re-acquire
+                // the ball wherever it next appears. The reported position is kept
+                // (we never stop emitting a ball position) and just goes stale.
+                const RESET_FILTER_AFTER_MISSES: u32 = 30; // ~0.5s at 60Hz
+                if self.misses == RESET_FILTER_AFTER_MISSES + 1 {
+                    self.reset_filter();
                 }
                 return;
             }
         };
         self.misses = 0;
 
-        if self.last_detection.is_none() {
+        if !self.filter.is_init() {
             self.last_detection = Some(StoredData {
                 timestamp: current_time,
                 position: pos,

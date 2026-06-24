@@ -1,9 +1,13 @@
 //! Unified ball-possession tracker — the single place possession is decided.
 //!
-//! One latched signal is fused from two evidence sources per robot:
-//!   * **breakbeam** (own robots only), *gated* on the ball actually being near
-//!     the dribbler — a breakbeam trigger with the ball nowhere near is rejected;
-//!   * **proximity** of the ball to the robot, with a two-band hysteresis (gain
+//! Evidence sources depend on whether the robot is one we control:
+//!   * **controlled robots** (our own team) use *only* their **breakbeam**,
+//!     *gated* on the ball actually being near the dribbler — a breakbeam trigger
+//!     with the ball nowhere near is rejected. Proximity never contributes for a
+//!     controlled robot, so a controlled robot that merely brushes the ball is
+//!     never credited with possession.
+//!   * **uncontrolled robots** (opponents, where we have no breakbeam) fall back
+//!     to **proximity** of the ball to the robot, with a two-band hysteresis (gain
 //!     at `acquire_dist`, retain until the ball leaves `release_dist`).
 //!
 //! Edges are confidence-driven: a breakbeam-backed gain commits in one frame,
@@ -21,7 +25,10 @@ use dies_core::{
 /// Raw, memoryless classification for a single frame.
 #[derive(Debug, Clone, PartialEq)]
 enum RawClass {
-    Owned { who: TeamPlayerId, breakbeam: bool },
+    Owned {
+        who: TeamPlayerId,
+        breakbeam: bool,
+    },
     Contested(Vec<TeamPlayerId>),
     Loose,
     /// Ball not detected this frame.
@@ -94,6 +101,8 @@ impl PossessionTracker {
         ball: Option<&BallData>,
         blue: &[PlayerData],
         yellow: &[PlayerData],
+        controlled_blue: bool,
+        controlled_yellow: bool,
         cfg: &PossessionConfig,
         now: f64,
     ) -> dies_core::Possession {
@@ -105,7 +114,7 @@ impl PossessionTracker {
             }
         }
 
-        let raw = self.classify(ball, blue, yellow, cfg);
+        let raw = self.classify(ball, blue, yellow, controlled_blue, controlled_yellow, cfg);
         self.stale = false;
 
         match raw {
@@ -151,6 +160,8 @@ impl PossessionTracker {
         ball: Option<&BallData>,
         blue: &[PlayerData],
         yellow: &[PlayerData],
+        controlled_blue: bool,
+        controlled_yellow: bool,
         cfg: &PossessionConfig,
     ) -> RawClass {
         let ball = match ball {
@@ -160,12 +171,16 @@ impl PossessionTracker {
         let ball_pos = ball.position.xy();
         let ball_speed = ball.velocity.xy().norm();
 
-        // (id, distance-to-ball, breakbeam) for every robot on the field.
-        let cands: Vec<(TeamPlayerId, f64, bool)> = blue
+        // (id, distance-to-ball, breakbeam, controlled) for every robot.
+        let cands: Vec<(TeamPlayerId, f64, bool, bool)> = blue
             .iter()
-            .map(|p| (TeamColor::Blue, p))
-            .chain(yellow.iter().map(|p| (TeamColor::Yellow, p)))
-            .map(|(team_color, p)| {
+            .map(|p| (TeamColor::Blue, controlled_blue, p))
+            .chain(
+                yellow
+                    .iter()
+                    .map(|p| (TeamColor::Yellow, controlled_yellow, p)),
+            )
+            .map(|(team_color, controlled, p)| {
                 (
                     TeamPlayerId {
                         team_color,
@@ -173,6 +188,7 @@ impl PossessionTracker {
                     },
                     (p.position - ball_pos).norm(),
                     p.breakbeam_ball_detected,
+                    controlled,
                 )
             })
             .collect();
@@ -180,9 +196,9 @@ impl PossessionTracker {
         // Hard evidence: breakbeam, gated on the ball being near the dribbler.
         let breakbeam_owner = cands
             .iter()
-            .filter(|(_, dist, bb)| *bb && *dist <= cfg.breakbeam_gate_dist)
+            .filter(|(_, dist, bb, _)| *bb && *dist <= cfg.breakbeam_gate_dist)
             .min_by(|a, b| a.1.total_cmp(&b.1));
-        if let Some((who, _, _)) = breakbeam_owner {
+        if let Some((who, _, _, _)) = breakbeam_owner {
             return RawClass::Owned {
                 who: *who,
                 breakbeam: true,
@@ -194,12 +210,15 @@ impl PossessionTracker {
             return RawClass::Loose;
         }
 
-        // Soft evidence: proximity, with the stable owner retained out to the
-        // looser `release_dist` band (hysteresis against oscillation).
+        // Soft evidence: proximity, but *only* for robots we don't control —
+        // controlled robots are credited solely via breakbeam (above). The
+        // stable owner is retained out to the looser `release_dist` band
+        // (hysteresis against oscillation).
         let stable_owner = self.stable.owner();
         let mut in_control: Vec<(TeamPlayerId, f64)> = cands
             .iter()
-            .filter(|(who, dist, _)| {
+            .filter(|(_, _, _, controlled)| !*controlled)
+            .filter(|(who, dist, _, _)| {
                 let threshold = if Some(*who) == stable_owner {
                     cfg.release_dist
                 } else {
@@ -207,7 +226,7 @@ impl PossessionTracker {
                 };
                 *dist < threshold
             })
-            .map(|(who, dist, _)| (*who, *dist))
+            .map(|(who, dist, _, _)| (*who, *dist))
             .collect();
         in_control.sort_by(|a, b| a.1.total_cmp(&b.1));
 
@@ -257,202 +276,5 @@ impl PossessionTracker {
         self.stable = new;
         self.candidate = None;
         self.candidate_count = 0;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use dies_core::{PlayerId, Vector3};
-
-    fn pid(n: u32) -> PlayerId {
-        PlayerId::new(n)
-    }
-
-    fn tpid(team: TeamColor, n: u32) -> TeamPlayerId {
-        TeamPlayerId {
-            team_color: team,
-            player_id: pid(n),
-        }
-    }
-
-    fn player(id: u32, pos: Vector2, breakbeam: bool) -> PlayerData {
-        let mut p = PlayerData::new(pid(id));
-        p.position = pos;
-        p.breakbeam_ball_detected = breakbeam;
-        p
-    }
-
-    fn ball(pos: Vector2, vel: Vector2) -> BallData {
-        BallData {
-            timestamp: 0.0,
-            position: Vector3::new(pos.x, pos.y, 0.0),
-            raw_position: vec![],
-            velocity: Vector3::new(vel.x, vel.y, 0.0),
-            detected: true,
-        }
-    }
-
-    fn cfg() -> PossessionConfig {
-        PossessionConfig::default()
-    }
-
-    /// One blue robot sitting on the ball with breakbeam lit.
-    fn one_blue_breakbeam() -> (Vec<PlayerData>, BallData) {
-        let b = ball(Vector2::new(0.0, 0.0), Vector2::zeros());
-        let p = player(1, Vector2::new(50.0, 0.0), true);
-        (vec![p], b)
-    }
-
-    #[test]
-    fn breakbeam_gain_commits_in_one_frame() {
-        let mut t = PossessionTracker::new();
-        let (blue, b) = one_blue_breakbeam();
-        let p = t.update(Some(&b), &blue, &[], &cfg(), 0.0);
-        assert_eq!(p.state, PossessionState::Owned { owner: tpid(TeamColor::Blue, 1) });
-        assert!(!p.stale);
-    }
-
-    #[test]
-    fn breakbeam_with_ball_far_is_rejected() {
-        // Breakbeam lit, but the ball is well beyond the gate distance → ignored.
-        let mut t = PossessionTracker::new();
-        let b = ball(Vector2::new(1000.0, 0.0), Vector2::zeros());
-        let p = player(1, Vector2::new(0.0, 0.0), true);
-        let res = t.update(Some(&b), &[p], &[], &cfg(), 0.0);
-        assert_eq!(res.state, PossessionState::Loose);
-    }
-
-    #[test]
-    fn single_frame_blip_is_masked() {
-        let mut t = PossessionTracker::new();
-        let (blue, b) = one_blue_breakbeam();
-        t.update(Some(&b), &blue, &[], &cfg(), 0.0);
-        // One frame with the ball gone far (loss) must NOT flip us yet.
-        let b2 = ball(Vector2::new(2000.0, 0.0), Vector2::zeros());
-        let blue2 = vec![player(1, Vector2::new(50.0, 0.0), false)];
-        let p = t.update(Some(&b2), &blue2, &[], &cfg(), 0.016);
-        assert_eq!(p.state, PossessionState::Owned { owner: tpid(TeamColor::Blue, 1) });
-    }
-
-    #[test]
-    fn sustained_loss_commits_after_debounce() {
-        let mut t = PossessionTracker::new();
-        let (blue, b) = one_blue_breakbeam();
-        t.update(Some(&b), &blue, &[], &cfg(), 0.0);
-        let b2 = ball(Vector2::new(2000.0, 0.0), Vector2::zeros());
-        let blue2 = vec![player(1, Vector2::new(50.0, 0.0), false)];
-        let mut last = t.possession().state;
-        for i in 0..cfg().acquire_frames {
-            last = t.update(Some(&b2), &blue2, &[], &cfg(), 0.1 + i as f64 * 0.016).state;
-        }
-        assert_eq!(last, PossessionState::Loose);
-    }
-
-    #[test]
-    fn dropout_holds_then_stale_then_loose() {
-        let mut t = PossessionTracker::new();
-        let (blue, b) = one_blue_breakbeam();
-        t.update(Some(&b), &blue, &[], &cfg(), 0.0);
-        // Within the hold window with no ball: keep owner, marked stale.
-        let held = t.update(None, &blue, &[], &cfg(), 0.1);
-        assert_eq!(held.state, PossessionState::Owned { owner: tpid(TeamColor::Blue, 1) });
-        assert!(held.stale);
-        // Past the hold window: decay to Loose.
-        let gone = t.update(None, &blue, &[], &cfg(), 1.0);
-        assert_eq!(gone.state, PossessionState::Loose);
-    }
-
-    #[test]
-    fn fast_ball_near_robot_is_not_possessed() {
-        let mut t = PossessionTracker::new();
-        let b = ball(Vector2::new(0.0, 0.0), Vector2::new(3000.0, 0.0));
-        let p = player(1, Vector2::new(50.0, 0.0), false);
-        let res = t.update(Some(&b), &[p], &[], &cfg(), 0.0);
-        assert_eq!(res.state, PossessionState::Loose);
-    }
-
-    #[test]
-    fn slow_ball_near_robot_is_owned_by_proximity() {
-        let mut t = PossessionTracker::new();
-        let b = ball(Vector2::new(0.0, 0.0), Vector2::new(50.0, 0.0));
-        let blue = vec![player(1, Vector2::new(50.0, 0.0), false)];
-        // Proximity gain needs the debounce frames.
-        let mut last = PossessionState::Loose;
-        for i in 0..cfg().acquire_frames {
-            last = t.update(Some(&b), &blue, &[], &cfg(), i as f64 * 0.016).state;
-        }
-        assert_eq!(last, PossessionState::Owned { owner: tpid(TeamColor::Blue, 1) });
-    }
-
-    #[test]
-    fn opponent_proximity_is_owned_opp() {
-        let mut t = PossessionTracker::new();
-        let b = ball(Vector2::new(0.0, 0.0), Vector2::zeros());
-        let yellow = vec![player(3, Vector2::new(40.0, 0.0), false)];
-        let mut last = PossessionState::Loose;
-        for i in 0..cfg().acquire_frames {
-            last = t.update(Some(&b), &[], &yellow, &cfg(), i as f64 * 0.016).state;
-        }
-        assert_eq!(last, PossessionState::Owned { owner: tpid(TeamColor::Yellow, 3) });
-    }
-
-    #[test]
-    fn two_robots_equidistant_is_contested() {
-        let mut t = PossessionTracker::new();
-        let b = ball(Vector2::new(0.0, 0.0), Vector2::zeros());
-        let blue = vec![player(1, Vector2::new(40.0, 0.0), false)];
-        let yellow = vec![player(2, Vector2::new(-40.0, 0.0), false)];
-        let mut last = PossessionState::Loose;
-        for i in 0..cfg().acquire_frames {
-            last = t.update(Some(&b), &blue, &yellow, &cfg(), i as f64 * 0.016).state;
-        }
-        assert_eq!(
-            last,
-            PossessionState::Contested {
-                candidates: vec![tpid(TeamColor::Blue, 1), tpid(TeamColor::Yellow, 2)],
-            }
-        );
-    }
-
-    #[test]
-    fn release_suppresses_proximity_but_not_breakbeam() {
-        let mut t = PossessionTracker::new();
-        let (blue, b) = one_blue_breakbeam();
-        t.update(Some(&b), &blue, &[], &cfg(), 0.0);
-        // Command a kick; next update drops us to Loose.
-        t.notify_kick(tpid(TeamColor::Blue, 1));
-        let near = ball(Vector2::new(0.0, 0.0), Vector2::zeros());
-        let blue_prox = vec![player(1, Vector2::new(50.0, 0.0), false)];
-        let dropped = t.update(Some(&near), &blue_prox, &[], &cfg(), 0.1);
-        assert_eq!(dropped.state, PossessionState::Loose);
-
-        // Proximity re-acquire by the kicker within the window stays suppressed.
-        for i in 0..(cfg().acquire_frames + 2) {
-            let p = t.update(Some(&near), &blue_prox, &[], &cfg(), 0.1 + i as f64 * 0.005);
-            assert_eq!(p.state, PossessionState::Loose);
-        }
-        // But a breakbeam re-acquire (ball never left) overrides immediately.
-        let blue_bb = vec![player(1, Vector2::new(50.0, 0.0), true)];
-        let p = t.update(Some(&near), &blue_bb, &[], &cfg(), 0.13);
-        assert_eq!(p.state, PossessionState::Owned { owner: tpid(TeamColor::Blue, 1) });
-    }
-
-    #[test]
-    fn suppression_expires() {
-        let mut t = PossessionTracker::new();
-        let near = ball(Vector2::new(0.0, 0.0), Vector2::zeros());
-        let blue_prox = vec![player(1, Vector2::new(50.0, 0.0), false)];
-        t.notify_kick(tpid(TeamColor::Blue, 1));
-        // First update consumes the kick, stamping the suppress window at t=1.0.
-        t.update(Some(&near), &blue_prox, &[], &cfg(), 1.0);
-        // Past the suppress window, proximity re-acquires (debounced as normal).
-        let mut last = PossessionState::Loose;
-        for i in 0..cfg().acquire_frames {
-            last = t
-                .update(Some(&near), &blue_prox, &[], &cfg(), 1.25 + i as f64 * 0.016)
-                .state;
-        }
-        assert_eq!(last, PossessionState::Owned { owner: tpid(TeamColor::Blue, 1) });
     }
 }

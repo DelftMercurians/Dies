@@ -31,6 +31,11 @@ impl<const OS: usize, const SS: usize> MaybeKalman<OS, SS> {
             _ => None,
         }
     }
+
+    /// Whether the filter currently holds an active track.
+    pub fn is_init(&self) -> bool {
+        matches!(self, MaybeKalman::Init(_))
+    }
 }
 
 /// OS: Observation Space, SS: State Space
