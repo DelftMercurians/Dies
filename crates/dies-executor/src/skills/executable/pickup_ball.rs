@@ -1,51 +1,38 @@
-//! PickupBall skill - approach and capture the ball.
-//!
-//! This is a discrete skill that approaches the ball from behind and
-//! captures it using the dribbler.
-
-use std::fmt::format;
-use std::time::{Duration, Instant};
-
-use dies_core::{Angle, Vector2, BALL_RADIUS, PLAYER_RADIUS};
+use dies_core::{Angle, Vector2};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
-use crate::control::{PlayerControlInput, Velocity};
+use crate::control::PlayerControlInput;
 
-const DRIBBLING_DISTANCE: f64 = 300.0;
-const BALL_MOVED_FAIL_DISTANCE: f64 = 100.0;
 const DRIBBLER_SPEED: f64 = 0.6;
-
-enum PickupState {
-    Approaching,
-    FinalApproach {
-        last_good_ball_pos: Vector2,
-        starting_position: Vector2,
-    },
-}
+const APPROACH_DISTANCE: f64 = 200.0;
+const COMMIT_DISTANCE: f64 = 280.0;
+const COMMIT_PERP: f64 = 30.0;
+const GATE_PERP: f64 = 80.0;
+const APPROACH_GAIN: f64 = 3.0;
+const APPROACH_MIN_SPEED: f64 = 200.0;
+const LATERAL_GAIN: f64 = 4.0;
+const APPROACH_CARE: f64 = -0.6;
+const BALL_MOVED_FAIL: f64 = 100.0;
+const DRIVEN_FAIL: f64 = 250.0;
 
 pub struct PickupBallSkill {
     target_heading: Angle,
-    skill_status: SkillStatus,
-    starting_position: Option<Vector2>,
-    breakbeam_on: Option<Instant>,
-    state: PickupState,
+    status: SkillStatus,
+    commit_pos: Option<Vector2>,
+    commit_ball: Option<Vector2>,
 }
 
 impl PickupBallSkill {
-    /// Create a new PickupBall skill.
     pub fn new(target_heading: Angle) -> Self {
         Self {
             target_heading,
-            skill_status: SkillStatus::Running,
-            starting_position: None,
-            breakbeam_on: None,
-            state: PickupState::Approaching,
+            status: SkillStatus::Running,
+            commit_pos: None,
+            commit_ball: None,
         }
     }
 
-    /// Update the post-capture heading in place (used when composed inside the
-    /// pass coordinator's `Secure` phase).
     pub fn set_target_heading(&mut self, target_heading: Angle) {
         self.target_heading = target_heading;
     }
@@ -59,108 +46,60 @@ impl ExecutableSkill for PickupBallSkill {
     fn update_params(&mut self, command: &SkillCommand) {
         if let SkillCommand::PickupBall { target_heading } = command {
             self.target_heading = *target_heading;
-            // Note: We don't reset status here - the skill continues with updated params
         }
     }
 
     fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
+        if ctx.player.has_ball {
+            self.status = SkillStatus::Succeeded;
+            return SkillProgress::success();
+        }
+
         let Some(ball) = ctx.world.ball.as_ref() else {
-            // Wait for the ball to appear
             return SkillProgress::Continue(PlayerControlInput::default());
         };
 
         let ball_pos = ball.position.xy();
-        let ball_speed = ball.velocity.xy().norm();
         let player_pos = ctx.player.position;
-        let distance = (ball_pos - player_pos).norm();
+        let dir = self.target_heading.to_vector();
 
-        // Check if breakbeam has been triggered
-        if ctx.player.has_ball {
-            self.skill_status = SkillStatus::Succeeded;
-            return SkillProgress::success();
-        }
+        let rel = player_pos - ball_pos;
+        let along = rel.dot(&dir);
+        let perp_vec = rel - dir * along;
+        let perp = perp_vec.norm();
 
         let mut input = PlayerControlInput::new();
-        match self.state {
-            PickupState::Approaching => {
-                let approach_dir = self.target_heading.to_vector();
-                let approach_pos = ball_pos - approach_dir * (PLAYER_RADIUS + BALL_RADIUS + 80.0);
-                dies_core::debug_cross(
-                    "pickup_ball_target",
-                    approach_pos,
-                    dies_core::DebugColor::Blue,
-                );
+        input.with_yaw(self.target_heading);
+        input.with_dribbling(DRIBBLER_SPEED);
 
-                input.with_position(approach_pos);
-                input.with_yaw(self.target_heading);
-                input.avoid_ball = true;
-                input.avoid_ball_care = 0.0;
+        let committed = along < 0.0 && -along < COMMIT_DISTANCE && perp < COMMIT_PERP;
+        if committed {
+            input.avoid_ball = false;
+            let gate = (1.0 - perp / GATE_PERP).clamp(0.0, 1.0);
+            let speed = (-along) * APPROACH_GAIN + APPROACH_MIN_SPEED;
+            input.add_global_velocity(dir * speed * gate - perp_vec * LATERAL_GAIN);
 
-                let to_ball_heading = Angle::from_vector(ball_pos - player_pos);
-                let cone_err = (ctx.player.yaw - to_ball_heading).abs();
-                dies_core::debug_string(
-                    "pickup_ball_state",
-                    format!(
-                        "approach: cone_err: {:.1}deg; distance: {:.1}",
-                        cone_err, distance
-                    ),
-                );
-                if cone_err < 10.0_f64.to_radians()
-                    && distance < (PLAYER_RADIUS + BALL_RADIUS + 100.0)
-                {
-                    self.state = PickupState::FinalApproach {
-                        last_good_ball_pos: ball_pos,
-                        starting_position: player_pos,
-                    };
-                }
+            let commit_ball = *self.commit_ball.get_or_insert(ball_pos);
+            let commit_pos = *self.commit_pos.get_or_insert(player_pos);
+            if (ball_pos - commit_ball).norm() > BALL_MOVED_FAIL
+                || (player_pos - commit_pos).norm() > DRIVEN_FAIL
+            {
+                self.status = SkillStatus::Failed;
+                return SkillProgress::failure();
             }
-            PickupState::FinalApproach {
-                last_good_ball_pos,
-                starting_position,
-            } => {
-                // If ball detected, update last good position and heading
-                if ball.detected {
-                    self.state = PickupState::FinalApproach {
-                        last_good_ball_pos: ball_pos,
-                        starting_position,
-                    };
-                    // Go back to approaching if the ball is too far away
-                    let cone_err =
-                        (ctx.player.yaw - Angle::from_vector(ball_pos - player_pos)).abs();
-                    if cone_err > 10.0_f64.to_radians() {
-                        self.state = PickupState::Approaching;
-                    }
-                }
-
-                let approach_vector = if ball.detected {
-                    ball_pos - ctx.player.position
-                } else {
-                    last_good_ball_pos - ctx.player.position
-                };
-                let approach_distance = approach_vector.norm();
-                input.add_global_velocity(
-                    approach_vector.normalize() * (approach_distance + 70.0) * 1.0,
-                );
-                input.with_yaw(Angle::from_vector(approach_vector));
-                input.with_dribbling(DRIBBLER_SPEED);
-                input.avoid_ball = false;
-                dies_core::debug_string("pickup_ball_state", format!("final_approach"));
-
-                let ball_dist = (ball_pos - last_good_ball_pos).norm();
-                if ball_dist > BALL_MOVED_FAIL_DISTANCE
-                    || (player_pos - starting_position).norm() > 300.0
-                {
-                    self.skill_status = SkillStatus::Failed;
-                    return SkillProgress::failure();
-                }
-            }
+        } else {
+            input.with_position(ball_pos - dir * APPROACH_DISTANCE);
+            input.avoid_ball = true;
+            input.avoid_ball_care = APPROACH_CARE;
+            self.commit_pos = Some(player_pos);
+            self.commit_ball = Some(ball_pos);
         }
 
-        self.skill_status = SkillStatus::Running;
+        self.status = SkillStatus::Running;
         SkillProgress::Continue(input)
     }
 
     fn status(&self) -> SkillStatus {
-        self.skill_status
+        self.status
     }
 }

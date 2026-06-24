@@ -15,7 +15,8 @@
 //! Everything is in team-relative coordinates, millimetres.
 
 use dies_core::{
-    AvoidanceConfig, BallData, FieldGeometry, GameState, PlayerId, TeamData, Vector2, PLAYER_RADIUS,
+    AvoidanceConfig, BallData, FieldGeometry, GameState, PlayerId, TeamData, Vector2, BALL_RADIUS,
+    PLAYER_RADIUS,
 };
 
 /// Geometry of a single keep-out / keep-in region.
@@ -250,7 +251,8 @@ impl ObstacleSet {
             let radius = if game_state == GameState::Stop {
                 cfg.ball_stop_radius
             } else {
-                cfg.ball_base_radius + cfg.ball_care_scale * gates.avoid_ball_care
+                (cfg.ball_base_radius + cfg.ball_care_scale * gates.avoid_ball_care)
+                    .max(BALL_RADIUS)
             };
             self.statics
                 .push(StaticObstacle::new(ObstacleShape::Circle {
