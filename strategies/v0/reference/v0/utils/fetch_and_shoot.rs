@@ -1,0 +1,12 @@
+use dies_executor::behavior_tree_api::*;
+
+pub fn fetch_and_shoot() -> BehaviorNode {
+    fetch_and_shoot_with_prep().into()
+}
+
+pub fn fetch_and_shoot_with_prep() -> BehaviorNode {
+    fetch_ball_with_preshoot()
+        .description("Fetch and shoot".to_string())
+        .build()
+        .into()
+}

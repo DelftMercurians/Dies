@@ -16,6 +16,7 @@ members = [
     "crates/dies-test-driver",
     # Strategy crates
     "strategies/concerto",
+    "strategies/v0",
 ]
 package.edition = "2021"
 resolver = "2"
