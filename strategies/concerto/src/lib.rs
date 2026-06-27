@@ -34,6 +34,8 @@ pub struct ConcertoStrategy {
     /// Ball position when we gained possession (the dribble contact point), for the
     /// excessive-dribbling carry cap. Cleared whenever we don't hold the ball.
     dribble_origin: Option<Vector2>,
+    /// Goalkeeper Guard/Clear state machine.
+    keeper: keeper::KeeperState,
 }
 
 impl ConcertoStrategy {
@@ -46,6 +48,7 @@ impl ConcertoStrategy {
             last_game_state: GameState::Unknown,
             double_touch_robot: None,
             dribble_origin: None,
+            keeper: keeper::KeeperState::new(),
         }
     }
 }
@@ -221,13 +224,8 @@ impl Strategy for ConcertoStrategy {
 
         // ── Goalkeeper ──────────────────────────────────────────────────
         if let Some(kid) = world.our_keeper_id() {
-            let kpos = keeper::keeper_target(&world, config::KEEPER_DEPTH);
-            let face = world
-                .ball_position()
-                .unwrap_or_else(|| world.opp_goal_center());
             if let Some(k) = ctx.player(kid) {
-                k.go_to(kpos).facing(face);
-                k.set_role("goalkeeper");
+                keeper::update(&mut self.keeper, &world, k);
             }
         }
 
@@ -298,6 +296,65 @@ impl ConcertoStrategy {
                 DebugColor::Blue,
             );
         }
+
+        self.draw_plan();
+    }
+
+    /// Emit the current plan as a structured plan primitive for the UI's plan
+    /// panel. No-op when there is no active plan.
+    fn draw_plan(&self) {
+        let Some(plan) = self.planner.current_plan() else {
+            return;
+        };
+
+        let steps: Vec<debug::PlanStep> = plan
+            .waypoints
+            .iter()
+            .enumerate()
+            // v1 plans are single-waypoint; the head waypoint is the active step.
+            .map(|(i, wp)| plan_step(wp, i == 0))
+            .collect();
+
+        debug::plan("plan", Some(plan.active_robot.as_u32()), steps);
+    }
+}
+
+/// Build a UI plan step from a waypoint.
+fn plan_step(wp: &planner::Waypoint, active: bool) -> debug::PlanStep {
+    use planner::{CaptureKind, Waypoint};
+    let (kind, detail) = match wp {
+        Waypoint::Capture { kind, robot } => {
+            let what = match kind {
+                CaptureKind::Loose => "loose ball".to_string(),
+                CaptureKind::Steal { from } => format!("steal from p{}", from.as_u32()),
+            };
+            ("Capture", format!("p{}: {what}", robot.as_u32()))
+        }
+        Waypoint::Dribble { target_area } => (
+            "Dribble",
+            format!("→ ({:.0}, {:.0})", target_area.x, target_area.y),
+        ),
+        Waypoint::Shoot { target } => ("Shoot", format!("→ ({:.0}, {:.0})", target.x, target.y)),
+        Waypoint::Pass {
+            passer,
+            receiver,
+            target_area,
+        } => (
+            "Pass",
+            format!(
+                "p{}→p{} @ ({:.0}, {:.0})",
+                passer.as_u32(),
+                receiver.as_u32(),
+                target_area.x,
+                target_area.y
+            ),
+        ),
+    };
+    debug::PlanStep {
+        kind: kind.to_string(),
+        label: kind.to_string(),
+        detail: Some(detail),
+        active,
     }
 }
 

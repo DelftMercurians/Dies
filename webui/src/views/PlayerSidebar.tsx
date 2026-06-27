@@ -39,6 +39,7 @@ import {
 } from "@/lib/utils";
 import { ChevronDown, ChevronRight, Pause, Pin, PinOff, Play, X } from "lucide-react";
 import { pinnedDebugKeysAtom } from "@/lib/pinnedDebug";
+import { skillStateTextClass } from "@/lib/hardware";
 import { FC, useState } from "react";
 import CodeEditor from "./CodeEditor";
 import HardwareReadout from "./HardwareReadout";
@@ -70,7 +71,10 @@ interface GraphData {
   playerDebug: Record<string, number | string>;
 }
 
-type PlayerDebugValues = [string, Exclude<DebugValue, { type: "Shape" }>][];
+type PlayerDebugValues = [
+  string,
+  Exclude<DebugValue, { type: "Shape" } | { type: "Plan" }>,
+][];
 
 type Graphable = keyof typeof graphableValues | "custom";
 
@@ -142,7 +146,10 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
   const playerDebugData = debugData
     ? (Object.entries(debugData)
         .filter(
-          ([key, val]) => key.startsWith(prefix) && val.type !== "Shape"
+          ([key, val]) =>
+            key.startsWith(prefix) &&
+            val.type !== "Shape" &&
+            val.type !== "Plan"
         )
         .map(([key, val]) => [key.slice(prefix.length + 1), val]) as PlayerDebugValues)
     : [];
@@ -220,6 +227,33 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
           breakbeamBall={selectedPlayer?.breakbeam_ball_detected}
           hasBall={selectedPlayer?.has_ball}
         />
+
+        {/* Active skill */}
+        {selectedPlayer?.skill && (
+          <div className="flex flex-col gap-1">
+            <div className="text-[11px] uppercase tracking-wider text-text-dim">
+              Active Skill
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span
+                className={cn(
+                  "font-medium",
+                  skillStateTextClass(selectedPlayer.skill.state)
+                )}
+              >
+                {selectedPlayer.skill.skill_type}
+              </span>
+              <span className="text-text-muted text-xs">
+                {selectedPlayer.skill.state}
+              </span>
+            </div>
+            {selectedPlayer.skill.description && (
+              <div className="text-xs text-text-std">
+                {selectedPlayer.skill.description}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Target velocity crosshair */}
         {(() => {
@@ -508,9 +542,9 @@ const DebugTable: FC<{ data: PlayerDebugValues }> = ({ data }) => {
   );
 };
 
-const DebugCell: FC<{ value: Exclude<DebugValue, { type: "Shape" }> }> = ({
-  value,
-}) => {
+const DebugCell: FC<{
+  value: Exclude<DebugValue, { type: "Shape" } | { type: "Plan" }>;
+}> = ({ value }) => {
   if (value.type === "Number") {
     return <span title={String(value.data)}>{formatNumber(value.data)}</span>;
   }

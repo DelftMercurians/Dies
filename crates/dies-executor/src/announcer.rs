@@ -178,9 +178,7 @@ fn command_announcement(
         }
         Command::TIMEOUT_BLUE => (C::Info, blue, "Timeout — Blue".to_string()),
         Command::TIMEOUT_YELLOW => (C::Info, yellow, "Timeout — Yellow".to_string()),
-        Command::BALL_PLACEMENT_BLUE => {
-            (C::Placement, blue, "Ball placement — Blue".to_string())
-        }
+        Command::BALL_PLACEMENT_BLUE => (C::Placement, blue, "Ball placement — Blue".to_string()),
         Command::BALL_PLACEMENT_YELLOW => {
             (C::Placement, yellow, "Ball placement — Yellow".to_string())
         }
@@ -196,14 +194,10 @@ fn sim_event_announcement(
     let team = ev.team;
     let item = match ev.kind {
         RefereeMessage::Goal => (C::Goal, team, format!("Goal — {}!", team_name(team))),
-        RefereeMessage::NoProgress => {
-            (C::Stoppage, None, "No progress — force start".to_string())
+        RefereeMessage::NoProgress => (C::Stoppage, None, "No progress — force start".to_string()),
+        RefereeMessage::DoubleTouchViolation => {
+            (C::Foul, team, format!("Double touch — {}", team_name(team)))
         }
-        RefereeMessage::DoubleTouchViolation => (
-            C::Foul,
-            team,
-            format!("Double touch — {}", team_name(team)),
-        ),
         RefereeMessage::DefenderTooCloseToBall => (
             C::Foul,
             team,
@@ -224,9 +218,11 @@ fn sim_event_announcement(
         | RefereeMessage::PenaltyRobotPositionViolation => {
             (C::Foul, team, "Penalty position violation".to_string())
         }
-        RefereeMessage::PenaltyBallDirectionViolation => {
-            (C::Foul, team, "Penalty ball moved the wrong way".to_string())
-        }
+        RefereeMessage::PenaltyBallDirectionViolation => (
+            C::Foul,
+            team,
+            "Penalty ball moved the wrong way".to_string(),
+        ),
         RefereeMessage::RobotTooCloseToOpponentDefenseArea => (
             C::Foul,
             team,
@@ -274,9 +270,11 @@ fn game_event_announcement(
             team_of(e.by_team()),
             "Ball left the field — goal/corner kick".to_string(),
         ),
-        Some(GcEvent::AimlessKick(e)) => {
-            (C::Stoppage, team_of(e.by_team()), "Aimless kick".to_string())
-        }
+        Some(GcEvent::AimlessKick(e)) => (
+            C::Stoppage,
+            team_of(e.by_team()),
+            "Aimless kick".to_string(),
+        ),
         Some(GcEvent::Goal(e)) | Some(GcEvent::PossibleGoal(e)) => {
             let team = team_of(e.by_team());
             (C::Goal, team, format!("Goal — {}!", team_name(team)))
@@ -298,15 +296,15 @@ fn game_event_announcement(
         Some(GcEvent::BotCrashDrawn(_)) => {
             (C::Foul, None, "Robots crashed (both at fault)".to_string())
         }
-        Some(GcEvent::BotPushedBot(e)) => {
-            (C::Foul, team_of(e.by_team()), "Pushing".to_string())
-        }
+        Some(GcEvent::BotPushedBot(e)) => (C::Foul, team_of(e.by_team()), "Pushing".to_string()),
         Some(GcEvent::BotHeldBallDeliberately(e)) => {
             (C::Foul, team_of(e.by_team()), "Ball holding".to_string())
         }
-        Some(GcEvent::BotTippedOver(e)) => {
-            (C::Foul, team_of(e.by_team()), "Robot tipped over".to_string())
-        }
+        Some(GcEvent::BotTippedOver(e)) => (
+            C::Foul,
+            team_of(e.by_team()),
+            "Robot tipped over".to_string(),
+        ),
         Some(GcEvent::KeeperHeldBall(e)) => (
             C::Foul,
             team_of(e.by_team()),

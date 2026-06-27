@@ -113,14 +113,6 @@ impl Default for Velocity {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ControlParameters {
-    pub kp: f64,
-    pub ki: f64,
-    pub thresh: f64,
-    pub antiwindup: f64,
-}
-
 /// Input to the player controller.
 #[derive(Debug, Clone)]
 pub struct PlayerControlInput {
@@ -140,11 +132,13 @@ pub struct PlayerControlInput {
     /// 0 means 'as fast as possible', 1 means 'as careful as possible'
     pub care: f64,
 
-    pub control_paramer_override: Option<ControlParameters>,
-
+    /// Snappiness dial for the position controller. Scales the approach gain
+    /// (`approach_kp`) and the terminal braking gain. `0.0` reproduces the global
+    /// defaults; higher is more aggressive.
     pub aggressiveness: f64,
     /// Per-robot override for the terminal active-braking gain
-    /// (`ControllerSettings::brake_gain`). `None` = use the global default.
+    /// (`ControllerSettings::brake_gain`). `None` = use the `aggressiveness`-derived
+    /// default.
     pub brake_gain: Option<f64>,
     pub acceleration_limit: Option<f64>,
     pub speed_limit: Option<f64>,
@@ -160,6 +154,9 @@ pub struct PlayerControlInput {
     /// Whether the iLQR controller should keep this robot out of the defense
     /// areas. Set per-robot by the team controller (off for the goalkeeper).
     pub avoid_defense_area: bool,
+    /// Whether this robot uses the global path planner. `false` → drive straight
+    /// at the target (no wall/obstacle routing). Default `true`.
+    pub use_planner: bool,
 
     pub role_type: RoleType,
 }
@@ -186,7 +183,7 @@ impl Default for PlayerControlInput {
             kick_speed: None,
             avoid_robots: false,
             avoid_defense_area: false,
-            control_paramer_override: None,
+            use_planner: true,
             role_type: RoleType::default(),
         }
     }

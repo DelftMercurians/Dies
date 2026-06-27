@@ -95,4 +95,12 @@ impl ExecutableSkill for GoToPosSkill {
     fn status(&self) -> SkillStatus {
         self.status
     }
+
+    fn skill_type(&self) -> &'static str {
+        "GoToPos"
+    }
+
+    fn description(&self) -> String {
+        format!("→ ({:.0}, {:.0})", self.target_pos.x, self.target_pos.y)
+    }
 }

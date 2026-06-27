@@ -1,4 +1,4 @@
-import { PlayerFeedbackMsg, SysStatus } from "@/bindings";
+import { PlayerFeedbackMsg, SkillState, SysStatus } from "@/bindings";
 
 /**
  * Hardware health helpers, ported from the standalone basestation viewer
@@ -139,6 +139,15 @@ export const playerHealth = (fb?: PlayerFeedbackMsg): PlayerHealth => {
 
   return { severity: worstSeverity(...severities), online: true, issues };
 };
+
+/** Tailwind text color for a skill execution state. */
+export const skillStateTextClass = (s: SkillState): string =>
+  ({
+    [SkillState.Idle]: "text-text-muted",
+    [SkillState.Running]: "text-accent-blue",
+    [SkillState.Succeeded]: "text-accent-green",
+    [SkillState.Failed]: "text-accent-red",
+  })[s];
 
 /** Zero-padded pattern image path for a robot id + team. */
 export const patternSrc = (id: number, team: "blue" | "yellow"): string =>

@@ -14,7 +14,9 @@ use crate::skill_builders::{
     DribbleBuilder, GoToBuilder, PickupBallParams, ReceiveParams, ReflexShootParams, SkillHandle,
 };
 use dies_core::Angle;
-use dies_strategy_protocol::{PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2};
+use dies_strategy_protocol::{
+    ControlOverride, PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2,
+};
 use std::collections::HashSet;
 
 /// Per-player control interface.
@@ -50,6 +52,8 @@ pub struct PlayerHandle {
     pending_command: Option<SkillCommand>,
     /// Role name for UI display.
     role: Option<String>,
+    /// Per-frame control override (position gains / avoidance gating).
+    control_override: Option<ControlOverride>,
 }
 
 impl PlayerHandle {
@@ -60,6 +64,7 @@ impl PlayerHandle {
             skill_status,
             pending_command: None,
             role: None,
+            control_override: None,
         }
     }
 
@@ -289,6 +294,15 @@ impl PlayerHandle {
         self.role.as_deref()
     }
 
+    /// Set a per-frame control override for this player.
+    ///
+    /// Overrides position-controller gains and avoidance gating (ORCA / planner)
+    /// for this robot only. Re-issue it each frame; cleared otherwise. See
+    /// [`ControlOverride`].
+    pub fn set_control_override(&mut self, control_override: ControlOverride) {
+        self.control_override = Some(control_override);
+    }
+
     // ========== Internal ==========
 
     /// Set the pending command (used by skill builders).
@@ -304,6 +318,11 @@ impl PlayerHandle {
     /// Take the role (used by TeamContext to collect roles).
     pub(crate) fn take_role(&mut self) -> Option<String> {
         self.role.take()
+    }
+
+    /// Take the control override (used by TeamContext to collect overrides).
+    pub(crate) fn take_control_override(&mut self) -> Option<ControlOverride> {
+        self.control_override.take()
     }
 }
 

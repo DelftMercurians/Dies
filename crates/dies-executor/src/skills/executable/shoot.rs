@@ -125,4 +125,17 @@ impl ExecutableSkill for ShootSkill {
     fn status(&self) -> SkillStatus {
         self.status
     }
+
+    fn skill_type(&self) -> &'static str {
+        "Shoot"
+    }
+
+    fn description(&self) -> String {
+        let phase = match self.state {
+            ShootState::Facing => "facing target",
+            ShootState::Kicking => "kicking",
+            ShootState::KickCommanded => "kick commanded",
+        };
+        format!("{phase} → ({:.0}, {:.0})", self.target.x, self.target.y)
+    }
 }

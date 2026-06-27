@@ -34,7 +34,7 @@ export interface LayoutConfig {
 // Bumped whenever the built-in default layout changes shape. A stored version
 // below this discards the persisted "default" layout so users pick up the new
 // arrangement (e.g. the bottom drawer + console) instead of their stale one.
-const LAYOUT_SCHEMA_VERSION = 4;
+const LAYOUT_SCHEMA_VERSION = 5;
 
 // Atom for storing layouts with localStorage persistence
 export const savedLayoutsAtom = atomWithStorage<Record<string, object>>(

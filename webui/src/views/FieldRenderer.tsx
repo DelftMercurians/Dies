@@ -475,7 +475,8 @@ export class FieldRenderer {
       this.ctx.stroke();
     }
 
-    // Draw role name if available and opacity is full (not for the "both" mode secondary rendering)
+    // Draw role name and player id if opacity is full (not for the "both" mode
+    // secondary rendering).
     if (opacity === 1) {
       const role = this.getPlayerRole(data.id, teamColor);
       if (role) {
@@ -484,6 +485,20 @@ export class FieldRenderer {
         this.ctx.textAlign = "center";
         this.ctx.fillText(role, x, y - robotCanvasRadius - 5);
       }
+
+      // Player id, centered on the body. A dark stroke keeps it legible over
+      // either team's fill color.
+      const idText = String(data.id);
+      this.ctx.save();
+      this.ctx.font = `bold ${Math.max(11, robotCanvasRadius)}px Arial`;
+      this.ctx.textAlign = "center";
+      this.ctx.textBaseline = "middle";
+      this.ctx.lineWidth = 3;
+      this.ctx.strokeStyle = "rgba(0,0,0,0.85)";
+      this.ctx.strokeText(idText, x, y);
+      this.ctx.fillStyle = "white";
+      this.ctx.fillText(idText, x, y);
+      this.ctx.restore();
     }
   }
 

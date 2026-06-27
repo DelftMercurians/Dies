@@ -230,6 +230,7 @@ impl SideAssignment {
             id: player.id,
             timestamp: player.timestamp,
             imu_readings: player.imu_readings,
+            skill: player.skill.clone(),
             handicaps: player.handicaps.clone(),
         }
     }

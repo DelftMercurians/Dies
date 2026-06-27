@@ -131,4 +131,15 @@ impl ExecutableSkill for ReceiveSkill {
     fn status(&self) -> SkillStatus {
         self.status
     }
+
+    fn skill_type(&self) -> &'static str {
+        "Receive"
+    }
+
+    fn description(&self) -> String {
+        format!(
+            "intercepting from ({:.0}, {:.0})",
+            self.from_pos.x, self.from_pos.y
+        )
+    }
 }

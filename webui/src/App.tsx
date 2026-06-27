@@ -49,6 +49,7 @@ const DEFAULT_LAYOUT = {
                   "player-inspector",
                   "game-controller",
                   "strategy",
+                  "plan",
                   "debug-layers",
                 ],
                 activeView: "debug-layers",
@@ -102,6 +103,11 @@ const DEFAULT_LAYOUT = {
       id: "strategy",
       contentComponent: "strategy",
       title: "STRATEGY",
+    },
+    plan: {
+      id: "plan",
+      contentComponent: "plan",
+      title: "PLAN",
     },
     "debug-layers": {
       id: "debug-layers",

@@ -530,7 +530,11 @@ impl WorldTracker {
                 format!(
                     "{:?}{}",
                     self.possession.state,
-                    if self.possession.stale { " (stale)" } else { "" }
+                    if self.possession.stale {
+                        " (stale)"
+                    } else {
+                        ""
+                    }
                 ),
             );
 

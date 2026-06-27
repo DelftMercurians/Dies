@@ -133,6 +133,19 @@ impl ExecutableSkill for DribbleShootSkill {
     fn status(&self) -> SkillStatus {
         self.status
     }
+
+    fn skill_type(&self) -> &'static str {
+        "DribbleShoot"
+    }
+
+    fn description(&self) -> String {
+        let phase = match self.state {
+            AimState::Aiming => "orbiting to aim",
+            AimState::Kicking => "kicking",
+            AimState::Kicked => "kicked",
+        };
+        format!("{phase} @ {:.0}°", self.target_heading.degrees())
+    }
 }
 
 /// Whether another robot sits in the shoot corridor (ray from the ball along

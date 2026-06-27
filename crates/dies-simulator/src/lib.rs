@@ -914,7 +914,8 @@ impl Simulation {
     /// [`take_referee_events`].
     fn push_referee_event(&mut self, kind: RefereeMessage, team: Option<TeamColor>) {
         dies_core::debug_string("RefereeMessage", kind.to_string());
-        self.referee_events.push_back(SimRefereeEvent { kind, team });
+        self.referee_events
+            .push_back(SimRefereeEvent { kind, team });
     }
 
     /// Drain the simulator-internal referee events accumulated since the last call.
@@ -1336,7 +1337,10 @@ impl Simulation {
     /// the match keeps running in self-play.
     fn place_ball(&mut self, x: f64, y: f64) {
         if let Some(ball) = self.ball.as_ref() {
-            let ball_body = self.rigid_body_set.get_mut(ball._rigid_body_handle).unwrap();
+            let ball_body = self
+                .rigid_body_set
+                .get_mut(ball._rigid_body_handle)
+                .unwrap();
             ball_body.set_position(Isometry::translation(x, y, BALL_RADIUS), true);
             ball_body.set_linvel(Vector::zeros(), true);
         }

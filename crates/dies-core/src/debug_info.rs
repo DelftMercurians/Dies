@@ -81,6 +81,33 @@ pub enum DebugShape {
     },
 }
 
+/// One step of a strategy [`DebugValue::Plan`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct PlanStep {
+    /// Category (e.g. `"Capture"`, `"Shoot"`, `"Pass"`, `"Dribble"`), used by
+    /// the UI for an icon / color.
+    pub kind: String,
+    /// Short label for the step.
+    pub label: String,
+    /// Optional detail line (targets, partners, etc.).
+    pub detail: Option<String>,
+    /// Whether this is the step currently being executed.
+    pub active: bool,
+}
+
+/// A strategy's current plan: an ordered list of steps driven by one robot.
+/// A structured, plan-shaped debug primitive (distinct from field shapes), shown
+/// in the UI's plan panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct PlanData {
+    /// The robot id (if any) driving the plan.
+    pub active_robot: Option<u32>,
+    /// The plan's steps, in order.
+    pub steps: Vec<PlanStep>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 #[typeshare]
@@ -88,6 +115,7 @@ pub enum DebugValue {
     Shape(DebugShape),
     Number(f64),
     String(String),
+    Plan(PlanData),
 }
 
 /// A map of debug messages.
@@ -111,8 +139,13 @@ pub struct DebugSubscriber {
 
 #[derive(Debug)]
 enum UpdateMsg {
-    InsertRecord { key: String, value: DebugValue },
-    RemoveRecord { key: String },
+    InsertRecord {
+        key: String,
+        value: DebugValue,
+    },
+    RemoveRecord {
+        key: String,
+    },
     Clear,
     /// Advance the frame clock and evict keys not refreshed within the TTL.
     Tick,

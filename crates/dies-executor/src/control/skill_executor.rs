@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use dies_core::{PlayerData, PlayerId, TeamData};
+use dies_core::{PlayerData, PlayerId, PlayerSkillInfo, SkillState, TeamData};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
 use super::{PlayerControlInput, TeamContext};
@@ -77,6 +77,23 @@ pub trait ExecutableSkill: Send {
 
     /// Get the current status of the skill.
     fn status(&self) -> SkillStatus;
+
+    /// Short, stable name for this skill type, shown in the UI (e.g. `"GoToPos"`).
+    fn skill_type(&self) -> &'static str;
+
+    /// Human-readable description of the skill's current internal state, shown in
+    /// the UI alongside the status (e.g. `"approaching ball"`, `"aiming"`).
+    fn description(&self) -> String;
+}
+
+/// Map the executor's `SkillStatus` to the UI-facing `SkillState` in `dies-core`.
+pub(crate) fn skill_state_from_status(status: SkillStatus) -> SkillState {
+    match status {
+        SkillStatus::Idle => SkillState::Idle,
+        SkillStatus::Running => SkillState::Running,
+        SkillStatus::Succeeded => SkillState::Succeeded,
+        SkillStatus::Failed => SkillState::Failed,
+    }
 }
 
 /// Per-player skill execution state.
@@ -231,6 +248,24 @@ impl SkillExecutor {
         self.player_states
             .iter()
             .map(|(id, state)| (*id, state.last_status))
+            .collect()
+    }
+
+    /// Get rich, UI-facing skill info for every player with an active skill.
+    pub fn get_all_infos(&self) -> HashMap<PlayerId, PlayerSkillInfo> {
+        self.player_states
+            .iter()
+            .filter_map(|(id, state)| {
+                let skill = state.current_skill.as_ref()?;
+                Some((
+                    *id,
+                    PlayerSkillInfo {
+                        skill_type: skill.skill_type().to_string(),
+                        state: skill_state_from_status(state.last_status),
+                        description: skill.description(),
+                    },
+                ))
+            })
             .collect()
     }
 

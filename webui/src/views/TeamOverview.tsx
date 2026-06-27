@@ -6,7 +6,13 @@ import {
   usePrimaryTeam,
   useDebugData,
 } from "@/api";
-import { PlayerData, PlayerFeedbackMsg, TeamColor, DebugMap } from "@/bindings";
+import {
+  PlayerData,
+  PlayerFeedbackMsg,
+  PlayerSkillInfo,
+  TeamColor,
+  DebugMap,
+} from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn, magnitude2 } from "@/lib/utils";
@@ -18,12 +24,15 @@ import {
   Severity,
   severityDotClass,
   severityTextClass,
+  skillStateTextClass,
   sysStatusSeverity,
   worstSeverity,
 } from "@/lib/hardware";
 import { pinnedDebugKeysAtom, formatPlayerDebugValue } from "@/lib/pinnedDebug";
-import { useAtomValue } from "jotai";
+import { alarmsArmedAtom, useHardwareAlarms } from "@/lib/alarms";
+import { useAtom, useAtomValue } from "jotai";
 import { FC, useEffect, useRef } from "react";
+import { Bell, BellOff } from "lucide-react";
 import PatternIcon from "./PatternIcon";
 import Sparkline from "./Sparkline";
 
@@ -111,6 +120,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
   const executorInfo = useExecutorInfo();
   const [primaryTeam] = usePrimaryTeam();
   const pinnedKeys = useAtomValue(pinnedDebugKeysAtom);
+  const [alarmsArmed, setAlarmsArmed] = useAtom(alarmsArmedAtom);
 
   const connected = worldState.status === "connected";
   const blue_team = connected ? worldState.data.blue_team : [];
@@ -128,6 +138,9 @@ const TeamOverview: FC<TeamOverviewProps> = ({
       : bsInfo.yellow_team
     : [];
 
+  // Drive audible alarms off the same basestation feedback the rows show.
+  useHardwareAlarms(bsPlayers, alarmsArmed);
+
   if (!connected) {
     return (
       <div className={cn("p-2 bg-bg-surface text-text-std", className)}>
@@ -141,8 +154,36 @@ const TeamOverview: FC<TeamOverviewProps> = ({
   return (
     <div className={cn("relative", className)}>
       <div className="absolute inset-0 overflow-y-auto bg-bg-surface">
-        <div className="px-2 py-1.5 text-[11px] uppercase tracking-wider text-text-dim border-b border-border-subtle">
-          {primaryTeam} team — {sorted_players.length} players
+        <div className="flex items-center justify-between px-2 py-1.5 text-[11px] uppercase tracking-wider text-text-dim border-b border-border-subtle">
+          <span>
+            {primaryTeam} team — {sorted_players.length} players
+          </span>
+          <SimpleTooltip
+            title={
+              alarmsArmed
+                ? "Audible alarms armed — click to mute"
+                : "Audible alarms off — click to arm"
+            }
+          >
+            <button
+              onClick={() => setAlarmsArmed((v) => !v)}
+              className={cn(
+                "flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors",
+                alarmsArmed
+                  ? "text-accent-red hover:bg-bg-overlay"
+                  : "text-text-muted hover:bg-bg-overlay"
+              )}
+            >
+              {alarmsArmed ? (
+                <Bell className="w-3 h-3" />
+              ) : (
+                <BellOff className="w-3 h-3" />
+              )}
+              <span className="normal-case">
+                {alarmsArmed ? "Armed" : "Alarms"}
+              </span>
+            </button>
+          </SimpleTooltip>
         </div>
         {sorted_players.length > 0 ? (
           <div className="divide-y divide-border-subtle">
@@ -243,6 +284,31 @@ const OverviewRow: FC<{
         </SimpleTooltip>
       </div>
 
+      {/* active skill */}
+      {player.skill && <SkillLine skill={player.skill} />}
+
+      {/* prominent critical/warning issues */}
+      {health.issues.length > 0 && (
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-1 text-[10px] font-medium",
+            health.severity === "alert" ? "text-accent-red" : "text-accent-amber"
+          )}
+        >
+          <span className="uppercase tracking-wide">
+            {health.severity === "alert" ? "⚠ critical" : "warn"}
+          </span>
+          {health.issues.map((issue) => (
+            <span
+              key={issue}
+              className="rounded bg-bg-overlay px-1 py-0.5 normal-case"
+            >
+              {issue}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* hardware strip */}
       <HardwareStrip feedback={feedback} />
 
@@ -292,6 +358,22 @@ const OverviewRow: FC<{
     </button>
   );
 };
+
+/**
+ * One-line active-skill readout: skill type, state-colored, with the skill's
+ * internal-state description. Shown only when the executor reports a skill.
+ */
+const SkillLine: FC<{ skill: PlayerSkillInfo }> = ({ skill }) => (
+  <div className="flex items-center gap-1.5 text-[10px]">
+    <span className="text-text-muted">skill</span>
+    <span className={cn("font-medium", skillStateTextClass(skill.state))}>
+      {skill.skill_type}
+    </span>
+    {skill.description && (
+      <span className="text-text-dim truncate min-w-0">{skill.description}</span>
+    )}
+  </div>
+);
 
 /**
  * Compact one-line hardware status: 5 motor dots (worst of status+temp),

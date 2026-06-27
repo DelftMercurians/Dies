@@ -273,6 +273,36 @@ pub struct RawGameStateData {
     pub status_message: Option<String>,
 }
 
+/// Execution state of a player's active skill, mirroring the executor's
+/// `SkillStatus` without coupling `dies-core` to the strategy protocol.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[typeshare]
+pub enum SkillState {
+    /// No skill has been commanded for this player.
+    #[default]
+    Idle,
+    /// The skill is currently executing.
+    Running,
+    /// The skill completed successfully.
+    Succeeded,
+    /// The skill failed.
+    Failed,
+}
+
+/// A snapshot of the skill a (own-team) player is currently executing, surfaced
+/// to the UI. Populated by the executor from the active skill's own report.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[typeshare]
+pub struct PlayerSkillInfo {
+    /// Short skill type name, e.g. `"GoToPos"`, `"Shoot"`, `"Pass"`.
+    pub skill_type: String,
+    /// Execution state.
+    pub state: SkillState,
+    /// Human-readable description of the skill's internal state, e.g.
+    /// `"approaching ball"` or `"aiming"`.
+    pub description: String,
+}
+
 /// A struct to store the player state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
@@ -319,6 +349,11 @@ pub struct PlayerData {
     pub imu_readings: Option<[f32; 6]>,
     pub kicker_status: Option<SysStatus>,
 
+    /// The skill this player is currently executing, if known. Only populated
+    /// for own players (the team we control); `None` for opponents and when no
+    /// skill is active.
+    pub skill: Option<PlayerSkillInfo>,
+
     pub handicaps: HashSet<Handicap>,
 }
 
@@ -343,6 +378,7 @@ impl PlayerData {
             has_ball: false,
             kicker_status: None,
             imu_readings: None,
+            skill: None,
             handicaps: HashSet::new(),
         }
     }
@@ -902,6 +938,7 @@ pub fn mock_world_data() -> WorldData {
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
+            skill: None,
             handicaps: HashSet::new(),
         }],
         yellow_team: vec![PlayerData {
@@ -923,6 +960,7 @@ pub fn mock_world_data() -> WorldData {
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
+            skill: None,
             handicaps: HashSet::new(),
         }],
         field_geom: Default::default(),
@@ -975,6 +1013,7 @@ pub fn mock_team_data() -> TeamData {
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
+            skill: None,
             handicaps: HashSet::new(),
         }],
         opp_players: vec![PlayerData {
@@ -996,6 +1035,7 @@ pub fn mock_team_data() -> TeamData {
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
+            skill: None,
             handicaps: HashSet::new(),
         }],
         field_geom: Some(FieldGeometry {

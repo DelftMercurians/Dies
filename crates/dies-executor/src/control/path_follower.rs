@@ -25,6 +25,8 @@ const LOOKAHEAD_MAX: f64 = 800.0;
 pub struct PathFollower {
     v_max: f64,
     a_lat: f64,
+    /// Baseline position approach gain from settings; the per-tick effective gain
+    /// (scaled by a robot's aggressiveness) is passed into [`PathFollower::follow`].
     approach_kp: f64,
     lookahead_min: f64,
     lookahead_time: f64,
@@ -70,11 +72,18 @@ impl PathFollower {
         self.lookahead_time = s.lookahead_time.max(0.0);
     }
 
+    /// Baseline (un-scaled) position approach gain from settings.
+    pub fn base_approach_kp(&self) -> f64 {
+        self.approach_kp
+    }
+
     /// Preferred path-following velocity \[mm/s\]: pure-pursuit direction × a
     /// speed envelope. A pure target — the caller applies acceleration limiting.
     /// `speed` is the robot's current command speed, used to scale the lookahead;
     /// `velocity` is the robot's measured velocity, used by terminal active
-    /// braking; `brake_gain` is the effective active-braking gain for this robot.
+    /// braking; `brake_gain` is the effective active-braking gain for this robot;
+    /// `approach_kp` is the effective position approach gain (baseline scaled by
+    /// the robot's aggressiveness).
     pub fn follow(
         &self,
         path: &[Vector2],
@@ -82,10 +91,11 @@ impl PathFollower {
         velocity: Vector2,
         speed: f64,
         brake_gain: f64,
+        approach_kp: f64,
     ) -> FollowCmd {
         match path.len() {
             0 => return FollowCmd::cruise(Vector2::zeros()),
-            1 => return self.seek_point(path[0], pos, velocity, brake_gain),
+            1 => return self.seek_point(path[0], pos, velocity, brake_gain, approach_kp),
             _ => {}
         }
 
@@ -100,7 +110,7 @@ impl PathFollower {
         // straight proportional approach that converges cleanly.
         let goal = path[path.len() - 1];
         if s_goal < self.lookahead_min {
-            return self.seek_point(goal, pos, velocity, brake_gain);
+            return self.seek_point(goal, pos, velocity, brake_gain, approach_kp);
         }
 
         // Pure-pursuit steering direction.
@@ -111,7 +121,7 @@ impl PathFollower {
             .or_else(|| (goal - pos).try_normalize(1.0e-6))
             .unwrap_or_else(Vector2::zeros);
 
-        FollowCmd::cruise(dir * self.speed_envelope(foot, seg, path, s_goal))
+        FollowCmd::cruise(dir * self.speed_envelope(foot, seg, path, s_goal, approach_kp))
     }
 
     /// Straight proportional approach to a point: velocity ∝ distance (capped at
@@ -129,6 +139,7 @@ impl PathFollower {
         pos: Vector2,
         velocity: Vector2,
         brake_gain: f64,
+        approach_kp: f64,
     ) -> FollowCmd {
         let to = target - pos;
         let dist = to.norm();
@@ -136,7 +147,7 @@ impl PathFollower {
             return FollowCmd::cruise(Vector2::zeros());
         }
         let dir = to / dist;
-        let v_profile = self.v_max.min(self.approach_kp * dist);
+        let v_profile = self.v_max.min(approach_kp * dist);
 
         let overspeed = velocity.dot(&dir) - v_profile;
         if brake_gain > 0.0 && overspeed > 0.0 {
@@ -155,15 +166,22 @@ impl PathFollower {
     /// corner (whose speed is set by the junction-deviation radius). Proportional
     /// (velocity ∝ remaining distance) is over-damped, so the robot eases into
     /// corners and the goal without overshooting them.
-    fn speed_envelope(&self, foot: Vector2, seg: usize, path: &[Vector2], s_goal: f64) -> f64 {
-        let mut v = self.v_max.min(self.approach_kp * s_goal);
+    fn speed_envelope(
+        &self,
+        foot: Vector2,
+        seg: usize,
+        path: &[Vector2],
+        s_goal: f64,
+        approach_kp: f64,
+    ) -> f64 {
+        let mut v = self.v_max.min(approach_kp * s_goal);
 
         let mut dist = (path[seg + 1] - foot).norm();
         let mut i = seg + 1;
         while i + 1 < path.len() {
             let vc = corner_speed(path[i] - path[i - 1], path[i + 1] - path[i], self.a_lat);
-            v = v.min(vc + self.approach_kp * dist);
-            if dist > self.v_max / self.approach_kp {
+            v = v.min(vc + approach_kp * dist);
+            if dist > self.v_max / approach_kp {
                 break; // beyond the proportional braking range of v_max
             }
             dist += (path[i + 1] - path[i]).norm();
@@ -257,9 +275,18 @@ mod tests {
     }
 
     // Convenience: follow with zero measured velocity and braking disabled — the
-    // pre-active-braking behaviour, for the path-shape assertions.
+    // pre-active-braking behaviour, for the path-shape assertions. Uses the
+    // follower's baseline approach gain.
     fn vel(f: &PathFollower, path: &[Vector2], pos: Vector2, speed: f64) -> Vector2 {
-        f.follow(path, pos, Vector2::zeros(), speed, 0.0).velocity
+        f.follow(
+            path,
+            pos,
+            Vector2::zeros(),
+            speed,
+            0.0,
+            f.base_approach_kp(),
+        )
+        .velocity
     }
 
     #[test]
@@ -319,14 +346,15 @@ mod tests {
         let pos = Vector2::new(950.0, 0.0);
         let fast = Vector2::new(3000.0, 0.0);
         // gain 0 → plain proportional, forward, no clamp bypass.
-        let gentle = f.follow(&path, pos, fast, 3000.0, 0.0);
+        let kp = f.base_approach_kp();
+        let gentle = f.follow(&path, pos, fast, 3000.0, 0.0, kp);
         assert!(
             gentle.velocity.x > 0.0 && !gentle.hard_brake,
             "{:?}",
             gentle
         );
         // gain 1 → command reverses (−x) and requests the slew-clamp bypass.
-        let brake = f.follow(&path, pos, fast, 3000.0, 1.0);
+        let brake = f.follow(&path, pos, fast, 3000.0, 1.0, kp);
         assert!(
             brake.velocity.x < 0.0 && brake.hard_brake,
             "should reverse-thrust: {:?}",
@@ -345,6 +373,7 @@ mod tests {
             Vector2::new(50.0, 0.0),
             50.0,
             1.0,
+            f.base_approach_kp(),
         );
         assert!(cmd.velocity.x > 0.0 && !cmd.hard_brake, "{:?}", cmd);
     }

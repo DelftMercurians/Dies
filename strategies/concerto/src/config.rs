@@ -97,5 +97,31 @@ pub const RECALC_BG_PERIOD: f64 = 0.4;
 pub const PLAN_CTX_MOVE_EPS: f64 = 300.0;
 
 // ── Goalkeeper ──────────────────────────────────────────────────────────────
-/// How far in front of the goal line the keeper sits.
-pub const KEEPER_DEPTH: f64 = 200.0;
+/// Radius of the keeper's positioning arc, measured from the goal centre. At the
+/// central (square-on) position the keeper sits this far in front of the line.
+pub const KEEPER_ARC_RADIUS: f64 = 400.0;
+/// Maximum angular excursion of the keeper off straight-out (radians). Caps how
+/// far along the arc toward the posts the keeper will travel.
+pub const KEEPER_ARC_MAX_ANGLE: f64 = std::f64::consts::FRAC_PI_4; // 45°
+
+// Aggressive control profile for the keeper — fed to `ControlOverride`.
+/// Snappiness dial: scales the position approach gain and terminal braking.
+pub const KEEPER_AGGRESSIVENESS: f64 = 1.5;
+/// Explicit terminal active-braking gain (decoupled from aggressiveness).
+pub const KEEPER_BRAKE_GAIN: f64 = 2.0;
+/// Keeper speed cap (mm/s). Tight, predictable line motion.
+pub const KEEPER_SPEED_LIMIT: f64 = 2500.0;
+
+// Ball-clearing behaviour.
+/// Clear only when the ball is essentially stopped (mm/s).
+pub const CLEAR_SPEED_LIMIT: f64 = 300.0;
+/// Ball must be inside the penalty area by at least this margin before the keeper
+/// commits to a clear, so the whole pickup maneuver stays inside the box.
+pub const CLEAR_INNER_MARGIN: f64 = 250.0;
+/// Abort the clear if the keeper body comes within this distance of the box edge.
+pub const CLEAR_EXIT_MARGIN: f64 = 120.0;
+/// Minimum |y| of the clear target, so the keeper never kicks straight up the
+/// middle in front of our own goal.
+pub const CLEAR_TARGET_MIN_Y: f64 = 1500.0;
+/// Downfield x of the clear target (toward the opponent half).
+pub const CLEAR_TARGET_X: f64 = 0.0;

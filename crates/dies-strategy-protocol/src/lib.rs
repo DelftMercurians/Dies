@@ -27,11 +27,13 @@
 //! Strategies never see absolute world coordinates or team color - the executor
 //! handles all coordinate transformations.
 
+mod control;
 mod debug;
 mod messages;
 mod skill;
 mod world;
 
+pub use control::*;
 pub use debug::*;
 pub use messages::*;
 pub use skill::*;

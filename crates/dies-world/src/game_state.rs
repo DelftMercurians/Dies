@@ -78,9 +78,7 @@ impl GameStateTracker {
         // Capture the per-message referee detail (these change on every packet,
         // independent of command transitions, so do it before the early return).
         self.stage = Some(data.stage());
-        self.stage_time_left_s = data
-            .stage_time_left
-            .map(|us| us as f64 / 1_000_000.0);
+        self.stage_time_left_s = data.stage_time_left.map(|us| us as f64 / 1_000_000.0);
         self.action_time_remaining_s = data
             .current_action_time_remaining
             .map(|us| us as f64 / 1_000_000.0);

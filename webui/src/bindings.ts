@@ -19,7 +19,8 @@ export type Angle = number;
 export type DebugValue = 
 	| { type: "Shape", data: DebugShape }
 	| { type: "Number", data: number }
-	| { type: "String", data: string };
+	| { type: "String", data: string }
+	| { type: "Plan", data: PlanData };
 
 /**
  * A map of debug messages.
@@ -706,6 +707,64 @@ export interface LogsResponse {
 	logs: LogInfo[];
 }
 
+/** One step of a strategy [`DebugValue::Plan`]. */
+export interface PlanStep {
+	/**
+	 * Category (e.g. `"Capture"`, `"Shoot"`, `"Pass"`, `"Dribble"`), used by
+	 * the UI for an icon / color.
+	 */
+	kind: string;
+	/** Short label for the step. */
+	label: string;
+	/** Optional detail line (targets, partners, etc.). */
+	detail?: string;
+	/** Whether this is the step currently being executed. */
+	active: boolean;
+}
+
+/**
+ * A strategy's current plan: an ordered list of steps driven by one robot.
+ * A structured, plan-shaped debug primitive (distinct from field shapes), shown
+ * in the UI's plan panel.
+ */
+export interface PlanData {
+	/** The robot id (if any) driving the plan. */
+	active_robot?: number;
+	/** The plan's steps, in order. */
+	steps: PlanStep[];
+}
+
+/**
+ * Execution state of a player's active skill, mirroring the executor's
+ * `SkillStatus` without coupling `dies-core` to the strategy protocol.
+ */
+export enum SkillState {
+	/** No skill has been commanded for this player. */
+	Idle = "Idle",
+	/** The skill is currently executing. */
+	Running = "Running",
+	/** The skill completed successfully. */
+	Succeeded = "Succeeded",
+	/** The skill failed. */
+	Failed = "Failed",
+}
+
+/**
+ * A snapshot of the skill a (own-team) player is currently executing, surfaced
+ * to the UI. Populated by the executor from the active skill's own report.
+ */
+export interface PlayerSkillInfo {
+	/** Short skill type name, e.g. `"GoToPos"`, `"Shoot"`, `"Pass"`. */
+	skill_type: string;
+	/** Execution state. */
+	state: SkillState;
+	/**
+	 * Human-readable description of the skill's internal state, e.g.
+	 * `"approaching ball"` or `"aiming"`.
+	 */
+	description: string;
+}
+
 /** A struct to store the player state from a single frame. */
 export interface PlayerData {
 	/**
@@ -758,6 +817,12 @@ export interface PlayerData {
 	imu_status?: SysStatus;
 	imu_readings?: [number, number, number, number, number, number];
 	kicker_status?: SysStatus;
+	/**
+	 * The skill this player is currently executing, if known. Only populated
+	 * for own players (the team we control); `None` for opponents and when no
+	 * skill is active.
+	 */
+	skill?: PlayerSkillInfo;
 	handicaps: HashSet<Handicap>;
 }
 

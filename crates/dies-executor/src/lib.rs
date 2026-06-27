@@ -1042,9 +1042,25 @@ impl Executor {
     /// recorded to the columnar log and the frame counter advances; referee
     /// updates pass `false` and reuse the current frame id.
     fn update_team_controller(&mut self, new_frame: bool) {
-        let world_data = self.tracker.get();
+        let mut world_data = self.tracker.get();
         let frame_id = self.frame_counter;
         self.last_t = world_data.t_received;
+
+        // Enrich each controlled team's players with the skill they're executing,
+        // taken from last frame's controller state (the controllers run later in
+        // this function). One frame of lag is irrelevant for display.
+        if let Some(ctrl) = self.team_controllers.blue_team.as_ref() {
+            let infos = ctrl.get_skill_infos();
+            for p in world_data.blue_team.iter_mut() {
+                p.skill = infos.get(&p.id).cloned();
+            }
+        }
+        if let Some(ctrl) = self.team_controllers.yellow_team.as_ref() {
+            let infos = ctrl.get_skill_infos();
+            for p in world_data.yellow_team.iter_mut() {
+                p.skill = infos.get(&p.id).cloned();
+            }
+        }
 
         let update = WorldUpdate {
             world_data: world_data.clone(),
@@ -1096,6 +1112,7 @@ impl Executor {
                     controller.set_strategy_input(StrategyInput {
                         skill_commands: frame.skill_commands,
                         player_roles: frame.player_roles,
+                        control_overrides: HashMap::new(),
                     });
                 }
                 self.test_manual.clear();
@@ -1141,6 +1158,7 @@ impl Executor {
                             controller.set_strategy_input(StrategyInput {
                                 skill_commands: frame_output.blue_commands,
                                 player_roles: frame_output.blue_roles,
+                                control_overrides: frame_output.blue_control_overrides,
                             });
                         }
                     }
@@ -1149,6 +1167,7 @@ impl Executor {
                             controller.set_strategy_input(StrategyInput {
                                 skill_commands: frame_output.yellow_commands,
                                 player_roles: frame_output.yellow_roles,
+                                control_overrides: frame_output.yellow_control_overrides,
                             });
                         }
                     }
@@ -1190,12 +1209,14 @@ impl Executor {
                 controller.set_strategy_input(StrategyInput {
                     skill_commands: frame_output.blue_commands,
                     player_roles: frame_output.blue_roles,
+                    control_overrides: frame_output.blue_control_overrides,
                 });
             }
             if let Some(ref mut controller) = self.team_controllers.yellow_team {
                 controller.set_strategy_input(StrategyInput {
                     skill_commands: frame_output.yellow_commands,
                     player_roles: frame_output.yellow_roles,
+                    control_overrides: frame_output.yellow_control_overrides,
                 });
             }
             self.test_manual.clear();

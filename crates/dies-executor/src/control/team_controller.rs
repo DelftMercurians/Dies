@@ -4,10 +4,10 @@ use std::{
 };
 
 use dies_core::{
-    DebugColor, ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerId, RoleType,
-    SideAssignment, TeamColor, TeamData, Vector2, PLAYER_RADIUS,
+    DebugColor, ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerId,
+    PlayerSkillInfo, RoleType, SideAssignment, TeamColor, TeamData, Vector2, PLAYER_RADIUS,
 };
-use dies_strategy_protocol::{SkillCommand, SkillStatus};
+use dies_strategy_protocol::{ControlOverride, SkillCommand, SkillStatus};
 use std::sync::Arc;
 
 use super::{
@@ -29,6 +29,8 @@ pub struct StrategyInput {
     pub skill_commands: HashMap<PlayerId, Option<SkillCommand>>,
     /// Role names per player for UI display.
     pub player_roles: HashMap<PlayerId, String>,
+    /// Per-player control overrides (sparse diff over executor defaults).
+    pub control_overrides: HashMap<PlayerId, ControlOverride>,
 }
 
 pub struct TeamController {
@@ -105,6 +107,18 @@ impl TeamController {
             statuses.insert(*id, *status);
         }
         statuses
+    }
+
+    /// Get rich, UI-facing skill info for all players.
+    ///
+    /// Joint (pass) infos override per-player skill infos for robots currently or
+    /// recently in a pass, mirroring [`Self::get_skill_statuses`].
+    pub fn get_skill_infos(&self) -> HashMap<PlayerId, PlayerSkillInfo> {
+        let mut infos = self.skill_executor.get_all_infos();
+        for (id, info) in self.joint_skill_executor.get_all_infos() {
+            infos.insert(id, info);
+        }
+        infos
     }
 
     /// Get rich pass results for players involved in a pass (empty otherwise).
@@ -320,13 +334,8 @@ impl TeamController {
         // Per robot: build the obstacle set, plan a path, then run the controller
         // — which follows the path, deflects the result through ORCA against the
         // obstacle set's agents, and acceleration-clamps the command, all in one
-        // place. ORCA is gated here; each per-controller solve is independent
-        // (reciprocity works through neighbours' observed velocities).
-        let orca = if cfg.orca_enabled {
-            Some(&self.orca)
-        } else {
-            None
-        };
+        // place. ORCA is gated per-robot below; each per-controller solve is
+        // independent (reciprocity works through neighbours' observed velocities).
         for controller in self.player_controllers.values_mut() {
             let id = controller.id();
             let Some(player_data) = world_data.own_players.iter().find(|p| p.id == id) else {
@@ -371,10 +380,21 @@ impl TeamController {
             };
             let obstacles = ObstacleSet::build(&world_data, id, gates, game_state, &cfg);
 
+            // ORCA gated per-robot: a robot with `avoid_robots = false` (e.g. the
+            // goalkeeper) has its commanded velocity passed through untouched —
+            // no reciprocal avoidance and, crucially, no static field-boundary
+            // wall deflection.
+            let orca = if cfg.orca_enabled && effective_input.avoid_robots {
+                Some(&self.orca)
+            } else {
+                None
+            };
+
             // Global planner → full path to follow (LOS fast path inside).
-            // Draws the route under the player's `plan.*` keys.
+            // Draws the route under the player's `plan.*` keys. Gated per-robot:
+            // `use_planner = false` drives straight at the target.
             let path = effective_input.position.map(|target| {
-                if cfg.planner_enabled {
+                if cfg.planner_enabled && effective_input.use_planner {
                     self.planner.plan(
                         id,
                         player_data.position,
@@ -452,9 +472,16 @@ impl TeamController {
                 debug_prefix: team_context.key(format!("p{}", player_id)),
             };
 
-            let input = self
+            let mut input = self
                 .skill_executor
                 .process_command(*player_id, skill_cmd, ctx);
+
+            // Merge the strategy's per-robot control override (sparse: only the
+            // Some(..) fields take effect) onto the skill-derived input.
+            if let Some(ovr) = self.strategy_input.control_overrides.get(player_id) {
+                apply_control_override(&mut input, ovr);
+            }
+
             player_inputs.insert(*player_id, input);
         }
 
@@ -494,6 +521,29 @@ impl TeamController {
                 c.command(&player_context, untransformer.clone())
             })
             .collect()
+    }
+}
+
+/// Merge a strategy-supplied [`ControlOverride`] onto a `PlayerControlInput`.
+/// Sparse: only the `Some(..)` fields are applied.
+fn apply_control_override(input: &mut PlayerControlInput, ovr: &ControlOverride) {
+    if let Some(v) = ovr.aggressiveness {
+        input.aggressiveness = v;
+    }
+    if let Some(v) = ovr.brake_gain {
+        input.brake_gain = Some(v);
+    }
+    if let Some(v) = ovr.speed_limit {
+        input.speed_limit = Some(v);
+    }
+    if let Some(v) = ovr.accel_limit {
+        input.acceleration_limit = Some(v);
+    }
+    if let Some(v) = ovr.avoid_robots {
+        input.avoid_robots = v;
+    }
+    if let Some(v) = ovr.use_planner {
+        input.use_planner = v;
     }
 }
 

@@ -14,6 +14,9 @@ use super::{
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 1000.0;
+/// Terminal active-braking gain added per unit of `aggressiveness` when no
+/// explicit `brake_gain` override is supplied.
+const AGGRESSIVENESS_BRAKE_SCALE: f64 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum KickerState {
@@ -262,13 +265,21 @@ impl PlayerController {
         // terminal active-braking maneuver.
         let mut hard_brake = false;
         if let Some(path) = path.as_deref() {
-            let brake_gain = input.brake_gain.unwrap_or(self.brake_gain);
+            // Aggressiveness is a single snappiness dial: it scales the position
+            // approach gain and supplies the default terminal braking gain. An
+            // explicit `input.brake_gain` decouples braking from the dial.
+            let aggressiveness = input.aggressiveness.max(0.0);
+            let approach_kp = self.path_follower.base_approach_kp() * (1.0 + aggressiveness);
+            let brake_gain = input
+                .brake_gain
+                .unwrap_or(self.brake_gain + aggressiveness * AGGRESSIVENESS_BRAKE_SCALE);
             let cmd = self.path_follower.follow(
                 path,
                 self.last_pos,
                 state.velocity,
                 last_cmd.norm(),
                 brake_gain,
+                approach_kp,
             );
             self.target_velocity_global = cmd.velocity;
             hard_brake = cmd.hard_brake;

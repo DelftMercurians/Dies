@@ -311,6 +311,8 @@ fn classify_debug(
                 additional_info: additional_info.clone(),
             }),
         },
+        // Plans are live-view only; not persisted to replay logs for now.
+        DebugValue::Plan(_) => {}
     }
 }
 

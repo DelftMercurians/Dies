@@ -26,8 +26,10 @@
 
 use std::cell::RefCell;
 
+pub use dies_strategy_protocol::PlanStep;
+
 use dies_strategy_protocol::{
-    DebugColor, DebugEntry, DebugShape, DebugValue, MarkerKind, PlayerId, Vector2,
+    DebugColor, DebugEntry, DebugShape, DebugValue, MarkerKind, PlanData, PlayerId, Vector2,
 };
 
 // Thread-local storage for debug entries collected during a frame.
@@ -171,6 +173,20 @@ pub fn value(key: &str, v: f64) {
 /// Record a string value (for display).
 pub fn string(key: &str, v: &str) {
     add_entry(DebugEntry::new(key, DebugValue::String(v.to_string())));
+}
+
+/// Record a structured strategy plan under `key`, shown in the UI's plan panel.
+///
+/// A plan is an ordered list of [`PlanStep`]s driven by `active_robot`. Carries
+/// no field geometry (no coordinate transform).
+pub fn plan(key: &str, active_robot: Option<u32>, steps: Vec<PlanStep>) {
+    add_entry(DebugEntry::new(
+        key,
+        DebugValue::Plan(PlanData {
+            active_robot,
+            steps,
+        }),
+    ));
 }
 
 /// Remove a debug entry by key.

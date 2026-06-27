@@ -128,4 +128,15 @@ impl ExecutableSkill for DribbleSkill {
     fn status(&self) -> SkillStatus {
         self.status
     }
+
+    fn skill_type(&self) -> &'static str {
+        "Dribble"
+    }
+
+    fn description(&self) -> String {
+        format!(
+            "carrying → ({:.0}, {:.0})",
+            self.target_pos.x, self.target_pos.y
+        )
+    }
 }

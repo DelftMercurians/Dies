@@ -14,6 +14,7 @@ import StrategyPanel from "./StrategyPanel";
 import DebugLayerPanel from "./DebugLayerPanel";
 import ScenarioPanel from "./ScenarioPanel";
 import ConsolePanel from "./ConsolePanel";
+import PlanPanel from "./PlanPanel";
 
 // Re-export panel components
 export {
@@ -26,6 +27,7 @@ export {
   DebugLayerPanel,
   ScenarioPanel,
   ConsolePanel,
+  PlanPanel,
 };
 
 // Panel IDs used for layout configuration
@@ -39,6 +41,7 @@ export const PANEL_IDS = {
   DEBUG_LAYERS: "debug-layers",
   SCENARIO: "scenario",
   CONSOLE: "console",
+  PLAN: "plan",
 } as const;
 
 export type PanelId = (typeof PANEL_IDS)[keyof typeof PANEL_IDS];
@@ -54,6 +57,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   [PANEL_IDS.DEBUG_LAYERS]: "DEBUG",
   [PANEL_IDS.SCENARIO]: "SCENARIO",
   [PANEL_IDS.CONSOLE]: "CONSOLE",
+  [PANEL_IDS.PLAN]: "PLAN",
 };
 
 // All panels in a stable order for menus
@@ -72,4 +76,5 @@ export const panelComponents = {
   [PANEL_IDS.DEBUG_LAYERS]: DebugLayerPanel,
   [PANEL_IDS.SCENARIO]: ScenarioPanel,
   [PANEL_IDS.CONSOLE]: ConsolePanel,
+  [PANEL_IDS.PLAN]: PlanPanel,
 };

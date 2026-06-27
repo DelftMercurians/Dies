@@ -102,4 +102,16 @@ impl ExecutableSkill for PickupBallSkill {
     fn status(&self) -> SkillStatus {
         self.status
     }
+
+    fn skill_type(&self) -> &'static str {
+        "PickupBall"
+    }
+
+    fn description(&self) -> String {
+        if self.commit_ball.is_some() {
+            "committing to ball".to_string()
+        } else {
+            "approaching ball".to_string()
+        }
+    }
 }

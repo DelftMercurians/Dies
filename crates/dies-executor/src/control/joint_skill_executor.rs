@@ -22,12 +22,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use dies_core::PlayerId;
+use dies_core::{PlayerId, PlayerSkillInfo, SkillState};
 use dies_strategy_protocol::{
     PassBallState, PassFailure, PassResult, PassRole, SkillCommand, SkillStatus,
 };
 
 use super::pass_coordinator::{PassContext, PassCoordinator};
+use super::skill_executor::skill_state_from_status;
 use super::PlayerControlInput;
 
 /// The per-frame output of the joint executor.
@@ -240,6 +241,49 @@ impl JointSkillExecutor {
     /// All joint statuses (to merge over the per-player skill statuses).
     pub fn statuses(&self) -> &HashMap<PlayerId, SkillStatus> {
         &self.statuses
+    }
+
+    /// Rich, UI-facing skill info for every player involved in a pass.
+    ///
+    /// Live coordinators report their current phase and role; players whose
+    /// coordinator has ended (but whose terminal status lingers) report the
+    /// retained status with a generic description.
+    pub fn get_all_infos(&self) -> HashMap<PlayerId, PlayerSkillInfo> {
+        let mut infos = HashMap::new();
+        for coord in &self.coordinators {
+            let passer = coord.passer();
+            let receiver = coord.receiver();
+            let phase = coord.phase().as_str();
+            for (id, role) in [(passer, "Passer"), (receiver, "Receiver")] {
+                let state = self
+                    .statuses
+                    .get(&id)
+                    .copied()
+                    .map(skill_state_from_status)
+                    .unwrap_or(SkillState::Running);
+                infos.insert(
+                    id,
+                    PlayerSkillInfo {
+                        skill_type: "Pass".to_string(),
+                        state,
+                        description: format!(
+                            "{role} p{}→p{}: {phase}",
+                            passer.as_u32(),
+                            receiver.as_u32()
+                        ),
+                    },
+                );
+            }
+        }
+        // Players with a lingering terminal status but no live coordinator.
+        for (id, status) in &self.statuses {
+            infos.entry(*id).or_insert_with(|| PlayerSkillInfo {
+                skill_type: "Pass".to_string(),
+                state: skill_state_from_status(*status),
+                description: "pass ended".to_string(),
+            });
+        }
+        infos
     }
 
     /// Current rich pass results, keyed by player. Retained until the player
