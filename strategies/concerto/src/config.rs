@@ -116,30 +116,28 @@ pub const PLAN_CTX_MOVE_EPS: f64 = 300.0;
 /// central (square-on) position the keeper sits this far in front of the line.
 pub const KEEPER_ARC_RADIUS: f64 = 400.0;
 /// Maximum angular excursion of the keeper off straight-out (radians). Caps how
-/// far along the arc toward the posts the keeper will travel.
+/// far along the arc toward the posts the keeper will travel. Also bounds the
+/// guard zone's angular span.
 pub const KEEPER_ARC_MAX_ANGLE: f64 = std::f64::consts::FRAC_PI_4; // 45°
-
-// Aggressive control profile for the keeper — fed to `ControlOverride`.
-/// Snappiness dial: scales the position approach gain and terminal braking.
-pub const KEEPER_AGGRESSIVENESS: f64 = 1.5;
-/// Explicit terminal active-braking gain (decoupled from aggressiveness).
-pub const KEEPER_BRAKE_GAIN: f64 = 2.0;
-/// Keeper speed cap (mm/s). Tight, predictable line motion.
-pub const KEEPER_SPEED_LIMIT: f64 = 2500.0;
+/// Radial breathing room (mm) added beyond `KEEPER_ARC_RADIUS` for the guard
+/// zone's outer edge, so position noise doesn't peg the keeper at the boundary.
+/// The aggressive control profile itself (gains, speed/accel caps, ORCA-off)
+/// lives in the `GoToBounded` executor skill.
+pub const KEEPER_ZONE_RADIUS_SLACK: f64 = 50.0;
 
 // Ball-clearing behaviour.
 /// Clear only when the ball is essentially stopped (mm/s).
 pub const CLEAR_SPEED_LIMIT: f64 = 300.0;
-/// Ball must be inside the penalty area by at least this margin on the *side*
-/// edges before the keeper commits to a clear, so the pickup maneuver stays
-/// inside the box.
-pub const CLEAR_INNER_MARGIN: f64 = 250.0;
-/// Front (field-facing) edge margin for the clear gate — much smaller than the
-/// side margin. Field robots are held ~200mm clear of the front line by the box
-/// keepout, so a ball anywhere inside the box is the keeper's to claim; without a
-/// small front margin a ball on the front line deadlocks (neither can reach it).
-pub const CLEAR_FRONT_MARGIN: f64 = 50.0;
-/// Abort the clear if the keeper body comes within this distance of the box edge.
+/// A stopped ball this far inside the penalty area's field-facing edges (front +
+/// sides) is the keeper's to clear. No field robot may enter the box (they're
+/// held ~200mm clear of every edge by the keepout), so the margin is small and
+/// uniform — a larger one would leave the box corners/edges in a dead zone where
+/// neither the keeper nor a field robot can reach the ball.
+pub const CLEAR_BALL_MARGIN: f64 = 50.0;
+/// Abort the clear if the keeper charges out past the *front* (field-facing) edge
+/// by this much — that's the one direction where leaving means abandoning the
+/// goal. The side/goal-line edges are unconstrained so the keeper can reach a
+/// ball in the box corners.
 pub const CLEAR_EXIT_MARGIN: f64 = 120.0;
 /// Minimum |y| of the clear target, so the keeper never kicks straight up the
 /// middle in front of our own goal.

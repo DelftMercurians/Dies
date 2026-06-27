@@ -186,6 +186,9 @@ impl ExecutorTask {
                     params,
                 });
             }
+            // Handled by the dedicated bench task (direct-to-basestation), not
+            // the executor.
+            UiCommand::Bench(_) => {}
         }
     }
 

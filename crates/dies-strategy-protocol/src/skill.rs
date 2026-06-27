@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Angle, PlayerId, Vector2};
+use crate::{Angle, MotionBounds, PlayerId, Vector2};
 
 /// A command to execute a skill on a player.
 ///
@@ -44,6 +44,29 @@ pub enum SkillCommand {
     GoToPos {
         position: Vector2,
         heading: Option<Angle>,
+    },
+
+    /// Move to a target position with aggressive direct-velocity control,
+    /// constrained to a bounded region.
+    ///
+    /// **Type**: Continuous - call each frame with updated position/bounds.
+    ///
+    /// Unlike `GoToPos`, this bypasses the path follower and global planner and
+    /// drives the robot directly toward the target with a snappy profile, while a
+    /// no-overshoot velocity envelope keeps it inside `bounds`. Built for the
+    /// goalkeeper holding its guard arc; the aggressive control profile (gains,
+    /// speed/accel caps, ORCA-off) lives in the executor skill, not here.
+    ///
+    /// **Parameters**:
+    /// - `position`: Target position in mm (should lie inside `bounds`)
+    /// - `heading`: Optional target heading
+    /// - `bounds`: Region the robot must not leave
+    ///
+    /// **Completion**: `Succeeded` when the robot arrives at the target.
+    GoToBounded {
+        position: Vector2,
+        heading: Option<Angle>,
+        bounds: MotionBounds,
     },
 
     /// Dribble with the ball to a target position.

@@ -173,6 +173,7 @@ pub async fn get_basesation_info(state: State<Arc<ServerState>>) -> Json<Basesta
             .filter(|((color, _), _)| color.is_none())
             .map(|(_, msg)| msg)
             .collect(),
+        base_info: state.base_info.read().unwrap().clone(),
     })
 }
 

@@ -15,8 +15,8 @@ use axum::{
     Router,
 };
 use dies_core::{
-    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId, TeamColor,
-    WorldUpdate,
+    BaseStationInfo, DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId,
+    TeamColor, WorldUpdate,
 };
 use dies_executor::{ControlMsg, ExecutorHandle};
 use dies_test_driver::{TestLogEntry, TestStatus};
@@ -36,6 +36,8 @@ pub struct ServerState {
     pub update_rx: watch::Receiver<Option<WorldUpdate>>,
     pub debug_sub: DebugSubscriber,
     pub basestation_feedback: RwLock<HashMap<(Option<TeamColor>, PlayerId), PlayerFeedbackMsg>>,
+    /// Latest RF basestation info (radios, version, channel), for the test bench.
+    pub base_info: RwLock<Option<BaseStationInfo>>,
     pub cmd_tx: broadcast::Sender<UiCommand>,
     pub ui_mode: RwLock<UiMode>,
     pub executor_status: RwLock<ExecutorStatus>,
@@ -107,6 +109,7 @@ impl ServerState {
             update_rx,
             debug_sub,
             basestation_feedback: RwLock::new(HashMap::new()),
+            base_info: RwLock::new(None),
             cmd_tx,
             ui_mode: RwLock::new(ui_mode),
             executor_status: RwLock::new(ExecutorStatus::None),
@@ -258,33 +261,15 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     state.executor_settings.write().unwrap().vision_delay_ms = config.vision_delay_ms;
     let state = Arc::new(state);
 
-    // Start basestation watcher
+    // Start basestation watcher + test-bench task (telemetry cache, base info,
+    // and direct 50 Hz robot command streaming).
     let basestation_task = {
         let state = Arc::clone(&state);
         let env = config.environment.clone();
-        let mut shutdown_rx = shutdown_rx.resubscribe();
+        let cmd_rx = cmd_tx.subscribe();
+        let shutdown_rx = shutdown_rx.resubscribe();
         tokio::spawn(async move {
-            match env {
-                UiEnvironment::WithLive { mut bs_handle, .. } => loop {
-                    tokio::select! {
-                        msg = bs_handle.recv() => match msg {
-                            Ok((color, msg)) => {
-                                let mut feedback = state.basestation_feedback.write().unwrap();
-                                feedback.insert((color, msg.id), msg);
-                            }
-                            Err(_) => {
-                                log::info!("Shutdown: basestation watcher loop exited (bs_handle closed)");
-                                break;
-                            }
-                        },
-                        _ = shutdown_rx.recv() => {
-                            log::info!("Shutdown: basestation watcher got stop signal, exiting");
-                            break;
-                        }
-                    }
-                },
-                UiEnvironment::SimulationOnly => {}
-            }
+            crate::bench::run(state, env, cmd_rx, shutdown_rx).await;
         })
     };
 

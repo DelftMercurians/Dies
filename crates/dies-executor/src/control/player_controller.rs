@@ -17,6 +17,9 @@ const MAX_DRIBBLE_SPEED: f64 = 1000.0;
 /// Terminal active-braking gain added per unit of `aggressiveness` when no
 /// explicit `brake_gain` override is supplied.
 const AGGRESSIVENESS_BRAKE_SCALE: f64 = 1.0;
+/// Safety margin (mm) the bounded-region velocity envelope pulls the effective
+/// boundary in by, to absorb position noise and one-tick discretization.
+const BOUNDS_MARGIN: f64 = 30.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum KickerState {
@@ -374,6 +377,27 @@ impl PlayerController {
             player_context.debug_value("orca.neighbors", neighbors.len() as f64);
         }
 
+        // Per-robot acceleration limits. `acceleration_limit` (when set) caps both
+        // ramp directions; the goalkeeper raises it to accelerate harder than the
+        // global default. The decel value also drives the bounded-region envelope
+        // below, so the brake profile it assumes is exactly what the clamp applies.
+        let eff_accel = input.acceleration_limit.unwrap_or(self.max_accel);
+        let eff_decel = input.acceleration_limit.unwrap_or(self.max_decel);
+
+        // Bounded-region velocity envelope: cap the outward component of the final
+        // commanded velocity so the robot can always brake before crossing the
+        // region boundary (no overshoot). Applied after ORCA so it bounds the
+        // truly-final velocity regardless of source; keyed off position, so it is
+        // robust to velocity-estimate lag.
+        if let Some(bounds) = input.bounds.as_ref() {
+            self.target_velocity_global = bounds.clamp_velocity(
+                state.position,
+                self.target_velocity_global,
+                eff_decel,
+                BOUNDS_MARGIN,
+            );
+        }
+
         // First-order asymmetric acceleration clamp toward the desired velocity
         // (accel when speeding up, decel when slowing). This is the only output
         // smoothing — no jerk stage. ORCA may step the command in an emergency;
@@ -385,9 +409,9 @@ impl PlayerController {
             desired
         } else {
             let a = if desired.norm() >= last_cmd.norm() {
-                self.max_accel
+                eff_accel
             } else {
-                self.max_decel
+                eff_decel
             };
             last_cmd + cap_vec(desired - last_cmd, a * dt.max(1.0e-3))
         };

@@ -12,8 +12,8 @@ use std::time::{Duration, Instant, SystemTime};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use dies_core::{SideAssignment, TeamColor, TeamData};
 use dies_strategy_protocol::{
-    ControlOverride, DebugEntry, HostMessage, ParamSpec, PassResult, PlayerId, SkillCommand,
-    SkillStatus, StrategyConfig, StrategyMessage, StrategyParams,
+    DebugEntry, HostMessage, ParamSpec, PassResult, PlayerId, SkillCommand, SkillStatus,
+    StrategyConfig, StrategyMessage, StrategyParams,
 };
 use thiserror::Error;
 use tracing::{debug, error, info, trace, warn};
@@ -91,8 +91,6 @@ pub struct StrategyOutput {
     pub debug_data: Vec<DebugEntry>,
     /// Role names for players.
     pub player_roles: HashMap<PlayerId, String>,
-    /// Per-player control overrides (sparse diff over executor defaults).
-    pub control_overrides: HashMap<PlayerId, ControlOverride>,
 }
 
 /// Manages a connection to a single strategy process.
@@ -410,7 +408,6 @@ impl StrategyConnection {
                 skill_commands,
                 debug_data,
                 player_roles,
-                control_overrides,
             }) => {
                 // Transform skill commands from strategy to world coordinates
                 let transformed_commands: HashMap<PlayerId, Option<SkillCommand>> = skill_commands
@@ -428,7 +425,6 @@ impl StrategyConnection {
                     skill_commands: transformed_commands,
                     debug_data: transformed_debug,
                     player_roles,
-                    control_overrides,
                 }))
             }
             Some(StrategyMessage::Log { level, message }) => {

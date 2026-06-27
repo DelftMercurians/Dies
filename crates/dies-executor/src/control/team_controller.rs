@@ -7,7 +7,7 @@ use dies_core::{
     DebugColor, ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerId,
     PlayerSkillInfo, RoleType, SideAssignment, TeamColor, TeamData, Vector2, PLAYER_RADIUS,
 };
-use dies_strategy_protocol::{ControlOverride, SkillCommand, SkillStatus};
+use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use std::sync::Arc;
 
 use super::{
@@ -29,8 +29,6 @@ pub struct StrategyInput {
     pub skill_commands: HashMap<PlayerId, Option<SkillCommand>>,
     /// Role names per player for UI display.
     pub player_roles: HashMap<PlayerId, String>,
-    /// Per-player control overrides (sparse diff over executor defaults).
-    pub control_overrides: HashMap<PlayerId, ControlOverride>,
 }
 
 pub struct TeamController {
@@ -473,15 +471,9 @@ impl TeamController {
                 debug_prefix: team_context.key(format!("p{}", player_id)),
             };
 
-            let mut input = self
+            let input = self
                 .skill_executor
                 .process_command(*player_id, skill_cmd, ctx);
-
-            // Merge the strategy's per-robot control override (sparse: only the
-            // Some(..) fields take effect) onto the skill-derived input.
-            if let Some(ovr) = self.strategy_input.control_overrides.get(player_id) {
-                apply_control_override(&mut input, ovr);
-            }
 
             player_inputs.insert(*player_id, input);
         }
@@ -522,29 +514,6 @@ impl TeamController {
                 c.command(&player_context, untransformer.clone())
             })
             .collect()
-    }
-}
-
-/// Merge a strategy-supplied [`ControlOverride`] onto a `PlayerControlInput`.
-/// Sparse: only the `Some(..)` fields are applied.
-fn apply_control_override(input: &mut PlayerControlInput, ovr: &ControlOverride) {
-    if let Some(v) = ovr.aggressiveness {
-        input.aggressiveness = v;
-    }
-    if let Some(v) = ovr.brake_gain {
-        input.brake_gain = Some(v);
-    }
-    if let Some(v) = ovr.speed_limit {
-        input.speed_limit = Some(v);
-    }
-    if let Some(v) = ovr.accel_limit {
-        input.acceleration_limit = Some(v);
-    }
-    if let Some(v) = ovr.avoid_robots {
-        input.avoid_robots = v;
-    }
-    if let Some(v) = ovr.use_planner {
-        input.use_planner = v;
     }
 }
 

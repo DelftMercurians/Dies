@@ -1215,7 +1215,6 @@ impl Executor {
                     controller.set_strategy_input(StrategyInput {
                         skill_commands: frame.skill_commands,
                         player_roles: frame.player_roles,
-                        control_overrides: HashMap::new(),
                     });
                 }
                 self.test_manual.clear();
@@ -1261,7 +1260,6 @@ impl Executor {
                             controller.set_strategy_input(StrategyInput {
                                 skill_commands: frame_output.blue_commands,
                                 player_roles: frame_output.blue_roles,
-                                control_overrides: frame_output.blue_control_overrides,
                             });
                         }
                     }
@@ -1270,7 +1268,6 @@ impl Executor {
                             controller.set_strategy_input(StrategyInput {
                                 skill_commands: frame_output.yellow_commands,
                                 player_roles: frame_output.yellow_roles,
-                                control_overrides: frame_output.yellow_control_overrides,
                             });
                         }
                     }
@@ -1312,14 +1309,12 @@ impl Executor {
                 controller.set_strategy_input(StrategyInput {
                     skill_commands: frame_output.blue_commands,
                     player_roles: frame_output.blue_roles,
-                    control_overrides: frame_output.blue_control_overrides,
                 });
             }
             if let Some(ref mut controller) = self.team_controllers.yellow_team {
                 controller.set_strategy_input(StrategyInput {
                     skill_commands: frame_output.yellow_commands,
                     player_roles: frame_output.yellow_roles,
-                    control_overrides: frame_output.yellow_control_overrides,
                 });
             }
             self.test_manual.clear();

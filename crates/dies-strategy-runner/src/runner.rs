@@ -151,7 +151,7 @@ impl<S: Strategy> StrategyRunner<S> {
                 self.strategy.update(&mut ctx);
 
                 // Collect outputs
-                let (skill_commands, player_roles, control_overrides) = ctx.collect_output();
+                let (skill_commands, player_roles) = ctx.collect_output();
                 let debug_data = strategy_debug::collect_entries();
 
                 // Collect logs
@@ -169,7 +169,6 @@ impl<S: Strategy> StrategyRunner<S> {
                     skill_commands,
                     debug_data,
                     player_roles,
-                    control_overrides,
                 };
 
                 self.connection

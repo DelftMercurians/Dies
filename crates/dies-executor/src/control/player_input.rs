@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use dies_core::{Angle, PlayerId, RoleType, Vector2};
+use dies_core::{Angle, MotionBounds, PlayerId, RoleType, Vector2};
 
 /// A collection of player inputs.
 pub struct PlayerInputs {
@@ -158,6 +158,12 @@ pub struct PlayerControlInput {
     /// at the target (no wall/obstacle routing). Default `true`.
     pub use_planner: bool,
 
+    /// Optional region the robot must stay inside. When set, the controller caps
+    /// the outward component of the final commanded velocity so the robot can
+    /// always brake before crossing the boundary (no overshoot). `None` = no
+    /// region constraint.
+    pub bounds: Option<MotionBounds>,
+
     pub role_type: RoleType,
 }
 
@@ -184,6 +190,7 @@ impl Default for PlayerControlInput {
             avoid_robots: false,
             avoid_defense_area: false,
             use_planner: true,
+            bounds: None,
             role_type: RoleType::default(),
         }
     }
@@ -254,6 +261,12 @@ impl PlayerControlInput {
 
     pub fn ignore_robots(&mut self) -> &mut Self {
         self.avoid_robots = true;
+        self
+    }
+
+    /// Constrain the robot to a region (no-overshoot velocity envelope).
+    pub fn with_bounds(&mut self, bounds: MotionBounds) -> &mut Self {
+        self.bounds = Some(bounds);
         self
     }
 

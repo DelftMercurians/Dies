@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 
 use dies_strategy_protocol::{
-    ControlOverride, ParamValue, PassResult, PassRole, PlayerId, SkillCommand, SkillStatus,
-    StrategyParams, Vector2, WorldSnapshot,
+    ParamValue, PassResult, PassRole, PlayerId, SkillCommand, SkillStatus, StrategyParams, Vector2,
+    WorldSnapshot,
 };
 
 use crate::player::PlayerHandle;
@@ -203,20 +203,18 @@ impl TeamContext {
         self.players.len()
     }
 
-    /// Collect all pending skill commands, player roles, and control overrides.
+    /// Collect all pending skill commands and player roles.
     ///
     /// This is called by the runner after the strategy's `update()` method.
-    /// Returns `(skill_commands, player_roles, control_overrides)`.
+    /// Returns `(skill_commands, player_roles)`.
     pub fn collect_output(
         &mut self,
     ) -> (
         HashMap<PlayerId, Option<SkillCommand>>,
         HashMap<PlayerId, String>,
-        HashMap<PlayerId, ControlOverride>,
     ) {
         let mut skill_commands = HashMap::new();
         let mut player_roles = HashMap::new();
-        let mut control_overrides = HashMap::new();
 
         for (id, player) in self.players.iter_mut() {
             let cmd = player.take_pending_command();
@@ -225,13 +223,9 @@ impl TeamContext {
             if let Some(role) = player.take_role() {
                 player_roles.insert(*id, role);
             }
-
-            if let Some(ovr) = player.take_control_override() {
-                control_overrides.insert(*id, ovr);
-            }
         }
 
-        (skill_commands, player_roles, control_overrides)
+        (skill_commands, player_roles)
     }
 }
 

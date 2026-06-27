@@ -2,15 +2,16 @@ use std::path::PathBuf;
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    Angle, DebugMap, ExecutorInfo, ExecutorSettings, GcSimCommand, ParamValue, PlayerFeedbackMsg,
-    PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration,
-    Vector2, WorldData, WorldUpdate,
+    Angle, BaseStationInfo, BenchCommand, DebugMap, ExecutorInfo, ExecutorSettings, GcSimCommand,
+    ParamValue, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd,
+    TeamColor, TeamConfiguration, Vector2, WorldData, WorldUpdate,
 };
 use dies_ssl_client::SslClientConfig;
 use dies_test_driver::{TestLogEntry, TestStatus};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
+mod bench;
 mod executor_task;
 mod replay_controller;
 mod routes;
@@ -157,6 +158,8 @@ pub(crate) enum UiCommand {
     ReplaySetSpeed {
         speed: f64,
     },
+    /// Direct robot test-bench command (bypasses the executor entirely).
+    Bench(BenchCommand),
     Stop,
 }
 
@@ -382,4 +385,6 @@ pub(crate) struct BasestationResponse {
     pub(crate) blue_team: Vec<PlayerFeedbackMsg>,
     pub(crate) yellow_team: Vec<PlayerFeedbackMsg>,
     pub(crate) unknown_team: Vec<PlayerFeedbackMsg>,
+    /// RF basestation status (radios, version, channel), for the test bench.
+    pub(crate) base_info: Option<BaseStationInfo>,
 }

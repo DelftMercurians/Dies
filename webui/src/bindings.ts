@@ -254,6 +254,20 @@ export interface BallData {
 	detected: boolean;
 }
 
+/** Status of the RF basestation itself, surfaced to the bench UI. */
+export interface BaseStationInfo {
+	connected: boolean;
+	protocol_ok: boolean;
+	version: string;
+	protocol_version: string;
+	/** Current radio channel in MHz. */
+	channel_mhz: number;
+	num_radios: number;
+	/** Online flag per radio module. */
+	radios_online: boolean[];
+	max_robots: number;
+}
+
 /** The status of a sub-system on the robot */
 export enum SysStatus {
 	Emergency = "Emergency",
@@ -269,6 +283,33 @@ export enum SysStatus {
 	NotInstalled = "NotInstalled",
 	Standby = "Standby",
 	Cooldown = "Cooldown",
+}
+
+/** State of the firmware reflex-kick state machine. */
+export enum ReflexKickState {
+	Off = "Off",
+	Armed = "Armed",
+	Cooldown = "Cooldown",
+	Emergency = "Emergency",
+}
+
+/** Echo of the last command the robot reports having received (global frame). */
+export interface CommandEcho {
+	global_speed_x: number;
+	global_speed_y: number;
+	heading_setpoint: number;
+	heading_last_measurement: number;
+	dribbler_speed: number;
+	kick_time: number;
+	/** Raw `Radio_RobotCommand` code; the frontend maps it to a label. */
+	robot_command: number;
+}
+
+/** Firmware version reported by a robot. */
+export interface FirmwareVersion {
+	major: number;
+	minor: number;
+	patch: number;
 }
 
 /** A message from one of our robots to the AI */
@@ -289,12 +330,28 @@ export interface PlayerFeedbackMsg {
 	pack_voltages?: [number, number];
 	/** IMU readings: [ang_x, ang_y, ang_z, ang_wx, ang_wy, ang_wz] */
 	imu_readings?: [number, number, number, number, number, number];
+	motor_currents?: [number, number, number, number, number];
+	main_board_current?: number;
+	avg_loop_time_us?: number;
+	max_loop_time_us?: number;
+	smart_kick_counter?: number;
+	kick_ok_flag?: boolean;
+	reflex_kick_state?: ReflexKickState;
+	reflex_kick_counter?: number;
+	breakbeam_raw?: number;
+	tof_ball_detected?: boolean;
+	/** Time-of-flight ball position estimate `[x, y]`. */
+	tof_xy?: [number, number];
+	last_command?: CommandEcho;
+	firmware_version?: FirmwareVersion;
 }
 
 export interface BasestationResponse {
 	blue_team: PlayerFeedbackMsg[];
 	yellow_team: PlayerFeedbackMsg[];
 	unknown_team: PlayerFeedbackMsg[];
+	/** RF basestation status (radios, version, channel), for the test bench. */
+	base_info?: BaseStationInfo;
 }
 
 export enum ConsoleLogLevel {
@@ -970,6 +1027,8 @@ export type UiCommand =
 	| { type: "ReplaySetSpeed", data: {
 	speed: number;
 }}
+	/** Direct robot test-bench command (bypasses the executor entirely). */
+	| { type: "Bench", data: BenchCommand }
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
@@ -1203,6 +1262,76 @@ export interface WorldUpdate {
 	 */
 	announcements?: Announcement[];
 }
+
+/**
+ * A command from the bench UI, sent straight to the basestation (no executor,
+ * no vision). Robots are addressed by raw robot id.
+ */
+export type BenchCommand = 
+	/** Continuously-streamed motion setpoint for a taken robot. */
+	| { type: "SetMotion", data: {
+	robot_id: number;
+	mode: BenchMotionMode;
+	vx: number;
+	vy: number;
+	/** `w` \[rad/s] in Local mode, heading setpoint \[rad] in Global mode. */
+	w_or_heading: number;
+	dribble_speed: number;
+}}
+	/** Zero a single robot's setpoint. */
+	| { type: "Stop", data: {
+	robot_id: number;
+}}
+	/** Zero every robot and release control. */
+	| { type: "StopAll",  }
+	/** Take or release streaming control of a robot. */
+	| { type: "TakeControl", data: {
+	robot_id: number;
+	taken: boolean;
+}}
+	/** Fire a one-shot action at a single robot. */
+	| { type: "OneShot", data: {
+	robot_id: number;
+	kind: BenchOneShot;
+}}
+	/** Broadcast a one-shot action to all robots. */
+	| { type: "Broadcast", data: {
+	kind: BenchOneShot;
+}}
+	/** Set the radio channel of the base (`robot_id = None`) or a robot. */
+	| { type: "SetChannel", data: {
+	robot_id?: number;
+	channel: number;
+}};
+
+/** Motion frame for a bench `SetMotion` command. */
+export enum BenchMotionMode {
+	/** `(vx, vy)` in the robot's local frame, `w_or_heading` is `w` \[rad/s]. */
+	Local = "Local",
+	/** `(vx, vy)` in the global frame, `w_or_heading` is the heading setpoint \[rad]. */
+	Global = "Global",
+}
+
+/** A one-shot bench action targeting a single robot (or broadcast). */
+export type BenchOneShot = 
+	| { type: "Beep",  }
+	| { type: "Reboot",  }
+	| { type: "Shutdown",  }
+	| { type: "Coast",  }
+	| { type: "Arm",  }
+	| { type: "Disarm",  }
+	| { type: "Discharge",  }
+	| { type: "Kick", data: {
+	speed: number;
+}}
+	| { type: "ArmReflex",  }
+	| { type: "CalibrateBreakbeam",  }
+	| { type: "CalibrateImu",  }
+	| { type: "GetVersion",  }
+	| { type: "ZeroHeading",  }
+	| { type: "SetHeading", data: {
+	angle: number;
+}};
 
 export enum DebugColor {
 	Red = "red",

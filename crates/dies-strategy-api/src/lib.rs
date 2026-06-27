@@ -133,10 +133,10 @@ pub use world::{Rect, World};
 // Re-export commonly used types from protocol and core crates
 pub use dies_core::{Angle, FieldGeometry};
 pub use dies_strategy_protocol::{
-    BallState, ControlOverride, DebugColor, DebugEntry, DebugShape, DebugValue, GameState,
-    Handicap, ParamKind, ParamSpec, ParamValue, PassBallState, PassFailure, PassResult, PassRole,
-    PlayerId, PlayerState, Possession, SkillCommand, SkillStatus, StrategyParams, Vector2,
-    WorldSnapshot,
+    ArcZone, BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState, Handicap,
+    MotionBounds, ParamKind, ParamSpec, ParamValue, PassBallState, PassFailure, PassResult,
+    PassRole, PlayerId, PlayerState, Possession, SkillCommand, SkillStatus, StrategyParams,
+    Vector2, WorldSnapshot,
 };
 
 /// Prelude module for convenient imports.
@@ -159,7 +159,7 @@ pub mod prelude {
     // Core types
     pub use dies_core::{Angle, FieldGeometry};
     pub use dies_strategy_protocol::{
-        BallState, ControlOverride, DebugColor, GameState, Handicap, ParamKind, ParamSpec,
+        ArcZone, BallState, DebugColor, GameState, Handicap, MotionBounds, ParamKind, ParamSpec,
         ParamValue, PlayerId, PlayerState, Possession, SkillCommand, SkillStatus, Vector2,
     };
 }

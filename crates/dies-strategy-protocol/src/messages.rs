@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ControlOverride, DebugEntry, ParamSpec, PassResult, PlayerId, SkillCommand, SkillStatus,
-    StrategyParams, WorldSnapshot,
+    DebugEntry, ParamSpec, PassResult, PlayerId, SkillCommand, SkillStatus, StrategyParams,
+    WorldSnapshot,
 };
 
 /// Configuration passed to a strategy on initialization.
@@ -96,12 +96,6 @@ pub enum StrategyMessage {
 
         /// Role names for each player (for UI display and debugging).
         player_roles: HashMap<PlayerId, String>,
-
-        /// Per-player control overrides (sparse diff over executor defaults).
-        ///
-        /// Players not included keep the default control profile. Carries no
-        /// spatial data, so it is not coordinate-transformed.
-        control_overrides: HashMap<PlayerId, ControlOverride>,
     },
 
     /// Log message to forward to the host logging system.
@@ -189,7 +183,6 @@ mod tests {
             skill_commands,
             debug_data: vec![],
             player_roles,
-            control_overrides: HashMap::new(),
         };
 
         let encoded = bincode::serialize(&output).unwrap();

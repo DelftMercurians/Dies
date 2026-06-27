@@ -6,9 +6,11 @@
 //! - **Clear**: when a ball settles inside our defense area, pick it up and kick
 //!   it out toward the opponent half (off the centre line), then return to Guard.
 //!
-//! The keeper runs an aggressive, ORCA-free, planner-free control profile (see
-//! [`keeper_control_override`]). Disabling ORCA is what stops field-boundary
-//! avoidance from ever overriding the keeper's commanded velocity.
+//! In Guard the keeper uses the [`go_to_bounded`](PlayerHandle::go_to_bounded)
+//! skill: aggressive direct-velocity control with the planner and ORCA bypassed,
+//! kept inside the guard arc by a no-overshoot velocity envelope (see
+//! [`keeper_guard_zone`]). The aggressive control profile lives in the executor
+//! skill, so no per-frame control overrides cross the IPC.
 
 use dies_strategy_api::prelude::*;
 use dies_strategy_api::World;
@@ -43,23 +45,23 @@ impl KeeperState {
     }
 }
 
-/// The keeper's aggressive control profile: high position/braking gains, a tight
-/// speed cap, and — crucially — ORCA and the planner disabled so nothing deflects
-/// or reroutes its line motion (no field-boundary avoidance).
-pub fn keeper_control_override() -> ControlOverride {
-    ControlOverride::new()
-        .aggressiveness(config::KEEPER_AGGRESSIVENESS)
-        .brake_gain(config::KEEPER_BRAKE_GAIN)
-        .speed_limit(config::KEEPER_SPEED_LIMIT)
-        .avoid_robots(false)
-        .use_planner(false)
+/// The guard region the keeper must not leave: an arc band in front of the goal.
+/// The `go_to_bounded` skill's velocity envelope brakes the keeper before it
+/// crosses any edge (the outer radius, or the ±angular ends near the posts), so
+/// even the aggressive profile can never swing it out of position.
+pub fn keeper_guard_zone(world: &World) -> MotionBounds {
+    MotionBounds::Arc(ArcZone {
+        center: world.own_goal_center(),
+        min_radius: 0.0,
+        max_radius: config::KEEPER_ARC_RADIUS + config::KEEPER_ZONE_RADIUS_SLACK,
+        half_angle: config::KEEPER_ARC_MAX_ANGLE,
+    })
 }
 
-/// Drive the keeper for this frame: set its role + control override and issue the
-/// Guard/Clear skill commands.
+/// Drive the keeper for this frame: set its role and issue the Guard/Clear skill
+/// commands.
 pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle) {
     keeper.set_role("goalkeeper");
-    keeper.set_control_override(keeper_control_override());
 
     // ── Mode transitions ────────────────────────────────────────────────
     match state.mode {
@@ -86,7 +88,9 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
             let face = world
                 .ball_position()
                 .unwrap_or_else(|| world.opp_goal_center());
-            keeper.go_to(target).facing(face);
+            keeper
+                .go_to_bounded(target, keeper_guard_zone(world))
+                .facing(face);
         }
         KeeperMode::Clear => {
             let ball = world.ball_position().unwrap_or_else(|| keeper.position());
@@ -176,11 +180,11 @@ fn should_clear(world: &World) -> bool {
         return false;
     };
     let speed = world.ball_velocity().map(|v| v.norm()).unwrap_or(0.0);
-    speed < config::CLEAR_SPEED_LIMIT && ball_firmly_inside(world, ball, config::CLEAR_INNER_MARGIN)
+    speed < config::CLEAR_SPEED_LIMIT && ball_inside_box(world, ball)
 }
 
 /// Whether an in-progress Clear should continue. Aborts back to Guard if the ball
-/// has left the box, the keeper is about to leave the box, or play is interrupted.
+/// has left the box, the keeper charges out the front edge, or play is interrupted.
 fn clear_still_valid(world: &World, keeper: &PlayerHandle) -> bool {
     if !world.is_ball_in_play() {
         return false;
@@ -192,29 +196,32 @@ fn clear_still_valid(world: &World, keeper: &PlayerHandle) -> bool {
     if !world.own_penalty_area().contains(ball) {
         return false;
     }
-    // Safety: never let the keeper leave the box.
-    keeper_safely_inside(world, keeper.position(), config::CLEAR_EXIT_MARGIN)
+    // Safety: the keeper may go right up to the side/goal-line edges to reach a
+    // corner ball, but must not charge out the front edge and abandon the goal.
+    keeper_inside_front(world, keeper.position(), config::CLEAR_EXIT_MARGIN)
 }
 
-/// Ball is inside the penalty area by `margin` on the field-facing edges (front +
-/// sides), so the whole pickup maneuver stays inside. The back edge is the goal
-/// line — no margin needed there.
-fn ball_firmly_inside(world: &World, ball: Vector2, margin: f64) -> bool {
+/// A stopped ball inside the penalty area is the keeper's to clear — no field
+/// robot may enter the box. Require only a small `CLEAR_BALL_MARGIN` inside the
+/// field-facing edges (front + sides) so we don't chase a ball straddling the
+/// line; the back edge is the goal line (no margin). A large margin would strand
+/// balls in the box corners where neither keeper nor field robot can reach them.
+fn ball_inside_box(world: &World, ball: Vector2) -> bool {
     let area = world.own_penalty_area();
-    // Side edges use the full `margin`; the front (field-facing) edge uses a much
-    // smaller margin so the keeper claims balls on the front line that no field
-    // robot can legally reach. The back edge is the goal line — no margin there.
+    let m = config::CLEAR_BALL_MARGIN;
     ball.x >= area.min.x
-        && ball.x <= area.max.x - config::CLEAR_FRONT_MARGIN
-        && ball.y >= area.min.y + margin
-        && ball.y <= area.max.y - margin
+        && ball.x <= area.max.x - m
+        && ball.y >= area.min.y + m
+        && ball.y <= area.max.y - m
 }
 
-/// Keeper is comfortably inside the box: at least `margin` from the field-facing
-/// edges (front + sides). The goal-line edge is not constrained.
-fn keeper_safely_inside(world: &World, pos: Vector2, margin: f64) -> bool {
+/// Keeper hasn't charged out past the front (field-facing) edge of the box. The
+/// side and goal-line edges are unconstrained: reaching a ball in the box corners
+/// requires the keeper near them, and the ball-left-box check already ends the
+/// clear once the ball is out.
+fn keeper_inside_front(world: &World, pos: Vector2, margin: f64) -> bool {
     let area = world.own_penalty_area();
-    pos.x <= area.max.x - margin && pos.y >= area.min.y + margin && pos.y <= area.max.y - margin
+    pos.x <= area.max.x - margin
 }
 
 /// Clearing target: upfield (toward the opponent half) and pushed toward the
@@ -326,9 +333,19 @@ mod tests {
     fn clear_claims_ball_near_the_front_line() {
         // A stopped ball just inside the front edge (the old 250mm margin left a
         // dead zone here where field robots can't reach and the keeper wouldn't
-        // commit). The small front margin must now claim it.
+        // commit). The small uniform margin must now claim it.
         let front_edge = -4500.0 + 1000.0; // own_penalty_area front (default geom)
-        let ball = Vector2::new(front_edge - config::CLEAR_FRONT_MARGIN - 10.0, 0.0);
+        let ball = Vector2::new(front_edge - config::CLEAR_BALL_MARGIN - 10.0, 0.0);
+        assert!(should_clear(&world_with_ball(ball)), "ball at {ball:?}");
+    }
+
+    #[test]
+    fn clear_claims_ball_in_the_box_corner() {
+        // Ball deep in the box near a side edge (the original "stuck in the corner"
+        // deadlock): field robots are held out, so the keeper must claim it. Old
+        // 250mm side margin excluded it; the small uniform margin must not.
+        let side_edge = -1000.0; // own_penalty_area side (default geom, width 2000)
+        let ball = Vector2::new(-4100.0, side_edge + config::CLEAR_BALL_MARGIN + 10.0);
         assert!(should_clear(&world_with_ball(ball)), "ball at {ball:?}");
     }
 

@@ -27,13 +27,11 @@
 //! Strategies never see absolute world coordinates or team color - the executor
 //! handles all coordinate transformations.
 
-mod control;
 mod debug;
 mod messages;
 mod skill;
 mod world;
 
-pub use control::*;
 pub use debug::*;
 pub use messages::*;
 pub use skill::*;
@@ -41,6 +39,6 @@ pub use world::*;
 
 // Re-export commonly used types from dies-core for convenience
 pub use dies_core::{
-    Angle, FieldGeometry, ParamKind, ParamSpec, ParamValue, PlayerId, StrategyParams,
-    TeamStrategyParams, Vector2, Vector3,
+    Angle, ArcZone, FieldGeometry, MotionBounds, ParamKind, ParamSpec, ParamValue, PlayerId,
+    StrategyParams, TeamStrategyParams, Vector2, Vector3,
 };

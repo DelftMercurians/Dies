@@ -11,12 +11,12 @@
 //! - **Discrete skills** (`pickup_ball`, `reflex_shoot`): Start once, return handles for monitoring
 
 use crate::skill_builders::{
-    DribbleBuilder, DribbleShootParams, GoToBuilder, PickupBallParams, ReceiveParams,
-    ReflexShootParams, SkillHandle,
+    DribbleBuilder, DribbleShootParams, GoToBoundedBuilder, GoToBuilder, PickupBallParams,
+    ReceiveParams, ReflexShootParams, SkillHandle,
 };
 use dies_core::Angle;
 use dies_strategy_protocol::{
-    ControlOverride, PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2,
+    MotionBounds, PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2,
 };
 use std::collections::HashSet;
 
@@ -53,8 +53,6 @@ pub struct PlayerHandle {
     pending_command: Option<SkillCommand>,
     /// Role name for UI display.
     role: Option<String>,
-    /// Per-frame control override (position gains / avoidance gating).
-    control_override: Option<ControlOverride>,
 }
 
 impl PlayerHandle {
@@ -65,7 +63,6 @@ impl PlayerHandle {
             skill_status,
             pending_command: None,
             role: None,
-            control_override: None,
         }
     }
 
@@ -141,6 +138,25 @@ impl PlayerHandle {
     /// `SkillStatus::Succeeded` when the robot arrives at the target position.
     pub fn go_to(&mut self, position: Vector2) -> GoToBuilder<'_> {
         GoToBuilder::new(self, position)
+    }
+
+    /// Move to a target position with aggressive direct-velocity control,
+    /// constrained to a bounded region.
+    ///
+    /// Like [`go_to`](Self::go_to) but bypasses the path follower and planner for
+    /// a snappy response, while a no-overshoot velocity envelope keeps the robot
+    /// inside `bounds`. Built for the goalkeeper's guard arc. Call each frame.
+    ///
+    /// ```ignore
+    /// let zone = MotionBounds::Arc(ArcZone { center, min_radius, max_radius, half_angle });
+    /// player.go_to_bounded(target, zone).facing(ball_pos);
+    /// ```
+    pub fn go_to_bounded(
+        &mut self,
+        position: Vector2,
+        bounds: MotionBounds,
+    ) -> GoToBoundedBuilder<'_> {
+        GoToBoundedBuilder::new(self, position, bounds)
     }
 
     /// Dribble with the ball to a target position.
@@ -345,15 +361,6 @@ impl PlayerHandle {
         self.role.as_deref()
     }
 
-    /// Set a per-frame control override for this player.
-    ///
-    /// Overrides position-controller gains and avoidance gating (ORCA / planner)
-    /// for this robot only. Re-issue it each frame; cleared otherwise. See
-    /// [`ControlOverride`].
-    pub fn set_control_override(&mut self, control_override: ControlOverride) {
-        self.control_override = Some(control_override);
-    }
-
     // ========== Internal ==========
 
     /// Set the pending command (used by skill builders).
@@ -369,11 +376,6 @@ impl PlayerHandle {
     /// Take the role (used by TeamContext to collect roles).
     pub(crate) fn take_role(&mut self) -> Option<String> {
         self.role.take()
-    }
-
-    /// Take the control override (used by TeamContext to collect overrides).
-    pub(crate) fn take_control_override(&mut self) -> Option<ControlOverride> {
-        self.control_override.take()
     }
 }
 

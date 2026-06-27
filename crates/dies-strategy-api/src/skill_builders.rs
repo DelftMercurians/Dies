@@ -5,7 +5,7 @@
 
 use crate::player::PlayerHandle;
 use dies_core::Angle;
-use dies_strategy_protocol::{SkillCommand, Vector2};
+use dies_strategy_protocol::{MotionBounds, SkillCommand, Vector2};
 
 /// Builder for `GoToPos` skill commands.
 ///
@@ -65,6 +65,63 @@ impl Drop for GoToBuilder<'_> {
         self.player.set_pending_command(SkillCommand::GoToPos {
             position: self.position,
             heading: self.heading,
+        });
+    }
+}
+
+/// Builder for `GoToBounded` skill commands.
+///
+/// Created by [`PlayerHandle::go_to_bounded()`]. Commits the command when dropped.
+///
+/// # Example
+///
+/// ```ignore
+/// player.go_to_bounded(target_pos, zone).facing(ball_pos);
+/// ```
+pub struct GoToBoundedBuilder<'a> {
+    player: &'a mut PlayerHandle,
+    position: Vector2,
+    bounds: MotionBounds,
+    heading: Option<Angle>,
+}
+
+impl<'a> GoToBoundedBuilder<'a> {
+    /// Create a new GoToBoundedBuilder.
+    pub(crate) fn new(
+        player: &'a mut PlayerHandle,
+        position: Vector2,
+        bounds: MotionBounds,
+    ) -> Self {
+        Self {
+            player,
+            position,
+            bounds,
+            heading: None,
+        }
+    }
+
+    /// Set the target heading. If not set, the robot maintains its current heading.
+    pub fn with_heading(mut self, heading: Angle) -> Self {
+        self.heading = Some(heading);
+        self
+    }
+
+    /// Compute and set heading to face the given position.
+    pub fn facing(mut self, look_at: Vector2) -> Self {
+        let direction = look_at - self.position;
+        if direction.norm() > 1e-6 {
+            self.heading = Some(Angle::from_radians(direction.y.atan2(direction.x)));
+        }
+        self
+    }
+}
+
+impl Drop for GoToBoundedBuilder<'_> {
+    fn drop(&mut self) {
+        self.player.set_pending_command(SkillCommand::GoToBounded {
+            position: self.position,
+            heading: self.heading,
+            bounds: self.bounds,
         });
     }
 }

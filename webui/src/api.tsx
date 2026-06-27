@@ -19,6 +19,7 @@ import {
   UiMode,
   UiStatus,
   UiCommand,
+  BenchMotionMode,
   TeamData,
   PostUiModeBody,
   PostUiCommandBody,
@@ -223,6 +224,22 @@ export const useBasestationInfo = () =>
     queryKey: ["basestation"],
     queryFn: getBasestationInfo,
     refetchInterval: 250,
+  });
+
+/** Whether the Test Bench modal is open (lifted so the toolbar can toggle it). */
+export const benchOpenAtom = atom<boolean>(false);
+
+/**
+ * Telemetry feed for the Test Bench. Same endpoint as {@link useBasestationInfo}
+ * but on its own query key with a faster poll while the modal is open, so the
+ * grid/focus readouts (cap voltage, motor speeds, breakbeam) stay smooth.
+ */
+export const useBenchTelemetry = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["bench-telemetry"],
+    queryFn: getBasestationInfo,
+    refetchInterval: enabled ? 80 : false,
+    enabled,
   });
 
 // Helper function to extract player ID from TeamPlayerId
@@ -916,6 +933,102 @@ export const useKeyboardControl = ({
       clearInterval(interval);
     };
   }, [playerId, primaryTeam]);
+};
+
+/**
+ * Direct keyboard driving for the Test Bench. Unlike {@link useKeyboardControl}
+ * this sends `Bench` `SetMotion` commands straight to the basestation (no
+ * executor, no vision). Active only while `robotId` is non-null (i.e. the robot
+ * has been "taken"). WASD = translate, Q/E = rotate, space = dribble.
+ */
+export const useBenchKeyboardControl = ({
+  robotId,
+  mode,
+  speed,
+  angularSpeedDegPerSec,
+  dribbleSpeed,
+}: {
+  robotId: number | null;
+  mode: BenchMotionMode;
+  speed: number;
+  angularSpeedDegPerSec: number;
+  dribbleSpeed: number;
+}) => {
+  const sendCommand = useSendCommand();
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
+  const angRef = useRef(angularSpeedDegPerSec);
+  angRef.current = angularSpeedDegPerSec;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const dribbleRef = useRef(dribbleSpeed);
+  dribbleRef.current = dribbleSpeed;
+
+  useEffect(() => {
+    if (robotId === null) return;
+    const pressed = new Set<string>();
+    let heading = 0; // accumulated heading setpoint for global mode
+    const down = (ev: KeyboardEvent) => {
+      if (ev.repeat) return;
+      pressed.add(ev.key.toLowerCase());
+    };
+    const up = (ev: KeyboardEvent) => pressed.delete(ev.key.toLowerCase());
+
+    const dtMs = 1000 / 30;
+    const interval = setInterval(() => {
+      let fwd = 0;
+      let right = 0;
+      let rot = 0;
+      if (pressed.has("w")) fwd += 1;
+      if (pressed.has("s")) fwd -= 1;
+      if (pressed.has("d")) right += 1;
+      if (pressed.has("a")) right -= 1;
+      if (pressed.has("q")) rot += 1;
+      if (pressed.has("e")) rot -= 1;
+
+      const mag = Math.hypot(fwd, right);
+      let vx = 0;
+      let vy = 0;
+      if (mag > 0) {
+        vx = (fwd / mag) * speedRef.current;
+        vy = (right / mag) * speedRef.current;
+      }
+
+      const angRad = (angRef.current * Math.PI) / 180;
+      let w_or_heading: number;
+      if (modeRef.current === BenchMotionMode.Local) {
+        w_or_heading = rot * angRad; // rad/s
+      } else {
+        heading += rot * angRad * (dtMs / 1000); // integrate to a heading setpoint
+        w_or_heading = heading;
+      }
+
+      const dribble_speed = pressed.has(" ") ? dribbleRef.current : 0;
+
+      sendCommand({
+        type: "Bench",
+        data: {
+          type: "SetMotion",
+          data: {
+            robot_id: robotId,
+            mode: modeRef.current,
+            vx,
+            vy,
+            w_or_heading,
+            dribble_speed,
+          },
+        },
+      } satisfies UiCommand);
+    }, dtMs);
+
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      clearInterval(interval);
+    };
+  }, [robotId]);
 };
 
 export const TeamDataProvider: FC<PropsWithChildren> = ({ children }) => {

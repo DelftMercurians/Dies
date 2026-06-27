@@ -384,7 +384,6 @@ mod tests {
             skill_commands,
             debug_data: vec![],
             player_roles: HashMap::new(),
-            control_overrides: HashMap::new(),
         };
 
         conn.send(&msg).unwrap();

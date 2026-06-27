@@ -13,6 +13,7 @@ import LayoutSelector from "./LayoutSelector";
 import AddPanelMenu from "./AddPanelMenu";
 import ShortcutIndicator from "./ShortcutIndicator";
 import ReplayButton from "./ReplayButton";
+import TestBenchButton from "./TestBenchButton";
 import logo from "@/assets/mercury-logo.svg";
 
 /**
@@ -79,6 +80,9 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Load log / replay control */}
       <ReplayButton />
+
+      {/* Robot test bench */}
+      <TestBenchButton />
 
       {/* Add Panel Menu */}
       {getDockviewApi && <AddPanelMenu getApi={getDockviewApi} />}

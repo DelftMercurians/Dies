@@ -48,6 +48,10 @@ pub enum RobotCmd {
     Reboot,
     Beep,
     Coast,
+    /// Calibrate the IMU (bench diagnostics)
+    CalibrateImu,
+    /// Calibrate the breakbeam sensor (bench diagnostics)
+    CalibrateBreakbeam,
 }
 
 impl From<RobotCmd> for glue::Radio_RobotCommand {
@@ -64,6 +68,8 @@ impl From<RobotCmd> for glue::Radio_RobotCommand {
             RobotCmd::Reboot => glue::Radio_RobotCommand::REBOOT,
             RobotCmd::Beep => glue::Radio_RobotCommand::BEEP,
             RobotCmd::Coast => glue::Radio_RobotCommand::COAST,
+            RobotCmd::CalibrateImu => glue::Radio_RobotCommand::CALIBRATE_IMU,
+            RobotCmd::CalibrateBreakbeam => glue::Radio_RobotCommand::CALIBRATE_BB,
         }
     }
 }
@@ -352,6 +358,50 @@ impl From<glue::HG_Status> for SysStatus {
     }
 }
 
+/// State of the firmware reflex-kick state machine.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub enum ReflexKickState {
+    Off,
+    Armed,
+    Cooldown,
+    Emergency,
+}
+
+impl From<glue::HG_ReflexState> for ReflexKickState {
+    fn from(val: glue::HG_ReflexState) -> Self {
+        match val {
+            glue::HG_ReflexState::OFF => ReflexKickState::Off,
+            glue::HG_ReflexState::ARMED => ReflexKickState::Armed,
+            glue::HG_ReflexState::COOLDOWN => ReflexKickState::Cooldown,
+            glue::HG_ReflexState::EMERGENCY => ReflexKickState::Emergency,
+        }
+    }
+}
+
+/// Echo of the last command the robot reports having received (global frame).
+#[derive(Debug, Copy, Clone, Serialize)]
+#[typeshare]
+pub struct CommandEcho {
+    pub global_speed_x: f32,
+    pub global_speed_y: f32,
+    pub heading_setpoint: f32,
+    pub heading_last_measurement: f32,
+    pub dribbler_speed: i16,
+    pub kick_time: u16,
+    /// Raw `Radio_RobotCommand` code; the frontend maps it to a label.
+    pub robot_command: u8,
+}
+
+/// Firmware version reported by a robot.
+#[derive(Debug, Copy, Clone, Serialize)]
+#[typeshare]
+pub struct FirmwareVersion {
+    pub major: u16,
+    pub minor: u16,
+    pub patch: u16,
+}
+
 /// A message from one of our robots to the AI
 #[derive(Clone, Copy, Debug, Serialize)]
 #[typeshare]
@@ -375,6 +425,22 @@ pub struct PlayerFeedbackMsg {
 
     /// IMU readings: [ang_x, ang_y, ang_z, ang_wx, ang_wy, ang_wz]
     pub imu_readings: Option<[f32; 6]>,
+
+    // --- Extended bench-dashboard telemetry ---
+    pub motor_currents: Option<[f32; 5]>,
+    pub main_board_current: Option<f32>,
+    pub avg_loop_time_us: Option<u32>,
+    pub max_loop_time_us: Option<u32>,
+    pub smart_kick_counter: Option<u8>,
+    pub kick_ok_flag: Option<bool>,
+    pub reflex_kick_state: Option<ReflexKickState>,
+    pub reflex_kick_counter: Option<u8>,
+    pub breakbeam_raw: Option<u16>,
+    pub tof_ball_detected: Option<bool>,
+    /// Time-of-flight ball position estimate `[x, y]`.
+    pub tof_xy: Option<[i32; 2]>,
+    pub last_command: Option<CommandEcho>,
+    pub firmware_version: Option<FirmwareVersion>,
 }
 
 impl PlayerFeedbackMsg {
@@ -394,8 +460,98 @@ impl PlayerFeedbackMsg {
             breakbeam_sensor_ok: None,
             pack_voltages: None,
             imu_readings: None,
+            motor_currents: None,
+            main_board_current: None,
+            avg_loop_time_us: None,
+            max_loop_time_us: None,
+            smart_kick_counter: None,
+            kick_ok_flag: None,
+            reflex_kick_state: None,
+            reflex_kick_counter: None,
+            breakbeam_raw: None,
+            tof_ball_detected: None,
+            tof_xy: None,
+            last_command: None,
+            firmware_version: None,
         }
     }
+}
+
+/// Status of the RF basestation itself, surfaced to the bench UI.
+#[derive(Clone, Debug, Serialize)]
+#[typeshare]
+pub struct BaseStationInfo {
+    pub connected: bool,
+    pub protocol_ok: bool,
+    pub version: String,
+    pub protocol_version: String,
+    /// Current radio channel in MHz.
+    pub channel_mhz: u32,
+    pub num_radios: u8,
+    /// Online flag per radio module.
+    pub radios_online: Vec<bool>,
+    pub max_robots: u8,
+}
+
+/// Motion frame for a bench `SetMotion` command.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[typeshare]
+pub enum BenchMotionMode {
+    /// `(vx, vy)` in the robot's local frame, `w_or_heading` is `w` \[rad/s].
+    Local,
+    /// `(vx, vy)` in the global frame, `w_or_heading` is the heading setpoint \[rad].
+    Global,
+}
+
+/// A one-shot bench action targeting a single robot (or broadcast).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare]
+pub enum BenchOneShot {
+    Beep,
+    Reboot,
+    Shutdown,
+    Coast,
+    Arm,
+    Disarm,
+    Discharge,
+    Kick { speed: f64 },
+    ArmReflex,
+    CalibrateBreakbeam,
+    CalibrateImu,
+    GetVersion,
+    ZeroHeading,
+    SetHeading { angle: f64 },
+}
+
+/// A command from the bench UI, sent straight to the basestation (no executor,
+/// no vision). Robots are addressed by raw robot id.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare]
+pub enum BenchCommand {
+    /// Continuously-streamed motion setpoint for a taken robot.
+    SetMotion {
+        robot_id: u32,
+        mode: BenchMotionMode,
+        vx: f64,
+        vy: f64,
+        /// `w` \[rad/s] in Local mode, heading setpoint \[rad] in Global mode.
+        w_or_heading: f64,
+        dribble_speed: f64,
+    },
+    /// Zero a single robot's setpoint.
+    Stop { robot_id: u32 },
+    /// Zero every robot and release control.
+    StopAll,
+    /// Take or release streaming control of a robot.
+    TakeControl { robot_id: u32, taken: bool },
+    /// Fire a one-shot action at a single robot.
+    OneShot { robot_id: u32, kind: BenchOneShot },
+    /// Broadcast a one-shot action to all robots.
+    Broadcast { kind: BenchOneShot },
+    /// Set the radio channel of the base (`robot_id = None`) or a robot.
+    SetChannel { robot_id: Option<u32>, channel: u8 },
 }
 
 /// Role of a player according to the game rules. These are mainly for rule-compliance.

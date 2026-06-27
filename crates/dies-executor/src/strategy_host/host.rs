@@ -11,8 +11,7 @@ use dies_core::{
     TeamStrategyParams,
 };
 use dies_strategy_protocol::{
-    ControlOverride, DebugEntry, PassResult, SkillCommand, SkillStatus, StrategyConfig,
-    StrategyParams,
+    DebugEntry, PassResult, SkillCommand, SkillStatus, StrategyConfig, StrategyParams,
 };
 use tracing::{error, info, warn};
 
@@ -57,10 +56,6 @@ pub struct FrameOutput {
     pub blue_roles: HashMap<PlayerId, String>,
     /// Player roles for yellow team.
     pub yellow_roles: HashMap<PlayerId, String>,
-    /// Control overrides for blue team.
-    pub blue_control_overrides: HashMap<PlayerId, ControlOverride>,
-    /// Control overrides for yellow team.
-    pub yellow_control_overrides: HashMap<PlayerId, ControlOverride>,
 }
 
 /// Manages strategy processes and their connections.
@@ -385,7 +380,6 @@ impl StrategyHost {
                         Ok(Some(strategy_output)) => {
                             output.blue_commands = strategy_output.skill_commands;
                             output.blue_roles = strategy_output.player_roles;
-                            output.blue_control_overrides = strategy_output.control_overrides;
                             self.forward_debug_data(TeamColor::Blue, strategy_output.debug_data);
                         }
                         Ok(None) => {
@@ -415,7 +409,6 @@ impl StrategyHost {
                         Ok(Some(strategy_output)) => {
                             output.yellow_commands = strategy_output.skill_commands;
                             output.yellow_roles = strategy_output.player_roles;
-                            output.yellow_control_overrides = strategy_output.control_overrides;
                             self.forward_debug_data(TeamColor::Yellow, strategy_output.debug_data);
                         }
                         Ok(None) => {

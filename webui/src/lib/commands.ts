@@ -1,5 +1,7 @@
+import { getDefaultStore } from "jotai";
 import { TeamColor, UiCommand } from "@/bindings";
 import { ALL_PANELS, PanelId, PANEL_IDS } from "@/components/panels";
+import { benchOpenAtom } from "@/api";
 
 /**
  * Central command registry. Each command is a self-contained action with a
@@ -169,6 +171,14 @@ export const COMMANDS: Command[] = [
     run: (c) => {
       c.focusPanel(PANEL_IDS.DEBUG_LAYERS);
       c.feedback("Focus Debug");
+    },
+  },
+  {
+    id: "open-test-bench",
+    title: "Open Robot Test Bench",
+    run: (c) => {
+      getDefaultStore().set(benchOpenAtom, true);
+      c.feedback("Open Test Bench");
     },
   },
 ];
