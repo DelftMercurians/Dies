@@ -137,6 +137,7 @@ pub fn best_pass_area(
 /// given flank (`sign` = ±1 for the +y / -y side) and returns the candidate with
 /// the most open ball→candidate lane, mildly preferring more forward positions.
 /// The result is always a valid outlet the carrier could actually pass into.
+#[allow(clippy::too_many_arguments)]
 pub fn best_support_pos(
     ball: Vector2,
     opponents: &[PlayerState],
@@ -146,14 +147,38 @@ pub fn best_support_pos(
     corridor: f64,
     opp_pen_depth: f64,
     opp_pen_half_width: f64,
+    // Attacking mode (ball in the opponent half): place supporters advanced and
+    // wide so a deep carrier has a goal-line cross/cutback outlet.
+    attacking: bool,
+    flank_y_fracs: [f64; 3],
+    goal_line_setback: f64,
 ) -> Vector2 {
     const PAD: f64 = 400.0;
-    let x_offsets = [1000.0, 2000.0, 3000.0];
-    let y_fracs = [0.18, 0.32, 0.46];
+    // Conservative grid stays modest and central; attacking mode reaches toward the
+    // goal line and flanks wide (outer bands clear the box keepout at the corners).
+    let (x_targets, y_fracs, fwd_bonus): ([f64; 3], [f64; 3], f64) = if attacking {
+        (
+            [
+                ball.x + 1500.0,
+                ball.x + 3000.0,
+                half_len - goal_line_setback,
+            ],
+            flank_y_fracs,
+            // Stronger pull toward the goal line; still below the openness range
+            // (0..1) so we never stand behind an opponent for the sake of depth.
+            1e-4,
+        )
+    } else {
+        (
+            [ball.x + 1000.0, ball.x + 2000.0, ball.x + 3000.0],
+            [0.18, 0.32, 0.46],
+            5e-5,
+        )
+    };
 
     let mut best: Option<(Vector2, f64)> = None;
-    for &dx in &x_offsets {
-        let cx = (ball.x + dx).clamp(-half_len + PAD, half_len - PAD);
+    for &xt in &x_targets {
+        let cx = xt.clamp(-half_len + PAD, half_len - PAD);
         for &fy in &y_fracs {
             let cy = (sign * half_wid * fy).clamp(-half_wid + PAD, half_wid - PAD);
             // Keep the outlet out of the opponent penalty area (no robot but the
@@ -166,8 +191,8 @@ pub fn best_support_pos(
                 opp_pen_half_width,
             );
             // Openness dominates (keeps the supporter out from behind an opponent);
-            // the small forward bonus only breaks ties between open candidates.
-            let score = lane_openness(ball, cand, opponents, corridor) + 5e-5 * cand.x;
+            // the forward bonus breaks ties toward advanced candidates.
+            let score = lane_openness(ball, cand, opponents, corridor) + fwd_bonus * cand.x;
             if best.is_none() || score > best.unwrap().1 {
                 best = Some((cand, score));
             }
@@ -424,6 +449,9 @@ mod tests {
             500.0,
             1000.0,
             1000.0,
+            false,
+            [0.46, 0.62, 0.78],
+            400.0,
         );
         let openness = lane_openness(ball, pos, std::slice::from_ref(&blocker), 500.0);
         assert!(pos.y > 0.0, "support should stay on its flank");
@@ -451,10 +479,42 @@ mod tests {
                 500.0,
                 pen_depth,
                 pen_half_width,
+                true,
+                [0.46, 0.62, 0.78],
+                400.0,
             );
             let in_box = pos.x > half_len - pen_depth && pos.y.abs() < pen_half_width;
             assert!(!in_box, "support landed inside the opp box at {pos:?}");
         }
+    }
+
+    #[test]
+    fn attacking_support_flanks_the_goal_for_a_deep_carrier() {
+        // Ball deep in the opponent half with open lanes: attacking mode should put
+        // the supporter advanced (near the goal line) and wide (flanking the box),
+        // not stranded level/behind near the centre.
+        let half_len = 4500.0;
+        let pos = best_support_pos(
+            Vector2::new(3000.0, 0.0),
+            &[],
+            1.0,
+            half_len,
+            3000.0,
+            500.0,
+            1000.0,  // pen depth
+            1000.0,  // pen half width
+            true,
+            [0.46, 0.62, 0.78],
+            400.0,
+        );
+        assert!(
+            pos.x > 3000.0,
+            "attacking supporter should be advanced past the ball, got {pos:?}"
+        );
+        assert!(
+            pos.y > 1300.0,
+            "attacking supporter should flank wide of the box, got {pos:?}"
+        );
     }
 
     #[test]

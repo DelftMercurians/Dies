@@ -412,6 +412,39 @@ impl Planner {
             return Some((Some(p.id), p.position + lead));
         }
 
+        // 1b. Final-third cross/cutback. Near the opponent goal there is little
+        //     field left ahead, so the strict "forward" gate above finds nothing.
+        //     Accept a wide, roughly-level supporter (laterally separated, not far
+        //     behind) with an open lane — the classic cross/cutback outlet. Pick the
+        //     one closest to the opponent goal.
+        if carrier_pos.x > config::FINAL_THIRD_X {
+            let best_wide = world
+                .own_players()
+                .iter()
+                .filter(|p| p.id != carrier)
+                .filter(|p| Some(p.id) != inputs.keeper_id)
+                .filter(|p| Some(p.id) != inputs.double_touch_robot)
+                .filter(|p| p.position.x > carrier_pos.x - config::CROSS_BACK_MARGIN)
+                .filter(|p| (p.position.y - carrier_pos.y).abs() > config::CROSS_MIN_LATERAL)
+                .filter(|p| {
+                    geometry::lane_openness(
+                        carrier_pos,
+                        p.position,
+                        opps,
+                        config::KICK_LANE_CORRIDOR,
+                    ) >= config::SUPPORTER_MIN_OPENNESS
+                })
+                .min_by(|a, b| {
+                    let da = (opp_goal - a.position).norm();
+                    let db = (opp_goal - b.position).norm();
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                });
+            if let Some(p) = best_wide {
+                let lead = (opp_goal - p.position).normalize() * config::SUPPORTER_LEAD;
+                return Some((Some(p.id), p.position + lead));
+            }
+        }
+
         // 2. Open forward space toward goal.
         let half_len = world.field_length() / 2.0;
         let half_wid = world.field_width() / 2.0;
@@ -641,5 +674,35 @@ mod tests {
             other => panic!("expected a Pass waypoint, got {other:?}"),
         }
         assert_eq!(plan.active_robot, PlayerId::new(2));
+    }
+
+    #[test]
+    fn final_third_carrier_passes_to_wide_level_supporter() {
+        // Carrier deep in the opponent third with the direct shot blocked. The only
+        // outlet is a wide supporter that is NOT strictly forward (a cross/cutback).
+        // The strict-forward gate rejects it; the final-third branch must accept it.
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, 3500.0, 0.0),  // carrier in the final third
+            player(3, 3600.0, 1800.0), // wide, ~level supporter (cross target)
+        ];
+        // Opponent parked in front of goal so the direct shot is not clear.
+        let opp = vec![player(9, 4000.0, 0.0)];
+        let world = world_with(own, opp, 1);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .expect("should produce a plan");
+
+        match &plan.waypoints[0] {
+            Waypoint::Pass {
+                passer, receiver, ..
+            } => {
+                assert_eq!(*passer, PlayerId::new(2));
+                assert_eq!(*receiver, PlayerId::new(3));
+            }
+            other => panic!("expected a cross Pass waypoint, got {other:?}"),
+        }
     }
 }

@@ -336,8 +336,31 @@ impl Formation {
         let opp_box = world.opp_penalty_area();
         let opp_pen_depth = opp_box.max.x - opp_box.min.x;
         let opp_pen_half_width = opp_box.max.y;
-        for slot in 0..config::SUPPORT_COUNT {
-            let sign = if slot % 2 == 0 { 1.0 } else { -1.0 };
+        // When the ball is in the opponent half and our own goal is not under
+        // threat, commit more bodies forward as supporters (keeper + one shadow
+        // stay home) and place them advanced/wide — a deep carrier near the box
+        // can't use a strictly-forward outlet, so we flank the goal for crosses.
+        let attacking = ball.x > config::SUPPORT_ATTACK_BALL_X
+            && ball_threat < config::SUPPORT_ATTACK_MAX_THREAT;
+        let support_count = if attacking {
+            config::SUPPORT_ATTACK_COUNT
+        } else {
+            config::SUPPORT_COUNT
+        };
+        let support_imp = if attacking {
+            config::IMP_SUPPORT_ATTACK
+        } else {
+            config::IMP_SUPPORT
+        };
+        for slot in 0..support_count {
+            // 0 → right flank, 1 → left flank, 2 → central trailer (sign 0 keeps the
+            // y candidates on the centre column). Distinct signs stop two supporters
+            // resolving to the same `best_support_pos` and stacking.
+            let sign = match slot {
+                0 => 1.0,
+                1 => -1.0,
+                _ => 0.0,
+            };
             let pos = geometry::best_support_pos(
                 ball,
                 world.opp_players(),
@@ -347,6 +370,9 @@ impl Formation {
                 config::SUPPORT_LANE_CORRIDOR,
                 opp_pen_depth,
                 opp_pen_half_width,
+                attacking,
+                config::SUPPORT_FLANK_Y_FRACS,
+                config::SUPPORT_GOAL_LINE_SETBACK,
             );
             roles.push(Role {
                 id: RoleId {
@@ -354,7 +380,7 @@ impl Formation {
                     slot: slot as u16,
                 },
                 position: pos,
-                importance: config::IMP_SUPPORT,
+                importance: support_imp,
                 face: world.opp_goal_center(),
             });
         }

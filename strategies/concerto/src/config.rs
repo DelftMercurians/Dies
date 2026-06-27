@@ -28,6 +28,17 @@ pub const KICK_LANE_CORRIDOR: f64 = 400.0;
 pub const SUPPORTER_MIN_OPENNESS: f64 = 0.5;
 /// Lead the kick-ahead this far past the supporter toward goal (kick into space).
 pub const SUPPORTER_LEAD: f64 = 350.0;
+/// Carrier rel-x beyond which we're in the attacking final third. Here the strict
+/// "supporter must be forward" gate no longer fits (there is little field left
+/// ahead), so we also accept a wide, roughly-level supporter as a cross/cutback
+/// outlet — see [`best_kickahead_target`].
+pub const FINAL_THIRD_X: f64 = 2000.0;
+/// Minimum lateral (|Δy|) separation between carrier and supporter for the
+/// supporter to count as a final-third cross/cutback outlet.
+pub const CROSS_MIN_LATERAL: f64 = 800.0;
+/// How far *behind* the carrier (along x) a wide final-third outlet may still sit
+/// and remain pass-eligible (a cutback). Strictly-forward outlets are unaffected.
+pub const CROSS_BACK_MARGIN: f64 = 600.0;
 /// Per-step distance of a corrective dribble.
 pub const DRIBBLE_CORRECTION_STEP: f64 = 250.0;
 /// Hard cap on how far the ball may be carried from the contact point before we
@@ -83,6 +94,22 @@ pub const MARK_MIN_THREAT: f64 = 0.05;
 pub const MARK_LANE_CORRIDOR: f64 = 500.0;
 /// Number of offensive support roles (split across flanks).
 pub const SUPPORT_COUNT: usize = 2;
+/// When the ball is in the opponent half and our own goal is not threatened we
+/// commit more bodies forward as supporters (keeper + one shadow stay home).
+pub const SUPPORT_ATTACK_COUNT: usize = 3;
+/// Ball rel-x beyond which support placement/staffing switches to the aggressive
+/// attacking mode (0 = ball in the opponent half).
+pub const SUPPORT_ATTACK_BALL_X: f64 = 0.0;
+/// Own-goal threat below which it is safe to commit the extra attacking
+/// supporters (above this we keep the conservative `SUPPORT_COUNT`).
+pub const SUPPORT_ATTACK_MAX_THREAT: f64 = 0.35;
+/// Lateral bands (fraction of half-width) for attacking support placement. Wider
+/// than the conservative grid so the outer candidates clear the box keepout and
+/// flank the opponent goal for a cross/cutback.
+pub const SUPPORT_FLANK_Y_FRACS: [f64; 3] = [0.46, 0.62, 0.78];
+/// How far in front of the opponent goal line the most advanced attacking flank
+/// candidate sits, so a deep carrier still gets a supporter level with / ahead.
+pub const SUPPORT_GOAL_LINE_SETBACK: f64 = 400.0;
 /// Corridor width for the ball→support lane-openness used to place supporters in
 /// open outlets (rather than stranded behind opponents).
 pub const SUPPORT_LANE_CORRIDOR: f64 = 500.0;
@@ -93,6 +120,10 @@ pub const SHADOW_RELIEF_THREAT: f64 = 0.4;
 pub const IMP_SHADOW_BASE: f64 = 8.0;
 pub const IMP_MARK_BASE: f64 = 6.0;
 pub const IMP_SUPPORT: f64 = 3.0;
+/// Support importance while attacking (ball in the opponent half, own goal safe).
+/// Above the weak-mark / spread range so surplus bodies win the assignment as
+/// supporters and push up instead of loitering at midfield.
+pub const IMP_SUPPORT_ATTACK: f64 = 5.0;
 pub const IMP_SPREAD: f64 = 0.5;
 /// Coverage accounting: radius around a plan robot's ball contest within which
 /// formation roles are de-prioritised (soft suppression, avoids clustering).
