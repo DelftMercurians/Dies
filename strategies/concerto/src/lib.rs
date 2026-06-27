@@ -133,13 +133,17 @@ impl Strategy for ConcertoStrategy {
         // ── Offensive loop: plan on events, then drive the active robot ──
         let mut plan_slots: Vec<PlayerId> = Vec::new();
         if !defense_only && ball_present && world.is_ball_in_play() && we_may_act {
+            // A pass is atomic: possession flits We→Loose→We while the ball is in
+            // flight, so soft (possession/game-state) replan triggers are suppressed
+            // mid-pass — the coordinator owns abort/failure and surfaces it as a
+            // terminal status, which still replans via the arm below.
+            let passing = self.driver.is_passing();
             let needs_replan = self.planner.current_plan().is_none()
                 || matches!(
                     self.driver.status(),
                     WaypointStatus::Succeeded | WaypointStatus::Failed(_)
                 )
-                || possession_changed
-                || game_state_changed;
+                || (!passing && (possession_changed || game_state_changed));
 
             if needs_replan {
                 let inputs = PlanInputs {
@@ -160,15 +164,18 @@ impl Strategy for ConcertoStrategy {
             }
 
             if let Some(active_id) = self.driver.active_robot_id() {
-                plan_slots.push(active_id);
+                // Reserve every plan-controlled robot (both passer and receiver for
+                // a pass) so Formation never commands them — a stray go_to would
+                // cancel the pass.
+                plan_slots.extend(self.driver.plan_slots());
                 let status = self.driver.update(&world, ctx);
                 if let WaypointStatus::Failed(reason) = status {
                     self.planner.record_failure(active_id, reason, now);
                 }
-                // Pass seam: a completed pass would hand off to the receiver here.
-                if let Some(_next) = self.driver.take_new_active() {
-                    // Unused in v1 (no waypoint sets it).
-                }
+                // A completed pass hands the ball to the receiver. We rely on the
+                // Succeeded status above to trigger a replan that picks up the new
+                // carrier via possession; the hint is consumed to keep it fresh.
+                let _ = self.driver.take_new_active();
 
                 // Compliance: name the active robot as the kicker during our restarts
                 // so the executor exempts it and positions everyone else.
@@ -199,12 +206,12 @@ impl Strategy for ConcertoStrategy {
             }
         }
 
-        let plan_context = self.driver.plan_context_area();
+        let plan_context = self.driver.plan_context();
 
         // ── Formation (all field robots except keeper + plan slots) ─────
         let commands = self
             .formation
-            .update(&world, &plan_slots, plan_context, now);
+            .update(&world, &plan_slots, &plan_context, now);
         for cmd in &commands {
             if let Some(p) = ctx.player(cmd.id) {
                 p.go_to(cmd.target).facing(cmd.face);

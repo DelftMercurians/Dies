@@ -130,6 +130,47 @@ pub fn best_pass_area(
     best.map(|(pos, _)| pos)
 }
 
+/// Pick an open, forward support/outlet position on one flank.
+///
+/// Static flank points leave supporters stranded behind opponents, so the ball
+/// can never reach them. This samples a small grid *ahead of the ball* on the
+/// given flank (`sign` = ±1 for the +y / -y side) and returns the candidate with
+/// the most open ball→candidate lane, mildly preferring more forward positions.
+/// The result is always a valid outlet the carrier could actually pass into.
+pub fn best_support_pos(
+    ball: Vector2,
+    opponents: &[PlayerState],
+    sign: f64,
+    half_len: f64,
+    half_wid: f64,
+    corridor: f64,
+) -> Vector2 {
+    const PAD: f64 = 400.0;
+    let x_offsets = [1000.0, 2000.0, 3000.0];
+    let y_fracs = [0.18, 0.32, 0.46];
+
+    let mut best: Option<(Vector2, f64)> = None;
+    for &dx in &x_offsets {
+        let cx = (ball.x + dx).clamp(-half_len + PAD, half_len - PAD);
+        for &fy in &y_fracs {
+            let cy = (sign * half_wid * fy).clamp(-half_wid + PAD, half_wid - PAD);
+            let cand = Vector2::new(cx, cy);
+            // Openness dominates (keeps the supporter out from behind an opponent);
+            // the small forward bonus only breaks ties between open candidates.
+            let score = lane_openness(ball, cand, opponents, corridor) + 5e-5 * cx;
+            if best.is_none() || score > best.unwrap().1 {
+                best = Some((cand, score));
+            }
+        }
+    }
+    best.map(|(p, _)| p).unwrap_or_else(|| {
+        Vector2::new(
+            (ball.x + 2000.0).clamp(-half_len + PAD, half_len - PAD),
+            sign * half_wid * 0.3,
+        )
+    })
+}
+
 /// Returns `true` if `point` lies roughly between `from` and `to` along the from→to axis.
 ///
 /// Projects `point` onto the infinite line through `from` and `to` and checks whether
@@ -283,6 +324,33 @@ mod tests {
         let near = threat(Vector2::new(-3500.0, 0.0), own_goal, 1500.0, 6000.0);
         let far = threat(Vector2::new(3000.0, 0.0), own_goal, 1500.0, 6000.0);
         assert!(near > far);
+    }
+
+    #[test]
+    fn support_pos_avoids_standing_behind_opponent() {
+        // An opponent sits straight ahead on the +y flank; the supporter must pick
+        // an open lane instead of parking behind it.
+        let ball = Vector2::new(0.0, 0.0);
+        let blocker = PlayerState::new(
+            PlayerId::new(9),
+            Vector2::new(2000.0, 960.0),
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let pos = best_support_pos(
+            ball,
+            std::slice::from_ref(&blocker),
+            1.0,
+            4500.0,
+            3000.0,
+            500.0,
+        );
+        let openness = lane_openness(ball, pos, std::slice::from_ref(&blocker), 500.0);
+        assert!(pos.y > 0.0, "support should stay on its flank");
+        assert!(
+            openness > 0.9,
+            "support lane should be open, got {openness} at {pos:?}"
+        );
     }
 
     #[test]

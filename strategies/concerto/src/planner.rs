@@ -36,11 +36,12 @@ pub enum Waypoint {
     Shoot {
         target: Vector2,
     },
-    /// Pass seam — defined for the future passing milestone, never emitted in v1.
-    #[allow(dead_code)]
+    /// A coordinated two-robot pass. The planner picks a concrete receiver
+    /// (Model B); the framework's `PassCoordinator` drives both robots. The
+    /// driver realises this by calling `ctx.pass()` each tick.
     Pass {
         passer: PlayerId,
-        receiver_hint: Option<PlayerId>,
+        receiver: PlayerId,
         target_area: Vector2,
     },
 }
@@ -51,6 +52,30 @@ pub enum Waypoint {
 pub struct Plan {
     pub waypoints: Vec<Waypoint>,
     pub active_robot: PlayerId,
+}
+
+/// What the plan-controlled robots are covering this tick, exported to Formation
+/// so it can account for that coverage instead of piling a second robot onto the
+/// same spot (the clustering fix). This is the enriched plan→formation channel
+/// that replaces the old `plan_ctx: Option<Vector2>`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PlanContext {
+    pub engagements: Vec<Engagement>,
+}
+
+/// A single coverage fact about a plan-controlled robot.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Engagement {
+    /// A plan robot is contesting / holding the ball here (capture, carry, or the
+    /// passer side of a pass). Formation soft-suppresses roles near this point.
+    BallContest { at: Vector2 },
+    /// A plan robot is pressuring this opponent (steal) — it *is* the mark, so
+    /// Formation skips generating a mark role for this opponent.
+    Engaging { opponent: PlayerId },
+    /// The pass receive area. The receiver itself is a plan slot (Model B); this
+    /// is a hint for Formation to backfill the vacated support (currently unused).
+    #[allow(dead_code)]
+    ReceiveArea { at: Vector2 },
 }
 
 /// Inputs the planner needs beyond the world snapshot.
@@ -152,8 +177,11 @@ impl Planner {
                 let waypoint = if is_kicker {
                     // Restart: always release forward (never dribble — double-touch).
                     // Kick at a supporter if one is well placed, else open space.
+                    // (Stays a Shoot, not a Pass: restart legality / double-touch is
+                    // its own problem — see plan, out of scope.)
                     let target = self
                         .best_kickahead_target(world, id, inputs)
+                        .map(|(_, t)| t)
                         .unwrap_or_else(|| self.release_target(carrier_pos, opp_goal, world));
                     Waypoint::Shoot { target }
                 } else if clear && in_range {
@@ -162,9 +190,15 @@ impl Planner {
                     // Primary advancement is a kick-ahead toward a supporter or open
                     // space (dribbling is unreliable and rule-capped). Dribble only as
                     // a small correction, and only while we're under the carry cap.
-                    // *** PASS SEAM ***: M4 upgrades the supporter kick-ahead to a Pass.
+                    // *** PASS SEAM ***: a well-placed supporter becomes a coordinated
+                    // Pass; open space stays a Shoot (no specific receiver to commit).
                     match self.best_kickahead_target(world, id, inputs) {
-                        Some(t) => Waypoint::Shoot { target: t },
+                        Some((Some(receiver), target_area)) => Waypoint::Pass {
+                            passer: id,
+                            receiver,
+                            target_area,
+                        },
+                        Some((None, target)) => Waypoint::Shoot { target },
                         None if inputs.carried < config::DRIBBLE_CORRECTION_LIMIT => {
                             Waypoint::Dribble {
                                 target_area: self.correction_target(carrier_pos, opp_goal, world),
@@ -281,15 +315,17 @@ impl Planner {
         )
     }
 
-    /// Best kick-ahead target: a well-placed forward supporter (preferred) or open
-    /// forward space toward goal. `None` only when congested (no supporter and no
-    /// open area) — the rare case where a small corrective dribble is warranted.
+    /// Best kick-ahead target. Returns `(Some(supporter), lead_point)` for a
+    /// well-placed forward supporter (the offense path promotes this to a Pass),
+    /// `(None, open_point)` for open forward space (a plain Shoot), or `None` when
+    /// congested (no supporter and no open area) — the rare case where a small
+    /// corrective dribble is warranted.
     fn best_kickahead_target(
         &self,
         world: &World,
         carrier: PlayerId,
         inputs: &PlanInputs,
-    ) -> Option<Vector2> {
+    ) -> Option<(Option<PlayerId>, Vector2)> {
         let carrier_pos = world.own_player(carrier)?.position;
         let opp_goal = world.opp_goal_center();
         let opps = world.opp_players();
@@ -321,13 +357,13 @@ impl Planner {
         if let Some((p, _)) = best_supporter {
             // Lead the kick past the supporter toward goal (kick into space to run onto).
             let lead = (opp_goal - p.position).normalize() * config::SUPPORTER_LEAD;
-            return Some(p.position + lead);
+            return Some((Some(p.id), p.position + lead));
         }
 
         // 2. Open forward space toward goal.
         let half_len = world.field_length() / 2.0;
         let half_wid = world.field_width() / 2.0;
-        geometry::best_pass_area(carrier_pos, opps, half_len, half_wid)
+        geometry::best_pass_area(carrier_pos, opps, half_len, half_wid).map(|t| (None, t))
     }
 
     /// A small step toward the opponent goal for a corrective dribble, clamped to
@@ -347,5 +383,79 @@ impl Planner {
             raw.x.clamp(-half_len + 200.0, half_len - 200.0),
             raw.y.clamp(-half_wid + 200.0, half_wid - 200.0),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dies_strategy_protocol::{BallState, GameState, WorldSnapshot};
+
+    fn player(id: u32, x: f64, y: f64) -> PlayerState {
+        PlayerState::new(
+            PlayerId::new(id),
+            Vector2::new(x, y),
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        )
+    }
+
+    fn world_with(own: Vec<PlayerState>, opp: Vec<PlayerState>, keeper: u32) -> World {
+        World::new(WorldSnapshot {
+            timestamp: 0.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: Vector2::new(-1000.0, 0.0),
+                velocity: Vector2::new(0.0, 0.0),
+                detected: true,
+            }),
+            own_players: own,
+            opp_players: opp,
+            game_state: GameState::Run,
+            us_operating: true,
+            our_keeper_id: Some(PlayerId::new(keeper)),
+            freekick_kicker: None,
+            possession: Possession::Loose,
+            possession_stale: false,
+        })
+    }
+
+    fn inputs() -> PlanInputs {
+        PlanInputs {
+            keeper_id: Some(PlayerId::new(1)),
+            double_touch_robot: None,
+            our_attacking_restart: false,
+            carried: 0.0,
+            now: 0.0,
+        }
+    }
+
+    #[test]
+    fn carrier_with_open_supporter_emits_pass() {
+        // Carrier deep in our half (no shot in range), a clear forward supporter,
+        // no opponents in the lane → the planner should commit a coordinated pass.
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -1000.0, 0.0), // carrier
+            player(3, 1500.0, 0.0),  // open forward supporter
+        ];
+        let world = world_with(own, vec![], 1);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .expect("should produce a plan");
+
+        match &plan.waypoints[0] {
+            Waypoint::Pass {
+                passer, receiver, ..
+            } => {
+                assert_eq!(*passer, PlayerId::new(2));
+                assert_eq!(*receiver, PlayerId::new(3));
+            }
+            other => panic!("expected a Pass waypoint, got {other:?}"),
+        }
+        assert_eq!(plan.active_robot, PlayerId::new(2));
     }
 }

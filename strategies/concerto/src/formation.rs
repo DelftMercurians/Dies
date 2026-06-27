@@ -22,13 +22,13 @@ use dies_strategy_api::World;
 use crate::config;
 use crate::geometry;
 use crate::matching::assign_min_cost;
+use crate::planner::{Engagement, PlanContext};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum RoleKind {
     Shadow,
     Mark,
     Support,
-    Receiver,
     Spread,
 }
 
@@ -37,7 +37,6 @@ fn role_name(kind: RoleKind) -> &'static str {
         RoleKind::Shadow => "shadow",
         RoleKind::Mark => "mark",
         RoleKind::Support => "support",
-        RoleKind::Receiver => "receiver",
         RoleKind::Spread => "spread",
     }
 }
@@ -75,7 +74,7 @@ pub struct Formation {
     // Change-detection snapshots for recalc triggers.
     last_assignable: Vec<PlayerId>,
     last_plan_slots: Vec<PlayerId>,
-    last_plan_ctx: Option<Vector2>,
+    last_plan_ctx: PlanContext,
 }
 
 impl Default for Formation {
@@ -92,7 +91,7 @@ impl Formation {
             queued: false,
             last_assignable: Vec::new(),
             last_plan_slots: Vec::new(),
-            last_plan_ctx: None,
+            last_plan_ctx: PlanContext::default(),
         }
     }
 
@@ -101,7 +100,7 @@ impl Formation {
         &mut self,
         world: &World,
         plan_slots: &[PlayerId],
-        plan_ctx: Option<Vector2>,
+        plan_ctx: &PlanContext,
         now: f64,
     ) -> Vec<FormationCommand> {
         let keeper_id = world.our_keeper_id();
@@ -122,7 +121,7 @@ impl Formation {
         // ── Decide whether to recompute the assignment (cadence) ────────
         let assignable_changed = assignable != self.last_assignable;
         let plan_slots_changed = plan_slots != self.last_plan_slots.as_slice();
-        let plan_ctx_changed = plan_ctx_differs(self.last_plan_ctx, plan_ctx);
+        let plan_ctx_changed = plan_ctx_differs(&self.last_plan_ctx, plan_ctx);
         let bg_due = now - self.last_recalc >= config::RECALC_BG_PERIOD;
         if assignable_changed || plan_slots_changed || plan_ctx_changed || bg_due {
             self.queued = true;
@@ -137,7 +136,7 @@ impl Formation {
 
         self.last_assignable = assignable.clone();
         self.last_plan_slots = plan_slots.to_vec();
-        self.last_plan_ctx = plan_ctx;
+        self.last_plan_ctx = plan_ctx.clone();
 
         // ── Emit commands: resolve each robot's RoleId to its current position ──
         let mut commands = Vec::with_capacity(assignable.len());
@@ -205,7 +204,7 @@ impl Formation {
 
     /// Build the role set for this tick. Generators run in priority order; spread
     /// roles top up to the over-generation target.
-    fn generate_roles(&self, world: &World, plan_ctx: Option<Vector2>, n: usize) -> Vec<Role> {
+    fn generate_roles(&self, world: &World, plan_ctx: &PlanContext, n: usize) -> Vec<Role> {
         let mut roles: Vec<Role> = Vec::new();
         let own_goal = world.own_goal_center();
         let ball = world
@@ -214,6 +213,26 @@ impl Formation {
         let half_len = world.field_length() / 2.0;
         let half_wid = world.field_width() / 2.0;
         let half_goal = world.goal_width() / 2.0;
+
+        // Coverage accounting: opponents already pressured by a plan robot need no
+        // mark (the plan robot *is* the mark); ball-contest points soft-suppress
+        // nearby roles so a second robot doesn't pile onto the contested ball.
+        let engaged_opps: Vec<PlayerId> = plan_ctx
+            .engagements
+            .iter()
+            .filter_map(|e| match e {
+                Engagement::Engaging { opponent } => Some(*opponent),
+                _ => None,
+            })
+            .collect();
+        let contest_pts: Vec<Vector2> = plan_ctx
+            .engagements
+            .iter()
+            .filter_map(|e| match e {
+                Engagement::BallContest { at } => Some(*at),
+                _ => None,
+            })
+            .collect();
 
         let ball_threat = geometry::threat(
             ball,
@@ -224,7 +243,22 @@ impl Formation {
 
         // 1. Shadow / goal coverage (coordinated set), count scales with threat.
         let span = (config::SHADOW_MAX - config::SHADOW_MIN) as f64;
-        let k = config::SHADOW_MIN + (span * ball_threat).round() as usize;
+        let mut k = config::SHADOW_MIN + (span * ball_threat).round() as usize;
+        // A plan robot contesting the ball in our defensive zone provides the
+        // front-line pressure a shadow would — count it as one, so shadows don't
+        // pile up directly behind the snatcher (the reported clustering).
+        let contesting_def = contest_pts
+            .iter()
+            .filter(|p| {
+                geometry::threat(
+                    **p,
+                    own_goal,
+                    config::THREAT_GOAL_NEAR,
+                    config::THREAT_GOAL_FAR,
+                ) > config::SHADOW_RELIEF_THREAT
+            })
+            .count();
+        k = k.saturating_sub(contesting_def).max(config::SHADOW_MIN);
         let positions = geometry::shadow_arc(ball, own_goal, k, config::SHADOW_STANDOFF, half_goal);
         for (i, pos) in positions.into_iter().enumerate() {
             roles.push(Role {
@@ -242,6 +276,10 @@ impl Formation {
         let mut opp_ids: Vec<PlayerId> = world.opp_player_ids();
         opp_ids.sort_by_key(|id| id.as_u32());
         for (slot, oid) in opp_ids.iter().enumerate() {
+            // A plan robot is already pressuring this opponent — don't double up.
+            if engaged_opps.contains(oid) {
+                continue;
+            }
             if let Some(opp) = world.opp_player(*oid) {
                 let to_ball = ball - opp.position;
                 let n_tg = to_ball.norm();
@@ -283,17 +321,19 @@ impl Formation {
             }
         }
 
-        // 3. Offensive support — flank-split forward positions.
+        // 3. Offensive support — open, forward outlets the carrier can pass into.
+        // Positioned by ball→candidate lane openness (not a static flank point),
+        // so supporters stop ending up stranded behind opponents.
         for slot in 0..config::SUPPORT_COUNT {
             let sign = if slot % 2 == 0 { 1.0 } else { -1.0 };
-            let mut pos = Vector2::new(half_len * 0.5, sign * half_wid * 0.3);
-            if let Some(opp) = world.closest_opp_player_to(pos) {
-                let away = pos - opp.position;
-                let d = away.norm();
-                if d < config::SUPPORT_AVOID_RANGE && d > 1e-6 {
-                    pos += away / d * (config::SUPPORT_AVOID_RANGE - d) * 0.5;
-                }
-            }
+            let pos = geometry::best_support_pos(
+                ball,
+                world.opp_players(),
+                sign,
+                half_len,
+                half_wid,
+                config::SUPPORT_LANE_CORRIDOR,
+            );
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Support,
@@ -305,20 +345,11 @@ impl Formation {
             });
         }
 
-        // 4. Plan-context receiver role (passing milestone). None in v1.
-        if let Some(area) = plan_ctx {
-            roles.push(Role {
-                id: RoleId {
-                    kind: RoleKind::Receiver,
-                    slot: 0,
-                },
-                position: area,
-                importance: config::IMP_RECEIVER,
-                face: ball,
-            });
-        }
+        // (No receiver role: Model B — the planner picks a concrete receiver, it
+        // becomes a plan slot, and the PassCoordinator positions it. Formation
+        // staffing one too would put a second robot on the receive area.)
 
-        // 5. Spread/residual — top up to the over-generation target.
+        // 4. Spread/residual — top up to the over-generation target.
         let target = (config::OVERGEN_FACTOR * n as f64).ceil() as usize;
         let mut slot = 0u16;
         while roles.len() < target.max(n) {
@@ -340,16 +371,48 @@ impl Formation {
             slot += 1;
         }
 
+        // Soft suppression: de-prioritise (don't remove) roles near a plan robot's
+        // ball contest, so the matcher avoids stacking a second body on the
+        // contested ball but can still place one if nothing better exists. Falloff
+        // is linear to zero at SUPPRESS_RADIUS; we take the strongest contest's
+        // effect rather than summing, so overlapping contests don't over-penalise.
+        if !contest_pts.is_empty() {
+            for role in roles.iter_mut() {
+                let prox = contest_pts
+                    .iter()
+                    .map(|pt| {
+                        (1.0 - (role.position - pt).norm() / config::SUPPRESS_RADIUS).max(0.0)
+                    })
+                    .fold(0.0_f64, f64::max);
+                role.importance -= config::IMP_SUPPRESS * prox;
+            }
+        }
+
         roles
     }
 }
 
-/// Whether two plan-context areas differ enough to count as a recalc trigger.
-fn plan_ctx_differs(a: Option<Vector2>, b: Option<Vector2>) -> bool {
+/// Whether two plan contexts differ enough to count as a recalc trigger. Relies
+/// on the driver building engagements in a stable order; positions compare with
+/// an epsilon so per-tick ball jitter doesn't force a recompute every frame.
+fn plan_ctx_differs(a: &PlanContext, b: &PlanContext) -> bool {
+    if a.engagements.len() != b.engagements.len() {
+        return true;
+    }
+    a.engagements
+        .iter()
+        .zip(&b.engagements)
+        .any(|(x, y)| engagement_differs(x, y))
+}
+
+fn engagement_differs(a: &Engagement, b: &Engagement) -> bool {
     match (a, b) {
-        (None, None) => false,
-        (Some(_), None) | (None, Some(_)) => true,
-        (Some(x), Some(y)) => (x - y).norm() > config::PLAN_CTX_MOVE_EPS,
+        (Engagement::BallContest { at: p }, Engagement::BallContest { at: q })
+        | (Engagement::ReceiveArea { at: p }, Engagement::ReceiveArea { at: q }) => {
+            (p - q).norm() > config::PLAN_CTX_MOVE_EPS
+        }
+        (Engagement::Engaging { opponent: p }, Engagement::Engaging { opponent: q }) => p != q,
+        _ => true, // different variant in the same slot
     }
 }
 
@@ -412,7 +475,7 @@ mod tests {
 
         let mut f = Formation::new();
         let plan_slots = vec![PlayerId::new(5)];
-        let cmds = f.update(&world, &plan_slots, None, 0.0);
+        let cmds = f.update(&world, &plan_slots, &PlanContext::default(), 0.0);
 
         // Assignable = ids {2,3,4} (exclude keeper 1 and plan slot 5).
         let mut assigned: Vec<u32> = cmds.iter().map(|c| c.id.as_u32()).collect();
@@ -423,6 +486,78 @@ mod tests {
         for c in &cmds {
             assert!(c.target.x.is_finite() && c.target.y.is_finite());
         }
+    }
+
+    #[test]
+    fn engaging_suppresses_that_opponents_mark() {
+        // A plan robot pressuring opp 11 means Formation must not also mark it.
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, -2000.0, 1000.0),
+            player(3, 0.0, 0.0),
+        ];
+        let opp = vec![player(11, 500.0, 0.0), player(12, 2000.0, 1500.0)];
+        let world = world_with(own, opp, 1);
+        let f = Formation::new();
+
+        let marks = |rs: &[Role]| rs.iter().filter(|r| r.id.kind == RoleKind::Mark).count();
+        let plain = f.generate_roles(&world, &PlanContext::default(), 3);
+        let engaged = f.generate_roles(
+            &world,
+            &PlanContext {
+                engagements: vec![Engagement::Engaging {
+                    opponent: PlayerId::new(11),
+                }],
+            },
+            3,
+        );
+        assert_eq!(marks(&plain), 2);
+        assert_eq!(marks(&engaged), 1);
+        // The surviving mark is opp 12 (slot 1), not the engaged opp 11 (slot 0).
+        assert!(engaged
+            .iter()
+            .any(|r| r.id.kind == RoleKind::Mark && r.id.slot == 1));
+    }
+
+    #[test]
+    fn ball_contest_softly_suppresses_nearby_roles() {
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, -2000.0, 1000.0),
+            player(3, 0.0, 0.0),
+        ];
+        let opp = vec![player(11, 500.0, 0.0), player(12, 2000.0, 1500.0)];
+        let world = world_with(own, opp, 1);
+        let f = Formation::new();
+
+        let plain = f.generate_roles(&world, &PlanContext::default(), 4);
+        let supp = f.generate_roles(
+            &world,
+            &PlanContext {
+                engagements: vec![Engagement::BallContest {
+                    at: Vector2::new(0.0, 0.0),
+                }],
+            },
+            4,
+        );
+
+        // BallContest only re-weights importance, never the role set.
+        assert_eq!(plain.len(), supp.len());
+        let mut any_reduced = false;
+        for r in &supp {
+            let p = plain.iter().find(|q| q.id == r.id).expect("same role ids");
+            assert!(
+                r.importance <= p.importance + 1e-9,
+                "no role gains importance"
+            );
+            if r.importance < p.importance - 1e-9 {
+                any_reduced = true;
+            }
+        }
+        assert!(
+            any_reduced,
+            "a role near the contest must be de-prioritised"
+        );
     }
 
     #[test]
@@ -437,10 +572,10 @@ mod tests {
         let world = world_with(own, opp, 1);
 
         let mut f = Formation::new();
-        let _ = f.update(&world, &[], None, 0.0);
+        let _ = f.update(&world, &[], &PlanContext::default(), 0.0);
         let snapshot = f.assignment.clone();
         // A tick later, within cooldown, no trigger → assignment unchanged.
-        let _ = f.update(&world, &[], None, 0.05);
+        let _ = f.update(&world, &[], &PlanContext::default(), 0.05);
         assert_eq!(f.assignment, snapshot);
     }
 }

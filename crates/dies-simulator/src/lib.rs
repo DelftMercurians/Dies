@@ -35,6 +35,9 @@ const FREE_KICK_PLACEMENT_MARGIN: f64 = 200.0;
 /// resuming after the ball leaves the field, a goal, or a no-progress stoppage.
 /// Tune this to make self-play matches more/less leisurely.
 const STOP_DURATION: f64 = 2.0;
+/// Speed (mm/s) at which a contested ball is squirted out from between two
+/// robots that both try to dribble it, so it escapes instead of staying pinned.
+const CONTESTED_BALL_POP_SPEED: f64 = 1200.0;
 const GROUND_THICKNESS: f64 = 10.0;
 const WALL_HEIGHT: f64 = 1000.0;
 const WALL_THICKNESS: f64 = 1.0;
@@ -1748,6 +1751,11 @@ impl Simulation {
 
         // Update players
         let send_feedback = self.feedback_interval.trigger(self.current_time);
+        // Ownership of the ball is resolved after the player loop from this
+        // frame's claimants, so that two robots racing for the same ball don't
+        // flip ownership every frame (last writer won) and deadlock.
+        let mut dribble_claimants: Vec<(PlayerId, TeamColor)> = Vec::new();
+        let mut ball_kicked_this_frame = false;
         for player in self.players.iter_mut() {
             // Only update players from controlled teams
             if (!self.config.blue_controlled && player.team_color == TeamColor::Blue)
@@ -1885,13 +1893,12 @@ impl Simulation {
                 let ball_dir = ball_position - player_position;
                 let distance = ball_dir.norm();
                 let angle = yaw.angle(&ball_dir);
-                let is_player_dribbling = matches!(self.ball_being_dribbled_by, Some((player_id, team_color)) if player_id == player.id && team_color == player.team_color);
                 if distance < self.config.player_radius + self.config.dribbler_radius + 20.0
                     && angle < self.config.dribbler_angle
                 {
                     player.breakbeam = true;
                     if is_kicking {
-                        self.ball_being_dribbled_by = None;
+                        ball_kicked_this_frame = true;
                         // Move the ball away from the player
                         let new_ball_position = ball_position + yaw * 80.0;
                         ball_body.set_position(
@@ -1913,13 +1920,28 @@ impl Simulation {
                             *ball_is_kicked = true;
                         }
                     } else if player.current_dribble_speed > 0.0 {
-                        self.ball_being_dribbled_by = Some((player.id, player.team_color));
-                    } else if is_player_dribbling {
-                        // If the player is dribbling, we need to stop the dribbling
-                        self.ball_being_dribbled_by = None;
+                        // Defer ownership to after the loop; record the claim.
+                        dribble_claimants.push((player.id, player.team_color));
                     }
                 }
             }
+        }
+
+        // Resolve ball ownership from this frame's claimants. A ball is only
+        // cleanly captured when exactly one robot is actively dribbling it. When
+        // two robots (e.g. opponents in a 50/50) both reach for it, the contact
+        // pops it loose instead of pinning it to a single dribbler — otherwise
+        // ownership flips between them every frame and the ball freezes between
+        // the two robots, deadlocking self-play.
+        if ball_kicked_this_frame {
+            self.ball_being_dribbled_by = None;
+        } else if dribble_claimants.len() == 1 {
+            self.ball_being_dribbled_by = Some(dribble_claimants[0]);
+        } else {
+            if dribble_claimants.len() > 1 {
+                self.pop_contested_ball(&dribble_claimants);
+            }
+            self.ball_being_dribbled_by = None;
         }
 
         if let Some((player_id, team_color)) = self.ball_being_dribbled_by {
@@ -1994,6 +2016,57 @@ impl Simulation {
         }
 
         self.current_time += dt;
+    }
+
+    /// Resolve a contested ball: when two or more robots try to dribble the same
+    /// ball, none can hold it. Squirt the ball out perpendicular to the line
+    /// joining the first two contenders so it escapes the pile instead of
+    /// staying pinned between them (which would deadlock a 50/50).
+    fn pop_contested_ball(&mut self, claimants: &[(PlayerId, TeamColor)]) {
+        let ball_handle = match self.ball.as_ref() {
+            Some(ball) => ball._rigid_body_handle,
+            None => return,
+        };
+
+        // Look up the first two contenders' positions.
+        let mut positions: Vec<Vector3> = Vec::with_capacity(2);
+        for &(id, team) in claimants.iter().take(2) {
+            if let Some(player) = self
+                .players
+                .iter()
+                .find(|p| p.id == id && p.team_color == team)
+            {
+                if let Some(body) = self.rigid_body_set.get(player.rigid_body_handle) {
+                    positions.push(body.position().translation.vector);
+                }
+            }
+        }
+        if positions.len() < 2 {
+            return;
+        }
+        let (p0, p1) = (positions[0], positions[1]);
+
+        let ball_position = match self.rigid_body_set.get(ball_handle) {
+            Some(body) => body.position().translation.vector,
+            None => return,
+        };
+
+        // Escape perpendicular to the squeeze axis between the two robots.
+        let axis = p1 - p0;
+        let mut escape = Vector3::new(-axis.y, axis.x, 0.0);
+        if escape.norm() < 1e-6 {
+            escape = Vector3::new(1.0, 0.0, 0.0);
+        }
+        let mut escape = escape.normalize();
+        // Send it toward whichever side the ball already leans, so the pop is
+        // stable frame-to-frame instead of fighting itself.
+        let midpoint = (p0 + p1) * 0.5;
+        if escape.dot(&(ball_position - midpoint)) < 0.0 {
+            escape = -escape;
+        }
+
+        let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
+        ball_body.set_linvel(escape * CONTESTED_BALL_POP_SPEED, true);
     }
 
     fn new_detection_packet(&mut self) {

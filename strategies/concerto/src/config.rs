@@ -68,14 +68,24 @@ pub const MARK_STANDOFF: f64 = 400.0;
 pub const MARK_LANE_CORRIDOR: f64 = 500.0;
 /// Number of offensive support roles (split across flanks).
 pub const SUPPORT_COUNT: usize = 2;
-/// Push support points away from a nearby opponent within this range.
-pub const SUPPORT_AVOID_RANGE: f64 = 800.0;
+/// Corridor width for the ball→support lane-openness used to place supporters in
+/// open outlets (rather than stranded behind opponents).
+pub const SUPPORT_LANE_CORRIDOR: f64 = 500.0;
+/// A ball contest with at least this much threat to our goal relieves one shadow
+/// (the contesting plan robot stands in for it). Keeps shadows off the snatcher.
+pub const SHADOW_RELIEF_THREAT: f64 = 0.4;
 /// Importance ladder (points; converted to seconds via SEC_PER_IMPORTANCE).
 pub const IMP_SHADOW_BASE: f64 = 8.0;
 pub const IMP_MARK_BASE: f64 = 6.0;
 pub const IMP_SUPPORT: f64 = 3.0;
-pub const IMP_RECEIVER: f64 = 12.0;
 pub const IMP_SPREAD: f64 = 0.5;
+/// Coverage accounting: radius around a plan robot's ball contest within which
+/// formation roles are de-prioritised (soft suppression, avoids clustering).
+pub const SUPPRESS_RADIUS: f64 = 1400.0;
+/// Max importance penalty applied at the centre of a suppression zone. Set above
+/// the shadow/mark bases so a redundant role on the contested ball decisively
+/// loses to anything further out (clustering fix).
+pub const IMP_SUPPRESS: f64 = 10.0;
 /// Primary tuning knob: seconds of redirect time one importance point is worth.
 pub const SEC_PER_IMPORTANCE: f64 = 0.4;
 /// Over-generate roles to this multiple of the assignable robot count.

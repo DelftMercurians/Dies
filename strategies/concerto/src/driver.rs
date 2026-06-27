@@ -6,10 +6,10 @@
 //! planner to react differently (e.g. NoProgress → try another robot).
 
 use dies_strategy_api::prelude::*;
-use dies_strategy_api::World;
+use dies_strategy_api::{PassFailure, PassResult, World};
 
 use crate::config;
-use crate::planner::Waypoint;
+use crate::planner::{CaptureKind, Engagement, PlanContext, Waypoint};
 
 /// Outcome of the current waypoint this tick.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,7 +41,9 @@ enum Phase {
     Pickup,
     Dribble,
     Shoot,
-    // PassExec / PassSettle added in the passing milestone.
+    /// A coordinated pass is in flight; the framework's `PassCoordinator` owns
+    /// both robots. The driver just keeps the pass alive and watches the result.
+    PassExec,
 }
 
 pub struct Driver {
@@ -83,13 +85,49 @@ impl Driver {
         self.active_robot
     }
 
-    /// The area Formation should staff with a receiver (Pass waypoints only).
-    /// Always `None` in v1; the formation reads this to build the receiver role.
-    pub fn plan_context_area(&self) -> Option<Vector2> {
+    /// Robots the plan currently controls (excluded from Formation). One for most
+    /// waypoints; both passer and receiver for a `Pass` — the latter is a hard
+    /// requirement so Formation never issues a `go_to` that would cancel the pass.
+    pub fn plan_slots(&self) -> Vec<PlayerId> {
         match &self.waypoint {
-            Some(Waypoint::Pass { target_area, .. }) => Some(*target_area),
-            _ => None,
+            Some(Waypoint::Pass {
+                passer, receiver, ..
+            }) => vec![*passer, *receiver],
+            _ => self.active_robot.into_iter().collect(),
         }
+    }
+
+    /// True while a pass is mid-flight. The orchestrator uses this to suppress
+    /// soft replans: possession flits We→Loose→We during a pass, and the
+    /// coordinator (not the planner) owns abort/failure.
+    pub fn is_passing(&self) -> bool {
+        matches!(self.waypoint, Some(Waypoint::Pass { .. }))
+            && self.last_status == WaypointStatus::Ongoing
+    }
+
+    /// Coverage the plan-controlled robots provide this tick, for Formation's
+    /// coverage accounting. Empty when no waypoint is active.
+    pub fn plan_context(&self) -> PlanContext {
+        let wp = match &self.waypoint {
+            Some(wp) => wp,
+            None => return PlanContext::default(),
+        };
+        let mut engagements = Vec::new();
+        // Any ball-holding/contesting waypoint occupies the ball area.
+        if let Some(at) = self.engage_ball_pos {
+            engagements.push(Engagement::BallContest { at });
+        }
+        match wp {
+            Waypoint::Capture {
+                kind: CaptureKind::Steal { from },
+                ..
+            } => engagements.push(Engagement::Engaging { opponent: *from }),
+            Waypoint::Pass { target_area, .. } => {
+                engagements.push(Engagement::ReceiveArea { at: *target_area })
+            }
+            _ => {}
+        }
+        PlanContext { engagements }
     }
 
     /// Consume the next-active hint (set when a pass succeeds). `None` in v1.
@@ -113,7 +151,7 @@ impl Driver {
             Waypoint::Capture { .. } => Phase::Approach,
             Waypoint::Dribble { .. } => Phase::Dribble,
             Waypoint::Shoot { .. } => Phase::Shoot,
-            Waypoint::Pass { .. } => Phase::Idle, // passing milestone wires this
+            Waypoint::Pass { .. } => Phase::PassExec,
         };
         self.waypoint = Some(waypoint);
         self.active_robot = Some(active_robot);
@@ -143,6 +181,44 @@ impl Driver {
         }
         let now = world.timestamp();
         let opp_goal = world.opp_goal_center();
+
+        // ── Pass: delegate to the joint coordinator ─────────────────────────
+        // A pass is a degenerate waypoint: keep it alive (idempotent) and watch
+        // the typed result. The framework's PassCoordinator owns both robots and
+        // every phase (Secure→Setup→Commit→Flight→Settle). We deliberately skip
+        // the ball-moved guard below — during a pass the ball is *meant* to move.
+        if let Waypoint::Pass {
+            passer,
+            receiver,
+            target_area,
+        } = waypoint
+        {
+            ctx.pass(passer, receiver).target_hint(target_area);
+            if let Some(p) = ctx.player(passer) {
+                p.set_role("passing");
+            }
+            if let Some(r) = ctx.player(receiver) {
+                r.set_role("receiving");
+            }
+            let status = match ctx.pass_result(passer) {
+                Some(PassResult::Success { .. }) => {
+                    self.new_active = Some(receiver);
+                    WaypointStatus::Succeeded
+                }
+                Some(PassResult::Failure { reason, .. }) => {
+                    WaypointStatus::Failed(map_pass_failure(*reason))
+                }
+                None => WaypointStatus::Ongoing,
+            };
+            if matches!(
+                status,
+                WaypointStatus::Succeeded | WaypointStatus::Failed(_)
+            ) {
+                return self.finish(status);
+            }
+            self.last_status = status.clone();
+            return status;
+        }
 
         // ── Global failure: ball left the engagement area, and not ours ─────
         if let (Some(engage), Some(bp)) = (self.engage_ball_pos, world.ball_position()) {
@@ -259,4 +335,120 @@ impl Driver {
 fn heading_toward(from: Vector2, to: Vector2) -> Angle {
     let d = to - from;
     Angle::from_radians(d.y.atan2(d.x))
+}
+
+/// Map a typed pass failure onto the driver's coarse `FailReason`. The planner
+/// only needs enough granularity to drive its anti-loop and next-action choice.
+fn map_pass_failure(reason: PassFailure) -> FailReason {
+    match reason {
+        PassFailure::Timeout => FailReason::Timeout,
+        // Ball ended up loose / on an opponent — possession is gone.
+        PassFailure::ReceiverMissed | PassFailure::Intercepted | PassFailure::StoppedShort => {
+            FailReason::PossessionLost
+        }
+        // The pass never really got going (passer lost it, or a side dropped out).
+        PassFailure::BallLost | PassFailure::PartnerLeft | PassFailure::Cancelled => {
+            FailReason::SkillFailed
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::planner::Waypoint;
+    use dies_strategy_api::PassBallState;
+    use dies_strategy_protocol::{BallState, GameState, WorldSnapshot};
+    use std::collections::HashMap;
+
+    fn snap() -> WorldSnapshot {
+        WorldSnapshot {
+            timestamp: 1.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: Vector2::new(0.0, 0.0),
+                velocity: Vector2::new(0.0, 0.0),
+                detected: true,
+            }),
+            own_players: vec![
+                PlayerState::new(
+                    PlayerId::new(2),
+                    Vector2::new(0.0, 0.0),
+                    Vector2::new(0.0, 0.0),
+                    Angle::from_radians(0.0),
+                ),
+                PlayerState::new(
+                    PlayerId::new(3),
+                    Vector2::new(2000.0, 0.0),
+                    Vector2::new(0.0, 0.0),
+                    Angle::from_radians(0.0),
+                ),
+            ],
+            opp_players: vec![],
+            game_state: GameState::Run,
+            us_operating: true,
+            our_keeper_id: None,
+            freekick_kicker: None,
+            possession: Possession::We(PlayerId::new(2)),
+            possession_stale: false,
+        }
+    }
+
+    fn ctx_with(result: Option<PassResult>) -> TeamContext {
+        let mut pr = HashMap::new();
+        if let Some(r) = result {
+            pr.insert(PlayerId::new(2), r);
+        }
+        TeamContext::new(snap(), HashMap::new(), pr, HashMap::new())
+    }
+
+    fn pass_waypoint() -> Waypoint {
+        Waypoint::Pass {
+            passer: PlayerId::new(2),
+            receiver: PlayerId::new(3),
+            target_area: Vector2::new(2500.0, 0.0),
+        }
+    }
+
+    #[test]
+    fn pass_succeeds_and_hands_off_to_receiver() {
+        let world = World::new(snap());
+        let mut ctx = ctx_with(Some(PassResult::Success {
+            receiver: PlayerId::new(3),
+        }));
+        let mut d = Driver::new();
+        d.set_waypoint(pass_waypoint(), PlayerId::new(2), 0.0);
+
+        assert_eq!(d.update(&world, &mut ctx), WaypointStatus::Succeeded);
+        assert_eq!(d.take_new_active(), Some(PlayerId::new(3)));
+    }
+
+    #[test]
+    fn pass_failure_maps_to_fail_reason() {
+        let world = World::new(snap());
+        let mut ctx = ctx_with(Some(PassResult::Failure {
+            reason: PassFailure::Timeout,
+            ball_state: PassBallState::Unknown,
+        }));
+        let mut d = Driver::new();
+        d.set_waypoint(pass_waypoint(), PlayerId::new(2), 0.0);
+
+        assert_eq!(
+            d.update(&world, &mut ctx),
+            WaypointStatus::Failed(FailReason::Timeout)
+        );
+    }
+
+    #[test]
+    fn pass_in_progress_reserves_both_robots() {
+        let world = World::new(snap());
+        let mut ctx = ctx_with(None);
+        let mut d = Driver::new();
+        d.set_waypoint(pass_waypoint(), PlayerId::new(2), 0.0);
+
+        assert_eq!(d.update(&world, &mut ctx), WaypointStatus::Ongoing);
+        assert!(d.is_passing());
+        assert_eq!(d.plan_slots(), vec![PlayerId::new(2), PlayerId::new(3)]);
+    }
 }
