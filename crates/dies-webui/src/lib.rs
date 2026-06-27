@@ -38,8 +38,13 @@ pub struct UiConfig {
     pub auto_start: bool,
     pub controlled_teams: ControlledTeam,
     pub calibration_mode: bool,
-    /// IPC strategy binary name (None = no strategy).
+    /// IPC strategy binary name (None = no strategy). Applied to every active team.
     pub strategy: Option<String>,
+    /// Per-team strategy override for blue. When set, activates the blue team and
+    /// uses this binary instead of [`strategy`](Self::strategy).
+    pub blue_strategy: Option<String>,
+    /// Per-team strategy override for yellow (see [`blue_strategy`](Self::blue_strategy)).
+    pub yellow_strategy: Option<String>,
     /// Dev-only: hot-reload the strategy process when its binary is rebuilt.
     pub hot_reload: bool,
     /// Dev-only: artificial delay (ms) applied to incoming vision packets.

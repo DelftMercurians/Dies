@@ -155,8 +155,21 @@ pub struct Cli {
     pub controlled_teams: ControlledTeam,
 
     /// Strategy binary name (e.g. "concerto"). Use "none" for no strategy.
+    /// Applies to every controlled team; for an asymmetric matchup (e.g. a
+    /// benchmark) use `--blue-strategy` / `--yellow-strategy` instead.
     #[clap(long, default_value = "none")]
     pub strategy: String,
+
+    /// Strategy binary for the blue team only. Overrides `--strategy` for blue
+    /// and activates the blue team. Pair with `--yellow-strategy` to pit two
+    /// strategies against each other in sim.
+    #[clap(long)]
+    pub blue_strategy: Option<String>,
+
+    /// Strategy binary for the yellow team only. Overrides `--strategy` for
+    /// yellow and activates the yellow team.
+    #[clap(long)]
+    pub yellow_strategy: Option<String>,
 
     /// Launch the existing strategy binary as-is; never build.
     #[clap(long, action)]
@@ -322,6 +335,8 @@ impl Cli {
             },
             calibration_mode,
             strategy,
+            blue_strategy: self.blue_strategy.clone(),
+            yellow_strategy: self.yellow_strategy.clone(),
             hot_reload,
             vision_delay_ms: self.vision_delay_ms,
             log_directory: PathBuf::from(self.log_directory),

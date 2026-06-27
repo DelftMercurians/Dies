@@ -25,16 +25,26 @@ pub async fn start_ui(args: Cli) -> Result<()> {
     log::set_logger(logger).unwrap(); // Safe to unwrap: no logger set yet
     log::set_max_level(log::LevelFilter::Debug);
 
-    // Build / watch the selected strategy before the executor launches it. The
-    // executor reads the binary from `target/debug`; in watch mode it also
-    // hot-swaps the process whenever the binary is rebuilt.
+    // Build / watch the selected strategies before the executor launches them.
+    // The executor reads each binary from `target/debug`; in watch mode it also
+    // hot-swaps the process whenever the binary is rebuilt. With the per-team
+    // `--blue-strategy` / `--yellow-strategy` overrides there can be more than one
+    // (e.g. a v0-vs-concerto benchmark), so build each distinct binary once.
+    let mut strategies: Vec<String> = Vec::new();
     if args.strategy != "none" {
+        strategies.push(args.strategy.clone());
+    }
+    strategies.extend(args.blue_strategy.clone());
+    strategies.extend(args.yellow_strategy.clone());
+    strategies.sort();
+    strategies.dedup();
+    for name in &strategies {
         match args.strategy_mode() {
             StrategyMode::Launch => {}
-            StrategyMode::Build => crate::strategy::build_strategy(&args.strategy)?,
+            StrategyMode::Build => crate::strategy::build_strategy(name)?,
             StrategyMode::Watch => {
-                crate::strategy::build_strategy(&args.strategy)?;
-                crate::strategy::spawn_watcher(args.strategy.clone());
+                crate::strategy::build_strategy(name)?;
+                crate::strategy::spawn_watcher(name.clone());
             }
         }
     }

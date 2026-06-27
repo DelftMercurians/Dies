@@ -256,6 +256,19 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
             settings.team_configuration.yellow_strategy = Some(strategy.clone());
         }
     }
+    // Per-team strategy overrides (e.g. an asymmetric benchmark). Each one both
+    // selects that team's binary and activates the team, independent of
+    // `--controlled-teams` / `--strategy`.
+    if let Some(ref strategy) = config.blue_strategy {
+        let mut settings = state.executor_settings.write().unwrap();
+        settings.team_configuration.blue_active = true;
+        settings.team_configuration.blue_strategy = Some(strategy.clone());
+    }
+    if let Some(ref strategy) = config.yellow_strategy {
+        let mut settings = state.executor_settings.write().unwrap();
+        settings.team_configuration.yellow_active = true;
+        settings.team_configuration.yellow_strategy = Some(strategy.clone());
+    }
     // Propagate the dev-only hot-reload flag into the executor settings.
     state.executor_settings.write().unwrap().hot_reload = config.hot_reload;
     state.executor_settings.write().unwrap().vision_delay_ms = config.vision_delay_ms;
