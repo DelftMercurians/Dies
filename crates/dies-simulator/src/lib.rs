@@ -646,6 +646,12 @@ impl Simulation {
         (self.blue_score, self.yellow_score)
     }
 
+    /// The field geometry this simulation was built with (logged into the log's
+    /// `meta.json` so analytics know the goal/field coordinates).
+    pub fn field_geometry(&self) -> &FieldGeometry {
+        &self.config.field_geometry
+    }
+
     /// A deterministic 64-bit fingerprint of the current physical state: the
     /// ball position plus every player's pose, in player-vector order. Folding
     /// this each frame yields a trajectory hash that is byte-identical across
@@ -1530,10 +1536,12 @@ impl Simulation {
             let ball_position = ball_body.position().translation.vector; // Center of the ball
 
             let goal_height = 150.0;
-            if ball_position.x.abs()
-                > self.config.field_geometry.field_length / 2.0
-                    - self.config.field_geometry.goal_depth
-                && ball_position.x.abs() < self.config.field_geometry.field_length / 2.0
+            // A goal is scored once the ball crosses the goal line (field_length/2)
+            // into the net, which extends back to field_length/2 + goal_depth.
+            if ball_position.x.abs() > self.config.field_geometry.field_length / 2.0
+                && ball_position.x.abs()
+                    < self.config.field_geometry.field_length / 2.0
+                        + self.config.field_geometry.goal_depth
                 && ball_position.y.abs() < self.config.field_geometry.goal_width / 2.0
                 && ball_position.z < goal_height
             {
