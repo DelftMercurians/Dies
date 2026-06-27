@@ -109,12 +109,19 @@ fn striker_position(s: &RobotSituation, last_pos: Option<Vector2>) -> Vector2 {
         return avoid_pos;
     }
 
-    let closest_striker = s.get_players_with_role("striker").into_iter().min_by(|a, b| {
-        let a_dist = (s.ball_position() - a.position).norm();
-        let b_dist = (s.ball_position() - b.position).norm();
-        a_dist.partial_cmp(&b_dist).unwrap_or(std::cmp::Ordering::Equal)
-    });
-    let am_closest_striker = closest_striker.map(|p| p.id == s.player_id).unwrap_or(false);
+    let closest_striker = s
+        .get_players_with_role("striker")
+        .into_iter()
+        .min_by(|a, b| {
+            let a_dist = (s.ball_position() - a.position).norm();
+            let b_dist = (s.ball_position() - b.position).norm();
+            a_dist
+                .partial_cmp(&b_dist)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    let am_closest_striker = closest_striker
+        .map(|p| p.id == s.player_id)
+        .unwrap_or(false);
 
     let ball_pos = s.ball_position();
     if am_closest_striker && ball_pos.x > 80.0 {
@@ -200,7 +207,11 @@ fn calculate_avoidance_position(s: &RobotSituation, ball_carrier: &PlayerState) 
     let perpendicular = Vector2::new(-shot_direction.y, shot_direction.x);
 
     let to_me = my_pos - carrier_pos;
-    let side = if to_me.dot(&perpendicular) > 0.0 { 1.0 } else { -1.0 };
+    let side = if to_me.dot(&perpendicular) > 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
 
     let avoidance_distance = 200.0;
     let along_shot = to_me.dot(&shot_direction).max(200.0);

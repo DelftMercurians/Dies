@@ -35,6 +35,17 @@ const ALIGNMENT_TOLERANCE: f64 = 10.0 * std::f64::consts::PI / 180.0;
 const SECURE_TIMEOUT: f64 = 3.0;
 /// Time budget for the `Setup` phase (aim + receiver positioning).
 const SETUP_TIMEOUT: f64 = 4.0;
+/// Dribble speed (0..1) the passer holds from `Secure` through `Setup`. The sim
+/// (and firmware) grip is binary — any non-zero speed pins the ball — but we
+/// hold full power so the ball stays seated on the dribbler while the passer
+/// rotates to aim, instead of slipping out of the dribbler cone.
+const PASS_DRIBBLE_SPEED: f64 = 1.0;
+/// Grace period (s) the passer may transiently read `!has_ball` during `Setup`
+/// before the pass aborts with `BallLost`. A pass that rotates the ball toward
+/// the receiver routinely drops the breakbeam for a frame or two as the ball
+/// rides the edge of the dribbler cone; without this debounce that single-frame
+/// flicker kills the pass and the passer livelocks on recapture→retry.
+const SETUP_BALL_LOST_GRACE: f64 = 0.2;
 /// How close (mm) the receiver must be to the intercept point to be "ready".
 const RECEIVER_READY_DIST: f64 = 250.0;
 /// Max perpendicular distance (mm) the receiver will travel off the pass line.
@@ -131,6 +142,10 @@ pub struct PassCoordinator {
     phase: PassPhase,
     phase_elapsed: f64,
     total_elapsed: f64,
+    /// Time spent reading `!has_ball` in the current `Setup` phase. Reset on any
+    /// phase change and whenever possession is (re)confirmed; debounces the
+    /// breakbeam so a transient drop doesn't abort the pass.
+    setup_ball_lost: f64,
 
     /// Fixed intercept point, captured when entering `Setup`.
     intercept_point: Option<Vector2>,
@@ -152,6 +167,7 @@ impl PassCoordinator {
             phase: PassPhase::Secure,
             phase_elapsed: 0.0,
             total_elapsed: 0.0,
+            setup_ball_lost: 0.0,
             intercept_point: None,
             // Sub-skills are seeded with placeholder params and reconfigured on use.
             pickup: PickupBallSkill::new(Angle::from_radians(0.0), false),
@@ -198,6 +214,7 @@ impl PassCoordinator {
     fn enter(&mut self, phase: PassPhase) {
         self.phase = phase;
         self.phase_elapsed = 0.0;
+        self.setup_ball_lost = 0.0;
     }
 
     fn finish(&mut self, result: PassResult) -> PassResult {
@@ -268,8 +285,10 @@ impl PassCoordinator {
                 if passer.has_ball {
                     self.enter(PassPhase::Setup);
                     self.intercept_point = Some(self.target_hint.unwrap_or(receiver.position));
-                    // fall through to Setup next frame; hold this frame
-                    passer_input = PlayerControlInput::new();
+                    // Fall through to Setup next frame; hold position this frame
+                    // but keep the dribbler engaged so the ball is not released
+                    // on the Secure→Setup handoff.
+                    passer_input = hold_dribbling();
                 } else if let Some(bp) = ball_pos {
                     let dist = (bp - passer.position).norm();
                     if dist > SECURE_DISTANCE {
@@ -292,7 +311,8 @@ impl PassCoordinator {
                             SkillProgress::Continue(input) => passer_input = input,
                             SkillProgress::Done(_) => {
                                 // Possession (or give-up) — re-checked next frame.
-                                passer_input = PlayerControlInput::new();
+                                // Keep dribbling so a fresh grip isn't dropped.
+                                passer_input = hold_dribbling();
                             }
                         }
                     }
@@ -306,8 +326,18 @@ impl PassCoordinator {
             }
 
             PassPhase::Setup => {
-                // Lost the ball before kicking → clean abort.
-                if !passer.has_ball {
+                // Debounce possession: rotating the ball toward the receiver
+                // rides it along the edge of the dribbler cone, so the breakbeam
+                // routinely drops for a frame or two. Only abort once the ball
+                // has been lost for longer than the grace window; while
+                // transiently lost we keep aiming + dribbling so it re-seats.
+                if passer.has_ball {
+                    self.setup_ball_lost = 0.0;
+                } else {
+                    self.setup_ball_lost += dt;
+                }
+
+                if self.setup_ball_lost > SETUP_BALL_LOST_GRACE {
                     result = Some(
                         self.finish(PassResult::Failure {
                             reason: PassFailure::BallLost,
@@ -329,9 +359,11 @@ impl PassCoordinator {
                     // Receiver gets ready (positions on the line, faces the ball).
                     receiver_input = self.tick_receive(ctx, &receiver, target_point);
 
+                    // Commit only from a confirmed grip — never kick on a frame
+                    // where the breakbeam is transiently dropped.
                     let aligned = (passer.yaw - target_heading).abs() < ALIGNMENT_TOLERANCE;
                     let ready = (receiver.position - target_point).norm() < RECEIVER_READY_DIST;
-                    if aligned && ready {
+                    if passer.has_ball && aligned && ready {
                         self.enter(PassPhase::Commit);
                     }
                 }
@@ -615,13 +647,21 @@ fn aim_input(
     target_heading: Angle,
 ) -> PlayerControlInput {
     let mut input = PlayerControlInput::new();
-    input.with_dribbling(0.3);
+    input.with_dribbling(PASS_DRIBBLE_SPEED);
     input.with_yaw(target_heading);
     input.with_care(0.7);
     if let Some(bp) = ball_pos {
         let dir = (bp - passer.position).normalize();
         input.velocity = Velocity::global(dir * 40.0);
     }
+    input
+}
+
+/// A neutral hold input that keeps the dribbler at full power — used on frames
+/// where the passer should not move but must not release the ball.
+fn hold_dribbling() -> PlayerControlInput {
+    let mut input = PlayerControlInput::new();
+    input.with_dribbling(PASS_DRIBBLE_SPEED);
     input
 }
 
@@ -781,5 +821,92 @@ mod tests {
             team_context: &tc,
         }); // misaligned -> stays Setup
         assert_eq!(c.phase(), PassPhase::Setup);
+    }
+
+    /// Helper: build a misaligned passer (so Setup never commits) + a receiver,
+    /// drive into Setup, and return the coordinator ready for ball-loss ticks.
+    fn into_setup(has_ball: bool) -> (PassCoordinator, TeamContext, PlayerData, PlayerData) {
+        let mut passer = player(0, Vector2::new(0.0, 0.0), std::f64::consts::FRAC_PI_2);
+        passer.has_ball = true;
+        let receiver = player(1, Vector2::new(2000.0, 0.0), std::f64::consts::PI);
+        let tc = team_ctx();
+        let mut c = PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None);
+        let w = world(
+            vec![passer.clone(), receiver.clone()],
+            Some(Vector2::new(60.0, 0.0)),
+            0.016,
+        );
+        c.tick(&PassContext {
+            world: &w,
+            team_context: &tc,
+        });
+        assert_eq!(c.phase(), PassPhase::Setup);
+        let mut passer = passer;
+        passer.has_ball = has_ball;
+        (c, tc, passer, receiver)
+    }
+
+    #[test]
+    fn setup_tolerates_brief_ball_loss() {
+        // A breakbeam flicker shorter than the grace window must not abort.
+        let (mut c, tc, passer, receiver) = into_setup(false);
+        // ~0.13s < SETUP_BALL_LOST_GRACE (0.2s) of "no ball": stay in Setup.
+        for _ in 0..8 {
+            let w = world(
+                vec![passer.clone(), receiver.clone()],
+                Some(Vector2::new(60.0, 0.0)),
+                0.016,
+            );
+            let out = c.tick(&PassContext {
+                world: &w,
+                team_context: &tc,
+            });
+            assert_eq!(out.status, SkillStatus::Running);
+            assert_eq!(c.phase(), PassPhase::Setup);
+        }
+        // Re-acquiring the ball clears the debounce and keeps the pass alive.
+        let mut regained = passer.clone();
+        regained.has_ball = true;
+        let w = world(
+            vec![regained, receiver.clone()],
+            Some(Vector2::new(60.0, 0.0)),
+            0.016,
+        );
+        c.tick(&PassContext {
+            world: &w,
+            team_context: &tc,
+        });
+        assert_eq!(c.phase(), PassPhase::Setup);
+    }
+
+    #[test]
+    fn setup_aborts_after_sustained_ball_loss() {
+        // Loss past the grace window is a real BallLost.
+        let (mut c, tc, passer, receiver) = into_setup(false);
+        let mut last = SkillStatus::Running;
+        for _ in 0..20 {
+            let w = world(
+                vec![passer.clone(), receiver.clone()],
+                Some(Vector2::new(60.0, 0.0)),
+                0.016,
+            );
+            last = c
+                .tick(&PassContext {
+                    world: &w,
+                    team_context: &tc,
+                })
+                .status;
+            if c.is_done() {
+                break;
+            }
+        }
+        assert_eq!(last, SkillStatus::Failed);
+        assert!(matches!(
+            c.result(),
+            Some(PassResult::Failure {
+                reason: PassFailure::BallLost,
+                ..
+            })
+        ));
     }
 }

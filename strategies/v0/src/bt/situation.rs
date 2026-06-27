@@ -176,7 +176,10 @@ impl RobotSituation {
 
     pub fn get_own_penalty_mark(&self) -> Vector2 {
         if let Some(field) = &self.world.field_geom {
-            Vector2::new(-field.field_length / 2.0 + field.goal_line_to_penalty_mark, 0.0)
+            Vector2::new(
+                -field.field_length / 2.0 + field.goal_line_to_penalty_mark,
+                0.0,
+            )
         } else {
             Vector2::new(-3500.0, 0.0)
         }
@@ -184,7 +187,10 @@ impl RobotSituation {
 
     pub fn get_opp_penalty_mark(&self) -> Vector2 {
         if let Some(field) = &self.world.field_geom {
-            Vector2::new(field.field_length / 2.0 - field.goal_line_to_penalty_mark, 0.0)
+            Vector2::new(
+                field.field_length / 2.0 - field.goal_line_to_penalty_mark,
+                0.0,
+            )
         } else {
             Vector2::new(3500.0, 0.0)
         }
@@ -217,11 +223,19 @@ impl RobotSituation {
     }
 
     pub fn ball_position(&self) -> Vector2 {
-        self.world.ball.as_ref().map(|b| b.position).unwrap_or_default()
+        self.world
+            .ball
+            .as_ref()
+            .map(|b| b.position)
+            .unwrap_or_default()
     }
 
     pub fn ball_velocity(&self) -> Vector2 {
-        self.world.ball.as_ref().map(|b| b.velocity).unwrap_or_default()
+        self.world
+            .ball
+            .as_ref()
+            .map(|b| b.velocity)
+            .unwrap_or_default()
     }
 
     pub fn ball_speed(&self) -> f64 {
@@ -229,11 +243,19 @@ impl RobotSituation {
     }
 
     pub fn ball_in_our_half(&self) -> bool {
-        self.world.ball.as_ref().map(|b| b.position.x < 0.0).unwrap_or(false)
+        self.world
+            .ball
+            .as_ref()
+            .map(|b| b.position.x < 0.0)
+            .unwrap_or(false)
     }
 
     pub fn ball_in_opponent_half(&self) -> bool {
-        self.world.ball.as_ref().map(|b| b.position.x > 0.0).unwrap_or(false)
+        self.world
+            .ball
+            .as_ref()
+            .map(|b| b.position.x > 0.0)
+            .unwrap_or(false)
     }
 
     pub fn ball_in_own_penalty_area(&self) -> bool {
@@ -293,7 +315,10 @@ impl RobotSituation {
     }
 
     pub fn is_kickoff_state(&self) -> bool {
-        matches!(self.game_state(), GameState::Kickoff | GameState::PrepareKickoff)
+        matches!(
+            self.game_state(),
+            GameState::Kickoff | GameState::PrepareKickoff
+        )
     }
 
     pub fn is_free_kick_state(&self) -> bool {
@@ -324,7 +349,12 @@ impl RobotSituation {
             .find(|p| p.id == self.player_id)
             .cloned()
             .unwrap_or_else(|| {
-                PlayerState::new(self.player_id, Vector2::zeros(), Vector2::zeros(), Angle::from_radians(0.0))
+                PlayerState::new(
+                    self.player_id,
+                    Vector2::zeros(),
+                    Vector2::zeros(),
+                    Angle::from_radians(0.0),
+                )
             })
     }
 
@@ -353,11 +383,17 @@ impl RobotSituation {
     }
 
     pub fn has_any_handicap(&self, handicaps: &[Handicap]) -> bool {
-        self.player_data().handicaps.iter().any(|h| handicaps.contains(h))
+        self.player_data()
+            .handicaps
+            .iter()
+            .any(|h| handicaps.contains(h))
     }
 
     pub fn has_none_of_handicaps(&self, handicaps: &[Handicap]) -> bool {
-        self.player_data().handicaps.iter().all(|h| !handicaps.contains(h))
+        self.player_data()
+            .handicaps
+            .iter()
+            .all(|h| !handicaps.contains(h))
     }
 
     pub fn player_id_hash(&self) -> f64 {
@@ -367,7 +403,10 @@ impl RobotSituation {
     // ── Roles ───────────────────────────────────────────────────────────
 
     pub fn current_role(&self) -> String {
-        self.role_assignments.get(&self.player_id).cloned().unwrap_or_default()
+        self.role_assignments
+            .get(&self.player_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn current_role_is(&self, role: &str) -> bool {
@@ -378,7 +417,12 @@ impl RobotSituation {
         self.world
             .own_players
             .iter()
-            .filter(|p| self.role_assignments.get(&p.id).map(|r| r.contains(role)).unwrap_or(false))
+            .filter(|p| {
+                self.role_assignments
+                    .get(&p.id)
+                    .map(|r| r.contains(role))
+                    .unwrap_or(false)
+            })
             .cloned()
             .collect()
     }
@@ -443,7 +487,11 @@ impl RobotSituation {
             .own_players
             .iter()
             .filter(|p| p.id != self.player_id)
-            .min_by(|p, q| key(p).partial_cmp(&key(q)).unwrap_or(std::cmp::Ordering::Equal))
+            .min_by(|p, q| {
+                key(p)
+                    .partial_cmp(&key(q))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .cloned()
     }
 
@@ -451,7 +499,11 @@ impl RobotSituation {
         self.world
             .opp_players
             .iter()
-            .min_by(|p, q| key(p).partial_cmp(&key(q)).unwrap_or(std::cmp::Ordering::Equal))
+            .min_by(|p, q| {
+                key(p)
+                    .partial_cmp(&key(q))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .cloned()
     }
 

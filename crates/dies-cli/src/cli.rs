@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::commands::{
-    run_scenario::run_scenario, start_ui::start_ui, test_radio::test_radio,
+    run_scenario::run_scenario, self_play::self_play, start_ui::start_ui, test_radio::test_radio,
     test_vision::test_vision,
 };
 
@@ -88,6 +88,35 @@ enum Command {
 
         #[clap(long, default_value = "live")]
         mode: ScenarioMode,
+    },
+
+    /// Run one deterministic, faster-than-realtime headless A-vs-B self-play
+    /// match in simulation (no webui). Emits a MatchResult as JSON.
+    #[clap(name = "self-play")]
+    SelfPlay {
+        /// Strategy binary for the blue team.
+        #[clap(long)]
+        blue_strategy: String,
+
+        /// Strategy binary for the yellow team.
+        #[clap(long)]
+        yellow_strategy: String,
+
+        /// RNG seed driving initial pose jitter (same seed → identical match).
+        #[clap(long, default_value = "0")]
+        seed: u64,
+
+        /// Match length in simulated seconds.
+        #[clap(long, default_value = "120")]
+        duration: f64,
+
+        /// Stop early once the combined score reaches this many goals.
+        #[clap(long)]
+        max_goals: Option<u32>,
+
+        /// Write the MatchResult JSON to this file instead of stdout.
+        #[clap(long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -288,6 +317,33 @@ impl Cli {
                     Ok(_) => ExitCode::SUCCESS,
                     Err(err) => {
                         eprintln!("Error running scenario: {}", err);
+                        ExitCode::FAILURE
+                    }
+                }
+            }
+            Some(Command::SelfPlay {
+                ref blue_strategy,
+                ref yellow_strategy,
+                seed,
+                duration,
+                max_goals,
+                ref output,
+            }) => {
+                let build = self.strategy_mode() != StrategyMode::Launch;
+                match self_play(
+                    blue_strategy.clone(),
+                    yellow_strategy.clone(),
+                    seed,
+                    duration,
+                    max_goals,
+                    output.clone(),
+                    build,
+                )
+                .await
+                {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error running self-play match: {}", err);
                         ExitCode::FAILURE
                     }
                 }

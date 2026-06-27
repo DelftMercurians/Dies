@@ -18,6 +18,7 @@ use dies_protos::{
     },
     ssl_vision_wrapper::SSL_WrapperPacket,
 };
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use rapier3d_f64::prelude::*;
 use serde::Serialize;
 use std::fmt;
@@ -107,6 +108,11 @@ pub struct SimulationConfig {
     pub blue_controlled: bool,
     pub yellow_controlled: bool,
     pub initial_side_assignment: SideAssignment,
+
+    /// Seed for the simulation RNG. Drives initial pose jitter (and any other
+    /// seeded variation) so headless self-play matches are reproducible: same
+    /// seed → identical match, different seed → different-but-reproducible match.
+    pub seed: u64,
 }
 
 impl Default for SimulationConfig {
@@ -153,6 +159,8 @@ impl Default for SimulationConfig {
             // teams), otherwise goal attribution and penalty checks are computed
             // against the opposite side from reality.
             initial_side_assignment: SideAssignment::YellowOnPositive,
+
+            seed: 0,
         }
     }
 }
@@ -509,6 +517,8 @@ pub struct Simulation {
     kick_ball_position: Option<Vector2>,
     last_kicker_info: Option<(PlayerId, TeamColor)>,
     kick_in_progress: bool,
+    /// Seeded RNG for deterministic variation (initial pose jitter, etc).
+    rng: StdRng,
 }
 
 impl Simulation {
@@ -530,6 +540,7 @@ impl Simulation {
         let geometry_packet = geometry(&config.field_geometry);
 
         let side_assignment = config.initial_side_assignment;
+        let rng = StdRng::seed_from_u64(config.seed);
         let mut simulation = Simulation {
             config,
             current_time: 0.0,
@@ -567,6 +578,7 @@ impl Simulation {
             kick_ball_position: None,
             last_kicker_info: None,
             kick_in_progress: false,
+            rng,
         };
 
         // Create the ground
@@ -622,6 +634,51 @@ impl Simulation {
 
     pub fn time(&self) -> WorldInstant {
         WorldInstant::Simulated(self.current_time)
+    }
+
+    /// Current simulated time in seconds.
+    pub fn time_secs(&self) -> f64 {
+        self.current_time
+    }
+
+    /// Current match score as `(blue, yellow)`.
+    pub fn score(&self) -> (u32, u32) {
+        (self.blue_score, self.yellow_score)
+    }
+
+    /// A deterministic 64-bit fingerprint of the current physical state: the
+    /// ball position plus every player's pose, in player-vector order. Folding
+    /// this each frame yields a trajectory hash that is byte-identical across
+    /// runs with the same `(seed, strategies)` on the same binary, and diverges
+    /// as soon as the trajectories differ — used to verify determinism and to
+    /// confirm that the seed actually varies the match. Uses raw float bits
+    /// (FNV-1a) for exact same-binary equality.
+    pub fn state_fingerprint(&self) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a offset basis
+        let mut mix = |x: f64, h: &mut u64| {
+            for b in x.to_bits().to_le_bytes() {
+                *h ^= b as u64;
+                *h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        };
+        if let Some(ball) = &self.ball {
+            if let Some(rb) = self.rigid_body_set.get(ball._rigid_body_handle) {
+                let p = rb.translation();
+                mix(p.x, &mut h);
+                mix(p.y, &mut h);
+                mix(p.z, &mut h);
+            }
+        }
+        for player in &self.players {
+            if let Some(rb) = self.rigid_body_set.get(player.rigid_body_handle) {
+                let t = rb.translation();
+                let yaw = rb.rotation().euler_angles().2;
+                mix(t.x, &mut h);
+                mix(t.y, &mut h);
+                mix(yaw, &mut h);
+            }
+        }
+        h
     }
 
     /// Get the controlled teams
@@ -2384,6 +2441,72 @@ impl SimulationBuilder {
     }
 }
 
+impl SimulationBuilder {
+    /// Like [`SimulationBuilder::default`] but with the given config, and with
+    /// each robot's initial pose deterministically jittered by `config.seed`.
+    /// The ball stays centered (kickoff repositions it anyway). Same seed →
+    /// identical layout, so headless self-play matches are reproducible while
+    /// different seeds produce different-but-reproducible openings.
+    ///
+    /// Draws are made in a fixed order (blue 0..6, then yellow 0..6) so the
+    /// perturbation is a pure function of the seed. Jitter is bounded so robots
+    /// never spawn overlapping: the line runs along x (tight spacing), so x
+    /// jitter is kept small while y (toward the open center) is generous.
+    pub fn default_seeded(config: SimulationConfig) -> Self {
+        // Position jitter bounds (mm) and yaw jitter (rad). x is constrained by
+        // the inter-robot spacing along the line; y has the open field.
+        const JITTER_X: f64 = 30.0;
+        const JITTER_Y: f64 = 150.0;
+        const JITTER_YAW: f64 = 0.3;
+
+        let mut builder = SimulationBuilder::new(config);
+        let field_width = builder.sim.config.field_geometry.field_width / 2.0;
+        let field_length = builder.sim.config.field_geometry.field_length / 2.0;
+        let boundary_width = builder.sim.config.field_geometry.boundary_width;
+        let player_radius = builder.sim.config.player_radius;
+        let player_margin = 0.75 * player_radius;
+        let sides = builder.sim.config.initial_side_assignment;
+
+        let mut jitter = |builder: &mut SimulationBuilder| {
+            let rng = &mut builder.sim.rng;
+            (
+                rng.gen_range(-JITTER_X..=JITTER_X),
+                rng.gen_range(-JITTER_Y..=JITTER_Y),
+                rng.gen_range(-JITTER_YAW..=JITTER_YAW),
+            )
+        };
+
+        for i in 0..6 {
+            let (dx, dy, dyaw) = jitter(&mut builder);
+            let position = Vector2::new(
+                field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin)
+                    + dx,
+                field_width - player_radius - boundary_width + dy,
+            );
+            builder = builder.add_blue_player(
+                sides.transform_vec2(TeamColor::Blue, &position),
+                Angle::from_radians(dyaw),
+            );
+        }
+        for i in 0..6 {
+            let (dx, dy, dyaw) = jitter(&mut builder);
+            let position = Vector2::new(
+                field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin)
+                    + dx,
+                -(field_width - player_radius - boundary_width) + dy,
+            );
+            builder = builder.add_yellow_player(
+                sides.transform_vec2(TeamColor::Yellow, &position),
+                Angle::from_radians(dyaw),
+            );
+        }
+
+        builder = builder.add_ball(Vector::new(0.0, 0.0, 20.0));
+
+        builder
+    }
+}
+
 impl Default for SimulationBuilder {
     fn default() -> Self {
         // By default we add 6 players on each side, lined up on their respective
@@ -2617,5 +2740,43 @@ mod free_kick_placement_tests {
         ] {
             assert_valid(&sim, sim.valid_free_kick_position(desired));
         }
+    }
+}
+
+#[cfg(test)]
+mod determinism_tests {
+    use super::*;
+
+    /// Build the standard seeded 6v6 layout and step it `n` frames at 60 Hz with
+    /// no commands (robots settle, ball rests), returning the trajectory
+    /// fingerprint folded over every frame.
+    fn run(seed: u64, n: usize) -> u64 {
+        let config = SimulationConfig {
+            seed,
+            ..Default::default()
+        };
+        let mut sim = SimulationBuilder::default_seeded(config)
+            .with_controlled_teams(true, true)
+            .build();
+        let mut hash: u64 = 0;
+        for _ in 0..n {
+            sim.step(1.0 / 60.0);
+            hash =
+                hash.rotate_left(7).wrapping_mul(0x0000_0100_0000_01b3) ^ sim.state_fingerprint();
+        }
+        hash
+    }
+
+    #[test]
+    fn same_seed_is_deterministic() {
+        // The whole point of headless self-play: identical seed → identical run.
+        assert_eq!(run(42, 300), run(42, 300));
+    }
+
+    #[test]
+    fn different_seeds_diverge() {
+        // Pose jitter must actually vary the match, otherwise sweeping seeds for
+        // A-vs-B evaluation is pointless.
+        assert_ne!(run(1, 300), run(2, 300));
     }
 }

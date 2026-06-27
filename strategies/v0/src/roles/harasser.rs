@@ -118,7 +118,9 @@ pub fn calculate_primary_harasser_position(s: &RobotSituation) -> Vector2 {
         .map(|own| (own.position - ball_pos).norm())
         .unwrap_or(f64::INFINITY);
     let harass_distance = if closest_opp_dist > closest_own_dist + 500.0
-        && closest_own_striker.map(|p| p.id != s.player_id).unwrap_or(true)
+        && closest_own_striker
+            .map(|p| p.id != s.player_id)
+            .unwrap_or(true)
     {
         1000.0
     } else {
@@ -212,7 +214,13 @@ fn find_best_position_on_arc(
     }
 
     if !found_valid && radius < 1000.0 {
-        return find_best_position_on_arc(s, center, radius * 1.3, preferred_angle, original_target);
+        return find_best_position_on_arc(
+            s,
+            center,
+            radius * 1.3,
+            preferred_angle,
+            original_target,
+        );
     }
 
     s.constrain_to_field(best_pos)

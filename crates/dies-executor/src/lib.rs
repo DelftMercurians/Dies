@@ -25,10 +25,12 @@ mod announcer;
 pub mod control;
 mod gc_client;
 mod handle;
+pub mod headless;
 pub mod skills;
 pub mod strategy_host;
 
 pub use control::*;
+pub use headless::{EndReason, GoalEvent, HeadlessConfig, MatchResult};
 
 /// Translate a test-driver `PlayerControlSlot` into the executor's
 /// `PlayerControlInput`. Global velocity wins over local if both set.
@@ -469,6 +471,7 @@ impl Executor {
                 yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
                 side_assignment: settings.team_configuration.side_assignment,
                 hot_reload: settings.hot_reload,
+                blocking: settings.strategy_blocking,
             });
         if let Some(ref name) = settings.team_configuration.blue_strategy {
             strategy_host.set_strategy(TeamColor::Blue, Some(name.clone()));
@@ -642,7 +645,18 @@ impl Executor {
         for ev in simulator.take_referee_events() {
             self.announcer.on_sim_event(&ev, self.last_t);
         }
-        for ((team_color, _), feedback) in simulator.feedback().into_iter() {
+        // Drain feedback in a deterministic order. `feedback()` returns a
+        // HashMap; iterating it directly leaks hash order into the consumer.
+        // Sorting by (team, player id) keeps headless runs reproducible.
+        let mut feedback: Vec<_> = simulator.feedback().into_iter().collect();
+        feedback.sort_by_key(|((team, id), _)| {
+            let team_key = match team {
+                TeamColor::Blue => 0u8,
+                TeamColor::Yellow => 1u8,
+            };
+            (team_key, id.as_u32())
+        });
+        for ((team_color, _), feedback) in feedback {
             self.update_from_bs_msg(team_color, feedback, simulator.time());
         }
 
@@ -735,6 +749,145 @@ impl Executor {
             h.shutdown();
         }
         Ok(())
+    }
+
+    /// Run one deterministic, faster-than-realtime headless self-play match.
+    ///
+    /// Unlike [`Executor::run_real_time`] this is a plain synchronous loop with
+    /// no wall-clock pacing: it steps the simulator at a fixed `dt` as fast as
+    /// the CPU allows. Determinism comes from (a) the sim clock driving the
+    /// whole tracker→strategy→controller pipeline, (b) blocking strategy IPC
+    /// (set via `ExecutorSettings::strategy_blocking`) so the loop waits for
+    /// each reply instead of racing a wall-clock timeout, and (c) seeded initial
+    /// pose jitter in the simulator. Requires a simulation environment.
+    pub fn run_headless(mut self, cfg: headless::HeadlessConfig) -> Result<headless::MatchResult> {
+        let mut simulator = match self.environment.take() {
+            Some(Environment::Simulation { simulator }) => simulator,
+            _ => anyhow::bail!("run_headless requires a simulation environment"),
+        };
+
+        // Gate the match start on both strategies completing the Init/Ready
+        // handshake (runs at startup, so wall-clock waiting is fine here).
+        if let Some(host) = self.strategy_host.as_mut() {
+            host.wait_until_ready(Duration::from_secs(30))
+                .map_err(|e| anyhow::anyhow!("strategy startup failed: {e}"))?;
+        }
+
+        let dt = SIMULATION_DT;
+        let cmd_period = CMD_INTERVAL.as_secs_f64();
+        let mut next_cmd_t = 0.0_f64;
+        let (mut prev_blue, mut prev_yellow) = simulator.score();
+        let mut goals: Vec<headless::GoalEvent> = Vec::new();
+        let mut trace_hash: u64 = 0;
+        let mut end_reason;
+
+        loop {
+            // Drain control channel non-blocking. Headless has no UI, but honor
+            // an explicit Stop and apply any queued sim/GC commands.
+            let mut stop = false;
+            while let Ok(msg) = self.command_rx.try_recv() {
+                match msg {
+                    ControlMsg::Stop => stop = true,
+                    ControlMsg::GcCommand { command } => simulator.handle_gc_command(command),
+                    ControlMsg::SimulatorCmd(cmd) => self.handle_simulator_cmd(&mut simulator, cmd),
+                    other => self.handle_control_msg(other),
+                }
+            }
+            if stop {
+                end_reason = headless::EndReason::Stopped;
+                break;
+            }
+
+            // Step physics + vision + strategy. The strategy IPC happens inside
+            // (blocking), so this naturally paces to strategy compute time and
+            // stays deterministic regardless of wall-clock.
+            if let Err(e) = self.step_simulation(&mut simulator, dt) {
+                end_reason = headless::EndReason::StrategyError(format!("{e:#}"));
+                break;
+            }
+
+            // Abort loudly if a strategy died mid-match (its connection drops to
+            // None on close), rather than silently running on with that team
+            // frozen and reporting a bogus result.
+            if let Some(host) = self.strategy_host.as_ref() {
+                if !host.configured_strategies_alive() {
+                    end_reason =
+                        headless::EndReason::StrategyError("strategy disconnected".to_string());
+                    break;
+                }
+            }
+
+            // Fold the physical state into the trajectory fingerprint.
+            trace_hash = trace_hash
+                .rotate_left(7)
+                .wrapping_mul(0x0000_0100_0000_01b3)
+                ^ simulator.state_fingerprint();
+
+            let now = simulator.time_secs();
+
+            // Goal detection via score delta (authoritative, set by the sim's
+            // auto-referee). Stamp each new goal with the current sim time.
+            let (blue, yellow) = simulator.score();
+            while prev_blue < blue {
+                goals.push(headless::GoalEvent {
+                    t_secs: now,
+                    team: TeamColor::Blue,
+                });
+                prev_blue += 1;
+            }
+            while prev_yellow < yellow {
+                goals.push(headless::GoalEvent {
+                    t_secs: now,
+                    team: TeamColor::Yellow,
+                });
+                prev_yellow += 1;
+            }
+
+            // 40 Hz command push via a sim-time accumulator — the deterministic
+            // equivalent of run_rt_sim's independent wall-clock cmd interval.
+            while next_cmd_t <= now {
+                let pending = std::mem::take(&mut self.pending_sim_cmds);
+                for cmd in pending {
+                    self.handle_simulator_cmd(&mut simulator, cmd);
+                }
+                for (team_color, cmd) in self.player_commands() {
+                    match cmd {
+                        PlayerCmd::Move(cmd) => simulator.push_cmd(team_color, cmd),
+                        PlayerCmd::GlobalMove(cmd) => simulator.push_global_cmd(team_color, cmd),
+                    }
+                }
+                next_cmd_t += cmd_period;
+            }
+
+            // End conditions.
+            if now >= cfg.duration_secs {
+                end_reason = headless::EndReason::TimeLimit;
+                break;
+            }
+            if let Some(max) = cfg.max_goals {
+                if blue + yellow >= max {
+                    end_reason = headless::EndReason::GoalCap;
+                    break;
+                }
+            }
+        }
+
+        if let Some(h) = self.strategy_host.as_mut() {
+            h.shutdown();
+        }
+
+        let (blue_score, yellow_score) = simulator.score();
+        Ok(headless::MatchResult {
+            blue_strategy: cfg.blue_strategy,
+            yellow_strategy: cfg.yellow_strategy,
+            seed: cfg.seed,
+            blue_score,
+            yellow_score,
+            duration_secs: simulator.time_secs(),
+            goals,
+            end_reason,
+            trace_hash,
+        })
     }
 
     /// Run the executor in real time, processing vision and referee messages and sending

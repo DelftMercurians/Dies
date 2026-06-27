@@ -21,6 +21,13 @@ use driver::{Driver, WaypointStatus};
 use formation::Formation;
 use planner::{PlanInputs, Planner};
 
+/// Standoff distance (mm) the set-piece kicker stages behind the ball during a
+/// prepare/setup state. The executor *hard-enforces* a no-touch ball keep-out for
+/// our kicker in `PrepareKickoff` (no robot may touch the ball before Normal Start
+/// — rules §5.3.2); this places the staging target just behind the ball on the
+/// attacking axis so the kicker sits poised inside the center circle to pounce.
+const PREP_KICKER_STANDOFF: f64 = 300.0;
+
 /// The Concerto strategy.
 pub struct ConcertoStrategy {
     /// Previous frame's possession, for detecting changes (the metric itself is
@@ -272,8 +279,18 @@ impl ConcertoStrategy {
         } else {
             "penalty_kicker"
         };
+        // During a prepare/setup state the kicker must NOT touch the ball — it may
+        // only approach. Going straight to `ball_pos` drives the robot into the
+        // ball and dribbles it off-center (a kickoff/penalty rule violation).
+        // Stand off behind the ball along the attacking axis so we're poised to
+        // pounce the instant the restart goes live without making contact.
+        let to_goal = world.opp_goal_center() - ball_pos;
+        let attack_dir = to_goal
+            .try_normalize(1e-6)
+            .unwrap_or_else(|| Vector2::new(1.0, 0.0));
+        let standoff = ball_pos - attack_dir * PREP_KICKER_STANDOFF;
         if let Some(p) = ctx.player(id) {
-            p.go_to(ball_pos).facing(world.opp_goal_center());
+            p.go_to(standoff).facing(world.opp_goal_center());
             p.set_role(role);
         }
         Some(id)

@@ -134,7 +134,10 @@ fn line_intersection(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2) -> Opti
         return None;
     }
     let t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
-    Some(Vector2::new(p1.x + t * (p2.x - p1.x), p1.y + t * (p2.y - p1.y)))
+    Some(Vector2::new(
+        p1.x + t * (p2.x - p1.x),
+        p1.y + t * (p2.y - p1.y),
+    ))
 }
 
 fn is_point_on_segment(point: Vector2, start: Vector2, end: Vector2) -> bool {
@@ -222,7 +225,11 @@ pub fn generate_boundary_position_tuples(s: &RobotSituation, role_name: &str) ->
     position_tuples
 }
 
-pub fn compute_coverage_score(ball: Vector2, our_pos: Vector2, backline: (Vector2, Vector2)) -> f64 {
+pub fn compute_coverage_score(
+    ball: Vector2,
+    our_pos: Vector2,
+    backline: (Vector2, Vector2),
+) -> f64 {
     let (angle1, angle2) = get_tangent_line_direction(our_pos, PLAYER_RADIUS, ball);
 
     let dir1 = Vector2::new(angle1.radians().cos(), angle1.radians().sin());

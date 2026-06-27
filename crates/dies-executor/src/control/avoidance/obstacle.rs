@@ -19,6 +19,12 @@ use dies_core::{
     PLAYER_RADIUS,
 };
 
+/// Center-to-center ball keep-out for our kickoff kicker during `PrepareKickoff`.
+/// Just enough to guarantee the robot edge clears the ball edge with margin
+/// (`PLAYER_RADIUS + BALL_RADIUS` ≈ 111 mm, contact threshold), so the kicker can
+/// stage close inside the center circle while never touching the ball.
+const KICKOFF_KICKER_NO_TOUCH_RADIUS: f64 = PLAYER_RADIUS + BALL_RADIUS + 140.0;
+
 /// Geometry of a single keep-out / keep-in region.
 #[derive(Clone, Copy, Debug)]
 pub enum ObstacleShape {
@@ -248,22 +254,33 @@ impl ObstacleSet {
         let Some(ball) = ball else { return };
         let ball_pos = ball.position.xy();
 
-        // The 500 mm ball keep-out rule applies to everyone during `Stop`, and to
-        // every robot during kickoff *except* our kicker — it has to approach the
-        // ball to take the restart. This is state+role based, not gated on
-        // `avoid_ball`, so it holds even though the kicker's own pickup skill
-        // raises `avoid_ball` while staging behind the ball.
+        // The full ball keep-out applies to everyone during `Stop`, and to every
+        // robot during the kickoff *except* our kicker once it may take the restart.
+        // The kicker exemption only holds after Normal Start (`Kickoff`) — during
+        // setup (`PrepareKickoff`) NO robot may touch the ball (rules §5.3.2).
+        // This is state+role based, not gated on `avoid_ball`, so it holds even
+        // though the kicker's own pickup skill raises `avoid_ball` while staging.
         let rule_keepout = game_state == GameState::Stop
             || (matches!(game_state, GameState::PrepareKickoff | GameState::Kickoff)
                 && !gates.is_kickoff_kicker);
 
-        let want_ball = rule_keepout || gates.avoid_ball || game_state == GameState::PreparePenalty;
+        // Our kicker during setup may stage right up against the ball — inside the
+        // center circle, poised to pounce on Normal Start — but must not *touch*
+        // it. A tight no-touch ring enforces that without the full stop standoff.
+        let kicker_no_touch = game_state == GameState::PrepareKickoff && gates.is_kickoff_kicker;
+
+        let want_ball = rule_keepout
+            || kicker_no_touch
+            || gates.avoid_ball
+            || game_state == GameState::PreparePenalty;
         if want_ball {
             // Rule keep-out routes paths well clear of the ball (full radius); the
             // softer `avoid_ball` gate (e.g. a pickup staging approach) uses the
             // small care-scaled radius so the robot can still get close.
             let radius = if rule_keepout {
                 cfg.ball_stop_radius
+            } else if kicker_no_touch {
+                KICKOFF_KICKER_NO_TOUCH_RADIUS
             } else {
                 (cfg.ball_base_radius + cfg.ball_care_scale * gates.avoid_ball_care)
                     .max(BALL_RADIUS)

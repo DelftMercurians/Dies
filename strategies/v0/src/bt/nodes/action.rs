@@ -579,7 +579,8 @@ pub fn at_goal(pos: impl Into<Argument<Vector2>>) -> Argument<ShootTarget> {
 pub fn to_player(
     id: impl Into<Argument<dies_strategy_protocol::PlayerId>>,
 ) -> Argument<ShootTarget> {
-    id.into().map(|id| ShootTarget::Player { id, position: None })
+    id.into()
+        .map(|id| ShootTarget::Player { id, position: None })
 }
 
 pub fn to_player_at_pos(

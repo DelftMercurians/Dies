@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use dies_core::{
     debug_record, DebugShape, DebugValue, PlayerId, SideAssignment, TeamColor, TeamData,
@@ -31,6 +32,9 @@ pub struct StrategyHostConfig {
     /// Dev-only: watch strategy binaries on disk and hot-swap the process when
     /// they are rebuilt.
     pub hot_reload: bool,
+    /// Blocking lockstep mode (headless self-play): the host waits for each
+    /// strategy's reply every tick instead of using a short best-effort timeout.
+    pub blocking: bool,
 }
 
 impl Default for StrategyHostConfig {
@@ -41,6 +45,7 @@ impl Default for StrategyHostConfig {
             yellow_strategy: None,
             side_assignment: SideAssignment::BlueOnPositive,
             hot_reload: false,
+            blocking: false,
         }
     }
 }
@@ -222,6 +227,7 @@ impl StrategyHost {
             self.config.side_assignment,
             config,
             self.config.hot_reload,
+            self.config.blocking,
         );
 
         match connection.start() {
@@ -325,6 +331,57 @@ impl StrategyHost {
                 }
             }
         }
+    }
+
+    /// Block until every configured strategy has connected and reached the
+    /// `Ready` state, or `timeout` elapses. Used by the headless self-play loop
+    /// to gate the match start on a completed Init/Ready handshake for both
+    /// teams (this runs at startup, not in the deterministic loop, so sleeping
+    /// on the wall clock is fine). Returns an error if a strategy fails to
+    /// start or does not become ready in time.
+    pub fn wait_until_ready(&mut self, timeout: Duration) -> Result<(), String> {
+        let want_blue = self.config.blue_strategy.is_some();
+        let want_yellow = self.config.yellow_strategy.is_some();
+        let start = Instant::now();
+        loop {
+            self.poll_connections();
+
+            if want_blue && self.blue_connection.is_none() {
+                return Err("blue strategy process failed to start".to_string());
+            }
+            if want_yellow && self.yellow_connection.is_none() {
+                return Err("yellow strategy process failed to start".to_string());
+            }
+
+            let ready = |conn: &Option<StrategyConnection>| {
+                conn.as_ref()
+                    .map(|c| c.state() == ConnectionState::Ready)
+                    .unwrap_or(false)
+            };
+            let blue_ok = !want_blue || ready(&self.blue_connection);
+            let yellow_ok = !want_yellow || ready(&self.yellow_connection);
+            if blue_ok && yellow_ok {
+                return Ok(());
+            }
+
+            if start.elapsed() > timeout {
+                return Err(format!(
+                    "strategies did not become ready within {:?} (blue_ready={}, yellow_ready={})",
+                    timeout, blue_ok, yellow_ok
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    /// True while every *configured* strategy still has a live connection. A
+    /// strategy that crashes or closes its socket has its connection dropped to
+    /// `None` (see [`StrategyHost::update`]); the headless self-play loop polls
+    /// this to abort the match instead of silently continuing with a frozen
+    /// team.
+    pub fn configured_strategies_alive(&self) -> bool {
+        (self.config.blue_strategy.is_none() || self.blue_connection.is_some())
+            && (self.config.yellow_strategy.is_none() || self.yellow_connection.is_some())
     }
 
     /// In hot-reload mode, swap any strategy whose binary on disk has changed.

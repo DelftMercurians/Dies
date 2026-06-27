@@ -431,7 +431,11 @@ impl ScoringSelectNode {
         };
         self.current_best_child_key = Some(final_key.clone());
 
-        let idx = self.scorers.iter().position(|s| s.key == final_key).unwrap();
+        let idx = self
+            .scorers
+            .iter()
+            .position(|s| s.key == final_key)
+            .unwrap();
         let (status, input) = self.scorers[idx].node.tick(situation);
         if matches!(status, BehaviorStatus::Success | BehaviorStatus::Failure) {
             self.current_best_child_key = None;
@@ -461,7 +465,11 @@ impl Default for ScoringSelectNodeBuilder {
 }
 
 impl ScoringSelectNodeBuilder {
-    pub fn add_child(mut self, child: impl Into<BehaviorNode>, scorer: impl BtCallback<f64>) -> Self {
+    pub fn add_child(
+        mut self,
+        child: impl Into<BehaviorNode>,
+        scorer: impl BtCallback<f64>,
+    ) -> Self {
         self.children.push((child.into(), Arc::new(scorer)));
         self
     }
@@ -512,10 +520,11 @@ pub struct SemaphoreNode {
 impl SemaphoreNode {
     pub fn tick(&mut self, situation: &mut RobotSituation) -> TickResult {
         let player_id = situation.player_id;
-        let acquired =
-            situation
-                .bt_context
-                .try_acquire_semaphore(&self.semaphore_id, self.max_count, player_id);
+        let acquired = situation.bt_context.try_acquire_semaphore(
+            &self.semaphore_id,
+            self.max_count,
+            player_id,
+        );
 
         if !acquired {
             self.holding = None;
@@ -525,7 +534,9 @@ impl SemaphoreNode {
 
         let (status, input) = self.child.tick(situation);
         if matches!(status, BehaviorStatus::Success | BehaviorStatus::Failure) {
-            situation.bt_context.release_semaphore(&self.semaphore_id, player_id);
+            situation
+                .bt_context
+                .release_semaphore(&self.semaphore_id, player_id);
             self.holding = None;
         }
         (status, input)

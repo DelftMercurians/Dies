@@ -165,7 +165,11 @@ impl BtRuntime {
             return (None, None);
         };
 
-        let side = if ball.x < 0.0 { BallSide::Our } else { BallSide::Opp };
+        let side = if ball.x < 0.0 {
+            BallSide::Our
+        } else {
+            BallSide::Opp
+        };
         let start = match &self.ball_side_since {
             Some((prev, start))
                 if matches!(

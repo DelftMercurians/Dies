@@ -23,8 +23,15 @@ use super::CoordinateTransformer;
 /// Maximum message size (16 MB).
 const MAX_MESSAGE_SIZE: u32 = 16 * 1024 * 1024;
 
-/// Timeout for receiving a response from strategy.
+/// Timeout for receiving a response from strategy (realtime/UI mode). On
+/// timeout the host silently applies no command this frame — fine for a live
+/// best-effort loop, fatal for deterministic lockstep.
 const RECV_TIMEOUT: Duration = Duration::from_millis(100);
+
+/// Timeout for receiving a response in blocking (headless self-play) mode.
+/// Generous so a slow-but-alive strategy still replies, but finite so a crashed
+/// or deadlocked strategy aborts the match instead of hanging forever.
+const BLOCKING_RECV_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Timeout for sending a message to strategy.
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -40,6 +47,9 @@ pub enum ConnectionError {
 
     #[error("strategy did not connect within timeout")]
     ConnectTimeout,
+
+    #[error("strategy did not respond within blocking timeout")]
+    Timeout,
 
     #[error("failed to send message: {0}")]
     Send(#[source] io::Error),
@@ -93,6 +103,17 @@ pub struct StrategyOutput {
     pub player_roles: HashMap<PlayerId, String>,
 }
 
+/// Forward a strategy `Log` message to the appropriate tracing level.
+fn log_strategy_message(level: dies_strategy_protocol::LogLevel, message: &str) {
+    match level {
+        dies_strategy_protocol::LogLevel::Trace => trace!("[Strategy] {}", message),
+        dies_strategy_protocol::LogLevel::Debug => debug!("[Strategy] {}", message),
+        dies_strategy_protocol::LogLevel::Info => info!("[Strategy] {}", message),
+        dies_strategy_protocol::LogLevel::Warn => warn!("[Strategy] {}", message),
+        dies_strategy_protocol::LogLevel::Error => error!("[Strategy] {}", message),
+    }
+}
+
 /// Manages a connection to a single strategy process.
 ///
 /// The connection handles:
@@ -132,6 +153,10 @@ pub struct StrategyConnection {
     binary_mtime: Option<SystemTime>,
     /// Last time we stat'd the binary, to throttle the mtime check (hot-reload).
     last_mtime_check: Option<Instant>,
+    /// Blocking lockstep mode (headless self-play): wait up to
+    /// `BLOCKING_RECV_TIMEOUT` for each reply and treat a timeout as a hard
+    /// error rather than silently dropping the frame.
+    blocking: bool,
 }
 
 impl StrategyConnection {
@@ -144,6 +169,7 @@ impl StrategyConnection {
         side_assignment: SideAssignment,
         config: StrategyConfig,
         hot_reload: bool,
+        blocking: bool,
     ) -> Self {
         // Create a unique socket path
         let socket_path = std::env::temp_dir().join(format!(
@@ -171,6 +197,7 @@ impl StrategyConnection {
             hot_reload,
             binary_mtime: None,
             last_mtime_check: None,
+            blocking,
         }
     }
 
@@ -308,8 +335,29 @@ impl StrategyConnection {
         match listener.accept() {
             Ok((stream, _)) => {
                 info!("Strategy connected for team {:?}", self.team_color);
+                // The listener is non-blocking and on some platforms (notably
+                // macOS) the accepted stream inherits O_NONBLOCK. Realtime mode
+                // relies on that: a read that would block returns `WouldBlock`,
+                // which we treat as "no message this frame". But in blocking
+                // (headless) lockstep mode a non-blocking socket is fatal — when
+                // the free-running loop fills the send buffer, `write_all`
+                // returns `WouldBlock` after writing only the length prefix,
+                // orphaning it in the stream and desyncing the strategy's
+                // framing (the strategy then reads a length prefix as a message
+                // body). Force the socket blocking so writes apply backpressure
+                // and always emit a complete frame.
+                if self.blocking {
+                    stream
+                        .set_nonblocking(false)
+                        .map_err(ConnectionError::Socket)?;
+                }
+                let recv_timeout = if self.blocking {
+                    BLOCKING_RECV_TIMEOUT
+                } else {
+                    RECV_TIMEOUT
+                };
                 stream
-                    .set_read_timeout(Some(RECV_TIMEOUT))
+                    .set_read_timeout(Some(recv_timeout))
                     .map_err(ConnectionError::Socket)?;
                 stream
                     .set_write_timeout(Some(SEND_TIMEOUT))
@@ -402,40 +450,49 @@ impl StrategyConnection {
         };
         self.send_message(&msg)?;
 
-        // Receive response
+        if self.blocking {
+            // Lockstep mode: the runner sends any Log frames *then* the Output
+            // for this tick, so keep reading until we get the Output. A timeout
+            // means the strategy is dead/stuck — abort loudly instead of
+            // silently dropping the frame (which would diverge the match).
+            loop {
+                match self.receive_message()? {
+                    Some(StrategyMessage::Output {
+                        skill_commands,
+                        debug_data,
+                        player_roles,
+                    }) => {
+                        return Ok(Some(self.build_output(
+                            skill_commands,
+                            debug_data,
+                            player_roles,
+                        )))
+                    }
+                    Some(StrategyMessage::Log { level, message }) => {
+                        log_strategy_message(level, &message);
+                    }
+                    Some(StrategyMessage::Ready { .. }) => {
+                        warn!("Received unexpected Ready message");
+                    }
+                    None => return Err(ConnectionError::Timeout),
+                }
+            }
+        }
+
+        // Receive response (best-effort, realtime/UI mode)
         match self.receive_message()? {
             Some(StrategyMessage::Output {
                 skill_commands,
                 debug_data,
                 player_roles,
-            }) => {
-                // Transform skill commands from strategy to world coordinates
-                let transformed_commands: HashMap<PlayerId, Option<SkillCommand>> = skill_commands
-                    .into_iter()
-                    .map(|(id, cmd)| {
-                        let transformed = cmd.map(|c| self.transformer.transform_skill_command(&c));
-                        (id, transformed)
-                    })
-                    .collect();
-
-                // Transform debug data
-                let transformed_debug = self.transformer.transform_debug_entries(debug_data);
-
-                Ok(Some(StrategyOutput {
-                    skill_commands: transformed_commands,
-                    debug_data: transformed_debug,
-                    player_roles,
-                }))
-            }
+            }) => Ok(Some(self.build_output(
+                skill_commands,
+                debug_data,
+                player_roles,
+            ))),
             Some(StrategyMessage::Log { level, message }) => {
                 // Log the message and try again
-                match level {
-                    dies_strategy_protocol::LogLevel::Trace => trace!("[Strategy] {}", message),
-                    dies_strategy_protocol::LogLevel::Debug => debug!("[Strategy] {}", message),
-                    dies_strategy_protocol::LogLevel::Info => info!("[Strategy] {}", message),
-                    dies_strategy_protocol::LogLevel::Warn => warn!("[Strategy] {}", message),
-                    dies_strategy_protocol::LogLevel::Error => error!("[Strategy] {}", message),
-                }
+                log_strategy_message(level, &message);
                 // Return empty output - we'll get the real output next frame
                 Ok(None)
             }
@@ -447,6 +504,29 @@ impl StrategyConnection {
                 // Timeout - strategy might be slow
                 Ok(None)
             }
+        }
+    }
+
+    /// Transform a strategy `Output` payload from team-relative to world
+    /// coordinates and wrap it in a [`StrategyOutput`].
+    fn build_output(
+        &self,
+        skill_commands: HashMap<PlayerId, Option<SkillCommand>>,
+        debug_data: Vec<DebugEntry>,
+        player_roles: HashMap<PlayerId, String>,
+    ) -> StrategyOutput {
+        let skill_commands = skill_commands
+            .into_iter()
+            .map(|(id, cmd)| {
+                let transformed = cmd.map(|c| self.transformer.transform_skill_command(&c));
+                (id, transformed)
+            })
+            .collect();
+        let debug_data = self.transformer.transform_debug_entries(debug_data);
+        StrategyOutput {
+            skill_commands,
+            debug_data,
+            player_roles,
         }
     }
 

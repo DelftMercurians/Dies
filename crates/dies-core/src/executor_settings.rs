@@ -296,6 +296,11 @@ pub struct ExecutorSettings {
     pub hot_reload: bool,
     #[serde(skip)]
     pub vision_delay_ms: u32,
+    /// Headless self-play only: run the strategy IPC in blocking lockstep mode
+    /// (host waits for each reply every tick) so matches are deterministic.
+    /// Runtime flag set by the CLI `self-play` command; never persisted.
+    #[serde(skip)]
+    pub strategy_blocking: bool,
 }
 
 fn default_true() -> bool {
@@ -352,6 +357,7 @@ impl Default for ExecutorSettings {
             avoidance: AvoidanceConfig::default(),
             hot_reload: false,
             vision_delay_ms: 0,
+            strategy_blocking: false,
         }
     }
 }

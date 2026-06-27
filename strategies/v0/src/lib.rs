@@ -122,7 +122,11 @@ mod tests {
 
             let (commands, roles) = ctx.collect_output();
             // Every robot should be given a role.
-            assert_eq!(roles.len(), 6, "all robots assigned a role in {game_state:?}");
+            assert_eq!(
+                roles.len(),
+                6,
+                "all robots assigned a role in {game_state:?}"
+            );
             // The keeper is always present.
             assert!(
                 roles.values().any(|r| r == "goalkeeper"),
