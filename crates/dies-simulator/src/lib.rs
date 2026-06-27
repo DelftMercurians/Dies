@@ -30,7 +30,12 @@ const BALL_RADIUS: f64 = 21.45;
 /// How far inside the field lines the ball is placed after it leaves the field.
 /// Must be large enough that a robot can fully get behind the ball to take the
 /// free kick (otherwise it would stay pinned against the boundary wall).
+/// Doubles as the rule 5.3.3 "0.2 m from all field lines" placement constraint.
 const FREE_KICK_PLACEMENT_MARGIN: f64 = 200.0;
+/// Minimum distance a free-kick ball must be placed from either defense area
+/// (SSL rule 5.3.3). Keeping this clear is what lets the kicker get behind the
+/// ball without violating the 0.2 m opponent-defense-area keep-out (rule 8.4.1).
+const FREE_KICK_DEFENSE_AREA_DISTANCE: f64 = 1000.0;
 /// How long the game sits in a `Stop` (robots slowed, ball being placed) before
 /// resuming after the ball leaves the field, a goal, or a no-progress stoppage.
 /// Tune this to make self-play matches more/less leisurely.
@@ -831,6 +836,23 @@ impl Simulation {
             }
             GcSimCommand::ForceStart => self.update_referee_command(referee::Command::FORCE_START),
             GcSimCommand::DirectFree { team_color } => {
+                // Relocate the ball to a rule 5.3.3-valid free-kick position. A real
+                // referee/auto-ref always places the ball ≥1 m from either defense
+                // area before a free kick; without this a manual `DirectFree` can
+                // leave the ball jammed against a defense area where the kicker
+                // cannot legally get behind it, and the restart just times out.
+                if let Some(ball) = self.ball.as_ref() {
+                    let current = self
+                        .rigid_body_set
+                        .get(ball._rigid_body_handle)
+                        .unwrap()
+                        .position()
+                        .translation
+                        .vector
+                        .xy();
+                    let placement = self.valid_free_kick_position(current);
+                    self.place_ball(placement.x, placement.y);
+                }
                 match team_color {
                     TeamColor::Blue => {
                         self.update_referee_command(referee::Command::DIRECT_FREE_BLUE);
@@ -1097,9 +1119,11 @@ impl Simulation {
                     // Snap the ball back onto a reachable spot inside the field
                     // so the free kick can actually be taken. Without this the
                     // ball stays pinned against the boundary wall and the match
-                    // gets stuck. Go through a Stop period first so robots slow
-                    // down and back off before the free kick.
-                    let placement = self.designated_ball_position;
+                    // gets stuck. Also enforce the rule 5.3.3 defense-area
+                    // clearance so the kicker can legally get behind the ball.
+                    // Go through a Stop period first so robots slow down and back
+                    // off before the free kick.
+                    let placement = self.valid_free_kick_position(self.designated_ball_position.xy());
                     self.place_ball(placement.x, placement.y);
 
                     if let Some((_kicker_id, kicker_color)) = self.last_touch_info {
@@ -1344,6 +1368,40 @@ impl Simulation {
             ball_body.set_position(Isometry::translation(x, y, BALL_RADIUS), true);
             ball_body.set_linvel(Vector::zeros(), true);
         }
+    }
+
+    /// Nudge a desired free-kick ball position to the closest spot that satisfies
+    /// the SSL rule 5.3.3 placement constraints: at least 0.2 m from every field
+    /// line and at least 1 m from either defense area. A position that is already
+    /// valid is returned unchanged.
+    fn valid_free_kick_position(&self, desired: Vector2) -> Vector2 {
+        let geom = &self.config.field_geometry;
+        let hl = geom.field_length / 2.0;
+        let hw = geom.field_width / 2.0;
+        let half_pa_w = geom.penalty_area_width / 2.0;
+
+        let mut pos = desired;
+
+        // Push out of the 1 m keep-out zone around each defense area (one per
+        // goal line). The areas are 2× penalty_area_depth apart in x, so their
+        // keep-out zones never overlap and the pushes don't fight each other.
+        for &goal_x in &[-hl, hl] {
+            let inner_x = goal_x - geom.penalty_area_depth * goal_x.signum();
+            let min = Vector2::new(goal_x.min(inner_x), -half_pa_w);
+            let max = Vector2::new(goal_x.max(inner_x), half_pa_w);
+            pos = push_out_of_rect(pos, min, max, FREE_KICK_DEFENSE_AREA_DISTANCE);
+        }
+
+        // Keep the ball at least 0.2 m inside every field line.
+        pos.x = pos.x.clamp(
+            -(hl - FREE_KICK_PLACEMENT_MARGIN),
+            hl - FREE_KICK_PLACEMENT_MARGIN,
+        );
+        pos.y = pos.y.clamp(
+            -(hw - FREE_KICK_PLACEMENT_MARGIN),
+            hw - FREE_KICK_PLACEMENT_MARGIN,
+        );
+        pos
     }
 
     fn ball_out(&mut self) -> bool {
@@ -2138,6 +2196,52 @@ impl Default for Simulation {
     }
 }
 
+/// If `p` lies within `margin` of the axis-aligned rectangle `[min, max]`, move
+/// it to the closest point exactly `margin` outside the rectangle; otherwise
+/// return it unchanged.
+fn push_out_of_rect(p: Vector2, min: Vector2, max: Vector2, margin: f64) -> Vector2 {
+    let inside_x = p.x > min.x && p.x < max.x;
+    let inside_y = p.y > min.y && p.y < max.y;
+
+    if inside_x && inside_y {
+        // Strictly inside: exit through the nearest face.
+        let to_left = p.x - min.x;
+        let to_right = max.x - p.x;
+        let to_bottom = p.y - min.y;
+        let to_top = max.y - p.y;
+        let nearest = to_left.min(to_right).min(to_bottom).min(to_top);
+        let mut out = p;
+        if nearest == to_left {
+            out.x = min.x - margin;
+        } else if nearest == to_right {
+            out.x = max.x + margin;
+        } else if nearest == to_bottom {
+            out.y = min.y - margin;
+        } else {
+            out.y = max.y + margin;
+        }
+        return out;
+    }
+
+    let nearest = Vector2::new(p.x.clamp(min.x, max.x), p.y.clamp(min.y, max.y));
+    let delta = p - nearest;
+    let dist = delta.norm();
+    if dist >= margin {
+        return p;
+    }
+    if dist > 1e-6 {
+        nearest + delta / dist * margin
+    } else {
+        // On an edge: push along +y or -y, away from the rectangle centre.
+        let dir = if p.y >= (min.y + max.y) / 2.0 {
+            Vector2::new(0.0, 1.0)
+        } else {
+            Vector2::new(0.0, -1.0)
+        };
+        nearest + dir * margin
+    }
+}
+
 pub struct SimulationBuilder {
     sim: Simulation,
     last_blue_id: u32,
@@ -2343,4 +2447,79 @@ fn geometry(config: &FieldGeometry) -> SSL_WrapperPacket {
     let mut packet = SSL_WrapperPacket::new();
     packet.geometry = Some(geometry).into();
     packet
+}
+
+#[cfg(test)]
+mod free_kick_placement_tests {
+    use super::*;
+
+    /// Distance from a point to an axis-aligned rectangle (0 if inside).
+    fn dist_to_rect(p: Vector2, min: Vector2, max: Vector2) -> f64 {
+        let dx = (min.x - p.x).max(0.0).max(p.x - max.x);
+        let dy = (min.y - p.y).max(0.0).max(p.y - max.y);
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    /// Assert a position obeys rule 5.3.3: inside the field margin and ≥1 m from
+    /// both defense areas.
+    fn assert_valid(sim: &Simulation, p: Vector2) {
+        let g = &sim.config.field_geometry;
+        let (hl, hw) = (g.field_length / 2.0, g.field_width / 2.0);
+        let half_pa_w = g.penalty_area_width / 2.0;
+        assert!(
+            p.x.abs() <= hl - FREE_KICK_PLACEMENT_MARGIN + 1e-6
+                && p.y.abs() <= hw - FREE_KICK_PLACEMENT_MARGIN + 1e-6,
+            "outside field margin: {p:?}"
+        );
+        for &goal_x in &[-hl, hl] {
+            let inner_x = goal_x - g.penalty_area_depth * goal_x.signum();
+            let min = Vector2::new(goal_x.min(inner_x), -half_pa_w);
+            let max = Vector2::new(goal_x.max(inner_x), half_pa_w);
+            let d = dist_to_rect(p, min, max);
+            assert!(
+                d >= FREE_KICK_DEFENSE_AREA_DISTANCE - 1e-6,
+                "too close to defense area: {p:?} d={d}"
+            );
+        }
+    }
+
+    #[test]
+    fn relocates_ball_jammed_against_defense_area() {
+        // The exact position from the stuck free kick: 63 mm outside the
+        // opponent defense-area corner, where the kicker could not get behind it.
+        let sim = Simulation::default();
+        let fixed = sim.valid_free_kick_position(Vector2::new(-4300.0, 1063.1));
+        assert!(
+            (fixed - Vector2::new(-4300.0, 1063.1)).norm() > 1.0,
+            "should have moved the ball"
+        );
+        assert_valid(&sim, fixed);
+    }
+
+    #[test]
+    fn leaves_already_valid_position_untouched() {
+        let sim = Simulation::default();
+        for desired in [
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1500.0, -500.0),
+            Vector2::new(-2000.0, 2000.0),
+        ] {
+            let fixed = sim.valid_free_kick_position(desired);
+            assert!((fixed - desired).norm() < 1e-6, "moved valid pos {desired:?}");
+            assert_valid(&sim, fixed);
+        }
+    }
+
+    #[test]
+    fn relocates_near_both_goals() {
+        let sim = Simulation::default();
+        for desired in [
+            Vector2::new(-4300.0, 1063.1),
+            Vector2::new(4300.0, -1063.1),
+            Vector2::new(4000.0, 0.0),
+            Vector2::new(-4000.0, 900.0),
+        ] {
+            assert_valid(&sim, sim.valid_free_kick_position(desired));
+        }
+    }
 }

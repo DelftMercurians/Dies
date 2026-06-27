@@ -281,19 +281,28 @@ impl Formation {
                 continue;
             }
             if let Some(opp) = world.opp_player(*oid) {
-                let to_ball = ball - opp.position;
-                let n_tg = to_ball.norm();
-                let pos = if n_tg > 1e-6 {
-                    opp.position + to_ball / n_tg * config::MARK_STANDOFF
-                } else {
-                    opp.position
-                };
                 let opp_threat = geometry::threat(
                     opp.position,
                     own_goal,
                     config::THREAT_GOAL_NEAR,
                     config::THREAT_GOAL_FAR,
                 );
+                // Skip opponents that pose no real threat (far up their own half);
+                // an importance-0 mark role is still assignable and would lure an
+                // up-field robot away from defending.
+                if opp_threat < config::MARK_MIN_THREAT {
+                    continue;
+                }
+                // Stand off the opponent toward our own goal (goal-side marking),
+                // and never cross midfield chasing them onto the opponent half.
+                let to_goal = own_goal - opp.position;
+                let n_tg = to_goal.norm();
+                let mut pos = if n_tg > 1e-6 {
+                    opp.position + to_goal / n_tg * config::MARK_STANDOFF
+                } else {
+                    opp.position
+                };
+                pos.x = pos.x.min(config::MARK_MAX_X);
                 // How open is the ball→opponent lane (can this opponent receive a
                 // pass and become a threat)? Exclude the opponent itself, which sits
                 // at the lane endpoint and would otherwise read as a blocker.
@@ -324,6 +333,9 @@ impl Formation {
         // 3. Offensive support — open, forward outlets the carrier can pass into.
         // Positioned by ball→candidate lane openness (not a static flank point),
         // so supporters stop ending up stranded behind opponents.
+        let opp_box = world.opp_penalty_area();
+        let opp_pen_depth = opp_box.max.x - opp_box.min.x;
+        let opp_pen_half_width = opp_box.max.y;
         for slot in 0..config::SUPPORT_COUNT {
             let sign = if slot % 2 == 0 { 1.0 } else { -1.0 };
             let pos = geometry::best_support_pos(
@@ -333,6 +345,8 @@ impl Formation {
                 half_len,
                 half_wid,
                 config::SUPPORT_LANE_CORRIDOR,
+                opp_pen_depth,
+                opp_pen_half_width,
             );
             roles.push(Role {
                 id: RoleId {
@@ -492,12 +506,14 @@ mod tests {
     #[test]
     fn engaging_suppresses_that_opponents_mark() {
         // A plan robot pressuring opp 11 means Formation must not also mark it.
+        // Both opponents sit near our goal so they clear the MARK_MIN_THREAT floor
+        // (a far opponent on its own half is intentionally not marked).
         let own = vec![
             player(1, -4000.0, 0.0),
             player(2, -2000.0, 1000.0),
             player(3, 0.0, 0.0),
         ];
-        let opp = vec![player(11, 500.0, 0.0), player(12, 2000.0, 1500.0)];
+        let opp = vec![player(11, 500.0, 0.0), player(12, -1000.0, 1000.0)];
         let world = world_with(own, opp, 1);
         let f = Formation::new();
 

@@ -178,6 +178,8 @@ export const EXTRA_SHORTCUTS: { keys: string; title: string }[] = [
   { keys: "⌘K", title: "Command palette" },
   { keys: "0–9", title: "Select robot by id" },
   { keys: "H", title: "Set target at cursor (over field)" },
+  { keys: "B", title: "Move ball to cursor (sim)" },
+  { keys: "K", title: "Kick ball toward cursor (sim)" },
 ];
 
 // --- command palette ---

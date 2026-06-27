@@ -71,17 +71,15 @@ const BALL_GRAB_RADIUS = 200;
 const HANDLE_GRAB_RADIUS = 90;
 /** Min teleport spacing (ms) while dragging, to throttle command spam. */
 const TELEPORT_THROTTLE_MS = 40;
-/** Pull distance (mm) → ball exit speed (mm/s). Ball mass is 1, so impulse = Δv. */
-const KICK_SCALE = 3.0;
-/** Max kick impulse magnitude (mm/s), roughly SSL max ball speed. */
-const KICK_MAX = 6500;
+/** Ball exit speed (mm/s) for a context-menu / shortcut kick. Mass is 1, so
+ *  the applied impulse equals this Δv. */
+const KICK_SPEED = 6000;
 
 /** An in-progress Sim Edit drag. */
 type SimDrag =
   | { kind: "robot"; teamColor: TeamColor; playerId: number; yaw: number }
   | { kind: "robot-rotate"; teamColor: TeamColor; playerId: number; pos: Vector2 }
-  | { kind: "ball-move" }
-  | { kind: "ball-kick"; ball: Vector2 };
+  | { kind: "ball-move" };
 
 /** Which robot to draw rotation controls around. */
 type SimEditRobotRef = { teamColor: TeamColor; playerId: number };
@@ -130,21 +128,44 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const ballRef = useRef(worldData?.ball);
   ballRef.current = worldData?.ball;
 
-  // --- Sim Edit mode (drag robots/ball, slingshot kick) -------------------
+  // --- Sim Edit mode (drag robots to move/rotate, drag ball to move) ------
   const [simEditMode, setSimEditMode] = useAtom(simEditModeAtom);
   const simEditRef = useRef(simEditMode);
   simEditRef.current = simEditMode;
   const worldDataRef = useRef(worldData);
   worldDataRef.current = worldData;
+  const isSimRef = useRef(isSim);
+  isSimRef.current = isSim;
   const sendCommandRef = useRef(sendCommand);
   sendCommandRef.current = sendCommand;
+
+  // --- Ball control (sim only; works regardless of Sim Edit mode) ---------
+  /** Teleport the ball to a field point. */
+  const moveBallTo = useCallback((target: Vector2) => {
+    if (!isSimRef.current) return;
+    sendCommandRef.current({
+      type: "SimulatorCmd",
+      data: { type: "TeleportBall", data: { position: target } },
+    });
+  }, []);
+
+  /** Kick the ball from its current position toward a field point. */
+  const kickBallToward = useCallback((target: Vector2) => {
+    if (!isSimRef.current) return;
+    const ball = worldDataRef.current?.ball;
+    if (!ball) return;
+    const dx = target[0] - ball.position[0];
+    const dy = target[1] - ball.position[1];
+    const mag = Math.hypot(dx, dy);
+    if (mag < 1) return;
+    const force: Vector2 = [(dx / mag) * KICK_SPEED, (dy / mag) * KICK_SPEED];
+    sendCommandRef.current({
+      type: "SimulatorCmd",
+      data: { type: "ApplyBallForce", data: { force } },
+    });
+  }, []);
   const simDragRef = useRef<SimDrag | null>(null);
   const lastTeleportRef = useRef(0);
-  // In-progress slingshot kick, drawn by the renderer.
-  const [simKickDraft, setSimKickDraft] = useState<{
-    ball: Vector2;
-    pull: Vector2;
-  } | null>(null);
   // Robot to show rotation controls around: the one being edited, else hovered.
   const [simEditHover, setSimEditHover] = useState<SimEditRobotRef | null>(null);
   const [simEditActiveRobot, setSimEditActiveRobot] =
@@ -279,7 +300,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     rendererRef.current.setFieldMask(fieldMask);
     rendererRef.current.setMaskDraft(maskDraft);
     rendererRef.current.setManualTargets(manualTargetMarkers);
-    rendererRef.current.setSimKickDraft(simKickDraft);
     rendererRef.current.setSimEditRobot(simEditRobotMarker);
     rendererRef.current.render(
       selectedPlayerId,
@@ -299,7 +319,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     fieldMask,
     maskDraft,
     manualTargetMarkers,
-    simKickDraft,
     simEditRobotMarker,
   ]);
 
@@ -377,6 +396,29 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // 'B' moves the ball to the cursor, 'K' kicks it toward the cursor (sim only,
+  // works regardless of Sim Edit mode — e.g. while the game is running).
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      const k = ev.key.toLowerCase();
+      if (k !== "b" && k !== "k") return;
+      if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (isTypingTarget(document.activeElement)) return;
+      if (!isOverFieldRef.current || !isSimRef.current) return;
+      ev.preventDefault();
+      const pos = mouseFieldRef.current;
+      if (k === "b") {
+        moveBallTo(pos);
+        setLastShortcut({ label: "Move ball", ts: Date.now() });
+      } else {
+        kickBallToward(pos);
+        setLastShortcut({ label: "Kick ball", ts: Date.now() });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [moveBallTo, kickBallToward, setLastShortcut]);
+
   // Esc cancels mask / sim editing.
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -389,7 +431,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       if (simEditRef.current) {
         setSimEditMode(false);
         simDragRef.current = null;
-        setSimKickDraft(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -441,15 +482,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         Math.hypot(ball.position[0] - f[0], ball.position[1] - f[1]) <
           BALL_GRAB_RADIUS;
 
-      // Shift-drag on the ball → slingshot kick.
-      if (event.shiftKey && overBall && ball) {
-        event.preventDefault();
-        const origin: Vector2 = [ball.position[0], ball.position[1]];
-        simDragRef.current = { kind: "ball-kick", ball: origin };
-        setSimKickDraft({ ball: origin, pull: f });
-        return true;
-      }
-
       // Robot under (or near) the cursor → rotate via the handle, else move.
       const player = rendererRef.current.getPlayerAt(f[0], f[1]);
       if (player) {
@@ -496,10 +528,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     (f: Vector2) => {
       const d = simDragRef.current;
       if (!d) return;
-      if (d.kind === "ball-kick") {
-        setSimKickDraft({ ball: d.ball, pull: f });
-        return;
-      }
       const now = performance.now();
       if (now - lastTeleportRef.current < TELEPORT_THROTTLE_MS) return;
       lastTeleportRef.current = now;
@@ -523,25 +551,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       simDragRef.current = null;
       setSimEditActiveRobot(null);
       const f = eventToField(event);
-      if (d.kind === "ball-kick") {
-        setSimKickDraft(null);
-        if (f) {
-          let fx = (d.ball[0] - f[0]) * KICK_SCALE;
-          let fy = (d.ball[1] - f[1]) * KICK_SCALE;
-          const mag = Math.hypot(fx, fy);
-          if (mag > KICK_MAX) {
-            fx = (fx / mag) * KICK_MAX;
-            fy = (fy / mag) * KICK_MAX;
-          }
-          if (mag > 1) {
-            sendCommandRef.current({
-              type: "SimulatorCmd",
-              data: { type: "ApplyBallForce", data: { force: [fx, fy] } },
-            });
-          }
-        }
-        return true;
-      }
       if (f) {
         if (d.kind === "robot") {
           sendTeleportRobot(d.teamColor, d.playerId, f, d.yaw);
@@ -779,7 +788,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       {/* Sim edit hint */}
       {simEditMode ? (
         <div className="absolute top-9 left-1/2 -translate-x-1/2 z-30 bg-accent-amber/90 text-black text-xs font-medium px-3 py-1 rounded shadow">
-          Drag robots/ball to place — Shift-drag the ball to kick — Esc to exit
+          Drag robots to move, the ring to rotate, the ball to reposition — Esc to exit
         </div>
       ) : null}
 
@@ -986,11 +995,19 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           ) : null}
 
           {isSim ? (
-            <ContextMenuItem
-              onClick={() => setManualBallPlacementPosition(mouseField)}
-            >
-              Set ball placement position
-            </ContextMenuItem>
+            <>
+              <ContextMenuItem onClick={() => moveBallTo(mouseField)}>
+                Move ball here
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => kickBallToward(mouseField)}>
+                Kick ball here
+              </ContextMenuItem>
+              <ContextMenuItem
+                onClick={() => setManualBallPlacementPosition(mouseField)}
+              >
+                Set ball placement position
+              </ContextMenuItem>
+            </>
           ) : null}
         </ContextMenuContent>
       </ContextMenu>

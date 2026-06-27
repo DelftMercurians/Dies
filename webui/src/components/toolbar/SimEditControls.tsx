@@ -1,8 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Move, Bookmark } from "lucide-react";
 import { useSetAtom, useAtom } from "jotai";
 
-import { useStatus } from "@/api";
+import { useStatus, useExecutorInfo, useSendCommand } from "@/api";
 import { UiMode } from "@/bindings";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -23,29 +23,55 @@ import { simEditModeAtom, maskEditModeAtom } from "@/lib/fieldEditing";
  */
 const SimEditControls: React.FC = () => {
   const { data: backendState } = useStatus();
+  const executorInfo = useExecutorInfo();
+  const sendCommand = useSendCommand();
   const [simEdit, setSimEdit] = useAtom(simEditModeAtom);
   const setMaskEdit = useSetAtom(maskEditModeAtom);
 
-  if (backendState?.ui_mode !== UiMode.Simulation) return null;
+  const isSim = backendState?.ui_mode === UiMode.Simulation;
+  const isRunning = backendState?.executor?.type === "RunningExecutor";
+  const isPaused = executorInfo?.paused ?? false;
+  // Editing only makes sense on a frozen sim, so it requires a running executor.
+  const canEdit = isSim && isRunning;
 
+  // Editing is locked to the paused state: drop out of edit mode whenever the
+  // executor isn't available to be paused (stopped / switched to live).
+  useEffect(() => {
+    if (simEdit && !canEdit) setSimEdit(false);
+  }, [simEdit, canEdit, setSimEdit]);
+
+  if (!isSim) return null;
+
+  // Enabling edit pauses the sim (you arrange a frozen board); disabling leaves
+  // the pause state as-is. The pause/resume control clears edit on resume.
   const toggle = () => {
-    setSimEdit((on) => {
-      if (!on) setMaskEdit(false); // mutually exclusive with mask editing
-      return !on;
-    });
+    if (simEdit) {
+      setSimEdit(false);
+      return;
+    }
+    if (!canEdit) return;
+    setMaskEdit(false); // mutually exclusive with mask editing
+    if (!isPaused) sendCommand({ type: "SetPause", data: true });
+    setSimEdit(true);
   };
 
   return (
     <div className="inline-flex items-center border border-border-muted h-7">
       <SimpleTooltip
-        title="Sim Edit — drag robots/ball, shift-drag ball to kick, drag the ring to rotate"
+        title={
+          canEdit
+            ? "Sim Edit — pauses the sim; drag robots to move, the ring to rotate, the ball to reposition"
+            : "Sim Edit — start the simulator first"
+        }
         className="h-full"
       >
         <button
           onClick={toggle}
+          disabled={!simEdit && !canEdit}
           className={cn(
             "h-full px-2 flex items-center gap-1 text-xs transition-colors",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
+            "disabled:opacity-40 disabled:cursor-not-allowed",
             simEdit
               ? "bg-accent-amber/20 text-accent-amber"
               : "text-text-muted hover:text-accent-amber hover:bg-accent-amber/10"

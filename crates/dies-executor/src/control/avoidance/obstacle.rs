@@ -138,6 +138,10 @@ pub struct AvoidanceGates {
     /// When false, opponents are dropped from the agent set (the waller-near-own
     /// goal exception).
     pub avoid_opp_robots: bool,
+    /// This robot is our kickoff taker. It must approach the ball to take the
+    /// restart, so it's exempt from the kickoff ball keep-out applied to everyone
+    /// else.
+    pub is_kickoff_kicker: bool,
 }
 
 impl ObstacleSet {
@@ -244,22 +248,21 @@ impl ObstacleSet {
         let Some(ball) = ball else { return };
         let ball_pos = ball.position.xy();
 
-        let want_ball = gates.avoid_ball
-            || game_state == GameState::PreparePenalty
-            || game_state == GameState::Stop;
+        // The 500 mm ball keep-out rule applies to everyone during `Stop`, and to
+        // every robot during kickoff *except* our kicker — it has to approach the
+        // ball to take the restart. This is state+role based, not gated on
+        // `avoid_ball`, so it holds even though the kicker's own pickup skill
+        // raises `avoid_ball` while staging behind the ball.
+        let rule_keepout = game_state == GameState::Stop
+            || (matches!(game_state, GameState::PrepareKickoff | GameState::Kickoff)
+                && !gates.is_kickoff_kicker);
+
+        let want_ball = rule_keepout || gates.avoid_ball || game_state == GameState::PreparePenalty;
         if want_ball {
-            // The 500 mm rule applies to everyone during `Stop`, and to every
-            // robot that opts in via `avoid_ball` during kickoff (the kicker is
-            // excluded by simply not setting the gate). Use the full rule radius
-            // there instead of the small care-scaled radius so the planner
-            // routes paths well clear of the ball, not just the endpoint.
-            let rule_distance = game_state == GameState::Stop
-                || (gates.avoid_ball
-                    && matches!(
-                        game_state,
-                        GameState::PrepareKickoff | GameState::Kickoff
-                    ));
-            let radius = if rule_distance {
+            // Rule keep-out routes paths well clear of the ball (full radius); the
+            // softer `avoid_ball` gate (e.g. a pickup staging approach) uses the
+            // small care-scaled radius so the robot can still get close.
+            let radius = if rule_keepout {
                 cfg.ball_stop_radius
             } else {
                 (cfg.ball_base_radius + cfg.ball_care_scale * gates.avoid_ball_care)

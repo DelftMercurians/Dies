@@ -1,8 +1,10 @@
 import React from "react";
 import { Play, Pause, Square } from "lucide-react";
+import { useSetAtom } from "jotai";
 import { useStatus, useSendCommand, useExecutorInfo } from "@/api";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { simEditModeAtom } from "@/lib/fieldEditing";
 
 /**
  * Executor control buttons: Play | Pause | Stop
@@ -24,6 +26,7 @@ const ExecutorControls: React.FC<ExecutorControlsProps> = ({
   const { data: backendState } = useStatus();
   const sendCommand = useSendCommand();
   const executorInfo = useExecutorInfo();
+  const setSimEdit = useSetAtom(simEditModeAtom);
 
   const executorStatus = backendState?.executor;
   const isRunning = executorStatus?.type === "RunningExecutor";
@@ -41,12 +44,16 @@ const ExecutorControls: React.FC<ExecutorControlsProps> = ({
 
   const handlePause = () => {
     if (!canPause) return;
-    sendCommand({ type: "SetPause", data: !isPaused });
+    const next = !isPaused;
+    // Sim Edit is locked to the paused state — resuming exits it.
+    if (!next) setSimEdit(false);
+    sendCommand({ type: "SetPause", data: next });
   };
 
   const handleStop = () => {
     if (isRunning) {
       onStop?.();
+      setSimEdit(false);
       sendCommand({ type: "Stop" });
     }
   };

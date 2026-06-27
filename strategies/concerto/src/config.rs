@@ -43,7 +43,9 @@ pub const ESCAPE_STEP: f64 = 300.0;
 pub const NOPROGRESS_TTL: f64 = 1.0;
 
 // ── Driver ──────────────────────────────────────────────────────────────────
-/// Distance to the ball at which the capture switches from driving to picking up.
+/// Distance to the ball below which the capture is "committing": the pickup
+/// skill is making its final drive, so the tight `PICKUP_TIMEOUT` applies
+/// instead of the generous `APPROACH_TIMEOUT` used while still traversing.
 pub const CAPTURE_PICKUP_DIST: f64 = 500.0;
 /// Distance to the target area at which a dribble is considered arrived. Kept
 /// below the correction step so a corrective dribble is a real move, not an
@@ -51,7 +53,8 @@ pub const CAPTURE_PICKUP_DIST: f64 = 500.0;
 pub const DRIBBLE_ARRIVE_DIST: f64 = 150.0;
 /// Ball displacement from the engagement point that aborts any waypoint.
 pub const BALL_MOVED_DIST: f64 = 2000.0;
-/// Per-phase timeouts.
+/// Capture timeouts: generous while traversing toward the ball, tight once
+/// within `CAPTURE_PICKUP_DIST` (the pickup skill's final committing drive).
 pub const APPROACH_TIMEOUT: f64 = 3.0;
 pub const PICKUP_TIMEOUT: f64 = 2.0;
 pub const DRIBBLE_TIMEOUT: f64 = 4.0;
@@ -68,6 +71,14 @@ pub const SHADOW_MAX: usize = 3;
 pub const SHADOW_STANDOFF: f64 = 1500.0;
 /// Marking standoff in front of the marked opponent (toward our goal).
 pub const MARK_STANDOFF: f64 = 400.0;
+/// Markers never cross to the opponent half: their target x is capped here
+/// (team-relative, so 0 = midfield). Keeps defenders home instead of chasing
+/// opponents up-field.
+pub const MARK_MAX_X: f64 = 0.0;
+/// Don't generate a mark role for opponents below this threat (0..1) to our goal
+/// — a zero-importance mark is still assignable and would lure an up-field robot
+/// off its defensive duty.
+pub const MARK_MIN_THREAT: f64 = 0.05;
 /// Corridor width for the marking lane-openness term.
 pub const MARK_LANE_CORRIDOR: f64 = 500.0;
 /// Number of offensive support roles (split across flanks).
@@ -119,9 +130,15 @@ pub const KEEPER_SPEED_LIMIT: f64 = 2500.0;
 // Ball-clearing behaviour.
 /// Clear only when the ball is essentially stopped (mm/s).
 pub const CLEAR_SPEED_LIMIT: f64 = 300.0;
-/// Ball must be inside the penalty area by at least this margin before the keeper
-/// commits to a clear, so the whole pickup maneuver stays inside the box.
+/// Ball must be inside the penalty area by at least this margin on the *side*
+/// edges before the keeper commits to a clear, so the pickup maneuver stays
+/// inside the box.
 pub const CLEAR_INNER_MARGIN: f64 = 250.0;
+/// Front (field-facing) edge margin for the clear gate — much smaller than the
+/// side margin. Field robots are held ~200mm clear of the front line by the box
+/// keepout, so a ball anywhere inside the box is the keeper's to claim; without a
+/// small front margin a ball on the front line deadlocks (neither can reach it).
+pub const CLEAR_FRONT_MARGIN: f64 = 50.0;
 /// Abort the clear if the keeper body comes within this distance of the box edge.
 pub const CLEAR_EXIT_MARGIN: f64 = 120.0;
 /// Minimum |y| of the clear target, so the keeper never kicks straight up the

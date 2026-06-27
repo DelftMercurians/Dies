@@ -186,14 +186,17 @@ impl SkillExecutor {
                 if !skill.matches_command(cmd) {
                     true
                 } else {
-                    // Same type, completed: restart only for continuous skills.
-                    // One-shot skills (e.g. shooting) latch their result so a
-                    // repeated command can't re-fire them — the driver always
-                    // interposes a different command before the next genuine shot.
-                    matches!(
-                        state.last_status,
-                        SkillStatus::Succeeded | SkillStatus::Failed
-                    ) && !skill.is_oneshot()
+                    // Same type, terminal: how it ended decides whether we retry.
+                    // A *failed* skill never produced its irreversible effect, so
+                    // re-creating and retrying is always safe — even a one-shot
+                    // (e.g. a shot aborted before the kick fired). A *succeeded*
+                    // one-shot latches so a repeated command can't re-fire it (the
+                    // kick already happened); continuous skills re-activate.
+                    match state.last_status {
+                        SkillStatus::Failed => true,
+                        SkillStatus::Succeeded => !skill.is_oneshot(),
+                        _ => false,
+                    }
                 }
             }
         };

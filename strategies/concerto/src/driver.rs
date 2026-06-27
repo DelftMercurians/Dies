@@ -38,7 +38,6 @@ pub enum FailReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
     Idle,
-    Approach,
     Pickup,
     Dribble,
     Shoot,
@@ -55,6 +54,10 @@ pub struct Driver {
     last_status: WaypointStatus,
     /// Ball position when the current waypoint started (for ball-moved detection).
     engage_ball_pos: Option<Vector2>,
+    /// When the active robot first entered the ball's committing range during a
+    /// capture (`< CAPTURE_PICKUP_DIST`). Drives the tighter pickup timeout;
+    /// cleared whenever it backs out of range so the timer only runs while close.
+    pickup_near_since: Option<f64>,
     /// Next active robot hint (set by a completed pass; consumed by orchestrator).
     new_active: Option<PlayerId>,
 }
@@ -74,6 +77,7 @@ impl Driver {
             phase_entered: 0.0,
             last_status: WaypointStatus::Ongoing,
             engage_ball_pos: None,
+            pickup_near_since: None,
             new_active: None,
         }
     }
@@ -143,13 +147,14 @@ impl Driver {
         self.phase = Phase::Idle;
         self.last_status = WaypointStatus::Ongoing;
         self.engage_ball_pos = None;
+        self.pickup_near_since = None;
         self.new_active = None;
     }
 
     /// Begin executing a waypoint with the given active robot.
     pub fn set_waypoint(&mut self, waypoint: Waypoint, active_robot: PlayerId, now: f64) {
         self.phase = match &waypoint {
-            Waypoint::Capture { .. } => Phase::Approach,
+            Waypoint::Capture { .. } => Phase::Pickup,
             Waypoint::Dribble { .. } => Phase::Dribble,
             Waypoint::Shoot { .. } => Phase::Shoot,
             Waypoint::Pass { .. } => Phase::PassExec,
@@ -159,6 +164,7 @@ impl Driver {
         self.phase_entered = now;
         self.last_status = WaypointStatus::Ongoing;
         self.engage_ball_pos = None;
+        self.pickup_near_since = None;
         self.new_active = None;
     }
 
@@ -244,31 +250,35 @@ impl Driver {
         let elapsed = now - self.phase_entered;
 
         let status = match (&waypoint, self.phase) {
-            // ── Capture: Approach ───────────────────────────────────────
-            (Waypoint::Capture { .. }, Phase::Approach) => {
-                player.go_to(ball_pos).facing(ball_pos);
-                player.set_role("capturing");
-                if (player_pos - ball_pos).norm() < config::CAPTURE_PICKUP_DIST {
-                    self.enter(Phase::Pickup, now);
-                    WaypointStatus::Ongoing
-                } else if elapsed > config::APPROACH_TIMEOUT {
-                    WaypointStatus::Failed(FailReason::Timeout)
-                } else {
-                    WaypointStatus::Ongoing
-                }
-            }
-
-            // ── Capture: Pickup ─────────────────────────────────────────
+            // ── Capture ─────────────────────────────────────────────────
+            // One phase: the pickup skill owns the whole capture. It routes to a
+            // staging point behind the ball (ball-avoiding) and only commits its
+            // final drive once aligned, so it never rams the ball — unlike the old
+            // `go_to(ball_pos)` approach, which aimed at the ball centre at full
+            // speed and handed off at a fixed distance regardless of momentum.
             (Waypoint::Capture { .. }, Phase::Pickup) => {
                 let heading = pickup_heading(world, active_id, ball_pos, opp_goal);
                 player.pickup_ball(heading);
-                player.set_role("picking");
+                player.set_role("capturing");
+
+                // Tiered timeout: generous while traversing toward the ball, tight
+                // once within committing range (where the skill makes its final
+                // drive). The near-timer resets if the robot backs out of range.
+                let near = (player_pos - ball_pos).norm() < config::CAPTURE_PICKUP_DIST;
+                if near {
+                    self.pickup_near_since.get_or_insert(now);
+                } else {
+                    self.pickup_near_since = None;
+                }
+                let timed_out = match self.pickup_near_since {
+                    Some(since) => now - since > config::PICKUP_TIMEOUT,
+                    None => elapsed > config::APPROACH_TIMEOUT,
+                };
+
                 match skill_status {
                     SkillStatus::Succeeded => WaypointStatus::Succeeded,
                     SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
-                    _ if elapsed > config::PICKUP_TIMEOUT => {
-                        WaypointStatus::Failed(FailReason::Timeout)
-                    }
+                    _ if timed_out => WaypointStatus::Failed(FailReason::Timeout),
                     _ => WaypointStatus::Ongoing,
                 }
             }

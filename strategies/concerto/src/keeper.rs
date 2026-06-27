@@ -201,8 +201,11 @@ fn clear_still_valid(world: &World, keeper: &PlayerHandle) -> bool {
 /// line — no margin needed there.
 fn ball_firmly_inside(world: &World, ball: Vector2, margin: f64) -> bool {
     let area = world.own_penalty_area();
+    // Side edges use the full `margin`; the front (field-facing) edge uses a much
+    // smaller margin so the keeper claims balls on the front line that no field
+    // robot can legally reach. The back edge is the goal line — no margin there.
     ball.x >= area.min.x
-        && ball.x <= area.max.x - margin
+        && ball.x <= area.max.x - config::CLEAR_FRONT_MARGIN
         && ball.y >= area.min.y + margin
         && ball.y <= area.max.y - margin
 }
@@ -317,6 +320,16 @@ mod tests {
         assert!(should_clear(&world_with_ball(inside)));
         // Outside the box → no.
         assert!(!should_clear(&world_with_ball(Vector2::new(0.0, 0.0))));
+    }
+
+    #[test]
+    fn clear_claims_ball_near_the_front_line() {
+        // A stopped ball just inside the front edge (the old 250mm margin left a
+        // dead zone here where field robots can't reach and the keeper wouldn't
+        // commit). The small front margin must now claim it.
+        let front_edge = -4500.0 + 1000.0; // own_penalty_area front (default geom)
+        let ball = Vector2::new(front_edge - config::CLEAR_FRONT_MARGIN - 10.0, 0.0);
+        assert!(should_clear(&world_with_ball(ball)), "ball at {ball:?}");
     }
 
     #[test]

@@ -13,10 +13,15 @@ use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgres
 use crate::control::{KickerControlInput, PlayerControlInput, Velocity};
 
 const BALL_TO_ROBOT_DISTANCE: f64 = 111.0;
-const ORBIT_SPEED: f64 = 800.0;
+/// Tangential orbit speed cap. Kept low enough that the dribbler can retain the
+/// ball through the slide — a faster orbit squeezes it out of the dribbler mouth.
+const ORBIT_SPEED: f64 = 400.0;
 const ORBIT_GAIN: f64 = 600.0;
 const MIN_ORBIT_SPEED: f64 = 40.0;
-const CREEP_IN: f64 = 0.0;
+/// Robot→ball distance beyond which the ball is considered lost (well past the
+/// `BALL_TO_ROBOT_DISTANCE` hold radius). Distance-based so a brief breakbeam
+/// flicker during the slide doesn't abort the orbit.
+const LOST_BALL_DISTANCE: f64 = 220.0;
 const YAW_TOLERANCE: f64 = 5.0 * std::f64::consts::PI / 180.0;
 const DRIBBLER_SPEED: f64 = 0.6;
 const KICK_SPEED: f64 = 4000.0;
@@ -80,11 +85,6 @@ impl ExecutableSkill for DribbleShootSkill {
             self.status = SkillStatus::Failed;
             return SkillProgress::failure();
         };
-        // if !ctx.player.has_ball {
-        //     log::warn!("dribble_shoot: lost ball");
-        //     self.status = SkillStatus::Failed;
-        //     return SkillProgress::failure();
-        // }
 
         let start = *self.start.get_or_insert_with(Instant::now);
         if start.elapsed() > TIMEOUT {
@@ -95,14 +95,18 @@ impl ExecutableSkill for DribbleShootSkill {
 
         let ball_pos = ball.position.xy();
         let player_pos = ctx.player.position;
-        if lane_blocked(&ctx, ball_pos, self.target_heading) {
-            log::warn!("dribble_shoot: lane blocked");
-            self.status = SkillStatus::Failed;
-            return SkillProgress::failure();
-        }
+        // A robot in the shoot corridor must not be kicked into — but this is a
+        // transient, positional condition (the opponent keeper is always in front
+        // of the goal we aim at), so it gates the *kick*, not the whole skill. We
+        // keep aiming/holding while blocked instead of failing and freezing.
+        let blocked = lane_blocked(&ctx, ball_pos, self.target_heading);
 
         let err = self.target_heading - ctx.player.yaw;
-        log::debug!("dribble_shoot tick: err={:.1}deg", err.degrees());
+        log::debug!(
+            "dribble_shoot tick: err={:.1}deg blocked={}",
+            err.degrees(),
+            blocked
+        );
         let mut input = PlayerControlInput::new();
         input.avoid_robots = false;
         input.with_dribbling(DRIBBLER_SPEED);
@@ -110,24 +114,38 @@ impl ExecutableSkill for DribbleShootSkill {
 
         match self.state {
             AimState::Aiming => {
-                if err.abs() < YAW_TOLERANCE {
+                // Lost the ball outright → fail fast so the strategy re-captures
+                // (the executor re-creates this skill on the next command). Use a
+                // distance gate, not breakbeam, so a brief flicker mid-slide
+                // doesn't abort the orbit.
+                let r = player_pos - ball_pos;
+                if r.norm() > LOST_BALL_DISTANCE {
+                    log::warn!("dribble_shoot: lost ball");
+                    self.status = SkillStatus::Failed;
+                    return SkillProgress::failure();
+                }
+
+                // Commit to the kick only when aligned, the lane is clear, and the
+                // ball is actually seated at the kicker — never kick into a robot
+                // or at a ball that isn't there.
+                if err.abs() < YAW_TOLERANCE && !blocked && ctx.player.has_ball {
                     self.state = AimState::Kicking;
                 }
 
                 const RADIUS_KP: f64 = 2.0;
-                let speed = (ORBIT_GAIN * err.abs()).clamp(MIN_ORBIT_SPEED, ORBIT_SPEED);
-                let r = player_pos - ball_pos;
                 let r_hat = r.normalize();
                 let tangent = Vector2::new(-r_hat.y, r_hat.x); // CCW
-                let v_tan = err.signum() * speed * tangent; // sign to confirm
                 let v_rad = -RADIUS_KP * (r.norm() - BALL_TO_ROBOT_DISTANCE) * r_hat;
+                // Slide tangentially to aim; when blocked, hold (radius only) so
+                // the robot keeps the ball aimed and waits for the lane to clear.
+                let v_tan = if blocked {
+                    Vector2::zeros()
+                } else {
+                    let speed = (ORBIT_GAIN * err.abs()).clamp(MIN_ORBIT_SPEED, ORBIT_SPEED);
+                    err.signum() * speed * tangent // sign to confirm
+                };
                 input.velocity = Velocity::global(v_tan + v_rad);
                 input.with_yaw(Angle::from_vector(-r)); // face ball
-
-                // let lateral = -err.signum() * speed;
-                // input.velocity = Velocity::local(Vector2::new(CREEP_IN, lateral));
-                // input.angular_velocity = Some(-lateral / BALL_TO_ROBOT_DISTANCE);
-                // input.with_yaw(Angle::from_vector(ball_pos - player_pos));
             }
             AimState::Kicking => {
                 input.with_yaw(self.target_heading);

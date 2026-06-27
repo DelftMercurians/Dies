@@ -144,6 +144,8 @@ pub fn best_support_pos(
     half_len: f64,
     half_wid: f64,
     corridor: f64,
+    opp_pen_depth: f64,
+    opp_pen_half_width: f64,
 ) -> Vector2 {
     const PAD: f64 = 400.0;
     let x_offsets = [1000.0, 2000.0, 3000.0];
@@ -154,21 +156,52 @@ pub fn best_support_pos(
         let cx = (ball.x + dx).clamp(-half_len + PAD, half_len - PAD);
         for &fy in &y_fracs {
             let cy = (sign * half_wid * fy).clamp(-half_wid + PAD, half_wid - PAD);
-            let cand = Vector2::new(cx, cy);
+            // Keep the outlet out of the opponent penalty area (no robot but the
+            // keeper may enter it) — otherwise the supporter pins against the box
+            // keepout and stalls at `no_path`.
+            let cand = clamp_out_of_opp_box(
+                Vector2::new(cx, cy),
+                half_len,
+                opp_pen_depth,
+                opp_pen_half_width,
+            );
             // Openness dominates (keeps the supporter out from behind an opponent);
             // the small forward bonus only breaks ties between open candidates.
-            let score = lane_openness(ball, cand, opponents, corridor) + 5e-5 * cx;
+            let score = lane_openness(ball, cand, opponents, corridor) + 5e-5 * cand.x;
             if best.is_none() || score > best.unwrap().1 {
                 best = Some((cand, score));
             }
         }
     }
     best.map(|(p, _)| p).unwrap_or_else(|| {
-        Vector2::new(
-            (ball.x + 2000.0).clamp(-half_len + PAD, half_len - PAD),
-            sign * half_wid * 0.3,
+        clamp_out_of_opp_box(
+            Vector2::new(
+                (ball.x + 2000.0).clamp(-half_len + PAD, half_len - PAD),
+                sign * half_wid * 0.3,
+            ),
+            half_len,
+            opp_pen_depth,
+            opp_pen_half_width,
         )
     })
+}
+
+/// Push a point in front of the opponent penalty area if it falls inside the box
+/// inflated by `BOX_CLEARANCE` (covers the planner keepout + a buffer). Only the
+/// goal-mouth y-band is constrained; points off to the side keep their x.
+fn clamp_out_of_opp_box(
+    p: Vector2,
+    half_len: f64,
+    opp_pen_depth: f64,
+    opp_pen_half_width: f64,
+) -> Vector2 {
+    const BOX_CLEARANCE: f64 = 300.0;
+    let box_front = half_len - opp_pen_depth - BOX_CLEARANCE;
+    if p.x > box_front && p.y.abs() < opp_pen_half_width + BOX_CLEARANCE {
+        Vector2::new(box_front, p.y)
+    } else {
+        p
+    }
 }
 
 /// Returns `true` if `point` lies roughly between `from` and `to` along the from→to axis.
@@ -389,6 +422,8 @@ mod tests {
             4500.0,
             3000.0,
             500.0,
+            1000.0,
+            1000.0,
         );
         let openness = lane_openness(ball, pos, std::slice::from_ref(&blocker), 500.0);
         assert!(pos.y > 0.0, "support should stay on its flank");
@@ -396,6 +431,30 @@ mod tests {
             openness > 0.9,
             "support lane should be open, got {openness} at {pos:?}"
         );
+    }
+
+    #[test]
+    fn support_pos_never_enters_opponent_penalty_area() {
+        // Ball near the opponent end with the goal-mouth lanes wide open: without
+        // box-awareness the outlet would land inside the opponent penalty area.
+        let half_len = 4500.0;
+        let pen_depth = 1000.0;
+        let pen_half_width = 1000.0;
+        let ball = Vector2::new(3000.0, 0.0);
+        for &sign in &[1.0, -1.0] {
+            let pos = best_support_pos(
+                ball,
+                &[],
+                sign,
+                half_len,
+                3000.0,
+                500.0,
+                pen_depth,
+                pen_half_width,
+            );
+            let in_box = pos.x > half_len - pen_depth && pos.y.abs() < pen_half_width;
+            assert!(!in_box, "support landed inside the opp box at {pos:?}");
+        }
     }
 
     #[test]

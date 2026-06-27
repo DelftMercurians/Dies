@@ -377,6 +377,7 @@ impl TeamController {
                 avoid_ball: effective_input.avoid_ball,
                 avoid_ball_care: effective_input.avoid_ball_care,
                 avoid_opp_robots,
+                is_kickoff_kicker: effective_input.role_type == RoleType::KickoffKicker,
             };
             let obstacles = ObstacleSet::build(&world_data, id, gates, game_state, &cfg);
 
@@ -760,11 +761,6 @@ fn comply(
                     && (input.role_type != RoleType::KickoffKicker
                         || !world_data.current_game_state.us_operating)
                 {
-                    // Make the ball a planner obstacle (at the 500 mm rule
-                    // radius), so the route to the kickoff position stays clear
-                    // of the ball rather than only the endpoint being safe.
-                    new_input.avoid_ball = true;
-
                     let mut target_pos = new_input.position.unwrap_or(player_data.position).clone();
                     target_pos.x = target_pos.x.min(-100.0);
                     new_input.with_position(target_pos);
