@@ -478,26 +478,21 @@ async fn select_serial_port(serial_port: &SerialPort) -> Result<String> {
                 log::info!("Connecting to serial port {}", ports[0]);
                 Some(ports[0].clone())
             } else {
-                println!("Available ports:");
-                for (idx, port) in ports.iter().enumerate() {
-                    println!("{}: {}", idx, port);
-                }
-
-                // Let user choose port
-                loop {
-                    println!("Enter port number:");
-                    if let Some(input) = read_line().await {
-                        if let Ok(port_idx) = input.trim().parse::<usize>() {
-                            if port_idx < ports.len() {
-                                break Some(ports[port_idx].clone());
-                            }
-                        } else {
-                            println!("Invalid port number");
-                        }
-                    } else {
-                        println!("Invalid port number");
-                    }
-                }
+                // Auto-pick a port. On macOS the same device shows up as both
+                // a `cu.*` (call-up) and a `tty.*` entry; prefer `cu.*` since
+                // that's the one meant for outgoing connections. Otherwise just
+                // take the first port.
+                let chosen = ports
+                    .iter()
+                    .find(|p| p.contains("cu."))
+                    .unwrap_or(&ports[0])
+                    .clone();
+                log::info!(
+                    "Auto-selected serial port {} (available: {})",
+                    chosen,
+                    ports.join(", ")
+                );
+                Some(chosen)
             }
         }
         SerialPort::Port(port) => {
@@ -517,15 +512,4 @@ async fn select_serial_port(serial_port: &SerialPort) -> Result<String> {
     };
 
     port.ok_or(anyhow::anyhow!("Serial port not found"))
-}
-
-async fn read_line() -> Option<String> {
-    let reader = BufReader::new(tokio::io::stdin());
-    reader
-        .lines()
-        .next_line()
-        .await
-        .ok()
-        .flatten()
-        .map(|s| s.trim().to_owned())
 }
