@@ -1314,6 +1314,7 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
                 let heading = get_num(&opts, "heading", ctx)?;
                 let cmd = SkillCommand::PickupBall {
                     target_heading: Angle::from_radians(heading),
+                    instant_kick: false,
                 };
                 register_skill_and_await(state.clone(), id, cmd, "pickupBall", ctx)
             })

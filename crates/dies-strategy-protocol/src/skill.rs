@@ -83,9 +83,18 @@ pub enum SkillCommand {
     /// 3. Complete when breakbeam detects ball
     ///
     /// **Completion**:
-    /// - `Succeeded` when breakbeam detects ball
+    /// - `Succeeded` when breakbeam detects ball (or, in `instant_kick` mode,
+    ///   when the ball departs along `target_heading`)
     /// - `Failed` if ball moves away or timeout
-    PickupBall { target_heading: Angle },
+    ///
+    /// **`instant_kick`**: double-touch-safe restart release. Instead of
+    /// capturing, the robot arms a firmware reflex kick during the drive-through
+    /// so the ball is struck the instant it reaches the breakbeam (no holding).
+    /// Succeeds on ball-departed rather than possession.
+    PickupBall {
+        target_heading: Angle,
+        instant_kick: bool,
+    },
 
     /// Orient toward a target and kick.
     ///

@@ -131,12 +131,16 @@ pub trait SkillParams: Clone {
 pub struct PickupBallParams {
     /// Target heading after ball is captured.
     pub target_heading: Angle,
+    /// Strike-through release mode (arm a reflex kick instead of capturing).
+    /// Used for double-touch-safe restarts; see [`SkillCommand::PickupBall`].
+    pub instant_kick: bool,
 }
 
 impl SkillParams for PickupBallParams {
     fn to_command(&self) -> SkillCommand {
         SkillCommand::PickupBall {
             target_heading: self.target_heading,
+            instant_kick: self.instant_kick,
         }
     }
 }
@@ -320,6 +324,7 @@ mod tests {
     fn test_skill_handle_update() {
         let mut handle = SkillHandle::new(PickupBallParams {
             target_heading: Angle::from_radians(0.0),
+            instant_kick: false,
         });
 
         handle.update_with(|p| p.target_heading = Angle::from_radians(1.0));

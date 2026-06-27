@@ -199,8 +199,34 @@ impl PlayerHandle {
     /// handle.update_with(|p| p.target_heading = new_heading);
     /// ```
     pub fn pickup_ball(&mut self, target_heading: Angle) -> SkillHandle<PickupBallParams> {
-        self.pending_command = Some(SkillCommand::PickupBall { target_heading });
-        SkillHandle::new(PickupBallParams { target_heading })
+        self.pending_command = Some(SkillCommand::PickupBall {
+            target_heading,
+            instant_kick: false,
+        });
+        SkillHandle::new(PickupBallParams {
+            target_heading,
+            instant_kick: false,
+        })
+    }
+
+    /// Strike-through release: approach the ball on the `target_heading` axis and
+    /// arm a firmware **reflex kick**, so the ball is struck the instant it
+    /// reaches the breakbeam — without ever holding it. This is the
+    /// double-touch-safe way to take a restart (kickoff / free kick); see
+    /// [`pickup_ball`](Self::pickup_ball) for the capturing variant.
+    ///
+    /// # Completion
+    /// - `SkillStatus::Succeeded` when the ball departs along `target_heading`
+    /// - `SkillStatus::Failed` on whiff / timeout (driver re-stages)
+    pub fn pickup_ball_reflex(&mut self, target_heading: Angle) -> SkillHandle<PickupBallParams> {
+        self.pending_command = Some(SkillCommand::PickupBall {
+            target_heading,
+            instant_kick: true,
+        });
+        SkillHandle::new(PickupBallParams {
+            target_heading,
+            instant_kick: true,
+        })
     }
 
     /// Orient toward a target and kick.
@@ -454,7 +480,7 @@ mod tests {
         assert!(cmd.is_some());
 
         match cmd.unwrap() {
-            SkillCommand::PickupBall { target_heading } => {
+            SkillCommand::PickupBall { target_heading, .. } => {
                 assert!((target_heading.radians() - 0.5).abs() < 1e-6);
             }
             _ => panic!("Expected PickupBall command"),

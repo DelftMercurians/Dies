@@ -36,6 +36,13 @@ pub enum Waypoint {
     Shoot {
         target: Vector2,
     },
+    /// A double-touch-safe restart release: strike the (stationary) ball forward
+    /// without ever holding it, via a reflex-armed strike-through. Used only on
+    /// our attacking kickoff / free kick, where holding to aim would be a
+    /// double-touch. Realised by the driver via `pickup_ball_reflex`.
+    Release {
+        target: Vector2,
+    },
     /// A coordinated two-robot pass. The planner picks a concrete receiver
     /// (Model B); the framework's `PassCoordinator` drives both robots. The
     /// driver realises this by calling `ctx.pass()` each tick.
@@ -182,13 +189,13 @@ impl Planner {
                 } else if is_kicker {
                     // Restart: always release forward (never dribble — double-touch).
                     // Kick at a supporter if one is well placed, else open space.
-                    // (Stays a Shoot, not a Pass: restart legality / double-touch is
-                    // its own problem — see plan, out of scope.)
+                    // A `Release` is a strike-through (reflex kick), never a hold,
+                    // so the kicker can't double-touch while aiming.
                     let target = self
                         .best_kickahead_target(world, id, inputs)
                         .map(|(_, t)| t)
                         .unwrap_or_else(|| self.release_target(carrier_pos, opp_goal, world));
-                    Waypoint::Shoot { target }
+                    Waypoint::Release { target }
                 } else if clear && in_range {
                     Waypoint::Shoot { target: opp_goal }
                 } else {
@@ -563,6 +570,49 @@ mod tests {
             }
             other => panic!("expected a strafe Dribble, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn attacking_restart_kicker_emits_release() {
+        // On our attacking restart, the kicker holding the ball must release it
+        // with a strike-through (no hold), i.e. a `Release` waypoint — never a
+        // `Shoot` (DribbleShoot, which holds and would double-touch).
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -1000.0, 0.0), // kicker with the ball
+        ];
+        let world = world_with(own, vec![], 1);
+        let mut planner = Planner::new();
+        let mut inp = inputs();
+        inp.our_attacking_restart = true;
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), &inp)
+            .expect("should produce a plan");
+        assert!(
+            matches!(plan.waypoints[0], Waypoint::Release { .. }),
+            "expected a Release waypoint, got {:?}",
+            plan.waypoints[0]
+        );
+        assert_eq!(plan.active_robot, PlayerId::new(2));
+    }
+
+    #[test]
+    fn open_play_carrier_does_not_emit_release() {
+        // Without an attacking restart, the same carrier must NOT use Release
+        // (open play keeps DribbleShoot / Pass / Dribble untouched).
+        let own = vec![player(1, -4000.0, 0.0), player(2, -1000.0, 0.0)];
+        let world = world_with(own, vec![], 1);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .expect("should produce a plan");
+        assert!(
+            !matches!(plan.waypoints[0], Waypoint::Release { .. }),
+            "open play must not emit Release, got {:?}",
+            plan.waypoints[0]
+        );
     }
 
     #[test]

@@ -420,6 +420,11 @@ struct Player {
     current_dribble_speed: f64,
     breakbeam: bool,
     last_kick_counter: u8,
+    /// Reflex kick armed (robot_cmd == ArmReflex). Fires once when the ball
+    /// reaches the dribbler/breakbeam, mirroring the firmware.
+    reflex_armed: bool,
+    /// Whether the armed reflex has already fired (one-shot per arm).
+    reflex_fired_this_arm: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -757,6 +762,8 @@ impl Simulation {
             current_dribble_speed: 0.0,
             breakbeam: false,
             last_kick_counter: 0,
+            reflex_armed: false,
+            reflex_fired_this_arm: false,
         });
     }
 
@@ -1123,7 +1130,8 @@ impl Simulation {
                     // clearance so the kicker can legally get behind the ball.
                     // Go through a Stop period first so robots slow down and back
                     // off before the free kick.
-                    let placement = self.valid_free_kick_position(self.designated_ball_position.xy());
+                    let placement =
+                        self.valid_free_kick_position(self.designated_ball_position.xy());
                     self.place_ball(placement.x, placement.y);
 
                     if let Some((_kicker_id, kicker_color)) = self.last_touch_info {
@@ -1882,6 +1890,13 @@ impl Simulation {
                             player.last_kick_counter = cmd.kick_counter;
                             is_kicking = true;
                         }
+                        // Reflex kick: armed by the held mode (no counter). Reset
+                        // the one-shot latch on a fresh arm (false -> true).
+                        let want_reflex = matches!(cmd.robot_cmd, RobotCmd::ArmReflex);
+                        if want_reflex && !player.reflex_armed {
+                            player.reflex_fired_this_arm = false;
+                        }
+                        player.reflex_armed = want_reflex;
                     }
                 }
             }
@@ -1959,7 +1974,13 @@ impl Simulation {
                     && angle < self.config.dribbler_angle
                 {
                     player.breakbeam = true;
-                    if is_kicking {
+                    // A reflex kick fires the instant the ball reaches the
+                    // breakbeam, once per arm (matches firmware ARM_REFLEX_KICK).
+                    let reflex_fire = player.reflex_armed && !player.reflex_fired_this_arm;
+                    if is_kicking || reflex_fire {
+                        if reflex_fire {
+                            player.reflex_fired_this_arm = true;
+                        }
                         ball_kicked_this_frame = true;
                         // Move the ball away from the player
                         let new_ball_position = ball_position + yaw * 80.0;
@@ -2357,6 +2378,8 @@ impl SimulationBuilder {
             current_dribble_speed: 0.0,
             breakbeam: false,
             last_kick_counter: 0,
+            reflex_armed: false,
+            reflex_fired_this_arm: false,
         });
     }
 }
@@ -2450,6 +2473,76 @@ fn geometry(config: &FieldGeometry) -> SSL_WrapperPacket {
 }
 
 #[cfg(test)]
+mod reflex_kick_tests {
+    use super::*;
+
+    /// Build a sim with one blue robot at the origin facing +x and a ball seated
+    /// in its dribbler, then apply `cmd` and step a few frames.
+    fn sim_with_ball_at_dribbler(cmd: PlayerGlobalMoveCmd) -> Simulation {
+        let mut sim = SimulationBuilder::new(SimulationConfig::default())
+            .with_controlled_teams(true, true)
+            .add_blue_player_with_id(0, Vector2::new(0.0, 0.0), Angle::from_radians(0.0))
+            .add_ball(Vector::new(150.0, 0.0, BALL_RADIUS))
+            .build();
+        sim.push_global_cmd(TeamColor::Blue, cmd);
+        for _ in 0..10 {
+            sim.step(0.016);
+        }
+        sim
+    }
+
+    fn ball_vx(sim: &Simulation) -> f64 {
+        let handle = sim.ball.as_ref().unwrap()._rigid_body_handle;
+        sim.rigid_body_set.get(handle).unwrap().linvel().x
+    }
+
+    #[test]
+    fn reflex_kick_fires_on_ball_contact() {
+        // ARM_REFLEX_KICK with no counter increment must fire once the ball is at
+        // the breakbeam — the strike-through restart release.
+        let mut cmd = PlayerGlobalMoveCmd::zero(PlayerId::new(0));
+        cmd.heading_setpoint = 0.0;
+        cmd.robot_cmd = RobotCmd::ArmReflex;
+        let sim = sim_with_ball_at_dribbler(cmd);
+        assert!(
+            ball_vx(&sim) > 100.0,
+            "reflex kick should have driven the ball forward, vx={}",
+            ball_vx(&sim)
+        );
+    }
+
+    #[test]
+    fn smart_kick_fires_on_counter_increment() {
+        // Unchanged original path: ARM_COUNTER_KICK (RobotCmd::Arm) fires when the
+        // kick counter increments past the robot's last seen value.
+        let mut cmd = PlayerGlobalMoveCmd::zero(PlayerId::new(0));
+        cmd.heading_setpoint = 0.0;
+        cmd.robot_cmd = RobotCmd::Arm;
+        cmd.kick_counter = 1;
+        let sim = sim_with_ball_at_dribbler(cmd);
+        assert!(
+            ball_vx(&sim) > 100.0,
+            "smart kick should have driven the ball forward, vx={}",
+            ball_vx(&sim)
+        );
+    }
+
+    #[test]
+    fn no_kick_without_trigger() {
+        // Plain arm with no counter change and no reflex must not kick.
+        let mut cmd = PlayerGlobalMoveCmd::zero(PlayerId::new(0));
+        cmd.heading_setpoint = 0.0;
+        cmd.robot_cmd = RobotCmd::Arm;
+        let sim = sim_with_ball_at_dribbler(cmd);
+        assert!(
+            ball_vx(&sim).abs() < 50.0,
+            "ball should be (near) stationary without a kick, vx={}",
+            ball_vx(&sim)
+        );
+    }
+}
+
+#[cfg(test)]
 mod free_kick_placement_tests {
     use super::*;
 
@@ -2505,7 +2598,10 @@ mod free_kick_placement_tests {
             Vector2::new(-2000.0, 2000.0),
         ] {
             let fixed = sim.valid_free_kick_position(desired);
-            assert!((fixed - desired).norm() < 1e-6, "moved valid pos {desired:?}");
+            assert!(
+                (fixed - desired).norm() < 1e-6,
+                "moved valid pos {desired:?}"
+            );
             assert_valid(&sim, fixed);
         }
     }

@@ -364,6 +364,9 @@ fn plan_step(wp: &planner::Waypoint, active: bool) -> debug::PlanStep {
             format!("→ ({:.0}, {:.0})", target_area.x, target_area.y),
         ),
         Waypoint::Shoot { target } => ("Shoot", format!("→ ({:.0}, {:.0})", target.x, target.y)),
+        Waypoint::Release { target } => {
+            ("Release", format!("→ ({:.0}, {:.0})", target.x, target.y))
+        }
         Waypoint::Pass {
             passer,
             receiver,

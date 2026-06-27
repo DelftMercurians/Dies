@@ -49,6 +49,9 @@ pub struct PlayerController {
 
     /// Kicker control
     kicker: KickerState,
+    /// Whether a reflex kick is being requested this frame (held mode, no counter
+    /// increment — firmware fires on breakbeam). Recomputed every `update`.
+    reflex_requested: bool,
     /// Dribble speed normalized to \[0, 1\]
     dribble_speed: f64,
 
@@ -84,6 +87,7 @@ impl PlayerController {
 
             frame_misses: 0,
             kicker: KickerState::Disarming,
+            reflex_requested: false,
             dribble_speed: 0.0,
 
             max_accel: settings.controller_settings.max_acceleration,
@@ -144,13 +148,18 @@ impl PlayerController {
             return PlayerCmd::GlobalMove(PlayerGlobalMoveCmd::zero(self.id));
         }
 
-        // Priority list: 1. Kick, 2. Anything else
-        let _robot_cmd = match self.kicker {
+        // Priority list: 1. Smart kick (counter increment), 2. Reflex arm, 3. Arm.
+        // Smart kick stays exactly as before: incrementing `kick_counter` while
+        // sending ARM_COUNTER_KICK (RobotCmd::Arm) is what fires it firmware-side.
+        // Reflex is a held mode (ARM_REFLEX_KICK) with no counter change; the
+        // firmware fires it on breakbeam.
+        let robot_cmd = match self.kicker {
             KickerState::Kicking => {
                 self.kicker = KickerState::Disarming;
                 self.kick_counter = self.kick_counter.wrapping_add(1);
-                RobotCmd::Kick
+                RobotCmd::Arm
             }
+            _ if self.reflex_requested => RobotCmd::ArmReflex,
             _ => RobotCmd::Arm,
         };
 
@@ -161,7 +170,7 @@ impl PlayerController {
             .set_dribble_speed(self.dribble_speed * MAX_DRIBBLE_SPEED)
             .set_kick_speed(self.kick_speed)
             .set_kick_counter(self.kick_counter)
-            .set_robot_cmd(RobotCmd::Arm)
+            .set_robot_cmd(robot_cmd)
             .set_max_yaw_rate(
                 self.last_yaw_rate_limit
                     .unwrap_or(self.max_angular_velocity),
@@ -451,10 +460,19 @@ impl PlayerController {
         // Set dribbling speed
         self.dribble_speed = input.dribbling_speed;
 
-        // Set kicker control
+        // Set kicker control. Reflex is a held mode (level signal), recomputed
+        // each frame; everything else drives the smart-kick state machine.
+        self.reflex_requested = matches!(input.kicker, KickerControlInput::ReflexKick);
         match input.kicker {
             KickerControlInput::Arm => {
                 self.kicker = KickerState::Arming;
+            }
+            // Reflex: keep the capacitor charging; the firmware fires on
+            // breakbeam, so we never enter the smart-kick `Kicking` state.
+            KickerControlInput::ReflexKick => {
+                if self.kicker != KickerState::Kicking {
+                    self.kicker = KickerState::Arming;
+                }
             }
             KickerControlInput::Kick => match self.kicker {
                 KickerState::Disarming | KickerState::Arming => {

@@ -278,6 +278,9 @@ pub enum KickerControlInput {
     Arm,
     /// Engage the kicker
     Kick,
+    /// Arm a reflex kick — the firmware fires automatically the moment the ball
+    /// is detected at the breakbeam. Held while armed; no counter increment.
+    ReflexKick,
     /// Discharge the kicker capacitor without kicking
     Disarm,
 }

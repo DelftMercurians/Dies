@@ -154,7 +154,7 @@ impl PassCoordinator {
             total_elapsed: 0.0,
             intercept_point: None,
             // Sub-skills are seeded with placeholder params and reconfigured on use.
-            pickup: PickupBallSkill::new(Angle::from_radians(0.0)),
+            pickup: PickupBallSkill::new(Angle::from_radians(0.0), false),
             receive: ReceiveSkill::new(Vector2::zeros(), Vector2::zeros(), CAPTURE_LIMIT, false),
             result: None,
         }

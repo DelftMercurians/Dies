@@ -29,8 +29,12 @@ impl std::fmt::Display for PlayerId {
 pub enum RobotCmd {
     /// Do nothing // TODO: What is this?
     None,
-    /// Arm the kicker
+    /// Arm the kicker (smart kick: fires when the kick counter increments)
     Arm,
+    /// Arm a reflex kick: the firmware fires automatically when the ball is
+    /// detected at the breakbeam. No counter increment needed — holding this
+    /// mode keeps the reflex armed (packet-loss safe).
+    ArmReflex,
     /// Disarm the kicker
     Disarm,
     /// Discharge the kicker without kicking
@@ -51,6 +55,7 @@ impl From<RobotCmd> for glue::Radio_RobotCommand {
         match val {
             RobotCmd::None => glue::Radio_RobotCommand::NONE,
             RobotCmd::Arm => glue::Radio_RobotCommand::ARM_COUNTER_KICK,
+            RobotCmd::ArmReflex => glue::Radio_RobotCommand::ARM_REFLEX_KICK,
             RobotCmd::Disarm => glue::Radio_RobotCommand::DISARM,
             RobotCmd::Discharge => glue::Radio_RobotCommand::DISCHARGE,
             RobotCmd::Kick => glue::Radio_RobotCommand::KICK,

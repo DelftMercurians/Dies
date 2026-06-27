@@ -41,6 +41,8 @@ enum Phase {
     Pickup,
     Dribble,
     Shoot,
+    /// Strike-through restart release (reflex kick) — see `Waypoint::Release`.
+    Release,
     /// A coordinated pass is in flight; the framework's `PassCoordinator` owns
     /// both robots. The driver just keeps the pass alive and watches the result.
     PassExec,
@@ -157,6 +159,7 @@ impl Driver {
             Waypoint::Capture { .. } => Phase::Pickup,
             Waypoint::Dribble { .. } => Phase::Dribble,
             Waypoint::Shoot { .. } => Phase::Shoot,
+            Waypoint::Release { .. } => Phase::Release,
             Waypoint::Pass { .. } => Phase::PassExec,
         };
         self.waypoint = Some(waypoint);
@@ -309,6 +312,23 @@ impl Driver {
                 match skill_status {
                     // Kick fired: the framework's possession metric handles the
                     // release (efference copy) centrally, so we just succeed.
+                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
+                    SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
+                    _ if elapsed > config::SHOOT_TIMEOUT => {
+                        WaypointStatus::Failed(FailReason::Timeout)
+                    }
+                    _ => WaypointStatus::Ongoing,
+                }
+            }
+
+            // ── Release (restart strike-through) ─────────────────────────
+            // Reflex-armed strike: approach the stationary ball on the shot axis
+            // and fire on breakbeam contact — never holding it, so the kicker
+            // can't double-touch. Succeeds when the skill reports the ball left.
+            (Waypoint::Release { target }, Phase::Release) => {
+                player.pickup_ball_reflex(heading_toward(ball_pos, *target));
+                player.set_role("kicking");
+                match skill_status {
                     SkillStatus::Succeeded => WaypointStatus::Succeeded,
                     SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
                     _ if elapsed > config::SHOOT_TIMEOUT => {
