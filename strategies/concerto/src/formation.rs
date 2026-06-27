@@ -243,10 +243,10 @@ impl Formation {
         opp_ids.sort_by_key(|id| id.as_u32());
         for (slot, oid) in opp_ids.iter().enumerate() {
             if let Some(opp) = world.opp_player(*oid) {
-                let to_goal = own_goal - opp.position;
-                let n_tg = to_goal.norm();
+                let to_ball = ball - opp.position;
+                let n_tg = to_ball.norm();
                 let pos = if n_tg > 1e-6 {
-                    opp.position + to_goal / n_tg * config::MARK_STANDOFF
+                    opp.position + to_ball / n_tg * config::MARK_STANDOFF
                 } else {
                     opp.position
                 };

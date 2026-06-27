@@ -1,9 +1,8 @@
 import React from "react";
-import { Settings, PanelBottom } from "lucide-react";
+import { Settings } from "lucide-react";
 import { DockviewApi } from "dockview";
 import { Button } from "@/components/ui/button";
 import { SimpleTooltip } from "@/components/ui/tooltip";
-import { toggleDrawer } from "@/lib/drawer";
 import ModeToggle from "./ModeToggle";
 import ExecutorControls from "./ExecutorControls";
 import GcControls from "./GcControls";
@@ -82,23 +81,6 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Layout Selector */}
       <LayoutSelector onResetToDefault={onResetLayout} />
-
-      {/* Toggle bottom drawer (⌘J) */}
-      {getDockviewApi && (
-        <SimpleTooltip title="Toggle bottom drawer (⌘J)">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => {
-              const api = getDockviewApi();
-              if (api) toggleDrawer(api);
-            }}
-            className="text-text-dim hover:text-text-std"
-          >
-            <PanelBottom className="w-4 h-4" />
-          </Button>
-        </SimpleTooltip>
-      )}
 
       {/* Separator */}
       <div className="w-px h-5 bg-border-muted" />

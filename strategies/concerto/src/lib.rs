@@ -70,14 +70,10 @@ impl Strategy for ConcertoStrategy {
     }
 
     fn update(&mut self, ctx: &mut TeamContext) {
-        // Owned snapshot so reads don't borrow `ctx` while we issue commands.
         let world = World::new(ctx.world().raw_snapshot().clone());
         let game_state = world.game_state();
         let us_operating = world.us_operating();
         let now = world.timestamp();
-
-        // Runtime toggle: when on, skip the offensive loop so every field robot
-        // stays Formation-controlled (for testing defence in isolation).
         let defense_only = ctx.param_bool("defense_only");
 
         // ── Double-touch tracking ───────────────────────────────────────
@@ -108,7 +104,6 @@ impl Strategy for ConcertoStrategy {
             return;
         }
 
-        // ── Possession (computed centrally by the framework) ────────────
         let possession = world.possession();
         let possession_changed = possession != self.last_possession;
         self.last_possession = possession;

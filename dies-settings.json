@@ -33,7 +33,7 @@
   },
   "team_configuration": {
     "blue_active": true,
-    "yellow_active": false,
+    "yellow_active": true,
     "side_assignment": "YellowOnPositive",
     "blue_strategy": "concerto",
     "yellow_strategy": "concerto"
@@ -62,7 +62,7 @@
     "release_suppress_secs": 0.2
   },
   "allow_no_vision": false,
-  "goal_area_avoidance": false,
+  "goal_area_avoidance": true,
   "avoidance": {
     "robot_clearance": 0.0,
     "wall_margin": 0.0,

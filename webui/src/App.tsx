@@ -19,6 +19,99 @@ import { panelComponents, PANEL_IDS, PANEL_TITLES } from "./components/panels";
 import CommandPalette from "./components/CommandPalette";
 import { DockviewApi } from "dockview";
 
+// Default workspace: FIELD fills the left, with a right-hand column split into a
+// top tab group (INSPECTOR / GAME CTRL / STRATEGY / DEBUG) and a bottom tab
+// group (CONSOLE / SETTINGS / SCENARIO). Stored relative sizes are scaled to the
+// real container by Dockview's `fromJSON`. Bump LAYOUT_SCHEMA_VERSION in
+// DockviewWrapper whenever this changes so stale persisted defaults are dropped.
+const DEFAULT_LAYOUT = {
+  grid: {
+    root: {
+      type: "branch",
+      data: [
+        {
+          type: "leaf",
+          data: {
+            views: ["field"],
+            activeView: "field",
+            id: "1",
+            hideHeader: true,
+          },
+          size: 1243,
+        },
+        {
+          type: "branch",
+          data: [
+            {
+              type: "leaf",
+              data: {
+                views: [
+                  "player-inspector",
+                  "game-controller",
+                  "strategy",
+                  "debug-layers",
+                ],
+                activeView: "debug-layers",
+                id: "4",
+              },
+              size: 0,
+            },
+            {
+              type: "leaf",
+              data: {
+                views: ["console", "settings", "scenario"],
+                activeView: "settings",
+                id: "3",
+              },
+              size: 900,
+            },
+          ],
+          size: 413,
+        },
+      ],
+      size: 900,
+    },
+    width: 1656,
+    height: 900,
+    orientation: "HORIZONTAL",
+  },
+  panels: {
+    field: { id: "field", contentComponent: "field", title: "FIELD" },
+    console: { id: "console", contentComponent: "console", title: "CONSOLE" },
+    settings: {
+      id: "settings",
+      contentComponent: "settings",
+      title: "SETTINGS",
+    },
+    scenario: {
+      id: "scenario",
+      contentComponent: "scenario",
+      title: "SCENARIO",
+    },
+    "player-inspector": {
+      id: "player-inspector",
+      contentComponent: "player-inspector",
+      title: "INSPECTOR",
+    },
+    "game-controller": {
+      id: "game-controller",
+      contentComponent: "game-controller",
+      title: "GAME CTRL",
+    },
+    strategy: {
+      id: "strategy",
+      contentComponent: "strategy",
+      title: "STRATEGY",
+    },
+    "debug-layers": {
+      id: "debug-layers",
+      contentComponent: "debug-layers",
+      title: "DEBUG",
+    },
+  },
+  activeGroup: "3",
+};
+
 const App: React.FC = () => {
   const { data: backendState, status: backendLoadingState } = useStatus();
   const worldState = useWorldState();
@@ -34,95 +127,11 @@ const App: React.FC = () => {
     setSelectedPlayerId(null);
   };
 
-  // Create default layout
+  // Create default layout — deserialize the canonical DEFAULT_LAYOUT. Dockview
+  // scales the stored relative sizes to the current container.
   const createDefaultLayout = useCallback((api: DockviewApi) => {
-    // Clear any existing panels
     api.clear();
-
-    // Layout:
-    //   ┌──────────────────────┬────────────┐
-    //   │ FIELD                │ INSPECTOR  │   top row
-    //   ├──────────────────────┴────────────┤
-    //   │ [GameCtrl/Debug/…]   │ CONSOLE    │   full-width bottom drawer
-    //   └──────────────────────┴────────────┘
-    //
-    // Build order matters: adding the drawer BELOW the field before splitting
-    // the field horizontally makes the root vertical, so the drawer spans the
-    // full width under both field and inspector.
-
-    api.addPanel({
-      id: PANEL_IDS.FIELD,
-      component: PANEL_IDS.FIELD,
-      title: "FIELD",
-    });
-
-    // Bottom drawer, left slot — migrated sidebar panels as tabs.
-    api.addPanel({
-      id: PANEL_IDS.GAME_CONTROLLER,
-      component: PANEL_IDS.GAME_CONTROLLER,
-      title: "GAME CTRL",
-      position: { referencePanel: PANEL_IDS.FIELD, direction: "below" },
-    });
-    for (const id of [
-      PANEL_IDS.DEBUG_LAYERS,
-      PANEL_IDS.SCENARIO,
-      PANEL_IDS.SETTINGS,
-      PANEL_IDS.STRATEGY,
-    ] as const) {
-      api.addPanel({
-        id,
-        component: id,
-        title: PANEL_TITLES[id],
-        position: {
-          referencePanel: PANEL_IDS.GAME_CONTROLLER,
-          direction: "within",
-        },
-      });
-    }
-
-    // Bottom drawer, right slot — the console.
-    api.addPanel({
-      id: PANEL_IDS.CONSOLE,
-      component: PANEL_IDS.CONSOLE,
-      title: PANEL_TITLES[PANEL_IDS.CONSOLE],
-      position: {
-        referencePanel: PANEL_IDS.GAME_CONTROLLER,
-        direction: "right",
-      },
-    });
-
-    // Player Inspector — splits the top row, leaving the drawer full-width.
-    api.addPanel({
-      id: PANEL_IDS.PLAYER_INSPECTOR,
-      component: PANEL_IDS.PLAYER_INSPECTOR,
-      title: "INSPECTOR",
-      position: { referencePanel: PANEL_IDS.FIELD, direction: "right" },
-    });
-
-    // Proportions: top row field ~75% / inspector ~25%; drawer ~30% height.
-    const totalWidth = api.width;
-    if (totalWidth > 0) {
-      api
-        .getPanel(PANEL_IDS.PLAYER_INSPECTOR)
-        ?.group?.api.setSize({ width: Math.floor(totalWidth * 0.25) });
-    }
-    const totalHeight = api.height;
-    if (totalHeight > 0) {
-      const drawerHeight = Math.floor(totalHeight * 0.3);
-      api
-        .getPanel(PANEL_IDS.CONSOLE)
-        ?.group?.api.setSize({ height: drawerHeight });
-      // Split the drawer row evenly between the two slots.
-      api
-        .getPanel(PANEL_IDS.CONSOLE)
-        ?.group?.api.setSize({ width: Math.floor(totalWidth * 0.5) });
-    }
-
-    // The field is the only panel in its group — its tab rail is wasted space.
-    // Hide the header to give the visualization the full height. (Persisted in
-    // the layout JSON via `hideHeader`.)
-    const fieldGroup = api.getPanel(PANEL_IDS.FIELD)?.group;
-    if (fieldGroup) fieldGroup.header.hidden = true;
+    api.fromJSON(DEFAULT_LAYOUT as any);
   }, []);
 
   // Handle reset layout

@@ -21,8 +21,6 @@ export interface CommandContext {
   toggleKeyboardMode: () => void;
   focusPanel: (id: PanelId) => void;
   toggleCommandPalette: () => void;
-  /** Collapse/expand the bottom drawer (Cmd+J). */
-  toggleDrawer: () => void;
   /** True when manual keyboard-driving is active (suppresses plain-letter keys). */
   drivingActive: boolean;
   /** Whether the executor is currently running. */
@@ -173,22 +171,11 @@ export const COMMANDS: Command[] = [
       c.feedback("Focus Debug");
     },
   },
-  {
-    // Keybind (⌘J/Ctrl+J) is handled specially in the global handler — the combo
-    // parser here rejects meta/ctrl. This entry keeps it in the command palette.
-    id: "toggle-drawer",
-    title: "Toggle bottom drawer",
-    run: (c) => {
-      c.toggleDrawer();
-      c.feedback("Toggle drawer");
-    },
-  },
 ];
 
 /** Extra display-only entries for the cheat sheet (handled outside COMMANDS). */
 export const EXTRA_SHORTCUTS: { keys: string; title: string }[] = [
   { keys: "⌘K", title: "Command palette" },
-  { keys: "⌘J", title: "Toggle bottom drawer" },
   { keys: "0–9", title: "Select robot by id" },
   { keys: "H", title: "Set target at cursor (over field)" },
 ];
