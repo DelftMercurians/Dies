@@ -154,7 +154,7 @@ pub struct Cli {
     #[clap(long, default_value = "blue")]
     pub controlled_teams: ControlledTeam,
 
-    /// Strategy binary name (e.g. "concerto", "v0-strategy"). Use "none" for no strategy.
+    /// Strategy binary name (e.g. "concerto"). Use "none" for no strategy.
     #[clap(long, default_value = "none")]
     pub strategy: String,
 

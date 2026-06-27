@@ -26,7 +26,7 @@ cargo build -p concerto       # Build a specific strategy
 
 # Release build of dies-cli + all strategies (build.rs produces the frontend
 # bundle; needs `typeshare` + `pnpm` on PATH):
-cargo build --release -p dies-cli -p concerto -p test-strategy -p v0-strategy
+cargo build --release -p dies-cli -p concerto
 ```
 
 **Strategy hot-reload:** with `--watch`, the CLI watches strategy
@@ -76,7 +76,7 @@ Strategies are separate binaries that implement the `Strategy` trait from `dies-
 - **dies-strategy-protocol**: IPC message types (HostMessage, StrategyMessage, SkillCommand)
 - **dies-strategy-api**: Public interface (`Strategy` trait, `TeamContext`, `PlayerHandle`)
 - **dies-strategy-runner**: Spawns strategy processes and manages IPC
-- **strategies/**: `concerto` (current main, Formation + Plan-Execute-Replan), `v0` (older strategy), `test-strategy` (smoke tests). IPC uses Unix domain sockets — Linux/macOS only.
+- **strategies/**: `concerto` (current main, Formation + Plan-Execute-Replan). IPC uses Unix domain sockets — Linux/macOS only.
 
 **Coordinate frame**: All strategy code uses team-relative coordinates (+x toward opponent goal). The executor handles transformation to/from absolute coordinates. Never expose absolute coordinates to strategies.
 

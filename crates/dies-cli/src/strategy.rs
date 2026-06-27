@@ -16,7 +16,7 @@ use notify::{RecursiveMode, Watcher};
 /// Directories whose changes should trigger a strategy rebuild in watch mode:
 /// the strategies themselves plus the strategy-facing crate closure. We watch
 /// all of `strategies/` recursively rather than a single crate so the binary
-/// name (e.g. `v0-strategy`) need not match its directory (`strategies/v0`);
+/// name (e.g. `concerto`) need not match its directory (`strategies/concerto`);
 /// `cargo build -p <name>` is a no-op when an unrelated change comes in.
 const WATCH_DIRS: &[&str] = &[
     "strategies",
