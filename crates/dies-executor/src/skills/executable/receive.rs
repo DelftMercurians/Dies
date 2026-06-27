@@ -4,6 +4,15 @@ use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::PlayerControlInput;
 
+/// Minimum closing speed (mm/s) along the pass line before the receiver commits
+/// to an interception. Below this the ball isn't meaningfully on its way, so the
+/// receiver holds the planned intercept point instead of chasing it.
+const MIN_CLOSING_SPEED: f64 = 250.0;
+/// Maximum look-ahead (s) for the interception prediction. A real pass arrives
+/// well within this; a longer predicted crossing time means the ball is barely
+/// converging (or diverging), so the receiver holds rather than chases.
+const MAX_PREDICT_TIME: f64 = 2.5;
+
 #[derive(Clone)]
 pub struct ReceiveSkill {
     from_pos: Vector2,
@@ -82,48 +91,53 @@ impl ExecutableSkill for ReceiveSkill {
         input.with_dribbling(0.6);
         input.with_yaw(target_heading);
 
-        // Project ball onto the normal line (perpendicular to from->target line, passing through target)
-        if let Some(ball) = ctx.world.ball.as_ref() {
-            let ball_pos = ball.position.xy();
-            let ball_vel = ball.velocity.xy();
+        // Position to intercept the pass. The receiver holds its depth at the
+        // planned intercept point and only slides laterally (along the pass-line
+        // normal) to meet a ball that is genuinely on its way. If the ball is not
+        // closing toward us, hold the intercept point instead of chasing the
+        // ball's lateral projection across the field.
+        let target_position = match ctx.world.ball.as_ref() {
+            Some(ball) => {
+                let ball_pos = ball.position.xy();
+                let ball_vel = ball.velocity.xy();
 
-            // Calculate line direction and its perpendicular (normal)
-            let line_vec = self.target_pos - self.from_pos;
-            let normal = Vector2::new(-line_vec.y, line_vec.x).normalize();
+                let line_vec = self.target_pos - self.from_pos;
+                if line_vec.norm() < 1.0 {
+                    // Degenerate geometry (passer ~on the intercept point): hold.
+                    self.target_pos
+                } else {
+                    let line_dir = line_vec.normalize();
+                    let normal = Vector2::new(-line_vec.y, line_vec.x).normalize();
 
-            // Project ball onto the normal line (perpendicular to from->target)
-            let to_ball = ball_pos - self.target_pos;
-            let distance_along_normal = to_ball.dot(&normal);
-            let distance_along_normal =
-                distance_along_normal.clamp(-self.capture_limit, self.capture_limit);
-
-            // Calculate ball's projected position on the normal line
-            let ball_projection = self.target_pos + normal * distance_along_normal;
-
-            // Claude calculation - maybe smart verified
-            let mut target_position = ball_projection;
-
-            let dot_product = to_ball.dot(&normal) * ball_vel.dot(&normal);
-            // Ball is moving away from line (towards it) - predict where it will intersect
-            let line_direction = line_vec.normalize();
-            let denominator = ball_vel.dot(&line_direction);
-
-            if denominator.abs() > 1e-6 {
-                let t = -to_ball.dot(&line_direction) / denominator;
-
-                if t > 0.0 && t < 10.0 {
-                    let future_ball_pos = ball_pos + ball_vel * t;
-                    let to_future = future_ball_pos - self.target_pos;
-                    let intercept_distance = to_future
-                        .dot(&normal)
-                        .clamp(-self.capture_limit, self.capture_limit);
-                    target_position = self.target_pos + normal * intercept_distance;
+                    // Closing speed of the ball along the pass line (passer -> target).
+                    let closing_speed = ball_vel.dot(&line_dir);
+                    if closing_speed > MIN_CLOSING_SPEED {
+                        // Time for the ball to reach our depth (the normal line
+                        // through the intercept point).
+                        let to_ball = ball_pos - self.target_pos;
+                        let t = -to_ball.dot(&line_dir) / closing_speed;
+                        if t > 0.0 && t < MAX_PREDICT_TIME {
+                            // Slide laterally to where the ball will cross our depth.
+                            let future_ball_pos = ball_pos + ball_vel * t;
+                            let lateral = (future_ball_pos - self.target_pos)
+                                .dot(&normal)
+                                .clamp(-self.capture_limit, self.capture_limit);
+                            self.target_pos + normal * lateral
+                        } else {
+                            // Crossing is in the past or too far out in time: hold.
+                            self.target_pos
+                        }
+                    } else {
+                        // Ball is moving away or not converging: hold.
+                        self.target_pos
+                    }
                 }
             }
+            // No ball detected: hold the planned intercept point.
+            None => self.target_pos,
+        };
 
-            input.with_position(target_position);
-            // }
-        }
+        input.with_position(target_position);
 
         SkillProgress::Continue(input)
     }

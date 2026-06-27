@@ -84,6 +84,15 @@ impl<S: Strategy> StrategyRunner<S> {
                         info!("connection closed by host, shutting down");
                         break;
                     }
+                    // A read timeout at a frame boundary just means the host is
+                    // idle (e.g. the executor is paused). The stream is still
+                    // aligned, so keep waiting instead of tearing down the
+                    // strategy — otherwise resuming from a long pause drops the
+                    // connection.
+                    if let Some(ConnectionError::Timeout) = e.downcast_ref::<ConnectionError>() {
+                        debug!("no frame from host within read timeout; still waiting");
+                        continue;
+                    }
                     error!("error processing frame: {:#}", e);
                     return Err(e);
                 }
