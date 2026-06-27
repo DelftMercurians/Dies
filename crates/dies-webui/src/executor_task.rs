@@ -292,8 +292,13 @@ impl ExecutorTask {
                                 bs_handle,
                             },
                         ) => {
-                            let vision_client = VisionClient::new(ssl_config).await;
-                            if let Ok(vision_client) = vision_client {
+                            // Try the configured vision client (if any). `None`
+                            // here means no vision was configured at launch.
+                            let vision_client = match ssl_config {
+                                Some(cfg) => VisionClient::new(cfg).await.ok(),
+                                None => None,
+                            };
+                            if let Some(vision_client) = vision_client {
                                 Ok(Executor::new_live(settings, vision_client, bs_handle))
                             } else if settings.allow_no_vision {
                                 log::warn!("Starting executor with mock vision client");
@@ -308,7 +313,9 @@ impl ExecutorTask {
                                     bs_handle,
                                 ))
                             } else {
-                                Err(anyhow::anyhow!("Failed to connect to vision"))
+                                Err(anyhow::anyhow!(
+                                    "No vision available (configure --connection-mode or enable allow_no_vision)"
+                                ))
                             }
                         }
                         (UiMode::Live, UiEnvironment::SimulationOnly) => {

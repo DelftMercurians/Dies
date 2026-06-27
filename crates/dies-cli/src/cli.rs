@@ -286,12 +286,15 @@ impl Cli {
     pub async fn into_ui(self) -> Result<UiConfig> {
         let calibration_mode = self.calibration_mode;
         let hot_reload = self.strategy_mode() == StrategyMode::Watch;
-        let environment = match (self.serial_config().await, self.ssl_config()) {
-            (Some(bs_config), Some(ssl_config)) => UiEnvironment::WithLive {
+        // A live basestation only needs the serial config. Vision config is
+        // optional — without it the executor can't run a Live match (unless
+        // allow_no_vision), but the test bench still works.
+        let environment = match self.serial_config().await {
+            Some(bs_config) => UiEnvironment::WithLive {
                 bs_handle: BasestationHandle::spawn(bs_config)?,
-                ssl_config,
+                ssl_config: self.ssl_config(),
             },
-            _ => UiEnvironment::SimulationOnly,
+            None => UiEnvironment::SimulationOnly,
         };
 
         let strategy = if self.strategy == "none" {

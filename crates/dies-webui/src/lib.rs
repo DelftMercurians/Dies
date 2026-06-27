@@ -51,7 +51,10 @@ pub struct UiConfig {
 #[derive(Debug, Clone)]
 pub enum UiEnvironment {
     WithLive {
-        ssl_config: SslClientConfig,
+        /// Vision/GC config. `None` means no vision was configured (e.g.
+        /// `--connection-mode none`): the basestation is still live (so the test
+        /// bench works), but a Live executor can only start with `allow_no_vision`.
+        ssl_config: Option<SslClientConfig>,
         bs_handle: BasestationHandle,
     },
     SimulationOnly,
