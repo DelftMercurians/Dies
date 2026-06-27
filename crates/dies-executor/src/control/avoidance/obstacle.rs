@@ -248,7 +248,18 @@ impl ObstacleSet {
             || game_state == GameState::PreparePenalty
             || game_state == GameState::Stop;
         if want_ball {
-            let radius = if game_state == GameState::Stop {
+            // The 500 mm rule applies to everyone during `Stop`, and to every
+            // robot that opts in via `avoid_ball` during kickoff (the kicker is
+            // excluded by simply not setting the gate). Use the full rule radius
+            // there instead of the small care-scaled radius so the planner
+            // routes paths well clear of the ball, not just the endpoint.
+            let rule_distance = game_state == GameState::Stop
+                || (gates.avoid_ball
+                    && matches!(
+                        game_state,
+                        GameState::PrepareKickoff | GameState::Kickoff
+                    ));
+            let radius = if rule_distance {
                 cfg.ball_stop_radius
             } else {
                 (cfg.ball_base_radius + cfg.ball_care_scale * gates.avoid_ball_care)

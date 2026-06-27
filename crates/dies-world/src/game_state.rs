@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn test_new_game_state_tracker() {
         let tracker = GameStateTracker::new();
-        assert_eq!(tracker.get(), GameState::Unknown);
+        assert_eq!(tracker.get(), GameState::Halt);
     }
 
     #[test]

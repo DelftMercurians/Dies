@@ -21,6 +21,8 @@ const ROBOT_RADIUS = 0.08 * 1000;
 const BALL_RADIUS = 0.043 * 1000;
 export const DEFAULT_FIELD_SIZE = [10400, 7400] as [number, number];
 export const CANVAS_PADDING = 20;
+/** Radius (mm) of the Sim Edit rotation ring / handle around a robot. */
+export const SIM_EDIT_RING_RADIUS = ROBOT_RADIUS + 70;
 
 const FIELD_GREEN = "#15803d";
 const FIELD_LINE = "#ffffff";
@@ -67,6 +69,8 @@ export class FieldRenderer {
   private manualTargets: ManualTargetMarker[] = [];
   /** In-progress slingshot kick: ball origin + current pull-back point (mm). */
   private simKickDraft: { ball: Vector2; pull: Vector2 } | null = null;
+  /** Robot to draw Sim Edit rotation controls around (hovered / being edited). */
+  private simEditRobot: { pos: Vector2; yaw: number } | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -87,6 +91,10 @@ export class FieldRenderer {
 
   setSimKickDraft(draft: { ball: Vector2; pull: Vector2 } | null) {
     this.simKickDraft = draft;
+  }
+
+  setSimEditRobot(robot: { pos: Vector2; yaw: number } | null) {
+    this.simEditRobot = robot;
   }
 
   setWorldData(world: WorldData | null) {
@@ -216,6 +224,41 @@ export class FieldRenderer {
     this.manualTargets.forEach((t) => this.drawManualTarget(t));
     this.drawMaskDraft();
     this.drawSimKickDraft();
+    this.drawSimEditRobot();
+  }
+
+  /** Rotation ring + heading handle around a robot being edited. */
+  private drawSimEditRobot() {
+    const r = this.simEditRobot;
+    if (!r) return;
+    const [cx, cy] = this.fieldToCanvas(r.pos);
+    const ring = this.convertLength(SIM_EDIT_RING_RADIUS);
+    const [hx, hy] = this.fieldToCanvas([
+      r.pos[0] + Math.cos(r.yaw) * SIM_EDIT_RING_RADIUS,
+      r.pos[1] + Math.sin(r.yaw) * SIM_EDIT_RING_RADIUS,
+    ]);
+    this.ctx.save();
+    // Ring.
+    this.ctx.strokeStyle = "#fbbf2488";
+    this.ctx.lineWidth = 1.5;
+    this.ctx.setLineDash([4, 3]);
+    this.ctx.beginPath();
+    this.ctx.arc(cx, cy, ring, 0, 2 * Math.PI);
+    this.ctx.stroke();
+    this.ctx.setLineDash([]);
+    // Heading line to the handle.
+    this.ctx.strokeStyle = "#fbbf24";
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.moveTo(cx, cy);
+    this.ctx.lineTo(hx, hy);
+    this.ctx.stroke();
+    // Handle knob.
+    this.ctx.fillStyle = "#fbbf24";
+    this.ctx.beginPath();
+    this.ctx.arc(hx, hy, 6, 0, 2 * Math.PI);
+    this.ctx.fill();
+    this.ctx.restore();
   }
 
   /** Slingshot aim: dashed pull-back line + solid launch arrow at the ball. */

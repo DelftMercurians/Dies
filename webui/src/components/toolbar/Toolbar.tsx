@@ -6,6 +6,7 @@ import { SimpleTooltip } from "@/components/ui/tooltip";
 import ModeToggle from "./ModeToggle";
 import ExecutorControls from "./ExecutorControls";
 import GcControls from "./GcControls";
+import SimEditControls from "./SimEditControls";
 import TeamIndicator from "./TeamIndicator";
 import StatusCluster from "./StatusCluster";
 import LayoutSelector from "./LayoutSelector";
@@ -66,6 +67,9 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Team/Side Indicator */}
       <TeamIndicator />
+
+      {/* Sim Edit controls (toggle + snapshots) — sim only */}
+      <SimEditControls />
 
       {/* Spacer */}
       <div className="flex-1" />

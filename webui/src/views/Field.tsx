@@ -19,6 +19,7 @@ import {
   FieldRenderer,
   ManualTargetMarker,
   PositionDisplayMode,
+  SIM_EDIT_RING_RADIUS,
 } from "./FieldRenderer";
 import {
   Popover,
@@ -47,7 +48,6 @@ import {
   filterDebugMap,
 } from "@/lib/debugLayers";
 import DebugVisibilityControls from "./DebugVisibilityControls";
-import SimEditPanel from "@/components/SimEditPanel";
 import {
   pinnedFieldKeysAtom,
   formatFieldDebugValue,
@@ -67,6 +67,8 @@ const CONT_PADDING_PX = 8;
 // --- Sim Edit tuning -------------------------------------------------------
 /** Grab radius (mm) for picking up the ball with the cursor. */
 const BALL_GRAB_RADIUS = 200;
+/** Grab radius (mm) around the rotation handle knob. */
+const HANDLE_GRAB_RADIUS = 90;
 /** Min teleport spacing (ms) while dragging, to throttle command spam. */
 const TELEPORT_THROTTLE_MS = 40;
 /** Pull distance (mm) → ball exit speed (mm/s). Ball mass is 1, so impulse = Δv. */
@@ -77,8 +79,12 @@ const KICK_MAX = 6500;
 /** An in-progress Sim Edit drag. */
 type SimDrag =
   | { kind: "robot"; teamColor: TeamColor; playerId: number; yaw: number }
+  | { kind: "robot-rotate"; teamColor: TeamColor; playerId: number; pos: Vector2 }
   | { kind: "ball-move" }
   | { kind: "ball-kick"; ball: Vector2 };
+
+/** Which robot to draw rotation controls around. */
+type SimEditRobotRef = { teamColor: TeamColor; playerId: number };
 
 interface FieldProps {
   selectedPlayerId: null | number;
@@ -139,6 +145,21 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     ball: Vector2;
     pull: Vector2;
   } | null>(null);
+  // Robot to show rotation controls around: the one being edited, else hovered.
+  const [simEditHover, setSimEditHover] = useState<SimEditRobotRef | null>(null);
+  const [simEditActiveRobot, setSimEditActiveRobot] =
+    useState<SimEditRobotRef | null>(null);
+  const simEditRobotMarker = useMemo<{ pos: Vector2; yaw: number } | null>(() => {
+    if (!simEditMode) return null;
+    const sel = simEditActiveRobot ?? simEditHover;
+    if (!sel) return null;
+    const team =
+      sel.teamColor === TeamColor.Blue
+        ? worldData?.blue_team
+        : worldData?.yellow_team;
+    const p = team?.find((pp) => pp.id === sel.playerId);
+    return p ? { pos: p.position, yaw: p.yaw } : null;
+  }, [simEditMode, simEditActiveRobot, simEditHover, worldData]);
 
   const [primaryTeam] = usePrimaryTeam();
   const debugMap = useDebugData();
@@ -259,6 +280,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     rendererRef.current.setMaskDraft(maskDraft);
     rendererRef.current.setManualTargets(manualTargetMarkers);
     rendererRef.current.setSimKickDraft(simKickDraft);
+    rendererRef.current.setSimEditRobot(simEditRobotMarker);
     rendererRef.current.render(
       selectedPlayerId,
       primaryTeam,
@@ -278,6 +300,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     maskDraft,
     manualTargetMarkers,
     simKickDraft,
+    simEditRobotMarker,
   ]);
 
   const selectedPlayerData =
@@ -427,7 +450,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         return true;
       }
 
-      // Robot under the cursor → move it.
+      // Robot under (or near) the cursor → rotate via the handle, else move.
       const player = rendererRef.current.getPlayerAt(f[0], f[1]);
       if (player) {
         const [teamColor, playerId] = player;
@@ -435,8 +458,22 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
           teamColor === TeamColor.Blue
             ? worldDataRef.current?.blue_team
             : worldDataRef.current?.yellow_team;
-        const yaw = team?.find((p) => p.id === playerId)?.yaw ?? 0;
+        const pd = team?.find((p) => p.id === playerId);
+        const pos: Vector2 = pd ? pd.position : f;
+        const yaw = pd?.yaw ?? 0;
         event.preventDefault();
+        setSimEditActiveRobot({ teamColor, playerId });
+
+        // Near the heading handle on the ring → rotate (position fixed).
+        const handle: Vector2 = [
+          pos[0] + Math.cos(yaw) * SIM_EDIT_RING_RADIUS,
+          pos[1] + Math.sin(yaw) * SIM_EDIT_RING_RADIUS,
+        ];
+        if (Math.hypot(handle[0] - f[0], handle[1] - f[1]) < HANDLE_GRAB_RADIUS) {
+          simDragRef.current = { kind: "robot-rotate", teamColor, playerId, pos };
+          return true;
+        }
+
         simDragRef.current = { kind: "robot", teamColor, playerId, yaw };
         sendTeleportRobot(teamColor, playerId, f, yaw);
         return true;
@@ -468,6 +505,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       lastTeleportRef.current = now;
       if (d.kind === "robot") {
         sendTeleportRobot(d.teamColor, d.playerId, f, d.yaw);
+      } else if (d.kind === "robot-rotate") {
+        const yaw = Math.atan2(f[1] - d.pos[1], f[0] - d.pos[0]);
+        sendTeleportRobot(d.teamColor, d.playerId, d.pos, yaw);
       } else {
         sendTeleportBall(f);
       }
@@ -481,6 +521,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       const d = simDragRef.current;
       if (!d) return false;
       simDragRef.current = null;
+      setSimEditActiveRobot(null);
       const f = eventToField(event);
       if (d.kind === "ball-kick") {
         setSimKickDraft(null);
@@ -504,6 +545,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       if (f) {
         if (d.kind === "robot") {
           sendTeleportRobot(d.teamColor, d.playerId, f, d.yaw);
+        } else if (d.kind === "robot-rotate") {
+          const yaw = Math.atan2(f[1] - d.pos[1], f[0] - d.pos[0]);
+          sendTeleportRobot(d.teamColor, d.playerId, d.pos, yaw);
         } else {
           sendTeleportBall(f);
         }
@@ -571,8 +615,16 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       const fieldXY = rendererRef.current.canvasToField([x, y]);
       setMouseField(fieldXY);
 
-      if (simEditRef.current && simDragRef.current) {
-        onSimDrag(fieldXY);
+      if (simEditRef.current) {
+        if (simDragRef.current) {
+          onSimDrag(fieldXY);
+        } else {
+          // Hover: show rotation controls around the robot under the cursor.
+          const p = rendererRef.current.getPlayerAt(fieldXY[0], fieldXY[1]);
+          setSimEditHover(
+            p ? { teamColor: p[0], playerId: p[1] } : null
+          );
+        }
         setPlayerTooltip(null);
         return;
       }
@@ -678,6 +730,7 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
       onMouseEnter={() => (isOverFieldRef.current = true)}
       onMouseLeave={() => {
         isOverFieldRef.current = false;
+        if (!simDragRef.current) setSimEditHover(null);
       }}
     >
       <Popover>
@@ -710,19 +763,6 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
               <ToggleGroupItem value="filtered">Filtered</ToggleGroupItem>
             </ToggleGroup>
           </div>
-          {isSim ? (
-            <div className="border-t border-border-dim pt-2">
-              <SimEditPanel
-                enabled={simEditMode}
-                onToggle={(on) => {
-                  setSimEditMode(on);
-                  if (on) setMaskEditMode(false);
-                }}
-                worldData={worldData}
-                primaryTeam={primaryTeam}
-              />
-            </div>
-          ) : null}
           <div className="border-t border-border-dim pt-2">
             <DebugVisibilityControls />
           </div>
