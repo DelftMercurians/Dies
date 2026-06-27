@@ -174,7 +174,12 @@ impl Planner {
                 );
                 let in_range = (carrier_pos - opp_goal).norm() < config::SHOOT_RANGE;
 
-                let waypoint = if is_kicker {
+                let waypoint = if !is_kicker && world.ball_contest().is_some() {
+                    // An opponent is physically pinning the ball we nominally hold.
+                    // Don't advance toward goal — that drives into the presser (the
+                    // old `correction_target` deadlock). Break contact instead.
+                    self.contest_escape(world, ball_pos, carrier_pos)
+                } else if is_kicker {
                     // Restart: always release forward (never dribble — double-touch).
                     // Kick at a supporter if one is well placed, else open space.
                     // (Stays a Shoot, not a Pass: restart legality / double-touch is
@@ -250,6 +255,46 @@ impl Planner {
 
         self.current_plan = Some(plan.clone());
         Some(plan)
+    }
+
+    /// Break out of a contest where an opponent is pinning the ball we hold.
+    /// Threat-blended: near our own goal we clear hard to a wing (accepting the
+    /// loss of possession to kill the danger and avoid a force-restart reshuffle);
+    /// elsewhere we strafe perpendicular to the squeeze axis to keep the ball and
+    /// move the presser out from between us and goal.
+    fn contest_escape(&self, world: &World, ball_pos: Vector2, carrier_pos: Vector2) -> Waypoint {
+        let own_goal = world.own_goal_center();
+        let threat = geometry::threat(
+            ball_pos,
+            own_goal,
+            config::THREAT_GOAL_NEAR,
+            config::THREAT_GOAL_FAR,
+        );
+        if threat > config::SHADOW_RELIEF_THREAT {
+            // Defensive third: firm clear toward a wing, away from our goal mouth.
+            let sign = if ball_pos.y >= 0.0 { 1.0 } else { -1.0 };
+            let target = Vector2::new(config::CLEAR_TARGET_X, sign * config::CLEAR_TARGET_MIN_Y);
+            Waypoint::Shoot { target }
+        } else {
+            // Keep the ball: strafe off-axis toward the more open side. The presser
+            // position falls back to the ball if the id can't be resolved (the
+            // geometry helper degrades gracefully).
+            let presser = world
+                .principal_presser()
+                .and_then(|id| world.opp_player(id))
+                .map(|p| p.position)
+                .unwrap_or(ball_pos);
+            let dir = geometry::escape_direction(
+                carrier_pos,
+                presser,
+                ball_pos,
+                world.opp_players(),
+                world.field_width() / 2.0,
+            );
+            Waypoint::Dribble {
+                target_area: carrier_pos + dir * config::ESCAPE_STEP,
+            }
+        }
     }
 
     /// Choose the robot that can reach the ball soonest (momentum-aware), excluding
@@ -389,7 +434,7 @@ impl Planner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dies_strategy_protocol::{BallState, GameState, WorldSnapshot};
+    use dies_strategy_protocol::{BallContest, BallState, GameState, WorldSnapshot};
 
     fn player(id: u32, x: f64, y: f64) -> PlayerState {
         PlayerState::new(
@@ -418,6 +463,7 @@ mod tests {
             freekick_kicker: None,
             possession: Possession::Loose,
             possession_stale: false,
+            ball_contest: None,
         })
     }
 
@@ -428,6 +474,94 @@ mod tests {
             our_attacking_restart: false,
             carried: 0.0,
             now: 0.0,
+        }
+    }
+
+    fn world_contest(
+        ball: Vector2,
+        own: Vec<PlayerState>,
+        opp: Vec<PlayerState>,
+        contest: Option<BallContest>,
+    ) -> World {
+        World::new(WorldSnapshot {
+            timestamp: 0.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: ball,
+                velocity: Vector2::new(0.0, 0.0),
+                detected: true,
+            }),
+            own_players: own,
+            opp_players: opp,
+            game_state: GameState::Run,
+            us_operating: true,
+            our_keeper_id: Some(PlayerId::new(1)),
+            freekick_kicker: None,
+            possession: Possession::We(PlayerId::new(2)),
+            possession_stale: false,
+            ball_contest: contest,
+        })
+    }
+
+    #[test]
+    fn contest_near_our_goal_clears_to_a_wing() {
+        // We hold the ball deep in our half with an opponent pressing → high threat
+        // → clear hard to a wing (give up possession to kill the danger).
+        let ball = Vector2::new(-3500.0, 200.0);
+        let own = vec![player(1, -4000.0, 0.0), player(2, -3500.0, 200.0)];
+        let opp = vec![player(9, -3300.0, 200.0)];
+        let contest = Some(BallContest {
+            ours: vec![PlayerId::new(2)],
+            opp: vec![PlayerId::new(9)],
+        });
+        let world = world_contest(ball, own, opp, contest);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Shoot { target } => {
+                assert!((target.x - config::CLEAR_TARGET_X).abs() < 1.0);
+                assert!(target.y.abs() >= config::CLEAR_TARGET_MIN_Y - 1.0);
+            }
+            other => panic!("expected a clearance Shoot, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn contest_in_attacking_half_strafes_off_axis() {
+        // We hold the ball upfield with an opponent pressing from ahead (+x) → low
+        // threat → strafe laterally to keep the ball, a step of ESCAPE_STEP.
+        let carrier = Vector2::new(2000.0, 300.0);
+        let ball = carrier;
+        let own = vec![player(1, -4000.0, 0.0), player(2, carrier.x, carrier.y)];
+        let opp = vec![player(9, 2300.0, 300.0)];
+        let contest = Some(BallContest {
+            ours: vec![PlayerId::new(2)],
+            opp: vec![PlayerId::new(9)],
+        });
+        let world = world_contest(ball, own, opp, contest);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Dribble { target_area } => {
+                let delta = target_area - carrier;
+                assert!(
+                    (delta.norm() - config::ESCAPE_STEP).abs() < 1.0,
+                    "should step exactly ESCAPE_STEP, got {}",
+                    delta.norm()
+                );
+                assert!(
+                    delta.x.abs() < delta.y.abs(),
+                    "presser ahead (+x) → escape should be lateral (y), got {delta:?}"
+                );
+            }
+            other => panic!("expected a strafe Dribble, got {other:?}"),
         }
     }
 

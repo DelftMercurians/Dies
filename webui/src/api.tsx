@@ -50,6 +50,9 @@ import {
   ConsoleLogMessage,
   SettingsSnapshot,
   SettingsSnapshotsResponse,
+  SnapshotsResponse,
+  FieldSnapshot,
+  SaveSnapshotBody,
 } from "./bindings";
 import { toast } from "sonner";
 import { atom, getDefaultStore, useAtom } from "jotai";
@@ -144,6 +147,25 @@ const postSettingsBaseline = (): Promise<SettingsSnapshot> =>
   fetch("/api/settings/baseline", { method: "POST" }).then((res) =>
     res.json(),
   );
+
+const getFieldSnapshots = (): Promise<SnapshotsResponse> =>
+  fetch("/api/snapshots").then((res) => res.json());
+
+export const getFieldSnapshot = (name: string): Promise<FieldSnapshot> =>
+  fetch(`/api/snapshots/${encodeURIComponent(name)}`).then((res) => {
+    if (!res.ok) throw new Error(`Snapshot "${name}" not found`);
+    return res.json();
+  });
+
+const postFieldSnapshot = (body: SaveSnapshotBody): Promise<Response> =>
+  fetch("/api/snapshots", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+const deleteFieldSnapshot = (name: string): Promise<Response> =>
+  fetch(`/api/snapshots/${encodeURIComponent(name)}`, { method: "DELETE" });
 
 const getDebugMap = (): Promise<DebugMap> =>
   fetch("/api/debug")
@@ -415,6 +437,34 @@ export const useSettingsSnapshots = () => {
     history: query.data?.history ?? [],
     markBaseline: setBaseline.mutate,
     restore: restore.mutate,
+  };
+};
+
+/** Saved simulator field-state snapshots (list + save/delete). */
+export const useFieldSnapshots = () => {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ["field-snapshots"],
+    queryFn: getFieldSnapshots,
+  });
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ["field-snapshots"] });
+
+  const save = useMutation({
+    mutationFn: postFieldSnapshot,
+    onSuccess: invalidate,
+  });
+
+  const remove = useMutation({
+    mutationFn: deleteFieldSnapshot,
+    onSuccess: invalidate,
+  });
+
+  return {
+    names: query.data?.names ?? [],
+    save: save.mutate,
+    remove: remove.mutate,
   };
 };
 

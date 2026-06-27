@@ -365,6 +365,7 @@ mod tests {
             freekick_kicker: None,
             possession: dies_strategy_protocol::Possession::Loose,
             possession_stale: false,
+            ball_contest: None,
         };
 
         let ctx = TeamContext::new(snapshot, HashMap::new(), HashMap::new(), HashMap::new());

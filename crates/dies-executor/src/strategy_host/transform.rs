@@ -11,8 +11,8 @@ use std::collections::HashSet;
 
 use dies_core::{Angle, PlayerData, SideAssignment, TeamColor, TeamData, Vector2};
 use dies_strategy_protocol::{
-    BallState, DebugEntry, DebugShape, DebugValue, Handicap, PassBallState, PassResult, PlayerId,
-    PlayerState, Possession, SkillCommand, SkillStatus, WorldSnapshot,
+    BallContest, BallState, DebugEntry, DebugShape, DebugValue, Handicap, PassBallState,
+    PassResult, PlayerId, PlayerState, Possession, SkillCommand, SkillStatus, WorldSnapshot,
 };
 
 /// Handles coordinate transformation between world and strategy frames.
@@ -114,7 +114,27 @@ impl CoordinateTransformer {
             freekick_kicker: team_data.current_game_state.freekick_kicker,
             possession: self.team_relative_possession(&team_data.possession.state),
             possession_stale: team_data.possession.stale,
+            ball_contest: self.team_relative_contest(team_data.possession.contest.as_ref()),
         }
+    }
+
+    /// Convert the absolute (team-tagged) contest into this team's relative view,
+    /// splitting the near set into our robots vs. opponents by team color.
+    fn team_relative_contest(
+        &self,
+        contest: Option<&dies_core::BallContest>,
+    ) -> Option<BallContest> {
+        let contest = contest?;
+        let mut ours = Vec::new();
+        let mut opp = Vec::new();
+        for who in &contest.near {
+            if who.team_color == self.team_color {
+                ours.push(who.player_id);
+            } else {
+                opp.push(who.player_id);
+            }
+        }
+        Some(BallContest { ours, opp })
     }
 
     /// Convert the absolute (team-tagged) possession into this team's relative view.

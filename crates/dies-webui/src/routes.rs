@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        Json, Query, State, WebSocketUpgrade,
+        Json, Path, Query, State, WebSocketUpgrade,
     },
     http::StatusCode,
     response::IntoResponse,
@@ -29,10 +29,10 @@ const DEBUG_SEND_HZ: u64 = 30;
 
 use crate::{
     server::ServerState, BasestationResponse, ConsoleLogMessage, ExecutorInfoResponse,
-    ExecutorSettingsResponse, GetDebugMapResponse, LogInfo, LogsResponse, PostExecutorSettingsBody,
-    PostUiCommandBody, PostUiModeBody, ReplayState, ScenarioInfo, ScenariosResponse,
-    SettingsSnapshot, SettingsSnapshotsResponse, UiCommand, UiMode, UiStatus, UiWorldState,
-    WsMessage,
+    ExecutorSettingsResponse, FieldSnapshot, GetDebugMapResponse, LogInfo, LogsResponse,
+    PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, ReplayState, SaveSnapshotBody,
+    ScenarioInfo, ScenariosResponse, SettingsSnapshot, SettingsSnapshotsResponse,
+    SnapshotsResponse, UiCommand, UiMode, UiStatus, UiWorldState, WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -100,6 +100,48 @@ pub async fn get_settings_snapshots(
 /// Mark the current live config as the known-good baseline.
 pub async fn post_settings_baseline(state: State<Arc<ServerState>>) -> Json<SettingsSnapshot> {
     Json(state.set_settings_baseline())
+}
+
+/// List saved simulator field-state snapshots.
+pub async fn get_snapshots(state: State<Arc<ServerState>>) -> Json<SnapshotsResponse> {
+    Json(SnapshotsResponse {
+        names: state.list_field_snapshots(),
+    })
+}
+
+/// Fetch a single field-state snapshot by name.
+pub async fn get_snapshot(
+    state: State<Arc<ServerState>>,
+    Path(name): Path<String>,
+) -> Result<Json<FieldSnapshot>, StatusCode> {
+    state
+        .get_field_snapshot(&name)
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
+/// Save a field-state snapshot under a name (overwrites an existing one).
+pub async fn post_snapshot(
+    state: State<Arc<ServerState>>,
+    Json(body): Json<SaveSnapshotBody>,
+) -> StatusCode {
+    if state.save_field_snapshot(&body.name, &body.snapshot) {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    }
+}
+
+/// Delete a field-state snapshot by name.
+pub async fn delete_snapshot(
+    state: State<Arc<ServerState>>,
+    Path(name): Path<String>,
+) -> StatusCode {
+    if state.delete_field_snapshot(&name) {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 pub async fn get_basesation_info(state: State<Arc<ServerState>>) -> Json<BasestationResponse> {

@@ -53,6 +53,22 @@ pub struct WorldSnapshot {
     /// Whether the possession belief is currently being coasted through a
     /// vision/contact dropout (held, not backed by a fresh observation).
     pub possession_stale: bool,
+
+    /// Set when the ball is being physically contested by both teams, *independent*
+    /// of `possession` (which can read `We`/`Opp` while a robot presses the holder
+    /// from the far side). `None` in the common, uncontested case.
+    pub ball_contest: Option<BallContest>,
+}
+
+/// A live physical contest over the ball, team-relative. Present when robots from
+/// both teams are crowding a near-stationary ball — the signal a strategy uses to
+/// break a deadlock instead of pushing into it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct BallContest {
+    /// Our robots crowding the ball.
+    pub ours: Vec<PlayerId>,
+    /// Opponent robots crowding the ball.
+    pub opp: Vec<PlayerId>,
 }
 
 /// Who controls the ball, from this team's perspective.
@@ -282,6 +298,7 @@ mod tests {
             freekick_kicker: None,
             possession: Possession::We(PlayerId::new(1)),
             possession_stale: false,
+            ball_contest: None,
         };
 
         let encoded = bincode::serialize(&snapshot).unwrap();

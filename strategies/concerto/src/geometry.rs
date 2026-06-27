@@ -192,6 +192,51 @@ pub fn is_between(point: Vector2, from: Vector2, to: Vector2) -> bool {
     (0.0..=1.0).contains(&t)
 }
 
+/// Direction to break out of a ball contest: a unit vector **perpendicular to the
+/// carrier→presser squeeze axis**, on whichever side is more open.
+///
+/// In a pin both dribblers push along the squeeze axis, so the perpendicular is
+/// the one unopposed escape direction. Of the two perpendiculars we pick the side
+/// with the more open lane from the ball (via [`lane_openness`]), mildly biased
+/// toward midfield so we don't shepherd the ball into a touchline. Robust to the
+/// degenerate case where carrier and presser coincide.
+pub fn escape_direction(
+    carrier: Vector2,
+    presser: Vector2,
+    ball: Vector2,
+    opponents: &[PlayerState],
+    field_half_width: f64,
+) -> Vector2 {
+    const PROBE_DIST: f64 = 1000.0;
+    const CORRIDOR: f64 = 400.0;
+    const CENTER_BIAS: f64 = 0.25;
+
+    // Squeeze axis (carrier → presser), with finite fallbacks if robots coincide.
+    let mut axis = presser - carrier;
+    if axis.norm() < 1e-6 {
+        axis = ball - carrier;
+    }
+    if axis.norm() < 1e-6 {
+        axis = Vector2::new(1.0, 0.0);
+    }
+    let axis = axis / axis.norm();
+    let perp = Vector2::new(-axis.y, axis.x); // unit ⟂ to the axis
+
+    let half_w = field_half_width.max(1.0);
+    let score = |dir: Vector2| -> f64 {
+        let cand = ball + dir * PROBE_DIST;
+        let openness = lane_openness(ball, cand, opponents, CORRIDOR);
+        let center = 1.0 - (cand.y.abs() / half_w).min(1.0);
+        openness + CENTER_BIAS * center
+    };
+
+    if score(perp) >= score(-perp) {
+        perp
+    } else {
+        -perp
+    }
+}
+
 /// Smooth Hermite step: 0 below `edge0`, 1 above `edge1`, C¹-continuous between.
 /// Used everywhere a hard threshold would otherwise cause formation discontinuities.
 pub fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
@@ -350,6 +395,40 @@ mod tests {
         assert!(
             openness > 0.9,
             "support lane should be open, got {openness} at {pos:?}"
+        );
+    }
+
+    #[test]
+    fn escape_direction_is_lateral_and_avoids_the_blocked_side() {
+        // Presser dead ahead along +x → escape must be lateral (±y). An opponent
+        // blocks the +y lane, so we must squirt out toward -y.
+        let carrier = Vector2::new(0.0, 0.0);
+        let presser = Vector2::new(500.0, 0.0);
+        let ball = Vector2::new(250.0, 0.0);
+        let blocker = PlayerState::new(
+            PlayerId::new(9),
+            Vector2::new(250.0, 1000.0), // sitting in the +y escape lane
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let dir = escape_direction(
+            carrier,
+            presser,
+            ball,
+            std::slice::from_ref(&blocker),
+            3000.0,
+        );
+        assert!(
+            dir.x.abs() < 1e-6,
+            "escape should be perpendicular to the axis"
+        );
+        assert!(
+            dir.y < 0.0,
+            "escape should avoid the blocked +y side, got {dir:?}"
+        );
+        assert!(
+            (dir.norm() - 1.0).abs() < 1e-6,
+            "escape should be a unit vector"
         );
     }
 

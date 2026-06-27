@@ -315,6 +315,7 @@ mod tests {
                 freekick_kicker: None,
                 possession: dies_strategy_protocol::Possession::Loose,
                 possession_stale: false,
+                ball_contest: None,
             };
 
             let msg = HostMessage::WorldUpdate {
@@ -383,6 +384,7 @@ mod tests {
             skill_commands,
             debug_data: vec![],
             player_roles: HashMap::new(),
+            control_overrides: HashMap::new(),
         };
 
         conn.send(&msg).unwrap();

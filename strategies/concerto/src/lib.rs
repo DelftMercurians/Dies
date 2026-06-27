@@ -26,6 +26,10 @@ pub struct ConcertoStrategy {
     /// Previous frame's possession, for detecting changes (the metric itself is
     /// the framework's single source of truth — `World::possession`).
     last_possession: Possession,
+    /// Previous frame's contest activity, so contest onset/clearing triggers a
+    /// replan even while `possession` is unchanged (it stays `We(id)` when an
+    /// opponent starts pressing the ball we hold).
+    last_contest_active: bool,
     planner: Planner,
     driver: Driver,
     formation: Formation,
@@ -42,6 +46,7 @@ impl ConcertoStrategy {
     pub fn new() -> Self {
         Self {
             last_possession: Possession::Loose,
+            last_contest_active: false,
             planner: Planner::new(),
             driver: Driver::new(),
             formation: Formation::new(),
@@ -111,6 +116,14 @@ impl Strategy for ConcertoStrategy {
         let possession_changed = possession != self.last_possession;
         self.last_possession = possession;
 
+        // Contest onset/clearing is its own replan trigger: when an opponent starts
+        // pressing the ball we hold, `possession` stays `We(id)` (breakbeam latches
+        // ownership) so nothing else would prompt a re-decision — and the pinned
+        // dribble would only fail slowly on timeout. Edge-detect it here.
+        let contest_active = world.ball_contest().is_some();
+        let contest_changed = contest_active != self.last_contest_active;
+        self.last_contest_active = contest_active;
+
         // Track the dribble contact point: stamp it when we gain the ball, clear it
         // when we don't hold it. `carried` = how far we've dribbled since contact.
         match possession {
@@ -146,7 +159,7 @@ impl Strategy for ConcertoStrategy {
                     self.driver.status(),
                     WaypointStatus::Succeeded | WaypointStatus::Failed(_)
                 )
-                || (!passing && (possession_changed || game_state_changed));
+                || (!passing && (possession_changed || contest_changed || game_state_changed));
 
             if needs_replan {
                 let inputs = PlanInputs {
@@ -282,6 +295,22 @@ impl ConcertoStrategy {
             Possession::Contested => "Contested".to_string(),
         };
         debug::string("possession", &poss_str);
+
+        // Contest: ring the contested ball and draw the squeeze axis to the
+        // principal presser, so the deadlock-break behaviour is visible.
+        if let (Some(contest), Some(ball)) = (world.ball_contest(), world.ball_position()) {
+            debug::string(
+                "contest",
+                &format!("ours={} opp={}", contest.ours.len(), contest.opp.len()),
+            );
+            debug::circle_stroke("contest_ball", ball, 250.0, DebugColor::Red);
+            if let Some(p) = world
+                .principal_presser()
+                .and_then(|id| world.opp_player(id))
+            {
+                debug::line_colored("contest_axis", p.position, ball, DebugColor::Red);
+            }
+        }
 
         if let Some(active) = self.driver.active_robot_id() {
             if let Some(p) = world.own_player(active) {

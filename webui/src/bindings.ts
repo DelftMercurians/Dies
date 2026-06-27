@@ -220,6 +220,23 @@ export interface AvoidanceConfig {
 	orca_enabled: boolean;
 }
 
+export interface TeamPlayerId {
+	team_color: TeamColor;
+	player_id: PlayerId;
+}
+
+/**
+ * A physical contest over the ball, *orthogonal* to ownership: at least one
+ * robot from each team is crowding a near-stationary ball. Fires even while the
+ * ball reads `Owned` (our breakbeam latches ownership the instant we touch it,
+ * hiding an opponent pressing from the far side — the deadlock the strategy
+ * otherwise can't see).
+ */
+export interface BallContest {
+	/** Robots from *both* teams within `contest_dist` of the ball this frame. */
+	near: TeamPlayerId[];
+}
+
 /** A struct to store the ball state from a single frame. */
 export interface BallData {
 	/**
@@ -354,11 +371,6 @@ export interface ControllerSettings {
 	angle_kp: number;
 	/** Heading deadzone (rad) — yaw control outputs zero inside this band. */
 	angle_cutoff_distance: number;
-}
-
-export interface TeamPlayerId {
-	team_color: TeamColor;
-	player_id: PlayerId;
 }
 
 /** Which control the UI should render for a parameter. */
@@ -570,6 +582,26 @@ export interface PossessionConfig {
 	 * this long (breakbeam re-acquisition is never suppressed).
 	 */
 	release_suppress_secs: number;
+	/**
+	 * An *opposing* robot within this distance of the ball counts as pressing it.
+	 * Deliberately looser than `acquire_dist` (a presser sits ~one robot-radius
+	 * out, so it never registers as a proximity owner — which is why contests
+	 * were invisible). Used only by the contest signal, not ownership.
+	 */
+	contest_dist: number;
+	/**
+	 * The ball must be slower than this for a contest to register — a genuine pin
+	 * is ~stationary. Far tighter than `max_ball_speed`; a moving ball means
+	 * someone is already winning, so there's nothing to resolve.
+	 */
+	contest_speed_max: number;
+	/** Frames a contest must persist before it commits (react fast — urgent). */
+	contest_enter_frames: number;
+	/**
+	 * Frames an absent contest must persist before it clears (release slow — don't
+	 * drop on a single jittery opponent-position frame).
+	 */
+	contest_exit_frames: number;
 }
 
 /** Settings for the executor. */
@@ -650,6 +682,23 @@ export interface FieldGeometry {
 	goal_line_to_penalty_mark: number;
 	/** Ball radius in mm */
 	ball_radius: number;
+}
+
+/** A single robot's saved pose in a field snapshot (position + yaw, no velocity). */
+export interface RobotSnapshot {
+	id: PlayerId;
+	position: Vector2;
+	yaw: Angle;
+}
+
+/**
+ * A saved simulator field state: robot poses + ball position. Replayed by
+ * teleporting everything back into place.
+ */
+export interface FieldSnapshot {
+	blue: RobotSnapshot[];
+	yellow: RobotSnapshot[];
+	ball?: Vector2;
 }
 
 /** The game state, as reported by the referee. */
@@ -847,6 +896,11 @@ export interface Possession {
 	 * (held, but not currently backed by a fresh observation).
 	 */
 	stale: boolean;
+	/**
+	 * Set when the ball is being physically contested (see [`BallContest`]).
+	 * `None` in the common, uncontested case. Independent of `state`.
+	 */
+	contest?: BallContest;
 }
 
 export interface PostExecutorSettingsBody {
@@ -986,6 +1040,11 @@ export interface ReplayState {
 	markers: ReplayMarker[];
 }
 
+export interface SaveSnapshotBody {
+	name: string;
+	snapshot: FieldSnapshot;
+}
+
 export interface ScenarioArtifact {
 	tag: string;
 	value_json: string;
@@ -1033,6 +1092,11 @@ export interface SettingsSnapshotsResponse {
 	baseline?: SettingsSnapshot;
 	/** Auto-captured history, newest first. */
 	history: SettingsSnapshot[];
+}
+
+export interface SnapshotsResponse {
+	/** Stored snapshot names, sorted. */
+	names: string[];
 }
 
 /** A struct to store the world state from a single frame. */

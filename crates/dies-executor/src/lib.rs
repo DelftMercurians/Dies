@@ -694,7 +694,29 @@ impl Executor {
                 }
             } else {
                 tokio::select! {
-                    Some(ControlMsg::Stop) = self.command_rx.recv() => break,
+                    Some(msg) = self.command_rx.recv() => {
+                        match msg {
+                            ControlMsg::Stop => break,
+                            // Allow sim manipulation while paused, then emit a fresh
+                            // frame so the UI reflects the change without stepping physics.
+                            ControlMsg::SimulatorCmd(cmd) => {
+                                self.handle_simulator_cmd(&mut simulator, cmd);
+                                simulator.force_detection_packet();
+                                if let Some(det) = simulator.detection() {
+                                    self.update_from_vision_msg(det, simulator.time());
+                                }
+                            }
+                            ControlMsg::GcCommand { command } => {
+                                simulator.handle_gc_command(command);
+                            }
+                            ControlMsg::SetActiveTeams { .. } => {
+                                log::warn!("Setting active teams is not supported mid run");
+                            }
+                            // Other state changes (settings, overrides, GC) don't step
+                            // physics, so they're safe to apply while paused.
+                            msg => self.handle_control_msg(msg),
+                        }
+                    }
                     Some(tx) = self.info_channel_rx.recv() => {
                         let _  = tx.send(self.info());
                     }

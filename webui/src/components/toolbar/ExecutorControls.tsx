@@ -1,9 +1,8 @@
 import React from "react";
 import { Play, Pause, Square } from "lucide-react";
-import { useStatus, useSendCommand } from "@/api";
+import { useStatus, useSendCommand, useExecutorInfo } from "@/api";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
 /**
  * Executor control buttons: Play | Pause | Stop
@@ -24,11 +23,14 @@ const ExecutorControls: React.FC<ExecutorControlsProps> = ({
 }) => {
   const { data: backendState } = useStatus();
   const sendCommand = useSendCommand();
+  const executorInfo = useExecutorInfo();
 
   const executorStatus = backendState?.executor;
   const isRunning = executorStatus?.type === "RunningExecutor";
-  const isStopped =
-    executorStatus?.type === "None" || executorStatus?.type === "Failed";
+  const isSim = backendState?.ui_mode === "Simulation";
+  // Pause is only supported on the simulator (a live match can't be frozen).
+  const canPause = isRunning && isSim;
+  const isPaused = canPause && (executorInfo?.paused ?? false);
 
   const handlePlay = () => {
     if (!isRunning) {
@@ -38,8 +40,8 @@ const ExecutorControls: React.FC<ExecutorControlsProps> = ({
   };
 
   const handlePause = () => {
-    // Pause functionality - currently not implemented in backend
-    toast.info("Pause not yet implemented");
+    if (!canPause) return;
+    sendCommand({ type: "SetPause", data: !isPaused });
   };
 
   const handleStop = () => {
@@ -70,18 +72,23 @@ const ExecutorControls: React.FC<ExecutorControlsProps> = ({
       <div className="w-px h-full bg-border-subtle" />
 
       {/* Pause */}
-      <SimpleTooltip title="Pause executor" className="h-full">
+      <SimpleTooltip
+        title={isPaused ? "Resume executor" : "Pause executor"}
+        className="h-full"
+      >
         <button
           onClick={handlePause}
-          disabled={!isRunning}
+          disabled={!canPause}
           className={cn(
             "h-full w-7 flex items-center justify-center transition-colors",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
             "disabled:opacity-40 disabled:cursor-not-allowed",
-            "text-text-muted hover:text-accent-amber hover:bg-accent-amber/10",
+            isPaused
+              ? "bg-accent-amber/20 text-accent-amber"
+              : "text-text-muted hover:text-accent-amber hover:bg-accent-amber/10",
           )}
         >
-          <Pause className="w-3.5 h-3.5" />
+          <Pause className="w-3.5 h-3.5 fill-current" />
         </button>
       </SimpleTooltip>
 

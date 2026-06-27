@@ -35,6 +35,10 @@ pub const DRIBBLE_CORRECTION_STEP: f64 = 250.0;
 pub const DRIBBLE_CORRECTION_LIMIT: f64 = 350.0;
 /// Maximum distance to the ball for a steal to be worth attempting (M1 crude gate).
 pub const STEAL_MAX_DIST: f64 = 2500.0;
+/// Lateral step a contested carrier strafes off the squeeze axis to break a pin
+/// while keeping the ball (the keep-possession escape). Short — it only needs to
+/// move the opponent out from between us and goal, after which we replan normally.
+pub const ESCAPE_STEP: f64 = 300.0;
 /// How long a robot is excluded from re-selection after a NoProgress failure.
 pub const NOPROGRESS_TTL: f64 = 1.0;
 

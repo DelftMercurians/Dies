@@ -151,6 +151,7 @@ mod tests {
             freekick_kicker: None,
             possession: dies_strategy_protocol::Possession::Loose,
             possession_stale: false,
+            ball_contest: None,
         };
         TeamContext::new(snapshot, HashMap::new(), HashMap::new(), HashMap::new())
     }
@@ -178,6 +179,7 @@ mod tests {
             freekick_kicker: None,
             possession: dies_strategy_protocol::Possession::Loose,
             possession_stale: false,
+            ball_contest: None,
         });
         strategy.init(&world);
         assert!(strategy.init_called);
@@ -221,6 +223,7 @@ mod tests {
             freekick_kicker: None,
             possession: dies_strategy_protocol::Possession::Loose,
             possession_stale: false,
+            ball_contest: None,
         });
         strategy.init(&world);
         strategy.shutdown();

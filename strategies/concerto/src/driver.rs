@@ -9,6 +9,7 @@ use dies_strategy_api::prelude::*;
 use dies_strategy_api::{PassFailure, PassResult, World};
 
 use crate::config;
+use crate::geometry;
 use crate::planner::{CaptureKind, Engagement, PlanContext, Waypoint};
 
 /// Outcome of the current waypoint this tick.
@@ -259,7 +260,7 @@ impl Driver {
 
             // ── Capture: Pickup ─────────────────────────────────────────
             (Waypoint::Capture { .. }, Phase::Pickup) => {
-                let heading = heading_toward(ball_pos, opp_goal);
+                let heading = pickup_heading(world, active_id, ball_pos, opp_goal);
                 player.pickup_ball(heading);
                 player.set_role("picking");
                 match skill_status {
@@ -337,6 +338,41 @@ fn heading_toward(from: Vector2, to: Vector2) -> Angle {
     Angle::from_radians(d.y.atan2(d.x))
 }
 
+/// How strongly the off-axis escape direction bends the contested pickup heading
+/// away from the straight-at-goal aim (0 = aim at goal, larger = more sideways).
+const CONTEST_HEADING_BIAS: f64 = 0.7;
+
+/// Capture heading for the pickup phase. With no contest, aim straight at the
+/// opponent goal (unchanged). Under contest, blend the goal direction with the
+/// off-axis [`geometry::escape_direction`] so we scoop the loose ball to our open
+/// side instead of head-butting the opponent straight over it.
+fn pickup_heading(world: &World, robot: PlayerId, ball: Vector2, opp_goal: Vector2) -> Angle {
+    if world.ball_contest().is_none() {
+        return heading_toward(ball, opp_goal);
+    }
+    let robot_pos = world.own_player(robot).map(|p| p.position).unwrap_or(ball);
+    let presser = world
+        .principal_presser()
+        .and_then(|id| world.opp_player(id))
+        .map(|p| p.position)
+        .unwrap_or(ball);
+    let escape = geometry::escape_direction(
+        robot_pos,
+        presser,
+        ball,
+        world.opp_players(),
+        world.field_width() / 2.0,
+    );
+    let to_goal = opp_goal - ball;
+    let to_goal = if to_goal.norm() > 1e-6 {
+        to_goal / to_goal.norm()
+    } else {
+        Vector2::new(1.0, 0.0)
+    };
+    let blended = to_goal + escape * CONTEST_HEADING_BIAS;
+    Angle::from_radians(blended.y.atan2(blended.x))
+}
+
 /// Map a typed pass failure onto the driver's coarse `FailReason`. The planner
 /// only needs enough granularity to drive its anti-loop and next-action choice.
 fn map_pass_failure(reason: PassFailure) -> FailReason {
@@ -392,6 +428,7 @@ mod tests {
             freekick_kicker: None,
             possession: Possession::We(PlayerId::new(2)),
             possession_stale: false,
+            ball_contest: None,
         }
     }
 

@@ -458,6 +458,7 @@ mod tests {
             freekick_kicker: None,
             possession: Possession::Loose,
             possession_stale: false,
+            ball_contest: None,
         })
     }
 

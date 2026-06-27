@@ -19,7 +19,8 @@
 //! misfire where the ball never left self-corrects within a frame.
 
 use dies_core::{
-    BallData, PlayerData, PossessionConfig, PossessionState, TeamColor, TeamPlayerId, Vector2,
+    BallContest, BallData, PlayerData, PossessionConfig, PossessionState, TeamColor, TeamPlayerId,
+    Vector2,
 };
 
 /// Raw, memoryless classification for a single frame.
@@ -45,6 +46,31 @@ fn order_key(t: &TeamPlayerId) -> (u8, u32) {
     (team, t.player_id.as_u32())
 }
 
+/// Memoryless contest observation from the per-robot candidate list: at least one
+/// robot from *each* team within `contest_dist` of a ball slower than
+/// `contest_speed_max`. `None` otherwise. The near set spans both teams.
+fn classify_contest(
+    cands: &[(TeamPlayerId, f64, bool, bool)],
+    ball_speed: f64,
+    cfg: &PossessionConfig,
+) -> Option<BallContest> {
+    if ball_speed >= cfg.contest_speed_max {
+        return None;
+    }
+    let near: Vec<TeamPlayerId> = cands
+        .iter()
+        .filter(|(_, dist, _, _)| *dist <= cfg.contest_dist)
+        .map(|(who, _, _, _)| *who)
+        .collect();
+    let has_blue = near.iter().any(|w| w.team_color == TeamColor::Blue);
+    let has_yellow = near.iter().any(|w| w.team_color == TeamColor::Yellow);
+    if has_blue && has_yellow {
+        Some(BallContest { near })
+    } else {
+        None
+    }
+}
+
 /// Debouncing possession tracker. Hold across ticks; feed `update` each frame.
 pub struct PossessionTracker {
     stable: PossessionState,
@@ -59,6 +85,12 @@ pub struct PossessionTracker {
     released_at: f64,
     /// A kick reported since the last `update`, consumed on the next one.
     pending_release: Option<TeamPlayerId>,
+    /// Committed contest belief — a *separate* debounce track from ownership, so
+    /// it never perturbs the `accumulate`/`commit` state machine above.
+    contest_stable: Option<BallContest>,
+    /// Consecutive frames the live contest observation has disagreed with
+    /// `contest_stable` (drives the enter/exit hysteresis).
+    contest_count: u32,
 }
 
 impl Default for PossessionTracker {
@@ -78,6 +110,8 @@ impl PossessionTracker {
             released_by: None,
             released_at: 0.0,
             pending_release: None,
+            contest_stable: None,
+            contest_count: 0,
         }
     }
 
@@ -86,6 +120,7 @@ impl PossessionTracker {
         dies_core::Possession {
             state: self.stable.clone(),
             stale: self.stale,
+            contest: self.contest_stable.clone(),
         }
     }
 
@@ -114,8 +149,19 @@ impl PossessionTracker {
             }
         }
 
-        let raw = self.classify(ball, blue, yellow, controlled_blue, controlled_yellow, cfg);
+        let (raw, contest_obs) =
+            self.classify(ball, blue, yellow, controlled_blue, controlled_yellow, cfg);
         self.stale = false;
+
+        // Contest is a separate, parallel track (orthogonal to ownership). On a
+        // detection dropout we clear it outright — a contest is a live geometric
+        // fact, not something to coast.
+        if matches!(raw, RawClass::Unknown) {
+            self.contest_stable = None;
+            self.contest_count = 0;
+        } else {
+            self.update_contest(contest_obs, cfg);
+        }
 
         match raw {
             RawClass::Unknown => {
@@ -154,7 +200,8 @@ impl PossessionTracker {
     }
 
     /// Memoryless classification, hysteresis-aware via the current stable owner
-    /// (who gets the looser `release_dist` retain band).
+    /// (who gets the looser `release_dist` retain band). Also returns the raw,
+    /// memoryless contest observation (debounced separately by the caller).
     fn classify(
         &self,
         ball: Option<&BallData>,
@@ -163,10 +210,10 @@ impl PossessionTracker {
         controlled_blue: bool,
         controlled_yellow: bool,
         cfg: &PossessionConfig,
-    ) -> RawClass {
+    ) -> (RawClass, Option<BallContest>) {
         let ball = match ball {
             Some(b) if b.detected => b,
-            _ => return RawClass::Unknown,
+            _ => return (RawClass::Unknown, None),
         };
         let ball_pos = ball.position.xy();
         let ball_speed = ball.velocity.xy().norm();
@@ -193,21 +240,27 @@ impl PossessionTracker {
             })
             .collect();
 
+        // Contest (orthogonal to ownership): both teams crowding a slow ball.
+        let contest = classify_contest(&cands, ball_speed, cfg);
+
         // Hard evidence: breakbeam, gated on the ball being near the dribbler.
         let breakbeam_owner = cands
             .iter()
             .filter(|(_, dist, bb, _)| *bb && *dist <= cfg.breakbeam_gate_dist)
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((who, _, _, _)) = breakbeam_owner {
-            return RawClass::Owned {
-                who: *who,
-                breakbeam: true,
-            };
+            return (
+                RawClass::Owned {
+                    who: *who,
+                    breakbeam: true,
+                },
+                contest,
+            );
         }
 
         // A fast ball can't be possessed by proximity (only breakbeam, above).
         if ball_speed >= cfg.max_ball_speed {
-            return RawClass::Loose;
+            return (RawClass::Loose, contest);
         }
 
         // Soft evidence: proximity, but *only* for robots we don't control —
@@ -232,7 +285,7 @@ impl PossessionTracker {
 
         let (closest, closest_dist) = match in_control.first() {
             Some(&(who, dist)) => (who, dist),
-            None => return RawClass::Loose,
+            None => return (RawClass::Loose, contest),
         };
 
         // Everyone within the ambiguity margin of the closest is a co-candidate.
@@ -241,7 +294,7 @@ impl PossessionTracker {
             .filter(|(_, dist)| dist - closest_dist < cfg.ambiguity_margin)
             .map(|(who, _)| *who)
             .collect();
-        if candidates.len() >= 2 {
+        let raw = if candidates.len() >= 2 {
             candidates.sort_by_key(order_key);
             RawClass::Contested(candidates)
         } else {
@@ -249,6 +302,35 @@ impl PossessionTracker {
                 who: closest,
                 breakbeam: false,
             }
+        };
+        (raw, contest)
+    }
+
+    /// Debounce the raw contest observation into `contest_stable` with asymmetric
+    /// enter/exit hysteresis. While active, the member list is refreshed every
+    /// frame (only the active/inactive *edge* is debounced, not set membership —
+    /// that would thrash as opponent positions jitter).
+    fn update_contest(&mut self, observed: Option<BallContest>, cfg: &PossessionConfig) {
+        let active_now = observed.is_some();
+        let active_before = self.contest_stable.is_some();
+        if active_now == active_before {
+            // No edge pending: reset the counter and refresh members if active.
+            self.contest_count = 0;
+            if observed.is_some() {
+                self.contest_stable = observed;
+            }
+            return;
+        }
+        // An edge is pending; commit once it has persisted long enough.
+        self.contest_count += 1;
+        let needed = if active_now {
+            cfg.contest_enter_frames
+        } else {
+            cfg.contest_exit_frames
+        };
+        if self.contest_count >= needed {
+            self.contest_stable = observed;
+            self.contest_count = 0;
         }
     }
 
@@ -276,5 +358,158 @@ impl PossessionTracker {
         self.stable = new;
         self.candidate = None;
         self.candidate_count = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dies_core::{PlayerId, Vector3};
+
+    fn ball(speed_x: f64) -> BallData {
+        BallData {
+            timestamp: 0.0,
+            position: Vector3::zeros(),
+            raw_position: vec![],
+            velocity: Vector3::new(speed_x, 0.0, 0.0),
+            detected: true,
+        }
+    }
+
+    fn player(id: u32, x: f64, y: f64, breakbeam: bool) -> PlayerData {
+        let mut p = PlayerData::new(PlayerId::new(id));
+        p.position = Vector2::new(x, y);
+        p.breakbeam_ball_detected = breakbeam;
+        p
+    }
+
+    fn contest_teams(c: &BallContest) -> (bool, bool) {
+        (
+            c.near.iter().any(|w| w.team_color == TeamColor::Blue),
+            c.near.iter().any(|w| w.team_color == TeamColor::Yellow),
+        )
+    }
+
+    /// The headline case: our (blue, controlled) robot holds the ball via breakbeam
+    /// while an opponent presses from close range on a near-stationary ball. Owner
+    /// stays us, *and* the contest signal fires — the deadlock the strategy was
+    /// previously blind to.
+    #[test]
+    fn breakbeam_owner_under_opponent_press_is_owned_and_contested() {
+        let cfg = PossessionConfig::default();
+        let mut t = PossessionTracker::new();
+        let blue = vec![player(1, 0.0, 0.0, true)];
+        let yellow = vec![player(2, 200.0, 0.0, false)]; // within contest_dist (220)
+        let b = ball(0.0);
+
+        // Breakbeam owns in one frame; contest needs `contest_enter_frames`.
+        let mut poss = dies_core::Possession::default();
+        for i in 0..cfg.contest_enter_frames {
+            poss = t.update(
+                Some(&b),
+                &blue,
+                &yellow,
+                true,
+                false,
+                &cfg,
+                i as f64 * 0.016,
+            );
+        }
+
+        match poss.state {
+            PossessionState::Owned { owner } => {
+                assert_eq!(owner.team_color, TeamColor::Blue);
+                assert_eq!(owner.player_id, PlayerId::new(1));
+            }
+            other => panic!("expected Owned by us, got {other:?}"),
+        }
+        let contest = poss.contest.expect("contest should fire");
+        assert_eq!(contest_teams(&contest), (true, true), "both teams crowding");
+    }
+
+    /// Carrying the ball in open space (no opponent near) is not a contest.
+    #[test]
+    fn clean_possession_is_not_contested() {
+        let cfg = PossessionConfig::default();
+        let mut t = PossessionTracker::new();
+        let blue = vec![player(1, 0.0, 0.0, true)];
+        let yellow = vec![player(2, 3000.0, 0.0, false)]; // far away
+        let b = ball(0.0);
+
+        let mut poss = dies_core::Possession::default();
+        for i in 0..(cfg.contest_enter_frames + 2) {
+            poss = t.update(
+                Some(&b),
+                &blue,
+                &yellow,
+                true,
+                false,
+                &cfg,
+                i as f64 * 0.016,
+            );
+        }
+        assert!(poss.contest.is_none(), "no opponent near → no contest");
+    }
+
+    /// A fast ball can't be a static pin, so it never reads as contested even with
+    /// both teams nearby.
+    #[test]
+    fn fast_ball_is_not_contested() {
+        let cfg = PossessionConfig::default();
+        let mut t = PossessionTracker::new();
+        let blue = vec![player(1, 0.0, 0.0, false)];
+        let yellow = vec![player(2, 150.0, 0.0, false)];
+        let b = ball(cfg.contest_speed_max + 100.0); // above the slow-ball gate
+
+        let mut poss = dies_core::Possession::default();
+        for i in 0..(cfg.contest_enter_frames + 2) {
+            poss = t.update(
+                Some(&b),
+                &blue,
+                &yellow,
+                true,
+                false,
+                &cfg,
+                i as f64 * 0.016,
+            );
+        }
+        assert!(poss.contest.is_none(), "fast ball → no contest");
+    }
+
+    /// Enter needs `contest_enter_frames`; exit needs the (longer) `contest_exit_frames`.
+    #[test]
+    fn contest_debounce_respects_enter_and_exit_frames() {
+        let cfg = PossessionConfig::default();
+        let mut t = PossessionTracker::new();
+        let blue = vec![player(1, 0.0, 0.0, true)];
+        let near = vec![player(2, 200.0, 0.0, false)];
+        let far = vec![player(2, 3000.0, 0.0, false)];
+        let b = ball(0.0);
+        let mut now = 0.0;
+        let mut tick = |t: &mut PossessionTracker, yellow: &[PlayerData]| {
+            now += 0.016;
+            t.update(Some(&b), &blue, yellow, true, false, &cfg, now)
+        };
+
+        // Enter: not contested until the enter threshold.
+        for _ in 0..(cfg.contest_enter_frames - 1) {
+            assert!(tick(&mut t, &near).contest.is_none());
+        }
+        assert!(
+            tick(&mut t, &near).contest.is_some(),
+            "commits at enter_frames"
+        );
+
+        // Exit: opponent leaves, but the belief is held for exit_frames.
+        for _ in 0..(cfg.contest_exit_frames - 1) {
+            assert!(
+                tick(&mut t, &far).contest.is_some(),
+                "held during exit window"
+            );
+        }
+        assert!(
+            tick(&mut t, &far).contest.is_none(),
+            "clears at exit_frames"
+        );
     }
 }

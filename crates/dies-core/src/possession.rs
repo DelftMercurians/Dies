@@ -35,6 +35,18 @@ impl PossessionState {
     }
 }
 
+/// A physical contest over the ball, *orthogonal* to ownership: at least one
+/// robot from each team is crowding a near-stationary ball. Fires even while the
+/// ball reads `Owned` (our breakbeam latches ownership the instant we touch it,
+/// hiding an opponent pressing from the far side — the deadlock the strategy
+/// otherwise can't see).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[typeshare]
+pub struct BallContest {
+    /// Robots from *both* teams within `contest_dist` of the ball this frame.
+    pub near: Vec<TeamPlayerId>,
+}
+
 /// Stable, debounced possession with a staleness flag.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
 #[typeshare]
@@ -43,6 +55,9 @@ pub struct Possession {
     /// True while the belief is being coasted through a vision/contact dropout
     /// (held, but not currently backed by a fresh observation).
     pub stale: bool,
+    /// Set when the ball is being physically contested (see [`BallContest`]).
+    /// `None` in the common, uncontested case. Independent of `state`.
+    pub contest: Option<BallContest>,
 }
 
 /// Tunable parameters for the unified possession metric. One central home for
@@ -74,6 +89,20 @@ pub struct PossessionConfig {
     /// After a commanded kick, suppress the kicker's *proximity* re-acquisition for
     /// this long (breakbeam re-acquisition is never suppressed).
     pub release_suppress_secs: f64,
+    /// An *opposing* robot within this distance of the ball counts as pressing it.
+    /// Deliberately looser than `acquire_dist` (a presser sits ~one robot-radius
+    /// out, so it never registers as a proximity owner — which is why contests
+    /// were invisible). Used only by the contest signal, not ownership.
+    pub contest_dist: f64,
+    /// The ball must be slower than this for a contest to register — a genuine pin
+    /// is ~stationary. Far tighter than `max_ball_speed`; a moving ball means
+    /// someone is already winning, so there's nothing to resolve.
+    pub contest_speed_max: f64,
+    /// Frames a contest must persist before it commits (react fast — urgent).
+    pub contest_enter_frames: u32,
+    /// Frames an absent contest must persist before it clears (release slow — don't
+    /// drop on a single jittery opponent-position frame).
+    pub contest_exit_frames: u32,
 }
 
 impl Default for PossessionConfig {
@@ -87,6 +116,10 @@ impl Default for PossessionConfig {
             max_ball_speed: 1000.0,
             hold_secs: 0.25,
             release_suppress_secs: 0.2,
+            contest_dist: 220.0,
+            contest_speed_max: 200.0,
+            contest_enter_frames: 2,
+            contest_exit_frames: 5,
         }
     }
 }

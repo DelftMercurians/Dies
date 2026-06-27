@@ -8,6 +8,13 @@ import { TeamColor, Vector2 } from "../bindings";
 export const maskEditModeAtom = atom<boolean>(false);
 
 /**
+ * Whether "Sim Edit" mode is active. When on, dragging on the field teleports
+ * robots/ball in the simulator, and shift-dragging the ball fires a slingshot
+ * kick. Sim-only; mutually exclusive with {@link maskEditModeAtom}.
+ */
+export const simEditModeAtom = atom<boolean>(false);
+
+/**
  * Last manual MoveTo target per player, tracked client-side (the executor does
  * not echo override targets back). Keyed by `${team}:${playerId}`. Ephemeral —
  * pruned when a player leaves manual control.

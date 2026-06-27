@@ -9,7 +9,7 @@
 
 use dies_core::{FieldGeometry, Vector2};
 use dies_strategy_protocol::{
-    BallState, GameState, PlayerId, PlayerState, Possession, WorldSnapshot,
+    BallContest, BallState, GameState, PlayerId, PlayerState, Possession, WorldSnapshot,
 };
 
 /// A rectangle defined by min and max corners.
@@ -218,6 +218,31 @@ impl World {
         self.snapshot.possession_stale
     }
 
+    /// The live physical contest over the ball, if any. Present when robots from
+    /// both teams are crowding a near-stationary ball — *independent* of
+    /// `possession()`, which can read `We`/`Opp` while a robot is pressing the
+    /// holder from the far side. Use it to break a deadlock instead of pushing in.
+    pub fn ball_contest(&self) -> Option<&BallContest> {
+        self.snapshot.ball_contest.as_ref()
+    }
+
+    /// The opponent pressing the contested ball most directly — the contesting
+    /// opponent nearest the ball. `None` when there is no contest, no opposing
+    /// presser, or the ball isn't visible.
+    pub fn principal_presser(&self) -> Option<PlayerId> {
+        let ball = self.ball_position()?;
+        let contest = self.ball_contest()?;
+        contest
+            .opp
+            .iter()
+            .filter_map(|id| {
+                self.opp_player(*id)
+                    .map(|p| (*id, (p.position - ball).norm()))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _)| id)
+    }
+
     // ========== Players ==========
 
     /// Get all own players (our team's robots).
@@ -361,6 +386,7 @@ mod tests {
             freekick_kicker: None,
             possession: dies_strategy_protocol::Possession::Loose,
             possession_stale: false,
+            ball_contest: None,
         })
     }
 

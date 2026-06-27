@@ -797,6 +797,22 @@ impl Simulation {
         self.last_detection_packet.take()
     }
 
+    /// Force a fresh detection packet immediately, bypassing the update interval.
+    /// Used to refresh the UI after manipulating sim state (e.g. teleporting a
+    /// robot or the ball) while the executor is paused and not stepping physics.
+    ///
+    /// Advances the clock by one vision step first: the world tracker's Kalman
+    /// filter ignores any frame with `dt <= 0`, so without this the *filtered*
+    /// position (the default UI view) would never reflect a paused teleport.
+    /// A non-zero dt also lets the tracker's teleport-detection snap the filter
+    /// straight to the new position.
+    pub fn force_detection_packet(&mut self) {
+        self.current_time += self.config.vision_update_step;
+        self.query_pipeline
+            .update(&self.rigid_body_set, &self.collider_set);
+        self.new_detection_packet();
+    }
+
     pub fn handle_gc_command(&mut self, command: GcSimCommand) {
         match command {
             GcSimCommand::KickOff { team_color } => {

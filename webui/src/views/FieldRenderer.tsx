@@ -65,6 +65,8 @@ export class FieldRenderer {
   /** In-progress mask drag rectangle, in field mm: [x1, y1, x2, y2]. */
   private maskDraft: [number, number, number, number] | null = null;
   private manualTargets: ManualTargetMarker[] = [];
+  /** In-progress slingshot kick: ball origin + current pull-back point (mm). */
+  private simKickDraft: { ball: Vector2; pull: Vector2 } | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -81,6 +83,10 @@ export class FieldRenderer {
 
   setManualTargets(targets: ManualTargetMarker[]) {
     this.manualTargets = targets;
+  }
+
+  setSimKickDraft(draft: { ball: Vector2; pull: Vector2 } | null) {
+    this.simKickDraft = draft;
   }
 
   setWorldData(world: WorldData | null) {
@@ -209,6 +215,51 @@ export class FieldRenderer {
 
     this.manualTargets.forEach((t) => this.drawManualTarget(t));
     this.drawMaskDraft();
+    this.drawSimKickDraft();
+  }
+
+  /** Slingshot aim: dashed pull-back line + solid launch arrow at the ball. */
+  private drawSimKickDraft() {
+    const k = this.simKickDraft;
+    if (!k) return;
+    const [bx, by] = this.fieldToCanvas(k.ball);
+    const [px, py] = this.fieldToCanvas(k.pull);
+    // Launch is opposite the pull, same magnitude (in canvas px).
+    const lx = bx - (px - bx);
+    const ly = by - (py - by);
+    this.ctx.save();
+    // Pull-back band (where the cursor is).
+    this.ctx.strokeStyle = "#ffffff88";
+    this.ctx.lineWidth = 1.5;
+    this.ctx.setLineDash([5, 4]);
+    this.ctx.beginPath();
+    this.ctx.moveTo(bx, by);
+    this.ctx.lineTo(px, py);
+    this.ctx.stroke();
+    this.ctx.setLineDash([]);
+    // Launch arrow.
+    this.ctx.strokeStyle = "#fb923c";
+    this.ctx.fillStyle = "#fb923c";
+    this.ctx.lineWidth = 2.5;
+    this.ctx.beginPath();
+    this.ctx.moveTo(bx, by);
+    this.ctx.lineTo(lx, ly);
+    this.ctx.stroke();
+    const ang = Math.atan2(ly - by, lx - bx);
+    const head = 9;
+    this.ctx.beginPath();
+    this.ctx.moveTo(lx, ly);
+    this.ctx.lineTo(
+      lx - head * Math.cos(ang - Math.PI / 6),
+      ly - head * Math.sin(ang - Math.PI / 6)
+    );
+    this.ctx.lineTo(
+      lx - head * Math.cos(ang + Math.PI / 6),
+      ly - head * Math.sin(ang + Math.PI / 6)
+    );
+    this.ctx.closePath();
+    this.ctx.fill();
+    this.ctx.restore();
   }
 
   /** Shade the region excluded by the field mask + outline the kept region. */

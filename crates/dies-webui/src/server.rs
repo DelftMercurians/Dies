@@ -11,7 +11,7 @@ use axum::{
     http::header,
     middleware,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use dies_core::{
@@ -25,9 +25,10 @@ use tower_http::services::ServeDir;
 use tower_layer::Layer;
 
 use crate::{
-    executor_task::ExecutorTask, routes, settings_store::SettingsStore, ConsoleLogMessage,
-    ControlledTeam, ExecutorStatus, ReplayState, SettingsSnapshot, SettingsSnapshotsResponse,
-    UiCommand, UiConfig, UiEnvironment, UiMode, UiStatus,
+    executor_task::ExecutorTask, routes, settings_store::SettingsStore, snapshots::SnapshotStore,
+    ConsoleLogMessage, ControlledTeam, ExecutorStatus, FieldSnapshot, ReplayState,
+    SettingsSnapshot, SettingsSnapshotsResponse, UiCommand, UiConfig, UiEnvironment, UiMode,
+    UiStatus,
 };
 
 pub struct ServerState {
@@ -56,6 +57,8 @@ pub struct ServerState {
     settings_file: PathBuf,
     /// Local store backing the settings baseline + auto-history (explore/revert).
     settings_store: SettingsStore,
+    /// Local store of saved simulator field-state snapshots.
+    snapshot_store: SnapshotStore,
 }
 
 impl ServerState {
@@ -71,12 +74,12 @@ impl ServerState {
         let settings = ExecutorSettings::load_or_insert(&settings_file);
         // Snapshots live in a gitignored `.dies-settings/` next to the settings
         // file, so the explore/revert history stays machine-local.
-        let snapshot_dir = settings_file
+        let settings_parent = settings_file
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."))
-            .join(".dies-settings");
-        let settings_store = SettingsStore::load(snapshot_dir);
+            .unwrap_or_else(|| Path::new("."));
+        let settings_store = SettingsStore::load(settings_parent.join(".dies-settings"));
+        let snapshot_store = SnapshotStore::load(settings_parent.join(".dies-snapshots"));
         let (scenario_log_tx, _) = broadcast::channel(256);
         // Higher capacity than scenario logs: backend logs are far chattier. A
         // lagging WS client drops old entries (handled in the WS loop) rather
@@ -116,6 +119,7 @@ impl ServerState {
             log_directory,
             settings_file,
             settings_store,
+            snapshot_store,
         }
     }
 
@@ -183,6 +187,22 @@ impl ServerState {
     /// Current baseline + auto-history for the explore/revert UI.
     pub fn settings_snapshots(&self) -> SettingsSnapshotsResponse {
         self.settings_store.snapshots()
+    }
+
+    pub fn list_field_snapshots(&self) -> Vec<String> {
+        self.snapshot_store.list()
+    }
+
+    pub fn get_field_snapshot(&self, name: &str) -> Option<FieldSnapshot> {
+        self.snapshot_store.get(name)
+    }
+
+    pub fn save_field_snapshot(&self, name: &str, snapshot: &FieldSnapshot) -> bool {
+        self.snapshot_store.save(name, snapshot)
+    }
+
+    pub fn delete_field_snapshot(&self, name: &str) -> bool {
+        self.snapshot_store.delete(name)
     }
 }
 
@@ -516,6 +536,14 @@ async fn start_webserver(
         .route("/api/list", get(routes::list_files))
         .route("/api/logs", get(routes::get_logs))
         .route("/api/scenarios", get(routes::get_scenarios))
+        .route(
+            "/api/snapshots",
+            get(routes::get_snapshots).post(routes::post_snapshot),
+        )
+        .route(
+            "/api/snapshots/:name",
+            get(routes::get_snapshot).delete(routes::delete_snapshot),
+        )
         .nest_service("/", serve_dir_with_csp.layer(serve_dir.clone()))
         .fallback_service(serve_dir)
         .with_state(Arc::clone(&state));
