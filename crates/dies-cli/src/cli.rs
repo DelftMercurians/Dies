@@ -117,6 +117,11 @@ enum Command {
         /// Write the MatchResult JSON to this file instead of stdout.
         #[clap(long)]
         output: Option<PathBuf>,
+
+        /// Record a full binary match log under this directory (for the
+        /// analytics harness). Omit to skip logging.
+        #[clap(long)]
+        log_dir: Option<PathBuf>,
     },
 }
 
@@ -328,6 +333,7 @@ impl Cli {
                 duration,
                 max_goals,
                 ref output,
+                ref log_dir,
             }) => {
                 let build = self.strategy_mode() != StrategyMode::Launch;
                 match self_play(
@@ -337,6 +343,7 @@ impl Cli {
                     duration,
                     max_goals,
                     output.clone(),
+                    log_dir.clone(),
                     build,
                 )
                 .await

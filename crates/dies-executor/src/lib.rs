@@ -643,6 +643,16 @@ impl Executor {
             self.update_from_gc_msg(gc_message);
         }
         for ev in simulator.take_referee_events() {
+            // Record sim referee events (goals, no-progress, ball-out, fouls,
+            // violations) to the log so analytics can attribute goals and count
+            // stoppage causes. These otherwise only reach the UI announcer.
+            self.log_event(
+                "sim_referee",
+                serde_json::json!({
+                    "kind": ev.kind,
+                    "team": ev.team.map(|t| format!("{t:?}")),
+                }),
+            );
             self.announcer.on_sim_event(&ev, self.last_t);
         }
         // Drain feedback in a deterministic order. `feedback()` returns a
@@ -773,6 +783,33 @@ impl Executor {
                 .map_err(|e| anyhow::anyhow!("strategy startup failed: {e}"))?;
         }
 
+        // Optionally record a full binary log of the match for offline analytics.
+        let log_path = if let Some(base) = cfg.log_dir.clone() {
+            let session = format!(
+                "selfplay_{}_vs_{}_seed{}",
+                cfg.blue_strategy, cfg.yellow_strategy, cfg.seed
+            );
+            let unix = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            let meta = dies_logger::MetaJson::new(
+                unix,
+                true,
+                Some(cfg.blue_strategy.clone()),
+                Some(cfg.yellow_strategy.clone()),
+                dies_logger::side_assignment_str(self.settings.team_configuration.side_assignment)
+                    .to_string(),
+            );
+            dies_logger::worker::ArrowLogger::init(base.clone());
+            dies_logger::worker::log_start(&session, meta);
+            dies_logger::worker::log_set_field_geom(simulator.field_geometry());
+            dies_logger::worker::log_settings_baseline(0, &self.settings);
+            Some(base.join(&session).to_string_lossy().into_owned())
+        } else {
+            None
+        };
+
         let dt = SIMULATION_DT;
         let cmd_period = CMD_INTERVAL.as_secs_f64();
         let mut next_cmd_t = 0.0_f64;
@@ -876,6 +913,11 @@ impl Executor {
             h.shutdown();
         }
 
+        // Flush + compact the log before returning so the artifact is complete.
+        if log_path.is_some() {
+            dies_logger::worker::log_close_blocking(Duration::from_secs(30));
+        }
+
         let (blue_score, yellow_score) = simulator.score();
         Ok(headless::MatchResult {
             blue_strategy: cfg.blue_strategy,
@@ -886,6 +928,7 @@ impl Executor {
             duration_secs: simulator.time_secs(),
             goals,
             end_reason,
+            log_path,
             trace_hash,
         })
     }

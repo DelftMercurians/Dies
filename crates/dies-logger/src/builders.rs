@@ -135,6 +135,7 @@ pub struct PlayersBuilder {
     pack_voltage_0: Float32Builder,
     pack_voltage_1: Float32Builder,
     breakbeam_ball_detected: BooleanBuilder,
+    has_ball: BooleanBuilder,
     imu_status: StringBuilder,
     kicker_status: StringBuilder,
     handicaps: StringBuilder,
@@ -161,6 +162,7 @@ impl PlayersBuilder {
         self.pack_voltage_1.append_option(r.pack_voltage_1);
         self.breakbeam_ball_detected
             .append_value(r.breakbeam_ball_detected);
+        self.has_ball.append_value(r.has_ball);
         self.imu_status.append_option(r.imu_status.as_deref());
         self.kicker_status.append_option(r.kicker_status.as_deref());
         self.handicaps.append_value(&r.handicaps);
@@ -190,6 +192,7 @@ impl PlayersBuilder {
             Arc::new(self.pack_voltage_0.finish()),
             Arc::new(self.pack_voltage_1.finish()),
             Arc::new(self.breakbeam_ball_detected.finish()),
+            Arc::new(self.has_ball.finish()),
             Arc::new(self.imu_status.finish()),
             Arc::new(self.kicker_status.finish()),
             Arc::new(self.handicaps.finish()),

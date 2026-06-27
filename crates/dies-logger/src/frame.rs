@@ -62,6 +62,9 @@ pub struct PlayerRow {
     pub pack_voltage_0: Option<f32>,
     pub pack_voltage_1: Option<f32>,
     pub breakbeam_ball_detected: bool,
+    /// Unified possession truth: this player is the confident ball owner (from
+    /// the world tracker's possession metric, breakbeam-latched + proximity).
+    pub has_ball: bool,
     pub imu_status: Option<String>,
     pub imu_readings: Option<[f32; 6]>,
     pub kicker_status: Option<String>,
@@ -222,6 +225,7 @@ fn player_row(team: TeamColor, p: &PlayerData) -> PlayerRow {
         pack_voltage_0: pv0,
         pack_voltage_1: pv1,
         breakbeam_ball_detected: p.breakbeam_ball_detected,
+        has_ball: p.has_ball,
         imu_status: p.imu_status.map(|s| sys_status_str(s).to_string()),
         imu_readings: p.imu_readings,
         kicker_status: p.kicker_status.map(|s| sys_status_str(s).to_string()),

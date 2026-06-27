@@ -87,6 +87,7 @@ cached_schema!(
     nullable("pack_voltage_0", DataType::Float32),
     nullable("pack_voltage_1", DataType::Float32),
     required("breakbeam_ball_detected", DataType::Boolean),
+    required("has_ball", DataType::Boolean),
     nullable("imu_status", DataType::Utf8),
     nullable("kicker_status", DataType::Utf8),
     required("handicaps", DataType::Utf8),

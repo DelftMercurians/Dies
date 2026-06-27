@@ -20,6 +20,7 @@ pub async fn self_play(
     duration: f64,
     max_goals: Option<u32>,
     output: Option<PathBuf>,
+    log_dir: Option<PathBuf>,
     build: bool,
 ) -> Result<()> {
     // Build both strategy binaries into target/debug (where the executor looks).
@@ -36,6 +37,7 @@ pub async fn self_play(
         seed,
         duration_secs: duration,
         max_goals,
+        log_dir,
     };
 
     // run_headless is a blocking sync loop (blocking IPC + free-running sim), so

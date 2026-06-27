@@ -21,6 +21,9 @@ pub struct HeadlessConfig {
     pub duration_secs: f64,
     /// Optional early stop once the combined score reaches this many goals.
     pub max_goals: Option<u32>,
+    /// If set, write a full Dies binary log of the match under this base
+    /// directory (one session dir per match), for offline analytics.
+    pub log_dir: Option<std::path::PathBuf>,
 }
 
 /// Why a headless match ended.
@@ -58,6 +61,8 @@ pub struct MatchResult {
     pub duration_secs: f64,
     pub goals: Vec<GoalEvent>,
     pub end_reason: EndReason,
+    /// Path to the match log session directory, if logging was enabled.
+    pub log_path: Option<String>,
     /// Rolling fingerprint of the whole simulated trajectory (ball + player
     /// poses, every frame). Identical for identical `(seed, strategies)` runs;
     /// differs as soon as the match diverges. Lets two runs be compared for
