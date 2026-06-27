@@ -84,6 +84,18 @@ pub trait ExecutableSkill: Send {
     /// Human-readable description of the skill's current internal state, shown in
     /// the UI alongside the status (e.g. `"approaching ball"`, `"aiming"`).
     fn description(&self) -> String;
+
+    /// Whether this is a one-shot skill that must NOT be auto-restarted when the
+    /// same command type keeps arriving after it has completed.
+    ///
+    /// Continuous skills (e.g. `GoToPos`, `Dribble`) return `false` (the default):
+    /// a repeated command after completion re-activates them against the latest
+    /// params. One-shot skills with an irreversible effect (e.g. shooting) return
+    /// `true` so they latch their terminal result instead of re-firing — a fresh
+    /// instance is only created when the commanded skill type actually changes.
+    fn is_oneshot(&self) -> bool {
+        false
+    }
 }
 
 /// Map the executor's `SkillStatus` to the UI-facing `SkillState` in `dies-core`.
@@ -174,11 +186,14 @@ impl SkillExecutor {
                 if !skill.matches_command(cmd) {
                     true
                 } else {
-                    // Same type, but if skill completed, start new instance
+                    // Same type, completed: restart only for continuous skills.
+                    // One-shot skills (e.g. shooting) latch their result so a
+                    // repeated command can't re-fire them — the driver always
+                    // interposes a different command before the next genuine shot.
                     matches!(
                         state.last_status,
                         SkillStatus::Succeeded | SkillStatus::Failed
-                    )
+                    ) && !skill.is_oneshot()
                 }
             }
         };

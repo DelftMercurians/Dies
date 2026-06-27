@@ -156,6 +156,21 @@ impl SkillParams for ReflexShootParams {
     }
 }
 
+/// Parameters for `DribbleShoot` skill.
+#[derive(Clone, Debug)]
+pub struct DribbleShootParams {
+    /// Heading to aim the shot along (the robot orbits the ball to face it).
+    pub target_heading: Angle,
+}
+
+impl SkillParams for DribbleShootParams {
+    fn to_command(&self) -> SkillCommand {
+        SkillCommand::DribbleShoot {
+            target_heading: self.target_heading,
+        }
+    }
+}
+
 /// Parameters for `Receive` skill.
 #[derive(Clone, Debug)]
 pub struct ReceiveParams {

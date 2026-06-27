@@ -3,9 +3,9 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerFeedbackMsg, PlayerId,
-    PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamPlayerId, Vector2, Vector3,
-    WorldInstant, WorldUpdate,
+    Angle, BallData, DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerData,
+    PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor,
+    TeamPlayerId, Vector2, Vector3, WorldData, WorldInstant, WorldUpdate,
 };
 use dies_logger::worker;
 use dies_protos::{
@@ -423,6 +423,11 @@ pub struct Executor {
     log_raw_vision: bool,
     /// Builds the scrolling announcer commentary feed sent to the UI.
     announcer: announcer::Announcer,
+    /// While paused, a frozen copy of the world that Sim Edit manipulations
+    /// (teleport/add/remove) patch in place, so the UI reflects edits without
+    /// stepping the sim, advancing the clock, running strategy, or logging.
+    /// Reset to `None` whenever the executor resumes stepping.
+    paused_edit_world: Option<WorldData>,
 }
 
 impl Executor {
@@ -512,6 +517,7 @@ impl Executor {
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
             announcer: announcer::Announcer::new(),
+            paused_edit_world: None,
         }
     }
 
@@ -654,6 +660,9 @@ impl Executor {
         loop {
             let paused = { *paused_rx.borrow_and_update() };
             if !paused {
+                // Drop any frozen Sim Edit snapshot; the live tracker drives the
+                // world view again once we're stepping.
+                self.paused_edit_world = None;
                 tokio::select! {
                     Some(msg) = self.command_rx.recv() => {
                         match msg {
@@ -697,14 +706,11 @@ impl Executor {
                     Some(msg) = self.command_rx.recv() => {
                         match msg {
                             ControlMsg::Stop => break,
-                            // Allow sim manipulation while paused, then emit a fresh
-                            // frame so the UI reflects the change without stepping physics.
+                            // Apply sim manipulation while paused and broadcast a
+                            // display-only world update — no stepping, no clock
+                            // advance, no strategy, no logging.
                             ControlMsg::SimulatorCmd(cmd) => {
-                                self.handle_simulator_cmd(&mut simulator, cmd);
-                                simulator.force_detection_packet();
-                                if let Some(det) = simulator.detection() {
-                                    self.update_from_vision_msg(det, simulator.time());
-                                }
+                                self.apply_sim_edit_paused(&mut simulator, cmd);
                             }
                             ControlMsg::GcCommand { command } => {
                                 simulator.handle_gc_command(command);
@@ -855,6 +861,81 @@ impl Executor {
                 sim.remove_robot(team_color, player_id);
             }
         }
+    }
+
+    /// Apply a Sim Edit manipulation while the executor is paused.
+    ///
+    /// The real per-frame pipeline (tracker → controllers → log) is the wrong
+    /// tool here: it would advance the clock, trip the player-gone detector,
+    /// recompute strategy, and log empty frames — all while "nothing is
+    /// happening". Instead we patch a frozen snapshot of the world (lazily taken
+    /// from the tracker at the first edit) and broadcast it directly, so the UI
+    /// shows the moved entity and nothing else changes. The underlying rigid
+    /// bodies *are* moved in the sim, so on resume the next real frame reconciles
+    /// the tracker via its teleport-detection.
+    fn apply_sim_edit_paused(&mut self, sim: &mut Simulation, cmd: SimulatorCmd) {
+        self.handle_simulator_cmd(sim, cmd.clone());
+
+        // A queued kick impulse only becomes visible once physics steps again,
+        // so there's nothing to redraw while paused.
+        if matches!(cmd, SimulatorCmd::ApplyBallForce { .. }) {
+            return;
+        }
+
+        if self.paused_edit_world.is_none() {
+            self.paused_edit_world = Some(self.tracker.get());
+        }
+        let world = self.paused_edit_world.as_mut().unwrap();
+        match cmd {
+            SimulatorCmd::TeleportRobot {
+                team_color,
+                player_id,
+                position,
+                yaw,
+            }
+            | SimulatorCmd::AddRobot {
+                team_color,
+                player_id,
+                position,
+                yaw,
+            } => patch_paused_robot(world, team_color, player_id, position, yaw),
+            SimulatorCmd::RemoveRobot {
+                team_color,
+                player_id,
+            } => {
+                let team = match team_color {
+                    TeamColor::Blue => &mut world.blue_team,
+                    TeamColor::Yellow => &mut world.yellow_team,
+                };
+                team.retain(|p| p.id != player_id);
+            }
+            SimulatorCmd::TeleportBall { position } => match world.ball.as_mut() {
+                Some(ball) => {
+                    ball.position = Vector3::new(position.x, position.y, ball.position.z);
+                    ball.raw_position = vec![ball.position];
+                    ball.velocity = Vector3::zeros();
+                    ball.detected = true;
+                }
+                None => {
+                    let pos = Vector3::new(position.x, position.y, 0.0);
+                    world.ball = Some(BallData {
+                        timestamp: world.t_received,
+                        position: pos,
+                        raw_position: vec![pos],
+                        velocity: Vector3::zeros(),
+                        detected: true,
+                    });
+                }
+            },
+            SimulatorCmd::ApplyBallForce { .. } => unreachable!("handled above"),
+        }
+
+        let update = WorldUpdate {
+            world_data: world.clone(),
+            frame_id: self.frame_counter,
+            announcements: self.announcer.snapshot(),
+        };
+        let _ = self.update_tx.send(update);
     }
 
     pub fn handle(&self) -> ExecutorHandle {
@@ -1296,4 +1377,32 @@ impl Executor {
             self.frame_counter = self.frame_counter.wrapping_add(1);
         }
     }
+}
+
+/// Patch a single robot's pose in a frozen Sim Edit world snapshot, inserting a
+/// fresh `PlayerData` if the robot isn't present yet (Add / load-into-empty).
+fn patch_paused_robot(
+    world: &mut WorldData,
+    team: TeamColor,
+    id: PlayerId,
+    position: Vector2,
+    yaw: Angle,
+) {
+    let list = match team {
+        TeamColor::Blue => &mut world.blue_team,
+        TeamColor::Yellow => &mut world.yellow_team,
+    };
+    let player = match list.iter_mut().position(|p| p.id == id) {
+        Some(idx) => &mut list[idx],
+        None => {
+            list.push(PlayerData::new(id));
+            list.last_mut().unwrap()
+        }
+    };
+    player.position = position;
+    player.raw_position = position;
+    player.yaw = yaw;
+    player.raw_yaw = yaw;
+    player.velocity = Vector2::zeros();
+    player.angular_speed = 0.0;
 }

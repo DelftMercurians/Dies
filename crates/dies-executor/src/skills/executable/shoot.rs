@@ -130,6 +130,10 @@ impl ExecutableSkill for ShootSkill {
         "Shoot"
     }
 
+    fn is_oneshot(&self) -> bool {
+        true
+    }
+
     fn description(&self) -> String {
         let phase = match self.state {
             ShootState::Facing => "facing target",

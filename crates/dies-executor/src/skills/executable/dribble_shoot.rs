@@ -23,11 +23,21 @@ const KICK_SPEED: f64 = 4000.0;
 const TIMEOUT: Duration = Duration::from_secs(4);
 const LANE_HALF_WIDTH: f64 = 120.0;
 const LANE_RANGE: f64 = 3000.0;
+/// How far the ball must move from its at-kick position to count as "the kick
+/// connected". Primary signal — position is not subject to the filter lag.
+const KICK_DEPART_DIST: f64 = 100.0;
+/// Ball speed that also counts as departure. Secondary signal: the ball velocity
+/// estimate is Kalman-filtered and lags, so it confirms but rarely fires first.
+const KICK_DEPART_SPEED: f64 = 1000.0;
+/// How long to wait for the ball to leave after commanding a kick before
+/// declaring the kick a whiff and failing.
+const VERIFY_WINDOW: Duration = Duration::from_millis(200);
 
 enum AimState {
     Aiming,
     Kicking,
-    Kicked,
+    /// Kick commanded; waiting to confirm the ball actually left the dribbler.
+    Verifying,
 }
 
 pub struct DribbleShootSkill {
@@ -35,6 +45,10 @@ pub struct DribbleShootSkill {
     status: SkillStatus,
     state: AimState,
     start: Option<Instant>,
+    /// Ball position recorded the instant the kick was commanded.
+    kick_ball_pos: Option<Vector2>,
+    /// When the kick was commanded (start of the verification window).
+    kick_time: Option<Instant>,
 }
 
 impl DribbleShootSkill {
@@ -44,6 +58,8 @@ impl DribbleShootSkill {
             status: SkillStatus::Running,
             state: AimState::Aiming,
             start: None,
+            kick_ball_pos: None,
+            kick_time: None,
         }
     }
 }
@@ -118,11 +134,35 @@ impl ExecutableSkill for DribbleShootSkill {
                 input.with_kicker(KickerControlInput::Kick);
                 input.kick_speed = Some(KICK_SPEED);
                 input.with_dribbling(0.0);
-                self.state = AimState::Kicked;
+                // Snapshot the ball so the verify gate can tell if it actually left.
+                self.kick_ball_pos = Some(ball_pos);
+                self.kick_time = Some(Instant::now());
+                self.state = AimState::Verifying;
             }
-            AimState::Kicked => {
-                self.status = SkillStatus::Succeeded;
-                return SkillProgress::success();
+            AimState::Verifying => {
+                // Only succeed once the ball has demonstrably left the dribbler;
+                // a commanded kick that doesn't connect is a whiff, not a success.
+                let departed = self
+                    .kick_ball_pos
+                    .map(|p0| (ball_pos - p0).norm() > KICK_DEPART_DIST)
+                    .unwrap_or(false)
+                    || ball.velocity.norm() > KICK_DEPART_SPEED;
+                if departed {
+                    self.status = SkillStatus::Succeeded;
+                    return SkillProgress::success();
+                }
+                if self
+                    .kick_time
+                    .map(|t| t.elapsed() > VERIFY_WINDOW)
+                    .unwrap_or(true)
+                {
+                    log::warn!("dribble_shoot: kick did not connect");
+                    self.status = SkillStatus::Failed;
+                    return SkillProgress::failure();
+                }
+                // Hold still and watch — dribbler off, no re-kick.
+                input.with_yaw(self.target_heading);
+                input.with_dribbling(0.0);
             }
         }
 
@@ -138,11 +178,15 @@ impl ExecutableSkill for DribbleShootSkill {
         "DribbleShoot"
     }
 
+    fn is_oneshot(&self) -> bool {
+        true
+    }
+
     fn description(&self) -> String {
         let phase = match self.state {
             AimState::Aiming => "orbiting to aim",
             AimState::Kicking => "kicking",
-            AimState::Kicked => "kicked",
+            AimState::Verifying => "verifying kick",
         };
         format!("{phase} @ {:.0}°", self.target_heading.degrees())
     }

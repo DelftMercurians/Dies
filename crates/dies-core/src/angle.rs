@@ -42,7 +42,7 @@ impl Angle {
     }
 
     pub fn from_vector(v: Vector2) -> Self {
-        Self::between_points(Vector2::x(), v)
+        Self::from_radians(v.y.atan2(v.x))
     }
 
     /// Get the angle in radians.

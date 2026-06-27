@@ -291,7 +291,10 @@ impl Driver {
 
             // ── Shoot ───────────────────────────────────────────────────
             (Waypoint::Shoot { target }, Phase::Shoot) => {
-                player.reflex_shoot(*target);
+                // Orbit-aim the captured ball along the shot direction (ball → target),
+                // then kick. DribbleShoot keeps the dribbler pressed while aiming and
+                // verifies the ball actually left before reporting success.
+                player.dribble_shoot(heading_toward(ball_pos, *target));
                 player.set_role("shooting");
                 match skill_status {
                     // Kick fired: the framework's possession metric handles the

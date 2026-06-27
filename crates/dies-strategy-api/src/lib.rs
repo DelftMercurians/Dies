@@ -123,7 +123,8 @@ mod world;
 
 pub use player::PlayerHandle;
 pub use skill_builders::{
-    DribbleBuilder, GoToBuilder, PickupBallParams, ReflexShootParams, SkillHandle, SkillParams,
+    DribbleBuilder, DribbleShootParams, GoToBuilder, PickupBallParams, ReflexShootParams,
+    SkillHandle, SkillParams,
 };
 pub use strategy::{Strategy, StrategyFactory};
 pub use team::{PassBuilder, TeamContext};
@@ -148,7 +149,9 @@ pub use dies_strategy_protocol::{
 pub mod prelude {
     pub use crate::debug;
     pub use crate::player::PlayerHandle;
-    pub use crate::skill_builders::{PickupBallParams, ReflexShootParams, SkillHandle};
+    pub use crate::skill_builders::{
+        DribbleShootParams, PickupBallParams, ReflexShootParams, SkillHandle,
+    };
     pub use crate::strategy::Strategy;
     pub use crate::team::TeamContext;
     pub use crate::world::{Rect, World};

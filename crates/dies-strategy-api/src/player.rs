@@ -11,7 +11,8 @@
 //! - **Discrete skills** (`pickup_ball`, `reflex_shoot`): Start once, return handles for monitoring
 
 use crate::skill_builders::{
-    DribbleBuilder, GoToBuilder, PickupBallParams, ReceiveParams, ReflexShootParams, SkillHandle,
+    DribbleBuilder, DribbleShootParams, GoToBuilder, PickupBallParams, ReceiveParams,
+    ReflexShootParams, SkillHandle,
 };
 use dies_core::Angle;
 use dies_strategy_protocol::{
@@ -235,6 +236,30 @@ impl PlayerHandle {
     pub fn reflex_shoot(&mut self, target: Vector2) -> SkillHandle<ReflexShootParams> {
         self.pending_command = Some(SkillCommand::Shoot { target });
         SkillHandle::new(ReflexShootParams { target })
+    }
+
+    /// Aim by orbiting the captured ball, then kick along `target_heading`.
+    ///
+    /// This is a **discrete skill** - start once and wait for completion.
+    /// Returns a handle for monitoring and updating parameters.
+    ///
+    /// Unlike [`reflex_shoot`](Self::reflex_shoot), this assumes the ball is
+    /// already captured: it slides tangentially around the ball (dribbler
+    /// pressed against it) until the shoot axis lines up with `target_heading`,
+    /// then kicks and verifies the ball actually left before succeeding.
+    ///
+    /// # Parameters
+    ///
+    /// - `target_heading`: Direction to kick the ball along.
+    ///
+    /// # Completion
+    ///
+    /// - `SkillStatus::Succeeded` when the kicked ball departs the dribbler
+    /// - `SkillStatus::Failed` if the kick doesn't connect, the lane is blocked,
+    ///   or it times out
+    pub fn dribble_shoot(&mut self, target_heading: Angle) -> SkillHandle<DribbleShootParams> {
+        self.pending_command = Some(SkillCommand::DribbleShoot { target_heading });
+        SkillHandle::new(DribbleShootParams { target_heading })
     }
 
     /// Receive a pass by intercepting along the passing line.
