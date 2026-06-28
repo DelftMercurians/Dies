@@ -422,6 +422,15 @@ pub fn threat(pos: Vector2, own_goal: Vector2, goal_near: f64, goal_far: f64) ->
     prox * (0.5 + 0.5 * aim)
 }
 
+/// Opponents within this radius of the lane origin are contesting the ball at
+/// the carrier's feet, not occupying the downfield lane. An on-ball defender sits
+/// at the shared origin of *every* forward lane and would otherwise tank the
+/// openness of all of them equally — masking a genuinely open outlet so the
+/// carrier never passes and hoofs the ball away instead. Excluding it keeps
+/// `lane_openness` measuring what it is meant to: how clear the lane is downfield.
+/// Sized to ~2.5 robot radii — two robots plus the ball contesting one point.
+const LANE_CONTEST_RADIUS: f64 = 250.0;
+
 /// Continuous openness in [0, 1] of the lane from `from` to `to` w.r.t. opponents.
 ///
 /// 1 if no opponent is near the segment, decaying toward 0 as the nearest in-corridor
@@ -435,6 +444,11 @@ pub fn lane_openness(from: Vector2, to: Vector2, opponents: &[PlayerState], corr
     let mut min_perp = f64::INFINITY;
     for opp in opponents {
         let to_opp = opp.position - from;
+        // Skip on-ball contesters at the lane origin: they block the first few
+        // hundred mm of every lane equally and say nothing about downfield clarity.
+        if to_opp.norm() < LANE_CONTEST_RADIUS {
+            continue;
+        }
         let t = to_opp.dot(&dir) / (len * len);
         if !(0.0..=1.0).contains(&t) {
             continue;
@@ -723,6 +737,37 @@ mod tests {
         let clear = lane_openness(from, to, &[], 500.0);
         assert!(blocked < clear);
         assert_eq!(clear, 1.0);
+    }
+
+    #[test]
+    fn lane_openness_ignores_on_ball_contester() {
+        // Regression for the "pass into the void" bug: a defender pressed on the
+        // carrier sits at the shared origin of every forward lane. It must not tank
+        // the openness of a downfield lane that is otherwise wide open, or the
+        // planner never commits the pass and hoofs the ball into the corner.
+        let from = Vector2::new(0.0, 0.0);
+        let to = Vector2::new(3000.0, 0.0); // an open outlet straight ahead
+        let contester = PlayerState::new(
+            PlayerId::new(9),
+            Vector2::new(200.0, 5.0), // on the ball, 5mm off the line, ~200mm away
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let open = lane_openness(from, to, std::slice::from_ref(&contester), 400.0);
+        assert_eq!(open, 1.0, "an on-ball contester must not block the lane");
+
+        // A blocker the same 5mm off the line but genuinely downfield still blocks.
+        let downfield = PlayerState::new(
+            PlayerId::new(9),
+            Vector2::new(1500.0, 5.0),
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let blocked = lane_openness(from, to, std::slice::from_ref(&downfield), 400.0);
+        assert!(
+            blocked < 0.1,
+            "a downfield blocker on the line still blocks"
+        );
     }
 
     #[test]

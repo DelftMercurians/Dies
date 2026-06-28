@@ -750,6 +750,43 @@ mod tests {
     }
 
     #[test]
+    fn on_ball_presser_does_not_mask_open_supporter() {
+        // Regression for the "pass into the void" bug (yellow p3 ~frame 380):
+        // an opponent pressed on the carrier sits at the shared origin of every
+        // forward lane and, before the fix, tanked the openness of an otherwise
+        // wide-open downfield supporter — so the planner never passed and hoofed
+        // the ball into the corner. Positions are the real frame in team-relative
+        // coordinates. The presser is ~209mm from the carrier (an on-ball contest),
+        // the supporter's lane is clear apart from it.
+        let own = vec![
+            player(1, -4000.0, 0.0),   // keeper
+            player(2, -1395.8, 539.2), // carrier (yellow p3)
+            player(3, 2024.1, 1080.0), // open forward supporter (yellow p4)
+        ];
+        let opp = vec![player(9, -1187.0, 544.4)]; // on-ball presser (blue p3)
+        let world = world_with(own, opp, 1);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .expect("should produce a plan");
+
+        match &plan.waypoints[0] {
+            Waypoint::Pass {
+                passer, receiver, ..
+            } => {
+                assert_eq!(*passer, PlayerId::new(2));
+                assert_eq!(
+                    *receiver,
+                    PlayerId::new(3),
+                    "should pass to the open supporter"
+                );
+            }
+            other => panic!("on-ball presser masked the supporter; expected a Pass, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn kickahead_lead_is_clamped_inside_the_field() {
         // Carrier in the final third, supporter near the opponent goal line. The
         // raw lead toward goal would push the aim point past the goal line (out of
