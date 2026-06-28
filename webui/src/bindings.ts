@@ -748,16 +748,6 @@ export interface RobotSnapshot {
 	yaw: Angle;
 }
 
-/**
- * A saved simulator field state: robot poses + ball position. Replayed by
- * teleporting everything back into place.
- */
-export interface FieldSnapshot {
-	blue: RobotSnapshot[];
-	yellow: RobotSnapshot[];
-	ball?: Vector2;
-}
-
 /** The game state, as reported by the referee. */
 export type GameState = 
 	| { type: "Unknown",  }
@@ -772,6 +762,26 @@ export type GameState =
 	| { type: "Penalty",  }
 	| { type: "PenaltyRun",  }
 	| { type: "Run",  };
+
+/**
+ * A saved simulator field state: robot poses + ball position, plus an optional
+ * game state to seed. Replayed by teleporting everything back into place (see
+ * `Simulation::apply_snapshot`) and, when present, forcing the auto-referee into
+ * `game_state` for `operating_team`. Both game-state fields are optional so
+ * older positional-only snapshots still load.
+ */
+export interface FieldSnapshot {
+	blue: RobotSnapshot[];
+	yellow: RobotSnapshot[];
+	ball?: Vector2;
+	/** Game state captured with the snapshot, if any. Seeded on load. */
+	game_state?: GameState;
+	/**
+	 * Team that operates `game_state` (kickoff/free-kick/penalty/placement).
+	 * Ignored for symmetric states (run/stop/halt).
+	 */
+	operating_team?: TeamColor;
+}
 
 export interface GameStateData {
 	/** The state of current game */

@@ -7,13 +7,49 @@ import {
   getFieldSnapshot,
   useWorldState,
 } from "@/api";
-import { TeamColor, FieldSnapshot } from "@/bindings";
+import { TeamColor, FieldSnapshot, GameState, GcSimCommand } from "@/bindings";
 import { Button } from "@/components/ui/button";
 
 /**
+ * Map a captured game state onto the GC command that reproduces it in sim.
+ * Run/Kickoff/PenaltyRun force straight into free play; asymmetric states use
+ * the snapshot's operating team. Returns null for states with no sim command.
+ */
+const gameStateToGcCommand = (
+  state: GameState,
+  team: TeamColor
+): GcSimCommand | null => {
+  switch (state.type) {
+    case "Run":
+    case "Kickoff":
+    case "PenaltyRun":
+      return { type: "ForceStart" };
+    case "Stop":
+      return { type: "Stop" };
+    case "Halt":
+    case "Timeout":
+      return { type: "Halt" };
+    case "PrepareKickoff":
+      return { type: "KickOff", data: { team_color: team } };
+    case "FreeKick":
+      return { type: "DirectFree", data: { team_color: team } };
+    case "Penalty":
+    case "PreparePenalty":
+      return { type: "Penalty", data: { team_color: team } };
+    case "BallReplacement":
+      return {
+        type: "BallPlacement",
+        data: { team_color: team, position: state.data },
+      };
+    default:
+      return null;
+  }
+};
+
+/**
  * Save / load / delete named simulator field-state snapshots (robot poses + ball
- * position). Built from the live world state on save and replayed as teleport
- * commands on load. Rendered inside the Sim Edit dialog.
+ * position + game state). Built from the live world state on save and replayed
+ * as teleport + GC commands on load. Rendered inside the Sim Edit dialog.
  */
 const SnapshotManager: FC = () => {
   const sendCommand = useSendCommand();
@@ -42,6 +78,8 @@ const SnapshotManager: FC = () => {
       ball: worldData.ball
         ? [worldData.ball.position[0], worldData.ball.position[1]]
         : undefined,
+      game_state: worldData.game_state.game_state,
+      operating_team: worldData.game_state.operating_team,
     };
     save(
       { name, snapshot },
@@ -102,6 +140,15 @@ const SnapshotManager: FC = () => {
         type: "SimulatorCmd",
         data: { type: "TeleportBall", data: { position: snapshot.ball } },
       });
+    }
+    // Seed the captured game state, if any, so the board resumes in the same
+    // phase it was saved in (run/kickoff/free-kick/...).
+    if (snapshot.game_state) {
+      const team = snapshot.operating_team ?? TeamColor.Blue;
+      const gc = gameStateToGcCommand(snapshot.game_state, team);
+      if (gc) {
+        sendCommand({ type: "GcCommand", data: gc });
+      }
     }
     toast.success(`Loaded "${name}"`);
   };

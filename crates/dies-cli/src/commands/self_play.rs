@@ -5,10 +5,10 @@
 //! blocking thread, and emits the [`MatchResult`] as JSON. No webui, no
 //! wall-clock pacing — same seed + same strategies → identical result.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use dies_core::ExecutorSettings;
+use dies_core::{ExecutorSettings, FieldSnapshot};
 use dies_executor::{Executor, HeadlessConfig};
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 
@@ -21,6 +21,7 @@ pub async fn self_play(
     max_goals: Option<u32>,
     output: Option<PathBuf>,
     log_dir: Option<PathBuf>,
+    snapshot: Option<String>,
     build: bool,
 ) -> Result<()> {
     // Build both strategy binaries into target/debug (where the executor looks).
@@ -31,6 +32,8 @@ pub async fn self_play(
         }
     }
 
+    let initial_snapshot = snapshot.as_deref().map(load_snapshot).transpose()?;
+
     let cfg = HeadlessConfig {
         blue_strategy: blue_strategy.clone(),
         yellow_strategy: yellow_strategy.clone(),
@@ -38,6 +41,7 @@ pub async fn self_play(
         duration_secs: duration,
         max_goals,
         log_dir,
+        initial_snapshot,
     };
 
     // run_headless is a blocking sync loop (blocking IPC + free-running sim), so
@@ -75,6 +79,22 @@ pub async fn self_play(
         None => println!("{json}"),
     }
     Ok(())
+}
+
+/// Resolve a `--snapshot` argument to a [`FieldSnapshot`]. A value that points
+/// at an existing file (or ends in `.json`) is read directly; otherwise it is
+/// treated as a snapshot name under `.dies-snapshots/`, matching where the Web
+/// UI's snapshot store writes them.
+fn load_snapshot(arg: &str) -> Result<FieldSnapshot> {
+    let direct = Path::new(arg);
+    let path = if direct.is_file() || arg.ends_with(".json") {
+        direct.to_path_buf()
+    } else {
+        PathBuf::from(".dies-snapshots").join(format!("{arg}.json"))
+    };
+    let contents = std::fs::read_to_string(&path)
+        .with_context(|| format!("reading snapshot from {}", path.display()))?;
+    serde_json::from_str(&contents).with_context(|| format!("parsing snapshot {}", path.display()))
 }
 
 fn summary(r: &dies_executor::MatchResult) -> String {

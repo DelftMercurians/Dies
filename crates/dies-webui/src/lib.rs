@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    Angle, BaseStationInfo, BenchCommand, DebugMap, ExecutorInfo, ExecutorSettings, GcSimCommand,
-    ParamValue, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd,
-    TeamColor, TeamConfiguration, Vector2, WorldData, WorldUpdate,
+    Angle, BaseStationInfo, BenchCommand, DebugMap, ExecutorInfo, ExecutorSettings, FieldSnapshot,
+    GcSimCommand, ParamValue, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, SideAssignment,
+    SimulatorCmd, TeamColor, TeamConfiguration, Vector2, WorldData, WorldUpdate,
 };
 use dies_ssl_client::SslClientConfig;
 use dies_test_driver::{TestLogEntry, TestStatus};
@@ -352,25 +352,6 @@ pub(crate) struct SettingsSnapshotsResponse {
     pub(crate) baseline: Option<SettingsSnapshot>,
     /// Auto-captured history, newest first.
     pub(crate) history: Vec<SettingsSnapshot>,
-}
-
-/// A single robot's saved pose in a field snapshot (position + yaw, no velocity).
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[typeshare]
-pub(crate) struct RobotSnapshot {
-    pub(crate) id: PlayerId,
-    pub(crate) position: Vector2,
-    pub(crate) yaw: Angle,
-}
-
-/// A saved simulator field state: robot poses + ball position. Replayed by
-/// teleporting everything back into place.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[typeshare]
-pub(crate) struct FieldSnapshot {
-    pub(crate) blue: Vec<RobotSnapshot>,
-    pub(crate) yellow: Vec<RobotSnapshot>,
-    pub(crate) ball: Option<Vector2>,
 }
 
 #[derive(Debug, Clone, Serialize)]

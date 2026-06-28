@@ -36,6 +36,32 @@ regenerates `webui/src/bindings.ts` on every build and runs `vite build` (into
 `crates/dies-webui/static`) whenever the hash of the frontend inputs changes (any
 profile) — dev iteration normally uses the vite dev server instead.
 
+**Headless self-play (FTR):** `cargo run -- self-play --blue-strategy <A>
+--yellow-strategy <B>` runs one deterministic, faster-than-realtime A-vs-B match
+with no webui (`crates/dies-cli/src/commands/self_play.rs` →
+`Executor::run_headless`). Same `(seed, strategies)` → byte-identical
+`MatchResult` (printed as JSON; `--output` to a file). `--duration` /
+`--max-goals` bound it; `--log-dir` records a full binary log under
+`logs/selfplay/...`.
+
+- **Seed a rollout from a snapshot:** `--snapshot <name|path>` loads a saved
+  field snapshot (name → `.dies-snapshots/<name>.json`, the same store the Web UI
+  writes; or a path to a JSON file) and seeds the match from it before kickoff —
+  robot poses + ball are teleported into place (roster trimmed to the snapshot's)
+  and the game state is **forced** to the snapshot's `game_state` (or `Run`/free
+  play if it has none), skipping the normal kickoff sequence. This lets a
+  scenario captured on the field be rolled out to a full simulated match.
+- **Snapshot format** lives in `dies-core` (`FieldSnapshot`/`RobotSnapshot`):
+  robot poses + ball, plus optional `game_state` + `operating_team` (both
+  `#[serde(default)]`, so older positional-only snapshots still load). The Web UI
+  `SnapshotManager` captures the live game state on save and re-seeds it on load
+  via a GC command. Seeding maps `GameState` → `GcSimCommand`:
+  `Run`/`Kickoff`/`PenaltyRun` → `ForceStart` (direct to free play),
+  kickoff/free-kick/penalty/placement use `operating_team`. `Simulation::
+  apply_snapshot` + `Simulation::seed_game_state` do the work; `ForceStart`/`Halt`
+  in `handle_gc_command` now set the auto-ref's internal state so a forced start
+  isn't overridden by a pending kickoff.
+
 ## Testing & Linting
 
 ```bash

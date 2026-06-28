@@ -783,6 +783,16 @@ impl Executor {
                 .map_err(|e| anyhow::anyhow!("strategy startup failed: {e}"))?;
         }
 
+        // Seed the field from a snapshot, if one was given: teleport robots + ball
+        // into place, then force the game state. Default to Run (free play) when
+        // the snapshot carries none, so the rollout actually plays rather than
+        // sitting through the kickoff sequence.
+        if let Some(snapshot) = cfg.initial_snapshot.as_ref() {
+            simulator.apply_snapshot(snapshot);
+            let state = snapshot.game_state.unwrap_or(dies_core::GameState::Run);
+            simulator.seed_game_state(state, snapshot.operating_team);
+        }
+
         // Optionally record a full binary log of the match for offline analytics.
         let log_path = if let Some(base) = cfg.log_dir.clone() {
             let session = format!(

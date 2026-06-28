@@ -5,7 +5,7 @@
 //! `(seed, blue_strategy, yellow_strategy)` on the same binary. The loop itself
 //! lives on [`crate::Executor::run_headless`].
 
-use dies_core::TeamColor;
+use dies_core::{FieldSnapshot, TeamColor};
 use serde::Serialize;
 
 /// Inputs for a single headless self-play match.
@@ -24,6 +24,11 @@ pub struct HeadlessConfig {
     /// If set, write a full Dies binary log of the match under this base
     /// directory (one session dir per match), for offline analytics.
     pub log_dir: Option<std::path::PathBuf>,
+    /// If set, seed the field from this snapshot before the match starts: robot
+    /// poses + ball are teleported into place, and the game state is forced to
+    /// the snapshot's `game_state` (or to `Run`/free play if the snapshot has
+    /// none) instead of running the normal kickoff sequence.
+    pub initial_snapshot: Option<FieldSnapshot>,
 }
 
 /// Why a headless match ended.

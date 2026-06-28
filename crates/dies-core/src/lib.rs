@@ -90,3 +90,32 @@ pub enum GcSimCommand {
         position: Vector2,
     },
 }
+
+/// A single robot's saved pose in a field snapshot (position + yaw, no velocity).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct RobotSnapshot {
+    pub id: PlayerId,
+    pub position: Vector2,
+    pub yaw: Angle,
+}
+
+/// A saved simulator field state: robot poses + ball position, plus an optional
+/// game state to seed. Replayed by teleporting everything back into place (see
+/// `Simulation::apply_snapshot`) and, when present, forcing the auto-referee into
+/// `game_state` for `operating_team`. Both game-state fields are optional so
+/// older positional-only snapshots still load.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct FieldSnapshot {
+    pub blue: Vec<RobotSnapshot>,
+    pub yellow: Vec<RobotSnapshot>,
+    pub ball: Option<Vector2>,
+    /// Game state captured with the snapshot, if any. Seeded on load.
+    #[serde(default)]
+    pub game_state: Option<GameState>,
+    /// Team that operates `game_state` (kickoff/free-kick/penalty/placement).
+    /// Ignored for symmetric states (run/stop/halt).
+    #[serde(default)]
+    pub operating_team: Option<TeamColor>,
+}

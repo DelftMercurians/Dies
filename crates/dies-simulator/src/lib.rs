@@ -907,11 +907,22 @@ impl Simulation {
                 self.update_referee_command(referee::Command::STOP);
                 self.game_state = SimulationGameState::stop();
             }
-            GcSimCommand::Halt => self.update_referee_command(referee::Command::HALT),
+            GcSimCommand::Halt => {
+                // Make Halt authoritative over the auto-ref, not just a broadcast,
+                // so a seeded/forced Halt actually freezes the state machine.
+                self.update_referee_command(referee::Command::HALT);
+                self.game_state = SimulationGameState::Halt;
+            }
             GcSimCommand::NormalStart => {
                 self.update_referee_command(referee::Command::NORMAL_START)
             }
-            GcSimCommand::ForceStart => self.update_referee_command(referee::Command::FORCE_START),
+            GcSimCommand::ForceStart => {
+                // Drop straight into free play and make the auto-ref agree, so a
+                // forced/seeded start isn't immediately overridden by a pending
+                // kickoff in the state machine.
+                self.update_referee_command(referee::Command::FORCE_START);
+                self.game_state = SimulationGameState::run();
+            }
             GcSimCommand::DirectFree { team_color } => {
                 // Relocate the ball to a rule 5.3.3-valid free-kick position. A real
                 // referee/auto-ref always places the ball ≥1 m from either defense
@@ -954,6 +965,77 @@ impl Simulation {
                 }
                 self.game_state = SimulationGameState::ball_placement(team_color, position);
             }
+        }
+    }
+
+    /// Apply a saved field snapshot: teleport existing robots to the snapshot's
+    /// poses, add ones it has that the field doesn't, remove ones it omits, and
+    /// place the ball. Mirrors the Web UI snapshot-load flow but runs directly
+    /// against the simulator (used to seed a headless rollout). Game state is
+    /// seeded separately via [`Simulation::seed_game_state`].
+    pub fn apply_snapshot(&mut self, snapshot: &FieldSnapshot) {
+        for (color, robots) in [
+            (TeamColor::Blue, &snapshot.blue),
+            (TeamColor::Yellow, &snapshot.yellow),
+        ] {
+            let snap_ids: HashSet<PlayerId> = robots.iter().map(|r| r.id).collect();
+            for r in robots {
+                let exists = self
+                    .players
+                    .iter()
+                    .any(|p| p.id == r.id && p.team_color == color);
+                if exists {
+                    self.teleport_robot(color, r.id, r.position, r.yaw);
+                } else {
+                    self.add_robot(color, r.id, r.position, r.yaw);
+                }
+            }
+            // Remove robots not present in the snapshot so the setup reproduces exactly.
+            let to_remove: Vec<PlayerId> = self
+                .players
+                .iter()
+                .filter(|p| p.team_color == color && !snap_ids.contains(&p.id))
+                .map(|p| p.id)
+                .collect();
+            for id in to_remove {
+                self.remove_robot(color, id);
+            }
+        }
+        if let Some(ball) = snapshot.ball {
+            self.teleport_ball(ball);
+        }
+    }
+
+    /// Seed the auto-referee game state directly, e.g. when starting a headless
+    /// rollout from a snapshot. Maps the strategy-facing [`GameState`] onto the
+    /// equivalent GC command; `Run`/`Kickoff`/`PenaltyRun` drop the match straight
+    /// into free play via `ForceStart` (skipping the kickoff cycle). `operating_team`
+    /// selects the team for asymmetric states (kickoff/free-kick/penalty/placement)
+    /// and is ignored for symmetric ones; it defaults to Blue when unknown.
+    pub fn seed_game_state(&mut self, state: GameState, operating_team: Option<TeamColor>) {
+        let team = operating_team.unwrap_or(TeamColor::Blue);
+        match state {
+            GameState::Run | GameState::Kickoff | GameState::PenaltyRun => {
+                self.handle_gc_command(GcSimCommand::ForceStart)
+            }
+            GameState::Stop => self.handle_gc_command(GcSimCommand::Stop),
+            GameState::Halt | GameState::Timeout => self.handle_gc_command(GcSimCommand::Halt),
+            GameState::PrepareKickoff => {
+                self.handle_gc_command(GcSimCommand::KickOff { team_color: team })
+            }
+            GameState::FreeKick => {
+                self.handle_gc_command(GcSimCommand::DirectFree { team_color: team })
+            }
+            GameState::Penalty | GameState::PreparePenalty => {
+                self.handle_gc_command(GcSimCommand::Penalty { team_color: team })
+            }
+            GameState::BallReplacement(position) => {
+                self.handle_gc_command(GcSimCommand::BallPlacement {
+                    team_color: team,
+                    position,
+                })
+            }
+            GameState::Unknown => {}
         }
     }
 
@@ -1107,7 +1189,8 @@ impl Simulation {
                 // force the kickoff after the timer so the match keeps running.
                 if prepare_timer.tick(self.integration_parameters.dt) {
                     self.kick_start_time = self.current_time;
-                    if let Some(ball_handle) = self.ball.as_ref().map(|ball| ball._rigid_body_handle)
+                    if let Some(ball_handle) =
+                        self.ball.as_ref().map(|ball| ball._rigid_body_handle)
                     {
                         let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
                         self.kick_ball_position =

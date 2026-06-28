@@ -122,6 +122,14 @@ enum Command {
         /// analytics harness). Omit to skip logging.
         #[clap(long)]
         log_dir: Option<PathBuf>,
+
+        /// Seed the field from a saved snapshot before kickoff. Accepts a
+        /// snapshot name (resolved to `.dies-snapshots/<name>.json`) or a path
+        /// to a snapshot JSON file. Robot poses + ball are teleported into
+        /// place and the game state is forced to the snapshot's state (or Run
+        /// if it has none), skipping the normal kickoff sequence.
+        #[clap(long)]
+        snapshot: Option<String>,
     },
 }
 
@@ -334,6 +342,7 @@ impl Cli {
                 max_goals,
                 ref output,
                 ref log_dir,
+                ref snapshot,
             }) => {
                 let build = self.strategy_mode() != StrategyMode::Launch;
                 match self_play(
@@ -344,6 +353,7 @@ impl Cli {
                     max_goals,
                     output.clone(),
                     log_dir.clone(),
+                    snapshot.clone(),
                     build,
                 )
                 .await
