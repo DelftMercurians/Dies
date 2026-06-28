@@ -252,6 +252,8 @@ const RobotFocus: FC<{
   const [heading, setHeading] = useState("");
   // Command currently being held (continuously re-sent), or null.
   const [hold, setHoldState] = useState<"Arm" | "ArmReflex" | null>(null);
+  // Dribble hold (independent of TakeControl).
+  const [dribbleHold, setDribbleHold] = useState(false);
 
   const robotId = player.id;
 
@@ -260,6 +262,18 @@ const RobotFocus: FC<{
     const next = hold === kind ? null : kind;
     setHoldState(next);
     setHoldCmd(send, robotId, next ? { type: next } : undefined);
+  };
+
+  // Toggle dribble hold (independent of TakeControl).
+  const toggleDribbleHold = (on: boolean) => {
+    setDribbleHold(on);
+    send({
+      type: "Bench",
+      data: {
+        type: "SetDribble",
+        data: { robot_id: robotId, speed: on ? dribble : null },
+      },
+    });
   };
 
   // Clear any hold (local + backend), e.g. on Disarm.
@@ -283,12 +297,21 @@ const RobotFocus: FC<{
   // unmounts. `takeControl(false)` clears the backend hold; reset local state.
   useEffect(() => {
     setHoldState(null);
+    setDribbleHold(false);
     // Seed the backend with the current kick time so a held reflex-arm has a
     // strength even before the slider is touched.
     sendKickTime(send, robotId, kickTime);
     return () => {
       takeControl(send, robotId, false);
       setHoldCmd(send, robotId, undefined);
+      // Clear any dribble hold on unmount.
+      send({
+        type: "Bench",
+        data: {
+          type: "SetDribble",
+          data: { robot_id: robotId, speed: null },
+        },
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [robotId]);
@@ -299,6 +322,9 @@ const RobotFocus: FC<{
       if (driving) {
         setDriving(false);
         takeControl(send, robotId, false);
+      }
+      if (dribbleHold) {
+        toggleDribbleHold(false);
       }
       clearHold();
     }
@@ -430,6 +456,15 @@ const RobotFocus: FC<{
           unit=""
           onChange={setDribble}
         />
+        <div className="flex items-center justify-between py-0.5">
+          <label className="flex items-center gap-2 text-sm text-text-std">
+            <Switch
+              checked={dribbleHold}
+              onCheckedChange={toggleDribbleHold}
+            />
+            Dribble hold (always on)
+          </label>
+        </div>
         <div className="mt-2 flex items-center justify-between">
           <label className="flex items-center gap-2 text-sm text-text-std">
             <Switch checked={driving} onCheckedChange={toggleDriving} />

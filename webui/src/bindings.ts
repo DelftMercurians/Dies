@@ -1322,6 +1322,15 @@ export type BenchCommand =
 	robot_id: number;
 	kick_time: number;
 }}
+	/**
+	 * Set a continuously-held dribble speed that is streamed even when the
+	 * robot isn't taken for driving. `speed` is the raw dribbler value
+	 * (0-1000). Send `None` to clear the hold.
+	 */
+	| { type: "SetDribble", data: {
+	robot_id: number;
+	speed?: number;
+}}
 	/** Broadcast a one-shot action to all robots. */
 	| { type: "Broadcast", data: {
 	kind: BenchOneShot;

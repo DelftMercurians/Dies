@@ -38,6 +38,8 @@ struct RobotBench {
     /// Raw kick duration (`kick_time_i`, ms) stamped onto every streamed packet,
     /// so a held reflex-arm carries the strength to fire with.
     kick_time: u16,
+    /// Continuous dribble speed set outside "take control" mode (None = not held).
+    dribble_hold: Option<f64>,
 }
 
 impl RobotBench {
@@ -48,6 +50,7 @@ impl RobotBench {
             last_update: Instant::now(),
             hold_cmd: None,
             kick_time: 3000,
+            dribble_hold: None,
         }
     }
 }
@@ -108,7 +111,7 @@ pub async fn run(
                 }
                 for (robot_id, rb) in robots.iter() {
                     // Stream robots being driven AND robots holding a command.
-                    if !rb.taken && rb.hold_cmd.is_none() {
+                    if !rb.taken && rb.hold_cmd.is_none() && rb.dribble_hold.is_none() {
                         continue;
                     }
                     let mut cmd = if rb.taken {
@@ -123,6 +126,9 @@ pub async fn run(
                     };
                     if let Some(hold) = rb.hold_cmd {
                         set_robot_cmd(&mut cmd, hold);
+                    }
+                    if let Some(dribble_speed) = rb.dribble_hold {
+                        set_dribble_speed(&mut cmd, dribble_speed);
                     }
                     bs_handle.bench_send_raw(*robot_id as u8, cmd, rb.kick_time);
                 }
@@ -182,6 +188,13 @@ fn handle_bench_command(
             rb.kick_time = kick_time;
             log::debug!("Bench robot {robot_id} kick_time set to {kick_time} ms");
         }
+        BenchCommand::SetDribble { robot_id, speed } => {
+            let rb = robots
+                .entry(robot_id)
+                .or_insert_with(|| RobotBench::new(robot_id));
+            rb.dribble_hold = speed;
+            log::debug!("Bench robot {robot_id} dribble_hold set to {speed:?}");
+        }
         BenchCommand::SetMotion {
             robot_id,
             mode,
@@ -216,6 +229,7 @@ fn handle_bench_command(
                 rb.setpoint = zero_like(&rb.setpoint, robot_id);
                 rb.last_update = Instant::now();
                 rb.hold_cmd = None;
+                rb.dribble_hold = None;
             }
             if !sending_blocked(state) {
                 bs_handle.bench_send_raw(
@@ -229,6 +243,7 @@ fn handle_bench_command(
             for (robot_id, rb) in robots.iter_mut() {
                 rb.taken = false;
                 rb.hold_cmd = None;
+                rb.dribble_hold = None;
                 rb.setpoint = PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(*robot_id)));
                 if !sending_blocked(state) {
                     bs_handle.bench_send_raw(
@@ -310,6 +325,14 @@ fn set_robot_cmd(cmd: &mut PlayerCmd, robot_cmd: RobotCmd) {
     match cmd {
         PlayerCmd::Move(c) => c.robot_cmd = robot_cmd,
         PlayerCmd::GlobalMove(c) => c.robot_cmd = robot_cmd,
+    }
+}
+
+/// Set the dribble speed on a setpoint, regardless of frame.
+fn set_dribble_speed(cmd: &mut PlayerCmd, speed: f64) {
+    match cmd {
+        PlayerCmd::Move(c) => c.dribble_speed = speed,
+        PlayerCmd::GlobalMove(c) => c.dribble_speed = speed,
     }
 }
 
