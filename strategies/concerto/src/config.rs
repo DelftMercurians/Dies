@@ -148,6 +148,11 @@ pub const SUPPORT_GOAL_LINE_SETBACK: f64 = 400.0;
 /// Corridor width for the ball→support lane-openness used to place supporters in
 /// open outlets (rather than stranded behind opponents).
 pub const SUPPORT_LANE_CORRIDOR: f64 = 500.0;
+/// Minimum spacing between two supporters' target positions. Support roles are
+/// placed greedily, each excluding candidates within this radius of an already-placed
+/// supporter, so two never converge on the same outlet. Sized so distinct grid cells
+/// survive the constraint while genuinely co-located spots are forbidden.
+pub const SUPPORT_MIN_SEPARATION: f64 = 1500.0;
 /// A ball contest with at least this much threat to our goal relieves one shadow
 /// (the contesting plan robot stands in for it). Keeps shadows off the snatcher.
 pub const SHADOW_RELIEF_THREAT: f64 = 0.4;

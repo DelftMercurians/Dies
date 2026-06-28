@@ -357,10 +357,13 @@ impl Formation {
         } else {
             config::IMP_SUPPORT
         };
+        // Placed greedily; each supporter excludes spots already claimed by an
+        // earlier one (see `taken` below) so two never converge on the same outlet.
+        let mut taken: Vec<Vector2> = Vec::with_capacity(support_count);
         for slot in 0..support_count {
-            // 0 → right flank, 1 → left flank, 2 → central trailer (sign 0 keeps the
-            // y candidates on the centre column). Distinct signs stop two supporters
-            // resolving to the same `best_support_pos` and stacking.
+            // 0 → right-flank bias, 1 → left-flank bias, 2 → centre. The sign is only
+            // a soft tie-break now; the `taken` exclusion is what structurally keeps
+            // supporters from resolving to the same `best_support_pos`.
             let sign = match slot {
                 0 => 1.0,
                 1 => -1.0,
@@ -378,7 +381,10 @@ impl Formation {
                 attacking,
                 config::SUPPORT_FLANK_Y_FRACS,
                 config::SUPPORT_GOAL_LINE_SETBACK,
+                &taken,
+                config::SUPPORT_MIN_SEPARATION,
             );
+            taken.push(pos);
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Support,

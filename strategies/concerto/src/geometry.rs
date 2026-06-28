@@ -253,11 +253,16 @@ pub fn best_support_pos(
     attacking: bool,
     flank_y_fracs: [f64; 3],
     goal_line_setback: f64,
+    // Positions already claimed by other supporters this tick. Candidates within
+    // `min_separation` of any of these are excluded, so two supporters can never
+    // resolve to the same outlet (structural anti-stacking, not a soft tie-break).
+    taken: &[Vector2],
+    min_separation: f64,
 ) -> Vector2 {
     const PAD: f64 = 400.0;
     // Conservative grid stays modest and central; attacking mode reaches toward the
     // goal line and flanks wide (outer bands clear the box keepout at the corners).
-    let (x_targets, y_fracs, fwd_bonus): ([f64; 3], [f64; 3], f64) = if attacking {
+    let (x_targets, y_mags, fwd_bonus): ([f64; 3], [f64; 3], f64) = if attacking {
         (
             [
                 ball.x + 1500.0,
@@ -277,11 +282,32 @@ pub fn best_support_pos(
         )
     };
 
+    // Sample BOTH flanks plus the centre line. Previously each lateral magnitude was
+    // multiplied by `sign`, so the central slot (sign 0) collapsed every candidate to
+    // y = 0 — a single point in front of the box with zero freedom to slide off a
+    // marker. A supporter pinned there sat fully covered for seconds. Mirroring the
+    // magnitudes gives every slot real lateral options; the side bias below (not the
+    // candidate set) is what keeps the slots spread across the field.
+    let mut y_fracs: Vec<f64> = Vec::with_capacity(2 * y_mags.len() + 1);
+    y_fracs.push(0.0);
+    for &m in &y_mags {
+        y_fracs.push(m);
+        y_fracs.push(-m);
+    }
+    // Tie-break that nudges slot 0 to +y and slot 1 to −y so the supporters don't
+    // stack, scaled to lose to any real openness/clearance gap (so a slot still
+    // crosses the field when its own side is covered). Centre slot (sign 0) is free.
+    const SIDE_BIAS: f64 = 1e-4;
+
+    // `best` only considers candidates clear of already-taken supporter spots;
+    // `fallback` ignores that constraint so we still return a sane point if every
+    // candidate is crowded out (more taken spots than the grid can separate).
     let mut best: Option<(Vector2, f64)> = None;
+    let mut fallback: Option<(Vector2, f64)> = None;
     for &xt in &x_targets {
         let cx = xt.clamp(-half_len + PAD, half_len - PAD);
         for &fy in &y_fracs {
-            let cy = (sign * half_wid * fy).clamp(-half_wid + PAD, half_wid - PAD);
+            let cy = (half_wid * fy).clamp(-half_wid + PAD, half_wid - PAD);
             // Keep the outlet out of the opponent penalty area (no robot but the
             // keeper may enter it) — otherwise the supporter pins against the box
             // keepout and stalls at `no_path`.
@@ -291,15 +317,30 @@ pub fn best_support_pos(
                 opp_pen_depth,
                 opp_pen_half_width,
             );
-            // Openness dominates (keeps the supporter out from behind an opponent);
-            // the forward bonus breaks ties toward advanced candidates.
-            let score = lane_openness(ball, cand, opponents, corridor) + fwd_bonus * cand.x;
+            // A clear throwing lane is necessary but not sufficient: a defender
+            // sitting *on* the receive point intercepts the moment the ball arrives.
+            // Score openness (lane clear) AND receiver clearance (spot uncontested),
+            // both in [0, 1], so a supporter peels off its marker into open space.
+            // A short lane is trivially open, so without the reach gate the supporter
+            // could "get open" by hugging the carrier — gate openness by distance
+            // from the ball so only a real, pass-length outlet counts as open.
+            const MIN_OUTLET_SEPARATION: f64 = 1200.0;
+            let reach = smoothstep(0.0, MIN_OUTLET_SEPARATION, (cand - ball).norm());
+            let open = lane_openness(ball, cand, opponents, corridor) * reach;
+            let clearance = receiver_clearance(cand, opponents);
+            let score = open + clearance + fwd_bonus * cand.x + SIDE_BIAS * sign * cand.y;
+            if fallback.is_none() || score > fallback.unwrap().1 {
+                fallback = Some((cand, score));
+            }
+            if taken.iter().any(|t| (cand - t).norm() < min_separation) {
+                continue;
+            }
             if best.is_none() || score > best.unwrap().1 {
                 best = Some((cand, score));
             }
         }
     }
-    best.map(|(p, _)| p).unwrap_or_else(|| {
+    best.or(fallback).map(|(p, _)| p).unwrap_or_else(|| {
         clamp_out_of_opp_box(
             Vector2::new(
                 (ball.x + 2000.0).clamp(-half_len + PAD, half_len - PAD),
@@ -310,6 +351,21 @@ pub fn best_support_pos(
             opp_pen_half_width,
         )
     })
+}
+
+/// Clearance in [0, 1] around a candidate receive point: 0 if an opponent stands on
+/// top of it, rising smoothly to 1 once the nearest opponent is at least
+/// `RECEIVER_CLEARANCE_RADIUS` away. Complements [`lane_openness`]: openness asks
+/// "is the throwing lane clear?", clearance asks "can I actually receive here, or is
+/// a marker sitting on the spot to intercept on arrival?". Radius ~3 robot radii so a
+/// defender within tackling distance tanks the spot.
+fn receiver_clearance(at: Vector2, opponents: &[PlayerState]) -> f64 {
+    const RECEIVER_CLEARANCE_RADIUS: f64 = 700.0;
+    let mut min_d = f64::INFINITY;
+    for opp in opponents {
+        min_d = min_d.min((opp.position - at).norm());
+    }
+    smoothstep(0.0, RECEIVER_CLEARANCE_RADIUS, min_d)
 }
 
 /// Push a point in front of the opponent penalty area if it falls inside the box
@@ -624,6 +680,8 @@ mod tests {
             false,
             [0.46, 0.62, 0.78],
             400.0,
+            &[],
+            1500.0,
         );
         let openness = lane_openness(ball, pos, std::slice::from_ref(&blocker), 500.0);
         assert!(pos.y > 0.0, "support should stay on its flank");
@@ -654,6 +712,8 @@ mod tests {
                 true,
                 [0.46, 0.62, 0.78],
                 400.0,
+                &[],
+                1500.0,
             );
             let in_box = pos.x > half_len - pen_depth && pos.y.abs() < pen_half_width;
             assert!(!in_box, "support landed inside the opp box at {pos:?}");
@@ -678,6 +738,8 @@ mod tests {
             true,
             [0.46, 0.62, 0.78],
             400.0,
+            &[],
+            1500.0,
         );
         assert!(
             pos.x > 3000.0,
@@ -687,6 +749,85 @@ mod tests {
             pos.y > 1300.0,
             "attacking supporter should flank wide of the box, got {pos:?}"
         );
+    }
+
+    #[test]
+    fn central_support_slot_dodges_a_marker_instead_of_pinning() {
+        // Regression for the "fully-covered supporter parks in front of the box"
+        // bug (frame 4776, yellow p4). Ball deep in the attacking corner, the
+        // central slot (sign 0), and a defender sitting on the lane to the single
+        // box-front point the slot used to collapse onto (~3200, 0). The slot must
+        // now have the lateral freedom to relocate to an open, uncontested spot.
+        let half_len = 4500.0;
+        let ball = Vector2::new(3920.0, 2280.0);
+        let marker = PlayerState::new(
+            PlayerId::new(5),
+            Vector2::new(3269.0, 318.0), // on the lane to the old pinned point
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let pos = best_support_pos(
+            ball,
+            std::slice::from_ref(&marker),
+            0.0, // central slot — used to collapse all candidates to y = 0
+            half_len,
+            3000.0,
+            500.0,
+            1000.0,
+            1000.0,
+            true,
+            [0.46, 0.62, 0.78],
+            400.0,
+            &[],
+            1500.0,
+        );
+        assert!(
+            (pos - marker.position).norm() > 700.0,
+            "supporter should peel off the marker, got {pos:?} \
+             ({:.0}mm from marker)",
+            (pos - marker.position).norm()
+        );
+        let open = lane_openness(ball, pos, std::slice::from_ref(&marker), 500.0);
+        let clearance = receiver_clearance(pos, std::slice::from_ref(&marker));
+        assert!(
+            open > 0.9 && clearance > 0.9,
+            "relocated spot should be open and uncontested, got open={open} clearance={clearance} at {pos:?}"
+        );
+    }
+
+    #[test]
+    fn supporters_never_resolve_to_the_same_outlet() {
+        // With a wide-open field every slot's raw argmax is the same deep/wide point,
+        // so without the `taken` exclusion all supporters would stack there. Placing
+        // them greedily must structurally separate them by at least `min_separation`.
+        let half_len = 4500.0;
+        let ball = Vector2::new(2000.0, 0.0);
+        let min_sep = 1500.0;
+        let mut taken: Vec<Vector2> = Vec::new();
+        for &sign in &[1.0, -1.0, 0.0] {
+            let pos = best_support_pos(
+                ball,
+                &[], // no opponents → openness is uniform, argmax ties everywhere
+                sign,
+                half_len,
+                3000.0,
+                500.0,
+                1000.0,
+                1000.0,
+                true,
+                [0.46, 0.62, 0.78],
+                400.0,
+                &taken,
+                min_sep,
+            );
+            for prev in &taken {
+                assert!(
+                    (pos - prev).norm() >= min_sep,
+                    "supporter at {pos:?} is within {min_sep} of {prev:?}"
+                );
+            }
+            taken.push(pos);
+        }
     }
 
     #[test]
