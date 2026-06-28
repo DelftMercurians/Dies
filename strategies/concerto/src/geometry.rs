@@ -169,6 +169,68 @@ pub fn best_pass_area(
     best.map(|(pos, _)| pos)
 }
 
+/// Aim a full-power advancement kick so the ball comes to rest INSIDE the field.
+///
+/// A struck ball rolls a roughly fixed distance (`travel` ≈ KICK_SPEED / ball
+/// damping) before stopping, regardless of where the kicker "aimed" — so naively
+/// hoofing toward an open-space point a short way ahead overshoots and sends the
+/// ball out of bounds (a stoppage that hands the opponent a free kick). Instead of
+/// choosing a *point*, this chooses a kick *direction*: it sweeps a forward cone
+/// around the ball→goal line and keeps only directions whose resting point
+/// (`ball + travel·dir`) stays within the field-of-play margin. Among those it
+/// favours forward progress and a landing spot clear of opponents. When a straight
+/// hoof would clear the field, an angled one toward a corner keeps the ball in play.
+///
+/// Returns the resting point to aim at (the driver kicks along `ball → point`), or
+/// `None` if no forward direction keeps the ball in — the caller should then keep
+/// the ball (dribble) rather than boot it out.
+#[allow(clippy::too_many_arguments)]
+pub fn safe_kick_target(
+    ball: Vector2,
+    opponents: &[PlayerState],
+    opp_goal: Vector2,
+    half_len: f64,
+    half_wid: f64,
+    travel: f64,
+    margin: f64,
+    min_progress: f64,
+    open_weight: f64,
+    open_cap: f64,
+) -> Option<Vector2> {
+    let to_goal = opp_goal - ball;
+    let (base, goal_dir) = if to_goal.norm() > 1e-6 {
+        (to_goal.y.atan2(to_goal.x), to_goal / to_goal.norm())
+    } else {
+        (0.0, Vector2::new(1.0, 0.0))
+    };
+    let x_lim = half_len - margin;
+    let y_lim = half_wid - margin;
+
+    let mut best: Option<(Vector2, f64)> = None;
+    // Sweep ±80° around the goal direction in 10° steps.
+    for i in -8..=8 {
+        let theta = base + (i as f64) * 10.0_f64.to_radians();
+        let dir = Vector2::new(theta.cos(), theta.sin());
+        let landing = ball + dir * travel;
+        if landing.x.abs() > x_lim || landing.y.abs() > y_lim {
+            continue; // a full-power kick this way rolls out of bounds
+        }
+        let progress = goal_dir.dot(&(landing - ball));
+        if progress < min_progress {
+            continue; // too little forward gain to justify releasing the ball
+        }
+        let min_opp = opponents
+            .iter()
+            .map(|o| (o.position - landing).norm())
+            .fold(f64::INFINITY, f64::min);
+        let score = progress + open_weight * min_opp.min(open_cap);
+        if best.map_or(true, |(_, b)| score > b) {
+            best = Some((landing, score));
+        }
+    }
+    best.map(|(p, _)| p)
+}
+
 /// Pick an open, forward support/outlet position on one flank.
 ///
 /// Static flank points leave supporters stranded behind opponents, so the ball
@@ -631,5 +693,56 @@ mod tests {
         let clear = lane_openness(from, to, &[], 500.0);
         assert!(blocked < clear);
         assert_eq!(clear, 1.0);
+    }
+
+    #[test]
+    fn safe_kick_target_keeps_the_ball_in_field() {
+        let opp_goal = Vector2::new(4500.0, 0.0);
+        let half_len = 4500.0;
+        let half_wid = 3000.0;
+        let margin = 300.0;
+        let in_field = |p: Vector2| {
+            p.x.abs() <= half_len - margin + 1.0 && p.y.abs() <= half_wid - margin + 1.0
+        };
+
+        // Deep in our own half there is room ahead: a long forward hoof stays in
+        // play and advances the ball.
+        let from_back = Vector2::new(-2000.0, 0.0);
+        let t = safe_kick_target(
+            from_back,
+            &[],
+            opp_goal,
+            half_len,
+            half_wid,
+            5000.0,
+            margin,
+            800.0,
+            0.5,
+            2000.0,
+        )
+        .expect("a forward hoof should be available from deep");
+        assert!(in_field(t), "resting point must stay in field, got {t:?}");
+        assert!(t.x > from_back.x, "hoof should advance the ball, got {t:?}");
+
+        // In the attacking half a full-power kick (~5 m roll) cannot stay in play,
+        // so the helper declines (None) and the planner keeps the ball instead of
+        // booting it out of bounds.
+        let from_front = Vector2::new(2000.0, 0.0);
+        assert!(
+            safe_kick_target(
+                from_front,
+                &[],
+                opp_goal,
+                half_len,
+                half_wid,
+                5000.0,
+                margin,
+                800.0,
+                0.5,
+                2000.0,
+            )
+            .is_none(),
+            "no full-power hoof should stay in field from the attacking half"
+        );
     }
 }

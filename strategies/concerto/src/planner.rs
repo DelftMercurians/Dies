@@ -469,10 +469,26 @@ impl Planner {
             }
         }
 
-        // 2. Open forward space toward goal.
+        // 2. Open forward space toward goal. A full-power advancement kick rolls
+        //    ~HOOF_TRAVEL and would sail out of bounds if aimed naively at an
+        //    open-space point a short way ahead (a stoppage + opponent free kick),
+        //    so aim at the kick's resting point and keep it inside the field.
         let half_len = world.field_length() / 2.0;
         let half_wid = world.field_width() / 2.0;
-        geometry::best_pass_area(carrier_pos, opps, half_len, half_wid).map(|t| (None, t))
+        let origin = world.ball_position().unwrap_or(carrier_pos);
+        geometry::safe_kick_target(
+            origin,
+            opps,
+            opp_goal,
+            half_len,
+            half_wid,
+            config::HOOF_TRAVEL,
+            config::HOOF_BOUNDARY_MARGIN,
+            config::HOOF_MIN_PROGRESS,
+            config::HOOF_OPEN_WEIGHT,
+            config::HOOF_OPEN_CAP,
+        )
+        .map(|t| (None, t))
     }
 
     /// Pull a kick-ahead lead target inside the field, preserving the lead

@@ -52,6 +52,26 @@ pub const STEAL_MAX_DIST: f64 = 2500.0;
 pub const ESCAPE_STEP: f64 = 300.0;
 /// How long a robot is excluded from re-selection after a NoProgress failure.
 pub const NOPROGRESS_TTL: f64 = 1.0;
+
+// ── Advancement hoof (kick to open space) ─────────────────────────────────────
+// A full-power `DribbleShoot` kick fires at a fixed ~4000 mm/s and the ball rolls
+// ~`KICK_SPEED / ball_damping` ≈ 4000 / 0.8 = 5000 mm before stopping. Aiming an
+// advancement kick "at open space" a short distance ahead therefore overshoots and
+// drives the ball out of bounds — a self-inflicted stoppage that hands the opponent
+// a free kick. We aim instead at the kick's *resting point* so it stays in play.
+/// Estimated distance the ball rolls after a full-power advancement kick.
+pub const HOOF_TRAVEL: f64 = 5000.0;
+/// Margin (mm) inside the field-of-play edge the resting point must stay within.
+/// The sim flags the ball out ~100 mm inside the line; the extra slack absorbs
+/// travel-estimate error so we don't graze the boundary.
+pub const HOOF_BOUNDARY_MARGIN: f64 = 300.0;
+/// Minimum forward (goalward) progress for an advancement hoof to be worth taking
+/// instead of keeping the ball; below this the planner prefers a corrective dribble.
+pub const HOOF_MIN_PROGRESS: f64 = 800.0;
+/// Weight on landing-spot openness (distance to nearest opponent) when scoring hoof
+/// directions, and the distance beyond which extra openness no longer helps.
+pub const HOOF_OPEN_WEIGHT: f64 = 0.5;
+pub const HOOF_OPEN_CAP: f64 = 2000.0;
 /// A loose ball within this distance of a touchline or goal line is treated as a
 /// boundary "rescue": the capture heading is biased to dribble the ball back
 /// *inward* (into the field) instead of along/over the line. Set comfortably
