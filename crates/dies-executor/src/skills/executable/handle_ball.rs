@@ -217,7 +217,8 @@ impl HandleBallSkill {
             let kick_ball = *self.kick_ball_pos.get_or_insert(ball_pos);
             let armed_at = *self.armed_at.get_or_insert(now);
             let along_depart = (ball_pos - kick_ball).dot(&dir);
-            if along_depart > pickup::KICK_DEPART_DIST || ball.velocity.norm() > pickup::KICK_DEPART_SPEED
+            if along_depart > pickup::KICK_DEPART_DIST
+                || ball.velocity.norm() > pickup::KICK_DEPART_SPEED
             {
                 self.status = SkillStatus::Succeeded;
                 return SkillProgress::success();
@@ -392,12 +393,7 @@ impl HandleBallSkill {
         SkillProgress::Continue(input)
     }
 
-    fn drive_verify(
-        &mut self,
-        ball_pos: Vector2,
-        ball_vel_norm: f64,
-        now: f64,
-    ) -> SkillProgress {
+    fn drive_verify(&mut self, ball_pos: Vector2, ball_vel_norm: f64, now: f64) -> SkillProgress {
         let departed = self
             .kick_ball_pos
             .map(|p0| (ball_pos - p0).norm() > ds::KICK_DEPART_DIST)

@@ -569,10 +569,7 @@ pub enum BenchCommand {
     /// Set a continuously-held dribble speed that is streamed even when the
     /// robot isn't taken for driving. `speed` is the raw dribbler value
     /// (0-1000). Send `None` to clear the hold.
-    SetDribble {
-        robot_id: u32,
-        speed: Option<f64>,
-    },
+    SetDribble { robot_id: u32, speed: Option<f64> },
     /// Broadcast a one-shot action to all robots.
     Broadcast { kind: BenchOneShot },
     /// Set the radio channel of the base (`robot_id = None`) or a robot.

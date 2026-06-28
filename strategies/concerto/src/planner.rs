@@ -27,16 +27,11 @@ pub enum Waypoint {
     /// Strip a held ball off an opponent (snatch). The only capture realised
     /// outside the unified ball-handling skill — it has a distinct completion
     /// contract (succeed when the opponent loses the ball) and its own timeout.
-    Steal {
-        from: PlayerId,
-    },
+    Steal { from: PlayerId },
     /// Acquire the ball (if not held) and perform `action` with it. `rescue`
     /// biases the acquire approach inward off a boundary. Realised each tick via
     /// `player.handle_ball`.
-    Handle {
-        action: BallAction,
-        rescue: bool,
-    },
+    Handle { action: BallAction, rescue: bool },
     /// A coordinated two-robot pass. The planner picks a concrete receiver
     /// (Model B); the framework's `PassCoordinator` drives both robots. The
     /// driver realises this by calling `ctx.pass()` each tick.

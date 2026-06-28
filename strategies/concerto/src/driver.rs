@@ -139,9 +139,7 @@ impl Driver {
             engagements.push(Engagement::BallContest { at });
         }
         match wp {
-            Waypoint::Steal { from } => {
-                engagements.push(Engagement::Engaging { opponent: *from })
-            }
+            Waypoint::Steal { from } => engagements.push(Engagement::Engaging { opponent: *from }),
             Waypoint::Pass { target_area, .. } => {
                 engagements.push(Engagement::ReceiveArea { at: *target_area })
             }
