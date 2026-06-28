@@ -1626,70 +1626,63 @@ impl Simulation {
             let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
             let ball_position = ball_body.position().translation.vector;
 
-            let test_boundary: f64 = 100.0; // When test in simulation, should not be 0.0 otherwise it will never be triggered
-            if ball_position.x.abs() < self.config.field_geometry.field_length / 2.0 - test_boundary
-                && ball_position.y.abs()
-                    < self.config.field_geometry.field_width / 2.0 - test_boundary
-            {
-                let ball_velocity: Vector<f64> = *ball_body.linvel(); // ball's current velocity as Vector3
-                let next_ball_position =
-                    ball_position + ball_velocity * self.integration_parameters.dt;
-                if next_ball_position.x.abs()
-                    > self.config.field_geometry.field_length / 2.0 - test_boundary
-                    || next_ball_position.y.abs()
-                        > self.config.field_geometry.field_width / 2.0 - test_boundary
-                {
-                    dies_core::debug_string(
-                        "RefereeMessage.BallOut",
-                        format!("Ball out of bounds at position: {:?}", next_ball_position),
-                    );
-                    // In next frame, Ball will be out of bounds
-                    // Do linear interpolation to find the free kick position
-                    let mut designated = ball_position + (next_ball_position - ball_position) * 0.5;
-                    // Constrain designated position to the field
-                    designated.x = designated.x.clamp(
-                        -(self.config.field_geometry.field_length / 2.0
-                            - FREE_KICK_PLACEMENT_MARGIN),
-                        self.config.field_geometry.field_length / 2.0 - FREE_KICK_PLACEMENT_MARGIN,
-                    );
-                    designated.y = designated.y.clamp(
-                        -(self.config.field_geometry.field_width / 2.0
-                            - FREE_KICK_PLACEMENT_MARGIN),
-                        self.config.field_geometry.field_width / 2.0 - FREE_KICK_PLACEMENT_MARGIN,
-                    );
-                    self.designated_ball_position = designated;
-                }
-                return false;
-            } else {
+            let half_length = self.config.field_geometry.field_length / 2.0;
+            let half_width = self.config.field_geometry.field_width / 2.0;
+
+            // Clamp a candidate free-kick spot to the reachable field margin so
+            // the placement is always inside the playable area.
+            let clamp_designated = |mut p: Vector<f64>| {
+                p.x = p.x.clamp(
+                    -(half_length - FREE_KICK_PLACEMENT_MARGIN),
+                    half_length - FREE_KICK_PLACEMENT_MARGIN,
+                );
+                p.y = p.y.clamp(
+                    -(half_width - FREE_KICK_PLACEMENT_MARGIN),
+                    half_width - FREE_KICK_PLACEMENT_MARGIN,
+                );
+                p
+            };
+
+            // A ball is out only once its centre has actually crossed a real
+            // field line. The out-of-bounds line must be the true field edge,
+            // not a shrunk one: the placement margin (FREE_KICK_PLACEMENT_MARGIN)
+            // already keeps a placed free-kick ball inside the field, so testing
+            // against any smaller boundary would flag a legally-placed corner
+            // free kick as immediately out and re-stop the game.
+            if ball_position.x.abs() > half_length || ball_position.y.abs() > half_width {
                 dies_core::debug_string(
                     "RefereeMessage",
                     format!("Ball out of bounds at position: {:?}", ball_position),
                 );
                 // Recompute the designated position from where the ball actually
-                // is. The predictive branch above only fires while the ball is
-                // still inside, so a ball that is already out (e.g. came to rest
-                // just past the line, or crossed in a single fast frame) would
-                // otherwise reuse a stale designated position from an earlier
-                // out-of-bounds on the other side of the field, teleporting the
-                // free kick to the wrong place. Clamp to the field margin so the
-                // placement is reachable.
-                let mut designated = ball_position;
-                designated.x = designated.x.clamp(
-                    -(self.config.field_geometry.field_length / 2.0 - FREE_KICK_PLACEMENT_MARGIN),
-                    self.config.field_geometry.field_length / 2.0 - FREE_KICK_PLACEMENT_MARGIN,
-                );
-                designated.y = designated.y.clamp(
-                    -(self.config.field_geometry.field_width / 2.0 - FREE_KICK_PLACEMENT_MARGIN),
-                    self.config.field_geometry.field_width / 2.0 - FREE_KICK_PLACEMENT_MARGIN,
-                );
-                self.designated_ball_position = designated;
+                // is, so a ball that is already out (e.g. came to rest just past
+                // the line, or crossed in a single fast frame) does not reuse a
+                // stale designated position from an earlier out-of-bounds on the
+                // other side of the field.
+                self.designated_ball_position = clamp_designated(ball_position);
                 // The actual reposition happens in `update_game_state` once the
                 // free kick is awarded (see `place_ball`); here we only report
                 // that the ball has left the field.
                 return true;
             }
+
+            // Still inside: predictively record where it *will* leave so the
+            // free-kick placement is ready, but keep the game running this frame.
+            let ball_velocity: Vector<f64> = *ball_body.linvel(); // ball's current velocity as Vector3
+            let next_ball_position = ball_position + ball_velocity * self.integration_parameters.dt;
+            if next_ball_position.x.abs() > half_length || next_ball_position.y.abs() > half_width {
+                dies_core::debug_string(
+                    "RefereeMessage.BallOut",
+                    format!("Ball out of bounds at position: {:?}", next_ball_position),
+                );
+                // Linear interpolation toward where it crosses the line.
+                let designated = ball_position + (next_ball_position - ball_position) * 0.5;
+                self.designated_ball_position = clamp_designated(designated);
+            }
+            false
+        } else {
+            false
         }
-        false
     }
 
     fn goal(&mut self) -> bool {
@@ -2941,6 +2934,57 @@ mod free_kick_placement_tests {
         ] {
             assert_valid(&sim, sim.valid_free_kick_position(desired));
         }
+    }
+}
+
+#[cfg(test)]
+mod ball_out_tests {
+    use super::*;
+
+    fn sim_with_ball() -> Simulation {
+        SimulationBuilder::new(SimulationConfig::default())
+            .add_ball(Vector::new(0.0, 0.0, BALL_RADIUS))
+            .build()
+    }
+
+    #[test]
+    fn ball_inside_real_field_is_not_out() {
+        // Regression: a corner free-kick ball resting ~62 mm inside the goal line
+        // (the exact stuck position from the log) must NOT count as out. The old
+        // 100 mm test boundary shrank the field below the 200 mm placement margin,
+        // so it flagged a legally-placed corner free kick as out and instantly
+        // re-stopped the game.
+        let mut sim = sim_with_ball();
+        sim.place_ball(-4437.86, 2738.58);
+        assert!(!sim.ball_out(), "ball inside the real field flagged as out");
+    }
+
+    #[test]
+    fn placed_free_kick_ball_is_never_out() {
+        // Any ball snapped to a valid free-kick spot sits within the placement
+        // margin and must stay in play.
+        let mut sim = sim_with_ball();
+        for desired in [
+            Vector2::new(-4300.0, 2900.0), // top-left corner
+            Vector2::new(4300.0, -2900.0), // bottom-right corner
+            Vector2::new(4400.0, 0.0),
+        ] {
+            let p = sim.valid_free_kick_position(desired);
+            sim.place_ball(p.x, p.y);
+            assert!(
+                !sim.ball_out(),
+                "placed free-kick ball {p:?} flagged as out"
+            );
+        }
+    }
+
+    #[test]
+    fn ball_past_the_line_is_out() {
+        let mut sim = sim_with_ball();
+        sim.place_ball(-4600.0, 0.0); // past the goal line
+        assert!(sim.ball_out(), "ball past the goal line not flagged out");
+        sim.place_ball(0.0, 3100.0); // past the touch line
+        assert!(sim.ball_out(), "ball past the touch line not flagged out");
     }
 }
 
