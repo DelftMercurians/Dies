@@ -409,7 +409,8 @@ impl Planner {
         if let Some((p, _)) = best_supporter {
             // Lead the kick past the supporter toward goal (kick into space to run onto).
             let lead = (opp_goal - p.position).normalize() * config::SUPPORTER_LEAD;
-            return Some((Some(p.id), p.position + lead));
+            let target = self.clamp_in_field(p.position, p.position + lead, world);
+            return Some((Some(p.id), target));
         }
 
         // 1b. Final-third cross/cutback. Near the opponent goal there is little
@@ -441,7 +442,8 @@ impl Planner {
                 });
             if let Some(p) = best_wide {
                 let lead = (opp_goal - p.position).normalize() * config::SUPPORTER_LEAD;
-                return Some((Some(p.id), p.position + lead));
+                let target = self.clamp_in_field(p.position, p.position + lead, world);
+                return Some((Some(p.id), target));
             }
         }
 
@@ -449,6 +451,39 @@ impl Planner {
         let half_len = world.field_length() / 2.0;
         let half_wid = world.field_width() / 2.0;
         geometry::best_pass_area(carrier_pos, opps, half_len, half_wid).map(|t| (None, t))
+    }
+
+    /// Pull a kick-ahead lead target inside the field, preserving the lead
+    /// direction. The lead aims a pass into space ahead of a receiver (toward the
+    /// opponent goal); for a deep or wide receiver that space can fall past the
+    /// goal line or a touchline, which would send the ball out (stoppage + lost
+    /// possession). We shorten the lead along its own direction so the aim point
+    /// lands `FIELD_LEAD_MARGIN` inside the boundary, rather than axis-clamping it
+    /// (which would skew the aim sideways). `from` is the receiver position; if it
+    /// is itself outside the inset (a receiver already on the line), a hard clamp
+    /// backstops the result.
+    fn clamp_in_field(&self, from: Vector2, target: Vector2, world: &World) -> Vector2 {
+        let max_x = world.field_length() / 2.0 - config::FIELD_LEAD_MARGIN;
+        let max_y = world.field_width() / 2.0 - config::FIELD_LEAD_MARGIN;
+
+        if target.x.abs() <= max_x && target.y.abs() <= max_y {
+            return target;
+        }
+
+        // Largest fraction of the lead that keeps the endpoint inside each bound.
+        let lead = target - from;
+        let mut s = 1.0_f64;
+        if lead.x.abs() > 1e-6 {
+            let bound = if lead.x > 0.0 { max_x } else { -max_x };
+            s = s.min((bound - from.x) / lead.x);
+        }
+        if lead.y.abs() > 1e-6 {
+            let bound = if lead.y > 0.0 { max_y } else { -max_y };
+            s = s.min((bound - from.y) / lead.y);
+        }
+        let s = s.clamp(0.0, 1.0);
+        let p = from + lead * s;
+        Vector2::new(p.x.clamp(-max_x, max_x), p.y.clamp(-max_y, max_y))
     }
 
     /// A small step toward the opponent goal for a corrective dribble, clamped to
@@ -677,13 +712,56 @@ mod tests {
     }
 
     #[test]
+    fn kickahead_lead_is_clamped_inside_the_field() {
+        // Carrier in the final third, supporter near the opponent goal line. The
+        // raw lead toward goal would push the aim point past the goal line (out of
+        // bounds); the planner must clamp it inside the field while keeping the
+        // pass to that receiver.
+        let own = vec![
+            player(1, -4000.0, 0.0),  // keeper
+            player(2, 3500.0, 0.0),   // carrier in the final third
+            player(3, 4200.0, 600.0), // forward supporter near the goal line
+        ];
+        // Opponent parked in front of goal so the direct shot is blocked (forces
+        // the kick-ahead branch) but the carrier→supporter lane stays open.
+        let opp = vec![player(9, 4000.0, 0.0)];
+        let world = world_with(own, opp, 1);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .expect("should produce a plan");
+
+        let max_x = world.field_length() / 2.0 - config::FIELD_LEAD_MARGIN;
+        let max_y = world.field_width() / 2.0 - config::FIELD_LEAD_MARGIN;
+        match &plan.waypoints[0] {
+            Waypoint::Pass {
+                receiver,
+                target_area,
+                ..
+            } => {
+                assert_eq!(*receiver, PlayerId::new(3));
+                assert!(
+                    target_area.x <= max_x + 1e-6,
+                    "lead x not clamped in-field: {target_area:?}"
+                );
+                assert!(
+                    target_area.y.abs() <= max_y + 1e-6,
+                    "lead y not clamped in-field: {target_area:?}"
+                );
+            }
+            other => panic!("expected a Pass waypoint, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn final_third_carrier_passes_to_wide_level_supporter() {
         // Carrier deep in the opponent third with the direct shot blocked. The only
         // outlet is a wide supporter that is NOT strictly forward (a cross/cutback).
         // The strict-forward gate rejects it; the final-third branch must accept it.
         let own = vec![
-            player(1, -4000.0, 0.0), // keeper
-            player(2, 3500.0, 0.0),  // carrier in the final third
+            player(1, -4000.0, 0.0),   // keeper
+            player(2, 3500.0, 0.0),    // carrier in the final third
             player(3, 3600.0, 1800.0), // wide, ~level supporter (cross target)
         ];
         // Opponent parked in front of goal so the direct shot is not clear.

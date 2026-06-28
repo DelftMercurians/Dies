@@ -156,6 +156,18 @@ pub const KEEPER_ARC_MAX_ANGLE: f64 = std::f64::consts::FRAC_PI_4; // 45°
 /// lives in the `GoToBounded` executor skill.
 pub const KEEPER_ZONE_RADIUS_SLACK: f64 = 50.0;
 
+// Shot-line intercept.
+/// Ball speed (mm/s) above which, if the ball is heading toward our goal across
+/// the goal mouth, the keeper switches from the cone-bisector position to sitting
+/// on the shot line (the incoming trajectory) so it is in the ball's path
+/// whichever corner the shot is aimed at. Below this the keeper tracks the cone
+/// bisector as usual.
+pub const KEEPER_INTERCEPT_SPEED: f64 = 800.0;
+/// Lateral slack (mm) added beyond each post when deciding whether a fast ball's
+/// trajectory counts as "on target" for the shot-line intercept. Covers shots
+/// aimed just inside/around a post plus tracking noise.
+pub const KEEPER_INTERCEPT_MOUTH_MARGIN: f64 = 300.0;
+
 // Ball-clearing behaviour.
 /// Clear only when the ball is essentially stopped (mm/s).
 pub const CLEAR_SPEED_LIMIT: f64 = 300.0;
@@ -175,3 +187,11 @@ pub const CLEAR_EXIT_MARGIN: f64 = 120.0;
 pub const CLEAR_TARGET_MIN_Y: f64 = 1500.0;
 /// Downfield x of the clear target (toward the opponent half).
 pub const CLEAR_TARGET_X: f64 = 0.0;
+
+// ── Planner: in-field clamping ───────────────────────────────────────────────
+/// Margin (mm) by which a kick-ahead pass/cross lead target is kept inside the
+/// field boundary. A lead aims a pass into the space ahead of a receiver (toward
+/// the opponent goal); for a deep or wide receiver that space can fall past the
+/// goal line or a touchline, sending the ball out (stoppage + lost possession).
+/// See [`crate::planner::Planner::clamp_in_field`].
+pub const FIELD_LEAD_MARGIN: f64 = 250.0;

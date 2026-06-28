@@ -501,8 +501,8 @@ mod tests {
             half_len,
             3000.0,
             500.0,
-            1000.0,  // pen depth
-            1000.0,  // pen half width
+            1000.0, // pen depth
+            1000.0, // pen half width
             true,
             [0.46, 0.62, 0.78],
             400.0,

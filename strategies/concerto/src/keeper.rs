@@ -3,6 +3,9 @@
 //! Two modes:
 //! - **Guard**: sit on a small arc around the goal mouth, on the bisector of the
 //!   shot cone (the two tangents from the ball to the posts), tracking the ball.
+//!   When a fast ball is incoming on a path that crosses the goal mouth, the
+//!   keeper instead sits on the shot line (see [`shot_intercept`]) so it is in
+//!   the ball's path whichever corner the shot is aimed at.
 //! - **Clear**: when a ball settles inside our defense area, pick it up and kick
 //!   it out toward the opponent half (off the centre line), then return to Guard.
 //!
@@ -118,6 +121,12 @@ pub fn keeper_arc_target(world: &World, radius: f64, max_angle: f64) -> Vector2 
         None => return clamp_to_arc(g + Vector2::new(radius, 0.0), g, radius, max_angle),
     };
 
+    // Fast incoming shot on target: stand on the shot line where it reaches the
+    // keeper's depth, rather than the cone bisector.
+    if let Some(p) = shot_intercept(world, g, half_goal, radius, max_angle) {
+        return p;
+    }
+
     let post_l = g + Vector2::new(0.0, half_goal);
     let post_r = g + Vector2::new(0.0, -half_goal);
 
@@ -141,6 +150,55 @@ pub fn keeper_arc_target(world: &World, radius: f64, max_angle: f64) -> Vector2 
         });
 
     clamp_to_arc(candidate, g, radius, max_angle)
+}
+
+/// Shot-line intercept: if the ball is travelling fast (≥
+/// [`KEEPER_INTERCEPT_SPEED`](config::KEEPER_INTERCEPT_SPEED)) toward our goal on
+/// a path that crosses the goal mouth (within
+/// [`KEEPER_INTERCEPT_MOUTH_MARGIN`](config::KEEPER_INTERCEPT_MOUTH_MARGIN) of a
+/// post), return the point on the keeper's arc lying on that trajectory — where
+/// the shot reaches the keeper's standoff depth in front of goal. This puts the
+/// keeper in the path of the shot regardless of which corner it is aimed at,
+/// instead of the cone-bisector position. Returns `None` for a slow ball, a ball
+/// moving away from goal, or an off-target trajectory, in which case the caller
+/// falls back to the bisector.
+fn shot_intercept(
+    world: &World,
+    g: Vector2,
+    half_goal: f64,
+    radius: f64,
+    max_angle: f64,
+) -> Option<Vector2> {
+    let ball = world.ball_position()?;
+    let vel = world.ball_velocity()?;
+    let speed = vel.norm();
+    if speed < config::KEEPER_INTERCEPT_SPEED {
+        return None;
+    }
+    let dir = vel / speed;
+    // Must be heading toward our goal (own goal is at -x).
+    if dir.x >= 0.0 {
+        return None;
+    }
+    // Where does the trajectory cross the goal line (x = g.x)? On target only if
+    // within the goal mouth plus the post margin.
+    let t_goal = (g.x - ball.x) / dir.x;
+    if t_goal <= 0.0 {
+        return None;
+    }
+    let y_cross = ball.y + dir.y * t_goal;
+    if y_cross.abs() > half_goal + config::KEEPER_INTERCEPT_MOUTH_MARGIN {
+        return None;
+    }
+    // Intercept the shot line at the keeper's standoff depth in front of goal.
+    // If the ball is already inside that depth it's a point-blank shot — defer to
+    // the bisector / clear logic.
+    let depth_x = g.x + radius;
+    let t_depth = (depth_x - ball.x) / dir.x;
+    if t_depth <= 0.0 {
+        return None;
+    }
+    Some(clamp_to_arc(ball + dir * t_depth, g, radius, max_angle))
 }
 
 /// First intersection of the ray `from + t·dir` (t>0) with the circle `(centre,
@@ -247,13 +305,17 @@ mod tests {
     use dies_strategy_protocol::{GameState, PlayerId, Possession, WorldSnapshot};
 
     fn world_with_ball(ball: Vector2) -> World {
+        world_with_ball_vel(ball, Vector2::zeros())
+    }
+
+    fn world_with_ball_vel(ball: Vector2, vel: Vector2) -> World {
         World::new(WorldSnapshot {
             timestamp: 0.0,
             dt: 0.016,
             field_geom: Some(FieldGeometry::default()),
             ball: Some(BallState {
                 position: ball,
-                velocity: Vector2::zeros(),
+                velocity: vel,
                 detected: true,
             }),
             own_players: vec![PlayerState::new(
@@ -318,6 +380,67 @@ mod tests {
         let w = world_with_ball(Vector2::new(0.0, 1500.0));
         let t = keeper_arc_target(&w, R, MAX_A);
         assert!(t.y > 0.0, "keeper should shift toward +y: {:?}", t);
+    }
+
+    #[test]
+    fn fast_corner_shot_pulls_keeper_onto_the_shot_line() {
+        // Central ball, but a fast shot aimed at the +y corner. The cone bisector
+        // for a central ball is square-on (y≈0); the shot-line intercept must
+        // instead shift the keeper toward +y to sit in the ball's path.
+        let g = Vector2::new(-4500.0, 0.0);
+        let target = g + Vector2::new(0.0, 400.0); // just inside the +y post
+        let dir = (target - Vector2::zeros()).normalize();
+        let w = world_with_ball_vel(Vector2::zeros(), dir * 1500.0);
+        let t = keeper_arc_target(&w, R, MAX_A);
+        // On the arc.
+        assert!(((t - g).norm() - R).abs() < 1.0, "radius off: {:?}", t);
+        // Shifted toward the shot side, unlike the square-on bisector position.
+        assert!(
+            t.y > 100.0,
+            "should sit on the shot line toward +y: {:?}",
+            t
+        );
+    }
+
+    #[test]
+    fn slow_ball_keeps_the_bisector_position() {
+        // A slow central ball must NOT trigger the intercept — keeper stays square.
+        let w = world_with_ball_vel(Vector2::zeros(), Vector2::new(-100.0, 200.0));
+        let t = keeper_arc_target(&w, R, MAX_A);
+        assert!(t.y.abs() < 1.0, "slow ball should stay square-on: {:?}", t);
+    }
+
+    #[test]
+    fn fast_ball_moving_away_keeps_the_bisector_position() {
+        // Fast ball but travelling toward the opponent goal (+x): no intercept,
+        // keeper holds the bisector (square-on for a central ball).
+        let w = world_with_ball_vel(Vector2::zeros(), Vector2::new(1500.0, 0.0));
+        let t = keeper_arc_target(&w, R, MAX_A);
+        assert!(
+            t.y.abs() < 1.0,
+            "ball moving away should stay square: {:?}",
+            t
+        );
+    }
+
+    #[test]
+    fn fast_off_target_shot_keeps_the_bisector_position() {
+        // Fast ball heading goalward but well wide of the mouth (crosses the goal
+        // line far outside the posts + margin): not a shot on target, so the
+        // keeper tracks the bisector rather than chasing the wide trajectory.
+        let g = Vector2::new(-4500.0, 0.0);
+        // Aim at a point far above the +y post on the goal line.
+        let aim = g + Vector2::new(0.0, 2500.0);
+        let dir = (aim - Vector2::zeros()).normalize();
+        let w = world_with_ball_vel(Vector2::zeros(), dir * 1500.0);
+        let t = keeper_arc_target(&w, R, MAX_A);
+        // Bisector for a central ball is square-on; intercept would have pushed it
+        // hard toward the +y clamp. Assert we did NOT take the intercept.
+        assert!(
+            t.y.abs() < 1.0,
+            "off-target shot should keep bisector: {:?}",
+            t
+        );
     }
 
     #[test]
