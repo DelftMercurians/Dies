@@ -20,8 +20,8 @@ import CommandPalette from "./components/CommandPalette";
 import { DockviewApi } from "dockview";
 
 // Default workspace: FIELD fills the left, with a right-hand column split into a
-// top tab group (INSPECTOR / GAME CTRL / STRATEGY / DEBUG) and a bottom tab
-// group (CONSOLE / SETTINGS / SCENARIO). Stored relative sizes are scaled to the
+// top tab group (INSPECTOR / GAME CTRL / DEBUG) and a bottom tab group
+// (CONSOLE / SETTINGS / SCENARIO). Stored relative sizes are scaled to the
 // real container by Dockview's `fromJSON`. Bump LAYOUT_SCHEMA_VERSION in
 // DockviewWrapper whenever this changes so stale persisted defaults are dropped.
 const DEFAULT_LAYOUT = {
@@ -48,8 +48,6 @@ const DEFAULT_LAYOUT = {
                 views: [
                   "player-inspector",
                   "game-controller",
-                  "strategy",
-                  "plan",
                   "debug-layers",
                 ],
                 activeView: "debug-layers",
@@ -98,16 +96,6 @@ const DEFAULT_LAYOUT = {
       id: "game-controller",
       contentComponent: "game-controller",
       title: "GAME CTRL",
-    },
-    strategy: {
-      id: "strategy",
-      contentComponent: "strategy",
-      title: "STRATEGY",
-    },
-    plan: {
-      id: "plan",
-      contentComponent: "plan",
-      title: "PLAN",
     },
     "debug-layers": {
       id: "debug-layers",

@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import SettingsEditor from "@/views/SettingsEditor";
 import AvoidanceSettingsEditor from "@/views/AvoidanceSettingsEditor";
 import SettingsBaselineBar from "@/views/SettingsBaselineBar";
+import StrategySettings from "@/views/StrategySettings";
 import { useExecutorSettings } from "@/api";
 
 const GoalAreaAvoidanceToggle: React.FC = () => {
@@ -36,10 +37,11 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
     <div className="w-full h-full bg-bg-surface flex flex-col">
       <Tabs
         size="sm"
-        defaultValue="controller"
+        defaultValue="strategy"
         className="flex-1 min-h-0 w-full flex flex-col gap-2 p-2"
       >
         <TabsList className="w-full">
+          <TabsTrigger value="strategy">Strategy</TabsTrigger>
           <TabsTrigger value="controller">Controller</TabsTrigger>
           <TabsTrigger value="avoidance">Avoidance</TabsTrigger>
           <TabsTrigger value="player">Player</TabsTrigger>
@@ -48,6 +50,9 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
           <TabsTrigger value="skill">Skill</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="strategy" className="flex-1 overflow-hidden">
+          <StrategySettings />
+        </TabsContent>
         <TabsContent value="controller" className="flex-1 overflow-hidden">
           <div className="h-full flex flex-col">
             <GoalAreaAvoidanceToggle />

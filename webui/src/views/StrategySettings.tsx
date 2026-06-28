@@ -1,5 +1,4 @@
 import React from "react";
-import { IDockviewPanelProps } from "dockview";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
@@ -103,15 +102,16 @@ const TeamParams: React.FC<{ tsp: TeamStrategyParams }> = ({ tsp }) => (
 );
 
 /**
- * Strategy Panel — renders runtime parameter controls declared by each active
+ * Strategy settings — runtime parameter controls declared by each active
  * strategy (auto-discovered via `ExecutorInfo.strategy_params`). Changes are
- * pushed live to the running strategy process.
+ * pushed live to the running strategy process. Rendered as a tab inside the
+ * Settings panel.
  */
-const StrategyPanel: React.FC<IDockviewPanelProps> = () => {
+const StrategySettings: React.FC = () => {
   const info = useExecutorInfo();
   const params = info?.strategy_params ?? [];
   return (
-    <div className="w-full h-full bg-bg-surface flex flex-col overflow-auto">
+    <div className="h-full overflow-auto">
       {params.length === 0 ? (
         <div className="p-4 text-sm text-text-muted">
           No active strategy, or it declares no parameters.
@@ -123,4 +123,4 @@ const StrategyPanel: React.FC<IDockviewPanelProps> = () => {
   );
 };
 
-export default StrategyPanel;
+export default StrategySettings;
