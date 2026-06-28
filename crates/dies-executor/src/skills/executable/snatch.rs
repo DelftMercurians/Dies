@@ -187,7 +187,7 @@ impl ExecutableSkill for SnatchSkill {
         }
 
         ctx.team_context.debug_string(
-            format!("{}snatch", ctx.debug_prefix),
+            format!("p{}.snatch", ctx.player.id.as_u32()),
             if self.engaged {
                 "peeling"
             } else {

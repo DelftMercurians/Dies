@@ -46,6 +46,10 @@ pub const DRIBBLE_CORRECTION_STEP: f64 = 250.0;
 pub const DRIBBLE_CORRECTION_LIMIT: f64 = 350.0;
 /// Maximum distance to the ball for a steal to be worth attempting (M1 crude gate).
 pub const STEAL_MAX_DIST: f64 = 2500.0;
+/// Backstop timeout (s) for a snatch attempt. The `snatch` skill has its own
+/// internal timeout that normally fires first; this is a driver-level safety net
+/// so a wedged attempt can't run forever before the planner gives up.
+pub const SNATCH_TIMEOUT: f64 = 4.0;
 /// Lateral step a contested carrier strafes off the squeeze axis to break a pin
 /// while keeping the ball (the keep-possession escape). Short — it only needs to
 /// move the opponent out from between us and goal, after which we replan normally.

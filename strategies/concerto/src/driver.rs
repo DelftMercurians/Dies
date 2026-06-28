@@ -39,6 +39,11 @@ pub enum FailReason {
 enum Phase {
     Idle,
     Pickup,
+    /// Strip a held ball off an opponent — press the ball and rotate to peel it
+    /// loose (the `snatch` skill). Distinct from `Pickup` because it has a simpler
+    /// completion contract (succeed when the opponent loses the ball) and its own
+    /// timeout, not the pickup tiered-commit timer.
+    Snatch,
     Dribble,
     Shoot,
     /// Strike-through restart release (reflex kick) — see `Waypoint::Release`.
@@ -156,6 +161,12 @@ impl Driver {
     /// Begin executing a waypoint with the given active robot.
     pub fn set_waypoint(&mut self, waypoint: Waypoint, active_robot: PlayerId, now: f64) {
         self.phase = match &waypoint {
+            // Stripping a held ball is a snatch; loose / boundary captures are a
+            // normal pickup.
+            Waypoint::Capture {
+                kind: CaptureKind::Steal { .. },
+                ..
+            } => Phase::Snatch,
             Waypoint::Capture { .. } => Phase::Pickup,
             Waypoint::Dribble { .. } => Phase::Dribble,
             Waypoint::Shoot { .. } => Phase::Shoot,
@@ -287,6 +298,31 @@ impl Driver {
                 }
             }
 
+            // ── Snatch (strip a held ball) ──────────────────────────────
+            // The opponent is holding the ball on its dribbler. Press our dribbler
+            // against the ball and rotate to peel it loose, aimed to a safe clear
+            // away from the holder. Succeeds when the opponent loses the ball — the
+            // ball then goes loose and the next replan captures it normally.
+            (
+                Waypoint::Capture {
+                    kind: CaptureKind::Steal { from },
+                    ..
+                },
+                Phase::Snatch,
+            ) => {
+                let release = snatch_release_hint(world, *from, ball_pos);
+                player.snatch(release);
+                player.set_role("snatching");
+                match skill_status {
+                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
+                    SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
+                    _ if elapsed > config::SNATCH_TIMEOUT => {
+                        WaypointStatus::Failed(FailReason::Timeout)
+                    }
+                    _ => WaypointStatus::Ongoing,
+                }
+            }
+
             // ── Dribble ─────────────────────────────────────────────────
             (Waypoint::Dribble { target_area }, Phase::Dribble) => {
                 let heading = heading_toward(*target_area, opp_goal);
@@ -371,6 +407,34 @@ impl Driver {
 fn heading_toward(from: Vector2, to: Vector2) -> Angle {
     let d = to - from;
     Angle::from_radians(d.y.atan2(d.x))
+}
+
+/// How far ahead (mm) the snatch release point is placed. Only its *direction*
+/// from the ball matters (the skill picks which way to peel from it), so the
+/// magnitude is arbitrary — just large enough to be a stable direction.
+const SNATCH_RELEASE_AIM: f64 = 1000.0;
+
+/// Where to knock a stripped ball: a safe clear *away from the holder*. The peel
+/// moves the ball perpendicular to the holder's facing, so the only real choice
+/// is which lateral side — pick the one pointing away from our own goal (upfield)
+/// so a strip never squirts the ball back toward danger. Returns `None` (skill's
+/// own safe default) if the holder can't be located.
+fn snatch_release_hint(world: &World, holder: PlayerId, ball: Vector2) -> Option<Vector2> {
+    let holder_pos = world.opp_player(holder)?.position;
+    let facing = ball - holder_pos;
+    if facing.norm() < 1e-3 {
+        return None;
+    }
+    let facing = facing.normalize();
+    // The two lateral (perpendicular) escape directions.
+    let lateral = Vector2::new(-facing.y, facing.x);
+    let away_from_goal = (ball - world.own_goal_center()).normalize();
+    let side = if lateral.dot(&away_from_goal) >= 0.0 {
+        lateral
+    } else {
+        -lateral
+    };
+    Some(ball + side * SNATCH_RELEASE_AIM)
 }
 
 /// How strongly the off-axis escape direction bends the contested pickup heading
