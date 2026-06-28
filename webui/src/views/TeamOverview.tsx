@@ -35,6 +35,13 @@ import { FC, useEffect, useRef } from "react";
 import { Bell, BellOff } from "lucide-react";
 import PatternIcon from "./PatternIcon";
 import Sparkline from "./Sparkline";
+import PlanSection from "./PlanSection";
+import {
+  collectTeamPasses,
+  PassDiag,
+  PasserStrip,
+  ReceiverStrip,
+} from "./PassDiag";
 
 /**
  * Superdense, glanceable team overview shown in the Inspector when no player is
@@ -130,6 +137,15 @@ const TeamOverview: FC<TeamOverviewProps> = ({
 
   const histories = usePlayerHistories(sorted_players);
 
+  // Fold active-pass diagnostics into the player list: the passer's row gets
+  // the full readout, the receiver's row the receive-side subset.
+  const passerByPlayer = new Map<number, PassDiag>();
+  const receiverByPlayer = new Map<number, PassDiag>();
+  for (const pass of collectTeamPasses(debugData, primaryTeam)) {
+    passerByPlayer.set(pass.passer, pass);
+    receiverByPlayer.set(pass.receiver, pass);
+  }
+
   const bsPlayers = bsInfo
     ? bsInfo.blue_team.length === 0 && bsInfo.yellow_team.length === 0
       ? bsInfo.unknown_team
@@ -152,8 +168,9 @@ const TeamOverview: FC<TeamOverviewProps> = ({
   }
 
   return (
-    <div className={cn("relative", className)}>
-      <div className="absolute inset-0 overflow-y-auto bg-bg-surface">
+    <div className={cn("flex flex-col bg-bg-surface", className)}>
+      <PlanSection />
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="flex items-center justify-between px-2 py-1.5 text-[11px] uppercase tracking-wider text-text-dim border-b border-border-subtle">
           <span>
             {primaryTeam} team — {sorted_players.length} players
@@ -202,6 +219,8 @@ const TeamOverview: FC<TeamOverviewProps> = ({
                 history={histories[player.id]}
                 debugData={debugData}
                 pinnedKeys={pinnedKeys}
+                asPasser={passerByPlayer.get(player.id)}
+                asReceiver={receiverByPlayer.get(player.id)}
                 onClick={() => onSelectPlayer(player.id)}
               />
             ))}
@@ -228,6 +247,8 @@ const OverviewRow: FC<{
   history?: { speed: number[]; accel: number[] };
   debugData: DebugMap | null;
   pinnedKeys: string[];
+  asPasser?: PassDiag;
+  asReceiver?: PassDiag;
   onClick: () => void;
 }> = ({
   player,
@@ -239,6 +260,8 @@ const OverviewRow: FC<{
   history,
   debugData,
   pinnedKeys,
+  asPasser,
+  asReceiver,
   onClick,
 }) => {
   const health = playerHealth(feedback);
@@ -286,6 +309,10 @@ const OverviewRow: FC<{
 
       {/* active skill */}
       {player.skill && <SkillLine skill={player.skill} />}
+
+      {/* pass coordinator diagnostics (passer/receiver of an active pass) */}
+      {asPasser && <PasserStrip diag={asPasser} />}
+      {asReceiver && <ReceiverStrip diag={asReceiver} />}
 
       {/* prominent critical/warning issues */}
       {health.issues.length > 0 && (

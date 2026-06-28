@@ -34,10 +34,12 @@ enum RoleKind {
     Capture,
     Shadow,
     Mark,
+    /// Offensive outlets. Slots `0..SUPPORT_COUNT` are the wide supporters; the
+    /// final slot is the central box-runner (cutback target / rebound crasher),
+    /// faded in by the attack fraction. Folding the box-runner into Support (rather
+    /// than a separate kind) makes central↔wide reassignment a within-kind slot
+    /// swap, not a tactical role flip — see the generator.
     Support,
-    /// Central box-runner: a single advanced body in front of the opponent box, the
-    /// cutback target / rebound crasher. Staffed only while attacking.
-    Striker,
     /// Deep recycle pivot behind the ball, ball-side: the safe outlet the carrier
     /// lays the ball back to when nothing is on forward. Never in the box.
     Pivot,
@@ -50,7 +52,6 @@ fn role_name(kind: RoleKind) -> &'static str {
         RoleKind::Shadow => "shadow",
         RoleKind::Mark => "mark",
         RoleKind::Support => "support",
-        RoleKind::Striker => "striker",
         RoleKind::Pivot => "pivot",
         RoleKind::Spread => "spread",
     }
@@ -113,6 +114,11 @@ pub struct Formation {
     last_reserved: Vec<PlayerId>,
     last_plan_ctx: PlanContext,
     last_capture: Option<CaptureRole>,
+    /// Robot that drew the capture role last tick (the incumbent pursuer). Fix D:
+    /// the matcher gives it a small commitment discount on the capture role so a
+    /// chase isn't re-elected to a marginally-closer robot every recompute as the
+    /// (lead) ball point jitters — the cause of most capturing↔unassigned churn.
+    last_capturer: Option<PlayerId>,
 }
 
 impl Default for Formation {
@@ -131,6 +137,7 @@ impl Formation {
             last_reserved: Vec::new(),
             last_plan_ctx: PlanContext::default(),
             last_capture: None,
+            last_capturer: None,
         }
     }
 
@@ -216,6 +223,7 @@ impl Formation {
                 role: role_name(role.id.kind),
             });
         }
+        self.last_capturer = capturer;
         FormationOutput { commands, capturer }
     }
 
@@ -252,11 +260,21 @@ impl Formation {
                                 config::A_MAX,
                             );
                             if role.id.kind == RoleKind::Capture {
-                                let barred = capture
-                                    .map(|c| c.ineligible.contains(id))
-                                    .unwrap_or(true);
+                                let barred =
+                                    capture.map(|c| c.ineligible.contains(id)).unwrap_or(true);
                                 if barred || t > config::CAPTURE_TIME_HORIZON {
                                     return f64::INFINITY;
+                                }
+                                // Fix D: commitment discount for the incumbent
+                                // pursuer — a challenger must be decisively faster
+                                // (by CAPTURE_COMMIT seconds of redirect) to take
+                                // the chase, so the capturer doesn't flip on lead-
+                                // point jitter. Applied after the eligibility gate
+                                // so it never un-gates an unreachable robot.
+                                if Some(*id) == self.last_capturer {
+                                    return t
+                                        - role.importance * config::SEC_PER_IMPORTANCE
+                                        - config::CAPTURE_COMMIT;
                                 }
                             }
                             t - role.importance * config::SEC_PER_IMPORTANCE
@@ -334,39 +352,53 @@ impl Formation {
             config::THREAT_GOAL_FAR,
         );
 
-        // 1. Shadow / goal coverage (coordinated set), count scales with threat.
-        let span = (config::SHADOW_MAX - config::SHADOW_MIN) as f64;
-        let mut k = config::SHADOW_MIN + (span * ball_threat).round() as usize;
-        // A plan robot contesting the ball in our defensive zone provides the
-        // front-line pressure a shadow would — count it as one, so shadows don't
-        // pile up directly behind the snatcher (the reported clustering).
-        let contesting_def = contest_pts
-            .iter()
-            .filter(|p| {
-                geometry::threat(
-                    **p,
-                    own_goal,
-                    config::THREAT_GOAL_NEAR,
-                    config::THREAT_GOAL_FAR,
-                ) > config::SHADOW_RELIEF_THREAT
-            })
-            .count();
-        k = k.saturating_sub(contesting_def).max(config::SHADOW_MIN);
+        // Defending an opponent set piece (free kick / kickoff / placement) with
+        // the ball deep in our own third: the goal is acutely threatened and we are
+        // barred from contesting the ball (must stand off it), so there's no
+        // capturer to absorb a body. Commit a full goal wall and pull everyone off
+        // offensive `support` (below). Without this the matcher staffs forward
+        // support roles while the goal mouth is left to the keeper alone — the
+        // corner free-kick collapse (leg-2 fix).
+        let setpiece_defense = !world.us_operating()
+            && !matches!(
+                world.game_state(),
+                GameState::Run | GameState::Halt | GameState::Timeout | GameState::Unknown
+            )
+            && ball.x < -half_len / 3.0;
+
+        // 1. Shadow / goal coverage. Fix A: always emit `SHADOW_MAX` shadows as a
+        //    fixed-width wall; importance is staggered center-out (the central
+        //    shadow on the ball→goal ray is most valuable, the wings fade) and
+        //    scaled by threat, so the *staffed* count emerges continuously — no
+        //    integer count step, hence no blink. Fixed cardinality also keeps each
+        //    shadow slot's identity stable tick-to-tick, which the redirect-cost
+        //    continuity (and Fix B) rely on. Relief for a plan robot contesting in
+        //    our zone is handled by the continuous soft-suppression pass below, not
+        //    a discrete count cut. On set-piece defense the stagger is flattened so
+        //    the full wall is committed (the importance-space form of leg-2's
+        //    `k = SHADOW_MAX`); support is zeroed below so nothing forward outranks
+        //    the outer wall slots.
         let positions = geometry::shadow_arc(
             ball,
             own_goal,
-            k,
+            config::SHADOW_MAX,
             config::SHADOW_STANDOFF,
             config::SHADOW_SPACING,
         );
+        let shadow_center = (config::SHADOW_MAX as f64 - 1.0) / 2.0;
         for (i, pos) in positions.into_iter().enumerate() {
+            let stagger = if setpiece_defense {
+                1.0
+            } else {
+                config::SHADOW_STAGGER.powf((i as f64 - shadow_center).abs())
+            };
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Shadow,
                     slot: i as u16,
                 },
                 position: pos,
-                importance: config::IMP_SHADOW_BASE * (0.5 + 0.5 * ball_threat),
+                importance: config::IMP_SHADOW_BASE * (0.5 + 0.5 * ball_threat) * stagger,
                 face: ball,
             });
         }
@@ -386,12 +418,10 @@ impl Formation {
                     config::THREAT_GOAL_NEAR,
                     config::THREAT_GOAL_FAR,
                 );
-                // Skip opponents that pose no real threat (far up their own half);
-                // an importance-0 mark role is still assignable and would lure an
-                // up-field robot away from defending.
-                if opp_threat < config::MARK_MIN_THREAT {
-                    continue;
-                }
+                // Fix A: no hard threat cutoff. Mark importance ramps to ~0 with
+                // opp_threat·openness, so a far opponent's mark simply loses the
+                // match (staffed only if a robot has nothing better) instead of
+                // blinking in/out at a threshold — one fewer role-set discontinuity.
                 // Stand off the opponent toward our own goal (goal-side marking),
                 // and never cross midfield chasing them onto the opponent half.
                 let to_goal = own_goal - opp.position;
@@ -435,24 +465,33 @@ impl Formation {
         let opp_box = world.opp_penalty_area();
         let opp_pen_depth = opp_box.max.x - opp_box.min.x;
         let opp_pen_half_width = opp_box.max.y;
-        // When the ball is in the opponent half and our own goal is not under
-        // threat, commit more bodies forward as supporters (keeper + one shadow
-        // stay home) and place them advanced/wide — a deep carrier near the box
-        // can't use a strictly-forward outlet, so we flank the goal for crosses.
-        let attacking = ball.x > config::SUPPORT_ATTACK_BALL_X
-            && ball_threat < config::SUPPORT_ATTACK_MAX_THREAT;
-        // When attacking, one forward body becomes the central box-runner (added
-        // below), so stage one fewer *wide* supporter to keep the body-count
-        // balanced — central presence replaces a wing, it doesn't add a fourth.
-        let support_count = if attacking {
-            config::SUPPORT_ATTACK_COUNT.saturating_sub(1)
+        // Fix A: a continuous attack fraction `af ∈ [0,1]` replaces the `attacking`
+        // boolean. It ramps up as the ball advances from SUPPORT_ATTACK_BALL_X
+        // toward ..._FULL, and is gated down as our-goal threat rises from
+        // ..._MIN_THREAT to ..._MAX_THREAT. Support importance lerps
+        // IMP_SUPPORT→IMP_SUPPORT_ATTACK with `af`, and the box-runner's importance
+        // scales with `af` (≈0 when not attacking) — so the forward block fades in
+        // and out smoothly across midfield rather than snapping at a threshold. The
+        // *placement* layout still switches at the midpoint (`attacking`, af ≥ 0.5):
+        // a lone position transition, damped by redirect cost + Fix B, while role
+        // existence and weight stay continuous.
+        let af_pos = ((ball.x - config::SUPPORT_ATTACK_BALL_X)
+            / (config::SUPPORT_ATTACK_BALL_X_FULL - config::SUPPORT_ATTACK_BALL_X))
+            .clamp(0.0, 1.0);
+        let af_threat = ((config::SUPPORT_ATTACK_MAX_THREAT - ball_threat)
+            / (config::SUPPORT_ATTACK_MAX_THREAT - config::SUPPORT_ATTACK_MIN_THREAT))
+            .clamp(0.0, 1.0);
+        let af = af_pos * af_threat;
+        let attacking = af >= 0.5; // positioning layout only; existence/weight are continuous
+        // Always two wide supporters; the central box-runner (below) is the third
+        // forward body, faded in by `af`. Count is fixed → no role-set step. On
+        // set-piece defense support importance is zeroed (leg-2: pull every body off
+        // offence onto the goal wall) — the importance-space form of `support = 0`.
+        let support_count = config::SUPPORT_COUNT;
+        let support_imp = if setpiece_defense {
+            0.0
         } else {
-            config::SUPPORT_COUNT
-        };
-        let support_imp = if attacking {
-            config::IMP_SUPPORT_ATTACK
-        } else {
-            config::IMP_SUPPORT
+            config::IMP_SUPPORT + (config::IMP_SUPPORT_ATTACK - config::IMP_SUPPORT) * af
         };
         // Placed greedily; each supporter excludes spots already claimed by an
         // earlier one (see `taken` below) so two never converge on the same outlet.
@@ -498,19 +537,28 @@ impl Formation {
         // angle across the keeper. This is the central outlet the planner cuts back
         // to (its large lateral separation from a wide carrier trips the final-third
         // cross branch) and the close-range finisher v0's wall+arc-keeper leave open.
-        if attacking {
-            let front_x = world.opp_goal_center().x - (opp_pen_depth + config::BOX_RUNNER_FRONT_MARGIN);
+        // Fix A/B: it is the *central support slot* (slot 2 of the Support kind), not
+        // a separate role kind. Folding it into Support means the former
+        // striker↔support reassignment (a forward robot swapping the central body for
+        // a wide outlet, ~13% of post-A role churn) is now a within-kind slot swap:
+        // the wide/central positions stay spatially fixed by slot, so redirect cost
+        // keeps the same robot central, and the change no longer reads as a tactical
+        // role flip. Importance scales with `af` (≈0 on set-piece defense, so it is
+        // unstaffed there too) so the central body fades in only as we commit forward.
+        {
+            let front_x =
+                world.opp_goal_center().x - (opp_pen_depth + config::BOX_RUNNER_FRONT_MARGIN);
             // Bias to the side away from the ball; default to +y when the ball is
             // dead-central so the choice is still deterministic.
             let away = if ball.y > 0.0 { -1.0 } else { 1.0 };
             let pos = Vector2::new(front_x, away * config::BOX_RUNNER_Y_OFFSET);
             roles.push(Role {
                 id: RoleId {
-                    kind: RoleKind::Striker,
-                    slot: 0,
+                    kind: RoleKind::Support,
+                    slot: config::SUPPORT_COUNT as u16,
                 },
                 position: pos,
-                importance: config::IMP_STRIKER,
+                importance: config::IMP_STRIKER * af,
                 face: world.opp_goal_center(),
             });
         }
@@ -543,8 +591,11 @@ impl Formation {
         // becomes a plan slot, and the PassCoordinator positions it. Formation
         // staffing one too would put a second robot on the receive area.)
 
-        // 4. Spread/residual — top up to the over-generation target.
-        let target = (config::OVERGEN_FACTOR * n as f64).ceil() as usize;
+        // 4. Spread/residual — Fix A: the fixed catalog above (shadows + marks +
+        //    supports + striker) already exceeds the field-robot count in normal
+        //    play, so spread is now only a floor guaranteeing every assignable
+        //    robot has *some* role; we no longer over-generate a 1.5× cushion.
+        let target = n;
         let mut slot = 0u16;
         while roles.len() < target.max(n) {
             let frac = if target.max(n) <= 1 {
@@ -823,9 +874,15 @@ mod tests {
         let f = Formation::new();
         let roles = f.generate_roles(&world, &PlanContext::default(), None, 4);
 
-        let strikers: Vec<&Role> = roles.iter().filter(|r| r.id.kind == RoleKind::Striker).collect();
-        assert_eq!(strikers.len(), 1, "exactly one box-runner when attacking");
-        let s = strikers[0];
+        // The box-runner is the central Support slot (slot == SUPPORT_COUNT).
+        let runners: Vec<&Role> = roles
+            .iter()
+            .filter(|r| {
+                r.id.kind == RoleKind::Support && r.id.slot as usize == config::SUPPORT_COUNT
+            })
+            .collect();
+        assert_eq!(runners.len(), 1, "exactly one central box-runner slot");
+        let s = runners[0];
         // Just in front of the opponent box, central.
         let box_front = world.opp_penalty_area().min.x;
         assert!(
@@ -834,10 +891,16 @@ mod tests {
             s.position.x
         );
         // Ball is at +y, so the runner biases to -y (open cutback side).
-        assert!(s.position.y < 0.0, "runner should bias away from the ball side");
-        // Wide supporters reduced from SUPPORT_ATTACK_COUNT to that minus one.
-        let supports = roles.iter().filter(|r| r.id.kind == RoleKind::Support).count();
-        assert_eq!(supports, config::SUPPORT_ATTACK_COUNT - 1);
+        assert!(
+            s.position.y < 0.0,
+            "runner should bias away from the ball side"
+        );
+        // Total support bodies = two wide + one central = SUPPORT_ATTACK_COUNT.
+        let supports = roles
+            .iter()
+            .filter(|r| r.id.kind == RoleKind::Support)
+            .count();
+        assert_eq!(supports, config::SUPPORT_ATTACK_COUNT);
     }
 
     #[test]

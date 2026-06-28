@@ -123,8 +123,8 @@ mod world;
 
 pub use player::PlayerHandle;
 pub use skill_builders::{
-    DribbleBuilder, DribbleShootParams, GoToBuilder, PickupBallParams, ReflexShootParams,
-    SkillHandle, SkillParams,
+    DribbleBuilder, DribbleShootParams, GoToBuilder, HandleBallParams, PickupBallParams,
+    ReflexShootParams, SkillHandle, SkillParams,
 };
 pub use strategy::{Strategy, StrategyFactory};
 pub use team::{PassBuilder, TeamContext};
@@ -133,10 +133,10 @@ pub use world::{Rect, World};
 // Re-export commonly used types from protocol and core crates
 pub use dies_core::{Angle, FieldGeometry};
 pub use dies_strategy_protocol::{
-    ArcZone, BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState, Handicap,
-    MotionBounds, ParamKind, ParamSpec, ParamValue, PassBallState, PassFailure, PassResult,
-    PassRole, PlayerId, PlayerState, Possession, SkillCommand, SkillStatus, StrategyParams,
-    Vector2, WorldSnapshot,
+    ArcZone, BallAction, BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState,
+    Handicap, MotionBounds, ParamKind, ParamSpec, ParamValue, PassBallState, PassFailure,
+    PassResult, PassRole, PlayerId, PlayerState, Possession, SkillCommand, SkillStatus,
+    StrategyParams, Vector2, WorldSnapshot,
 };
 
 /// Prelude module for convenient imports.
@@ -150,7 +150,7 @@ pub mod prelude {
     pub use crate::debug;
     pub use crate::player::PlayerHandle;
     pub use crate::skill_builders::{
-        DribbleShootParams, PickupBallParams, ReflexShootParams, SkillHandle,
+        DribbleShootParams, HandleBallParams, PickupBallParams, ReflexShootParams, SkillHandle,
     };
     pub use crate::strategy::Strategy;
     pub use crate::team::TeamContext;
@@ -159,8 +159,9 @@ pub mod prelude {
     // Core types
     pub use dies_core::{Angle, FieldGeometry};
     pub use dies_strategy_protocol::{
-        ArcZone, BallState, DebugColor, GameState, Handicap, MotionBounds, ParamKind, ParamSpec,
-        ParamValue, PlayerId, PlayerState, Possession, SkillCommand, SkillStatus, Vector2,
+        ArcZone, BallAction, BallState, DebugColor, GameState, Handicap, MotionBounds, ParamKind,
+        ParamSpec, ParamValue, PlayerId, PlayerState, Possession, SkillCommand, SkillStatus,
+        Vector2,
     };
 }
 

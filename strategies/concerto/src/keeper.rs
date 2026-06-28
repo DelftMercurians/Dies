@@ -57,7 +57,7 @@ pub fn keeper_guard_zone(world: &World) -> MotionBounds {
         center: world.own_goal_center(),
         min_radius: 0.0,
         max_radius: config::KEEPER_ARC_RADIUS + config::KEEPER_ZONE_RADIUS_SLACK,
-        half_angle: config::KEEPER_ARC_MAX_ANGLE,
+        half_angle: config::KEEPER_ARC_MAX_ANGLE + config::KEEPER_ZONE_ANGLE_SLACK,
     })
 }
 
@@ -87,6 +87,8 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
                 world,
                 config::KEEPER_ARC_RADIUS,
                 config::KEEPER_ARC_MAX_ANGLE,
+                config::KEEPER_MOUTH_MARGIN,
+                config::KEEPER_NEARPOST_BIAS,
             );
             let face = world
                 .ball_position()
@@ -102,28 +104,46 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
             if keeper.has_ball() {
                 let _ = keeper.reflex_shoot(target);
             } else {
-                let _ = keeper.pickup_ball(heading);
+                // Acquire via the unified ball-handling skill (Hold mode); the
+                // reflex_shoot above takes over once the breakbeam trips.
+                let _ = keeper.handle_ball(BallAction::Hold { heading }, Some(heading));
             }
         }
     }
 }
 
 /// Compute the keeper's Guard target: the point on the arc of radius `radius`
-/// around the goal centre that lies on the bisector of the shot cone, clamped to
-/// `±max_angle` off straight-out.
-pub fn keeper_arc_target(world: &World, radius: f64, max_angle: f64) -> Vector2 {
+/// around the goal centre that lies on the shot-cone bisector biased toward the
+/// near post, kept laterally within the goal mouth (`mouth_margin` inside each
+/// post) and within `±max_angle` off straight-out.
+///
+/// The near-post bias (`nearpost_bias`, scaled by how oblique the ball is) shifts
+/// the keeper toward the post on the ball's side: for a corner shot the makeable
+/// shot is at the near post, while the far post is geometrically very hard, so we
+/// deny the near post and concede the far. The mouth clamp (Option B) replaces the
+/// old fixed angular clamp, which pinned the keeper near goal-centre and left the
+/// near post open against oblique shots.
+pub fn keeper_arc_target(
+    world: &World,
+    radius: f64,
+    max_angle: f64,
+    mouth_margin: f64,
+    nearpost_bias: f64,
+) -> Vector2 {
     let g = world.own_goal_center();
     let half_goal = world.goal_width() / 2.0;
+    // Lateral limit for the keeper centre: stay this far inside the posts.
+    let y_lim = (half_goal - mouth_margin).max(0.0);
 
     let ball = match world.ball_position() {
         Some(b) => b,
         // No ball: square up at the centre of the arc.
-        None => return clamp_to_arc(g + Vector2::new(radius, 0.0), g, radius, max_angle),
+        None => return clamp_to_mouth(g + Vector2::new(radius, 0.0), g, radius, max_angle, y_lim),
     };
 
     // Fast incoming shot on target: stand on the shot line where it reaches the
     // keeper's depth, rather than the cone bisector.
-    if let Some(p) = shot_intercept(world, g, half_goal, radius, max_angle) {
+    if let Some(p) = shot_intercept(world, g, half_goal, radius, max_angle, y_lim) {
         return p;
     }
 
@@ -139,7 +159,27 @@ pub fn keeper_arc_target(world: &World, radius: f64, max_angle: f64) -> Vector2 
         _ => None,
     };
 
-    let candidate = bisector
+    // Near-post bias, scaled by obliqueness: `obliq` is the lateral component of
+    // the goal→ball direction (0 = straight on, 1 = level with the goal line). The
+    // near post is the one on the ball's side.
+    let aim = bisector.map(|bis| {
+        let to_ball = (ball - g)
+            .try_normalize(1.0e-6)
+            .unwrap_or(Vector2::new(1.0, 0.0));
+        let obliq = to_ball.y.abs().min(1.0);
+        let near_post = g + Vector2::new(0.0, half_goal * to_ball.y.signum());
+        match (near_post - ball).try_normalize(1.0e-6) {
+            Some(to_near) => {
+                let w = (nearpost_bias * obliq).clamp(0.0, 1.0);
+                (bis * (1.0 - w) + to_near * w)
+                    .try_normalize(1.0e-6)
+                    .unwrap_or(bis)
+            }
+            None => bis,
+        }
+    });
+
+    let candidate = aim
         .and_then(|u| ray_circle_front(ball, u, g, radius))
         .unwrap_or_else(|| {
             // Degenerate: fall back to the goal→ball direction on the arc.
@@ -149,7 +189,7 @@ pub fn keeper_arc_target(world: &World, radius: f64, max_angle: f64) -> Vector2 
             g + d * radius
         });
 
-    clamp_to_arc(candidate, g, radius, max_angle)
+    clamp_to_mouth(candidate, g, radius, max_angle, y_lim)
 }
 
 /// Shot-line intercept: if the ball is travelling fast (≥
@@ -168,6 +208,7 @@ fn shot_intercept(
     half_goal: f64,
     radius: f64,
     max_angle: f64,
+    y_lim: f64,
 ) -> Option<Vector2> {
     let ball = world.ball_position()?;
     let vel = world.ball_velocity()?;
@@ -198,7 +239,13 @@ fn shot_intercept(
     if t_depth <= 0.0 {
         return None;
     }
-    Some(clamp_to_arc(ball + dir * t_depth, g, radius, max_angle))
+    Some(clamp_to_mouth(
+        ball + dir * t_depth,
+        g,
+        radius,
+        max_angle,
+        y_lim,
+    ))
 }
 
 /// First intersection of the ray `from + t·dir` (t>0) with the circle `(centre,
@@ -219,11 +266,18 @@ fn ray_circle_front(from: Vector2, dir: Vector2, centre: Vector2, radius: f64) -
     Some(from + dir * t)
 }
 
-/// Project a point onto the arc: force radius `radius` from `centre` and clamp the
-/// angle off straight-out (+x) to `±max_angle`.
-fn clamp_to_arc(p: Vector2, centre: Vector2, radius: f64, max_angle: f64) -> Vector2 {
+/// Project a point onto the keeper's guard arc, kept in front of the goal and
+/// inside the mouth: force radius `radius` from `centre`, then clamp the angle off
+/// straight-out (+x, team-relative) to whichever is tighter — `±max_angle` (the
+/// stay-in-front sanity bound) or the angle whose lateral offset equals `y_lim`
+/// (the stay-within-the-mouth clamp, Option B).
+fn clamp_to_mouth(p: Vector2, centre: Vector2, radius: f64, max_angle: f64, y_lim: f64) -> Vector2 {
     let rel = p - centre;
-    let theta = rel.y.atan2(rel.x).clamp(-max_angle, max_angle);
+    // Tightest angular bound: the explicit sanity cap, or the lateral mouth limit
+    // (the angle at which `radius·sin θ == y_lim`).
+    let lat_angle = (y_lim / radius).clamp(0.0, 1.0).asin();
+    let lim = max_angle.min(lat_angle);
+    let theta = rel.y.atan2(rel.x).clamp(-lim, lim);
     centre + Vector2::new(radius * theta.cos(), radius * theta.sin())
 }
 
@@ -335,13 +389,65 @@ mod tests {
         })
     }
 
-    const R: f64 = 400.0;
-    const MAX_A: f64 = std::f64::consts::FRAC_PI_4;
+    const R: f64 = config::KEEPER_ARC_RADIUS;
+    const MAX_A: f64 = config::KEEPER_ARC_MAX_ANGLE;
+    const MARGIN: f64 = config::KEEPER_MOUTH_MARGIN;
+    const BIAS: f64 = config::KEEPER_NEARPOST_BIAS;
+
+    /// Guard target with the production constants.
+    fn guard_target(w: &World) -> Vector2 {
+        keeper_arc_target(w, R, MAX_A, MARGIN, BIAS)
+    }
+
+    /// Distance from `p` to segment `a→b` (a shot path).
+    fn seg_dist(p: Vector2, a: Vector2, b: Vector2) -> f64 {
+        let ab = b - a;
+        let t = ((p - a).dot(&ab) / ab.norm_squared()).clamp(0.0, 1.0);
+        (p - (a + ab * t)).norm()
+    }
+
+    /// Regression guard for the 2026-06-28 corner free-kick goal: a strike from the
+    /// corner (-4000,-2000) crossing the line at y=-241. The keeper body (≈90mm)
+    /// plus ball radius must be within reach of the shot line. The old ±45° clamp
+    /// parked the keeper near goal-centre and left this wide open; the new mouth
+    /// clamp covers it.
+    #[test]
+    fn oblique_corner_shot_is_covered() {
+        let ball = Vector2::new(-4000.0, -2000.0);
+        let w = world_with_ball(ball);
+        let cross = Vector2::new(-4500.0, -241.0);
+        let contact = 90.0 + config::BALL_RADIUS;
+
+        let kn = guard_target(&w);
+        assert!(
+            seg_dist(kn, ball, cross) < contact,
+            "new keeper must block the incident shot: keeper {:?} dist {:.0}",
+            kn,
+            seg_dist(kn, ball, cross)
+        );
+
+        // The old behaviour (±45° clamp, no bias) left it open — documents the fix.
+        let kb = keeper_arc_target(&w, R, std::f64::consts::FRAC_PI_4, MARGIN, 0.0);
+        assert!(
+            seg_dist(kb, ball, cross) > contact,
+            "old clamp should have conceded (regression baseline): keeper {:?} dist {:.0}",
+            kb,
+            seg_dist(kb, ball, cross)
+        );
+    }
+
+    /// On an oblique ball the keeper hugs toward the near post — well past the old
+    /// 45°/`radius·sin45°≈283mm` lateral cap that pinned it near centre.
+    #[test]
+    fn reaches_toward_near_post_on_oblique_ball() {
+        let kn = guard_target(&world_with_ball(Vector2::new(-4000.0, -2000.0)));
+        assert!(kn.y < -340.0, "should hug toward the near post: {:?}", kn);
+    }
 
     #[test]
     fn central_ball_puts_keeper_square_on() {
         let w = world_with_ball(Vector2::new(0.0, 0.0));
-        let t = keeper_arc_target(&w, R, MAX_A);
+        let t = guard_target(&w);
         let g = w.own_goal_center();
         // On the arc, straight out in front of the goal centre.
         assert!(((t - g).norm() - R).abs() < 1.0, "radius: {:?}", t);
@@ -352,15 +458,21 @@ mod tests {
     #[test]
     fn stays_on_arc_and_within_clamp() {
         let g = Vector2::new(-4500.0, 0.0);
+        let half_goal = FieldGeometry::default().goal_width / 2.0;
+        let y_lim = half_goal - MARGIN;
+        // Tightest lateral angle: whichever of the sanity cap / mouth limit binds.
+        let lim = MAX_A.min((y_lim / R).clamp(0.0, 1.0).asin());
         for &by in &[-2000.0, -800.0, 0.0, 800.0, 2000.0] {
             for &bx in &[-3000.0, -1000.0, 1000.0] {
                 let w = world_with_ball(Vector2::new(bx, by));
-                let t = keeper_arc_target(&w, R, MAX_A);
+                let t = guard_target(&w);
                 // Exactly on the arc.
                 assert!(((t - g).norm() - R).abs() < 1.0, "radius off: {:?}", t);
                 // Within the angular clamp.
                 let theta = (t - g).y.atan2((t - g).x);
-                assert!(theta.abs() <= MAX_A + 1.0e-6, "angle {} > max", theta);
+                assert!(theta.abs() <= lim + 1.0e-6, "angle {} > lim {}", theta, lim);
+                // And never laterally outside the mouth.
+                assert!(t.y.abs() <= y_lim + 1.0, "outside mouth: {:?}", t);
             }
         }
     }
@@ -370,7 +482,7 @@ mod tests {
         let mut snap = world_with_ball(Vector2::zeros()).raw_snapshot().clone();
         snap.ball = None;
         let w = World::new(snap);
-        let t = keeper_arc_target(&w, R, MAX_A);
+        let t = guard_target(&w);
         let g = w.own_goal_center();
         assert!(t.y.abs() < 1.0 && (t.x - (g.x + R)).abs() < 1.0, "{:?}", t);
     }
@@ -378,7 +490,7 @@ mod tests {
     #[test]
     fn ball_on_a_side_pulls_keeper_toward_that_side() {
         let w = world_with_ball(Vector2::new(0.0, 1500.0));
-        let t = keeper_arc_target(&w, R, MAX_A);
+        let t = guard_target(&w);
         assert!(t.y > 0.0, "keeper should shift toward +y: {:?}", t);
     }
 
@@ -391,7 +503,7 @@ mod tests {
         let target = g + Vector2::new(0.0, 400.0); // just inside the +y post
         let dir = (target - Vector2::zeros()).normalize();
         let w = world_with_ball_vel(Vector2::zeros(), dir * 1500.0);
-        let t = keeper_arc_target(&w, R, MAX_A);
+        let t = guard_target(&w);
         // On the arc.
         assert!(((t - g).norm() - R).abs() < 1.0, "radius off: {:?}", t);
         // Shifted toward the shot side, unlike the square-on bisector position.
@@ -406,7 +518,7 @@ mod tests {
     fn slow_ball_keeps_the_bisector_position() {
         // A slow central ball must NOT trigger the intercept — keeper stays square.
         let w = world_with_ball_vel(Vector2::zeros(), Vector2::new(-100.0, 200.0));
-        let t = keeper_arc_target(&w, R, MAX_A);
+        let t = guard_target(&w);
         assert!(t.y.abs() < 1.0, "slow ball should stay square-on: {:?}", t);
     }
 
@@ -415,7 +527,7 @@ mod tests {
         // Fast ball but travelling toward the opponent goal (+x): no intercept,
         // keeper holds the bisector (square-on for a central ball).
         let w = world_with_ball_vel(Vector2::zeros(), Vector2::new(1500.0, 0.0));
-        let t = keeper_arc_target(&w, R, MAX_A);
+        let t = guard_target(&w);
         assert!(
             t.y.abs() < 1.0,
             "ball moving away should stay square: {:?}",
@@ -433,7 +545,7 @@ mod tests {
         let aim = g + Vector2::new(0.0, 2500.0);
         let dir = (aim - Vector2::zeros()).normalize();
         let w = world_with_ball_vel(Vector2::zeros(), dir * 1500.0);
-        let t = keeper_arc_target(&w, R, MAX_A);
+        let t = guard_target(&w);
         // Bisector for a central ball is square-on; intercept would have pushed it
         // hard toward the +y clamp. Assert we did NOT take the intercept.
         assert!(

@@ -271,10 +271,17 @@ impl Strategy for ConcertoStrategy {
                         self.driver
                             .set_waypoint(plan.waypoints[0].clone(), plan.active_robot, now)
                     }
-                    None => {
+                    // Fix C: only tear down when there is genuinely no one to
+                    // pursue. If a capturer is elected but the plan momentarily
+                    // can't form (e.g. a one-frame ball-detection gap), keep the
+                    // existing waypoint so the pursuer stays commanded instead of
+                    // dropping to "unassigned" for a frame and re-acquiring next
+                    // tick — a source of capturing↔unassigned churn.
+                    None if fout.capturer.is_none() => {
                         self.planner.clear_plan();
                         self.driver.clear();
                     }
+                    None => {}
                 }
             }
             if let Some(active_id) = self.driver.active_robot_id() {
@@ -428,24 +435,23 @@ impl ConcertoStrategy {
 
 /// Build a UI plan step from a waypoint.
 fn plan_step(wp: &planner::Waypoint, active: bool) -> debug::PlanStep {
-    use planner::{CaptureKind, Waypoint};
+    use dies_strategy_api::BallAction;
+    use planner::Waypoint;
     let (kind, detail) = match wp {
-        Waypoint::Capture { kind, robot } => {
-            let what = match kind {
-                CaptureKind::Loose => "loose ball".to_string(),
-                CaptureKind::Steal { from } => format!("steal from p{}", from.as_u32()),
-                CaptureKind::RescueInward => "rescue off line".to_string(),
-            };
-            ("Capture", format!("p{}: {what}", robot.as_u32()))
-        }
-        Waypoint::Dribble { target_area } => (
-            "Dribble",
-            format!("→ ({:.0}, {:.0})", target_area.x, target_area.y),
-        ),
-        Waypoint::Shoot { target } => ("Shoot", format!("→ ({:.0}, {:.0})", target.x, target.y)),
-        Waypoint::Release { target } => {
-            ("Release", format!("→ ({:.0}, {:.0})", target.x, target.y))
-        }
+        Waypoint::Steal { from } => ("Steal", format!("from p{}", from.as_u32())),
+        Waypoint::Handle { action, rescue } => match action {
+            BallAction::Shoot { target } => {
+                ("Shoot", format!("→ ({:.0}, {:.0})", target.x, target.y))
+            }
+            BallAction::Strike { target } => {
+                ("Strike", format!("→ ({:.0}, {:.0})", target.x, target.y))
+            }
+            BallAction::Carry { to, .. } => ("Carry", format!("→ ({:.0}, {:.0})", to.x, to.y)),
+            BallAction::Hold { .. } => (
+                "Acquire",
+                if *rescue { "rescue off line" } else { "ball" }.to_string(),
+            ),
+        },
         Waypoint::Pass {
             passer,
             receiver,

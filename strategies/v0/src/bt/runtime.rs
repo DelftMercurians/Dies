@@ -233,6 +233,9 @@ fn apply_command(player: &mut PlayerHandle, cmd: SkillCommand) {
         SkillCommand::DribbleShoot { target } => {
             player.dribble_shoot(target);
         }
+        SkillCommand::HandleBall { action, approach } => {
+            player.handle_ball(action, approach);
+        }
         SkillCommand::Receive {
             from_pos,
             target_pos,

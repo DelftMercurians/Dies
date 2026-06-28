@@ -19,11 +19,7 @@ pub async fn test_radio(
     kick: bool,
 ) -> Result<()> {
     let port = port.select().await?;
-    let bs_config = BasestationClientConfig::new(
-        port,
-        dies_basestation_client::BaseStationProtocol::V1,
-        HashMap::new(),
-    );
+    let bs_config = BasestationClientConfig::new(port, HashMap::new());
     let mut bs_handle = BasestationHandle::spawn(bs_config)?;
 
     assert!(!ids.is_empty(), "No IDs provided");

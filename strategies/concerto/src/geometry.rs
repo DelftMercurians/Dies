@@ -168,7 +168,11 @@ pub fn best_shot(
             continue; // behind the ball, or behind the goal line
         }
         let is_keeper = Some(opp.id) == keeper_id;
-        let r = if is_keeper { keeper_radius } else { robot_radius } + ball_radius;
+        let r = if is_keeper {
+            keeper_radius
+        } else {
+            robot_radius
+        } + ball_radius;
         let scale = dx / ox; // similar triangles: perpendicular extent grows with range
         let yc = ball.y + (opp.position.y - ball.y) * scale;
         let half = r * scale;
@@ -651,22 +655,28 @@ pub fn shadow_arc(
     if k == 0 {
         return Vec::new();
     }
-    let dist = (own_goal - ball).norm();
-    let line_x = own_goal.x + standoff.min(dist * 0.8);
+    // Stand off the goal *radially* along the ball→goal-centre line, so the wall
+    // always sits between the ball and the goal — even for a wide/corner ball.
+    // (A fixed-x standoff line breaks down there: the ball→goal ray, projected
+    // onto a line in *front* of a ball that's already deep in the corner, lands
+    // far off the field, and the unreachable wall roles go unfilled — the goal
+    // is then left to the keeper alone.) Cap the radius at 0.8·dist so the wall
+    // never ends up behind the ball when it's closer than the standoff.
+    let to_ball = ball - own_goal;
+    let dist = to_ball.norm();
+    let u = to_ball
+        .try_normalize(1e-6)
+        .unwrap_or_else(|| Vector2::new(1.0, 0.0));
+    let center = own_goal + u * standoff.min(dist * 0.8);
 
-    // y where the direct ball→goal-centre ray crosses the standoff line.
-    let d = own_goal - ball;
-    let y_center = if d.x.abs() < 1e-6 {
-        ball.y
-    } else {
-        ball.y + (line_x - ball.x) / d.x * d.y
-    };
-
-    // Contiguous wall centred on that ray; offset (k-1)/2 keeps it symmetric.
+    // Spread the wall perpendicular to the shot line (so it faces the ball),
+    // ordered along +perp so slot identity stays stable as the wall pivots with
+    // the ball. For a square-on ball this reduces to the old vertical wall.
+    let perp = Vector2::new(-u.y, u.x);
     (0..k)
         .map(|i| {
             let offset = (i as f64 - (k as f64 - 1.0) / 2.0) * spacing;
-            Vector2::new(line_x, y_center + offset)
+            center + perp * offset
         })
         .collect()
 }
@@ -759,6 +769,36 @@ mod tests {
             sum_y.abs() < 1e-6,
             "wall should be centred, got y-sum {sum_y}"
         );
+    }
+
+    #[test]
+    fn shadow_wall_stays_on_field_for_a_corner_ball() {
+        // Free kick deep in our corner (the collapse scenario, team-relative: our
+        // goal at -x). The old fixed-x standoff projected the wall ~3 m off the
+        // field; the radial standoff must keep every robot on the field and
+        // strictly between the ball and the goal.
+        let own_goal = Vector2::new(-4500.0, 0.0);
+        let ball = Vector2::new(-4000.0, 2000.0);
+        let half_wid = 3000.0;
+        for k in 1..=3 {
+            let wall = shadow_arc(ball, own_goal, k, 1500.0, 170.0);
+            assert_eq!(wall.len(), k);
+            for p in &wall {
+                assert!(
+                    p.y.abs() <= half_wid,
+                    "k={k}: shadow off the field at {p:?}"
+                );
+                // Closer to the goal than the ball is, and in front of the goal line.
+                assert!(
+                    (p - own_goal).norm() < (ball - own_goal).norm(),
+                    "k={k}: shadow {p:?} is not between ball and goal"
+                );
+                assert!(
+                    p.x > own_goal.x,
+                    "k={k}: shadow {p:?} is behind the goal line"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1097,8 +1137,16 @@ mod tests {
         let ball = Vector2::new(3000.0, 0.0);
         let aim = best_shot(ball, GOAL_X, GOAL_W, &[], None, RR, KR, BR, BIAS)
             .expect("open mouth must yield a shot");
-        assert!(aim.target.y.abs() < 1.0, "should aim centre, got {:?}", aim.target);
-        assert!(aim.angle > 0.2, "full mouth should be a wide window, got {}", aim.angle);
+        assert!(
+            aim.target.y.abs() < 1.0,
+            "should aim centre, got {:?}",
+            aim.target
+        );
+        assert!(
+            aim.angle > 0.2,
+            "full mouth should be a wide window, got {}",
+            aim.angle
+        );
     }
 
     #[test]
@@ -1107,8 +1155,18 @@ mod tests {
         // off-centre into one of the open corners.
         let ball = Vector2::new(3000.0, 0.0);
         let keeper = opp(9, 4400.0, 0.0);
-        let aim = best_shot(ball, GOAL_X, GOAL_W, &[keeper], Some(PlayerId::new(9)), RR, KR, BR, BIAS)
-            .expect("corners are open");
+        let aim = best_shot(
+            ball,
+            GOAL_X,
+            GOAL_W,
+            &[keeper],
+            Some(PlayerId::new(9)),
+            RR,
+            KR,
+            BR,
+            BIAS,
+        )
+        .expect("corners are open");
         assert!(
             aim.target.y.abs() > 200.0,
             "central keeper should push the aim into a corner, got {:?}",
@@ -1124,8 +1182,18 @@ mod tests {
         // prefer the corner *away* from the keeper (-y).
         let ball = Vector2::new(3167.0, 28.0); // mirror of real (-3167,-28)
         let keeper = opp(1, 4214.0, -188.0); // mirror of real (-4214,188)
-        let aim = best_shot(ball, GOAL_X, GOAL_W, &[keeper], Some(PlayerId::new(1)), RR, KR, BR, BIAS)
-            .expect("a 1.3m chance with an off-centre keeper must be a shot");
+        let aim = best_shot(
+            ball,
+            GOAL_X,
+            GOAL_W,
+            &[keeper],
+            Some(PlayerId::new(1)),
+            RR,
+            KR,
+            BR,
+            BIAS,
+        )
+        .expect("a 1.3m chance with an off-centre keeper must be a shot");
         assert!(
             aim.angle >= crate::config::SHOT_MIN_ANGLE,
             "window {} should clear the shoot gate {}",
@@ -1148,9 +1216,19 @@ mod tests {
             .map(|i| opp(i, 4300.0, -500.0 + i as f64 * 200.0))
             .collect();
         assert!(
-            best_shot(ball, GOAL_X, GOAL_W, &wall, Some(PlayerId::new(0)), RR, KR, BR, BIAS)
-                .filter(|s| s.angle >= crate::config::SHOT_MIN_ANGLE)
-                .is_none(),
+            best_shot(
+                ball,
+                GOAL_X,
+                GOAL_W,
+                &wall,
+                Some(PlayerId::new(0)),
+                RR,
+                KR,
+                BR,
+                BIAS
+            )
+            .filter(|s| s.angle >= crate::config::SHOT_MIN_ANGLE)
+            .is_none(),
             "a packed mouth should offer no viable shot window"
         );
     }

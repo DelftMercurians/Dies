@@ -166,8 +166,15 @@ pub const SHOOT_TIMEOUT: f64 = 2.0;
 pub const THREAT_GOAL_NEAR: f64 = 1500.0;
 pub const THREAT_GOAL_FAR: f64 = 6000.0;
 /// Shadow (goal-coverage) role count scales with threat between these bounds.
+/// (Fix A: SHADOW_MIN is retained for reference but the goal wall now always
+/// emits `SHADOW_MAX` shadows; the *staffed* count emerges from importance.)
 pub const SHADOW_MIN: usize = 1;
 pub const SHADOW_MAX: usize = 3;
+/// Fix A: per-arc-step importance falloff for the always-emitted shadow wall.
+/// The central shadow (on the ball→goal ray) keeps full importance; each step out
+/// toward a wing multiplies by this, so at low threat only the centre is staffed
+/// and the wings light up continuously as threat rises. No count step → no blink.
+pub const SHADOW_STAGGER: f64 = 0.6;
 /// How far in front of our goal the shadow line sits.
 pub const SHADOW_STANDOFF: f64 = 1500.0;
 /// Lateral spacing between adjacent shadows in the goal-coverage wall. Kept just
@@ -198,6 +205,15 @@ pub const SUPPORT_ATTACK_BALL_X: f64 = 0.0;
 /// Own-goal threat below which it is safe to commit the extra attacking
 /// supporters (above this we keep the conservative `SUPPORT_COUNT`).
 pub const SUPPORT_ATTACK_MAX_THREAT: f64 = 0.35;
+/// Fix A: the `attacking` boolean is replaced by a continuous attack fraction
+/// `af ∈ [0,1]`. `af` ramps up as the ball advances past `SUPPORT_ATTACK_BALL_X`
+/// toward `..._FULL`, and is gated down as our-goal threat rises from
+/// `SUPPORT_ATTACK_MIN_THREAT` to `SUPPORT_ATTACK_MAX_THREAT`. Support importance
+/// lerps IMP_SUPPORT→IMP_SUPPORT_ATTACK with `af`, and the striker importance
+/// scales with `af` (≈0 when not attacking) — so the support/striker block fades
+/// in/out smoothly across midfield instead of snapping at a boolean threshold.
+pub const SUPPORT_ATTACK_BALL_X_FULL: f64 = 2500.0;
+pub const SUPPORT_ATTACK_MIN_THREAT: f64 = 0.15;
 /// Lateral bands (fraction of half-width) for attacking support placement. Wider
 /// than the conservative grid so the outer candidates clear the box keepout and
 /// flank the opponent goal for a cross/cutback.
@@ -268,6 +284,12 @@ pub const CAPTURE_IMPORTANCE: f64 = 13.0;
 /// Seconds the capturer leads the ball along its velocity (aim at an intercept,
 /// not a stale point).
 pub const CAPTURE_LEAD_TAU: f64 = 0.3;
+/// Fix D: commitment discount (seconds of redirect time) the incumbent pursuer
+/// gets on the Capture slot, so a challenger must be this much faster to the ball
+/// to take over the chase. Bounded well below the capture importance so it only
+/// settles near-ties (who is closest as the lead point jitters), never overrides a
+/// decisively better challenger. Keeps a chase committed to one robot.
+pub const CAPTURE_COMMIT: f64 = 0.4;
 /// Over-generate roles to this multiple of the assignable robot count.
 pub const OVERGEN_FACTOR: f64 = 1.5;
 /// Assignment recalculation cadence.
@@ -280,15 +302,38 @@ pub const PLAN_CTX_MOVE_EPS: f64 = 300.0;
 /// Radius of the keeper's positioning arc, measured from the goal centre. At the
 /// central (square-on) position the keeper sits this far in front of the line.
 pub const KEEPER_ARC_RADIUS: f64 = 400.0;
-/// Maximum angular excursion of the keeper off straight-out (radians). Caps how
-/// far along the arc toward the posts the keeper will travel. Also bounds the
+/// Maximum angular excursion of the keeper off straight-out (radians). A pure
+/// *sanity* bound now (the lateral mouth clamp is the primary limit): keeps the
+/// keeper a little in front of the line rather than drifting onto it at extreme
+/// angles. Widened from the old 45° — that clamp parked the keeper near goal-centre
+/// and left the near post wide open against oblique (corner) shots. Also bounds the
 /// guard zone's angular span.
-pub const KEEPER_ARC_MAX_ANGLE: f64 = std::f64::consts::FRAC_PI_4; // 45°
+pub const KEEPER_ARC_MAX_ANGLE: f64 = 80.0 * std::f64::consts::PI / 180.0; // 80°
+/// How far inside each post (mm) the keeper centre may travel laterally — the
+/// "stay in front of your net" clamp (Option B). With `KEEPER_ARC_RADIUS` < half the
+/// goal width this is slack (the arc caps lateral reach first); it becomes the
+/// binding limit if the radius is ever grown past the mouth half-width.
+pub const KEEPER_MOUTH_MARGIN: f64 = 80.0;
+/// Modest bias of the guard target toward the *near* post (the post on the ball's
+/// side), scaled by how oblique the ball is. Conceding the far post (a very hard
+/// shot from a tight angle) to better deny the near post, which is the makeable
+/// shot. 0 = pure cone bisector; 1 = aim straight at the near post.
+///
+/// Kept small: on a *symmetric* shooter the bias is net-negative (it opens the far
+/// lane wider than it closes the near — see `examples/goalie_bench.rs`), and the
+/// mouth clamp alone already covers the near post on oblique shots. This small
+/// value hedges only toward a realistic shooter that prefers the near post on tight
+/// angles, at a bounded coverage cost.
+pub const KEEPER_NEARPOST_BIAS: f64 = 0.10;
 /// Radial breathing room (mm) added beyond `KEEPER_ARC_RADIUS` for the guard
 /// zone's outer edge, so position noise doesn't peg the keeper at the boundary.
 /// The aggressive control profile itself (gains, speed/accel caps, ORCA-off)
 /// lives in the `GoToBounded` executor skill.
 pub const KEEPER_ZONE_RADIUS_SLACK: f64 = 50.0;
+/// Angular breathing room (radians) added beyond `KEEPER_ARC_MAX_ANGLE` for the
+/// guard zone's ends, so the keeper can actually reach a near-post target without
+/// the no-overshoot envelope braking it at the boundary.
+pub const KEEPER_ZONE_ANGLE_SLACK: f64 = 0.12;
 
 // Shot-line intercept.
 /// Ball speed (mm/s) above which, if the ball is heading toward our goal across

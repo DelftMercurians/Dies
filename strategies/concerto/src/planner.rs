@@ -14,39 +14,24 @@ use crate::config;
 use crate::driver::FailReason;
 use crate::geometry;
 
-/// How a capture is performed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CaptureKind {
-    /// Ball is loose — drive to it and pick it up.
-    Loose,
-    /// Ball is held by an opponent — challenge from a favourable angle.
-    Steal { from: PlayerId },
-    /// Ball is pinned against a field boundary. Approach from inside and dribble
-    /// it back into play (inward heading) rather than chasing it over the line —
-    /// the capturer would otherwise drive off the pitch and carry it out.
-    RescueInward,
-}
-
 /// A desired ball-state transition.
+///
+/// Acquire + carry + shoot/strike all collapse into a single [`Waypoint::Handle`]
+/// realised by the unified [`BallAction`] skill: because acquire and the terminal
+/// action are one skill *variant*, a possession-change replan that swaps the
+/// action is a live param update (no teardown), so the capture→act seam keeps its
+/// state. Only stealing a held ball (a snatch) and a coordinated pass live outside
+/// it.
 #[derive(Debug, Clone)]
 pub enum Waypoint {
-    Capture {
-        kind: CaptureKind,
-        robot: PlayerId,
-    },
-    Dribble {
-        target_area: Vector2,
-    },
-    Shoot {
-        target: Vector2,
-    },
-    /// A double-touch-safe restart release: strike the (stationary) ball forward
-    /// without ever holding it, via a reflex-armed strike-through. Used only on
-    /// our attacking kickoff / free kick, where holding to aim would be a
-    /// double-touch. Realised by the driver via `pickup_ball_reflex`.
-    Release {
-        target: Vector2,
-    },
+    /// Strip a held ball off an opponent (snatch). The only capture realised
+    /// outside the unified ball-handling skill — it has a distinct completion
+    /// contract (succeed when the opponent loses the ball) and its own timeout.
+    Steal { from: PlayerId },
+    /// Acquire the ball (if not held) and perform `action` with it. `rescue`
+    /// biases the acquire approach inward off a boundary. Realised each tick via
+    /// `player.handle_ball`.
+    Handle { action: BallAction, rescue: bool },
     /// A coordinated two-robot pass. The planner picks a concrete receiver
     /// (Model B); the framework's `PassCoordinator` drives both robots. The
     /// driver realises this by calling `ctx.pass()` each tick.
@@ -55,6 +40,12 @@ pub enum Waypoint {
         receiver: PlayerId,
         target_area: Vector2,
     },
+}
+
+/// Heading from `from` pointing toward the opponent goal (carry/hold facing).
+fn goalward_heading(from: Vector2, opp_goal: Vector2) -> Angle {
+    let d = opp_goal - from;
+    Angle::from_radians(d.y.atan2(d.x))
 }
 
 /// A plan: a sequence of waypoints driven by one active robot. v1 emits length-1;
@@ -222,15 +213,21 @@ impl Planner {
                 } else if is_kicker {
                     // Restart: always release forward (never dribble — double-touch).
                     // Kick at a supporter if one is well placed, else open space.
-                    // A `Release` is a strike-through (reflex kick), never a hold,
+                    // A `Strike` is a strike-through (reflex kick), never a hold,
                     // so the kicker can't double-touch while aiming.
                     let target = self
                         .best_kickahead_target(world, id, inputs)
                         .map(|(_, t, _)| t)
                         .unwrap_or_else(|| self.release_target(carrier_pos, opp_goal, world));
-                    Waypoint::Release { target }
+                    Waypoint::Handle {
+                        action: BallAction::Strike { target },
+                        rescue: false,
+                    }
                 } else if let (true, Some(aim)) = (in_range, shot) {
-                    Waypoint::Shoot { target: aim.target }
+                    Waypoint::Handle {
+                        action: BallAction::Shoot { target: aim.target },
+                        rescue: false,
+                    }
                 } else {
                     // Primary advancement is a kick-ahead toward a supporter or open
                     // space (dribbling is unreliable and rule-capped). When the best
@@ -243,6 +240,10 @@ impl Planner {
                         passer: id,
                         receiver,
                         target_area,
+                    };
+                    let hoof = |target: Vector2| Waypoint::Handle {
+                        action: BallAction::Shoot { target },
+                        rescue: false,
                     };
                     match forward {
                         Some((Some(receiver), target_area, quality)) => {
@@ -263,7 +264,7 @@ impl Planner {
                         }
                         // About to hoof into open space: recycle instead if we can.
                         Some((None, target, _)) => {
-                            recycle.map(as_pass).unwrap_or(Waypoint::Shoot { target })
+                            recycle.map(as_pass).unwrap_or_else(|| hoof(target))
                         }
                         // Nothing forward at all: recycle, else a short corrective
                         // dribble (under the carry cap), else release.
@@ -271,14 +272,16 @@ impl Planner {
                             if let Some(rec) = recycle {
                                 as_pass(rec)
                             } else if inputs.carried < config::DRIBBLE_CORRECTION_LIMIT {
-                                Waypoint::Dribble {
-                                    target_area: self
-                                        .correction_target(carrier_pos, opp_goal, world),
+                                let to = self.correction_target(carrier_pos, opp_goal, world);
+                                Waypoint::Handle {
+                                    action: BallAction::Carry {
+                                        to,
+                                        heading: goalward_heading(to, opp_goal),
+                                    },
+                                    rescue: false,
                                 }
                             } else {
-                                Waypoint::Shoot {
-                                    target: self.release_target(carrier_pos, opp_goal, world),
-                                }
+                                hoof(self.release_target(carrier_pos, opp_goal, world))
                             }
                         }
                     }
@@ -292,13 +295,17 @@ impl Planner {
             // ── Ball is loose (or contested — go win it) ────────────────
             Possession::Loose | Possession::Contested => {
                 let robot = capturer?;
-                let kind = if on_boundary {
-                    CaptureKind::RescueInward
-                } else {
-                    CaptureKind::Loose
-                };
+                // Acquire and hold; the next replan (on the possession flip) swaps
+                // this Hold to the real action as a live param update — same skill
+                // instance, no teardown. `rescue` biases the approach inward off a
+                // boundary; the driver computes the live approach heading.
                 Plan {
-                    waypoints: vec![Waypoint::Capture { kind, robot }],
+                    waypoints: vec![Waypoint::Handle {
+                        action: BallAction::Hold {
+                            heading: goalward_heading(ball_pos, opp_goal),
+                        },
+                        rescue: on_boundary,
+                    }],
                     active_robot: robot,
                 }
             }
@@ -310,13 +317,20 @@ impl Planner {
                 // distance) could strip a robot of its defensive role yet leave it
                 // uncommanded, since Formation has excluded it from positioning.
                 let robot = capturer?;
-                let kind = if on_boundary {
-                    CaptureKind::RescueInward
+                // A ball pinned on a boundary is rescued inward (acquire + hold),
+                // taking priority over the steal; otherwise strip it from the holder.
+                let waypoint = if on_boundary {
+                    Waypoint::Handle {
+                        action: BallAction::Hold {
+                            heading: goalward_heading(ball_pos, opp_goal),
+                        },
+                        rescue: true,
+                    }
                 } else {
-                    CaptureKind::Steal { from: oid }
+                    Waypoint::Steal { from: oid }
                 };
                 Plan {
-                    waypoints: vec![Waypoint::Capture { kind, robot }],
+                    waypoints: vec![waypoint],
                     active_robot: robot,
                 }
             }
@@ -361,7 +375,10 @@ impl Planner {
             // Defensive third: firm clear toward a wing, away from our goal mouth.
             let sign = if ball_pos.y >= 0.0 { 1.0 } else { -1.0 };
             let target = Vector2::new(config::CLEAR_TARGET_X, sign * config::CLEAR_TARGET_MIN_Y);
-            Waypoint::Shoot { target }
+            Waypoint::Handle {
+                action: BallAction::Shoot { target },
+                rescue: false,
+            }
         } else {
             // Keep the ball: strafe off-axis toward the more open side. The presser
             // position falls back to the ball if the id can't be resolved (the
@@ -378,8 +395,13 @@ impl Planner {
                 world.opp_players(),
                 world.field_width() / 2.0,
             );
-            Waypoint::Dribble {
-                target_area: carrier_pos + dir * config::ESCAPE_STEP,
+            let to = carrier_pos + dir * config::ESCAPE_STEP;
+            Waypoint::Handle {
+                action: BallAction::Carry {
+                    to,
+                    heading: goalward_heading(to, world.opp_goal_center()),
+                },
+                rescue: false,
             }
         }
     }
@@ -708,7 +730,10 @@ mod tests {
             .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
         match &plan.waypoints[0] {
-            Waypoint::Shoot { target } => {
+            Waypoint::Handle {
+                action: BallAction::Shoot { target },
+                ..
+            } => {
                 assert!((target.x - config::CLEAR_TARGET_X).abs() < 1.0);
                 assert!(target.y.abs() >= config::CLEAR_TARGET_MIN_Y - 1.0);
             }
@@ -735,8 +760,11 @@ mod tests {
             .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
         match &plan.waypoints[0] {
-            Waypoint::Dribble { target_area } => {
-                let delta = target_area - carrier;
+            Waypoint::Handle {
+                action: BallAction::Carry { to, .. },
+                ..
+            } => {
+                let delta = to - carrier;
                 assert!(
                     (delta.norm() - config::ESCAPE_STEP).abs() < 1.0,
                     "should step exactly ESCAPE_STEP, got {}",
@@ -747,7 +775,7 @@ mod tests {
                     "presser ahead (+x) → escape should be lateral (y), got {delta:?}"
                 );
             }
-            other => panic!("expected a strafe Dribble, got {other:?}"),
+            other => panic!("expected a strafe Carry, got {other:?}"),
         }
     }
 
@@ -769,8 +797,14 @@ mod tests {
             .replan(&world, &Possession::We(PlayerId::new(2)), None, &inp)
             .expect("should produce a plan");
         assert!(
-            matches!(plan.waypoints[0], Waypoint::Release { .. }),
-            "expected a Release waypoint, got {:?}",
+            matches!(
+                plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Strike { .. },
+                    ..
+                }
+            ),
+            "expected a Strike waypoint, got {:?}",
             plan.waypoints[0]
         );
         assert_eq!(plan.active_robot, PlayerId::new(2));
@@ -778,8 +812,8 @@ mod tests {
 
     #[test]
     fn open_play_carrier_does_not_emit_release() {
-        // Without an attacking restart, the same carrier must NOT use Release
-        // (open play keeps DribbleShoot / Pass / Dribble untouched).
+        // Without an attacking restart, the same carrier must NOT strike-through
+        // (open play keeps capture-then-aim Shoot / Pass / Carry untouched).
         let own = vec![player(1, -4000.0, 0.0), player(2, -1000.0, 0.0)];
         let world = world_with(own, vec![], 1);
         let mut planner = Planner::new();
@@ -788,8 +822,14 @@ mod tests {
             .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
         assert!(
-            !matches!(plan.waypoints[0], Waypoint::Release { .. }),
-            "open play must not emit Release, got {:?}",
+            !matches!(
+                plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Strike { .. },
+                    ..
+                }
+            ),
+            "open play must not emit Strike, got {:?}",
             plan.waypoints[0]
         );
     }
