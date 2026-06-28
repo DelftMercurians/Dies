@@ -217,7 +217,7 @@ impl Planner {
                     // so the kicker can't double-touch while aiming.
                     let target = self
                         .best_kickahead_target(world, id, inputs)
-                        .map(|(_, t)| t)
+                        .map(|(_, t, _)| t)
                         .unwrap_or_else(|| self.release_target(carrier_pos, opp_goal, world));
                     Waypoint::Handle {
                         action: BallAction::Strike { target },
@@ -230,36 +230,60 @@ impl Planner {
                     }
                 } else {
                     // Primary advancement is a kick-ahead toward a supporter or open
-                    // space (dribbling is unreliable and rule-capped). Dribble only as
-                    // a small correction, and only while we're under the carry cap.
-                    // *** PASS SEAM ***: a well-placed supporter becomes a coordinated
-                    // Pass; open space stays a Shoot (no specific receiver to commit).
-                    match self.best_kickahead_target(world, id, inputs) {
-                        Some((Some(receiver), target_area)) => Waypoint::Pass {
-                            passer: id,
-                            receiver,
-                            target_area,
-                        },
-                        Some((None, target)) => Waypoint::Handle {
-                            action: BallAction::Shoot { target },
-                            rescue: false,
-                        },
-                        None if inputs.carried < config::DRIBBLE_CORRECTION_LIMIT => {
-                            let to = self.correction_target(carrier_pos, opp_goal, world);
-                            Waypoint::Handle {
-                                action: BallAction::Carry {
-                                    to,
-                                    heading: goalward_heading(to, opp_goal),
-                                },
-                                rescue: false,
+                    // space (dribbling is unreliable and rule-capped). When the best
+                    // forward option is weak — a low-quality pass, or a hoof into
+                    // space — and we're in the attacking half, lay the ball back to
+                    // the recycle pivot instead to keep possession. *** PASS SEAM ***.
+                    let forward = self.best_kickahead_target(world, id, inputs);
+                    let recycle = self.recycle_target(world, id, inputs);
+                    let as_pass = |(receiver, target_area): (PlayerId, Vector2)| Waypoint::Pass {
+                        passer: id,
+                        receiver,
+                        target_area,
+                    };
+                    let hoof = |target: Vector2| Waypoint::Handle {
+                        action: BallAction::Shoot { target },
+                        rescue: false,
+                    };
+                    match forward {
+                        Some((Some(receiver), target_area, quality)) => {
+                            // A weak forward pass is recycled when a safe outlet exists.
+                            if quality < config::FORWARD_OK_BAR {
+                                recycle.map(as_pass).unwrap_or(Waypoint::Pass {
+                                    passer: id,
+                                    receiver,
+                                    target_area,
+                                })
+                            } else {
+                                Waypoint::Pass {
+                                    passer: id,
+                                    receiver,
+                                    target_area,
+                                }
                             }
                         }
-                        None => Waypoint::Handle {
-                            action: BallAction::Shoot {
-                                target: self.release_target(carrier_pos, opp_goal, world),
-                            },
-                            rescue: false,
-                        },
+                        // About to hoof into open space: recycle instead if we can.
+                        Some((None, target, _)) => {
+                            recycle.map(as_pass).unwrap_or_else(|| hoof(target))
+                        }
+                        // Nothing forward at all: recycle, else a short corrective
+                        // dribble (under the carry cap), else release.
+                        None => {
+                            if let Some(rec) = recycle {
+                                as_pass(rec)
+                            } else if inputs.carried < config::DRIBBLE_CORRECTION_LIMIT {
+                                let to = self.correction_target(carrier_pos, opp_goal, world);
+                                Waypoint::Handle {
+                                    action: BallAction::Carry {
+                                        to,
+                                        heading: goalward_heading(to, opp_goal),
+                                    },
+                                    rescue: false,
+                                }
+                            } else {
+                                hoof(self.release_target(carrier_pos, opp_goal, world))
+                            }
+                        }
                     }
                 };
                 Plan {
@@ -406,23 +430,39 @@ impl Planner {
         )
     }
 
-    /// Best kick-ahead target. Returns `(Some(supporter), lead_point)` for a
-    /// well-placed forward supporter (the offense path promotes this to a Pass),
-    /// `(None, open_point)` for open forward space (a plain Shoot), or `None` when
-    /// congested (no supporter and no open area) — the rare case where a small
-    /// corrective dribble is warranted.
+    /// Best kick-ahead target. Returns `(Some(supporter), lead_point, quality)` for
+    /// a well-placed forward supporter (the offense path promotes this to a Pass),
+    /// `(None, open_point, 0.0)` for open forward space (a plain Shoot), or `None`
+    /// when congested. `quality` is the pass-success of the chosen outlet (0 for a
+    /// hoof), so the caller can recycle over a weak forward option.
     fn best_kickahead_target(
         &self,
         world: &World,
         carrier: PlayerId,
         inputs: &PlanInputs,
-    ) -> Option<(Option<PlayerId>, Vector2)> {
+    ) -> Option<(Option<PlayerId>, Vector2, f64)> {
         let carrier_pos = world.own_player(carrier)?.position;
         let opp_goal = world.opp_goal_center();
         let opps = world.opp_players();
+        // Pass-success quality of an outlet: lane openness × clearance of the receive
+        // point (a marker sitting on the receiver intercepts on arrival even down an
+        // open lane). Returned so the caller can weigh a forward pass vs a recycle.
+        let pass_quality = |to: Vector2| -> f64 {
+            geometry::lane_openness(carrier_pos, to, opps, config::KICK_LANE_CORRIDOR)
+                * geometry::receiver_clearance(to, opps)
+        };
+        let pass_ok = |to: Vector2| -> bool {
+            geometry::lane_openness(carrier_pos, to, opps, config::KICK_LANE_CORRIDOR)
+                >= config::SUPPORTER_MIN_OPENNESS
+        };
 
         // 1. Forward supporter with an open lane from the ball. Score by how far
         //    forward (goalward) it is, weighted by lane openness.
+        let outlet_score = |p: &PlayerState| -> f64 {
+            let open =
+                geometry::lane_openness(carrier_pos, p.position, opps, config::KICK_LANE_CORRIDOR);
+            p.position.x + open * 1000.0
+        };
         let best_supporter = world
             .own_players()
             .iter()
@@ -430,26 +470,18 @@ impl Planner {
             .filter(|p| Some(p.id) != inputs.keeper_id)
             .filter(|p| Some(p.id) != inputs.double_touch_robot)
             .filter(|p| p.position.x > carrier_pos.x + config::SUPPORTER_FWD_MARGIN)
-            .filter_map(|p| {
-                let open = geometry::lane_openness(
-                    carrier_pos,
-                    p.position,
-                    opps,
-                    config::KICK_LANE_CORRIDOR,
-                );
-                (open >= config::SUPPORTER_MIN_OPENNESS).then_some((p, open))
-            })
-            .max_by(|(a, oa), (b, ob)| {
-                let sa = a.position.x + oa * 1000.0;
-                let sb = b.position.x + ob * 1000.0;
-                sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
+            .filter(|p| pass_ok(p.position))
+            .max_by(|a, b| {
+                outlet_score(a)
+                    .partial_cmp(&outlet_score(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
 
-        if let Some((p, _)) = best_supporter {
+        if let Some(p) = best_supporter {
             // Lead the kick past the supporter toward goal (kick into space to run onto).
             let lead = (opp_goal - p.position).normalize() * config::SUPPORTER_LEAD;
             let target = self.clamp_in_field(p.position, p.position + lead, world);
-            return Some((Some(p.id), target));
+            return Some((Some(p.id), target, pass_quality(p.position)));
         }
 
         // 1b. Final-third cross/cutback. Near the opponent goal there is little
@@ -466,14 +498,7 @@ impl Planner {
                 .filter(|p| Some(p.id) != inputs.double_touch_robot)
                 .filter(|p| p.position.x > carrier_pos.x - config::CROSS_BACK_MARGIN)
                 .filter(|p| (p.position.y - carrier_pos.y).abs() > config::CROSS_MIN_LATERAL)
-                .filter(|p| {
-                    geometry::lane_openness(
-                        carrier_pos,
-                        p.position,
-                        opps,
-                        config::KICK_LANE_CORRIDOR,
-                    ) >= config::SUPPORTER_MIN_OPENNESS
-                })
+                .filter(|p| pass_ok(p.position))
                 .min_by(|a, b| {
                     let da = (opp_goal - a.position).norm();
                     let db = (opp_goal - b.position).norm();
@@ -482,7 +507,7 @@ impl Planner {
             if let Some(p) = best_wide {
                 let lead = (opp_goal - p.position).normalize() * config::SUPPORTER_LEAD;
                 let target = self.clamp_in_field(p.position, p.position + lead, world);
-                return Some((Some(p.id), target));
+                return Some((Some(p.id), target, pass_quality(p.position)));
             }
         }
 
@@ -505,7 +530,60 @@ impl Planner {
             config::HOOF_OPEN_WEIGHT,
             config::HOOF_OPEN_CAP,
         )
-        .map(|t| (None, t))
+        // A hoof into open space keeps no possession (quality 0): the eager-recycle
+        // path treats it as a last resort, preferring a safe recycle when one exists.
+        .map(|t| (None, t, 0.0))
+    }
+
+    /// A backward/lateral *recycle* outlet — the most open teammate behind
+    /// or level with the carrier, far enough to be a real switch of play. Lets a
+    /// carrier with nothing forward keep possession (lay it back to the pivot)
+    /// instead of dribbling into pressure or hoofing the ball away. Returns the
+    /// receiver and the aim point (the teammate itself; a recycle is not led into
+    /// space, it is played to feet).
+    fn recycle_target(
+        &self,
+        world: &World,
+        carrier: PlayerId,
+        inputs: &PlanInputs,
+    ) -> Option<(PlayerId, Vector2)> {
+        let carrier_pos = world.own_player(carrier)?.position;
+        // Never circulate in our own half — a recycle/turnover there becomes a goal.
+        // This attacking-half gate is what makes recycling a net win (recycling
+        // everywhere conceded significantly more and lost in self-play).
+        if carrier_pos.x <= 0.0 {
+            return None;
+        }
+        let opps = world.opp_players();
+        world
+            .own_players()
+            .iter()
+            .filter(|p| p.id != carrier)
+            .filter(|p| Some(p.id) != inputs.keeper_id)
+            .filter(|p| Some(p.id) != inputs.double_touch_robot)
+            // Behind or level with the carrier (a recycle, not a forward pass)...
+            .filter(|p| p.position.x < carrier_pos.x + config::SUPPORTER_FWD_MARGIN)
+            // ...but still in the attacking half, so we don't drag play homeward.
+            .filter(|p| p.position.x > 0.0)
+            .filter(|p| (p.position - carrier_pos).norm() > config::RECYCLE_MIN_DIST)
+            .filter(|p| {
+                let open =
+                    geometry::lane_openness(carrier_pos, p.position, opps, config::KICK_LANE_CORRIDOR);
+                let clear = geometry::receiver_clearance(p.position, opps);
+                open >= config::RECYCLE_MIN_OPENNESS && clear >= 0.5
+            })
+            // Prefer the safest outlet: the most open lane plus the most clear
+            // receive point (a lay-back we're confident actually completes).
+            .max_by(|a, b| {
+                let score = |p: &PlayerState| {
+                    geometry::lane_openness(carrier_pos, p.position, opps, config::KICK_LANE_CORRIDOR)
+                        + geometry::receiver_clearance(p.position, opps)
+                };
+                score(a)
+                    .partial_cmp(&score(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| (p.id, p.position))
     }
 
     /// Pull a kick-ahead lead target inside the field, preserving the lead

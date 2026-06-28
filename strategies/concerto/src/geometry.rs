@@ -475,7 +475,7 @@ pub fn best_support_pos(
 /// "is the throwing lane clear?", clearance asks "can I actually receive here, or is
 /// a marker sitting on the spot to intercept on arrival?". Radius ~3 robot radii so a
 /// defender within tackling distance tanks the spot.
-fn receiver_clearance(at: Vector2, opponents: &[PlayerState]) -> f64 {
+pub fn receiver_clearance(at: Vector2, opponents: &[PlayerState]) -> f64 {
     const RECEIVER_CLEARANCE_RADIUS: f64 = 700.0;
     let mut min_d = f64::INFINITY;
     for opp in opponents {
