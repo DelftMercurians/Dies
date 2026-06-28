@@ -17,52 +17,52 @@ use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{KickerControlInput, PlayerControlInput, Velocity};
 
-const BALL_TO_ROBOT_DISTANCE: f64 = 111.0;
+pub(crate) const BALL_TO_ROBOT_DISTANCE: f64 = 111.0;
 /// Tangential orbit speed cap. Kept low enough that the dribbler can retain the
 /// ball through the slide — a faster orbit squeezes it out of the dribbler mouth.
-const ORBIT_SPEED: f64 = 400.0;
-const ORBIT_GAIN: f64 = 600.0;
-const MIN_ORBIT_SPEED: f64 = 40.0;
+pub(crate) const ORBIT_SPEED: f64 = 400.0;
+pub(crate) const ORBIT_GAIN: f64 = 600.0;
+pub(crate) const MIN_ORBIT_SPEED: f64 = 40.0;
 /// Robot→ball distance beyond which the ball is considered lost (well past the
 /// `BALL_TO_ROBOT_DISTANCE` hold radius). Distance-based so a brief breakbeam
 /// flicker during the slide doesn't abort.
-const LOST_BALL_DISTANCE: f64 = 220.0;
-const YAW_TOLERANCE: f64 = 5.0 * std::f64::consts::PI / 180.0;
-const DRIBBLER_SPEED: f64 = 0.6;
-const KICK_SPEED: f64 = 4000.0;
-const TIMEOUT: Duration = Duration::from_secs(4);
-const LANE_HALF_WIDTH: f64 = 120.0;
-const LANE_RANGE: f64 = 3000.0;
+pub(crate) const LOST_BALL_DISTANCE: f64 = 220.0;
+pub(crate) const YAW_TOLERANCE: f64 = 5.0 * std::f64::consts::PI / 180.0;
+pub(crate) const DRIBBLER_SPEED: f64 = 0.6;
+pub(crate) const KICK_SPEED: f64 = 4000.0;
+pub(crate) const TIMEOUT: Duration = Duration::from_secs(4);
+pub(crate) const LANE_HALF_WIDTH: f64 = 120.0;
+pub(crate) const LANE_RANGE: f64 = 3000.0;
 /// How far the ball must move from its at-kick position to count as "the kick
 /// connected". Primary signal — position is not subject to the filter lag.
-const KICK_DEPART_DIST: f64 = 100.0;
+pub(crate) const KICK_DEPART_DIST: f64 = 100.0;
 /// Ball speed that also counts as departure. Secondary signal: the ball velocity
 /// estimate is Kalman-filtered and lags, so it confirms but rarely fires first.
-const KICK_DEPART_SPEED: f64 = 1000.0;
+pub(crate) const KICK_DEPART_SPEED: f64 = 1000.0;
 /// How long to wait for the ball to leave after commanding a kick before
 /// declaring the kick a whiff and failing.
-const VERIFY_WINDOW: Duration = Duration::from_millis(200);
+pub(crate) const VERIFY_WINDOW: Duration = Duration::from_millis(200);
 
 // ── launch-point selection ───────────────────────────────────────────────────
 /// Clearance required at a candidate kicking pose (robot behind the launch point).
-const LAUNCH_POSE_EGO: f64 = PLAYER_RADIUS;
+pub(crate) const LAUNCH_POSE_EGO: f64 = PLAYER_RADIUS;
 /// Inset from the physical field edge a kicking pose must keep (robot stays on
 /// the surface). Matches the pickup staging clamp.
-const LAUNCH_SURFACE_MARGIN: f64 = 130.0;
+pub(crate) const LAUNCH_SURFACE_MARGIN: f64 = 130.0;
 /// A ball this close to a field line is "jammed" — repositioned inward before
 /// aiming, so we never try to aim/kick with the ball pinned on the boundary.
-const LAUNCH_BOUNDARY_MARGIN: f64 = 350.0;
+pub(crate) const LAUNCH_BOUNDARY_MARGIN: f64 = 350.0;
 /// Carry distances (mm) tried when searching for a reachable launch point. Short
 /// — repositioning is a small nudge off a bad spot, not a dribble across field.
-const CARRY_STEPS: [f64; 3] = [300.0, 500.0, 700.0];
+pub(crate) const CARRY_STEPS: [f64; 3] = [300.0, 500.0, 700.0];
 /// Lateral fan (radians) tried around the inward direction at each carry step.
-const CARRY_FAN: [f64; 5] = [0.0, 0.5, -0.5, 1.0, -1.0];
+pub(crate) const CARRY_FAN: [f64; 5] = [0.0, 0.5, -0.5, 1.0, -1.0];
 /// Ball within this distance of the chosen launch point → done repositioning.
-const REPOSITION_ARRIVE: f64 = 90.0;
+pub(crate) const REPOSITION_ARRIVE: f64 = 90.0;
 /// Carry motion limits (reuse the proven `Dribble` law: hold the ball, drive to
 /// the kicking pose under an acceleration cap so it isn't shaken loose).
-const CARRY_ACCEL_LIMIT: f64 = 500.0;
-const CARRY_ANGULAR_LIMIT: f64 = 1.5;
+pub(crate) const CARRY_ACCEL_LIMIT: f64 = 500.0;
+pub(crate) const CARRY_ANGULAR_LIMIT: f64 = 1.5;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AimState {
@@ -277,7 +277,7 @@ impl ExecutableSkill for DribbleShootSkill {
 /// place); if it's jammed against a boundary or has no on-surface, obstacle-free
 /// kicking pose toward the target, search short carries along the inward
 /// direction (fanned laterally) for the nearest spot that does.
-fn choose_launch(ctx: &SkillContext<'_>, ball: Vector2, target: Vector2) -> Vector2 {
+pub(crate) fn choose_launch(ctx: &SkillContext<'_>, ball: Vector2, target: Vector2) -> Vector2 {
     let field = ctx.world.field_geom.as_ref();
     if !ball_near_boundary(ball, field) && pose_ok(ctx, ball, target, field) {
         return ball;
@@ -369,7 +369,7 @@ fn rotate(v: Vector2, rot: f64) -> Vector2 {
 
 /// Whether another robot sits in the shoot corridor (ray from the ball along
 /// `heading`, half-width `LANE_HALF_WIDTH`, length `LANE_RANGE`).
-fn lane_blocked(ctx: &SkillContext<'_>, ball_pos: Vector2, heading: Angle) -> bool {
+pub(crate) fn lane_blocked(ctx: &SkillContext<'_>, ball_pos: Vector2, heading: Angle) -> bool {
     let dir = heading.to_vector();
     ctx.world
         .own_players

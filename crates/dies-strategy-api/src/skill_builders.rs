@@ -5,7 +5,7 @@
 
 use crate::player::PlayerHandle;
 use dies_core::Angle;
-use dies_strategy_protocol::{MotionBounds, SkillCommand, Vector2};
+use dies_strategy_protocol::{BallAction, MotionBounds, SkillCommand, Vector2};
 
 /// Builder for `GoToPos` skill commands.
 ///
@@ -228,6 +228,24 @@ impl SkillParams for DribbleShootParams {
     fn to_command(&self) -> SkillCommand {
         SkillCommand::DribbleShoot {
             target: self.target,
+        }
+    }
+}
+
+/// Parameters for the unified `HandleBall` skill.
+#[derive(Clone, Copy, Debug)]
+pub struct HandleBallParams {
+    /// Terminal action to perform once the ball is held.
+    pub action: BallAction,
+    /// Optional exit-bias heading for the acquire sub-phase.
+    pub approach: Option<Angle>,
+}
+
+impl SkillParams for HandleBallParams {
+    fn to_command(&self) -> SkillCommand {
+        SkillCommand::HandleBall {
+            action: self.action,
+            approach: self.approach,
         }
     }
 }

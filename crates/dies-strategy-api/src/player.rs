@@ -11,12 +11,12 @@
 //! - **Discrete skills** (`pickup_ball`, `reflex_shoot`): Start once, return handles for monitoring
 
 use crate::skill_builders::{
-    DribbleBuilder, DribbleShootParams, GoToBoundedBuilder, GoToBuilder, PickupBallParams,
-    ReceiveParams, ReflexShootParams, SkillHandle, SnatchParams,
+    DribbleBuilder, DribbleShootParams, GoToBoundedBuilder, GoToBuilder, HandleBallParams,
+    PickupBallParams, ReceiveParams, ReflexShootParams, SkillHandle, SnatchParams,
 };
 use dies_core::Angle;
 use dies_strategy_protocol::{
-    MotionBounds, PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2,
+    BallAction, MotionBounds, PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2,
 };
 use std::collections::HashSet;
 
@@ -181,6 +181,32 @@ impl PlayerHandle {
     /// ```
     pub fn dribble_to(&mut self, position: Vector2, heading: Angle) -> DribbleBuilder<'_> {
         DribbleBuilder::new(self, position, heading)
+    }
+
+    // ========== Unified Ball Handling ==========
+
+    /// Acquire the ball (if not held) and perform a continuously-supplied terminal
+    /// [`BallAction`] with it — the merged successor to
+    /// [`pickup_ball`](Self::pickup_ball) → [`dribble_shoot`](Self::dribble_shoot).
+    ///
+    /// Call each frame; swapping the `action` (e.g. `Hold` → `Shoot` once the ball
+    /// is secured) is a live update on the same skill, so the acquire→act
+    /// transition keeps its capture-phase state instead of restarting cold.
+    ///
+    /// - `approach`: optional exit-bias heading for the acquire sub-phase (which
+    ///   side to take the ball from); `None` derives a default from `action`.
+    ///
+    /// # Completion
+    /// - `SkillStatus::Succeeded` only when a kick departs (`Shoot`/`Strike`).
+    ///   `Carry`/`Hold` never self-complete.
+    /// - `SkillStatus::Failed` on an unrecoverable acquire/aim/kick problem.
+    pub fn handle_ball(
+        &mut self,
+        action: BallAction,
+        approach: Option<Angle>,
+    ) -> SkillHandle<HandleBallParams> {
+        self.pending_command = Some(SkillCommand::HandleBall { action, approach });
+        SkillHandle::new(HandleBallParams { action, approach })
     }
 
     // ========== Discrete Skills ==========

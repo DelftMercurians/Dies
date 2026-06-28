@@ -14,17 +14,17 @@
 //! [`PassResult`]; the joint executor then releases them back to the strategy.
 //!
 //! Sub-behaviours are composed from the existing single-robot skills rather than
-//! reimplemented: [`PickupBallSkill`] for `Secure`, [`ReceiveSkill`] for the
-//! receiver's positioning + interception.
+//! reimplemented: [`HandleBallSkill`] (in `Hold` mode) for `Secure`,
+//! [`ReceiveSkill`] for the receiver's positioning + interception.
 
 use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2, BALL_RADIUS, PLAYER_RADIUS};
-use dies_strategy_protocol::{PassBallState, PassFailure, PassResult, SkillStatus};
+use dies_strategy_protocol::{BallAction, PassBallState, PassFailure, PassResult, SkillStatus};
 
 use super::avoidance::ObstacleSet;
 use super::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use super::team_context::TeamContext;
 use crate::control::{KickerControlInput, PlayerControlInput, Velocity};
-use crate::skills::executable::{PickupBallSkill, ReceiveSkill};
+use crate::skills::executable::{HandleBallSkill, ReceiveSkill};
 
 /// Max distance the ball may be from the passer for the weak `Secure` phase to
 /// attempt a pickup. Beyond this the pass fails immediately with `BallLost` — the
@@ -150,8 +150,9 @@ pub struct PassCoordinator {
 
     /// Fixed intercept point, captured when entering `Setup`.
     intercept_point: Option<Vector2>,
-    /// Sub-skill driving the passer during `Secure`.
-    pickup: PickupBallSkill,
+    /// Sub-skill driving the passer during `Secure` (unified capture front-end,
+    /// in `Hold` mode — acquire the ball and hold it facing the receiver).
+    acquire: HandleBallSkill,
     /// Sub-skill driving the receiver from `Setup` onward.
     receive: ReceiveSkill,
 
@@ -171,7 +172,12 @@ impl PassCoordinator {
             setup_ball_lost: 0.0,
             intercept_point: None,
             // Sub-skills are seeded with placeholder params and reconfigured on use.
-            pickup: PickupBallSkill::new(Angle::from_radians(0.0), false),
+            acquire: HandleBallSkill::new(
+                BallAction::Hold {
+                    heading: Angle::from_radians(0.0),
+                },
+                None,
+            ),
             receive: ReceiveSkill::new(Vector2::zeros(), Vector2::zeros(), CAPTURE_LIMIT, false),
             result: None,
         }
@@ -306,12 +312,14 @@ impl PassCoordinator {
                             ball_state: PassBallState::Loose { position: bp },
                         }));
                     } else {
-                        // Run the pickup sub-skill, aiming the post-capture
-                        // heading toward the receiver.
+                        // Run the unified capture front-end in Hold mode, holding
+                        // the post-capture heading toward the receiver. Hold never
+                        // returns Done; the Done arm is a defensive fallback.
                         let heading = Angle::between_points(bp, receiver.position);
-                        self.pickup.set_target_heading(heading);
+                        self.acquire
+                            .reconfigure(BallAction::Hold { heading }, Some(heading));
                         let sctx = self.skill_ctx(ctx, &passer);
-                        match self.pickup.tick(sctx) {
+                        match self.acquire.tick(sctx) {
                             SkillProgress::Continue(input) => passer_input = input,
                             SkillProgress::Done(_) => {
                                 // Possession (or give-up) — re-checked next frame.

@@ -10,7 +10,7 @@ use dies_strategy_api::{PassFailure, PassResult, World};
 
 use crate::config;
 use crate::geometry;
-use crate::planner::{CaptureKind, Engagement, PlanContext, Waypoint};
+use crate::planner::{Engagement, PlanContext, Waypoint};
 
 /// Outcome of the current waypoint this tick.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,16 +38,15 @@ pub enum FailReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
     Idle,
-    Pickup,
+    /// Unified acquire + carry + shoot/strike via `player.handle_ball`. One phase
+    /// for the whole ball-handling episode — the acquire→act transition is a live
+    /// param swap inside the skill, so the driver never tears it down.
+    Handle,
     /// Strip a held ball off an opponent — press the ball and rotate to peel it
-    /// loose (the `snatch` skill). Distinct from `Pickup` because it has a simpler
+    /// loose (the `snatch` skill). Distinct from `Handle` because it has a simpler
     /// completion contract (succeed when the opponent loses the ball) and its own
     /// timeout, not the pickup tiered-commit timer.
     Snatch,
-    Dribble,
-    Shoot,
-    /// Strike-through restart release (reflex kick) — see `Waypoint::Release`.
-    Release,
     /// A coordinated pass is in flight; the framework's `PassCoordinator` owns
     /// both robots. The driver just keeps the pass alive and watches the result.
     PassExec,
@@ -65,6 +64,14 @@ pub struct Driver {
     /// capture (`< CAPTURE_PICKUP_DIST`). Drives the tighter pickup timeout;
     /// cleared whenever it backs out of range so the timer only runs while close.
     pickup_near_since: Option<f64>,
+    /// When the active robot last secured the ball during a `Handle` waypoint
+    /// (the `!has_ball` → `has_ball` edge). Arms the per-action timeout; cleared
+    /// while we don't hold the ball so it re-arms on the next acquisition.
+    act_started: Option<f64>,
+    /// Whether the post-kick latch reset has been handled for the current `Handle`
+    /// waypoint. A successful `HandleBall` kick is one-shot and latches the
+    /// executor slot; a fresh episode clears it for one frame before re-commanding.
+    handle_reset_done: bool,
     /// Next active robot hint (set by a completed pass; consumed by orchestrator).
     new_active: Option<PlayerId>,
 }
@@ -85,6 +92,8 @@ impl Driver {
             last_status: WaypointStatus::Ongoing,
             engage_ball_pos: None,
             pickup_near_since: None,
+            act_started: None,
+            handle_reset_done: false,
             new_active: None,
         }
     }
@@ -130,10 +139,9 @@ impl Driver {
             engagements.push(Engagement::BallContest { at });
         }
         match wp {
-            Waypoint::Capture {
-                kind: CaptureKind::Steal { from },
-                ..
-            } => engagements.push(Engagement::Engaging { opponent: *from }),
+            Waypoint::Steal { from } => {
+                engagements.push(Engagement::Engaging { opponent: *from })
+            }
             Waypoint::Pass { target_area, .. } => {
                 engagements.push(Engagement::ReceiveArea { at: *target_area })
             }
@@ -155,22 +163,18 @@ impl Driver {
         self.last_status = WaypointStatus::Ongoing;
         self.engage_ball_pos = None;
         self.pickup_near_since = None;
+        self.act_started = None;
+        self.handle_reset_done = false;
         self.new_active = None;
     }
 
     /// Begin executing a waypoint with the given active robot.
     pub fn set_waypoint(&mut self, waypoint: Waypoint, active_robot: PlayerId, now: f64) {
         self.phase = match &waypoint {
-            // Stripping a held ball is a snatch; loose / boundary captures are a
-            // normal pickup.
-            Waypoint::Capture {
-                kind: CaptureKind::Steal { .. },
-                ..
-            } => Phase::Snatch,
-            Waypoint::Capture { .. } => Phase::Pickup,
-            Waypoint::Dribble { .. } => Phase::Dribble,
-            Waypoint::Shoot { .. } => Phase::Shoot,
-            Waypoint::Release { .. } => Phase::Release,
+            // Stripping a held ball is a snatch; everything else (acquire + carry +
+            // shoot/strike) is one unified ball-handling episode.
+            Waypoint::Steal { .. } => Phase::Snatch,
+            Waypoint::Handle { .. } => Phase::Handle,
             Waypoint::Pass { .. } => Phase::PassExec,
         };
         self.waypoint = Some(waypoint);
@@ -179,6 +183,8 @@ impl Driver {
         self.last_status = WaypointStatus::Ongoing;
         self.engage_ball_pos = None;
         self.pickup_near_since = None;
+        self.act_started = None;
+        self.handle_reset_done = false;
         self.new_active = None;
     }
 
@@ -263,38 +269,97 @@ impl Driver {
         let has_ball = player.has_ball();
         let elapsed = now - self.phase_entered;
 
-        let status = match (&waypoint, self.phase) {
-            // ── Capture ─────────────────────────────────────────────────
-            // One phase: the pickup skill owns the whole capture. It routes to a
-            // staging point behind the ball (ball-avoiding) and only commits its
-            // final drive once aligned, so it never rams the ball — unlike the old
-            // `go_to(ball_pos)` approach, which aimed at the ball centre at full
-            // speed and handed off at a fixed distance regardless of momentum.
-            (Waypoint::Capture { kind, .. }, Phase::Pickup) => {
-                let rescue = matches!(kind, CaptureKind::RescueInward);
-                let heading = pickup_heading(world, active_id, ball_pos, opp_goal, rescue);
-                player.pickup_ball(heading);
-                player.set_role(if rescue { "rescuing" } else { "capturing" });
+        // Post-kick latch reset: a successful one-shot `HandleBall` kick latches the
+        // executor slot, so a *fresh* `Handle` episode must clear it for one frame
+        // before re-commanding (else the new command is ignored). This only fires
+        // when the previous skill actually succeeded — a `Hold → Shoot` live swap
+        // stays `Running` and updates in place, which is the seam fix.
+        if self.phase == Phase::Handle && !self.handle_reset_done {
+            self.handle_reset_done = true;
+            if skill_status == SkillStatus::Succeeded {
+                player.stop();
+                self.last_status = WaypointStatus::Ongoing;
+                return WaypointStatus::Ongoing;
+            }
+        }
 
-                // Tiered timeout: generous while traversing toward the ball, tight
-                // once within committing range (where the skill makes its final
-                // drive). The near-timer resets if the robot backs out of range.
-                let near = (player_pos - ball_pos).norm() < config::CAPTURE_PICKUP_DIST;
-                if near {
-                    self.pickup_near_since.get_or_insert(now);
-                } else {
+        let status = match (&waypoint, self.phase) {
+            // ── Handle (acquire + carry + shoot/strike) ─────────────────
+            // One unified skill owns the whole episode: it stages behind the ball,
+            // commits the capture, then (for Shoot) orbits to aim and kicks — all
+            // without a teardown, so the capture→aim seam keeps its state. The
+            // action is recommanded every frame; swapping it (e.g. once we secure
+            // the ball) is a live param update on the same skill instance.
+            (Waypoint::Handle { action, rescue }, Phase::Handle) => {
+                // Acquire exit-bias, computed live so a contested/boundary capture
+                // scoops the ball to the open side. Only used while `!has_ball`.
+                let approach = matches!(action, BallAction::Hold { .. })
+                    .then(|| pickup_heading(world, active_id, ball_pos, opp_goal, *rescue));
+                player.handle_ball(*action, approach);
+                player.set_role(match action {
+                    BallAction::Shoot { .. } => "shooting",
+                    BallAction::Strike { .. } => "kicking",
+                    BallAction::Carry { .. } => "carrying",
+                    BallAction::Hold { .. } if *rescue => "rescuing",
+                    BallAction::Hold { .. } => "capturing",
+                });
+
+                // Timeout: while we don't hold the ball, the tiered approach/pickup
+                // timer (generous traversing, tight once committing); once we hold
+                // it, the per-action timer armed at the acquisition edge.
+                let timed_out = if has_ball {
                     self.pickup_near_since = None;
-                }
-                let timed_out = match self.pickup_near_since {
-                    Some(since) => now - since > config::PICKUP_TIMEOUT,
-                    None => elapsed > config::APPROACH_TIMEOUT,
+                    let started = *self.act_started.get_or_insert(now);
+                    let budget = match action {
+                        BallAction::Shoot { .. } | BallAction::Strike { .. } => {
+                            config::SHOOT_TIMEOUT
+                        }
+                        BallAction::Carry { .. } => config::DRIBBLE_TIMEOUT,
+                        BallAction::Hold { .. } => f64::INFINITY,
+                    };
+                    now - started > budget
+                } else {
+                    self.act_started = None;
+                    let near = (player_pos - ball_pos).norm() < config::CAPTURE_PICKUP_DIST;
+                    if near {
+                        self.pickup_near_since.get_or_insert(now);
+                    } else {
+                        self.pickup_near_since = None;
+                    }
+                    match self.pickup_near_since {
+                        Some(since) => now - since > config::PICKUP_TIMEOUT,
+                        None => elapsed > config::APPROACH_TIMEOUT,
+                    }
                 };
 
-                match skill_status {
-                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
-                    SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
-                    _ if timed_out => WaypointStatus::Failed(FailReason::Timeout),
-                    _ => WaypointStatus::Ongoing,
+                // Completion is action-specific: Shoot/Strike succeed on the kick
+                // (the skill verifies the ball left); Carry succeeds on arrival
+                // (driver-owned, as the old Dribble waypoint did); Hold never
+                // self-completes — the planner replans it away on the possession flip.
+                match action {
+                    BallAction::Carry { to, .. } => {
+                        if skill_status == SkillStatus::Failed {
+                            WaypointStatus::Failed(FailReason::PossessionLost)
+                        } else if has_ball
+                            && (player_pos - *to).norm() < config::DRIBBLE_ARRIVE_DIST
+                        {
+                            WaypointStatus::Succeeded
+                        } else if timed_out {
+                            WaypointStatus::Failed(FailReason::Timeout)
+                        } else {
+                            WaypointStatus::Ongoing
+                        }
+                    }
+                    _ => match skill_status {
+                        SkillStatus::Succeeded => WaypointStatus::Succeeded,
+                        SkillStatus::Failed => WaypointStatus::Failed(if has_ball {
+                            FailReason::SkillFailed
+                        } else {
+                            FailReason::PossessionLost
+                        }),
+                        _ if timed_out => WaypointStatus::Failed(FailReason::Timeout),
+                        _ => WaypointStatus::Ongoing,
+                    },
                 }
             }
 
@@ -303,13 +368,7 @@ impl Driver {
             // against the ball and rotate to peel it loose, aimed to a safe clear
             // away from the holder. Succeeds when the opponent loses the ball — the
             // ball then goes loose and the next replan captures it normally.
-            (
-                Waypoint::Capture {
-                    kind: CaptureKind::Steal { from },
-                    ..
-                },
-                Phase::Snatch,
-            ) => {
+            (Waypoint::Steal { from }, Phase::Snatch) => {
                 let release = snatch_release_hint(world, *from, ball_pos);
                 player.snatch(release);
                 player.set_role("snatching");
@@ -317,59 +376,6 @@ impl Driver {
                     SkillStatus::Succeeded => WaypointStatus::Succeeded,
                     SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
                     _ if elapsed > config::SNATCH_TIMEOUT => {
-                        WaypointStatus::Failed(FailReason::Timeout)
-                    }
-                    _ => WaypointStatus::Ongoing,
-                }
-            }
-
-            // ── Dribble ─────────────────────────────────────────────────
-            (Waypoint::Dribble { target_area }, Phase::Dribble) => {
-                let heading = heading_toward(*target_area, opp_goal);
-                player.dribble_to(*target_area, heading);
-                player.set_role("dribbling");
-                if has_ball && (player_pos - *target_area).norm() < config::DRIBBLE_ARRIVE_DIST {
-                    WaypointStatus::Succeeded
-                } else if skill_status == SkillStatus::Failed {
-                    WaypointStatus::Failed(FailReason::PossessionLost)
-                } else if elapsed > config::DRIBBLE_TIMEOUT {
-                    WaypointStatus::Failed(FailReason::Timeout)
-                } else {
-                    WaypointStatus::Ongoing
-                }
-            }
-
-            // ── Shoot ───────────────────────────────────────────────────
-            (Waypoint::Shoot { target }, Phase::Shoot) => {
-                // Aim the captured ball at `target` and kick. DribbleShoot chooses
-                // the launch point (orbit in place, or a short reposition if the
-                // ball is jammed), keeps the dribbler pressed while aiming, and
-                // verifies the ball actually left before reporting success.
-                player.dribble_shoot(*target);
-                player.set_role("shooting");
-                match skill_status {
-                    // Kick fired: the framework's possession metric handles the
-                    // release (efference copy) centrally, so we just succeed.
-                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
-                    SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
-                    _ if elapsed > config::SHOOT_TIMEOUT => {
-                        WaypointStatus::Failed(FailReason::Timeout)
-                    }
-                    _ => WaypointStatus::Ongoing,
-                }
-            }
-
-            // ── Release (restart strike-through) ─────────────────────────
-            // Reflex-armed strike: approach the stationary ball on the shot axis
-            // and fire on breakbeam contact — never holding it, so the kicker
-            // can't double-touch. Succeeds when the skill reports the ball left.
-            (Waypoint::Release { target }, Phase::Release) => {
-                player.pickup_ball_reflex(heading_toward(ball_pos, *target));
-                player.set_role("kicking");
-                match skill_status {
-                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
-                    SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
-                    _ if elapsed > config::SHOOT_TIMEOUT => {
                         WaypointStatus::Failed(FailReason::Timeout)
                     }
                     _ => WaypointStatus::Ongoing,
@@ -388,11 +394,6 @@ impl Driver {
         }
         self.last_status = status.clone();
         status
-    }
-
-    fn enter(&mut self, phase: Phase, now: f64) {
-        self.phase = phase;
-        self.phase_entered = now;
     }
 
     fn finish(&mut self, status: WaypointStatus) -> WaypointStatus {

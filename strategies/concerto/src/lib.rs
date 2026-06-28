@@ -428,24 +428,23 @@ impl ConcertoStrategy {
 
 /// Build a UI plan step from a waypoint.
 fn plan_step(wp: &planner::Waypoint, active: bool) -> debug::PlanStep {
-    use planner::{CaptureKind, Waypoint};
+    use dies_strategy_api::BallAction;
+    use planner::Waypoint;
     let (kind, detail) = match wp {
-        Waypoint::Capture { kind, robot } => {
-            let what = match kind {
-                CaptureKind::Loose => "loose ball".to_string(),
-                CaptureKind::Steal { from } => format!("steal from p{}", from.as_u32()),
-                CaptureKind::RescueInward => "rescue off line".to_string(),
-            };
-            ("Capture", format!("p{}: {what}", robot.as_u32()))
-        }
-        Waypoint::Dribble { target_area } => (
-            "Dribble",
-            format!("→ ({:.0}, {:.0})", target_area.x, target_area.y),
-        ),
-        Waypoint::Shoot { target } => ("Shoot", format!("→ ({:.0}, {:.0})", target.x, target.y)),
-        Waypoint::Release { target } => {
-            ("Release", format!("→ ({:.0}, {:.0})", target.x, target.y))
-        }
+        Waypoint::Steal { from } => ("Steal", format!("from p{}", from.as_u32())),
+        Waypoint::Handle { action, rescue } => match action {
+            BallAction::Shoot { target } => {
+                ("Shoot", format!("→ ({:.0}, {:.0})", target.x, target.y))
+            }
+            BallAction::Strike { target } => {
+                ("Strike", format!("→ ({:.0}, {:.0})", target.x, target.y))
+            }
+            BallAction::Carry { to, .. } => ("Carry", format!("→ ({:.0}, {:.0})", to.x, to.y)),
+            BallAction::Hold { .. } => (
+                "Acquire",
+                if *rescue { "rescue off line" } else { "ball" }.to_string(),
+            ),
+        },
         Waypoint::Pass {
             passer,
             receiver,

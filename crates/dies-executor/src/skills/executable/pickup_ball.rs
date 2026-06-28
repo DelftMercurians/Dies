@@ -6,17 +6,17 @@ use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{KickerControlInput, PlayerControlInput};
 
-const DRIBBLER_SPEED: f64 = 0.6;
-const APPROACH_DISTANCE: f64 = 200.0;
-const COMMIT_DISTANCE: f64 = 280.0;
-const COMMIT_PERP: f64 = 30.0;
-const GATE_PERP: f64 = 80.0;
-const APPROACH_GAIN: f64 = 3.0;
-const APPROACH_MIN_SPEED: f64 = 200.0;
-const LATERAL_GAIN: f64 = 4.0;
-const APPROACH_CARE: f64 = -0.6;
-const BALL_MOVED_FAIL: f64 = 100.0;
-const DRIVEN_FAIL: f64 = 250.0;
+pub(crate) const DRIBBLER_SPEED: f64 = 0.6;
+pub(crate) const APPROACH_DISTANCE: f64 = 200.0;
+pub(crate) const COMMIT_DISTANCE: f64 = 280.0;
+pub(crate) const COMMIT_PERP: f64 = 30.0;
+pub(crate) const GATE_PERP: f64 = 80.0;
+pub(crate) const APPROACH_GAIN: f64 = 3.0;
+pub(crate) const APPROACH_MIN_SPEED: f64 = 200.0;
+pub(crate) const LATERAL_GAIN: f64 = 4.0;
+pub(crate) const APPROACH_CARE: f64 = -0.6;
+pub(crate) const BALL_MOVED_FAIL: f64 = 100.0;
+pub(crate) const DRIVEN_FAIL: f64 = 250.0;
 /// Inset (mm) from the *physical* field edge (touchline/goal line **plus** the
 /// run-off `boundary_width`) that the staging point is kept inside. Robots may
 /// legally stand in the run-off, so the staging point only has to stay on the
@@ -24,7 +24,7 @@ const DRIVEN_FAIL: f64 = 250.0;
 /// ball pinned on the line and the robot would stall short of it (only the ball
 /// is "out" past the line; the rescue-inward heading keeps the ball in). Covers
 /// the robot radius plus a buffer so the body stays on the surface.
-const STAGING_FIELD_MARGIN: f64 = 130.0;
+pub(crate) const STAGING_FIELD_MARGIN: f64 = 130.0;
 
 // ── heading-free approach-side selection ─────────────────────────────────────
 // A normal capture is not given a fixed approach heading: the skill picks which
@@ -33,39 +33,39 @@ const STAGING_FIELD_MARGIN: f64 = 130.0;
 // roughly sets up the next action). `target_heading` carries that soft exit bias
 // for a capture (and remains the hard strike axis for an instant-kick release).
 /// Number of candidate push directions sampled around the ball.
-const N_APPROACH_SAMPLES: usize = 24;
+pub(crate) const N_APPROACH_SAMPLES: usize = 24;
 /// Ego clearance required at a candidate staging point (robot radius + buffer).
-const APPROACH_EGO_RADIUS: f64 = PLAYER_RADIUS + 20.0;
+pub(crate) const APPROACH_EGO_RADIUS: f64 = PLAYER_RADIUS + 20.0;
 /// Clearance required along the commit corridor (staging point → ball). Slightly
 /// tighter so only a real blocker between us and the ball rejects an approach.
-const APPROACH_COMMIT_RADIUS: f64 = PLAYER_RADIUS;
+pub(crate) const APPROACH_COMMIT_RADIUS: f64 = PLAYER_RADIUS;
 /// Sampling step (mm) for the commit-corridor clearance check.
-const APPROACH_CLEAR_STEP: f64 = 60.0;
+pub(crate) const APPROACH_CLEAR_STEP: f64 = 60.0;
 /// Value (mm of approach distance) of a perfectly exit-aligned push. Trades off
 /// against "closest staging point": a well-aimed capture is worth approaching
 /// from a bit farther away. Soft — boundary safety is a hard constraint below.
-const EXIT_BIAS_WEIGHT: f64 = 600.0;
+pub(crate) const EXIT_BIAS_WEIGHT: f64 = 600.0;
 /// The chosen side is kept unless a candidate beats it by more than this (mm),
 /// so the approach side doesn't flip-flop on noise / orbiting opponents.
-const APPROACH_HYSTERESIS: f64 = 200.0;
+pub(crate) const APPROACH_HYSTERESIS: f64 = 200.0;
 /// A ball within this distance (mm) of a field line forbids any approach whose
 /// push has an outward component there — never dribble the ball out (only the
 /// ball is "out" past the line; this is the touchline/goal-line rescue, now
 /// folded into the generic selector instead of a special heading).
-const BALL_KEEPIN_MARGIN: f64 = 350.0;
+pub(crate) const BALL_KEEPIN_MARGIN: f64 = 350.0;
 /// Tolerance on the inward-push constraint (slightly negative so a near-parallel
 /// push along the line is still allowed).
-const MIN_INWARD_PUSH: f64 = -0.05;
+pub(crate) const MIN_INWARD_PUSH: f64 = -0.05;
 
 // ── instant-kick (reflex strike-through) tuning ──────────────────────────────
 /// Ball displacement along the kick axis that counts as "the reflex connected".
-const KICK_DEPART_DIST: f64 = 100.0;
+pub(crate) const KICK_DEPART_DIST: f64 = 100.0;
 /// Ball speed that also counts as departure (filtered estimate; confirms).
-const KICK_DEPART_SPEED: f64 = 1000.0;
+pub(crate) const KICK_DEPART_SPEED: f64 = 1000.0;
 /// How long to wait after arming the reflex for the ball to depart before
 /// declaring a whiff and failing (so a dribbler-on hold can't linger and
 /// accumulate double-touch contact).
-const REFLEX_TIMEOUT: Duration = Duration::from_millis(600);
+pub(crate) const REFLEX_TIMEOUT: Duration = Duration::from_millis(600);
 
 pub struct PickupBallSkill {
     /// Capture: a soft *exit-direction* bias for which side to take the ball from.
@@ -117,7 +117,32 @@ impl PickupBallSkill {
         ball_pos: Vector2,
         player_pos: Vector2,
     ) -> Vector2 {
-        let exit = self.target_heading.to_vector();
+        select_approach_dir(
+            ctx,
+            ball_pos,
+            player_pos,
+            self.target_heading,
+            &mut self.chosen_dir,
+        )
+    }
+}
+
+/// Pick the push direction (unit) for a capture (shared by `PickupBallSkill` and
+/// the unified `HandleBallSkill`). Samples candidate sides around the ball, scores
+/// each by how quickly the robot reaches the staging point minus a reward for
+/// matching `exit_heading`, rejects sides that are blocked or would push the ball
+/// out, and keeps `chosen_dir` unless clearly beaten (hysteresis). The robot
+/// stages behind the ball along `-dir` and drives through it, so `dir` is also the
+/// direction the ball is pushed. `chosen_dir` is updated in place for hysteresis.
+pub(crate) fn select_approach_dir(
+    ctx: &SkillContext<'_>,
+    ball_pos: Vector2,
+    player_pos: Vector2,
+    exit_heading: Angle,
+    chosen_dir: &mut Option<Vector2>,
+) -> Vector2 {
+    {
+        let exit = exit_heading.to_vector();
         let field = ctx.world.field_geom.as_ref();
         let obstacles = &ctx.obstacles;
 
@@ -163,7 +188,7 @@ impl PickupBallSkill {
 
         // Hysteresis: stick with the current side unless the new best is a better
         // tier or beats it by more than the margin.
-        let dir = match self.chosen_dir {
+        let dir = match *chosen_dir {
             Some(prev) if prev.norm() > 1e-6 => {
                 let (pt, pc) = eval(prev);
                 if best_tier < pt || (best_tier == pt && best_cost + APPROACH_HYSTERESIS < pc) {
@@ -174,7 +199,7 @@ impl PickupBallSkill {
             }
             _ => best_u,
         };
-        self.chosen_dir = Some(dir);
+        *chosen_dir = Some(dir);
         dir
     }
 }
@@ -183,7 +208,7 @@ impl PickupBallSkill {
 /// line the ball is within [`BALL_KEEPIN_MARGIN`] of, the push must not have an
 /// outward component (we never dribble the ball out — only the ball is "out"
 /// past a line, so a robot in the run-off is fine, but the ball must stay in).
-fn push_keeps_ball_in(ball: Vector2, u: Vector2, field: Option<&FieldGeometry>) -> bool {
+pub(crate) fn push_keeps_ball_in(ball: Vector2, u: Vector2, field: Option<&FieldGeometry>) -> bool {
     let Some(field) = field else {
         return true;
     };
@@ -328,7 +353,7 @@ impl ExecutableSkill for PickupBallSkill {
 
 /// Clamp a point to the playing area, inset by [`STAGING_FIELD_MARGIN`] from every
 /// boundary. With no field geometry available the point is returned unchanged.
-fn clamp_into_field(p: Vector2, field: Option<&FieldGeometry>) -> Vector2 {
+pub(crate) fn clamp_into_field(p: Vector2, field: Option<&FieldGeometry>) -> Vector2 {
     let Some(field) = field else {
         return p;
     };

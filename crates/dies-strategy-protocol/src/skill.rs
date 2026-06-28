@@ -219,6 +219,33 @@ pub enum SkillCommand {
     /// - `Failed` on timeout or if no opponent is holding the ball to strip
     Snatch { release_hint: Option<Vector2> },
 
+    /// Unified ball handling: acquire the ball if we don't have it, then perform a
+    /// continuously-supplied terminal action with it.
+    ///
+    /// **Type**: Continuous — call each frame with the latest `action`/`approach`.
+    /// This is the merged successor to the [`PickupBall`](Self::PickupBall) →
+    /// [`DribbleShoot`](Self::DribbleShoot) sequence: because acquire *and* act are
+    /// one command **variant**, swapping the action mid-handle is a live parameter
+    /// update on the same skill instance (no teardown), so the delicate acquire→act
+    /// transition no longer discards state.
+    ///
+    /// **Parameters**:
+    /// - `action`: the terminal intent (see [`BallAction`]). Updated live.
+    /// - `approach`: optional exit-bias heading for the *acquire* sub-phase (which
+    ///   side to take the ball from / where it ends up facing at capture). `None`
+    ///   derives a default from `action`.
+    ///
+    /// **Completion**:
+    /// - `Succeeded` only when a kick departs (`Shoot`/`Strike`). `Carry` and
+    ///   `Hold` never self-complete — they run until the strategy commands
+    ///   something else (the caller decides arrival).
+    /// - `Failed` on an unrecoverable acquire/aim/kick problem (the skill silently
+    ///   re-acquires brief ball losses internally before giving up).
+    HandleBall {
+        action: BallAction,
+        approach: Option<Angle>,
+    },
+
     /// Stop all motion immediately.
     ///
     /// **Type**: Immediate
@@ -228,6 +255,26 @@ pub enum SkillCommand {
     /// - Disables dribbler
     /// - Transitions to `Idle` status
     Stop,
+}
+
+/// The terminal intent for a [`SkillCommand::HandleBall`]. The skill acquires the
+/// ball first if needed, then realises this action; all fields are live-updatable.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum BallAction {
+    /// Capture the ball, aim it at `target` (orbit in place / short reposition),
+    /// then kick. The open-play shot path — always captures and aims, never a
+    /// one-touch strike.
+    Shoot { target: Vector2 },
+    /// Strike the ball through toward `target` in one motion via a firmware reflex
+    /// kick — **never holding it** (double-touch-safe). Used for attacking
+    /// restarts. A whiff fails rather than falling back to a hold.
+    Strike { target: Vector2 },
+    /// Acquire the ball then dribble it to `to`, facing `heading`. Does not kick
+    /// and does not self-complete (the caller decides arrival).
+    Carry { to: Vector2, heading: Angle },
+    /// Acquire the ball then keep possession, facing `heading`. Never completes —
+    /// the "just go get it and hold" action (loose-ball capture, pass-secure).
+    Hold { heading: Angle },
 }
 
 /// The role a robot plays in a [`SkillCommand::Pass`].
