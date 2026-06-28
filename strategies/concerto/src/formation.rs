@@ -35,6 +35,9 @@ enum RoleKind {
     Shadow,
     Mark,
     Support,
+    /// Central box-runner: a single advanced body in front of the opponent box, the
+    /// cutback target / rebound crasher. Staffed only while attacking.
+    Striker,
     Spread,
 }
 
@@ -44,6 +47,7 @@ fn role_name(kind: RoleKind) -> &'static str {
         RoleKind::Shadow => "shadow",
         RoleKind::Mark => "mark",
         RoleKind::Support => "support",
+        RoleKind::Striker => "striker",
         RoleKind::Spread => "spread",
     }
 }
@@ -433,8 +437,11 @@ impl Formation {
         // can't use a strictly-forward outlet, so we flank the goal for crosses.
         let attacking = ball.x > config::SUPPORT_ATTACK_BALL_X
             && ball_threat < config::SUPPORT_ATTACK_MAX_THREAT;
+        // When attacking, one forward body becomes the central box-runner (added
+        // below), so stage one fewer *wide* supporter to keep the body-count
+        // balanced — central presence replaces a wing, it doesn't add a fourth.
         let support_count = if attacking {
-            config::SUPPORT_ATTACK_COUNT
+            config::SUPPORT_ATTACK_COUNT.saturating_sub(1)
         } else {
             config::SUPPORT_COUNT
         };
@@ -478,6 +485,28 @@ impl Formation {
                 },
                 position: pos,
                 importance: support_imp,
+                face: world.opp_goal_center(),
+            });
+        }
+
+        // 3b. Central box-runner — a single advanced body just in front of the
+        // opponent box, offset to the side away from the ball so it offers a cutback
+        // angle across the keeper. This is the central outlet the planner cuts back
+        // to (its large lateral separation from a wide carrier trips the final-third
+        // cross branch) and the close-range finisher v0's wall+arc-keeper leave open.
+        if attacking {
+            let front_x = world.opp_goal_center().x - (opp_pen_depth + config::BOX_RUNNER_FRONT_MARGIN);
+            // Bias to the side away from the ball; default to +y when the ball is
+            // dead-central so the choice is still deterministic.
+            let away = if ball.y > 0.0 { -1.0 } else { 1.0 };
+            let pos = Vector2::new(front_x, away * config::BOX_RUNNER_Y_OFFSET);
+            roles.push(Role {
+                id: RoleId {
+                    kind: RoleKind::Striker,
+                    slot: 0,
+                },
+                position: pos,
+                importance: config::IMP_STRIKER,
                 face: world.opp_goal_center(),
             });
         }
@@ -730,6 +759,57 @@ mod tests {
             any_reduced,
             "a role near the contest must be de-prioritised"
         );
+    }
+
+    #[test]
+    fn attacking_stages_a_central_box_runner() {
+        // Ball advanced in the opponent half with our goal safe → attacking. A
+        // single Striker role must appear, central and just in front of the
+        // opponent box, while the wide-supporter count drops by one (the central
+        // body replaces a wing, not adds to it).
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, 1000.0, 800.0),
+            player(3, 1500.0, -600.0),
+        ];
+        let opp = vec![player(11, 3000.0, 200.0)];
+        let world = World::new(WorldSnapshot {
+            timestamp: 0.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: Vector2::new(2200.0, 600.0), // opp half, ball.y > 0
+                velocity: Vector2::new(0.0, 0.0),
+                detected: true,
+            }),
+            own_players: own,
+            opp_players: opp,
+            game_state: GameState::Run,
+            us_operating: true,
+            our_keeper_id: Some(PlayerId::new(1)),
+            freekick_kicker: None,
+            possession: Possession::We(PlayerId::new(2)),
+            possession_stale: false,
+            ball_contest: None,
+        });
+        let f = Formation::new();
+        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4);
+
+        let strikers: Vec<&Role> = roles.iter().filter(|r| r.id.kind == RoleKind::Striker).collect();
+        assert_eq!(strikers.len(), 1, "exactly one box-runner when attacking");
+        let s = strikers[0];
+        // Just in front of the opponent box, central.
+        let box_front = world.opp_penalty_area().min.x;
+        assert!(
+            s.position.x < box_front && s.position.x > box_front - 600.0,
+            "box-runner sits just outside the box front, got x={}",
+            s.position.x
+        );
+        // Ball is at +y, so the runner biases to -y (open cutback side).
+        assert!(s.position.y < 0.0, "runner should bias away from the ball side");
+        // Wide supporters reduced from SUPPORT_ATTACK_COUNT to that minus one.
+        let supports = roles.iter().filter(|r| r.id.kind == RoleKind::Support).count();
+        assert_eq!(supports, config::SUPPORT_ATTACK_COUNT - 1);
     }
 
     #[test]

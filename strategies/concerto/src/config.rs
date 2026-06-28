@@ -181,6 +181,25 @@ pub const SUPPORT_LANE_CORRIDOR: f64 = 500.0;
 /// supporter, so two never converge on the same outlet. Sized so distinct grid cells
 /// survive the constraint while genuinely co-located spots are forbidden.
 pub const SUPPORT_MIN_SEPARATION: f64 = 1500.0;
+// ── Central box-runner (striker) ────────────────────────────────────────────
+// v0 (and most simple defences) cover the centre of the mouth with only a 2-robot
+// wall + an arc keeper that bias toward the ball — so the highest-value attacking
+// position is central, just in front of the box: a cutback target and rebound
+// crasher. When attacking we stage ONE supporter there (replacing a wide one, to
+// keep the forward body-count balanced) so the planner has a central outlet to
+// pass into and finish from close range instead of shooting from acute wing angles.
+/// How far in front of the opponent penalty-area front edge the box-runner sits
+/// (mm). Small + positive keeps it just outside the box (legal, and a step from a
+/// point-blank finish) rather than parked on the goal line.
+pub const BOX_RUNNER_FRONT_MARGIN: f64 = 250.0;
+/// Lateral offset (mm) of the box-runner from centre, toward the side *away* from
+/// the ball — it opens a cutback angle across the keeper rather than standing on
+/// the ball's own line. Kept small so it stays within the high-value central zone.
+pub const BOX_RUNNER_Y_OFFSET: f64 = 350.0;
+/// Importance of the box-runner role while attacking. At/above `IMP_SUPPORT_ATTACK`
+/// so the central outlet is reliably staffed when we commit forward.
+pub const IMP_STRIKER: f64 = 5.5;
+
 /// A ball contest with at least this much threat to our goal relieves one shadow
 /// (the contesting plan robot stands in for it). Keeps shadows off the snatcher.
 pub const SHADOW_RELIEF_THREAT: f64 = 0.4;
