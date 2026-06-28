@@ -1304,6 +1304,16 @@ export type BenchCommand =
 	robot_id: number;
 	kind: BenchOneShot;
 }}
+	/**
+	 * Set (or clear, with `None`) a continuously-held command that is re-sent to
+	 * the robot every stream tick until cleared. Only one-shots that map to a
+	 * `RobotCmd` (Arm/ArmReflex/Coast/Discharge/...) are holdable; others are
+	 * ignored. Works whether or not the robot is taken for driving.
+	 */
+	| { type: "SetHold", data: {
+	robot_id: number;
+	kind?: BenchOneShot;
+}}
 	/** Broadcast a one-shot action to all robots. */
 	| { type: "Broadcast", data: {
 	kind: BenchOneShot;
@@ -1331,8 +1341,12 @@ export type BenchOneShot =
 	| { type: "Arm",  }
 	| { type: "Disarm",  }
 	| { type: "Discharge",  }
+	/**
+	 * Fire the kicker. `kick_time` is the raw firmware kick duration
+	 * (`GenericCommand.kick_time_i`, a `u16` in milliseconds) sent verbatim.
+	 */
 	| { type: "Kick", data: {
-	speed: number;
+	kick_time: number;
 }}
 	| { type: "ArmReflex",  }
 	| { type: "CalibrateBreakbeam",  }

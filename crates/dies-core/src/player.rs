@@ -515,7 +515,9 @@ pub enum BenchOneShot {
     Arm,
     Disarm,
     Discharge,
-    Kick { speed: f64 },
+    /// Fire the kicker. `kick_time` is the raw firmware kick duration
+    /// (`GenericCommand.kick_time_i`, a `u16` in milliseconds) sent verbatim.
+    Kick { kick_time: u16 },
     ArmReflex,
     CalibrateBreakbeam,
     CalibrateImu,
@@ -548,6 +550,14 @@ pub enum BenchCommand {
     TakeControl { robot_id: u32, taken: bool },
     /// Fire a one-shot action at a single robot.
     OneShot { robot_id: u32, kind: BenchOneShot },
+    /// Set (or clear, with `None`) a continuously-held command that is re-sent to
+    /// the robot every stream tick until cleared. Only one-shots that map to a
+    /// `RobotCmd` (Arm/ArmReflex/Coast/Discharge/...) are holdable; others are
+    /// ignored. Works whether or not the robot is taken for driving.
+    SetHold {
+        robot_id: u32,
+        kind: Option<BenchOneShot>,
+    },
     /// Broadcast a one-shot action to all robots.
     Broadcast { kind: BenchOneShot },
     /// Set the radio channel of the base (`robot_id = None`) or a robot.

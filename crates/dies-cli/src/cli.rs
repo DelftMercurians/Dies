@@ -584,16 +584,27 @@ async fn select_serial_port(serial_port: &SerialPort) -> Result<String> {
             }
         }
         SerialPort::Port(port) => {
+            // An explicitly requested port is always honored — we only validate
+            // that the device exists, not that autodetect recognized it as a
+            // basestation. Some basestation firmwares report a custom USB
+            // VID/PID that the `is_basestation` heuristic doesn't match, so they
+            // never show up in `list_serial_ports()` even though they work fine.
             if !ports.contains(port) {
-                println!(
-                    "Available ports:\n{}",
-                    ports
-                        .iter()
-                        .map(|p| format!("  - {}", p))
-                        .collect::<Vec<_>>()
-                        .join("\n")
+                if !std::path::Path::new(port).exists() {
+                    println!(
+                        "Detected basestation ports:\n{}",
+                        ports
+                            .iter()
+                            .map(|p| format!("  - {}", p))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
+                    bail!("Port {} does not exist", port);
+                }
+                log::warn!(
+                    "Port {} not detected as a basestation (custom USB VID/PID?), using it anyway",
+                    port
                 );
-                bail!("Port {} not found", port);
             }
             Some(port.clone())
         }

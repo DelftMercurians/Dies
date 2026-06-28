@@ -35,6 +35,14 @@ const oneShot = (send: Send, robot_id: number, kind: BenchOneShot) =>
 const broadcast = (send: Send, kind: BenchOneShot) =>
   send({ type: "Bench", data: { type: "Broadcast", data: { kind } } });
 
+// Set (kind set) or clear (kind undefined) a continuously-held command.
+const setHoldCmd = (
+  send: Send,
+  robot_id: number,
+  kind: BenchOneShot | undefined
+) =>
+  send({ type: "Bench", data: { type: "SetHold", data: { robot_id, kind } } });
+
 const stopRobot = (send: Send, robot_id: number) =>
   send({ type: "Bench", data: { type: "Stop", data: { robot_id } } });
 
@@ -231,12 +239,29 @@ const RobotFocus: FC<{
   const [speed, setSpeed] = useState(0.5); // m/s
   const [angularSpeed, setAngularSpeed] = useState(90); // deg/s
   const [dribble, setDribble] = useState(0); // raw dribbler value
-  const [kickSpeed, setKickSpeed] = useState(0.5); // 0..1
+  const [kickTime, setKickTime] = useState(2500); // raw kick_time_i [ms]
   const [driving, setDriving] = useState(false);
   const [channel, setChannel] = useState("");
   const [heading, setHeading] = useState("");
+  // Command currently being held (continuously re-sent), or null.
+  const [hold, setHoldState] = useState<"Arm" | "ArmReflex" | null>(null);
 
   const robotId = player.id;
+
+  // Toggle a continuously-held command; selecting a different one replaces it.
+  const toggleHold = (kind: "Arm" | "ArmReflex") => {
+    const next = hold === kind ? null : kind;
+    setHoldState(next);
+    setHoldCmd(send, robotId, next ? { type: next } : undefined);
+  };
+
+  // Clear any hold (local + backend), e.g. on Disarm.
+  const clearHold = () => {
+    if (hold !== null) {
+      setHoldState(null);
+      setHoldCmd(send, robotId, undefined);
+    }
+  };
 
   // Keyboard driving streams SetMotion at 30 Hz while taken.
   useBenchKeyboardControl({
@@ -247,19 +272,25 @@ const RobotFocus: FC<{
     dribbleSpeed: dribble,
   });
 
-  // Release control when the focused robot changes or the panel unmounts.
+  // Release control (and any hold) when the focused robot changes or the panel
+  // unmounts. `takeControl(false)` clears the backend hold; reset local state.
   useEffect(() => {
+    setHoldState(null);
     return () => {
       takeControl(send, robotId, false);
+      setHoldCmd(send, robotId, undefined);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [robotId]);
 
-  // Disabling (e.g. a live executor starts) drops driving.
+  // Disabling (e.g. a live executor starts) drops driving and any hold.
   useEffect(() => {
-    if (disabled && driving) {
-      setDriving(false);
-      takeControl(send, robotId, false);
+    if (disabled) {
+      if (driving) {
+        setDriving(false);
+        takeControl(send, robotId, false);
+      }
+      clearHold();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled]);
@@ -413,22 +444,37 @@ const RobotFocus: FC<{
       <fieldset disabled={disabled} className="border border-border-subtle p-2">
         <div className="mb-2 text-sm font-semibold text-text-dim">Kicker</div>
         <SliderRow
-          label="Kick power"
-          value={kickSpeed}
+          label="Kick time"
+          value={kickTime}
           min={0}
-          max={1}
-          step={0.05}
-          unit=""
-          onChange={setKickSpeed}
+          max={5000}
+          step={50}
+          unit=" ms"
+          onChange={setKickTime}
         />
         <div className="mt-2 flex flex-wrap gap-1">
-          <Button size="sm" variant="outline" onClick={() => oneShot(send, robotId, { type: "Arm" })}>
-            Arm
+          <Button
+            size="sm"
+            variant={hold === "Arm" ? "primary" : "outline"}
+            onClick={() => toggleHold("Arm")}
+          >
+            {hold === "Arm" ? "Arming…" : "Arm (hold)"}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => oneShot(send, robotId, { type: "ArmReflex" })}>
-            Arm reflex
+          <Button
+            size="sm"
+            variant={hold === "ArmReflex" ? "primary" : "outline"}
+            onClick={() => toggleHold("ArmReflex")}
+          >
+            {hold === "ArmReflex" ? "Arming reflex…" : "Arm reflex (hold)"}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => oneShot(send, robotId, { type: "Disarm" })}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              clearHold();
+              oneShot(send, robotId, { type: "Disarm" });
+            }}
+          >
             Disarm
           </Button>
           <Button size="sm" variant="outline" onClick={() => oneShot(send, robotId, { type: "Discharge" })}>
@@ -437,7 +483,7 @@ const RobotFocus: FC<{
           <Button
             size="sm"
             variant="primary"
-            onClick={() => oneShot(send, robotId, { type: "Kick", data: { speed: kickSpeed } })}
+            onClick={() => oneShot(send, robotId, { type: "Kick", data: { kick_time: kickTime } })}
           >
             Kick
           </Button>

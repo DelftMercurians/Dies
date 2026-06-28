@@ -31,6 +31,10 @@ struct RobotBench {
     taken: bool,
     setpoint: PlayerCmd,
     last_update: Instant,
+    /// A command re-sent every tick until cleared (e.g. Arm/ArmReflex). Folded
+    /// into the streamed setpoint, or sent as a zero-motion carrier when the
+    /// robot isn't taken for driving.
+    hold_cmd: Option<RobotCmd>,
 }
 
 impl RobotBench {
@@ -39,6 +43,7 @@ impl RobotBench {
             taken: false,
             setpoint: PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(robot_id))),
             last_update: Instant::now(),
+            hold_cmd: None,
         }
     }
 }
@@ -98,14 +103,23 @@ pub async fn run(
                     continue;
                 }
                 for (robot_id, rb) in robots.iter() {
-                    if !rb.taken {
+                    // Stream robots being driven AND robots holding a command.
+                    if !rb.taken && rb.hold_cmd.is_none() {
                         continue;
                     }
-                    let cmd = if rb.last_update.elapsed() > SETPOINT_TIMEOUT {
-                        zero_like(&rb.setpoint, *robot_id)
+                    let mut cmd = if rb.taken {
+                        if rb.last_update.elapsed() > SETPOINT_TIMEOUT {
+                            zero_like(&rb.setpoint, *robot_id)
+                        } else {
+                            rb.setpoint
+                        }
                     } else {
-                        rb.setpoint
+                        // Not driven: a zero-motion carrier for the held command.
+                        PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(*robot_id)))
                     };
+                    if let Some(hold) = rb.hold_cmd {
+                        set_robot_cmd(&mut cmd, hold);
+                    }
                     bs_handle.bench_send_raw(*robot_id as u8, cmd);
                 }
             },
@@ -140,6 +154,11 @@ fn handle_bench_command(
             rb.taken = taken;
             rb.setpoint = PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(robot_id)));
             rb.last_update = Instant::now();
+            if !taken {
+                // Releasing a robot also clears any held command, so it can't
+                // stay armed after the operator lets go.
+                rb.hold_cmd = None;
+            }
             if !taken && !sending_blocked(state) {
                 // Push a final zero so the robot halts immediately on release.
                 bs_handle.bench_send_raw(
@@ -162,10 +181,26 @@ fn handle_bench_command(
             rb.setpoint = build_setpoint(robot_id, mode, vx, vy, w_or_heading, dribble_speed);
             rb.last_update = Instant::now();
         }
+        BenchCommand::SetHold { robot_id, kind } => {
+            let rb = robots
+                .entry(robot_id)
+                .or_insert_with(|| RobotBench::new(robot_id));
+            rb.hold_cmd = match kind {
+                None => None,
+                Some(k) => match one_shot_robot_cmd(k) {
+                    Some(cmd) => Some(cmd),
+                    None => {
+                        log::warn!("Bench hold unsupported for {:?}", k);
+                        None
+                    }
+                },
+            };
+        }
         BenchCommand::Stop { robot_id } => {
             if let Some(rb) = robots.get_mut(&robot_id) {
                 rb.setpoint = zero_like(&rb.setpoint, robot_id);
                 rb.last_update = Instant::now();
+                rb.hold_cmd = None;
             }
             if !sending_blocked(state) {
                 bs_handle.bench_send_raw(
@@ -177,6 +212,7 @@ fn handle_bench_command(
         BenchCommand::StopAll => {
             for (robot_id, rb) in robots.iter_mut() {
                 rb.taken = false;
+                rb.hold_cmd = None;
                 rb.setpoint = PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(*robot_id)));
                 if !sending_blocked(state) {
                     bs_handle.bench_send_raw(
@@ -251,6 +287,14 @@ fn build_setpoint(
     }
 }
 
+/// Set the embedded robot command on a setpoint, regardless of frame.
+fn set_robot_cmd(cmd: &mut PlayerCmd, robot_cmd: RobotCmd) {
+    match cmd {
+        PlayerCmd::Move(c) => c.robot_cmd = robot_cmd,
+        PlayerCmd::GlobalMove(c) => c.robot_cmd = robot_cmd,
+    }
+}
+
 /// A zeroed setpoint of the same frame as `cmd`.
 fn zero_like(cmd: &PlayerCmd, robot_id: u32) -> PlayerCmd {
     let id = PlayerId::new(robot_id);
@@ -262,15 +306,15 @@ fn zero_like(cmd: &PlayerCmd, robot_id: u32) -> PlayerCmd {
 
 fn dispatch_one_shot(bs_handle: &BasestationHandle, robot_id: u8, kind: BenchOneShot) {
     match kind {
-        BenchOneShot::Kick { speed } => {
-            bs_handle.bench_robot_command(robot_id, RobotCmd::Kick, speed)
+        BenchOneShot::Kick { kick_time } => {
+            bs_handle.bench_robot_command(robot_id, RobotCmd::Kick, kick_time)
         }
         BenchOneShot::GetVersion => bs_handle.bench_get_version(robot_id),
         BenchOneShot::ZeroHeading => bs_handle.bench_set_heading(robot_id, 0.0),
         BenchOneShot::SetHeading { angle } => bs_handle.bench_set_heading(robot_id, angle as f32),
         other => {
             if let Some(robot_cmd) = one_shot_robot_cmd(other) {
-                bs_handle.bench_robot_command(robot_id, robot_cmd, 0.0);
+                bs_handle.bench_robot_command(robot_id, robot_cmd, 0);
             }
         }
     }

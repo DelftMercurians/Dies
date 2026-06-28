@@ -108,7 +108,8 @@ enum BenchOp {
     RobotCommand {
         robot_id: u8,
         cmd: RobotCmd,
-        kick_speed: f64,
+        /// Raw firmware kick duration (`kick_time_i`, u16 ms); 0 for non-kick.
+        kick_time: u16,
     },
     /// Broadcast a one-shot robot command to all robots.
     Broadcast(RobotCmd),
@@ -429,12 +430,13 @@ impl BasestationHandle {
         self.send_bench(BenchOp::SendRaw(robot_id, cmd));
     }
 
-    /// Fire a one-shot robot command (zero speed) at a raw robot id.
-    pub fn bench_robot_command(&self, robot_id: u8, cmd: RobotCmd, kick_speed: f64) {
+    /// Fire a one-shot robot command (zero speed) at a raw robot id. `kick_time`
+    /// is the raw firmware kick duration (`kick_time_i`, u16 ms); 0 for non-kick.
+    pub fn bench_robot_command(&self, robot_id: u8, cmd: RobotCmd, kick_time: u16) {
         self.send_bench(BenchOp::RobotCommand {
             robot_id,
             cmd,
-            kick_speed,
+            kick_time,
         });
     }
 
@@ -476,7 +478,7 @@ impl Clone for BasestationHandle {
 
 /// Build a zero-velocity command carrying a single robot command (for bench
 /// one-shots like beep/kick/calibrate).
-fn build_robot_command(cmd: RobotCmd, kick_speed: f64) -> glue::Radio_Command {
+fn build_robot_command(cmd: RobotCmd, kick_time: u16) -> glue::Radio_Command {
     glue::Radio_Command {
         speed: glue::HG_Pose {
             x: 0.0,
@@ -485,7 +487,7 @@ fn build_robot_command(cmd: RobotCmd, kick_speed: f64) -> glue::Radio_Command {
         },
         gen_command: glue::Radio_GenericCommand {
             dribbler_speed_i: 0,
-            kick_time_i: (5_000.0 * kick_speed as f32) as u16,
+            kick_time_i: kick_time,
             time_to_kick: 0,
             smart_kick_couter: 0,
             robot_command: cmd.into(),
@@ -510,14 +512,14 @@ fn dispatch_bench_op(monitor: &mut Monitor, op: BenchOp) {
         BenchOp::RobotCommand {
             robot_id,
             cmd,
-            kick_speed,
+            kick_time,
         } => {
             monitor
-                .send_single(robot_id, build_robot_command(cmd, kick_speed))
+                .send_single(robot_id, build_robot_command(cmd, kick_time))
                 .ok();
         }
         BenchOp::Broadcast(cmd) => {
-            monitor.send_broadcast(build_robot_command(cmd, 0.0)).ok();
+            monitor.send_broadcast(build_robot_command(cmd, 0)).ok();
         }
         BenchOp::SetHeading(robot_id, heading) => {
             monitor.set_current_heading(robot_id, heading).ok();
