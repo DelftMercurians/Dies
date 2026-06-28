@@ -136,19 +136,22 @@ pub enum SkillCommand {
     /// - `Failed` if angle is impossible or ball lost
     Shoot { target: Vector2 },
 
-    /// Aim by orbiting the captured ball, then kick.
+    /// Aim the captured ball at a target point and kick.
     ///
     /// **Type**: Discrete - start once, wait for completion.
     ///
     /// **Parameters**:
-    /// - `target_heading`: Direction to shoot. The robot slides tangentially
-    ///   around the ball (dribbler engaged) until its shoot axis aligns with
-    ///   this heading.
+    /// - `target`: Point to shoot/pass toward. From the *point* (not just a
+    ///   heading) the skill chooses where to launch the ball: it aims in place
+    ///   (orbiting the ball, dribbler engaged) when the current spot has a clear
+    ///   kicking pose toward the target, or first dribbles the ball a short
+    ///   distance to a reachable launch point when it's jammed (e.g. against a
+    ///   boundary), then aims and kicks.
     ///
     /// **Completion**:
     /// - `Succeeded` when the ball is kicked
     /// - `Failed` if the ball is lost, the shoot lane is blocked, or timeout
-    DribbleShoot { target_heading: Angle },
+    DribbleShoot { target: Vector2 },
 
     /// Receive a pass by intercepting the ball along a passing line.
     ///

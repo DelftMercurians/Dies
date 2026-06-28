@@ -286,22 +286,23 @@ impl PlayerHandle {
     /// Returns a handle for monitoring and updating parameters.
     ///
     /// Unlike [`reflex_shoot`](Self::reflex_shoot), this assumes the ball is
-    /// already captured: it slides tangentially around the ball (dribbler
-    /// pressed against it) until the shoot axis lines up with `target_heading`,
-    /// then kicks and verifies the ball actually left before succeeding.
+    /// already captured. From the target *point* it chooses where to launch the
+    /// ball: it orbits to aim in place when the current spot has a clear kicking
+    /// pose, or first dribbles the ball a short distance to a reachable launch
+    /// point when it's jammed, then kicks and verifies the ball actually left.
     ///
     /// # Parameters
     ///
-    /// - `target_heading`: Direction to kick the ball along.
+    /// - `target`: Point to shoot/pass the ball toward.
     ///
     /// # Completion
     ///
     /// - `SkillStatus::Succeeded` when the kicked ball departs the dribbler
     /// - `SkillStatus::Failed` if the kick doesn't connect, the lane is blocked,
     ///   or it times out
-    pub fn dribble_shoot(&mut self, target_heading: Angle) -> SkillHandle<DribbleShootParams> {
-        self.pending_command = Some(SkillCommand::DribbleShoot { target_heading });
-        SkillHandle::new(DribbleShootParams { target_heading })
+    pub fn dribble_shoot(&mut self, target: Vector2) -> SkillHandle<DribbleShootParams> {
+        self.pending_command = Some(SkillCommand::DribbleShoot { target });
+        SkillHandle::new(DribbleShootParams { target })
     }
 
     /// Receive a pass by intercepting along the passing line.

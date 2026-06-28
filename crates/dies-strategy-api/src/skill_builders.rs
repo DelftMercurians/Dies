@@ -220,14 +220,14 @@ impl SkillParams for ReflexShootParams {
 /// Parameters for `DribbleShoot` skill.
 #[derive(Clone, Debug)]
 pub struct DribbleShootParams {
-    /// Heading to aim the shot along (the robot orbits the ball to face it).
-    pub target_heading: Angle,
+    /// Point to shoot/pass toward. The skill chooses the launch point and aims.
+    pub target: Vector2,
 }
 
 impl SkillParams for DribbleShootParams {
     fn to_command(&self) -> SkillCommand {
         SkillCommand::DribbleShoot {
-            target_heading: self.target_heading,
+            target: self.target,
         }
     }
 }

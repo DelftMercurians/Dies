@@ -20,6 +20,7 @@
 use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2, BALL_RADIUS, PLAYER_RADIUS};
 use dies_strategy_protocol::{PassBallState, PassFailure, PassResult, SkillStatus};
 
+use super::avoidance::ObstacleSet;
 use super::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use super::team_context::TeamContext;
 use crate::control::{KickerControlInput, PlayerControlInput, Velocity};
@@ -234,6 +235,9 @@ impl PassCoordinator {
             world: ctx.world,
             team_context: ctx.team_context,
             debug_prefix: ctx.team_context.key(format!("p{}", player.id)),
+            // The pass FSM's secure-pickup happens with the ball already at the
+            // passer; obstacle-aware approach selection isn't needed here.
+            obstacles: ObstacleSet::default(),
         }
     }
 

@@ -449,18 +449,22 @@ pub fn lane_openness(from: Vector2, to: Vector2, opponents: &[PlayerState], corr
     smoothstep(0.0, corridor, min_perp)
 }
 
-/// Distribute `k` shadow positions across the goal-mouth coverage arc as seen from
-/// `ball`, on a standoff line in front of our goal.
+/// Place `k` shadow defenders as a contiguous wall centred on the direct
+/// ball→goal-centre line, on a standoff line in front of our goal.
 ///
-/// Positions vary continuously with the ball; ordered left→right so slot identity
-/// is stable as the fan rotates. `standoff` is how far in front of the goal the
-/// shadows sit (clamped so they stay in front of the ball).
+/// The straight shot at the goal centre is the highest-percentage threat and the
+/// hardest for the keeper to react to, so the wall is built centre-out: with an
+/// odd `k` a robot sits on the centre line; with an even `k` two robots straddle
+/// it, spaced under a robot width (`spacing`) so they overlap and leave no central
+/// gap. Further robots fan symmetrically outward. Wide-angle shots past the wall
+/// edges are conceded to the keeper. Positions vary continuously with the ball and
+/// are ordered left→right so slot identity stays stable as the wall shifts.
 pub fn shadow_arc(
     ball: Vector2,
     own_goal: Vector2,
     k: usize,
     standoff: f64,
-    half_goal: f64,
+    spacing: f64,
 ) -> Vec<Vector2> {
     if k == 0 {
         return Vec::new();
@@ -468,26 +472,19 @@ pub fn shadow_arc(
     let dist = (own_goal - ball).norm();
     let line_x = own_goal.x + standoff.min(dist * 0.8);
 
-    // Aim points span the goal mouth; each shadow blocks the ball→aim ray at line_x.
+    // y where the direct ball→goal-centre ray crosses the standoff line.
+    let d = own_goal - ball;
+    let y_center = if d.x.abs() < 1e-6 {
+        ball.y
+    } else {
+        ball.y + (line_x - ball.x) / d.x * d.y
+    };
+
+    // Contiguous wall centred on that ray; offset (k-1)/2 keeps it symmetric.
     (0..k)
         .map(|i| {
-            // Spread aim across the mouth, left→right. Single shadow → centre.
-            let frac = if k == 1 {
-                0.5
-            } else {
-                i as f64 / (k as f64 - 1.0)
-            };
-            let aim_y = -half_goal + 2.0 * half_goal * frac;
-            let aim = Vector2::new(own_goal.x, aim_y);
-            // Intersect ball→aim with x = line_x.
-            let d = aim - ball;
-            let y = if d.x.abs() < 1e-6 {
-                ball.y
-            } else {
-                let t = (line_x - ball.x) / d.x;
-                ball.y + t * d.y
-            };
-            Vector2::new(line_x, y)
+            let offset = (i as f64 - (k as f64 - 1.0) / 2.0) * spacing;
+            Vector2::new(line_x, y_center + offset)
         })
         .collect()
 }
@@ -547,6 +544,39 @@ mod tests {
         let a = smoothstep(0.0, 1.0, 0.25);
         let b = smoothstep(0.0, 1.0, 0.75);
         assert!(a < b);
+    }
+
+    #[test]
+    fn shadow_wall_covers_the_direct_goal_line() {
+        // Opponent kickoff: ball dead centre, our goal at -x. For every wall size,
+        // some robot must sit within a robot radius of the direct ball→goal-centre
+        // line (y=0 here) — otherwise a straight kick threads the gap.
+        const ROBOT_RADIUS: f64 = 90.0;
+        let own_goal = Vector2::new(-4500.0, 0.0);
+        let ball = Vector2::new(0.0, 0.0);
+        for k in 1..=3 {
+            let wall = shadow_arc(ball, own_goal, k, 1500.0, 170.0);
+            assert_eq!(wall.len(), k);
+            let min_abs_y = wall.iter().map(|p| p.y.abs()).fold(f64::INFINITY, f64::min);
+            assert!(
+                min_abs_y < ROBOT_RADIUS,
+                "k={k}: nearest shadow is {min_abs_y}mm off the goal line, leaving a central gap"
+            );
+            // Wall sits on the standoff line in front of goal.
+            assert!(wall.iter().all(|p| (p.x - (-3000.0)).abs() < 1e-6));
+        }
+    }
+
+    #[test]
+    fn shadow_wall_is_symmetric_about_the_goal_line() {
+        let own_goal = Vector2::new(-4500.0, 0.0);
+        let ball = Vector2::new(0.0, 0.0);
+        let wall = shadow_arc(ball, own_goal, 3, 1500.0, 170.0);
+        let sum_y: f64 = wall.iter().map(|p| p.y).sum();
+        assert!(
+            sum_y.abs() < 1e-6,
+            "wall should be centred, got y-sum {sum_y}"
+        );
     }
 
     #[test]

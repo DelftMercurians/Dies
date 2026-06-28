@@ -110,6 +110,11 @@ pub const SHADOW_MIN: usize = 1;
 pub const SHADOW_MAX: usize = 3;
 /// How far in front of our goal the shadow line sits.
 pub const SHADOW_STANDOFF: f64 = 1500.0;
+/// Lateral spacing between adjacent shadows in the goal-coverage wall. Kept just
+/// under a robot width (~180mm) so neighbours overlap and leave no central gap —
+/// the wall is built centre-out on the direct ball→goal line, so an even count
+/// straddles the centre rather than splitting around it.
+pub const SHADOW_SPACING: f64 = 170.0;
 /// Marking standoff in front of the marked opponent (toward our goal).
 pub const MARK_STANDOFF: f64 = 400.0;
 /// Markers never cross to the opponent half: their target x is capped here

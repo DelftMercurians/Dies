@@ -1365,9 +1365,13 @@ fn build_robot_handle(ctx: &mut Context, state: StateRef, id: PlayerId) -> JsRes
         let f = unsafe {
             NativeFunction::from_closure(move |_this, args, ctx| {
                 let opts = args.first().cloned().unwrap_or(JsValue::undefined());
-                let heading = get_num(&opts, "heading", ctx)?;
+                let target_val = get_obj_opt(&opts, "target", ctx)?.ok_or_else(|| {
+                    JsNativeError::typ().with_message("dribbleShoot: target required")
+                })?;
+                let tx = get_num(&target_val, "x", ctx)?;
+                let ty = get_num(&target_val, "y", ctx)?;
                 let cmd = SkillCommand::DribbleShoot {
-                    target_heading: Angle::from_radians(heading),
+                    target: Vector2::new(tx, ty),
                 };
                 register_skill_and_await(state.clone(), id, cmd, "dribbleShoot", ctx)
             })

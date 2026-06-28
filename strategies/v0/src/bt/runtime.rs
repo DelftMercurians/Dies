@@ -230,8 +230,8 @@ fn apply_command(player: &mut PlayerHandle, cmd: SkillCommand) {
         SkillCommand::Shoot { target } => {
             player.reflex_shoot(target);
         }
-        SkillCommand::DribbleShoot { target_heading } => {
-            player.dribble_shoot(target_heading);
+        SkillCommand::DribbleShoot { target } => {
+            player.dribble_shoot(target);
         }
         SkillCommand::Receive {
             from_pos,

@@ -157,8 +157,10 @@ impl ActionNode {
             }
 
             SkillDef::Kick => {
+                // DribbleShoot now takes a target point; preserve "kick along my
+                // current heading" by aiming at a far point along it from the ball.
                 let cmd = SkillCommand::DribbleShoot {
-                    target_heading: situation.heading(),
+                    target: situation.ball_position() + situation.heading().to_vector() * 4000.0,
                 };
                 let status = status_of(situation.skill_status);
                 if status != BehaviorStatus::Running {
@@ -280,12 +282,9 @@ impl ActionNode {
                             self.fetch_phase = FetchPhase::Picking;
                             self.ticks_in_phase = 0;
                         }
-                        let heading = heading_to(situation.position(), aim);
                         (
                             BehaviorStatus::Running,
-                            Some(SkillCommand::DribbleShoot {
-                                target_heading: heading,
-                            }),
+                            Some(SkillCommand::DribbleShoot { target: aim }),
                         )
                     }
                 }

@@ -466,11 +466,29 @@ impl TeamController {
                 .get(player_id)
                 .and_then(|opt| opt.as_ref());
 
+            // Capture/aim view of the world for ball-relative pose selection:
+            // walls + defense boxes + opponents (frozen), but NOT the ball — the
+            // skill is driving to it. ORCA still handles moving robots reactively.
+            let obstacles = ObstacleSet::build(
+                world_data,
+                *player_id,
+                AvoidanceGates {
+                    avoid_defense_area: true,
+                    avoid_ball: false,
+                    avoid_ball_care: 0.0,
+                    avoid_opp_robots: true,
+                    is_kickoff_kicker: false,
+                },
+                world_data.current_game_state.game_state,
+                &self.settings.avoidance,
+            );
+
             let ctx = SkillContext {
                 player: player_data,
                 world: world_data,
                 team_context,
                 debug_prefix: team_context.key(format!("p{}", player_id)),
+                obstacles,
             };
 
             let input = self

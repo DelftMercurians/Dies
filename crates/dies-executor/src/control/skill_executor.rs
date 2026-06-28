@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use dies_core::{PlayerData, PlayerId, PlayerSkillInfo, SkillState, TeamData};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
+use super::avoidance::ObstacleSet;
 use super::{PlayerControlInput, TeamContext};
 
 /// The result of a skill execution step.
@@ -51,6 +52,13 @@ pub struct SkillContext<'a> {
     pub team_context: &'a TeamContext,
     /// Debug key prefix for this player.
     pub debug_prefix: String,
+    /// Static geometry + frozen opponent discs this robot should treat as
+    /// blockers when choosing ball-relative poses (capture approach points, shot
+    /// launch points). Excludes the ball itself — capture/aim skills drive *to*
+    /// it. Empty when the caller has no obstacle context (e.g. the pass FSM's
+    /// secure pickup). Opponents are a static snapshot; ORCA handles them
+    /// reactively once the skill picks a target.
+    pub obstacles: ObstacleSet,
 }
 
 /// Trait for executable skills in the executor.
@@ -321,9 +329,7 @@ fn create_skill_from_command(cmd: &SkillCommand) -> Box<dyn ExecutableSkill> {
             instant_kick,
         } => Box::new(PickupBallSkill::new(*target_heading, *instant_kick)),
         SkillCommand::Shoot { target } => Box::new(ShootSkill::new(*target)),
-        SkillCommand::DribbleShoot { target_heading } => {
-            Box::new(DribbleShootSkill::new(*target_heading))
-        }
+        SkillCommand::DribbleShoot { target } => Box::new(DribbleShootSkill::new(*target)),
         SkillCommand::Receive {
             from_pos,
             target_pos,

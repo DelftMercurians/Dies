@@ -311,6 +311,42 @@ impl ObstacleSet {
         }
     }
 
+    /// Signed clearance from `p` to the nearest obstacle, treating agents as
+    /// discs at their true radius (the frozen-planner view with no extra
+    /// inflation). Positive = free space; the magnitude is how far the point is
+    /// from the nearest blocker edge. `∞` when there are no obstacles.
+    ///
+    /// Skills use this to test candidate ball-relative poses (capture approach
+    /// points, shot launch points) against static geometry + opponents without
+    /// reaching into the planner.
+    pub fn clearance_at(&self, p: Vector2) -> f64 {
+        self.as_planner_shapes(0.0)
+            .map(|s| s.distance(p))
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Whether a robot of `ego_radius` can occupy `p` without overlapping any
+    /// obstacle (static geometry or a frozen opponent disc).
+    pub fn point_clear(&self, p: Vector2, ego_radius: f64) -> bool {
+        self.clearance_at(p) >= ego_radius
+    }
+
+    /// Whether a robot of `ego_radius` can travel the straight segment `a → b`
+    /// without any obstacle clearance dropping below `ego_radius`. Sampled every
+    /// `step` mm. Mirrors the planner's line-of-sight test for skill use (e.g.
+    /// "is the commit line / shot lane clear?").
+    pub fn segment_clear(&self, a: Vector2, b: Vector2, ego_radius: f64, step: f64) -> bool {
+        let len = (b - a).norm();
+        let n = (len / step.max(1.0)).ceil() as usize;
+        for k in 0..=n {
+            let t = if n == 0 { 0.0 } else { k as f64 / n as f64 };
+            if !self.point_clear(a + (b - a) * t, ego_radius) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Frozen view for the planner: dynamic agents become keep-out discs at
     /// their current position (inflated by `clearance`) alongside the static
     /// shapes. The planner treats the whole world as solid geometry and tests

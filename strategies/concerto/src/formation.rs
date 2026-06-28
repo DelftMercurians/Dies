@@ -212,7 +212,6 @@ impl Formation {
             .unwrap_or_else(|| Vector2::new(0.0, 0.0));
         let half_len = world.field_length() / 2.0;
         let half_wid = world.field_width() / 2.0;
-        let half_goal = world.goal_width() / 2.0;
 
         // Coverage accounting: opponents already pressured by a plan robot need no
         // mark (the plan robot *is* the mark); ball-contest points soft-suppress
@@ -259,7 +258,13 @@ impl Formation {
             })
             .count();
         k = k.saturating_sub(contesting_def).max(config::SHADOW_MIN);
-        let positions = geometry::shadow_arc(ball, own_goal, k, config::SHADOW_STANDOFF, half_goal);
+        let positions = geometry::shadow_arc(
+            ball,
+            own_goal,
+            k,
+            config::SHADOW_STANDOFF,
+            config::SHADOW_SPACING,
+        );
         for (i, pos) in positions.into_iter().enumerate() {
             roles.push(Role {
                 id: RoleId {
