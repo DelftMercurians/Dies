@@ -1,8 +1,9 @@
 //! Concerto — a formation/planner-split RoboCup SSL strategy.
 //!
 //! Two layers above the skills:
-//! - **Formation** positions every field robot except the keeper and the active
-//!   (plan-controlled) robot.
+//! - **Formation** runs one cost-aware matching that positions every field robot
+//!   (except the keeper and the plan-controlled robots) and, when we don't hold the
+//!   ball, elects the ball-winner as one of those roles.
 //! - **Planner → Driver** moves the ball toward the opponent goal via
 //!   ball-state-transition waypoints, re-deciding only on discrete events.
 
@@ -153,31 +154,41 @@ impl Strategy for ConcertoStrategy {
             _ => false,
         };
 
-        // ── Offensive loop: plan on events, then drive the active robot ──
-        let mut plan_slots: Vec<PlayerId> = Vec::new();
-        if !defense_only && ball_present && world.is_ball_in_play() && we_may_act {
-            // A pass is atomic: possession flits We→Loose→We while the ball is in
-            // flight, so soft (possession/game-state) replan triggers are suppressed
-            // mid-pass — the coordinator owns abort/failure and surfaces it as a
-            // terminal status, which still replans via the arm below.
-            let passing = self.driver.is_passing();
+        let can_act = !defense_only && ball_present && world.is_ball_in_play() && we_may_act;
+        // A pass is atomic: possession flits We→Loose→We while the ball is in flight,
+        // so we stay in the offense path (the coordinator owns the pass) rather than
+        // treating the transient loose ball as something to chase.
+        let passing = self.driver.is_passing();
+        // Offense — we hold the ball (or a pass is in flight): the Planner owns the
+        // active robot(s). Pursuit — a ball we don't hold but may contest: Formation's
+        // matching picks the capturer, weighing it against every defensive duty.
+        let offense = can_act && (passing || matches!(possession, Possession::We(_)));
+        let pursuit = can_act && !offense;
+
+        let inputs = PlanInputs {
+            keeper_id: world.our_keeper_id(),
+            double_touch_robot: self.double_touch_robot,
+            our_attacking_restart: us_operating
+                && matches!(game_state, GameState::Kickoff | GameState::FreeKick),
+            carried,
+            now,
+        };
+
+        // Robots Formation must not position: those the Planner already controls
+        // (carrier + pass receiver). The pursuit capturer is *not* reserved — it is
+        // chosen by Formation's matching and excluded from positioning there.
+        let mut reserved: Vec<PlayerId> = Vec::new();
+
+        // ── Offense: plan on events (Planner-first so pass slots are reserved) ──
+        if offense {
             let needs_replan = self.planner.current_plan().is_none()
                 || matches!(
                     self.driver.status(),
                     WaypointStatus::Succeeded | WaypointStatus::Failed(_)
                 )
                 || (!passing && (possession_changed || contest_changed || game_state_changed));
-
             if needs_replan {
-                let inputs = PlanInputs {
-                    keeper_id: world.our_keeper_id(),
-                    double_touch_robot: self.double_touch_robot,
-                    our_attacking_restart: us_operating
-                        && matches!(game_state, GameState::Kickoff | GameState::FreeKick),
-                    carried,
-                    now,
-                };
-                match self.planner.replan(&world, &possession, &inputs) {
+                match self.planner.replan(&world, &possession, None, &inputs) {
                     Some(plan) => {
                         self.driver
                             .set_waypoint(plan.waypoints[0].clone(), plan.active_robot, now)
@@ -185,31 +196,18 @@ impl Strategy for ConcertoStrategy {
                     None => self.driver.clear(),
                 }
             }
-
             if let Some(active_id) = self.driver.active_robot_id() {
-                // Reserve every plan-controlled robot (both passer and receiver for
-                // a pass) so Formation never commands them — a stray go_to would
-                // cancel the pass.
-                plan_slots.extend(self.driver.plan_slots());
+                reserved.extend(self.driver.plan_slots());
                 let status = self.driver.update(&world, ctx);
                 if let WaypointStatus::Failed(reason) = status {
                     self.planner.record_failure(active_id, reason, now);
                 }
-                // A completed pass hands the ball to the receiver. We rely on the
-                // Succeeded status above to trigger a replan that picks up the new
-                // carrier via possession; the hint is consumed to keep it fresh.
+                // A completed pass hands the ball to the receiver; the Succeeded
+                // status triggers the replan that picks up the new carrier.
                 let _ = self.driver.take_new_active();
-
-                // Compliance: name the active robot as the kicker during our restarts
-                // so the executor exempts it and positions everyone else.
-                if let Some(role) = our_kicker_role(game_state, us_operating) {
-                    if let Some(p) = ctx.player(active_id) {
-                        p.set_role(role);
-                    }
-                }
             }
-        } else {
-            // Not acting offensively — replan fresh when play resumes.
+        } else if !pursuit {
+            // Not acting — replan fresh when play resumes.
             self.planner.clear_plan();
             self.driver.clear();
         }
@@ -225,17 +223,80 @@ impl Strategy for ConcertoStrategy {
             )
         {
             if let Some(id) = self.designate_prep_kicker(&world, ctx, game_state) {
-                plan_slots.push(id);
+                reserved.push(id);
             }
         }
 
+        // ── Pursuit: hand Formation a capture role so its matching elects the
+        //    ball-winner (weighed against defensive duty). ───────────────────────
+        let capture = pursuit.then(|| {
+            let ball = world.ball_position().unwrap_or_default();
+            let pos = world
+                .predict_ball_position(config::CAPTURE_LEAD_TAU)
+                .unwrap_or(ball);
+            let mut ineligible = self.planner.capture_ineligible(now);
+            ineligible.extend(self.double_touch_robot);
+            formation::CaptureRole {
+                pos,
+                importance: config::CAPTURE_IMPORTANCE,
+                ineligible,
+            }
+        });
+
         let plan_context = self.driver.plan_context();
 
-        // ── Formation (all field robots except keeper + plan slots) ─────
-        let commands = self
+        // ── Formation: one cost-aware matching over all field robots (the capturer
+        //    is one of the roles in pursuit). ─────────────────────────────────────
+        let fout = self
             .formation
-            .update(&world, &plan_slots, &plan_context, now);
-        for cmd in &commands {
+            .update(&world, &reserved, &plan_context, capture.as_ref(), now);
+
+        // ── Pursuit: build the capture waypoint for Formation's chosen capturer ──
+        if pursuit {
+            let needs_replan = self.planner.current_plan().is_none()
+                || matches!(
+                    self.driver.status(),
+                    WaypointStatus::Succeeded | WaypointStatus::Failed(_)
+                )
+                || possession_changed
+                || contest_changed
+                || game_state_changed
+                || fout.capturer != self.driver.active_robot_id();
+            if needs_replan {
+                let plan = fout
+                    .capturer
+                    .and_then(|c| self.planner.replan(&world, &possession, Some(c), &inputs));
+                match plan {
+                    Some(plan) => {
+                        self.driver
+                            .set_waypoint(plan.waypoints[0].clone(), plan.active_robot, now)
+                    }
+                    None => {
+                        self.planner.clear_plan();
+                        self.driver.clear();
+                    }
+                }
+            }
+            if let Some(active_id) = self.driver.active_robot_id() {
+                let status = self.driver.update(&world, ctx);
+                if let WaypointStatus::Failed(reason) = status {
+                    self.planner.record_failure(active_id, reason, now);
+                }
+            }
+        }
+
+        // Compliance: name the active robot as the kicker during our restarts so the
+        // executor exempts it and positions everyone else.
+        if let Some(active_id) = self.driver.active_robot_id() {
+            if let Some(role) = our_kicker_role(game_state, us_operating) {
+                if let Some(p) = ctx.player(active_id) {
+                    p.set_role(role);
+                }
+            }
+        }
+
+        // ── Apply Formation positioning (non-capturing field robots) ─────
+        for cmd in &fout.commands {
             if let Some(p) = ctx.player(cmd.id) {
                 p.go_to(cmd.target).facing(cmd.face);
                 p.set_role(cmd.role);
@@ -249,7 +310,7 @@ impl Strategy for ConcertoStrategy {
             }
         }
 
-        self.draw_debug(&world, &possession, &commands);
+        self.draw_debug(&world, &possession, &fout.commands);
     }
 }
 

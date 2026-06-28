@@ -44,8 +44,6 @@ pub const DRIBBLE_CORRECTION_STEP: f64 = 250.0;
 /// Hard cap on how far the ball may be carried from the contact point before we
 /// must kick (well under the 1m excessive-dribbling limit).
 pub const DRIBBLE_CORRECTION_LIMIT: f64 = 350.0;
-/// Maximum distance to the ball for a steal to be worth attempting (M1 crude gate).
-pub const STEAL_MAX_DIST: f64 = 2500.0;
 /// Backstop timeout (s) for a snatch attempt. The `snatch` skill has its own
 /// internal timeout that normally fires first; this is a driver-level safety net
 /// so a wedged attempt can't run forever before the planner gives up.
@@ -178,6 +176,21 @@ pub const SUPPRESS_RADIUS: f64 = 1400.0;
 pub const IMP_SUPPRESS: f64 = 10.0;
 /// Primary tuning knob: seconds of redirect time one importance point is worth.
 pub const SEC_PER_IMPORTANCE: f64 = 0.4;
+/// Capture worth-it gate: a robot more than this redirect time from the ball is
+/// barred from the Capture slot, so the matcher never sends a robot that would
+/// arrive far too late, and leaves the ball to Formation when no one can reach it.
+/// Tuned via self-play + snapshot rollouts: the dominant knob trading possession
+/// (longer → pursue more loose balls) against defensive shape (shorter → keep
+/// bodies home). 1.5s recovers near-baseline ball ownership.
+pub const CAPTURE_TIME_HORIZON: f64 = 1.5;
+/// Importance of the Capture slot in the capturer assignment. Weighed against the
+/// defensive roles a robot would otherwise fill: too low and we never commit
+/// anyone in our own half, too high and we strip defenders. Decides *whether* to
+/// send a capturer; the time horizon + opportunity cost decide *who*.
+pub const CAPTURE_IMPORTANCE: f64 = 13.0;
+/// Seconds the capturer leads the ball along its velocity (aim at an intercept,
+/// not a stale point).
+pub const CAPTURE_LEAD_TAU: f64 = 0.3;
 /// Over-generate roles to this multiple of the assignable robot count.
 pub const OVERGEN_FACTOR: f64 = 1.5;
 /// Assignment recalculation cadence.

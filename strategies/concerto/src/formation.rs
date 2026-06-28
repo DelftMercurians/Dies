@@ -1,18 +1,19 @@
-//! Formation — positions all field robots except the keeper and the active
-//! (plan-controlled) robots.
+//! Formation — one cost-aware matching that places every field robot (except the
+//! keeper and the reserved plan robots) *and* elects the ball-winner.
 //!
 //! Role generators produce smoothly-varying positions with continuous importance;
 //! robots are matched to roles by minimum total cost, where cost blends a
-//! momentum-aware redirect time with the role's importance. Stability comes from
-//! three physical sources, never a stay-bonus:
+//! momentum-aware redirect time with the role's importance. When we don't hold the
+//! ball, "win the ball" enters that same matching as the capture role — so the
+//! decision "who leaves their post for the ball" is made by the same optimiser,
+//! against the same costs, as every defensive duty. The robot that draws it is the
+//! capturer (driven by the Planner/Driver, not positioned here).
+//!
+//! Stability comes from three physical sources, never a stay-bonus:
 //!   1. continuity — role positions are continuous functions of the world;
 //!   2. redirect cost — a moving robot continues cheaply, reverses expensively;
 //!   3. cadence — assignments are recomputed only on events (cooldown-bounded),
 //!      while positions update every tick so motion stays smooth.
-//!
-//! v1 excludes plan-controlled robots from the assignable set (equivalent to the
-//! plan-slot model for a single active robot, and simpler). The passing milestone
-//! switches to plan-slot accounting when two robots become plan-controlled.
 
 use std::collections::HashMap;
 
@@ -26,6 +27,11 @@ use crate::planner::{Engagement, PlanContext};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum RoleKind {
+    /// Win the loose/contested ball. The robot matched to this role is the
+    /// capturer — driven by the Planner/Driver, not positioned by Formation — so
+    /// the decision "who leaves their post for the ball" is made by the same
+    /// cost-aware matching as every defensive duty, weighing each robot's value.
+    Capture,
     Shadow,
     Mark,
     Support,
@@ -34,6 +40,7 @@ enum RoleKind {
 
 fn role_name(kind: RoleKind) -> &'static str {
     match kind {
+        RoleKind::Capture => "capture",
         RoleKind::Shadow => "shadow",
         RoleKind::Mark => "mark",
         RoleKind::Support => "support",
@@ -66,6 +73,28 @@ pub struct FormationCommand {
     pub role: &'static str,
 }
 
+/// Request to include a ball-winner in the matching this tick. Present only when
+/// we don't hold the ball and may pursue it. The matcher weighs capturing the
+/// ball against each robot's defensive duty; the winner is returned as the
+/// capturer (and is not given a positioning command — the Driver controls it).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CaptureRole {
+    /// Where to win the ball (a velocity-led intercept point).
+    pub pos: Vector2,
+    /// Value of winning the ball, weighed against defensive importances.
+    pub importance: f64,
+    /// Robots barred from ball duty (double-touch robot, no-progress cooldown).
+    /// They still take defensive roles — they just can't draw the capture role.
+    pub ineligible: Vec<PlayerId>,
+}
+
+/// Result of a formation update: positioning for the non-capturing field robots,
+/// plus the capturer if the capture role was filled.
+pub struct FormationOutput {
+    pub commands: Vec<FormationCommand>,
+    pub capturer: Option<PlayerId>,
+}
+
 pub struct Formation {
     /// Frozen assignment from the last recalc; positions re-resolved each tick.
     assignment: HashMap<PlayerId, RoleId>,
@@ -73,8 +102,9 @@ pub struct Formation {
     queued: bool,
     // Change-detection snapshots for recalc triggers.
     last_assignable: Vec<PlayerId>,
-    last_plan_slots: Vec<PlayerId>,
+    last_reserved: Vec<PlayerId>,
     last_plan_ctx: PlanContext,
+    last_capture: Option<CaptureRole>,
 }
 
 impl Default for Formation {
@@ -90,55 +120,68 @@ impl Formation {
             last_recalc: f64::NEG_INFINITY,
             queued: false,
             last_assignable: Vec::new(),
-            last_plan_slots: Vec::new(),
+            last_reserved: Vec::new(),
             last_plan_ctx: PlanContext::default(),
+            last_capture: None,
         }
     }
 
-    /// Compute positioning for all field robots except the keeper and plan slots.
+    /// Match every field robot (except the keeper and the reserved plan robots) to
+    /// a role in one cost-aware assignment. When `capture` is given, the ball-winner
+    /// is one of those roles, so who pursues the ball is decided jointly with who
+    /// holds defensive shape. Returns positioning for the non-capturers plus the
+    /// capturer (if the capture role was filled).
     pub fn update(
         &mut self,
         world: &World,
-        plan_slots: &[PlayerId],
+        reserved: &[PlayerId],
         plan_ctx: &PlanContext,
+        capture: Option<&CaptureRole>,
         now: f64,
-    ) -> Vec<FormationCommand> {
+    ) -> FormationOutput {
         let keeper_id = world.our_keeper_id();
 
-        // Assignable = own field robots minus keeper minus plan-controlled robots.
+        // Assignable = own field robots minus keeper minus reserved plan robots.
         let mut assignable: Vec<PlayerId> = world
             .own_players()
             .iter()
             .map(|p| p.id)
-            .filter(|id| Some(*id) != keeper_id && !plan_slots.contains(id))
+            .filter(|id| Some(*id) != keeper_id && !reserved.contains(id))
             .collect();
         assignable.sort_by_key(|id| id.as_u32());
 
         // Generate the role set (positions/importance recomputed every tick).
-        let roles = self.generate_roles(world, plan_ctx, assignable.len());
+        let roles = self.generate_roles(world, plan_ctx, capture, assignable.len());
         let role_by_id: HashMap<RoleId, &Role> = roles.iter().map(|r| (r.id, r)).collect();
 
         // ── Decide whether to recompute the assignment (cadence) ────────
         let assignable_changed = assignable != self.last_assignable;
-        let plan_slots_changed = plan_slots != self.last_plan_slots.as_slice();
+        let reserved_changed = reserved != self.last_reserved.as_slice();
         let plan_ctx_changed = plan_ctx_differs(&self.last_plan_ctx, plan_ctx);
+        let capture_changed = capture_differs(self.last_capture.as_ref(), capture);
         let bg_due = now - self.last_recalc >= config::RECALC_BG_PERIOD;
-        if assignable_changed || plan_slots_changed || plan_ctx_changed || bg_due {
+        if assignable_changed || reserved_changed || plan_ctx_changed || capture_changed || bg_due {
             self.queued = true;
         }
         let cooldown_ok = now - self.last_recalc >= config::RECALC_COOLDOWN;
         let stale = self.assignment.is_empty() && !assignable.is_empty();
-        if (self.queued && cooldown_ok) || stale {
-            self.recompute(world, &assignable, &roles);
+        // Capture appearing/disappearing must take effect this tick (don't make a
+        // pursuit wait out the cooldown, or leave a stale capturer after we score).
+        let capture_presence_changed = self.last_capture.is_some() != capture.is_some();
+        if (self.queued && cooldown_ok) || stale || capture_presence_changed {
+            self.recompute(world, &assignable, &roles, capture);
             self.last_recalc = now;
             self.queued = false;
         }
 
         self.last_assignable = assignable.clone();
-        self.last_plan_slots = plan_slots.to_vec();
+        self.last_reserved = reserved.to_vec();
         self.last_plan_ctx = plan_ctx.clone();
+        self.last_capture = capture.cloned();
 
-        // ── Emit commands: resolve each robot's RoleId to its current position ──
+        // ── Emit commands; the capture-role robot is the capturer (driven by the
+        //    Driver, so it gets no positioning command). ─────────────────────────
+        let mut capturer = None;
         let mut commands = Vec::with_capacity(assignable.len());
         for id in &assignable {
             let role = self.assignment.get(id).and_then(|rid| role_by_id.get(rid));
@@ -154,6 +197,10 @@ impl Formation {
                     }
                 }
             };
+            if role.id.kind == RoleKind::Capture {
+                capturer = Some(*id);
+                continue;
+            }
             commands.push(FormationCommand {
                 id: *id,
                 target: role.position,
@@ -161,11 +208,21 @@ impl Formation {
                 role: role_name(role.id.kind),
             });
         }
-        commands
+        FormationOutput { commands, capturer }
     }
 
-    /// Run the cost-aware matching and store the new assignment.
-    fn recompute(&mut self, world: &World, assignable: &[PlayerId], roles: &[Role]) {
+    /// Run the cost-aware matching and store the new assignment. The capture role
+    /// (if any) is gated: a robot barred from ball duty, or unable to reach the
+    /// ball within `CAPTURE_TIME_HORIZON`, cannot take it — so the matcher never
+    /// sends the freest robot on a hopeless chase, and leaves capture unfilled when
+    /// no one can reach it (the "is it worth pursuing" gate).
+    fn recompute(
+        &mut self,
+        world: &World,
+        assignable: &[PlayerId],
+        roles: &[Role],
+        capture: Option<&CaptureRole>,
+    ) {
         if assignable.is_empty() || roles.is_empty() {
             self.assignment.clear();
             return;
@@ -179,13 +236,22 @@ impl Formation {
                     .iter()
                     .map(|role| match p {
                         Some(p) => {
-                            geometry::redirect_time(
+                            let t = geometry::redirect_time(
                                 p.position,
                                 p.velocity,
                                 role.position,
                                 config::V_MAX,
                                 config::A_MAX,
-                            ) - role.importance * config::SEC_PER_IMPORTANCE
+                            );
+                            if role.id.kind == RoleKind::Capture {
+                                let barred = capture
+                                    .map(|c| c.ineligible.contains(id))
+                                    .unwrap_or(true);
+                                if barred || t > config::CAPTURE_TIME_HORIZON {
+                                    return f64::INFINITY;
+                                }
+                            }
+                            t - role.importance * config::SEC_PER_IMPORTANCE
                         }
                         None => f64::INFINITY,
                     })
@@ -204,7 +270,13 @@ impl Formation {
 
     /// Build the role set for this tick. Generators run in priority order; spread
     /// roles top up to the over-generation target.
-    fn generate_roles(&self, world: &World, plan_ctx: &PlanContext, n: usize) -> Vec<Role> {
+    fn generate_roles(
+        &self,
+        world: &World,
+        plan_ctx: &PlanContext,
+        capture: Option<&CaptureRole>,
+        n: usize,
+    ) -> Vec<Role> {
         let mut roles: Vec<Role> = Vec::new();
         let own_goal = world.own_goal_center();
         let ball = world
@@ -212,6 +284,20 @@ impl Formation {
             .unwrap_or_else(|| Vector2::new(0.0, 0.0));
         let half_len = world.field_length() / 2.0;
         let half_wid = world.field_width() / 2.0;
+
+        // 0. Capture — the ball-winner, when we're pursuing a ball we don't hold.
+        //    The robot matched to it becomes the capturer (driven by the Driver).
+        if let Some(c) = capture {
+            roles.push(Role {
+                id: RoleId {
+                    kind: RoleKind::Capture,
+                    slot: 0,
+                },
+                position: c.pos,
+                importance: c.importance,
+                face: ball,
+            });
+        }
 
         // Coverage accounting: opponents already pressured by a plan robot need no
         // mark (the plan robot *is* the mark); ball-contest points soft-suppress
@@ -429,6 +515,12 @@ impl Formation {
         // effect rather than summing, so overlapping contests don't over-penalise.
         if !contest_pts.is_empty() {
             for role in roles.iter_mut() {
+                // The capture role sits *on* the contested ball by design — it's the
+                // robot we want there — so never suppress it; only the defensive
+                // roles that shouldn't pile on.
+                if role.id.kind == RoleKind::Capture {
+                    continue;
+                }
                 let prox = contest_pts
                     .iter()
                     .map(|pt| {
@@ -440,6 +532,23 @@ impl Formation {
         }
 
         roles
+    }
+}
+
+/// Whether the capture spec changed enough to trigger a recalc. The capture point
+/// tracks the (lead) ball and so jitters every tick; compare it with an epsilon so
+/// normal ball motion doesn't force a recompute every frame (presence flips are
+/// handled separately, with an immediate recompute). Importance/eligibility compare
+/// exactly.
+fn capture_differs(a: Option<&CaptureRole>, b: Option<&CaptureRole>) -> bool {
+    match (a, b) {
+        (None, None) => false,
+        (Some(x), Some(y)) => {
+            (x.pos - y.pos).norm() > config::PLAN_CTX_MOVE_EPS
+                || x.importance != y.importance
+                || x.ineligible != y.ineligible
+        }
+        _ => true,
     }
 }
 
@@ -470,11 +579,17 @@ fn engagement_differs(a: &Engagement, b: &Engagement) -> bool {
 /// Nearest existing role position to a robot (fallback when its role vanished).
 fn nearest_role<'a>(world: &World, id: PlayerId, roles: &'a [Role]) -> Option<&'a Role> {
     let pos = world.own_player(id)?.position;
-    roles.iter().min_by(|a, b| {
-        let da = (a.position - pos).norm();
-        let db = (b.position - pos).norm();
-        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-    })
+    // Positioning roles only — the capturer must come from the gated cost matching,
+    // never from a proximity fallback (which would bypass eligibility/horizon and
+    // could double-elect the capture role, leaving the matched capturer uncommanded).
+    roles
+        .iter()
+        .filter(|r| r.id.kind != RoleKind::Capture)
+        .min_by(|a, b| {
+            let da = (a.position - pos).norm();
+            let db = (b.position - pos).norm();
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
 }
 
 #[cfg(test)]
@@ -526,18 +641,19 @@ mod tests {
         let world = world_with(own, opp, 1);
 
         let mut f = Formation::new();
-        let plan_slots = vec![PlayerId::new(5)];
-        let cmds = f.update(&world, &plan_slots, &PlanContext::default(), 0.0);
+        let reserved = vec![PlayerId::new(5)];
+        let out = f.update(&world, &reserved, &PlanContext::default(), None, 0.0);
 
-        // Assignable = ids {2,3,4} (exclude keeper 1 and plan slot 5).
-        let mut assigned: Vec<u32> = cmds.iter().map(|c| c.id.as_u32()).collect();
+        // Assignable = ids {2,3,4} (exclude keeper 1 and reserved 5).
+        let mut assigned: Vec<u32> = out.commands.iter().map(|c| c.id.as_u32()).collect();
         assigned.sort_unstable();
         assert_eq!(assigned, vec![2, 3, 4]);
         // Each gets exactly one command, all finite.
-        assert_eq!(cmds.len(), 3);
-        for c in &cmds {
+        assert_eq!(out.commands.len(), 3);
+        for c in &out.commands {
             assert!(c.target.x.is_finite() && c.target.y.is_finite());
         }
+        assert_eq!(out.capturer, None, "no capture role given → no capturer");
     }
 
     #[test]
@@ -555,7 +671,7 @@ mod tests {
         let f = Formation::new();
 
         let marks = |rs: &[Role]| rs.iter().filter(|r| r.id.kind == RoleKind::Mark).count();
-        let plain = f.generate_roles(&world, &PlanContext::default(), 3);
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 3);
         let engaged = f.generate_roles(
             &world,
             &PlanContext {
@@ -563,6 +679,7 @@ mod tests {
                     opponent: PlayerId::new(11),
                 }],
             },
+            None,
             3,
         );
         assert_eq!(marks(&plain), 2);
@@ -584,7 +701,7 @@ mod tests {
         let world = world_with(own, opp, 1);
         let f = Formation::new();
 
-        let plain = f.generate_roles(&world, &PlanContext::default(), 4);
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 4);
         let supp = f.generate_roles(
             &world,
             &PlanContext {
@@ -592,6 +709,7 @@ mod tests {
                     at: Vector2::new(0.0, 0.0),
                 }],
             },
+            None,
             4,
         );
 
@@ -626,10 +744,64 @@ mod tests {
         let world = world_with(own, opp, 1);
 
         let mut f = Formation::new();
-        let _ = f.update(&world, &[], &PlanContext::default(), 0.0);
+        let _ = f.update(&world, &[], &PlanContext::default(), None, 0.0);
         let snapshot = f.assignment.clone();
         // A tick later, within cooldown, no trigger → assignment unchanged.
-        let _ = f.update(&world, &[], &PlanContext::default(), 0.05);
+        let _ = f.update(&world, &[], &PlanContext::default(), None, 0.05);
         assert_eq!(f.assignment, snapshot);
+    }
+
+    #[test]
+    fn capture_role_spares_the_deepest_defender() {
+        // Loose ball in our third; the deepest defender (p2) is also nearest — a
+        // greedy min-time pick would yank it and gut the goal cover. The matching
+        // weighs its defensive value and elects a freer, near-enough robot, keeping
+        // the deepest defender home.
+        let own = vec![
+            player(1, -4400.0, 0.0),    // keeper
+            player(2, -3000.0, 100.0),  // deepest + nearest to the ball
+            player(3, -2600.0, -300.0), // midfielder, slightly farther
+            player(4, -1500.0, 800.0),
+            player(5, 1500.0, 0.0),
+        ];
+        let opp = vec![player(11, -2000.0, 0.0)];
+        // Ball loose deep in our half (world_with places it at origin, so build a
+        // world with the ball where we want it via a contest-free snapshot).
+        let world = World::new(WorldSnapshot {
+            timestamp: 0.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: Vector2::new(-2800.0, 0.0),
+                velocity: Vector2::new(0.0, 0.0),
+                detected: true,
+            }),
+            own_players: own,
+            opp_players: opp,
+            game_state: GameState::Run,
+            us_operating: true,
+            our_keeper_id: Some(PlayerId::new(1)),
+            freekick_kicker: None,
+            possession: Possession::Loose,
+            possession_stale: false,
+            ball_contest: None,
+        });
+
+        let mut f = Formation::new();
+        let capture = CaptureRole {
+            pos: Vector2::new(-2800.0, 0.0),
+            importance: config::CAPTURE_IMPORTANCE,
+            ineligible: Vec::new(),
+        };
+        let out = f.update(&world, &[], &PlanContext::default(), Some(&capture), 0.0);
+
+        let capturer = out.capturer.expect("a near robot should take the ball");
+        assert_ne!(
+            capturer,
+            PlayerId::new(2),
+            "the deepest defender must be spared, not sent to the ball"
+        );
+        // And it must not also be emitted a positioning command.
+        assert!(!out.commands.iter().any(|c| c.id == capturer));
     }
 }

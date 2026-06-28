@@ -136,29 +136,34 @@ impl Planner {
         self.recent_failures.insert(robot, (reason, now));
     }
 
-    /// Drop expired failure records; clear all on possession change.
-    fn prune_failures(&mut self, now: f64) {
+    /// Robots that shouldn't be sent to the ball right now: those still in a
+    /// no-progress cooldown. Prunes expired records as a side effect. Fed to the
+    /// Formation capture role so a stuck robot keeps a defensive duty instead.
+    pub fn capture_ineligible(&mut self, now: f64) -> Vec<PlayerId> {
         self.recent_failures
             .retain(|_, (_, ts)| now - *ts < config::NOPROGRESS_TTL);
-    }
-
-    /// True if `id` recently failed with NoProgress and is still in the cooldown.
-    fn recently_stuck(&self, id: PlayerId) -> bool {
-        matches!(
-            self.recent_failures.get(&id),
-            Some((FailReason::NoProgress, _))
-        )
+        let mut ids: Vec<PlayerId> = self
+            .recent_failures
+            .iter()
+            .filter(|(_, (reason, _))| *reason == FailReason::NoProgress)
+            .map(|(id, _)| *id)
+            .collect();
+        // Stable order (HashMap iteration is not), so the capture spec compares
+        // equal tick-to-tick and doesn't spuriously trigger a recompute.
+        ids.sort_by_key(|id| id.as_u32());
+        ids
     }
 
     /// Re-evaluate and produce a plan, or `None` to defer to Formation (defend).
+    /// `capturer` is the ball-winner chosen by Formation's matching (for a ball we
+    /// don't hold); it is ignored when we already hold the ball.
     pub fn replan(
         &mut self,
         world: &World,
         possession: &Possession,
+        capturer: Option<PlayerId>,
         inputs: &PlanInputs,
     ) -> Option<Plan> {
-        self.prune_failures(inputs.now);
-
         let ball_pos = world.ball_position()?;
         let opp_goal = world.opp_goal_center();
 
@@ -247,7 +252,7 @@ impl Planner {
 
             // ── Ball is loose (or contested — go win it) ────────────────
             Possession::Loose | Possession::Contested => {
-                let robot = self.select_capturer(world, ball_pos, inputs)?;
+                let robot = capturer?;
                 let kind = if on_boundary {
                     CaptureKind::RescueInward
                 } else {
@@ -261,15 +266,11 @@ impl Planner {
 
             // ── Opponent has the ball ───────────────────────────────────
             Possession::Opp(oid) => {
-                // M1 crude steal gate: only commit a challenger that is reasonably
-                // close to the ball; otherwise defer to Formation. (M3 replaces this
-                // with a proper conservative gate that protects deep defenders.)
-                let robot = self.select_capturer(world, ball_pos, inputs)?;
-                let robot_pos = world.own_player(robot)?.position;
-                if (robot_pos - ball_pos).norm() > config::STEAL_MAX_DIST {
-                    self.current_plan = None;
-                    return None;
-                }
+                // Formation already elected this challenger through the capture
+                // time-horizon gate. Accept it as-is: re-gating here (e.g. on
+                // distance) could strip a robot of its defensive role yet leave it
+                // uncommanded, since Formation has excluded it from positioning.
+                let robot = capturer?;
                 let kind = if on_boundary {
                     CaptureKind::RescueInward
                 } else {
@@ -324,45 +325,6 @@ impl Planner {
                 target_area: carrier_pos + dir * config::ESCAPE_STEP,
             }
         }
-    }
-
-    /// Choose the robot that can reach the ball soonest (momentum-aware), excluding
-    /// the keeper, the double-touch robot, and robots in a no-progress cooldown.
-    fn select_capturer(
-        &self,
-        world: &World,
-        ball_pos: Vector2,
-        inputs: &PlanInputs,
-    ) -> Option<PlayerId> {
-        let pick = |relax_stuck: bool| -> Option<PlayerId> {
-            world
-                .own_players()
-                .iter()
-                .filter(|p| Some(p.id) != inputs.keeper_id)
-                .filter(|p| Some(p.id) != inputs.double_touch_robot)
-                .filter(|p| relax_stuck || !self.recently_stuck(p.id))
-                .min_by(|a, b| {
-                    let ta = geometry::redirect_time(
-                        a.position,
-                        a.velocity,
-                        ball_pos,
-                        config::V_MAX,
-                        config::A_MAX,
-                    );
-                    let tb = geometry::redirect_time(
-                        b.position,
-                        b.velocity,
-                        ball_pos,
-                        config::V_MAX,
-                        config::A_MAX,
-                    );
-                    ta.partial_cmp(&tb).unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .map(|p| p.id)
-        };
-
-        // Prefer a robot not in cooldown; if everyone is stuck, allow reuse.
-        pick(false).or_else(|| pick(true))
     }
 
     /// Target for an attacking-restart release kick: the most open forward zone
@@ -632,7 +594,7 @@ mod tests {
         let mut planner = Planner::new();
 
         let plan = planner
-            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
         match &plan.waypoints[0] {
             Waypoint::Shoot { target } => {
@@ -659,7 +621,7 @@ mod tests {
         let mut planner = Planner::new();
 
         let plan = planner
-            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
         match &plan.waypoints[0] {
             Waypoint::Dribble { target_area } => {
@@ -693,7 +655,7 @@ mod tests {
         inp.our_attacking_restart = true;
 
         let plan = planner
-            .replan(&world, &Possession::We(PlayerId::new(2)), &inp)
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inp)
             .expect("should produce a plan");
         assert!(
             matches!(plan.waypoints[0], Waypoint::Release { .. }),
@@ -712,7 +674,7 @@ mod tests {
         let mut planner = Planner::new();
 
         let plan = planner
-            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
         assert!(
             !matches!(plan.waypoints[0], Waypoint::Release { .. }),
@@ -734,7 +696,7 @@ mod tests {
         let mut planner = Planner::new();
 
         let plan = planner
-            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
 
         match &plan.waypoints[0] {
@@ -768,7 +730,7 @@ mod tests {
         let mut planner = Planner::new();
 
         let plan = planner
-            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
 
         match &plan.waypoints[0] {
@@ -804,7 +766,7 @@ mod tests {
         let mut planner = Planner::new();
 
         let plan = planner
-            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
 
         let max_x = world.field_length() / 2.0 - config::FIELD_LEAD_MARGIN;
@@ -845,7 +807,7 @@ mod tests {
         let mut planner = Planner::new();
 
         let plan = planner
-            .replan(&world, &Possession::We(PlayerId::new(2)), &inputs())
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
 
         match &plan.waypoints[0] {
