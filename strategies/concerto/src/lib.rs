@@ -271,10 +271,17 @@ impl Strategy for ConcertoStrategy {
                         self.driver
                             .set_waypoint(plan.waypoints[0].clone(), plan.active_robot, now)
                     }
-                    None => {
+                    // Fix C: only tear down when there is genuinely no one to
+                    // pursue. If a capturer is elected but the plan momentarily
+                    // can't form (e.g. a one-frame ball-detection gap), keep the
+                    // existing waypoint so the pursuer stays commanded instead of
+                    // dropping to "unassigned" for a frame and re-acquiring next
+                    // tick — a source of capturing↔unassigned churn.
+                    None if fout.capturer.is_none() => {
                         self.planner.clear_plan();
                         self.driver.clear();
                     }
+                    None => {}
                 }
             }
             if let Some(active_id) = self.driver.active_robot_id() {
