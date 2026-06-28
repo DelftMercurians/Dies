@@ -110,6 +110,118 @@ pub fn is_clear_shot(
     true
 }
 
+/// An aim point in the opponent goal mouth plus the angular width of the open
+/// window it sits in (the shot's aiming tolerance, as seen from the ball).
+#[derive(Debug, Clone, Copy)]
+pub struct ShotAim {
+    /// Point on the goal line to shoot at (the open window's midpoint).
+    pub target: Vector2,
+    /// Angular width of the open window from the ball, in radians. Distance-aware:
+    /// the same gap subtends less angle the farther the ball is, so gating on this
+    /// scales the required clearance with range for free.
+    pub angle: f64,
+}
+
+/// Find the widest *open* window in the opponent goal mouth as seen from `ball`,
+/// and aim at its midpoint — the open-goal model that replaces shooting only at
+/// the goal centre.
+///
+/// Every opponent between the ball and the goal line is projected as a circular
+/// shadow onto the goal line (via similar triangles from the ball) and subtracted
+/// from the mouth. The aim window must clear the posts and every shadow by the ball
+/// radius. The keeper is special-cased: it gets an inflated shadow (it dives/slides
+/// to cover during the ball's flight, blocking far more than its static footprint)
+/// and the scoring biases the aim toward the corner *furthest* from it, so when
+/// both corners are open we shoot where the keeper must travel furthest.
+///
+/// Returns the chosen aim point and its angular width, or `None` if no gap in the
+/// mouth is open at all (fully crowded goal).
+#[allow(clippy::too_many_arguments)]
+pub fn best_shot(
+    ball: Vector2,
+    goal_x: f64,
+    goal_width: f64,
+    opponents: &[PlayerState],
+    keeper_id: Option<PlayerId>,
+    robot_radius: f64,
+    keeper_radius: f64,
+    ball_radius: f64,
+    keeper_bias: f64,
+) -> Option<ShotAim> {
+    let dx = goal_x - ball.x;
+    if dx <= 1e-3 {
+        return None; // ball at or behind the goal line — no shot geometry
+    }
+    let post = goal_width / 2.0;
+    let lo = -post + ball_radius;
+    let hi = post - ball_radius;
+    if hi <= lo {
+        return None;
+    }
+
+    // Project opponents to blocked y-intervals on the goal line.
+    let mut blocked: Vec<(f64, f64)> = Vec::new();
+    let mut keeper_y: Option<f64> = None;
+    for opp in opponents {
+        let ox = opp.position.x - ball.x;
+        if ox <= 1e-3 || opp.position.x > goal_x + robot_radius {
+            continue; // behind the ball, or behind the goal line
+        }
+        let is_keeper = Some(opp.id) == keeper_id;
+        let r = if is_keeper { keeper_radius } else { robot_radius } + ball_radius;
+        let scale = dx / ox; // similar triangles: perpendicular extent grows with range
+        let yc = ball.y + (opp.position.y - ball.y) * scale;
+        let half = r * scale;
+        if is_keeper {
+            keeper_y = Some(yc);
+        }
+        let b_lo = (yc - half).max(lo);
+        let b_hi = (yc + half).min(hi);
+        if b_hi > b_lo {
+            blocked.push((b_lo, b_hi));
+        }
+    }
+
+    // Merge shadows and collect the free gaps within [lo, hi].
+    blocked.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut free: Vec<(f64, f64)> = Vec::new();
+    let mut cursor = lo;
+    for (b_lo, b_hi) in blocked {
+        if b_lo > cursor {
+            free.push((cursor, b_lo));
+        }
+        cursor = cursor.max(b_hi);
+    }
+    if cursor < hi {
+        free.push((cursor, hi));
+    }
+
+    // Pick the window with the best score: open width plus a bias for distance from
+    // the keeper's projected position. Aim at its midpoint.
+    let mut best: Option<(f64, f64, f64)> = None; // (score, w_lo, w_hi)
+    for (w_lo, w_hi) in free {
+        let width = w_hi - w_lo;
+        if width <= 1e-6 {
+            continue;
+        }
+        let mid = 0.5 * (w_lo + w_hi);
+        let keeper_dist = keeper_y.map(|ky| (mid - ky).abs()).unwrap_or(0.0);
+        let score = width + keeper_bias * keeper_dist;
+        if best.map(|(s, _, _)| score > s).unwrap_or(true) {
+            best = Some((score, w_lo, w_hi));
+        }
+    }
+
+    let (_, w_lo, w_hi) = best?;
+    let mid_y = 0.5 * (w_lo + w_hi);
+    let ang_lo = (w_lo - ball.y).atan2(dx);
+    let ang_hi = (w_hi - ball.y).atan2(dx);
+    Some(ShotAim {
+        target: Vector2::new(goal_x, mid_y),
+        angle: (ang_hi - ang_lo).abs(),
+    })
+}
+
 /// Find the best area in the opponent half to pass the ball to.
 ///
 /// Samples a grid of candidate positions in the attacking half (x > 0) and scores
@@ -959,6 +1071,87 @@ mod tests {
             )
             .is_none(),
             "no full-power hoof should stay in field from the attacking half"
+        );
+    }
+
+    fn opp(id: u32, x: f64, y: f64) -> PlayerState {
+        PlayerState::new(
+            PlayerId::new(id),
+            Vector2::new(x, y),
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        )
+    }
+
+    // Geometry helpers use the attacking-toward-+x convention (opp goal at +x).
+    const GOAL_X: f64 = 4500.0;
+    const GOAL_W: f64 = 1000.0;
+    const RR: f64 = 110.0;
+    const KR: f64 = 280.0;
+    const BR: f64 = 21.5;
+    const BIAS: f64 = 0.35;
+
+    #[test]
+    fn open_goal_no_keeper_aims_centre() {
+        // Empty mouth → widest window is the whole goal, aim at centre.
+        let ball = Vector2::new(3000.0, 0.0);
+        let aim = best_shot(ball, GOAL_X, GOAL_W, &[], None, RR, KR, BR, BIAS)
+            .expect("open mouth must yield a shot");
+        assert!(aim.target.y.abs() < 1.0, "should aim centre, got {:?}", aim.target);
+        assert!(aim.angle > 0.2, "full mouth should be a wide window, got {}", aim.angle);
+    }
+
+    #[test]
+    fn central_keeper_forces_a_corner() {
+        // Keeper square in the mouth centre → the centre is shadowed, aim must shift
+        // off-centre into one of the open corners.
+        let ball = Vector2::new(3000.0, 0.0);
+        let keeper = opp(9, 4400.0, 0.0);
+        let aim = best_shot(ball, GOAL_X, GOAL_W, &[keeper], Some(PlayerId::new(9)), RR, KR, BR, BIAS)
+            .expect("corners are open");
+        assert!(
+            aim.target.y.abs() > 200.0,
+            "central keeper should push the aim into a corner, got {:?}",
+            aim.target
+        );
+    }
+
+    #[test]
+    fn frame_3963_off_centre_keeper_yields_open_corner_shot() {
+        // The canonical missed chance, mapped into +x convention: carrier ~1.3m out,
+        // central; keeper offset to +y. Both corners are open and the keeper is
+        // slightly toward +y, so the model must find a comfortably-open window and
+        // prefer the corner *away* from the keeper (-y).
+        let ball = Vector2::new(3167.0, 28.0); // mirror of real (-3167,-28)
+        let keeper = opp(1, 4214.0, -188.0); // mirror of real (-4214,188)
+        let aim = best_shot(ball, GOAL_X, GOAL_W, &[keeper], Some(PlayerId::new(1)), RR, KR, BR, BIAS)
+            .expect("a 1.3m chance with an off-centre keeper must be a shot");
+        assert!(
+            aim.angle >= crate::config::SHOT_MIN_ANGLE,
+            "window {} should clear the shoot gate {}",
+            aim.angle,
+            crate::config::SHOT_MIN_ANGLE
+        );
+        assert!(
+            aim.target.y > 0.0,
+            "keeper sits at -y, so aim should bias to the +y corner, got {:?}",
+            aim.target
+        );
+    }
+
+    #[test]
+    fn fully_crowded_mouth_has_no_shot() {
+        // A wall of opponents spanning the mouth just in front of the line leaves no
+        // gap → no shot (caller falls through to pass/kick-ahead).
+        let ball = Vector2::new(3000.0, 0.0);
+        let wall: Vec<PlayerState> = (0..6)
+            .map(|i| opp(i, 4300.0, -500.0 + i as f64 * 200.0))
+            .collect();
+        assert!(
+            best_shot(ball, GOAL_X, GOAL_W, &wall, Some(PlayerId::new(0)), RR, KR, BR, BIAS)
+                .filter(|s| s.angle >= crate::config::SHOT_MIN_ANGLE)
+                .is_none(),
+            "a packed mouth should offer no viable shot window"
         );
     }
 }

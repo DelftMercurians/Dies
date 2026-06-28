@@ -1592,6 +1592,12 @@ impl Simulation {
                 .unwrap();
             ball_body.set_position(Isometry::translation(x, y, BALL_RADIUS), true);
             ball_body.set_linvel(Vector::zeros(), true);
+            // Also kill the spin: a ball that rolled out carries angular velocity,
+            // and ground friction would convert that residual spin back into
+            // linear motion, dragging the freshly-placed ball off its spot and
+            // back over the line during the Stop period — which re-triggers
+            // ball-out and collapses the free-kick restart into a force-start.
+            ball_body.set_angvel(Vector::zeros(), true);
         }
     }
 
@@ -3089,6 +3095,90 @@ mod ball_out_tests {
         assert!(sim.ball_out(), "ball past the goal line not flagged out");
         sim.place_ball(0.0, 3100.0); // past the touch line
         assert!(sim.ball_out(), "ball past the touch line not flagged out");
+    }
+
+    fn set_ball_vel(sim: &mut Simulation, vx: f64, vy: f64) {
+        let h = sim.ball.as_ref().unwrap()._rigid_body_handle;
+        sim.rigid_body_set
+            .get_mut(h)
+            .unwrap()
+            .set_linvel(Vector::new(vx, vy, 0.0), true);
+    }
+
+    fn ball_xy(sim: &Simulation) -> Vector2 {
+        let h = sim.ball.as_ref().unwrap()._rigid_body_handle;
+        sim.rigid_body_set
+            .get(h)
+            .unwrap()
+            .position()
+            .translation
+            .vector
+            .xy()
+    }
+
+    /// Regression for the botched free-kick sequence (log frame 813): a ball that
+    /// rolls out of bounds while in `Run` must be teleported back to a legal
+    /// free-kick spot *and stay there* through the Stop + FreeKick period, so the
+    /// free kick can actually be taken. The original bug let the ball keep rolling
+    /// out to the boundary wall; the free kick was awarded with the ball still out,
+    /// `check_ball_in_play` mistook the ball's drift along the wall for the kick
+    /// being taken, and the sequence collapsed back into a force-start.
+    #[test]
+    fn rolling_ball_out_is_relocated_in_bounds_for_free_kick() {
+        let mut sim = sim_with_ball();
+        // Last toucher set so a free kick (not a neutral force-start) is awarded.
+        sim.last_touch_info = Some((PlayerId::new(0), TeamColor::Blue));
+        sim.game_state = SimulationGameState::run();
+
+        // Seat the ball near the negative goal line, still in bounds, flying out
+        // fast and at an angle (mirrors the logged corner roll-out).
+        sim.place_ball(-4400.0, -1700.0);
+        set_ball_vel(&mut sim, -1500.0, 350.0);
+
+        let hl = sim.config.field_geometry.field_length / 2.0;
+        let hw = sim.config.field_geometry.field_width / 2.0;
+
+        // Step through the whole restart at 60 Hz: Stop (2 s) + free kick, with
+        // enough headroom for the 10 s free-kick timeout to resume play since this
+        // test has no kicker robot. Once the autoref has awarded the free kick
+        // (StopAndFreeKick / FreeKick), the ball must be sitting at a legal
+        // in-bounds spot — never pinned against the boundary wall.
+        let mut saw_free_kick = false;
+        let mut reached_run_after = false;
+        for _ in 0..780 {
+            sim.step(1.0 / 60.0);
+            let b = ball_xy(&sim);
+            match sim.game_state {
+                SimulationGameState::StopAndFreeKick { .. }
+                | SimulationGameState::FreeKick { .. } => {
+                    saw_free_kick = true;
+                    assert!(
+                        b.x.abs() <= hl + 1e-3 && b.y.abs() <= hw + 1e-3,
+                        "free kick awarded with the ball still out of bounds: {b:?}"
+                    );
+                }
+                SimulationGameState::Run { .. } if saw_free_kick => {
+                    reached_run_after = true;
+                }
+                // The free-kick restart must not collapse back into a neutral
+                // force-start because the ball was left out of bounds.
+                SimulationGameState::StopAndForceStart { .. } if saw_free_kick => {
+                    panic!("free-kick restart collapsed into a force-start (ball left out)");
+                }
+                _ => {}
+            }
+        }
+
+        assert!(saw_free_kick, "free kick was never awarded");
+        assert!(
+            reached_run_after,
+            "game never resumed (Run) after the free kick"
+        );
+        let b = ball_xy(&sim);
+        assert!(
+            b.x.abs() <= hl && b.y.abs() <= hw,
+            "ball still out of bounds at end of restart: {b:?}"
+        );
     }
 }
 

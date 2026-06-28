@@ -16,10 +16,36 @@ pub const A_MAX: f64 = 3000.0;
 // Offense policy: dribbling is unreliable and bounded by the 1m excessive-dribbling
 // rule, so the PRIMARY advancement action is a kick-ahead (Shoot at a supporter or
 // open forward space). Dribbling is only a small, rare correction.
-/// Corridor width for the "clear shot to goal" check.
-pub const CLEAR_SHOT_CORRIDOR: f64 = 700.0;
 /// Maximum distance to goal from which we attempt a direct shot.
 pub const SHOOT_RANGE: f64 = 4000.0;
+
+// ── Open-goal shot aiming ───────────────────────────────────────────────────
+// Instead of only ever shooting at the goal *centre* (which a keeper tracking the
+// bisector always covers), `geometry::best_shot` finds the widest open window in
+// the goal mouth — every opponent projected as a shadow on the goal line — and
+// aims at its midpoint. The decision to shoot is gated on the window's *angular*
+// width, which is naturally distance-aware (a far shot needs a wider gap for the
+// same aiming tolerance).
+/// Ball radius (mm). Aim points are inset off the posts and opponent shadows by
+/// this so the struck ball physically clears.
+pub const BALL_RADIUS: f64 = 21.5;
+/// Effective radius (mm) of a field opponent when projecting its goal-line shadow.
+/// Robot radius (~90mm) plus a little slack for position noise.
+pub const SHOT_ROBOT_RADIUS: f64 = 110.0;
+/// Effective radius (mm) of the opponent *keeper* shadow. Inflated well beyond a
+/// field robot: the keeper actively dives/slides to cover during the ball's flight,
+/// so it blocks far more of the mouth than its static footprint suggests.
+pub const SHOT_KEEPER_RADIUS: f64 = 280.0;
+/// Weight on aiming *away* from the keeper when scoring open windows. Score is in
+/// goal-line mm: a window this many mm farther from the keeper's projected position
+/// is worth `+1mm` of open width per `1/bias` mm of distance. Picks the corner the
+/// keeper must travel furthest to reach when both corners are open.
+pub const SHOT_KEEPER_BIAS: f64 = 0.35;
+/// Minimum angular width (radians) of the open window for the carrier to take a
+/// direct shot. Below this we fall through to the kick-ahead / pass logic. The
+/// angular gate scales with distance for free: ~0.10 rad is a ~130mm gap at 1.3m
+/// but needs a ~400mm gap at 4m.
+pub const SHOT_MIN_ANGLE: f64 = 0.10;
 /// A kick-ahead target teammate must be at least this far forward of the carrier.
 pub const SUPPORTER_FWD_MARGIN: f64 = 400.0;
 /// Corridor width for the carrier→supporter lane-openness check.

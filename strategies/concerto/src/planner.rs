@@ -196,12 +196,22 @@ impl Planner {
                     && (inputs.double_touch_robot.is_none()
                         || inputs.double_touch_robot == Some(id));
 
-                let clear = geometry::is_clear_shot(
-                    carrier_pos,
-                    opp_goal,
+                // Open-goal shot: aim at the widest open window in the mouth (keeper
+                // special-cased), not the centre. Gated on the window's angular
+                // width (distance-aware) and on being in range. This takes priority
+                // over passing — a real shooting chance is never traded for a pass.
+                let shot = geometry::best_shot(
+                    ball_pos,
+                    opp_goal.x,
+                    world.goal_width(),
                     world.opp_players(),
-                    config::CLEAR_SHOT_CORRIDOR,
-                );
+                    Self::opp_keeper(world),
+                    config::SHOT_ROBOT_RADIUS,
+                    config::SHOT_KEEPER_RADIUS,
+                    config::BALL_RADIUS,
+                    config::SHOT_KEEPER_BIAS,
+                )
+                .filter(|s| s.angle >= config::SHOT_MIN_ANGLE);
                 let in_range = (carrier_pos - opp_goal).norm() < config::SHOOT_RANGE;
 
                 let waypoint = if !is_kicker && world.ball_contest().is_some() {
@@ -219,8 +229,8 @@ impl Planner {
                         .map(|(_, t)| t)
                         .unwrap_or_else(|| self.release_target(carrier_pos, opp_goal, world));
                     Waypoint::Release { target }
-                } else if clear && in_range {
-                    Waypoint::Shoot { target: opp_goal }
+                } else if let (true, Some(aim)) = (in_range, shot) {
+                    Waypoint::Shoot { target: aim.target }
                 } else {
                     // Primary advancement is a kick-ahead toward a supporter or open
                     // space (dribbling is unreliable and rule-capped). Dribble only as
@@ -285,6 +295,24 @@ impl Planner {
 
         self.current_plan = Some(plan.clone());
         Some(plan)
+    }
+
+    /// Infer the opponent keeper: the opponent nearest its own goal (the goal we
+    /// attack). Strategies aren't told the opponent's designated keeper, but the
+    /// robot parked deepest in front of the mouth is it in practice — and if no
+    /// opponent is near the goal, the nearest one casts no central shadow anyway, so
+    /// the shot model degrades gracefully.
+    fn opp_keeper(world: &World) -> Option<PlayerId> {
+        let goal = world.opp_goal_center();
+        world
+            .opp_players()
+            .iter()
+            .min_by(|a, b| {
+                let da = (a.position - goal).norm();
+                let db = (b.position - goal).norm();
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| p.id)
     }
 
     /// Break out of a contest where an opponent is pinning the ball we hold.
