@@ -29,3 +29,6 @@ log*.json
 .dies-settings/
 .claude
 .selfimprove/
+# scratch space for one-off log analysis (keep the README tracked)
+.analysis/*
+!.analysis/README.md

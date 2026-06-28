@@ -49,6 +49,95 @@ cd webui && pnpm run tsc      # TypeScript type check
 
 For hangs, `tokio-console` (install via `cargo install --locked tokio-console`) attaches to the running process and shows task state.
 
+## Log analysis
+
+Every run records a columnar binary log. This is the primary way to debug
+behavior after the fact — what a robot actually did, what the strategy/controller
+thought, why a skill fired. Analyze logs in Python with `tools/dieslog.py`.
+
+### Where logs live & the format
+
+- Written under `logs/` (gitignored), named `dies-YYYY-MM-DD_HH-MM-SS`
+  (`crates/dies-webui/src/executor_task.rs`). Self-play writes under
+  `logs/selfplay/...` via `--log-dir`.
+- Two on-disk forms, both readable by `load()`:
+  - **directory** `logs/dies-.../` — live recording, one Apache Arrow IPC stream
+    per table (`{table}.arrow`) plus `meta.json`.
+  - **`.dieslog` zip** — produced on close by compacting each `.arrow` to Zstd
+    Parquet and zipping them (STORED). This is the durable artifact; the `.arrow`
+    dir may be deleted after compaction.
+- Format/schema is defined in `crates/dies-logger/src/schema.rs`. Writer:
+  `writer.rs`; compaction: `compact.rs`. `meta.json` holds `field_geom`,
+  strategies, `side_assignment`, `is_simulation`, `session_start_unix`.
+
+### Tables (all per-frame tables keyed on `frame_id`)
+
+`frames`, `ball`, `players`, `debug_values`, `debug_shapes`, `debug_tree`,
+`settings_changes`, `events`, `markers`, `logs`, `vision`. Key columns:
+
+- **frames**: `frame_id`, `t_received`, `t_capture`, `dt`, `game_state`,
+  `operating_team`, `side_assignment`. This table maps `frame_id → time`; the
+  reader uses it to build the shared `t` index (seconds from log start).
+- **players**: `frame_id`, `team` (`"blue"`/`"yellow"`), `player_id`, pose +
+  velocity `x, y, vx, vy, yaw, raw_yaw, angular_speed`, plus telemetry
+  `primary_status`, `kicker_cap_voltage`, `pack_voltage_0/1`,
+  `breakbeam_ball_detected`, `has_ball`, `handicaps`.
+- **ball**: position/velocity of the ball, t-indexed.
+- **debug_values**: `frame_id`, `key`, `value` (numeric) **or** `value_str`
+  (string). This is the firehose of strategy/controller internals.
+- **markers**: `frame_id`, `t`, `label` — user-dropped points of interest
+  (double-space in the UI) used to segment a log into phases.
+
+### Debug values — the naming convention
+
+Recorded from Rust via `debug_value/debug_string/debug_cross/...` in
+`crates/dies-core/src/debug_info.rs`. Keys are dotted `snake_case`. **Player-scoped
+keys are namespaced `team_<Color>.p<id>.<tag>`** (capitalized color), e.g.
+`team_Blue.p0.target_vel_x`, `team_Yellow.p3.breakbeam`. Global keys are bare
+(`dt`, `game_state`, `ball_on_blue_side_for`). Vec2 values are stored as
+`"x y"` strings and split by the reader into `<tag>_x` / `<tag>_y`. Grep the
+strategy/executor for `debug_value(`/`debug_string(` to discover available keys.
+
+### Reading logs in Python
+
+Use the repo venv (has pyarrow/pandas/matplotlib): `.venv/bin/python`.
+Every accessor returns a DataFrame indexed by `t` (seconds from log start), so
+all robots/series share one clock. Window with `df.loc[t0:t1]`, take magnitudes
+with `np.hypot`.
+
+```python
+import sys; sys.path.insert(0, "tools")
+from dieslog import load
+import numpy as np
+
+log = load("logs/dies-2026-06-27_14-45-58")   # dir or .dieslog
+
+log.robots()                 # -> [('blue', 0), ..., ('yellow', 5)]
+log["players"]               # raw players table, t-indexed
+log.ball                     # bare-attribute table access
+log.debug("team_Blue.p0.")   # that robot's debug values, pivoted wide, prefix stripped
+r = log.robot("blue", 0)     # player frames FUSED with team_Blue.p0.* debug (casing handled)
+
+# commanded vs measured speed, first 15 s
+r = log.robot("blue", 0).loc[0:15]
+measured = np.hypot(r.vx, r.vy)
+cmd      = np.hypot(r.target_vel_x, r.target_vel_y)
+
+log.timeline(team="blue")    # overlaid per-robot speed plot with marker lines
+log.seg(df, i)               # i-th segment cut by markers (markers split into len+1 pieces)
+```
+
+`tools/match_analytics.py` builds on `dieslog` for match-level metrics
+(possession, shots, stoppages, goals, `run_frac`) — `analyze(path)`,
+`summarize(glob)`, `report(df)`, `benchmark(...)`.
+
+### Scratch space for analysis scripts
+
+Put one-off/throwaway analysis scripts and plots in `.analysis/` (gitignored;
+only its `README.md` is tracked). Don't clutter `tools/` or the repo root with
+exploratory scripts. Promote anything genuinely reusable into
+`tools/dieslog.py` / `tools/match_analytics.py`. Run with `.venv/bin/python`.
+
 ## Architecture
 
 **Cargo workspace** with diamond-shaped dependency graph:
