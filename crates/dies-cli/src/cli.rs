@@ -130,6 +130,18 @@ enum Command {
         /// if it has none), skipping the normal kickoff sequence.
         #[clap(long)]
         snapshot: Option<String>,
+
+        /// Build the strategies in release profile (faster matches) instead of
+        /// debug. Implies launching from `target/release` unless
+        /// `--strategies-dir` overrides it.
+        #[clap(long, default_value = "false")]
+        release_strategies: bool,
+
+        /// Directory the executor launches strategy binaries from. Defaults to
+        /// `target/release` with `--release-strategies`, else `target/debug`.
+        /// Set to a directory of prebuilt binaries to run without rebuilding.
+        #[clap(long)]
+        strategies_dir: Option<PathBuf>,
     },
 }
 
@@ -340,6 +352,8 @@ impl Cli {
                 ref output,
                 ref log_dir,
                 ref snapshot,
+                release_strategies,
+                ref strategies_dir,
             }) => {
                 let build = self.strategy_mode() != StrategyMode::Launch;
                 match self_play(
@@ -352,6 +366,8 @@ impl Cli {
                     log_dir.clone(),
                     snapshot.clone(),
                     build,
+                    release_strategies,
+                    strategies_dir.clone(),
                 )
                 .await
                 {

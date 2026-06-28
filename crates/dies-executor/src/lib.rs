@@ -466,7 +466,10 @@ impl Executor {
 
         let mut strategy_host =
             strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
-                strategies_dir: std::path::PathBuf::from("target/debug"),
+                strategies_dir: settings
+                    .strategies_dir
+                    .clone()
+                    .unwrap_or_else(|| std::path::PathBuf::from("target/debug")),
                 blue_strategy: settings.team_configuration.blue_strategy.clone(),
                 yellow_strategy: settings.team_configuration.yellow_strategy.clone(),
                 side_assignment: settings.team_configuration.side_assignment,

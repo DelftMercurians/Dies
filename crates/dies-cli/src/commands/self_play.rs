@@ -23,14 +23,27 @@ pub async fn self_play(
     log_dir: Option<PathBuf>,
     snapshot: Option<String>,
     build: bool,
+    release_strategies: bool,
+    strategies_dir: Option<PathBuf>,
 ) -> Result<()> {
-    // Build both strategy binaries into target/debug (where the executor looks).
+    // Build both strategy binaries (release → target/release, else target/debug,
+    // which is where the executor looks unless `strategies_dir` overrides it).
     if build {
-        crate::strategy::build_strategy(&blue_strategy)?;
+        crate::strategy::build_strategy_profile(&blue_strategy, release_strategies)?;
         if yellow_strategy != blue_strategy {
-            crate::strategy::build_strategy(&yellow_strategy)?;
+            crate::strategy::build_strategy_profile(&yellow_strategy, release_strategies)?;
         }
     }
+
+    // Resolve where the executor launches strategy binaries from: explicit
+    // override wins, else the profile we (would have) built.
+    let resolved_strategies_dir = strategies_dir.unwrap_or_else(|| {
+        PathBuf::from(if release_strategies {
+            "target/release"
+        } else {
+            "target/debug"
+        })
+    });
 
     let initial_snapshot = snapshot.as_deref().map(load_snapshot).transpose()?;
 
@@ -53,6 +66,7 @@ pub async fn self_play(
         settings.team_configuration.blue_strategy = Some(blue_strategy);
         settings.team_configuration.yellow_strategy = Some(yellow_strategy);
         settings.strategy_blocking = true;
+        settings.strategies_dir = Some(resolved_strategies_dir);
 
         let sim_config = SimulationConfig {
             seed,

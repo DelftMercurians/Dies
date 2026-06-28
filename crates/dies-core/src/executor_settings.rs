@@ -306,6 +306,12 @@ pub struct ExecutorSettings {
     /// Runtime flag set by the CLI `self-play` command; never persisted.
     #[serde(skip)]
     pub strategy_blocking: bool,
+    /// Directory the strategy host launches strategy binaries from. Runtime flag
+    /// set by the CLI; never persisted. `None` falls back to `target/debug` (the
+    /// profile `cargo build -p <strategy>` writes to). Set to `target/release`
+    /// for faster matches, or any directory holding prebuilt strategy binaries.
+    #[serde(skip)]
+    pub strategies_dir: Option<std::path::PathBuf>,
 }
 
 fn default_true() -> bool {
@@ -369,6 +375,7 @@ impl Default for ExecutorSettings {
             hot_reload: false,
             vision_delay_ms: 0,
             strategy_blocking: false,
+            strategies_dir: None,
         }
     }
 }

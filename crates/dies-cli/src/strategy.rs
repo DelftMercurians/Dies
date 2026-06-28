@@ -30,14 +30,27 @@ const WATCH_DIRS: &[&str] = &[
 /// the `target/debug` directory the executor launches from). Returns an error if
 /// cargo cannot be spawned or the build fails.
 pub fn build_strategy(name: &str) -> Result<()> {
-    println!("Building strategy `{name}`...");
-    match Command::new("cargo").args(["build", "-p", name]).status() {
+    build_strategy_profile(name, false)
+}
+
+/// Build a strategy binary, optionally in release profile. Release strategies
+/// land in `target/release` (run the executor with a matching `strategies_dir`);
+/// debug strategies in `target/debug` (the executor's default). Used by the
+/// self-play harness to trade compile time for faster matches.
+pub fn build_strategy_profile(name: &str, release: bool) -> Result<()> {
+    let profile = if release { "release" } else { "debug" };
+    println!("Building strategy `{name}` ({profile})...");
+    let mut args = vec!["build", "-p", name];
+    if release {
+        args.push("--release");
+    }
+    match Command::new("cargo").args(&args).status() {
         Ok(status) if status.success() => {
-            println!("Strategy `{name}` built");
+            println!("Strategy `{name}` built ({profile})");
             Ok(())
         }
-        Ok(status) => bail!("`cargo build -p {name}` failed with {status}"),
-        Err(e) => bail!("failed to run `cargo build -p {name}`: {e}"),
+        Ok(status) => bail!("`cargo build -p {name}` ({profile}) failed with {status}"),
+        Err(e) => bail!("failed to run `cargo build -p {name}` ({profile}): {e}"),
     }
 }
 
