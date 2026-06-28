@@ -52,6 +52,18 @@ SHOT_DEBOUNCE = 0.4  # min gap between two counted shots
 CONTROL_RADIUS = 500.0  # nearest robot within this => that team "controls" the ball
 PLAY_STATES = {"Run", "Kickoff", "FreeKick", "Penalty", "PenaltyRun"}
 
+# --- possession-chain / pass tunables ---------------------------------------
+# A team must be the nearest-in-radius controller for at least MIN_DWELL before it
+# counts as having *established* control — so a defender the ball merely flies past
+# during a pass doesn't register as a turnover. A possession chain bridges loose
+# ("none") frames and sub-dwell opponent touches; it ends as a TURNOVER when the
+# other team establishes control, or as DEAD on a stoppage/goal (out-of-play gap).
+MIN_DWELL = 0.30        # s of continuous nearest-control to "establish" possession
+STOPPAGE_GAP = 0.50     # s gap in in-play frames => dead-ball chain boundary
+KICK_SPEED = 800.0      # rising edge above this = a kick (pass or shot)
+KICK_DEBOUNCE = 0.30    # min gap between counted kicks
+PASS_WINDOW = 2.0       # s after a pass within which the next controller is judged
+
 REPO_DEFAULT = Path(__file__).resolve().parent.parent
 
 
@@ -67,6 +79,158 @@ def _seed_from_name(name):
 def _pos_defender(side):
     """The team defending the +x goal (so a shot toward +x belongs to the other)."""
     return "yellow" if str(side).startswith("yellow") else "blue"
+
+
+def possession_metrics(log):
+    """Possession-chain, turnover, and pass-completion proxies for one match.
+
+    These are the *optimization targets* for reducing ball loss: they measure how
+    well each team keeps and circulates the ball, independent of the scoreline.
+
+    Method: build a per-in-play-frame "controller" (the team whose robot is nearest
+    the ball within ``CONTROL_RADIUS``, else loose). Collapse into segments; a team
+    is the *established* controller once its segment lasts ``MIN_DWELL`` (so a ball
+    flying past a defender mid-pass isn't a turnover). A possession **chain** is a
+    maximal run of one team's established control, bridging loose frames and brief
+    opponent touches; it ends as a **turnover** when the other team establishes
+    control, or **dead** on a stoppage/goal. A **pass** is a kick (ball-speed rising
+    edge) by the controlling team that isn't a shot on goal; it's **completed** if
+    the same team is the next established controller within ``PASS_WINDOW``.
+
+    Returns per-team: ``{t}_chains``, ``{t}_chain_s`` (mean chain duration),
+    ``{t}_ctrl_s`` (total established-control time), ``{t}_turnovers``,
+    ``{t}_turnovers_per_min`` (per minute of own control), ``{t}_pass_att``,
+    ``{t}_pass_comp``, ``{t}_pass_pct``.
+    """
+    log = _as_log(log)
+    f = log["frames"]
+    if not len(f):
+        return {}
+    fmap = f.reset_index().rename(columns={f.index.name or "index": "t"})
+    fmap = fmap[["frame_id", "t", "dt", "game_state"]]
+
+    # Per-frame nearest team to the ball.
+    ball = log["ball"].reset_index()[["frame_id", "x", "y"]].rename(
+        columns={"x": "bx", "y": "by"}
+    )
+    p = log["players"].reset_index()
+    pc = p[["frame_id", "team", "x", "y"]].merge(ball, on="frame_id", how="inner")
+    pc["d"] = np.hypot(pc["x"] - pc["bx"], pc["y"] - pc["by"])
+    near = pc.loc[pc.groupby("frame_id")["d"].idxmin(), ["frame_id", "team", "d"]]
+    tl = fmap.merge(near, on="frame_id", how="left").sort_values("t")
+    inplay = tl["game_state"].isin(PLAY_STATES)
+    ctrl = np.where(inplay & (tl["d"] <= CONTROL_RADIUS), tl["team"].fillna("none"), "none")
+    tl = tl.assign(ctrl=ctrl, inplay=inplay)
+    tl = tl[tl["inplay"]].reset_index(drop=True)
+    if not len(tl):
+        return {}
+
+    tt = tl["t"].to_numpy()
+    cc = tl["ctrl"].to_numpy()
+
+    # 1. Collapse to (team, t_start, t_end) segments, splitting on stoppage gaps.
+    segs = []  # (team_or_none, t0, t1, dead_after)
+    i = 0
+    n = len(tt)
+    while i < n:
+        j = i
+        while j + 1 < n and cc[j + 1] == cc[i] and (tt[j + 1] - tt[j]) < STOPPAGE_GAP:
+            j += 1
+        dead_after = j + 1 < n and (tt[j + 1] - tt[j]) >= STOPPAGE_GAP
+        segs.append([cc[i], tt[i], tt[j], dead_after or (j + 1 >= n)])
+        i = j + 1
+
+    # 2. Established controllers: team segments lasting >= MIN_DWELL.
+    established = []  # (team, t0, t1, dead_after)
+    for team, t0, t1, dead in segs:
+        if team != "none" and (t1 - t0) >= MIN_DWELL:
+            established.append((team, t0, t1, dead))
+        elif dead and established:
+            # A stoppage during a loose/sub-dwell stretch still ends the chain.
+            established[-1] = (established[-1][0], established[-1][1],
+                               established[-1][2], True)
+
+    # 3. Walk established controllers into chains.
+    chains = []  # (team, t_start, t_end, end_kind)  end_kind in turnover|dead|end
+    cur = None
+    for k, (team, t0, t1, dead) in enumerate(established):
+        if cur is None:
+            cur = [team, t0, t1]
+        elif team == cur[0]:
+            cur[2] = t1
+        else:
+            chains.append((cur[0], cur[1], cur[2], "turnover"))
+            cur = [team, t0, t1]
+        if dead:
+            chains.append((cur[0], cur[1], cur[2], "dead"))
+            cur = None
+    if cur is not None:
+        chains.append((cur[0], cur[1], cur[2], "end"))
+
+    # 4. Kicks (rising edges of ball speed), for pass attribution.
+    b = log["ball"]
+    bt = b.index.to_numpy()
+    vx, vy = b["vx"].to_numpy(), b["vy"].to_numpy()
+    spd = np.hypot(vx, vy)
+    side = log.meta.get("side_assignment", "yellow_on_positive")
+    posdef = _pos_defender(side)
+    attacker_pos = "blue" if posdef == "yellow" else "yellow"
+    kicks = []  # (t, team_attributed, is_shot)
+    if len(spd):
+        above = spd > KICK_SPEED
+        rising = np.concatenate([[above[0]], above[1:] & ~above[:-1]])
+        last = -1e9
+        for idx in np.nonzero(rising)[0]:
+            tk = bt[idx]
+            if tk - last < KICK_DEBOUNCE or vx[idx] == 0:
+                continue
+            last = tk
+            # Attribute to the team controlling at/just-before the kick.
+            owner = None
+            for team, t0, t1, _ in established:
+                if t0 - 0.2 <= tk <= t1 + 0.2:
+                    owner = team
+                    break
+            if owner is None:
+                # last established controller before the kick
+                prev = [e for e in established if e[1] <= tk]
+                owner = prev[-1][0] if prev else None
+            if owner is None:
+                continue
+            toward_pos = vx[idx] > 0
+            shooter_dir = attacker_pos if toward_pos else posdef
+            is_shot = spd[idx] > SHOT_SPEED and shooter_dir == owner
+            kicks.append((tk, owner, is_shot))
+
+    # 5. Pass completion: next established controller within PASS_WINDOW.
+    def next_controller(tk):
+        for team, t0, t1, _ in established:
+            if t0 >= tk:
+                if t0 - tk <= PASS_WINDOW:
+                    return team
+                return None
+        return None
+
+    out = {}
+    for team in ("yellow", "blue"):
+        tc = [c for c in chains if c[0] == team]
+        ctrl_s = sum(t1 - t0 for _, t0, t1, _ in tc)
+        n_to = sum(1 for c in tc if c[3] == "turnover")
+        durs = [t1 - t0 for _, t0, t1, _ in tc]
+        passes = [k for k in kicks if k[1] == team and not k[2]]
+        comp = sum(1 for tk, _, _ in passes if next_controller(tk) == team)
+        att = len(passes)
+        out[f"{team}_chains"] = len(tc)
+        out[f"{team}_chain_s"] = round(float(np.mean(durs)), 2) if durs else 0.0
+        out[f"{team}_ctrl_s"] = round(ctrl_s, 1)
+        out[f"{team}_turnovers"] = n_to
+        out[f"{team}_turnovers_per_min"] = (
+            round(60.0 * n_to / ctrl_s, 2) if ctrl_s > 1 else None
+        )
+        out[f"{team}_pass_att"] = att
+        out[f"{team}_pass_comp"] = comp
+        out[f"{team}_pass_pct"] = round(100.0 * comp / att, 1) if att else None
+    return out
 
 
 def analyze(log):
@@ -189,6 +353,7 @@ def analyze(log):
         "sot_blue": sot["blue"],
         "sot_yellow": sot["yellow"],
         "max_ball_speed": round(float(spd.max()), 0) if len(spd) else 0.0,
+        **possession_metrics(log),
     }
 
 

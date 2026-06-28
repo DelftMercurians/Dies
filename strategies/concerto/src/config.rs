@@ -3,6 +3,38 @@
 //! All physical constants live here so behaviour can be tuned in one place.
 //! Distances are in mm, times in seconds, speeds in mm/s, accelerations in mm/s².
 
+// ── Attacking-half recycle pivot ─────────────────────────────────────────────
+// When the carrier has no good *forward* option in the opponent half, it lays the
+// ball back to a deep recycle pivot to keep possession, rather than forcing a
+// low-percentage forward pass or hoofing into space (the two dominant turnover
+// sources). Gated to the attacking half so we never circulate the ball in our own
+// half, where a turnover becomes a goal. In headless self-play vs v0 (32 paired
+// seeds) this lifted pass completion ~2.4×, cut turnovers ~40%, lengthened
+// possession chains, and *raised* shots/SOT — with goals-for and goals-against vs
+// v0 unchanged. Earlier variants that recycled everywhere (own half too) conceded
+// significantly more and lost; the attacking-half gate is what makes it pay.
+//
+/// Forward-pass quality (lane openness × receiver clearance, 0..1) at/above which a
+/// forward pass is taken outright instead of recycling. Below it, a weak forward
+/// pass (or a hoof into space) is recycled when a safe outlet exists.
+pub const FORWARD_OK_BAR: f64 = 0.50;
+/// How far behind the ball (toward our own half) the recycle pivot sits, on the
+/// ball's flank. Deep enough to be a safe lay-back outlet, never up in the box
+/// where an extra central body would invite the defence to collapse the shot zone.
+pub const PIVOT_SETBACK: f64 = 1400.0;
+/// Lateral band (|y|) the pivot holds — ball-side half-space, clamped so it stays
+/// central enough to switch play but off the exact ball line.
+pub const PIVOT_Y_MIN: f64 = 300.0;
+pub const PIVOT_Y_MAX: f64 = 1800.0;
+/// Importance of the pivot. Kept at the conservative-support level so a *surplus*
+/// body takes it; it never outbids a shadow/mark and pulls a defender out of shape
+/// (the defensive cost that sank the more prominent-pivot variants).
+pub const IMP_PIVOT: f64 = 3.0;
+/// A recycle outlet must be at least this far from the carrier (a real switch of
+/// play, not a tap) and its lane this open, to be worth laying the ball back to.
+pub const RECYCLE_MIN_DIST: f64 = 1200.0;
+pub const RECYCLE_MIN_OPENNESS: f64 = 0.6;
+
 // ── Robot motion model (used by momentum-aware redirect cost) ───────────────
 /// Assumed top speed for time-to-target estimates.
 pub const V_MAX: f64 = 3000.0;

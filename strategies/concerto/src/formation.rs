@@ -38,6 +38,9 @@ enum RoleKind {
     /// Central box-runner: a single advanced body in front of the opponent box, the
     /// cutback target / rebound crasher. Staffed only while attacking.
     Striker,
+    /// Deep recycle pivot behind the ball, ball-side: the safe outlet the carrier
+    /// lays the ball back to when nothing is on forward. Never in the box.
+    Pivot,
     Spread,
 }
 
@@ -48,6 +51,7 @@ fn role_name(kind: RoleKind) -> &'static str {
         RoleKind::Mark => "mark",
         RoleKind::Support => "support",
         RoleKind::Striker => "striker",
+        RoleKind::Pivot => "pivot",
         RoleKind::Spread => "spread",
     }
 }
@@ -507,6 +511,30 @@ impl Formation {
                 },
                 position: pos,
                 importance: config::IMP_STRIKER,
+                face: world.opp_goal_center(),
+            });
+        }
+
+        // 3c. Deep recycle pivot behind the ball on the ball's flank — the safe
+        // outlet the carrier lays the ball back to when nothing is on forward (the
+        // planner's recycle branch). Placed deep (never in the box) so it does
+        // not invite the defence to collapse the shooting zone the way an advanced
+        // central body does. Only while attacking (ball advanced, our goal safe).
+        if attacking {
+            let y_mag = ball
+                .y
+                .abs()
+                .clamp(config::PIVOT_Y_MIN, config::PIVOT_Y_MAX);
+            let py = if ball.y >= 0.0 { y_mag } else { -y_mag };
+            let px =
+                (ball.x - config::PIVOT_SETBACK).clamp(-half_len + 400.0, half_len - 400.0);
+            roles.push(Role {
+                id: RoleId {
+                    kind: RoleKind::Pivot,
+                    slot: 0,
+                },
+                position: Vector2::new(px, py),
+                importance: config::IMP_PIVOT,
                 face: world.opp_goal_center(),
             });
         }
