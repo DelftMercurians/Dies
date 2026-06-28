@@ -373,6 +373,7 @@ fn plan_step(wp: &planner::Waypoint, active: bool) -> debug::PlanStep {
             let what = match kind {
                 CaptureKind::Loose => "loose ball".to_string(),
                 CaptureKind::Steal { from } => format!("steal from p{}", from.as_u32()),
+                CaptureKind::RescueInward => "rescue off line".to_string(),
             };
             ("Capture", format!("p{}: {what}", robot.as_u32()))
         }

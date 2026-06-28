@@ -42,6 +42,12 @@ const FREE_KICK_DEFENSE_AREA_DISTANCE: f64 = 1000.0;
 /// resuming after the ball leaves the field, a goal, or a no-progress stoppage.
 /// Tune this to make self-play matches more/less leisurely.
 const STOP_DURATION: f64 = 2.0;
+/// How far the ball must travel from its last reference point to count as
+/// "progress" and reset the no-progress timer (rule 8.1). Measured against a
+/// sticky reference over the whole 10 s window, not frame-to-frame, so a slow
+/// dribble still counts as progress and only a genuinely stuck ball trips the
+/// timer.
+const NO_PROGRESS_DISTANCE: f64 = 200.0;
 /// Speed (mm/s) at which a contested ball is squirted out from between two
 /// robots that both try to dribble it, so it escapes instead of staying pinned.
 const CONTESTED_BALL_POP_SPEED: f64 = 1200.0;
@@ -1220,7 +1226,7 @@ impl Simulation {
             }
             SimulationGameState::Run {
                 ref mut no_progress_timer,
-                last_ball_position,
+                ref mut last_ball_position,
                 ..
             } => {
                 // Check if we're in a kick and should clear tracking due to time or ball movement
@@ -1328,27 +1334,42 @@ impl Simulation {
                         SimulationGameState::stop_and_force_start()
                     }
                 } else {
-                    // Check for no progress
+                    // Check for no progress (rule 8.1): the timer only fires if the
+                    // ball stays within NO_PROGRESS_DISTANCE of a sticky reference
+                    // point for the whole window. As soon as the ball travels far
+                    // enough from that reference, we move the reference up and reset
+                    // the timer, so any real progress keeps the game running.
                     let ball_handle = self.ball.as_mut().map(|ball| ball._rigid_body_handle);
                     if let Some(ball_handle) = ball_handle {
                         let ball_body = self.rigid_body_set.get_mut(ball_handle).unwrap();
                         let ball_position_2d = ball_body.position().translation.vector.xy();
-                        let last_ball_position_unwrapped =
-                            last_ball_position.as_ref().unwrap_or(&ball_position_2d);
-                        if (ball_position_2d - last_ball_position_unwrapped).norm() < 10.0 {
-                            if no_progress_timer.tick(self.integration_parameters.dt) {
-                                self.push_referee_event(RefereeMessage::NoProgress, None);
-                                self.update_referee_command_full(
-                                    referee::Command::STOP,
-                                    Some(referee::Command::FORCE_START),
-                                    Some(STOP_DURATION),
-                                );
-                                SimulationGameState::stop_and_force_start()
-                            } else {
+                        match last_ball_position {
+                            Some(reference)
+                                if (ball_position_2d - *reference).norm() < NO_PROGRESS_DISTANCE =>
+                            {
+                                // Ball hasn't made progress — count down.
+                                if no_progress_timer.tick(self.integration_parameters.dt) {
+                                    // tick() resets the timer on fire; advance the
+                                    // reference so the next window starts cleanly.
+                                    *last_ball_position = Some(ball_position_2d);
+                                    self.push_referee_event(RefereeMessage::NoProgress, None);
+                                    self.update_referee_command_full(
+                                        referee::Command::STOP,
+                                        Some(referee::Command::FORCE_START),
+                                        Some(STOP_DURATION),
+                                    );
+                                    SimulationGameState::stop_and_force_start()
+                                } else {
+                                    game_state
+                                }
+                            }
+                            _ => {
+                                // First frame, or the ball moved far enough to count
+                                // as progress: advance the reference and reset.
+                                *last_ball_position = Some(ball_position_2d);
+                                no_progress_timer.reset();
                                 game_state
                             }
-                        } else {
-                            game_state
                         }
                     } else {
                         game_state
@@ -1628,6 +1649,24 @@ impl Simulation {
                     "RefereeMessage",
                     format!("Ball out of bounds at position: {:?}", ball_position),
                 );
+                // Recompute the designated position from where the ball actually
+                // is. The predictive branch above only fires while the ball is
+                // still inside, so a ball that is already out (e.g. came to rest
+                // just past the line, or crossed in a single fast frame) would
+                // otherwise reuse a stale designated position from an earlier
+                // out-of-bounds on the other side of the field, teleporting the
+                // free kick to the wrong place. Clamp to the field margin so the
+                // placement is reachable.
+                let mut designated = ball_position;
+                designated.x = designated.x.clamp(
+                    -(self.config.field_geometry.field_length / 2.0 - FREE_KICK_PLACEMENT_MARGIN),
+                    self.config.field_geometry.field_length / 2.0 - FREE_KICK_PLACEMENT_MARGIN,
+                );
+                designated.y = designated.y.clamp(
+                    -(self.config.field_geometry.field_width / 2.0 - FREE_KICK_PLACEMENT_MARGIN),
+                    self.config.field_geometry.field_width / 2.0 - FREE_KICK_PLACEMENT_MARGIN,
+                );
+                self.designated_ball_position = designated;
                 // The actual reposition happens in `update_game_state` once the
                 // free kick is awarded (see `place_ball`); here we only report
                 // that the ball has left the field.

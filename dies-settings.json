@@ -59,7 +59,11 @@
     "ambiguity_margin": 60.0,
     "max_ball_speed": 1000.0,
     "hold_secs": 0.25,
-    "release_suppress_secs": 0.2
+    "release_suppress_secs": 0.2,
+    "contest_dist": 220.0,
+    "contest_speed_max": 200.0,
+    "contest_enter_frames": 2,
+    "contest_exit_frames": 5
   },
   "allow_no_vision": false,
   "goal_area_avoidance": true,

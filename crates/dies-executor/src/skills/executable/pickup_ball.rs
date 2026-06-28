@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use dies_core::{Angle, Vector2};
+use dies_core::{Angle, FieldGeometry, Vector2};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
@@ -17,6 +17,14 @@ const LATERAL_GAIN: f64 = 4.0;
 const APPROACH_CARE: f64 = -0.6;
 const BALL_MOVED_FAIL: f64 = 100.0;
 const DRIVEN_FAIL: f64 = 250.0;
+/// Inset (mm) from the *physical* field edge (touchline/goal line **plus** the
+/// run-off `boundary_width`) that the staging point is kept inside. Robots may
+/// legally stand in the run-off, so the staging point only has to stay on the
+/// playing surface — clamping to the line itself would forbid getting *behind* a
+/// ball pinned on the line and the robot would stall short of it (only the ball
+/// is "out" past the line; the rescue-inward heading keeps the ball in). Covers
+/// the robot radius plus a buffer so the body stays on the surface.
+const STAGING_FIELD_MARGIN: f64 = 130.0;
 
 // ── instant-kick (reflex strike-through) tuning ──────────────────────────────
 /// Ball displacement along the kick axis that counts as "the reflex connected".
@@ -142,7 +150,12 @@ impl ExecutableSkill for PickupBallSkill {
                 }
             }
         } else {
-            input.with_position(ball_pos - dir * APPROACH_DISTANCE);
+            // Stage a fixed distance *behind* the ball along the approach axis, but
+            // never outside the field: a ball pinned against a boundary would put
+            // the staging point off the pitch, so the robot would drive out (and
+            // carry the ball over the line). Clamp it into the playing area.
+            let stage = ball_pos - dir * APPROACH_DISTANCE;
+            input.with_position(clamp_into_field(stage, ctx.world.field_geom.as_ref()));
             input.avoid_ball = true;
             input.avoid_ball_care = APPROACH_CARE;
             self.commit_pos = Some(player_pos);
@@ -167,5 +180,51 @@ impl ExecutableSkill for PickupBallSkill {
         } else {
             "approaching ball".to_string()
         }
+    }
+}
+
+/// Clamp a point to the playing area, inset by [`STAGING_FIELD_MARGIN`] from every
+/// boundary. With no field geometry available the point is returned unchanged.
+fn clamp_into_field(p: Vector2, field: Option<&FieldGeometry>) -> Vector2 {
+    let Some(field) = field else {
+        return p;
+    };
+    // Physical surface = field lines + run-off; robots may use the run-off.
+    let max_x = (field.field_length / 2.0 + field.boundary_width - STAGING_FIELD_MARGIN).max(0.0);
+    let max_y = (field.field_width / 2.0 + field.boundary_width - STAGING_FIELD_MARGIN).max(0.0);
+    Vector2::new(p.x.clamp(-max_x, max_x), p.y.clamp(-max_y, max_y))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn field() -> FieldGeometry {
+        FieldGeometry::default() // 9000 × 6000
+    }
+
+    #[test]
+    fn staging_in_runoff_past_the_line_is_allowed() {
+        // The touchline is at y=3000 but the surface extends to 3000+boundary
+        // (3300). A staging point in the run-off (y=3100) is legal — the robot
+        // may stand there to get behind a ball pinned on the line — so it is NOT
+        // pulled back inside the line.
+        let p = Vector2::new(-2800.0, 3100.0);
+        assert_eq!(clamp_into_field(p, Some(&field())), p);
+    }
+
+    #[test]
+    fn staging_past_physical_edge_is_clamped_to_the_surface() {
+        // Past the physical edge (3300) the staging point is pulled back onto the
+        // surface, inset by the margin, so the robot doesn't drive off it.
+        let clamped = clamp_into_field(Vector2::new(-2800.0, 3400.0), Some(&field()));
+        assert!((clamped.y - (3000.0 + 300.0 - STAGING_FIELD_MARGIN)).abs() < 1e-6);
+        assert!((clamped.x - (-2800.0)).abs() < 1e-6); // x already inside, untouched
+    }
+
+    #[test]
+    fn staging_inside_field_is_unchanged() {
+        let p = Vector2::new(1000.0, -500.0);
+        assert_eq!(clamp_into_field(p, Some(&field())), p);
     }
 }

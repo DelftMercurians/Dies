@@ -15,6 +15,7 @@ use typeshare::typeshare;
 /// All distances are millimetres, times are seconds. A single `AvoidanceConfig`
 /// is shared across the whole team and applied live from settings updates.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 #[typeshare]
 pub struct AvoidanceConfig {
     // --- Obstacle margins ---

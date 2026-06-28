@@ -259,10 +259,11 @@ impl Driver {
             // final drive once aligned, so it never rams the ball — unlike the old
             // `go_to(ball_pos)` approach, which aimed at the ball centre at full
             // speed and handed off at a fixed distance regardless of momentum.
-            (Waypoint::Capture { .. }, Phase::Pickup) => {
-                let heading = pickup_heading(world, active_id, ball_pos, opp_goal);
+            (Waypoint::Capture { kind, .. }, Phase::Pickup) => {
+                let rescue = matches!(kind, CaptureKind::RescueInward);
+                let heading = pickup_heading(world, active_id, ball_pos, opp_goal, rescue);
                 player.pickup_ball(heading);
-                player.set_role("capturing");
+                player.set_role(if rescue { "rescuing" } else { "capturing" });
 
                 // Tiered timeout: generous while traversing toward the ball, tight
                 // once within committing range (where the skill makes its final
@@ -379,7 +380,28 @@ const CONTEST_HEADING_BIAS: f64 = 0.7;
 /// opponent goal (unchanged). Under contest, blend the goal direction with the
 /// off-axis [`geometry::escape_direction`] so we scoop the loose ball to our open
 /// side instead of head-butting the opponent straight over it.
-fn pickup_heading(world: &World, robot: PlayerId, ball: Vector2, opp_goal: Vector2) -> Angle {
+fn pickup_heading(
+    world: &World,
+    robot: PlayerId,
+    ball: Vector2,
+    opp_goal: Vector2,
+    rescue: bool,
+) -> Angle {
+    // Boundary rescue takes priority: dribble the ball back into the field rather
+    // than along/over the line. Falls through to the normal heading if the ball
+    // has since drifted off the boundary.
+    if rescue {
+        if let Some(h) = geometry::boundary_rescue_heading(
+            ball,
+            opp_goal,
+            world.field_length() / 2.0,
+            world.field_width() / 2.0,
+            config::BOUNDARY_RESCUE_MARGIN,
+            config::RESCUE_GOAL_BIAS,
+        ) {
+            return h;
+        }
+    }
     if world.ball_contest().is_none() {
         return heading_toward(ball, opp_goal);
     }

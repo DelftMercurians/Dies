@@ -17,6 +17,7 @@ use crate::{
 /// braking-to-goal) and the player controller applies a first-order asymmetric
 /// acceleration clamp; `YawController` handles heading.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 #[typeshare]
 pub struct ControllerSettings {
     // --- Translational limits.
@@ -128,6 +129,7 @@ impl Default for FieldMask {
 /// trusts measurements more (snappier, noisier). Higher measurement
 /// variance → tracker trusts dynamics model more (smoother, laggier).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 #[typeshare]
 pub struct TrackerSettings {
     /// Vision crop applied at the ball tracker — fractions of the field
@@ -215,6 +217,7 @@ impl Default for TrackerSettings {
 
 /// Team configuration that can be set before executor creation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 #[typeshare]
 pub struct TeamConfiguration {
     /// Whether the blue team is active
@@ -261,6 +264,7 @@ impl std::fmt::Display for Handicap {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(default)]
 #[typeshare]
 pub struct TeamSpecificSettings {
     pub handicaps: HashMap<PlayerId, Vec<Handicap>>,
@@ -268,6 +272,7 @@ pub struct TeamSpecificSettings {
 
 /// Settings for the executor.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 #[typeshare]
 pub struct ExecutorSettings {
     pub controller_settings: ControllerSettings,
@@ -319,7 +324,13 @@ impl ExecutorSettings {
             Ok(contents) => match serde_json::from_str(&contents) {
                 Ok(settings) => settings,
                 Err(err) => {
-                    eprintln!("Failed to parse executor settings: {}", err);
+                    let msg = format!(
+                        "Failed to parse {}: {err}. FALLING BACK TO ALL-DEFAULT SETTINGS \
+                         (your tuned values are NOT in effect). Fix the file and restart.",
+                        path.as_ref().display()
+                    );
+                    eprintln!("{msg}");
+                    log::error!("{msg}");
                     Self::default()
                 }
             },

@@ -64,6 +64,7 @@ pub struct Possession {
 /// every threshold that used to be scattered across the strategy and the pass
 /// coordinator. Distances in mm, times in seconds, speeds in mm/s.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 #[typeshare]
 pub struct PossessionConfig {
     /// Ball-to-robot distance at which a robot *gains* possession (near band).

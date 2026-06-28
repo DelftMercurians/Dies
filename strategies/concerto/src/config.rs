@@ -52,6 +52,16 @@ pub const STEAL_MAX_DIST: f64 = 2500.0;
 pub const ESCAPE_STEP: f64 = 300.0;
 /// How long a robot is excluded from re-selection after a NoProgress failure.
 pub const NOPROGRESS_TTL: f64 = 1.0;
+/// A loose ball within this distance of a touchline or goal line is treated as a
+/// boundary "rescue": the capture heading is biased to dribble the ball back
+/// *inward* (into the field) instead of along/over the line. Set comfortably
+/// above the ball radius + capture contact so a ball pinned on the line still
+/// trips it. Pairs with the pickup skill's in-field staging clamp.
+pub const BOUNDARY_RESCUE_MARGIN: f64 = 300.0;
+/// During a boundary rescue, how strongly the toward-goal direction is blended
+/// into the inward push (0 = straight inward, larger = more goalward). Keeps a
+/// forward component while guaranteeing the dominant pull is away from the line.
+pub const RESCUE_GOAL_BIAS: f64 = 0.6;
 
 // ── Driver ──────────────────────────────────────────────────────────────────
 /// Distance to the ball below which the capture is "committing": the pickup

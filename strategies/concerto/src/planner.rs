@@ -21,6 +21,10 @@ pub enum CaptureKind {
     Loose,
     /// Ball is held by an opponent — challenge from a favourable angle.
     Steal { from: PlayerId },
+    /// Ball is pinned against a field boundary. Approach from inside and dribble
+    /// it back into play (inward heading) rather than chasing it over the line —
+    /// the capturer would otherwise drive off the pitch and carry it out.
+    RescueInward,
 }
 
 /// A desired ball-state transition.
@@ -158,6 +162,20 @@ impl Planner {
         let ball_pos = world.ball_position()?;
         let opp_goal = world.opp_goal_center();
 
+        // Gate: a loose ball essentially on a touchline/goal line is captured as a
+        // "rescue inward" — the driver dribbles it back into the field instead of
+        // pushing it over the line (which concedes the ball out). Applies to both
+        // loose and steal captures; the boundary takes priority over the steal.
+        let on_boundary = geometry::boundary_rescue_heading(
+            ball_pos,
+            opp_goal,
+            world.field_length() / 2.0,
+            world.field_width() / 2.0,
+            config::BOUNDARY_RESCUE_MARGIN,
+            config::RESCUE_GOAL_BIAS,
+        )
+        .is_some();
+
         let plan = match *possession {
             // ── We have the ball ────────────────────────────────────────
             Possession::We(id) => {
@@ -230,11 +248,13 @@ impl Planner {
             // ── Ball is loose (or contested — go win it) ────────────────
             Possession::Loose | Possession::Contested => {
                 let robot = self.select_capturer(world, ball_pos, inputs)?;
+                let kind = if on_boundary {
+                    CaptureKind::RescueInward
+                } else {
+                    CaptureKind::Loose
+                };
                 Plan {
-                    waypoints: vec![Waypoint::Capture {
-                        kind: CaptureKind::Loose,
-                        robot,
-                    }],
+                    waypoints: vec![Waypoint::Capture { kind, robot }],
                     active_robot: robot,
                 }
             }
@@ -250,11 +270,13 @@ impl Planner {
                     self.current_plan = None;
                     return None;
                 }
+                let kind = if on_boundary {
+                    CaptureKind::RescueInward
+                } else {
+                    CaptureKind::Steal { from: oid }
+                };
                 Plan {
-                    waypoints: vec![Waypoint::Capture {
-                        kind: CaptureKind::Steal { from: oid },
-                        robot,
-                    }],
+                    waypoints: vec![Waypoint::Capture { kind, robot }],
                     active_robot: robot,
                 }
             }

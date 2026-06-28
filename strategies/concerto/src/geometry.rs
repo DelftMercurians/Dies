@@ -29,6 +29,45 @@ pub fn redirect_time(pos: Vector2, vel: Vector2, target: Vector2, v_max: f64, a_
     (t_cruise + t_redirect - t_credit).max(0.0)
 }
 
+/// If `ball` is within `margin` of a touchline or goal line, return the heading a
+/// capturer should dribble it on to "rescue" it back into play: the inward normal
+/// of the nearest boundary, blended with the toward-`opp_goal` direction by
+/// `goal_bias`. Returns `None` when the ball is comfortably inside the field (the
+/// caller then uses the normal toward-goal pickup heading).
+///
+/// The dominant component is always inward, so driving the ball on this heading
+/// moves it *away* from the line rather than along/over it — the touchline-capture
+/// fix. The nearest single boundary is chosen; corners pick whichever is closer.
+pub fn boundary_rescue_heading(
+    ball: Vector2,
+    opp_goal: Vector2,
+    half_len: f64,
+    half_wid: f64,
+    margin: f64,
+    goal_bias: f64,
+) -> Option<Angle> {
+    // Distance to each boundary and that boundary's inward normal.
+    let candidates = [
+        (half_wid - ball.y, Vector2::new(0.0, -1.0)), // top touchline
+        (half_wid + ball.y, Vector2::new(0.0, 1.0)),  // bottom touchline
+        (half_len - ball.x, Vector2::new(-1.0, 0.0)), // opp goal line
+        (half_len + ball.x, Vector2::new(1.0, 0.0)),  // own goal line
+    ];
+    let (dist, inward) = candidates
+        .into_iter()
+        .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))?;
+    if dist > margin {
+        return None;
+    }
+
+    let to_goal = (opp_goal - ball)
+        .try_normalize(1e-6)
+        .unwrap_or(Vector2::new(1.0, 0.0));
+    let blended = inward + to_goal * goal_bias;
+    let dir = blended.try_normalize(1e-6).unwrap_or(inward);
+    Some(Angle::from_radians(dir.y.atan2(dir.x)))
+}
+
 /// Check whether the corridor from `ball_pos` to `goal_center` is free of opponents.
 ///
 /// The corridor is a rectangle of the given `corridor_width` (perpendicular to the
@@ -394,6 +433,33 @@ pub fn shadow_arc(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boundary_rescue_pushes_inward_near_top_touchline() {
+        // Ball 200mm inside the top touchline (half_wid = 3000), opp goal at +x.
+        // Rescue heading must point into the field (-y) so the dribble moves the
+        // ball away from the line, while keeping a forward (+x) component.
+        let ball = Vector2::new(-2735.0, 2800.0);
+        let opp_goal = Vector2::new(4500.0, 0.0);
+        let h = boundary_rescue_heading(ball, opp_goal, 4500.0, 3000.0, 300.0, 0.6)
+            .expect("ball within margin should trigger a rescue");
+        let v = h.to_vector();
+        assert!(
+            v.y < -0.5,
+            "heading should pull strongly inward (-y), got {v:?}"
+        );
+        assert!(
+            v.x > 0.0,
+            "heading should keep a forward (+x) component, got {v:?}"
+        );
+    }
+
+    #[test]
+    fn no_rescue_when_ball_is_well_inside() {
+        let ball = Vector2::new(0.0, 0.0);
+        let opp_goal = Vector2::new(4500.0, 0.0);
+        assert!(boundary_rescue_heading(ball, opp_goal, 4500.0, 3000.0, 300.0, 0.6).is_none());
+    }
 
     #[test]
     fn redirect_time_prefers_continuing_over_reversing() {

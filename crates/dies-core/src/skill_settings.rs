@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 #[typeshare]
 pub struct SkillSettings {
     pub dribbler_radius_near_center: f64,
