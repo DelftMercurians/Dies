@@ -1585,10 +1585,19 @@ impl Simulation {
         // Push out of the 1 m keep-out zone around each defense area (one per
         // goal line). The areas are 2× penalty_area_depth apart in x, so their
         // keep-out zones never overlap and the pushes don't fight each other.
+        //
+        // Extend each rectangle *behind* its goal line (well off the field) so the
+        // goal-line face is never the nearest exit. Otherwise a ball that went out
+        // over the goal line — closer to the goal line than to the front edge or
+        // the sides — would be pushed back through the goal (off the field), and
+        // the field-line clamp below would drag it straight back inside the box,
+        // leaving the free kick at an illegal in-area position. The only valid
+        // exits are the front (field-facing) edge and the two sides.
         for &goal_x in &[-hl, hl] {
             let inner_x = goal_x - geom.penalty_area_depth * goal_x.signum();
-            let min = Vector2::new(goal_x.min(inner_x), -half_pa_w);
-            let max = Vector2::new(goal_x.max(inner_x), half_pa_w);
+            let outer_x = goal_x + 10_000.0 * goal_x.signum();
+            let min = Vector2::new(inner_x.min(outer_x), -half_pa_w);
+            let max = Vector2::new(inner_x.max(outer_x), half_pa_w);
             pos = push_out_of_rect(pos, min, max, FREE_KICK_DEFENSE_AREA_DISTANCE);
         }
 
@@ -2865,6 +2874,24 @@ mod free_kick_placement_tests {
             "should have moved the ball"
         );
         assert_valid(&sim, fixed);
+    }
+
+    #[test]
+    fn ball_out_over_goal_line_is_not_left_inside_the_box() {
+        // Regression: a ball that left over the goal line beside the goal lands
+        // inside the defense area, closer to the goal line than to the front edge
+        // or the sides. The keep-out must push it out a *field-facing* face, not
+        // back through the goal line (which the field clamp would then undo,
+        // stranding the free kick at an illegal in-area position).
+        let sim = Simulation::default();
+        for desired in [
+            Vector2::new(4300.0, 693.0),  // the exact stuck case from the log
+            Vector2::new(-4300.0, -693.0), // mirror at the other goal
+            Vector2::new(4400.0, 0.0),    // dead centre, hard against the goal line
+        ] {
+            let fixed = sim.valid_free_kick_position(desired);
+            assert_valid(&sim, fixed);
+        }
     }
 
     #[test]
