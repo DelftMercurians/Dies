@@ -248,9 +248,8 @@ impl Formation {
                                 config::A_MAX,
                             );
                             if role.id.kind == RoleKind::Capture {
-                                let barred = capture
-                                    .map(|c| c.ineligible.contains(id))
-                                    .unwrap_or(true);
+                                let barred =
+                                    capture.map(|c| c.ineligible.contains(id)).unwrap_or(true);
                                 if barred || t > config::CAPTURE_TIME_HORIZON {
                                     return f64::INFINITY;
                                 }
@@ -330,9 +329,27 @@ impl Formation {
             config::THREAT_GOAL_FAR,
         );
 
+        // Defending an opponent set piece (free kick / kickoff / placement) with
+        // the ball deep in our own third: the goal is acutely threatened and we
+        // are barred from contesting the ball (must stand off it), so there's no
+        // capturer to absorb a body. Commit a full goal wall and pull everyone off
+        // offensive `support` (see below). Without this the matcher staffs forward
+        // support roles while the goal mouth is left to the keeper alone — the
+        // corner free-kick collapse.
+        let setpiece_defense = !world.us_operating()
+            && !matches!(
+                world.game_state(),
+                GameState::Run | GameState::Halt | GameState::Timeout | GameState::Unknown
+            )
+            && ball.x < -half_len / 3.0;
+
         // 1. Shadow / goal coverage (coordinated set), count scales with threat.
         let span = (config::SHADOW_MAX - config::SHADOW_MIN) as f64;
-        let mut k = config::SHADOW_MIN + (span * ball_threat).round() as usize;
+        let mut k = if setpiece_defense {
+            config::SHADOW_MAX
+        } else {
+            config::SHADOW_MIN + (span * ball_threat).round() as usize
+        };
         // A plan robot contesting the ball in our defensive zone provides the
         // front-line pressure a shadow would — count it as one, so shadows don't
         // pile up directly behind the snatcher (the reported clustering).
@@ -440,7 +457,11 @@ impl Formation {
         // When attacking, one forward body becomes the central box-runner (added
         // below), so stage one fewer *wide* supporter to keep the body-count
         // balanced — central presence replaces a wing, it doesn't add a fourth.
-        let support_count = if attacking {
+        let support_count = if setpiece_defense {
+            // Defending a set piece in our own third — no bodies forward, all on
+            // the goal wall / marks.
+            0
+        } else if attacking {
             config::SUPPORT_ATTACK_COUNT.saturating_sub(1)
         } else {
             config::SUPPORT_COUNT
@@ -495,7 +516,8 @@ impl Formation {
         // to (its large lateral separation from a wide carrier trips the final-third
         // cross branch) and the close-range finisher v0's wall+arc-keeper leave open.
         if attacking {
-            let front_x = world.opp_goal_center().x - (opp_pen_depth + config::BOX_RUNNER_FRONT_MARGIN);
+            let front_x =
+                world.opp_goal_center().x - (opp_pen_depth + config::BOX_RUNNER_FRONT_MARGIN);
             // Bias to the side away from the ball; default to +y when the ball is
             // dead-central so the choice is still deterministic.
             let away = if ball.y > 0.0 { -1.0 } else { 1.0 };
@@ -795,7 +817,10 @@ mod tests {
         let f = Formation::new();
         let roles = f.generate_roles(&world, &PlanContext::default(), None, 4);
 
-        let strikers: Vec<&Role> = roles.iter().filter(|r| r.id.kind == RoleKind::Striker).collect();
+        let strikers: Vec<&Role> = roles
+            .iter()
+            .filter(|r| r.id.kind == RoleKind::Striker)
+            .collect();
         assert_eq!(strikers.len(), 1, "exactly one box-runner when attacking");
         let s = strikers[0];
         // Just in front of the opponent box, central.
@@ -806,9 +831,15 @@ mod tests {
             s.position.x
         );
         // Ball is at +y, so the runner biases to -y (open cutback side).
-        assert!(s.position.y < 0.0, "runner should bias away from the ball side");
+        assert!(
+            s.position.y < 0.0,
+            "runner should bias away from the ball side"
+        );
         // Wide supporters reduced from SUPPORT_ATTACK_COUNT to that minus one.
-        let supports = roles.iter().filter(|r| r.id.kind == RoleKind::Support).count();
+        let supports = roles
+            .iter()
+            .filter(|r| r.id.kind == RoleKind::Support)
+            .count();
         assert_eq!(supports, config::SUPPORT_ATTACK_COUNT - 1);
     }
 
