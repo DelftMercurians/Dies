@@ -153,9 +153,6 @@ pub struct Cli {
     #[clap(long, default_value = "auto", default_missing_value = "auto")]
     pub serial_port: SerialPort,
 
-    #[clap(long, default_value = "v1")]
-    pub protocol: BasestationProtocolVersion,
-
     #[clap(long, default_value = "5555")]
     pub webui_port: u16,
 
@@ -450,9 +447,7 @@ impl Cli {
             .await
             .map_err(|err| log::warn!("Failed to setup serial: {}", err))
             .ok()
-            .map(|port| {
-                BasestationClientConfig::new(port, self.protocol.into(), self.parse_robot_ids())
-            })
+            .map(|port| BasestationClientConfig::new(port, self.parse_robot_ids()))
     }
 
     /// Configures the vision client based on the CLI arguments.
@@ -505,22 +500,6 @@ pub enum ConnectionMode {
     None,
     Tcp,
     Udp,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum, Default)]
-pub enum BasestationProtocolVersion {
-    #[default]
-    V1,
-    V0,
-}
-
-impl From<BasestationProtocolVersion> for dies_basestation_client::BaseStationProtocol {
-    fn from(val: BasestationProtocolVersion) -> Self {
-        match val {
-            BasestationProtocolVersion::V0 => dies_basestation_client::BaseStationProtocol::V0,
-            BasestationProtocolVersion::V1 => dies_basestation_client::BaseStationProtocol::V1,
-        }
-    }
 }
 
 /// The serial port to connect to.

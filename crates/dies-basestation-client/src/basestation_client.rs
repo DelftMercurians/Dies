@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use dies_core::{
@@ -14,17 +11,17 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 const MAX_MSG_FREQ: f64 = 50.0;
 const BASE_STATION_READ_FREQ: f64 = 50.0;
 
+/// How long `is_connected()` must stay false before we treat the link as
+/// genuinely down. This rides over the brief warmup after opening the port (the
+/// monitor thread needs a cycle to report `true`) and momentary USB hiccups.
+const DISCONNECT_GRACE: Duration = Duration::from_millis(300);
+/// Minimum spacing between reconnect attempts while the link is down.
+const RECONNECT_INTERVAL: Duration = Duration::from_millis(500);
+
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
 pub fn list_serial_ports() -> Vec<String> {
     Serial::list_ports(true)
-}
-
-/// Protocol version for the base station communication.
-#[derive(Debug, Clone)]
-pub enum BaseStationProtocol {
-    V0,
-    V1,
 }
 
 #[derive(Debug, Clone)]
@@ -35,20 +32,13 @@ pub struct BasestationClientConfig {
     port_name: String,
     /// Map of player IDs to robot ids
     robot_id_map: HashMap<(TeamColor, PlayerId), u32>,
-    /// Protocol version
-    protocol: BaseStationProtocol,
 }
 
 impl BasestationClientConfig {
-    pub fn new(
-        port: String,
-        protocol: BaseStationProtocol,
-        robot_id_map: HashMap<(TeamColor, PlayerId), u32>,
-    ) -> Self {
+    pub fn new(port: String, robot_id_map: HashMap<(TeamColor, PlayerId), u32>) -> Self {
         BasestationClientConfig {
             port_name: port,
             robot_id_map,
-            protocol,
         }
     }
 
@@ -83,14 +73,8 @@ impl Default for BasestationClientConfig {
             #[cfg(not(target_os = "windows"))]
             port_name: "/dev/ttyACM0".to_string(),
             robot_id_map: HashMap::new(),
-            protocol: BaseStationProtocol::V1,
         }
     }
-}
-
-enum Connection {
-    V0(Serial),
-    V1(Monitor),
 }
 
 enum Message {
@@ -143,26 +127,24 @@ impl BasestationHandle {
         let (info_tx, info_rx) = broadcast::channel::<(Option<TeamColor>, PlayerFeedbackMsg)>(16);
         let (base_info_tx, base_info_rx) = watch::channel::<Option<BaseStationInfo>>(None);
 
-        let mut connection = match config.protocol {
-            BaseStationProtocol::V0 => {
-                let serial = Serial::new(&port_name)?;
-                Connection::V0(serial)
-            }
-            BaseStationProtocol::V1 => {
-                let monitor = Monitor::start();
-                monitor
-                    .connect_to(&port_name)
-                    .map_err(|_| anyhow!("Failed to connect to base station"))?;
-                Connection::V1(monitor)
-            }
-        };
+        let mut monitor = Monitor::start();
+        monitor
+            .connect_to(&port_name)
+            .map_err(|_| anyhow!("Failed to connect to base station"))?;
 
         let result = tokio::task::spawn_blocking(move || {
             let mut last_send = std::time::Instant::now();
             let interval = Duration::from_secs_f64(1.0 / BASE_STATION_READ_FREQ);
             let mut id_map = config.robot_id_map;
 
-            let mut all_ids = HashSet::new();
+            // Reconnect state. `last_connected` is seeded to "now" because we
+            // open the link in `spawn` before the loop starts; `reconnecting`
+            // tracks whether we're in a down cycle (for one-shot logging) and
+            // `last_reconnect_attempt` throttles retries.
+            let mut last_connected = std::time::Instant::now();
+            let mut reconnecting = false;
+            let mut last_reconnect_attempt: Option<std::time::Instant> = None;
+
             'outer: loop {
                 // Send commands
                 let send_start = std::time::Instant::now();
@@ -170,69 +152,36 @@ impl BasestationHandle {
                     match cmd_rx.try_recv() {
                         Ok(Message::PlayerCmd((team_color, cmd, resp))) => match cmd {
                             PlayerCmd::Move(cmd) => {
-                                let robot_id = id_map
-                                    .get(&(team_color, cmd.id))
-                                    .copied()
-                                    .unwrap_or_else(|| cmd.id.as_u32())
-                                    as usize;
-                                match &mut connection {
-                                    Connection::V1(monitor) => {
-                                        let glue_cmd: glue::Radio_Command = cmd.into();
-                                        resp.send(
-                                            monitor
-                                                .send_single(cmd.id.as_u32() as u8, glue_cmd)
-                                                .map_err(|_| anyhow!("Failed to send command")),
-                                        )
-                                        .ok();
-                                    }
-                                    Connection::V0(serial) => {
-                                        all_ids.insert(robot_id);
-                                        let cmd_str = cmd.into_proto_v0_with_id(robot_id);
-                                        serial.send(&cmd_str);
-                                        resp.send(Ok(())).ok();
-                                    }
-                                }
+                                let glue_cmd: glue::Radio_Command = cmd.into();
+                                resp.send(
+                                    monitor
+                                        .send_single(cmd.id.as_u32() as u8, glue_cmd)
+                                        .map_err(|_| anyhow!("Failed to send command")),
+                                )
+                                .ok();
                             }
                             PlayerCmd::GlobalMove(cmd) => {
                                 let robot_id = id_map
                                     .get(&(team_color, cmd.id))
                                     .copied()
-                                    .unwrap_or_else(|| cmd.id.as_u32())
-                                    as usize;
-                                match &mut connection {
-                                    Connection::V1(monitor) => {
-                                        let glue_cmd: glue::Radio_GlobalCommand = cmd.into();
-                                        resp.send(
-                                            monitor
-                                                .send_single_global(robot_id as u8, glue_cmd)
-                                                .map_err(|_| anyhow!("Failed to send command")),
-                                        )
-                                        .ok();
-                                    }
-                                    Connection::V0(_) => {
-                                        log::error!("Global move commands are not supported in V0");
-                                        resp.send(Err(anyhow!(
-                                            "Global move commands are not supported in V0"
-                                        )))
-                                        .ok();
-                                    }
-                                }
+                                    .unwrap_or_else(|| cmd.id.as_u32());
+                                let glue_cmd: glue::Radio_GlobalCommand = cmd.into();
+                                resp.send(
+                                    monitor
+                                        .send_single_global(robot_id as u8, glue_cmd)
+                                        .map_err(|_| anyhow!("Failed to send command")),
+                                )
+                                .ok();
                             }
                         },
                         Ok(Message::ChangeIdMap(new_id_map)) => {
                             id_map = new_id_map;
                         }
                         Ok(Message::Bench(op)) => {
-                            if let Connection::V1(monitor) = &mut connection {
-                                dispatch_bench_op(monitor, op);
-                            } else {
-                                log::warn!("Bench commands require the V1 protocol");
-                            }
+                            dispatch_bench_op(&mut monitor, op);
                         }
                         Err(mpsc::error::TryRecvError::Disconnected) => {
-                            if let Connection::V1(monitor) = connection {
-                                monitor.stop();
-                            }
+                            monitor.stop();
                             break 'outer;
                         }
                         Err(mpsc::error::TryRecvError::Empty) => break 'inner,
@@ -241,14 +190,56 @@ impl BasestationHandle {
                 let send_elapsed = send_start.elapsed();
                 dies_core::debug_string("bs_send_took", send_elapsed.as_millis().to_string());
 
-                // Receive feedback
-                if let Connection::V1(monitor) = &mut connection {
+                // Receive feedback / maintain the link.
+                {
+                    let monitor = &mut monitor;
                     if !monitor.is_connected() {
-                        println!(
-                            "Base station disconnected: {:?}",
-                            monitor.has_error().unwrap_or_default()
-                        );
-                        std::process::exit(1);
+                        // Link is (or has just gone) down. Instead of killing the
+                        // whole process, throttle reconnect attempts and keep the
+                        // thread alive so we recover transparently once the base
+                        // station comes back.
+                        if last_connected.elapsed() >= DISCONNECT_GRACE {
+                            if !reconnecting {
+                                log::warn!(
+                                    "Base station disconnected ({:?}); attempting to reconnect...",
+                                    monitor.has_error().unwrap_or_default()
+                                );
+                                base_info_tx.send_replace(Some(BaseStationInfo::disconnected()));
+                                reconnecting = true;
+                            }
+                            let due = last_reconnect_attempt
+                                .map_or(true, |t| t.elapsed() >= RECONNECT_INTERVAL);
+                            if due {
+                                last_reconnect_attempt = Some(std::time::Instant::now());
+                                if reconnect(monitor, &port_name) {
+                                    // Success is confirmed on the next iteration
+                                    // once the monitor thread reports connected.
+                                    log::info!("Reconnected to base station");
+                                } else {
+                                    log::debug!(
+                                        "Base station reconnect attempt failed; retrying in {:?}",
+                                        RECONNECT_INTERVAL
+                                    );
+                                }
+                            }
+                        }
+                        // Skip the feedback read while the link is down.
+                        let elapsed = last_send.elapsed();
+                        last_send = std::time::Instant::now();
+                        if elapsed < interval {
+                            std::thread::sleep(interval - elapsed);
+                        } else {
+                            std::thread::sleep(Duration::from_secs_f64(1.0 / MAX_MSG_FREQ));
+                        }
+                        continue 'outer;
+                    }
+
+                    // Connected: note the time and clear any reconnect state.
+                    last_connected = std::time::Instant::now();
+                    if reconnecting {
+                        log::info!("Base station link re-established");
+                        reconnecting = false;
+                        last_reconnect_attempt = None;
                     }
 
                     let fw_versions = read_firmware_versions(monitor);
@@ -263,7 +254,6 @@ impl BasestationHandle {
                                     .unwrap_or(Duration::from_secs(600))
                                     < Duration::from_millis(600)
                                 {
-                                    all_ids.insert(id);
                                     let (color, player_id) = id_map
                                         .iter()
                                         .find_map(|(k, v)| {
@@ -421,7 +411,7 @@ impl BasestationHandle {
     }
 
     // --- Bench (test-bench) API: addresses robots by raw robot id, bypassing
-    // the (team, player) -> robot_id map. V1 protocol only. ---
+    // the (team, player) -> robot_id map. ---
 
     fn send_bench(&self, op: BenchOp) {
         self.cmd_tx.try_send(Message::Bench(op)).ok();
@@ -497,6 +487,17 @@ fn build_robot_command(cmd: RobotCmd, kick_time: u16) -> glue::Radio_Command {
         },
         _pad: [0, 0, 0, 0, 0, 0, 0, 0],
     }
+}
+
+/// Attempt to (re)open the base station link. Prefers the configured port, then
+/// falls back to the first detected base station — the device path can change
+/// across a USB re-enumeration, so the original `port_name` may no longer exist.
+/// Returns true if a connection was opened.
+fn reconnect(monitor: &Monitor, port_name: &str) -> bool {
+    if monitor.connect_to(port_name).is_ok() {
+        return true;
+    }
+    monitor.connect_to_first().is_ok()
 }
 
 /// Dispatch a bench operation directly to the glue monitor.

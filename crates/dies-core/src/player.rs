@@ -123,24 +123,6 @@ impl PlayerMoveCmd {
             kick_speed: 0.5,
         }
     }
-
-    pub fn into_proto_v0_with_id(self, with_id: usize) -> String {
-        let extra = match self.robot_cmd {
-            RobotCmd::Arm => "A".to_string(),
-            RobotCmd::Disarm => "D".to_string(),
-            RobotCmd::Kick => "K".to_string(),
-            RobotCmd::Discharge => "".to_string(),
-            RobotCmd::None => "".to_string(),
-            RobotCmd::Chip => "".to_string(),
-            RobotCmd::PowerBoardOff => "".to_string(),
-            _ => "".to_string(),
-        };
-
-        format!(
-            "p{};Sx{:.2};Sy{:.2};Sz{:.2};Sd{:.0};Kt7000;S.{};\n",
-            with_id, self.sx, self.sy, self.w, self.dribble_speed, extra
-        )
-    }
 }
 
 impl From<PlayerMoveCmd> for glue::Radio_Command {
@@ -493,6 +475,23 @@ pub struct BaseStationInfo {
     /// Online flag per radio module.
     pub radios_online: Vec<bool>,
     pub max_robots: u8,
+}
+
+impl BaseStationInfo {
+    /// Placeholder info published while the link is down, so the UI shows the
+    /// base station as disconnected instead of holding onto stale data.
+    pub fn disconnected() -> Self {
+        Self {
+            connected: false,
+            protocol_ok: false,
+            version: String::new(),
+            protocol_version: String::new(),
+            channel_mhz: 0,
+            num_radios: 0,
+            radios_online: Vec::new(),
+            max_robots: 0,
+        }
+    }
 }
 
 /// Motion frame for a bench `SetMotion` command.
