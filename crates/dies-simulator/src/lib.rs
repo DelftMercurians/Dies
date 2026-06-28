@@ -438,6 +438,11 @@ struct Player {
     target_velocity: Vector<f64>,
     w: f64,
     target_heading: f64,
+    /// Per-command yaw-rate limit (rad/s) from the controller's `max_yaw_rate`.
+    /// The body slews toward `target_heading` no faster than this (capped by the
+    /// hardware `max_ang_vel`), mirroring the firmware — so it can't teleport and
+    /// fling a dribbled ball out of the dribbler cone.
+    target_yaw_rate: f64,
     current_dribble_speed: f64,
     breakbeam: bool,
     last_kick_counter: u8,
@@ -835,6 +840,7 @@ impl Simulation {
             target_velocity: Vector::zeros(),
             w: 0.0,
             target_heading: f64::NAN,
+            target_yaw_rate: f64::INFINITY,
             current_dribble_speed: 0.0,
             breakbeam: false,
             last_kick_counter: 0,
@@ -1345,7 +1351,8 @@ impl Simulation {
                         let ball_position_2d = ball_body.position().translation.vector.xy();
                         match last_ball_position {
                             Some(reference)
-                                if (ball_position_2d - *reference).norm() < NO_PROGRESS_DISTANCE =>
+                                if (ball_position_2d - *reference).norm()
+                                    < NO_PROGRESS_DISTANCE =>
                             {
                                 // Ball hasn't made progress — count down.
                                 if no_progress_timer.tick(self.integration_parameters.dt) {
@@ -2099,6 +2106,7 @@ impl Simulation {
                             yaw.inverse() * Vector::new(cmd.global_x, cmd.global_y, 0.0);
                         player.target_velocity = target_velocity * 1000.0; // m/s to mm/s
                         player.target_heading = cmd.heading_setpoint;
+                        player.target_yaw_rate = cmd.max_yaw_rate;
                         player.current_dribble_speed = cmd.dribble_speed;
                         player.last_cmd_time = self.current_time;
                         player.w = -cmd.w;
@@ -2121,6 +2129,7 @@ impl Simulation {
                 player.target_velocity = Vector::zeros();
                 player.w = 0.0;
                 player.target_heading = f64::NAN;
+                player.target_yaw_rate = f64::INFINITY;
             }
 
             let velocity = rigid_body.linvel();
@@ -2149,13 +2158,22 @@ impl Simulation {
             rigid_body.set_linvel(new_vel, true);
 
             if !player.target_heading.is_nan() {
-                // Move towards the target heading with config.max_ang_vel
+                // Slew toward the target heading at a bounded rate, capped by the
+                // controller's per-command `max_yaw_rate` and the hardware
+                // `max_ang_vel`. (Previously this teleported to the target every
+                // step — `5f64.to_degrees()` ≈ 286 rad could never be exceeded by a
+                // radian error, and the cap used `max_ang_vel/dt` — so a large aim
+                // rotation snapped the body in one step and flung a dribbled ball
+                // out of the dribbler cone. The firmware rate-limits yaw; match it.)
                 let current_yaw = rigid_body.rotation().euler_angles().2;
                 let target_yaw = player.target_heading;
-                let yaw_err = target_yaw - current_yaw;
-                let new_yaw = if yaw_err.abs() > 5f64.to_degrees() {
-                    let ang_vel = (yaw_err / dt).min(self.config.max_ang_vel / dt);
-                    current_yaw + ang_vel * dt
+                // Shortest signed angular error in (-π, π], so we never slew the
+                // long way around when the headings straddle ±π.
+                let yaw_err = (target_yaw - current_yaw + PI).rem_euclid(2.0 * PI) - PI;
+                let rate = player.target_yaw_rate.min(self.config.max_ang_vel);
+                let max_step = rate * dt;
+                let new_yaw = if yaw_err.abs() > max_step {
+                    current_yaw + yaw_err.signum() * max_step
                 } else {
                     target_yaw
                 };
@@ -2591,6 +2609,7 @@ impl SimulationBuilder {
             target_velocity: Vector::zeros(),
             w: 0.0,
             target_heading: f64::NAN,
+            target_yaw_rate: f64::INFINITY,
             current_dribble_speed: 0.0,
             breakbeam: false,
             last_kick_counter: 0,
@@ -2885,9 +2904,9 @@ mod free_kick_placement_tests {
         // stranding the free kick at an illegal in-area position).
         let sim = Simulation::default();
         for desired in [
-            Vector2::new(4300.0, 693.0),  // the exact stuck case from the log
+            Vector2::new(4300.0, 693.0),   // the exact stuck case from the log
             Vector2::new(-4300.0, -693.0), // mirror at the other goal
-            Vector2::new(4400.0, 0.0),    // dead centre, hard against the goal line
+            Vector2::new(4400.0, 0.0),     // dead centre, hard against the goal line
         ] {
             let fixed = sim.valid_free_kick_position(desired);
             assert_valid(&sim, fixed);
