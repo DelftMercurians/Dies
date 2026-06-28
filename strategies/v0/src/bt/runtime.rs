@@ -246,5 +246,6 @@ fn apply_command(player: &mut PlayerHandle, cmd: SkillCommand) {
             // the v0 trees; ignore.
         }
         SkillCommand::Stop => player.stop(),
+        SkillCommand::Snatch { .. } => {}
     }
 }
