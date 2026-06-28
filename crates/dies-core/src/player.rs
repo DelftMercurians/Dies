@@ -120,7 +120,7 @@ impl PlayerMoveCmd {
             dribble_speed: 0.0,
             robot_cmd: RobotCmd::None,
             fan_speed: 0.0,
-            kick_speed: 0.0,
+            kick_speed: 0.5,
         }
     }
 
@@ -153,7 +153,7 @@ impl From<PlayerMoveCmd> for glue::Radio_Command {
             },
             gen_command: glue::Radio_GenericCommand {
                 dribbler_speed_i: val.dribble_speed as i16,
-                kick_time_i: (5_000.0 * val.kick_speed as f32) as u16,
+                kick_time_i: (6_000.0 * val.kick_speed as f32) as u16,
                 time_to_kick: 0,
                 smart_kick_couter: 0,
                 robot_command: val.robot_cmd.into(),
@@ -196,6 +196,7 @@ pub struct PlayerGlobalMoveCmd {
     pub heading_setpoint: f64,
     pub last_heading: f64,
     pub dribble_speed: f64,
+    pub kick_speed: f64,
     pub kick_counter: u8,
     pub robot_cmd: RobotCmd,
     pub w: f64,
@@ -215,6 +216,7 @@ impl PlayerGlobalMoveCmd {
             dribble_speed: 0.0,
             kick_counter: 0,
             robot_cmd: RobotCmd::None,
+            kick_speed: 0.5,
             w: 0.0,
             max_yaw_rate: 0.0,
             preferred_rotation_direction: RotationDirection::NoPreference,
@@ -231,7 +233,7 @@ impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
             heading_setpoint: val.heading_setpoint as f32,
             gen_command: glue::Radio_GenericCommand {
                 dribbler_speed_i: val.dribble_speed as i16,
-                kick_time_i: 5_000,
+                kick_time_i: (6_000.0 * val.kick_speed as f32) as u16,
                 time_to_kick: 0,
                 smart_kick_couter: val.kick_counter,
                 robot_command: val.robot_cmd.into(),
@@ -517,13 +519,17 @@ pub enum BenchOneShot {
     Discharge,
     /// Fire the kicker. `kick_time` is the raw firmware kick duration
     /// (`GenericCommand.kick_time_i`, a `u16` in milliseconds) sent verbatim.
-    Kick { kick_time: u16 },
+    Kick {
+        kick_time: u16,
+    },
     ArmReflex,
     CalibrateBreakbeam,
     CalibrateImu,
     GetVersion,
     ZeroHeading,
-    SetHeading { angle: f64 },
+    SetHeading {
+        angle: f64,
+    },
 }
 
 /// A command from the bench UI, sent straight to the basestation (no executor,
@@ -558,6 +564,9 @@ pub enum BenchCommand {
         robot_id: u32,
         kind: Option<BenchOneShot>,
     },
+    /// Set the raw kick duration (`kick_time_i`, u16 ms) stamped onto every
+    /// streamed packet for a robot, so a held reflex-arm carries kick strength.
+    SetKickTime { robot_id: u32, kick_time: u16 },
     /// Broadcast a one-shot action to all robots.
     Broadcast { kind: BenchOneShot },
     /// Set the radio channel of the base (`robot_id = None`) or a robot.

@@ -43,6 +43,13 @@ const setHoldCmd = (
 ) =>
   send({ type: "Bench", data: { type: "SetHold", data: { robot_id, kind } } });
 
+// Set the kick duration stamped onto every streamed packet for a robot.
+const sendKickTime = (send: Send, robot_id: number, kick_time: number) =>
+  send({
+    type: "Bench",
+    data: { type: "SetKickTime", data: { robot_id, kick_time } },
+  });
+
 const stopRobot = (send: Send, robot_id: number) =>
   send({ type: "Bench", data: { type: "Stop", data: { robot_id } } });
 
@@ -276,6 +283,9 @@ const RobotFocus: FC<{
   // unmounts. `takeControl(false)` clears the backend hold; reset local state.
   useEffect(() => {
     setHoldState(null);
+    // Seed the backend with the current kick time so a held reflex-arm has a
+    // strength even before the slider is touched.
+    sendKickTime(send, robotId, kickTime);
     return () => {
       takeControl(send, robotId, false);
       setHoldCmd(send, robotId, undefined);
@@ -450,7 +460,10 @@ const RobotFocus: FC<{
           max={5000}
           step={50}
           unit=" ms"
-          onChange={setKickTime}
+          onChange={(v) => {
+            setKickTime(v);
+            sendKickTime(send, robotId, v);
+          }}
         />
         <div className="mt-2 flex flex-wrap gap-1">
           <Button

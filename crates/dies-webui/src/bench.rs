@@ -35,6 +35,9 @@ struct RobotBench {
     /// into the streamed setpoint, or sent as a zero-motion carrier when the
     /// robot isn't taken for driving.
     hold_cmd: Option<RobotCmd>,
+    /// Raw kick duration (`kick_time_i`, ms) stamped onto every streamed packet,
+    /// so a held reflex-arm carries the strength to fire with.
+    kick_time: u16,
 }
 
 impl RobotBench {
@@ -44,6 +47,7 @@ impl RobotBench {
             setpoint: PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(robot_id))),
             last_update: Instant::now(),
             hold_cmd: None,
+            kick_time: 3000,
         }
     }
 }
@@ -120,7 +124,7 @@ pub async fn run(
                     if let Some(hold) = rb.hold_cmd {
                         set_robot_cmd(&mut cmd, hold);
                     }
-                    bs_handle.bench_send_raw(*robot_id as u8, cmd);
+                    bs_handle.bench_send_raw(*robot_id as u8, cmd, rb.kick_time);
                 }
             },
             _ = shutdown_rx.recv() => {
@@ -164,8 +168,19 @@ fn handle_bench_command(
                 bs_handle.bench_send_raw(
                     robot_id as u8,
                     PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(robot_id))),
+                    0,
                 );
             }
+        }
+        BenchCommand::SetKickTime {
+            robot_id,
+            kick_time,
+        } => {
+            let rb = robots
+                .entry(robot_id)
+                .or_insert_with(|| RobotBench::new(robot_id));
+            rb.kick_time = kick_time;
+            log::debug!("Bench robot {robot_id} kick_time set to {kick_time} ms");
         }
         BenchCommand::SetMotion {
             robot_id,
@@ -206,6 +221,7 @@ fn handle_bench_command(
                 bs_handle.bench_send_raw(
                     robot_id as u8,
                     PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(robot_id))),
+                    0,
                 );
             }
         }
@@ -218,6 +234,7 @@ fn handle_bench_command(
                     bs_handle.bench_send_raw(
                         *robot_id as u8,
                         PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(*robot_id))),
+                        0,
                     );
                 }
             }
@@ -269,7 +286,7 @@ fn build_setpoint(
             dribble_speed,
             robot_cmd: RobotCmd::None,
             fan_speed: 0.0,
-            kick_speed: 0.0,
+            kick_speed: 0.5,
         }),
         BenchMotionMode::Global => PlayerCmd::GlobalMove(PlayerGlobalMoveCmd {
             id,
@@ -279,6 +296,7 @@ fn build_setpoint(
             last_heading: f64::NAN,
             dribble_speed,
             kick_counter: 0,
+            kick_speed: 0.5,
             robot_cmd: RobotCmd::None,
             w: 0.0,
             max_yaw_rate: BENCH_MAX_YAW_RATE,

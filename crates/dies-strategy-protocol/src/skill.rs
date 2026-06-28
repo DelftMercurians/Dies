@@ -196,6 +196,29 @@ pub enum SkillCommand {
         target_hint: Option<Vector2>,
     },
 
+    /// Strip the ball off an opponent that is holding it on its dribbler.
+    ///
+    /// **Type**: Discrete - start once, wait for completion.
+    ///
+    /// The robot presses its own dribbler against the held ball (keeping a body
+    /// standoff so it contacts the *ball*, never the opponent chassis) and slowly
+    /// rotates in place. On real hardware the circular shear peels the ball out of
+    /// the opponent's dribbler; in simulation the [`crate`]-side peel model drags
+    /// the ball around the holder by the contesting robot's rotation rate until it
+    /// leaves the holder's dribbler cone. This is a *strip-for-a-teammate*: success
+    /// is the opponent losing the ball, not us securing it.
+    ///
+    /// **Parameters**:
+    /// - `release_hint`: Optional point to knock the ball toward (e.g. a supporting
+    ///   teammate or open space). The approach side and rotation direction are
+    ///   chosen so the ball pops loose toward this point. `None` defaults toward
+    ///   midfield.
+    ///
+    /// **Completion**:
+    /// - `Succeeded` when the targeted opponent no longer holds the ball
+    /// - `Failed` on timeout or if no opponent is holding the ball to strip
+    Snatch { release_hint: Option<Vector2> },
+
     /// Stop all motion immediately.
     ///
     /// **Type**: Immediate

@@ -1314,6 +1314,14 @@ export type BenchCommand =
 	robot_id: number;
 	kind?: BenchOneShot;
 }}
+	/**
+	 * Set the raw kick duration (`kick_time_i`, u16 ms) stamped onto every
+	 * streamed packet for a robot, so a held reflex-arm carries kick strength.
+	 */
+	| { type: "SetKickTime", data: {
+	robot_id: number;
+	kick_time: number;
+}}
 	/** Broadcast a one-shot action to all robots. */
 	| { type: "Broadcast", data: {
 	kind: BenchOneShot;

@@ -51,6 +51,18 @@ const NO_PROGRESS_DISTANCE: f64 = 200.0;
 /// Speed (mm/s) at which a contested ball is squirted out from between two
 /// robots that both try to dribble it, so it escapes instead of staying pinned.
 const CONTESTED_BALL_POP_SPEED: f64 = 1200.0;
+/// Snatch peel: how fast a contesting robot's rotation drags a held ball around
+/// the holder's dribbler, as a fraction of the contester's own yaw rate. `1.0` =
+/// the ball sweeps as fast as the contester spins; lower makes the strip slower.
+const SNATCH_PEEL_GAIN: f64 = 0.6;
+/// Speed (mm/s) the ball is flung along the sweep direction when it finally pops
+/// out of the holder's dribbler cone. Gentle — it's a strip for a teammate, not a
+/// shot.
+const SNATCH_RELEASE_SPEED: f64 = 500.0;
+/// Max centre-to-ball distance (mm) at which a rotating robot counts as pressing
+/// (contesting) a held ball. Distance-gated, not cone-gated, so a robot spinning
+/// in place still registers as pressing while its facing sweeps.
+const SNATCH_PRESS_RANGE: f64 = 250.0;
 const GROUND_THICKNESS: f64 = 10.0;
 const WALL_HEIGHT: f64 = 1000.0;
 const WALL_THICKNESS: f64 = 1.0;
@@ -530,6 +542,11 @@ pub struct Simulation {
     last_touch_info: Option<(PlayerId, TeamColor)>,
     side_assignment: SideAssignment,
     ball_being_dribbled_by: Option<(PlayerId, TeamColor)>,
+    /// Accumulated peel angle (rad) of a held ball being stripped: how far a
+    /// contesting robot's rotation has dragged the ball around the holder's
+    /// dribbler. Reset to 0 whenever the ball isn't being actively peeled; once it
+    /// exceeds the holder's dribbler cone the ball pops loose.
+    ball_peel_angle: f64,
     // New fields for rule enforcement
     kick_start_time: f64,
     kick_ball_position: Option<Vector2>,
@@ -592,6 +609,7 @@ impl Simulation {
             last_touch_info: None,
             side_assignment,
             ball_being_dribbled_by: None,
+            ball_peel_angle: 0.0,
             kick_start_time: 0.0,
             kick_ball_position: None,
             last_kicker_info: None,
@@ -2238,42 +2256,113 @@ impl Simulation {
         }
 
         // Resolve ball ownership from this frame's claimants. A ball is only
-        // cleanly captured when exactly one robot is actively dribbling it. When
-        // two robots (e.g. opponents in a 50/50) both reach for it, the contact
-        // pops it loose instead of pinning it to a single dribbler — otherwise
-        // ownership flips between them every frame and the ball freezes between
-        // the two robots, deadlocking self-play.
+        // cleanly captured when exactly one robot is actively dribbling it.
+        //
+        // Before the normal resolution we check for an active *snatch*: an
+        // established holder (last frame's owner) still gripping the ball, plus a
+        // distinct robot pressing its dribbler against the ball and rotating. The
+        // contester's rotation drags the ball around the holder's dribbler
+        // (`ball_peel_angle` accumulates from the contester's yaw rate) until it
+        // leaves the holder's cone and pops loose (handled in the pin block).
+        //
+        // The contester is detected by *contact distance*, not the dribbler cone:
+        // a robot rotating in place sweeps its cone off the ball, but it's still
+        // pressing — so cone-gating would drop it mid-spin. Touching without
+        // rotating does nothing — only ω peels.
+        //
+        // With no established holder, several claimants are a genuine loose-ball
+        // 50/50: the contact pops it loose (`pop_contested_ball`) as before, which
+        // is what stops ownership flipping every frame and deadlocking self-play.
+        let prior_holder = self.ball_being_dribbled_by;
+        let ball_xy = self
+            .ball
+            .as_ref()
+            .map(|b| {
+                let v = self
+                    .rigid_body_set
+                    .get(b._rigid_body_handle)
+                    .unwrap()
+                    .position()
+                    .translation
+                    .vector;
+                Vector2::new(v.x, v.y)
+            })
+            .unwrap_or_else(Vector2::zeros);
+
+        // Fastest-rotating presser contesting the holder, if any.
+        let snatch_omega = prior_holder
+            .filter(|h| !ball_kicked_this_frame && dribble_claimants.contains(h))
+            .map(|holder| {
+                let mut best = 0.0_f64;
+                for p in self.players.iter() {
+                    if (p.id, p.team_color) == holder || p.current_dribble_speed <= 0.0 {
+                        continue;
+                    }
+                    let rb = self.rigid_body_set.get(p.rigid_body_handle).unwrap();
+                    let ppos = rb.position().translation.vector;
+                    if (ball_xy - Vector2::new(ppos.x, ppos.y)).norm() > SNATCH_PRESS_RANGE {
+                        continue;
+                    }
+                    // The contester's rotation is commanded as angular velocity
+                    // (a spin, no heading setpoint), already applied to the body
+                    // via `set_angvel` this frame — read it directly. (The body's
+                    // orientation itself only integrates in the physics step that
+                    // runs after this resolution, so a yaw delta would read zero.)
+                    let omega = rb.angvel().z;
+                    if omega.abs() > best.abs() {
+                        best = omega;
+                    }
+                }
+                (holder, best)
+            });
+
         if ball_kicked_this_frame {
             self.ball_being_dribbled_by = None;
+            self.ball_peel_angle = 0.0;
+        } else if let Some((holder, omega)) = snatch_omega {
+            // Pure-ω: no centerline bias — the skill picks the spin direction to aim
+            // where the ball pops loose.
+            self.ball_peel_angle += SNATCH_PEEL_GAIN * omega * dt;
+            self.ball_being_dribbled_by = Some(holder);
         } else if dribble_claimants.len() == 1 {
             self.ball_being_dribbled_by = Some(dribble_claimants[0]);
+            self.ball_peel_angle = 0.0;
         } else {
             if dribble_claimants.len() > 1 {
                 self.pop_contested_ball(&dribble_claimants);
             }
             self.ball_being_dribbled_by = None;
+            self.ball_peel_angle = 0.0;
         }
 
         if let Some((player_id, team_color)) = self.ball_being_dribbled_by {
-            let player = self
-                .players
-                .iter()
-                .find(|p| p.id == player_id && p.team_color == team_color)
-                .unwrap();
-            let rigid_body = self
-                .rigid_body_set
-                .get_mut(player.rigid_body_handle)
-                .unwrap();
-            let yaw = rigid_body.position().rotation * Vector::x();
-            let player_position = rigid_body.position().translation.vector;
+            // Read the holder's pose into locals so the borrow ends before we mutate
+            // the ball body and the peel state.
+            let (player_position, yaw_angle) = {
+                let player = self
+                    .players
+                    .iter()
+                    .find(|p| p.id == player_id && p.team_color == team_color)
+                    .unwrap();
+                let rb = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
+                (
+                    rb.position().translation.vector,
+                    rb.rotation().euler_angles().2,
+                )
+            };
+
+            // Pin the ball to the dribbler, rotated by the accumulated peel angle.
+            // At peel 0 this is the holder's dribbler centerline (the normal hold).
+            let base_offset = self.config.player_radius + self.config.dribbler_radius - 80.0;
+            let hold_angle = yaw_angle + self.ball_peel_angle;
+            let dir = Vector::new(hold_angle.cos(), hold_angle.sin(), 0.0);
+            let dribbler_position = player_position + dir * base_offset;
+            let released = self.ball_peel_angle.abs() > self.config.dribbler_angle;
+
             let ball_body = self
                 .rigid_body_set
                 .get_mut(self.ball.as_ref().unwrap()._rigid_body_handle)
                 .unwrap();
-
-            // Fix the ball position to the dribbler
-            let dribbler_position = player_position
-                + yaw * (self.config.player_radius + self.config.dribbler_radius - 80.0);
             ball_body.set_position(
                 Isometry::translation(
                     dribbler_position.x,
@@ -2282,7 +2371,22 @@ impl Simulation {
                 ),
                 true,
             );
-            ball_body.set_linvel(Vector3::zeros(), true);
+            if released {
+                // Ball swept past the holder's dribbler cone: it pops loose, flung
+                // along the sweep (the direction the contester aimed it) plus a
+                // radial-outward component so it clearly leaves the holder's grip
+                // and isn't re-claimed on the next frame.
+                let tangential = Vector::new(-dir.y, dir.x, 0.0) * self.ball_peel_angle.signum();
+                let release_dir = (tangential + dir).normalize();
+                ball_body.set_linvel(release_dir * SNATCH_RELEASE_SPEED, true);
+            } else {
+                ball_body.set_linvel(Vector3::zeros(), true);
+            }
+
+            if released {
+                self.ball_being_dribbled_by = None;
+                self.ball_peel_angle = 0.0;
+            }
         }
 
         self.integration_parameters.dt = dt;
@@ -3023,5 +3127,128 @@ mod determinism_tests {
         // Pose jitter must actually vary the match, otherwise sweeping seeds for
         // A-vs-B evaluation is pointless.
         assert_ne!(run(1, 300), run(2, 300));
+    }
+}
+
+#[cfg(test)]
+mod snatch_peel_tests {
+    use super::*;
+
+    const BLUE: TeamColor = TeamColor::Blue;
+    const YELLOW: TeamColor = TeamColor::Yellow;
+
+    /// Blue holder at the origin facing +x with the ball seated in its dribbler,
+    /// and a yellow contester pressed against the ball from the far (+x) side.
+    fn setup() -> Simulation {
+        SimulationBuilder::new(SimulationConfig::default())
+            .with_controlled_teams(true, true)
+            .add_blue_player_with_id(0, Vector2::new(0.0, 0.0), Angle::from_radians(0.0))
+            .add_yellow_player_with_id(0, Vector2::new(340.0, 0.0), Angle::from_radians(PI))
+            .add_ball(Vector::new(150.0, 0.0, BALL_RADIUS))
+            .build()
+    }
+
+    fn hold(dribble: f64) -> PlayerMoveCmd {
+        let mut c = PlayerMoveCmd::zero(PlayerId::new(0));
+        c.dribble_speed = dribble;
+        c
+    }
+
+    fn press(dribble: f64, w: f64) -> PlayerMoveCmd {
+        let mut c = PlayerMoveCmd::zero(PlayerId::new(0));
+        c.dribble_speed = dribble;
+        c.w = w;
+        c
+    }
+
+    fn holder(sim: &Simulation) -> Option<(PlayerId, TeamColor)> {
+        sim.ball_being_dribbled_by
+    }
+
+    fn ball_speed(sim: &Simulation) -> f64 {
+        let h = sim.ball.as_ref().unwrap()._rigid_body_handle;
+        let v = sim.rigid_body_set.get(h).unwrap().linvel();
+        (v.x * v.x + v.y * v.y).sqrt()
+    }
+
+    /// A contester that presses *and rotates* peels the ball off the holder.
+    #[test]
+    fn rotating_press_strips_the_ball() {
+        let mut sim = setup();
+
+        // Phase A: blue establishes possession, yellow idle.
+        for _ in 0..30 {
+            sim.push_cmd(BLUE, hold(0.5));
+            sim.step(1.0 / 60.0);
+        }
+        assert_eq!(
+            holder(&sim),
+            Some((PlayerId::new(0), BLUE)),
+            "blue should hold the ball before the strip"
+        );
+
+        // Phase B: yellow presses with its dribbler on and rotates in place.
+        let mut stripped_at = None;
+        for f in 0..120 {
+            sim.push_cmd(BLUE, hold(0.5));
+            sim.push_cmd(YELLOW, press(0.8, 2.0));
+            sim.step(1.0 / 60.0);
+            if holder(&sim).is_none() {
+                stripped_at = Some(f);
+                break;
+            }
+        }
+
+        let f = stripped_at.expect("rotating press should strip the ball within 2s");
+        assert!(
+            ball_speed(&sim) > 100.0,
+            "stripped ball should be flung loose, speed={}",
+            ball_speed(&sim)
+        );
+        // Slow peel, not instant: it should take a meaningful fraction of a second.
+        assert!(f > 10, "strip happened suspiciously fast at frame {f}");
+    }
+
+    /// Pressing without rotating must NOT strip the ball — only ω peels.
+    #[test]
+    fn static_press_does_not_strip() {
+        let mut sim = setup();
+        for _ in 0..30 {
+            sim.push_cmd(BLUE, hold(0.5));
+            sim.step(1.0 / 60.0);
+        }
+        assert_eq!(holder(&sim), Some((PlayerId::new(0), BLUE)));
+
+        for _ in 0..120 {
+            sim.push_cmd(BLUE, hold(0.5));
+            sim.push_cmd(YELLOW, press(0.8, 0.0)); // dribbler on, no rotation
+            sim.step(1.0 / 60.0);
+        }
+        assert_eq!(
+            holder(&sim),
+            Some((PlayerId::new(0), BLUE)),
+            "a non-rotating press should not peel the ball off the holder"
+        );
+    }
+
+    /// Two robots reaching for a loose ball on the same frame (no prior holder)
+    /// must still trip the pop guard that squirts the ball out, rather than the
+    /// snatch peel path silently handing possession to one of them. The peel path
+    /// only applies once a robot has an *established* possession.
+    #[test]
+    fn fresh_5050_still_pops_loose() {
+        let mut sim = setup();
+        // Both reach for the ball on the same frame, neither rotating.
+        let mut max_speed = 0.0_f64;
+        for _ in 0..20 {
+            sim.push_cmd(BLUE, hold(0.8));
+            sim.push_cmd(YELLOW, press(0.8, 0.0));
+            sim.step(1.0 / 60.0);
+            max_speed = max_speed.max(ball_speed(&sim));
+        }
+        assert!(
+            max_speed > 800.0,
+            "a fresh 50/50 should pop the ball loose (guard fires); max speed={max_speed}"
+        );
     }
 }

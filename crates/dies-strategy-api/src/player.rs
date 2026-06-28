@@ -12,7 +12,7 @@
 
 use crate::skill_builders::{
     DribbleBuilder, DribbleShootParams, GoToBoundedBuilder, GoToBuilder, PickupBallParams,
-    ReceiveParams, ReflexShootParams, SkillHandle,
+    ReceiveParams, ReflexShootParams, SkillHandle, SnatchParams,
 };
 use dies_core::Angle;
 use dies_strategy_protocol::{
@@ -335,6 +335,28 @@ impl PlayerHandle {
             capture_limit,
             cushion,
         })
+    }
+
+    /// Strip the ball off an opponent that is holding it on its dribbler.
+    ///
+    /// This is a **discrete skill** - start once and wait for completion. The
+    /// robot presses its dribbler against the held ball (keeping a body standoff so
+    /// it contacts the *ball*, not the opponent chassis) and slowly rotates in
+    /// place to peel the ball out of the opponent's dribbler. This is a
+    /// *strip-for-a-teammate*: it succeeds when the opponent loses the ball.
+    ///
+    /// # Parameters
+    ///
+    /// - `release_hint`: Optional point to knock the ball loose toward (a
+    ///   supporting teammate or open space). `None` defaults toward midfield.
+    ///
+    /// # Completion
+    ///
+    /// - `SkillStatus::Succeeded` when the targeted opponent no longer holds the ball
+    /// - `SkillStatus::Failed` on timeout or if no opponent is holding the ball
+    pub fn snatch(&mut self, release_hint: Option<Vector2>) -> SkillHandle<SnatchParams> {
+        self.pending_command = Some(SkillCommand::Snatch { release_hint });
+        SkillHandle::new(SnatchParams { release_hint })
     }
 
     // ========== Control ==========

@@ -16,6 +16,7 @@ mod go_to_pos;
 mod pickup_ball;
 mod receive;
 mod shoot;
+mod snatch;
 
 pub use dribble::DribbleSkill;
 pub use dribble_shoot::DribbleShootSkill;
@@ -24,3 +25,4 @@ pub use go_to_pos::GoToPosSkill;
 pub use pickup_ball::PickupBallSkill;
 pub use receive::ReceiveSkill;
 pub use shoot::ShootSkill;
+pub use snatch::SnatchSkill;

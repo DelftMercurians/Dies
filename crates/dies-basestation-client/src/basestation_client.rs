@@ -102,8 +102,10 @@ enum Message {
 /// A low-level bench operation, addressing robots by raw robot id and bypassing
 /// the `(team, player) -> robot_id` map. Used only by the webui test bench.
 enum BenchOp {
-    /// Stream a movement setpoint to a raw robot id.
-    SendRaw(u8, PlayerCmd),
+    /// Stream a movement setpoint to a raw robot id. The trailing `u16` is the
+    /// raw kick duration (`kick_time_i`, ms) stamped onto the packet, so a
+    /// streamed reflex-arm carries the kick strength to fire with.
+    SendRaw(u8, PlayerCmd, u16),
     /// Fire a one-shot robot command (zero speed) at a raw robot id.
     RobotCommand {
         robot_id: u8,
@@ -426,8 +428,9 @@ impl BasestationHandle {
     }
 
     /// Stream a movement setpoint to a raw robot id (the 50 Hz bench path).
-    pub fn bench_send_raw(&self, robot_id: u8, cmd: PlayerCmd) {
-        self.send_bench(BenchOp::SendRaw(robot_id, cmd));
+    /// `kick_time` is stamped onto every packet (`kick_time_i`, ms).
+    pub fn bench_send_raw(&self, robot_id: u8, cmd: PlayerCmd, kick_time: u16) {
+        self.send_bench(BenchOp::SendRaw(robot_id, cmd, kick_time));
     }
 
     /// Fire a one-shot robot command (zero speed) at a raw robot id. `kick_time`
@@ -499,13 +502,15 @@ fn build_robot_command(cmd: RobotCmd, kick_time: u16) -> glue::Radio_Command {
 /// Dispatch a bench operation directly to the glue monitor.
 fn dispatch_bench_op(monitor: &mut Monitor, op: BenchOp) {
     match op {
-        BenchOp::SendRaw(robot_id, cmd) => match cmd {
+        BenchOp::SendRaw(robot_id, cmd, kick_time) => match cmd {
             PlayerCmd::Move(c) => {
-                let g: glue::Radio_Command = c.into();
+                let mut g: glue::Radio_Command = c.into();
+                g.gen_command.kick_time_i = kick_time;
                 monitor.send_single(robot_id, g).ok();
             }
             PlayerCmd::GlobalMove(c) => {
-                let g: glue::Radio_GlobalCommand = c.into();
+                let mut g: glue::Radio_GlobalCommand = c.into();
+                g.gen_command.kick_time_i = kick_time;
                 monitor.send_single_global(robot_id, g).ok();
             }
         },
@@ -514,12 +519,12 @@ fn dispatch_bench_op(monitor: &mut Monitor, op: BenchOp) {
             cmd,
             kick_time,
         } => {
-            monitor
-                .send_single(robot_id, build_robot_command(cmd, kick_time))
-                .ok();
+            let cmd = build_robot_command(cmd, kick_time);
+            monitor.send_single(robot_id, cmd).ok();
         }
         BenchOp::Broadcast(cmd) => {
-            monitor.send_broadcast(build_robot_command(cmd, 0)).ok();
+            let cmd = build_robot_command(cmd, 0);
+            monitor.send_broadcast(cmd).ok();
         }
         BenchOp::SetHeading(robot_id, heading) => {
             monitor.set_current_heading(robot_id, heading).ok();

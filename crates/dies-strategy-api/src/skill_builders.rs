@@ -256,6 +256,22 @@ impl SkillParams for ReceiveParams {
     }
 }
 
+/// Parameters for `Snatch` skill.
+#[derive(Clone, Debug)]
+pub struct SnatchParams {
+    /// Optional point to knock the ball loose toward (e.g. a teammate or open
+    /// space). `None` lets the skill default toward midfield.
+    pub release_hint: Option<Vector2>,
+}
+
+impl SkillParams for SnatchParams {
+    fn to_command(&self) -> SkillCommand {
+        SkillCommand::Snatch {
+            release_hint: self.release_hint,
+        }
+    }
+}
+
 /// Handle to a running discrete skill.
 ///
 /// Provides methods to update skill parameters while the skill is running.
