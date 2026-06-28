@@ -248,15 +248,38 @@ pub const PLAN_CTX_MOVE_EPS: f64 = 300.0;
 /// Radius of the keeper's positioning arc, measured from the goal centre. At the
 /// central (square-on) position the keeper sits this far in front of the line.
 pub const KEEPER_ARC_RADIUS: f64 = 400.0;
-/// Maximum angular excursion of the keeper off straight-out (radians). Caps how
-/// far along the arc toward the posts the keeper will travel. Also bounds the
+/// Maximum angular excursion of the keeper off straight-out (radians). A pure
+/// *sanity* bound now (the lateral mouth clamp is the primary limit): keeps the
+/// keeper a little in front of the line rather than drifting onto it at extreme
+/// angles. Widened from the old 45° — that clamp parked the keeper near goal-centre
+/// and left the near post wide open against oblique (corner) shots. Also bounds the
 /// guard zone's angular span.
-pub const KEEPER_ARC_MAX_ANGLE: f64 = std::f64::consts::FRAC_PI_4; // 45°
+pub const KEEPER_ARC_MAX_ANGLE: f64 = 80.0 * std::f64::consts::PI / 180.0; // 80°
+/// How far inside each post (mm) the keeper centre may travel laterally — the
+/// "stay in front of your net" clamp (Option B). With `KEEPER_ARC_RADIUS` < half the
+/// goal width this is slack (the arc caps lateral reach first); it becomes the
+/// binding limit if the radius is ever grown past the mouth half-width.
+pub const KEEPER_MOUTH_MARGIN: f64 = 80.0;
+/// Modest bias of the guard target toward the *near* post (the post on the ball's
+/// side), scaled by how oblique the ball is. Conceding the far post (a very hard
+/// shot from a tight angle) to better deny the near post, which is the makeable
+/// shot. 0 = pure cone bisector; 1 = aim straight at the near post.
+///
+/// Kept small: on a *symmetric* shooter the bias is net-negative (it opens the far
+/// lane wider than it closes the near — see `examples/goalie_bench.rs`), and the
+/// mouth clamp alone already covers the near post on oblique shots. This small
+/// value hedges only toward a realistic shooter that prefers the near post on tight
+/// angles, at a bounded coverage cost.
+pub const KEEPER_NEARPOST_BIAS: f64 = 0.10;
 /// Radial breathing room (mm) added beyond `KEEPER_ARC_RADIUS` for the guard
 /// zone's outer edge, so position noise doesn't peg the keeper at the boundary.
 /// The aggressive control profile itself (gains, speed/accel caps, ORCA-off)
 /// lives in the `GoToBounded` executor skill.
 pub const KEEPER_ZONE_RADIUS_SLACK: f64 = 50.0;
+/// Angular breathing room (radians) added beyond `KEEPER_ARC_MAX_ANGLE` for the
+/// guard zone's ends, so the keeper can actually reach a near-post target without
+/// the no-overshoot envelope braking it at the boundary.
+pub const KEEPER_ZONE_ANGLE_SLACK: f64 = 0.12;
 
 // Shot-line intercept.
 /// Ball speed (mm/s) above which, if the ball is heading toward our goal across
