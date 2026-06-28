@@ -49,7 +49,11 @@ pub struct TeamController {
 
     removing_players: HashSet<PlayerId>,
 
-    warmup_timer: Option<Instant>,
+    /// Sim-time (seconds) accumulated toward the warmup period. Sim-time based
+    /// (not wall-clock) so headless runs — which advance many sim-seconds per
+    /// wall-second — get a fixed, deterministic warmup instead of freezing the
+    /// robots for a wall-clock second's worth of sim time.
+    warmup_elapsed: f64,
     warmup_done: bool,
 
     /// When false, game-state-driven compliance mutations are skipped entirely
@@ -73,7 +77,7 @@ impl TeamController {
             orca: OrcaSolver::new(&settings.avoidance),
             removing_players: HashSet::new(),
             avoid_goal_area_flags: HashMap::new(),
-            warmup_timer: None,
+            warmup_elapsed: 0.0,
             warmup_done: false,
             comply_enabled: true,
         };
@@ -143,18 +147,16 @@ impl TeamController {
         }
         let team_context = TeamContext::new(team_color, side_assignment);
 
-        // Handle warmup period
-        if let Some(warmup_timer) = self.warmup_timer {
-            if warmup_timer.elapsed() > Duration::from_secs(1) {
+        // Handle warmup period (sim-time based — see `warmup_elapsed`). Only count
+        // time once field geometry is available, so warmup measures settling time
+        // with a usable world, not wall-clock.
+        if !self.warmup_done && world_data.field_geom.is_some() {
+            self.warmup_elapsed += world_data.dt;
+            if self.warmup_elapsed > 1.0 {
                 self.warmup_done = true;
-                self.warmup_timer = None;
             }
         }
         if !self.warmup_done || (world_data.field_geom.is_none()) {
-            if self.warmup_timer.is_none() {
-                self.warmup_timer = Some(Instant::now());
-            }
-
             // Update player controllers with default input during warmup
             for controller in self.player_controllers.values_mut() {
                 let player_data = world_data
@@ -603,9 +605,18 @@ fn comply(
                         GameState::Run | GameState::Stop | GameState::FreeKick
                     )
                 {
-                    // Avoid goal area
+                    // Avoid goal area. The restart kicker is exempt from the wide
+                    // FreeKick keep-out around the *opponent* area (handled below):
+                    // it must be able to reach a ball placed just outside that area
+                    // to strike it, otherwise the free kick can never be taken and
+                    // deadlocks until the kick timer expires.
+                    let is_restart_kicker = matches!(
+                        input.role_type,
+                        RoleType::FreeKicker | RoleType::KickoffKicker
+                    );
                     let min_distance = match game_state {
                         GameState::Run => 80.0,
+                        GameState::Stop | GameState::FreeKick if is_restart_kicker => 80.0,
                         GameState::Stop | GameState::FreeKick
                             if input.role_type != RoleType::Waller =>
                         {

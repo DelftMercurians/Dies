@@ -4,8 +4,9 @@ use std::{
 };
 
 use dies_core::{
-    Angle, FieldGeometry, GcSimCommand, PlayerFeedbackMsg, PlayerGlobalMoveCmd, PlayerId,
-    PlayerMoveCmd, RobotCmd, SideAssignment, SysStatus, TeamColor, Vector2, Vector3, WorldInstant,
+    Angle, FieldGeometry, FieldSnapshot, GameState, GcSimCommand, PlayerFeedbackMsg,
+    PlayerGlobalMoveCmd, PlayerId, PlayerMoveCmd, RobotCmd, SideAssignment, SysStatus, TeamColor,
+    Vector2, Vector3, WorldInstant,
 };
 use dies_protos::{
     ssl_gc_referee_message::{
@@ -184,6 +185,7 @@ pub enum SimulationGameState {
     },
     PrepareKickOff {
         team_color: TeamColor,
+        prepare_timer: Timer,
     },
     Run {
         wait_timer: Timer,
@@ -239,7 +241,12 @@ impl SimulationGameState {
     }
 
     fn prepare_kickoff(team_color: TeamColor) -> Self {
-        SimulationGameState::PrepareKickOff { team_color }
+        SimulationGameState::PrepareKickOff {
+            team_color,
+            // Hard ceiling so a kickoff can never stall the match if positions
+            // never become valid; matches the referee NORMAL_START schedule.
+            prepare_timer: Timer::new(10.0),
+        }
     }
 
     fn free_kick(team_color: TeamColor) -> Self {
@@ -1091,8 +1098,26 @@ impl Simulation {
                     game_state
                 }
             }
-            SimulationGameState::PrepareKickOff { team_color } => {
-                if self.check_kickoff_positions(team_color) {
+            SimulationGameState::PrepareKickOff {
+                team_color,
+                ref mut prepare_timer,
+            } => {
+                // If positions never become valid (e.g. the scoring team's
+                // robots don't retreat to their own half), don't hang forever —
+                // force the kickoff after the timer so the match keeps running.
+                if prepare_timer.tick(self.integration_parameters.dt) {
+                    self.kick_start_time = self.current_time;
+                    if let Some(ball_handle) = self.ball.as_ref().map(|ball| ball._rigid_body_handle)
+                    {
+                        let ball_body = self.rigid_body_set.get(ball_handle).unwrap();
+                        self.kick_ball_position =
+                            Some(ball_body.position().translation.vector.xy());
+                    }
+                    self.kick_in_progress = true;
+                    self.last_kicker_info = None;
+                    self.update_referee_command(referee::Command::NORMAL_START);
+                    SimulationGameState::run()
+                } else if self.check_kickoff_positions(team_color) {
                     // Initialize kick tracking
                     self.kick_start_time = self.current_time;
                     if let Some(ball_handle) =
@@ -1587,31 +1612,26 @@ impl Simulation {
                     return false;
                 }
 
-                // Check if robot is in own half (excluding center circle)
-                let is_on_opp_side = self
+                // Every robot must be on its own half. The only exception is a
+                // single attacking robot allowed inside the center circle (which
+                // straddles the halfway line) so it can take the kick.
+                let is_on_own_side = self
                     .side_assignment
-                    .is_on_opp_side_vec3(player.team_color, &player_position);
-                if is_on_opp_side {
-                    // Allow attacking team robot in center circle
+                    .is_on_own_side_vec3(player.team_color, &player_position);
+                if !is_on_own_side {
                     let distance_to_center = (player_position.xy() - Vector2::new(0.0, 0.0)).norm();
-                    if player.team_color == attacking_team
-                        && distance_to_center <= center_circle_radius
-                    {
+                    let is_kicker_in_circle = player.team_color == attacking_team
+                        && distance_to_center <= center_circle_radius;
+                    if is_kicker_in_circle {
                         attacking_robots_in_circle += 1;
-                        if attacking_robots_in_circle > 1 {
-                            dies_core::debug_string(
-                                "RefereeMessage",
-                                RefereeMessage::KickoffPositionViolation.to_string(),
-                            );
-                            return false;
-                        }
                     }
-                } else {
-                    dies_core::debug_string(
-                        "RefereeMessage",
-                        RefereeMessage::KickoffPositionViolation.to_string(),
-                    );
-                    return false;
+                    if !is_kicker_in_circle || attacking_robots_in_circle > 1 {
+                        dies_core::debug_string(
+                            "RefereeMessage",
+                            RefereeMessage::KickoffPositionViolation.to_string(),
+                        );
+                        return false;
+                    }
                 }
             }
         }
@@ -2484,10 +2504,13 @@ impl SimulationBuilder {
             )
         };
 
+        // Base x is negative so robots line up on their OWN half (team-relative
+        // +x points at the enemy goal, so own half is x < 0); transform_vec2 then
+        // maps that to the correct absolute side per the side assignment.
         for i in 0..6 {
             let (dx, dy, dyaw) = jitter(&mut builder);
             let position = Vector2::new(
-                field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin)
+                -(field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin))
                     + dx,
                 field_width - player_radius - boundary_width + dy,
             );
@@ -2499,7 +2522,7 @@ impl SimulationBuilder {
         for i in 0..6 {
             let (dx, dy, dyaw) = jitter(&mut builder);
             let position = Vector2::new(
-                field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin)
+                -(field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin))
                     + dx,
                 -(field_width - player_radius - boundary_width) + dy,
             );
@@ -2527,9 +2550,11 @@ impl Default for SimulationBuilder {
         let player_margin = 0.75 * player_radius;
         let sides = builder.sim.config.initial_side_assignment;
 
+        // Base x is negative so robots line up on their OWN half (team-relative
+        // +x points at the enemy goal); transform_vec2 maps to the absolute side.
         for i in 0..6 {
             let position = Vector2::new(
-                field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin),
+                -(field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin)),
                 field_width - player_radius - boundary_width,
             );
             builder = builder.add_blue_player(
@@ -2539,7 +2564,7 @@ impl Default for SimulationBuilder {
         }
         for i in 0..6 {
             let position = Vector2::new(
-                field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin),
+                -(field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin)),
                 -(field_width - player_radius - boundary_width),
             );
             builder = builder.add_yellow_player(
