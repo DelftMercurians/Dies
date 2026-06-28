@@ -206,6 +206,16 @@ React/TypeScript frontend in `webui/` (Vite + Tailwind), using **pnpm** as packa
 - **Error handling**: `anyhow::Result` everywhere, no panics, propagate errors to executor
 - **Logging**: `tracing` crate — error (fatal only), warn (recoverable), info (rare, user-facing), debug (everything else). No `trace`, no `println!`
 - **Generics**: Use sparingly (YAGNI). Crates are kept granular for compile-time caching.
+- **Time in skills/control**: Never use `std::time::Instant`/wall-clock for
+  timeouts or elapsed-time logic in the executor's per-frame path (skills,
+  controllers, FSMs). The headless/FTR sim decouples wall-clock from the sim
+  clock and steps as fast as the CPU allows, so a wall-clock timer fires at the
+  wrong sim-time *and* breaks determinism (same seed → different result, because
+  elapsed wall time depends on CPU speed/load). Drive all in-match timing off
+  world time: accumulate `ctx.world.dt` or diff `ctx.world.t_received` (both
+  seconds). See `pass_coordinator.rs` / `team_controller.rs` warmup for the
+  pattern. `Instant` is only acceptable for genuinely wall-clock-bound concerns
+  (startup handshakes, IPC, logging), never for in-match behavior.
 
 ## Key crates
 

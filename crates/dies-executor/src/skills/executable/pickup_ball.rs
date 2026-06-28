@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use dies_core::{Angle, FieldGeometry, Vector2, PLAYER_RADIUS};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
@@ -81,8 +81,10 @@ pub struct PickupBallSkill {
     instant_kick: bool,
     /// Ball position when the reflex was first armed (for the departure check).
     kick_ball_pos: Option<Vector2>,
-    /// When the reflex was first armed (for the whiff timeout).
-    armed_at: Option<Instant>,
+    /// World time (`t_received`, seconds) the reflex was first armed (for the
+    /// whiff timeout). Sim-clock based so the timeout is deterministic and works
+    /// under faster-than-realtime sim — wall-clock would be wrong. See CLAUDE.md.
+    armed_at: Option<f64>,
 }
 
 impl PickupBallSkill {
@@ -263,7 +265,7 @@ impl ExecutableSkill for PickupBallSkill {
                 // onto the beam), so the ball is struck on contact, never held.
                 input.with_kicker(KickerControlInput::ReflexKick);
                 let kick_ball = *self.kick_ball_pos.get_or_insert(ball_pos);
-                let now = *self.armed_at.get_or_insert_with(Instant::now);
+                let armed_at = *self.armed_at.get_or_insert(ctx.world.t_received);
 
                 // Success = ball departed along the kick axis (the reflex fired).
                 // Checked BEFORE any ball-moved failure, and gated to the kick
@@ -275,7 +277,7 @@ impl ExecutableSkill for PickupBallSkill {
                 }
                 // Whiff: armed but the ball never left → fail so the driver
                 // re-stages a fresh approach instead of lingering in contact.
-                if now.elapsed() > REFLEX_TIMEOUT {
+                if ctx.world.t_received - armed_at > REFLEX_TIMEOUT.as_secs_f64() {
                     log::warn!("pickup_ball: reflex kick did not connect");
                     self.status = SkillStatus::Failed;
                     return SkillProgress::failure();

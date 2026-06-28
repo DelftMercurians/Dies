@@ -9,7 +9,7 @@
 //! is* relative to the current ball — one "drive to kicking pose" primitive, not
 //! a mode selector.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use dies_core::{Angle, FieldGeometry, Vector2, PLAYER_RADIUS};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
@@ -82,11 +82,15 @@ pub struct DribbleShootSkill {
     /// Where to launch the ball from. Chosen once on the first tick and held, so
     /// the aim phase doesn't oscillate between repositioning and orbiting.
     launch: Option<Vector2>,
-    start: Option<Instant>,
+    /// World time (`t_received`, seconds) of the first tick. Sim-clock based so
+    /// the timeout is deterministic and works under faster-than-realtime sim —
+    /// `Instant`/wall-clock would fire at the wrong sim-time. See CLAUDE.md.
+    start: Option<f64>,
     /// Ball position recorded the instant the kick was commanded.
     kick_ball_pos: Option<Vector2>,
-    /// When the kick was commanded (start of the verification window).
-    kick_time: Option<Instant>,
+    /// World time (`t_received`, seconds) the kick was commanded (start of the
+    /// verification window).
+    kick_time: Option<f64>,
 }
 
 impl DribbleShootSkill {
@@ -120,8 +124,8 @@ impl ExecutableSkill for DribbleShootSkill {
             return SkillProgress::failure();
         };
 
-        let start = *self.start.get_or_insert_with(Instant::now);
-        if start.elapsed() > TIMEOUT {
+        let start = *self.start.get_or_insert(ctx.world.t_received);
+        if ctx.world.t_received - start > TIMEOUT.as_secs_f64() {
             log::warn!("dribble_shoot: timeout");
             self.status = SkillStatus::Failed;
             return SkillProgress::failure();
@@ -214,7 +218,7 @@ impl ExecutableSkill for DribbleShootSkill {
                 input.kick_speed = Some(KICK_SPEED);
                 input.with_dribbling(0.0);
                 self.kick_ball_pos = Some(ball_pos);
-                self.kick_time = Some(Instant::now());
+                self.kick_time = Some(ctx.world.t_received);
                 self.state = AimState::Verifying;
             }
 
@@ -230,7 +234,7 @@ impl ExecutableSkill for DribbleShootSkill {
                 }
                 if self
                     .kick_time
-                    .map(|t| t.elapsed() > VERIFY_WINDOW)
+                    .map(|t| ctx.world.t_received - t > VERIFY_WINDOW.as_secs_f64())
                     .unwrap_or(true)
                 {
                     log::warn!("dribble_shoot: kick did not connect");

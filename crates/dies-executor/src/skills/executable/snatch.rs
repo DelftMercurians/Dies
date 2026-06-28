@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use dies_core::{Angle, PlayerData, PlayerId, Vector2};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
@@ -39,7 +39,10 @@ pub struct SnatchSkill {
     target: Option<PlayerId>,
     /// Whether we've reached the contact pose and started pressing + rotating.
     engaged: bool,
-    started: Option<Instant>,
+    /// World time (`t_received`, seconds) of the first tick. Sim-clock based so the
+    /// timeout is deterministic and works under faster-than-realtime sim —
+    /// `Instant`/wall-clock would fire at the wrong sim-time. See CLAUDE.md.
+    started: Option<f64>,
 }
 
 impl SnatchSkill {
@@ -81,7 +84,8 @@ impl ExecutableSkill for SnatchSkill {
     }
 
     fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
-        self.started.get_or_insert_with(Instant::now);
+        let started = *self.started.get_or_insert(ctx.world.t_received);
+        let elapsed = ctx.world.t_received - started;
 
         let Some(ball) = ctx.world.ball.as_ref() else {
             return SkillProgress::Continue(PlayerControlInput::default());
@@ -118,7 +122,7 @@ impl ExecutableSkill for SnatchSkill {
                 self.status = SkillStatus::Succeeded;
                 return SkillProgress::success();
             }
-            if self.started.map(|t| t.elapsed()).unwrap_or_default() > TIMEOUT {
+            if elapsed > TIMEOUT.as_secs_f64() {
                 self.status = SkillStatus::Failed;
                 return SkillProgress::failure();
             }
@@ -132,7 +136,7 @@ impl ExecutableSkill for SnatchSkill {
             return SkillProgress::success();
         }
 
-        if self.started.map(|t| t.elapsed()).unwrap_or_default() > TIMEOUT {
+        if elapsed > TIMEOUT.as_secs_f64() {
             self.status = SkillStatus::Failed;
             return SkillProgress::failure();
         }
