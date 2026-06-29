@@ -189,7 +189,41 @@ pub fn keeper_arc_target(
             g + d * radius
         });
 
-    clamp_to_mouth(candidate, g, radius, max_angle, y_lim)
+    // Cross-shot damping: a ball crossing the mouth fast (not a goalward shot —
+    // the intercept above already handled those) is a cross/switch. Pull the guard
+    // angle back toward square-on so the keeper stays compact and isn't wrong-footed
+    // by a strike back across the face. Keeps it more central (never off its line).
+    let damped = damp_cross(candidate, world, g, radius);
+
+    clamp_to_mouth(damped, g, radius, max_angle, y_lim)
+}
+
+/// Pull a guard candidate's angle back toward square-on (straight out from goal)
+/// proportionally to how fast the ball is crossing the mouth laterally, when the
+/// ball is fast and deep in our half. Returns `candidate` unchanged for a slow or
+/// up-field ball. The radius is preserved (we only reduce the angular excursion),
+/// so the keeper stays on its arc — this only ever moves it *toward* centre, never
+/// further out or off the line.
+fn damp_cross(candidate: Vector2, world: &World, g: Vector2, radius: f64) -> Vector2 {
+    let Some(ball) = world.ball_position() else {
+        return candidate;
+    };
+    if ball.x > config::KEEPER_CROSS_DAMP_BALL_X {
+        return candidate;
+    }
+    let lateral_speed = world.ball_velocity().map(|v| v.y.abs()).unwrap_or(0.0);
+    let w = config::KEEPER_CROSS_DAMP_MAX
+        * crate::geometry::smoothstep(
+            config::KEEPER_CROSS_DAMP_SPEED_LO,
+            config::KEEPER_CROSS_DAMP_SPEED_HI,
+            lateral_speed,
+        );
+    if w <= 1.0e-6 {
+        return candidate;
+    }
+    let rel = candidate - g;
+    let theta = rel.y.atan2(rel.x) * (1.0 - w);
+    g + Vector2::new(radius * theta.cos(), radius * theta.sin())
 }
 
 /// Shot-line intercept: if the ball is travelling fast (≥
@@ -552,6 +586,61 @@ mod tests {
             t.y.abs() < 1.0,
             "off-target shot should keep bisector: {:?}",
             t
+        );
+    }
+
+    #[test]
+    fn fast_cross_across_the_face_keeps_keeper_compact() {
+        // Regression for the worked-ball-across-the-box concession: a ball deep in
+        // our half on the +y side, moving fast *laterally* (across the mouth, not
+        // goalward), must not drag the keeper all the way to the +y side — a strike
+        // back across the face would then beat it into the open -y corner. The
+        // cross-damping pulls the guard angle back toward square-on.
+        let ball = Vector2::new(-3200.0, 1400.0);
+        let crossing = world_with_ball_vel(ball, Vector2::new(-200.0, 3000.0)); // fast across
+        let still = world_with_ball(ball); // same position, ball at rest
+        let kc = guard_target(&crossing);
+        let ks = guard_target(&still);
+        // Both shade toward +y, but the fast cross stays markedly more central.
+        assert!(kc.y > 0.0 && ks.y > 0.0, "both shade to the ball side");
+        assert!(
+            kc.y < ks.y - 50.0,
+            "fast cross must keep the keeper more central: crossing y={:.0} vs still y={:.0}",
+            kc.y,
+            ks.y
+        );
+        // It must stay on its arc (only the angle is reduced, not the radius).
+        let g = crossing.own_goal_center();
+        assert!(
+            ((kc - g).norm() - R).abs() < 1.0,
+            "still on the arc: {:?}",
+            kc
+        );
+    }
+
+    #[test]
+    fn slow_cross_is_tracked_normally() {
+        // A slowly-rolling ball across the face (an opponent dribbling it) is NOT a
+        // cross-shot threat, so the keeper tracks it normally (no damping).
+        let ball = Vector2::new(-3200.0, 1400.0);
+        let slow = world_with_ball_vel(ball, Vector2::new(0.0, 200.0));
+        let still = world_with_ball(ball);
+        assert!(
+            (guard_target(&slow).y - guard_target(&still).y).abs() < 1.0,
+            "slow ball must be tracked like a static one"
+        );
+    }
+
+    #[test]
+    fn upfield_cross_does_not_damp() {
+        // A fast lateral ball in the attacking half is no immediate shot threat and
+        // must not damp (the keeper would otherwise sit needlessly square-on).
+        let ball = Vector2::new(1000.0, 1400.0);
+        let fast = world_with_ball_vel(ball, Vector2::new(0.0, 3000.0));
+        let still = world_with_ball(ball);
+        assert!(
+            (guard_target(&fast).y - guard_target(&still).y).abs() < 1.0,
+            "up-field cross must not be damped"
         );
     }
 

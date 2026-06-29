@@ -231,9 +231,12 @@ impl Planner {
 
                 let waypoint = if !is_kicker && world.ball_contest().is_some() {
                     // An opponent is physically pinning the ball we nominally hold.
-                    // Don't advance toward goal — that drives into the presser (the
-                    // old `correction_target` deadlock). Break contact instead.
-                    self.contest_escape(world, ball_pos, carrier_pos)
+                    // In the attacking strike zone, finish first-time — striking the
+                    // contested ball goalward beats trying to keep it and losing the
+                    // 50/50. Otherwise don't advance toward goal (that drives into the
+                    // presser — the old `correction_target` deadlock): break contact.
+                    self.contested_finish(world, ball_pos, opp_goal, carrier_pos)
+                        .unwrap_or_else(|| self.contest_escape(world, ball_pos, carrier_pos))
                 } else if is_kicker {
                     // Restart: always release forward (never dribble — double-touch).
                     // Kick at a supporter if one is well placed, else open space.
@@ -248,8 +251,28 @@ impl Planner {
                         rescue: false,
                     }
                 } else if let (true, Some(aim)) = (in_range, shot) {
+                    // A real aimed shot is on. Close to goal (inside the
+                    // strike-finish zone), finish it FIRST-TIME with a reflex
+                    // `Strike` rather than the orbit-to-aim `Shoot`: the aimed
+                    // Shoot's kick gate refuses any marginally-covered corridor and
+                    // orbits indefinitely instead of firing — the dithering observed
+                    // in the finishing battery, where a carrier sits on a central box
+                    // position for seconds and never gets a shot away. From inside
+                    // the zone aim precision matters far less than decisiveness (the
+                    // window midpoint is still the target), and a strike-through fires
+                    // immediately, forcing a save/rebound/goal instead of holding the
+                    // ball until the defence recovers. Farther out (between
+                    // STRIKE_FINISH_RANGE and SHOOT_RANGE) keep the precise aimed
+                    // Shoot — there the lane is cleaner and accuracy is what pays.
+                    let close = carrier_pos.x > 0.0
+                        && (carrier_pos - opp_goal).norm() < config::STRIKE_FINISH_RANGE;
+                    let action = if close {
+                        BallAction::Strike { target: aim.target }
+                    } else {
+                        BallAction::Shoot { target: aim.target }
+                    };
                     Waypoint::Handle {
-                        action: BallAction::Shoot { target: aim.target },
+                        action,
                         rescue: false,
                     }
                 } else {
@@ -269,6 +292,39 @@ impl Planner {
                         action: BallAction::Shoot { target },
                         rescue: false,
                     };
+
+                    // Strike-finish fallback: in genuine shooting range with the ball
+                    // but no *clean* aimed-shot window and no good forward pass, the
+                    // aimed Shoot would orbit forever (its kick gate refuses a
+                    // `lane_blocked` corridor and never fires from wide/covered
+                    // angles), and a backward recycle from this deep repeatedly turns
+                    // into a lost-territory counter (observed in the finishing
+                    // battery). Instead release a one-touch Strike (reflex
+                    // kick-through) at the widest available window — or, if the mouth
+                    // is fully crowded, the goal centre. The Strike fires through a
+                    // marginally covered lane, forcing a save/rebound/corner and
+                    // pinning the ball in the attacking third. The classic coach call:
+                    // in the box with nothing on, shoot — don't pass backward. It
+                    // only pre-empts the *recycle* fallbacks below, never a real
+                    // forward pass or cross.
+                    let strike_zone = carrier_pos.x > 0.0
+                        && (carrier_pos - opp_goal).norm() < config::STRIKE_FINISH_RANGE;
+                    let finish = || {
+                        let target = self.finish_strike_target(world, ball_pos, opp_goal);
+                        Waypoint::Handle {
+                            action: BallAction::Strike { target },
+                            rescue: false,
+                        }
+                    };
+                    // The recycle outlet, but strike instead when in shooting range.
+                    let recycle_or_finish = || {
+                        if strike_zone {
+                            Some(finish())
+                        } else {
+                            recycle.map(as_pass)
+                        }
+                    };
+
                     match forward {
                         Some((Some(receiver), target_area, quality)) => {
                             // A weak forward pass is recycled when a safe outlet
@@ -277,7 +333,7 @@ impl Planner {
                             // (the defence is still recovering, so the lane is more
                             // open than the snapshot suggests).
                             if !fast_break && quality < config::FORWARD_OK_BAR {
-                                recycle.map(as_pass).unwrap_or(Waypoint::Pass {
+                                recycle_or_finish().unwrap_or(Waypoint::Pass {
                                     passer: id,
                                     receiver,
                                     target_area,
@@ -297,14 +353,15 @@ impl Planner {
                             if fast_break {
                                 hoof(target)
                             } else {
-                                recycle.map(as_pass).unwrap_or_else(|| hoof(target))
+                                recycle_or_finish().unwrap_or_else(|| hoof(target))
                             }
                         }
-                        // Nothing forward at all: recycle, else a short corrective
-                        // dribble (under the carry cap), else release.
+                        // Nothing forward at all: strike if in range, else recycle,
+                        // else a short corrective dribble (under the carry cap), else
+                        // release.
                         None => {
-                            if let Some(rec) = recycle {
-                                as_pass(rec)
+                            if let Some(w) = recycle_or_finish() {
+                                w
                             } else if inputs.carried < config::DRIBBLE_CORRECTION_LIMIT {
                                 let to = self.correction_target(carrier_pos, opp_goal, world);
                                 Waypoint::Handle {
@@ -329,17 +386,30 @@ impl Planner {
             // ── Ball is loose (or contested — go win it) ────────────────
             Possession::Loose | Possession::Contested => {
                 let robot = capturer?;
+                // First-time finish: a contested loose ball in the attacking strike
+                // zone (and not a boundary rescue) is struck goalward on contact — a
+                // genuine 50/50 in the final third is lost when we try to settle it,
+                // and the recycle/loss becomes a counter (finishing battery). Only
+                // when our capturer is right on it (a reflex strike is imminent).
+                let actor_pos = world
+                    .own_player(robot)
+                    .map(|p| p.position)
+                    .unwrap_or(ball_pos);
+                let finish = (!on_boundary)
+                    .then(|| self.contested_finish(world, ball_pos, opp_goal, actor_pos))
+                    .flatten();
                 // Acquire and hold; the next replan (on the possession flip) swaps
                 // this Hold to the real action as a live param update — same skill
                 // instance, no teardown. `rescue` biases the approach inward off a
                 // boundary; the driver computes the live approach heading.
+                let waypoint = finish.unwrap_or(Waypoint::Handle {
+                    action: BallAction::Hold {
+                        heading: goalward_heading(ball_pos, opp_goal),
+                    },
+                    rescue: on_boundary,
+                });
                 Plan {
-                    waypoints: vec![Waypoint::Handle {
-                        action: BallAction::Hold {
-                            heading: goalward_heading(ball_pos, opp_goal),
-                        },
-                        rescue: on_boundary,
-                    }],
+                    waypoints: vec![waypoint],
                     active_robot: robot,
                 }
             }
@@ -447,6 +517,57 @@ impl Planner {
     /// loss of possession to kill the danger and avoid a force-restart reshuffle);
     /// elsewhere we strafe perpendicular to the squeeze axis to keep the ball and
     /// move the presser out from between us and goal.
+    /// Aim point for a one-touch finish: the widest open window in the goal mouth
+    /// (`best_shot`), or the goal centre when the mouth is fully crowded.
+    fn finish_strike_target(&self, world: &World, ball_pos: Vector2, opp_goal: Vector2) -> Vector2 {
+        geometry::best_shot(
+            ball_pos,
+            opp_goal.x,
+            world.goal_width(),
+            world.opp_players(),
+            Self::opp_keeper(world),
+            config::SHOT_ROBOT_RADIUS,
+            Self::keeper_shot_radius(world),
+            config::BALL_RADIUS,
+            config::SHOT_KEEPER_BIAS,
+        )
+        .map(|s| s.target)
+        .unwrap_or(opp_goal)
+    }
+
+    /// First-time finish: when a *contested* ball sits in the attacking strike zone
+    /// and a reflex strike is imminent (both an opponent and our actor are right on
+    /// it), striking it goalward on contact beats trying to settle the 50/50 — which
+    /// loses the ball and concedes a counter (the finishing-battery failure). Returns
+    /// the reflex-`Strike` waypoint when the finish is on, else `None` so the caller
+    /// keeps its normal behaviour (settle / escape).
+    fn contested_finish(
+        &self,
+        world: &World,
+        ball_pos: Vector2,
+        opp_goal: Vector2,
+        actor_pos: Vector2,
+    ) -> Option<Waypoint> {
+        let in_zone =
+            ball_pos.x > 0.0 && (ball_pos - opp_goal).norm() < config::STRIKE_FINISH_RANGE;
+        if !in_zone {
+            return None;
+        }
+        let opp_d = world
+            .closest_opp_player_to(ball_pos)
+            .map(|p| (p.position - ball_pos).norm())?;
+        if opp_d > config::FINISH_CONTEST_OPP_DIST
+            || (actor_pos - ball_pos).norm() > config::FINISH_CONTEST_OUR_DIST
+        {
+            return None;
+        }
+        let target = self.finish_strike_target(world, ball_pos, opp_goal);
+        Some(Waypoint::Handle {
+            action: BallAction::Strike { target },
+            rescue: false,
+        })
+    }
+
     fn contest_escape(&self, world: &World, ball_pos: Vector2, carrier_pos: Vector2) -> Waypoint {
         let own_goal = world.own_goal_center();
         let threat = geometry::threat(
@@ -862,12 +983,13 @@ mod tests {
 
     #[test]
     fn contest_in_attacking_half_strafes_off_axis() {
-        // We hold the ball upfield with an opponent pressing from ahead (+x) → low
-        // threat → strafe laterally to keep the ball, a step of ESCAPE_STEP.
-        let carrier = Vector2::new(2000.0, 300.0);
+        // We hold the ball upfield (but OUTSIDE the strike-finish zone) with an
+        // opponent pressing from ahead (+x) → low threat, no finish on → strafe
+        // laterally to keep the ball, a step of ESCAPE_STEP.
+        let carrier = Vector2::new(500.0, 300.0);
         let ball = carrier;
         let own = vec![player(1, -4000.0, 0.0), player(2, carrier.x, carrier.y)];
-        let opp = vec![player(9, 2300.0, 300.0)];
+        let opp = vec![player(9, 800.0, 300.0)];
         let contest = Some(BallContest {
             ours: vec![PlayerId::new(2)],
             opp: vec![PlayerId::new(9)],
@@ -896,6 +1018,123 @@ mod tests {
             }
             other => panic!("expected a strafe Carry, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn contested_ball_in_strike_zone_finishes_first_time() {
+        // Same press, but in the attacking strike zone (within STRIKE_FINISH_RANGE of
+        // the opp goal): rather than strafe to keep a 50/50 we'd likely lose, strike
+        // the contested ball goalward on contact (the first-time finish).
+        let carrier = Vector2::new(2600.0, 200.0);
+        let ball = carrier;
+        let own = vec![player(1, -4000.0, 0.0), player(2, carrier.x, carrier.y)];
+        let opp = vec![player(9, 2850.0, 200.0)];
+        let contest = Some(BallContest {
+            ours: vec![PlayerId::new(2)],
+            opp: vec![PlayerId::new(9)],
+        });
+        let world = world_contest(ball, own, opp, contest);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        assert!(
+            matches!(
+                &plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Strike { .. },
+                    ..
+                }
+            ),
+            "a contested ball in the strike zone should finish first-time, got {:?}",
+            plan.waypoints[0]
+        );
+    }
+
+    #[test]
+    fn close_range_aimed_shot_is_a_first_time_strike() {
+        // An uncontested carrier with a clean aimed shot from INSIDE the
+        // strike-finish zone finishes first-time with a reflex Strike rather than
+        // orbiting to aim with Shoot (which dithers when the lane is marginally
+        // covered and never fires — the finishing-battery failure).
+        let carrier = Vector2::new(2700.0, 0.0); // ~1800mm from goal, in zone
+        let own = vec![player(1, -4000.0, 0.0), player(2, carrier.x, carrier.y)];
+        let opp = vec![player(9, -4000.0, 0.0)]; // far behind the ball → open mouth
+        let world = world_contest(carrier, own, opp, None);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        assert!(
+            matches!(
+                &plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Strike { .. },
+                    ..
+                }
+            ),
+            "a close-range aimed shot should be a first-time Strike, got {:?}",
+            plan.waypoints[0]
+        );
+    }
+
+    #[test]
+    fn long_range_aimed_shot_keeps_the_precise_shoot() {
+        // Same open mouth but from OUTSIDE the strike-finish zone (still in range):
+        // accuracy matters more than decisiveness, so keep the orbit-to-aim Shoot.
+        let carrier = Vector2::new(700.0, 0.0); // ~3800mm from goal: >zone, <range
+        let own = vec![player(1, -4000.0, 0.0), player(2, carrier.x, carrier.y)];
+        let opp = vec![player(9, -4000.0, 0.0)];
+        let world = world_contest(carrier, own, opp, None);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        assert!(
+            matches!(
+                &plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Shoot { .. },
+                    ..
+                }
+            ),
+            "a long-range aimed shot should keep the precise Shoot, got {:?}",
+            plan.waypoints[0]
+        );
+    }
+
+    #[test]
+    fn uncontested_loose_ball_in_zone_is_settled_not_struck() {
+        // A loose ball in the strike zone with NO opponent near it: we win it clean,
+        // so settle (Hold) and build — don't hack at goal.
+        let ball = Vector2::new(2600.0, 200.0);
+        let own = vec![player(1, -4000.0, 0.0), player(2, 2400.0, 200.0)];
+        let opp = vec![player(9, 3800.0, 0.0)]; // far from the ball
+        let world = world_contest(ball, own, opp, None);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(
+                &world,
+                &Possession::Loose,
+                Some(PlayerId::new(2)),
+                &inputs(),
+            )
+            .expect("should produce a plan");
+        assert!(
+            matches!(
+                &plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Hold { .. },
+                    ..
+                }
+            ),
+            "an uncontested loose ball should be settled, got {:?}",
+            plan.waypoints[0]
+        );
     }
 
     #[test]
@@ -1165,5 +1404,77 @@ mod tests {
             }
             other => panic!("expected a cross Pass waypoint, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn box_carrier_with_no_clean_shot_strikes() {
+        // Carrier on the ball in the box, the goal mouth crowded so no *clean*
+        // aimed-shot window survives the angle gate, and no forward outlet exists.
+        // Rather than recycle the ball backward, the carrier must release a
+        // one-touch Strike at the goal (the reflex finish that fires through a
+        // covered lane).
+        let ball = Vector2::new(3700.0, 0.0);
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, 3700.0, 0.0),  // carrier on the ball in the box
+        ];
+        // Three opponents fanned across the mouth: every open gap is too narrow to
+        // clear the angle gate, so the aimed Shoot is off the table.
+        let opp = vec![
+            player(7, 4200.0, -300.0),
+            player(8, 4200.0, 0.0),
+            player(9, 4200.0, 300.0),
+        ];
+        let world = world_contest(ball, own, opp, None);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        assert!(
+            matches!(
+                plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Strike { .. },
+                    ..
+                }
+            ),
+            "expected a Strike finish in the box, got {:?}",
+            plan.waypoints[0]
+        );
+    }
+
+    #[test]
+    fn deep_carrier_with_no_clean_shot_does_not_strike() {
+        // The same crowded-mouth situation but the carrier is in its own half,
+        // far out of shooting range: the strike-finish must NOT fire there (a give
+        // away that deep is a counter), it falls back to the normal recycle/carry.
+        let ball = Vector2::new(-1500.0, 0.0);
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -1500.0, 0.0), // carrier deep in our own half
+        ];
+        let opp = vec![
+            player(7, 4200.0, -300.0),
+            player(8, 4200.0, 0.0),
+            player(9, 4200.0, 300.0),
+        ];
+        let world = world_contest(ball, own, opp, None);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        assert!(
+            !matches!(
+                plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Strike { .. },
+                    ..
+                }
+            ),
+            "must not strike-finish from deep in our own half, got {:?}",
+            plan.waypoints[0]
+        );
     }
 }

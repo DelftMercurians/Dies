@@ -597,23 +597,46 @@ impl Formation {
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .map(|p| p.id);
-            // Slide the finisher into the open shooting pocket the defence leaves,
-            // rather than a static cutback point — converts the cutback the planner
-            // already targets into a real shot. Falls back to `base` if no window.
-            let pos = geometry::best_finishing_pocket(
-                base,
-                ball,
-                world.opp_goal_center().x,
-                world.goal_width(),
-                world.opp_players(),
-                opp_keeper,
-                config::SHOT_ROBOT_RADIUS,
-                config::SHOT_KEEPER_RADIUS,
-                config::BALL_RADIUS,
-                config::SHOT_KEEPER_BIAS,
-                half_wid,
-                config::BOX_RUNNER_Y_OFFSET,
-            );
+            // Rebound poacher: when a shot is already in flight at the opponent goal
+            // (ball moving goalward fast, in the attacking third), abandon the static
+            // cutback pocket and crash the goal mouth to pounce on a save/parry —
+            // "follow your shot in". In this low-event sim a keeper save is the most
+            // common way a finish dies with no second chance; a body on the loose
+            // ball converts the rebound into another shot. Transient (resolves in
+            // <1s as the ball clears/scores), position-only within the same Support
+            // slot — so it adds shots without role churn and never moves our keeper.
+            let opp_goal = world.opp_goal_center();
+            let shot_in_flight = world
+                .ball_velocity()
+                .map(|v| v.x > config::REBOUND_CRASH_BALL_SPEED)
+                .unwrap_or(false)
+                && ball.x > config::FINAL_THIRD_X
+                && (ball - opp_goal).norm() < config::SHOOT_RANGE;
+            let pos = if shot_in_flight {
+                let side = if ball.y > 0.0 { -1.0 } else { 1.0 };
+                Vector2::new(
+                    opp_goal.x - config::REBOUND_CRASH_DEPTH,
+                    side * config::REBOUND_CRASH_Y,
+                )
+            } else {
+                // Slide the finisher into the open shooting pocket the defence leaves,
+                // rather than a static cutback point — converts the cutback the planner
+                // already targets into a real shot. Falls back to `base` if no window.
+                geometry::best_finishing_pocket(
+                    base,
+                    ball,
+                    opp_goal.x,
+                    world.goal_width(),
+                    world.opp_players(),
+                    opp_keeper,
+                    config::SHOT_ROBOT_RADIUS,
+                    config::SHOT_KEEPER_RADIUS,
+                    config::BALL_RADIUS,
+                    config::SHOT_KEEPER_BIAS,
+                    half_wid,
+                    config::BOX_RUNNER_Y_OFFSET,
+                )
+            };
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Support,
@@ -981,6 +1004,53 @@ mod tests {
             .filter(|r| r.id.kind == RoleKind::Support)
             .count();
         assert_eq!(supports, config::SUPPORT_ATTACK_COUNT);
+    }
+
+    #[test]
+    fn box_runner_crashes_goal_mouth_when_a_shot_is_in_flight() {
+        // Same attacking setup, but the ball is now in flight at the opponent goal
+        // (fast, goalward, in the attacking third). The box-runner must abandon its
+        // front-of-box cutback pocket and crash the goal mouth to poach a rebound.
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, 1000.0, 800.0),
+            player(3, 1500.0, -600.0),
+        ];
+        let opp = vec![player(11, 3000.0, 200.0)];
+        let world = World::new(WorldSnapshot {
+            timestamp: 0.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: Vector2::new(2600.0, 600.0), // attacking third, +y
+                velocity: Vector2::new(3000.0, 0.0),   // fast, straight at goal
+                detected: true,
+            }),
+            own_players: own,
+            opp_players: opp,
+            game_state: GameState::Run,
+            us_operating: true,
+            our_keeper_id: Some(PlayerId::new(1)),
+            freekick_kicker: None,
+            possession: Possession::We(PlayerId::new(2)),
+            possession_stale: false,
+            ball_contest: None,
+        });
+        let f = Formation::new();
+        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4);
+        let runner = roles
+            .iter()
+            .find(|r| r.id.kind == RoleKind::Support && r.id.slot as usize == config::SUPPORT_COUNT)
+            .expect("a central box-runner slot");
+        // Crashed in close to the goal line (well inside the box front), not parked
+        // out at the cutback pocket.
+        let goal_x = world.opp_goal_center().x;
+        assert!(
+            runner.position.x > goal_x - config::REBOUND_CRASH_DEPTH - 1.0
+                && runner.position.x < goal_x,
+            "poacher should crash the goal mouth, got x={}",
+            runner.position.x
+        );
     }
 
     #[test]

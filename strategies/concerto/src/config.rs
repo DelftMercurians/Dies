@@ -83,6 +83,29 @@ pub const A_MAX: f64 = 3000.0;
 /// Maximum distance to goal from which we attempt a direct shot.
 pub const SHOOT_RANGE: f64 = 4000.0;
 
+/// Range within which a carrier that has the ball but no *clean* aimed-shot
+/// window will fall back to a one-touch Strike at the goal instead of recycling
+/// the ball backward. Tighter than [`SHOOT_RANGE`] so the reflex finish only
+/// fires from genuine shooting distance (final third / edge of the box), never as
+/// a long midfield hoof. The aimed Shoot's kick gate refuses a `lane_blocked`
+/// corridor and orbits forever from wide/covered angles; the Strike fires through
+/// it, turning stalled attacking possessions into shots.
+pub const STRIKE_FINISH_RANGE: f64 = 3600.0;
+
+/// First-time finish: a *contested* ball in the attacking strike zone (within
+/// [`STRIKE_FINISH_RANGE`] of the opponent goal) is struck goalward on contact
+/// rather than settled. Trying to settle a genuine 50/50 in the final third loses
+/// the ball and concedes a counter — the recurring finishing-battery failure
+/// (ball sits in the attacking third, the 50/50 is lost, the opponent counters
+/// the length of the field). A reflex strike-through forces a save/rebound/corner
+/// and pins the ball in the attacking third instead. The contest is "genuine" when
+/// an opponent is within [`FINISH_CONTEST_OPP_DIST`] of the ball AND our actor is
+/// within [`FINISH_CONTEST_OUR_DIST`] — i.e. a reflex strike is imminent, not a
+/// long traverse during which the picture changes. If we'd win the ball clean (no
+/// opponent near), we settle and build instead of hacking at goal.
+pub const FINISH_CONTEST_OPP_DIST: f64 = 600.0;
+pub const FINISH_CONTEST_OUR_DIST: f64 = 750.0;
+
 // ── Open-goal shot aiming ───────────────────────────────────────────────────
 // Instead of only ever shooting at the goal *centre* (which a keeper tracking the
 // bisector always covers), `geometry::best_shot` finds the widest open window in
@@ -319,6 +342,21 @@ pub const BOX_RUNNER_Y_OFFSET: f64 = 350.0;
 /// Importance of the box-runner role while attacking. At/above `IMP_SUPPORT_ATTACK`
 /// so the central outlet is reliably staffed when we commit forward.
 pub const IMP_STRIKER: f64 = 5.5;
+/// Rebound poacher: when a shot is in flight at the opponent goal (the ball is
+/// moving goalward at or above this speed in the attacking third), the box-runner
+/// stops holding its front-of-box cutback pocket and *crashes the goal mouth* to
+/// pounce on a keeper save / parry / rebound — "follow your shot in". A save in
+/// this low-event sim is the single most common way a finish dies without a second
+/// chance; putting a body on the loose ball turns it into another shot. Position
+/// only (same Support slot), so no role churn, and it never touches our keeper.
+pub const REBOUND_CRASH_BALL_SPEED: f64 = 1500.0;
+/// How far out from the opponent goal line (mm) the poacher waits for the rebound —
+/// inside the goal area, where parries and rebounds land, but not on the line.
+pub const REBOUND_CRASH_DEPTH: f64 = 700.0;
+/// Lateral offset (mm) of the poacher from goal centre while crashing, toward the
+/// side away from the incoming ball (the side the keeper, having shifted to cover
+/// the shot, tends to leave open). Small — it must still cover a central rebound.
+pub const REBOUND_CRASH_Y: f64 = 220.0;
 
 /// A ball contest with at least this much threat to our goal relieves one shadow
 /// (the contesting plan robot stands in for it). Keeps shadows off the snatcher.
@@ -422,6 +460,29 @@ pub const KEEPER_INTERCEPT_SPEED: f64 = 800.0;
 /// trajectory counts as "on target" for the shot-line intercept. Covers shots
 /// aimed just inside/around a post plus tracking noise.
 pub const KEEPER_INTERCEPT_MOUTH_MARGIN: f64 = 300.0;
+
+// Cross-shot lateral damping. A ball moving fast *across* the goal mouth (large
+// |vy|, not heading goalward — so the shot-line intercept above does NOT fire) is
+// a cross/switch, not a shot. Chasing the cone bisector to the ball's current
+// lateral position over-commits the keeper to the ball's side; a quick strike back
+// across the face then beats it into the open corner (the worked-ball-across-the-
+// box concession). When the ball is crossing the face fast in our defensive third,
+// pull the keeper's guard angle back toward square-on so it stays compact and set
+// for the shot from either side instead of following the cross all the way. This
+// keeps the keeper MORE central/home — it never advances or chases off the line —
+// so it is strictly safer than the bisector. Damping scales with lateral ball
+// speed (a slow ball dribbled across is tracked normally) and is capped well below
+// 1 so the keeper still shades to the ball's side, just less far.
+/// Lateral ball speed (mm/s) below which no cross damping applies (a slow ball is
+/// tracked normally); and the speed at which damping is full.
+pub const KEEPER_CROSS_DAMP_SPEED_LO: f64 = 1000.0;
+pub const KEEPER_CROSS_DAMP_SPEED_HI: f64 = 3000.0;
+/// Maximum fraction the guard angle is pulled back toward square-on for a full-speed
+/// cross. Capped below 1 so the keeper still shades toward the ball's side.
+pub const KEEPER_CROSS_DAMP_MAX: f64 = 0.55;
+/// Only damp when the ball is this deep in our half (rel-x, negative = our side):
+/// a cross at midfield is no immediate shot threat. ~ -1500 mm = our defensive third.
+pub const KEEPER_CROSS_DAMP_BALL_X: f64 = -1500.0;
 
 // Ball-clearing behaviour.
 /// Clear only when the ball is essentially stopped (mm/s).
