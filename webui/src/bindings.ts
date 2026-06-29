@@ -266,6 +266,18 @@ export interface BaseStationInfo {
 	/** Online flag per radio module. */
 	radios_online: boolean[];
 	max_robots: number;
+	/** Radio command packets the client transmits per second (1 s window). */
+	tx_hz?: number;
+	/**
+	 * Robot feedback frames the client receives per second, summed over all
+	 * robots (1 s window).
+	 */
+	rx_hz?: number;
+	/**
+	 * Actual frequency of the client's IO loop (target is 50 Hz); a value well
+	 * below target means the client can't keep up with the serial link.
+	 */
+	loop_hz?: number;
 }
 
 /** The status of a sub-system on the robot */

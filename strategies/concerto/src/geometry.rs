@@ -705,6 +705,19 @@ pub fn lane_openness(from: Vector2, to: Vector2, opponents: &[PlayerState], corr
     smoothstep(0.0, corridor, min_perp)
 }
 
+/// The point a radial `standoff` in front of our goal along the ball→goal-centre
+/// ray. Capped at 0.8·(ball distance) so it never sits behind a ball closer than
+/// the standoff. This is the centre of the shadow wall (see `shadow_arc`) and is
+/// reused to place the anchor at its own, shorter standoff.
+pub fn goal_ray_point(ball: Vector2, own_goal: Vector2, standoff: f64) -> Vector2 {
+    let to_ball = ball - own_goal;
+    let dist = to_ball.norm();
+    let u = to_ball
+        .try_normalize(1e-6)
+        .unwrap_or_else(|| Vector2::new(1.0, 0.0));
+    own_goal + u * standoff.min(dist * 0.8)
+}
+
 /// Place `k` shadow defenders as a contiguous wall centred on the direct
 /// ball→goal-centre line, on a standoff line in front of our goal.
 ///

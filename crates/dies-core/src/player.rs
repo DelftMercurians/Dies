@@ -490,6 +490,14 @@ pub struct BaseStationInfo {
     /// Online flag per radio module.
     pub radios_online: Vec<bool>,
     pub max_robots: u8,
+    /// Radio command packets the client transmits per second (1 s window).
+    pub tx_hz: Option<f32>,
+    /// Robot feedback frames the client receives per second, summed over all
+    /// robots (1 s window).
+    pub rx_hz: Option<f32>,
+    /// Actual frequency of the client's IO loop (target is 50 Hz); a value well
+    /// below target means the client can't keep up with the serial link.
+    pub loop_hz: Option<f32>,
 }
 
 impl BaseStationInfo {
@@ -505,6 +513,9 @@ impl BaseStationInfo {
             num_radios: 0,
             radios_online: Vec::new(),
             max_robots: 0,
+            tx_hz: None,
+            rx_hz: None,
+            loop_hz: None,
         }
     }
 }

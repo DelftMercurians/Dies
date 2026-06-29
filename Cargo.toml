@@ -31,3 +31,10 @@ opt-level = 1
 
 [profile.test]
 opt-level = 1
+
+# Use the local glue checkout so the extra API exposed for the raw-Serial
+# basestation client (BaseStation/Robot/Debug, broadcast/base-station IDs,
+# pub serial field) is picked up. Cut a new glue tag and bump the dep + drop
+# this patch before committing/sharing.
+[patch."https://github.com/DelftMercurians/glue.git"]
+glue = { path = "../glue" }

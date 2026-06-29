@@ -944,6 +944,29 @@ const TestBenchModal: FC<{
                     </span>
                   ))}
                 </span>
+                {base.tx_hz !== undefined && (
+                  <span className="font-mono">
+                    tx <span className="text-text-std">{Math.round(base.tx_hz)}</span> · rx{" "}
+                    <span className="text-text-std">
+                      {Math.round(base.rx_hz ?? 0)}
+                    </span>{" "}
+                    · loop{" "}
+                    <span
+                      className={
+                        base.loop_hz === undefined
+                          ? "text-text-muted"
+                          : base.loop_hz >= 45
+                            ? "text-accent-green"
+                            : base.loop_hz >= 25
+                              ? "text-accent-amber"
+                              : "text-accent-red"
+                      }
+                    >
+                      {Math.round(base.loop_hz ?? 0)}
+                    </span>{" "}
+                    Hz
+                  </span>
+                )}
               </span>
             ) : (
               <span className="text-sm font-normal text-accent-red">

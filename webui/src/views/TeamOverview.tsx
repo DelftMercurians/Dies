@@ -36,6 +36,7 @@ import { Bell, BellOff } from "lucide-react";
 import PatternIcon from "./PatternIcon";
 import Sparkline from "./Sparkline";
 import PlanSection from "./PlanSection";
+import BasestationBar from "./BasestationBar";
 import {
   collectTeamPasses,
   PassDiag,
@@ -169,6 +170,7 @@ const TeamOverview: FC<TeamOverviewProps> = ({
 
   return (
     <div className={cn("flex flex-col bg-bg-surface", className)}>
+      <BasestationBar />
       <PlanSection />
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="flex items-center justify-between px-2 py-1.5 text-[11px] uppercase tracking-wider text-text-dim border-b border-border-subtle">

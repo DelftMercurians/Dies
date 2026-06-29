@@ -30,6 +30,21 @@ pub const PIVOT_Y_MAX: f64 = 1800.0;
 /// body takes it; it never outbids a shadow/mark and pulls a defender out of shape
 /// (the defensive cost that sank the more prominent-pivot variants).
 pub const IMP_PIVOT: f64 = 3.0;
+/// ── Rest defense (lever 2: don't over-commit on the counter) ────────────────
+/// While attacking, all field robots but the keeper + box anchor pile forward
+/// (2 wide support + box-runner + pivot), so a turnover leaves the goal to the
+/// keeper + anchor alone and the wing wall has nobody recoverable to staff it.
+/// The Balance role keeps ONE body home as rest defense: it is placed on the
+/// ball→own-goal ray this far (mm) in front of our goal — own-half/midfield, on
+/// the most likely counter lane — so on turnover it is already there to take a
+/// wing of the wall while the deep attackers recover.
+pub const BALANCE_STANDOFF: f64 = 3500.0;
+/// Importance of the rest-defense Balance role while attacking. Set above the
+/// forward block (IMP_SUPPORT_ATTACK = 5.0, IMP_STRIKER = 5.5) so it wins exactly
+/// one body — displacing the *pivot* (IMP_PIVOT = 3.0, the least-critical forward
+/// outlet), not a support — but below the box anchor (8.0 × 0.8 = 6.4) and Mark,
+/// so it never outranks the genuine last line. Only emitted when `attacking`.
+pub const IMP_BALANCE: f64 = 6.0;
 /// A recycle outlet must be at least this far from the carrier (a real switch of
 /// play, not a tap) and its lane this open, to be worth laying the ball back to.
 pub const RECYCLE_MIN_DIST: f64 = 1200.0;
@@ -211,7 +226,12 @@ pub const SHADOW_MAX: usize = 3;
 /// The central shadow (on the ball→goal ray) keeps full importance; each step out
 /// toward a wing multiplies by this, so at low threat only the centre is staffed
 /// and the wings light up continuously as threat rises. No count step → no blink.
-pub const SHADOW_STAGGER: f64 = 0.6;
+/// Lever 1: raised 0.6→0.8 so the wing wall fades less toward the flanks — at
+/// moderate threat the wings (which cover the open *post angles* a counter shoots
+/// into) now light up and outbid mark/capture for the nearest bodies, instead of
+/// only the central anchor being staffed. Goal openness is angular, so lateral
+/// wall coverage (not a deeper central body) is what shrinks the open angle.
+pub const SHADOW_STAGGER: f64 = 0.8;
 /// How far in front of our goal the shadow line sits.
 pub const SHADOW_STANDOFF: f64 = 1500.0;
 /// Lateral spacing between adjacent shadows in the goal-coverage wall. Kept just
@@ -219,6 +239,21 @@ pub const SHADOW_STANDOFF: f64 = 1500.0;
 /// the wall is built centre-out on the direct ball→goal line, so an even count
 /// straddles the centre rather than splitting around it.
 pub const SHADOW_SPACING: f64 = 170.0;
+/// The central shadow (on the ball→goal ray) is promoted to an "anchor": a sticky
+/// last-line field defender, distinct from the keeper at the mouth. It is pulled
+/// in from the wall standoff to the penalty-area front edge plus this margin (mm)
+/// so it hugs the box — layering keeper(~400) → anchor(box edge) → wings(1500).
+/// Only applied in open play; on set-piece defense the centre stays in the
+/// contiguous wall (leg-2 corner-free-kick fix).
+pub const ANCHOR_BOX_MARGIN: f64 = 150.0;
+/// Importance floor (on the threat-scaling factor, normally 0.5..1.0) for the
+/// anchor. Its importance never collapses with low ball-threat the way the wing
+/// wall does, so it stays staffed above the striker/support roles even while we
+/// commit forward — guaranteeing one body at the box. `IMP_SHADOW_BASE * this`
+/// (8.0 × 0.8 = 6.4) sits above IMP_STRIKER/IMP_SUPPORT_ATTACK/IMP_MARK_BASE but
+/// below CAPTURE/IMP_SUPPRESS, so a genuine ball-winner or a plan robot already
+/// contesting at the box can still pull it.
+pub const ANCHOR_THREAT_FLOOR: f64 = 0.8;
 /// Marking standoff in front of the marked opponent (toward our goal).
 pub const MARK_STANDOFF: f64 = 400.0;
 /// Markers never cross to the opponent half: their target x is capped here
@@ -289,7 +324,11 @@ pub const IMP_STRIKER: f64 = 5.5;
 /// (the contesting plan robot stands in for it). Keeps shadows off the snatcher.
 pub const SHADOW_RELIEF_THREAT: f64 = 0.4;
 /// Importance ladder (points; converted to seconds via SEC_PER_IMPORTANCE).
-pub const IMP_SHADOW_BASE: f64 = 8.0;
+/// Lever 1: raised 8.0→10.0 to give the threat-scaled wing wall enough headroom
+/// to outbid Mark (≤6) for the nearest bodies when the goal is threatened, so the
+/// posts get covered on a counter. Also lifts the anchor floor (×0.8 → 8.0); both
+/// stay below Capture (13), so a genuine ball-winner can still pull them.
+pub const IMP_SHADOW_BASE: f64 = 10.0;
 pub const IMP_MARK_BASE: f64 = 6.0;
 pub const IMP_SUPPORT: f64 = 3.0;
 /// Support importance while attacking (ball in the opponent half, own goal safe).

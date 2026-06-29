@@ -43,6 +43,11 @@ enum RoleKind {
     /// Deep recycle pivot behind the ball, ball-side: the safe outlet the carrier
     /// lays the ball back to when nothing is on forward. Never in the box.
     Pivot,
+    /// Rest-defense body kept home while attacking, on the ball→own-goal ray in our
+    /// own half. Holds one robot back so a turnover doesn't leave the goal to the
+    /// keeper + box anchor alone (it recovers into a wing of the wall). See the
+    /// generator (gated on `attacking`).
+    Balance,
     Spread,
 }
 
@@ -53,6 +58,7 @@ fn role_name(kind: RoleKind) -> &'static str {
         RoleKind::Mark => "mark",
         RoleKind::Support => "support",
         RoleKind::Pivot => "pivot",
+        RoleKind::Balance => "balance",
         RoleKind::Spread => "spread",
     }
 }
@@ -386,19 +392,41 @@ impl Formation {
             config::SHADOW_SPACING,
         );
         let shadow_center = (config::SHADOW_MAX as f64 - 1.0) / 2.0;
+        // The central shadow on the ball→goal ray is promoted to an "anchor": a
+        // sticky last-line field defender (distinct from the keeper at the mouth).
+        // In open play it is (a) pulled in to the penalty-area edge so a body
+        // always hugs the box, and (b) floored in importance so it doesn't
+        // collapse with ball_threat the way the wing wall does — otherwise when we
+        // commit forward (ball_threat→0) the whole wall drops below the
+        // striker/support roles and the box is left to the keeper alone. On
+        // set-piece defense the centre stays in the contiguous wall (leg-2 fix).
+        let pen_depth = world.field().map(|f| f.penalty_area_depth).unwrap_or(1000.0);
+        let anchor_standoff = pen_depth + config::ANCHOR_BOX_MARGIN;
         for (i, pos) in positions.into_iter().enumerate() {
+            let off_center = (i as f64 - shadow_center).abs();
+            let is_anchor = off_center < 1e-9 && !setpiece_defense;
             let stagger = if setpiece_defense {
                 1.0
             } else {
-                config::SHADOW_STAGGER.powf((i as f64 - shadow_center).abs())
+                config::SHADOW_STAGGER.powf(off_center)
+            };
+            let threat_factor = if is_anchor {
+                (0.5 + 0.5 * ball_threat).max(config::ANCHOR_THREAT_FLOOR)
+            } else {
+                0.5 + 0.5 * ball_threat
+            };
+            let position = if is_anchor {
+                geometry::goal_ray_point(ball, own_goal, anchor_standoff)
+            } else {
+                pos
             };
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Shadow,
                     slot: i as u16,
                 },
-                position: pos,
-                importance: config::IMP_SHADOW_BASE * (0.5 + 0.5 * ball_threat) * stagger,
+                position,
+                importance: config::IMP_SHADOW_BASE * threat_factor * stagger,
                 face: ball,
             });
         }
@@ -615,6 +643,28 @@ impl Formation {
                 position: Vector2::new(px, py),
                 importance: config::IMP_PIVOT,
                 face: world.opp_goal_center(),
+            });
+        }
+
+        // 3d. Rest defense — keep ONE body home while we commit forward, so a
+        // turnover doesn't leave the goal to the keeper + box anchor alone (the
+        // counter-attack that opens the wall's flanks). Placed on the ball→own-goal
+        // ray in our own half — the most likely counter lane — at a recoverable
+        // depth, so on turnover it is already there to take a wing of the wall while
+        // the deep attackers recover. Importance (IMP_BALANCE) sits above the
+        // forward block but below the anchor, so it displaces the pivot (the least
+        // critical forward outlet), not a supporter — netting a 3-back/3-forward
+        // shape instead of 2-back/4-forward. Only while attacking (same gate as the
+        // pivot it replaces); when defending, the 3-wide wall already lights up.
+        if attacking {
+            roles.push(Role {
+                id: RoleId {
+                    kind: RoleKind::Balance,
+                    slot: 0,
+                },
+                position: geometry::goal_ray_point(ball, own_goal, config::BALANCE_STANDOFF),
+                importance: config::IMP_BALANCE,
+                face: ball,
             });
         }
 
