@@ -320,22 +320,18 @@ impl PlayerController {
         let add_vel_factor = if input.bounds.is_some() {
             1.0
         } else if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, maxdist) {
-                let mut actual_dist = 0.0;
-                for margin in (1..=(maxdist as i32)).step_by(10) {
-                    if self.is_in_prohibited_zone(
-                        state.position,
-                        geom,
-                        avoid_goal_area,
-                        margin as f64,
-                    ) {
-                        actual_dist = margin as f64;
-                        break;
-                    }
+            let mut actual_dist = 0.0;
+            for margin in (1..=(maxdist as i32)).step_by(10) {
+                if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, margin as f64)
+                {
+                    actual_dist = margin as f64;
+                    break;
                 }
-                ((actual_dist - 80.0) / (maxdist - 80.0)).max(0.0)
-            } else {
-                1.0
-            };
+            }
+            ((actual_dist - 80.0) / (maxdist - 80.0)).max(0.0)
+        } else {
+            1.0
+        };
 
         if !is_manual_override {
             self.target_velocity_global += add_vel * add_vel_factor;

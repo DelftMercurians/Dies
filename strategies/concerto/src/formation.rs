@@ -400,7 +400,10 @@ impl Formation {
         // commit forward (ball_threat→0) the whole wall drops below the
         // striker/support roles and the box is left to the keeper alone. On
         // set-piece defense the centre stays in the contiguous wall (leg-2 fix).
-        let pen_depth = world.field().map(|f| f.penalty_area_depth).unwrap_or(1000.0);
+        let pen_depth = world
+            .field()
+            .map(|f| f.penalty_area_depth)
+            .unwrap_or(1000.0);
         let anchor_standoff = pen_depth + config::ANCHOR_BOX_MARGIN;
         for (i, pos) in positions.into_iter().enumerate() {
             let off_center = (i as f64 - shadow_center).abs();
@@ -511,10 +514,10 @@ impl Formation {
             .clamp(0.0, 1.0);
         let af = af_pos * af_threat;
         let attacking = af >= 0.5; // positioning layout only; existence/weight are continuous
-        // Always two wide supporters; the central box-runner (below) is the third
-        // forward body, faded in by `af`. Count is fixed → no role-set step. On
-        // set-piece defense support importance is zeroed (leg-2: pull every body off
-        // offence onto the goal wall) — the importance-space form of `support = 0`.
+                                   // Always two wide supporters; the central box-runner (below) is the third
+                                   // forward body, faded in by `af`. Count is fixed → no role-set step. On
+                                   // set-piece defense support importance is zeroed (leg-2: pull every body off
+                                   // offence onto the goal wall) — the importance-space form of `support = 0`.
         let support_count = config::SUPPORT_COUNT;
         let support_imp = if setpiece_defense {
             0.0
@@ -628,13 +631,9 @@ impl Formation {
         // not invite the defence to collapse the shooting zone the way an advanced
         // central body does. Only while attacking (ball advanced, our goal safe).
         if attacking {
-            let y_mag = ball
-                .y
-                .abs()
-                .clamp(config::PIVOT_Y_MIN, config::PIVOT_Y_MAX);
+            let y_mag = ball.y.abs().clamp(config::PIVOT_Y_MIN, config::PIVOT_Y_MAX);
             let py = if ball.y >= 0.0 { y_mag } else { -y_mag };
-            let px =
-                (ball.x - config::PIVOT_SETBACK).clamp(-half_len + 400.0, half_len - 400.0);
+            let px = (ball.x - config::PIVOT_SETBACK).clamp(-half_len + 400.0, half_len - 400.0);
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Pivot,

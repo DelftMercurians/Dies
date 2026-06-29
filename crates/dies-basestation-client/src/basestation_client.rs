@@ -209,8 +209,10 @@ impl BasestationHandle {
                                     .unwrap_or_else(|| cmd.id.as_u32())
                                     as u8;
                                 let glue_cmd: glue::Radio_Command = cmd.into();
-                                commands_by_robot
-                                    .insert(id, (Instant::now(), GlueRadioCommand::Local(glue_cmd)));
+                                commands_by_robot.insert(
+                                    id,
+                                    (Instant::now(), GlueRadioCommand::Local(glue_cmd)),
+                                );
                             }
                             PlayerCmd::GlobalMove(cmd) => {
                                 let id = id_map

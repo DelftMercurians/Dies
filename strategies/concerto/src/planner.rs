@@ -651,8 +651,12 @@ impl Planner {
             .filter(|p| p.position.x > 0.0)
             .filter(|p| (p.position - carrier_pos).norm() > config::RECYCLE_MIN_DIST)
             .filter(|p| {
-                let open =
-                    geometry::lane_openness(carrier_pos, p.position, opps, config::KICK_LANE_CORRIDOR);
+                let open = geometry::lane_openness(
+                    carrier_pos,
+                    p.position,
+                    opps,
+                    config::KICK_LANE_CORRIDOR,
+                );
                 let clear = geometry::receiver_clearance(p.position, opps);
                 open >= config::RECYCLE_MIN_OPENNESS && clear >= 0.5
             })
@@ -660,8 +664,12 @@ impl Planner {
             // receive point (a lay-back we're confident actually completes).
             .max_by(|a, b| {
                 let score = |p: &PlayerState| {
-                    geometry::lane_openness(carrier_pos, p.position, opps, config::KICK_LANE_CORRIDOR)
-                        + geometry::receiver_clearance(p.position, opps)
+                    geometry::lane_openness(
+                        carrier_pos,
+                        p.position,
+                        opps,
+                        config::KICK_LANE_CORRIDOR,
+                    ) + geometry::receiver_clearance(p.position, opps)
                 };
                 score(a)
                     .partial_cmp(&score(b))
@@ -816,7 +824,8 @@ mod tests {
                 < 1e-6
         );
         // Halfway between near and far → midpoint radius, and monotone shrinking.
-        let mid = keeper_charge_radius((config::KEEPER_CHARGE_NEAR + config::KEEPER_CHARGE_FAR) / 2.0);
+        let mid =
+            keeper_charge_radius((config::KEEPER_CHARGE_NEAR + config::KEEPER_CHARGE_FAR) / 2.0);
         let expected = (config::SHOT_KEEPER_RADIUS + config::SHOT_ROBOT_RADIUS) / 2.0;
         assert!((mid - expected).abs() < 1e-6);
         assert!(mid < config::SHOT_KEEPER_RADIUS && mid > config::SHOT_ROBOT_RADIUS);

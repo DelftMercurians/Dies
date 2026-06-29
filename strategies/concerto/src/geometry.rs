@@ -1325,17 +1325,7 @@ mod tests {
         let base = Vector2::new(3500.0, -400.0);
         let opps = vec![opp(5, 3500.0, -400.0)]; // a defender sitting on `base`
         let pos = best_finishing_pocket(
-            base,
-            ball,
-            GOAL_X,
-            GOAL_W,
-            &opps,
-            None,
-            RR,
-            KR,
-            BR,
-            BIAS,
-            3000.0, // half_wid
+            base, ball, GOAL_X, GOAL_W, &opps, None, RR, KR, BR, BIAS, 3000.0, // half_wid
             400.0,  // y_offset
         );
         assert!(
