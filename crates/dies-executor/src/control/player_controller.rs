@@ -308,8 +308,18 @@ impl PlayerController {
             return;
         };
         let maxdist = 400.0;
-        let add_vel_factor =
-            if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, maxdist) {
+        // A skill that supplies its own `MotionBounds` (the keeper's guard
+        // `ArcZone`) manages its own no-overshoot containment via the
+        // `clamp_velocity` envelope below, so the generic prohibited-zone damping
+        // must NOT also apply. Its *unconditional* field-boundary branch otherwise
+        // zeros the keeper's velocity whenever it guards near its own goal line
+        // (within `maxdist` of the back boundary) — freezing it at a post, unable
+        // to track back when the ball switches flanks (regression test +
+        // log 15-44-27). The goal-area branch is already exempt for the keeper
+        // (`avoid_goal_area = false`), but the boundary branch was not.
+        let add_vel_factor = if input.bounds.is_some() {
+            1.0
+        } else if self.is_in_prohibited_zone(state.position, geom, avoid_goal_area, maxdist) {
                 let mut actual_dist = 0.0;
                 for margin in (1..=(maxdist as i32)).step_by(10) {
                     if self.is_in_prohibited_zone(
@@ -563,5 +573,94 @@ fn cap_vec(v: Vector2, cap: f64) -> Vector2 {
         v * (cap / n)
     } else {
         v
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dies_core::FieldGeometry;
+
+    /// Mirror of the `add_vel_factor` computation in `update` (the per-robot
+    /// prohibited-zone velocity damping), including the fix: a skill supplying its
+    /// own `MotionBounds` (`has_bounds`) is exempt — it manages its own
+    /// containment via `clamp_velocity`.
+    fn add_vel_factor(
+        pc: &PlayerController,
+        pos: Vector2,
+        geom: &FieldGeometry,
+        avoid_goal_area: bool,
+        has_bounds: bool,
+    ) -> f64 {
+        let maxdist = 400.0;
+        if has_bounds {
+            1.0
+        } else if pc.is_in_prohibited_zone(pos, geom, avoid_goal_area, maxdist) {
+            let mut actual_dist = 0.0;
+            for margin in (1..=(maxdist as i32)).step_by(10) {
+                if pc.is_in_prohibited_zone(pos, geom, avoid_goal_area, margin as f64) {
+                    actual_dist = margin as f64;
+                    break;
+                }
+            }
+            ((actual_dist - 80.0) / (maxdist - 80.0)).max(0.0)
+        } else {
+            1.0
+        }
+    }
+
+    /// Repro for the 2026-06-29 conceded goal (log 15-44-27): the blue keeper
+    /// froze at its −y post (≈ −4408, −389) and never tracked back to the +y side
+    /// when the ball switched flanks, conceding the open +y half of the goal.
+    ///
+    /// Root cause: the keeper is correctly exempt from *goal-area* avoidance
+    /// (`avoid_goal_area = false` for `RoleType::Goalkeeper`), but the **field
+    /// boundary** branch of `is_in_prohibited_zone` runs unconditionally. The back
+    /// boundary sits at `−(field_length/2 + boundary_width) = −4800`. A keeper
+    /// hugging a post sits at x ≈ −4400.. −4431 — within `maxdist = 400 mm` of that
+    /// boundary — so the *un-fixed* velocity-damping factor collapses to 0 and zeros
+    /// its commanded velocity, a permanent freeze.
+    ///
+    /// Fix: the keeper supplies its own `MotionBounds` (`has_bounds = true`), which
+    /// exempts it from the generic damping — its `ArcZone` `clamp_velocity` already
+    /// bounds it. This test asserts the keeper now moves at the post, while a robot
+    /// *without* bounds is still damped there (the boundary brake is unchanged for
+    /// everyone else).
+    #[test]
+    fn keeper_with_bounds_is_not_frozen_at_the_post() {
+        let settings = ExecutorSettings::default();
+        let pc = PlayerController::new(PlayerId::new(1), &settings);
+        let geom = FieldGeometry::default(); // 9000×6000, boundary 300 → back edge −4800
+
+        // Keeper exempt from goal-area avoidance, as the team controller sets it.
+        let avoid = false;
+
+        // Post-hugging guard position (team-relative, own goal at −4500): the exact
+        // spot the keeper was stuck at in the log.
+        let post = Vector2::new(-4408.0, -389.0);
+        // Mid-arc guard position (straight out in front of goal).
+        let center = Vector2::new(-4100.0, 0.0);
+
+        // FIXED: the keeper (has its own bounds) is no longer damped at the post —
+        // full velocity, so it can track back across the arc.
+        assert_eq!(
+            add_vel_factor(&pc, post, &geom, avoid, /*has_bounds=*/ true),
+            1.0,
+            "keeper with bounds must NOT be frozen at the post"
+        );
+
+        // Regression guard: WITHOUT bounds the post is still damped to 0 — the
+        // boundary brake itself is unchanged (this documents the pre-fix freeze and
+        // that non-keeper robots still get the keepout).
+        assert!(pc.is_in_prohibited_zone(post, &geom, avoid, 400.0));
+        assert_eq!(
+            add_vel_factor(&pc, post, &geom, avoid, /*has_bounds=*/ false),
+            0.0,
+            "a robot without its own bounds is still braked at the boundary"
+        );
+
+        // Mid-arc is >400mm from the boundary: free either way.
+        assert!(!pc.is_in_prohibited_zone(center, &geom, avoid, 400.0));
+        assert_eq!(add_vel_factor(&pc, center, &geom, avoid, false), 1.0);
     }
 }
