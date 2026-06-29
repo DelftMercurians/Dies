@@ -551,7 +551,38 @@ impl Formation {
             // Bias to the side away from the ball; default to +y when the ball is
             // dead-central so the choice is still deterministic.
             let away = if ball.y > 0.0 { -1.0 } else { 1.0 };
-            let pos = Vector2::new(front_x, away * config::BOX_RUNNER_Y_OFFSET);
+            let base = Vector2::new(front_x, away * config::BOX_RUNNER_Y_OFFSET);
+            // Opponent keeper ≈ the opponent nearest the goal we attack; passed so
+            // the pocket search respects the keeper's wider blocking shadow (matches
+            // the planner's shot model). Degrades gracefully if none is near.
+            let opp_keeper = world
+                .opp_players()
+                .iter()
+                .min_by(|a, b| {
+                    let goal = world.opp_goal_center();
+                    (a.position - goal)
+                        .norm()
+                        .partial_cmp(&(b.position - goal).norm())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|p| p.id);
+            // Slide the finisher into the open shooting pocket the defence leaves,
+            // rather than a static cutback point — converts the cutback the planner
+            // already targets into a real shot. Falls back to `base` if no window.
+            let pos = geometry::best_finishing_pocket(
+                base,
+                ball,
+                world.opp_goal_center().x,
+                world.goal_width(),
+                world.opp_players(),
+                opp_keeper,
+                config::SHOT_ROBOT_RADIUS,
+                config::SHOT_KEEPER_RADIUS,
+                config::BALL_RADIUS,
+                config::SHOT_KEEPER_BIAS,
+                half_wid,
+                config::BOX_RUNNER_Y_OFFSET,
+            );
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Support,

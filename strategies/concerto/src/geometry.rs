@@ -226,6 +226,76 @@ pub fn best_shot(
     })
 }
 
+/// Pick the most dangerous *open* finishing pocket for the central box-runner.
+///
+/// The box-runner is the advanced central body the planner cuts the ball back to.
+/// Standing it on a single fixed point in front of the box means it sits wherever
+/// the formation puts it even when the defence is covering that exact spot — a
+/// cutback to a finisher with no shooting window is wasted. Instead, sample a small
+/// fan of candidate pockets across the front of the opponent box on the side away
+/// from the ball (so the cutback still cuts *across* the keeper) and pick the one
+/// with the widest *open* goal-mouth subtense — the keeper-aware shot window from
+/// [`best_shot`] — weighted by how uncontested the spot is ([`receiver_clearance`]).
+///
+/// Net effect: our central finisher drifts into the shooting lane the defence
+/// leaves open instead of a static point, turning the cutback the planner already
+/// targets into a real shot. Candidates never go closer to goal than `base` (which
+/// already sits just outside the penalty area), so it cannot wander into the box
+/// keepout. Returns `base` unchanged when no candidate offers a real window, so it
+/// degrades gracefully to the old fixed behaviour.
+#[allow(clippy::too_many_arguments)]
+pub fn best_finishing_pocket(
+    base: Vector2,
+    ball: Vector2,
+    opp_goal_x: f64,
+    goal_width: f64,
+    opponents: &[PlayerState],
+    keeper_id: Option<PlayerId>,
+    robot_radius: f64,
+    keeper_radius: f64,
+    ball_radius: f64,
+    keeper_bias: f64,
+    half_wid: f64,
+    y_offset: f64,
+) -> Vector2 {
+    // Away from the ball so the cutback crosses the keeper; deterministic when the
+    // ball is dead-central (matches the box-runner's own default in formation.rs).
+    let away = if ball.y > 0.0 { -1.0 } else { 1.0 };
+    // Depths: at the box front (`base.x`) and a step back from it — never closer to
+    // goal, so we stay clear of the penalty-area keepout.
+    let depths = [base.x, base.x - 300.0];
+    // Lateral fan on the away side, plus a tucked-in option toward centre.
+    let y_mags = [y_offset * 0.4, y_offset, y_offset * 1.7];
+    let mut best: Option<(Vector2, f64)> = None;
+    for &dx in &depths {
+        for &ym in &y_mags {
+            let cy = (away * ym).clamp(-half_wid + 400.0, half_wid - 400.0);
+            let cand = Vector2::new(dx, cy);
+            let angle = best_shot(
+                cand,
+                opp_goal_x,
+                goal_width,
+                opponents,
+                keeper_id,
+                robot_radius,
+                keeper_radius,
+                ball_radius,
+                keeper_bias,
+            )
+            .map(|s| s.angle)
+            .unwrap_or(0.0);
+            if angle <= 0.0 {
+                continue;
+            }
+            let score = angle * receiver_clearance(cand, opponents);
+            if best.map(|(_, s)| score > s).unwrap_or(true) {
+                best = Some((cand, score));
+            }
+        }
+    }
+    best.map(|(p, _)| p).unwrap_or(base)
+}
+
 /// Find the best area in the opponent half to pass the ball to.
 ///
 /// Samples a grid of candidate positions in the attacking half (x > 0) and scores
@@ -1230,6 +1300,63 @@ mod tests {
             .filter(|s| s.angle >= crate::config::SHOT_MIN_ANGLE)
             .is_none(),
             "a packed mouth should offer no viable shot window"
+        );
+    }
+
+    #[test]
+    fn finishing_pocket_slides_off_a_covered_base() {
+        // Ball on +y → finisher works the -y side. A defender sits exactly on the
+        // default cutback point, killing its receiver clearance; the pocket search
+        // must relocate the finisher to a still-open, shootable spot.
+        let ball = Vector2::new(3000.0, 500.0);
+        let base = Vector2::new(3500.0, -400.0);
+        let opps = vec![opp(5, 3500.0, -400.0)]; // a defender sitting on `base`
+        let pos = best_finishing_pocket(
+            base,
+            ball,
+            GOAL_X,
+            GOAL_W,
+            &opps,
+            None,
+            RR,
+            KR,
+            BR,
+            BIAS,
+            3000.0, // half_wid
+            400.0,  // y_offset
+        );
+        assert!(
+            (pos - base).norm() > 1.0,
+            "a marker on the base point should push the finisher off it, got {pos:?}"
+        );
+        assert!(
+            best_shot(pos, GOAL_X, GOAL_W, &opps, None, RR, KR, BR, BIAS)
+                .map(|s| s.angle)
+                .unwrap_or(0.0)
+                > 0.0,
+            "the chosen pocket must still have an open shooting window, got {pos:?}"
+        );
+        assert!(
+            receiver_clearance(pos, &opps) > 0.0,
+            "the chosen pocket must be clear of the marker, got {pos:?}"
+        );
+    }
+
+    #[test]
+    fn finishing_pocket_degrades_to_base_with_no_window() {
+        // Mouth fully walled off → no candidate has a shot window → return `base`
+        // unchanged (never worse than the old static behaviour).
+        let ball = Vector2::new(3000.0, 500.0);
+        let base = Vector2::new(3500.0, -400.0);
+        let wall: Vec<PlayerState> = (0..7)
+            .map(|i| opp(i, 4300.0, -600.0 + i as f64 * 200.0))
+            .collect();
+        let pos = best_finishing_pocket(
+            base, ball, GOAL_X, GOAL_W, &wall, None, RR, KR, BR, BIAS, 3000.0, 400.0,
+        );
+        assert!(
+            (pos - base).norm() < 1.0,
+            "with no shooting window the finisher should stay on base, got {pos:?}"
         );
     }
 }

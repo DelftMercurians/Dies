@@ -46,6 +46,9 @@ pub struct ConcertoStrategy {
     /// Ball position when we gained possession (the dribble contact point), for the
     /// excessive-dribbling carry cap. Cleared whenever we don't hold the ball.
     dribble_origin: Option<Vector2>,
+    /// World time we gained possession, for the transient fast-break window. Cleared
+    /// whenever we don't hold the ball, so it re-stamps on the next turnover.
+    gained_ball_t: Option<f64>,
     /// Goalkeeper Guard/Clear state machine.
     keeper: keeper::KeeperState,
 }
@@ -61,6 +64,7 @@ impl ConcertoStrategy {
             last_game_state: GameState::Unknown,
             double_touch_robot: None,
             dribble_origin: None,
+            gained_ball_t: None,
             keeper: keeper::KeeperState::new(),
         }
     }
@@ -139,8 +143,14 @@ impl Strategy for ConcertoStrategy {
                 if self.dribble_origin.is_none() {
                     self.dribble_origin = world.ball_position();
                 }
+                if self.gained_ball_t.is_none() {
+                    self.gained_ball_t = Some(now);
+                }
             }
-            _ => self.dribble_origin = None,
+            _ => {
+                self.dribble_origin = None;
+                self.gained_ball_t = None;
+            }
         }
         let carried = match (self.dribble_origin, world.ball_position()) {
             (Some(origin), Some(ball)) => (ball - origin).norm(),
@@ -171,6 +181,10 @@ impl Strategy for ConcertoStrategy {
             our_attacking_restart: us_operating
                 && matches!(game_state, GameState::Kickoff | GameState::FreeKick),
             carried,
+            fresh_possession: self
+                .gained_ball_t
+                .map(|t| now - t < config::FAST_BREAK_WINDOW)
+                .unwrap_or(false),
             now,
         };
 

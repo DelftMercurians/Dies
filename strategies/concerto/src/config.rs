@@ -35,6 +35,23 @@ pub const IMP_PIVOT: f64 = 3.0;
 pub const RECYCLE_MIN_DIST: f64 = 1200.0;
 pub const RECYCLE_MIN_OPENNESS: f64 = 0.6;
 
+// ── Fast-break commit (transient counter-attack) ─────────────────────────────
+// The patient recycle (above) keeps possession but is wrong on a clean
+// counter-attack: in the 1–2 s after we win the ball the opponent is still
+// recovering, so the open lane is *forward*, not backward. For a short window
+// after a turnover, when we have a genuine numerical break — strictly more of our
+// own bodies goal-side of the ball than the opponent has (its keeper excluded) —
+// we commit the ball forward (kick-ahead to a supporter, or a hoof into the space
+// behind their line) instead of laying it back. This is net-asymmetric: it can
+// only fire for the team that just recovered the ball, so a frozen mirror of
+// ourselves can't symmetrically copy it; and it is self-limiting — once the
+// defence recovers its numbers goal-side, the break gate closes and play reverts
+// to the patient shape. The numerical gate keeps it safe: we never gamble the
+// direct ball when we are outnumbered at the back.
+/// Seconds after winning the ball during which a numerical break is committed
+/// forward rather than recycled. Outside this window play is always patient.
+pub const FAST_BREAK_WINDOW: f64 = 1.5;
+
 // ── Robot motion model (used by momentum-aware redirect cost) ───────────────
 /// Assumed top speed for time-to-target estimates.
 pub const V_MAX: f64 = 3000.0;
@@ -68,6 +85,26 @@ pub const SHOT_ROBOT_RADIUS: f64 = 110.0;
 /// field robot: the keeper actively dives/slides to cover during the ball's flight,
 /// so it blocks far more of the mouth than its static footprint suggests.
 pub const SHOT_KEEPER_RADIUS: f64 = 280.0;
+// Keeper-charge-aware shot model. The inflated keeper shadow above assumes the
+// keeper sits on its line and can dive/slide across the mouth during the ball's
+// flight. That stops being true once the keeper has *committed forward* off its
+// line (charging a loose ball, smothering a carrier): a keeper several hundred mm
+// up-field physically cannot recover to a corner, so the static 280mm shadow
+// over-states the cover and makes us *pass up* a shot at a net the keeper has
+// abandoned. When the inferred opponent keeper is advanced off its goal line we
+// shrink its effective shadow toward a plain field-robot radius, converting a
+// high-quality chance we'd otherwise decline into a shot. This is net-asymmetric
+// (only the team in possession facing the over-committed keeper benefits — a
+// frozen mirror of ourselves can't copy it without also charging its keeper), it
+// moves none of our own players, and it is self-limiting: the shrink reverts the
+// instant the keeper recovers its line.
+/// Keeper advancement (mm off its goal line, along x toward the ball) below which
+/// the full inflated [`SHOT_KEEPER_RADIUS`] shadow applies (keeper still on its line).
+pub const KEEPER_CHARGE_NEAR: f64 = 700.0;
+/// Keeper advancement (mm off its goal line) at/beyond which the keeper is treated
+/// as fully committed forward — its shadow shrinks all the way to [`SHOT_ROBOT_RADIUS`]
+/// (it can no longer dive to cover the corners). Linearly interpolated in between.
+pub const KEEPER_CHARGE_FAR: f64 = 1800.0;
 /// Weight on aiming *away* from the keeper when scoring open windows. Score is in
 /// goal-line mm: a window this many mm farther from the keeper's projected position
 /// is worth `+1mm` of open width per `1/bias` mm of distance. Picks the corner the

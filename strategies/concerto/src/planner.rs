@@ -48,6 +48,18 @@ fn goalward_heading(from: Vector2, opp_goal: Vector2) -> Angle {
     Angle::from_radians(d.y.atan2(d.x))
 }
 
+/// Effective keeper shot-shadow radius as a function of how far the keeper has
+/// advanced off its goal line (mm). On its line → full inflated shadow; fully
+/// committed forward → plain field-robot radius; linear in between. See
+/// [`config::KEEPER_CHARGE_NEAR`]/[`config::KEEPER_CHARGE_FAR`].
+fn keeper_charge_radius(advance: f64) -> f64 {
+    let full = config::SHOT_KEEPER_RADIUS;
+    let t = ((advance - config::KEEPER_CHARGE_NEAR)
+        / (config::KEEPER_CHARGE_FAR - config::KEEPER_CHARGE_NEAR))
+        .clamp(0.0, 1.0);
+    full + t * (config::SHOT_ROBOT_RADIUS - full)
+}
+
 /// A plan: a sequence of waypoints driven by one active robot. v1 emits length-1;
 /// replan-after-each makes any tail advisory.
 #[derive(Debug, Clone)]
@@ -90,6 +102,10 @@ pub struct PlanInputs {
     /// Linear distance the ball has been carried from the contact point this
     /// possession (for the excessive-dribbling cap). 0 if we don't hold the ball.
     pub carried: f64,
+    /// True for a short window right after we won the ball (see
+    /// [`config::FAST_BREAK_WINDOW`]). Arms the transient fast-break commit when it
+    /// coincides with a numerical break goal-side of the ball.
+    pub fresh_possession: bool,
     pub now: f64,
 }
 
@@ -198,12 +214,20 @@ impl Planner {
                     world.opp_players(),
                     Self::opp_keeper(world),
                     config::SHOT_ROBOT_RADIUS,
-                    config::SHOT_KEEPER_RADIUS,
+                    Self::keeper_shot_radius(world),
                     config::BALL_RADIUS,
                     config::SHOT_KEEPER_BIAS,
                 )
                 .filter(|s| s.angle >= config::SHOT_MIN_ANGLE);
                 let in_range = (carrier_pos - opp_goal).norm() < config::SHOOT_RANGE;
+
+                // Transient fast-break: just after a turnover, in the attacking
+                // half, with no opponent pinning the ball and a genuine numerical
+                // break goal-side, commit the ball forward instead of recycling.
+                let fast_break = inputs.fresh_possession
+                    && carrier_pos.x > 0.0
+                    && world.ball_contest().is_none()
+                    && self.numerical_break(world, id, carrier_pos, inputs);
 
                 let waypoint = if !is_kicker && world.ball_contest().is_some() {
                     // An opponent is physically pinning the ball we nominally hold.
@@ -247,8 +271,12 @@ impl Planner {
                     };
                     match forward {
                         Some((Some(receiver), target_area, quality)) => {
-                            // A weak forward pass is recycled when a safe outlet exists.
-                            if quality < config::FORWARD_OK_BAR {
+                            // A weak forward pass is recycled when a safe outlet
+                            // exists — unless we're on a fast break, where we commit
+                            // the forward ball even if its static lane reads weak
+                            // (the defence is still recovering, so the lane is more
+                            // open than the snapshot suggests).
+                            if !fast_break && quality < config::FORWARD_OK_BAR {
                                 recycle.map(as_pass).unwrap_or(Waypoint::Pass {
                                     passer: id,
                                     receiver,
@@ -262,9 +290,15 @@ impl Planner {
                                 }
                             }
                         }
-                        // About to hoof into open space: recycle instead if we can.
+                        // About to hoof into open space: recycle instead if we can —
+                        // but on a fast break, drive the ball forward into the space
+                        // behind their line rather than laying it back.
                         Some((None, target, _)) => {
-                            recycle.map(as_pass).unwrap_or_else(|| hoof(target))
+                            if fast_break {
+                                hoof(target)
+                            } else {
+                                recycle.map(as_pass).unwrap_or_else(|| hoof(target))
+                            }
                         }
                         // Nothing forward at all: recycle, else a short corrective
                         // dribble (under the carry cap), else release.
@@ -340,6 +374,35 @@ impl Planner {
         Some(plan)
     }
 
+    /// A genuine numerical break: strictly more of our own field robots are
+    /// goal-side of the ball (carrier + keeper excluded) than the opponent has
+    /// (its keeper excluded), and at least one of ours is up there to receive.
+    /// This is the textbook counter-attack situation — we out-man the recovering
+    /// defence, so the direct forward ball is worth more than keeping possession.
+    fn numerical_break(
+        &self,
+        world: &World,
+        carrier: PlayerId,
+        carrier_pos: Vector2,
+        inputs: &PlanInputs,
+    ) -> bool {
+        let own_ahead = world
+            .own_players()
+            .iter()
+            .filter(|p| p.id != carrier)
+            .filter(|p| Some(p.id) != inputs.keeper_id)
+            .filter(|p| p.position.x > carrier_pos.x)
+            .count();
+        let opp_keeper = Self::opp_keeper(world);
+        let opp_ahead = world
+            .opp_players()
+            .iter()
+            .filter(|p| Some(p.id) != opp_keeper)
+            .filter(|p| p.position.x > carrier_pos.x)
+            .count();
+        own_ahead >= 1 && own_ahead > opp_ahead
+    }
+
     /// Infer the opponent keeper: the opponent nearest its own goal (the goal we
     /// attack). Strategies aren't told the opponent's designated keeper, but the
     /// robot parked deepest in front of the mouth is it in practice — and if no
@@ -356,6 +419,27 @@ impl Planner {
                 da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|p| p.id)
+    }
+
+    /// Effective shadow radius for the opponent keeper in the shot model, shrunk
+    /// when the keeper has committed forward off its goal line. On its line it can
+    /// dive/slide to cover the mouth, so it earns the full inflated
+    /// [`config::SHOT_KEEPER_RADIUS`]; charged up-field it cannot recover to the
+    /// corners, so its shadow collapses toward a plain field robot's. Linearly
+    /// interpolated by how far the keeper sits off its line (along x, toward us).
+    fn keeper_shot_radius(world: &World) -> f64 {
+        let full = config::SHOT_KEEPER_RADIUS;
+        let goal = world.opp_goal_center();
+        let Some(kid) = Self::opp_keeper(world) else {
+            return full;
+        };
+        let Some(keeper) = world.opp_players().iter().find(|p| p.id == kid) else {
+            return full;
+        };
+        // Advancement off the goal line: the goal we attack is at max +x, so a
+        // keeper that has charged toward the ball has a *smaller* x than its goal.
+        let advance = (goal.x - keeper.position.x).max(0.0);
+        keeper_charge_radius(advance)
     }
 
     /// Break out of a contest where an opponent is pinning the ball we hold.
@@ -681,6 +765,7 @@ mod tests {
             double_touch_robot: None,
             our_attacking_restart: false,
             carried: 0.0,
+            fresh_possession: false,
             now: 0.0,
         }
     }
@@ -710,6 +795,31 @@ mod tests {
             possession_stale: false,
             ball_contest: contest,
         })
+    }
+
+    #[test]
+    fn keeper_charge_radius_shrinks_with_advancement() {
+        // On its line (no advancement) → full inflated shadow.
+        assert!((keeper_charge_radius(0.0) - config::SHOT_KEEPER_RADIUS).abs() < 1e-6);
+        assert!(
+            (keeper_charge_radius(config::KEEPER_CHARGE_NEAR) - config::SHOT_KEEPER_RADIUS).abs()
+                < 1e-6
+        );
+        // Fully committed forward → shrinks to a plain field-robot shadow.
+        assert!(
+            (keeper_charge_radius(config::KEEPER_CHARGE_FAR) - config::SHOT_ROBOT_RADIUS).abs()
+                < 1e-6
+        );
+        assert!(
+            (keeper_charge_radius(config::KEEPER_CHARGE_FAR + 5000.0) - config::SHOT_ROBOT_RADIUS)
+                .abs()
+                < 1e-6
+        );
+        // Halfway between near and far → midpoint radius, and monotone shrinking.
+        let mid = keeper_charge_radius((config::KEEPER_CHARGE_NEAR + config::KEEPER_CHARGE_FAR) / 2.0);
+        let expected = (config::SHOT_KEEPER_RADIUS + config::SHOT_ROBOT_RADIUS) / 2.0;
+        assert!((mid - expected).abs() < 1e-6);
+        assert!(mid < config::SHOT_KEEPER_RADIUS && mid > config::SHOT_ROBOT_RADIUS);
     }
 
     #[test]
@@ -939,6 +1049,82 @@ mod tests {
                 );
             }
             other => panic!("expected a Pass waypoint, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fast_break_commits_forward_instead_of_recycling() {
+        // Carrier just past midfield (no shot in range), the only forward teammate
+        // has a blocked lane, and a safe recycle outlet sits behind. Normally we lay
+        // the ball back (keep possession). On a fast break with a numerical edge
+        // goal-side, we commit the ball forward (hoof into space) instead.
+        let own = vec![
+            player(1, -4000.0, 0.0),  // keeper
+            player(2, 400.0, 0.0),    // carrier (out of shot range)
+            player(3, 1500.0, 0.0),   // forward, but its lane is blocked
+            player(4, 200.0, 1300.0), // recycle outlet behind/level
+        ];
+        // One opponent on the carrier→forward lane; it is the opp keeper (nearest the
+        // opp goal), so it is excluded from the numerical-break count → we out-man
+        // the defence goal-side (1 vs 0).
+        let opp = vec![player(9, 1000.0, 0.0)];
+
+        // Without a fresh turnover: recycle (lay the ball back to player 4).
+        let world = world_with(own.clone(), opp.clone(), 1);
+        let mut planner = Planner::new();
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Pass { receiver, .. } => assert_eq!(*receiver, PlayerId::new(4)),
+            other => panic!("patient play should recycle to p4, got {other:?}"),
+        }
+
+        // Same frame, but fresh possession → fast break commits the ball forward.
+        let world = world_with(own, opp, 1);
+        let mut planner = Planner::new();
+        let mut inp = inputs();
+        inp.fresh_possession = true;
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inp)
+            .expect("should produce a plan");
+        assert!(
+            matches!(
+                plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Shoot { .. },
+                    ..
+                }
+            ),
+            "fast break should drive the ball forward, got {:?}",
+            plan.waypoints[0]
+        );
+    }
+
+    #[test]
+    fn fast_break_suppressed_without_numerical_edge() {
+        // Same fresh turnover, but the opponent has a field robot back goal-side
+        // (in addition to its keeper), so we do NOT out-man the defence — the break
+        // gate stays shut and we play patiently (recycle).
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, 400.0, 0.0),
+            player(3, 1500.0, 0.0),
+            player(4, 200.0, 1300.0),
+        ];
+        // p9 is the opp keeper (deepest); p8 is a field defender goal-side of the
+        // ball → opp_ahead = 1, own_ahead = 1, so own_ahead > opp_ahead is false.
+        let opp = vec![player(9, 4200.0, 0.0), player(8, 1000.0, 0.0)];
+        let world = world_with(own, opp, 1);
+        let mut planner = Planner::new();
+        let mut inp = inputs();
+        inp.fresh_possession = true;
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inp)
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Pass { receiver, .. } => assert_eq!(*receiver, PlayerId::new(4)),
+            other => panic!("no numerical edge → should recycle to p4, got {other:?}"),
         }
     }
 
