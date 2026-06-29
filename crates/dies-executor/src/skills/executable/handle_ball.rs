@@ -229,7 +229,12 @@ impl HandleBallSkill {
                 return self.fail();
             }
         } else {
-            input.with_position(stage_point(ball_pos, dir, pt, ctx.world.field_geom.as_ref()));
+            input.with_position(stage_point(
+                ball_pos,
+                dir,
+                pt,
+                ctx.world.field_geom.as_ref(),
+            ));
             input.avoid_ball = true;
             input.avoid_ball_care = pickup::APPROACH_CARE;
         }
@@ -248,7 +253,14 @@ impl HandleBallSkill {
         now: f64,
     ) -> SkillProgress {
         let exit = self.acquire_heading(ball_pos);
-        let axis = capture_axis(ctx, ball_pos, ball_vel, player_pos, exit, &mut self.chosen_dir);
+        let axis = capture_axis(
+            ctx,
+            ball_pos,
+            ball_vel,
+            player_pos,
+            exit,
+            &mut self.chosen_dir,
+        );
 
         let rel = player_pos - ball_pos;
         let along = rel.dot(&axis.dir);
@@ -266,7 +278,14 @@ impl HandleBallSkill {
 
             let commit_ball = *self.commit_ball.get_or_insert(ball_pos);
             let commit_pos = *self.commit_pos.get_or_insert(player_pos);
-            if commit_strayed(axis.moving, axis.dir, ball_pos, commit_ball, player_pos, commit_pos) {
+            if commit_strayed(
+                axis.moving,
+                axis.dir,
+                ball_pos,
+                commit_ball,
+                player_pos,
+                commit_pos,
+            ) {
                 // Ball squirted out of the corridor during the commit drive —
                 // re-stage internally (bounded by the re-acquire budget).
                 self.reacquire(now);

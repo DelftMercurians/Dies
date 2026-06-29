@@ -451,8 +451,14 @@ impl ExecutableSkill for PickupBallSkill {
             } else {
                 let commit_ball = *self.commit_ball.get_or_insert(ball_pos);
                 let commit_pos = *self.commit_pos.get_or_insert(player_pos);
-                if commit_strayed(axis.moving, axis.dir, ball_pos, commit_ball, player_pos, commit_pos)
-                {
+                if commit_strayed(
+                    axis.moving,
+                    axis.dir,
+                    ball_pos,
+                    commit_ball,
+                    player_pos,
+                    commit_pos,
+                ) {
                     self.status = SkillStatus::Failed;
                     return SkillProgress::failure();
                 }
