@@ -336,7 +336,7 @@ impl fmt::Display for SimulationGameState {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum RefereeMessage {
     RobotTooCloseToOpponentDefenseArea, //8.4.1
     BoundaryCrossing,                   //8.4.1
@@ -354,6 +354,10 @@ pub enum RefereeMessage {
     NoProgress,
     Goal,
 }
+
+/// SSL rule 8.4.3 grace period (seconds): a recurring ball-out-of-play foul is
+/// re-raised for the same team at most once per this interval.
+const FOUL_GRACE_SECS: f64 = 2.0;
 
 /// A simulator-internal referee event together with the team it concerns (if
 /// any). Surfaced to the executor so sim matches narrate the same class of
@@ -532,6 +536,10 @@ pub struct Simulation {
     /// Simulator-internal referee events (fouls/violations/goals) awaiting drain
     /// into the announcer feed.
     referee_events: VecDeque<SimRefereeEvent>,
+    /// Last sim time (seconds) each recurring §8.4.3 foul was raised, keyed by
+    /// (foul, team). Enforces the rule's 2-second per-team grace period so a
+    /// sustained violation isn't re-emitted every physics frame.
+    foul_last_raised: HashMap<(RefereeMessage, Option<TeamColor>), f64>,
     /// Running match score, incremented on each goal and reported via `TeamInfo`.
     blue_score: u32,
     yellow_score: u32,
@@ -600,6 +608,7 @@ impl Simulation {
             referee_message: VecDeque::new(),
             command_counter: 0,
             referee_events: VecDeque::new(),
+            foul_last_raised: HashMap::new(),
             blue_score: 0,
             yellow_score: 0,
             feedback_interval: IntervalTrigger::new(feedback_interval),
@@ -1129,6 +1138,28 @@ impl Simulation {
             .push_back(SimRefereeEvent { kind, team });
     }
 
+    /// Raise a recurring "ball out of play" foul (§8.4.3 — e.g.
+    /// [`RefereeMessage::DefenderTooCloseToBall`]) subject to the rule's
+    /// per-team 2-second grace period: "Each foul has a grace period of 2
+    /// seconds per team until it is raised again. … If a robot keeps committing
+    /// a foul, it will be punished again after the grace period." The position
+    /// checks run every physics frame, so without this gate one sustained
+    /// violation (e.g. a keeper pinned by a ball parked behind its own goal line
+    /// during an opponent free kick) emits hundreds of identical events. The
+    /// grace collapses that to one event per 2 s, matching what a real autoref
+    /// reports — and what downstream counters/digests should see.
+    fn raise_foul(&mut self, kind: RefereeMessage, team: Option<TeamColor>) {
+        let key = (kind, team);
+        let recently_raised = self
+            .foul_last_raised
+            .get(&key)
+            .is_some_and(|&last| self.current_time - last < FOUL_GRACE_SECS);
+        if !recently_raised {
+            self.foul_last_raised.insert(key.clone(), self.current_time);
+            self.push_referee_event(key.0, key.1);
+        }
+    }
+
     /// Drain the simulator-internal referee events accumulated since the last call.
     pub fn take_referee_events(&mut self) -> Vec<SimRefereeEvent> {
         self.referee_events.drain(..).collect()
@@ -1408,9 +1439,12 @@ impl Simulation {
             } => {
                 // Check if positions are valid
                 if !self.check_free_kick_positions(team_color) {
-                    // Defending robots are crowding the ball (announcer dedupes
-                    // the repeated frames into a single line).
-                    self.push_referee_event(
+                    // Defending robots are crowding the ball. Raised at most once
+                    // per team per FOUL_GRACE_SECS (SSL §8.4.3) rather than every
+                    // physics frame — a sustained violation (e.g. a keeper pinned
+                    // by a ball behind its own goal line) is one foul per 2 s, not
+                    // hundreds.
+                    self.raise_foul(
                         RefereeMessage::DefenderTooCloseToBall,
                         Some(team_color.opposite()),
                     );
