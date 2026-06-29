@@ -67,6 +67,31 @@ pub(crate) const KICK_DEPART_SPEED: f64 = 1000.0;
 /// accumulate double-touch contact).
 pub(crate) const REFLEX_TIMEOUT: Duration = Duration::from_millis(600);
 
+// ── moving-ball tail-catch + contact offset ──────────────────────────────────
+/// Lateral contact offset (mm): the ball is centered this far to the robot's
+/// LEFT of dribbler center so it rests clear of the dribbler-drive gear on the
+/// right. Applied in the robot's heading frame (for a moving catch the heading is
+/// the drive direction, so heading-left and axis-left coincide).
+pub(crate) const PICKUP_LATERAL_OFFSET: f64 = 2.5;
+/// Ball speed (mm/s) above which a capture switches from static side-selection to
+/// a velocity-aware tail-catch: lead the intercept and feed-forward the ball
+/// speed so the robot matches pace instead of decelerating into a stern chase.
+/// Below this the ball is effectively static and the side-selector is better.
+pub(crate) const MOVING_BALL_SPEED: f64 = 300.0;
+/// Cosine of the half-cone within which a ball rolling *toward* the robot is
+/// treated as head-on and left to `Receive` (a tail-catch would loop around).
+pub(crate) const HEAD_ON_COS: f64 = 0.6; // ~53°
+/// Nominal robot speed (mm/s) for the intercept-time estimate. Conservative
+/// (below true max) so the aim point lands slightly short rather than past the
+/// ball.
+pub(crate) const INTERCEPT_ROBOT_SPEED: f64 = 2500.0;
+/// Cap (s) on the intercept look-ahead.
+pub(crate) const MAX_INTERCEPT_TIME: f64 = 1.5;
+/// Lateral deviation (mm) of a moving ball from the commit axis that counts as
+/// the ball squirting out of the corridor. Replaces the static `BALL_MOVED_FAIL`
+/// while the ball is legitimately rolling *along* the axis.
+pub(crate) const BALL_STRAY_FAIL: f64 = 150.0;
+
 pub struct PickupBallSkill {
     /// Capture: a soft *exit-direction* bias for which side to take the ball from.
     /// Instant-kick: the hard strike axis.
@@ -103,27 +128,6 @@ impl PickupBallSkill {
 
     pub fn set_target_heading(&mut self, target_heading: Angle) {
         self.target_heading = target_heading;
-    }
-
-    /// Pick the push direction (unit) for a capture: sample candidate sides around
-    /// the ball, score each by how quickly the robot can reach the staging point
-    /// minus a reward for matching the desired exit direction, reject sides that
-    /// are blocked or would push the ball out, and keep the previous choice unless
-    /// clearly beaten (hysteresis). The robot stages behind the ball along `-dir`
-    /// and drives through it, so `dir` is also the direction the ball is pushed.
-    fn select_approach_dir(
-        &mut self,
-        ctx: &SkillContext<'_>,
-        ball_pos: Vector2,
-        player_pos: Vector2,
-    ) -> Vector2 {
-        select_approach_dir(
-            ctx,
-            ball_pos,
-            player_pos,
-            self.target_heading,
-            &mut self.chosen_dir,
-        )
     }
 }
 
@@ -228,6 +232,131 @@ pub(crate) fn push_keeps_ball_in(ball: Vector2, u: Vector2, field: Option<&Field
     true
 }
 
+/// The capture axis for a tick: which direction to drive through the ball, the
+/// point to stage behind, the heading to hold, and whether the velocity-aware
+/// tail-catch is engaged. A fast, non-head-on ball leads the intercept and faces
+/// travel; otherwise the static side-selector picks the side and the exit heading
+/// is held.
+pub(crate) struct CaptureAxis {
+    pub dir: Vector2,
+    pub aim_point: Vector2,
+    pub heading: Angle,
+    pub moving: bool,
+}
+
+/// Choose the capture axis for this tick (shared by `PickupBallSkill` and
+/// `HandleBallSkill`). A ball rolling faster than [`MOVING_BALL_SPEED`] and not
+/// head-on is tail-caught: drive along its velocity, stage behind the *predicted*
+/// intercept, and face travel. Otherwise fall back to [`select_approach_dir`].
+pub(crate) fn capture_axis(
+    ctx: &SkillContext<'_>,
+    ball_pos: Vector2,
+    ball_vel: Vector2,
+    player_pos: Vector2,
+    exit_heading: Angle,
+    chosen_dir: &mut Option<Vector2>,
+) -> CaptureAxis {
+    if ball_vel.norm() > MOVING_BALL_SPEED {
+        if let Some(v_hat) = ball_vel.try_normalize(1e-6) {
+            let head_on = (player_pos - ball_pos)
+                .try_normalize(1e-6)
+                .map(|to_robot| v_hat.dot(&to_robot) > HEAD_ON_COS)
+                .unwrap_or(false);
+            if !head_on {
+                let t = intercept_time(ball_pos, ball_vel, player_pos);
+                // Keep the side memory consistent if we later drop back to static.
+                *chosen_dir = Some(v_hat);
+                return CaptureAxis {
+                    dir: v_hat,
+                    aim_point: ball_pos + ball_vel * t,
+                    heading: Angle::from_vector(v_hat),
+                    moving: true,
+                };
+            }
+        }
+    }
+    let dir = select_approach_dir(ctx, ball_pos, player_pos, exit_heading, chosen_dir);
+    CaptureAxis {
+        dir,
+        aim_point: ball_pos,
+        heading: exit_heading,
+        moving: false,
+    }
+}
+
+/// Fixed-point estimate of the time (s) to intercept a constant-velocity ball.
+fn intercept_time(ball: Vector2, vel: Vector2, robot: Vector2) -> f64 {
+    let mut t = 0.0;
+    for _ in 0..4 {
+        let p = ball + vel * t;
+        t = ((p - robot).norm() / INTERCEPT_ROBOT_SPEED).min(MAX_INTERCEPT_TIME);
+    }
+    t
+}
+
+/// Lateral target (mm, in the plane perpendicular to `dir`) that places the ball
+/// [`PICKUP_LATERAL_OFFSET`] to the robot's left of dribbler center — i.e. the
+/// robot center sits that far to the right of the ball line. `heading` is where
+/// the dribbler/gear physically face (for a moving catch `heading` == `dir`).
+pub(crate) fn perp_target(heading: Angle, dir: Vector2) -> Vector2 {
+    let h = heading.to_vector();
+    let left = Vector2::new(-h.y, h.x);
+    let target = -left * PICKUP_LATERAL_OFFSET;
+    target - dir * target.dot(&dir)
+}
+
+/// Whether the robot is in the commit corridor (behind the ball, close, centered).
+pub(crate) fn committed(along: f64, perp: f64) -> bool {
+    along < 0.0 && -along < COMMIT_DISTANCE && perp < COMMIT_PERP
+}
+
+/// Global velocity for the commit drive-through. Feeds forward the ball velocity
+/// so the closing speed is *relative* (a moving ball no longer outruns the speed
+/// law and the robot doesn't decelerate to a crawl beside it), drives the
+/// remaining along-axis gap, and centers the ball on the offset contact point.
+pub(crate) fn commit_velocity(
+    dir: Vector2,
+    along: f64,
+    perp_vec: Vector2,
+    ball_vel: Vector2,
+    pt: Vector2,
+) -> Vector2 {
+    let gate = (1.0 - perp_vec.norm() / GATE_PERP).clamp(0.0, 1.0);
+    let close = (-along) * APPROACH_GAIN + APPROACH_MIN_SPEED;
+    ball_vel + dir * close * gate - (perp_vec - pt) * LATERAL_GAIN
+}
+
+/// Staging point a fixed distance behind `aim_point` along `-dir`, shifted by the
+/// lateral contact offset and clamped onto the playing surface.
+pub(crate) fn stage_point(
+    aim_point: Vector2,
+    dir: Vector2,
+    pt: Vector2,
+    field: Option<&FieldGeometry>,
+) -> Vector2 {
+    clamp_into_field(aim_point - dir * APPROACH_DISTANCE + pt, field)
+}
+
+/// Whether the ball has escaped the commit corridor and the capture should bail.
+/// A moving ball is allowed to roll *along* the axis (only lateral stray counts);
+/// a static capture fails on any large ball move or an over-long drive.
+pub(crate) fn commit_strayed(
+    moving: bool,
+    dir: Vector2,
+    ball_pos: Vector2,
+    commit_ball: Vector2,
+    player_pos: Vector2,
+    commit_pos: Vector2,
+) -> bool {
+    if moving {
+        let d = ball_pos - commit_ball;
+        (d - dir * d.dot(&dir)).norm() > BALL_STRAY_FAIL
+    } else {
+        (ball_pos - commit_ball).norm() > BALL_MOVED_FAIL
+            || (player_pos - commit_pos).norm() > DRIVEN_FAIL
+    }
+}
+
 impl ExecutableSkill for PickupBallSkill {
     fn matches_command(&self, command: &SkillCommand) -> bool {
         matches!(command, SkillCommand::PickupBall { .. })
@@ -258,31 +387,43 @@ impl ExecutableSkill for PickupBallSkill {
         };
 
         let ball_pos = ball.position.xy();
+        let ball_vel = ball.velocity.xy();
         let player_pos = ctx.player.position;
-        // Instant-kick uses the commanded strike axis directly. A capture instead
-        // chooses its own approach side (fastest reachable & obstacle-free, biased
-        // toward the commanded exit direction), re-evaluated each tick.
-        let dir = if self.instant_kick {
-            self.target_heading.to_vector()
+        // Instant-kick keeps the commanded strike axis (no leading). A capture
+        // chooses its axis: a fast, non-head-on ball is tail-caught with a led
+        // intercept and faces travel; otherwise the side-selector picks the
+        // approach side (fastest reachable, biased toward the exit direction).
+        let axis = if self.instant_kick {
+            CaptureAxis {
+                dir: self.target_heading.to_vector(),
+                aim_point: ball_pos,
+                heading: self.target_heading,
+                moving: false,
+            }
         } else {
-            self.select_approach_dir(&ctx, ball_pos, player_pos)
+            capture_axis(
+                &ctx,
+                ball_pos,
+                ball_vel,
+                player_pos,
+                self.target_heading,
+                &mut self.chosen_dir,
+            )
         };
 
         let rel = player_pos - ball_pos;
-        let along = rel.dot(&dir);
-        let perp_vec = rel - dir * along;
+        let along = rel.dot(&axis.dir);
+        let perp_vec = rel - axis.dir * along;
         let perp = perp_vec.norm();
+        let pt = perp_target(axis.heading, axis.dir);
 
         let mut input = PlayerControlInput::new();
-        input.with_yaw(self.target_heading);
+        input.with_yaw(axis.heading);
         input.with_dribbling(DRIBBLER_SPEED);
 
-        let committed = along < 0.0 && -along < COMMIT_DISTANCE && perp < COMMIT_PERP;
-        if committed {
+        if committed(along, perp) {
             input.avoid_ball = false;
-            let gate = (1.0 - perp / GATE_PERP).clamp(0.0, 1.0);
-            let speed = (-along) * APPROACH_GAIN + APPROACH_MIN_SPEED;
-            input.add_global_velocity(dir * speed * gate - perp_vec * LATERAL_GAIN);
+            input.add_global_velocity(commit_velocity(axis.dir, along, perp_vec, ball_vel, pt));
 
             if self.instant_kick {
                 // Arm a firmware reflex kick: it fires the instant the ball hits
@@ -295,7 +436,7 @@ impl ExecutableSkill for PickupBallSkill {
                 // Success = ball departed along the kick axis (the reflex fired).
                 // Checked BEFORE any ball-moved failure, and gated to the kick
                 // direction so a lateral knock doesn't read as a clean release.
-                let along_depart = (ball_pos - kick_ball).dot(&dir);
+                let along_depart = (ball_pos - kick_ball).dot(&axis.dir);
                 if along_depart > KICK_DEPART_DIST || ball.velocity.norm() > KICK_DEPART_SPEED {
                     self.status = SkillStatus::Succeeded;
                     return SkillProgress::success();
@@ -310,20 +451,23 @@ impl ExecutableSkill for PickupBallSkill {
             } else {
                 let commit_ball = *self.commit_ball.get_or_insert(ball_pos);
                 let commit_pos = *self.commit_pos.get_or_insert(player_pos);
-                if (ball_pos - commit_ball).norm() > BALL_MOVED_FAIL
-                    || (player_pos - commit_pos).norm() > DRIVEN_FAIL
+                if commit_strayed(axis.moving, axis.dir, ball_pos, commit_ball, player_pos, commit_pos)
                 {
                     self.status = SkillStatus::Failed;
                     return SkillProgress::failure();
                 }
             }
         } else {
-            // Stage a fixed distance *behind* the ball along the approach axis, but
-            // never outside the field: a ball pinned against a boundary would put
-            // the staging point off the pitch, so the robot would drive out (and
-            // carry the ball over the line). Clamp it into the playing area.
-            let stage = ball_pos - dir * APPROACH_DISTANCE;
-            input.with_position(clamp_into_field(stage, ctx.world.field_geom.as_ref()));
+            // Stage a fixed distance *behind* the (predicted) ball along the
+            // approach axis, but never outside the field: a ball pinned against a
+            // boundary would put the staging point off the pitch, so the robot
+            // would drive out (and carry the ball over the line). Clamp it in.
+            input.with_position(stage_point(
+                axis.aim_point,
+                axis.dir,
+                pt,
+                ctx.world.field_geom.as_ref(),
+            ));
             input.avoid_ball = true;
             input.avoid_ball_care = APPROACH_CARE;
             self.commit_pos = Some(player_pos);

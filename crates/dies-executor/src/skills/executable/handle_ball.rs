@@ -30,7 +30,10 @@ use dies_core::{Angle, Vector2};
 use dies_strategy_protocol::{BallAction, SkillCommand, SkillStatus};
 
 use super::dribble_shoot::{self as ds, choose_launch, lane_blocked};
-use super::pickup_ball::{self as pickup, clamp_into_field, select_approach_dir};
+use super::pickup_ball::{
+    self as pickup, capture_axis, commit_strayed, commit_velocity, committed, perp_target,
+    stage_point,
+};
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{KickerControlInput, PlayerControlInput, Velocity};
 
@@ -190,6 +193,7 @@ impl HandleBallSkill {
             return SkillProgress::Continue(PlayerControlInput::default());
         };
         let ball_pos = ball.position.xy();
+        let ball_vel = ball.velocity.xy();
         let player_pos = ctx.player.position;
         let heading = self
             .approach
@@ -200,18 +204,15 @@ impl HandleBallSkill {
         let along = rel.dot(&dir);
         let perp_vec = rel - dir * along;
         let perp = perp_vec.norm();
+        let pt = perp_target(heading, dir);
 
         let mut input = PlayerControlInput::new();
         input.with_yaw(heading);
         input.with_dribbling(pickup::DRIBBLER_SPEED);
 
-        let committed =
-            along < 0.0 && -along < pickup::COMMIT_DISTANCE && perp < pickup::COMMIT_PERP;
-        if committed {
+        if committed(along, perp) {
             input.avoid_ball = false;
-            let gate = (1.0 - perp / pickup::GATE_PERP).clamp(0.0, 1.0);
-            let speed = (-along) * pickup::APPROACH_GAIN + pickup::APPROACH_MIN_SPEED;
-            input.add_global_velocity(dir * speed * gate - perp_vec * pickup::LATERAL_GAIN);
+            input.add_global_velocity(commit_velocity(dir, along, perp_vec, ball_vel, pt));
 
             input.with_kicker(KickerControlInput::ReflexKick);
             let kick_ball = *self.kick_ball_pos.get_or_insert(ball_pos);
@@ -228,8 +229,7 @@ impl HandleBallSkill {
                 return self.fail();
             }
         } else {
-            let stage = ball_pos - dir * pickup::APPROACH_DISTANCE;
-            input.with_position(clamp_into_field(stage, ctx.world.field_geom.as_ref()));
+            input.with_position(stage_point(ball_pos, dir, pt, ctx.world.field_geom.as_ref()));
             input.avoid_ball = true;
             input.avoid_ball_care = pickup::APPROACH_CARE;
         }
@@ -243,41 +243,41 @@ impl HandleBallSkill {
         &mut self,
         ctx: &SkillContext<'_>,
         ball_pos: Vector2,
+        ball_vel: Vector2,
         player_pos: Vector2,
         now: f64,
     ) -> SkillProgress {
         let exit = self.acquire_heading(ball_pos);
-        let dir = select_approach_dir(ctx, ball_pos, player_pos, exit, &mut self.chosen_dir);
+        let axis = capture_axis(ctx, ball_pos, ball_vel, player_pos, exit, &mut self.chosen_dir);
 
         let rel = player_pos - ball_pos;
-        let along = rel.dot(&dir);
-        let perp_vec = rel - dir * along;
+        let along = rel.dot(&axis.dir);
+        let perp_vec = rel - axis.dir * along;
         let perp = perp_vec.norm();
+        let pt = perp_target(axis.heading, axis.dir);
 
         let mut input = PlayerControlInput::new();
-        input.with_yaw(exit);
+        input.with_yaw(axis.heading);
         input.with_dribbling(pickup::DRIBBLER_SPEED);
 
-        let committed =
-            along < 0.0 && -along < pickup::COMMIT_DISTANCE && perp < pickup::COMMIT_PERP;
-        if committed {
+        if committed(along, perp) {
             input.avoid_ball = false;
-            let gate = (1.0 - perp / pickup::GATE_PERP).clamp(0.0, 1.0);
-            let speed = (-along) * pickup::APPROACH_GAIN + pickup::APPROACH_MIN_SPEED;
-            input.add_global_velocity(dir * speed * gate - perp_vec * pickup::LATERAL_GAIN);
+            input.add_global_velocity(commit_velocity(axis.dir, along, perp_vec, ball_vel, pt));
 
             let commit_ball = *self.commit_ball.get_or_insert(ball_pos);
             let commit_pos = *self.commit_pos.get_or_insert(player_pos);
-            if (ball_pos - commit_ball).norm() > pickup::BALL_MOVED_FAIL
-                || (player_pos - commit_pos).norm() > pickup::DRIVEN_FAIL
-            {
-                // Ball squirted away during the commit drive — re-stage internally
-                // (bounded by the re-acquire budget) instead of failing.
+            if commit_strayed(axis.moving, axis.dir, ball_pos, commit_ball, player_pos, commit_pos) {
+                // Ball squirted out of the corridor during the commit drive —
+                // re-stage internally (bounded by the re-acquire budget).
                 self.reacquire(now);
             }
         } else {
-            let stage = ball_pos - dir * pickup::APPROACH_DISTANCE;
-            input.with_position(clamp_into_field(stage, ctx.world.field_geom.as_ref()));
+            input.with_position(stage_point(
+                axis.aim_point,
+                axis.dir,
+                pt,
+                ctx.world.field_geom.as_ref(),
+            ));
             input.avoid_ball = true;
             input.avoid_ball_care = pickup::APPROACH_CARE;
             self.commit_pos = Some(player_pos);
@@ -489,7 +489,7 @@ impl ExecutableSkill for HandleBallSkill {
                 self.enter_act(now);
             } else {
                 self.status = SkillStatus::Running;
-                return self.drive_acquire(&ctx, ball_pos, player_pos, now);
+                return self.drive_acquire(&ctx, ball_pos, ball.velocity.xy(), player_pos, now);
             }
         } else if matches!(self.stage, Stage::Aim | Stage::Carry | Stage::Hold)
             && !self.stage_matches_action()
