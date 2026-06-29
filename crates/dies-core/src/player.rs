@@ -425,6 +425,18 @@ pub struct PlayerFeedbackMsg {
     pub tof_xy: Option<[i32; 2]>,
     pub last_command: Option<CommandEcho>,
     pub firmware_version: Option<FirmwareVersion>,
+
+    // --- Link-health telemetry (for the bench stress test) ---
+    /// Rate at which fresh feedback frames are arriving from this robot,
+    /// measured backend-side over a 1 s sliding window. Saturates at the
+    /// basestation read rate (~50 Hz) — useful for watching it collapse under
+    /// radio load, not as an absolute ceiling.
+    pub feedback_hz: Option<f32>,
+    /// Age of the most recent feedback frame in milliseconds.
+    pub feedback_age_ms: Option<u32>,
+    /// Whether the robot is currently considered online by the basestation
+    /// (fresh feedback within glue's 400 ms timeout).
+    pub online: Option<bool>,
 }
 
 impl PlayerFeedbackMsg {
@@ -457,6 +469,9 @@ impl PlayerFeedbackMsg {
             tof_xy: None,
             last_command: None,
             firmware_version: None,
+            feedback_hz: None,
+            feedback_age_ms: None,
+            online: None,
         }
     }
 }
@@ -574,6 +589,14 @@ pub enum BenchCommand {
     Broadcast { kind: BenchOneShot },
     /// Set the radio channel of the base (`robot_id = None`) or a robot.
     SetChannel { robot_id: Option<u32>, channel: u8 },
+    /// Set the rate (Hz) at which streamed setpoints / the stress-test
+    /// keepalive are sent to robots. Clamped backend-side to a sane range.
+    SetStreamRate { hz: f64 },
+    /// Enable/disable the radio-link stress test: while active, a benign
+    /// zero-motion keepalive is streamed to every online robot at the current
+    /// stream rate, purely to load the link so its feedback rate can be
+    /// observed under stress.
+    SetStress { active: bool },
 }
 
 /// Role of a player according to the game rules. These are mainly for rule-compliance.

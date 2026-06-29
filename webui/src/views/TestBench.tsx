@@ -22,6 +22,15 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 // ---------------------------------------------------------------------------
 // Command helpers
@@ -71,6 +80,14 @@ const sendSetChannel = (
     type: "Bench",
     data: { type: "SetChannel", data: { robot_id, channel } },
   });
+
+// Set the global stream rate (Hz) for taken robots + the stress keepalive.
+const setStreamRate = (send: Send, hz: number) =>
+  send({ type: "Bench", data: { type: "SetStreamRate", data: { hz } } });
+
+// Start/stop the radio-link stress test.
+const setStress = (send: Send, active: boolean) =>
+  send({ type: "Bench", data: { type: "SetStress", data: { active } } });
 
 // ---------------------------------------------------------------------------
 // Telemetry formatting helpers
@@ -271,7 +288,7 @@ const RobotFocus: FC<{
       type: "Bench",
       data: {
         type: "SetDribble",
-        data: { robot_id: robotId, speed: on ? dribble : null },
+        data: { robot_id: robotId, speed: on ? dribble : undefined },
       },
     });
   };
@@ -309,7 +326,7 @@ const RobotFocus: FC<{
         type: "Bench",
         data: {
           type: "SetDribble",
-          data: { robot_id: robotId, speed: null },
+          data: { robot_id: robotId, speed: undefined },
         },
       });
     };
@@ -636,6 +653,241 @@ const SliderRow: FC<{
 );
 
 // ---------------------------------------------------------------------------
+// Link stress test
+// ---------------------------------------------------------------------------
+
+// Distinct line colors per robot id slot.
+const ROBOT_COLORS = [
+  "#22d3ee",
+  "#f59e0b",
+  "#34d399",
+  "#f87171",
+  "#a78bfa",
+  "#fb7185",
+  "#60a5fa",
+  "#fbbf24",
+];
+
+const robotColor = (id: number) => ROBOT_COLORS[id % ROBOT_COLORS.length];
+
+// How many samples to keep in each rolling chart (~12.5 Hz poll → ~12 s).
+const MAX_SAMPLES = 150;
+
+type ChartRow = Record<string, number>;
+
+// Build one chart row {t, r<id>: value} from the current telemetry snapshot,
+// dropping robots whose metric is missing so recharts leaves a gap.
+const rowFrom = (
+  robots: PlayerFeedbackMsg[],
+  t: number,
+  pick: (p: PlayerFeedbackMsg) => number | undefined
+): ChartRow => {
+  const row: ChartRow = { t };
+  for (const p of robots) {
+    const v = pick(p);
+    if (v !== undefined && v !== null) row[`r${p.id}`] = v;
+  }
+  return row;
+};
+
+const MultiLineChart: FC<{
+  data: ChartRow[];
+  robotIds: number[];
+  yLabel: string;
+}> = ({ data, robotIds, yLabel }) => (
+  <div className="h-44 w-full bg-bg-surface">
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+        <XAxis dataKey="t" tick={false} stroke="#555" />
+        <YAxis
+          tick={{ fontSize: 10, fill: "#888" }}
+          width={42}
+          stroke="#555"
+          label={{
+            value: yLabel,
+            angle: -90,
+            position: "insideLeft",
+            offset: 16,
+            style: { fontSize: 10, fill: "#888" },
+          }}
+        />
+        <Tooltip
+          contentStyle={{
+            background: "#111",
+            border: "1px solid #333",
+            fontSize: 11,
+          }}
+          labelFormatter={() => ""}
+        />
+        {robotIds.map((id) => (
+          <Line
+            key={id}
+            type="monotone"
+            dataKey={`r${id}`}
+            name={`R${id}`}
+            stroke={robotColor(id)}
+            dot={false}
+            isAnimationActive={false}
+            connectNulls={false}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  </div>
+);
+
+const LinkStressPanel: FC<{
+  robots: PlayerFeedbackMsg[];
+  disabled: boolean;
+  send: Send;
+}> = ({ robots, disabled, send }) => {
+  const [hz, setHz] = useState(50);
+  const [running, setRunning] = useState(false);
+  const [hzData, setHzData] = useState<ChartRow[]>([]);
+  const [loopData, setLoopData] = useState<ChartRow[]>([]);
+
+  // Robots currently reporting (online !== false), stable id list for lines.
+  const robotIds = useMemo(
+    () =>
+      robots
+        .filter((r) => r.online !== false)
+        .map((r) => r.id)
+        .sort((a, b) => a - b),
+    [robots]
+  );
+
+  // Append a sample on every telemetry poll while the panel is mounted.
+  useEffect(() => {
+    const t = Date.now();
+    setHzData((d) =>
+      [...d, rowFrom(robots, t, (r) => r.feedback_hz)].slice(-MAX_SAMPLES)
+    );
+    setLoopData((d) =>
+      [...d, rowFrom(robots, t, (r) => r.avg_loop_time_us)].slice(-MAX_SAMPLES)
+    );
+  }, [robots]);
+
+  // A live executor starting (disabled) stops the test.
+  useEffect(() => {
+    if (disabled && running) {
+      setRunning(false);
+      setStress(send, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled]);
+
+  // Safety: stop the test if the panel unmounts.
+  useEffect(
+    () => () => {
+      setStress(send, false);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const onHzChange = (v: number) => {
+    setHz(v);
+    setStreamRate(send, v);
+  };
+
+  const toggleRunning = (on: boolean) => {
+    setRunning(on);
+    if (on) setStreamRate(send, hz);
+    setStress(send, on);
+  };
+
+  const onlineCount = robotIds.length;
+  const totalPps = Math.round(hz * onlineCount);
+
+  return (
+    <fieldset
+      disabled={disabled}
+      className="flex flex-col gap-3 border border-border-subtle p-3"
+    >
+      <div className="flex flex-wrap items-center gap-4">
+        <span className="text-sm font-semibold text-text-dim">
+          Radio-link stress test
+        </span>
+        <Button
+          variant={running ? "destructive" : "primary"}
+          size="sm"
+          onClick={() => toggleRunning(!running)}
+        >
+          {running ? "Stop test" : "Start test"}
+        </Button>
+        <div className="flex min-w-[260px] flex-1 items-center gap-3">
+          <span className="w-16 text-sm text-text-dim">Rate</span>
+          <Slider
+            className="flex-1"
+            value={[hz]}
+            min={1}
+            max={250}
+            step={1}
+            onValueChange={([v]) => onHzChange(v)}
+          />
+          <span className="w-20 text-right font-mono text-sm text-text-std">
+            {hz} Hz
+          </span>
+        </div>
+        <div className="flex items-center gap-4 font-mono text-sm">
+          <span className="text-text-dim">
+            online{" "}
+            <span className="text-text-std">{onlineCount}</span>
+          </span>
+          <span className="text-text-dim">
+            TX{" "}
+            <span className="text-accent-cyan">{totalPps}</span> pkt/s
+          </span>
+        </div>
+      </div>
+
+      {/* Legend */}
+      {robotIds.length > 0 && (
+        <div className="flex flex-wrap gap-3 text-xs">
+          {robotIds.map((id) => (
+            <span key={id} className="flex items-center gap-1">
+              <span style={{ color: robotColor(id) }}>●</span>
+              <span className="text-text-dim">R{id}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div>
+          <div className="mb-1 text-xs text-text-dim">
+            Feedback rate (Hz, ≤50 sampled) — should track TX, then degrade
+          </div>
+          <MultiLineChart data={hzData} robotIds={robotIds} yLabel="Hz" />
+        </div>
+        <div>
+          <div className="mb-1 text-xs text-text-dim">
+            Firmware loop time (avg µs) — spikes signal starvation
+          </div>
+          <MultiLineChart data={loopData} robotIds={robotIds} yLabel="µs" />
+        </div>
+      </div>
+
+      {/* Per-robot numeric strip */}
+      <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs">
+        {robotIds.map((id) => {
+          const p = robots.find((r) => r.id === id);
+          return (
+            <span key={id} className="text-text-dim">
+              <span style={{ color: robotColor(id) }}>R{id}</span>{" "}
+              {fmt(p?.feedback_hz, 0)}Hz · {p?.avg_loop_time_us ?? "—"}/
+              {p?.max_loop_time_us ?? "—"}µs · age{" "}
+              {p?.feedback_age_ms ?? "—"}ms
+            </span>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Modal
 // ---------------------------------------------------------------------------
 
@@ -741,6 +993,16 @@ const TestBenchModal: FC<{
             </Button>
           </div>
         </fieldset>
+
+        {/* Radio-link stress test (collapsible) */}
+        <details className="group">
+          <summary className="cursor-pointer select-none py-1 text-sm font-semibold text-text-dim hover:text-text-std">
+            ▸ Radio-link stress test
+          </summary>
+          <div className="pt-2">
+            <LinkStressPanel robots={robots} disabled={blocked} send={send} />
+          </div>
+        </details>
 
         {/* Body: grid + focus */}
         <div className="flex min-h-0 flex-1 gap-4">

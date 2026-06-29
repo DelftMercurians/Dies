@@ -4,7 +4,7 @@
 //! telemetry caching always runs.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -18,8 +18,12 @@ use tokio::sync::broadcast;
 
 use crate::{server::ServerState, ExecutorStatus, UiCommand, UiEnvironment, UiMode};
 
-/// Streaming rate for taken robots.
+/// Default streaming rate for taken robots (and the stress keepalive). The
+/// effective rate is a runtime knob via `BenchCommand::SetStreamRate`.
 const STREAM_HZ: f64 = 50.0;
+/// Bounds for the runtime stream-rate knob.
+const STREAM_HZ_MIN: f64 = 1.0;
+const STREAM_HZ_MAX: f64 = 250.0;
 /// If a taken robot's setpoint hasn't been refreshed within this window, stream
 /// zero velocity (watchdog against a stuck/closed UI).
 const SETPOINT_TIMEOUT: Duration = Duration::from_millis(300);
@@ -72,7 +76,11 @@ pub async fn run(
     };
 
     let mut robots: HashMap<u32, RobotBench> = HashMap::new();
-    let mut tick = tokio::time::interval(Duration::from_secs_f64(1.0 / STREAM_HZ));
+    let mut stream_hz = STREAM_HZ;
+    // Radio-link stress test: stream a benign zero-motion keepalive to every
+    // online robot at `stream_hz` to load the link.
+    let mut stress_active = false;
+    let mut tick = tokio::time::interval(Duration::from_secs_f64(1.0 / stream_hz));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -93,6 +101,26 @@ pub async fn run(
             },
             // UI commands. Only `Bench` variants are handled here.
             cmd = cmd_rx.recv() => match cmd {
+                // Rate knob and stress toggle are handled here (not in
+                // `handle_bench_command`) because they own the stream timer.
+                Ok(UiCommand::Bench(BenchCommand::SetStreamRate { hz })) => {
+                    stream_hz = hz.clamp(STREAM_HZ_MIN, STREAM_HZ_MAX);
+                    tick = tokio::time::interval(Duration::from_secs_f64(1.0 / stream_hz));
+                    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    log::info!("Bench stream rate set to {stream_hz:.0} Hz");
+                }
+                Ok(UiCommand::Bench(BenchCommand::SetStress { active })) => {
+                    stress_active = active;
+                    log::info!(
+                        "Bench link stress test {}",
+                        if active { "started" } else { "stopped" }
+                    );
+                }
+                // StopAll is a safety stop (e.g. modal close): also end stress.
+                Ok(UiCommand::Bench(BenchCommand::StopAll)) => {
+                    stress_active = false;
+                    handle_bench_command(&bs_handle, &state, &mut robots, BenchCommand::StopAll);
+                }
                 Ok(UiCommand::Bench(bench_cmd)) => {
                     handle_bench_command(&bs_handle, &state, &mut robots, bench_cmd);
                 }
@@ -109,6 +137,7 @@ pub async fn run(
                 if sending_blocked(&state) {
                     continue;
                 }
+                let mut streamed: HashSet<u8> = HashSet::new();
                 for (robot_id, rb) in robots.iter() {
                     // Stream robots being driven AND robots holding a command.
                     if !rb.taken && rb.hold_cmd.is_none() && rb.dribble_hold.is_none() {
@@ -131,6 +160,28 @@ pub async fn run(
                         set_dribble_speed(&mut cmd, dribble_speed);
                     }
                     bs_handle.bench_send_raw(*robot_id as u8, cmd, rb.kick_time);
+                    streamed.insert(*robot_id as u8);
+                }
+                // Radio-link stress test: blast a benign zero-motion keepalive
+                // at every online robot we didn't already stream, to load the
+                // link. Robots don't move; the load is purely the packet rate.
+                if stress_active {
+                    let ids: Vec<u32> = state
+                        .basestation_feedback
+                        .read()
+                        .unwrap()
+                        .keys()
+                        .map(|(_, pid)| pid.as_u32())
+                        .collect();
+                    for id in ids {
+                        if streamed.insert(id as u8) {
+                            bs_handle.bench_send_raw(
+                                id as u8,
+                                PlayerCmd::Move(PlayerMoveCmd::zero(PlayerId::new(id))),
+                                0,
+                            );
+                        }
+                    }
                 }
             },
             _ = shutdown_rx.recv() => {
@@ -279,6 +330,9 @@ fn handle_bench_command(
                 None => bs_handle.bench_set_base_channel(channel),
             }
         }
+        // These own the stream timer / stress flag and are handled in `run`
+        // before reaching here.
+        BenchCommand::SetStreamRate { .. } | BenchCommand::SetStress { .. } => {}
     }
 }
 

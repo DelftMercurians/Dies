@@ -344,6 +344,20 @@ export interface PlayerFeedbackMsg {
 	tof_xy?: [number, number];
 	last_command?: CommandEcho;
 	firmware_version?: FirmwareVersion;
+	/**
+	 * Rate at which fresh feedback frames are arriving from this robot,
+	 * measured backend-side over a 1 s sliding window. Saturates at the
+	 * basestation read rate (~50 Hz) — useful for watching it collapse under
+	 * radio load, not as an absolute ceiling.
+	 */
+	feedback_hz?: number;
+	/** Age of the most recent feedback frame in milliseconds. */
+	feedback_age_ms?: number;
+	/**
+	 * Whether the robot is currently considered online by the basestation
+	 * (fresh feedback within glue's 400 ms timeout).
+	 */
+	online?: boolean;
 }
 
 export interface BasestationResponse {
@@ -1339,6 +1353,22 @@ export type BenchCommand =
 	| { type: "SetChannel", data: {
 	robot_id?: number;
 	channel: number;
+}}
+	/**
+	 * Set the rate (Hz) at which streamed setpoints / the stress-test
+	 * keepalive are sent to robots. Clamped backend-side to a sane range.
+	 */
+	| { type: "SetStreamRate", data: {
+	hz: number;
+}}
+	/**
+	 * Enable/disable the radio-link stress test: while active, a benign
+	 * zero-motion keepalive is streamed to every online robot at the current
+	 * stream rate, purely to load the link so its feedback rate can be
+	 * observed under stress.
+	 */
+	| { type: "SetStress", data: {
+	active: boolean;
 }};
 
 /** Motion frame for a bench `SetMotion` command. */
