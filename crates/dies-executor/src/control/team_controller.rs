@@ -546,6 +546,8 @@ fn role_type_from_name(role_name: &str) -> RoleType {
         RoleType::Waller
     } else if role_name.contains("penalty_kicker") {
         RoleType::PenaltyKicker
+    } else if role_name.contains("formation") {
+        RoleType::Formation
     } else {
         RoleType::Player
     }
@@ -572,7 +574,14 @@ fn comply(
 
                 let mut new_input = input.clone();
 
-                if matches!(
+                // Logo/warmup formation robots may slowly reposition while play is
+                // stopped — except during a true Halt, which always stops everything.
+                let is_formation = input.role_type == RoleType::Formation;
+                if is_formation && matches!(game_state, GameState::Unknown | GameState::Timeout) {
+                    new_input.with_speed_limit(1500.0);
+                    new_input.with_angular_speed_limit(2.0 * std::f64::consts::PI);
+                    new_input.dribbling_speed = 0.0;
+                } else if matches!(
                     game_state,
                     GameState::Halt | GameState::Unknown | GameState::Timeout
                 ) {

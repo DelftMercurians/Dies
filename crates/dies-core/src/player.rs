@@ -626,4 +626,7 @@ pub enum RoleType {
     /// freekicker
     FreeKicker,
     Waller,
+    /// Robot posed in a static logo/warmup formation (triangle). Exempt from the
+    /// stop-state speed clamp (except Halt) so it may slowly reposition.
+    Formation,
 }

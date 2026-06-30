@@ -12,6 +12,7 @@ pub mod driver;
 pub mod formation;
 pub mod geometry;
 pub mod keeper;
+pub mod logo;
 pub mod matching;
 pub mod planner;
 
@@ -82,11 +83,14 @@ impl Strategy for ConcertoStrategy {
     }
 
     fn params(&self) -> Vec<ParamSpec> {
-        vec![ParamSpec::bool(
-            "defense_only",
-            "Defense only (suppress offense)",
-            false,
-        )]
+        vec![
+            ParamSpec::bool("defense_only", "Defense only (suppress offense)", false),
+            ParamSpec::bool(
+                "warmup",
+                "Warmup: pose in the logo (triangle) formation",
+                false,
+            ),
+        ]
     }
 
     fn update(&mut self, ctx: &mut TeamContext) {
@@ -116,11 +120,21 @@ impl Strategy for ConcertoStrategy {
         }
         self.last_game_state = game_state;
 
+        // ── Logo (triangle) formation ───────────────────────────────────
+        // Active on the operator's `warmup` toggle (pose up while placing robots),
+        // or during a real-match Timeout (cosmetic ready-formation). Robots tagged
+        // `formation` are exempt from the executor's stop-state speed clamp (except
+        // Halt), so they may slowly reposition. This takes precedence over normal
+        // play, so leaving `warmup` on is an obvious visible signal.
+        let warmup = ctx.param_bool("warmup");
+        let logo_active = warmup || matches!(game_state, GameState::Timeout);
+        if logo_active {
+            self.run_logo(&world, ctx);
+            return;
+        }
+
         // ── Hard stops: let the executor halt the robots ────────────────
-        if matches!(
-            game_state,
-            GameState::Halt | GameState::Unknown | GameState::Timeout
-        ) {
+        if matches!(game_state, GameState::Halt | GameState::Unknown) {
             return;
         }
 
@@ -336,6 +350,25 @@ impl Strategy for ConcertoStrategy {
 }
 
 impl ConcertoStrategy {
+    /// Pose every field robot (keeper included) into the static logo triangle.
+    /// Slots are team-relative; the executor transforms and — for `formation`-role
+    /// robots — permits slow repositioning while play is stopped.
+    fn run_logo(&self, world: &World, ctx: &mut TeamContext) {
+        let face = world.opp_goal_center();
+        for p in world.own_players() {
+            // ID-based slots: missing IDs leave their spot empty; IDs outside the
+            // triangle (>5) are left where they are.
+            let Some(slot) = logo::slot_for(p.id) else {
+                continue;
+            };
+            debug::cross(&format!("logo_{}", p.id.as_u32()), slot);
+            if let Some(h) = ctx.player(p.id) {
+                h.go_to(slot).facing(face);
+                h.set_role("formation");
+            }
+        }
+    }
+
     /// Pick the nearest eligible robot to the ball as the set-piece kicker, send it
     /// to the ball, and name it so the executor exempts it from restart clamping.
     fn designate_prep_kicker(
