@@ -20,8 +20,8 @@ import CommandPalette from "./components/CommandPalette";
 import { DockviewApi } from "dockview";
 
 // Default workspace: FIELD fills the left, with a right-hand column split into a
-// top tab group (INSPECTOR / GAME CTRL / DEBUG) and a bottom tab group
-// (CONSOLE / SETTINGS). Stored relative sizes are scaled to the
+// top tab group (INSPECTOR / SETTINGS) and a bottom tab group
+// (CONSOLE / DEBUG / GAME CTRL). Stored relative sizes are scaled to the
 // real container by Dockview's `fromJSON`. Bump LAYOUT_SCHEMA_VERSION in
 // DockviewWrapper whenever this changes so stale persisted defaults are dropped.
 const DEFAULT_LAYOUT = {
@@ -37,7 +37,7 @@ const DEFAULT_LAYOUT = {
             id: "1",
             hideHeader: true,
           },
-          size: 1243,
+          size: 1247,
         },
         {
           type: "branch",
@@ -45,60 +45,56 @@ const DEFAULT_LAYOUT = {
             {
               type: "leaf",
               data: {
-                views: [
-                  "player-inspector",
-                  "game-controller",
-                  "debug-layers",
-                ],
-                activeView: "debug-layers",
+                views: ["player-inspector", "settings"],
+                activeView: "player-inspector",
                 id: "4",
               },
-              size: 0,
+              size: 655,
             },
             {
               type: "leaf",
               data: {
-                views: ["console", "settings"],
-                activeView: "settings",
+                views: ["console", "debug-layers", "game-controller"],
+                activeView: "console",
                 id: "3",
               },
-              size: 900,
+              size: 338,
             },
           ],
-          size: 413,
+          size: 414.5,
         },
       ],
-      size: 900,
+      size: 993,
     },
-    width: 1656,
-    height: 900,
+    width: 1661.5,
+    height: 993,
     orientation: "HORIZONTAL",
   },
   panels: {
     field: { id: "field", contentComponent: "field", title: "FIELD" },
-    console: { id: "console", contentComponent: "console", title: "CONSOLE" },
+    "player-inspector": {
+      id: "player-inspector",
+      contentComponent: "player-inspector",
+      title: "INSPECTOR",
+    },
     settings: {
       id: "settings",
       contentComponent: "settings",
       title: "SETTINGS",
     },
-    "player-inspector": {
-      id: "player-inspector",
-      contentComponent: "player-inspector",
-      title: "INSPECTOR",
+    console: { id: "console", contentComponent: "console", title: "CONSOLE" },
+    "debug-layers": {
+      id: "debug-layers",
+      contentComponent: "debug-layers",
+      title: "DEBUG",
     },
     "game-controller": {
       id: "game-controller",
       contentComponent: "game-controller",
       title: "GAME CTRL",
     },
-    "debug-layers": {
-      id: "debug-layers",
-      contentComponent: "debug-layers",
-      title: "DEBUG",
-    },
   },
-  activeGroup: "3",
+  activeGroup: "4",
 };
 
 const App: React.FC = () => {

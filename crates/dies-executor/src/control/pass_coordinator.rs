@@ -696,7 +696,7 @@ fn partner_str(c: &PassCoordinator, id: PlayerId) -> String {
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::*;
-    use dies_core::{BallData, GameStateData, SideAssignment, SkillSettings, TeamColor, Vector3};
+    use dies_core::{BallData, GameStateData, SideAssignment, TeamColor, Vector3};
 
     pub fn player(id: u32, pos: Vector2, yaw: f64) -> PlayerData {
         let mut p = PlayerData::new(PlayerId::new(id));
@@ -724,7 +724,6 @@ pub(crate) mod test_support {
             ball_on_our_side: None,
             ball_on_opp_side: None,
             kicked_ball: None,
-            skill_settings: SkillSettings::default(),
             possession: Default::default(),
         }
     }

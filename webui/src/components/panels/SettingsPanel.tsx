@@ -41,7 +41,7 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
         defaultValue="strategy"
         className="flex-1 min-h-0 w-full flex flex-col gap-2 p-2"
       >
-        <TabsList className="w-full">
+        <TabsList className="w-full flex-wrap h-auto gap-y-0.5">
           <TabsTrigger value="strategy">Strategy</TabsTrigger>
           <TabsTrigger value="controller">Controller</TabsTrigger>
           <TabsTrigger value="avoidance">Avoidance</TabsTrigger>

@@ -20,7 +20,7 @@ pub use dies_core::{
 };
 use dies_core::{
     ExecutorSettings, FieldMask, GameState, Handicap, PlayerFeedbackMsg, PlayerId, Possession,
-    PossessionConfig, RawGameStateData, SideAssignment, SkillSettings, TeamColor, TeamPlayerId,
+    PossessionConfig, RawGameStateData, SideAssignment, TeamColor, TeamPlayerId,
     TeamSpecificSettings, TrackerSettings, Vector2, WorldData, WorldInstant,
 };
 use player::PlayerTracker;
@@ -181,8 +181,6 @@ pub struct WorldTracker {
     ball_on_blue_side_for: Option<f64>,
     ball_on_yellow_side_for: Option<f64>,
 
-    skill_settings: SkillSettings,
-
     autoref_info: Option<(Instant, TrackedFrame)>,
 
     /// Unified ball-possession metric: the stateful tracker, its config, and the
@@ -231,8 +229,6 @@ impl WorldTracker {
             ball_on_blue_side_for: None,
             ball_on_yellow_side_for: None,
 
-            skill_settings: settings.skill_settings.clone(),
-
             autoref_info: None,
 
             possession_tracker: PossessionTracker::new(),
@@ -273,7 +269,6 @@ impl WorldTracker {
         self.ball_tracker.update_settings(&self.tracker_settings);
         self.blue_team_settings = settings.blue_team_settings.clone();
         self.yellow_team_settings = settings.yellow_team_settings.clone();
-        self.skill_settings = settings.skill_settings.clone();
         self.possession_config = settings.possession_config.clone();
 
         // Log the field mask lines
@@ -675,7 +670,6 @@ impl WorldTracker {
                 .autoref_info
                 .as_ref()
                 .map(|(_, frame)| frame.clone().into()),
-            skill_settings: self.skill_settings.clone(),
             possession: self.possession.clone(),
         }
     }

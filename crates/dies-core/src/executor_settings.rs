@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    avoidance_config::AvoidanceConfig, skill_settings::SkillSettings, FieldGeometry, PlayerId,
-    PossessionConfig, SideAssignment,
+    avoidance_config::AvoidanceConfig, FieldGeometry, PlayerId, PossessionConfig, SideAssignment,
 };
 
 /// Settings for the low-level controller.
@@ -286,7 +285,6 @@ pub struct ExecutorSettings {
     pub team_configuration: TeamConfiguration,
     pub yellow_team_settings: TeamSpecificSettings,
     pub blue_team_settings: TeamSpecificSettings,
-    pub skill_settings: SkillSettings,
     /// Runtime overrides for executor *skill* tunables (the knobs declared with
     /// `tunables!` in `dies-executor`'s skills), keyed by their namespaced key
     /// (`"<skill>.<NAME>"`). Holds **overrides only** — an absent key uses the
@@ -362,22 +360,23 @@ impl ExecutorSettings {
             }
             Err(err) => panic!("Failed to read executor settings: {}", err),
         };
-        // The strategy selection is never persisted (see `store`) — it's a
-        // per-run choice set by a CLI flag or in the UI, not tuning that should
-        // survive a restart. Ignore any value left in an older settings file so
-        // startup defaults to no strategy loaded.
-        settings.team_configuration.blue_strategy = None;
-        settings.team_configuration.yellow_strategy = None;
+        // `team_configuration` (which teams are active, each team's strategy
+        // binary, the side assignment) is per-run operational state — set from
+        // CLI flags + toolbar controls each session and carried on its own
+        // command path, not tuning that should survive a restart or ride the
+        // settings baseline/revert bar (see `store`). Ignore whatever a
+        // (possibly stale) settings file left here so startup is deterministic.
+        settings.team_configuration = TeamConfiguration::default();
         settings
     }
 
-    /// Store the executor settings in the given file. The per-run strategy
-    /// selection is omitted — it's not configuration that should outlive the run
-    /// (a stale value would silently auto-load a strategy on the next startup).
+    /// Store the executor settings in the given file. The per-run
+    /// `team_configuration` is omitted — it's operational state, not tuning that
+    /// should outlive the run (a stale value would silently auto-activate a team,
+    /// auto-load a strategy, or flip the side assignment on the next startup).
     pub async fn store(&self, path: impl AsRef<Path>) {
         let mut to_store = self.clone();
-        to_store.team_configuration.blue_strategy = None;
-        to_store.team_configuration.yellow_strategy = None;
+        to_store.team_configuration = TeamConfiguration::default();
         if let Err(err) =
             tokio::fs::write(path, serde_json::to_string_pretty(&to_store).unwrap()).await
         {
@@ -394,7 +393,6 @@ impl Default for ExecutorSettings {
             team_configuration: TeamConfiguration::default(),
             yellow_team_settings: TeamSpecificSettings::default(),
             blue_team_settings: TeamSpecificSettings::default(),
-            skill_settings: SkillSettings::default(),
             skill_tunables: HashMap::new(),
             possession_config: PossessionConfig::default(),
             allow_no_vision: false,

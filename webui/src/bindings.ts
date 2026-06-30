@@ -651,14 +651,6 @@ export interface TeamSpecificSettings {
 	ignore_gc: boolean;
 }
 
-export interface SkillSettings {
-	dribbler_radius_near_center: number;
-	dribbler_radius_far_center: number;
-	dribbler_radius_breakbeam_factor: number;
-	fetch_ball_preshoot_offset: number;
-	fetch_ball_preshoot_ball_avoidance: number;
-}
-
 /**
  * Tunable parameters for the unified possession metric. One central home for
  * every threshold that used to be scattered across the strategy and the pass
@@ -731,7 +723,6 @@ export interface ExecutorSettings {
 	team_configuration: TeamConfiguration;
 	yellow_team_settings: TeamSpecificSettings;
 	blue_team_settings: TeamSpecificSettings;
-	skill_settings: SkillSettings;
 	/**
 	 * Runtime overrides for executor *skill* tunables (the knobs declared with
 	 * `tunables!` in `dies-executor`'s skills), keyed by their namespaced key
@@ -1236,7 +1227,6 @@ export interface TeamData {
 	ball_on_our_side?: Duration;
 	ball_on_opp_side?: Duration;
 	kicked_ball?: AutorefKickedBallTeam;
-	skill_settings: SkillSettings;
 	/**
 	 * Unified possession metric (absolute / team-tagged — the same value as on
 	 * `WorldData`). Converted to a team-relative view at the strategy boundary.
@@ -1279,7 +1269,6 @@ export interface WorldData {
 	ball_on_blue_side?: Duration;
 	ball_on_yellow_side?: Duration;
 	autoref_info?: AutorefInfo;
-	skill_settings: SkillSettings;
 	/**
 	 * Unified ball-possession metric (absolute / team-tagged). Computed once in
 	 * the world tracker; the single source of truth for who has the ball.
@@ -1544,6 +1533,11 @@ export enum RoleType {
 	/** freekicker */
 	FreeKicker = "FreeKicker",
 	Waller = "Waller",
+	/**
+	 * Robot posed in a static logo/warmup formation (triangle). Exempt from the
+	 * stop-state speed clamp (except Halt) so it may slowly reposition.
+	 */
+	Formation = "Formation",
 }
 
 /** Command to modify the simulator state. */

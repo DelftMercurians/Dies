@@ -188,28 +188,6 @@ const fieldConfig: FieldConfig = {
       ),
     },
   },
-  skill_settings: {
-    dribbler_radius_near_center: {
-      min: 0, max: 100, step: 1, unit: "mm",
-      help: "Ball-capture radius when the ball is near the robot center. Larger = grabs sooner but may false-trigger.",
-    },
-    dribbler_radius_far_center: {
-      min: 0, max: 100, step: 1, unit: "mm",
-      help: "Ball-capture radius when the ball is off to the side. Larger = more forgiving capture at an angle.",
-    },
-    dribbler_radius_breakbeam_factor: {
-      min: 0, max: 5, step: 0.1,
-      help: "Multiplier on the capture radius once the breakbeam sees the ball — keeps 'have ball' latched through small wobbles. Higher = stickier possession.",
-    },
-    fetch_ball_preshoot_offset: {
-      min: 0, max: 1000, step: 1, unit: "mm",
-      help: "How far behind the ball the robot lines up before driving through to shoot. Larger = straighter approach but slower.",
-    },
-    fetch_ball_preshoot_ball_avoidance: {
-      min: 0, max: 5, step: 0.1, unit: "*",
-      help: "How much the pre-shoot approach curves around the ball to avoid bumping it. Higher = wider, gentler arc.",
-    },
-  },
 };
 
 function SettingsEditor<K extends keyof ExecutorSettings>({

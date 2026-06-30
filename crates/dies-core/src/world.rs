@@ -10,9 +10,8 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    distance_to_line, player::PlayerId, skill_settings::SkillSettings, Angle, FieldGeometry,
-    Handicap, Possession, RoleType, SideAssignment, SysStatus, TeamColor, TeamPlayerId, Vector2,
-    Vector3,
+    distance_to_line, player::PlayerId, Angle, FieldGeometry, Handicap, Possession, RoleType,
+    SideAssignment, SysStatus, TeamColor, TeamPlayerId, Vector2, Vector3,
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
@@ -486,7 +485,6 @@ pub struct WorldData {
     pub ball_on_blue_side: Option<Duration>,
     pub ball_on_yellow_side: Option<Duration>,
     pub autoref_info: Option<AutorefInfo>,
-    pub skill_settings: SkillSettings,
     /// Unified ball-possession metric (absolute / team-tagged). Computed once in
     /// the world tracker; the single source of truth for who has the ball.
     pub possession: Possession,
@@ -533,7 +531,6 @@ pub struct TeamData {
     pub ball_on_our_side: Option<Duration>,
     pub ball_on_opp_side: Option<Duration>,
     pub kicked_ball: Option<AutorefKickedBallTeam>,
-    pub skill_settings: SkillSettings,
     /// Unified possession metric (absolute / team-tagged — the same value as on
     /// `WorldData`). Converted to a team-relative view at the strategy boundary.
     pub possession: Possession,
@@ -988,7 +985,6 @@ pub fn mock_world_data() -> WorldData {
         ball_on_blue_side: None,
         ball_on_yellow_side: None,
         autoref_info: None,
-        skill_settings: SkillSettings::default(),
         possession: Possession::default(),
     }
 }
@@ -1059,7 +1055,6 @@ pub fn mock_team_data() -> TeamData {
         ball_on_our_side: None,
         ball_on_opp_side: None,
         kicked_ball: None,
-        skill_settings: SkillSettings::default(),
         possession: Possession::default(),
     }
 }

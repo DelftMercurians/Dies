@@ -35,8 +35,7 @@ use arrow::array::{
 use arrow::ipc::reader::StreamReader;
 use dies_core::{
     Angle, BallData, DebugColor, DebugMap, DebugShape, DebugValue, GameState, Handicap, PlayerData,
-    PlayerId, RawGameStateData, SideAssignment, SkillSettings, SysStatus, TeamColor, Vector2,
-    Vector3, WorldData,
+    PlayerId, RawGameStateData, SideAssignment, SysStatus, TeamColor, Vector2, Vector3, WorldData,
 };
 use parquet::arrow::arrow_reader::{
     ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReaderBuilder,
@@ -800,9 +799,6 @@ fn build_world(
         ball_on_yellow_side: fr.ball_on_yellow_side.map(Duration::from_secs_f64),
         // Reconstructed from events if needed; defaulted here (lossy).
         autoref_info: None,
-        // skill_settings live in the settings_changes stream; replay uses the
-        // default (the field view does not depend on it).
-        skill_settings: SkillSettings::default(),
         // Possession is recomputed live, not stored; replay defaults it.
         possession: Default::default(),
     }

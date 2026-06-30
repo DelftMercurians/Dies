@@ -11,6 +11,14 @@ export type SettingsDiffEntry = {
 
 const GENERAL = "general";
 
+/**
+ * Sections that are per-run operational state, not persisted tuning — they're
+ * set from CLI flags + toolbar controls each session and carried on their own
+ * command path, so they don't belong in the settings baseline/revert diff (and
+ * aren't written to the settings JSON). Keep them out of the diff entirely.
+ */
+const IGNORED_SECTIONS = new Set<string>(["team_configuration"]);
+
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 
@@ -31,6 +39,7 @@ export function diffSettings(
   const base = baseline as unknown as Record<string, unknown>;
 
   for (const key of Object.keys(cur)) {
+    if (IGNORED_SECTIONS.has(key)) continue;
     const cv = cur[key];
     const bv = base[key];
     if (isPlainObject(cv)) {
@@ -87,7 +96,6 @@ const SECTION_LABELS: Record<string, string> = {
   controller_settings: "Controller",
   tracker_settings: "Tracker",
   avoidance: "Avoidance",
-  skill_settings: "Skill",
   skill_tunables: "Skill tunables",
   team_configuration: "Team",
   blue_team_settings: "Blue team",

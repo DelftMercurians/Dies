@@ -10,7 +10,6 @@ mod params;
 mod player;
 mod possession;
 mod sides;
-mod skill_settings;
 mod tunable;
 mod world;
 
@@ -29,7 +28,6 @@ pub use player::*;
 pub use possession::*;
 use serde::{Deserialize, Serialize};
 pub use sides::*;
-pub use skill_settings::*;
 pub use tunable::*;
 use typeshare::typeshare;
 pub use world::*;

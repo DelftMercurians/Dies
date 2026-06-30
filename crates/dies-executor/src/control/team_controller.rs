@@ -574,23 +574,15 @@ fn comply(
 
                 let mut new_input = input.clone();
 
-                // Logo/warmup formation robots may slowly reposition while play is
-                // stopped — except during a true Halt, which always stops everything.
-                let is_formation = input.role_type == RoleType::Formation;
-                if is_formation && matches!(game_state, GameState::Unknown | GameState::Timeout) {
-                    new_input.with_speed_limit(1500.0);
-                    new_input.with_angular_speed_limit(2.0 * std::f64::consts::PI);
-                    new_input.dribbling_speed = 0.0;
-                } else if matches!(
-                    game_state,
-                    GameState::Halt | GameState::Unknown | GameState::Timeout
-                ) {
+                if matches!(game_state, GameState::Halt | GameState::Unknown) {
                     new_input.with_speed_limit(0.0);
                     new_input.with_angular_speed_limit(0.0);
                     new_input.dribbling_speed = 0.0;
                 }
 
-                if matches!(game_state, GameState::Stop) {
+                // Timeout is treated like Stop: robots may move at the Stop-state
+                // speed limit (not a hard Halt).
+                if matches!(game_state, GameState::Stop | GameState::Timeout) {
                     new_input.with_speed_limit(1500.0);
                 }
 
