@@ -89,6 +89,10 @@ pub enum GcSimCommand {
         team_color: TeamColor,
         position: Vector2,
     },
+    /// Show a yellow card to a team (lowers its `max_allowed_bots` for 120 s).
+    YellowCard {
+        team_color: TeamColor,
+    },
 }
 
 /// A single robot's saved pose in a field snapshot (position + yaw, no velocity).

@@ -239,6 +239,12 @@ fn sim_event_announcement(
         RefereeMessage::KickoffPositionViolation => {
             (C::Foul, team, "Kick-off position violation".to_string())
         }
+        RefereeMessage::YellowCard => (C::Card, team, format!("Yellow card — {}", team_name(team))),
+        RefereeMessage::TooManyRobots => (
+            C::Foul,
+            team,
+            format!("Too many robots — {}", team_name(team)),
+        ),
     };
     Some(item)
 }

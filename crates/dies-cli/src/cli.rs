@@ -107,6 +107,24 @@ enum Command {
         /// Set to a directory of prebuilt binaries to run without rebuilding.
         #[clap(long)]
         strategies_dir: Option<PathBuf>,
+
+        /// Number of robots to field for the blue team (1..=6, default 6).
+        #[clap(long, default_value = "6")]
+        blue_robots: usize,
+
+        /// Number of robots to field for the yellow team (1..=6, default 6).
+        #[clap(long, default_value = "6")]
+        yellow_robots: usize,
+
+        /// Show the blue team a yellow card at this sim time (seconds). Repeat
+        /// for multiple cards; each lowers blue's bot allowance for 120 s.
+        #[clap(long)]
+        blue_card_at: Vec<f64>,
+
+        /// Show the yellow team a yellow card at this sim time (seconds). Repeat
+        /// for multiple cards; each lowers yellow's bot allowance for 120 s.
+        #[clap(long)]
+        yellow_card_at: Vec<f64>,
     },
 
     /// Supervised match mode: run a pre-match checklist, then launch dies and
@@ -301,6 +319,10 @@ impl Cli {
                 ref snapshot,
                 release_strategies,
                 ref strategies_dir,
+                blue_robots,
+                yellow_robots,
+                ref blue_card_at,
+                ref yellow_card_at,
             }) => {
                 let build = self.strategy_mode() != StrategyMode::Launch;
                 match self_play(
@@ -315,6 +337,10 @@ impl Cli {
                     build,
                     release_strategies,
                     strategies_dir.clone(),
+                    blue_robots,
+                    yellow_robots,
+                    blue_card_at.clone(),
+                    yellow_card_at.clone(),
                 )
                 .await
                 {

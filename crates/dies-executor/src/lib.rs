@@ -29,7 +29,9 @@ pub mod skills;
 pub mod strategy_host;
 
 pub use control::*;
-pub use headless::{EndReason, GoalEvent, HeadlessConfig, MatchResult};
+pub use headless::{
+    EndReason, GoalEvent, HeadlessConfig, MatchResult, ScriptedEvent, ScriptedEventKind,
+};
 
 /// Manual override inputs from the webui (MoveTo position, global velocity, yaw)
 /// arrive in absolute world coordinates, matching the absolute world data the UI
@@ -772,6 +774,12 @@ impl Executor {
             None
         };
 
+        // Scripted in-match events, fired as the sim clock passes each timestamp.
+        // Sorted ascending; a cursor walks through them so each fires once.
+        let mut scripted_events = cfg.scripted_events.clone();
+        scripted_events.sort_by(|a, b| a.t_secs.total_cmp(&b.t_secs));
+        let mut next_event = 0usize;
+
         let dt = SIMULATION_DT;
         let cmd_period = CMD_INTERVAL.as_secs_f64();
         let mut next_cmd_t = 0.0_f64;
@@ -823,6 +831,17 @@ impl Executor {
                 ^ simulator.state_fingerprint();
 
             let now = simulator.time_secs();
+
+            // Fire any scripted events whose time has arrived.
+            while next_event < scripted_events.len() && scripted_events[next_event].t_secs <= now {
+                match &scripted_events[next_event].kind {
+                    headless::ScriptedEventKind::YellowCard { team } => {
+                        log::info!("Scripted yellow card for {team:?} at {now:.1}s");
+                        simulator.add_yellow_card(*team);
+                    }
+                }
+                next_event += 1;
+            }
 
             // Goal detection via score delta (authoritative, set by the sim's
             // auto-referee). Stamp each new goal with the current sim time.

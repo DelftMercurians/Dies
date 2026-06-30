@@ -197,22 +197,51 @@ impl TeamController {
         let (player_inputs_map, role_assignments) =
             self.update_strategy_path(&world_data, &team_context, &active_robots);
 
-        // Handle yellow card robot removal
+        // Handle yellow card robot removal. We pull the *least critical* robots —
+        // ranked by the role the strategy assigned them this tick (a spread/idle or
+        // forward-support body before a defender, keeper never) — so a card costs us
+        // our least valuable robot, not an arbitrary high-id one. Selection is a
+        // one-shot decision (the chosen robots persist in `removing_players`), so
+        // ranking doesn't thrash frame-to-frame.
         let allowed_number_of_robots = world_data.current_game_state.max_allowed_bots;
-        if active_robots.len() > allowed_number_of_robots as usize {
-            let n_robots_to_remove = (active_robots.len() - allowed_number_of_robots as usize)
-                .clamp(0, active_robots.len());
+        let already_removing = self.removing_players.len();
+        let want_removed = active_robots
+            .len()
+            .saturating_sub(allowed_number_of_robots as usize);
+        if want_removed > already_removing {
+            let n_robots_to_remove = want_removed - already_removing;
             log::info!(
-                "We have {} yellow cards and {} robots, removing {} robots",
+                "We have {} yellow cards and {} robots, removing {} more robots",
                 world_data.current_game_state.yellow_cards,
                 active_robots.len(),
                 n_robots_to_remove
             );
-            // Sort active robots by id for deterministic removal
-            let mut sorted_robots = active_robots.clone();
-            sorted_robots.sort();
+            // Rank candidates by ascending criticality of their assigned role, then
+            // by id for a deterministic tie-break; remove the least critical first.
+            let mut candidates: Vec<PlayerId> = active_robots
+                .iter()
+                .copied()
+                .filter(|id| !self.removing_players.contains(id))
+                .collect();
+            candidates.sort_by_key(|id| {
+                let crit = role_assignments
+                    .get(id)
+                    .map(|r| role_removal_criticality(r))
+                    .unwrap_or(0);
+                (crit, id.as_u32())
+            });
             self.removing_players
-                .extend(sorted_robots.iter().rev().take(n_robots_to_remove));
+                .extend(candidates.into_iter().take(n_robots_to_remove));
+        } else if want_removed < already_removing {
+            // Allowance was restored (e.g. a yellow card expired): release the
+            // surplus parked robots so they return to play and are re-assigned a
+            // role. Release the most recently / highest-id parked first.
+            let n_release = already_removing - want_removed;
+            let mut parked: Vec<PlayerId> = self.removing_players.iter().copied().collect();
+            parked.sort();
+            for id in parked.into_iter().rev().take(n_release) {
+                self.removing_players.remove(&id);
+            }
         }
 
         // Drive robots that are being removed to the removal position
@@ -531,6 +560,38 @@ impl TeamController {
                 c.command(&player_context, untransformer.clone())
             })
             .collect()
+    }
+}
+
+/// Rank a robot's strategy-assigned role by how *critical* it is to keep on the
+/// field when a yellow card forces a removal — lower is removed first. The role
+/// name (produced by the strategy) is the criticality signal: an idle/spread or
+/// forward-support body is the cheapest to lose, a ball-carrier or the keeper the
+/// most expensive. Unknown/empty roles rank as least critical (removed first).
+fn role_removal_criticality(role_name: &str) -> u8 {
+    let r = role_name.to_ascii_lowercase();
+    if r.contains("goalkeeper") {
+        u8::MAX // never remove the keeper
+    } else if r.contains("captur")
+        || r.contains("kick")
+        || r.contains("snatch")
+        || r.contains("rescu")
+    {
+        7 // on the ball
+    } else if r.contains("anchor") {
+        6
+    } else if r.contains("balance") {
+        5
+    } else if r.contains("shadow") || r.contains("waller") {
+        4 // goal wall
+    } else if r.contains("mark") {
+        3
+    } else if r.contains("support") {
+        2
+    } else if r.contains("pivot") {
+        1
+    } else {
+        0 // spread / unassigned / unknown — least critical
     }
 }
 

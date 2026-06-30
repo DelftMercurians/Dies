@@ -1481,6 +1481,10 @@ export type GcSimCommand =
 	| { type: "BallPlacement", data: {
 	team_color: TeamColor;
 	position: Vector2;
+}}
+	/** Show a yellow card to a team (lowers its `max_allowed_bots` for 120 s). */
+	| { type: "YellowCard", data: {
+	team_color: TeamColor;
 }};
 
 /** Semantic kind of a [`DebugShape::Marker`], controlling which glyph the UI draws. */

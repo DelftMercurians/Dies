@@ -125,6 +125,10 @@ pub struct Formation {
     /// chase isn't re-elected to a marginally-closer robot every recompute as the
     /// (lead) ball point jitters — the cause of most capturing↔unassigned churn.
     last_capturer: Option<PlayerId>,
+    /// Count-aware stance parameters (wall sizing, rest-defense gating, aggression),
+    /// loaded once from the environment so the offence/defence balance can be
+    /// tuned and swept without recompiling.
+    stance: config::StanceConfig,
 }
 
 impl Default for Formation {
@@ -144,6 +148,7 @@ impl Formation {
             last_plan_ctx: PlanContext::default(),
             last_capture: None,
             last_capturer: None,
+            stance: config::StanceConfig::from_env(),
         }
     }
 
@@ -180,11 +185,11 @@ impl Formation {
         let reserved_changed = reserved != self.last_reserved.as_slice();
         let plan_ctx_changed = plan_ctx_differs(&self.last_plan_ctx, plan_ctx);
         let capture_changed = capture_differs(self.last_capture.as_ref(), capture);
-        let bg_due = now - self.last_recalc >= config::RECALC_BG_PERIOD;
+        let bg_due = now - self.last_recalc >= self.stance.recalc_bg_period;
         if assignable_changed || reserved_changed || plan_ctx_changed || capture_changed || bg_due {
             self.queued = true;
         }
-        let cooldown_ok = now - self.last_recalc >= config::RECALC_COOLDOWN;
+        let cooldown_ok = now - self.last_recalc >= self.stance.recalc_cooldown;
         let stale = self.assignment.is_empty() && !assignable.is_empty();
         // Capture appearing/disappearing must take effect this tick (don't make a
         // pursuit wait out the cooldown, or leave a stale capturer after we score).
@@ -279,11 +284,11 @@ impl Formation {
                                 // so it never un-gates an unreachable robot.
                                 if Some(*id) == self.last_capturer {
                                     return t
-                                        - role.importance * config::SEC_PER_IMPORTANCE
+                                        - role.importance * self.stance.sec_per_importance
                                         - config::CAPTURE_COMMIT;
                                 }
                             }
-                            t - role.importance * config::SEC_PER_IMPORTANCE
+                            t - role.importance * self.stance.sec_per_importance
                         }
                         None => f64::INFINITY,
                     })
@@ -405,9 +410,31 @@ impl Formation {
             .map(|f| f.penalty_area_depth)
             .unwrap_or(1000.0);
         let anchor_standoff = pen_depth + config::ANCHOR_BOX_MARGIN;
+        // Count-aware wall sizing (the core dynamic-robot-count fix): always emit
+        // the central anchor as the one guaranteed home body, then emit only as
+        // many threat-scaled wings as the field-robot count affords —
+        // `clamp(field_n - forward_reserve - 1, 0, SHADOW_MAX-1)`. A short-handed
+        // team thus thins its wall (e.g. 3 field robots → anchor only) and frees
+        // bodies forward, instead of pinning every robot to a fixed 3-wide wall.
+        // Wings are kept in stable index order (not ball-dependent) so the
+        // generated shadow slot set is constant within a match → no role churn.
+        // On set-piece defense the full wall is always committed (leg-2).
+        let wing_budget = if setpiece_defense {
+            config::SHADOW_MAX
+        } else {
+            (n as f64 - self.stance.forward_reserve - 1.0)
+                .clamp(0.0, (config::SHADOW_MAX - 1) as f64) as usize
+        };
+        let mut wings_pushed = 0usize;
         for (i, pos) in positions.into_iter().enumerate() {
             let off_center = (i as f64 - shadow_center).abs();
             let is_anchor = off_center < 1e-9 && !setpiece_defense;
+            if !is_anchor {
+                if wings_pushed >= wing_budget {
+                    continue;
+                }
+                wings_pushed += 1;
+            }
             let stagger = if setpiece_defense {
                 1.0
             } else {
@@ -522,7 +549,8 @@ impl Formation {
         let support_imp = if setpiece_defense {
             0.0
         } else {
-            config::IMP_SUPPORT + (config::IMP_SUPPORT_ATTACK - config::IMP_SUPPORT) * af
+            (config::IMP_SUPPORT + (config::IMP_SUPPORT_ATTACK - config::IMP_SUPPORT) * af)
+                * self.stance.aggression
         };
         // Placed greedily; each supporter excludes spots already claimed by an
         // earlier one (see `taken` below) so two never converge on the same outlet.
@@ -643,7 +671,7 @@ impl Formation {
                     slot: config::SUPPORT_COUNT as u16,
                 },
                 position: pos,
-                importance: config::IMP_STRIKER * af,
+                importance: config::IMP_STRIKER * af * self.stance.aggression,
                 face: world.opp_goal_center(),
             });
         }
@@ -663,7 +691,7 @@ impl Formation {
                     slot: 0,
                 },
                 position: Vector2::new(px, py),
-                importance: config::IMP_PIVOT,
+                importance: config::IMP_PIVOT * self.stance.aggression,
                 face: world.opp_goal_center(),
             });
         }
@@ -678,7 +706,9 @@ impl Formation {
         // critical forward outlet), not a supporter — netting a 3-back/3-forward
         // shape instead of 2-back/4-forward. Only while attacking (same gate as the
         // pivot it replaces); when defending, the 3-wide wall already lights up.
-        if attacking {
+        // Count gate: a short-handed team (field_n < balance_min_bots) can't spare a
+        // dedicated rest defender on top of the anchor, so that body goes forward.
+        if attacking && (n as f64) >= self.stance.balance_min_bots {
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Balance,

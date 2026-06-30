@@ -535,3 +535,94 @@ pub const CLEAR_TARGET_X: f64 = 0.0;
 /// goal line or a touchline, sending the ball out (stoppage + lost possession).
 /// See [`crate::planner::Planner::clamp_in_field`].
 pub const FIELD_LEAD_MARGIN: f64 = 250.0;
+
+// ── Count-aware offensive stance ─────────────────────────────────────────────
+/// Runtime-tunable stance parameters that make role allocation scale with the
+/// number of field robots (3–6) and let the offence/defence balance be tuned
+/// without recompiling. Loaded once from environment variables at strategy
+/// startup (`StanceConfig::from_env`); each falls back to a default that
+/// reproduces sensible behaviour at full strength.
+///
+/// The defensive wall is restructured into one always-present home **anchor**
+/// plus 0..=`SHADOW_MAX-1` threat-scaled **wings** whose count scales with the
+/// field-robot count, so a short-handed team thins its wall instead of pinning
+/// every robot home. `balance` (the rest defender) and the forward block are
+/// likewise gated/scaled by count and an aggression multiplier.
+#[derive(Debug, Clone, Copy)]
+pub struct StanceConfig {
+    /// Bodies reserved for non-wall duty when sizing the wing wall. The number of
+    /// staffed wings is `clamp(field_n - forward_reserve - 1, 0, SHADOW_MAX-1)`
+    /// (the `-1` accounts for the always-present anchor). Lower → wider wall;
+    /// higher → more bodies freed forward. Default 2.0:
+    /// walls = {n3:1, n4:2, n5:3, n6:3} (anchor + wings).
+    pub forward_reserve: f64,
+    /// Minimum field-robot count at which the dedicated rest defender (`Balance`)
+    /// is emitted. Below this the rest-defense body is freed forward instead.
+    /// Default 5.0 → only 5- and 6-robot teams keep a dedicated rest defender.
+    pub balance_min_bots: f64,
+    /// Multiplier on forward-role importances (support, striker, pivot, outlet).
+    /// >1 commits more bodies forward at every count; 1.0 = neutral. Default 1.0.
+    pub aggression: f64,
+    /// Override for [`SEC_PER_IMPORTANCE`] — seconds of robot travel one
+    /// importance point is worth. Higher → importance outweighs travel, so robots
+    /// commit to high-value (forward) roles from farther away. Default = 0.4.
+    pub sec_per_importance: f64,
+    /// Override for [`RECALC_COOLDOWN`] — minimum seconds between assignment
+    /// recomputes. Default = `RECALC_COOLDOWN`.
+    pub recalc_cooldown: f64,
+    /// Override for [`RECALC_BG_PERIOD`] — background recompute period when no
+    /// event forces one. Raising it holds the assignment longer → less role
+    /// churn (at the cost of slower adaptation). Default = `RECALC_BG_PERIOD`.
+    pub recalc_bg_period: f64,
+}
+
+impl Default for StanceConfig {
+    fn default() -> Self {
+        // Tuned by headless sweep vs the frozen baseline concerto (cvc goal_diff
+        // fitness, counts 3–6, 20 seeds; see `.analysis/stance_sweep.py` and the
+        // [[dynamic-robot-count]] memory). This point is net-positive at 4–6
+        // robots with markedly higher offensive presence, while keeping the
+        // rest-defender so a short-handed team doesn't over-extend and get
+        // countered. (3v3 stays bunker-hard — the original defensive concerto
+        // edges it there, but that extreme is rare.)
+        StanceConfig {
+            // Thin the wing wall (wings = field_n - 3 - 1, so 0 at ≤4 field
+            // robots, 1 at 5) — frees bodies forward at higher counts.
+            forward_reserve: 3.0,
+            // Keep the dedicated rest defender at every count (gate effectively
+            // off): the single biggest fix against being countered short-handed.
+            balance_min_bots: 2.0,
+            // Slightly soften the forward push so committed bodies don't
+            // over-extend into turnovers.
+            aggression: 0.9,
+            sec_per_importance: SEC_PER_IMPORTANCE,
+            recalc_cooldown: RECALC_COOLDOWN,
+            recalc_bg_period: RECALC_BG_PERIOD,
+        }
+    }
+}
+
+impl StanceConfig {
+    /// Load from environment, falling back to defaults. Env keys:
+    /// `CONCERTO_FORWARD_RESERVE`, `CONCERTO_BALANCE_MIN_BOTS`,
+    /// `CONCERTO_AGGRESSION`, `CONCERTO_SEC_PER_IMP`, `CONCERTO_RECALC_CD`,
+    /// `CONCERTO_RECALC_BG`.
+    pub fn from_env() -> Self {
+        let d = StanceConfig::default();
+        StanceConfig {
+            forward_reserve: env_f64("CONCERTO_FORWARD_RESERVE", d.forward_reserve),
+            balance_min_bots: env_f64("CONCERTO_BALANCE_MIN_BOTS", d.balance_min_bots),
+            aggression: env_f64("CONCERTO_AGGRESSION", d.aggression),
+            sec_per_importance: env_f64("CONCERTO_SEC_PER_IMP", d.sec_per_importance),
+            recalc_cooldown: env_f64("CONCERTO_RECALC_CD", d.recalc_cooldown),
+            recalc_bg_period: env_f64("CONCERTO_RECALC_BG", d.recalc_bg_period),
+        }
+    }
+}
+
+fn env_f64(key: &str, default: f64) -> f64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .unwrap_or(default)
+}

@@ -128,6 +128,12 @@ pub struct SimulationConfig {
     pub yellow_controlled: bool,
     pub initial_side_assignment: SideAssignment,
 
+    /// Number of robots to spawn for each team in the seeded/default builders
+    /// (1..=6). Lets headless self-play run uneven or short-handed matches
+    /// (e.g. 3v6) to exercise dynamic-robot-count behaviour.
+    pub n_blue_robots: usize,
+    pub n_yellow_robots: usize,
+
     /// Seed for the simulation RNG. Drives initial pose jitter (and any other
     /// seeded variation) so headless self-play matches are reproducible: same
     /// seed → identical match, different seed → different-but-reproducible match.
@@ -178,6 +184,9 @@ impl Default for SimulationConfig {
             // teams), otherwise goal attribution and penalty checks are computed
             // against the opposite side from reality.
             initial_side_assignment: SideAssignment::YellowOnPositive,
+
+            n_blue_robots: 6,
+            n_yellow_robots: 6,
 
             seed: 0,
         }
@@ -353,7 +362,19 @@ pub enum RefereeMessage {
     PenaltyTimeExceeded,
     NoProgress,
     Goal,
+    /// A yellow card was shown to a team (SSL §5.5.1). Lowers `max_allowed_bots`.
+    YellowCard,
+    /// A team has more robots on the field than its current `max_allowed_bots`
+    /// allows (e.g. it has not yet removed a carded robot).
+    TooManyRobots,
 }
+
+/// Yellow-card lifetime in seconds (SSL §5.5.1: a card expires after 120 s of
+/// playing time, restoring one robot to the team's allowance).
+const YELLOW_CARD_DURATION_SECS: f64 = 120.0;
+
+/// Base robot allowance per team before any cards (SSL division B: 6).
+const BASE_MAX_BOTS: u32 = 6;
 
 /// SSL rule 8.4.3 grace period (seconds): a recurring ball-out-of-play foul is
 /// re-raised for the same team at most once per this interval.
@@ -366,6 +387,21 @@ const FOUL_GRACE_SECS: f64 = 2.0;
 pub struct SimRefereeEvent {
     pub kind: RefereeMessage,
     pub team: Option<TeamColor>,
+}
+
+/// Compute a team's referee `TeamInfo` card fields from its active card
+/// expiries: the current `max_allowed_bots` (base minus active cards, floored
+/// at 1) and the `yellow_card_times` list (one positive entry per active card,
+/// holding whole seconds remaining — the world tracker only counts entries > 0).
+fn card_team_info(expiries: &[f64], now: f64) -> (u32, Vec<u32>) {
+    let mut times: Vec<u32> = expiries
+        .iter()
+        .filter(|&&e| e > now)
+        .map(|&e| ((e - now).ceil() as u32).max(1))
+        .collect();
+    times.sort_unstable_by(|a, b| b.cmp(a));
+    let max_bots = BASE_MAX_BOTS.saturating_sub(times.len() as u32).max(1);
+    (max_bots, times)
 }
 
 impl fmt::Display for RefereeMessage {
@@ -394,6 +430,8 @@ impl fmt::Display for RefereeMessage {
             RefereeMessage::PenaltyTimeExceeded => write!(f, "Penalty time exceeded"),
             RefereeMessage::NoProgress => write!(f, "No progress"),
             RefereeMessage::Goal => write!(f, "Goal"),
+            RefereeMessage::YellowCard => write!(f, "Yellow card"),
+            RefereeMessage::TooManyRobots => write!(f, "Too many robots"),
         }
     }
 }
@@ -560,6 +598,24 @@ pub struct Simulation {
     kick_ball_position: Option<Vector2>,
     last_kicker_info: Option<(PlayerId, TeamColor)>,
     kick_in_progress: bool,
+    /// Active yellow-card expiry sim-times (seconds) per team. A card is active
+    /// while `current_time < expiry`; each active card lowers that team's
+    /// `max_allowed_bots` by one. Cards expire 120 s after they are shown
+    /// (SSL §5.5.1), restoring the bot allowance.
+    blue_card_expiries: Vec<f64>,
+    yellow_card_expiries: Vec<f64>,
+    /// Robots physically removed from the field to serve an active card, by team.
+    /// Modelled like a real substitution: once the executor has parked a carded
+    /// robot beyond the touchline, the sim removes it (so the strategy sees the
+    /// true, reduced roster); on card expiry it is re-added at the halfway line.
+    blue_carded_out: Vec<PlayerId>,
+    yellow_carded_out: Vec<PlayerId>,
+    /// Last referee command emitted, so a card change can be re-broadcast with
+    /// updated `TeamInfo` without altering the game state — re-emitting an
+    /// unchanged command is a no-op in the world game-state tracker (which
+    /// early-returns on an unchanged command) but still refreshes the card /
+    /// max-bots fields, which are read on every referee message.
+    last_command: referee::Command,
     /// Seeded RNG for deterministic variation (initial pose jitter, etc).
     rng: StdRng,
 }
@@ -623,6 +679,11 @@ impl Simulation {
             kick_ball_position: None,
             last_kicker_info: None,
             kick_in_progress: false,
+            blue_card_expiries: Vec::new(),
+            yellow_card_expiries: Vec::new(),
+            blue_carded_out: Vec::new(),
+            yellow_carded_out: Vec::new(),
+            last_command: referee::Command::HALT,
             rng,
         };
 
@@ -1004,6 +1065,9 @@ impl Simulation {
                 }
                 self.game_state = SimulationGameState::ball_placement(team_color, position);
             }
+            GcSimCommand::YellowCard { team_color } => {
+                self.add_yellow_card(team_color);
+            }
         }
     }
 
@@ -1092,6 +1156,7 @@ impl Simulation {
         next_command: Option<referee::Command>,
         action_time_s: Option<f64>,
     ) {
+        self.last_command = command;
         let mut msg = Referee::new();
         msg.set_command(command);
         msg.packet_timestamp = Some(0);
@@ -1112,15 +1177,20 @@ impl Simulation {
             point.set_y(position.y as f32);
             msg.designated_position = Some(point).into();
         }
+        let now = self.current_time;
+        let (blue_max, blue_cards) = card_team_info(&self.blue_card_expiries, now);
+        let (yellow_max, yellow_cards) = card_team_info(&self.yellow_card_expiries, now);
         let mut blue_team_info = TeamInfo::new();
-        blue_team_info.set_max_allowed_bots(6);
+        blue_team_info.set_max_allowed_bots(blue_max);
         blue_team_info.set_goalkeeper(1);
         blue_team_info.set_score(self.blue_score);
+        blue_team_info.yellow_card_times = blue_cards;
         msg.blue = Some(blue_team_info).into();
         let mut yellow_team_info = TeamInfo::new();
-        yellow_team_info.set_max_allowed_bots(6);
+        yellow_team_info.set_max_allowed_bots(yellow_max);
         yellow_team_info.set_goalkeeper(1);
         yellow_team_info.set_score(self.yellow_score);
+        yellow_team_info.yellow_card_times = yellow_cards;
         msg.yellow = Some(yellow_team_info).into();
         // Report the sim's true side so the executor/strategies and the sim's own
         // goal/penalty checks all agree on which team defends which half.
@@ -1163,6 +1233,140 @@ impl Simulation {
     /// Drain the simulator-internal referee events accumulated since the last call.
     pub fn take_referee_events(&mut self) -> Vec<SimRefereeEvent> {
         self.referee_events.drain(..).collect()
+    }
+
+    /// Show a yellow card to `team` (SSL §5.5.1): record a 120 s expiry, lowering
+    /// the team's `max_allowed_bots` by one until it expires, and immediately
+    /// re-broadcast the current referee command so the new allowance reaches the
+    /// world tracker without waiting for the next game-state transition. The
+    /// executor's compliance layer then parks the excess robot off-field; on
+    /// expiry the allowance is restored (see [`Simulation::update_cards`]).
+    pub fn add_yellow_card(&mut self, team: TeamColor) {
+        let expiry = self.current_time + YELLOW_CARD_DURATION_SECS;
+        match team {
+            TeamColor::Blue => self.blue_card_expiries.push(expiry),
+            TeamColor::Yellow => self.yellow_card_expiries.push(expiry),
+        }
+        self.push_referee_event(RefereeMessage::YellowCard, Some(team));
+        self.rebroadcast_referee();
+    }
+
+    /// Number of robots a team is currently allowed on the field.
+    fn max_allowed_bots_for(&self, team: TeamColor) -> u32 {
+        let expiries = match team {
+            TeamColor::Blue => &self.blue_card_expiries,
+            TeamColor::Yellow => &self.yellow_card_expiries,
+        };
+        card_team_info(expiries, self.current_time).0
+    }
+
+    /// Re-emit the last referee command with refreshed `TeamInfo` (card / max-bot
+    /// fields). Game state is unaffected: the world game-state tracker
+    /// early-returns on an unchanged command but still re-reads the card fields.
+    fn rebroadcast_referee(&mut self) {
+        let cmd = self.last_command;
+        self.update_referee_command_full(cmd, None, None);
+    }
+
+    /// Prune expired yellow cards and, if any expired this step, re-broadcast the
+    /// referee command so the restored allowance reaches the world tracker.
+    /// Driven off sim time, so it is deterministic and FTR-safe.
+    fn update_cards(&mut self) {
+        let now = self.current_time;
+        let before = self.blue_card_expiries.len() + self.yellow_card_expiries.len();
+        self.blue_card_expiries.retain(|&e| e > now);
+        self.yellow_card_expiries.retain(|&e| e > now);
+        let after = self.blue_card_expiries.len() + self.yellow_card_expiries.len();
+        if after < before {
+            self.rebroadcast_referee();
+        }
+    }
+
+    /// Model the physical substitution that a yellow card forces: once the
+    /// executor has parked a carded robot beyond the touchline (its compliance
+    /// layer drives it to the substitution line), the sim removes it so the
+    /// strategy sees the true reduced roster — exactly as a real robot leaving the
+    /// cameras' view would. When a card later expires the robot is re-added at the
+    /// halfway line, where the strategy picks it back up and assigns it a role.
+    /// Deterministic: keyed only on sim-time card state + robot positions.
+    fn update_card_substitutions(&mut self) {
+        let beyond = self.config.field_geometry.field_width / 2.0 + 30.0;
+        let reentry_y = self.config.field_geometry.field_width / 2.0 - 200.0;
+        for team in [TeamColor::Blue, TeamColor::Yellow] {
+            let (target, out_len) = match team {
+                TeamColor::Blue => (self.blue_card_expiries.len(), self.blue_carded_out.len()),
+                TeamColor::Yellow => (
+                    self.yellow_card_expiries.len(),
+                    self.yellow_carded_out.len(),
+                ),
+            };
+            if out_len < target {
+                // Need to serve more cards: remove parked robots (those the executor
+                // has driven beyond the touchline) not already taken out.
+                let already: &[PlayerId] = match team {
+                    TeamColor::Blue => &self.blue_carded_out,
+                    TeamColor::Yellow => &self.yellow_carded_out,
+                };
+                let mut cands: Vec<PlayerId> = self
+                    .players
+                    .iter()
+                    .filter(|p| p.team_color == team && !already.contains(&p.id))
+                    .filter_map(|p| {
+                        let y = self
+                            .rigid_body_set
+                            .get(p.rigid_body_handle)
+                            .map(|b| b.position().translation.vector.y)
+                            .unwrap_or(0.0);
+                        if y.abs() > beyond {
+                            Some(p.id)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                cands.sort();
+                cands.truncate(target - out_len);
+                for id in cands {
+                    self.remove_robot(team, id);
+                    match team {
+                        TeamColor::Blue => self.blue_carded_out.push(id),
+                        TeamColor::Yellow => self.yellow_carded_out.push(id),
+                    }
+                }
+            } else if out_len > target {
+                // Cards expired: re-add robots at the halfway-line substitution zone.
+                for k in 0..(out_len - target) {
+                    let id = match team {
+                        TeamColor::Blue => self.blue_carded_out.pop(),
+                        TeamColor::Yellow => self.yellow_carded_out.pop(),
+                    };
+                    if let Some(id) = id {
+                        let pos = Vector2::new(-300.0 * k as f64, reentry_y);
+                        self.add_robot(team, id, pos, Angle::from_radians(0.0));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Count of a team's robots currently inside the touch/goal lines (parked,
+    /// off-field robots at the substitution line are excluded). Used for the
+    /// too-many-robots flag.
+    fn on_field_count(&self, team: TeamColor) -> u32 {
+        let half_w = self.config.field_geometry.field_width / 2.0;
+        let half_l = self.config.field_geometry.field_length / 2.0;
+        self.players
+            .iter()
+            .filter(|p| p.team_color == team)
+            .filter(|p| {
+                let pos = self
+                    .rigid_body_set
+                    .get(p.rigid_body_handle)
+                    .map(|b| b.position().translation.vector)
+                    .unwrap_or_default();
+                pos.x.abs() <= half_l && pos.y.abs() <= half_w
+            })
+            .count() as u32
     }
 
     pub fn gc_message(&mut self) -> Option<Referee> {
@@ -2057,6 +2261,20 @@ impl Simulation {
             self.last_touch_info = None;
         }
 
+        // Expire yellow cards (restoring bot allowance) before the game state /
+        // detection are produced for this step, then enact physical substitution
+        // (remove parked carded robots / re-add expired ones).
+        self.update_cards();
+        self.update_card_substitutions();
+
+        // Flag a team that is fielding more robots than its current card-adjusted
+        // allowance (SSL TOO_MANY_ROBOTS). Grace-limited like other §8.4.3 fouls.
+        for team in [TeamColor::Blue, TeamColor::Yellow] {
+            if self.on_field_count(team) > self.max_allowed_bots_for(team) {
+                self.raise_foul(RefereeMessage::TooManyRobots, Some(team));
+            }
+        }
+
         // Update the game state
         self.update_game_state();
 
@@ -2781,6 +2999,8 @@ impl SimulationBuilder {
         let player_radius = builder.sim.config.player_radius;
         let player_margin = 0.75 * player_radius;
         let sides = builder.sim.config.initial_side_assignment;
+        let n_blue = builder.sim.config.n_blue_robots;
+        let n_yellow = builder.sim.config.n_yellow_robots;
 
         let mut jitter = |builder: &mut SimulationBuilder| {
             let rng = &mut builder.sim.rng;
@@ -2794,7 +3014,7 @@ impl SimulationBuilder {
         // Base x is negative so robots line up on their OWN half (team-relative
         // +x points at the enemy goal, so own half is x < 0); transform_vec2 then
         // maps that to the correct absolute side per the side assignment.
-        for i in 0..6 {
+        for i in 0..n_blue {
             let (dx, dy, dyaw) = jitter(&mut builder);
             let position = Vector2::new(
                 -(field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin))
@@ -2806,7 +3026,7 @@ impl SimulationBuilder {
                 Angle::from_radians(dyaw),
             );
         }
-        for i in 0..6 {
+        for i in 0..n_yellow {
             let (dx, dy, dyaw) = jitter(&mut builder);
             let position = Vector2::new(
                 -(field_length - player_margin - i as f64 * (2.0 * player_radius + player_margin))

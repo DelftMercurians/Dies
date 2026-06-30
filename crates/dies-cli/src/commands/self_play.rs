@@ -8,8 +8,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use dies_core::{ExecutorSettings, FieldSnapshot};
-use dies_executor::{Executor, HeadlessConfig};
+use dies_core::{ExecutorSettings, FieldSnapshot, TeamColor};
+use dies_executor::{Executor, HeadlessConfig, ScriptedEvent, ScriptedEventKind};
 use dies_simulator::{SimulationBuilder, SimulationConfig};
 
 #[allow(clippy::too_many_arguments)]
@@ -25,7 +25,31 @@ pub async fn self_play(
     build: bool,
     release_strategies: bool,
     strategies_dir: Option<PathBuf>,
+    blue_robots: usize,
+    yellow_robots: usize,
+    blue_card_at: Vec<f64>,
+    yellow_card_at: Vec<f64>,
 ) -> Result<()> {
+    let n_blue_robots = blue_robots.clamp(1, 6);
+    let n_yellow_robots = yellow_robots.clamp(1, 6);
+
+    // Build the scripted-event timeline from the card schedules.
+    let mut scripted_events: Vec<ScriptedEvent> = blue_card_at
+        .into_iter()
+        .map(|t| ScriptedEvent {
+            t_secs: t,
+            kind: ScriptedEventKind::YellowCard {
+                team: TeamColor::Blue,
+            },
+        })
+        .chain(yellow_card_at.into_iter().map(|t| ScriptedEvent {
+            t_secs: t,
+            kind: ScriptedEventKind::YellowCard {
+                team: TeamColor::Yellow,
+            },
+        }))
+        .collect();
+    scripted_events.sort_by(|a, b| a.t_secs.total_cmp(&b.t_secs));
     // Build both strategy binaries (release → target/release, else target/debug,
     // which is where the executor looks unless `strategies_dir` overrides it).
     if build {
@@ -55,6 +79,7 @@ pub async fn self_play(
         max_goals,
         log_dir,
         initial_snapshot,
+        scripted_events,
     };
 
     // run_headless is a blocking sync loop (blocking IPC + free-running sim), so
@@ -70,6 +95,8 @@ pub async fn self_play(
 
         let sim_config = SimulationConfig {
             seed,
+            n_blue_robots,
+            n_yellow_robots,
             ..Default::default()
         };
         let simulator = SimulationBuilder::default_seeded(sim_config)

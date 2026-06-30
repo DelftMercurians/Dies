@@ -8,6 +8,22 @@
 use dies_core::{FieldSnapshot, TeamColor};
 use serde::Serialize;
 
+/// A scripted in-match event fired at a fixed sim time. Lets a headless match
+/// inject referee events (currently yellow cards) on a schedule, so dynamic
+/// robot-count behaviour can be exercised deterministically.
+#[derive(Debug, Clone)]
+pub struct ScriptedEvent {
+    /// Sim time (seconds) at which to fire the event.
+    pub t_secs: f64,
+    pub kind: ScriptedEventKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ScriptedEventKind {
+    /// Show a yellow card to a team (lowers its `max_allowed_bots` for 120 s).
+    YellowCard { team: TeamColor },
+}
+
 /// Inputs for a single headless self-play match.
 #[derive(Debug, Clone)]
 pub struct HeadlessConfig {
@@ -29,6 +45,9 @@ pub struct HeadlessConfig {
     /// the snapshot's `game_state` (or to `Run`/free play if the snapshot has
     /// none) instead of running the normal kickoff sequence.
     pub initial_snapshot: Option<FieldSnapshot>,
+    /// Scripted in-match events (e.g. yellow cards) fired on a sim-time
+    /// schedule. Applied in order as the match clock passes each `t_secs`.
+    pub scripted_events: Vec<ScriptedEvent>,
 }
 
 /// Why a headless match ended.
