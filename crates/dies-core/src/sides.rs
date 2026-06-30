@@ -73,7 +73,17 @@ pub enum SideAssignment {
 
 impl SideAssignment {
     /// Transforms world data to team-specific coordinates.
-    pub fn transform_to_team_coords(&self, color: TeamColor, world_data: &WorldData) -> TeamData {
+    ///
+    /// When `ignore_gc` is set, the team's game state is forced to
+    /// [`GameState::Run`] (free play) regardless of the actual Game Controller
+    /// state — a testing override that disables all GC-driven constraints
+    /// (halt/stop/kickoff positioning, rule keep-out zones) for this team.
+    pub fn transform_to_team_coords(
+        &self,
+        color: TeamColor,
+        world_data: &WorldData,
+        ignore_gc: bool,
+    ) -> TeamData {
         TeamData {
             t_received: world_data.t_received,
             t_capture: world_data.t_capture,
@@ -94,9 +104,9 @@ impl SideAssignment {
                 .map(|b| self.transform_to_team_coords_ball(color, b)),
             field_geom: world_data.field_geom.clone(),
             current_game_state: GameStateData {
-                game_state: if let GameState::BallReplacement(pos) =
-                    world_data.game_state.game_state
-                {
+                game_state: if ignore_gc {
+                    GameState::Run
+                } else if let GameState::BallReplacement(pos) = world_data.game_state.game_state {
                     GameState::BallReplacement(self.transform_vec2(color, &pos))
                 } else {
                     world_data.game_state.game_state

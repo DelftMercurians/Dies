@@ -62,7 +62,7 @@ const TeamPicker: FC<{
 
 /**
  * Strategy / scenario picker, opened as a modal from the toolbar. Assign any
- * strategy (concerto, v0-strategy, …) or skill-test scenario (pickup_ball, …) to
+ * strategy (concerto, …) or skill-test scenario (handle_ball, …) to
  * each team, then Run. Both are plain Strategy binaries launched over the strategy
  * IPC — scenarios are just strategies that script a robot through skills.
  *
@@ -79,6 +79,7 @@ const StrategyControls: React.FC = () => {
   const isRunning = status.data?.executor?.type === "RunningExecutor";
   const tc = settings?.team_configuration;
 
+  const [open, setOpen] = useState(false);
   const [blue, setBlue] = useState<string>(NONE);
   const [yellow, setYellow] = useState<string>(NONE);
 
@@ -109,12 +110,14 @@ const StrategyControls: React.FC = () => {
     if (isRunning) sendCommand({ type: "Stop" });
     sendCommand({ type: "Start" });
     toast.success(isRunning ? "Restarting with new strategies" : "Starting");
+    // Close the picker on run — the field/inspector is what you want to watch.
+    setOpen(false);
   };
 
   const stop = () => sendCommand({ type: "Stop" });
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <SimpleTooltip title="Strategies & scenarios — assign per team and run" className="h-full">
         <DialogTrigger asChild>
           <button

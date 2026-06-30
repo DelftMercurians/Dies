@@ -146,8 +146,7 @@ pub async fn delete_snapshot(
 /// Extract the `[package] name` from a Cargo.toml with a minimal hand parse (no
 /// toml dependency). The strategy binary name equals the package name, which is
 /// what `cargo build -p <name>` and the executor's `strategies_dir/<name>` both
-/// use — and a crate's dir name can differ from it (e.g. `strategies/v0` →
-/// `v0-strategy`).
+/// use — and a crate's dir name can differ from its package name.
 fn cargo_package_name(cargo_toml: &std::path::Path) -> Option<String> {
     let text = fs::read_to_string(cargo_toml).ok()?;
     let mut in_package = false;

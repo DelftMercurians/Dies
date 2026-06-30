@@ -10,21 +10,17 @@
 //! - Clean completion semantics
 
 mod dribble;
-mod dribble_shoot;
 mod go_to_bounded;
 mod go_to_pos;
 mod handle_ball;
-mod pickup_ball;
 mod receive;
 mod shoot;
 mod snatch;
 
 pub use dribble::DribbleSkill;
-pub use dribble_shoot::DribbleShootSkill;
 pub use go_to_bounded::GoToBoundedSkill;
 pub use go_to_pos::GoToPosSkill;
 pub use handle_ball::HandleBallSkill;
-pub use pickup_ball::PickupBallSkill;
 pub use receive::ReceiveSkill;
 pub use shoot::ShootSkill;
 pub use snatch::SnatchSkill;

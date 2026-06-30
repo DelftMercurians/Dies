@@ -18,7 +18,7 @@ use crate::{Angle, MotionBounds, PlayerId, Vector2};
 /// - If the same skill type is already running, parameters are updated without interruption
 ///
 /// ### Discrete Skills
-/// - `PickupBall`, `ReflexShoot`: Start once, run to completion
+/// - `Shoot`, `Receive`, `Snatch`: Start once, run to completion
 /// - Monitor via `SkillStatus`; can update parameters while running
 ///
 /// ## Update Semantics
@@ -89,36 +89,6 @@ pub enum SkillCommand {
         target_heading: Angle,
     },
 
-    /// Approach and capture the ball.
-    ///
-    /// **Type**: Discrete - start once, wait for completion.
-    ///
-    /// **Parameters**:
-    /// - `target_heading`: Desired heading after ball is captured. For a
-    ///   stationary ball this also determines the approach direction —
-    ///   the robot moves to the side of the ball opposite `target_heading`
-    ///   so it ends up facing that direction at capture.
-    ///
-    /// **Behavior**:
-    /// 1. Move to position behind ball (opposite side of `target_heading`),
-    ///    already facing `target_heading`
-    /// 2. Slowly approach ball with dribbler on
-    /// 3. Complete when breakbeam detects ball
-    ///
-    /// **Completion**:
-    /// - `Succeeded` when breakbeam detects ball (or, in `instant_kick` mode,
-    ///   when the ball departs along `target_heading`)
-    /// - `Failed` if ball moves away or timeout
-    ///
-    /// **`instant_kick`**: double-touch-safe restart release. Instead of
-    /// capturing, the robot arms a firmware reflex kick during the drive-through
-    /// so the ball is struck the instant it reaches the breakbeam (no holding).
-    /// Succeeds on ball-departed rather than possession.
-    PickupBall {
-        target_heading: Angle,
-        instant_kick: bool,
-    },
-
     /// Orient toward a target and kick.
     ///
     /// **Type**: Discrete - start once, wait for completion.
@@ -135,23 +105,6 @@ pub enum SkillCommand {
     /// - `Succeeded` when ball is kicked
     /// - `Failed` if angle is impossible or ball lost
     Shoot { target: Vector2 },
-
-    /// Aim the captured ball at a target point and kick.
-    ///
-    /// **Type**: Discrete - start once, wait for completion.
-    ///
-    /// **Parameters**:
-    /// - `target`: Point to shoot/pass toward. From the *point* (not just a
-    ///   heading) the skill chooses where to launch the ball: it aims in place
-    ///   (orbiting the ball, dribbler engaged) when the current spot has a clear
-    ///   kicking pose toward the target, or first dribbles the ball a short
-    ///   distance to a reachable launch point when it's jammed (e.g. against a
-    ///   boundary), then aims and kicks.
-    ///
-    /// **Completion**:
-    /// - `Succeeded` when the ball is kicked
-    /// - `Failed` if the ball is lost, the shoot lane is blocked, or timeout
-    DribbleShoot { target: Vector2 },
 
     /// Receive a pass by intercepting the ball along a passing line.
     ///
@@ -223,9 +176,8 @@ pub enum SkillCommand {
     /// continuously-supplied terminal action with it.
     ///
     /// **Type**: Continuous — call each frame with the latest `action`/`approach`.
-    /// This is the merged successor to the [`PickupBall`](Self::PickupBall) →
-    /// [`DribbleShoot`](Self::DribbleShoot) sequence: because acquire *and* act are
-    /// one command **variant**, swapping the action mid-handle is a live parameter
+    /// Acquire *and* the terminal action are one command **variant**, so swapping
+    /// the action mid-handle (e.g. once the ball is secured) is a live parameter
     /// update on the same skill instance (no teardown), so the delicate acquire→act
     /// transition no longer discards state.
     ///
@@ -359,8 +311,8 @@ pub enum SkillStatus {
     /// The skill completed successfully.
     ///
     /// - For `GoToPos`/`Dribble`: Robot arrived at target position
-    /// - For `PickupBall`: Ball is captured (breakbeam triggered)
-    /// - For `ReflexShoot`: Ball was kicked
+    /// - For `HandleBall`: A `Shoot`/`Strike` kick departed
+    /// - For `Shoot`: Ball was kicked
     ///
     /// The robot is stopped. Status remains `Succeeded` until a new skill is commanded.
     Succeeded,
@@ -368,8 +320,8 @@ pub enum SkillStatus {
     /// The skill failed.
     ///
     /// - For `Dribble`: Ball was lost during dribble
-    /// - For `PickupBall`: Ball moved away or timeout
-    /// - For `ReflexShoot`: Could not align or ball lost
+    /// - For `HandleBall`: Could not acquire/aim, or lost the ball too many times
+    /// - For `Shoot`: Could not align or ball lost
     ///
     /// The robot is stopped. Status remains `Failed` until a new skill is commanded.
     Failed,

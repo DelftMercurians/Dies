@@ -7,12 +7,12 @@
 //!
 //! The skill API uses a hybrid approach:
 //!
-//! - **Continuous skills** (`go_to`, `dribble_to`): Call each frame, parameters update smoothly
-//! - **Discrete skills** (`pickup_ball`, `reflex_shoot`): Start once, return handles for monitoring
+//! - **Continuous skills** (`go_to`, `dribble_to`, `handle_ball`): Call each frame, parameters update smoothly
+//! - **Discrete skills** (`reflex_shoot`, `snatch`): Start once, return handles for monitoring
 
 use crate::skill_builders::{
-    DribbleBuilder, DribbleShootParams, GoToBoundedBuilder, GoToBuilder, HandleBallParams,
-    PickupBallParams, ReceiveParams, ReflexShootParams, SkillHandle, SnatchParams,
+    DribbleBuilder, GoToBoundedBuilder, GoToBuilder, HandleBallParams, ReceiveParams,
+    ReflexShootParams, SkillHandle, SnatchParams,
 };
 use dies_core::Angle;
 use dies_strategy_protocol::{
@@ -186,8 +186,7 @@ impl PlayerHandle {
     // ========== Unified Ball Handling ==========
 
     /// Acquire the ball (if not held) and perform a continuously-supplied terminal
-    /// [`BallAction`] with it — the merged successor to
-    /// [`pickup_ball`](Self::pickup_ball) → [`dribble_shoot`](Self::dribble_shoot).
+    /// [`BallAction`] with it — the unified acquire + carry + shoot/strike skill.
     ///
     /// Call each frame; swapping the `action` (e.g. `Hold` → `Shoot` once the ball
     /// is secured) is a live update on the same skill, so the acquire→act
@@ -210,66 +209,6 @@ impl PlayerHandle {
     }
 
     // ========== Discrete Skills ==========
-
-    /// Approach and capture the ball.
-    ///
-    /// This is a **discrete skill** - start once and wait for completion.
-    /// Returns a handle for monitoring and updating parameters.
-    ///
-    /// # Parameters
-    ///
-    /// - `target_heading`: Desired heading after ball is captured (for follow-up action)
-    ///
-    /// # Behavior
-    ///
-    /// 1. Move to position behind ball, facing `target_heading`
-    /// 2. Slowly approach ball with dribbler on
-    /// 3. Complete when breakbeam detects ball
-    ///
-    /// # Completion
-    ///
-    /// - `SkillStatus::Succeeded` when breakbeam detects ball
-    /// - `SkillStatus::Failed` if ball moves away or timeout
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Start pickup
-    /// let handle = player.pickup_ball(heading_toward_goal);
-    ///
-    /// // Later, update heading while approaching
-    /// handle.update_with(|p| p.target_heading = new_heading);
-    /// ```
-    pub fn pickup_ball(&mut self, target_heading: Angle) -> SkillHandle<PickupBallParams> {
-        self.pending_command = Some(SkillCommand::PickupBall {
-            target_heading,
-            instant_kick: false,
-        });
-        SkillHandle::new(PickupBallParams {
-            target_heading,
-            instant_kick: false,
-        })
-    }
-
-    /// Strike-through release: approach the ball on the `target_heading` axis and
-    /// arm a firmware **reflex kick**, so the ball is struck the instant it
-    /// reaches the breakbeam — without ever holding it. This is the
-    /// double-touch-safe way to take a restart (kickoff / free kick); see
-    /// [`pickup_ball`](Self::pickup_ball) for the capturing variant.
-    ///
-    /// # Completion
-    /// - `SkillStatus::Succeeded` when the ball departs along `target_heading`
-    /// - `SkillStatus::Failed` on whiff / timeout (driver re-stages)
-    pub fn pickup_ball_reflex(&mut self, target_heading: Angle) -> SkillHandle<PickupBallParams> {
-        self.pending_command = Some(SkillCommand::PickupBall {
-            target_heading,
-            instant_kick: true,
-        });
-        SkillHandle::new(PickupBallParams {
-            target_heading,
-            instant_kick: true,
-        })
-    }
 
     /// Orient toward a target and kick.
     ///
@@ -304,31 +243,6 @@ impl PlayerHandle {
     pub fn reflex_shoot(&mut self, target: Vector2) -> SkillHandle<ReflexShootParams> {
         self.pending_command = Some(SkillCommand::Shoot { target });
         SkillHandle::new(ReflexShootParams { target })
-    }
-
-    /// Aim by orbiting the captured ball, then kick along `target_heading`.
-    ///
-    /// This is a **discrete skill** - start once and wait for completion.
-    /// Returns a handle for monitoring and updating parameters.
-    ///
-    /// Unlike [`reflex_shoot`](Self::reflex_shoot), this assumes the ball is
-    /// already captured. From the target *point* it chooses where to launch the
-    /// ball: it orbits to aim in place when the current spot has a clear kicking
-    /// pose, or first dribbles the ball a short distance to a reachable launch
-    /// point when it's jammed, then kicks and verifies the ball actually left.
-    ///
-    /// # Parameters
-    ///
-    /// - `target`: Point to shoot/pass the ball toward.
-    ///
-    /// # Completion
-    ///
-    /// - `SkillStatus::Succeeded` when the kicked ball departs the dribbler
-    /// - `SkillStatus::Failed` if the kick doesn't connect, the lane is blocked,
-    ///   or it times out
-    pub fn dribble_shoot(&mut self, target: Vector2) -> SkillHandle<DribbleShootParams> {
-        self.pending_command = Some(SkillCommand::DribbleShoot { target });
-        SkillHandle::new(DribbleShootParams { target })
     }
 
     /// Receive a pass by intercepting along the passing line.
@@ -522,19 +436,26 @@ mod tests {
     }
 
     #[test]
-    fn test_pickup_ball_command() {
+    fn test_handle_ball_command() {
         let mut player = make_test_player();
 
-        let _handle = player.pickup_ball(Angle::from_radians(0.5));
+        let _handle = player.handle_ball(
+            BallAction::Hold {
+                heading: Angle::from_radians(0.5),
+            },
+            None,
+        );
 
         let cmd = player.take_pending_command();
         assert!(cmd.is_some());
 
         match cmd.unwrap() {
-            SkillCommand::PickupBall { target_heading, .. } => {
-                assert!((target_heading.radians() - 0.5).abs() < 1e-6);
+            SkillCommand::HandleBall { action, .. } => {
+                assert!(
+                    matches!(action, BallAction::Hold { heading } if (heading.radians() - 0.5).abs() < 1e-6)
+                );
             }
-            _ => panic!("Expected PickupBall command"),
+            _ => panic!("Expected HandleBall command"),
         }
     }
 

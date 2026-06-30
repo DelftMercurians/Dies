@@ -29,7 +29,7 @@ pub async fn start_ui(args: Cli) -> Result<()> {
     // The executor reads each binary from `target/debug`; in watch mode it also
     // hot-swaps the process whenever the binary is rebuilt. With the per-team
     // `--blue-strategy` / `--yellow-strategy` overrides there can be more than one
-    // (e.g. a v0-vs-concerto benchmark), so build each distinct binary once.
+    // (e.g. a concerto-vs-scenario benchmark), so build each distinct binary once.
     let mut selected: Vec<String> = Vec::new();
     if args.strategy != "none" {
         selected.push(args.strategy.clone());
@@ -69,7 +69,7 @@ pub async fn start_ui(args: Cli) -> Result<()> {
                 .flatten()
                 .filter(|e| e.path().is_dir() && e.file_name() != "scenarios")
                 // Build by package name (== binary name), which can differ from
-                // the crate's dir name (e.g. `strategies/v0` → `v0-strategy`).
+                // the crate's dir name.
                 .filter_map(|e| crate::strategy::cargo_package_name(&e.path().join("Cargo.toml")))
                 .filter(|n| !selected.contains(n))
                 .collect();

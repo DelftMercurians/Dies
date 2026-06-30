@@ -189,7 +189,7 @@ pub const ESCAPE_STEP: f64 = 300.0;
 pub const NOPROGRESS_TTL: f64 = 1.0;
 
 // ── Advancement hoof (kick to open space) ─────────────────────────────────────
-// A full-power `DribbleShoot` kick fires at a fixed ~4000 mm/s and the ball rolls
+// A full-power `Shoot` kick fires at a fixed ~4000 mm/s and the ball rolls
 // ~`KICK_SPEED / ball_damping` ≈ 4000 / 0.8 = 5000 mm before stopping. Aiming an
 // advancement kick "at open space" a short distance ahead therefore overshoots and
 // drives the ball out of bounds — a self-inflicted stoppage that hands the opponent

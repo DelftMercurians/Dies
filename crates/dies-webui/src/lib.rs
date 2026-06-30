@@ -337,8 +337,8 @@ pub(crate) struct SnapshotsResponse {
 }
 
 /// The set of runnable binaries the strategy picker can assign to a team.
-/// `strategies` are full strategy crates (e.g. `concerto`, `v0`); `scenarios`
-/// are skill-test binaries from the `scenarios` crate (e.g. `pickup_ball`).
+/// `strategies` are full strategy crates (e.g. `concerto`); `scenarios`
+/// are skill-test binaries from the `scenarios` crate (e.g. `handle_ball`).
 /// Both are launched the same way — they're just `Strategy` binaries.
 #[derive(Debug, Clone, Serialize)]
 #[typeshare]

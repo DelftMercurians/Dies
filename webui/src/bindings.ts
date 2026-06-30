@@ -612,6 +612,14 @@ export enum Handicap {
 
 export interface TeamSpecificSettings {
 	handicaps: Record<PlayerId, Handicap[]>;
+	/**
+	 * Testing override: when true, this team ignores the Game Controller and
+	 * always plays as if in free play (`GameState::Run`) — full speed, no
+	 * halt/stop/kickoff positioning, no rule keep-out zones. Useful for
+	 * testing on the real field with no GC connected, or for letting one team
+	 * keep playing while the other is stopped. Defaults to false.
+	 */
+	ignore_gc: boolean;
 }
 
 export interface SkillSettings {
@@ -1159,8 +1167,8 @@ export interface SnapshotsResponse {
 
 /**
  * The set of runnable binaries the strategy picker can assign to a team.
- * `strategies` are full strategy crates (e.g. `concerto`, `v0`); `scenarios`
- * are skill-test binaries from the `scenarios` crate (e.g. `pickup_ball`).
+ * `strategies` are full strategy crates (e.g. `concerto`); `scenarios`
+ * are skill-test binaries from the `scenarios` crate (e.g. `handle_ball`).
  * Both are launched the same way — they're just `Strategy` binaries.
  */
 export interface StrategiesResponse {

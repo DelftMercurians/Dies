@@ -15,7 +15,6 @@ members = [
     "crates/dies-logger",
     # Strategy crates
     "strategies/concerto",
-    "strategies/v0",
     # Skill-test scenarios (each binary is a Strategy)
     "strategies/scenarios",
 ]

@@ -507,8 +507,9 @@ impl WorldData {
         }
     }
 
-    pub fn get_team_data(&self, color: TeamColor) -> TeamData {
-        self.side_assignment.transform_to_team_coords(color, self)
+    pub fn get_team_data(&self, color: TeamColor, ignore_gc: bool) -> TeamData {
+        self.side_assignment
+            .transform_to_team_coords(color, self, ignore_gc)
     }
 }
 

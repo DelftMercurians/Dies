@@ -191,10 +191,12 @@ impl TeamMap {
         &mut self,
         world_data: &dies_core::WorldData,
         manual_override: HashMap<(TeamColor, PlayerId), PlayerControlInput>,
+        blue_ignore_gc: bool,
+        yellow_ignore_gc: bool,
     ) {
         // Update blue team controller if active
         if let Some(controller) = &mut self.blue_team {
-            let team_data = world_data.get_team_data(TeamColor::Blue);
+            let team_data = world_data.get_team_data(TeamColor::Blue, blue_ignore_gc);
             controller.update(
                 TeamColor::Blue,
                 world_data.side_assignment,
@@ -214,7 +216,7 @@ impl TeamMap {
 
         // Update yellow team controller if active
         if let Some(controller) = &mut self.yellow_team {
-            let team_data = world_data.get_team_data(TeamColor::Yellow);
+            let team_data = world_data.get_team_data(TeamColor::Yellow, yellow_ignore_gc);
             controller.update(
                 TeamColor::Yellow,
                 world_data.side_assignment,
@@ -1236,13 +1238,15 @@ impl Executor {
             log::error!("Failed to broadcast world update: {}", err);
         }
 
+        let blue_ignore_gc = self.settings.blue_team_settings.ignore_gc;
+        let yellow_ignore_gc = self.settings.yellow_team_settings.ignore_gc;
         let blue_team_data = if self.team_controllers.blue_team.is_some() {
-            Some(world_data.get_team_data(TeamColor::Blue))
+            Some(world_data.get_team_data(TeamColor::Blue, blue_ignore_gc))
         } else {
             None
         };
         let yellow_team_data = if self.team_controllers.yellow_team.is_some() {
-            Some(world_data.get_team_data(TeamColor::Yellow))
+            Some(world_data.get_team_data(TeamColor::Yellow, yellow_ignore_gc))
         } else {
             None
         };
@@ -1290,7 +1294,8 @@ impl Executor {
                 )
             })
             .collect();
-        self.team_controllers.update(&world_data, manual_override);
+        self.team_controllers
+            .update(&world_data, manual_override, blue_ignore_gc, yellow_ignore_gc);
 
         // Feed this tick's velocity setpoints to the tracker for command
         // feedforward (consumed on the next vision update). The controllers run in

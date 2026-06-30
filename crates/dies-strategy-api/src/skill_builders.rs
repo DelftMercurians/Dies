@@ -183,25 +183,6 @@ pub trait SkillParams: Clone {
     fn to_command(&self) -> SkillCommand;
 }
 
-/// Parameters for `PickupBall` skill.
-#[derive(Clone, Debug)]
-pub struct PickupBallParams {
-    /// Target heading after ball is captured.
-    pub target_heading: Angle,
-    /// Strike-through release mode (arm a reflex kick instead of capturing).
-    /// Used for double-touch-safe restarts; see [`SkillCommand::PickupBall`].
-    pub instant_kick: bool,
-}
-
-impl SkillParams for PickupBallParams {
-    fn to_command(&self) -> SkillCommand {
-        SkillCommand::PickupBall {
-            target_heading: self.target_heading,
-            instant_kick: self.instant_kick,
-        }
-    }
-}
-
 /// Parameters for `ReflexShoot` skill.
 #[derive(Clone, Debug)]
 pub struct ReflexShootParams {
@@ -212,21 +193,6 @@ pub struct ReflexShootParams {
 impl SkillParams for ReflexShootParams {
     fn to_command(&self) -> SkillCommand {
         SkillCommand::Shoot {
-            target: self.target,
-        }
-    }
-}
-
-/// Parameters for `DribbleShoot` skill.
-#[derive(Clone, Debug)]
-pub struct DribbleShootParams {
-    /// Point to shoot/pass toward. The skill chooses the launch point and aims.
-    pub target: Vector2,
-}
-
-impl SkillParams for DribbleShootParams {
-    fn to_command(&self) -> SkillCommand {
-        SkillCommand::DribbleShoot {
             target: self.target,
         }
     }
@@ -299,10 +265,10 @@ impl SkillParams for SnatchParams {
 ///
 /// ```ignore
 /// // Start skill
-/// let handle = player.pickup_ball(heading);
+/// let mut handle = player.handle_ball(BallAction::Hold { heading }, None);
 ///
 /// // Update parameters
-/// handle.update_with(|p| p.target_heading = new_heading);
+/// handle.update_with(|p| p.action = BallAction::Shoot { target });
 /// ```
 #[derive(Clone, Debug)]
 pub struct SkillHandle<S: SkillParams> {
@@ -413,13 +379,15 @@ mod tests {
 
     #[test]
     fn test_skill_handle_update() {
-        let mut handle = SkillHandle::new(PickupBallParams {
-            target_heading: Angle::from_radians(0.0),
-            instant_kick: false,
+        let mut handle = SkillHandle::new(HandleBallParams {
+            action: BallAction::Hold {
+                heading: Angle::from_radians(0.0),
+            },
+            approach: None,
         });
 
-        handle.update_with(|p| p.target_heading = Angle::from_radians(1.0));
+        handle.update_with(|p| p.approach = Some(Angle::from_radians(1.0)));
 
-        assert!((handle.params().target_heading.radians() - 1.0).abs() < 1e-6);
+        assert!((handle.params().approach.unwrap().radians() - 1.0).abs() < 1e-6);
     }
 }

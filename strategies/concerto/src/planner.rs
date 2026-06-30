@@ -1141,7 +1141,7 @@ mod tests {
     fn attacking_restart_kicker_emits_release() {
         // On our attacking restart, the kicker holding the ball must release it
         // with a strike-through (no hold), i.e. a `Release` waypoint — never a
-        // `Shoot` (DribbleShoot, which holds and would double-touch).
+        // `Shoot` (which captures and holds the ball, and would double-touch).
         let own = vec![
             player(1, -4000.0, 0.0), // keeper
             player(2, -1000.0, 0.0), // kicker with the ball

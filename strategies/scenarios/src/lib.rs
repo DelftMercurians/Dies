@@ -20,7 +20,7 @@
 //!         let p = PlayerId::new(0);
 //!         Scenario::looping(move || {
 //!             vec![
-//!                 Step::skill("pickup", p, |h| { h.pickup_ball(Angle::from_radians(0.0)); })
+//!                 Step::skill("acquire", p, |h| { h.handle_ball(BallAction::Hold { heading: Angle::from_radians(0.0) }, None); })
 //!                     .timeout(15.0),
 //!                 Step::skill("shoot", p, |h| { h.reflex_shoot(OPP_GOAL); })
 //!                     .timeout(10.0),
@@ -70,6 +70,13 @@ pub enum StepOutcome {
 /// [`Step::custom`].
 pub struct Step {
     name: String,
+    /// Category for the UI plan panel (drives its per-step color), e.g.
+    /// `"Skill"`, `"Pass"`, `"Wait"`. Mirrors concerto's `PlanStep::kind`.
+    kind: String,
+    /// The robots this step drives. Used to reset their skills when the step
+    /// ends (so a re-run starts from a fresh skill instance, not stale internal
+    /// state) and to surface the first as the plan's active robot.
+    players: Vec<PlayerId>,
     run: Box<dyn FnMut(&mut TeamContext) -> StepOutcome + Send>,
     timeout: Option<f64>,
     elapsed: f64,
@@ -78,10 +85,13 @@ pub struct Step {
 impl Step {
     fn new(
         name: impl Into<String>,
+        kind: impl Into<String>,
         run: impl FnMut(&mut TeamContext) -> StepOutcome + Send + 'static,
     ) -> Self {
         Self {
             name: name.into(),
+            kind: kind.into(),
+            players: Vec::new(),
             run: Box::new(run),
             timeout: None,
             elapsed: 0.0,
@@ -97,7 +107,7 @@ impl Step {
 
     /// Drive a single skill on one player and complete when the executor reports
     /// the skill `Succeeded` (continuous skills like `go_to` complete on arrival;
-    /// discrete skills like `pickup_ball`/`reflex_shoot` complete when done).
+    /// discrete skills like `handle_ball`/`reflex_shoot` complete when done).
     ///
     /// `issue` is called every frame with the player's [`PlayerHandle`] — issue
     /// the skill there exactly as a strategy would. The closure should command
@@ -109,7 +119,7 @@ impl Step {
     ) -> Self {
         let mut armed = false;
         let mut frames: u32 = 0;
-        Step::new(name, move |ctx| {
+        let mut step = Step::new(name, "Skill", move |ctx| {
             frames += 1;
             let status = match ctx.player(id) {
                 Some(player) => {
@@ -130,7 +140,9 @@ impl Step {
                 SkillStatus::Failed if armed || frames > ARM_GRACE_FRAMES => StepOutcome::Failed,
                 _ => StepOutcome::Running,
             }
-        })
+        });
+        step.players = vec![id];
+        step
     }
 
     /// Run the joint pass coordinator from `passer` to `receiver` and complete on
@@ -139,7 +151,7 @@ impl Step {
     pub fn pass(passer: PlayerId, receiver: PlayerId, target_hint: Option<Vector2>) -> Self {
         let mut armed = false;
         let mut frames: u32 = 0;
-        Step::new(format!("pass {passer}->{receiver}"), move |ctx| {
+        let mut step = Step::new(format!("pass {passer}->{receiver}"), "Pass", move |ctx| {
             frames += 1;
             // Issue the pass into both slots (committed on the builder's drop).
             match target_hint {
@@ -169,14 +181,16 @@ impl Step {
                 }
             }
             StepOutcome::Running
-        })
+        });
+        step.players = vec![passer, receiver];
+        step
     }
 
     /// Idle for `seconds` of world time, then succeed. Useful for letting the
     /// field settle between skills or pacing a loop.
     pub fn wait(seconds: f64) -> Self {
         let mut elapsed = 0.0;
-        Step::new(format!("wait {seconds}s"), move |ctx| {
+        Step::new(format!("wait {seconds}s"), "Wait", move |ctx| {
             elapsed += ctx.world().dt();
             if elapsed >= seconds {
                 StepOutcome::Succeeded
@@ -192,7 +206,7 @@ impl Step {
         name: impl Into<String>,
         run: impl FnMut(&mut TeamContext) -> StepOutcome + Send + 'static,
     ) -> Self {
-        Step::new(name, run)
+        Step::new(name, "Custom", run)
     }
 }
 
@@ -260,7 +274,27 @@ impl Strategy for Scenario {
         let total = self.steps.len();
         let dt = ctx.world().dt();
 
-        let (name, timed_out, outcome) = {
+        // Mirror the step list into the UI's plan panel via the same
+        // `DebugValue::Plan` primitive concerto uses. Re-emitted every frame
+        // (debug entries are TTL-evicted) so the inspector tracks progress: the
+        // current step is the active one. The key is prefixed to
+        // `team_{Color}.strategy.plan` by the strategy host — exactly what the
+        // PlanSection panel reads.
+        let plan_steps: Vec<debug::PlanStep> = self
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, step)| debug::PlanStep {
+                kind: step.kind.clone(),
+                label: step.name.clone(),
+                detail: None,
+                active: i == idx,
+            })
+            .collect();
+        let active_robot = self.steps[idx].players.first().map(|p| p.as_u32());
+        debug::plan("plan", active_robot, plan_steps);
+
+        let (name, players, timed_out, outcome) = {
             let step = &mut self.steps[idx];
             step.elapsed += dt;
             let timed_out = step.timeout.is_some_and(|t| step.elapsed >= t);
@@ -269,14 +303,15 @@ impl Strategy for Scenario {
             } else {
                 (step.run)(ctx)
             };
-            (step.name.clone(), timed_out, outcome)
+            (step.name.clone(), step.players.clone(), timed_out, outcome)
         };
 
-        match outcome {
-            StepOutcome::Running => {}
+        let advanced = match outcome {
+            StepOutcome::Running => false,
             StepOutcome::Succeeded => {
                 tracing::info!("✓ step {}/{} '{}' succeeded", idx + 1, total, name);
                 self.idx += 1;
+                true
             }
             StepOutcome::Failed => {
                 if timed_out {
@@ -285,6 +320,21 @@ impl Strategy for Scenario {
                     tracing::warn!("✗ step {}/{} '{}' failed", idx + 1, total, name);
                 }
                 self.idx += 1;
+                true
+            }
+        };
+
+        // Reset the skills this step drove so the next step — or, in a looping
+        // scenario, the next pass — rebuilds each skill from a fresh instance
+        // instead of inheriting the finished skill's terminal status or internal
+        // state. `stop` drops the executor's `current_skill` for the player; the
+        // next frame's command recreates it. (Custom steps that drive untracked
+        // robots are responsible for their own cleanup.)
+        if advanced {
+            for pid in players {
+                if let Some(player) = ctx.player(pid) {
+                    player.stop();
+                }
             }
         }
     }

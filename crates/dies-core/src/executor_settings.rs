@@ -268,6 +268,12 @@ impl std::fmt::Display for Handicap {
 #[typeshare]
 pub struct TeamSpecificSettings {
     pub handicaps: HashMap<PlayerId, Vec<Handicap>>,
+    /// Testing override: when true, this team ignores the Game Controller and
+    /// always plays as if in free play (`GameState::Run`) — full speed, no
+    /// halt/stop/kickoff positioning, no rule keep-out zones. Useful for
+    /// testing on the real field with no GC connected, or for letting one team
+    /// keep playing while the other is stopped. Defaults to false.
+    pub ignore_gc: bool,
 }
 
 /// Settings for the executor.
@@ -326,7 +332,7 @@ impl ExecutorSettings {
     ///
     /// Panics if the file exists but cannot be read or if creating the file fails.
     pub fn load_or_insert(path: impl AsRef<Path>) -> Self {
-        match fs::read_to_string(path.as_ref()) {
+        let mut settings = match fs::read_to_string(path.as_ref()) {
             Ok(contents) => match serde_json::from_str(&contents) {
                 Ok(settings) => settings,
                 Err(err) => {
@@ -347,12 +353,25 @@ impl ExecutorSettings {
                 settings
             }
             Err(err) => panic!("Failed to read executor settings: {}", err),
-        }
+        };
+        // The strategy selection is never persisted (see `store`) — it's a
+        // per-run choice set by a CLI flag or in the UI, not tuning that should
+        // survive a restart. Ignore any value left in an older settings file so
+        // startup defaults to no strategy loaded.
+        settings.team_configuration.blue_strategy = None;
+        settings.team_configuration.yellow_strategy = None;
+        settings
     }
 
-    /// Store the executor settings in the given file.
+    /// Store the executor settings in the given file. The per-run strategy
+    /// selection is omitted — it's not configuration that should outlive the run
+    /// (a stale value would silently auto-load a strategy on the next startup).
     pub async fn store(&self, path: impl AsRef<Path>) {
-        if let Err(err) = tokio::fs::write(path, serde_json::to_string_pretty(self).unwrap()).await
+        let mut to_store = self.clone();
+        to_store.team_configuration.blue_strategy = None;
+        to_store.team_configuration.yellow_strategy = None;
+        if let Err(err) =
+            tokio::fs::write(path, serde_json::to_string_pretty(&to_store).unwrap()).await
         {
             log::error!("Failed to write executor settings: {}", err);
         }

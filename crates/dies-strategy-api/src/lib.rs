@@ -85,18 +85,18 @@
 //!
 //! Start once and monitor status. Return handles for parameter updates.
 //!
-//! - [`PlayerHandle::pickup_ball`]: Approach and capture ball
+//! - [`PlayerHandle::handle_ball`]: Acquire the ball and run a terminal action
 //! - [`PlayerHandle::reflex_shoot`]: Orient and kick toward target
 //!
 //! ```ignore
-//! // Start pickup
-//! let handle = player.pickup_ball(target_heading);
+//! // Acquire the ball and shoot it at the goal
+//! let handle = player.handle_ball(BallAction::Shoot { target: goal }, None);
 //!
 //! // Check status
 //! match player.skill_status() {
 //!     SkillStatus::Running => { /* still working */ }
-//!     SkillStatus::Succeeded => { /* got ball */ }
-//!     SkillStatus::Failed => { /* missed */ }
+//!     SkillStatus::Succeeded => { /* kick departed */ }
+//!     SkillStatus::Failed => { /* gave up */ }
 //!     _ => {}
 //! }
 //! ```
@@ -123,8 +123,7 @@ mod world;
 
 pub use player::PlayerHandle;
 pub use skill_builders::{
-    DribbleBuilder, DribbleShootParams, GoToBuilder, HandleBallParams, PickupBallParams,
-    ReflexShootParams, SkillHandle, SkillParams,
+    DribbleBuilder, GoToBuilder, HandleBallParams, ReflexShootParams, SkillHandle, SkillParams,
 };
 pub use strategy::{Strategy, StrategyFactory};
 pub use team::{PassBuilder, TeamContext};
@@ -149,9 +148,7 @@ pub use dies_strategy_protocol::{
 pub mod prelude {
     pub use crate::debug;
     pub use crate::player::PlayerHandle;
-    pub use crate::skill_builders::{
-        DribbleShootParams, HandleBallParams, PickupBallParams, ReflexShootParams, SkillHandle,
-    };
+    pub use crate::skill_builders::{HandleBallParams, ReflexShootParams, SkillHandle};
     pub use crate::strategy::Strategy;
     pub use crate::team::TeamContext;
     pub use crate::world::{Rect, World};
