@@ -21,7 +21,7 @@ import { DockviewApi } from "dockview";
 
 // Default workspace: FIELD fills the left, with a right-hand column split into a
 // top tab group (INSPECTOR / GAME CTRL / DEBUG) and a bottom tab group
-// (CONSOLE / SETTINGS / SCENARIO). Stored relative sizes are scaled to the
+// (CONSOLE / SETTINGS). Stored relative sizes are scaled to the
 // real container by Dockview's `fromJSON`. Bump LAYOUT_SCHEMA_VERSION in
 // DockviewWrapper whenever this changes so stale persisted defaults are dropped.
 const DEFAULT_LAYOUT = {
@@ -58,7 +58,7 @@ const DEFAULT_LAYOUT = {
             {
               type: "leaf",
               data: {
-                views: ["console", "settings", "scenario"],
+                views: ["console", "settings"],
                 activeView: "settings",
                 id: "3",
               },
@@ -81,11 +81,6 @@ const DEFAULT_LAYOUT = {
       id: "settings",
       contentComponent: "settings",
       title: "SETTINGS",
-    },
-    scenario: {
-      id: "scenario",
-      contentComponent: "scenario",
-      title: "SCENARIO",
     },
     "player-inspector": {
       id: "player-inspector",

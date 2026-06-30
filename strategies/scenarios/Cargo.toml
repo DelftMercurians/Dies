@@ -1,0 +1,24 @@
+[package]
+name = "scenarios"
+version = "0.1.0"
+edition = "2021"
+description = "Rust skill-test scenarios — each binary is a Strategy that scripts robots through skills over the normal strategy IPC."
+
+[lib]
+name = "scenarios"
+path = "src/lib.rs"
+
+# Each scenario is an auto-discovered binary under `src/bin/`. They all share the
+# sequence helper in this crate's lib and are launched like any other strategy:
+# pick the binary name in the strategy picker (or `--strategy <name>`), seed the
+# field with a snapshot, and watch it run.
+
+[dependencies]
+dies-strategy-api = { version = "0.1.0", path = "../../crates/dies-strategy-api" }
+dies-strategy-runner = { version = "0.1.0", path = "../../crates/dies-strategy-runner" }
+dies-strategy-protocol = { version = "0.1.0", path = "../../crates/dies-strategy-protocol" }
+dies-core = { version = "0.1.0", path = "../../crates/dies-core" }
+tracing = "0.1"
+
+[lints]
+workspace = true

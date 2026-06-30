@@ -17,11 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Crate `src` dirs that hold `#[typeshare]` types feeding the bindings.
-const TYPE_SRC_DIRS: &[&str] = &[
-    "crates/dies-core/src",
-    "crates/dies-test-driver/src",
-    "crates/dies-webui/src",
-];
+const TYPE_SRC_DIRS: &[&str] = &["crates/dies-core/src", "crates/dies-webui/src"];
 
 /// Frontend inputs that, when changed, require a bundle rebuild. `webui/src`
 /// includes the generated `bindings.ts`.

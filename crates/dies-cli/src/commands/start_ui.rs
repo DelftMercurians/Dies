@@ -30,21 +30,55 @@ pub async fn start_ui(args: Cli) -> Result<()> {
     // hot-swaps the process whenever the binary is rebuilt. With the per-team
     // `--blue-strategy` / `--yellow-strategy` overrides there can be more than one
     // (e.g. a v0-vs-concerto benchmark), so build each distinct binary once.
-    let mut strategies: Vec<String> = Vec::new();
+    let mut selected: Vec<String> = Vec::new();
     if args.strategy != "none" {
-        strategies.push(args.strategy.clone());
+        selected.push(args.strategy.clone());
     }
-    strategies.extend(args.blue_strategy.clone());
-    strategies.extend(args.yellow_strategy.clone());
-    strategies.sort();
-    strategies.dedup();
-    for name in &strategies {
+    selected.extend(args.blue_strategy.clone());
+    selected.extend(args.yellow_strategy.clone());
+    selected.sort();
+    selected.dedup();
+    // Build the explicitly-selected strategies (fatal on failure — you asked for
+    // them) and watch them for hot-reload.
+    for name in &selected {
         match args.strategy_mode() {
             StrategyMode::Launch => {}
             StrategyMode::Build => crate::strategy::build_strategy(name)?,
             StrategyMode::Watch => {
                 crate::strategy::build_strategy(name)?;
                 crate::strategy::spawn_watcher(name.clone());
+            }
+        }
+    }
+
+    // Build everything else the in-UI strategy picker can assign, so any choice is
+    // runnable without a CLI restart: the skill-test `scenarios` crate (all bins)
+    // plus every other strategy crate under `strategies/` (package == dir name).
+    // Non-selected strategies build best-effort — one that doesn't compile is
+    // skipped, not fatal, so it can't block startup. The scenarios crate is
+    // watched so scenario edits hot-reload.
+    if args.strategy_mode() != StrategyMode::Launch {
+        if !selected.iter().any(|s| s == "scenarios") {
+            crate::strategy::build_strategy("scenarios")?;
+        }
+        if args.strategy_mode() == StrategyMode::Watch {
+            crate::strategy::spawn_watcher("scenarios".to_string());
+        }
+        if let Ok(entries) = std::fs::read_dir("strategies") {
+            let mut others: Vec<String> = entries
+                .flatten()
+                .filter(|e| e.path().is_dir() && e.file_name() != "scenarios")
+                // Build by package name (== binary name), which can differ from
+                // the crate's dir name (e.g. `strategies/v0` → `v0-strategy`).
+                .filter_map(|e| crate::strategy::cargo_package_name(&e.path().join("Cargo.toml")))
+                .filter(|n| !selected.contains(n))
+                .collect();
+            others.sort();
+            others.dedup();
+            for pkg in others {
+                if let Err(e) = crate::strategy::build_strategy(&pkg) {
+                    log::warn!("Strategy `{pkg}` not built (won't be runnable): {e}");
+                }
             }
         }
     }

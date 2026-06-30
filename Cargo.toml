@@ -13,10 +13,11 @@ members = [
     "crates/dies-webui",
     "crates/dies-world",
     "crates/dies-logger",
-    "crates/dies-test-driver",
     # Strategy crates
     "strategies/concerto",
     "strategies/v0",
+    # Skill-test scenarios (each binary is a Strategy)
+    "strategies/scenarios",
 ]
 package.edition = "2021"
 resolver = "2"

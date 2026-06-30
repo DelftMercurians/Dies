@@ -7,7 +7,6 @@ use dies_core::{
     SimulatorCmd, TeamColor, TeamConfiguration, Vector2, WorldData, WorldUpdate,
 };
 use dies_ssl_client::SslClientConfig;
-use dies_test_driver::{TestLogEntry, TestStatus};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
@@ -136,13 +135,6 @@ pub(crate) enum UiCommand {
     SwapTeamColors,
     /// Swap team sides (BlueOnPositive <-> YellowOnPositive)
     SwapTeamSides,
-    /// Load and start a JS scenario by file name (resolved against `scenarios/`).
-    StartScenario {
-        scenario: String,
-        team: Option<TeamColor>,
-    },
-    /// Stop the currently running scenario and return to strategy mode.
-    StopScenario,
     /// Drop a point-of-interest marker at the current live frame (double-space).
     AddMarker {
         label: Option<String>,
@@ -270,8 +262,6 @@ pub(crate) enum WsMessage<'a> {
     /// show the current frame number for both live and replay.
     WorldUpdate(&'a WorldUpdate),
     Debug(&'a DebugMap),
-    ScenarioLog(&'a TestLogEntry),
-    ScenarioStatus(&'a TestStatus),
     ReplayState(&'a ReplayState),
     ConsoleLog(&'a ConsoleLogMessage),
 }
@@ -297,21 +287,6 @@ pub(crate) struct LogInfo {
 #[typeshare]
 pub(crate) struct LogsResponse {
     pub(crate) logs: Vec<LogInfo>,
-}
-
-/// A single scenario file available on disk.
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
-pub(crate) struct ScenarioInfo {
-    pub(crate) name: String,
-    pub(crate) path: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
-pub(crate) struct ScenariosResponse {
-    pub(crate) scenarios: Vec<ScenarioInfo>,
-    pub(crate) status: TestStatus,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -359,6 +334,17 @@ pub(crate) struct SettingsSnapshotsResponse {
 pub(crate) struct SnapshotsResponse {
     /// Stored snapshot names, sorted.
     pub(crate) names: Vec<String>,
+}
+
+/// The set of runnable binaries the strategy picker can assign to a team.
+/// `strategies` are full strategy crates (e.g. `concerto`, `v0`); `scenarios`
+/// are skill-test binaries from the `scenarios` crate (e.g. `pickup_ball`).
+/// Both are launched the same way — they're just `Strategy` binaries.
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct StrategiesResponse {
+    pub(crate) strategies: Vec<String>,
+    pub(crate) scenarios: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

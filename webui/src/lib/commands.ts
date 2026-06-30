@@ -154,16 +154,6 @@ export const COMMANDS: Command[] = [
     },
   },
   {
-    id: "focus-scenario",
-    title: "Focus Scenario",
-    keys: "S",
-    suppressedWhileDriving: true,
-    run: (c) => {
-      c.focusPanel(PANEL_IDS.SCENARIO);
-      c.feedback("Focus Scenario");
-    },
-  },
-  {
     id: "focus-debug",
     title: "Focus Debug",
     keys: "D",

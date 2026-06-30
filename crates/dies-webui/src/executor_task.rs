@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 
@@ -138,17 +137,6 @@ impl ExecutorTask {
             }
             UiCommand::GcCommand(command) => {
                 self.handle_executor_msg(ControlMsg::GcCommand { command });
-            }
-            UiCommand::StartScenario { scenario, team } => {
-                let path = resolve_scenario_path(&scenario);
-                if !path.exists() {
-                    log::warn!("scenario file not found: {}", path.display());
-                    return;
-                }
-                self.handle_executor_msg(ControlMsg::StartScenario { path, team });
-            }
-            UiCommand::StopScenario => {
-                self.handle_executor_msg(ControlMsg::StopScenario);
             }
             UiCommand::AddMarker { label } => {
                 self.handle_executor_msg(ControlMsg::AddMarker { label });
@@ -345,33 +333,6 @@ impl ExecutorTask {
                                 }
                             });
 
-                            // Bridge scenario log entries into the long-lived
-                            // server-side broadcast so WS clients don't need to
-                            // resubscribe each Start.
-                            let mut log_rx = executor.handle().log_bus.subscribe();
-                            let log_tx = server_state.scenario_log_tx.clone();
-                            tokio::spawn(async move {
-                                loop {
-                                    match log_rx.recv().await {
-                                        Ok(entry) => {
-                                            let _ = log_tx.send(entry);
-                                        }
-                                        Err(RecvError::Lagged(_)) => continue,
-                                        Err(RecvError::Closed) => break,
-                                    }
-                                }
-                            });
-
-                            // Mirror scenario status into server state.
-                            let mut status_rx = executor.handle().scenario_status_rx.clone();
-                            let status_tx = server_state.scenario_status.clone();
-                            tokio::spawn(async move {
-                                let _ = status_tx.send(status_rx.borrow().clone());
-                                while status_rx.changed().await.is_ok() {
-                                    let _ = status_tx.send(status_rx.borrow().clone());
-                                }
-                            });
-
                             server_state.set_executor_status(ExecutorStatus::RunningExecutor);
                             if let Err(err) = executor.run_real_time().await {
                                 log::error!("Executor failed: {}", err);
@@ -418,18 +379,4 @@ impl ExecutorTask {
             executor_handle.send(cmd);
         }
     }
-}
-
-/// Resolve a scenario name from the UI to an on-disk path. The UI sends bare
-/// names (e.g. `mpc_step_response.js`); they are resolved relative to the
-/// `scenarios/` directory in the current working directory. Absolute paths
-/// and explicit relative paths (containing `/`) are kept as-is.
-pub(crate) fn resolve_scenario_path(name: &str) -> PathBuf {
-    let p = PathBuf::from(name);
-    if p.is_absolute() || name.contains('/') || name.contains(std::path::MAIN_SEPARATOR) {
-        return p;
-    }
-    let mut full = PathBuf::from("scenarios");
-    full.push(name);
-    full
 }

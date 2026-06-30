@@ -3,8 +3,7 @@
 //! Each named snapshot is one pretty-printed JSON file under a
 //! `.dies-snapshots/` dir next to the settings file. Snapshots capture robot
 //! positions + yaw and the ball position (no velocities) so a board state can
-//! be saved and replayed by teleporting everything back into place. Unrelated
-//! to the scenario/test-driver system.
+//! be saved and replayed by teleporting everything back into place.
 
 use std::path::PathBuf;
 use std::sync::Arc;

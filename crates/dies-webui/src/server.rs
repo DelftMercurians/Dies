@@ -19,7 +19,6 @@ use dies_core::{
     TeamColor, WorldUpdate,
 };
 use dies_executor::{ControlMsg, ExecutorHandle};
-use dies_test_driver::{TestLogEntry, TestStatus};
 use tokio::sync::{broadcast, watch};
 use tower_http::services::ServeDir;
 use tower_layer::Layer;
@@ -43,15 +42,9 @@ pub struct ServerState {
     pub executor_status: RwLock<ExecutorStatus>,
     pub executor_handle: RwLock<Option<ExecutorHandle>>,
     pub executor_settings: RwLock<ExecutorSettings>,
-    /// Stable broadcast: the executor task republishes scenario log entries here so
-    /// every WS client subscribes to the same long-lived channel, not the executor's
-    /// per-run log bus (which would force resubscription on each Start).
-    pub scenario_log_tx: broadcast::Sender<TestLogEntry>,
     /// Stable broadcast of backend log lines, fed by the global logger's console
     /// observer, consumed by WS clients for the console panel.
     pub console_log_tx: broadcast::Sender<ConsoleLogMessage>,
-    /// Latest scenario status, mirrored from the active executor handle.
-    pub scenario_status: watch::Sender<TestStatus>,
     /// Latest replay-player state, pushed to WS clients on change.
     pub replay_state: watch::Sender<ReplayState>,
     /// Directory where session logs live (for the replay browser).
@@ -82,10 +75,8 @@ impl ServerState {
             .unwrap_or_else(|| Path::new("."));
         let settings_store = SettingsStore::load(settings_parent.join(".dies-settings"));
         let snapshot_store = SnapshotStore::load(settings_parent.join(".dies-snapshots"));
-        let (scenario_log_tx, _) = broadcast::channel(256);
-        // Higher capacity than scenario logs: backend logs are far chattier. A
-        // lagging WS client drops old entries (handled in the WS loop) rather
-        // than blocking the logging thread.
+        // Backend logs are chatty; a lagging WS client drops old entries (handled
+        // in the WS loop) rather than blocking the logging thread.
         let (console_log_tx, _) = broadcast::channel::<ConsoleLogMessage>(1024);
         {
             let tx = console_log_tx.clone();
@@ -102,7 +93,6 @@ impl ServerState {
                 });
             });
         }
-        let (scenario_status, _) = watch::channel(TestStatus::Idle);
         let (replay_state, _) = watch::channel(ReplayState::default());
         Self {
             is_live_available,
@@ -115,9 +105,7 @@ impl ServerState {
             executor_status: RwLock::new(ExecutorStatus::None),
             executor_handle: RwLock::new(None),
             executor_settings: RwLock::new(settings),
-            scenario_log_tx,
             console_log_tx,
-            scenario_status,
             replay_state,
             log_directory,
             settings_file,
@@ -533,7 +521,7 @@ async fn start_webserver(
         .route("/api/command", post(routes::post_command))
         .route("/api/list", get(routes::list_files))
         .route("/api/logs", get(routes::get_logs))
-        .route("/api/scenarios", get(routes::get_scenarios))
+        .route("/api/strategies", get(routes::get_strategies))
         .route(
             "/api/snapshots",
             get(routes::get_snapshots).post(routes::post_snapshot),

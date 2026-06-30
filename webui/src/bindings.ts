@@ -1033,13 +1033,6 @@ export type UiCommand =
 	| { type: "SwapTeamColors",  }
 	/** Swap team sides (BlueOnPositive <-> YellowOnPositive) */
 	| { type: "SwapTeamSides",  }
-	/** Load and start a JS scenario by file name (resolved against `scenarios/`). */
-	| { type: "StartScenario", data: {
-	scenario: string;
-	team?: TeamColor;
-}}
-	/** Stop the currently running scenario and return to strategy mode. */
-	| { type: "StopScenario",  }
 	/** Drop a point-of-interest marker at the current live frame (double-space). */
 	| { type: "AddMarker", data: {
 	label?: string;
@@ -1140,36 +1133,6 @@ export interface SaveSnapshotBody {
 	snapshot: FieldSnapshot;
 }
 
-export interface ScenarioArtifact {
-	tag: string;
-	value_json: string;
-}
-
-/** A single scenario file available on disk. */
-export interface ScenarioInfo {
-	name: string;
-	path: string;
-}
-
-export type TestStatus = 
-	| { state: "Idle",  }
-	| { state: "Starting",  }
-	| { state: "Running", data: {
-	name: string;
-}}
-	| { state: "Completed", data: {
-	artifacts: ScenarioArtifact[];
-}}
-	| { state: "Failed", data: {
-	error: string;
-}}
-	| { state: "Aborted",  };
-
-export interface ScenariosResponse {
-	scenarios: ScenarioInfo[];
-	status: TestStatus;
-}
-
 /**
  * A captured settings configuration with provenance. `kind` is a free-form
  * tag: `"edit"` (debounced auto-snapshot of a live edit), `"baseline"` (the
@@ -1192,6 +1155,17 @@ export interface SettingsSnapshotsResponse {
 export interface SnapshotsResponse {
 	/** Stored snapshot names, sorted. */
 	names: string[];
+}
+
+/**
+ * The set of runnable binaries the strategy picker can assign to a team.
+ * `strategies` are full strategy crates (e.g. `concerto`, `v0`); `scenarios`
+ * are skill-test binaries from the `scenarios` crate (e.g. `pickup_ball`).
+ * Both are launched the same way — they're just `Strategy` binaries.
+ */
+export interface StrategiesResponse {
+	strategies: string[];
+	scenarios: string[];
 }
 
 /** A struct to store the world state from a single frame. */
@@ -1222,23 +1196,6 @@ export interface TeamData {
 	 * `WorldData`). Converted to a team-relative view at the strategy boundary.
 	 */
 	possession: Possession;
-}
-
-export enum TestLogLevel {
-	Info = "Info",
-	Warn = "Warn",
-	Error = "Error",
-	Record = "Record",
-}
-
-export interface TestLogEntry {
-	level: TestLogLevel;
-	tag?: string;
-	message: string;
-	/** Optional structured payload (JSON-serialized). `log.record` uses this. */
-	value_json?: string;
-	/** Milliseconds since UNIX epoch at emission time. */
-	ts_ms: number;
 }
 
 /** The current status of the executor. */
@@ -1580,8 +1537,6 @@ export type WsMessage =
 	 */
 	| { type: "WorldUpdate", data: WorldUpdate }
 	| { type: "Debug", data: DebugMap }
-	| { type: "ScenarioLog", data: TestLogEntry }
-	| { type: "ScenarioStatus", data: TestStatus }
 	| { type: "ReplayState", data: ReplayState }
 	| { type: "ConsoleLog", data: ConsoleLogMessage };
 

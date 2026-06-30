@@ -9,7 +9,6 @@ use axum::{
     response::IntoResponse,
 };
 use dies_core::{DebugMap, DebugSubscriber, TeamColor, WorldUpdate};
-use dies_test_driver::{TestLogEntry, TestStatus};
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
@@ -31,8 +30,8 @@ use crate::{
     server::ServerState, BasestationResponse, ConsoleLogMessage, ExecutorInfoResponse,
     ExecutorSettingsResponse, FieldSnapshot, GetDebugMapResponse, LogInfo, LogsResponse,
     PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, ReplayState, SaveSnapshotBody,
-    ScenarioInfo, ScenariosResponse, SettingsSnapshot, SettingsSnapshotsResponse,
-    SnapshotsResponse, UiCommand, UiMode, UiStatus, UiWorldState, WsMessage,
+    SettingsSnapshot, SettingsSnapshotsResponse, SnapshotsResponse, StrategiesResponse, UiCommand,
+    UiMode, UiStatus, UiWorldState, WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -144,6 +143,75 @@ pub async fn delete_snapshot(
     }
 }
 
+/// Extract the `[package] name` from a Cargo.toml with a minimal hand parse (no
+/// toml dependency). The strategy binary name equals the package name, which is
+/// what `cargo build -p <name>` and the executor's `strategies_dir/<name>` both
+/// use — and a crate's dir name can differ from it (e.g. `strategies/v0` →
+/// `v0-strategy`).
+fn cargo_package_name(cargo_toml: &std::path::Path) -> Option<String> {
+    let text = fs::read_to_string(cargo_toml).ok()?;
+    let mut in_package = false;
+    for line in text.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_package = t == "[package]";
+            continue;
+        }
+        if in_package {
+            if let Some(rest) = t.strip_prefix("name") {
+                if let Some(val) = rest.trim_start().strip_prefix('=') {
+                    let name = val.trim().trim_matches('"');
+                    if !name.is_empty() {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// List the binaries the strategy picker can assign to a team: full strategy
+/// crates under `strategies/` (each subdir except `scenarios`, by package name)
+/// and the skill-test binaries in `strategies/scenarios/src/bin/`. Read from
+/// source so the list is complete regardless of what's currently built; the CLI
+/// builds them all at startup so they're runnable. Both kinds are plain
+/// `Strategy` binaries.
+pub async fn get_strategies() -> Json<StrategiesResponse> {
+    let mut strategies = Vec::new();
+    if let Ok(entries) = fs::read_dir("strategies") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() || entry.file_name() == "scenarios" {
+                continue;
+            }
+            if let Some(name) = cargo_package_name(&path.join("Cargo.toml")) {
+                strategies.push(name);
+            }
+        }
+    }
+    strategies.sort();
+
+    let mut scenarios = Vec::new();
+    if let Ok(entries) = fs::read_dir("strategies/scenarios/src/bin") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                scenarios.push(stem.to_string());
+            }
+        }
+    }
+    scenarios.sort();
+
+    Json(StrategiesResponse {
+        strategies,
+        scenarios,
+    })
+}
+
 pub async fn get_basesation_info(state: State<Arc<ServerState>>) -> Json<BasestationResponse> {
     Json(BasestationResponse {
         blue_team: state
@@ -249,9 +317,7 @@ pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> 
             state.cmd_tx.clone(),
             state.update_rx.clone(),
             state.debug_sub.clone(),
-            state.scenario_log_tx.subscribe(),
             state.console_log_tx.subscribe(),
-            state.scenario_status.subscribe(),
             state.replay_state.subscribe(),
             socket,
         )
@@ -263,16 +329,10 @@ async fn handle_ws_conn(
     tx: broadcast::Sender<UiCommand>,
     mut world_rx: watch::Receiver<Option<WorldUpdate>>,
     debug_rx: DebugSubscriber,
-    mut log_rx: broadcast::Receiver<TestLogEntry>,
     mut console_rx: broadcast::Receiver<ConsoleLogMessage>,
-    mut status_rx: watch::Receiver<TestStatus>,
     mut replay_rx: watch::Receiver<ReplayState>,
     mut socket: WebSocket,
 ) {
-    // Send the current status snapshot once so the client doesn't have to poll.
-    let initial_status = status_rx.borrow().clone();
-    let _ = handle_send_status(&initial_status, &mut socket).await;
-
     // Rate-limit debug pushes: tick at a fixed rate and send the latest
     // snapshot, coalescing the many per-tick debug updates into one message.
     let mut debug_interval = tokio::time::interval(Duration::from_millis(1000 / DEBUG_SEND_HZ));
@@ -296,18 +356,6 @@ async fn handle_ws_conn(
                     break;
                 }
             }
-            log_entry = log_rx.recv() => {
-                match log_entry {
-                    Ok(entry) => {
-                        if let Err(err) = handle_send_log(&entry, &mut socket).await {
-                            log::error!("Failed to send scenario log: {}", err);
-                            break;
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(broadcast::error::RecvError::Closed) => {}
-                }
-            }
             console_entry = console_rx.recv() => {
                 match console_entry {
                     Ok(entry) => {
@@ -318,13 +366,6 @@ async fn handle_ws_conn(
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(broadcast::error::RecvError::Closed) => {}
-                }
-            }
-            Ok(()) = status_rx.changed() => {
-                let status = status_rx.borrow().clone();
-                if let Err(err) = handle_send_status(&status, &mut socket).await {
-                    log::error!("Failed to send scenario status: {}", err);
-                    break;
                 }
             }
             Ok(()) = replay_rx.changed() => {
@@ -387,12 +428,6 @@ async fn handle_send_debug_map_update(
     Ok(())
 }
 
-async fn handle_send_log(entry: &TestLogEntry, socket: &mut WebSocket) -> anyhow::Result<()> {
-    let text = serde_json::to_string(&WsMessage::ScenarioLog(entry))?;
-    socket.send(Message::Text(text)).await?;
-    Ok(())
-}
-
 async fn handle_send_console_log(
     entry: &ConsoleLogMessage,
     socket: &mut WebSocket,
@@ -400,39 +435,6 @@ async fn handle_send_console_log(
     let text = serde_json::to_string(&WsMessage::ConsoleLog(entry))?;
     socket.send(Message::Text(text)).await?;
     Ok(())
-}
-
-async fn handle_send_status(status: &TestStatus, socket: &mut WebSocket) -> anyhow::Result<()> {
-    let text = serde_json::to_string(&WsMessage::ScenarioStatus(status))?;
-    socket.send(Message::Text(text)).await?;
-    Ok(())
-}
-
-/// Lists `.js` files in the `scenarios/` directory of the cwd. Includes the
-/// current scenario status so the UI can render in a single fetch.
-pub async fn get_scenarios(state: State<Arc<ServerState>>) -> Json<ScenariosResponse> {
-    let mut scenarios = Vec::new();
-    let dir = PathBuf::from("scenarios");
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("js") {
-                continue;
-            }
-            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            scenarios.push(ScenarioInfo {
-                name: name.to_string(),
-                path: path.to_string_lossy().to_string(),
-            });
-        }
-    }
-    scenarios.sort_by(|a, b| a.name.cmp(&b.name));
-    Json(ScenariosResponse {
-        scenarios,
-        status: state.scenario_status.borrow().clone(),
-    })
 }
 
 #[derive(Serialize)]

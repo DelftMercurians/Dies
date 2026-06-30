@@ -41,10 +41,6 @@ import {
   PlayerOverrideCommand,
   TeamConfiguration,
   SideAssignment,
-  ScenariosResponse,
-  ScenarioInfo,
-  TestStatus,
-  TestLogEntry,
   ReplayState,
   LogsResponse,
   LogInfo,
@@ -52,6 +48,7 @@ import {
   SettingsSnapshot,
   SettingsSnapshotsResponse,
   SnapshotsResponse,
+  StrategiesResponse,
   FieldSnapshot,
   SaveSnapshotBody,
 } from "./bindings";
@@ -167,6 +164,9 @@ const postFieldSnapshot = (body: SaveSnapshotBody): Promise<Response> =>
 
 const deleteFieldSnapshot = (name: string): Promise<Response> =>
   fetch(`/api/snapshots/${encodeURIComponent(name)}`, { method: "DELETE" });
+
+const getStrategies = (): Promise<StrategiesResponse> =>
+  fetch("/api/strategies").then((res) => res.json());
 
 const getDebugMap = (): Promise<DebugMap> =>
   fetch("/api/debug")
@@ -485,6 +485,18 @@ export const useFieldSnapshots = () => {
   };
 };
 
+/** Binaries the strategy picker can assign to a team: full strategies + scenarios. */
+export const useStrategies = () => {
+  const query = useQuery({
+    queryKey: ["strategies"],
+    queryFn: getStrategies,
+  });
+  return {
+    strategies: query.data?.strategies ?? [],
+    scenarios: query.data?.scenarios ?? [],
+  };
+};
+
 export const useRawWorldData = () => {
   const wsConnected = useContext(WsConnectedContext);
   const query = useQuery({
@@ -530,18 +542,6 @@ export const useWsConnectionStatus = () => {
   return useAtom(wsConnectionStatusAtom);
 };
 
-// Scenario state — populated from WS messages emitted by the executor.
-const scenarioStatusAtom = atom<TestStatus>({ state: "Idle" });
-const scenarioLogsAtom = atom<TestLogEntry[]>([]);
-const SCENARIO_LOG_LIMIT = 500;
-
-export const useScenarioStatus = () => useAtom(scenarioStatusAtom)[0];
-export const useScenarioLogs = () => useAtom(scenarioLogsAtom)[0];
-export const useClearScenarioLogs = () => {
-  const set = useAtom(scenarioLogsAtom)[1];
-  return () => set([]);
-};
-
 // Console state — backend log lines streamed over the WS for the console panel.
 const consoleLogsAtom = atom<ConsoleLogMessage[]>([]);
 const CONSOLE_LOG_LIMIT = 1000;
@@ -551,16 +551,6 @@ export const useClearConsoleLogs = () => {
   const set = useAtom(consoleLogsAtom)[1];
   return () => set([]);
 };
-
-const getScenarios = (): Promise<ScenariosResponse> =>
-  fetch("/api/scenarios").then((res) => res.json());
-
-export const useScenarios = () =>
-  useQuery({
-    queryKey: ["scenarios"],
-    queryFn: getScenarios,
-    refetchInterval: 5000,
-  });
 
 let ws: WebSocket | null = null;
 const onWsConnectedChange: ((connected: boolean) => void)[] = [];
@@ -713,21 +703,6 @@ export function startWsClient() {
           });
         } else if (msg.type === "Debug") {
           queryClient.setQueryData(["debug-map"], msg.data satisfies DebugMap);
-        } else if (msg.type === "ScenarioStatus") {
-          store.set(scenarioStatusAtom, msg.data);
-          // A new run started — clear the previous run's logs.
-          if (msg.data.state === "Starting" || msg.data.state === "Running") {
-            const existing = store.get(scenarioLogsAtom);
-            if (existing.length > 0 && msg.data.state === "Starting") {
-              store.set(scenarioLogsAtom, []);
-            }
-          }
-        } else if (msg.type === "ScenarioLog") {
-          const cur = store.get(scenarioLogsAtom);
-          const next = cur.length >= SCENARIO_LOG_LIMIT
-            ? [...cur.slice(cur.length - SCENARIO_LOG_LIMIT + 1), msg.data]
-            : [...cur, msg.data];
-          store.set(scenarioLogsAtom, next);
         } else if (msg.type === "ConsoleLog") {
           const cur = store.get(consoleLogsAtom);
           const next = cur.length >= CONSOLE_LOG_LIMIT

@@ -7,6 +7,7 @@ import ModeToggle from "./ModeToggle";
 import ExecutorControls from "./ExecutorControls";
 import GcControls from "./GcControls";
 import SimEditControls from "./SimEditControls";
+import StrategyControls from "./StrategyControls";
 import TeamIndicator from "./TeamIndicator";
 import StatusCluster from "./StatusCluster";
 import LayoutSelector from "./LayoutSelector";
@@ -68,6 +69,9 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Team/Side Indicator */}
       <TeamIndicator />
+
+      {/* Strategy / scenario picker (modal) */}
+      <StrategyControls />
 
       {/* Sim Edit controls (toggle + snapshots) — sim only */}
       <SimEditControls />

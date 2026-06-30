@@ -1,4 +1,3 @@
-pub mod run_scenario;
 pub mod self_play;
 pub mod start_ui;
 pub mod test_radio;
