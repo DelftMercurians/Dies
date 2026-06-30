@@ -14,6 +14,7 @@ mod go_to_bounded;
 mod go_to_pos;
 mod handle_ball;
 mod receive;
+mod reflex_receive;
 mod shoot;
 mod snatch;
 
@@ -26,6 +27,7 @@ pub use go_to_bounded::GoToBoundedSkill;
 pub use go_to_pos::GoToPosSkill;
 pub use handle_ball::HandleBallSkill;
 pub use receive::ReceiveSkill;
+pub use reflex_receive::ReflexReceiveSkill;
 pub use shoot::ShootSkill;
 pub use snatch::SnatchSkill;
 
@@ -38,6 +40,7 @@ macro_rules! for_each_tunable_module {
         $mac!(go_to_pos);
         $mac!(handle_ball);
         $mac!(receive);
+        $mac!(reflex_receive);
         $mac!(shoot);
         $mac!(snatch);
     };

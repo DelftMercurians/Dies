@@ -247,7 +247,10 @@ impl Planner {
                         .map(|(_, t, _)| t)
                         .unwrap_or_else(|| self.release_target(carrier_pos, opp_goal, world));
                     Waypoint::Handle {
-                        action: BallAction::Strike { target },
+                        action: BallAction::Strike {
+                            target,
+                            acquire_first: false,
+                        },
                         rescue: false,
                     }
                 } else if let (true, Some(aim)) = (in_range, shot) {
@@ -267,7 +270,10 @@ impl Planner {
                     let close = carrier_pos.x > 0.0
                         && (carrier_pos - opp_goal).norm() < config::STRIKE_FINISH_RANGE;
                     let action = if close {
-                        BallAction::Strike { target: aim.target }
+                        BallAction::Strike {
+                            target: aim.target,
+                            acquire_first: false,
+                        }
                     } else {
                         BallAction::Shoot { target: aim.target }
                     };
@@ -312,7 +318,10 @@ impl Planner {
                     let finish = || {
                         let target = self.finish_strike_target(world, ball_pos, opp_goal);
                         Waypoint::Handle {
-                            action: BallAction::Strike { target },
+                            action: BallAction::Strike {
+                                target,
+                                acquire_first: false,
+                            },
                             rescue: false,
                         }
                     };
@@ -563,7 +572,10 @@ impl Planner {
         }
         let target = self.finish_strike_target(world, ball_pos, opp_goal);
         Some(Waypoint::Handle {
-            action: BallAction::Strike { target },
+            action: BallAction::Strike {
+                target,
+                acquire_first: false,
+            },
             rescue: false,
         })
     }

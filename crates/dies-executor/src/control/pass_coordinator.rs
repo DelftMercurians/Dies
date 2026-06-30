@@ -445,7 +445,7 @@ impl PassCoordinator {
             .map(|p| p.position)
             .unwrap_or(receiver.position);
         self.receive
-            .reconfigure(from, target_point, CAPTURE_LIMIT, false);
+            .reconfigure(from, target_point, CAPTURE_LIMIT, true);
         let sctx = self.skill_ctx(ctx, receiver);
         match self.receive.tick(sctx) {
             SkillProgress::Continue(input) => input,

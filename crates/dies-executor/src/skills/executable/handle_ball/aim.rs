@@ -13,6 +13,22 @@ use super::*;
 use crate::control::{KickerControlInput, Velocity};
 
 impl HandleBallSkill {
+    /// The shot `target` and the kicker mechanism for the aim/kick/verify path.
+    /// `Shoot` releases with the smart (counter) kick; an `acquire_first` `Strike`
+    /// releases via the firmware reflex — a single double-touch-safe contact fired
+    /// the instant the (already-seated) ball trips the breakbeam. Any other action
+    /// has no shot, so the aim path falls back to a hold / fails.
+    pub(super) fn shot(&self) -> Option<(Vector2, KickerControlInput)> {
+        match self.action {
+            BallAction::Shoot { target } => Some((target, KickerControlInput::Kick)),
+            BallAction::Strike {
+                target,
+                acquire_first: true,
+            } => Some((target, KickerControlInput::ReflexKick)),
+            _ => None,
+        }
+    }
+
     /// Aim (orbit) toward the shot target, repositioning first if the ball is
     /// jammed.
     pub(super) fn drive_aim(
@@ -22,7 +38,7 @@ impl HandleBallSkill {
         player_pos: Vector2,
         now: f64,
     ) -> SkillProgress {
-        let BallAction::Shoot { target } = self.action else {
+        let Some((target, _)) = self.shot() else {
             return self.drive_hold(ctx, self.hold_heading());
         };
         if now - self.stage_entered > AIM_BACKSTOP() {
@@ -103,7 +119,7 @@ impl HandleBallSkill {
         ball_pos: Vector2,
         now: f64,
     ) -> SkillProgress {
-        let BallAction::Shoot { target } = self.action else {
+        let Some((target, kicker)) = self.shot() else {
             return self.fail();
         };
         let target_heading = Angle::from_vector(target - ball_pos);
@@ -112,7 +128,7 @@ impl HandleBallSkill {
         self.detail = format!("fire {:.0}", KICK_SPEED());
         let mut input = PlayerControlInput::new();
         input.with_yaw(target_heading);
-        input.with_kicker(KickerControlInput::Kick);
+        input.with_kicker(kicker);
         input.kick_speed = Some(KICK_SPEED());
         input.with_dribbling(0.0);
         self.kick_ball_pos = Some(ball_pos);
@@ -153,8 +169,15 @@ impl HandleBallSkill {
             return self.fail();
         }
         let mut input = PlayerControlInput::new();
-        if let BallAction::Shoot { target } = self.action {
+        if let Some((target, kicker)) = self.shot() {
             input.with_yaw(Angle::from_vector(target - ball_pos));
+            // Hold a reflex arm across the verify window (a held/level signal is
+            // packet-loss-safe) until the ball departs. The smart kick has already
+            // fired on its counter increment and must NOT re-arm here.
+            if matches!(kicker, KickerControlInput::ReflexKick) {
+                input.with_kicker(KickerControlInput::ReflexKick);
+                input.kick_speed = Some(KICK_SPEED());
+            }
         }
         input.with_dribbling(0.0);
         SkillProgress::Continue(input)

@@ -490,7 +490,7 @@ fn plan_step(wp: &planner::Waypoint, active: bool) -> debug::PlanStep {
             BallAction::Shoot { target } => {
                 ("Shoot", format!("→ ({:.0}, {:.0})", target.x, target.y))
             }
-            BallAction::Strike { target } => {
+            BallAction::Strike { target, .. } => {
                 ("Strike", format!("→ ({:.0}, {:.0})", target.x, target.y))
             }
             BallAction::Carry { to, .. } => ("Carry", format!("→ ({:.0}, {:.0})", to.x, to.y)),

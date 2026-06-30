@@ -23,7 +23,11 @@ use scenarios::prelude::*;
 /// recovers as soon as the robot is allowed to reach the ball.
 fn secure(passer: PlayerId, receiver: PlayerId) -> Step {
     Step::custom(format!("{passer} secures ball"), move |ctx| {
-        if ctx.player_ref(passer).map(|p| p.has_ball()).unwrap_or(false) {
+        if ctx
+            .player_ref(passer)
+            .map(|p| p.has_ball())
+            .unwrap_or(false)
+        {
             return StepOutcome::Succeeded;
         }
         // Face the receiver at capture so the pass can align with less re-orbit.

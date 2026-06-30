@@ -339,6 +339,17 @@ fn create_skill_from_command(cmd: &SkillCommand) -> Box<dyn ExecutableSkill> {
             *capture_limit,
             *cushion,
         )),
+        SkillCommand::ReflexReceive {
+            from_pos,
+            intercept_pos,
+            target,
+            capture_limit,
+        } => Box::new(ReflexReceiveSkill::new(
+            *from_pos,
+            *intercept_pos,
+            *target,
+            *capture_limit,
+        )),
         SkillCommand::Snatch { release_hint } => Box::new(SnatchSkill::new(*release_hint)),
         SkillCommand::Pass { .. } => {
             // Pass is a joint skill handled by the JointSkillExecutor; the team

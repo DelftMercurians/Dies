@@ -12,7 +12,7 @@
 
 use crate::skill_builders::{
     DribbleBuilder, GoToBoundedBuilder, GoToBuilder, HandleBallParams, ReceiveParams,
-    ReflexShootParams, SkillHandle, SnatchParams,
+    ReflexReceiveParams, ReflexShootParams, SkillHandle, SnatchParams,
 };
 use dies_core::Angle;
 use dies_strategy_protocol::{
@@ -208,6 +208,21 @@ impl PlayerHandle {
         SkillHandle::new(HandleBallParams { action, approach })
     }
 
+    /// Acquire the ball, aim at `target`, then release it via the firmware reflex
+    /// kick — a single double-touch-safe contact from possession. Convenience for
+    /// `handle_ball(BallAction::Strike { target, acquire_first: true }, None)`; use
+    /// it for the designated kicker on an attacking restart, where a smart-kick's
+    /// command-timed fire risks a double touch.
+    pub fn strike_from_possession(&mut self, target: Vector2) -> SkillHandle<HandleBallParams> {
+        self.handle_ball(
+            BallAction::Strike {
+                target,
+                acquire_first: true,
+            },
+            None,
+        )
+    }
+
     // ========== Discrete Skills ==========
 
     /// Orient toward a target and kick.
@@ -274,6 +289,54 @@ impl PlayerHandle {
             target_pos,
             capture_limit,
             cushion,
+        })
+    }
+
+    /// Receive a pass as a **one-timer**: position to intercept with the firmware
+    /// reflex kick pre-armed and the robot facing `target`, so the kicker fires the
+    /// instant the ball trips the breakbeam. The ball is never held — it is fired
+    /// onward toward `target`.
+    ///
+    /// This is a **discrete skill** - start once and wait for completion. Returns a
+    /// handle for monitoring and updating parameters.
+    ///
+    /// # Parameters
+    ///
+    /// - `from_pos`: position the ball is being passed from
+    /// - `intercept_pos`: planned intercept point on the passing line
+    /// - `target`: shot target the robot faces and fires toward
+    /// - `capture_limit`: maximum perpendicular distance the receiver slides to meet
+    ///   the ball
+    ///
+    /// # Geometry
+    ///
+    /// The robot faces `target`, so the incoming pass must arrive within the
+    /// kicker-mouth acceptance cone (roughly: the passer in front of the receiver
+    /// relative to `target`). Positioning for a feasible angle is the strategy's
+    /// responsibility.
+    ///
+    /// # Completion
+    ///
+    /// - `SkillStatus::Succeeded` when the ball departs at speed after arriving
+    /// - `SkillStatus::Failed` on timeout (the ball never arrives)
+    pub fn reflex_receive(
+        &mut self,
+        from_pos: Vector2,
+        intercept_pos: Vector2,
+        target: Vector2,
+        capture_limit: f64,
+    ) -> SkillHandle<ReflexReceiveParams> {
+        self.pending_command = Some(SkillCommand::ReflexReceive {
+            from_pos,
+            intercept_pos,
+            target,
+            capture_limit,
+        });
+        SkillHandle::new(ReflexReceiveParams {
+            from_pos,
+            intercept_pos,
+            target,
+            capture_limit,
         })
     }
 

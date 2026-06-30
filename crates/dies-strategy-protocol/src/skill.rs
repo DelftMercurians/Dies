@@ -125,6 +125,35 @@ pub enum SkillCommand {
         cushion: bool,
     },
 
+    /// Receive a pass as a **one-timer**: position to intercept the ball with the
+    /// firmware reflex kick *pre-armed* and the robot facing `target`, so the kicker
+    /// fires the instant the ball trips the breakbeam — a zero-handling-latency
+    /// redirect/shot. Unlike [`Receive`](Self::Receive), it never holds the ball; the
+    /// firmware fires it onward.
+    ///
+    /// **Type**: Discrete - start once, wait for completion.
+    ///
+    /// **Geometry note**: the robot faces `target`, so the incoming pass must arrive
+    /// within the kicker-mouth acceptance cone (roughly: passer in front of the
+    /// receiver relative to `target`). The skill does not model the cone — feasible
+    /// geometry is the caller's responsibility.
+    ///
+    /// **Parameters**:
+    /// - `from_pos`: where the pass originates (for the interception prediction)
+    /// - `intercept_pos`: planned waiting/intercept point on the pass line
+    /// - `target`: the shot target the robot faces and fires toward
+    /// - `capture_limit`: maximum perpendicular slide to meet the ball
+    ///
+    /// **Completion**:
+    /// - `Succeeded` when the ball departs at speed after arriving (reflex fired)
+    /// - `Failed` on timeout (the ball never arrives / never trips the breakbeam)
+    ReflexReceive {
+        from_pos: Vector2,
+        intercept_pos: Vector2,
+        target: Vector2,
+        capture_limit: f64,
+    },
+
     /// Coordinate a pass between two players.
     ///
     /// **Type**: Joint - this command occupies the skill slot of BOTH the passer
@@ -217,10 +246,22 @@ pub enum BallAction {
     /// then kick. The open-play shot path — always captures and aims, never a
     /// one-touch strike.
     Shoot { target: Vector2 },
-    /// Strike the ball through toward `target` in one motion via a firmware reflex
-    /// kick — **never holding it** (double-touch-safe). Used for attacking
-    /// restarts. A whiff fails rather than falling back to a hold.
-    Strike { target: Vector2 },
+    /// Strike the ball toward `target` via a firmware reflex kick — fired the
+    /// instant the ball trips the breakbeam, so it is a single firmware-timed
+    /// contact (double-touch-safe). Used for attacking restarts.
+    ///
+    /// `acquire_first` selects the entry path:
+    /// - `false`: a one-motion drive-through a **free** ball, **never holding it** —
+    ///   stage behind the ball and strike through it (the attacking-restart release).
+    ///   A whiff fails rather than falling back to a hold.
+    /// - `true`: **acquire the ball first**, aim at `target`, then release via the
+    ///   reflex kick. A seated ball already trips the breakbeam, so arming fires it
+    ///   immediately along the aim heading — a single continuous touch from
+    ///   possession (e.g. the designated kicker on an attacking free kick).
+    Strike {
+        target: Vector2,
+        acquire_first: bool,
+    },
     /// Acquire the ball then dribble it to `to`, facing `heading`. Does not kick
     /// and does not self-complete (the caller decides arrival).
     Carry { to: Vector2, heading: Angle },

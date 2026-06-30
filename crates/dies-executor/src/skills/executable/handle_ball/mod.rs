@@ -345,7 +345,7 @@ impl HandleBallSkill {
             return a;
         }
         match self.action {
-            BallAction::Shoot { target } | BallAction::Strike { target } => {
+            BallAction::Shoot { target } | BallAction::Strike { target, .. } => {
                 Angle::from_vector(target - ball_pos)
             }
             BallAction::Carry { heading, .. } | BallAction::Hold { heading } => heading,
@@ -366,6 +366,13 @@ impl HandleBallSkill {
             (Stage::Hold, BallAction::Hold { .. })
                 | (Stage::Carry, BallAction::Carry { .. })
                 | (Stage::Aim, BallAction::Shoot { .. })
+                | (
+                    Stage::Aim,
+                    BallAction::Strike {
+                        acquire_first: true,
+                        ..
+                    }
+                )
         )
     }
 
@@ -373,8 +380,12 @@ impl HandleBallSkill {
     fn enter_act(&mut self, now: f64) {
         self.stage = match self.action {
             BallAction::Carry { .. } => Stage::Carry,
-            BallAction::Shoot { .. } => Stage::Aim,
-            // Hold, and the unreachable Strike (handled before this point).
+            BallAction::Shoot { .. }
+            | BallAction::Strike {
+                acquire_first: true,
+                ..
+            } => Stage::Aim,
+            // Hold, and the drive-through Strike (handled before this point).
             _ => Stage::Hold,
         };
         self.stage_entered = now;
@@ -491,9 +502,15 @@ impl ExecutableSkill for HandleBallSkill {
         }
         let player_pos = ctx.player.position;
 
-        // Strike is a one-motion reflex strike-through: handled separately (never
-        // holds, never re-acquires).
-        if let BallAction::Strike { target } = self.action {
+        // Drive-through Strike is a one-motion reflex strike-through: handled
+        // separately (never holds, never re-acquires). The `acquire_first` variant
+        // instead falls through to the normal acquire → aim path below and fires via
+        // reflex once aimed.
+        if let BallAction::Strike {
+            target,
+            acquire_first: false,
+        } = self.action
+        {
             return self.tick_strike(&ctx, target, now);
         }
 
@@ -599,5 +616,46 @@ impl ExecutableSkill for HandleBallSkill {
         } else {
             format!("{act}: {stage} · {}", self.detail)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::control::KickerControlInput;
+
+    fn skill(action: BallAction) -> HandleBallSkill {
+        HandleBallSkill::new(action, None)
+    }
+
+    #[test]
+    fn shoot_releases_with_smart_kick() {
+        let s = skill(BallAction::Shoot {
+            target: Vector2::new(1000.0, 0.0),
+        });
+        assert!(matches!(s.shot(), Some((_, KickerControlInput::Kick))));
+    }
+
+    #[test]
+    fn acquire_first_strike_releases_via_reflex() {
+        let s = skill(BallAction::Strike {
+            target: Vector2::new(1000.0, 0.0),
+            acquire_first: true,
+        });
+        assert!(matches!(
+            s.shot(),
+            Some((_, KickerControlInput::ReflexKick))
+        ));
+    }
+
+    #[test]
+    fn drive_through_strike_is_not_an_aim_shot() {
+        // The free-ball drive-through is handled by `tick_strike`, not the aim path,
+        // so it must not be picked up as a `shot()` here.
+        let s = skill(BallAction::Strike {
+            target: Vector2::new(1000.0, 0.0),
+            acquire_first: false,
+        });
+        assert!(s.shot().is_none());
     }
 }

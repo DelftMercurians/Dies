@@ -27,12 +27,12 @@ pub fn slot_for(id: PlayerId) -> Option<Vector2> {
     let (cx, cy, s) = (CENTER_X, CENTER_Y, SPACING);
     let p = |x: f64, y: f64| Vector2::new(x, y);
     Some(match id.as_u32() {
-        0 => p(cx + s, cy),           // tip — front, toward opponent goal
-        1 => p(cx, cy + 0.5 * s),     // middle, top
-        2 => p(cx, cy - 0.5 * s),     // middle, bottom
-        3 => p(cx - s, cy + s),       // back, top
-        4 => p(cx - s, cy),           // back, middle
-        5 => p(cx - s, cy - s),       // back, bottom
+        0 => p(cx + s, cy),       // tip — front, toward opponent goal
+        1 => p(cx, cy + 0.5 * s), // middle, top
+        2 => p(cx, cy - 0.5 * s), // middle, bottom
+        3 => p(cx - s, cy + s),   // back, top
+        4 => p(cx - s, cy),       // back, middle
+        5 => p(cx - s, cy - s),   // back, bottom
         _ => return None,
     })
 }

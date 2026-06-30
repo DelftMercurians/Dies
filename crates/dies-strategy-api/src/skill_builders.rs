@@ -240,6 +240,30 @@ impl SkillParams for ReceiveParams {
     }
 }
 
+/// Parameters for the `ReflexReceive` one-timer skill.
+#[derive(Clone, Debug)]
+pub struct ReflexReceiveParams {
+    /// Position the ball is being passed from.
+    pub from_pos: Vector2,
+    /// Planned intercept point on the passing line.
+    pub intercept_pos: Vector2,
+    /// Shot target the robot faces and fires the one-timer toward.
+    pub target: Vector2,
+    /// Maximum perpendicular distance the receiver slides to meet the ball.
+    pub capture_limit: f64,
+}
+
+impl SkillParams for ReflexReceiveParams {
+    fn to_command(&self) -> SkillCommand {
+        SkillCommand::ReflexReceive {
+            from_pos: self.from_pos,
+            intercept_pos: self.intercept_pos,
+            target: self.target,
+            capture_limit: self.capture_limit,
+        }
+    }
+}
+
 /// Parameters for `Snatch` skill.
 #[derive(Clone, Debug)]
 pub struct SnatchParams {
