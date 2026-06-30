@@ -5,6 +5,7 @@ use typeshare::typeshare;
 
 use crate::{
     avoidance_config::AvoidanceConfig, FieldGeometry, PlayerId, PossessionConfig, SideAssignment,
+    StrategyParams,
 };
 
 /// Settings for the low-level controller.
@@ -324,6 +325,12 @@ pub struct ExecutorSettings {
     /// for faster matches, or any directory holding prebuilt strategy binaries.
     #[serde(skip)]
     pub strategies_dir: Option<std::path::PathBuf>,
+    /// Initial strategy parameters seeded into the strategy host at executor
+    /// build, applied to every controlled team (CLI `--strategy-param`). Runtime
+    /// flag set by the CLI; never persisted. Used by match mode to start concerto
+    /// with `warmup=true`.
+    #[serde(skip)]
+    pub initial_strategy_params: StrategyParams,
 }
 
 fn default_true() -> bool {
@@ -402,6 +409,7 @@ impl Default for ExecutorSettings {
             vision_delay_ms: 0,
             strategy_blocking: false,
             strategies_dir: None,
+            initial_strategy_params: HashMap::new(),
         }
     }
 }

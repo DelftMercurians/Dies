@@ -260,6 +260,12 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
     // Propagate the dev-only hot-reload flag into the executor settings.
     state.executor_settings.write().unwrap().hot_reload = config.hot_reload;
     state.executor_settings.write().unwrap().vision_delay_ms = config.vision_delay_ms;
+    // Seed CLI-provided initial strategy params (match mode's `warmup=true`).
+    state
+        .executor_settings
+        .write()
+        .unwrap()
+        .initial_strategy_params = config.initial_strategy_params.clone();
     let state = Arc::new(state);
 
     // Start basestation watcher + test-bench task (telemetry cache, base info,

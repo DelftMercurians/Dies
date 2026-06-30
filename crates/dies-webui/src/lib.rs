@@ -50,6 +50,9 @@ pub struct UiConfig {
     pub vision_delay_ms: u32,
     /// Directory where session logs are written/browsed for replay.
     pub log_directory: PathBuf,
+    /// Initial strategy params seeded into the executor at build (CLI
+    /// `--strategy-param`). Applied to every controlled team.
+    pub initial_strategy_params: dies_core::StrategyParams,
 }
 
 #[derive(Debug, Clone)]

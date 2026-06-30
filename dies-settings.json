@@ -33,24 +33,20 @@
   },
   "team_configuration": {
     "blue_active": true,
-    "yellow_active": true,
+    "yellow_active": false,
     "side_assignment": "YellowOnPositive",
-    "blue_strategy": "concerto",
-    "yellow_strategy": "concerto"
+    "blue_strategy": null,
+    "yellow_strategy": null
   },
   "yellow_team_settings": {
-    "handicaps": {}
+    "handicaps": {},
+    "ignore_gc": false
   },
   "blue_team_settings": {
-    "handicaps": {}
+    "handicaps": {},
+    "ignore_gc": false
   },
-  "skill_settings": {
-    "dribbler_radius_near_center": 30.0,
-    "dribbler_radius_far_center": 25.0,
-    "dribbler_radius_breakbeam_factor": 2.0,
-    "fetch_ball_preshoot_offset": 150.0,
-    "fetch_ball_preshoot_ball_avoidance": 0.0
-  },
+  "skill_tunables": {},
   "possession_config": {
     "acquire_dist": 120.0,
     "release_dist": 180.0,

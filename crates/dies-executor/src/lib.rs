@@ -432,6 +432,15 @@ impl Executor {
         if let Some(ref name) = settings.team_configuration.yellow_strategy {
             strategy_host.set_strategy(TeamColor::Yellow, Some(name.clone()));
         }
+        // Seed CLI-provided initial strategy params (e.g. match mode's
+        // `warmup=true`) into the host cache. The cache is pushed to each
+        // strategy once it reaches `Ready`, and re-pushed on reconnect/hot-reload.
+        if !settings.initial_strategy_params.is_empty() {
+            strategy_host
+                .set_strategy_params(TeamColor::Blue, settings.initial_strategy_params.clone());
+            strategy_host
+                .set_strategy_params(TeamColor::Yellow, settings.initial_strategy_params.clone());
+        }
 
         let mut team_controllers = TeamMap::new(settings.team_configuration.side_assignment);
         let mut controlled_teams = Vec::new();

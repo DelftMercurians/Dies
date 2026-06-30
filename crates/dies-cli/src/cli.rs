@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::SocketAddr, path::PathBuf, process::ExitCod
 use anyhow::{bail, Result};
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use dies_basestation_client::{list_serial_ports, BasestationClientConfig, BasestationHandle};
-use dies_core::{PlayerId, TeamColor};
+use dies_core::{ParamValue, PlayerId, StrategyParams, TeamColor};
 use dies_ssl_client::{ConnectionConfig, SslClientConfig};
 use dies_webui::{UiConfig, UiEnvironment};
 use serde::{Deserialize, Serialize};
@@ -108,6 +108,15 @@ enum Command {
         #[clap(long)]
         strategies_dir: Option<PathBuf>,
     },
+
+    /// Supervised match mode: run a pre-match checklist, then launch dies and
+    /// auto-restart it on any crash. Starts concerto with `warmup=true`.
+    #[clap(name = "match")]
+    Match {
+        /// Pre-match checklist markdown file (one item per line).
+        #[clap(long, default_value = "match-checklist.md")]
+        checklist: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ValueEnum)]
@@ -186,6 +195,13 @@ pub struct Cli {
     /// yellow and activates the yellow team.
     #[clap(long)]
     pub yellow_strategy: Option<String>,
+
+    /// Seed an initial strategy parameter, `KEY=VALUE` (repeatable). Applied to
+    /// every controlled team at executor build. The value is parsed as a bool
+    /// (`true`/`false`), else an integer, else a float, else a string. Used by
+    /// match mode to start concerto with `warmup=true`.
+    #[clap(long = "strategy-param", value_name = "KEY=VALUE")]
+    pub strategy_param: Vec<String>,
 
     /// Launch the existing strategy binary as-is; never build.
     #[clap(long, action)]
@@ -309,6 +325,16 @@ impl Cli {
                     }
                 }
             }
+            Some(Command::Match { ref checklist }) => {
+                let checklist = checklist.clone();
+                match crate::commands::match_mode::run(self, checklist).await {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error in match mode: {}", err);
+                        ExitCode::FAILURE
+                    }
+                }
+            }
         }
     }
 
@@ -357,6 +383,7 @@ impl Cli {
             hot_reload,
             vision_delay_ms: self.vision_delay_ms,
             log_directory: PathBuf::from(self.log_directory),
+            initial_strategy_params: parse_strategy_params(&self.strategy_param)?,
         })
     }
 
@@ -449,6 +476,17 @@ pub enum ConnectionMode {
     Udp,
 }
 
+impl ConnectionMode {
+    /// CLI value string for forwarding to a child process.
+    pub fn to_arg(&self) -> &'static str {
+        match self {
+            ConnectionMode::None => "none",
+            ConnectionMode::Tcp => "tcp",
+            ConnectionMode::Udp => "udp",
+        }
+    }
+}
+
 /// The serial port to connect to.
 #[derive(Debug, Clone, Default)]
 pub enum SerialPort {
@@ -462,6 +500,41 @@ impl SerialPort {
     pub async fn select(&self) -> Result<String> {
         select_serial_port(self).await
     }
+
+    /// CLI value string for forwarding to a child process (inverse of `FromStr`).
+    pub fn to_arg(&self) -> String {
+        match self {
+            SerialPort::Disabled => "disabled".to_owned(),
+            SerialPort::Auto => "auto".to_owned(),
+            SerialPort::Port(p) => p.clone(),
+        }
+    }
+}
+
+/// Parse `KEY=VALUE` strategy-param specs into a [`StrategyParams`] map. The
+/// value is coerced to a bool (`true`/`false`), else an integer, else a float,
+/// else kept as a string.
+pub fn parse_strategy_params(specs: &[String]) -> Result<StrategyParams> {
+    let mut out = StrategyParams::new();
+    for spec in specs {
+        let (key, value) = spec.split_once('=').ok_or_else(|| {
+            anyhow::anyhow!("Invalid --strategy-param `{spec}` (expected KEY=VALUE)")
+        })?;
+        let key = key.trim();
+        let value = value.trim();
+        if key.is_empty() {
+            bail!("Invalid --strategy-param `{spec}` (empty key)");
+        }
+        let parsed = match value {
+            "true" => ParamValue::Bool(true),
+            "false" => ParamValue::Bool(false),
+            _ if value.parse::<i32>().is_ok() => ParamValue::Int(value.parse().unwrap()),
+            _ if value.parse::<f64>().is_ok() => ParamValue::Float(value.parse().unwrap()),
+            _ => ParamValue::Text(value.to_owned()),
+        };
+        out.insert(key.to_owned(), parsed);
+    }
+    Ok(out)
 }
 
 impl FromStr for SerialPort {
