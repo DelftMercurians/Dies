@@ -205,6 +205,9 @@ pub struct HandleBallParams {
     pub action: BallAction,
     /// Optional exit-bias heading for the acquire sub-phase.
     pub approach: Option<Angle>,
+    /// Allow firmware magnet capture during the commit drive (default `true`).
+    /// Set `false` to force the velocity-only capture for this invocation.
+    pub magnet: bool,
 }
 
 impl SkillParams for HandleBallParams {
@@ -212,6 +215,7 @@ impl SkillParams for HandleBallParams {
         SkillCommand::HandleBall {
             action: self.action,
             approach: self.approach,
+            magnet: self.magnet,
         }
     }
 }
@@ -408,6 +412,7 @@ mod tests {
                 heading: Angle::from_radians(0.0),
             },
             approach: None,
+            magnet: true,
         });
 
         handle.update_with(|p| p.approach = Some(Angle::from_radians(1.0)));

@@ -234,6 +234,8 @@ impl SideAssignment {
             pack_voltages: player.pack_voltages,
             breakbeam_ball_detected: player.breakbeam_ball_detected,
             has_ball: player.has_ball,
+            tof_ok: player.tof_ok,
+            tof_ball_detected: player.tof_ball_detected,
             imu_status: player.imu_status,
             kicker_status: player.kicker_status,
             id: player.id,

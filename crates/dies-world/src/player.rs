@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use dies_core::{
-    Angle, Handicap, PlayerData, PlayerFeedbackMsg, PlayerId, TrackerSettings, Vector2,
+    Angle, Handicap, PlayerData, PlayerFeedbackMsg, PlayerId, SysStatus, TrackerSettings, Vector2,
     WorldInstant,
 };
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
@@ -464,6 +464,8 @@ impl PlayerTracker {
                 pack_voltages: f.pack_voltages,
                 breakbeam_ball_detected: self.raw_breakbeam(),
                 has_ball: false,
+                tof_ok: matches!(f.tof_status, Some(SysStatus::Ok)),
+                tof_ball_detected: f.tof_ball_detected.unwrap_or(false),
                 imu_status: f.imu_status,
                 imu_readings: f.imu_readings,
                 kicker_status: f.kicker_status,
@@ -487,6 +489,14 @@ impl PlayerTracker {
             pack_voltages: self.last_feedback.and_then(|f| f.pack_voltages),
             breakbeam_ball_detected: self.raw_breakbeam(),
             has_ball: false,
+            tof_ok: matches!(
+                self.last_feedback.and_then(|f| f.tof_status),
+                Some(SysStatus::Ok)
+            ),
+            tof_ball_detected: self
+                .last_feedback
+                .and_then(|f| f.tof_ball_detected)
+                .unwrap_or(false),
             imu_status: self.last_feedback.and_then(|f| f.imu_status),
             imu_readings: self.last_feedback.and_then(|f| f.imu_readings),
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),

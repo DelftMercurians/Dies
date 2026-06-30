@@ -47,7 +47,16 @@ impl HandleBallSkill {
         input.with_yaw(heading);
         input.with_dribbling(DRIBBLER_SPEED());
 
-        if committed(along, perp) {
+        let is_committed = committed(along, perp);
+        // Drive-and-reflex-kick: while committed and the ToF sees the ball, hand the
+        // final centimetres to firmware magnet capture with the reflex armed
+        // (ARM_REFLEX_KICK_MAGNET) so the strike fires the instant the ball reaches
+        // the breakbeam. Velocity is ignored while engaged.
+        let magnet = self.magnet_engaged(ctx, is_committed);
+        input.magnet = magnet;
+        tc.debug_value(dkey(ctx, "magnet"), if magnet { 1.0 } else { 0.0 });
+
+        if is_committed {
             tc.debug_value(dkey(ctx, "committed"), 1.0);
             input.avoid_ball = false;
             input.add_global_velocity(commit_velocity(dir, along, perp_vec, ball_vel, pt));

@@ -344,6 +344,13 @@ pub struct PlayerData {
     /// Unified "this player has the ball" signal, derived from
     /// `WorldData::possession` (true iff this player is the confident owner).
     pub has_ball: bool,
+    /// Whether the onboard ToF ball sensor is reporting `Ok` (only meaningful for
+    /// own players). Used as the magnet-mode capability gate — `Standby`/etc. and
+    /// robots without the sensor read `false`.
+    pub tof_ok: bool,
+    /// Whether the onboard ToF sensor currently sees the ball in its ~64 mm front
+    /// window (only meaningful for own players). The magnet-mode engage trigger.
+    pub tof_ball_detected: bool,
     pub imu_status: Option<SysStatus>,
     pub imu_readings: Option<[f32; 6]>,
     pub kicker_status: Option<SysStatus>,
@@ -375,6 +382,8 @@ impl PlayerData {
             imu_status: None,
             breakbeam_ball_detected: false,
             has_ball: false,
+            tof_ok: false,
+            tof_ball_detected: false,
             kicker_status: None,
             imu_readings: None,
             skill: None,
@@ -933,6 +942,8 @@ pub fn mock_world_data() -> WorldData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             has_ball: false,
+            tof_ok: false,
+            tof_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -955,6 +966,8 @@ pub fn mock_world_data() -> WorldData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             has_ball: false,
+            tof_ok: false,
+            tof_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -1007,6 +1020,8 @@ pub fn mock_team_data() -> TeamData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             has_ball: false,
+            tof_ok: false,
+            tof_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -1029,6 +1044,8 @@ pub fn mock_team_data() -> TeamData {
             pack_voltages: Some([0.0, 0.0]),
             breakbeam_ball_detected: false,
             has_ball: false,
+            tof_ok: false,
+            tof_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),

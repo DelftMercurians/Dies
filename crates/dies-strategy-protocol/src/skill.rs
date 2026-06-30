@@ -225,6 +225,11 @@ pub enum SkillCommand {
     HandleBall {
         action: BallAction,
         approach: Option<Angle>,
+        /// Strategy-level opt-in for firmware magnet capture during the final
+        /// commit drive (default `true`). ANDed with the skill-level
+        /// `MAGNET_ENABLED` tunable and the robot's ToF capability; a no-op on
+        /// robots without a working ToF sensor and in sim.
+        magnet: bool,
     },
 
     /// Stop all motion immediately.

@@ -177,6 +177,7 @@ impl PassCoordinator {
                     heading: Angle::from_radians(0.0),
                 },
                 None,
+                true,
             ),
             receive: ReceiveSkill::new(Vector2::zeros(), Vector2::zeros(), CAPTURE_LIMIT, false),
             result: None,

@@ -97,6 +97,15 @@ tunables! {
     #[tunable(min = 0.0, max = 1.0, step = 0.05)]
     CARRY_DRIBBLER_SPEED: f64 = 0.5;
 
+    // ── magnet capture ──────────────────────────────────────────────────────────
+    section "HandleBall magnet";
+
+    /// Master enable for firmware magnet capture during the commit drive (`>0.5` =
+    /// on). ANDed with the per-command strategy flag and the robot's ToF
+    /// capability. A no-op on robots without a working ToF sensor and in sim.
+    #[tunable(min = 0.0, max = 1.0, step = 1.0)]
+    MAGNET_ENABLED: f64 = 1.0;
+
     // ── acquire (capture front-end) ───────────────────────────────────────────
     section "HandleBall acquire";
 
@@ -280,6 +289,9 @@ pub struct HandleBallSkill {
     action: BallAction,
     /// Exit-bias heading for the acquire sub-phase; `None` derives from `action`.
     approach: Option<Angle>,
+    /// Per-command strategy opt-in for firmware magnet capture (default `true`).
+    /// ANDed with the `MAGNET_ENABLED` tunable and the robot's ToF capability.
+    magnet: bool,
     status: SkillStatus,
     stage: Stage,
     /// World time (`t_received`, s) of the first tick. Sim-clock based for
@@ -310,10 +322,11 @@ pub struct HandleBallSkill {
 }
 
 impl HandleBallSkill {
-    pub fn new(action: BallAction, approach: Option<Angle>) -> Self {
+    pub fn new(action: BallAction, approach: Option<Angle>, magnet: bool) -> Self {
         Self {
             action,
             approach,
+            magnet,
             status: SkillStatus::Running,
             stage: Stage::Acquire,
             first_tick: None,
@@ -337,6 +350,20 @@ impl HandleBallSkill {
     pub fn reconfigure(&mut self, action: BallAction, approach: Option<Angle>) {
         self.action = action;
         self.approach = approach;
+    }
+
+    /// Whether to engage firmware magnet capture this tick. All gates ANDed:
+    /// master tunable on, per-command strategy flag on, the robot's ToF reporting
+    /// `Ok`, the ToF currently seeing the ball (so the firmware's servo will work —
+    /// it holds still when engaged-but-not-acquired), and we're in the commit
+    /// corridor. `tof_ok`/`tof_ball_detected` are never set in sim, so this is a
+    /// no-op there and the velocity capture runs unchanged.
+    pub(super) fn magnet_engaged(&self, ctx: &SkillContext<'_>, committed: bool) -> bool {
+        MAGNET_ENABLED() > 0.5
+            && self.magnet
+            && ctx.player.tof_ok
+            && ctx.player.tof_ball_detected
+            && committed
     }
 
     /// Exit-bias heading for the acquire sub-phase.
@@ -487,9 +514,15 @@ impl ExecutableSkill for HandleBallSkill {
     }
 
     fn update_params(&mut self, command: &SkillCommand) {
-        if let SkillCommand::HandleBall { action, approach } = command {
+        if let SkillCommand::HandleBall {
+            action,
+            approach,
+            magnet,
+        } = command
+        {
             self.action = *action;
             self.approach = *approach;
+            self.magnet = *magnet;
         }
     }
 
@@ -625,7 +658,7 @@ mod tests {
     use crate::control::KickerControlInput;
 
     fn skill(action: BallAction) -> HandleBallSkill {
-        HandleBallSkill::new(action, None)
+        HandleBallSkill::new(action, None, true)
     }
 
     #[test]

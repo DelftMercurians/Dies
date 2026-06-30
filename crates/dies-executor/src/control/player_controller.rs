@@ -55,6 +55,9 @@ pub struct PlayerController {
     /// Whether a reflex kick is being requested this frame (held mode, no counter
     /// increment — firmware fires on breakbeam). Recomputed every `update`.
     reflex_requested: bool,
+    /// Whether magnet mode is being requested this frame (held mode, composed with
+    /// the kicker state into the wire command). Recomputed every `update`.
+    magnet_requested: bool,
     /// Dribble speed normalized to \[0, 1\]
     dribble_speed: f64,
 
@@ -91,6 +94,7 @@ impl PlayerController {
             frame_misses: 0,
             kicker: KickerState::Disarming,
             reflex_requested: false,
+            magnet_requested: false,
             dribble_speed: 0.0,
 
             max_accel: settings.controller_settings.max_acceleration,
@@ -156,13 +160,20 @@ impl PlayerController {
         // sending ARM_COUNTER_KICK (RobotCmd::Arm) is what fires it firmware-side.
         // Reflex is a held mode (ARM_REFLEX_KICK) with no counter change; the
         // firmware fires it on breakbeam.
+        // Magnet mode rides on the kicker state: while engaged the firmware servos
+        // the ball onto the dribbler. We keep the kicker armed/charging throughout
+        // (ARM_COUNTER) so a shot is ready the moment capture completes; a reflex
+        // request composes to fire-on-capture. Magnet is never requested while a
+        // kick is being commanded this frame.
         let robot_cmd = match self.kicker {
             KickerState::Kicking => {
                 self.kicker = KickerState::Disarming;
                 self.kick_counter = self.kick_counter.wrapping_add(1);
                 RobotCmd::Arm
             }
+            _ if self.reflex_requested && self.magnet_requested => RobotCmd::ArmReflexMagnet,
             _ if self.reflex_requested => RobotCmd::ArmReflex,
+            _ if self.magnet_requested => RobotCmd::ArmMagnet,
             _ => RobotCmd::Arm,
         };
 
@@ -489,6 +500,10 @@ impl PlayerController {
 
         // Set dribbling speed
         self.dribble_speed = input.dribbling_speed;
+
+        // Magnet is a held mode (level signal), recomputed each frame; composed
+        // with the kicker state when the wire command is built.
+        self.magnet_requested = input.magnet;
 
         // Set kicker control. Reflex is a held mode (level signal), recomputed
         // each frame; everything else drives the smart-kick state machine.

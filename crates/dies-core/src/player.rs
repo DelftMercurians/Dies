@@ -52,6 +52,16 @@ pub enum RobotCmd {
     CalibrateImu,
     /// Calibrate the breakbeam sensor (bench diagnostics)
     CalibrateBreakbeam,
+    /// Magnet mode (2-axis ToF ball capture), kicker idle. Firmware servos the
+    /// ball onto the dribbler and ignores our velocity while engaged.
+    NoneMagnet,
+    /// Magnet mode while keeping the kicker armed/charging (ARM_COUNTER): the
+    /// capture-and-hold path. Won't fire without a counter increment, so it just
+    /// charges + captures.
+    ArmMagnet,
+    /// Magnet mode with a reflex kick armed: the firmware strikes the instant the
+    /// ball reaches the breakbeam. The drive-and-reflex-kick path.
+    ArmReflexMagnet,
 }
 
 impl From<RobotCmd> for glue::Radio_RobotCommand {
@@ -70,6 +80,9 @@ impl From<RobotCmd> for glue::Radio_RobotCommand {
             RobotCmd::Coast => glue::Radio_RobotCommand::COAST,
             RobotCmd::CalibrateImu => glue::Radio_RobotCommand::CALIBRATE_IMU,
             RobotCmd::CalibrateBreakbeam => glue::Radio_RobotCommand::CALIBRATE_BB,
+            RobotCmd::NoneMagnet => glue::Radio_RobotCommand::NONE_MAGNET,
+            RobotCmd::ArmMagnet => glue::Radio_RobotCommand::ARM_COUNTER_KICK_MAGNET,
+            RobotCmd::ArmReflexMagnet => glue::Radio_RobotCommand::ARM_REFLEX_KICK_MAGNET,
         }
     }
 }
@@ -629,4 +642,23 @@ pub enum RoleType {
     /// Robot posed in a static logo/warmup formation (triangle). Exempt from the
     /// stop-state speed clamp (except Halt) so it may slowly reposition.
     Formation,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The magnet `RobotCmd` variants must map to the firmware's composed aux+kicker
+    /// wire codes (capture-and-hold keeps the kicker charging via ARM_COUNTER;
+    /// the reflex variant fires on capture). A typo here silently sends the wrong
+    /// byte to the robot.
+    #[test]
+    fn magnet_robot_cmds_map_to_composed_wire_codes() {
+        let none: glue::Radio_RobotCommand = RobotCmd::NoneMagnet.into();
+        let arm: glue::Radio_RobotCommand = RobotCmd::ArmMagnet.into();
+        let reflex: glue::Radio_RobotCommand = RobotCmd::ArmReflexMagnet.into();
+        assert_eq!(none, glue::Radio_RobotCommand::NONE_MAGNET);
+        assert_eq!(arm, glue::Radio_RobotCommand::ARM_COUNTER_KICK_MAGNET);
+        assert_eq!(reflex, glue::Radio_RobotCommand::ARM_REFLEX_KICK_MAGNET);
+    }
 }

@@ -53,11 +53,21 @@ impl HandleBallSkill {
         tc.debug_value(dkey(ctx, "perp"), perp);
         tc.debug_value(dkey(ctx, "tail_catch"), if axis.moving { 1.0 } else { 0.0 });
 
-        if committed(along, perp) {
+        let is_committed = committed(along, perp);
+        // Hand off the final centimetres to firmware magnet capture once the ToF
+        // actually sees the ball (the velocity output is ignored while engaged; the
+        // firmware keeps the kicker charging via ARM_COUNTER). Capture-and-hold —
+        // the reflex coupling lives in `Strike`.
+        let magnet = self.magnet_engaged(ctx, is_committed);
+        input.magnet = magnet;
+        tc.debug_value(dkey(ctx, "magnet"), if magnet { 1.0 } else { 0.0 });
+
+        if is_committed {
             tc.debug_value(dkey(ctx, "committed"), 1.0);
             self.detail = format!(
-                "{} a{along:.0} p{perp:.0}",
-                if axis.moving { "tail-catch" } else { "commit" }
+                "{}{} a{along:.0} p{perp:.0}",
+                if axis.moving { "tail-catch" } else { "commit" },
+                if magnet { "+magnet" } else { "" }
             );
             input.avoid_ball = false;
             input.add_global_velocity(commit_velocity(axis.dir, along, perp_vec, ball_vel, pt));

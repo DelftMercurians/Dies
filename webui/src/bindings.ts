@@ -993,6 +993,17 @@ export interface PlayerData {
 	 * `WorldData::possession` (true iff this player is the confident owner).
 	 */
 	has_ball: boolean;
+	/**
+	 * Whether the onboard ToF ball sensor is reporting `Ok` (only meaningful for
+	 * own players). Used as the magnet-mode capability gate — `Standby`/etc. and
+	 * robots without the sensor read `false`.
+	 */
+	tof_ok: boolean;
+	/**
+	 * Whether the onboard ToF sensor currently sees the ball in its ~64 mm front
+	 * window (only meaningful for own players). The magnet-mode engage trigger.
+	 */
+	tof_ball_detected: boolean;
 	imu_status?: SysStatus;
 	imu_readings?: [number, number, number, number, number, number];
 	kicker_status?: SysStatus;

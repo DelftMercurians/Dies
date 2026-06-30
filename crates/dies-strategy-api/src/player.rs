@@ -204,8 +204,19 @@ impl PlayerHandle {
         action: BallAction,
         approach: Option<Angle>,
     ) -> SkillHandle<HandleBallParams> {
-        self.pending_command = Some(SkillCommand::HandleBall { action, approach });
-        SkillHandle::new(HandleBallParams { action, approach })
+        // Magnet capture is opt-out (default on); flip the `magnet` field on the
+        // returned handle's params (e.g. via `update_with`) to force velocity-only
+        // capture for a given invocation.
+        self.pending_command = Some(SkillCommand::HandleBall {
+            action,
+            approach,
+            magnet: true,
+        });
+        SkillHandle::new(HandleBallParams {
+            action,
+            approach,
+            magnet: true,
+        })
     }
 
     /// Acquire the ball, aim at `target`, then release it via the firmware reflex

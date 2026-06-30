@@ -128,6 +128,12 @@ pub struct PlayerControlInput {
     pub dribbling_speed: f64,
     /// Kicker control input
     pub kicker: KickerControlInput,
+    /// Engage firmware magnet mode (2-axis ToF ball capture) this tick. While
+    /// engaged the firmware servos the ball onto the dribbler and **ignores** the
+    /// commanded velocity/dribbler. Composed with the kicker state into the wire
+    /// command by [`PlayerController`]. Only effective on robots with a working
+    /// ToF sensor; a no-op otherwise (and in sim).
+    pub magnet: bool,
     /// How carefully do we wish to move (e.g. move further than the target)
     /// 0 means 'as fast as possible', 1 means 'as careful as possible'
     pub care: f64,
@@ -176,6 +182,7 @@ impl Default for PlayerControlInput {
             angular_velocity: None,
             dribbling_speed: 0.0,
             kicker: KickerControlInput::default(),
+            magnet: false,
             care: 0.0,
             aggressiveness: 0.0,
             brake_gain: None,
@@ -213,6 +220,12 @@ impl PlayerControlInput {
     /// Set the target yaw of the player.
     pub fn with_yaw(&mut self, yaw: Angle) -> &mut Self {
         self.yaw = Some(yaw);
+        self
+    }
+
+    /// Engage (or disengage) firmware magnet mode this tick.
+    pub fn with_magnet(&mut self, magnet: bool) -> &mut Self {
+        self.magnet = magnet;
         self
     }
 
