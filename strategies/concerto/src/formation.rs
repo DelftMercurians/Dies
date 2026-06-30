@@ -690,6 +690,40 @@ impl Formation {
             });
         }
 
+        // 3e. Counter outlet — when we are under genuine own-goal threat (being
+        // pressed: an opponent is working the ball toward our goal and `af`→0 has
+        // pulled every supporter home), hold ONE body high on the flank away from
+        // the ball as a swing-back / counter target. Without it a clearance or
+        // recovery has no advanced outlet and dies in our own half (the "can't
+        // swing back when pressed" failure). Gated on THREAT (not ball-x) so it
+        // fires only while defending and never during our own low-threat buildup —
+        // keeping the carrier's short recycle outlets intact. Fades out as we
+        // commit forward (the supporters/striker then provide the high outlets via
+        // `af`) and is suppressed on set-piece defense (full wall, leg-2). Folded
+        // into the Support kind (a high slot) so it reads as a within-kind body,
+        // not a new role kind that would churn the role-assignment metric.
+        let outlet_gate = geometry::smoothstep(
+            config::OUTLET_THREAT_LO,
+            config::OUTLET_THREAT_HI,
+            ball_threat,
+        );
+        if !setpiece_defense && outlet_gate > 0.0 {
+            let far = if ball.y > 0.0 { -1.0 } else { 1.0 };
+            let pos = Vector2::new(
+                config::OUTLET_X.clamp(-half_len + 400.0, half_len - 400.0),
+                (far * half_wid * config::OUTLET_Y_FRAC).clamp(-half_wid + 400.0, half_wid - 400.0),
+            );
+            roles.push(Role {
+                id: RoleId {
+                    kind: RoleKind::Support,
+                    slot: (config::SUPPORT_COUNT + 1) as u16,
+                },
+                position: pos,
+                importance: config::IMP_OUTLET * outlet_gate,
+                face: world.opp_goal_center(),
+            });
+        }
+
         // (No receiver role: Model B — the planner picks a concrete receiver, it
         // becomes a plan slot, and the PassCoordinator positions it. Formation
         // staffing one too would put a second robot on the receive area.)

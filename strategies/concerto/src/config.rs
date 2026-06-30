@@ -374,6 +374,30 @@ pub const IMP_SUPPORT: f64 = 3.0;
 /// supporters and push up instead of loitering at midfield.
 pub const IMP_SUPPORT_ATTACK: f64 = 5.0;
 pub const IMP_SPREAD: f64 = 0.5;
+// ── Counter outlet (anti-press swing target) ─────────────────────────────────
+// When under genuine own-goal threat (being pressed) the attack fraction `af`
+// collapses and every supporter retreats, leaving no advanced target to clear or
+// counter to — the "limited presence in the opponent half when pressed, so we
+// can't swing back" failure. To fix it we hold ONE body high on the far flank
+// whenever own-goal threat exceeds OUTLET_THREAT_LO, ramping to full at
+// OUTLET_THREAT_HI. Gated on THREAT (not ball-x) so it fires only while defending
+// and never during our own low-threat buildup, leaving the carrier's short
+// recycle outlets intact (extending the ball-x attack ramp into our half instead
+// tanked buildup possession). Suppressed on set-piece defense (full wall, leg-2).
+pub const OUTLET_THREAT_LO: f64 = 0.30;
+pub const OUTLET_THREAT_HI: f64 = 0.60;
+/// Field-absolute x of the counter outlet (mm, team-relative; +x = opponent
+/// half). Just into the opponent half so a clear/switch has an advanced target and
+/// the body is a genuine counter springboard rather than another midfielder.
+pub const OUTLET_X: f64 = 800.0;
+/// Lateral placement of the outlet as a fraction of half-width, on the flank away
+/// from the ball (where a switch/clearance naturally goes).
+pub const OUTLET_Y_FRAC: f64 = 0.55;
+/// Importance of the counter outlet at full threat. Below Mark/Balance (6) and the
+/// Shadow wall (10) so it never strips the goal wall — it claims at most the
+/// least-critical surplus body — but above plain Support (3)/Spread so that body
+/// holds high instead of collapsing all the way home.
+pub const IMP_OUTLET: f64 = 5.0;
 /// Coverage accounting: radius around a plan robot's ball contest within which
 /// formation roles are de-prioritised (soft suppression, avoids clustering).
 pub const SUPPRESS_RADIUS: f64 = 1400.0;
