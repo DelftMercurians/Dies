@@ -485,6 +485,29 @@ export interface TeamStrategyParams {
 	values: Record<string, ParamValue>;
 }
 
+/**
+ * Code-generated description of one tunable knob, surfaced to the web UI to
+ * render a control. Values themselves are stored separately in
+ * `ExecutorSettings::skill_tunables` keyed by [`TunableSpec::key`].
+ */
+export interface TunableSpec {
+	/** Namespaced unique key, `"<module>.<NAME>"` (the settings-map key). */
+	key: string;
+	/** Human label derived from the knob name (Title Case). */
+	label: string;
+	/** Help text from the knob's doc comment, if any. */
+	help?: string;
+	/** Compile-time default (shown when no override is set; revert target). */
+	default: number;
+	min?: number;
+	max?: number;
+	step?: number;
+	/** Display unit suffix (e.g. `"mm"`, `"mm/s"`, `"s"`, `"rad"`). */
+	unit?: string;
+	/** Grouping label for the UI; defaults to the module/skill name. */
+	section?: string;
+}
+
 /** Runtime information about the active executor. */
 export interface ExecutorInfo {
 	/** Whether the executor is currently paused. */
@@ -495,6 +518,12 @@ export interface ExecutorInfo {
 	active_teams: TeamColor[];
 	/** Declared parameters + current values for each active team's strategy. */
 	strategy_params: TeamStrategyParams[];
+	/**
+	 * Code-generated metadata for the executor's skill tunables (one entry per
+	 * knob declared with `tunables!`). Drives the dynamic Skill settings tab;
+	 * current values live in `ExecutorSettings::skill_tunables`.
+	 */
+	skill_tunable_specs: TunableSpec[];
 }
 
 /** Runtime information about the active executor. */
@@ -703,6 +732,15 @@ export interface ExecutorSettings {
 	yellow_team_settings: TeamSpecificSettings;
 	blue_team_settings: TeamSpecificSettings;
 	skill_settings: SkillSettings;
+	/**
+	 * Runtime overrides for executor *skill* tunables (the knobs declared with
+	 * `tunables!` in `dies-executor`'s skills), keyed by their namespaced key
+	 * (`"<skill>.<NAME>"`). Holds **overrides only** — an absent key uses the
+	 * compile-time default. The render metadata (label/help/range/unit) is
+	 * code-generated and surfaced separately via `ExecutorInfo::skill_tunable_specs`.
+	 * Persisted with the rest of the settings, so it rides the baseline/revert bar.
+	 */
+	skill_tunables?: Record<string, number>;
 	/** Tuning for the unified ball-possession metric (computed in the world tracker). */
 	possession_config?: PossessionConfig;
 	allow_no_vision: boolean;

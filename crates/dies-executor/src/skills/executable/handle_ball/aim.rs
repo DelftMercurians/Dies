@@ -25,7 +25,7 @@ impl HandleBallSkill {
         let BallAction::Shoot { target } = self.action else {
             return self.drive_hold(ctx, self.hold_heading());
         };
-        if now - self.stage_entered > AIM_BACKSTOP {
+        if now - self.stage_entered > AIM_BACKSTOP() {
             log::warn!("handle_ball: aim timed out");
             return self.fail();
         }
@@ -40,22 +40,22 @@ impl HandleBallSkill {
         tc.debug_line_colored(dkey(ctx, "shot"), ball_pos, target, DebugColor::Green);
 
         let mut input = PlayerControlInput::new();
-        input.with_dribbling(DRIBBLER_SPEED);
+        input.with_dribbling(DRIBBLER_SPEED());
 
         // Carry the ball to the launch point first if it's away from it.
         let ball_to_launch = (ball_pos - launch).norm();
         tc.debug_value(dkey(ctx, "ball_to_launch"), ball_to_launch);
-        if ball_to_launch > REPOSITION_ARRIVE {
+        if ball_to_launch > REPOSITION_ARRIVE() {
             tc.debug_string(dkey(ctx, "aim_phase"), "reposition");
             self.detail = format!("reposition {ball_to_launch:.0}mm");
             let axis = (target - launch)
                 .try_normalize(1e-6)
                 .unwrap_or_else(|| Vector2::new(1.0, 0.0));
-            let pose = launch - axis * BALL_TO_ROBOT_DISTANCE;
+            let pose = launch - axis * BALL_TO_ROBOT_DISTANCE();
             input.with_position(pose);
             input.with_yaw(Angle::from_vector(target - launch));
-            input.with_acceleration_limit(CARRY_ACCEL_LIMIT);
-            input.with_angular_speed_limit(CARRY_ANGULAR_LIMIT);
+            input.with_acceleration_limit(CARRY_ACCEL_LIMIT());
+            input.with_angular_speed_limit(CARRY_ANGULAR_LIMIT());
             return SkillProgress::Continue(input);
         }
 
@@ -75,7 +75,7 @@ impl HandleBallSkill {
             "orbit err{err_deg:.0}°{}",
             if blocked { " blocked" } else { "" }
         );
-        if err.abs() < YAW_TOLERANCE && !blocked && ctx.player.has_ball {
+        if err.abs() < YAW_TOLERANCE() && !blocked && ctx.player.has_ball {
             self.stage = Stage::Kicking;
             self.stage_entered = now;
         }
@@ -85,11 +85,11 @@ impl HandleBallSkill {
             .try_normalize(1e-6)
             .unwrap_or_else(|| Vector2::new(1.0, 0.0));
         let tangent = Vector2::new(-r_hat.y, r_hat.x); // CCW
-        let v_rad = -RADIUS_KP * (r.norm() - BALL_TO_ROBOT_DISTANCE) * r_hat;
+        let v_rad = -RADIUS_KP() * (r.norm() - BALL_TO_ROBOT_DISTANCE()) * r_hat;
         let v_tan = if blocked {
             Vector2::zeros()
         } else {
-            let speed = (ORBIT_GAIN * err.abs()).clamp(MIN_ORBIT_SPEED, ORBIT_SPEED);
+            let speed = (ORBIT_GAIN() * err.abs()).clamp(MIN_ORBIT_SPEED(), ORBIT_SPEED());
             err.signum() * speed * tangent
         };
         input.velocity = Velocity::global(v_tan + v_rad);
@@ -109,11 +109,11 @@ impl HandleBallSkill {
         let target_heading = Angle::from_vector(target - ball_pos);
         ctx.team_context
             .debug_line_colored(dkey(ctx, "shot"), ball_pos, target, DebugColor::Green);
-        self.detail = format!("fire {KICK_SPEED:.0}");
+        self.detail = format!("fire {:.0}", KICK_SPEED());
         let mut input = PlayerControlInput::new();
         input.with_yaw(target_heading);
         input.with_kicker(KickerControlInput::Kick);
-        input.kick_speed = Some(KICK_SPEED);
+        input.kick_speed = Some(KICK_SPEED());
         input.with_dribbling(0.0);
         self.kick_ball_pos = Some(ball_pos);
         self.kick_time = Some(now);
@@ -139,7 +139,7 @@ impl HandleBallSkill {
         tc.debug_value(dkey(ctx, "verify_ms"), elapsed * 1000.0);
         self.detail = format!("verify {depart_dist:.0}mm {:.0}ms", elapsed * 1000.0);
 
-        let departed = depart_dist > KICK_DEPART_DIST || ball_vel_norm > KICK_DEPART_SPEED;
+        let departed = depart_dist > KICK_DEPART_DIST() || ball_vel_norm > KICK_DEPART_SPEED();
         if departed {
             self.status = SkillStatus::Succeeded;
             return SkillProgress::success();
@@ -196,28 +196,28 @@ fn pose_ok(
         Some(a) => a,
         None => return false,
     };
-    let pose = launch - axis * BALL_TO_ROBOT_DISTANCE;
+    let pose = launch - axis * BALL_TO_ROBOT_DISTANCE();
     on_surface(pose, field) && ctx.obstacles.point_clear(pose, LAUNCH_POSE_EGO)
 }
 
-/// True if `p` is on the physical surface, inset by [`LAUNCH_SURFACE_MARGIN`].
+/// True if `p` is on the physical surface, inset by [`LAUNCH_SURFACE_MARGIN()`].
 fn on_surface(p: Vector2, field: Option<&FieldGeometry>) -> bool {
     let Some(field) = field else {
         return true;
     };
-    let max_x = field.field_length / 2.0 + field.boundary_width - LAUNCH_SURFACE_MARGIN;
-    let max_y = field.field_width / 2.0 + field.boundary_width - LAUNCH_SURFACE_MARGIN;
+    let max_x = field.field_length / 2.0 + field.boundary_width - LAUNCH_SURFACE_MARGIN();
+    let max_y = field.field_width / 2.0 + field.boundary_width - LAUNCH_SURFACE_MARGIN();
     p.x.abs() <= max_x && p.y.abs() <= max_y
 }
 
-/// True if the ball is within [`LAUNCH_BOUNDARY_MARGIN`] of any field line.
+/// True if the ball is within [`LAUNCH_BOUNDARY_MARGIN()`] of any field line.
 fn ball_near_boundary(ball: Vector2, field: Option<&FieldGeometry>) -> bool {
     let Some(field) = field else {
         return false;
     };
     let hl = field.field_length / 2.0;
     let hw = field.field_width / 2.0;
-    (hl - ball.x.abs()) < LAUNCH_BOUNDARY_MARGIN || (hw - ball.y.abs()) < LAUNCH_BOUNDARY_MARGIN
+    (hl - ball.x.abs()) < LAUNCH_BOUNDARY_MARGIN() || (hw - ball.y.abs()) < LAUNCH_BOUNDARY_MARGIN()
 }
 
 /// Inward direction to nudge the ball: away from the nearest field line, or
@@ -240,7 +240,7 @@ fn inward_dir(ball: Vector2, field: Option<&FieldGeometry>) -> Vector2 {
         .into_iter()
         .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
         .unwrap();
-    if dist < LAUNCH_BOUNDARY_MARGIN {
+    if dist < LAUNCH_BOUNDARY_MARGIN() {
         normal
     } else {
         (-ball)
@@ -256,7 +256,7 @@ fn rotate(v: Vector2, rot: f64) -> Vector2 {
 }
 
 /// Whether another robot sits in the shoot corridor (ray from the ball along
-/// `heading`, half-width [`LANE_HALF_WIDTH`], length [`LANE_RANGE`]).
+/// `heading`, half-width [`LANE_HALF_WIDTH()`], length [`LANE_RANGE()`]).
 fn lane_blocked(ctx: &SkillContext<'_>, ball_pos: Vector2, heading: Angle) -> bool {
     let dir = heading.to_vector();
     ctx.world
@@ -268,6 +268,6 @@ fn lane_blocked(ctx: &SkillContext<'_>, ball_pos: Vector2, heading: Angle) -> bo
             let rel = p.position - ball_pos;
             let proj = rel.dot(&dir);
             let perp = (rel - dir * proj).norm();
-            proj > 0.0 && proj < LANE_RANGE && perp < LANE_HALF_WIDTH
+            proj > 0.0 && proj < LANE_RANGE() && perp < LANE_HALF_WIDTH()
         })
 }

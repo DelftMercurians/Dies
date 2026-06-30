@@ -5,20 +5,30 @@
 
 use dies_core::{Angle, Vector2, BALL_RADIUS, PLAYER_RADIUS};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
+use dies_tunables_macro::tunables;
 
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{KickerControlInput, PlayerControlInput, Velocity};
 
-/// Angle tolerance for considering the robot "aligned" with target
-const ALIGNMENT_TOLERANCE: f64 = 10.0 * std::f64::consts::PI / 180.0; // 6 degrees
-/// Angular speed limit while turning with ball
-const ANGULAR_SPEED_LIMIT: f64 = 1.3; // radians/s
-/// Angular acceleration limit while turning with ball
-const ANGULAR_ACCELERATION_LIMIT: f64 = 240.0 * std::f64::consts::PI / 180.0;
-/// Dribbler speed during shot
-const DRIBBLER_SPEED: f64 = 0.2;
-/// Maximum distance from ball before declaring failure
-const MAX_BALL_DISTANCE: f64 = 350.0;
+tunables! {
+    section "Shoot";
+
+    /// Angle tolerance for considering the robot "aligned" with the target (rad).
+    #[tunable(unit = "rad", min = 0.01, max = 0.5, step = 0.01)]
+    ALIGNMENT_TOLERANCE: f64 = 10.0 * std::f64::consts::PI / 180.0;
+    /// Angular speed limit while turning with the ball.
+    #[tunable(unit = "rad/s", min = 0.5, max = 4.0, step = 0.1)]
+    ANGULAR_SPEED_LIMIT: f64 = 1.3;
+    /// Angular acceleration limit while turning with the ball (rad/s²).
+    #[tunable(unit = "rad/s²", min = 1.0, max = 12.0, step = 0.5)]
+    ANGULAR_ACCELERATION_LIMIT: f64 = 240.0 * std::f64::consts::PI / 180.0;
+    /// Dribbler speed during the shot.
+    #[tunable(min = 0.0, max = 1.0, step = 0.05)]
+    DRIBBLER_SPEED: f64 = 0.2;
+    /// Maximum distance from the ball before declaring failure.
+    #[tunable(unit = "mm", min = 100.0, max = 600.0, step = 10.0)]
+    MAX_BALL_DISTANCE: f64 = 350.0;
+}
 
 /// State machine for reflex shoot
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,13 +83,13 @@ impl ExecutableSkill for ShootSkill {
         };
 
         let ball_dist = (ball.position.xy() - ctx.player.position).norm();
-        if ball_dist > MAX_BALL_DISTANCE {
+        if ball_dist > MAX_BALL_DISTANCE() {
             self.status = SkillStatus::Failed;
             return SkillProgress::failure();
         }
 
         let mut input = PlayerControlInput::new();
-        input.with_dribbling(DRIBBLER_SPEED);
+        input.with_dribbling(DRIBBLER_SPEED());
 
         // Calculate target heading
         let target_heading = Angle::between_points(ctx.player.position, self.target);

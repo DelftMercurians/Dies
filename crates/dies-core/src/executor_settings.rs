@@ -287,6 +287,14 @@ pub struct ExecutorSettings {
     pub yellow_team_settings: TeamSpecificSettings,
     pub blue_team_settings: TeamSpecificSettings,
     pub skill_settings: SkillSettings,
+    /// Runtime overrides for executor *skill* tunables (the knobs declared with
+    /// `tunables!` in `dies-executor`'s skills), keyed by their namespaced key
+    /// (`"<skill>.<NAME>"`). Holds **overrides only** — an absent key uses the
+    /// compile-time default. The render metadata (label/help/range/unit) is
+    /// code-generated and surfaced separately via `ExecutorInfo::skill_tunable_specs`.
+    /// Persisted with the rest of the settings, so it rides the baseline/revert bar.
+    #[serde(default)]
+    pub skill_tunables: HashMap<String, f64>,
     /// Tuning for the unified ball-possession metric (computed in the world tracker).
     #[serde(default)]
     pub possession_config: PossessionConfig,
@@ -387,6 +395,7 @@ impl Default for ExecutorSettings {
             yellow_team_settings: TeamSpecificSettings::default(),
             blue_team_settings: TeamSpecificSettings::default(),
             skill_settings: SkillSettings::default(),
+            skill_tunables: HashMap::new(),
             possession_config: PossessionConfig::default(),
             allow_no_vision: false,
             goal_area_avoidance: true,

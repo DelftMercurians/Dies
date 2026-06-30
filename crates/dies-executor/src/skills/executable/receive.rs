@@ -1,17 +1,24 @@
 use dies_core::{Angle, Vector2};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
+use dies_tunables_macro::tunables;
 
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::PlayerControlInput;
 
-/// Minimum closing speed (mm/s) along the pass line before the receiver commits
-/// to an interception. Below this the ball isn't meaningfully on its way, so the
-/// receiver holds the planned intercept point instead of chasing it.
-const MIN_CLOSING_SPEED: f64 = 250.0;
-/// Maximum look-ahead (s) for the interception prediction. A real pass arrives
-/// well within this; a longer predicted crossing time means the ball is barely
-/// converging (or diverging), so the receiver holds rather than chases.
-const MAX_PREDICT_TIME: f64 = 2.5;
+tunables! {
+    section "Receive";
+
+    /// Minimum closing speed along the pass line before the receiver commits to an
+    /// interception. Below this the ball isn't meaningfully on its way, so the
+    /// receiver holds the planned intercept point instead of chasing it.
+    #[tunable(unit = "mm/s", min = 0.0, max = 1000.0, step = 25.0)]
+    MIN_CLOSING_SPEED: f64 = 250.0;
+    /// Maximum look-ahead for the interception prediction. A real pass arrives well
+    /// within this; a longer predicted crossing time means the ball is barely
+    /// converging (or diverging), so the receiver holds rather than chases.
+    #[tunable(unit = "s", min = 0.5, max = 5.0, step = 0.1)]
+    MAX_PREDICT_TIME: f64 = 2.5;
+}
 
 #[derive(Clone)]
 pub struct ReceiveSkill {
@@ -111,12 +118,12 @@ impl ExecutableSkill for ReceiveSkill {
 
                     // Closing speed of the ball along the pass line (passer -> target).
                     let closing_speed = ball_vel.dot(&line_dir);
-                    if closing_speed > MIN_CLOSING_SPEED {
+                    if closing_speed > MIN_CLOSING_SPEED() {
                         // Time for the ball to reach our depth (the normal line
                         // through the intercept point).
                         let to_ball = ball_pos - self.target_pos;
                         let t = -to_ball.dot(&line_dir) / closing_speed;
-                        if t > 0.0 && t < MAX_PREDICT_TIME {
+                        if t > 0.0 && t < MAX_PREDICT_TIME() {
                             // Slide laterally to where the ball will cross our depth.
                             let future_ball_pos = ball_pos + ball_vel * t;
                             let lateral = (future_ball_pos - self.target_pos)

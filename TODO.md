@@ -1,5 +1,7 @@
 Skills
 
+- make use of high freq radio
+
 - ball handling
   - TODO: handle moving ball
   - move pickup axis 2.5mm to the left

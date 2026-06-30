@@ -88,6 +88,7 @@ const SECTION_LABELS: Record<string, string> = {
   tracker_settings: "Tracker",
   avoidance: "Avoidance",
   skill_settings: "Skill",
+  skill_tunables: "Skill tunables",
   team_configuration: "Team",
   blue_team_settings: "Blue team",
   yellow_team_settings: "Yellow team",

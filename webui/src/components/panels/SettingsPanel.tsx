@@ -7,6 +7,7 @@ import SettingsEditor from "@/views/SettingsEditor";
 import AvoidanceSettingsEditor from "@/views/AvoidanceSettingsEditor";
 import SettingsBaselineBar from "@/views/SettingsBaselineBar";
 import StrategySettings from "@/views/StrategySettings";
+import SkillTunablesEditor from "@/views/SkillTunablesEditor";
 import { useExecutorSettings } from "@/api";
 
 const GoalAreaAvoidanceToggle: React.FC = () => {
@@ -92,7 +93,7 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
           <SettingsEditor settingsKey="tracker_settings" include={["field_mask"]} />
         </TabsContent>
         <TabsContent value="skill" className="flex-1 overflow-hidden">
-          <SettingsEditor settingsKey="skill_settings" />
+          <SkillTunablesEditor />
         </TabsContent>
       </Tabs>
       <SettingsBaselineBar />

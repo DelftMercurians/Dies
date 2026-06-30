@@ -409,6 +409,11 @@ impl Executor {
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
+        // Apply any persisted skill-tunable overrides into the global cells before
+        // the first tick (empty map = compile-time defaults, so self-play is
+        // unaffected and deterministic).
+        crate::skills::apply_skill_tunables(&settings.skill_tunables);
+
         let mut strategy_host =
             strategy_host::StrategyHost::new(strategy_host::StrategyHostConfig {
                 strategies_dir: settings
@@ -553,6 +558,7 @@ impl Executor {
                 .as_ref()
                 .map(|h| h.param_state())
                 .unwrap_or_default(),
+            skill_tunable_specs: crate::skills::all_skill_tunable_specs(),
         }
     }
 
@@ -1143,6 +1149,7 @@ impl Executor {
             ControlMsg::UpdateSettings(settings) => {
                 self.team_controllers.update_settings(&settings);
                 self.tracker.update_settings(&settings);
+                crate::skills::apply_skill_tunables(&settings.skill_tunables);
                 self.settings = settings;
                 if worker::is_active() {
                     worker::log_settings_diff(self.frame_counter, self.last_t, &self.settings);
@@ -1294,8 +1301,12 @@ impl Executor {
                 )
             })
             .collect();
-        self.team_controllers
-            .update(&world_data, manual_override, blue_ignore_gc, yellow_ignore_gc);
+        self.team_controllers.update(
+            &world_data,
+            manual_override,
+            blue_ignore_gc,
+            yellow_ignore_gc,
+        );
 
         // Feed this tick's velocity setpoints to the tracker for command
         // feedforward (consumed on the next vision update). The controllers run in

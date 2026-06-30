@@ -45,7 +45,7 @@ impl HandleBallSkill {
 
         let mut input = PlayerControlInput::new();
         input.with_yaw(heading);
-        input.with_dribbling(DRIBBLER_SPEED);
+        input.with_dribbling(DRIBBLER_SPEED());
 
         if committed(along, perp) {
             tc.debug_value(dkey(ctx, "committed"), 1.0);
@@ -60,7 +60,7 @@ impl HandleBallSkill {
             tc.debug_value(dkey(ctx, "depart_along"), along_depart);
             tc.debug_value(dkey(ctx, "armed_ms"), armed_ms);
             self.detail = format!("striking d{along_depart:.0} {armed_ms:.0}ms");
-            if along_depart > KICK_DEPART_DIST || ball.velocity.norm() > KICK_DEPART_SPEED {
+            if along_depart > KICK_DEPART_DIST() || ball.velocity.norm() > KICK_DEPART_SPEED() {
                 self.status = SkillStatus::Succeeded;
                 return SkillProgress::success();
             }
@@ -75,7 +75,7 @@ impl HandleBallSkill {
             self.detail = "staging".into();
             input.with_position(staging);
             input.avoid_ball = true;
-            input.avoid_ball_care = APPROACH_CARE;
+            input.avoid_ball_care = APPROACH_CARE();
         }
 
         self.status = SkillStatus::Running;

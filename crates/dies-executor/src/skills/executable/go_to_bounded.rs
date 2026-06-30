@@ -10,25 +10,35 @@
 
 use dies_core::{Angle, MotionBounds, Vector2};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
+use dies_tunables_macro::tunables;
 
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{PlayerControlInput, Velocity};
 
-/// See [`GoToPosSkill`](super::GoToPosSkill); must clear the path-follower deadband.
-const DEFAULT_POS_TOLERANCE: f64 = 30.0;
-const DEFAULT_VEL_TOLERANCE: f64 = 50.0;
+tunables! {
+    section "GoToBounded (keeper)";
 
-/// Proportional approach gain [1/s]: commanded speed = `KP × distance`, capped at
-/// the speed limit. ~`base_approach_kp (4.0) × (1 + aggressiveness 1.5)` — the old
-/// keeper snappiness. Velocity ∝ distance is over-damped, so it settles on the
-/// target without overshooting it; the envelope handles the region edges.
-const KEEPER_APPROACH_KP: f64 = 10.0;
-/// Keeper speed cap [mm/s]. Tight, predictable line motion.
-const KEEPER_SPEED_LIMIT: f64 = 2500.0;
-/// Keeper acceleration cap [mm/s²] — deliberately harder than the global default
-/// (4000 accel / 6000 decel) so the keeper reacts more sharply. Caps both ramp
-/// directions and drives the bounded-region brake envelope.
-const KEEPER_ACCEL: f64 = 8000.0;
+    /// Arrival position tolerance; must clear the path-follower deadband.
+    #[tunable(unit = "mm", min = 15.0, max = 200.0, step = 5.0)]
+    DEFAULT_POS_TOLERANCE: f64 = 30.0;
+    /// Arrival speed tolerance.
+    #[tunable(unit = "mm/s", min = 0.0, max = 300.0, step = 10.0)]
+    DEFAULT_VEL_TOLERANCE: f64 = 50.0;
+    /// Proportional approach gain: commanded speed = `KP × distance`, capped at the
+    /// speed limit. ~`base_approach_kp (4.0) × (1 + aggressiveness 1.5)` — the keeper
+    /// snappiness. Velocity ∝ distance is over-damped, so it settles on the target
+    /// without overshooting it; the envelope handles the region edges.
+    #[tunable(unit = "1/s", min = 2.0, max = 20.0, step = 0.5)]
+    KEEPER_APPROACH_KP: f64 = 10.0;
+    /// Keeper speed cap. Tight, predictable line motion.
+    #[tunable(unit = "mm/s", min = 1000.0, max = 4000.0, step = 100.0)]
+    KEEPER_SPEED_LIMIT: f64 = 2500.0;
+    /// Keeper acceleration cap — deliberately harder than the global default (4000
+    /// accel / 6000 decel) so the keeper reacts more sharply. Caps both ramp
+    /// directions and drives the bounded-region brake envelope.
+    #[tunable(unit = "mm/s²", min = 2000.0, max = 15000.0, step = 250.0)]
+    KEEPER_ACCEL: f64 = 8000.0;
+}
 
 /// Aggressive bounded-region positioning skill (goalkeeper guard).
 pub struct GoToBoundedSkill {
@@ -46,8 +56,8 @@ impl GoToBoundedSkill {
             target_pos,
             target_heading,
             bounds,
-            pos_tolerance: DEFAULT_POS_TOLERANCE,
-            vel_tolerance: DEFAULT_VEL_TOLERANCE,
+            pos_tolerance: DEFAULT_POS_TOLERANCE(),
+            vel_tolerance: DEFAULT_VEL_TOLERANCE(),
             status: SkillStatus::Running,
         }
     }
@@ -88,7 +98,7 @@ impl ExecutableSkill for GoToBoundedSkill {
         // Direct proportional velocity toward the target (bypasses path follower).
         let to = self.target_pos - position;
         let v = if distance > 1.0e-6 {
-            (to / distance) * (KEEPER_APPROACH_KP * distance).min(KEEPER_SPEED_LIMIT)
+            (to / distance) * (KEEPER_APPROACH_KP() * distance).min(KEEPER_SPEED_LIMIT())
         } else {
             Vector2::zeros()
         };
@@ -98,8 +108,8 @@ impl ExecutableSkill for GoToBoundedSkill {
         // below is the primary command. The envelope (via `bounds`) keeps it in.
         input.velocity = Velocity::Global(v);
         input.bounds = Some(self.bounds);
-        input.speed_limit = Some(KEEPER_SPEED_LIMIT);
-        input.acceleration_limit = Some(KEEPER_ACCEL);
+        input.speed_limit = Some(KEEPER_SPEED_LIMIT());
+        input.acceleration_limit = Some(KEEPER_ACCEL());
         input.avoid_robots = false;
         if let Some(heading) = self.target_heading {
             input.with_yaw(heading);

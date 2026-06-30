@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::{PlayerId, TeamColor, TeamStrategyParams};
+use crate::{PlayerId, TeamColor, TeamStrategyParams, TunableSpec};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[typeshare]
@@ -22,4 +22,8 @@ pub struct ExecutorInfo {
     pub active_teams: Vec<TeamColor>,
     /// Declared parameters + current values for each active team's strategy.
     pub strategy_params: Vec<TeamStrategyParams>,
+    /// Code-generated metadata for the executor's skill tunables (one entry per
+    /// knob declared with `tunables!`). Drives the dynamic Skill settings tab;
+    /// current values live in `ExecutorSettings::skill_tunables`.
+    pub skill_tunable_specs: Vec<TunableSpec>,
 }

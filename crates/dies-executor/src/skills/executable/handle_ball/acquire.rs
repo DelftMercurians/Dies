@@ -38,7 +38,7 @@ impl HandleBallSkill {
 
         let mut input = PlayerControlInput::new();
         input.with_yaw(axis.heading);
-        input.with_dribbling(DRIBBLER_SPEED);
+        input.with_dribbling(DRIBBLER_SPEED());
 
         // Debug: the chosen approach axis (ball → staging side), the corridor
         // geometry, and whether the velocity-aware tail-catch is engaged.
@@ -46,7 +46,7 @@ impl HandleBallSkill {
         tc.debug_line_colored(
             dkey(ctx, "approach_axis"),
             axis.aim_point,
-            axis.aim_point - axis.dir * APPROACH_DISTANCE,
+            axis.aim_point - axis.dir * APPROACH_DISTANCE(),
             DebugColor::Orange,
         );
         tc.debug_value(dkey(ctx, "along"), along);
@@ -87,7 +87,7 @@ impl HandleBallSkill {
             };
             input.with_position(staging);
             input.avoid_ball = true;
-            input.avoid_ball_care = APPROACH_CARE;
+            input.avoid_ball_care = APPROACH_CARE();
             self.commit_pos = Some(player_pos);
             self.commit_ball = Some(ball_pos);
         }
@@ -119,13 +119,13 @@ fn select_approach_dir(
     // 1 = keeps ball in + clear staging (corridor blocked, e.g. a steal);
     // 2 = keeps ball in only; 3 = nothing satisfied (last resort).
     let eval = |u: Vector2| -> (u8, f64) {
-        let staging = clamp_into_field(ball_pos - u * APPROACH_DISTANCE, field);
+        let staging = clamp_into_field(ball_pos - u * APPROACH_DISTANCE(), field);
         let clear = obstacles.point_clear(staging, APPROACH_EGO_RADIUS);
         let commit = obstacles.segment_clear(
             staging,
             ball_pos,
             APPROACH_COMMIT_RADIUS,
-            APPROACH_CLEAR_STEP,
+            APPROACH_CLEAR_STEP(),
         );
         let keeps_in = push_keeps_ball_in(ball_pos, u, field);
         let tier = match (keeps_in, clear, commit) {
@@ -134,7 +134,7 @@ fn select_approach_dir(
             (true, false, _) => 2,
             (false, _, _) => 3,
         };
-        let cost = (staging - player_pos).norm() - EXIT_BIAS_WEIGHT * u.dot(&exit);
+        let cost = (staging - player_pos).norm() - EXIT_BIAS_WEIGHT() * u.dot(&exit);
         (tier, cost)
     };
 
@@ -158,7 +158,7 @@ fn select_approach_dir(
     let dir = match *chosen_dir {
         Some(prev) if prev.norm() > 1e-6 => {
             let (pt, pc) = eval(prev);
-            if best_tier < pt || (best_tier == pt && best_cost + APPROACH_HYSTERESIS < pc) {
+            if best_tier < pt || (best_tier == pt && best_cost + APPROACH_HYSTERESIS() < pc) {
                 best_u
             } else {
                 prev.normalize()
@@ -171,7 +171,7 @@ fn select_approach_dir(
 }
 
 /// Whether pushing the ball along `u` keeps it inside the field lines: for any
-/// line the ball is within [`BALL_KEEPIN_MARGIN`] of, the push must not have an
+/// line the ball is within [`BALL_KEEPIN_MARGIN()`] of, the push must not have an
 /// outward component (we never dribble the ball out — only the ball is "out"
 /// past a line, so a robot in the run-off is fine, but the ball must stay in).
 fn push_keeps_ball_in(ball: Vector2, u: Vector2, field: Option<&FieldGeometry>) -> bool {
@@ -187,7 +187,7 @@ fn push_keeps_ball_in(ball: Vector2, u: Vector2, field: Option<&FieldGeometry>) 
         (hl + ball.x, Vector2::new(1.0, 0.0)),  // -x goal line
     ];
     for (dist, inward) in lines {
-        if dist < BALL_KEEPIN_MARGIN && u.dot(&inward) < MIN_INWARD_PUSH {
+        if dist < BALL_KEEPIN_MARGIN() && u.dot(&inward) < MIN_INWARD_PUSH() {
             return false;
         }
     }
@@ -207,7 +207,7 @@ struct CaptureAxis {
 }
 
 /// Choose the capture axis for this tick. A ball rolling faster than
-/// [`MOVING_BALL_SPEED`] and not head-on is tail-caught: drive along its velocity,
+/// [`MOVING_BALL_SPEED()`] and not head-on is tail-caught: drive along its velocity,
 /// stage behind the *predicted* intercept, and face travel. Otherwise fall back to
 /// [`select_approach_dir`].
 fn capture_axis(
@@ -218,11 +218,11 @@ fn capture_axis(
     exit_heading: Angle,
     chosen_dir: &mut Option<Vector2>,
 ) -> CaptureAxis {
-    if ball_vel.norm() > MOVING_BALL_SPEED {
+    if ball_vel.norm() > MOVING_BALL_SPEED() {
         if let Some(v_hat) = ball_vel.try_normalize(1e-6) {
             let head_on = (player_pos - ball_pos)
                 .try_normalize(1e-6)
-                .map(|to_robot| v_hat.dot(&to_robot) > HEAD_ON_COS)
+                .map(|to_robot| v_hat.dot(&to_robot) > HEAD_ON_COS())
                 .unwrap_or(false);
             if !head_on {
                 let t = intercept_time(ball_pos, ball_vel, player_pos);
@@ -251,25 +251,25 @@ fn intercept_time(ball: Vector2, vel: Vector2, robot: Vector2) -> f64 {
     let mut t = 0.0;
     for _ in 0..4 {
         let p = ball + vel * t;
-        t = ((p - robot).norm() / INTERCEPT_ROBOT_SPEED).min(MAX_INTERCEPT_TIME);
+        t = ((p - robot).norm() / INTERCEPT_ROBOT_SPEED()).min(MAX_INTERCEPT_TIME());
     }
     t
 }
 
 /// Lateral target (mm, in the plane perpendicular to `dir`) that places the ball
-/// [`PICKUP_LATERAL_OFFSET`] to the robot's left of dribbler center — i.e. the
+/// [`PICKUP_LATERAL_OFFSET()`] to the robot's left of dribbler center — i.e. the
 /// robot center sits that far to the right of the ball line. `heading` is where
 /// the dribbler/gear physically face (for a moving catch `heading` == `dir`).
 pub(super) fn perp_target(heading: Angle, dir: Vector2) -> Vector2 {
     let h = heading.to_vector();
     let left = Vector2::new(-h.y, h.x);
-    let target = -left * PICKUP_LATERAL_OFFSET;
+    let target = -left * PICKUP_LATERAL_OFFSET();
     target - dir * target.dot(&dir)
 }
 
 /// Whether the robot is in the commit corridor (behind the ball, close, centered).
 pub(super) fn committed(along: f64, perp: f64) -> bool {
-    along < 0.0 && -along < COMMIT_DISTANCE && perp < COMMIT_PERP
+    along < 0.0 && -along < COMMIT_DISTANCE() && perp < COMMIT_PERP()
 }
 
 /// Global velocity for the commit drive-through. Feeds forward the ball velocity
@@ -283,9 +283,9 @@ pub(super) fn commit_velocity(
     ball_vel: Vector2,
     pt: Vector2,
 ) -> Vector2 {
-    let gate = (1.0 - perp_vec.norm() / GATE_PERP).clamp(0.0, 1.0);
-    let close = (-along) * APPROACH_GAIN + APPROACH_MIN_SPEED;
-    ball_vel + dir * close * gate - (perp_vec - pt) * LATERAL_GAIN
+    let gate = (1.0 - perp_vec.norm() / GATE_PERP()).clamp(0.0, 1.0);
+    let close = (-along) * APPROACH_GAIN() + APPROACH_MIN_SPEED();
+    ball_vel + dir * close * gate - (perp_vec - pt) * LATERAL_GAIN()
 }
 
 /// Staging point a fixed distance behind `aim_point` along `-dir`, shifted by the
@@ -296,7 +296,7 @@ pub(super) fn stage_point(
     pt: Vector2,
     field: Option<&FieldGeometry>,
 ) -> Vector2 {
-    clamp_into_field(aim_point - dir * APPROACH_DISTANCE + pt, field)
+    clamp_into_field(aim_point - dir * APPROACH_DISTANCE() + pt, field)
 }
 
 /// Whether the ball has escaped the commit corridor and the capture should bail.
@@ -312,22 +312,22 @@ fn commit_strayed(
 ) -> bool {
     if moving {
         let d = ball_pos - commit_ball;
-        (d - dir * d.dot(&dir)).norm() > BALL_STRAY_FAIL
+        (d - dir * d.dot(&dir)).norm() > BALL_STRAY_FAIL()
     } else {
-        (ball_pos - commit_ball).norm() > BALL_MOVED_FAIL
-            || (player_pos - commit_pos).norm() > DRIVEN_FAIL
+        (ball_pos - commit_ball).norm() > BALL_MOVED_FAIL()
+            || (player_pos - commit_pos).norm() > DRIVEN_FAIL()
     }
 }
 
-/// Clamp a point to the playing area, inset by [`STAGING_FIELD_MARGIN`] from every
+/// Clamp a point to the playing area, inset by [`STAGING_FIELD_MARGIN()`] from every
 /// boundary. With no field geometry available the point is returned unchanged.
 fn clamp_into_field(p: Vector2, field: Option<&FieldGeometry>) -> Vector2 {
     let Some(field) = field else {
         return p;
     };
     // Physical surface = field lines + run-off; robots may use the run-off.
-    let max_x = (field.field_length / 2.0 + field.boundary_width - STAGING_FIELD_MARGIN).max(0.0);
-    let max_y = (field.field_width / 2.0 + field.boundary_width - STAGING_FIELD_MARGIN).max(0.0);
+    let max_x = (field.field_length / 2.0 + field.boundary_width - STAGING_FIELD_MARGIN()).max(0.0);
+    let max_y = (field.field_width / 2.0 + field.boundary_width - STAGING_FIELD_MARGIN()).max(0.0);
     Vector2::new(p.x.clamp(-max_x, max_x), p.y.clamp(-max_y, max_y))
 }
 
@@ -354,7 +354,7 @@ mod tests {
         // Past the physical edge (3300) the staging point is pulled back onto the
         // surface, inset by the margin, so the robot doesn't drive off it.
         let clamped = clamp_into_field(Vector2::new(-2800.0, 3400.0), Some(&field()));
-        assert!((clamped.y - (3000.0 + 300.0 - STAGING_FIELD_MARGIN)).abs() < 1e-6);
+        assert!((clamped.y - (3000.0 + 300.0 - STAGING_FIELD_MARGIN())).abs() < 1e-6);
         assert!((clamped.x - (-2800.0)).abs() < 1e-6); // x already inside, untouched
     }
 

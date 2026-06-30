@@ -1160,6 +1160,7 @@ dependencies = [
  "dies-simulator",
  "dies-ssl-client",
  "dies-strategy-protocol",
+ "dies-tunables-macro",
  "dies-world",
  "lapjv",
  "linear_assignment",
@@ -1261,6 +1262,15 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "dies-tunables-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
 ]
 
 [[package]]

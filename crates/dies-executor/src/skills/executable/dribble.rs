@@ -5,18 +5,34 @@
 
 use dies_core::{Angle, Vector2};
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
+use dies_tunables_macro::tunables;
 
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
 use crate::control::{PlayerControlInput, Velocity};
 
-const DEFAULT_POS_TOLERANCE: f64 = 50.0;
-const DEFAULT_YAW_TOLERANCE: f64 = 5.0;
+tunables! {
+    section "Dribble";
 
-//to be fined tuned
-const ACCELERATION_LIMIT: f64 = 500.0; // mm/s^2
-const ROTATE_AROUND_BALL_SPEED: f64 = 300.0;
-const BALL_TO_ROBOT_DISTANCE: f64 = 140.0; //111.335 based on real measurements // mm, distance from center of robot to middle of the ball
-const MAX_ANGULAR_SPEED: f64 = 1.5; // rad/s
+    /// Arrival position tolerance for the carry target.
+    #[tunable(unit = "mm", min = 15.0, max = 300.0, step = 5.0)]
+    DEFAULT_POS_TOLERANCE: f64 = 50.0;
+    /// Heading tolerance to count as aligned (degrees).
+    #[tunable(unit = "deg", min = 1.0, max = 30.0, step = 1.0)]
+    DEFAULT_YAW_TOLERANCE: f64 = 5.0;
+    /// Translational acceleration cap while carrying — gentle so the ball isn't
+    /// shaken loose.
+    #[tunable(unit = "mm/s²", min = 100.0, max = 2000.0, step = 50.0)]
+    ACCELERATION_LIMIT: f64 = 500.0;
+    /// Lateral speed while pivoting around the ball to fix heading.
+    #[tunable(unit = "mm/s", min = 50.0, max = 800.0, step = 25.0)]
+    ROTATE_AROUND_BALL_SPEED: f64 = 300.0;
+    /// Centre-of-robot to centre-of-ball distance (≈111 mm by measurement).
+    #[tunable(unit = "mm", min = 90.0, max = 200.0, step = 5.0)]
+    BALL_TO_ROBOT_DISTANCE: f64 = 140.0;
+    /// Angular speed cap while carrying.
+    #[tunable(unit = "rad/s", min = 0.5, max = 4.0, step = 0.1)]
+    MAX_ANGULAR_SPEED: f64 = 1.5;
+}
 
 /// A skill that moves the robot to a target position while carrying the ball.
 ///
@@ -86,7 +102,7 @@ impl ExecutableSkill for DribbleSkill {
         //First rotates to face target position then moves
         let heading_err =
             Angle::from_degrees(ctx.player.yaw.degrees() - self.target_heading.degrees());
-        if (self.with_ball == false && heading_err.degrees().abs() > DEFAULT_YAW_TOLERANCE) {
+        if self.with_ball == false && heading_err.degrees().abs() > DEFAULT_YAW_TOLERANCE() {
             // Velocity 90 degrees to the left or right of current heading
             let direction = if heading_err.radians() > 0.0 {
                 Vector2::new(0.0, 1.0) // Rotate to the left
@@ -94,9 +110,9 @@ impl ExecutableSkill for DribbleSkill {
                 Vector2::new(0.0, -1.0) // Rotate to the right
             };
             //let direction = Vector2::new(0.0, 1.0);
-            input.velocity = Velocity::local(direction * ROTATE_AROUND_BALL_SPEED);
+            input.velocity = Velocity::local(direction * ROTATE_AROUND_BALL_SPEED());
             input.angular_velocity =
-                Some(direction.y * ROTATE_AROUND_BALL_SPEED / BALL_TO_ROBOT_DISTANCE); // v = w*d and d is distance from the centre of robot to ball
+                Some(direction.y * ROTATE_AROUND_BALL_SPEED() / BALL_TO_ROBOT_DISTANCE()); // v = w*d and d is distance from the centre of robot to ball
             return SkillProgress::Continue(input);
         }
 
@@ -107,15 +123,15 @@ impl ExecutableSkill for DribbleSkill {
         input.with_yaw(self.target_heading);
         //log::info!("cur_vel{:.2}, exp_vel{:.2}", current_velocity.magnitude(), ACCELERATION_LIMIT*distance_to_target);
 
-        input.with_acceleration_limit(ACCELERATION_LIMIT);
-        input.with_angular_speed_limit(MAX_ANGULAR_SPEED);
+        input.with_acceleration_limit(ACCELERATION_LIMIT());
+        input.with_angular_speed_limit(MAX_ANGULAR_SPEED());
         // input.with_angular_acceleration_limit(ANGULAR_ACCELERATION_LIMIT);
 
         //TODO: implement rotating around ball when with_ball = false
 
         //        log::info!("to_target magnitude: {:.2}", to_target.magnitude());
-        if to_target.magnitude() < DEFAULT_POS_TOLERANCE
-            && heading_err.degrees().abs() < DEFAULT_YAW_TOLERANCE
+        if to_target.magnitude() < DEFAULT_POS_TOLERANCE()
+            && heading_err.degrees().abs() < DEFAULT_YAW_TOLERANCE()
         {
             log::info!("Dribble: At the target position with correct heading.");
             self.status = SkillStatus::Succeeded;
