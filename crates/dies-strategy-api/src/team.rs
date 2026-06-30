@@ -331,7 +331,7 @@ mod tests {
             player.set_role("Striker");
         }
 
-        let (commands, roles, _overrides) = ctx.collect_output();
+        let (commands, roles) = ctx.collect_output();
 
         // Player 1 should have a command
         assert!(commands.get(&PlayerId::new(1)).unwrap().is_some());
