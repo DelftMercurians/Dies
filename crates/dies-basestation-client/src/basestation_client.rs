@@ -11,7 +11,7 @@ use dies_core::{
 use glue::{BaseStation, Serial};
 use tokio::sync::{broadcast, mpsc, watch};
 
-const DEFAULT_BASE_STATION_READ_FREQ: f64 = 800.0;
+const DEFAULT_BASE_STATION_READ_FREQ: f64 = 300.0;
 
 /// A robot's latest command is re-sent every loop until superseded; if no fresh
 /// command arrives within this window the robot is dropped from the poll set, so

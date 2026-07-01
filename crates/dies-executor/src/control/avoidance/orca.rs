@@ -431,7 +431,7 @@ fn linear_program3(
 
 #[cfg(test)]
 mod tests {
-    use super::super::obstacle::{DynamicAgent, ObstacleShape, StaticObstacle};
+    use super::super::obstacle::{DynamicAgent, ObstacleKind, ObstacleShape, StaticObstacle};
     use super::{OrcaAgent, OrcaSolver};
     use dies_core::{AvoidanceConfig, PlayerId, Vector2};
 
@@ -523,6 +523,56 @@ mod tests {
             "expected deflection, got {:?}",
             v
         );
+        assert!(v.x.is_finite() && v.y.is_finite());
+    }
+
+    /// A right-hand keep-in wall at `x = offset` (normal points to the forbidden
+    /// +x side, so its clearance decreases as the robot approaches).
+    fn wall(offset: f64) -> StaticObstacle {
+        StaticObstacle {
+            shape: ObstacleShape::HalfPlane {
+                normal: Vector2::new(1.0, 0.0),
+                offset,
+            },
+            kind: ObstacleKind::Wall,
+        }
+    }
+
+    #[test]
+    fn wall_parallel_motion_passes_through() {
+        // Well inside the field, driving parallel to the wall → non-binding.
+        let mut a = agent(Vector2::zeros(), Vector2::zeros(), Vector2::new(0.0, 1000.0));
+        a.statics.push(wall(1000.0));
+        let v = solver().solve(&a, 0.02);
+        assert!((v - a.pref_velocity).norm() < 1.0, "got {:?}", v);
+    }
+
+    #[test]
+    fn wall_caps_inward_velocity() {
+        // Robot edge already past the keep-in plane (d < radius): inward (+x)
+        // velocity toward the wall must be forced non-positive.
+        let mut a = agent(
+            Vector2::new(950.0, 0.0),
+            Vector2::zeros(),
+            Vector2::new(2000.0, 0.0),
+        );
+        a.statics.push(wall(1000.0));
+        let v = solver().solve(&a, 0.02);
+        assert!(v.x < 0.0, "should be pushed back off the wall, got {:?}", v);
+        assert!(v.x.is_finite() && v.y.is_finite());
+    }
+
+    #[test]
+    fn wall_recovers_when_outside() {
+        // Robot penetrated past the plane, commanded inward → strong inward, finite.
+        let mut a = agent(
+            Vector2::new(1050.0, 0.0),
+            Vector2::zeros(),
+            Vector2::new(-500.0, 0.0),
+        );
+        a.statics.push(wall(1000.0));
+        let v = solver().solve(&a, 0.02);
+        assert!(v.x < 0.0, "should recover inward, got {:?}", v);
         assert!(v.x.is_finite() && v.y.is_finite());
     }
 

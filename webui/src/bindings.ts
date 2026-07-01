@@ -160,7 +160,12 @@ export interface AvoidanceConfig {
 	 * robots by `robot_clearance + planner_margin`; ORCA only by this.
 	 */
 	robot_clearance: number;
-	/** Inset of the robot centre from the physical field walls [mm]. */
+	/**
+	 * Base inset of the robot centre from the physical field walls [mm]. The
+	 * effective per-robot inset is `wall_care * wall_margin` (see
+	 * `PlayerControlInput::wall_care`): a robot may request a tighter margin
+	 * (down to 0 = edge-at-wall) to reach a ball hard against the boundary.
+	 */
 	wall_margin: number;
 	/** Keep-out margin grown around each defense area [mm]. */
 	defense_margin: number;

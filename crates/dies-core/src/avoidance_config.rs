@@ -24,7 +24,10 @@ pub struct AvoidanceConfig {
     /// planner does the real avoidance with `planner_margin`. The planner inflates
     /// robots by `robot_clearance + planner_margin`; ORCA only by this.
     pub robot_clearance: f64,
-    /// Inset of the robot centre from the physical field walls [mm].
+    /// Base inset of the robot centre from the physical field walls [mm]. The
+    /// effective per-robot inset is `wall_care * wall_margin` (see
+    /// `PlayerControlInput::wall_care`): a robot may request a tighter margin
+    /// (down to 0 = edge-at-wall) to reach a ball hard against the boundary.
     pub wall_margin: f64,
     /// Keep-out margin grown around each defense area [mm].
     pub defense_margin: f64,

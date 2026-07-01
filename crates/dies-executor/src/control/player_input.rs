@@ -154,6 +154,18 @@ pub struct PlayerControlInput {
     pub avoid_ball: bool,
     pub avoid_ball_care: f64,
 
+    /// Whether field-wall containment applies to this robot. Default `true`.
+    /// Decoupled from `avoid_robots`: a robot may ignore other robots (e.g. a
+    /// commit drive through a contesting opponent) while still being kept inside
+    /// the field. Set `false` only to deliberately leave the field (card-removed
+    /// drive-off) or when a skill manages its own containment via `bounds` (the
+    /// keeper's `ArcZone`).
+    pub avoid_wall: bool,
+    /// Scales the wall keep-out margin: effective inset = `wall_care *
+    /// wall_margin`. `1.0` (default) = the configured margin; `0.0` = no margin
+    /// (robot edge may reach the physical wall, "just robot radius").
+    pub wall_care: f64,
+
     pub fan_speed: Option<f64>,
     pub kick_speed: Option<f64>,
     pub avoid_robots: bool,
@@ -192,6 +204,8 @@ impl Default for PlayerControlInput {
             angular_speed_limit: Some(3.0),
             avoid_ball: false,
             avoid_ball_care: 0.0,
+            avoid_wall: true,
+            wall_care: 1.0,
             fan_speed: None,
             kick_speed: None,
             avoid_robots: false,
@@ -274,6 +288,20 @@ impl PlayerControlInput {
 
     pub fn ignore_robots(&mut self) -> &mut Self {
         self.avoid_robots = true;
+        self
+    }
+
+    /// Set how carefully this robot keeps clear of the field walls. `1.0` = the
+    /// configured `wall_margin`; `0.0` = robot edge may reach the physical wall.
+    pub fn with_wall_care(&mut self, care: f64) -> &mut Self {
+        self.wall_care = care;
+        self
+    }
+
+    /// Drop field-wall containment for this robot (e.g. a deliberate off-field
+    /// drive). Prefer `with_bounds`/`with_wall_care` when the robot should stay in.
+    pub fn without_wall(&mut self) -> &mut Self {
+        self.avoid_wall = false;
         self
     }
 

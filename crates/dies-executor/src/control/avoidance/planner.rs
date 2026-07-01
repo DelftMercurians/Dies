@@ -423,7 +423,7 @@ fn segment_clear(
 #[cfg(test)]
 mod tests {
     use super::super::super::team_context::{PlayerContext, TeamContext};
-    use super::super::obstacle::{ObstacleSet, ObstacleShape, StaticObstacle};
+    use super::super::obstacle::{ObstacleKind, ObstacleSet, ObstacleShape, StaticObstacle};
     use super::{segment_clear, GlobalPlanner};
     use dies_core::{AvoidanceConfig, PlayerId, SideAssignment, TeamColor, Vector2};
 
@@ -436,6 +436,7 @@ mod tests {
         ObstacleSet {
             statics: vec![StaticObstacle {
                 shape: ObstacleShape::Circle { center, radius },
+                kind: ObstacleKind::Ball,
             }],
             agents: Vec::new(),
         }

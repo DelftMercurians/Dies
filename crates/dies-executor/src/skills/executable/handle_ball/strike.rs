@@ -64,9 +64,22 @@ impl HandleBallSkill {
         tc.debug_value(dkey(ctx, "magnet"), if magnet { 1.0 } else { 0.0 });
 
         if is_committed {
+            // Commit drops robot + defense-box ORCA — bail rather than illegally
+            // strike a ball inside (or wander into) a defense area (see `acquire`).
+            if let Some(field) = ctx.world.field_geom.as_ref() {
+                if field.in_defense_area(player_pos, DEFENSE_BAIL_MARGIN())
+                    || field.in_defense_area(ball_pos, BALL_IN_BOX_MARGIN())
+                {
+                    self.detail = "bail: defense area".into();
+                    return self.fail();
+                }
+            }
+
             tc.debug_value(dkey(ctx, "committed"), 1.0);
             input.avoid_ball = false;
             input.avoid_robots = false; // drive through the contesting opponent
+            input.avoid_wall = true; // …but stay on the field (tight margin)
+            input.wall_care = COMMIT_WALL_CARE();
             input.add_global_velocity(commit_velocity(dir, along, perp_vec, ball_vel, pt));
 
             input.with_kicker(KickerControlInput::ReflexKick);

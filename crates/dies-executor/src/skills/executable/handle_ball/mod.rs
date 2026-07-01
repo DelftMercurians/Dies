@@ -106,6 +106,24 @@ tunables! {
     #[tunable(min = 0.0, max = 1.0, step = 1.0)]
     MAGNET_ENABLED: f64 = 1.0;
 
+    // ── commit-drive containment / safety ─────────────────────────────────────
+    section "HandleBall commit safety";
+
+    /// Wall margin scale during a commit drive (which runs walls-only ORCA with
+    /// `avoid_robots = false`). `0` = robot edge may reach the wall, so we can
+    /// strike/capture a ball hard against the boundary; `1` = the full margin.
+    #[tunable(min = 0.0, max = 1.0, step = 0.1)]
+    COMMIT_WALL_CARE: f64 = 0.0;
+    /// Commit drives drop defense-box ORCA, so they must bail rather than wander
+    /// into a defense area. Bail if the robot centre is within this of a defense
+    /// area (≈ robot radius + a small buffer, so we bail before the body crosses).
+    #[tunable(unit = "mm", min = 0.0, max = 400.0, step = 10.0)]
+    DEFENSE_BAIL_MARGIN: f64 = 120.0;
+    /// Bail if the ball we would touch is within this of a defense area — touching
+    /// a ball inside the opponent area (or our own, keeper's job) is a foul.
+    #[tunable(unit = "mm", min = 0.0, max = 300.0, step = 10.0)]
+    BALL_IN_BOX_MARGIN: f64 = 30.0;
+
     // ── acquire (capture front-end) ───────────────────────────────────────────
     section "HandleBall acquire";
 

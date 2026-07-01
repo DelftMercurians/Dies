@@ -154,6 +154,21 @@ impl FieldGeometry {
             ball_radius: geometry.ball_radius() as f64,
         }
     }
+
+    /// True if `p` lies within `margin` mm of either defense (penalty) area,
+    /// in team-relative coordinates (own goal at −x, opponent goal at +x).
+    ///
+    /// Used by commit-drive skills to bail before illegally entering a defense
+    /// area (they run walls-only ORCA, so nothing deflects them out).
+    pub fn in_defense_area(&self, p: Vector2, margin: f64) -> bool {
+        let hl = self.field_length / 2.0;
+        let depth = self.penalty_area_depth + margin;
+        let half_w = self.penalty_area_width / 2.0 + margin;
+        // Own area (−x)
+        (p.x < -hl + depth && p.y.abs() < half_w)
+            // Opponent area (+x)
+            || (p.x > hl - depth && p.y.abs() < half_w)
+    }
 }
 
 impl Default for FieldGeometry {
@@ -276,5 +291,29 @@ impl Default for FieldGeometry {
             goal_line_to_penalty_mark,
             ball_radius,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn in_defense_area_covers_both_boxes() {
+        let f = FieldGeometry::default(); // 9000×6000, penalty area 1000 deep × 2000 wide
+        let hl = f.field_length / 2.0; // 4500
+
+        // Deep inside our own box (−x), on the goal line side.
+        assert!(f.in_defense_area(Vector2::new(-hl + 500.0, 0.0), 0.0));
+        // Deep inside the opponent box (+x).
+        assert!(f.in_defense_area(Vector2::new(hl - 500.0, 0.0), 0.0));
+        // Midfield: clear of both.
+        assert!(!f.in_defense_area(Vector2::new(0.0, 0.0), 0.0));
+        // Just outside our box front edge (front at −hl + 1000 = −3500).
+        assert!(!f.in_defense_area(Vector2::new(-hl + 1000.0 + 50.0, 0.0), 0.0));
+        // …but within a 100 mm margin it counts.
+        assert!(f.in_defense_area(Vector2::new(-hl + 1000.0 + 50.0, 0.0), 100.0));
+        // Beyond the box width (±1000) at the goal line: outside.
+        assert!(!f.in_defense_area(Vector2::new(-hl + 100.0, 1200.0), 0.0));
     }
 }

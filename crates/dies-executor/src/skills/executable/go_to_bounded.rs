@@ -111,6 +111,10 @@ impl ExecutableSkill for GoToBoundedSkill {
         input.speed_limit = Some(KEEPER_SPEED_LIMIT());
         input.acceleration_limit = Some(KEEPER_ACCEL());
         input.avoid_robots = false;
+        // Containment is the `bounds` (`ArcZone`) envelope, applied after ORCA;
+        // opting out of wall ORCA keeps it fully off (its guard arc sits well
+        // inside the walls anyway) and preserves the keeper's exact behavior.
+        input.avoid_wall = false;
         if let Some(heading) = self.target_heading {
             input.with_yaw(heading);
         }

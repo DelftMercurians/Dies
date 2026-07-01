@@ -78,6 +78,20 @@ impl HandleBallSkill {
         tc.debug_value(dkey(ctx, "magnet"), if magnet { 1.0 } else { 0.0 });
 
         if is_committed {
+            // The commit drive drops robot + defense-box ORCA, so nothing deflects
+            // us out of a defense area. Bail (fail) rather than illegally enter one:
+            // our own box is the keeper's, and touching the ball in either box is a
+            // foul. Staging (above) keeps `avoid_robots = true` and is deflected
+            // out of boxes normally, so only the commit needs this guard.
+            if let Some(field) = ctx.world.field_geom.as_ref() {
+                if field.in_defense_area(player_pos, DEFENSE_BAIL_MARGIN())
+                    || field.in_defense_area(ball_pos, BALL_IN_BOX_MARGIN())
+                {
+                    self.detail = "bail: defense area".into();
+                    return self.fail();
+                }
+            }
+
             tc.debug_value(dkey(ctx, "committed"), 1.0);
             self.detail = format!(
                 "{}{} a{along:.0} p{perp:.0}",
@@ -85,11 +99,15 @@ impl HandleBallSkill {
                 if magnet { "+magnet" } else { "" }
             );
             input.avoid_ball = false;
-            // Drive straight through a contesting opponent: ORCA off for the commit
-            // drive (mirrors `snatch`/`aim`). Otherwise reciprocal avoidance of an
-            // opponent parked on the ball deflects us off the commit axis and the
-            // capture never latches (perp can't fall under COMMIT_PERP).
+            // Drive straight through a contesting opponent: robot ORCA off for the
+            // commit drive (mirrors `snatch`/`aim`). Otherwise reciprocal avoidance
+            // of an opponent parked on the ball deflects us off the commit axis and
+            // the capture never latches (perp can't fall under COMMIT_PERP). Walls
+            // stay on (tight margin) so we can reach a ball against the boundary
+            // without driving off the field.
             input.avoid_robots = false;
+            input.avoid_wall = true;
+            input.wall_care = COMMIT_WALL_CARE();
             input.add_global_velocity(commit_velocity(axis.dir, along, perp_vec, ball_vel, pt));
 
             let commit_ball = *self.commit_ball.get_or_insert(ball_pos);

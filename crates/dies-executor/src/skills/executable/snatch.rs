@@ -39,6 +39,17 @@ tunables! {
     /// Speed cap while approaching, so contact stays gentle (no crash foul).
     #[tunable(unit = "mm/s", min = 200.0, max = 1500.0, step = 50.0)]
     APPROACH_SPEED_LIMIT: f64 = 700.0;
+    /// Wall margin scale while contesting (`avoid_robots = false`, walls-only
+    /// ORCA). Low so we can strip a ball pinned against the boundary.
+    #[tunable(min = 0.0, max = 1.0, step = 0.1)]
+    COMMIT_WALL_CARE: f64 = 0.0;
+    /// Bail if our centre is within this of a defense area (a non-keeper in our
+    /// own box, or touching the ball in either box, is a foul).
+    #[tunable(unit = "mm", min = 0.0, max = 400.0, step = 10.0)]
+    DEFENSE_BAIL_MARGIN: f64 = 120.0;
+    /// Bail if the contested ball is within this of a defense area.
+    #[tunable(unit = "mm", min = 0.0, max = 300.0, step = 10.0)]
+    BALL_IN_BOX_MARGIN: f64 = 30.0;
 }
 
 /// Give up after this long if the opponent hasn't lost the ball.
@@ -170,9 +181,21 @@ impl ExecutableSkill for SnatchSkill {
         let contact_pose = ball_pos + a * CONTACT_DIST();
         let face = Angle::from_vector(-a);
 
+        // Contesting drops robot + defense-box ORCA, so bail rather than illegally
+        // enter a defense area (keeper's box, or touching the ball inside one).
+        if let Some(field) = ctx.world.field_geom.as_ref() {
+            if field.in_defense_area(player_pos, DEFENSE_BAIL_MARGIN())
+                || field.in_defense_area(ball_pos, BALL_IN_BOX_MARGIN())
+            {
+                self.status = SkillStatus::Failed;
+                return SkillProgress::failure();
+            }
+        }
+
         let mut input = PlayerControlInput::new();
         input.avoid_robots = false; // we deliberately close on the opponent
         input.avoid_ball = false; // we want to touch the ball
+        input.wall_care = COMMIT_WALL_CARE(); // …but stay on the field (tight margin)
         input.with_position(contact_pose);
         input.with_dribbling(DRIBBLER_SPEED());
         input.with_speed_limit(APPROACH_SPEED_LIMIT());

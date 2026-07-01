@@ -98,17 +98,30 @@ impl ObstacleShape {
     }
 }
 
+/// What a [`StaticObstacle`] represents. Lets a consumer enforce a subset of the
+/// static geometry — e.g. ORCA applies **walls only** for a robot that ignores
+/// other robots (`avoid_robots = false`) so a commit drive isn't deflected by the
+/// defense box or ball, while still being kept inside the field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ObstacleKind {
+    Wall,
+    DefenseArea,
+    Ball,
+    PlacementCorridor,
+}
+
 /// A non-reciprocal blocker: walls, defense boxes, the ball, the ball-placement
 /// corridor. ORCA treats it as a one-sided linearised constraint; the planner
 /// treats it as solid geometry.
 #[derive(Clone, Copy, Debug)]
 pub struct StaticObstacle {
     pub shape: ObstacleShape,
+    pub kind: ObstacleKind,
 }
 
 impl StaticObstacle {
-    fn new(shape: ObstacleShape) -> Self {
-        Self { shape }
+    fn new(shape: ObstacleShape, kind: ObstacleKind) -> Self {
+        Self { shape, kind }
     }
 }
 
@@ -136,7 +149,7 @@ pub struct ObstacleSet {
 ///
 /// Robot-robot avoidance is always on (own robots are always added); these gates
 /// only toggle the *other* obstacle classes.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct AvoidanceGates {
     pub avoid_defense_area: bool,
     pub avoid_ball: bool,
@@ -148,6 +161,25 @@ pub struct AvoidanceGates {
     /// restart, so it's exempt from the kickoff ball keep-out applied to everyone
     /// else.
     pub is_kickoff_kicker: bool,
+    /// Scales the wall keep-out margin (`wall_care * cfg.wall_margin`). Mirrors
+    /// `PlayerControlInput::wall_care`.
+    pub wall_care: f64,
+}
+
+// Hand-written (not derived) so `wall_care` defaults to 1.0, not 0.0: a derived
+// `Default` would silently build zero-margin walls (robot edge at the physical
+// boundary) for any `..Default::default()` construction.
+impl Default for AvoidanceGates {
+    fn default() -> Self {
+        Self {
+            avoid_defense_area: false,
+            avoid_ball: false,
+            avoid_ball_care: 0.0,
+            avoid_opp_robots: false,
+            is_kickoff_kicker: false,
+            wall_care: 1.0,
+        }
+    }
 }
 
 impl ObstacleSet {
@@ -202,7 +234,7 @@ impl ObstacleSet {
         }
 
         if let Some(field) = world.field_geom.as_ref() {
-            set.push_walls(field, cfg);
+            set.push_walls(field, cfg, gates.wall_care);
             if gates.avoid_defense_area {
                 set.push_defense_areas(field, cfg);
             }
@@ -214,21 +246,23 @@ impl ObstacleSet {
     }
 
     /// Field walls → keep-in half-planes, inset from the physical boundary by
-    /// `wall_margin`.
-    fn push_walls(&mut self, field: &FieldGeometry, cfg: &AvoidanceConfig) {
-        let x_max = field.field_length / 2.0 + field.boundary_width - cfg.wall_margin;
-        let y_max = field.field_width / 2.0 + field.boundary_width - cfg.wall_margin;
+    /// `wall_care * wall_margin`. `.max(0.0)` is the hardware safety floor: a
+    /// negative margin would push the keep-in plane outside the physical wall and
+    /// let the robot leave the field.
+    fn push_walls(&mut self, field: &FieldGeometry, cfg: &AvoidanceConfig, wall_care: f64) {
+        let margin = (wall_care * cfg.wall_margin).max(0.0);
+        let x_max = field.field_length / 2.0 + field.boundary_width - margin;
+        let y_max = field.field_width / 2.0 + field.boundary_width - margin;
         for (normal, offset) in [
             (Vector2::new(1.0, 0.0), x_max),
             (Vector2::new(-1.0, 0.0), x_max),
             (Vector2::new(0.0, 1.0), y_max),
             (Vector2::new(0.0, -1.0), y_max),
         ] {
-            self.statics
-                .push(StaticObstacle::new(ObstacleShape::HalfPlane {
-                    normal,
-                    offset,
-                }));
+            self.statics.push(StaticObstacle::new(
+                ObstacleShape::HalfPlane { normal, offset },
+                ObstacleKind::Wall,
+            ));
         }
     }
 
@@ -250,8 +284,10 @@ impl ObstacleSet {
                 Vector2::new(hl + back, half_w + m),
             ),
         ] {
-            self.statics
-                .push(StaticObstacle::new(ObstacleShape::Box { min, max }));
+            self.statics.push(StaticObstacle::new(
+                ObstacleShape::Box { min, max },
+                ObstacleKind::DefenseArea,
+            ));
         }
     }
 
@@ -299,11 +335,13 @@ impl ObstacleSet {
                 (cfg.ball_base_radius + cfg.ball_care_scale * gates.avoid_ball_care)
                     .max(BALL_RADIUS)
             };
-            self.statics
-                .push(StaticObstacle::new(ObstacleShape::Circle {
+            self.statics.push(StaticObstacle::new(
+                ObstacleShape::Circle {
                     center: ball_pos,
                     radius,
-                }));
+                },
+                ObstacleKind::Ball,
+            ));
         }
 
         if let GameState::BallReplacement(target) = game_state {
@@ -316,11 +354,13 @@ impl ObstacleSet {
             let n = (len / step).ceil() as usize;
             for i in 0..=n {
                 let t = if n == 0 { 0.0 } else { i as f64 / n as f64 };
-                self.statics
-                    .push(StaticObstacle::new(ObstacleShape::Circle {
+                self.statics.push(StaticObstacle::new(
+                    ObstacleShape::Circle {
                         center: ball_pos + seg * t,
                         radius,
-                    }));
+                    },
+                    ObstacleKind::PlacementCorridor,
+                ));
             }
         }
     }
@@ -373,5 +413,153 @@ impl ObstacleSet {
             radius: a.radius + clearance,
         });
         self.statics.iter().map(|s| s.shape).chain(agent_discs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dies_core::{GameStateData, Possession, Vector3};
+
+    fn team(field: FieldGeometry, ball: Option<BallData>) -> TeamData {
+        TeamData {
+            t_received: 0.0,
+            t_capture: 0.0,
+            dt: 0.0,
+            own_players: Vec::new(),
+            opp_players: Vec::new(),
+            sidelined_players: Vec::new(),
+            ball,
+            field_geom: Some(field),
+            current_game_state: GameStateData::default(),
+            ball_on_our_side: None,
+            ball_on_opp_side: None,
+            kicked_ball: None,
+            possession: Possession::default(),
+        }
+    }
+
+    fn ball_at(x: f64, y: f64) -> BallData {
+        BallData {
+            timestamp: 0.0,
+            position: Vector3::new(x, y, 0.0),
+            raw_position: Vec::new(),
+            velocity: Vector3::zeros(),
+            detected: true,
+        }
+    }
+
+    fn gates(wall_care: f64, avoid_defense_area: bool, avoid_ball: bool) -> AvoidanceGates {
+        AvoidanceGates {
+            wall_care,
+            avoid_defense_area,
+            avoid_ball,
+            ..Default::default()
+        }
+    }
+
+    /// Offsets of the `Wall`-kinded half-planes, in push order (x, x, y, y).
+    fn wall_offsets(set: &ObstacleSet) -> Vec<f64> {
+        set.statics
+            .iter()
+            .filter(|s| s.kind == ObstacleKind::Wall)
+            .map(|s| match s.shape {
+                ObstacleShape::HalfPlane { offset, .. } => offset,
+                _ => panic!("wall must be a half-plane"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn push_walls_offsets_and_kind() {
+        let field = FieldGeometry::default();
+        let cfg = AvoidanceConfig::default();
+        let set = ObstacleSet::build(
+            &team(field.clone(), None),
+            PlayerId::new(0),
+            gates(1.0, false, false),
+            GameState::Run,
+            &cfg,
+        );
+        let w = wall_offsets(&set);
+        assert_eq!(w.len(), 4, "four keep-in walls");
+        let x_max = field.field_length / 2.0 + field.boundary_width - cfg.wall_margin;
+        let y_max = field.field_width / 2.0 + field.boundary_width - cfg.wall_margin;
+        assert!((w[0] - x_max).abs() < 1e-6 && (w[1] - x_max).abs() < 1e-6);
+        assert!((w[2] - y_max).abs() < 1e-6 && (w[3] - y_max).abs() < 1e-6);
+    }
+
+    #[test]
+    fn wall_care_scales_margin_with_floor() {
+        let field = FieldGeometry::default();
+        let cfg = AvoidanceConfig::default();
+        let base_x = field.field_length / 2.0 + field.boundary_width;
+        let off = |care: f64| {
+            wall_offsets(&ObstacleSet::build(
+                &team(field.clone(), None),
+                PlayerId::new(0),
+                gates(care, false, false),
+                GameState::Run,
+                &cfg,
+            ))[0]
+        };
+        // care = 0 → offset at the physical boundary (no margin).
+        assert!((off(0.0) - base_x).abs() < 1e-6);
+        // care = 0.5 → half the configured margin.
+        assert!((off(0.5) - (base_x - 0.5 * cfg.wall_margin)).abs() < 1e-6);
+        // negative care → clamped to the physical boundary (floor).
+        assert!((off(-1.0) - base_x).abs() < 1e-6);
+    }
+
+    #[test]
+    fn static_kinds_are_tagged() {
+        let field = FieldGeometry::default();
+        let cfg = AvoidanceConfig::default();
+        // Walls + defense boxes + ball disc, all gated on.
+        let set = ObstacleSet::build(
+            &team(field.clone(), Some(ball_at(0.0, 0.0))),
+            PlayerId::new(0),
+            gates(1.0, true, true),
+            GameState::Run,
+            &cfg,
+        );
+        let count = |k: ObstacleKind| set.statics.iter().filter(|s| s.kind == k).count();
+        assert_eq!(count(ObstacleKind::Wall), 4);
+        assert_eq!(count(ObstacleKind::DefenseArea), 2);
+        assert_eq!(count(ObstacleKind::Ball), 1);
+
+        // Wall-only vs minus-walls partitions are complementary.
+        let walls = count(ObstacleKind::Wall);
+        let non_walls = set.statics.iter().filter(|s| s.kind != ObstacleKind::Wall).count();
+        assert_eq!(walls + non_walls, set.statics.len());
+
+        // Defense boxes drop when the gate is off.
+        let ungated = ObstacleSet::build(
+            &team(field.clone(), None),
+            PlayerId::new(0),
+            gates(1.0, false, false),
+            GameState::Run,
+            &cfg,
+        );
+        assert_eq!(
+            ungated.statics.iter().filter(|s| s.kind == ObstacleKind::DefenseArea).count(),
+            0
+        );
+    }
+
+    #[test]
+    fn placement_corridor_is_tagged() {
+        let field = FieldGeometry::default();
+        let cfg = AvoidanceConfig::default();
+        let set = ObstacleSet::build(
+            &team(field, Some(ball_at(0.0, 0.0))),
+            PlayerId::new(0),
+            gates(1.0, false, false),
+            GameState::BallReplacement(Vector2::new(1000.0, 0.0)),
+            &cfg,
+        );
+        assert!(
+            set.statics.iter().filter(|s| s.kind == ObstacleKind::PlacementCorridor).count() > 1
+        );
     }
 }

@@ -9,7 +9,10 @@ use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use std::sync::Arc;
 
 use super::{
-    avoidance::{AvoidanceGates, GlobalPlanner, ObstacleSet, OrcaSolver},
+    avoidance::{
+        AvoidanceGates, DynamicAgent, GlobalPlanner, ObstacleKind, ObstacleSet, OrcaSolver,
+        StaticObstacle,
+    },
     joint_skill_executor::JointSkillExecutor,
     pass_coordinator::PassContext,
     player_controller::PlayerController,
@@ -265,7 +268,6 @@ impl TeamController {
                         world_data.dt,
                         false,
                         &player_context,
-                        true,
                         &[],
                         &[],
                         None,
@@ -309,6 +311,10 @@ impl TeamController {
             let removal_position = first_removal_position + Vector2::new(-(i as f64) * 100.0, 0.0);
             let mut player_input = PlayerControlInput::default();
             player_input.with_position(removal_position);
+            // Drive fully off-field to the removal spot; wall containment must not
+            // fight it (robust to `wall_margin` tuning). `avoid_robots` is already
+            // false via `default()`, so ORCA stays off entirely.
+            player_input.avoid_wall = false;
             player_inputs_map.insert(*player_id, player_input);
             team_context
                 .player_context(*player_id)
@@ -460,18 +466,52 @@ impl TeamController {
                 avoid_ball_care: effective_input.avoid_ball_care,
                 avoid_opp_robots,
                 is_kickoff_kicker: effective_input.role_type == RoleType::KickoffKicker,
+                wall_care: effective_input.wall_care,
             };
             let obstacles = ObstacleSet::build(&world_data, id, gates, game_state, &cfg);
 
-            // ORCA gated per-robot: a robot with `avoid_robots = false` (e.g. the
-            // goalkeeper) has its commanded velocity passed through untouched —
-            // no reciprocal avoidance and, crucially, no static field-boundary
-            // wall deflection.
-            let orca = if cfg.orca_enabled && effective_input.avoid_robots {
-                Some(&self.orca)
-            } else {
-                None
-            };
+            // ORCA is decoupled per concern. It runs if the robot wants EITHER
+            // reciprocal avoidance OR wall containment; the two feed different
+            // slices so a robot that ignores other robots (`avoid_robots = false`,
+            // e.g. a commit drive through a contesting opponent) is still kept
+            // inside the field:
+            //   - `neighbors`: robots, only when `avoid_robots`.
+            //   - `statics`: walls only when `avoid_robots = false` (no defense-box
+            //     or ball deflection off the commit); the full set otherwise, minus
+            //     walls when `avoid_wall = false`.
+            let run_orca = cfg.orca_enabled
+                && (effective_input.avoid_robots || effective_input.avoid_wall);
+            let orca = if run_orca { Some(&self.orca) } else { None };
+
+            // Zero-copy for the common (avoid_robots, avoid_wall) = (true, true)
+            // case; owned filtered Vecs otherwise (≤6 robots/tick, negligible).
+            let filtered_neighbors: Vec<DynamicAgent>;
+            let filtered_statics: Vec<StaticObstacle>;
+            let (orca_neighbors, orca_statics): (&[DynamicAgent], &[StaticObstacle]) =
+                match (effective_input.avoid_robots, effective_input.avoid_wall) {
+                    (true, true) => (&obstacles.agents, &obstacles.statics),
+                    (true, false) => {
+                        filtered_statics = obstacles
+                            .statics
+                            .iter()
+                            .filter(|s| s.kind != ObstacleKind::Wall)
+                            .copied()
+                            .collect();
+                        (&obstacles.agents, &filtered_statics)
+                    }
+                    (false, _) => {
+                        // Only reached with `avoid_wall = true` (else `run_orca`
+                        // is false and these are unused): walls only, no agents.
+                        filtered_neighbors = Vec::new();
+                        filtered_statics = obstacles
+                            .statics
+                            .iter()
+                            .filter(|s| s.kind == ObstacleKind::Wall)
+                            .copied()
+                            .collect();
+                        (&filtered_neighbors, &filtered_statics)
+                    }
+                };
 
             // Global planner → full path to follow (LOS fast path inside).
             // Draws the route under the player's `plan.*` keys. Gated per-robot:
@@ -499,9 +539,8 @@ impl TeamController {
                 dt,
                 is_manual,
                 &player_context,
-                avoid_goal_area,
-                &obstacles.agents,
-                &obstacles.statics,
+                orca_neighbors,
+                orca_statics,
                 orca,
             );
         }
@@ -560,6 +599,7 @@ impl TeamController {
                     avoid_ball_care: 0.0,
                     avoid_opp_robots: true,
                     is_kickoff_kicker: false,
+                    wall_care: 1.0,
                 },
                 world_data.current_game_state.game_state,
                 &self.settings.avoidance,
