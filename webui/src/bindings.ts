@@ -889,6 +889,18 @@ export interface GameStateData {
 	freekick_kicker?: PlayerId;
 	max_allowed_bots: number;
 	our_keeper_id?: PlayerId;
+	/**
+	 * The restart the GC's `next_command` hint predicts will resume play after
+	 * the current stoppage (free kick / kickoff / penalty), if any. Used to
+	 * pre-stage during Stop/BallReplacement. `None` when there is no meaningful
+	 * hint. This never affects rule compliance — that keys off `game_state`.
+	 */
+	predicted_next_game_state?: GameState;
+	/**
+	 * Whether the predicted restart ([`Self::predicted_next_game_state`]) is
+	 * ours to take, in team-relative terms. `None` when there is no prediction.
+	 */
+	predicted_us_operating?: boolean;
 }
 
 export interface GetDebugMapResponse {
@@ -1203,6 +1215,14 @@ export interface RawGameStateData {
 	 * next"), as a display string.
 	 */
 	next_command?: string;
+	/**
+	 * Machine-usable prediction derived from the `next_command` hint: the
+	 * `GameState` that will resume play, for the meaningful set-piece restarts
+	 * (free kick / kickoff / penalty). `None` otherwise.
+	 */
+	predicted_next_game_state?: GameState;
+	/** The team the predicted restart is for (from the `next_command` color). */
+	predicted_operating_team?: TeamColor;
 	/** A human-readable reason for the current stoppage, if provided. */
 	status_message?: string;
 	/** GC-reported team names, if the operator has entered them. */

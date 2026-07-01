@@ -2,6 +2,7 @@ import {
   useBasestationInfo,
   useDebugData,
   useExecutorInfo,
+  useExecutorSettings,
   useKeyboardControl,
   useSendCommand,
   useWorldState,
@@ -12,7 +13,13 @@ import {
 } from "@/api";
 import { useAtom } from "jotai";
 import * as math from "mathjs";
-import { DebugValue, PlayerData, TeamColor } from "@/bindings";
+import {
+  DebugValue,
+  Handicap,
+  PlayerData,
+  TeamColor,
+  TeamSpecificSettings,
+} from "@/bindings";
 import { Button } from "@/components/ui/button";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
@@ -339,6 +346,9 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
           </div>
         </CollapsibleSection>
 
+        {/* Per-robot settings: handicaps + ToF-backup breakbeam */}
+        <PlayerTeamSettings team={primaryTeam} playerId={selectedPlayerId} />
+
         {/* Manual control */}
         <div className="flex flex-col gap-3">
           <SimpleTooltip title="Set this player to manual control -- it will stop following the strategy">
@@ -461,6 +471,87 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
 };
 
 export default PlayerSidebar;
+
+/** Handicap options rendered as per-robot toggles, in enum order. */
+const HANDICAP_OPTIONS: { value: Handicap; label: string }[] = [
+  { value: Handicap.NoKicker, label: "No kicker" },
+  { value: Handicap.NoDribbler, label: "No dribbler" },
+  { value: Handicap.NoBreakbeam, label: "No breakbeam" },
+];
+
+/**
+ * Per-robot settings for the selected player: hardware handicaps and the
+ * ToF-backup breakbeam toggle. Both live on `<team>_team_settings` — handicaps
+ * as a `Record<PlayerId, Handicap[]>`, the ToF toggle as a `PlayerId[]` set.
+ * Edits spread the whole settings object and POST it back (same whole-object
+ * replace pattern as the GC controls), so they ride the baseline/revert bar.
+ */
+const PlayerTeamSettings: FC<{ team: TeamColor; playerId: number }> = ({
+  team,
+  playerId,
+}) => {
+  const { settings, updateSettings } = useExecutorSettings();
+  if (!settings) return null;
+
+  const teamKey =
+    team === TeamColor.Blue ? "blue_team_settings" : "yellow_team_settings";
+  const teamSettings = settings[teamKey];
+  const activeHandicaps = teamSettings.handicaps[playerId] ?? [];
+  const tofBackup = teamSettings.tof_backup_breakbeam.includes(playerId);
+
+  const writeTeam = (patch: Partial<TeamSpecificSettings>) =>
+    updateSettings({
+      ...settings,
+      [teamKey]: { ...teamSettings, ...patch },
+    });
+
+  const toggleHandicap = (h: Handicap, on: boolean) => {
+    const cur = teamSettings.handicaps[playerId] ?? [];
+    const next = on ? [...new Set([...cur, h])] : cur.filter((x) => x !== h);
+    const handicaps = { ...teamSettings.handicaps };
+    if (next.length > 0) handicaps[playerId] = next;
+    else delete handicaps[playerId];
+    writeTeam({ handicaps });
+  };
+
+  const toggleTofBackup = (on: boolean) => {
+    const cur = teamSettings.tof_backup_breakbeam;
+    const next = on
+      ? [...new Set([...cur, playerId])]
+      : cur.filter((x) => x !== playerId);
+    writeTeam({ tof_backup_breakbeam: next });
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-[11px] uppercase tracking-wider text-text-dim">
+        Robot Settings
+      </div>
+
+      {HANDICAP_OPTIONS.map(({ value, label }) => (
+        <div key={value} className="flex flex-row gap-2 items-center">
+          <Switch
+            id={`handicap-${playerId}-${value}`}
+            checked={activeHandicaps.includes(value)}
+            onCheckedChange={(c) => toggleHandicap(value, c)}
+          />
+          <Label htmlFor={`handicap-${playerId}-${value}`}>{label}</Label>
+        </div>
+      ))}
+
+      <SimpleTooltip title="Ignore this robot's hardware breakbeam and use the onboard ToF sensor as the ball detector instead (Schmitt-triggered). Thresholds are global, in Possession settings.">
+        <div className="flex flex-row gap-2 items-center">
+          <Switch
+            id={`tof-backup-${playerId}`}
+            checked={tofBackup}
+            onCheckedChange={toggleTofBackup}
+          />
+          <Label htmlFor={`tof-backup-${playerId}`}>ToF backup breakbeam</Label>
+        </div>
+      </SimpleTooltip>
+    </div>
+  );
+};
 
 /** A collapsible section, collapsed by default. */
 const CollapsibleSection: FC<{

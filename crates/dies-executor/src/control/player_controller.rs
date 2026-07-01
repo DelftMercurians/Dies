@@ -289,6 +289,35 @@ impl PlayerController {
             ),
         );
 
+        // Raw ToF telemetry (for tuning the ToF-backup breakbeam substitute) plus
+        // the latched output, so raw vs. Schmitt-latched can be compared in a log.
+        match state.tof_confidence {
+            Some(c) => player_context.debug_value("tof_confidence", c as f64),
+            None => player_context.debug_remove("tof_confidence"),
+        }
+        match state.tof_xy {
+            Some([x, y]) => {
+                player_context.debug_value("tof_x", x as f64);
+                player_context.debug_value("tof_y", y as f64);
+            }
+            None => {
+                player_context.debug_remove("tof_x");
+                player_context.debug_remove("tof_y");
+            }
+        }
+        if state.tof_backup_enabled {
+            player_context.debug_value(
+                "tof_backup_ball_detected",
+                if state.tof_backup_ball_detected {
+                    1.0
+                } else {
+                    0.0
+                },
+            );
+        } else {
+            player_context.debug_remove("tof_backup_ball_detected");
+        }
+
         self.last_yaw = state.raw_yaw;
         self.last_pos = state.position;
 

@@ -214,6 +214,30 @@ impl GameStateTracker {
         self.next_command.map(command_display)
     }
 
+    /// The `GameState` that the GC's `next_command` hint predicts will resume
+    /// play after the current stoppage, for the meaningful set-piece restarts
+    /// (free kick / kickoff / penalty). `None` for force/normal starts, ball
+    /// placement, or when no hint is present. See [`predict_from_command`].
+    pub fn get_predicted_next_game_state(&self) -> Option<GameState> {
+        self.next_command
+            .and_then(predict_from_command)
+            .map(|(state, _)| state)
+    }
+
+    /// The team the predicted restart ([`Self::get_predicted_next_game_state`])
+    /// is for, derived from the color suffix of the `next_command` hint.
+    pub fn get_predicted_operating_team(&self) -> Option<TeamColor> {
+        self.next_command
+            .and_then(predict_from_command)
+            .map(|(_, is_blue)| {
+                if is_blue {
+                    TeamColor::Blue
+                } else {
+                    TeamColor::Yellow
+                }
+            })
+    }
+
     pub fn get_status_message(&self) -> Option<String> {
         self.status_message.clone()
     }
@@ -461,6 +485,24 @@ pub fn command_display(command: Command) -> String {
     .to_string()
 }
 
+/// Map a GC `next_command` hint to the `GameState` that will resume play and the
+/// team that operates it (`true` = blue), for the meaningful set-piece restarts
+/// only. Kickoff/penalty map to their *prepare* variants (so downstream logic
+/// stages without treating the ball as in play); free kicks map to `FreeKick`.
+/// Returns `None` for force/normal starts, ball placement, timeouts, and the
+/// deprecated indirect free kicks — i.e. cases we don't pre-stage for.
+pub fn predict_from_command(command: Command) -> Option<(GameState, bool)> {
+    match command {
+        Command::DIRECT_FREE_BLUE => Some((GameState::FreeKick, true)),
+        Command::DIRECT_FREE_YELLOW => Some((GameState::FreeKick, false)),
+        Command::PREPARE_KICKOFF_BLUE => Some((GameState::PrepareKickoff, true)),
+        Command::PREPARE_KICKOFF_YELLOW => Some((GameState::PrepareKickoff, false)),
+        Command::PREPARE_PENALTY_BLUE => Some((GameState::PreparePenalty, true)),
+        Command::PREPARE_PENALTY_YELLOW => Some((GameState::PreparePenalty, false)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use dies_protos::{
@@ -520,6 +562,50 @@ mod tests {
         assert_eq!(
             tracker.get(),
             GameState::BallReplacement(Vector2::new(0.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn test_predict_from_command() {
+        assert_eq!(
+            predict_from_command(Command::DIRECT_FREE_BLUE),
+            Some((GameState::FreeKick, true))
+        );
+        assert_eq!(
+            predict_from_command(Command::DIRECT_FREE_YELLOW),
+            Some((GameState::FreeKick, false))
+        );
+        assert_eq!(
+            predict_from_command(Command::PREPARE_KICKOFF_YELLOW),
+            Some((GameState::PrepareKickoff, false))
+        );
+        assert_eq!(
+            predict_from_command(Command::PREPARE_PENALTY_BLUE),
+            Some((GameState::PreparePenalty, true))
+        );
+        assert_eq!(predict_from_command(FORCE_START), None);
+        assert_eq!(predict_from_command(Command::NORMAL_START), None);
+        assert_eq!(predict_from_command(Command::BALL_PLACEMENT_BLUE), None);
+    }
+
+    #[test]
+    fn test_predicted_getters_track_next_command() {
+        let mut tracker = GameStateTracker::new();
+        tracker.update(&referee_msg(Command::STOP));
+        // No next_command on the plain STOP message → no prediction.
+        assert_eq!(tracker.get_predicted_next_game_state(), None);
+        assert_eq!(tracker.get_predicted_operating_team(), None);
+
+        let mut msg = referee_msg(Command::STOP);
+        msg.set_next_command(Command::DIRECT_FREE_YELLOW);
+        tracker.update(&msg);
+        assert_eq!(
+            tracker.get_predicted_next_game_state(),
+            Some(GameState::FreeKick)
+        );
+        assert_eq!(
+            tracker.get_predicted_operating_team(),
+            Some(TeamColor::Yellow)
         );
     }
 

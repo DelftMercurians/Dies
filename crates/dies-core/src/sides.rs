@@ -133,6 +133,21 @@ impl SideAssignment {
                     TeamColor::Blue => world_data.game_state.blue_team_keeper_id,
                     TeamColor::Yellow => world_data.game_state.yellow_team_keeper_id,
                 },
+                // Predicted restart is never `BallReplacement`, so no coordinate
+                // flip is needed. Suppressed when GC is ignored (forced free play).
+                predicted_next_game_state: if ignore_gc {
+                    None
+                } else {
+                    world_data.game_state.predicted_next_game_state
+                },
+                predicted_us_operating: if ignore_gc {
+                    None
+                } else {
+                    world_data
+                        .game_state
+                        .predicted_operating_team
+                        .map(|t| t == color)
+                },
             },
             ball_on_our_side: match color {
                 TeamColor::Blue => world_data.ball_on_blue_side,

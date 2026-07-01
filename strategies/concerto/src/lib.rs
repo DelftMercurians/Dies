@@ -97,6 +97,22 @@ impl Strategy for ConcertoStrategy {
         let world = World::new(ctx.world().raw_snapshot().clone());
         let game_state = world.game_state();
         let us_operating = world.us_operating();
+        // During a stoppage the executor may present the *predicted* upcoming
+        // restart (free kick / kickoff / penalty) here so we can pre-stage for
+        // it. `pre_stage` is true in that window: stage positions, but don't run
+        // live play — the real stoppage rules are still enforced by the executor.
+        let pre_stage = world.pre_stage();
+        // Replay clarity: the executor/GC log shows the real state (e.g. Stop)
+        // while we're acting on the predicted restart shown here.
+        debug::value("pre_stage", if pre_stage { 1.0 } else { 0.0 });
+        if pre_stage {
+            debug::string(
+                "pre_stage_restart",
+                &format!("{:?} us_operating={}", game_state, us_operating),
+            );
+        } else {
+            debug::remove("pre_stage_restart");
+        }
         let now = world.timestamp();
         let defense_only = ctx.param_bool("defense_only");
 
@@ -178,7 +194,13 @@ impl Strategy for ConcertoStrategy {
             _ => false,
         };
 
-        let can_act = !defense_only && ball_present && world.is_ball_in_play() && we_may_act;
+        // `!pre_stage` keeps us from running live play while the executor is only
+        // showing us a *predicted* restart during a stoppage (line-up only). This
+        // only bites our own free kick — kickoff/penalty predictions surface as
+        // `Prepare*` states, which aren't ball-in-play, so `can_act` is already
+        // false for them.
+        let can_act =
+            !defense_only && ball_present && world.is_ball_in_play() && we_may_act && !pre_stage;
         // A pass is atomic: possession flits We→Loose→We while the ball is in flight,
         // so we stay in the offense path (the coordinator owns the pass) rather than
         // treating the transient loose ball as something to chase.
@@ -243,12 +265,14 @@ impl Strategy for ConcertoStrategy {
         // ── Our set-piece preparation: designate & position a kicker ─────
         // Covers states that are not yet ball-in-play but where comply() would
         // otherwise clamp/sideline our kicker: PrepareKickoff, PreparePenalty, and
-        // the brief Penalty state before PenaltyRun.
+        // the brief Penalty state before PenaltyRun. Also covers a *predicted* free
+        // kick during a stoppage (`pre_stage`): there is no prepare-variant for
+        // free kicks, so we line the taker up here instead of running live offense.
         if us_operating
-            && matches!(
+            && (matches!(
                 game_state,
                 GameState::PrepareKickoff | GameState::PreparePenalty | GameState::Penalty
-            )
+            ) || (pre_stage && game_state == GameState::FreeKick))
         {
             if let Some(id) = self.designate_prep_kicker(&world, ctx, game_state) {
                 reserved.push(id);
@@ -389,10 +413,10 @@ impl ConcertoStrategy {
                 da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
             })?;
         let id = kicker.id;
-        let role = if game_state == GameState::PrepareKickoff {
-            "kickoff_kicker"
-        } else {
-            "penalty_kicker"
+        let role = match game_state {
+            GameState::PrepareKickoff => "kickoff_kicker",
+            GameState::FreeKick => "free_kick_kicker",
+            _ => "penalty_kicker",
         };
         // During a prepare/setup state the kicker must NOT touch the ball — it may
         // only approach. Going straight to `ball_pos` drives the robot into the

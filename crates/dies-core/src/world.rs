@@ -233,6 +233,14 @@ pub struct GameStateData {
     pub freekick_kicker: Option<PlayerId>,
     pub max_allowed_bots: u32,
     pub our_keeper_id: Option<PlayerId>,
+    /// The restart the GC's `next_command` hint predicts will resume play after
+    /// the current stoppage (free kick / kickoff / penalty), if any. Used to
+    /// pre-stage during Stop/BallReplacement. `None` when there is no meaningful
+    /// hint. This never affects rule compliance — that keys off `game_state`.
+    pub predicted_next_game_state: Option<GameState>,
+    /// Whether the predicted restart ([`Self::predicted_next_game_state`]) is
+    /// ours to take, in team-relative terms. `None` when there is no prediction.
+    pub predicted_us_operating: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -268,6 +276,12 @@ pub struct RawGameStateData {
     /// The command that will resume play after the current stoppage ("what's
     /// next"), as a display string.
     pub next_command: Option<String>,
+    /// Machine-usable prediction derived from the `next_command` hint: the
+    /// `GameState` that will resume play, for the meaningful set-piece restarts
+    /// (free kick / kickoff / penalty). `None` otherwise.
+    pub predicted_next_game_state: Option<GameState>,
+    /// The team the predicted restart is for (from the `next_command` color).
+    pub predicted_operating_team: Option<TeamColor>,
     /// A human-readable reason for the current stoppage, if provided.
     pub status_message: Option<String>,
     /// GC-reported team names, if the operator has entered them.
@@ -1023,6 +1037,8 @@ pub fn mock_world_data() -> WorldData {
             stage_time_left: None,
             action_time_remaining: None,
             next_command: None,
+            predicted_next_game_state: None,
+            predicted_operating_team: None,
             status_message: None,
             blue_team_name: None,
             yellow_team_name: None,
@@ -1109,6 +1125,8 @@ pub fn mock_team_data() -> TeamData {
             freekick_kicker: None,
             max_allowed_bots: 6,
             our_keeper_id: None,
+            predicted_next_game_state: None,
+            predicted_us_operating: None,
         },
         ball_on_our_side: None,
         ball_on_opp_side: None,

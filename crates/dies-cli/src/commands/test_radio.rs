@@ -39,7 +39,8 @@ struct RobotStat {
 }
 
 fn opt<T: std::fmt::Debug>(v: &Option<T>) -> String {
-    v.as_ref().map_or_else(|| "—".to_string(), |x| format!("{:?}", x))
+    v.as_ref()
+        .map_or_else(|| "—".to_string(), |x| format!("{:?}", x))
 }
 
 fn optf(v: &Option<f32>) -> String {

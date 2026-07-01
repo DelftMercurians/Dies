@@ -314,6 +314,14 @@ impl World {
         self.snapshot.us_operating
     }
 
+    /// `true` when [`Self::game_state`]/[`Self::us_operating`] are showing a
+    /// *predicted* upcoming restart during a stoppage rather than the live state.
+    /// Stage positions for the restart but don't commit to live play (the
+    /// executor still enforces the real stoppage rules).
+    pub fn pre_stage(&self) -> bool {
+        self.snapshot.pre_stage
+    }
+
     /// Get our goalkeeper's player ID, if designated.
     pub fn our_keeper_id(&self) -> Option<PlayerId> {
         self.snapshot.our_keeper_id
@@ -382,6 +390,7 @@ mod tests {
             )],
             game_state: GameState::Run,
             us_operating: true,
+            pre_stage: false,
             our_keeper_id: Some(PlayerId::new(1)),
             freekick_kicker: None,
             possession: dies_strategy_protocol::Possession::Loose,

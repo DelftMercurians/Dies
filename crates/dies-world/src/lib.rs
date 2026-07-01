@@ -670,6 +670,8 @@ impl WorldTracker {
             stage_time_left: self.game_state_tracker.get_stage_time_left(),
             action_time_remaining: self.game_state_tracker.get_action_time_remaining(),
             next_command: self.game_state_tracker.get_next_command_display(),
+            predicted_next_game_state: self.game_state_tracker.get_predicted_next_game_state(),
+            predicted_operating_team: self.game_state_tracker.get_predicted_operating_team(),
             status_message: self.game_state_tracker.get_status_message(),
             blue_team_name: self.game_state_tracker.get_blue_team_name(),
             yellow_team_name: self.game_state_tracker.get_yellow_team_name(),

@@ -89,6 +89,29 @@ impl CoordinateTransformer {
         _skill_statuses: &std::collections::HashMap<PlayerId, SkillStatus>,
         dt: f64,
     ) -> WorldSnapshot {
+        // During a stoppage (Stop / ball placement), if the GC advertised the
+        // upcoming restart, present that *predicted* state to the strategy so it
+        // can pre-stage for it. `comply()` keys off the real state (from world
+        // data), not this snapshot, so this override cannot cause a rule
+        // violation. Outside the stoppage window (or with no hint) we present the
+        // live state unchanged and `pre_stage` is false.
+        let gs = &team_data.current_game_state;
+        let in_prep_window = matches!(
+            gs.game_state,
+            dies_core::GameState::Stop | dies_core::GameState::BallReplacement(_)
+        );
+        let predicted = in_prep_window
+            .then_some(gs.predicted_next_game_state)
+            .flatten();
+        let (game_state, us_operating, pre_stage) = match predicted {
+            Some(state) => (
+                state.into(),
+                gs.predicted_us_operating.unwrap_or(gs.us_operating),
+                true,
+            ),
+            None => (gs.game_state.into(), gs.us_operating, false),
+        };
+
         WorldSnapshot {
             timestamp: team_data.t_received,
             dt,
@@ -108,8 +131,9 @@ impl CoordinateTransformer {
                 .iter()
                 .map(|p| self.convert_player_state(p, false))
                 .collect(),
-            game_state: team_data.current_game_state.game_state.into(),
-            us_operating: team_data.current_game_state.us_operating,
+            game_state,
+            us_operating,
+            pre_stage,
             our_keeper_id: team_data.current_game_state.our_keeper_id,
             freekick_kicker: team_data.current_game_state.freekick_kicker,
             possession: self.team_relative_possession(&team_data.possession.state),
@@ -263,6 +287,43 @@ impl CoordinateTransformer {
 mod tests {
     use super::*;
     use dies_strategy_protocol::DebugColor;
+
+    /// During a stoppage, a predicted restart is presented to the strategy with
+    /// `pre_stage = true`; outside a stoppage the live state passes through
+    /// unchanged with `pre_stage = false`.
+    #[test]
+    fn test_prestage_override_during_stop() {
+        let tr = CoordinateTransformer::new(TeamColor::Blue, SideAssignment::YellowOnPositive);
+        let empty = std::collections::HashMap::new();
+
+        // Stop + predicted our free kick → present FreeKick, us_operating, pre_stage.
+        let mut td = dies_core::mock_team_data();
+        td.current_game_state.game_state = dies_core::GameState::Stop;
+        td.current_game_state.us_operating = false; // symmetric-state value, ignored
+        td.current_game_state.predicted_next_game_state = Some(dies_core::GameState::FreeKick);
+        td.current_game_state.predicted_us_operating = Some(true);
+        let snap = tr.create_world_snapshot(&td, &empty, 0.016);
+        assert_eq!(snap.game_state, dies_strategy_protocol::GameState::FreeKick);
+        assert!(snap.us_operating);
+        assert!(snap.pre_stage);
+
+        // No prediction → live Stop passes through, pre_stage false.
+        let mut td2 = dies_core::mock_team_data();
+        td2.current_game_state.game_state = dies_core::GameState::Stop;
+        td2.current_game_state.predicted_next_game_state = None;
+        let snap2 = tr.create_world_snapshot(&td2, &empty, 0.016);
+        assert_eq!(snap2.game_state, dies_strategy_protocol::GameState::Stop);
+        assert!(!snap2.pre_stage);
+
+        // A prediction outside the stoppage window must be ignored (no override).
+        let mut td3 = dies_core::mock_team_data();
+        td3.current_game_state.game_state = dies_core::GameState::Run;
+        td3.current_game_state.predicted_next_game_state = Some(dies_core::GameState::FreeKick);
+        td3.current_game_state.predicted_us_operating = Some(true);
+        let snap3 = tr.create_world_snapshot(&td3, &empty, 0.016);
+        assert_eq!(snap3.game_state, dies_strategy_protocol::GameState::Run);
+        assert!(!snap3.pre_stage);
+    }
 
     #[test]
     fn test_direction_sign_blue_on_positive() {

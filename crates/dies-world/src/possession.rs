@@ -671,7 +671,15 @@ mod tests {
         let blue = vec![tof_player(1, None, Some([0, 0]))];
         let mut poss = dies_core::Possession::default();
         for i in 0..(cfg.tof_backup_enter_frames + 5) {
-            poss = t.update(Some(&b), &blue, &yellow, true, false, &cfg, i as f64 * 0.016);
+            poss = t.update(
+                Some(&b),
+                &blue,
+                &yellow,
+                true,
+                false,
+                &cfg,
+                i as f64 * 0.016,
+            );
         }
         assert!(
             poss.state.owner().is_none(),

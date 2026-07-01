@@ -35,10 +35,23 @@ pub struct WorldSnapshot {
     pub opp_players: Vec<PlayerState>,
 
     /// Current game state.
+    ///
+    /// During a stoppage (`Stop`/`BallPlacement`), when the GC advertises the
+    /// upcoming restart, this is *overridden* with that predicted state so the
+    /// strategy can pre-stage for it — see [`Self::pre_stage`]. The executor's
+    /// rule compliance keys off the real state, not this field, so the override
+    /// cannot cause a foul.
     pub game_state: GameState,
 
-    /// Whether it's our team's turn to act (e.g., we have a free kick).
+    /// Whether it's our team's turn to act (e.g., we have a free kick). During a
+    /// pre-stage window this reflects the *predicted* restart's operator.
     pub us_operating: bool,
+
+    /// `true` when [`Self::game_state`]/[`Self::us_operating`] are showing a
+    /// *predicted* upcoming restart during a stoppage rather than the live state.
+    /// Strategies use this to stage positions without committing to live play
+    /// (e.g. line up a free-kick taker without running the kick FSM yet).
+    pub pre_stage: bool,
 
     /// Our goalkeeper's player ID, if designated.
     pub our_keeper_id: Option<PlayerId>,
@@ -294,6 +307,7 @@ mod tests {
             )],
             game_state: GameState::Run,
             us_operating: true,
+            pre_stage: false,
             our_keeper_id: Some(PlayerId::new(0)),
             freekick_kicker: None,
             possession: Possession::We(PlayerId::new(1)),

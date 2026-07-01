@@ -287,6 +287,7 @@ mod tests {
             opp_players: vec![],
             game_state: GameState::Run,
             us_operating: true,
+            pre_stage: false,
             our_keeper_id: None,
             freekick_kicker: None,
             possession: dies_strategy_protocol::Possession::Loose,

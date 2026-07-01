@@ -64,6 +64,7 @@ fn make_world(ball: Vector2, ball_vel: Vector2) -> World {
         opp_players: vec![],
         game_state: GameState::Run,
         us_operating: false,
+        pre_stage: false,
         our_keeper_id: Some(PlayerId::new(1)),
         freekick_kicker: None,
         possession: Possession::Loose,

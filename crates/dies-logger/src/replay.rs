@@ -782,6 +782,8 @@ fn build_world(
         stage_time_left: None,
         action_time_remaining: None,
         next_command: None,
+        predicted_next_game_state: None,
+        predicted_operating_team: None,
         status_message: None,
         blue_team_name: None,
         yellow_team_name: None,
