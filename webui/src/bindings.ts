@@ -352,8 +352,17 @@ export interface PlayerFeedbackMsg {
 	reflex_kick_counter?: number;
 	breakbeam_raw?: number;
 	tof_ball_detected?: boolean;
-	/** Time-of-flight ball position estimate `[x, y]`. */
+	/**
+	 * Time-of-flight ball position estimate `[x, y]` in raw sensor units
+	 * (`x` signed −left/+right, `y` unsigned +forward/−back).
+	 */
 	tof_xy?: [number, number];
+	/**
+	 * Time-of-flight detection confidence (raw sensor byte, `0..=255`), from
+	 * glue's `tof_confidence()`. `None` when the robot reports no reading.
+	 * Consumed by the per-robot ToF-backup breakbeam substitute.
+	 */
+	tof_confidence?: number;
 	last_command?: CommandEcho;
 	firmware_version?: FirmwareVersion;
 	/**
@@ -642,6 +651,14 @@ export enum Handicap {
 export interface TeamSpecificSettings {
 	handicaps: Record<PlayerId, Handicap[]>;
 	/**
+	 * Per-robot ToF-backup breakbeam toggle. For a robot in this set, the
+	 * hardware breakbeam bit is *ignored entirely* for possession and the
+	 * Schmitt-triggered onboard ToF signal stands in as its breakbeam. Robots
+	 * not in the set use the hardware breakbeam as normal. Thresholds are
+	 * global (see `PossessionConfig::tof_backup_*`).
+	 */
+	tof_backup_breakbeam: HashSet<PlayerId>;
+	/**
 	 * Testing override: when true, this team ignores the Game Controller and
 	 * always plays as if in free play (`GameState::Run`) — full speed, no
 	 * halt/stop/kickoff positioning, no rule keep-out zones. Useful for
@@ -714,6 +731,16 @@ export interface PossessionConfig {
 	 * drop on a single jittery opponent-position frame).
 	 */
 	contest_exit_frames: number;
+	/** ToF confidence must exceed this for the raw detection to hold (`c_th`). */
+	tof_backup_conf_th: number;
+	/** Raw detection requires `|tof_x| < x_th` (`x_th`, sensor units). */
+	tof_backup_x_th: number;
+	/** Raw detection requires `tof_y < y_th` (`y_th`, sensor units). */
+	tof_backup_y_th: number;
+	/** Frames the raw condition must hold before the latch turns ON (`N`). */
+	tof_backup_enter_frames: number;
+	/** Frames the raw condition must fail before the latch turns OFF (`M`). */
+	tof_backup_exit_frames: number;
 }
 
 /** Settings for the executor. */
@@ -1004,6 +1031,30 @@ export interface PlayerData {
 	 * window (only meaningful for own players). The magnet-mode engage trigger.
 	 */
 	tof_ball_detected: boolean;
+	/**
+	 * Raw ToF ball-position estimate `[x, y]` in sensor units (`x` signed
+	 * −left/+right, `y` unsigned +forward/−back). Only meaningful for own
+	 * players; `None` when the sensor reports nothing. An *input* to the
+	 * ToF-backup breakbeam substitute — use `has_ball`, not this.
+	 */
+	tof_xy?: [number, number];
+	/**
+	 * Raw ToF detection confidence byte (`0..=255`); `None` when the robot
+	 * reports no reading. Input to the ToF-backup breakbeam substitute.
+	 */
+	tof_confidence?: number;
+	/**
+	 * Whether this robot's per-robot ToF-backup breakbeam toggle is on. When
+	 * true, the hardware breakbeam bit is ignored for possession and the
+	 * Schmitt-triggered ToF signal (`tof_backup_ball_detected`) stands in.
+	 */
+	tof_backup_enabled: boolean;
+	/**
+	 * Latched output of the ToF-backup Schmitt trigger (only meaningful when
+	 * `tof_backup_enabled`). Stamped from the possession tracker, mirrors how
+	 * `has_ball` is filled — for logging/tuning, not a consumer signal.
+	 */
+	tof_backup_ball_detected: boolean;
 	imu_status?: SysStatus;
 	imu_readings?: [number, number, number, number, number, number];
 	kicker_status?: SysStatus;

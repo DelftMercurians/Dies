@@ -236,6 +236,12 @@ impl SideAssignment {
             has_ball: player.has_ball,
             tof_ok: player.tof_ok,
             tof_ball_detected: player.tof_ball_detected,
+            // ToF fields are robot-local (sensor frame), so they pass through the
+            // team-coordinate transform unchanged.
+            tof_xy: player.tof_xy,
+            tof_confidence: player.tof_confidence,
+            tof_backup_enabled: player.tof_backup_enabled,
+            tof_backup_ball_detected: player.tof_backup_ball_detected,
             imu_status: player.imu_status,
             kicker_status: player.kicker_status,
             id: player.id,

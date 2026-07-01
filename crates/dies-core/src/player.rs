@@ -434,8 +434,13 @@ pub struct PlayerFeedbackMsg {
     pub reflex_kick_counter: Option<u8>,
     pub breakbeam_raw: Option<u16>,
     pub tof_ball_detected: Option<bool>,
-    /// Time-of-flight ball position estimate `[x, y]`.
+    /// Time-of-flight ball position estimate `[x, y]` in raw sensor units
+    /// (`x` signed −left/+right, `y` unsigned +forward/−back).
     pub tof_xy: Option<[i32; 2]>,
+    /// Time-of-flight detection confidence (raw sensor byte, `0..=255`), from
+    /// glue's `tof_confidence()`. `None` when the robot reports no reading.
+    /// Consumed by the per-robot ToF-backup breakbeam substitute.
+    pub tof_confidence: Option<u8>,
     pub last_command: Option<CommandEcho>,
     pub firmware_version: Option<FirmwareVersion>,
 
@@ -480,6 +485,7 @@ impl PlayerFeedbackMsg {
             breakbeam_raw: None,
             tof_ball_detected: None,
             tof_xy: None,
+            tof_confidence: None,
             last_command: None,
             firmware_version: None,
             feedback_hz: None,

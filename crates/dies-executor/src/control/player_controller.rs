@@ -21,6 +21,15 @@ const AGGRESSIVENESS_BRAKE_SCALE: f64 = 1.0;
 /// boundary in by, to absorb position noise and one-tick discretization.
 const BOUNDS_MARGIN: f64 = 30.0;
 
+/// When no heading is commanded, the robot is considered "stable" (and its
+/// current measured heading is latched as the hold setpoint) while its linear
+/// speed is below this threshold \[mm/s\]. The on-board stability assist drives
+/// better against a fixed heading setpoint than against NaN, so we emit the last
+/// stable heading rather than releasing heading control.
+const STABLE_HOLD_LINEAR_SPEED: f64 = 50.0;
+/// Companion angular-speed gate \[rad/s\] for latching the hold heading.
+const STABLE_HOLD_ANGULAR_SPEED: f64 = 0.2;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum KickerState {
     Disarming,
@@ -43,6 +52,11 @@ pub struct PlayerController {
 
     /// Target heading
     target_z: f64,
+    /// Last heading the robot held while stable (near-stationary), latched
+    /// whenever no heading is commanded and the robot is slow. Used as the
+    /// hold setpoint when driving to a point with no fixed heading, so the
+    /// on-board stability assist has a real setpoint instead of NaN.
+    held_heading: Option<Angle>,
     /// Local angular velocity
     w: f64,
     /// Kick counter
@@ -89,6 +103,7 @@ impl PlayerController {
             ),
             last_yaw: Angle::from_radians(0.0),
             target_z: 0.0,
+            held_heading: None,
             kick_counter: 0,
 
             frame_misses: 0,
@@ -463,24 +478,48 @@ impl PlayerController {
                 input.care,
             );
             self.w = head_u;
-        } else {
-            // if self.target_velocity_global.norm() > 1000.0 {
-            //     // Face the direction of movement (or inveser if thats closer - we just want to be moving along the forward body axis) when moving faster and have no other heading SP
-            //     let current_yaw = self.last_yaw;
-            //     let velocity_heading = Angle::from_vector(self.target_velocity_global);
-            //     let inverse_velocity_heading =
-            //         Angle::from_vector(self.target_velocity_global) + Angle::from_degrees(180.0);
-            //     if (current_yaw - inverse_velocity_heading).abs()
-            //         < (current_yaw - velocity_heading).abs()
-            //     {
-            //         self.target_z = inverse_velocity_heading.radians();
-            //     } else {
-            //         self.target_z = velocity_heading.radians();
-            //     }
-            // } else {
+            // Keep the hold heading fresh while actively commanding one, so that
+            // when the command is released mid-motion we hold the heading the
+            // robot actually ended up at rather than a stale latched value.
+            self.held_heading = Some(self.last_yaw);
+        } else if input.angular_velocity.is_some() {
+            // Caller is commanding a raw angular velocity (a spin). The firmware
+            // ignores `w` when a heading setpoint is present, so we must release
+            // heading control (NaN) to let the spin through. `self.w` is set from
+            // `input.angular_velocity` further below. Keep the hold heading fresh
+            // so releasing the spin later resumes holding near the current yaw.
             self.target_z = f64::NAN;
             self.w = 0.0;
-            // }
+            self.held_heading = Some(self.last_yaw);
+        } else {
+            // No commanded heading. Rather than releasing heading control
+            // (emitting NaN), hold the last heading the robot had while stable.
+            // The on-board stability assist drives more smoothly against a real
+            // heading setpoint. We (re)latch the measured heading whenever the
+            // robot is near-stationary, and keep emitting that latched value
+            // while it drives to a point with no fixed heading.
+            let is_stable = state.velocity.norm() < STABLE_HOLD_LINEAR_SPEED
+                && state.angular_speed.abs() < STABLE_HOLD_ANGULAR_SPEED;
+            if is_stable || self.held_heading.is_none() {
+                self.held_heading = Some(self.last_yaw);
+            }
+            let hold = self.held_heading.unwrap_or(self.last_yaw);
+            self.target_z = hold.radians();
+            self.yaw_control.set_setpoint(hold);
+            let head_u = self.yaw_control.update(
+                self.last_yaw,
+                state.angular_speed,
+                dt,
+                input.angular_speed_limit.unwrap_or(
+                    self.last_yaw_rate_limit
+                        .unwrap_or(self.max_angular_velocity),
+                ),
+                input
+                    .angular_acceleration_limit
+                    .unwrap_or(self.max_angular_acceleration),
+                input.care,
+            );
+            self.w = head_u;
         }
 
         // Ramp up yaw rate with proprtional control

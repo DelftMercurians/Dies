@@ -104,6 +104,24 @@ pub struct PossessionConfig {
     /// Frames an absent contest must persist before it clears (release slow — don't
     /// drop on a single jittery opponent-position frame).
     pub contest_exit_frames: u32,
+
+    // --- ToF-backup breakbeam substitute (per-robot toggle in TeamSpecificSettings) ---
+    // These thresholds are GLOBAL (same sensor geometry across robots); only the
+    // per-robot enable lives on the team settings. The raw condition is
+    //   `confidence > conf_th  &&  |x| < x_th  &&  y < y_th`
+    // (x/y/confidence in raw ToF sensor units), latched through an asymmetric
+    // enter/exit frame debounce (the Schmitt trigger, time domain).
+    // TODO(valentin): replace the PLACEHOLDER defaults below with tuned numbers.
+    /// ToF confidence must exceed this for the raw detection to hold (`c_th`).
+    pub tof_backup_conf_th: f64,
+    /// Raw detection requires `|tof_x| < x_th` (`x_th`, sensor units).
+    pub tof_backup_x_th: f64,
+    /// Raw detection requires `tof_y < y_th` (`y_th`, sensor units).
+    pub tof_backup_y_th: f64,
+    /// Frames the raw condition must hold before the latch turns ON (`N`).
+    pub tof_backup_enter_frames: u32,
+    /// Frames the raw condition must fail before the latch turns OFF (`M`).
+    pub tof_backup_exit_frames: u32,
 }
 
 impl Default for PossessionConfig {
@@ -121,6 +139,12 @@ impl Default for PossessionConfig {
             contest_speed_max: 200.0,
             contest_enter_frames: 2,
             contest_exit_frames: 5,
+            // PLACEHOLDER — pending tuned numbers from Valentin.
+            tof_backup_conf_th: 50.0,
+            tof_backup_x_th: 40.0,
+            tof_backup_y_th: 60.0,
+            tof_backup_enter_frames: 2,
+            tof_backup_exit_frames: 4,
         }
     }
 }

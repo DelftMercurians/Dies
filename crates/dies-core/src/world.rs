@@ -354,6 +354,22 @@ pub struct PlayerData {
     /// Whether the onboard ToF sensor currently sees the ball in its ~64 mm front
     /// window (only meaningful for own players). The magnet-mode engage trigger.
     pub tof_ball_detected: bool,
+    /// Raw ToF ball-position estimate `[x, y]` in sensor units (`x` signed
+    /// −left/+right, `y` unsigned +forward/−back). Only meaningful for own
+    /// players; `None` when the sensor reports nothing. An *input* to the
+    /// ToF-backup breakbeam substitute — use `has_ball`, not this.
+    pub tof_xy: Option<[i32; 2]>,
+    /// Raw ToF detection confidence byte (`0..=255`); `None` when the robot
+    /// reports no reading. Input to the ToF-backup breakbeam substitute.
+    pub tof_confidence: Option<u8>,
+    /// Whether this robot's per-robot ToF-backup breakbeam toggle is on. When
+    /// true, the hardware breakbeam bit is ignored for possession and the
+    /// Schmitt-triggered ToF signal (`tof_backup_ball_detected`) stands in.
+    pub tof_backup_enabled: bool,
+    /// Latched output of the ToF-backup Schmitt trigger (only meaningful when
+    /// `tof_backup_enabled`). Stamped from the possession tracker, mirrors how
+    /// `has_ball` is filled — for logging/tuning, not a consumer signal.
+    pub tof_backup_ball_detected: bool,
     pub imu_status: Option<SysStatus>,
     pub imu_readings: Option<[f32; 6]>,
     pub kicker_status: Option<SysStatus>,
@@ -387,6 +403,10 @@ impl PlayerData {
             has_ball: false,
             tof_ok: false,
             tof_ball_detected: false,
+            tof_xy: None,
+            tof_confidence: None,
+            tof_backup_enabled: false,
+            tof_backup_ball_detected: false,
             kicker_status: None,
             imu_readings: None,
             skill: None,
@@ -947,6 +967,10 @@ pub fn mock_world_data() -> WorldData {
             has_ball: false,
             tof_ok: false,
             tof_ball_detected: false,
+            tof_xy: None,
+            tof_confidence: None,
+            tof_backup_enabled: false,
+            tof_backup_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -971,6 +995,10 @@ pub fn mock_world_data() -> WorldData {
             has_ball: false,
             tof_ok: false,
             tof_ball_detected: false,
+            tof_xy: None,
+            tof_confidence: None,
+            tof_backup_enabled: false,
+            tof_backup_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -1027,6 +1055,10 @@ pub fn mock_team_data() -> TeamData {
             has_ball: false,
             tof_ok: false,
             tof_ball_detected: false,
+            tof_xy: None,
+            tof_confidence: None,
+            tof_backup_enabled: false,
+            tof_backup_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
@@ -1051,6 +1083,10 @@ pub fn mock_team_data() -> TeamData {
             has_ball: false,
             tof_ok: false,
             tof_ball_detected: false,
+            tof_xy: None,
+            tof_confidence: None,
+            tof_backup_enabled: false,
+            tof_backup_ball_detected: false,
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),

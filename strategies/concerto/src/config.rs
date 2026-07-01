@@ -18,6 +18,24 @@
 /// forward pass is taken outright instead of recycling. Below it, a weak forward
 /// pass (or a hoof into space) is recycled when a safe outlet exists.
 pub const FORWARD_OK_BAR: f64 = 0.50;
+
+/// Global pass-propensity knob — a single scalar multiplied into **every**
+/// pass-success estimate concerto computes (forward-pass quality, forward-outlet
+/// eligibility, and recycle openness). It is the one global lever for "how much to
+/// pass vs just shoot":
+/// - `1.0` (default) — neutral; behaviour is unchanged from an ungated build.
+/// - `(0, 1)` — progressively discount every pass's assessed success, so more
+///   forward balls fall below [`FORWARD_OK_BAR`] / [`SUPPORTER_MIN_OPENNESS`] and
+///   are downgraded to a strike-finish, hoof, or short carry. Biases toward
+///   shooting/carrying.
+/// - `0.0` — passing is fully disabled: no pass ever clears its gate, so the
+///   planner never emits a `Waypoint::Pass`. The carrier always shoots, carries,
+///   or hoofs; a set-piece kicker still releases forward into open space.
+/// - `> 1.0` — biases toward passing (marginal lanes clear their gate more often).
+///
+/// Because every pass gate scales linearly with it, `0.0` disabling passing falls
+/// out of the arithmetic — no special-casing needed.
+pub const PASS_SUCCESS_BASE: f64 = 1.0;
 /// How far behind the ball (toward our own half) the recycle pivot sits, on the
 /// ball's flank. Deep enough to be a safe lay-back outlet, never up in the box
 /// where an extra central body would invite the defence to collapse the shot zone.

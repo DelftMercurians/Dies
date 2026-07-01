@@ -196,6 +196,12 @@ pub struct PlayerTracker {
     position_noise_var: f64,
 
     handicaps: HashSet<Handicap>,
+
+    /// Whether this robot's per-robot ToF-backup breakbeam toggle is on. Emitted
+    /// into `PlayerData` so the possession tracker can substitute the ToF Schmitt
+    /// signal for the hardware breakbeam. Threaded from
+    /// `TeamSpecificSettings::tof_backup_breakbeam` like `handicaps`.
+    tof_backup_enabled: bool,
 }
 
 impl PlayerTracker {
@@ -203,6 +209,7 @@ impl PlayerTracker {
     pub fn new(
         id: PlayerId,
         handicaps: HashSet<Handicap>,
+        tof_backup_enabled: bool,
         settings: &TrackerSettings,
         allow_no_vision: bool,
         is_controlled: bool,
@@ -231,6 +238,7 @@ impl PlayerTracker {
             rolling_control: 1.0,
             position_noise_var: 0.0,
             handicaps,
+            tof_backup_enabled,
         }
     }
 
@@ -418,7 +426,12 @@ impl PlayerTracker {
         }
     }
 
-    pub fn update_settings(&mut self, handicaps: HashSet<Handicap>, settings: &TrackerSettings) {
+    pub fn update_settings(
+        &mut self,
+        handicaps: HashSet<Handicap>,
+        tof_backup_enabled: bool,
+        settings: &TrackerSettings,
+    ) {
         self.filter.update_settings(
             settings.player_unit_transition_var,
             settings.player_ca_unit_transition_var,
@@ -427,6 +440,7 @@ impl PlayerTracker {
         self.use_command_feedforward = settings.player_use_command_feedforward;
         self.command_tau = settings.player_command_tau;
         self.handicaps = handicaps;
+        self.tof_backup_enabled = tof_backup_enabled;
         self.yaw_filter
             .update_settings(settings.player_yaw_lpf_alpha);
     }
@@ -444,6 +458,16 @@ impl PlayerTracker {
         self.last_feedback
             .and_then(|f| f.breakbeam_ball_detected)
             .unwrap_or(false)
+    }
+
+    /// Raw ToF ball-position estimate from feedback (`None` if absent).
+    fn raw_tof_xy(&self) -> Option<[i32; 2]> {
+        self.last_feedback.and_then(|f| f.tof_xy)
+    }
+
+    /// Raw ToF confidence byte from feedback (`None` if the robot reports none).
+    fn raw_tof_confidence(&self) -> Option<u8> {
+        self.last_feedback.and_then(|f| f.tof_confidence)
     }
 
     pub fn get(&self) -> Option<PlayerData> {
@@ -466,6 +490,10 @@ impl PlayerTracker {
                 has_ball: false,
                 tof_ok: matches!(f.tof_status, Some(SysStatus::Ok)),
                 tof_ball_detected: f.tof_ball_detected.unwrap_or(false),
+                tof_xy: f.tof_xy,
+                tof_confidence: f.tof_confidence,
+                tof_backup_enabled: self.tof_backup_enabled,
+                tof_backup_ball_detected: false,
                 imu_status: f.imu_status,
                 imu_readings: f.imu_readings,
                 kicker_status: f.kicker_status,
@@ -497,6 +525,10 @@ impl PlayerTracker {
                 .last_feedback
                 .and_then(|f| f.tof_ball_detected)
                 .unwrap_or(false),
+            tof_xy: self.raw_tof_xy(),
+            tof_confidence: self.raw_tof_confidence(),
+            tof_backup_enabled: self.tof_backup_enabled,
+            tof_backup_ball_detected: false,
             imu_status: self.last_feedback.and_then(|f| f.imu_status),
             imu_readings: self.last_feedback.and_then(|f| f.imu_readings),
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),

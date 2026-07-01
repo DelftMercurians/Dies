@@ -79,6 +79,8 @@ cached_schema!(
     required("vy", DataType::Float64),
     required("yaw", DataType::Float64),
     required("raw_yaw", DataType::Float64),
+    required("raw_x", DataType::Float64),
+    required("raw_y", DataType::Float64),
     required("angular_speed", DataType::Float64),
     required("position_noise", DataType::Float64),
     nullable("primary_status", DataType::Utf8),

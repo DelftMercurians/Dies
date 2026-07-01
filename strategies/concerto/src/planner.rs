@@ -663,13 +663,17 @@ impl Planner {
         let opps = world.opp_players();
         // Pass-success quality of an outlet: lane openness × clearance of the receive
         // point (a marker sitting on the receiver intercepts on arrival even down an
-        // open lane). Returned so the caller can weigh a forward pass vs a recycle.
+        // open lane), scaled by the global pass-propensity base. Returned so the
+        // caller can weigh a forward pass vs a recycle. At `base == 0` every outlet
+        // reads as unusable, so no forward pass (or cross) is ever eligible.
         let pass_quality = |to: Vector2| -> f64 {
-            geometry::lane_openness(carrier_pos, to, opps, config::KICK_LANE_CORRIDOR)
+            config::PASS_SUCCESS_BASE
+                * geometry::lane_openness(carrier_pos, to, opps, config::KICK_LANE_CORRIDOR)
                 * geometry::receiver_clearance(to, opps)
         };
         let pass_ok = |to: Vector2| -> bool {
-            geometry::lane_openness(carrier_pos, to, opps, config::KICK_LANE_CORRIDOR)
+            config::PASS_SUCCESS_BASE
+                * geometry::lane_openness(carrier_pos, to, opps, config::KICK_LANE_CORRIDOR)
                 >= config::SUPPORTER_MIN_OPENNESS
         };
 
@@ -784,12 +788,16 @@ impl Planner {
             .filter(|p| p.position.x > 0.0)
             .filter(|p| (p.position - carrier_pos).norm() > config::RECYCLE_MIN_DIST)
             .filter(|p| {
-                let open = geometry::lane_openness(
-                    carrier_pos,
-                    p.position,
-                    opps,
-                    config::KICK_LANE_CORRIDOR,
-                );
+                // Scaled by the global pass-propensity base so the recycle outlet —
+                // itself a pass — is suppressed alongside forward passes, and
+                // vanishes entirely at `base == 0`.
+                let open = config::PASS_SUCCESS_BASE
+                    * geometry::lane_openness(
+                        carrier_pos,
+                        p.position,
+                        opps,
+                        config::KICK_LANE_CORRIDOR,
+                    );
                 let clear = geometry::receiver_clearance(p.position, opps);
                 open >= config::RECYCLE_MIN_OPENNESS && clear >= 0.5
             })

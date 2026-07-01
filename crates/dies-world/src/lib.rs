@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 
@@ -34,12 +34,16 @@ struct TeamTracker {
     allow_no_vision: bool,
     controlled: bool,
     handicaps: HashMap<PlayerId, Vec<Handicap>>,
+    /// Per-robot ToF-backup breakbeam toggle (see
+    /// `TeamSpecificSettings::tof_backup_breakbeam`).
+    tof_backup: HashSet<PlayerId>,
 }
 
 impl TeamTracker {
     fn new(
         controlled: bool,
         handicaps: HashMap<PlayerId, Vec<Handicap>>,
+        tof_backup: HashSet<PlayerId>,
         allow_no_vision: bool,
     ) -> Self {
         Self {
@@ -47,14 +51,17 @@ impl TeamTracker {
             allow_no_vision,
             controlled,
             handicaps,
+            tof_backup,
         }
     }
 
     fn update_settings(
         &mut self,
         handicaps: &HashMap<PlayerId, Vec<Handicap>>,
+        tof_backup: &HashSet<PlayerId>,
         settings: &TrackerSettings,
     ) {
+        self.tof_backup = tof_backup.clone();
         for player_tracker in self.players.values_mut() {
             player_tracker.update_settings(
                 handicaps
@@ -63,6 +70,7 @@ impl TeamTracker {
                     .unwrap_or_default()
                     .into_iter()
                     .collect(),
+                tof_backup.contains(&player_tracker.id),
                 settings,
             );
         }
@@ -84,6 +92,7 @@ impl TeamTracker {
                     .unwrap_or_default()
                     .into_iter()
                     .collect(),
+                self.tof_backup.contains(&player_id),
                 tracker_settings,
                 self.allow_no_vision,
                 self.controlled,
@@ -111,6 +120,7 @@ impl TeamTracker {
                         .unwrap_or_default()
                         .into_iter()
                         .collect(),
+                    self.tof_backup.contains(&feedback.id),
                     tracker_settings,
                     true,
                     self.controlled,
@@ -201,11 +211,13 @@ impl WorldTracker {
             blue_team: TeamTracker::new(
                 controlled_teams.contains(&TeamColor::Blue),
                 settings.blue_team_settings.handicaps.clone(),
+                settings.blue_team_settings.tof_backup_breakbeam.clone(),
                 allow_no_vision,
             ),
             yellow_team: TeamTracker::new(
                 controlled_teams.contains(&TeamColor::Yellow),
                 settings.yellow_team_settings.handicaps.clone(),
+                settings.yellow_team_settings.tof_backup_breakbeam.clone(),
                 allow_no_vision,
             ),
             ball_tracker: BallTracker::new(&settings.tracker_settings),
@@ -262,10 +274,16 @@ impl WorldTracker {
 
     pub fn update_settings(&mut self, settings: &ExecutorSettings) {
         self.tracker_settings = settings.tracker_settings.clone();
-        self.blue_team
-            .update_settings(&self.blue_team_settings.handicaps, &self.tracker_settings);
-        self.yellow_team
-            .update_settings(&self.yellow_team_settings.handicaps, &self.tracker_settings);
+        self.blue_team.update_settings(
+            &settings.blue_team_settings.handicaps,
+            &settings.blue_team_settings.tof_backup_breakbeam,
+            &self.tracker_settings,
+        );
+        self.yellow_team.update_settings(
+            &settings.yellow_team_settings.handicaps,
+            &settings.yellow_team_settings.tof_backup_breakbeam,
+            &self.tracker_settings,
+        );
         self.ball_tracker.update_settings(&self.tracker_settings);
         self.blue_team_settings = settings.blue_team_settings.clone();
         self.yellow_team_settings = settings.yellow_team_settings.clone();
@@ -612,21 +630,24 @@ impl WorldTracker {
         let mut blue_players = self.blue_team.get_players();
         let mut yellow_players = self.yellow_team.get_players();
 
-        // Stamp the unified per-player `has_ball` from the single possession truth.
+        // Stamp the unified per-player `has_ball` from the single possession
+        // truth, plus the ToF-backup Schmitt latch (for logging/tuning).
         let owner = self.possession.state.owner();
         for p in blue_players.iter_mut() {
-            p.has_ball = owner
-                == Some(TeamPlayerId {
-                    team_color: TeamColor::Blue,
-                    player_id: p.id,
-                });
+            let tpid = TeamPlayerId {
+                team_color: TeamColor::Blue,
+                player_id: p.id,
+            };
+            p.has_ball = owner == Some(tpid);
+            p.tof_backup_ball_detected = self.possession_tracker.tof_backup_detected(tpid);
         }
         for p in yellow_players.iter_mut() {
-            p.has_ball = owner
-                == Some(TeamPlayerId {
-                    team_color: TeamColor::Yellow,
-                    player_id: p.id,
-                });
+            let tpid = TeamPlayerId {
+                team_color: TeamColor::Yellow,
+                player_id: p.id,
+            };
+            p.has_ball = owner == Some(tpid);
+            p.tof_backup_ball_detected = self.possession_tracker.tof_backup_detected(tpid);
         }
 
         let game_state = RawGameStateData {

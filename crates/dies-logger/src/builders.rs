@@ -127,6 +127,8 @@ pub struct PlayersBuilder {
     vy: Float64Builder,
     yaw: Float64Builder,
     raw_yaw: Float64Builder,
+    raw_x: Float64Builder,
+    raw_y: Float64Builder,
     angular_speed: Float64Builder,
     position_noise: Float64Builder,
     primary_status: StringBuilder,
@@ -152,6 +154,8 @@ impl PlayersBuilder {
         self.vy.append_value(r.vy);
         self.yaw.append_value(r.yaw);
         self.raw_yaw.append_value(r.raw_yaw);
+        self.raw_x.append_value(r.raw_x);
+        self.raw_y.append_value(r.raw_y);
         self.angular_speed.append_value(r.angular_speed);
         self.position_noise.append_value(r.position_noise);
         self.primary_status
@@ -184,6 +188,8 @@ impl PlayersBuilder {
             Arc::new(self.vy.finish()),
             Arc::new(self.yaw.finish()),
             Arc::new(self.raw_yaw.finish()),
+            Arc::new(self.raw_x.finish()),
+            Arc::new(self.raw_y.finish()),
             Arc::new(self.angular_speed.finish()),
             Arc::new(self.position_noise.finish()),
             Arc::new(self.primary_status.finish()),

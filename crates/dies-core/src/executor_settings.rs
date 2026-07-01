@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fs, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::Path,
+};
 
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
@@ -268,6 +272,12 @@ impl std::fmt::Display for Handicap {
 #[typeshare]
 pub struct TeamSpecificSettings {
     pub handicaps: HashMap<PlayerId, Vec<Handicap>>,
+    /// Per-robot ToF-backup breakbeam toggle. For a robot in this set, the
+    /// hardware breakbeam bit is *ignored entirely* for possession and the
+    /// Schmitt-triggered onboard ToF signal stands in as its breakbeam. Robots
+    /// not in the set use the hardware breakbeam as normal. Thresholds are
+    /// global (see `PossessionConfig::tof_backup_*`).
+    pub tof_backup_breakbeam: HashSet<PlayerId>,
     /// Testing override: when true, this team ignores the Game Controller and
     /// always plays as if in free play (`GameState::Run`) — full speed, no
     /// halt/stop/kickoff positioning, no rule keep-out zones. Useful for

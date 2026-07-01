@@ -384,6 +384,7 @@ impl BasestationHandle {
                                             breakbeam_raw: msg.breakbeam_raw(),
                                             tof_ball_detected: msg.tof_ball_detected(),
                                             tof_xy: msg.tof_xy().map(|(x, y)| [x as i32, y as i32]),
+                                            tof_confidence: msg.tof_confidence(),
                                             last_command: msg.global_command().map(|c| {
                                                 CommandEcho {
                                                     global_speed_x: c.global_speed_x,

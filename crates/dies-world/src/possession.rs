@@ -18,10 +18,39 @@
 //! re-acquisition briefly — breakbeam re-acquisition is never suppressed, so a
 //! misfire where the ball never left self-corrects within a frame.
 
+use std::collections::HashMap;
+
 use dies_core::{
     BallContest, BallData, PlayerData, PossessionConfig, PossessionState, TeamColor, TeamPlayerId,
     Vector2,
 };
+
+/// Per-robot latch state for the ToF-backup breakbeam substitute — an asymmetric
+/// enter/exit frame debounce (a time-domain Schmitt trigger) over the raw ToF
+/// detection condition. Only tracked for controlled robots whose per-robot
+/// toggle is on.
+#[derive(Debug, Clone, Copy, Default)]
+struct TofBackupState {
+    /// Latched output: the ToF signal currently substituting for the breakbeam.
+    on: bool,
+    /// Consecutive frames the raw condition has disagreed with `on` (drives the
+    /// enter/exit hysteresis).
+    count: u32,
+}
+
+/// The instantaneous (memoryless) ToF-backup detection condition for a robot:
+/// `confidence > c_th && |x| < x_th && y < y_th`, all in raw sensor units.
+/// Fail-safe: a missing confidence byte or missing position yields `false`, so
+/// an enabled robot never spuriously claims the ball on absent telemetry.
+fn tof_backup_raw(p: &PlayerData, cfg: &PossessionConfig) -> bool {
+    let conf_ok = p
+        .tof_confidence
+        .is_some_and(|c| c as f64 > cfg.tof_backup_conf_th);
+    let geom_ok = p.tof_xy.is_some_and(|[x, y]| {
+        (x as f64).abs() < cfg.tof_backup_x_th && (y as f64) < cfg.tof_backup_y_th
+    });
+    conf_ok && geom_ok
+}
 
 /// Raw, memoryless classification for a single frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -91,6 +120,9 @@ pub struct PossessionTracker {
     /// Consecutive frames the live contest observation has disagreed with
     /// `contest_stable` (drives the enter/exit hysteresis).
     contest_count: u32,
+    /// Per-robot ToF-backup breakbeam latch state, keyed by robot. Entries exist
+    /// only for controlled robots with the toggle currently on; pruned otherwise.
+    tof_backup: HashMap<TeamPlayerId, TofBackupState>,
 }
 
 impl Default for PossessionTracker {
@@ -112,6 +144,61 @@ impl PossessionTracker {
             pending_release: None,
             contest_stable: None,
             contest_count: 0,
+            tof_backup: HashMap::new(),
+        }
+    }
+
+    /// Latched ToF-backup detection for a robot (false if it has no toggle / no
+    /// entry). Used to stamp `PlayerData::tof_backup_ball_detected` for logging.
+    pub fn tof_backup_detected(&self, who: TeamPlayerId) -> bool {
+        self.tof_backup.get(&who).map(|s| s.on).unwrap_or(false)
+    }
+
+    /// Advance the per-robot ToF-backup Schmitt latches by one frame. Runs before
+    /// `classify`, which reads the latched output as the effective breakbeam for
+    /// toggled robots. Only controlled robots with the toggle on are tracked;
+    /// others are pruned so a later toggle-off can't leave a stale latch.
+    fn advance_tof_backup(
+        &mut self,
+        blue: &[PlayerData],
+        yellow: &[PlayerData],
+        controlled_blue: bool,
+        controlled_yellow: bool,
+        cfg: &PossessionConfig,
+    ) {
+        for (team_color, controlled, players) in [
+            (TeamColor::Blue, controlled_blue, blue),
+            (TeamColor::Yellow, controlled_yellow, yellow),
+        ] {
+            for p in players {
+                let who = TeamPlayerId {
+                    team_color,
+                    player_id: p.id,
+                };
+                if !(controlled && p.tof_backup_enabled) {
+                    self.tof_backup.remove(&who);
+                    continue;
+                }
+                let raw = tof_backup_raw(p, cfg);
+                let state = self.tof_backup.entry(who).or_default();
+                if raw == state.on {
+                    // Agreement resets the disagreement counter.
+                    state.count = 0;
+                } else {
+                    // Persist the disagreeing edge for the asymmetric threshold
+                    // (fast to acquire, slow to release) before flipping.
+                    state.count += 1;
+                    let need = if state.on {
+                        cfg.tof_backup_exit_frames
+                    } else {
+                        cfg.tof_backup_enter_frames
+                    };
+                    if state.count >= need {
+                        state.on = raw;
+                        state.count = 0;
+                    }
+                }
+            }
         }
     }
 
@@ -148,6 +235,10 @@ impl PossessionTracker {
                 self.commit(PossessionState::Loose);
             }
         }
+
+        // Advance the ToF-backup Schmitt latches first so `classify` sees this
+        // frame's effective breakbeam for toggled robots.
+        self.advance_tof_backup(blue, yellow, controlled_blue, controlled_yellow, cfg);
 
         let (raw, contest_obs) =
             self.classify(ball, blue, yellow, controlled_blue, controlled_yellow, cfg);
@@ -228,15 +319,20 @@ impl PossessionTracker {
                     .map(|p| (TeamColor::Yellow, controlled_yellow, p)),
             )
             .map(|(team_color, controlled, p)| {
-                (
-                    TeamPlayerId {
-                        team_color,
-                        player_id: p.id,
-                    },
-                    (p.position - ball_pos).norm(),
-                    p.breakbeam_ball_detected,
-                    controlled,
-                )
+                let who = TeamPlayerId {
+                    team_color,
+                    player_id: p.id,
+                };
+                // ToF-backup replacement: when a robot's toggle is on, ignore its
+                // hardware breakbeam entirely and use the latched ToF signal in
+                // its place. Both still ride the `breakbeam_gate_dist` sanity gate
+                // (applied below), so this behaves exactly like a breakbeam.
+                let breakbeam = if p.tof_backup_enabled {
+                    self.tof_backup_detected(who)
+                } else {
+                    p.breakbeam_ball_detected
+                };
+                (who, (p.position - ball_pos).norm(), breakbeam, controlled)
             })
             .collect();
 
@@ -383,6 +479,18 @@ mod tests {
         p
     }
 
+    /// A ToF-backup-enabled robot at the ball with a given raw ToF reading. Its
+    /// hardware breakbeam is left `false` so the test proves the ToF path alone
+    /// drives possession.
+    fn tof_player(id: u32, conf: Option<u8>, tof_xy: Option<[i32; 2]>) -> PlayerData {
+        let mut p = PlayerData::new(PlayerId::new(id));
+        p.position = Vector2::new(0.0, 0.0);
+        p.tof_backup_enabled = true;
+        p.tof_confidence = conf;
+        p.tof_xy = tof_xy;
+        p
+    }
+
     fn contest_teams(c: &BallContest) -> (bool, bool) {
         (
             c.near.iter().any(|w| w.team_color == TeamColor::Blue),
@@ -510,6 +618,64 @@ mod tests {
         assert!(
             tick(&mut t, &far).contest.is_none(),
             "clears at exit_frames"
+        );
+    }
+
+    /// ToF-backup substitutes for the breakbeam: a toggled robot with the hardware
+    /// breakbeam off still gains possession once the raw ToF condition
+    /// (`conf > c_th && |x| < x_th && y < y_th`) holds for `enter_frames`.
+    #[test]
+    fn tof_backup_owns_after_enter_frames_and_releases_after_exit() {
+        let cfg = PossessionConfig::default();
+        let mut t = PossessionTracker::new();
+        let yellow = vec![player(2, 3000.0, 0.0, false)]; // far, uninvolved
+        let b = ball(0.0);
+        let good = [0i32, (cfg.tof_backup_y_th as i32) - 1]; // |x|<x_th, y<y_th
+        let conf = Some((cfg.tof_backup_conf_th as u8) + 1);
+        let mut now = 0.0;
+        let mut tick = |t: &mut PossessionTracker, blue: &[PlayerData]| {
+            now += 0.016;
+            t.update(Some(&b), blue, &yellow, true, false, &cfg, now)
+        };
+
+        let seen = vec![tof_player(1, conf, Some(good))];
+        // Not owned until the raw condition has persisted enter_frames; the latch
+        // flips (and breakbeam-commits in one frame) on the enter_frames-th tick.
+        for _ in 0..(cfg.tof_backup_enter_frames - 1) {
+            assert!(tick(&mut t, &seen).state.owner().is_none());
+        }
+        let owner = tick(&mut t, &seen).state.owner().expect("latched → owned");
+        assert_eq!(owner.player_id, PlayerId::new(1));
+
+        // Signal drops (no detection): retained through exit_frames, then released.
+        let lost = vec![tof_player(1, conf, None)];
+        for _ in 0..cfg.tof_backup_exit_frames {
+            let _ = tick(&mut t, &lost);
+        }
+        // After the exit debounce the latch is off; possession decays to loose
+        // (allow the hold_secs coast to elapse by ticking past it).
+        for _ in 0..20 {
+            let _ = tick(&mut t, &lost);
+        }
+        assert!(tick(&mut t, &lost).state.owner().is_none());
+    }
+
+    /// Fail-safe: an enabled robot with no confidence byte never latches, even
+    /// with a perfect geometric reading.
+    #[test]
+    fn tof_backup_without_confidence_never_owns() {
+        let cfg = PossessionConfig::default();
+        let mut t = PossessionTracker::new();
+        let yellow = vec![player(2, 3000.0, 0.0, false)];
+        let b = ball(0.0);
+        let blue = vec![tof_player(1, None, Some([0, 0]))];
+        let mut poss = dies_core::Possession::default();
+        for i in 0..(cfg.tof_backup_enter_frames + 5) {
+            poss = t.update(Some(&b), &blue, &yellow, true, false, &cfg, i as f64 * 0.016);
+        }
+        assert!(
+            poss.state.owner().is_none(),
+            "no confidence → no ToF-backup possession"
         );
     }
 }
