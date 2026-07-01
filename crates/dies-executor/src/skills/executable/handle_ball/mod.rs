@@ -118,6 +118,12 @@ tunables! {
     /// Perpendicular tolerance to the commit axis while committed.
     #[tunable(unit = "mm", min = 5.0, max = 150.0, step = 5.0)]
     COMMIT_PERP: f64 = 30.0;
+    /// Release (hysteresis) band for the commit latch. Once committed we keep
+    /// driving while perp stays under this, and only bail if it blows past it. Kept
+    /// ≤ GATE_PERP so forward drive is already throttled to a crawl near the
+    /// boundary — the robot slides back onto the axis rather than ramming the ball.
+    #[tunable(unit = "mm", min = 30.0, max = 200.0, step = 5.0)]
+    COMMIT_PERP_RELEASE: f64 = 70.0;
     /// Perpendicular gate width for entering the commit drive.
     #[tunable(unit = "mm", min = 20.0, max = 200.0, step = 5.0)]
     GATE_PERP: f64 = 80.0;
@@ -129,7 +135,7 @@ tunables! {
     APPROACH_MIN_SPEED: f64 = 200.0;
     /// Lateral correction gain that holds the robot on the commit axis.
     #[tunable(min = 0.5, max = 10.0, step = 0.25)]
-    LATERAL_GAIN: f64 = 4.0;
+    LATERAL_GAIN: f64 = 6.0;
     /// Care factor during the approach (negative = aggressive, less braking).
     #[tunable(min = -1.0, max = 1.0, step = 0.05)]
     APPROACH_CARE: f64 = -0.6;
@@ -309,6 +315,10 @@ pub struct HandleBallSkill {
     chosen_dir: Option<Vector2>,
     commit_pos: Option<Vector2>,
     commit_ball: Option<Vector2>,
+    /// Schmitt latch for the commit drive (shared by acquire + strike): set on
+    /// entering the tight corridor, held through the release band, cleared on a
+    /// real bail or re-acquire.
+    commit_latched: bool,
     // ── strike (reflex) state ──
     kick_ball_pos: Option<Vector2>,
     armed_at: Option<f64>,
@@ -337,6 +347,7 @@ impl HandleBallSkill {
             chosen_dir: None,
             commit_pos: None,
             commit_ball: None,
+            commit_latched: false,
             kick_ball_pos: None,
             armed_at: None,
             launch: None,
@@ -440,6 +451,7 @@ impl HandleBallSkill {
         self.chosen_dir = None;
         self.commit_pos = None;
         self.commit_ball = None;
+        self.commit_latched = false;
         self.launch = None;
         self.lost_since = None;
         self.reacquires += 1;

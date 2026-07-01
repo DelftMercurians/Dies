@@ -58,7 +58,17 @@ impl HandleBallSkill {
         tc.debug_value(dkey(ctx, "perp"), perp);
         tc.debug_value(dkey(ctx, "tail_catch"), if axis.moving { 1.0 } else { 0.0 });
 
-        let is_committed = committed(along, perp);
+        // Schmitt-latched commit with hysteresis: enter on the tight corridor
+        // (`committed`, perp < COMMIT_PERP); hold while still behind the ball and
+        // perp stays under the wider release band. A transient nudge no longer
+        // silently drops to staging; a genuine lateral blow-out past the release
+        // band is a *real* bail (`reacquire`, counts toward MAX_REACQUIRE).
+        let behind = along < 0.0 && -along < COMMIT_DISTANCE();
+        if committed(along, perp) {
+            self.commit_latched = true;
+        }
+        let is_committed = self.commit_latched && behind && perp < COMMIT_PERP_RELEASE();
+        let perp_blowout = self.commit_latched && !is_committed;
         // Hand off the final centimetres to firmware magnet capture once the ToF
         // actually sees the ball (the velocity output is ignored while engaged; the
         // firmware keeps the kicker charging via ARM_COUNTER). Capture-and-hold —
@@ -75,6 +85,11 @@ impl HandleBallSkill {
                 if magnet { "+magnet" } else { "" }
             );
             input.avoid_ball = false;
+            // Drive straight through a contesting opponent: ORCA off for the commit
+            // drive (mirrors `snatch`/`aim`). Otherwise reciprocal avoidance of an
+            // opponent parked on the ball deflects us off the commit axis and the
+            // capture never latches (perp can't fall under COMMIT_PERP).
+            input.avoid_robots = false;
             input.add_global_velocity(commit_velocity(axis.dir, along, perp_vec, ball_vel, pt));
 
             let commit_ball = *self.commit_ball.get_or_insert(ball_pos);
@@ -92,6 +107,11 @@ impl HandleBallSkill {
                 self.reacquire(now);
             }
         } else {
+            if perp_blowout {
+                // Lateral blow-out during the commit drive — a real loss; surface it
+                // instead of silently re-staging in an unbounded loop.
+                self.reacquire(now);
+            }
             let staging = stage_point(axis.aim_point, axis.dir, pt, ctx.world.field_geom.as_ref());
             tc.debug_value(dkey(ctx, "committed"), 0.0);
             tc.debug_value(dkey(ctx, "staging_dist"), (staging - player_pos).norm());

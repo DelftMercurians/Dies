@@ -47,7 +47,14 @@ impl HandleBallSkill {
         input.with_yaw(heading);
         input.with_dribbling(DRIBBLER_SPEED());
 
-        let is_committed = committed(along, perp);
+        // Schmitt-latched commit (mirrors `drive_acquire`): hold through the release
+        // band so a transient nudge doesn't disarm the reflex mid-strike. A genuine
+        // blow-out clears the latch and re-stages; REFLEX_TIMEOUT bounds the attempt.
+        let behind = along < 0.0 && -along < COMMIT_DISTANCE();
+        if committed(along, perp) {
+            self.commit_latched = true;
+        }
+        let is_committed = self.commit_latched && behind && perp < COMMIT_PERP_RELEASE();
         // Drive-and-reflex-kick: while committed and the ToF sees the ball, hand the
         // final centimetres to firmware magnet capture with the reflex armed
         // (ARM_REFLEX_KICK_MAGNET) so the strike fires the instant the ball reaches
@@ -59,6 +66,7 @@ impl HandleBallSkill {
         if is_committed {
             tc.debug_value(dkey(ctx, "committed"), 1.0);
             input.avoid_ball = false;
+            input.avoid_robots = false; // drive through the contesting opponent
             input.add_global_velocity(commit_velocity(dir, along, perp_vec, ball_vel, pt));
 
             input.with_kicker(KickerControlInput::ReflexKick);
@@ -78,6 +86,7 @@ impl HandleBallSkill {
                 return self.fail();
             }
         } else {
+            self.commit_latched = false;
             let staging = stage_point(ball_pos, dir, pt, ctx.world.field_geom.as_ref());
             tc.debug_value(dkey(ctx, "committed"), 0.0);
             tc.debug_cross_colored(dkey(ctx, "staging"), staging, DebugColor::Red);
