@@ -450,6 +450,18 @@ impl PlayerData {
             sideline: None,
         }
     }
+
+    /// On the field but not an assignable roster member (radio-lost or
+    /// card-removed). Such robots are forked out of `TeamData::own_players`.
+    pub fn is_sidelined(&self) -> bool {
+        self.sideline.is_some()
+    }
+
+    /// Benched for a yellow card and driven off-field. We still command these
+    /// (unlike radio-lost robots), so they stay in the commandable set.
+    pub fn is_card_removed(&self) -> bool {
+        self.sideline == Some(SidelineReason::CardRemoved)
+    }
 }
 
 pub enum BallPrediction {

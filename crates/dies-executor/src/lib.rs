@@ -1281,28 +1281,29 @@ impl Executor {
         // team-relative transform forks them out of `own_players`. Radio-lost
         // marks are already present from the tracker. Runs before the broadcast so
         // the UI sees both sideline reasons.
-        if let Some(ctrl) = self.team_controllers.blue_team.as_mut() {
-            let removed = ctrl.plan_sidelining(
-                &world_data.blue_team,
-                world_data.game_state.blue_team_max_allowed_bots,
-            );
-            for p in world_data.blue_team.iter_mut() {
+        fn stamp_card_removed(
+            ctrl: Option<&mut TeamController>,
+            roster: &mut [PlayerData],
+            max_bots: u32,
+        ) {
+            let Some(ctrl) = ctrl else { return };
+            let removed = ctrl.plan_sidelining(roster, max_bots);
+            for p in roster.iter_mut() {
                 if p.sideline.is_none() && removed.contains(&p.id) {
                     p.sideline = Some(SidelineReason::CardRemoved);
                 }
             }
         }
-        if let Some(ctrl) = self.team_controllers.yellow_team.as_mut() {
-            let removed = ctrl.plan_sidelining(
-                &world_data.yellow_team,
-                world_data.game_state.yellow_team_max_allowed_bots,
-            );
-            for p in world_data.yellow_team.iter_mut() {
-                if p.sideline.is_none() && removed.contains(&p.id) {
-                    p.sideline = Some(SidelineReason::CardRemoved);
-                }
-            }
-        }
+        stamp_card_removed(
+            self.team_controllers.blue_team.as_mut(),
+            &mut world_data.blue_team,
+            world_data.game_state.blue_team_max_allowed_bots,
+        );
+        stamp_card_removed(
+            self.team_controllers.yellow_team.as_mut(),
+            &mut world_data.yellow_team,
+            world_data.game_state.yellow_team_max_allowed_bots,
+        );
 
         let update = WorldUpdate {
             world_data: world_data.clone(),

@@ -15,8 +15,8 @@
 //! Everything is in team-relative coordinates, millimetres.
 
 use dies_core::{
-    AvoidanceConfig, BallData, FieldGeometry, GameState, PlayerId, SidelineReason, TeamData,
-    Vector2, BALL_RADIUS, PLAYER_RADIUS,
+    AvoidanceConfig, BallData, FieldGeometry, GameState, PlayerId, TeamData, Vector2, BALL_RADIUS,
+    PLAYER_RADIUS,
 };
 
 /// Center-to-center ball keep-out for our kickoff kicker during `PrepareKickoff`.
@@ -194,7 +194,7 @@ impl ObstacleSet {
         // take the full avoidance burden (`is_own: false`).
         for p in world.sidelined_players.iter().filter(|p| p.id != this_id) {
             set.agents.push(DynamicAgent {
-                is_own: matches!(p.sideline, Some(SidelineReason::CardRemoved)),
+                is_own: p.is_card_removed(),
                 position: p.position,
                 velocity: p.velocity,
                 radius: PLAYER_RADIUS,

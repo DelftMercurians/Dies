@@ -129,7 +129,7 @@ impl TeamController {
             .count();
         let effective_limit = (max_allowed_bots as usize).saturating_sub(radio_lost);
 
-        let active: Vec<PlayerId> = controllable
+        let mut active: Vec<PlayerId> = controllable
             .iter()
             .copied()
             .filter(|id| !self.removing_players.contains(id))
@@ -147,8 +147,7 @@ impl TeamController {
             );
             // Rank candidates by ascending role criticality, id as tie-break;
             // remove the least critical first.
-            let mut candidates = active.clone();
-            candidates.sort_by_key(|id| {
+            active.sort_by_key(|id| {
                 let crit = self
                     .strategy_input
                     .player_roles
@@ -158,7 +157,7 @@ impl TeamController {
                 (crit, id.as_u32())
             });
             self.removing_players
-                .extend(candidates.into_iter().take(n_robots_to_remove));
+                .extend(active.into_iter().take(n_robots_to_remove));
         } else if want_removed < already_removing {
             // Allowance restored (card expired): release the highest-id parked
             // robots first so they return to play and are re-assigned a role.
@@ -222,7 +221,7 @@ impl TeamController {
                 world_data
                     .sidelined_players
                     .iter()
-                    .filter(|p| matches!(p.sideline, Some(SidelineReason::CardRemoved)))
+                    .filter(|p| p.is_card_removed())
                     .map(|p| p.id),
             )
             .collect();
@@ -294,7 +293,7 @@ impl TeamController {
         let mut card_removed: Vec<PlayerId> = world_data
             .sidelined_players
             .iter()
-            .filter(|p| matches!(p.sideline, Some(SidelineReason::CardRemoved)))
+            .filter(|p| p.is_card_removed())
             .map(|p| p.id)
             .collect();
         card_removed.sort();
@@ -418,7 +417,7 @@ impl TeamController {
                     world_data
                         .sidelined_players
                         .iter()
-                        .filter(|p| matches!(p.sideline, Some(SidelineReason::CardRemoved))),
+                        .filter(|p| p.is_card_removed()),
                 )
                 .find(|p| p.id == id)
             else {
