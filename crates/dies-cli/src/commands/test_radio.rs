@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use dies_basestation_client::{BasestationClientConfig, BasestationHandle};
-use dies_core::{Angle, PlayerGlobalMoveCmd, PlayerId, RobotCmd, RotationDirection};
+use dies_core::{
+    Angle, PlayerFeedbackMsg, PlayerGlobalMoveCmd, PlayerId, RobotCmd, RotationDirection,
+};
 use tokio::time::{Duration, Instant};
 
 use crate::cli::SerialPort;
@@ -10,17 +12,52 @@ use crate::cli::SerialPort;
 /// Per-robot feedback integrity tally, accumulated from the feedback stream.
 #[derive(Default)]
 struct RobotStat {
-    /// Frames since the last 1 s report (→ measured feedback Hz).
+    /// Feedback frames forwarded to us since the last 1 s report (→ the
+    /// basestation *forwarding* rate, which re-emits the cached record every
+    /// loop). This is NOT the true radio frame rate.
     interval_count: u32,
+    /// Frames since the last report whose `feedback_age_ms` implied a genuinely
+    /// new radio frame (dedup mirrors `FeedbackRateTracker::observe`). This IS
+    /// the true per-robot RF frame rate — compare it against `interval_count`.
+    fresh_count: u32,
+    /// Reconstructed stamp time of the last fresh frame (for dedup).
+    prev_update: Option<Instant>,
     total_count: u64,
     last_recv: Option<Instant>,
-    /// Worst inter-arrival gap seen (ms) — stall / loss indicator.
+    /// Worst / best inter-arrival gap seen this window (ms).
     max_gap_ms: u128,
-    /// Worst `feedback_age_ms` seen — staleness indicator.
+    min_gap_ms: Option<u128>,
+    /// Worst / best `feedback_age_ms` seen this window (ms) — staleness range.
     max_age_ms: u32,
+    min_age_ms: Option<u32>,
     online: bool,
     /// Whether the robot was ever reported offline (link flap).
     saw_offline: bool,
+    /// Latest full feedback frame, for the per-robot telemetry dump.
+    last: Option<PlayerFeedbackMsg>,
+}
+
+fn opt<T: std::fmt::Debug>(v: &Option<T>) -> String {
+    v.as_ref().map_or_else(|| "—".to_string(), |x| format!("{:?}", x))
+}
+
+fn optf(v: &Option<f32>) -> String {
+    v.map_or_else(|| "—".to_string(), |x| format!("{:.2}", x))
+}
+
+fn optu(v: &Option<u32>) -> String {
+    v.map_or_else(|| "—".to_string(), |x| x.to_string())
+}
+
+/// Compact fixed-precision formatter for optional f32 arrays.
+fn farr<const N: usize>(v: &Option<[f32; N]>) -> String {
+    v.as_ref().map_or_else(
+        || "—".to_string(),
+        |a| {
+            let parts: Vec<String> = a.iter().map(|x| format!("{:.1}", x)).collect();
+            format!("[{}]", parts.join(","))
+        },
+    )
 }
 
 pub async fn test_radio(
@@ -99,18 +136,36 @@ pub async fn test_radio(
                     let now = Instant::now();
                     let s = stats.entry(fb.id.as_u32()).or_default();
                     if let Some(last) = s.last_recv {
-                        s.max_gap_ms = s.max_gap_ms.max((now - last).as_millis());
+                        let gap = (now - last).as_millis();
+                        s.max_gap_ms = s.max_gap_ms.max(gap);
+                        s.min_gap_ms = Some(s.min_gap_ms.map_or(gap, |m| m.min(gap)));
                     }
                     s.last_recv = Some(now);
                     s.interval_count += 1;
                     s.total_count += 1;
                     if let Some(age) = fb.feedback_age_ms {
                         s.max_age_ms = s.max_age_ms.max(age);
+                        s.min_age_ms = Some(s.min_age_ms.map_or(age, |m| m.min(age)));
+                        // Fresh-frame detection: reconstruct the basestation's HF
+                        // stamp time (recv - age) and count it only if it advanced,
+                        // mirroring FeedbackRateTracker::observe. Lets us see the
+                        // true RF frame rate vs the forwarding rate.
+                        let update_instant = now
+                            .checked_sub(Duration::from_millis(age as u64))
+                            .unwrap_or(now);
+                        let is_fresh = s
+                            .prev_update
+                            .map_or(true, |p| update_instant > p + Duration::from_micros(500));
+                        if is_fresh {
+                            s.prev_update = Some(update_instant);
+                            s.fresh_count += 1;
+                        }
                     }
                     s.online = fb.online.unwrap_or(false);
                     if !s.online {
                         s.saw_offline = true;
                     }
+                    s.last = Some(fb);
                 }
             }
 
@@ -118,24 +173,63 @@ pub async fn test_radio(
             _ = report_tick.tick() => {
                 let dt = last_report.elapsed().as_secs_f64();
                 last_report = Instant::now();
-                let bi = bs_handle.base_info();
-                let (tx, loop_hz, conn) = bi.as_ref().map_or((0.0, 0.0, false), |b| {
-                    (b.tx_hz.unwrap_or(0.0), b.loop_hz.unwrap_or(0.0), b.connected)
-                });
-                log::info!(
-                    "--- t={:.0}s | link tx={:.0} loop={:.0} Hz connected={} ---",
-                    start.elapsed().as_secs_f64(), tx, loop_hz, conn,
-                );
+                let t = start.elapsed().as_secs_f64();
+                match bs_handle.base_info() {
+                    Some(b) => {
+                        let radios_up = b.radios_online.iter().filter(|x| **x).count();
+                        log::info!(
+                            "--- t={:.0}s | conn={} proto_ok={} fw={} proto={} | ch={}MHz radios={}/{}{:?} max_robots={} | tx={:.0} rx={:.0} loop={:.0} Hz ---",
+                            t, b.connected, b.protocol_ok, b.version, b.protocol_version,
+                            b.channel_mhz, radios_up, b.num_radios, b.radios_online, b.max_robots,
+                            b.tx_hz.unwrap_or(0.0), b.rx_hz.unwrap_or(0.0), b.loop_hz.unwrap_or(0.0),
+                        );
+                    }
+                    None => log::info!("--- t={:.0}s | link: <no base_info / disconnected> ---", t),
+                }
                 let mut robot_ids: Vec<u32> = stats.keys().copied().collect();
                 robot_ids.sort_unstable();
                 for id in robot_ids {
                     let s = stats.get_mut(&id).unwrap();
-                    let hz = s.interval_count as f64 / dt;
+                    let recv_hz = s.interval_count as f64 / dt;
+                    let fresh_hz = s.fresh_count as f64 / dt;
+                    let bs_hz = s.last.and_then(|m| m.feedback_hz).unwrap_or(0.0);
                     log::info!(
-                        "  robot {:>2}: {:>5.1} Hz | max_gap {:>4} ms | max_age {:>4} ms | online={} | total={}",
-                        id, hz, s.max_gap_ms, s.max_age_ms, s.online, s.total_count,
+                        "  robot {:>2}: recv {:>5.0} Hz | fresh {:>4.0} Hz (bs {:>4.0}) | gap {:>3}-{:<4} ms | age {:>3}-{:<4} ms | online={} | total={}",
+                        id, recv_hz, fresh_hz, bs_hz,
+                        s.min_gap_ms.unwrap_or(0), s.max_gap_ms,
+                        s.min_age_ms.unwrap_or(0), s.max_age_ms,
+                        s.online, s.total_count,
                     );
+                    if let Some(m) = s.last {
+                        log::info!(
+                            "       fw={} status prim={} kick={} imu={} tof={} | cap={}V temp={}C pack={}V mainI={}A | rloop avg={}us max={}us",
+                            opt(&m.firmware_version),
+                            opt(&m.primary_status), opt(&m.kicker_status), opt(&m.imu_status), opt(&m.tof_status),
+                            optf(&m.kicker_cap_voltage), optf(&m.kicker_temp), farr(&m.pack_voltages), optf(&m.main_board_current),
+                            optu(&m.avg_loop_time_us), optu(&m.max_loop_time_us),
+                        );
+                        log::info!(
+                            "       motors st={} spd={} temp={} curr={}",
+                            opt(&m.motor_statuses), farr(&m.motor_speeds), farr(&m.motor_temps), farr(&m.motor_currents),
+                        );
+                        log::info!(
+                            "       bb det={} ok={} raw={} | tof det={} xy={} | imu={} | smartkick={} kickok={} reflex={} cnt={} | lastcmd={}",
+                            opt(&m.breakbeam_ball_detected), opt(&m.breakbeam_sensor_ok), opt(&m.breakbeam_raw),
+                            opt(&m.tof_ball_detected), opt(&m.tof_xy), farr(&m.imu_readings),
+                            opt(&m.smart_kick_counter), opt(&m.kick_ok_flag), opt(&m.reflex_kick_state), opt(&m.reflex_kick_counter),
+                            opt(&m.last_command),
+                        );
+                    }
                     s.interval_count = 0;
+                    s.fresh_count = 0;
+                }
+
+                // Clear per-window range trackers.
+                for s in stats.values_mut() {
+                    s.max_gap_ms = 0;
+                    s.min_gap_ms = None;
+                    s.max_age_ms = 0;
+                    s.min_age_ms = None;
                 }
             }
         }
