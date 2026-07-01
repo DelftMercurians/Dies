@@ -382,6 +382,12 @@ pub struct Executor {
     /// stepping the sim, advancing the clock, running strategy, or logging.
     /// Reset to `None` whenever the executor resumes stepping.
     paused_edit_world: Option<WorldData>,
+    /// Last GC team names patched into the log `meta.json`, to avoid rewriting it
+    /// every frame (only rewrite when a name actually changes).
+    last_logged_team_names: Option<(Option<String>, Option<String>)>,
+    /// Whether the one-shot "MATCH START" marker has been dropped yet (match runs
+    /// only, once the GC team names are known).
+    match_marker_dropped: bool,
 }
 
 impl Executor {
@@ -479,6 +485,8 @@ impl Executor {
                 .unwrap_or(false),
             announcer: announcer::Announcer::new(),
             paused_edit_world: None,
+            last_logged_team_names: None,
+            match_marker_dropped: false,
         }
     }
 
@@ -1363,8 +1371,38 @@ impl Executor {
             if worker::is_active() {
                 let debug = DebugSubscriber::instance().get_copy();
                 worker::log_frame(frame_id, &world_data, &debug);
+                self.log_match_metadata(&world_data, frame_id);
             }
             self.frame_counter = self.frame_counter.wrapping_add(1);
+        }
+    }
+
+    /// Bake match identity into the log: patch the GC team names into `meta.json`
+    /// when they change, and — on real-match runs (`is_match`) — drop a one-shot
+    /// "MATCH START — <blue> vs <yellow>" timeline marker once the names arrive.
+    fn log_match_metadata(&mut self, world_data: &WorldData, frame_id: u64) {
+        let blue = world_data.game_state.blue_team_name.clone();
+        let yellow = world_data.game_state.yellow_team_name.clone();
+
+        // Nothing to record until the GC operator has entered at least one name.
+        if blue.is_none() && yellow.is_none() {
+            return;
+        }
+
+        let names = (blue.clone(), yellow.clone());
+        if self.last_logged_team_names.as_ref() != Some(&names) {
+            worker::log_set_team_names(blue.clone(), yellow.clone());
+            self.last_logged_team_names = Some(names);
+        }
+
+        if self.settings.is_match && !self.match_marker_dropped {
+            let label = format!(
+                "MATCH START — {} vs {}",
+                blue.as_deref().unwrap_or("Blue"),
+                yellow.as_deref().unwrap_or("Yellow"),
+            );
+            worker::log_marker(frame_id, self.last_t, Some(label));
+            self.match_marker_dropped = true;
         }
     }
 }

@@ -255,7 +255,7 @@ impl ExecutorTask {
                         format!("dies-{time}")
                     };
                     dies_core::debug_clear();
-                    let meta = dies_logger::MetaJson::new(
+                    let mut meta = dies_logger::MetaJson::new(
                         chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
                         matches!(mode, UiMode::Simulation),
                         settings.team_configuration.blue_strategy.clone(),
@@ -265,6 +265,7 @@ impl ExecutorTask {
                         )
                         .to_string(),
                     );
+                    meta.is_match = settings.is_match;
                     dies_logger::worker::log_start(&session_name, meta);
                     dies_logger::worker::log_settings_baseline(0, &settings);
 

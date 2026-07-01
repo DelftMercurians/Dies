@@ -172,6 +172,19 @@ impl LogWriter {
         }
     }
 
+    /// Patch the GC team names into `meta.json`. The caller guards against
+    /// unnecessary rewrites, so this only rewrites when a name actually changed.
+    pub fn set_team_names(&mut self, blue: Option<String>, yellow: Option<String>) {
+        if self.meta.blue_team_name == blue && self.meta.yellow_team_name == yellow {
+            return;
+        }
+        self.meta.blue_team_name = blue;
+        self.meta.yellow_team_name = yellow;
+        if let Err(e) = self.meta.write(&self.dir) {
+            log::warn!("failed to patch team names into meta.json: {e}");
+        }
+    }
+
     /// Flush builders to disk if the interval elapsed, a builder is large, or
     /// `force` is set.
     pub fn maybe_flush(&mut self, now: Instant, force: bool) -> Result<()> {

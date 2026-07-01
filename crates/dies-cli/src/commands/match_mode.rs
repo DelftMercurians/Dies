@@ -224,6 +224,7 @@ fn build_child_command(exe: &std::path::Path, cli: &Cli, team: &str) -> Command 
     }
     // Match-mode overrides.
     cmd.arg("--auto-start")
+        .arg("--is-match")
         .args(["--controlled-teams", team])
         .args(["--strategy", "concerto"])
         .args(["--strategy-param", "warmup=true"])

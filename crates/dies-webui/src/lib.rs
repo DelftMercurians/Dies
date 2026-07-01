@@ -53,6 +53,10 @@ pub struct UiConfig {
     /// Initial strategy params seeded into the executor at build (CLI
     /// `--strategy-param`). Applied to every controlled team.
     pub initial_strategy_params: dies_core::StrategyParams,
+    /// True only for real-match runs (CLI `--is-match`, set by the `match`
+    /// subcommand). Recorded in the log `meta.json` and gates the MATCH START
+    /// marker.
+    pub is_match: bool,
 }
 
 #[derive(Debug, Clone)]

@@ -1154,6 +1154,9 @@ export interface RawGameStateData {
 	next_command?: string;
 	/** A human-readable reason for the current stoppage, if provided. */
 	status_message?: string;
+	/** GC-reported team names, if the operator has entered them. */
+	blue_team_name?: string;
+	yellow_team_name?: string;
 }
 
 /** A user point-of-interest marker, surfaced to the replay scrubber. */

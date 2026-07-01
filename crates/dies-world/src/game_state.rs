@@ -44,6 +44,9 @@ pub struct GameStateTracker {
     referee_capture: Option<Instant>,
     next_command: Option<Command>,
     status_message: Option<String>,
+    /// GC-reported team names (empty in the packet ⇒ `None`).
+    blue_team_name: Option<String>,
+    yellow_team_name: Option<String>,
 }
 
 impl GameStateTracker {
@@ -69,6 +72,8 @@ impl GameStateTracker {
             referee_capture: None,
             next_command: None,
             status_message: None,
+            blue_team_name: None,
+            yellow_team_name: None,
         }
     }
 
@@ -93,6 +98,11 @@ impl GameStateTracker {
             None
         };
         self.referee_capture = Some(Instant::now());
+
+        // GC team names — non-empty only once the operator has typed them.
+        let non_empty = |s: &str| (!s.is_empty()).then(|| s.to_string());
+        self.blue_team_name = non_empty(data.blue.name());
+        self.yellow_team_name = non_empty(data.yellow.name());
 
         if self.last_cmd == Some(command) {
             return self.game_state;
@@ -206,6 +216,16 @@ impl GameStateTracker {
 
     pub fn get_status_message(&self) -> Option<String> {
         self.status_message.clone()
+    }
+
+    /// GC-reported blue team name, if the operator has entered one.
+    pub fn get_blue_team_name(&self) -> Option<String> {
+        self.blue_team_name.clone()
+    }
+
+    /// GC-reported yellow team name, if the operator has entered one.
+    pub fn get_yellow_team_name(&self) -> Option<String> {
+        self.yellow_team_name.clone()
     }
 
     /// Subtract the time elapsed since the last referee capture from a captured

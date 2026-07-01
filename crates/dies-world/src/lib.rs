@@ -650,6 +650,8 @@ impl WorldTracker {
             action_time_remaining: self.game_state_tracker.get_action_time_remaining(),
             next_command: self.game_state_tracker.get_next_command_display(),
             status_message: self.game_state_tracker.get_status_message(),
+            blue_team_name: self.game_state_tracker.get_blue_team_name(),
+            yellow_team_name: self.game_state_tracker.get_yellow_team_name(),
         };
 
         WorldData {

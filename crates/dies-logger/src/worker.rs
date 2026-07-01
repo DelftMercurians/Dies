@@ -42,6 +42,10 @@ enum WorkerMsg {
         meta: Box<MetaJson>,
     },
     SetFieldGeom(Box<FieldGeometry>),
+    SetTeamNames {
+        blue: Option<String>,
+        yellow: Option<String>,
+    },
     CloseLog {
         ack: Option<Sender<()>>,
     },
@@ -136,6 +140,11 @@ fn handle(writer: &mut Option<LogWriter>, msg: WorkerMsg) {
                 w.set_field_geom(*geom);
             }
         }
+        WorkerMsg::SetTeamNames { blue, yellow } => {
+            if let Some(w) = writer {
+                w.set_team_names(blue, yellow);
+            }
+        }
         WorkerMsg::CloseLog { ack } => {
             if let Some(w) = writer.take() {
                 match w.close(Instant::now()) {
@@ -210,6 +219,15 @@ pub fn log_start(name: &str, meta: MetaJson) {
 pub fn log_set_field_geom(geom: &FieldGeometry) {
     if let Some(l) = ARROW_LOGGER.get() {
         l.send(WorkerMsg::SetFieldGeom(Box::new(geom.clone())));
+    }
+}
+
+/// Patch the GC team names into `meta.json`. Call whenever the observed names
+/// change (the writer rewrites `meta.json` on each call); callers should guard
+/// against firing every frame.
+pub fn log_set_team_names(blue: Option<String>, yellow: Option<String>) {
+    if let Some(l) = ARROW_LOGGER.get() {
+        l.send(WorkerMsg::SetTeamNames { blue, yellow });
     }
 }
 

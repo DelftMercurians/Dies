@@ -270,6 +270,9 @@ pub struct RawGameStateData {
     pub next_command: Option<String>,
     /// A human-readable reason for the current stoppage, if provided.
     pub status_message: Option<String>,
+    /// GC-reported team names, if the operator has entered them.
+    pub blue_team_name: Option<String>,
+    pub yellow_team_name: Option<String>,
 }
 
 /// Execution state of a player's active skill, mirroring the executor's
@@ -993,6 +996,8 @@ pub fn mock_world_data() -> WorldData {
             action_time_remaining: None,
             next_command: None,
             status_message: None,
+            blue_team_name: None,
+            yellow_team_name: None,
         },
         side_assignment: SideAssignment::YellowOnPositive,
         ball_on_blue_side: None,

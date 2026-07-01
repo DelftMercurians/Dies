@@ -266,6 +266,8 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         .write()
         .unwrap()
         .initial_strategy_params = config.initial_strategy_params.clone();
+    // Mark real-match runs (match subcommand) for meta.json + the MATCH START marker.
+    state.executor_settings.write().unwrap().is_match = config.is_match;
     let state = Arc::new(state);
 
     // Start basestation watcher + test-bench task (telemetry cache, base info,

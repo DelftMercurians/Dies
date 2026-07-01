@@ -236,6 +236,12 @@ pub struct Cli {
 
     #[clap(long, default_value = "false", action)]
     pub calibration_mode: bool,
+
+    /// Mark this run as a real match: sets `is_match` in the log `meta.json`
+    /// (for filtering) and enables the "MATCH START" log marker. Set
+    /// automatically by the `match` subcommand; not normally passed by hand.
+    #[clap(long, default_value = "false", action)]
+    pub is_match: bool,
 }
 
 impl Cli {
@@ -410,6 +416,7 @@ impl Cli {
             vision_delay_ms: self.vision_delay_ms,
             log_directory: PathBuf::from(self.log_directory),
             initial_strategy_params: parse_strategy_params(&self.strategy_param)?,
+            is_match: self.is_match,
         })
     }
 

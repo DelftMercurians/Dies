@@ -331,6 +331,11 @@ pub struct ExecutorSettings {
     /// with `warmup=true`.
     #[serde(skip)]
     pub initial_strategy_params: StrategyParams,
+    /// True only for real-match runs (launched via the `match` subcommand).
+    /// Written into `meta.json` for filtering and gates the "MATCH START" log
+    /// marker. Runtime flag set by the CLI; never persisted.
+    #[serde(skip)]
+    pub is_match: bool,
 }
 
 fn default_true() -> bool {
@@ -410,6 +415,7 @@ impl Default for ExecutorSettings {
             strategy_blocking: false,
             strategies_dir: None,
             initial_strategy_params: HashMap::new(),
+            is_match: false,
         }
     }
 }

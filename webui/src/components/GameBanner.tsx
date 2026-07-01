@@ -66,7 +66,15 @@ const GameBanner: React.FC<GameBannerProps> = ({ gameState, sideAssignment }) =>
     operating_team: operating,
     action_time_remaining: action,
     next_command: nextCommand,
+    blue_team_name: blueTeamName,
+    yellow_team_name: yellowTeamName,
   } = gameState;
+
+  // Prefer the GC-reported team name (e.g. "TIGERs"); fall back to the colour.
+  const teamLabel = (team: TeamColor): string => {
+    const name = team === TeamColor.Blue ? blueTeamName : yellowTeamName;
+    return name && name.length > 0 ? name : team === TeamColor.Blue ? "Blue" : "Yellow";
+  };
 
   // Determine which team is on which side based on side assignment
   const leftTeam =
@@ -107,7 +115,7 @@ const GameBanner: React.FC<GameBannerProps> = ({ gameState, sideAssignment }) =>
             )}
           />
           <span className="text-text-bright font-medium uppercase tracking-wide">
-            {leftTeam === TeamColor.Blue ? "Blue" : "Yellow"}
+            {teamLabel(leftTeam)}
           </span>
           <div className="flex items-center gap-1">
             {Array.from({ length: leftCards }, (_, i) => (
@@ -137,7 +145,7 @@ const GameBanner: React.FC<GameBannerProps> = ({ gameState, sideAssignment }) =>
             ))}
           </div>
           <span className="text-text-bright font-medium uppercase tracking-wide">
-            {rightTeam === TeamColor.Blue ? "Blue" : "Yellow"}
+            {teamLabel(rightTeam)}
           </span>
           <div
             className={cn(

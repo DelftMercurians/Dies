@@ -29,6 +29,16 @@ pub struct MetaJson {
     pub side_assignment: String,
     /// Filled on the first frame (geometry isn't known when logging starts).
     pub field_geom: Option<FieldGeometry>,
+    /// True only for real-match runs (launched via the `match` subcommand). Used
+    /// to filter match logs out of the dev/sim/self-play pile.
+    #[serde(default)]
+    pub is_match: bool,
+    /// GC-reported team names, patched in once known (empty until the GC operator
+    /// types them, so usually not available at log-open time).
+    #[serde(default)]
+    pub blue_team_name: Option<String>,
+    #[serde(default)]
+    pub yellow_team_name: Option<String>,
     /// Final session stats, patched in on close (None while the log is open).
     #[serde(default)]
     pub frame_count: Option<u64>,
@@ -54,6 +64,9 @@ impl MetaJson {
             yellow_strategy,
             side_assignment,
             field_geom: None,
+            is_match: false,
+            blue_team_name: None,
+            yellow_team_name: None,
             frame_count: None,
             first_t: None,
             last_t: None,

@@ -783,6 +783,8 @@ fn build_world(
         action_time_remaining: None,
         next_command: None,
         status_message: None,
+        blue_team_name: None,
+        yellow_team_name: None,
     };
 
     WorldData {
