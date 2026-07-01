@@ -642,9 +642,11 @@ fn comply(
                 }
 
                 // Timeout is treated like Stop: robots may move at the Stop-state
-                // speed limit (not a hard Halt).
+                // speed limit (not a hard Halt). Keep this strictly *below* the
+                // 1.5 m/s rule ceiling (1300, same cap Stop gets at :760) so a
+                // Timeout never trips a BOT_TOO_FAST_IN_STOP-style over-speed.
                 if matches!(game_state, GameState::Stop | GameState::Timeout) {
-                    new_input.with_speed_limit(1500.0);
+                    new_input.with_speed_limit(1300.0);
                 }
 
                 let us_operating = world_data.current_game_state.us_operating;
@@ -662,17 +664,32 @@ fn comply(
                         field.field_length / 2.0 + 120.0
                     };
                     new_input.with_position(Vector2::new(penalty_positin_x, penalty_position_y));
-                    new_input.with_speed_limit(1500.0);
+                    // Penalty setup runs under Stop-like conditions; stay below the
+                    // 1.5 m/s ceiling (1300) rather than sitting exactly on it.
+                    new_input.with_speed_limit(1300.0);
                     new_input.dribbling_speed = 0.0;
                 }
+                // Rule 5.3.5: every robot except the penalty kicker (ours, when we
+                // take it) and the defending keeper (ours, when the opponent takes it)
+                // must stay at least 1 m *behind* the ball along the shot axis so it
+                // can't interfere. Clamp explicitly against the live ball position
+                // (own goal −x, opponent goal +x) so it holds under any field geometry
+                // instead of relying on parking at a fixed field end.
                 if matches!(
                     game_state,
                     GameState::PreparePenalty | GameState::Penalty | GameState::PenaltyRun
-                ) && input.role_type != RoleType::Goalkeeper
-                    && !world_data.current_game_state.us_operating
+                ) && ((us_operating && input.role_type != RoleType::PenaltyKicker)
+                    || (!us_operating && input.role_type != RoleType::Goalkeeper))
                 {
                     let mut pos = new_input.position.unwrap_or(player_data.position);
-                    pos.x = -field.field_length / 2.0;
+                    let behind = 1000.0; // ≥ 1 m rule margin
+                    if us_operating {
+                        // We attack +x → behind the ball is the −x side.
+                        pos.x = pos.x.min(ball_pos.x - behind);
+                    } else {
+                        // Opponent attacks −x → behind the ball is the +x side.
+                        pos.x = pos.x.max(ball_pos.x + behind);
+                    }
                     new_input.with_position(pos);
                 }
 
@@ -818,8 +835,13 @@ fn comply(
                     && (input.role_type != RoleType::KickoffKicker
                         || !world_data.current_game_state.us_operating)
                 {
+                    // Keep the whole robot behind the halfway line (own half is
+                    // team-relative -x). Clamping the *center* to -PLAYER_RADIUS puts the
+                    // robot edge exactly on the line; add a buffer so vision noise can't
+                    // push us over and fail the kickoff own-half rule.
+                    let half_margin = -(PLAYER_RADIUS + 100.0);
                     let mut target_pos = new_input.position.unwrap_or(player_data.position).clone();
-                    target_pos.x = target_pos.x.min(-100.0);
+                    target_pos.x = target_pos.x.min(half_margin);
                     new_input.with_position(target_pos);
                     // we do it twice to make sure we are on the right side of the field
 
@@ -839,7 +861,7 @@ fn comply(
 
                     // Keep to our side of the field
                     let mut target_pos = new_input.position.unwrap_or(player_data.position).clone();
-                    target_pos.x = target_pos.x.min(-100.0);
+                    target_pos.x = target_pos.x.min(half_margin);
                     new_input.with_position(target_pos);
                 }
 
