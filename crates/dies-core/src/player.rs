@@ -546,6 +546,15 @@ pub struct BaseStationInfo {
     /// Actual frequency of the client's IO loop (target is 50 Hz); a value well
     /// below target means the client can't keep up with the serial link.
     pub loop_hz: Option<f32>,
+    /// Worst-case send-loop iteration work time over the last second, in
+    /// microseconds (time spent before the pacing sleep). A spike here means
+    /// the loop periodically stalls, delaying that robot's next setpoint —
+    /// jitter a 1 s-averaged `loop_hz` would hide.
+    pub work_max_us: Option<u32>,
+    /// Fraction of send-loop iterations in the last second whose work alone met
+    /// or exceeded the target period (loop ran flat-out with no pacing slack).
+    /// ~0 = healthy headroom; ~1 = serial/RF-bound saturation.
+    pub overrun_frac: Option<f32>,
 }
 
 impl BaseStationInfo {
@@ -564,6 +573,8 @@ impl BaseStationInfo {
             tx_hz: None,
             rx_hz: None,
             loop_hz: None,
+            work_max_us: None,
+            overrun_frac: None,
         }
     }
 }

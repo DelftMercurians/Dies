@@ -283,6 +283,19 @@ export interface BaseStationInfo {
 	 * below target means the client can't keep up with the serial link.
 	 */
 	loop_hz?: number;
+	/**
+	 * Worst-case send-loop iteration work time over the last second, in
+	 * microseconds (time spent before the pacing sleep). A spike here means
+	 * the loop periodically stalls, delaying that robot's next setpoint —
+	 * jitter a 1 s-averaged `loop_hz` would hide.
+	 */
+	work_max_us?: number;
+	/**
+	 * Fraction of send-loop iterations in the last second whose work alone met
+	 * or exceeded the target period (loop ran flat-out with no pacing slack).
+	 * ~0 = healthy headroom; ~1 = serial/RF-bound saturation.
+	 */
+	overrun_frac?: number;
 }
 
 /** The status of a sub-system on the robot */
@@ -930,6 +943,26 @@ export interface LogsResponse {
 	logs: LogInfo[];
 }
 
+/**
+ * A struct to store the player state from a single frame.
+ * Live per-robot open-loop delay estimate (command → first visible motion on
+ * vision), computed online from stop→go events via the same √displacement
+ * x-intercept extrapolation used offline. Only populated for own players, and
+ * only once at least one clean event has been measured. The rolling window is
+ * anchored to the most recent event, so a robot that sits still does not lose
+ * its last estimate — `age_s` tells you how stale it is.
+ */
+export interface OpenLoopDelayStats {
+	/** Median measured delay (ms) over the rolling window. */
+	median_ms: number;
+	/** Maximum measured delay (ms) over the rolling window. */
+	max_ms: number;
+	/** Seconds since the most recent measured event (staleness of the estimate). */
+	age_s: number;
+	/** Number of events in the rolling window. */
+	sample_count: number;
+}
+
 /** One step of a strategy [`DebugValue::Plan`]. */
 export interface PlanStep {
 	/**
@@ -1003,7 +1036,6 @@ export enum SidelineReason {
 	CardRemoved = "CardRemoved",
 }
 
-/** A struct to store the player state from a single frame. */
 export interface PlayerData {
 	/**
 	 * Unix timestamp of the recorded frame from which this data was extracted (in
@@ -1111,6 +1143,11 @@ export interface PlayerData {
 	 * `TeamData::sidelined_players` but remain in the color lists.
 	 */
 	sideline?: SidelineReason;
+	/**
+	 * Live open-loop delay estimate (own players only). `None` until the first
+	 * clean stop→go event has been measured. Stamped by the executor.
+	 */
+	open_loop_delay?: OpenLoopDelayStats;
 }
 
 /** Who controls the ball, in absolute (team-tagged) terms. */

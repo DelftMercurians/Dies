@@ -79,6 +79,37 @@ impl RateCounter {
     }
 }
 
+/// Sliding-window tracker of per-iteration send-loop *work* time (the time
+/// spent before the pacing sleep). `loop_hz` reports the paced rate and so
+/// hides how close the loop is to saturation; this exposes the worst-case
+/// iteration cost and how often the work alone overran the target period.
+#[derive(Default)]
+struct WorkStatTracker {
+    /// (sample time, work microseconds, overran target period).
+    hits: VecDeque<(Instant, u32, bool)>,
+}
+
+impl WorkStatTracker {
+    fn tick(&mut self, now: Instant, work: Duration, interval: Duration) {
+        self.hits
+            .push_back((now, work.as_micros() as u32, work >= interval));
+    }
+
+    /// Prune the window, then return (max work µs, overrun fraction).
+    fn stats(&mut self, now: Instant) -> (u32, f32) {
+        let cutoff = now.checked_sub(FEEDBACK_RATE_WINDOW).unwrap_or(now);
+        while self.hits.front().is_some_and(|(t, _, _)| *t < cutoff) {
+            self.hits.pop_front();
+        }
+        if self.hits.is_empty() {
+            return (0, 0.0);
+        }
+        let max_us = self.hits.iter().map(|(_, w, _)| *w).max().unwrap_or(0);
+        let overruns = self.hits.iter().filter(|(_, _, o)| *o).count();
+        (max_us, overruns as f32 / self.hits.len() as f32)
+    }
+}
+
 /// List available serial ports. The port names can be used to create a
 /// [`BasestationClient`].
 pub fn list_serial_ports() -> Vec<String> {
@@ -190,6 +221,7 @@ impl BasestationHandle {
             // The client's own link metrics, surfaced to the UI via base info.
             let mut tx_counter = RateCounter::default();
             let mut loop_counter = RateCounter::default();
+            let mut work_tracker = WorkStatTracker::default();
             let mut current_base_info = BaseStationInfo::disconnected();
             // Round-robin cursor so every robot gets polled across successive loops.
             let mut rr_cursor = 0usize;
@@ -446,17 +478,25 @@ impl BasestationHandle {
                     current_base_info.tx_hz = Some(tx_counter.rate(metric_now));
                     current_base_info.rx_hz = Some(rx_hz);
                     current_base_info.loop_hz = Some(loop_counter.rate(metric_now));
+                    let (work_max_us, overrun_frac) = work_tracker.stats(metric_now);
+                    current_base_info.work_max_us = Some(work_max_us);
+                    current_base_info.overrun_frac = Some(overrun_frac);
                     base_info_tx.send_replace(Some(current_base_info.clone()));
                 }
 
                 // Cap the loop at the target rate, timing only this iteration's
                 // work (from send_start) so the period is exactly `interval` when
                 // there's slack and runs flat-out when the work alone exceeds it.
+                // When already over budget, yield the CPU slice instead of
+                // sleeping a fixed 1 ms: an extra sleep here would push an
+                // already-behind loop further behind, throttling the per-robot
+                // round-robin TX cadence for no reason.
                 let elapsed = send_start.elapsed();
+                work_tracker.tick(std::time::Instant::now(), elapsed, interval);
                 if elapsed < interval {
                     std::thread::sleep(interval - elapsed);
                 } else {
-                    std::thread::sleep(Duration::from_millis(1));
+                    std::thread::yield_now();
                 }
             }
         });

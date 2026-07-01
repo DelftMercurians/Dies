@@ -276,6 +276,7 @@ impl SideAssignment {
             skill: player.skill.clone(),
             handicaps: player.handicaps.clone(),
             sideline: player.sideline,
+            open_loop_delay: player.open_loop_delay,
         }
     }
 

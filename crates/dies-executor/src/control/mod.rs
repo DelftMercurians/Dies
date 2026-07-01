@@ -1,4 +1,5 @@
 mod avoidance;
+mod delay_detector;
 mod joint_skill_executor;
 mod pass_coordinator;
 mod passing;
@@ -16,6 +17,7 @@ pub use team_context::*;
 // `SkillContext::obstacles` field; name it so out-of-`control` skill tests can
 // build a `SkillContext`.
 pub use avoidance::ObstacleSet;
+pub use delay_detector::DelayDetector;
 // Shared world/player/context fixtures for skill unit tests across the crate.
 #[cfg(test)]
 pub(crate) use pass_coordinator::test_support;

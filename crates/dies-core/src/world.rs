@@ -336,6 +336,25 @@ pub enum SidelineReason {
 }
 
 /// A struct to store the player state from a single frame.
+/// Live per-robot open-loop delay estimate (command → first visible motion on
+/// vision), computed online from stop→go events via the same √displacement
+/// x-intercept extrapolation used offline. Only populated for own players, and
+/// only once at least one clean event has been measured. The rolling window is
+/// anchored to the most recent event, so a robot that sits still does not lose
+/// its last estimate — `age_s` tells you how stale it is.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[typeshare]
+pub struct OpenLoopDelayStats {
+    /// Median measured delay (ms) over the rolling window.
+    pub median_ms: f64,
+    /// Maximum measured delay (ms) over the rolling window.
+    pub max_ms: f64,
+    /// Seconds since the most recent measured event (staleness of the estimate).
+    pub age_s: f64,
+    /// Number of events in the rolling window.
+    pub sample_count: u32,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct PlayerData {
@@ -422,6 +441,11 @@ pub struct PlayerData {
     /// `TeamData::sidelined_players` but remain in the color lists.
     #[serde(default)]
     pub sideline: Option<SidelineReason>,
+
+    /// Live open-loop delay estimate (own players only). `None` until the first
+    /// clean stop→go event has been measured. Stamped by the executor.
+    #[serde(default)]
+    pub open_loop_delay: Option<OpenLoopDelayStats>,
 }
 
 impl PlayerData {
@@ -455,6 +479,7 @@ impl PlayerData {
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
+            open_loop_delay: None,
         }
     }
 
@@ -1060,6 +1085,7 @@ pub fn mock_world_data() -> WorldData {
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
+            open_loop_delay: None,
         }],
         yellow_team: vec![PlayerData {
             id: PlayerId::new(1),
@@ -1090,6 +1116,7 @@ pub fn mock_world_data() -> WorldData {
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
+            open_loop_delay: None,
         }],
         field_geom: Default::default(),
         ball: None,
@@ -1155,6 +1182,7 @@ pub fn mock_team_data() -> TeamData {
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
+            open_loop_delay: None,
         }],
         opp_players: vec![PlayerData {
             id: PlayerId::new(1),
@@ -1185,6 +1213,7 @@ pub fn mock_team_data() -> TeamData {
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
+            open_loop_delay: None,
         }],
         field_geom: Some(FieldGeometry {
             field_length: 9000.0,

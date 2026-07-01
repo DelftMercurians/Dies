@@ -362,6 +362,8 @@ pub struct Executor {
     /// Latest raw basestation feedback per robot, captured at intake and logged
     /// verbatim (as JSON) each frame into the `player_feedback` table.
     latest_feedback: HashMap<(TeamColor, PlayerId), PlayerFeedbackMsg>,
+    /// Online open-loop delay estimator per own robot (command → visible motion).
+    open_loop_detectors: HashMap<(TeamColor, PlayerId), control::DelayDetector>,
     update_tx: broadcast::Sender<WorldUpdate>,
     command_tx: mpsc::UnboundedSender<ControlMsg>,
     command_rx: mpsc::UnboundedReceiver<ControlMsg>,
@@ -475,6 +477,7 @@ impl Executor {
             environment: Some(environment),
             manual_override: HashMap::new(),
             latest_feedback: HashMap::new(),
+            open_loop_detectors: HashMap::new(),
             command_tx,
             command_rx,
             update_tx,
@@ -1008,6 +1011,27 @@ impl Executor {
                     for (team_color, cmd) in self.player_commands() {
                         bs_client.send_no_wait(team_color, cmd);
                     }
+                    // Basestation link metrics (1 s window), so offline log
+                    // analysis can separate round-robin TX scheduling from RF
+                    // turnaround: with strict one-robot-per-loop round-robin,
+                    // loop_hz ~= tx_hz ~= N_robots * per-robot feedback rate.
+                    if let Some(info) = bs_client.base_info() {
+                        if let Some(hz) = info.loop_hz {
+                            dies_core::debug_value("base.loop_hz", hz as f64);
+                        }
+                        if let Some(hz) = info.tx_hz {
+                            dies_core::debug_value("base.tx_hz", hz as f64);
+                        }
+                        if let Some(hz) = info.rx_hz {
+                            dies_core::debug_value("base.rx_hz", hz as f64);
+                        }
+                        if let Some(us) = info.work_max_us {
+                            dies_core::debug_value("base.work_max_us", us as f64);
+                        }
+                        if let Some(frac) = info.overrun_frac {
+                            dies_core::debug_value("base.overrun_frac", frac as f64);
+                        }
+                    }
                 }
             }
         }
@@ -1305,6 +1329,39 @@ impl Executor {
             world_data.game_state.yellow_team_max_allowed_bots,
         );
 
+        // Stamp the latest open-loop delay estimate onto each own robot for the
+        // UI. Uses detector state accumulated on prior frames (the detector is
+        // fed further below, after the controllers produce this tick's
+        // commands), so it carries a harmless one-frame lag.
+        {
+            let now = world_data.t_received;
+            for (color, roster) in [
+                (TeamColor::Blue, &mut world_data.blue_team),
+                (TeamColor::Yellow, &mut world_data.yellow_team),
+            ] {
+                for pd in roster.iter_mut() {
+                    if let Some(det) = self.open_loop_detectors.get(&(color, pd.id)) {
+                        pd.open_loop_delay = det.stats(now);
+                        if let Some(s) = pd.open_loop_delay {
+                            let id = pd.id.as_u32();
+                            dies_core::debug_value(
+                                format!("team_{color:?}.p{id}.ol_delay_median_ms"),
+                                s.median_ms,
+                            );
+                            dies_core::debug_value(
+                                format!("team_{color:?}.p{id}.ol_delay_max_ms"),
+                                s.max_ms,
+                            );
+                            dies_core::debug_value(
+                                format!("team_{color:?}.p{id}.ol_delay_age_s"),
+                                s.age_s,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         let update = WorldUpdate {
             world_data: world_data.clone(),
             frame_id,
@@ -1388,6 +1445,22 @@ impl Executor {
         for (color, id, vel) in self.team_controllers.target_velocities_global() {
             let vel_abs = side_assignment.transform_vec2(color, &vel);
             self.tracker.set_player_command(color, id, vel_abs);
+
+            // Feed the online open-loop delay estimator: raw (unfiltered) vision
+            // position vs. the command sent this frame, both in absolute coords.
+            // One tick per real vision frame; stats are read back next frame.
+            if new_frame {
+                let roster = match color {
+                    TeamColor::Blue => &world_data.blue_team,
+                    TeamColor::Yellow => &world_data.yellow_team,
+                };
+                if let Some(pd) = roster.iter().find(|p| p.id == id) {
+                    self.open_loop_detectors
+                        .entry((color, id))
+                        .or_default()
+                        .push(world_data.t_received, pd.raw_position, vel_abs);
+                }
+            }
         }
 
         // Efference copy: tell the possession metric who is kicking this tick so a

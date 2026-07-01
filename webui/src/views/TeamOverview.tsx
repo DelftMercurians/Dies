@@ -12,6 +12,7 @@ import {
   PlayerSkillInfo,
   TeamColor,
   DebugMap,
+  OpenLoopDelayStats,
 } from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { SimpleTooltip } from "@/components/ui/tooltip";
@@ -482,7 +483,41 @@ const HardwareStrip: FC<{
       {/* imu + kicker dots */}
       <DotStat label="imu" sev={sysStatusSeverity(fb.imu_status)} />
       <DotStat label="kick" sev={sysStatusSeverity(fb.kicker_status)} />
+
+      {/* live open-loop delay estimate (cmd → visible motion) */}
+      {player?.open_loop_delay && (
+        <OpenLoopDelayStat stats={player.open_loop_delay} />
+      )}
     </div>
+  );
+};
+
+/** Rolling per-robot open-loop delay: median/max ms over a 10-min window
+ *  (anchored to the last measured event), with staleness dimming. */
+const delaySeverity = (medianMs: number): Severity =>
+  medianMs > 200 ? "warn" : medianMs > 120 ? "info" : "idle";
+
+const fmtAge = (s: number): string =>
+  s < 90 ? `${Math.round(s)}s` : `${Math.round(s / 60)}m`;
+
+const OpenLoopDelayStat: FC<{ stats: OpenLoopDelayStats }> = ({ stats }) => {
+  const stale = stats.age_s > 120;
+  return (
+    <SimpleTooltip
+      title={`Open-loop delay (command → first visible motion): median ${Math.round(
+        stats.median_ms
+      )} ms · max ${Math.round(stats.max_ms)} ms · ${
+        stats.sample_count
+      } events · last measured ${fmtAge(stats.age_s)} ago`}
+    >
+      <span className={cn("flex items-center gap-1", stale && "opacity-50")}>
+        <span className="text-text-muted">lag</span>
+        <span className={cn("font-mono", severityTextClass(delaySeverity(stats.median_ms)))}>
+          {Math.round(stats.median_ms)}/{Math.round(stats.max_ms)}
+          <span className="text-text-muted">ms</span>
+        </span>
+      </span>
+    </SimpleTooltip>
   );
 };
 

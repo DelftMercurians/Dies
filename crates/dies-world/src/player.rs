@@ -503,6 +503,7 @@ impl PlayerTracker {
                 // Feedback-only (bench, no vision) is the radio-alive case, not
                 // radio loss.
                 sideline: None,
+                open_loop_delay: None,
             });
         }
         self.last_detection.as_ref().map(|data| PlayerData {
@@ -542,6 +543,8 @@ impl PlayerTracker {
             sideline: self
                 .is_uncontrolled_visible()
                 .then_some(SidelineReason::RadioLost),
+            // Stamped later by the executor (needs command velocities).
+            open_loop_delay: None,
         })
     }
 
