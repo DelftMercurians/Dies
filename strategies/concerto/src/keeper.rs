@@ -61,10 +61,39 @@ pub fn keeper_guard_zone(world: &World) -> MotionBounds {
     })
 }
 
+/// Draw the keeper's guard arc — the arc of radius [`KEEPER_ARC_RADIUS`] around
+/// the goal centre, spanning the effective angular clamp (the tighter of
+/// [`KEEPER_ARC_MAX_ANGLE`] and the stay-inside-the-mouth limit) — as a debug
+/// shape. There is no arc primitive in the debug protocol, so it is drawn as a
+/// short polyline of line segments.
+///
+/// [`KEEPER_ARC_RADIUS`]: config::KEEPER_ARC_RADIUS
+/// [`KEEPER_ARC_MAX_ANGLE`]: config::KEEPER_ARC_MAX_ANGLE
+fn draw_guard_arc(world: &World) {
+    let g = world.own_goal_center();
+    let radius = config::KEEPER_ARC_RADIUS;
+    let half_goal = world.goal_width() / 2.0;
+    let y_lim = (half_goal - config::KEEPER_MOUTH_MARGIN).max(0.0);
+    // Same effective angular clamp as `clamp_to_mouth`.
+    let lat_angle = (y_lim / radius).clamp(0.0, 1.0).asin();
+    let lim = config::KEEPER_ARC_MAX_ANGLE.min(lat_angle);
+
+    const SEGMENTS: usize = 24;
+    let point = |theta: f64| g + Vector2::new(radius * theta.cos(), radius * theta.sin());
+    let mut prev = point(-lim);
+    for i in 1..=SEGMENTS {
+        let theta = -lim + (2.0 * lim) * (i as f64 / SEGMENTS as f64);
+        let next = point(theta);
+        debug::line_colored(&format!("keeper_arc.{i}"), prev, next, DebugColor::Cyan);
+        prev = next;
+    }
+}
+
 /// Drive the keeper for this frame: set its role and issue the Guard/Clear skill
 /// commands.
 pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle) {
     keeper.set_role("goalkeeper");
+    draw_guard_arc(world);
 
     // ── Mode transitions ────────────────────────────────────────────────
     match state.mode {
