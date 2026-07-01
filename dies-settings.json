@@ -2,9 +2,9 @@
   "controller_settings": {
     "max_acceleration": 30000.0,
     "max_deceleration": 40000.0,
-    "max_velocity": 6500.0,
+    "max_velocity": 5000.0,
     "lateral_acceleration": 1500.0,
-    "approach_kp": 2.6,
+    "approach_kp": 2.0,
     "brake_gain": 0.0,
     "lookahead_min": 200.0,
     "lookahead_time": 0.2,
@@ -49,17 +49,17 @@
     "ignore_gc": false
   },
   "skill_tunables": {
-    "handle_ball.GATE_PERP": 35.0,
     "handle_ball.PICKUP_LATERAL_OFFSET": 0.0,
-    "handle_ball.DRIBBLER_SPEED": 0.6,
-    "handle_ball.CARRY_DRIBBLER_SPEED": 0.5,
     "handle_ball.APPROACH_MIN_SPEED": 200.0,
-    "handle_ball.MAGNET_ENABLED": 0.0,
-    "handle_ball.COMMIT_DISTANCE": 280.0,
-    "handle_ball.AIM_BACKSTOP": 60.0,
-    "handle_ball.APPROACH_CARE": -0.6,
     "handle_ball.APPROACH_HYSTERESIS": 400.0,
+    "handle_ball.MAGNET_ENABLED": 0.0,
+    "handle_ball.CARRY_DRIBBLER_SPEED": 0.5,
+    "handle_ball.AIM_BACKSTOP": 60.0,
+    "handle_ball.COMMIT_DISTANCE": 280.0,
     "handle_ball.COMMIT_PERP": 20.0,
+    "handle_ball.GATE_PERP": 35.0,
+    "handle_ball.APPROACH_CARE": -0.6,
+    "handle_ball.DRIBBLER_SPEED": 0.6,
     "handle_ball.APPROACH_DISTANCE": 200.0
   },
   "possession_config": {
@@ -84,7 +84,7 @@
   "allow_no_vision": false,
   "goal_area_avoidance": true,
   "avoidance": {
-    "robot_clearance": 0.0,
+    "robot_clearance": 15.0,
     "wall_margin": 0.0,
     "defense_margin": 25.0,
     "ball_stop_radius": 800.0,

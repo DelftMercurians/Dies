@@ -36,7 +36,7 @@ fn main() {
                 Step::skill("shoot at goal", r, move |h| {
                     h.handle_ball(
                         BallAction::Shoot {
-                            target: Vector2::new(-3000.0, 0.0),
+                            target: Vector2::new(3000.0, 0.0),
                         },
                         AcquirePosition::Default,
                     );
