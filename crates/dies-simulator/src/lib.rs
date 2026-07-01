@@ -67,6 +67,189 @@ const GROUND_THICKNESS: f64 = 10.0;
 const WALL_HEIGHT: f64 = 1000.0;
 const WALL_THICKNESS: f64 = 1.0;
 
+/// Which teams' hardware is degraded by [`RealismConfig`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealismTeams {
+    /// No team — realism disabled.
+    None,
+    /// Both teams degrade (symmetric — the realistic case where both real teams
+    /// have imperfect hardware).
+    Both,
+    /// Only Blue degrades (asymmetric — for A/B'ing one team's robustness against
+    /// an ideal-hardware twin).
+    Blue,
+    /// Only Yellow degrades.
+    Yellow,
+}
+
+/// Models imperfect hardware execution — the sim2real gap. Adds stochastic noise
+/// to the three classes of physically-unreliable events: **shooting** (noisy
+/// heading, noisy power, occasional misfire), **ball reception / pickup** (the
+/// ball bumping off the dribbler or robot sides instead of being cleanly
+/// captured), and **movement** (brief actuator stutters and general
+/// sluggishness).
+///
+/// All noise is drawn from the simulation's seeded `StdRng`, so a given `(seed,
+/// realism)` is byte-reproducible — the same property self-play relies on.
+/// [`Default`] is a perfect actuator (everything off); realism is opt-in via
+/// [`RealismConfig::from_env`] so normal benchmarks are unaffected.
+#[derive(Debug, Clone)]
+pub struct RealismConfig {
+    /// Which teams' hardware is degraded.
+    pub teams: RealismTeams,
+
+    // --- Shooting ---
+    /// Std dev (radians) of Gaussian noise added to the kick heading.
+    pub shot_heading_noise: f64,
+    /// Std dev (fraction of nominal) of Gaussian noise on kick power. `0.1` = 10 %.
+    pub shot_power_noise: f64,
+    /// Probability a kick fails to fire at all (a dud — the ball stays on the
+    /// dribbler).
+    pub shot_failure_prob: f64,
+
+    // --- Reception / pickup ---
+    /// Base probability the ball bumps off instead of being captured when a robot
+    /// first gains it (models a slow pickup bump even with magnet mode).
+    pub capture_fail_base: f64,
+    /// Extra bump probability per m/s of the ball's incoming speed (models a fast
+    /// pass bouncing off the dribbler / robot sides).
+    pub capture_fail_per_mps: f64,
+    /// Hard cap on total capture-failure probability.
+    pub capture_fail_max: f64,
+    /// Speed (mm/s) the ball is deflected when a capture bumps off.
+    pub bump_speed: f64,
+
+    // --- Movement ---
+    /// Per-robot, per-step probability of a movement stutter (a brief hitch).
+    pub move_stutter_prob: f64,
+    /// Velocity multiplier applied during a stutter (`0.0` = frozen that step).
+    pub move_stutter_factor: f64,
+    /// Steady velocity multiplier (`1.0` = none; `<1` models sluggishness).
+    pub move_sluggish: f64,
+}
+
+impl Default for RealismConfig {
+    fn default() -> Self {
+        RealismConfig {
+            teams: RealismTeams::None,
+            shot_heading_noise: 0.0,
+            shot_power_noise: 0.0,
+            shot_failure_prob: 0.0,
+            capture_fail_base: 0.0,
+            capture_fail_per_mps: 0.0,
+            capture_fail_max: 0.0,
+            bump_speed: 0.0,
+            move_stutter_prob: 0.0,
+            move_stutter_factor: 1.0,
+            move_sluggish: 1.0,
+        }
+    }
+}
+
+impl RealismConfig {
+    /// The level-5 ("max") profile. Intermediate levels scale linearly from a
+    /// perfect actuator (level 0) toward this, so `DIES_REALISM_LEVEL` defines a
+    /// smooth gradient. Magnitudes chosen to be hard-but-playable; calibrated
+    /// against the degradation curve, not from real hardware data (none yet).
+    fn scaled(frac: f64) -> Self {
+        let f = frac.clamp(0.0, 1.0);
+        RealismConfig {
+            teams: RealismTeams::Both,
+            shot_heading_noise: f * 0.09,
+            shot_power_noise: f * 0.12,
+            shot_failure_prob: f * 0.05,
+            // Capture-bump strengthened relative to the first calibration so
+            // reception/pickup failures contribute on par with shot noise.
+            capture_fail_base: f * 0.10,
+            capture_fail_per_mps: f * 0.085,
+            capture_fail_max: 0.5,
+            bump_speed: 700.0,
+            // Movement noise toned down from the first calibration: a 2 %/frame
+            // freeze + 8 % steady slow applied to *every* robot swamped the other
+            // two factors (it taxes all positioning/race-winning at once). At
+            // ~0.9 %/frame + 4 % slow it is a meaningful but no-longer-dominant
+            // contributor, so the gradient is a balanced three-factor model.
+            move_stutter_prob: f * 0.009,
+            move_stutter_factor: 0.0,
+            move_sluggish: 1.0 - f * 0.04,
+        }
+    }
+
+    /// Build a config from the environment, read once at simulator construction
+    /// (so a sweep needs no recompile). `DIES_REALISM_LEVEL` (0..=5, may be
+    /// fractional) selects a point on the gradient; `DIES_REALISM_TEAMS`
+    /// (`both`|`blue`|`yellow`|`none`) scopes it. Individual `DIES_REALISM_*`
+    /// knobs override single parameters on top of the level preset, for fine
+    /// one-axis sweeps.
+    pub fn from_env() -> Self {
+        let level = std::env::var("DIES_REALISM_LEVEL")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let mut cfg = if level > 0.0 {
+            Self::scaled(level / 5.0)
+        } else {
+            Self::default()
+        };
+
+        if let Ok(t) = std::env::var("DIES_REALISM_TEAMS") {
+            cfg.teams = match t.to_ascii_lowercase().as_str() {
+                "both" => RealismTeams::Both,
+                "blue" => RealismTeams::Blue,
+                "yellow" => RealismTeams::Yellow,
+                _ => RealismTeams::None,
+            };
+        }
+
+        let ov = |name: &str, cur: f64| -> f64 {
+            std::env::var(name)
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(cur)
+        };
+        cfg.shot_heading_noise = ov("DIES_REALISM_SHOT_HEADING", cfg.shot_heading_noise);
+        cfg.shot_power_noise = ov("DIES_REALISM_SHOT_POWER", cfg.shot_power_noise);
+        cfg.shot_failure_prob = ov("DIES_REALISM_SHOT_FAIL", cfg.shot_failure_prob);
+        cfg.capture_fail_base = ov("DIES_REALISM_CAPTURE_BASE", cfg.capture_fail_base);
+        cfg.capture_fail_per_mps = ov("DIES_REALISM_CAPTURE_PER_MPS", cfg.capture_fail_per_mps);
+        cfg.bump_speed = ov("DIES_REALISM_BUMP_SPEED", cfg.bump_speed);
+        cfg.move_stutter_prob = ov("DIES_REALISM_STUTTER_PROB", cfg.move_stutter_prob);
+        cfg.move_sluggish = ov("DIES_REALISM_SLUGGISH", cfg.move_sluggish);
+
+        cfg
+    }
+
+    fn applies_to(&self, team: TeamColor) -> bool {
+        match self.teams {
+            RealismTeams::None => false,
+            RealismTeams::Both => true,
+            RealismTeams::Blue => team == TeamColor::Blue,
+            RealismTeams::Yellow => team == TeamColor::Yellow,
+        }
+    }
+
+    /// Probability that a fresh capture of a ball arriving at `speed_mps` bumps
+    /// off instead of sticking. `0` when realism doesn't apply to `team`.
+    fn capture_fail_prob(&self, team: TeamColor, speed_mps: f64) -> f64 {
+        if !self.applies_to(team) {
+            return 0.0;
+        }
+        (self.capture_fail_base + self.capture_fail_per_mps * speed_mps.max(0.0))
+            .clamp(0.0, self.capture_fail_max)
+    }
+}
+
+/// Sample a zero-mean Gaussian with the given std dev from a uniform RNG
+/// (Box–Muller). Returns 0 for a non-positive std dev (the no-noise fast path).
+fn gaussian(rng: &mut StdRng, std: f64) -> f64 {
+    if std <= 0.0 {
+        return 0.0;
+    }
+    let u1: f64 = rng.gen_range(1e-12..1.0);
+    let u2: f64 = rng.gen_range(0.0..1.0);
+    (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos() * std
+}
+
 #[derive(Debug, Clone)]
 pub struct SimulationConfig {
     // PHYSICAL CONSTANTS
@@ -138,6 +321,10 @@ pub struct SimulationConfig {
     /// seeded variation) so headless self-play matches are reproducible: same
     /// seed → identical match, different seed → different-but-reproducible match.
     pub seed: u64,
+
+    /// Imperfect-hardware noise model (sim2real gap). Default = perfect actuator
+    /// (off); self-play populates it from the environment.
+    pub realism: RealismConfig,
 }
 
 impl Default for SimulationConfig {
@@ -189,6 +376,7 @@ impl Default for SimulationConfig {
             n_yellow_robots: 6,
 
             seed: 0,
+            realism: RealismConfig::default(),
         }
     }
 }
@@ -2424,7 +2612,23 @@ impl Simulation {
                 velocity + acc * dt
             };
             let new_vel = new_vel.cap_magnitude(self.config.max_vel);
-            rigid_body.set_linvel(new_vel, true);
+            // Realism: general sluggishness (steady scale) plus occasional
+            // per-step stutters (a brief actuator hitch). Both are velocity
+            // multipliers applied for this step only; the controller still
+            // commands normally, so this models the robot under-delivering, not
+            // the strategy changing.
+            let vel_scale = if self.config.realism.applies_to(player.team_color) {
+                if self.config.realism.move_stutter_prob > 0.0
+                    && self.rng.gen::<f64>() < self.config.realism.move_stutter_prob
+                {
+                    self.config.realism.move_stutter_factor
+                } else {
+                    self.config.realism.move_sluggish
+                }
+            } else {
+                1.0
+            };
+            rigid_body.set_linvel(new_vel * vel_scale, true);
 
             if !player.target_heading.is_nan() {
                 // Slew toward the target heading at a bounded rate, capped by the
@@ -2480,13 +2684,35 @@ impl Simulation {
                     // A reflex kick fires the instant the ball reaches the
                     // breakbeam, once per arm (matches firmware ARM_REFLEX_KICK).
                     let reflex_fire = player.reflex_armed && !player.reflex_fired_this_arm;
-                    if is_kicking || reflex_fire {
+                    // Realism: a kicker dud — the solenoid doesn't fire, so the
+                    // ball stays on the dribbler (falls through to a dribble claim).
+                    let misfire = self.config.realism.applies_to(player.team_color)
+                        && self.config.realism.shot_failure_prob > 0.0
+                        && self.rng.gen::<f64>() < self.config.realism.shot_failure_prob;
+                    if (is_kicking || reflex_fire) && !misfire {
                         if reflex_fire {
                             player.reflex_fired_this_arm = true;
                         }
                         ball_kicked_this_frame = true;
+                        // Realism: noisy kick heading + power. `kick_dir` is the
+                        // nominal robot facing rotated by a Gaussian heading error;
+                        // `power` scales the impulse by a Gaussian fraction.
+                        let (kick_dir, power) = if self.config.realism.applies_to(player.team_color)
+                        {
+                            let dtheta =
+                                gaussian(&mut self.rng, self.config.realism.shot_heading_noise);
+                            let (s, c) = dtheta.sin_cos();
+                            let dir =
+                                Vector::new(yaw.x * c - yaw.y * s, yaw.x * s + yaw.y * c, 0.0);
+                            let p = (1.0
+                                + gaussian(&mut self.rng, self.config.realism.shot_power_noise))
+                            .max(0.2);
+                            (dir, p)
+                        } else {
+                            (yaw, 1.0)
+                        };
                         // Move the ball away from the player
-                        let new_ball_position = ball_position + yaw * 80.0;
+                        let new_ball_position = ball_position + kick_dir * 80.0;
                         ball_body.set_position(
                             Isometry::translation(
                                 new_ball_position.x,
@@ -2496,7 +2722,7 @@ impl Simulation {
                             true,
                         );
 
-                        let force = yaw * self.config.kicker_strength;
+                        let force = kick_dir * self.config.kicker_strength * power;
                         ball_body.add_force(force, true);
 
                         // Set the ball_is_kicked to true
@@ -2583,8 +2809,74 @@ impl Simulation {
             self.ball_peel_angle += SNATCH_PEEL_GAIN * omega * dt;
             self.ball_being_dribbled_by = Some(holder);
         } else if dribble_claimants.len() == 1 {
-            self.ball_being_dribbled_by = Some(dribble_claimants[0]);
-            self.ball_peel_angle = 0.0;
+            let claimant = dribble_claimants[0];
+            // Realism: a *fresh* capture (a reception or pickup) can bump off the
+            // dribbler instead of sticking — likelier the faster the ball arrives.
+            // A ball already held last frame is never spuriously dropped here.
+            let is_fresh = prior_holder != Some(claimant);
+            let bump_p = if is_fresh {
+                let speed_mps = self
+                    .ball
+                    .as_ref()
+                    .map(|b| {
+                        self.rigid_body_set
+                            .get(b._rigid_body_handle)
+                            .unwrap()
+                            .linvel()
+                            .norm()
+                    })
+                    .unwrap_or(0.0)
+                    / 1000.0;
+                self.config.realism.capture_fail_prob(claimant.1, speed_mps)
+            } else {
+                0.0
+            };
+            if bump_p > 0.0 && self.rng.gen::<f64>() < bump_p {
+                // Bump: deflect the ball outward from the robot (with lateral
+                // spread) so it clearly leaves the dribbler and isn't re-grabbed
+                // next frame. No capture this frame.
+                let robot_xy = self
+                    .players
+                    .iter()
+                    .find(|p| (p.id, p.team_color) == claimant)
+                    .map(|p| {
+                        let v = self
+                            .rigid_body_set
+                            .get(p.rigid_body_handle)
+                            .unwrap()
+                            .position()
+                            .translation
+                            .vector;
+                        Vector2::new(v.x, v.y)
+                    })
+                    .unwrap_or(ball_xy);
+                let mut out = ball_xy - robot_xy;
+                if out.norm() < 1e-6 {
+                    out = Vector2::new(1.0, 0.0);
+                }
+                let base = out.y.atan2(out.x);
+                let spread = gaussian(&mut self.rng, 0.5);
+                let ang = base + spread;
+                if let Some(ball) = self.ball.as_ref() {
+                    let bb = self
+                        .rigid_body_set
+                        .get_mut(ball._rigid_body_handle)
+                        .unwrap();
+                    bb.set_linvel(
+                        Vector::new(
+                            ang.cos() * self.config.realism.bump_speed,
+                            ang.sin() * self.config.realism.bump_speed,
+                            0.0,
+                        ),
+                        true,
+                    );
+                }
+                self.ball_being_dribbled_by = None;
+                self.ball_peel_angle = 0.0;
+            } else {
+                self.ball_being_dribbled_by = Some(claimant);
+                self.ball_peel_angle = 0.0;
+            }
         } else {
             if dribble_claimants.len() > 1 {
                 self.pop_contested_ball(&dribble_claimants);
@@ -3202,6 +3494,112 @@ mod reflex_kick_tests {
             "ball should be (near) stationary without a kick, vx={}",
             ball_vx(&sim)
         );
+    }
+}
+
+#[cfg(test)]
+mod realism_tests {
+    use super::*;
+
+    /// Build a sim with one blue robot at the origin facing +x, a ball seated in
+    /// its dribbler, and the given realism config. Issue `cmd`, step, return the
+    /// sim.
+    fn sim_with(realism: RealismConfig, seed: u64, cmd: PlayerGlobalMoveCmd) -> Simulation {
+        let mut config = SimulationConfig {
+            seed,
+            realism,
+            ..Default::default()
+        };
+        config.blue_controlled = true;
+        config.yellow_controlled = true;
+        let mut sim = SimulationBuilder::new(config)
+            .with_controlled_teams(true, true)
+            .add_blue_player_with_id(0, Vector2::new(0.0, 0.0), Angle::from_radians(0.0))
+            .add_ball(Vector::new(150.0, 0.0, BALL_RADIUS))
+            .build();
+        sim.push_global_cmd(TeamColor::Blue, cmd);
+        for _ in 0..10 {
+            sim.step(0.016);
+        }
+        sim
+    }
+
+    fn ball_vel(sim: &Simulation) -> Vector<f64> {
+        let h = sim.ball.as_ref().unwrap()._rigid_body_handle;
+        *sim.rigid_body_set.get(h).unwrap().linvel()
+    }
+
+    fn kick_cmd() -> PlayerGlobalMoveCmd {
+        let mut cmd = PlayerGlobalMoveCmd::zero(PlayerId::new(0));
+        cmd.heading_setpoint = 0.0;
+        cmd.robot_cmd = RobotCmd::ArmReflex;
+        cmd
+    }
+
+    #[test]
+    fn shot_heading_noise_spreads_the_kick() {
+        // With heading noise the kick direction wanders off the robot's facing, so
+        // the lateral (vy) component is substantially nonzero across seeds; with no
+        // noise it stays on the centerline (vy ≈ 0).
+        let mut noisy = RealismConfig::default();
+        noisy.teams = RealismTeams::Both;
+        noisy.shot_heading_noise = 0.25;
+
+        let mut sum_abs_vy_noisy = 0.0;
+        let mut sum_abs_vy_clean = 0.0;
+        let n = 24;
+        for seed in 0..n {
+            sum_abs_vy_noisy += ball_vel(&sim_with(noisy.clone(), seed, kick_cmd())).y.abs();
+            sum_abs_vy_clean += ball_vel(&sim_with(RealismConfig::default(), seed, kick_cmd()))
+                .y
+                .abs();
+        }
+        let mean_noisy = sum_abs_vy_noisy / n as f64;
+        let mean_clean = sum_abs_vy_clean / n as f64;
+        assert!(
+            mean_noisy > 200.0 && mean_noisy > 10.0 * mean_clean.max(1.0),
+            "heading noise should spread the kick laterally: noisy |vy|={mean_noisy:.1} clean={mean_clean:.1}"
+        );
+    }
+
+    #[test]
+    fn shot_failure_suppresses_the_kick() {
+        // A guaranteed misfire leaves the ball on the dribbler.
+        let mut r = RealismConfig::default();
+        r.teams = RealismTeams::Both;
+        r.shot_failure_prob = 1.0;
+        let v = ball_vel(&sim_with(r, 7, kick_cmd()));
+        assert!(
+            v.norm() < 50.0,
+            "misfire should not launch the ball, |v|={}",
+            v.norm()
+        );
+    }
+
+    #[test]
+    fn capture_failure_is_deterministic_and_team_scoped() {
+        // capture_fail_prob is 0 for an untouched team and clamped to its max.
+        let mut r = RealismConfig::default();
+        r.teams = RealismTeams::Blue;
+        r.capture_fail_base = 0.1;
+        r.capture_fail_per_mps = 0.1;
+        r.capture_fail_max = 0.45;
+        assert_eq!(r.capture_fail_prob(TeamColor::Yellow, 5.0), 0.0);
+        assert!((r.capture_fail_prob(TeamColor::Blue, 0.0) - 0.1).abs() < 1e-9);
+        assert!((r.capture_fail_prob(TeamColor::Blue, 100.0) - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn realism_preserves_determinism() {
+        // Same (seed, realism) ⇒ identical kick outcome.
+        let mut r = RealismConfig::default();
+        r.teams = RealismTeams::Both;
+        r.shot_heading_noise = 0.2;
+        r.shot_power_noise = 0.2;
+        let a = ball_vel(&sim_with(r.clone(), 3, kick_cmd()));
+        let b = ball_vel(&sim_with(r, 3, kick_cmd()));
+        assert_eq!(a.x.to_bits(), b.x.to_bits());
+        assert_eq!(a.y.to_bits(), b.y.to_bits());
     }
 }
 

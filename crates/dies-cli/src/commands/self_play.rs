@@ -97,6 +97,9 @@ pub async fn self_play(
             seed,
             n_blue_robots,
             n_yellow_robots,
+            // Imperfect-hardware realism model (sim2real gap), read from the
+            // environment so a sweep needs no recompile. Off by default.
+            realism: dies_simulator::RealismConfig::from_env(),
             ..Default::default()
         };
         let simulator = SimulationBuilder::default_seeded(sim_config)
