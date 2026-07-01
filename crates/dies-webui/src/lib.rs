@@ -165,6 +165,15 @@ pub(crate) enum UiCommand {
     ReplaySetSpeed {
         speed: f64,
     },
+    /// Step by a number of frames (negative = backward). Pauses playback.
+    ReplayStep {
+        #[typeshare(serialized_as = "number")]
+        delta: i64,
+    },
+    /// Step by a time delta in seconds (negative = backward). Pauses playback.
+    ReplayStepTime {
+        dt: f64,
+    },
     /// Direct robot test-bench command (bypasses the executor entirely).
     Bench(BenchCommand),
     Stop,
@@ -222,6 +231,9 @@ pub(crate) struct ReplayState {
     pub current_frame_id: u64,
     #[typeshare(serialized_as = "number")]
     pub frame_count: u64,
+    /// Nominal per-frame timestep in seconds (median of frame deltas), for the
+    /// scrubber's frame/fps readout. Zero for degenerate single-frame logs.
+    pub dt: f64,
     pub markers: Vec<ReplayMarker>,
 }
 

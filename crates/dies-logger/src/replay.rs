@@ -80,6 +80,16 @@ pub struct EventRow {
     pub payload_json: String,
 }
 
+/// One row of the `player_feedback` table: the full basestation feedback for a
+/// robot on a frame, captured verbatim as JSON.
+#[derive(Clone, Debug)]
+pub struct PlayerFeedbackRowR {
+    pub frame_id: u64,
+    pub team: String,
+    pub player_id: u32,
+    pub feedback_json: String,
+}
+
 /// Which heavy table a cache entry belongs to (cache-key discriminant).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum HeavyId {
@@ -236,6 +246,9 @@ pub struct LogReader {
     debug_shapes: HeavyTable,
     debug_tree: HeavyTable,
     cache: Mutex<RowGroupCache>,
+    /// Log directory (or extracted temp dir), retained for on-demand reads of
+    /// dense tables not needed for `reconstruct` (e.g. `player_feedback`).
+    dir: PathBuf,
     _extracted: Option<tempfile::TempDir>,
 }
 
@@ -310,6 +323,7 @@ impl LogReader {
             debug_shapes: HeavyTable::open(&dir, "debug_shapes")?,
             debug_tree: HeavyTable::open(&dir, "debug_tree")?,
             cache: Mutex::new(RowGroupCache::new(DEFAULT_CACHE_BUDGET)),
+            dir,
             _extracted: extracted,
         })
     }
@@ -342,6 +356,29 @@ impl LogReader {
 
     pub fn events(&self) -> &[EventRow] {
         &self.events
+    }
+
+    /// Read the full `player_feedback` table on demand — every logged robot
+    /// feedback frame as `(frame_id, team, player_id, feedback_json)`. Dense
+    /// table, so this is not cached; read once. Empty for logs recorded before
+    /// this table existed.
+    pub fn player_feedback_rows(&self) -> Result<Vec<PlayerFeedbackRowR>> {
+        let mut out = Vec::new();
+        for b in read_table(&self.dir, "player_feedback")? {
+            let frame_id = u64s(&b, "frame_id");
+            let team = strs(&b, "team");
+            let player_id = u32s(&b, "player_id");
+            let json = strs(&b, "feedback_json");
+            for i in 0..b.num_rows() {
+                out.push(PlayerFeedbackRowR {
+                    frame_id: frame_id.value(i),
+                    team: team.value(i).to_string(),
+                    player_id: player_id.value(i),
+                    feedback_json: json.value(i).to_string(),
+                });
+            }
+        }
+        Ok(out)
     }
 
     /// The frame id active at time `t` (first frame whose time is >= `t`, else
@@ -1214,6 +1251,47 @@ mod tests {
             }
             _ => panic!("missing cross shape"),
         }
+    }
+
+    #[test]
+    fn player_feedback_roundtrips() {
+        use crate::frame::{FeedbackRecord, PlayerFeedbackRow};
+        use dies_core::{PlayerFeedbackMsg, PlayerId};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("session");
+        let mut w = LogWriter::open(dir.clone(), meta(), Instant::now()).unwrap();
+
+        let world = mock_world_data();
+        let debug = DebugMap::new();
+        let mut msg = PlayerFeedbackMsg::empty(PlayerId::new(3));
+        msg.kicker_cap_voltage = Some(212.5);
+        let json = serde_json::to_string(&msg).unwrap();
+        for fid in 0..3 {
+            w.push_frame(&FrameRecord::from_world(fid, &world, &debug));
+            w.push_feedback(&FeedbackRecord {
+                frame_id: fid,
+                players: vec![PlayerFeedbackRow {
+                    team: "yellow",
+                    player_id: 3,
+                    feedback_json: json.clone(),
+                }],
+            });
+        }
+        w.close(Instant::now()).unwrap();
+
+        let reader = LogReader::open(&dir).unwrap();
+        let rows = reader.player_feedback_rows().unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].team, "yellow");
+        assert_eq!(rows[0].player_id, 3);
+        // The JSON preserves every field verbatim, including ones left at None.
+        let v: serde_json::Value = serde_json::from_str(&rows[0].feedback_json).unwrap();
+        assert_eq!(v["kicker_cap_voltage"], 212.5);
+        assert!(
+            v.get("motor_speeds").is_some(),
+            "all fields present in JSON"
+        );
     }
 
     #[test]

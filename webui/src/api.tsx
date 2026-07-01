@@ -353,12 +353,46 @@ const PrimaryTeamContext = createContext<
 >([TeamColor.Blue, () => {}]);
 
 export const PrimaryTeamProvider: FC<PropsWithChildren> = ({ children }) => {
-  const [primaryTeam, setPrimaryTeam] = useState<TeamColor>(TeamColor.Blue);
+  const [primaryTeam, setPrimaryTeamState] = useState<TeamColor>(TeamColor.Blue);
+  // Whether the user has picked a team explicitly this session. In-memory (a ref,
+  // like `primaryTeam`'s state) so both reset on page reload — a fresh load
+  // re-auto-focuses from scratch.
+  const userChoseRef = useRef(false);
+  const setPrimaryTeam = (team: TeamColor) => {
+    userChoseRef.current = true;
+    setPrimaryTeamState(team);
+  };
+
   return (
     <PrimaryTeamContext.Provider value={[primaryTeam, setPrimaryTeam]}>
+      {/* Isolated in a leaf so the high-frequency debug subscription driving the
+          auto-focus never re-renders the app tree under this provider. */}
+      <TeamAutoFocus userChoseRef={userChoseRef} setTeam={setPrimaryTeamState} />
       {children}
     </PrimaryTeamContext.Provider>
   );
+};
+
+/**
+ * Auto-focuses the controlled team — the one emitting `team_<Color>.*` debug —
+ * uniformly across live, sim, and replay (a replay's log only carries the
+ * controlled team's debug). No-op once the user has chosen a team manually, and
+ * when both (or neither) teams are controlled/logged. Renders nothing.
+ */
+const TeamAutoFocus: FC<{
+  userChoseRef: React.MutableRefObject<boolean>;
+  setTeam: (t: TeamColor) => void;
+}> = ({ userChoseRef, setTeam }) => {
+  const debugMap = useDebugData();
+  useEffect(() => {
+    if (userChoseRef.current || !debugMap) return;
+    const has = (t: TeamColor) =>
+      Object.keys(debugMap).some((k) => k.startsWith(`team_${t}.`));
+    const blue = has(TeamColor.Blue);
+    const yellow = has(TeamColor.Yellow);
+    if (blue !== yellow) setTeam(blue ? TeamColor.Blue : TeamColor.Yellow);
+  }, [debugMap, userChoseRef, setTeam]);
+  return null;
 };
 
 export const usePrimaryTeam = () => {

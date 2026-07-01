@@ -98,8 +98,9 @@ thought, why a skill fired. Analyze logs in Python with `tools/dieslog.py`.
 
 ### Tables (all per-frame tables keyed on `frame_id`)
 
-`frames`, `ball`, `players`, `debug_values`, `debug_shapes`, `debug_tree`,
-`settings_changes`, `events`, `markers`, `logs`, `vision`. Key columns:
+`frames`, `ball`, `players`, `player_feedback`, `debug_values`, `debug_shapes`,
+`debug_tree`, `settings_changes`, `events`, `markers`, `logs`, `vision`. Key
+columns:
 
 - **frames**: `frame_id`, `t_received`, `t_capture`, `dt`, `game_state`,
   `operating_team`, `side_assignment`. This table maps `frame_id → time`; the
@@ -108,6 +109,14 @@ thought, why a skill fired. Analyze logs in Python with `tools/dieslog.py`.
   velocity `x, y, vx, vy, yaw, raw_yaw, angular_speed`, plus telemetry
   `primary_status`, `kicker_cap_voltage`, `pack_voltage_0/1`,
   `breakbeam_ball_detected`, `has_ball`, `handicaps`.
+- **player_feedback**: `frame_id`, `team`, `player_id`, `feedback_json` — the
+  full raw basestation `PlayerFeedbackMsg` per robot, captured verbatim as JSON
+  (motors, currents, loop times, reflex-kick, ToF, firmware, link-health, …), so
+  every field is preserved and the schema stays forward-compatible. Expand it in
+  Python with `log.feedback(team=..., player_id=...)`, which json-normalizes the
+  blob into wide, t-indexed columns (array fields → `<name>_0`, `<name>_1`, …).
+  The per-frame `players` table still carries the world-model subset used by the
+  UI/replay; this table is the exhaustive telemetry firehose for offline analysis.
 - **ball**: position/velocity of the ball, t-indexed.
 - **debug_values**: `frame_id`, `key`, `value` (numeric) **or** `value_str`
   (string). This is the firehose of strategy/controller internals.

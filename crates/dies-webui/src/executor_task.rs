@@ -162,6 +162,16 @@ impl ExecutorTask {
                     controller.set_speed(speed);
                 }
             }
+            UiCommand::ReplayStep { delta } => {
+                if let ExecutorTaskState::Replaying { controller } = &self.state {
+                    controller.step(delta);
+                }
+            }
+            UiCommand::ReplayStepTime { dt } => {
+                if let ExecutorTaskState::Replaying { controller } = &self.state {
+                    controller.step_time(dt);
+                }
+            }
             UiCommand::SetStrategyParam {
                 team_color,
                 key,

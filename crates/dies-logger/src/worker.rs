@@ -12,11 +12,16 @@ use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use dies_core::{DebugMap, ExecutorSettings, FieldGeometry, WorldData};
+use dies_core::{
+    DebugMap, ExecutorSettings, FieldGeometry, PlayerFeedbackMsg, TeamColor, WorldData,
+};
 use log::{Log, Metadata, Record};
 
 use crate::flatten::{self, FlatSettings};
-use crate::frame::{EventRecord, FrameRecord, LogLineRecord, MarkerRecord, RawRecord};
+use crate::frame::{
+    team_color_str, EventRecord, FeedbackRecord, FrameRecord, LogLineRecord, MarkerRecord,
+    PlayerFeedbackRow, RawRecord,
+};
 use crate::meta::MetaJson;
 use crate::writer::{LogWriter, FLUSH_INTERVAL};
 
@@ -50,6 +55,7 @@ enum WorkerMsg {
         ack: Option<Sender<()>>,
     },
     Frame(Box<FrameRecord>),
+    Feedback(Box<FeedbackRecord>),
     Settings {
         frame_id: u64,
         t: f64,
@@ -164,6 +170,11 @@ fn handle(writer: &mut Option<LogWriter>, msg: WorkerMsg) {
                 w.push_frame(&rec);
             }
         }
+        WorkerMsg::Feedback(rec) => {
+            if let Some(w) = writer {
+                w.push_feedback(&rec);
+            }
+        }
         WorkerMsg::Settings {
             frame_id,
             t,
@@ -255,6 +266,29 @@ pub fn log_frame(frame_id: u64, world: &WorldData, debug: &DebugMap) {
     if let Some(l) = ARROW_LOGGER.get() {
         let rec = FrameRecord::from_world(frame_id, world, debug);
         l.send(WorkerMsg::Frame(Box::new(rec)));
+    }
+}
+
+/// Log the full basestation feedback for every reporting robot this frame. Each
+/// `PlayerFeedbackMsg` is serialized to JSON verbatim (one row per player), so
+/// all telemetry is preserved for offline analysis. No-op until initialized.
+pub fn log_player_feedback(frame_id: u64, feedback: &[(TeamColor, PlayerFeedbackMsg)]) {
+    if let Some(l) = ARROW_LOGGER.get() {
+        if feedback.is_empty() {
+            return;
+        }
+        let players = feedback
+            .iter()
+            .map(|(team, msg)| PlayerFeedbackRow {
+                team: team_color_str(*team),
+                player_id: msg.id.as_u32(),
+                feedback_json: serde_json::to_string(msg).unwrap_or_default(),
+            })
+            .collect();
+        l.send(WorkerMsg::Feedback(Box::new(FeedbackRecord {
+            frame_id,
+            players,
+        })));
     }
 }
 

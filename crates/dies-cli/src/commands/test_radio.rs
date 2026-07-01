@@ -198,26 +198,26 @@ pub async fn test_radio(
                         s.min_age_ms.unwrap_or(0), s.max_age_ms,
                         s.online, s.total_count,
                     );
-                    if let Some(m) = s.last {
-                        log::info!(
-                            "       fw={} status prim={} kick={} imu={} tof={} | cap={}V temp={}C pack={}V mainI={}A | rloop avg={}us max={}us",
-                            opt(&m.firmware_version),
-                            opt(&m.primary_status), opt(&m.kicker_status), opt(&m.imu_status), opt(&m.tof_status),
-                            optf(&m.kicker_cap_voltage), optf(&m.kicker_temp), farr(&m.pack_voltages), optf(&m.main_board_current),
-                            optu(&m.avg_loop_time_us), optu(&m.max_loop_time_us),
-                        );
-                        log::info!(
-                            "       motors st={} spd={} temp={} curr={}",
-                            opt(&m.motor_statuses), farr(&m.motor_speeds), farr(&m.motor_temps), farr(&m.motor_currents),
-                        );
-                        log::info!(
-                            "       bb det={} ok={} raw={} | tof det={} xy={} | imu={} | smartkick={} kickok={} reflex={} cnt={} | lastcmd={}",
-                            opt(&m.breakbeam_ball_detected), opt(&m.breakbeam_sensor_ok), opt(&m.breakbeam_raw),
-                            opt(&m.tof_ball_detected), opt(&m.tof_xy), farr(&m.imu_readings),
-                            opt(&m.smart_kick_counter), opt(&m.kick_ok_flag), opt(&m.reflex_kick_state), opt(&m.reflex_kick_counter),
-                            opt(&m.last_command),
-                        );
-                    }
+                    // if let Some(m) = s.last {
+                    //     log::info!(
+                    //         "       fw={} status prim={} kick={} imu={} tof={} | cap={}V temp={}C pack={}V mainI={}A | rloop avg={}us max={}us",
+                    //         opt(&m.firmware_version),
+                    //         opt(&m.primary_status), opt(&m.kicker_status), opt(&m.imu_status), opt(&m.tof_status),
+                    //         optf(&m.kicker_cap_voltage), optf(&m.kicker_temp), farr(&m.pack_voltages), optf(&m.main_board_current),
+                    //         optu(&m.avg_loop_time_us), optu(&m.max_loop_time_us),
+                    //     );
+                    //     log::info!(
+                    //         "       motors st={} spd={} temp={} curr={}",
+                    //         opt(&m.motor_statuses), farr(&m.motor_speeds), farr(&m.motor_temps), farr(&m.motor_currents),
+                    //     );
+                    //     log::info!(
+                    //         "       bb det={} ok={} raw={} | tof det={} xy={} | imu={} | smartkick={} kickok={} reflex={} cnt={} | lastcmd={}",
+                    //         opt(&m.breakbeam_ball_detected), opt(&m.breakbeam_sensor_ok), opt(&m.breakbeam_raw),
+                    //         opt(&m.tof_ball_detected), opt(&m.tof_xy), farr(&m.imu_readings),
+                    //         opt(&m.smart_kick_counter), opt(&m.kick_ok_flag), opt(&m.reflex_kick_state), opt(&m.reflex_kick_counter),
+                    //         opt(&m.last_command),
+                    //     );
+                    // }
                     s.interval_count = 0;
                     s.fresh_count = 0;
                 }

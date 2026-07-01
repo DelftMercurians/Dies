@@ -39,6 +39,7 @@ TABLES = (
     "frames",
     "ball",
     "players",
+    "player_feedback",
     "debug_values",
     "debug_shapes",
     "debug_tree",
@@ -170,6 +171,61 @@ class DiesLog:
         """`debug_values` pivoted wide on frame_id, t-indexed. With a prefix,
         keep only matching keys and strip it (vec2 strings split into _x/_y)."""
         return self._index_t(self._wide(prefix).reset_index())
+
+    def feedback(self, team=None, player_id=None):
+        """Full basestation robot feedback, one row per (frame, player), with the
+        logged `feedback_json` expanded into wide columns (motors, currents, loop
+        times, reflex-kick, ToF, firmware, ...). t-indexed. Array fields expand to
+        `<name>_0`, `<name>_1`, ... . Filter by `team` and/or `player_id`. Empty
+        for logs recorded before the `player_feedback` table existed."""
+        pf = self.tables.get("player_feedback")
+        if pf is None or not len(pf):
+            return pd.DataFrame()
+        pf = pf.copy()
+        if team is not None:
+            pf = pf[pf["team"].astype(str) == str(team).lower()]
+        if player_id is not None:
+            pf = pf[pf["player_id"].astype(int) == int(player_id)]
+        if not len(pf):
+            return pd.DataFrame()
+        expanded = pd.json_normalize([json.loads(s) for s in pf["feedback_json"]])
+        # Flatten any list-valued columns (fixed-size arrays like motor_speeds[5])
+        # into scalar <name>_<i> columns.
+        for col in list(expanded.columns):
+            if expanded[col].apply(lambda v: isinstance(v, list)).any():
+                arr = expanded[col].apply(lambda v: v if isinstance(v, list) else [])
+                width = int(arr.map(len).max() or 0)
+                for i in range(width):
+                    expanded[f"{col}_{i}"] = arr.map(
+                        lambda v, i=i: v[i] if i < len(v) else np.nan
+                    )
+                expanded = expanded.drop(columns=col)
+        expanded.index = pf.index
+        out = pd.concat(
+            [pf[["frame_id", "team", "player_id"]].reset_index(drop=True),
+             expanded.reset_index(drop=True)],
+            axis=1,
+        )
+        return self._index_t(out)
+
+    def shape(self, key):
+        """Rows of `debug_shapes` for one exact `key`, t-indexed. Point/cross
+        shapes populate `cx,cy`; lines `x1,y1,x2,y2`; circles `cx,cy,radius`."""
+        ds = self.tables["debug_shapes"]
+        return self._index_t(ds[ds["key"].astype(str) == key])
+
+    def target(self, team, player_id, key="plan.waypoint"):
+        """A robot's target-position point over time, as `x,y` columns t-indexed.
+        Defaults to `plan.waypoint` — the planner waypoint the robot is driving to
+        (its destination). Pass e.g. `key="hb.staging"` for other point targets.
+        Uses the cross `cx,cy`. Empty if the key isn't in the log."""
+        color = str(team).capitalize()
+        full = f"team_{color}.p{int(player_id)}.{key}"
+        df = self.shape(full)
+        if not len(df):
+            return pd.DataFrame(columns=["x", "y"])
+        out = df[["cx", "cy"]].rename(columns={"cx": "x", "cy": "y"})
+        return out.dropna(how="all")
 
     def robot(self, team, player_id):
         """One robot's player frames fused with its team_<Color>.p<id>.* debug."""

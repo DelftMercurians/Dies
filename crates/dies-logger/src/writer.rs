@@ -18,7 +18,9 @@ use dies_core::FieldGeometry;
 
 use crate::builders::*;
 use crate::flatten::{self, FlatSettings};
-use crate::frame::{EventRecord, FrameRecord, LogLineRecord, MarkerRecord, RawRecord};
+use crate::frame::{
+    EventRecord, FeedbackRecord, FrameRecord, LogLineRecord, MarkerRecord, RawRecord,
+};
 use crate::meta::MetaJson;
 use crate::schema;
 
@@ -32,6 +34,7 @@ struct Builders {
     frames: FramesBuilder,
     ball: BallBuilder,
     players: PlayersBuilder,
+    player_feedback: PlayerFeedbackBuilder,
     debug_values: DebugValuesBuilder,
     debug_shapes: DebugShapesBuilder,
     debug_tree: DebugTreeBuilder,
@@ -144,6 +147,12 @@ impl LogWriter {
         self.settings_state = flat;
     }
 
+    pub fn push_feedback(&mut self, rec: &FeedbackRecord) {
+        for p in &rec.players {
+            self.builders.player_feedback.push(rec.frame_id, p);
+        }
+    }
+
     pub fn push_event(&mut self, rec: &EventRecord) {
         self.builders.events.push(rec);
     }
@@ -197,6 +206,7 @@ impl LogWriter {
         flush_table!(self, "frames", frames);
         flush_table!(self, "ball", ball);
         flush_table!(self, "players", players);
+        flush_table!(self, "player_feedback", player_feedback);
         flush_table!(self, "debug_values", debug_values);
         flush_table!(self, "debug_shapes", debug_shapes);
         flush_table!(self, "debug_tree", debug_tree);
@@ -217,6 +227,7 @@ impl LogWriter {
             self.builders.frames.len(),
             self.builders.ball.len(),
             self.builders.players.len(),
+            self.builders.player_feedback.len(),
             self.builders.debug_values.len(),
             self.builders.debug_shapes.len(),
             self.builders.debug_tree.len(),

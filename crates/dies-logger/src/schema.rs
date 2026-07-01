@@ -14,6 +14,7 @@ pub const TABLES: &[&str] = &[
     "frames",
     "ball",
     "players",
+    "player_feedback",
     "debug_values",
     "debug_shapes",
     "debug_tree",
@@ -93,6 +94,19 @@ cached_schema!(
     nullable("imu_status", DataType::Utf8),
     nullable("kicker_status", DataType::Utf8),
     required("handicaps", DataType::Utf8),
+);
+
+// Full basestation robot feedback, one row per (frame, player). The entire
+// `PlayerFeedbackMsg` is captured verbatim as JSON so every field — including
+// motors, currents, loop times, reflex-kick, ToF, firmware — is preserved and
+// the schema stays forward-compatible as firmware adds fields. `team`/`player_id`
+// are lifted out as columns for cheap filtering/joins without parsing the JSON.
+cached_schema!(
+    player_feedback,
+    required("frame_id", DataType::UInt64),
+    required("team", DataType::Utf8),
+    required("player_id", DataType::UInt32),
+    required("feedback_json", DataType::Utf8),
 );
 
 // `value` and `value_str` are both nullable: a `Number` debug entry fills
@@ -191,6 +205,7 @@ pub fn schema_for(table: &str) -> Option<SchemaRef> {
         "frames" => frames(),
         "ball" => ball(),
         "players" => players(),
+        "player_feedback" => player_feedback(),
         "debug_values" => debug_values(),
         "debug_shapes" => debug_shapes(),
         "debug_tree" => debug_tree(),

@@ -1167,6 +1167,14 @@ export type UiCommand =
 	| { type: "ReplaySetSpeed", data: {
 	speed: number;
 }}
+	/** Step by a number of frames (negative = backward). Pauses playback. */
+	| { type: "ReplayStep", data: {
+	delta: number;
+}}
+	/** Step by a time delta in seconds (negative = backward). Pauses playback. */
+	| { type: "ReplayStepTime", data: {
+	dt: number;
+}}
 	/** Direct robot test-bench command (bypasses the executor entirely). */
 	| { type: "Bench", data: BenchCommand }
 	| { type: "Stop",  };
@@ -1247,6 +1255,11 @@ export interface ReplayState {
 	current_t: number;
 	current_frame_id: number;
 	frame_count: number;
+	/**
+	 * Nominal per-frame timestep in seconds (median of frame deltas), for the
+	 * scrubber's frame/fps readout. Zero for degenerate single-frame logs.
+	 */
+	dt: number;
 	markers: ReplayMarker[];
 }
 

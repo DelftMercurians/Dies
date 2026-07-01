@@ -15,7 +15,7 @@ use arrow::record_batch::RecordBatch;
 
 use crate::frame::{
     BallRow, DebugShapeRow, DebugTreeRow, DebugValueRow, EventRecord, FrameRecord, LogLineRecord,
-    MarkerRecord, PlayerRow, RawRecord,
+    MarkerRecord, PlayerFeedbackRow, PlayerRow, RawRecord,
 };
 use crate::schema;
 
@@ -205,6 +205,40 @@ impl PlayersBuilder {
         ];
         self.len = 0;
         Ok(RecordBatch::try_new(schema::players(), cols)?)
+    }
+}
+
+#[derive(Default)]
+pub struct PlayerFeedbackBuilder {
+    len: usize,
+    frame_id: UInt64Builder,
+    team: StringBuilder,
+    player_id: UInt32Builder,
+    feedback_json: StringBuilder,
+}
+
+impl PlayerFeedbackBuilder {
+    pub fn push(&mut self, frame_id: u64, r: &PlayerFeedbackRow) {
+        self.frame_id.append_value(frame_id);
+        self.team.append_value(r.team);
+        self.player_id.append_value(r.player_id);
+        self.feedback_json.append_value(&r.feedback_json);
+        self.len += 1;
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn finish(&mut self) -> Result<RecordBatch> {
+        let cols: Vec<ArrayRef> = vec![
+            Arc::new(self.frame_id.finish()),
+            Arc::new(self.team.finish()),
+            Arc::new(self.player_id.finish()),
+            Arc::new(self.feedback_json.finish()),
+        ];
+        self.len = 0;
+        Ok(RecordBatch::try_new(schema::player_feedback(), cols)?)
     }
 }
 

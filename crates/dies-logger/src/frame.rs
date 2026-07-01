@@ -73,6 +73,22 @@ pub struct PlayerRow {
     pub handicaps: String,
 }
 
+/// One robot's full basestation feedback for a frame, serialized to JSON. The
+/// executor sends a batch of these per frame via `worker::log_player_feedback`.
+#[derive(Debug, Clone)]
+pub struct PlayerFeedbackRow {
+    pub team: &'static str,
+    pub player_id: u32,
+    pub feedback_json: String,
+}
+
+/// A frame's worth of per-player feedback rows, keyed on `frame_id`.
+#[derive(Debug, Clone)]
+pub struct FeedbackRecord {
+    pub frame_id: u64,
+    pub players: Vec<PlayerFeedbackRow>,
+}
+
 #[derive(Debug, Clone)]
 pub struct DebugValueRow {
     pub key: String,

@@ -174,6 +174,25 @@ export function useGlobalShortcuts(getDockviewApi: () => DockviewApi | null) {
         return;
       }
 
+      // Replay stepping with arrow keys (only while a log is loaded).
+      // ←/→ step one frame; ⇧+←/→ step one second.
+      if (
+        replayingRef.current &&
+        !ev.ctrlKey &&
+        !ev.metaKey &&
+        !ev.altKey &&
+        (ev.key === "ArrowLeft" || ev.key === "ArrowRight")
+      ) {
+        ev.preventDefault();
+        const dir = ev.key === "ArrowRight" ? 1 : -1;
+        if (ev.shiftKey) {
+          c.sendCommand({ type: "ReplayStepTime", data: { dt: dir } });
+        } else {
+          c.sendCommand({ type: "ReplayStep", data: { delta: dir } });
+        }
+        return;
+      }
+
       const cmd = matchKeyboard(ev);
       if (!cmd) return;
       if (cmd.suppressedWhileDriving && c.drivingActive) return;

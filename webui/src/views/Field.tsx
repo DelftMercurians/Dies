@@ -188,6 +188,8 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
   const [categoryVis] = useAtom(debugCategoryVisibilityAtom);
   const filteredDebugMap = useMemo(() => {
     if (!debugMap) return null;
+    // `primaryTeam` auto-focuses the controlled team (see PrimaryTeamProvider), so
+    // a one-sided log/session already points here; filter by it directly.
     return filterDebugMap(debugMap, layerVis, categoryVis, primaryTeam);
   }, [debugMap, layerVis, categoryVis, primaryTeam]);
 

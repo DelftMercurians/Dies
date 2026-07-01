@@ -359,6 +359,9 @@ pub struct Executor {
     gc_client: GcClient,
     environment: Option<Environment>,
     manual_override: HashMap<(TeamColor, PlayerId), PlayerOverrideState>,
+    /// Latest raw basestation feedback per robot, captured at intake and logged
+    /// verbatim (as JSON) each frame into the `player_feedback` table.
+    latest_feedback: HashMap<(TeamColor, PlayerId), PlayerFeedbackMsg>,
     update_tx: broadcast::Sender<WorldUpdate>,
     command_tx: mpsc::UnboundedSender<ControlMsg>,
     command_rx: mpsc::UnboundedReceiver<ControlMsg>,
@@ -471,6 +474,7 @@ impl Executor {
             gc_client: GcClient::new(),
             environment: Some(environment),
             manual_override: HashMap::new(),
+            latest_feedback: HashMap::new(),
             command_tx,
             command_rx,
             update_tx,
@@ -544,6 +548,8 @@ impl Executor {
         message: PlayerFeedbackMsg,
         time: WorldInstant,
     ) {
+        self.latest_feedback
+            .insert((team_color, message.id), message);
         self.tracker
             .update_from_feedback(team_color, &message, time);
     }
@@ -1371,6 +1377,12 @@ impl Executor {
             if worker::is_active() {
                 let debug = DebugSubscriber::instance().get_copy();
                 worker::log_frame(frame_id, &world_data, &debug);
+                let feedback: Vec<(TeamColor, PlayerFeedbackMsg)> = self
+                    .latest_feedback
+                    .iter()
+                    .map(|(&(team, _), &msg)| (team, msg))
+                    .collect();
+                worker::log_player_feedback(frame_id, &feedback);
                 self.log_match_metadata(&world_data, frame_id);
             }
             self.frame_counter = self.frame_counter.wrapping_add(1);
