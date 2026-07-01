@@ -19,6 +19,7 @@ import { cn, magnitude2 } from "@/lib/utils";
 import {
   batterySeverity,
   capVoltageSeverity,
+  feedbackFromPlayer,
   motorTempSeverity,
   playerHealth,
   Severity,
@@ -339,7 +340,7 @@ const OverviewRow: FC<{
       )}
 
       {/* hardware strip */}
-      <HardwareStrip feedback={feedback} />
+      <HardwareStrip feedback={feedback} player={player} />
 
       {/* pinned debug values */}
       {pinnedKeys.length > 0 ? (
@@ -409,55 +410,64 @@ const SkillLine: FC<{ skill: PlayerSkillInfo }> = ({ skill }) => (
  * battery & capacitor voltages, IMU and kicker status dots. Quiet when
  * healthy; colored only on issues. Shows a muted placeholder without feedback.
  */
-const HardwareStrip: FC<{ feedback?: PlayerFeedbackMsg }> = ({ feedback }) => {
-  if (!feedback) {
+const HardwareStrip: FC<{
+  feedback?: PlayerFeedbackMsg;
+  player?: PlayerData;
+}> = ({ feedback, player }) => {
+  // Live feedback wins; fall back to the world stream (log replay), which lacks
+  // motor telemetry.
+  const isLive = !!feedback;
+  const fb = feedback ?? (player ? feedbackFromPlayer(player) : undefined);
+  if (!fb) {
     return (
       <div className="text-[10px] text-text-muted italic">no telemetry</div>
     );
   }
 
   const battery =
-    feedback.pack_voltages && feedback.pack_voltages.length > 0
-      ? Math.min(...feedback.pack_voltages)
+    fb.pack_voltages && fb.pack_voltages.length > 0
+      ? Math.min(...fb.pack_voltages)
       : undefined;
-  const batterySev = feedback.pack_voltages
-    ? worstSeverity(...feedback.pack_voltages.map(batterySeverity))
+  const batterySev = fb.pack_voltages
+    ? worstSeverity(...fb.pack_voltages.map(batterySeverity))
     : "idle";
-  const cap = feedback.kicker_cap_voltage;
+  const cap = fb.kicker_cap_voltage;
 
   return (
     <div className="flex items-center gap-2 text-[10px] text-text-dim">
-      {/* motors */}
-      <span className="flex items-center gap-1">
-        <span className="text-text-muted">M</span>
-        <span className="flex items-center gap-0.5">
-          {[0, 1, 2, 3, 4].map((i) => {
-            const sev = worstSeverity(
-              sysStatusSeverity(feedback.motor_statuses?.[i]),
-              motorTempSeverity(feedback.motor_temps?.[i])
-            );
-            return (
-              <SimpleTooltip
-                key={i}
-                title={`${i === 4 ? "Dribbler" : `Motor ${i}`}: ${
-                  feedback.motor_statuses?.[i] ?? "n/a"
-                }${
-                  feedback.motor_temps?.[i] !== undefined
-                    ? ` · ${Math.round(feedback.motor_temps[i])}°C`
-                    : ""
-                }`}
-              >
-                <span
-                  className={cn(
-                    "w-1.5 h-1.5 rounded-full",
-                    severityDotClass(sev)
-                  )}
-                />
-              </SimpleTooltip>
-            );
-          })}
+      {/* motors — live basestation feedback only */}
+      {isLive && (
+        <span className="flex items-center gap-1">
+          <span className="text-text-muted">M</span>
+          <span className="flex items-center gap-0.5">
+            {[0, 1, 2, 3, 4].map((i) => {
+              const sev = worstSeverity(
+                sysStatusSeverity(fb.motor_statuses?.[i]),
+                motorTempSeverity(fb.motor_temps?.[i])
+              );
+              return (
+                <SimpleTooltip
+                  key={i}
+                  title={`${i === 4 ? "Dribbler" : `Motor ${i}`}: ${
+                    fb.motor_statuses?.[i] ?? "n/a"
+                  }${
+                    fb.motor_temps?.[i] !== undefined
+                      ? ` · ${Math.round(fb.motor_temps[i])}°C`
+                      : ""
+                  }`}
+                >
+                  <span
+                    className={cn(
+                      "w-1.5 h-1.5 rounded-full",
+                      severityDotClass(sev)
+                    )}
+                  />
+                </SimpleTooltip>
+              );
+            })}
+          </span>
         </span>
-      </span>
+      )}
 
       {/* battery */}
       <Stat label="bat" sev={batterySev}>
@@ -470,8 +480,8 @@ const HardwareStrip: FC<{ feedback?: PlayerFeedbackMsg }> = ({ feedback }) => {
       </Stat>
 
       {/* imu + kicker dots */}
-      <DotStat label="imu" sev={sysStatusSeverity(feedback.imu_status)} />
-      <DotStat label="kick" sev={sysStatusSeverity(feedback.kicker_status)} />
+      <DotStat label="imu" sev={sysStatusSeverity(fb.imu_status)} />
+      <DotStat label="kick" sev={sysStatusSeverity(fb.kicker_status)} />
     </div>
   );
 };

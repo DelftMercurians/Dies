@@ -272,6 +272,7 @@ struct PlayerRowR {
     pack_voltage_0: Option<f32>,
     pack_voltage_1: Option<f32>,
     breakbeam_ball_detected: bool,
+    has_ball: bool,
     imu_status: Option<String>,
     kicker_status: Option<String>,
     handicaps: String,
@@ -617,6 +618,7 @@ fn append_players(
     let pack_voltage_0 = f32s(b, "pack_voltage_0");
     let pack_voltage_1 = f32s(b, "pack_voltage_1");
     let breakbeam = bools(b, "breakbeam_ball_detected");
+    let has_ball = bools(b, "has_ball");
     let imu_status = strs(b, "imu_status");
     let kicker_status = strs(b, "kicker_status");
     let handicaps = strs(b, "handicaps");
@@ -638,6 +640,7 @@ fn append_players(
             pack_voltage_0: opt_f32(pack_voltage_0, i),
             pack_voltage_1: opt_f32(pack_voltage_1, i),
             breakbeam_ball_detected: breakbeam.value(i),
+            has_ball: has_ball.value(i),
             imu_status: opt_str(imu_status, i),
             kicker_status: opt_str(kicker_status, i),
             handicaps: handicaps.value(i).to_string(),
@@ -828,6 +831,7 @@ fn player_data_from_row(r: &PlayerRowR, t: f64) -> PlayerData {
     pd.kicker_temp = r.kicker_temp;
     pd.pack_voltages = pack_voltages;
     pd.breakbeam_ball_detected = r.breakbeam_ball_detected;
+    pd.has_ball = r.has_ball;
     pd.imu_status = r.imu_status.as_deref().and_then(sys_status_from_str);
     pd.kicker_status = r.kicker_status.as_deref().and_then(sys_status_from_str);
     pd.handicaps = parse_handicaps(&r.handicaps);
@@ -1173,7 +1177,8 @@ mod tests {
         let dir = tmp.path().join("session");
         let mut w = LogWriter::open(dir.clone(), meta(), Instant::now()).unwrap();
 
-        let world = mock_world_data();
+        let mut world = mock_world_data();
+        world.blue_team[0].has_ball = true;
         let mut debug = DebugMap::new();
         debug.insert(
             "team_blue.p0.target".into(),
@@ -1195,6 +1200,8 @@ mod tests {
         assert_eq!(rw.blue_team.len(), 1);
         assert_eq!(rw.yellow_team.len(), 1);
         assert_eq!(rw.blue_team[0].position, world.blue_team[0].position);
+        assert!(rw.blue_team[0].has_ball, "has_ball should round-trip");
+        assert!(!rw.yellow_team[0].has_ball);
         assert_eq!(rw.game_state.game_state, GameState::Run);
         assert_eq!(rd.len(), 2);
         match rd.get("k") {

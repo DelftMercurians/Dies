@@ -231,6 +231,7 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
           id={selectedPlayerId}
           team={primaryTeam}
           feedback={feedback}
+          player={selectedPlayer}
           breakbeamBall={selectedPlayer?.breakbeam_ball_detected}
           hasBall={selectedPlayer?.has_ball}
         />

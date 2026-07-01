@@ -1,4 +1,26 @@
-import { PlayerFeedbackMsg, SkillState, SysStatus } from "@/bindings";
+import { PlayerData, PlayerFeedbackMsg, SkillState, SysStatus } from "@/bindings";
+
+/**
+ * Build a partial `PlayerFeedbackMsg` from the world-stream `PlayerData`.
+ * Used as a fallback during log replay, where the live-only `/api/basestation`
+ * feedback is unavailable but the reconstructed world stream still carries
+ * power/status/IMU. Motor telemetry and a few sensor-status fields are not in
+ * the world stream, so they stay absent.
+ */
+export const feedbackFromPlayer = (p: PlayerData): PlayerFeedbackMsg => ({
+  id: p.id,
+  primary_status: p.primary_status,
+  kicker_status: p.kicker_status,
+  imu_status: p.imu_status,
+  kicker_cap_voltage: p.kicker_cap_voltage,
+  kicker_temp: p.kicker_temp,
+  pack_voltages: p.pack_voltages,
+  breakbeam_ball_detected: p.breakbeam_ball_detected,
+  imu_readings: p.imu_readings,
+  tof_ball_detected: p.tof_ball_detected,
+  tof_xy: p.tof_xy,
+  tof_confidence: p.tof_confidence,
+});
 
 /**
  * Hardware health helpers, ported from the standalone basestation viewer
