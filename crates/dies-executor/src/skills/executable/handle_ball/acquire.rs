@@ -21,12 +21,14 @@ impl HandleBallSkill {
         now: f64,
     ) -> SkillProgress {
         let exit = self.acquire_heading(ball_pos);
+        let exit_bias = self.exit_bias_weight();
         let axis = capture_axis(
             ctx,
             ball_pos,
             ball_vel,
             player_pos,
             exit,
+            exit_bias,
             &mut self.chosen_dir,
         );
 
@@ -38,7 +40,6 @@ impl HandleBallSkill {
 
         let mut input = PlayerControlInput::new();
         input.with_yaw(axis.heading);
-        input.with_dribbling(DRIBBLER_SPEED());
 
         // Debug: the chosen approach axis (ball → staging side), the corridor
         // geometry, and whether the velocity-aware tail-catch is engaged.
@@ -89,12 +90,14 @@ impl HandleBallSkill {
         } else {
             let staging = stage_point(axis.aim_point, axis.dir, pt, ctx.world.field_geom.as_ref());
             tc.debug_value(dkey(ctx, "committed"), 0.0);
+            tc.debug_value(dkey(ctx, "staging_dist"), (staging - player_pos).norm());
             tc.debug_cross_colored(dkey(ctx, "staging"), staging, DebugColor::Orange);
             self.detail = if axis.moving {
                 "tail-catch: staging".into()
             } else {
                 "staging".into()
             };
+            input.with_dribbling(DRIBBLER_SPEED());
             input.with_position(staging);
             input.avoid_ball = true;
             input.avoid_ball_care = APPROACH_CARE();
@@ -117,6 +120,7 @@ fn select_approach_dir(
     ball_pos: Vector2,
     player_pos: Vector2,
     exit_heading: Angle,
+    exit_bias: f64,
     chosen_dir: &mut Option<Vector2>,
 ) -> Vector2 {
     let exit = exit_heading.to_vector();
@@ -144,7 +148,7 @@ fn select_approach_dir(
             (true, false, _) => 2,
             (false, _, _) => 3,
         };
-        let cost = (staging - player_pos).norm() - EXIT_BIAS_WEIGHT() * u.dot(&exit);
+        let cost = (staging - player_pos).norm() - exit_bias * u.dot(&exit);
         (tier, cost)
     };
 
@@ -226,6 +230,7 @@ fn capture_axis(
     ball_vel: Vector2,
     player_pos: Vector2,
     exit_heading: Angle,
+    exit_bias: f64,
     chosen_dir: &mut Option<Vector2>,
 ) -> CaptureAxis {
     if ball_vel.norm() > MOVING_BALL_SPEED() {
@@ -247,7 +252,14 @@ fn capture_axis(
             }
         }
     }
-    let dir = select_approach_dir(ctx, ball_pos, player_pos, exit_heading, chosen_dir);
+    let dir = select_approach_dir(
+        ctx,
+        ball_pos,
+        player_pos,
+        exit_heading,
+        exit_bias,
+        chosen_dir,
+    );
     CaptureAxis {
         dir,
         aim_point: ball_pos,

@@ -106,7 +106,10 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
             } else {
                 // Acquire via the unified ball-handling skill (Hold mode); the
                 // reflex_shoot above takes over once the breakbeam trips.
-                let _ = keeper.handle_ball(BallAction::Hold { heading }, Some(heading));
+                let _ = keeper.handle_ball(
+                    BallAction::Hold { heading },
+                    AcquirePosition::Heading(heading),
+                );
             }
         }
     }

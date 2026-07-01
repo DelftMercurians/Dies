@@ -17,6 +17,10 @@ fn main() {
         let r = PlayerId::new(0);
         Scenario::looping(move || {
             vec![
+                // Step::skill("goto", r, move |h| {
+                //     h.go_to(Vector2::zeros());
+                // })
+                // .timeout(15.0),
                 // Acquire + hold, facing -x (away from goal) so the follow-up
                 // Shoot has to orbit the ball to aim.
                 Step::skill("acquire + hold", r, move |h| {
@@ -24,16 +28,21 @@ fn main() {
                         BallAction::Hold {
                             heading: Angle::from_radians(PI),
                         },
-                        None,
+                        AcquirePosition::Default,
                     );
                 })
-                .timeout(15.0),
+                .timeout(20.0),
                 // Live-swap to Shoot on the same skill instance: aim + kick.
                 Step::skill("shoot at goal", r, move |h| {
-                    h.handle_ball(BallAction::Shoot { target: OPP_GOAL }, None);
+                    h.handle_ball(
+                        BallAction::Shoot {
+                            target: Vector2::new(-3000.0, 0.0),
+                        },
+                        AcquirePosition::Default,
+                    );
                 })
-                .timeout(15.0),
-                Step::wait(0.5),
+                .timeout(30.0),
+                Step::wait(5.0),
             ]
         })
     });

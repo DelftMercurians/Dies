@@ -90,7 +90,7 @@
 //!
 //! ```ignore
 //! // Acquire the ball and shoot it at the goal
-//! let handle = player.handle_ball(BallAction::Shoot { target: goal }, None);
+//! let handle = player.handle_ball(BallAction::Shoot { target: goal }, AcquirePosition::Default);
 //!
 //! // Check status
 //! match player.skill_status() {
@@ -132,8 +132,8 @@ pub use world::{Rect, World};
 // Re-export commonly used types from protocol and core crates
 pub use dies_core::{Angle, FieldGeometry};
 pub use dies_strategy_protocol::{
-    ArcZone, BallAction, BallState, DebugColor, DebugEntry, DebugShape, DebugValue, GameState,
-    Handicap, MotionBounds, ParamKind, ParamSpec, ParamValue, PassBallState, PassFailure,
+    AcquirePosition, ArcZone, BallAction, BallState, DebugColor, DebugEntry, DebugShape, DebugValue,
+    GameState, Handicap, MotionBounds, ParamKind, ParamSpec, ParamValue, PassBallState, PassFailure,
     PassResult, PassRole, PlayerId, PlayerState, Possession, SkillCommand, SkillStatus,
     StrategyParams, Vector2, WorldSnapshot,
 };
@@ -156,9 +156,9 @@ pub mod prelude {
     // Core types
     pub use dies_core::{Angle, FieldGeometry};
     pub use dies_strategy_protocol::{
-        ArcZone, BallAction, BallState, DebugColor, GameState, Handicap, MotionBounds, ParamKind,
-        ParamSpec, ParamValue, PlayerId, PlayerState, Possession, SkillCommand, SkillStatus,
-        Vector2,
+        AcquirePosition, ArcZone, BallAction, BallState, DebugColor, GameState, Handicap,
+        MotionBounds, ParamKind, ParamSpec, ParamValue, PlayerId, PlayerState, Possession,
+        SkillCommand, SkillStatus, Vector2,
     };
 }
 

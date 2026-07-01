@@ -43,7 +43,7 @@ fn secure(passer: PlayerId, receiver: PlayerId) -> Step {
             if latched {
                 p.stop(); // clear the one-shot latch; retry next frame
             } else {
-                p.handle_ball(BallAction::Hold { heading }, None);
+                p.handle_ball(BallAction::Hold { heading }, AcquirePosition::Default);
             }
         }
         StepOutcome::Running

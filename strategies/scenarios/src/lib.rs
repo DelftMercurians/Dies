@@ -20,7 +20,7 @@
 //!         let p = PlayerId::new(0);
 //!         Scenario::looping(move || {
 //!             vec![
-//!                 Step::skill("acquire", p, |h| { h.handle_ball(BallAction::Hold { heading: Angle::from_radians(0.0) }, None); })
+//!                 Step::skill("acquire", p, |h| { h.handle_ball(BallAction::Hold { heading: Angle::from_radians(0.0) }, AcquirePosition::Default); })
 //!                     .timeout(15.0),
 //!                 Step::skill("shoot", p, |h| { h.reflex_shoot(OPP_GOAL); })
 //!                     .timeout(10.0),

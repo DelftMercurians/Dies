@@ -5,7 +5,7 @@
 
 use crate::player::PlayerHandle;
 use dies_core::Angle;
-use dies_strategy_protocol::{BallAction, MotionBounds, SkillCommand, Vector2};
+use dies_strategy_protocol::{AcquirePosition, BallAction, MotionBounds, SkillCommand, Vector2};
 
 /// Builder for `GoToPos` skill commands.
 ///
@@ -203,8 +203,8 @@ impl SkillParams for ReflexShootParams {
 pub struct HandleBallParams {
     /// Terminal action to perform once the ball is held.
     pub action: BallAction,
-    /// Optional exit-bias heading for the acquire sub-phase.
-    pub approach: Option<Angle>,
+    /// Which side of the ball to take it from during the acquire sub-phase.
+    pub acquire: AcquirePosition,
     /// Allow firmware magnet capture during the commit drive (default `true`).
     /// Set `false` to force the velocity-only capture for this invocation.
     pub magnet: bool,
@@ -214,7 +214,7 @@ impl SkillParams for HandleBallParams {
     fn to_command(&self) -> SkillCommand {
         SkillCommand::HandleBall {
             action: self.action,
-            approach: self.approach,
+            acquire: self.acquire,
             magnet: self.magnet,
         }
     }
@@ -293,7 +293,7 @@ impl SkillParams for SnatchParams {
 ///
 /// ```ignore
 /// // Start skill
-/// let mut handle = player.handle_ball(BallAction::Hold { heading }, None);
+/// let mut handle = player.handle_ball(BallAction::Hold { heading }, AcquirePosition::Default);
 ///
 /// // Update parameters
 /// handle.update_with(|p| p.action = BallAction::Shoot { target });
@@ -411,12 +411,15 @@ mod tests {
             action: BallAction::Hold {
                 heading: Angle::from_radians(0.0),
             },
-            approach: None,
+            acquire: AcquirePosition::Default,
             magnet: true,
         });
 
-        handle.update_with(|p| p.approach = Some(Angle::from_radians(1.0)));
+        handle.update_with(|p| p.acquire = AcquirePosition::Heading(Angle::from_radians(1.0)));
 
-        assert!((handle.params().approach.unwrap().radians() - 1.0).abs() < 1e-6);
+        assert!(matches!(
+            handle.params().acquire,
+            AcquirePosition::Heading(a) if (a.radians() - 1.0).abs() < 1e-6
+        ));
     }
 }

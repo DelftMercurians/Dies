@@ -16,12 +16,13 @@ struct RobotStat {
     /// basestation *forwarding* rate, which re-emits the cached record every
     /// loop). This is NOT the true radio frame rate.
     interval_count: u32,
-    /// Frames since the last report whose `feedback_age_ms` implied a genuinely
-    /// new radio frame (dedup mirrors `FeedbackRateTracker::observe`). This IS
-    /// the true per-robot RF frame rate — compare it against `interval_count`.
+    /// Frames since the last report where `feedback_age_ms` *dropped* — a reset
+    /// of the age toward 0 is an unambiguous new-frame edge (age is monotonic
+    /// non-decreasing while the same frame is re-forwarded). This IS the true
+    /// per-robot RF frame rate — compare it against `interval_count`.
     fresh_count: u32,
-    /// Reconstructed stamp time of the last fresh frame (for dedup).
-    prev_update: Option<Instant>,
+    /// Previous `feedback_age_ms`, to detect the reset edge.
+    prev_age_ms: Option<u32>,
     total_count: u64,
     last_recv: Option<Instant>,
     /// Worst / best inter-arrival gap seen this window (ms).
@@ -146,20 +147,16 @@ pub async fn test_radio(
                     if let Some(age) = fb.feedback_age_ms {
                         s.max_age_ms = s.max_age_ms.max(age);
                         s.min_age_ms = Some(s.min_age_ms.map_or(age, |m| m.min(age)));
-                        // Fresh-frame detection: reconstruct the basestation's HF
-                        // stamp time (recv - age) and count it only if it advanced,
-                        // mirroring FeedbackRateTracker::observe. Lets us see the
-                        // true RF frame rate vs the forwarding rate.
-                        let update_instant = now
-                            .checked_sub(Duration::from_millis(age as u64))
-                            .unwrap_or(now);
-                        let is_fresh = s
-                            .prev_update
-                            .map_or(true, |p| update_instant > p + Duration::from_micros(500));
-                        if is_fresh {
-                            s.prev_update = Some(update_instant);
+                        // Fresh-frame detection by reset edge: the basestation
+                        // re-forwards the cached record with a monotonically
+                        // growing age until a new RF frame lands and resets it.
+                        // Each downward step in age is exactly one new frame.
+                        // (Reconstructing recv-age instead double-counts, because
+                        // ms-quantized age crosses any sub-ms gate ~once/frame.)
+                        if s.prev_age_ms.is_some_and(|pa| age < pa) {
                             s.fresh_count += 1;
                         }
+                        s.prev_age_ms = Some(age);
                     }
                     s.online = fb.online.unwrap_or(false);
                     if !s.online {

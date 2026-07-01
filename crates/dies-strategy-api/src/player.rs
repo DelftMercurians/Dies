@@ -16,7 +16,8 @@ use crate::skill_builders::{
 };
 use dies_core::Angle;
 use dies_strategy_protocol::{
-    BallAction, MotionBounds, PlayerId, PlayerState, SkillCommand, SkillStatus, Vector2,
+    AcquirePosition, BallAction, MotionBounds, PlayerId, PlayerState, SkillCommand, SkillStatus,
+    Vector2,
 };
 use std::collections::HashSet;
 
@@ -192,8 +193,11 @@ impl PlayerHandle {
     /// is secured) is a live update on the same skill, so the acquire→act
     /// transition keeps its capture-phase state instead of restarting cold.
     ///
-    /// - `approach`: optional exit-bias heading for the acquire sub-phase (which
-    ///   side to take the ball from); `None` derives a default from `action`.
+    /// - `acquire`: which side of the ball to take it from during the acquire
+    ///   sub-phase — [`AcquirePosition::Fastest`] (closest reachable side),
+    ///   [`AcquirePosition::Default`] (bias toward an exit heading derived from
+    ///   `action`), or [`AcquirePosition::Heading`] (bias toward an explicit
+    ///   heading).
     ///
     /// # Completion
     /// - `SkillStatus::Succeeded` only when a kick departs (`Shoot`/`Strike`).
@@ -202,35 +206,35 @@ impl PlayerHandle {
     pub fn handle_ball(
         &mut self,
         action: BallAction,
-        approach: Option<Angle>,
+        acquire: AcquirePosition,
     ) -> SkillHandle<HandleBallParams> {
         // Magnet capture is opt-out (default on); flip the `magnet` field on the
         // returned handle's params (e.g. via `update_with`) to force velocity-only
         // capture for a given invocation.
         self.pending_command = Some(SkillCommand::HandleBall {
             action,
-            approach,
+            acquire,
             magnet: true,
         });
         SkillHandle::new(HandleBallParams {
             action,
-            approach,
+            acquire,
             magnet: true,
         })
     }
 
     /// Acquire the ball, aim at `target`, then release it via the firmware reflex
     /// kick — a single double-touch-safe contact from possession. Convenience for
-    /// `handle_ball(BallAction::Strike { target, acquire_first: true }, None)`; use
-    /// it for the designated kicker on an attacking restart, where a smart-kick's
-    /// command-timed fire risks a double touch.
+    /// `handle_ball(BallAction::Strike { target, acquire_first: true },
+    /// AcquirePosition::Default)`; use it for the designated kicker on an attacking
+    /// restart, where a smart-kick's command-timed fire risks a double touch.
     pub fn strike_from_possession(&mut self, target: Vector2) -> SkillHandle<HandleBallParams> {
         self.handle_ball(
             BallAction::Strike {
                 target,
                 acquire_first: true,
             },
-            None,
+            AcquirePosition::Default,
         )
     }
 
@@ -517,7 +521,7 @@ mod tests {
             BallAction::Hold {
                 heading: Angle::from_radians(0.5),
             },
-            None,
+            AcquirePosition::Default,
         );
 
         let cmd = player.take_pending_command();

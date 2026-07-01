@@ -18,7 +18,9 @@
 //! [`ReceiveSkill`] for the receiver's positioning + interception.
 
 use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2, BALL_RADIUS, PLAYER_RADIUS};
-use dies_strategy_protocol::{BallAction, PassBallState, PassFailure, PassResult, SkillStatus};
+use dies_strategy_protocol::{
+    AcquirePosition, BallAction, PassBallState, PassFailure, PassResult, SkillStatus,
+};
 
 use super::avoidance::ObstacleSet;
 use super::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
@@ -176,7 +178,7 @@ impl PassCoordinator {
                 BallAction::Hold {
                     heading: Angle::from_radians(0.0),
                 },
-                None,
+                AcquirePosition::Default,
                 true,
             ),
             receive: ReceiveSkill::new(Vector2::zeros(), Vector2::zeros(), CAPTURE_LIMIT, false),
@@ -317,8 +319,10 @@ impl PassCoordinator {
                         // the post-capture heading toward the receiver. Hold never
                         // returns Done; the Done arm is a defensive fallback.
                         let heading = Angle::between_points(bp, receiver.position);
-                        self.acquire
-                            .reconfigure(BallAction::Hold { heading }, Some(heading));
+                        self.acquire.reconfigure(
+                            BallAction::Hold { heading },
+                            AcquirePosition::Heading(heading),
+                        );
                         let sctx = self.skill_ctx(ctx, &passer);
                         match self.acquire.tick(sctx) {
                             SkillProgress::Continue(input) => passer_input = input,

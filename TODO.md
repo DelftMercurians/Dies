@@ -1,3 +1,17 @@
+TESTING
+
+- movement, quick tune
+- ball handle
+  - pickup
+    - tune for faster pickup
+  - shoot
+  - strike through pickup
+  - magnet mode
+- passing
+
+logs:
+dies-2026-07-01_13-08-39.dieslog - pickup ball
+
 Skills
 
 - make use of high freq radio

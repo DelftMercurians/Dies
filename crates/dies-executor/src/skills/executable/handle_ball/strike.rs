@@ -25,9 +25,9 @@ impl HandleBallSkill {
         let ball_pos = ball.position.xy();
         let ball_vel = ball.velocity.xy();
         let player_pos = ctx.player.position;
-        let heading = self
-            .approach
-            .unwrap_or_else(|| Angle::from_vector(target - ball_pos));
+        // The strike axis must point at the target: an explicit `Heading` overrides,
+        // otherwise it is derived from the target (a `Fastest`/`Default` no-op here).
+        let heading = self.acquire_heading(ball_pos);
         let dir = heading.to_vector();
 
         let rel = player_pos - ball_pos;

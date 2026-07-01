@@ -204,7 +204,7 @@ pub enum SkillCommand {
     /// Unified ball handling: acquire the ball if we don't have it, then perform a
     /// continuously-supplied terminal action with it.
     ///
-    /// **Type**: Continuous — call each frame with the latest `action`/`approach`.
+    /// **Type**: Continuous — call each frame with the latest `action`/`acquire`.
     /// Acquire *and* the terminal action are one command **variant**, so swapping
     /// the action mid-handle (e.g. once the ball is secured) is a live parameter
     /// update on the same skill instance (no teardown), so the delicate acquire→act
@@ -212,9 +212,8 @@ pub enum SkillCommand {
     ///
     /// **Parameters**:
     /// - `action`: the terminal intent (see [`BallAction`]). Updated live.
-    /// - `approach`: optional exit-bias heading for the *acquire* sub-phase (which
-    ///   side to take the ball from / where it ends up facing at capture). `None`
-    ///   derives a default from `action`.
+    /// - `acquire`: which side of the ball to take it from during the *acquire*
+    ///   sub-phase (see [`AcquirePosition`]).
     ///
     /// **Completion**:
     /// - `Succeeded` only when a kick departs (`Shoot`/`Strike`). `Carry` and
@@ -224,7 +223,7 @@ pub enum SkillCommand {
     ///   re-acquires brief ball losses internally before giving up).
     HandleBall {
         action: BallAction,
-        approach: Option<Angle>,
+        acquire: AcquirePosition,
         /// Strategy-level opt-in for firmware magnet capture during the final
         /// commit drive (default `true`). ANDed with the skill-level
         /// `MAGNET_ENABLED` tunable and the robot's ToF capability; a no-op on
@@ -273,6 +272,26 @@ pub enum BallAction {
     /// Acquire the ball then keep possession, facing `heading`. Never completes —
     /// the "just go get it and hold" action (loose-ball capture, pass-secure).
     Hold { heading: Angle },
+}
+
+/// Which side of the ball the *acquire* sub-phase of [`SkillCommand::HandleBall`]
+/// takes it from. The skill always samples candidate sides around the ball and
+/// rejects blocked / ball-out-of-bounds ones; this only selects how the remaining
+/// candidates are ranked.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub enum AcquirePosition {
+    /// Approach from whichever reachable side is closest to the robot — no
+    /// exit-heading bias. The fastest capture, ignoring where the ball ends up
+    /// pointing.
+    Fastest,
+    /// Bias the approach toward an exit heading derived from the `BallAction`
+    /// (aim at the shot/strike target, or face the carry/hold heading). The
+    /// default: a well-aimed capture is worth approaching from a bit farther away.
+    #[default]
+    Default,
+    /// Bias the approach toward this explicit exit heading, overriding the one
+    /// derived from the action.
+    Heading(Angle),
 }
 
 /// The role a robot plays in a [`SkillCommand::Pass`].

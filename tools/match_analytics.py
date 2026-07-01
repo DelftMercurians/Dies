@@ -329,6 +329,13 @@ def analyze(log):
         "seed": _seed_from_name(log.path.name),
         "blue": meta.get("blue_strategy"),
         "yellow": meta.get("yellow_strategy"),
+        "is_match": bool(meta.get("is_match", False)),
+        "matchup": (
+            f"{meta.get('blue_team_name') or 'Blue'} vs "
+            f"{meta.get('yellow_team_name') or 'Yellow'}"
+            if meta.get("is_match")
+            else None
+        ),
         "duration_s": round(dur, 1),
         "playing_s": round(playing_s, 1),
         "run_frac": round(playing_s / dur, 3) if dur else 0.0,

@@ -290,10 +290,16 @@ impl Driver {
             // the ball) is a live param update on the same skill instance.
             (Waypoint::Handle { action, rescue }, Phase::Handle) => {
                 // Acquire exit-bias, computed live so a contested/boundary capture
-                // scoops the ball to the open side. Only used while `!has_ball`.
-                let approach = matches!(action, BallAction::Hold { .. })
-                    .then(|| pickup_heading(world, active_id, ball_pos, opp_goal, *rescue));
-                player.handle_ball(*action, approach);
+                // scoops the ball to the open side. Only used while `!has_ball`;
+                // for non-Hold actions the default action-derived bias is fine.
+                let acquire = if matches!(action, BallAction::Hold { .. }) {
+                    AcquirePosition::Heading(pickup_heading(
+                        world, active_id, ball_pos, opp_goal, *rescue,
+                    ))
+                } else {
+                    AcquirePosition::Default
+                };
+                player.handle_ball(*action, acquire);
                 player.set_role(match action {
                     BallAction::Shoot { .. } => "shooting",
                     BallAction::Strike { .. } => "kicking",

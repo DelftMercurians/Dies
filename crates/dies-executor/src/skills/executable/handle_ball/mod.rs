@@ -36,7 +36,7 @@ mod strike;
 use std::time::Duration;
 
 use dies_core::{Angle, DebugColor, Vector2, PLAYER_RADIUS};
-use dies_strategy_protocol::{BallAction, SkillCommand, SkillStatus};
+use dies_strategy_protocol::{AcquirePosition, BallAction, SkillCommand, SkillStatus};
 use dies_tunables_macro::tunables;
 
 use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
@@ -81,7 +81,7 @@ tunables! {
     /// Backstop: if we have *never* secured the ball this long after the first tick,
     /// give up so the planner can re-elect a capturer.
     #[tunable(unit = "s", min = 1.0, max = 12.0, step = 0.5)]
-    ACQUIRE_BACKSTOP: f64 = 6.0;
+    ACQUIRE_BACKSTOP: f64 = 60.0;
     /// Backstop for the aim stage once we hold the ball (a permanently blocked lane,
     /// say). In concerto the driver's per-action timeout fires well before this.
     #[tunable(unit = "s", min = 1.0, max = 12.0, step = 0.5)]
@@ -287,8 +287,8 @@ enum Stage {
 
 pub struct HandleBallSkill {
     action: BallAction,
-    /// Exit-bias heading for the acquire sub-phase; `None` derives from `action`.
-    approach: Option<Angle>,
+    /// Which side of the ball to take it from during the acquire sub-phase.
+    acquire: AcquirePosition,
     /// Per-command strategy opt-in for firmware magnet capture (default `true`).
     /// ANDed with the `MAGNET_ENABLED` tunable and the robot's ToF capability.
     magnet: bool,
@@ -322,10 +322,10 @@ pub struct HandleBallSkill {
 }
 
 impl HandleBallSkill {
-    pub fn new(action: BallAction, approach: Option<Angle>, magnet: bool) -> Self {
+    pub fn new(action: BallAction, acquire: AcquirePosition, magnet: bool) -> Self {
         Self {
             action,
-            approach,
+            acquire,
             magnet,
             status: SkillStatus::Running,
             stage: Stage::Acquire,
@@ -347,9 +347,9 @@ impl HandleBallSkill {
 
     /// Reconfigure (used by the pass coordinator's Secure phase, which drives this
     /// skill directly rather than through the executor).
-    pub fn reconfigure(&mut self, action: BallAction, approach: Option<Angle>) {
+    pub fn reconfigure(&mut self, action: BallAction, acquire: AcquirePosition) {
         self.action = action;
-        self.approach = approach;
+        self.acquire = acquire;
     }
 
     /// Whether to engage firmware magnet capture this tick. All gates ANDed:
@@ -362,13 +362,16 @@ impl HandleBallSkill {
         MAGNET_ENABLED() > 0.5
             && self.magnet
             && ctx.player.tof_ok
-            && ctx.player.tof_ball_detected
+            // && ctx.player.tof_ball_detected
             && committed
     }
 
-    /// Exit-bias heading for the acquire sub-phase.
+    /// Exit-bias heading for the acquire sub-phase. An explicit `Heading` overrides;
+    /// otherwise (`Default`/`Fastest`) it derives from the action. For `Fastest` the
+    /// heading is still used as the robot's facing during the static approach, but
+    /// the side selection ignores it (see [`exit_bias_weight`](Self::exit_bias_weight)).
     fn acquire_heading(&self, ball_pos: Vector2) -> Angle {
-        if let Some(a) = self.approach {
+        if let AcquirePosition::Heading(a) = self.acquire {
             return a;
         }
         match self.action {
@@ -376,6 +379,16 @@ impl HandleBallSkill {
                 Angle::from_vector(target - ball_pos)
             }
             BallAction::Carry { heading, .. } | BallAction::Hold { heading } => heading,
+        }
+    }
+
+    /// How strongly the acquire side-selection is biased toward the exit heading.
+    /// `Fastest` zeroes it (rank sides purely by how close the staging point is);
+    /// `Default`/`Heading` use the full [`EXIT_BIAS_WEIGHT`] tunable.
+    fn exit_bias_weight(&self) -> f64 {
+        match self.acquire {
+            AcquirePosition::Fastest => 0.0,
+            AcquirePosition::Default | AcquirePosition::Heading(_) => EXIT_BIAS_WEIGHT(),
         }
     }
 
@@ -516,12 +529,12 @@ impl ExecutableSkill for HandleBallSkill {
     fn update_params(&mut self, command: &SkillCommand) {
         if let SkillCommand::HandleBall {
             action,
-            approach,
+            acquire,
             magnet,
         } = command
         {
             self.action = *action;
-            self.approach = *approach;
+            self.acquire = *acquire;
             self.magnet = *magnet;
         }
     }
@@ -658,7 +671,7 @@ mod tests {
     use crate::control::KickerControlInput;
 
     fn skill(action: BallAction) -> HandleBallSkill {
-        HandleBallSkill::new(action, None, true)
+        HandleBallSkill::new(action, AcquirePosition::Default, true)
     }
 
     #[test]
