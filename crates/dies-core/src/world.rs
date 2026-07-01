@@ -913,6 +913,20 @@ pub fn nearest_safe_pos(
     max_radius: i32,
     field: &FieldGeometry,
 ) -> Vector2 {
+    // Fast path: if the target is already clear of the avoided region (and on the
+    // field) and the straight line to it doesn't cross the region, keep it
+    // unchanged. The polar grid below samples on a 50 mm radial step with a
+    // closeness penalty, so for any target within ~one grid step of the robot it
+    // otherwise snaps back to `initial_pos` (the robot's *current* position) —
+    // freezing every fine final approach (e.g. the acquire staging point) ~30 mm
+    // short of its goal, even when no keep-out is anywhere near.
+    if is_pos_in_field(target_pos, field)
+        && entity_to_avoid.distance_to(target_pos) > min_distance
+        && !entity_to_avoid.intersects_line(initial_pos, target_pos)
+    {
+        return target_pos;
+    }
+
     let mut best_pos = target_pos;
     let mut best_loss = f64::INFINITY;
     let min_theta = 0;
@@ -1214,5 +1228,40 @@ mod tests {
 
         // Line parallel to rectangle edge but not touching
         assert!(!rect.intersects_line(Vector2::new(-50.0, -50.0), Vector2::new(50.0, -50.0)));
+    }
+
+    #[test]
+    fn nearest_safe_pos_keeps_a_close_safe_target() {
+        // Regression: a target ~36 mm from the robot, with the keep-out far away,
+        // must be returned unchanged. The coarse polar grid (50 mm radial step +
+        // closeness penalty) used to snap any sub-~37 mm target back to
+        // `initial_pos`, freezing the acquire staging approach ~30 mm short.
+        let field = FieldGeometry::default();
+        let rect = Avoid::Rectangle {
+            min: Vector2::new(3150.0, -1000.0),
+            max: Vector2::new(14500.0, 1000.0),
+        }; // opponent goal-area keep-out, far from the robot below
+        let initial = Vector2::new(2308.0, -1051.0);
+        let target = initial + Vector2::new(0.7, 0.7).normalize() * 36.0;
+        let out = nearest_safe_pos(rect, 80.0, initial, target, 4000, &field);
+        assert_relative_eq!(out.x, target.x, epsilon = 1e-6);
+        assert_relative_eq!(out.y, target.y, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn nearest_safe_pos_relocates_a_target_inside_the_keepout() {
+        // The grid search still runs when the target is genuinely unsafe: the
+        // result must land outside the keep-out.
+        let field = FieldGeometry::default();
+        let center = Vector2::new(0.0, 0.0);
+        let ball = Avoid::Circle { center };
+        let initial = Vector2::new(900.0, 0.0);
+        let target = center; // right on the ball
+        let out = nearest_safe_pos(ball.clone(), 800.0, initial, target, 4000, &field);
+        assert!(
+            ball.distance_to(out) >= 800.0,
+            "expected >=800mm from ball, got {}",
+            ball.distance_to(out)
+        );
     }
 }

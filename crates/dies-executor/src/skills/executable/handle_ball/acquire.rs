@@ -39,7 +39,11 @@ impl HandleBallSkill {
         let pt = perp_target(axis.heading, axis.dir);
 
         let mut input = PlayerControlInput::new();
-        input.with_yaw(axis.heading);
+        let ball_heading = (ball_pos - player_pos)
+            .try_normalize(1e-6)
+            .map(Angle::from_vector)
+            .unwrap_or(axis.heading);
+        input.with_yaw(ball_heading);
 
         // Debug: the chosen approach axis (ball → staging side), the corridor
         // geometry, and whether the velocity-aware tail-catch is engaged.

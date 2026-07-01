@@ -139,7 +139,7 @@ impl Default for PossessionConfig {
             contest_speed_max: 200.0,
             contest_enter_frames: 2,
             contest_exit_frames: 5,
-            tof_backup_conf_th: 50.0,
+            tof_backup_conf_th: 100.0,
             tof_backup_x_th: 10.0,
             tof_backup_y_th: 15.0,
             tof_backup_enter_frames: 2,
