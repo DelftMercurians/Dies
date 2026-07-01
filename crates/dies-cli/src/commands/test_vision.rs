@@ -63,6 +63,7 @@ pub async fn test_vision(
             dies_ssl_client::SslMessage::Vision(_) => {
                 if !received_vision {
                     received_vision = true;
+                    println!("Received vision packet");
                 }
             }
             dies_ssl_client::SslMessage::Referee(_) => {
@@ -71,9 +72,7 @@ pub async fn test_vision(
                     received_gc = true;
                 }
             }
-            dies_ssl_client::SslMessage::Tracker(_) => {
-                println!("Received tracker packet");
-            }
+            dies_ssl_client::SslMessage::Tracker(_) => {}
         }
     }
 
