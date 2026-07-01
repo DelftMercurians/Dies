@@ -257,6 +257,15 @@ pub fn best_finishing_pocket(
     keeper_bias: f64,
     half_wid: f64,
     y_offset: f64,
+    // Hysteresis: last tick's pocket (if any) and a *multiplicative* incumbency
+    // bonus. The candidate nearest `prev` has its score scaled by up to
+    // `1 + stickiness`, so the pocket sticks unless a challenger is decisively
+    // better — the box-runner analogue of the supporters' target hysteresis, but
+    // relative because the pocket score (`angle × clearance`) has no fixed scale.
+    // Pass `None` / `0.0` for the stateless behaviour.
+    prev: Option<Vector2>,
+    stickiness: f64,
+    sticky_radius: f64,
 ) -> Vector2 {
     // Away from the ball so the cutback crosses the keeper; deterministic when the
     // ball is dead-central (matches the box-runner's own default in formation.rs).
@@ -287,7 +296,15 @@ pub fn best_finishing_pocket(
             if angle <= 0.0 {
                 continue;
             }
-            let score = angle * receiver_clearance(cand, opponents);
+            let mut score = angle * receiver_clearance(cand, opponents);
+            // Multiplicative incumbency: a pocket sitting on last tick's choice is
+            // boosted so the argmax holds it against a marginally-better neighbour.
+            if let Some(p) = prev {
+                if stickiness > 0.0 {
+                    let closeness = 1.0 - smoothstep(0.0, sticky_radius, (cand - p).norm());
+                    score *= 1.0 + stickiness * closeness;
+                }
+            }
             if best.map(|(_, s)| score > s).unwrap_or(true) {
                 best = Some((cand, score));
             }
@@ -444,6 +461,15 @@ pub fn best_support_pos(
     // resolve to the same outlet (structural anti-stacking, not a soft tie-break).
     taken: &[Vector2],
     min_separation: f64,
+    // Hysteresis: last tick's target for this slot (if any) and the incumbency
+    // bonus. The candidate nearest `prev` gets up to `+stickiness` added to its
+    // score, so a challenger must be decisively more open to displace the
+    // incumbent — this is what stops the target thrashing between near-tied grid
+    // cells under opponent jitter. Pass `None` / `0.0` for the stateless behaviour.
+    // `sticky_radius` is the distance over which the bonus decays to zero.
+    prev: Option<Vector2>,
+    stickiness: f64,
+    sticky_radius: f64,
 ) -> Vector2 {
     const PAD: f64 = 400.0;
     // Conservative grid stays modest and central; attacking mode reaches toward the
@@ -514,7 +540,16 @@ pub fn best_support_pos(
             let reach = smoothstep(0.0, MIN_OUTLET_SEPARATION, (cand - ball).norm());
             let open = lane_openness(ball, cand, opponents, corridor) * reach;
             let clearance = receiver_clearance(cand, opponents);
-            let score = open + clearance + fwd_bonus * cand.x + SIDE_BIAS * sign * cand.y;
+            // Incumbency bonus: full weight for a candidate sitting on last tick's
+            // target, decaying to zero by `sticky_radius`, so the argmax holds the
+            // current outlet unless a challenger is more open by `stickiness`.
+            let sticky = match prev {
+                Some(p) if stickiness > 0.0 => {
+                    stickiness * (1.0 - smoothstep(0.0, sticky_radius, (cand - p).norm()))
+                }
+                _ => 0.0,
+            };
+            let score = open + clearance + fwd_bonus * cand.x + SIDE_BIAS * sign * cand.y + sticky;
             if fallback.is_none() || score > fallback.unwrap().1 {
                 fallback = Some((cand, score));
             }
@@ -917,6 +952,9 @@ mod tests {
             400.0,
             &[],
             1500.0,
+            None,
+            0.0,
+            0.0,
         );
         let openness = lane_openness(ball, pos, std::slice::from_ref(&blocker), 500.0);
         assert!(pos.y > 0.0, "support should stay on its flank");
@@ -949,6 +987,9 @@ mod tests {
                 400.0,
                 &[],
                 1500.0,
+                None,
+                0.0,
+                0.0,
             );
             let in_box = pos.x > half_len - pen_depth && pos.y.abs() < pen_half_width;
             assert!(!in_box, "support landed inside the opp box at {pos:?}");
@@ -975,6 +1016,9 @@ mod tests {
             400.0,
             &[],
             1500.0,
+            None,
+            0.0,
+            0.0,
         );
         assert!(
             pos.x > 3000.0,
@@ -1015,6 +1059,9 @@ mod tests {
             400.0,
             &[],
             1500.0,
+            None,
+            0.0,
+            0.0,
         );
         assert!(
             (pos - marker.position).norm() > 700.0,
@@ -1054,6 +1101,9 @@ mod tests {
                 400.0,
                 &taken,
                 min_sep,
+                None,
+                0.0,
+                0.0,
             );
             for prev in &taken {
                 assert!(
@@ -1063,6 +1113,98 @@ mod tests {
             }
             taken.push(pos);
         }
+    }
+
+    #[test]
+    fn incumbency_bonus_holds_a_tied_outlet_but_yields_to_a_better_one() {
+        // The thrashing fix: `best_support_pos` is a discrete argmax, so when two
+        // grid outlets are near-tied the winner flips every tick under opponent
+        // jitter, yanking the supporter's target across the field. Last tick's
+        // target gets an incumbency bonus so the choice sticks — UNLESS a
+        // challenger is decisively more open.
+        let half_len = 4500.0;
+        let ball = Vector2::new(3000.0, 0.0);
+        let flanks = [0.46, 0.62, 0.78];
+
+        // 1. Perfect tie (no opponents, central slot): the default tie-break picks
+        //    one flank deterministically. Feed the *mirror* point back as `prev`;
+        //    the bonus must flip the winner to the incumbent's side, proving the
+        //    hysteresis — not a fixed bias — is what decides a tie.
+        let base = best_support_pos(
+            ball,
+            &[],
+            0.0,
+            half_len,
+            3000.0,
+            500.0,
+            1000.0,
+            1000.0,
+            true,
+            flanks,
+            400.0,
+            &[],
+            1500.0,
+            None,
+            0.0,
+            0.0,
+        );
+        let mirror = Vector2::new(base.x, -base.y);
+        let held = best_support_pos(
+            ball,
+            &[],
+            0.0,
+            half_len,
+            3000.0,
+            500.0,
+            1000.0,
+            1000.0,
+            true,
+            flanks,
+            400.0,
+            &[],
+            1500.0,
+            Some(mirror),
+            crate::config::SUPPORT_STICKINESS,
+            crate::config::SUPPORT_STICKY_RADIUS,
+        );
+        assert!(
+            (held - mirror).norm() < (base - mirror).norm(),
+            "incumbency should hold the previous outlet {mirror:?} against a tie, got {held:?}"
+        );
+
+        // 2. Decisive gap: an opponent parks on the incumbent outlet (clearance → 0)
+        //    while the opposite flank is wide open. The ~1.0 clearance gap dwarfs the
+        //    0.18 bonus, so the supporter must relocate rather than pin on a covered
+        //    spot.
+        let covered = base; // incumbent outlet from step 1
+        let marker = PlayerState::new(
+            PlayerId::new(9),
+            covered,
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let moved = best_support_pos(
+            ball,
+            std::slice::from_ref(&marker),
+            0.0,
+            half_len,
+            3000.0,
+            500.0,
+            1000.0,
+            1000.0,
+            true,
+            flanks,
+            400.0,
+            &[],
+            1500.0,
+            Some(covered),
+            crate::config::SUPPORT_STICKINESS,
+            crate::config::SUPPORT_STICKY_RADIUS,
+        );
+        assert!(
+            (moved - covered).norm() > crate::config::SUPPORT_STICKY_RADIUS,
+            "supporter should yield a covered outlet despite incumbency, stayed at {moved:?}"
+        );
     }
 
     #[test]
@@ -1327,6 +1469,7 @@ mod tests {
         let pos = best_finishing_pocket(
             base, ball, GOAL_X, GOAL_W, &opps, None, RR, KR, BR, BIAS, 3000.0, // half_wid
             400.0,  // y_offset
+            None, 0.0, 0.0,
         );
         assert!(
             (pos - base).norm() > 1.0,
@@ -1346,6 +1489,87 @@ mod tests {
     }
 
     #[test]
+    fn finishing_pocket_incumbency_can_hold_a_pocket() {
+        // No opponents: every pocket is clear, scored purely by its shot angle, so
+        // the stateless search picks the widest-angle candidate. Feeding a *different*
+        // valid pocket back as the incumbent with a strong enough multiplicative
+        // bonus must flip the choice to it — proving the hysteresis can hold a pocket
+        // the raw argmax wouldn't pick — while the normal bonus on the incumbent
+        // simply keeps it.
+        let ball = Vector2::new(3000.0, 500.0);
+        let base = Vector2::new(3500.0, -400.0);
+        let stateless = best_finishing_pocket(
+            base,
+            ball,
+            GOAL_X,
+            GOAL_W,
+            &[],
+            None,
+            RR,
+            KR,
+            BR,
+            BIAS,
+            3000.0,
+            400.0,
+            None,
+            0.0,
+            0.0,
+        );
+        // A different but valid candidate: deeper depth (base.x - 300) on the widest
+        // away-side band (y_offset * 1.7), matching the grid `best_finishing_pocket`
+        // samples so it lands exactly on a candidate.
+        let alt = Vector2::new(base.x - 300.0, -400.0 * 1.7);
+        assert!(
+            (alt - stateless).norm() > 1.0,
+            "alt {alt:?} must differ from the stateless pick {stateless:?}"
+        );
+        // Normal bonus on the incumbent holds it.
+        let held = best_finishing_pocket(
+            base,
+            ball,
+            GOAL_X,
+            GOAL_W,
+            &[],
+            None,
+            RR,
+            KR,
+            BR,
+            BIAS,
+            3000.0,
+            400.0,
+            Some(stateless),
+            crate::config::BOX_RUNNER_STICKINESS,
+            crate::config::BOX_RUNNER_STICKY_RADIUS,
+        );
+        assert!(
+            (held - stateless).norm() < 1.0,
+            "the incumbent pocket should hold under a normal bonus, got {held:?}"
+        );
+        // A strong bonus on the alternative flips the choice onto it.
+        let flipped = best_finishing_pocket(
+            base,
+            ball,
+            GOAL_X,
+            GOAL_W,
+            &[],
+            None,
+            RR,
+            KR,
+            BR,
+            BIAS,
+            3000.0,
+            400.0,
+            Some(alt),
+            5.0,
+            crate::config::BOX_RUNNER_STICKY_RADIUS,
+        );
+        assert!(
+            (flipped - alt).norm() < 1.0,
+            "a strong incumbency bonus should hold the alt pocket, got {flipped:?}"
+        );
+    }
+
+    #[test]
     fn finishing_pocket_degrades_to_base_with_no_window() {
         // Mouth fully walled off → no candidate has a shot window → return `base`
         // unchanged (never worse than the old static behaviour).
@@ -1355,7 +1579,8 @@ mod tests {
             .map(|i| opp(i, 4300.0, -600.0 + i as f64 * 200.0))
             .collect();
         let pos = best_finishing_pocket(
-            base, ball, GOAL_X, GOAL_W, &wall, None, RR, KR, BR, BIAS, 3000.0, 400.0,
+            base, ball, GOAL_X, GOAL_W, &wall, None, RR, KR, BR, BIAS, 3000.0, 400.0, None, 0.0,
+            0.0,
         );
         assert!(
             (pos - base).norm() < 1.0,

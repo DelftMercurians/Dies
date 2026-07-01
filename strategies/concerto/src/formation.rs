@@ -125,6 +125,14 @@ pub struct Formation {
     /// chase isn't re-elected to a marginally-closer robot every recompute as the
     /// (lead) ball point jitters — the cause of most capturing↔unassigned churn.
     last_capturer: Option<PlayerId>,
+    /// Last tick's resolved target for each wide-support slot, keyed by slot index.
+    /// `best_support_pos` is a stateless discrete argmax over a grid of outlets, so
+    /// under opponent-position jitter its winner flips between near-tied cells every
+    /// tick — thrashing the supporter's target. Feeding last tick's target back in as
+    /// an incumbency bonus (see `config::SUPPORT_STICKINESS`) makes the choice sticky.
+    /// Positions are re-resolved every tick (unlike the frozen role *assignment*), so
+    /// this is where the per-slot position hysteresis has to live.
+    support_prev: HashMap<u16, Vector2>,
     /// Count-aware stance parameters (wall sizing, rest-defense gating, aggression),
     /// loaded once from the environment so the offence/defence balance can be
     /// tuned and swept without recompiling.
@@ -148,6 +156,7 @@ impl Formation {
             last_plan_ctx: PlanContext::default(),
             last_capture: None,
             last_capturer: None,
+            support_prev: HashMap::new(),
             stance: config::StanceConfig::from_env(),
         }
     }
@@ -308,7 +317,7 @@ impl Formation {
     /// Build the role set for this tick. Generators run in priority order; spread
     /// roles top up to the over-generation target.
     fn generate_roles(
-        &self,
+        &mut self,
         world: &World,
         plan_ctx: &PlanContext,
         capture: Option<&CaptureRole>,
@@ -564,6 +573,7 @@ impl Formation {
                 1 => -1.0,
                 _ => 0.0,
             };
+            let slot_key = slot as u16;
             let pos = geometry::best_support_pos(
                 ball,
                 world.opp_players(),
@@ -578,7 +588,11 @@ impl Formation {
                 config::SUPPORT_GOAL_LINE_SETBACK,
                 &taken,
                 config::SUPPORT_MIN_SEPARATION,
+                self.support_prev.get(&slot_key).copied(),
+                config::SUPPORT_STICKINESS,
+                config::SUPPORT_STICKY_RADIUS,
             );
+            self.support_prev.insert(slot_key, pos);
             taken.push(pos);
             roles.push(Role {
                 id: RoleId {
@@ -640,6 +654,7 @@ impl Formation {
                 .unwrap_or(false)
                 && ball.x > config::FINAL_THIRD_X
                 && (ball - opp_goal).norm() < config::SHOOT_RANGE;
+            let box_slot = config::SUPPORT_COUNT as u16;
             let pos = if shot_in_flight {
                 let side = if ball.y > 0.0 { -1.0 } else { 1.0 };
                 Vector2::new(
@@ -650,6 +665,8 @@ impl Formation {
                 // Slide the finisher into the open shooting pocket the defence leaves,
                 // rather than a static cutback point — converts the cutback the planner
                 // already targets into a real shot. Falls back to `base` if no window.
+                // Incumbency-stabilised so the pocket doesn't flip between near-tied
+                // candidates under opponent jitter.
                 geometry::best_finishing_pocket(
                     base,
                     ball,
@@ -663,8 +680,16 @@ impl Formation {
                     config::SHOT_KEEPER_BIAS,
                     half_wid,
                     config::BOX_RUNNER_Y_OFFSET,
+                    self.support_prev.get(&box_slot).copied(),
+                    config::BOX_RUNNER_STICKINESS,
+                    config::BOX_RUNNER_STICKY_RADIUS,
                 )
             };
+            // Only the pocket branch feeds the hysteresis; the transient rebound-crash
+            // point is a deep goal-mouth override, not a pocket to hold onto.
+            if !shot_in_flight {
+                self.support_prev.insert(box_slot, pos);
+            }
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Support,
@@ -944,7 +969,7 @@ mod tests {
         ];
         let opp = vec![player(11, 500.0, 0.0), player(12, -1000.0, 1000.0)];
         let world = world_with(own, opp, 1);
-        let f = Formation::new();
+        let mut f = Formation::new();
 
         let marks = |rs: &[Role]| rs.iter().filter(|r| r.id.kind == RoleKind::Mark).count();
         let plain = f.generate_roles(&world, &PlanContext::default(), None, 3);
@@ -975,7 +1000,7 @@ mod tests {
         ];
         let opp = vec![player(11, 500.0, 0.0), player(12, 2000.0, 1500.0)];
         let world = world_with(own, opp, 1);
-        let f = Formation::new();
+        let mut f = Formation::new();
 
         let plain = f.generate_roles(&world, &PlanContext::default(), None, 4);
         let supp = f.generate_roles(
@@ -1040,7 +1065,7 @@ mod tests {
             possession_stale: false,
             ball_contest: None,
         });
-        let f = Formation::new();
+        let mut f = Formation::new();
         let roles = f.generate_roles(&world, &PlanContext::default(), None, 4);
 
         // The box-runner is the central Support slot (slot == SUPPORT_COUNT).
@@ -1103,7 +1128,7 @@ mod tests {
             possession_stale: false,
             ball_contest: None,
         });
-        let f = Formation::new();
+        let mut f = Formation::new();
         let roles = f.generate_roles(&world, &PlanContext::default(), None, 4);
         let runner = roles
             .iter()

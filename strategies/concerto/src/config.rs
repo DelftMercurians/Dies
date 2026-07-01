@@ -342,6 +342,27 @@ pub const SUPPORT_LANE_CORRIDOR: f64 = 500.0;
 /// supporter, so two never converge on the same outlet. Sized so distinct grid cells
 /// survive the constraint while genuinely co-located spots are forbidden.
 pub const SUPPORT_MIN_SEPARATION: f64 = 1500.0;
+/// Incumbency bonus that stabilises a supporter's target against frame-to-frame
+/// thrashing. `best_support_pos` is a discrete argmax over a grid of candidate
+/// outlets scored by `lane_openness + receiver_clearance` (both in [0, 1]); with
+/// opponent positions jittering under Kalman noise, the top two candidates are
+/// often near-tied and the winner flips every tick — yanking the target across a
+/// grid cell (or the whole field, on a flank flip) and leaving the supporter
+/// dithering in place instead of arriving. The candidate nearest last tick's
+/// target for this slot gets up to `+SUPPORT_STICKINESS` added to its score, so a
+/// challenger must be *decisively* more open (by this margin in the 0..2 score
+/// space) to displace the incumbent — hysteresis in argmax form, the same
+/// commitment pattern as the capture-role discount. Small enough that a genuinely
+/// better outlet (openness swing ≥ this) still wins and the supporter follows the
+/// ball as the whole grid advances.
+pub const SUPPORT_STICKINESS: f64 = 0.18;
+/// Distance over which the incumbency bonus decays to zero (mm). Sized well below
+/// the grid spacing (~1000mm in x, wider across flanks) so only the candidate
+/// essentially *at* last tick's target keeps the full bonus and its neighbours get
+/// none — the bonus favours holding the current outlet, not a whole region. Also
+/// absorbs the small per-tick translation of the ball-relative grid so the
+/// incumbent stays sticky through jitter while still advancing with the ball.
+pub const SUPPORT_STICKY_RADIUS: f64 = 600.0;
 // ── Central box-runner (striker) ────────────────────────────────────────────
 // v0 (and most simple defences) cover the centre of the mouth with only a 2-robot
 // wall + an arc keeper that bias toward the ball — so the highest-value attacking
@@ -357,6 +378,21 @@ pub const BOX_RUNNER_FRONT_MARGIN: f64 = 250.0;
 /// the ball — it opens a cutback angle across the keeper rather than standing on
 /// the ball's own line. Kept small so it stays within the high-value central zone.
 pub const BOX_RUNNER_Y_OFFSET: f64 = 350.0;
+/// Incumbency bonus for the box-runner's finishing pocket, the analogue of
+/// `SUPPORT_STICKINESS` for `best_finishing_pocket`. That pocket is also a discrete
+/// argmax (6 candidates near the box front), so it flips between near-tied pockets
+/// under opponent jitter. Unlike the supporters' additive `open+clearance` score
+/// (0..2), the pocket is scored `shot_angle × receiver_clearance` — a much smaller,
+/// input-dependent scale — so the bonus is applied *multiplicatively* here: the
+/// candidate nearest last tick's pocket has its score scaled by up to
+/// `1 + BOX_RUNNER_STICKINESS`, i.e. a challenger must be this fraction better to
+/// take the pocket. Scale-free, so it holds whatever the absolute angles are.
+pub const BOX_RUNNER_STICKINESS: f64 = 0.15;
+/// Decay distance (mm) for the box-runner incumbency bonus. Tighter than the wide
+/// supporters' radius because the finishing pockets are only ~200–500mm apart — this
+/// keeps the bonus discriminating between adjacent pockets (holds *this* pocket, not
+/// the whole box front) rather than smearing across all of them.
+pub const BOX_RUNNER_STICKY_RADIUS: f64 = 250.0;
 /// Importance of the box-runner role while attacking. At/above `IMP_SUPPORT_ATTACK`
 /// so the central outlet is reliably staffed when we commit forward.
 pub const IMP_STRIKER: f64 = 5.5;
