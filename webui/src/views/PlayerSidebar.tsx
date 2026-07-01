@@ -50,6 +50,7 @@ import { skillStateTextClass } from "@/lib/hardware";
 import { FC, useState } from "react";
 import CodeEditor from "./CodeEditor";
 import HardwareReadout from "./HardwareReadout";
+import HeadingIndicator from "./HeadingIndicator";
 import TargetVelCrosshair from "./TargetVelCrosshair";
 import TimeSeriesChart from "./TimeSeriesChart";
 
@@ -275,6 +276,24 @@ const PlayerSidebar: FC<PlayerSidebarProps> = ({
             </div>
           ) : null;
         })()}
+
+        {/* Heading (compass): measured yaw vs commanded setpoint + rate */}
+        {selectedPlayer ? (
+          <div className="flex flex-col gap-1">
+            <div className="text-[11px] uppercase tracking-wider text-text-dim">
+              Heading
+            </div>
+            <HeadingIndicator
+              yaw={selectedPlayer.yaw}
+              setpoint={
+                typeof playerDebugMap["heading_setpoint"] === "number"
+                  ? (playerDebugMap["heading_setpoint"] as number)
+                  : null
+              }
+              rate={selectedPlayer.angular_speed}
+            />
+          </div>
+        ) : null}
 
         {/* Debug data table */}
         <div className="flex flex-col gap-1">

@@ -376,6 +376,35 @@ impl From<glue::HG_ReflexState> for ReflexKickState {
     }
 }
 
+impl ReflexKickState {
+    /// Whether the firmware reflex kicker is currently armed and will fire on
+    /// ball contact.
+    pub fn is_armed(self) -> bool {
+        matches!(self, ReflexKickState::Armed)
+    }
+
+    /// Stable snake_case tag used for columnar logging.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReflexKickState::Off => "off",
+            ReflexKickState::Armed => "armed",
+            ReflexKickState::Cooldown => "cooldown",
+            ReflexKickState::Emergency => "emergency",
+        }
+    }
+
+    /// Inverse of [`ReflexKickState::as_str`], for log read-back.
+    pub fn from_tag(s: &str) -> Option<Self> {
+        match s {
+            "off" => Some(ReflexKickState::Off),
+            "armed" => Some(ReflexKickState::Armed),
+            "cooldown" => Some(ReflexKickState::Cooldown),
+            "emergency" => Some(ReflexKickState::Emergency),
+            _ => None,
+        }
+    }
+}
+
 /// Echo of the last command the robot reports having received (global frame).
 #[derive(Debug, Copy, Clone, Serialize)]
 #[typeshare]

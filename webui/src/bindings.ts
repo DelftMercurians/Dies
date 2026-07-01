@@ -1086,6 +1086,13 @@ export interface PlayerData {
 	imu_readings?: [number, number, number, number, number, number];
 	kicker_status?: SysStatus;
 	/**
+	 * State of the firmware reflex-kick state machine, as reported over feedback
+	 * (only meaningful for own players; `None` when the robot reports nothing).
+	 * `Armed` means the kicker will fire the instant the ball trips the beam.
+	 * Surfaced for logging/UI; skills may read it to confirm the firmware armed.
+	 */
+	reflex_kick_state?: ReflexKickState;
+	/**
 	 * The skill this player is currently executing, if known. Only populated
 	 * for own players (the team we control); `None` for opponents and when no
 	 * skill is active.

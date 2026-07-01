@@ -16,6 +16,7 @@ export const feedbackFromPlayer = (p: PlayerData): PlayerFeedbackMsg => ({
   kicker_temp: p.kicker_temp,
   pack_voltages: p.pack_voltages,
   breakbeam_ball_detected: p.breakbeam_ball_detected,
+  reflex_kick_state: p.reflex_kick_state,
   imu_readings: p.imu_readings,
   tof_ball_detected: p.tof_ball_detected,
   tof_xy: p.tof_xy,

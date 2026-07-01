@@ -35,8 +35,8 @@ use arrow::array::{
 use arrow::ipc::reader::StreamReader;
 use dies_core::{
     Angle, BallData, DebugColor, DebugMap, DebugShape, DebugValue, GameState, Handicap, PlayerData,
-    PlayerId, RawGameStateData, SideAssignment, SidelineReason, SysStatus, TeamColor, Vector2,
-    Vector3, WorldData,
+    PlayerId, RawGameStateData, ReflexKickState, SideAssignment, SidelineReason, SysStatus,
+    TeamColor, Vector2, Vector3, WorldData,
 };
 use parquet::arrow::arrow_reader::{
     ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReaderBuilder,
@@ -287,6 +287,7 @@ struct PlayerRowR {
     pack_voltage_1: Option<f32>,
     breakbeam_ball_detected: bool,
     has_ball: bool,
+    reflex_kick_state: Option<String>,
     imu_status: Option<String>,
     kicker_status: Option<String>,
     handicaps: String,
@@ -662,6 +663,9 @@ fn append_players(
     let kicker_status = strs(b, "kicker_status");
     let handicaps = strs(b, "handicaps");
     // Added later — absent in older logs, so read defensively.
+    let reflex_kick_state = b
+        .column_by_name("reflex_kick_state")
+        .and_then(|c| c.as_any().downcast_ref::<StringArray>());
     let sideline = b
         .column_by_name("sideline")
         .and_then(|c| c.as_any().downcast_ref::<StringArray>());
@@ -684,6 +688,7 @@ fn append_players(
             pack_voltage_1: opt_f32(pack_voltage_1, i),
             breakbeam_ball_detected: breakbeam.value(i),
             has_ball: has_ball.value(i),
+            reflex_kick_state: reflex_kick_state.and_then(|a| opt_str(a, i)),
             imu_status: opt_str(imu_status, i),
             kicker_status: opt_str(kicker_status, i),
             handicaps: handicaps.value(i).to_string(),
@@ -876,6 +881,10 @@ fn player_data_from_row(r: &PlayerRowR, t: f64) -> PlayerData {
     pd.pack_voltages = pack_voltages;
     pd.breakbeam_ball_detected = r.breakbeam_ball_detected;
     pd.has_ball = r.has_ball;
+    pd.reflex_kick_state = r
+        .reflex_kick_state
+        .as_deref()
+        .and_then(ReflexKickState::from_tag);
     pd.imu_status = r.imu_status.as_deref().and_then(sys_status_from_str);
     pd.kicker_status = r.kicker_status.as_deref().and_then(sys_status_from_str);
     pd.handicaps = parse_handicaps(&r.handicaps);

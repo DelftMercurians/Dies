@@ -5,8 +5,8 @@ use std::{
 
 use dies_core::{
     Angle, FieldGeometry, FieldSnapshot, GameState, GcSimCommand, PlayerFeedbackMsg,
-    PlayerGlobalMoveCmd, PlayerId, PlayerMoveCmd, RobotCmd, SideAssignment, SysStatus, TeamColor,
-    Vector2, Vector3, WorldInstant,
+    PlayerGlobalMoveCmd, PlayerId, PlayerMoveCmd, ReflexKickState, RobotCmd, SideAssignment,
+    SysStatus, TeamColor, Vector2, Vector3, WorldInstant,
 };
 use dies_protos::{
     ssl_gc_referee_message::{
@@ -2523,6 +2523,11 @@ impl Simulation {
             if send_feedback {
                 let mut feedback = PlayerFeedbackMsg::empty(player.id);
                 feedback.breakbeam_ball_detected = Some(player.breakbeam);
+                feedback.reflex_kick_state = Some(if player.reflex_armed {
+                    ReflexKickState::Armed
+                } else {
+                    ReflexKickState::Off
+                });
                 feedback.kicker_status = Some(SysStatus::Ready);
                 feedback.imu_status = if self.config.has_imu {
                     Some(SysStatus::Ready)

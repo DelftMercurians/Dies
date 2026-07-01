@@ -1,4 +1,10 @@
-import { PlayerData, PlayerFeedbackMsg, SysStatus, TeamColor } from "@/bindings";
+import {
+  PlayerData,
+  PlayerFeedbackMsg,
+  ReflexKickState,
+  SysStatus,
+  TeamColor,
+} from "@/bindings";
 import { Badge } from "@/components/ui/badge";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn, formatNumber } from "@/lib/utils";
@@ -102,6 +108,7 @@ const HardwareReadout: FC<{
               status={fb.tof_status}
               label="Time of Flight Sensor"
             />
+            <ReflexIndicator state={fb.reflex_kick_state} />
           </Section>
 
           {/* imu */}
@@ -228,6 +235,43 @@ const Section: FC<{ title: string; children: React.ReactNode }> = ({
     </div>
   </div>
 );
+
+/**
+ * Firmware reflex-kick state. Quiet unless the kicker is actually armed
+ * (amber, will fire on ball contact) or faulted (red). Off/cooldown stay dim.
+ */
+const ReflexIndicator: FC<{ state?: ReflexKickState }> = ({ state }) => {
+  const armed = state === ReflexKickState.Armed;
+  const emergency = state === ReflexKickState.Emergency;
+  return (
+    <SimpleTooltip title={`Reflex kicker: ${state ?? "n/a"}`}>
+      <span className="flex items-center gap-1.5">
+        <span
+          className={cn(
+            "w-1.5 h-1.5 rounded-full",
+            armed
+              ? "bg-accent-amber"
+              : emergency
+              ? "bg-accent-red"
+              : "bg-border-muted",
+          )}
+        />
+        <span
+          className={cn(
+            "text-xs",
+            armed
+              ? "text-accent-amber"
+              : emergency
+              ? "text-accent-red"
+              : "text-text-std",
+          )}
+        >
+          Reflex{armed ? " armed" : ""}
+        </span>
+      </span>
+    </SimpleTooltip>
+  );
+};
 
 const StatusDot: FC<{ status?: SysStatus; label: string }> = ({
   status,

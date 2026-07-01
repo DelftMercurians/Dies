@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::{
-    distance_to_line, player::PlayerId, Angle, FieldGeometry, Handicap, Possession, RoleType,
-    SideAssignment, SysStatus, TeamColor, TeamPlayerId, Vector2, Vector3,
+    distance_to_line, player::PlayerId, Angle, FieldGeometry, Handicap, Possession,
+    ReflexKickState, RoleType, SideAssignment, SysStatus, TeamColor, TeamPlayerId, Vector2,
+    Vector3,
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
@@ -402,6 +403,11 @@ pub struct PlayerData {
     pub imu_status: Option<SysStatus>,
     pub imu_readings: Option<[f32; 6]>,
     pub kicker_status: Option<SysStatus>,
+    /// State of the firmware reflex-kick state machine, as reported over feedback
+    /// (only meaningful for own players; `None` when the robot reports nothing).
+    /// `Armed` means the kicker will fire the instant the ball trips the beam.
+    /// Surfaced for logging/UI; skills may read it to confirm the firmware armed.
+    pub reflex_kick_state: Option<ReflexKickState>,
 
     /// The skill this player is currently executing, if known. Only populated
     /// for own players (the team we control); `None` for opponents and when no
@@ -445,6 +451,7 @@ impl PlayerData {
             tof_backup_ball_detected: false,
             kicker_status: None,
             imu_readings: None,
+            reflex_kick_state: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
@@ -1049,6 +1056,7 @@ pub fn mock_world_data() -> WorldData {
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
+            reflex_kick_state: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
@@ -1078,6 +1086,7 @@ pub fn mock_world_data() -> WorldData {
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
+            reflex_kick_state: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
@@ -1142,6 +1151,7 @@ pub fn mock_team_data() -> TeamData {
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
+            reflex_kick_state: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
@@ -1171,6 +1181,7 @@ pub fn mock_team_data() -> TeamData {
             imu_status: Some(SysStatus::Ready),
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
+            reflex_kick_state: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
