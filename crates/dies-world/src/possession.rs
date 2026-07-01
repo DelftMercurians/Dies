@@ -310,12 +310,16 @@ impl PossessionTracker {
         let ball_speed = ball.velocity.xy().norm();
 
         // (id, distance-to-ball, breakbeam, controlled) for every robot.
+        // Sidelined robots (radio-lost / card-removed) can't meaningfully own the
+        // ball — we can't act on it — so they're excluded from ownership.
         let cands: Vec<(TeamPlayerId, f64, bool, bool)> = blue
             .iter()
+            .filter(|p| p.sideline.is_none())
             .map(|p| (TeamColor::Blue, controlled_blue, p))
             .chain(
                 yellow
                     .iter()
+                    .filter(|p| p.sideline.is_none())
                     .map(|p| (TeamColor::Yellow, controlled_yellow, p)),
             )
             .map(|(team_color, controlled, p)| {
@@ -533,6 +537,37 @@ mod tests {
         }
         let contest = poss.contest.expect("contest should fire");
         assert_eq!(contest_teams(&contest), (true, true), "both teams crowding");
+    }
+
+    /// A sidelined robot (radio-lost / card-removed) sitting on the ball with its
+    /// breakbeam tripped must NOT be credited with possession — we can't act on it.
+    #[test]
+    fn sidelined_robot_does_not_own_ball() {
+        let cfg = PossessionConfig::default();
+        let mut t = PossessionTracker::new();
+        let mut dead = player(1, 0.0, 0.0, true); // breakbeam on, right on the ball
+        dead.sideline = Some(dies_core::SidelineReason::RadioLost);
+        let blue = vec![dead];
+        let yellow: Vec<PlayerData> = vec![];
+        let b = ball(0.0);
+
+        let mut poss = dies_core::Possession::default();
+        for i in 0..(cfg.contest_enter_frames + 20) {
+            poss = t.update(
+                Some(&b),
+                &blue,
+                &yellow,
+                true,
+                false,
+                &cfg,
+                i as f64 * 0.016,
+            );
+        }
+        assert!(
+            !matches!(poss.state, PossessionState::Owned { .. }),
+            "a sidelined robot must not own the ball, got {:?}",
+            poss.state
+        );
     }
 
     /// Carrying the ball in open space (no opponent near) is not a contest.

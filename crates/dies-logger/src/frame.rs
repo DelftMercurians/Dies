@@ -7,7 +7,7 @@
 
 use dies_core::{
     BallData, DebugColor, DebugMap, DebugShape, DebugValue, Handicap, PlayerData, SideAssignment,
-    SysStatus, TeamColor, WorldData,
+    SidelineReason, SysStatus, TeamColor, WorldData,
 };
 
 /// One world frame, projected into the per-frame tables.
@@ -71,6 +71,8 @@ pub struct PlayerRow {
     pub imu_readings: Option<[f32; 6]>,
     pub kicker_status: Option<String>,
     pub handicaps: String,
+    /// "radio_lost" / "card_removed" when sidelined; `None` for normal players.
+    pub sideline: Option<String>,
 }
 
 /// One robot's full basestation feedback for a frame, serialized to JSON. The
@@ -250,6 +252,14 @@ fn player_row(team: TeamColor, p: &PlayerData) -> PlayerRow {
         imu_readings: p.imu_readings,
         kicker_status: p.kicker_status.map(|s| sys_status_str(s).to_string()),
         handicaps,
+        sideline: p.sideline.map(|s| sideline_reason_str(s).to_string()),
+    }
+}
+
+fn sideline_reason_str(r: SidelineReason) -> &'static str {
+    match r {
+        SidelineReason::RadioLost => "radio_lost",
+        SidelineReason::CardRemoved => "card_removed",
     }
 }
 

@@ -4,8 +4,8 @@ use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     Angle, BallData, DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerData,
-    PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor,
-    TeamPlayerId, Vector2, Vector3, WorldData, WorldInstant, WorldUpdate,
+    PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, SideAssignment, SidelineReason,
+    SimulatorCmd, TeamColor, TeamPlayerId, Vector2, Vector3, WorldData, WorldInstant, WorldUpdate,
 };
 use dies_logger::worker;
 use dies_protos::{
@@ -1273,6 +1273,34 @@ impl Executor {
             let infos = ctrl.get_skill_infos();
             for p in world_data.yellow_team.iter_mut() {
                 p.skill = infos.get(&p.id).cloned();
+            }
+        }
+
+        // Yellow-card removal pre-pass (before the strategy): decide which robots
+        // to bench and stamp them `CardRemoved` on the color lists, so the
+        // team-relative transform forks them out of `own_players`. Radio-lost
+        // marks are already present from the tracker. Runs before the broadcast so
+        // the UI sees both sideline reasons.
+        if let Some(ctrl) = self.team_controllers.blue_team.as_mut() {
+            let removed = ctrl.plan_sidelining(
+                &world_data.blue_team,
+                world_data.game_state.blue_team_max_allowed_bots,
+            );
+            for p in world_data.blue_team.iter_mut() {
+                if p.sideline.is_none() && removed.contains(&p.id) {
+                    p.sideline = Some(SidelineReason::CardRemoved);
+                }
+            }
+        }
+        if let Some(ctrl) = self.team_controllers.yellow_team.as_mut() {
+            let removed = ctrl.plan_sidelining(
+                &world_data.yellow_team,
+                world_data.game_state.yellow_team_max_allowed_bots,
+            );
+            for p in world_data.yellow_team.iter_mut() {
+                if p.sideline.is_none() && removed.contains(&p.id) {
+                    p.sideline = Some(SidelineReason::CardRemoved);
+                }
             }
         }
 

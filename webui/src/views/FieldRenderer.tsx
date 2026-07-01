@@ -518,6 +518,20 @@ export class FieldRenderer {
       this.ctx.stroke();
     }
 
+    // Sidelined robots: on the field but not commanded as a roster member. A
+    // dashed ring flags the reason — red for radio loss, amber for a card.
+    if (data.sideline) {
+      this.ctx.save();
+      this.ctx.setLineDash([4, 3]);
+      this.ctx.strokeStyle =
+        data.sideline === "RadioLost" ? "#ef4444" : "#f59e0b";
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, robotCanvasRadius + 4, 0, 2 * Math.PI);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
     // Draw role name and player id if opacity is full (not for the "both" mode
     // secondary rendering).
     if (opacity === 1) {

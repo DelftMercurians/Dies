@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use dies_core::{
-    Angle, Handicap, PlayerData, PlayerFeedbackMsg, PlayerId, SysStatus, TrackerSettings, Vector2,
-    WorldInstant,
+    Angle, Handicap, PlayerData, PlayerFeedbackMsg, PlayerId, SidelineReason, SysStatus,
+    TrackerSettings, Vector2, WorldInstant,
 };
 use dies_protos::ssl_vision_detection::SSL_DetectionRobot;
 use nalgebra::{self as na, Vector4};
@@ -499,6 +499,9 @@ impl PlayerTracker {
                 kicker_status: f.kicker_status,
                 skill: None,
                 handicaps: self.handicaps.clone(),
+                // Feedback-only (bench, no vision) is the radio-alive case, not
+                // radio loss.
+                sideline: None,
             });
         }
         self.last_detection.as_ref().map(|data| PlayerData {
@@ -534,7 +537,19 @@ impl PlayerTracker {
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),
             skill: None,
             handicaps: self.handicaps.clone(),
+            sideline: self
+                .is_uncontrolled_visible()
+                .then_some(SidelineReason::RadioLost),
         })
+    }
+
+    /// True when this is a controlled robot that vision still sees but whose
+    /// radio/control link has gone (feedback stale). Read-only re-slice of the
+    /// EWMAs `check_is_gone` already maintains — it does **not** change the
+    /// gone-detection trigger. Such a robot is kept in the world as an obstacle
+    /// (tagged [`SidelineReason::RadioLost`]) instead of being dropped.
+    pub fn is_uncontrolled_visible(&self) -> bool {
+        self.is_controlled && self.rolling_vision > 0.1 && self.rolling_control < 0.1
     }
 }
 
@@ -598,5 +613,76 @@ mod tests {
             ca_on <= ca_off * 1.05,
             "CA feedforward should not worsen tracking: off={ca_off:.1} on={ca_on:.1}"
         );
+    }
+
+    fn controlled_tracker_with_detection() -> PlayerTracker {
+        let settings = TrackerSettings::default();
+        let mut pt = PlayerTracker::new(
+            PlayerId::new(3),
+            HashSet::new(),
+            false,
+            &settings,
+            /* allow_no_vision */ false,
+            /* is_controlled */ true,
+        );
+        pt.last_detection = Some(StoredData {
+            timestamp: 0.0,
+            raw_position: Vector2::zeros(),
+            position: Vector2::new(100.0, 200.0),
+            velocity: Vector2::zeros(),
+            yaw: Angle::from_radians(0.0),
+            raw_yaw: Angle::from_radians(0.0),
+            angular_speed: 0.0,
+        });
+        pt
+    }
+
+    #[test]
+    fn radio_lost_but_visible_is_tagged() {
+        // Vision fresh, control link decayed: the robot is visible but we can't
+        // command it — it must be kept and tagged RadioLost, not dropped.
+        let mut pt = controlled_tracker_with_detection();
+        pt.rolling_vision = 1.0;
+        pt.rolling_control = 0.05;
+        assert!(pt.is_uncontrolled_visible());
+        let pd = pt.get().expect("visible robot yields PlayerData");
+        assert_eq!(pd.sideline, Some(SidelineReason::RadioLost));
+    }
+
+    #[test]
+    fn healthy_controlled_robot_is_not_sidelined() {
+        let mut pt = controlled_tracker_with_detection();
+        pt.rolling_vision = 1.0;
+        pt.rolling_control = 1.0;
+        assert!(!pt.is_uncontrolled_visible());
+        assert_eq!(pt.get().unwrap().sideline, None);
+    }
+
+    #[test]
+    fn opponent_never_sidelined_even_without_control() {
+        // Uncontrolled (opponent) trackers have no radio, so radio loss is
+        // meaningless — they are never tagged.
+        let settings = TrackerSettings::default();
+        let mut pt = PlayerTracker::new(
+            PlayerId::new(1),
+            HashSet::new(),
+            false,
+            &settings,
+            false,
+            /* is_controlled */ false,
+        );
+        pt.last_detection = Some(StoredData {
+            timestamp: 0.0,
+            raw_position: Vector2::zeros(),
+            position: Vector2::zeros(),
+            velocity: Vector2::zeros(),
+            yaw: Angle::from_radians(0.0),
+            raw_yaw: Angle::from_radians(0.0),
+            angular_speed: 0.0,
+        });
+        pt.rolling_vision = 1.0;
+        pt.rolling_control = 0.0;
+        assert!(!pt.is_uncontrolled_visible());
+        assert_eq!(pt.get().unwrap().sideline, None);
     }
 }

@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use dies_core::{
-    DebugColor, ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerId,
-    PlayerSkillInfo, RoleType, SideAssignment, TeamColor, TeamData, Vector2, PLAYER_RADIUS,
+    DebugColor, ExecutorSettings, GameState, PlayerCmd, PlayerCmdUntransformer, PlayerData,
+    PlayerId, PlayerSkillInfo, RoleType, SideAssignment, SidelineReason, TeamColor, TeamData,
+    Vector2, PLAYER_RADIUS,
 };
 use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use std::sync::Arc;
@@ -96,6 +97,82 @@ impl TeamController {
         self.strategy_input = input;
     }
 
+    /// Yellow-card removal *decision*, run as a pre-pass by the executor BEFORE
+    /// the strategy so benched robots are forked out of `own_players` (via the
+    /// `SidelineReason::CardRemoved` marks the executor stamps from our return
+    /// value) and never assigned a role. We rank by the *previous* frame's roles
+    /// (`self.strategy_input.player_roles`, not yet overwritten this frame) — the
+    /// choice is a sticky one-shot, so prior-frame roles are fine.
+    ///
+    /// `own_detected` is the team's raw color-list roster (absolute coords; only
+    /// ids + `sideline` are used). A radio-lost robot occupies a physical slot we
+    /// cannot vacate, so it lowers the effective allowance by one — forcing us to
+    /// bench a controllable robot to stay legal — but is never itself a candidate.
+    pub fn plan_sidelining(
+        &mut self,
+        own_detected: &[PlayerData],
+        max_allowed_bots: u32,
+    ) -> HashSet<PlayerId> {
+        // Prune robots that left the field from the parked set.
+        let present: HashSet<PlayerId> = own_detected.iter().map(|p| p.id).collect();
+        self.removing_players.retain(|id| present.contains(id));
+
+        // Controllable robots only (radio-lost ones are un-removable).
+        let controllable: Vec<PlayerId> = own_detected
+            .iter()
+            .filter(|p| p.sideline.is_none())
+            .map(|p| p.id)
+            .collect();
+        let radio_lost = own_detected
+            .iter()
+            .filter(|p| matches!(p.sideline, Some(SidelineReason::RadioLost)))
+            .count();
+        let effective_limit = (max_allowed_bots as usize).saturating_sub(radio_lost);
+
+        let active: Vec<PlayerId> = controllable
+            .iter()
+            .copied()
+            .filter(|id| !self.removing_players.contains(id))
+            .collect();
+        let already_removing = self.removing_players.len();
+        let want_removed = active.len().saturating_sub(effective_limit);
+        if want_removed > already_removing {
+            let n_robots_to_remove = want_removed - already_removing;
+            log::info!(
+                "Sidelining {} robot(s): {} controllable, {} radio-lost, allowance {}",
+                n_robots_to_remove,
+                controllable.len(),
+                radio_lost,
+                max_allowed_bots
+            );
+            // Rank candidates by ascending role criticality, id as tie-break;
+            // remove the least critical first.
+            let mut candidates = active.clone();
+            candidates.sort_by_key(|id| {
+                let crit = self
+                    .strategy_input
+                    .player_roles
+                    .get(id)
+                    .map(|r| role_removal_criticality(r))
+                    .unwrap_or(0);
+                (crit, id.as_u32())
+            });
+            self.removing_players
+                .extend(candidates.into_iter().take(n_robots_to_remove));
+        } else if want_removed < already_removing {
+            // Allowance restored (card expired): release the highest-id parked
+            // robots first so they return to play and are re-assigned a role.
+            let n_release = already_removing - want_removed;
+            let mut parked: Vec<PlayerId> = self.removing_players.iter().copied().collect();
+            parked.sort();
+            for id in parked.into_iter().rev().take(n_release) {
+                self.removing_players.remove(&id);
+            }
+        }
+
+        self.removing_players.clone()
+    }
+
     /// Get current skill statuses for all players.
     ///
     /// Joint (pass) statuses override per-player skill statuses for robots
@@ -133,7 +210,22 @@ impl TeamController {
         manual_override: HashMap<PlayerId, PlayerControlInput>,
     ) {
         let world_data = Arc::new(team_data);
-        let detected_ids: HashSet<_> = world_data.own_players.iter().map(|p| p.id).collect();
+        // Commandable robots = roster (`own_players`) plus card-removed robots we
+        // still drive off-field. Radio-lost robots are sidelined too but get no
+        // controller (we can't command them); their stale controller, if any, is
+        // skipped in the control loop below.
+        let detected_ids: HashSet<_> = world_data
+            .own_players
+            .iter()
+            .map(|p| p.id)
+            .chain(
+                world_data
+                    .sidelined_players
+                    .iter()
+                    .filter(|p| matches!(p.sideline, Some(SidelineReason::CardRemoved)))
+                    .map(|p| p.id),
+            )
+            .collect();
         for id in detected_ids.iter() {
             if !self.player_controllers.contains_key(id) {
                 self.player_controllers
@@ -185,69 +277,27 @@ impl TeamController {
             return;
         }
 
-        // Get active robots
-        let active_robots: Vec<PlayerId> = world_data
-            .own_players
-            .iter()
-            .map(|p| p.id)
-            .filter(|id| !self.removing_players.contains(id))
-            .collect();
+        // Active roster = `own_players`. The yellow-card removal *decision* now
+        // runs in `plan_sidelining` (a pre-pass before the strategy, see
+        // `dies-executor/src/lib.rs`), so card-removed robots are already forked
+        // out of `own_players` into `sidelined_players` by the time we get here.
+        let active_robots: Vec<PlayerId> = world_data.own_players.iter().map(|p| p.id).collect();
 
         // Get player inputs from strategy path
         let (player_inputs_map, role_assignments) =
             self.update_strategy_path(&world_data, &team_context, &active_robots);
 
-        // Handle yellow card robot removal. We pull the *least critical* robots —
-        // ranked by the role the strategy assigned them this tick (a spread/idle or
-        // forward-support body before a defender, keeper never) — so a card costs us
-        // our least valuable robot, not an arbitrary high-id one. Selection is a
-        // one-shot decision (the chosen robots persist in `removing_players`), so
-        // ranking doesn't thrash frame-to-frame.
-        let allowed_number_of_robots = world_data.current_game_state.max_allowed_bots;
-        let already_removing = self.removing_players.len();
-        let want_removed = active_robots
-            .len()
-            .saturating_sub(allowed_number_of_robots as usize);
-        if want_removed > already_removing {
-            let n_robots_to_remove = want_removed - already_removing;
-            log::info!(
-                "We have {} yellow cards and {} robots, removing {} more robots",
-                world_data.current_game_state.yellow_cards,
-                active_robots.len(),
-                n_robots_to_remove
-            );
-            // Rank candidates by ascending criticality of their assigned role, then
-            // by id for a deterministic tie-break; remove the least critical first.
-            let mut candidates: Vec<PlayerId> = active_robots
-                .iter()
-                .copied()
-                .filter(|id| !self.removing_players.contains(id))
-                .collect();
-            candidates.sort_by_key(|id| {
-                let crit = role_assignments
-                    .get(id)
-                    .map(|r| role_removal_criticality(r))
-                    .unwrap_or(0);
-                (crit, id.as_u32())
-            });
-            self.removing_players
-                .extend(candidates.into_iter().take(n_robots_to_remove));
-        } else if want_removed < already_removing {
-            // Allowance was restored (e.g. a yellow card expired): release the
-            // surplus parked robots so they return to play and are re-assigned a
-            // role. Release the most recently / highest-id parked first.
-            let n_release = already_removing - want_removed;
-            let mut parked: Vec<PlayerId> = self.removing_players.iter().copied().collect();
-            parked.sort();
-            for id in parked.into_iter().rev().take(n_release) {
-                self.removing_players.remove(&id);
-            }
-        }
-
-        // Drive robots that are being removed to the removal position
+        // Drive card-removed robots to the removal position (off the bottom touch
+        // line, spread by 100 mm). Radio-lost robots are sidelined too but are not
+        // driven — we can't command them.
         let mut player_inputs_map = player_inputs_map;
-        let mut removing_players = self.removing_players.iter().copied().collect::<Vec<_>>();
-        removing_players.sort();
+        let mut card_removed: Vec<PlayerId> = world_data
+            .sidelined_players
+            .iter()
+            .filter(|p| matches!(p.sideline, Some(SidelineReason::CardRemoved)))
+            .map(|p| p.id)
+            .collect();
+        card_removed.sort();
         let first_removal_position = Vector2::new(
             -800.0 * side_assignment.attacking_direction_sign(team_color), // unflip to world coords
             world_data
@@ -256,20 +306,14 @@ impl TeamController {
                 .map(|g| -g.field_width / 2.0 - 150.0)
                 .unwrap_or(-3000.0 - 150.0),
         );
-        for (i, player_id) in removing_players.iter().enumerate() {
-            let player_data = world_data.own_players.iter().find(|p| p.id == *player_id);
-            if player_data.is_some() {
-                let removal_position =
-                    first_removal_position + Vector2::new(-(i as f64) * 100.0, 0.0);
-                let mut player_input = PlayerControlInput::default();
-                player_input.with_position(removal_position);
-                player_inputs_map.insert(*player_id, player_input);
-                team_context
-                    .player_context(*player_id)
-                    .debug_string("role", "removed");
-            } else {
-                self.removing_players.remove(player_id);
-            }
+        for (i, player_id) in card_removed.iter().enumerate() {
+            let removal_position = first_removal_position + Vector2::new(-(i as f64) * 100.0, 0.0);
+            let mut player_input = PlayerControlInput::default();
+            player_input.with_position(removal_position);
+            player_inputs_map.insert(*player_id, player_input);
+            team_context
+                .player_context(*player_id)
+                .debug_string("role", "removed");
         }
 
         // Apply role types for compliance and debug display
@@ -364,7 +408,20 @@ impl TeamController {
         // independent (reciprocity works through neighbours' observed velocities).
         for controller in self.player_controllers.values_mut() {
             let id = controller.id();
-            let Some(player_data) = world_data.own_players.iter().find(|p| p.id == id) else {
+            // Command roster robots plus card-removed robots (driven off-field).
+            // A radio-lost robot's stale controller finds no player_data here and
+            // is skipped — we can't command it.
+            let Some(player_data) = world_data
+                .own_players
+                .iter()
+                .chain(
+                    world_data
+                        .sidelined_players
+                        .iter()
+                        .filter(|p| matches!(p.sideline, Some(SidelineReason::CardRemoved))),
+                )
+                .find(|p| p.id == id)
+            else {
                 controller.increment_frames_misses();
                 continue;
             };
@@ -568,6 +625,62 @@ impl TeamController {
 /// name (produced by the strategy) is the criticality signal: an idle/spread or
 /// forward-support body is the cheapest to lose, a ball-carrier or the keeper the
 /// most expensive. Unknown/empty roles rank as least critical (removed first).
+#[cfg(test)]
+mod sidelining_tests {
+    use super::*;
+
+    fn tc() -> TeamController {
+        TeamController::new(&ExecutorSettings::default(), TeamColor::Blue)
+    }
+
+    fn roster(ids: &[u32]) -> Vec<PlayerData> {
+        ids.iter()
+            .map(|i| PlayerData::new(PlayerId::new(*i)))
+            .collect()
+    }
+
+    #[test]
+    fn benches_least_critical_over_limit() {
+        let mut c = tc();
+        // Roles: ids 0..4 are critical, id 5 idle (unknown role → crit 0).
+        for i in 0..5u32 {
+            c.strategy_input
+                .player_roles
+                .insert(PlayerId::new(i), "waller".to_string());
+        }
+        let removed = c.plan_sidelining(&roster(&[0, 1, 2, 3, 4, 5]), 5);
+        assert_eq!(removed.len(), 1);
+        assert!(
+            removed.contains(&PlayerId::new(5)),
+            "least-critical id benched"
+        );
+    }
+
+    #[test]
+    fn radio_lost_lowers_effective_limit() {
+        let mut c = tc();
+        // 5 controllable + 1 radio-lost = 6 physically present, allowance 5.
+        // The radio-lost robot can't be vacated, so a controllable one is benched.
+        let mut r = roster(&[0, 1, 2, 3, 4, 9]);
+        r[5].sideline = Some(SidelineReason::RadioLost);
+        let removed = c.plan_sidelining(&r, 5);
+        assert_eq!(removed.len(), 1);
+        assert!(
+            !removed.contains(&PlayerId::new(9)),
+            "radio-lost is never a candidate"
+        );
+    }
+
+    #[test]
+    fn releases_when_allowance_restored() {
+        let mut c = tc();
+        let r = roster(&[0, 1, 2, 3, 4, 5]);
+        assert_eq!(c.plan_sidelining(&r, 4).len(), 2);
+        // Allowance back to full: everyone returns.
+        assert_eq!(c.plan_sidelining(&r, 6).len(), 0);
+    }
+}
+
 fn role_removal_criticality(role_name: &str) -> u8 {
     let r = role_name.to_ascii_lowercase();
     if r.contains("goalkeeper") {
@@ -630,6 +743,7 @@ fn comply(
                 let player_data = world_data
                     .own_players
                     .iter()
+                    .chain(world_data.sidelined_players.iter())
                     .find(|p| p.id == *id)
                     .expect("Player not found in world data");
 

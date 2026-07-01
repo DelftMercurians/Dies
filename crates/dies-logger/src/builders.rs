@@ -141,6 +141,7 @@ pub struct PlayersBuilder {
     imu_status: StringBuilder,
     kicker_status: StringBuilder,
     handicaps: StringBuilder,
+    sideline: StringBuilder,
 }
 
 impl PlayersBuilder {
@@ -170,6 +171,7 @@ impl PlayersBuilder {
         self.imu_status.append_option(r.imu_status.as_deref());
         self.kicker_status.append_option(r.kicker_status.as_deref());
         self.handicaps.append_value(&r.handicaps);
+        self.sideline.append_option(r.sideline.as_deref());
         self.len += 1;
     }
 
@@ -202,6 +204,7 @@ impl PlayersBuilder {
             Arc::new(self.imu_status.finish()),
             Arc::new(self.kicker_status.finish()),
             Arc::new(self.handicaps.finish()),
+            Arc::new(self.sideline.finish()),
         ];
         self.len = 0;
         Ok(RecordBatch::try_new(schema::players(), cols)?)

@@ -15,8 +15,8 @@
 //! Everything is in team-relative coordinates, millimetres.
 
 use dies_core::{
-    AvoidanceConfig, BallData, FieldGeometry, GameState, PlayerId, TeamData, Vector2, BALL_RADIUS,
-    PLAYER_RADIUS,
+    AvoidanceConfig, BallData, FieldGeometry, GameState, PlayerId, SidelineReason, TeamData,
+    Vector2, BALL_RADIUS, PLAYER_RADIUS,
 };
 
 /// Center-to-center ball keep-out for our kickoff kicker during `PrepareKickoff`.
@@ -185,6 +185,20 @@ impl ObstacleSet {
                     radius: PLAYER_RADIUS,
                 });
             }
+        }
+
+        // Sidelined robots (radio-lost / card-removed) are always avoided — a
+        // solid object on the field the waller-near-goal exception must not skip.
+        // A card-removed robot drives off under our own ORCA control, so it is
+        // reciprocal (`is_own: true`); a radio-lost robot won't cooperate, so we
+        // take the full avoidance burden (`is_own: false`).
+        for p in world.sidelined_players.iter().filter(|p| p.id != this_id) {
+            set.agents.push(DynamicAgent {
+                is_own: matches!(p.sideline, Some(SidelineReason::CardRemoved)),
+                position: p.position,
+                velocity: p.velocity,
+                radius: PLAYER_RADIUS,
+            });
         }
 
         if let Some(field) = world.field_geom.as_ref() {

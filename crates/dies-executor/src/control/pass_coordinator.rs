@@ -717,6 +717,7 @@ pub(crate) mod test_support {
             dt,
             own_players: own,
             opp_players: vec![],
+            sidelined_players: vec![],
             ball: ball.map(|b| BallData {
                 timestamp: 0.0,
                 position: Vector3::new(b.x, b.y, 0.0),

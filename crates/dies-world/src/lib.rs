@@ -140,7 +140,13 @@ impl TeamTracker {
     fn get_players(&self) -> Vec<PlayerData> {
         let mut players = Vec::new();
         for player_tracker in self.players.values() {
-            if player_tracker.is_gone && !self.allow_no_vision {
+            // A radio-lost-but-visible robot is `is_gone` (control EWMA decayed)
+            // yet must be kept in the world as an obstacle, tagged `RadioLost` by
+            // `PlayerTracker::get`. Drop only robots that are truly gone.
+            if player_tracker.is_gone
+                && !self.allow_no_vision
+                && !player_tracker.is_uncontrolled_visible()
+            {
                 continue;
             }
             if let Some(player_data) = player_tracker.get() {

@@ -983,6 +983,21 @@ export interface PlayerSkillInfo {
 	description: string;
 }
 
+/**
+ * Why a robot is present on the field but not an assignable roster member.
+ * 
+ * Both cases are physically on the field (still avoided as obstacles) but must
+ * never be handed to the strategy as a controllable player:
+ * - `RadioLost`: seen by vision but the RF/basestation link is gone, so we
+ * cannot command it (non-cooperative — teammates take full avoidance).
+ * - `CardRemoved`: benched by the team controller for a yellow card and driven
+ * off-field (still cooperative — it moves under our ORCA control).
+ */
+export enum SidelineReason {
+	RadioLost = "RadioLost",
+	CardRemoved = "CardRemoved",
+}
+
 /** A struct to store the player state from a single frame. */
 export interface PlayerData {
 	/**
@@ -1077,6 +1092,13 @@ export interface PlayerData {
 	 */
 	skill?: PlayerSkillInfo;
 	handicaps: HashSet<Handicap>;
+	/**
+	 * Set when this robot is on the field but not an assignable roster member
+	 * (radio lost, or card-removed). `None` for normal players and opponents.
+	 * Robots with this set are forked out of `TeamData::own_players` into
+	 * `TeamData::sidelined_players` but remain in the color lists.
+	 */
+	sideline?: SidelineReason;
 }
 
 /** Who controls the ball, in absolute (team-tagged) terms. */
@@ -1319,6 +1341,13 @@ export interface TeamData {
 	dt: number;
 	own_players: PlayerData[];
 	opp_players: PlayerData[];
+	/**
+	 * Own-color robots on the field that are not assignable roster members
+	 * (radio lost, or card-removed — see [`SidelineReason`]). Excluded from
+	 * `own_players` so the strategy never roles them, but still avoided as
+	 * obstacles by the executor and blocking for ray/radius queries.
+	 */
+	sidelined_players?: PlayerData[];
 	ball?: BallData;
 	field_geom?: FieldGeometry;
 	current_game_state: GameStateData;

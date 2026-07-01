@@ -319,6 +319,21 @@ pub struct PlayerSkillInfo {
     pub description: String,
 }
 
+/// Why a robot is present on the field but not an assignable roster member.
+///
+/// Both cases are physically on the field (still avoided as obstacles) but must
+/// never be handed to the strategy as a controllable player:
+/// - `RadioLost`: seen by vision but the RF/basestation link is gone, so we
+///   cannot command it (non-cooperative — teammates take full avoidance).
+/// - `CardRemoved`: benched by the team controller for a yellow card and driven
+///   off-field (still cooperative — it moves under our ORCA control).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[typeshare]
+pub enum SidelineReason {
+    RadioLost,
+    CardRemoved,
+}
+
 /// A struct to store the player state from a single frame.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
@@ -394,6 +409,13 @@ pub struct PlayerData {
     pub skill: Option<PlayerSkillInfo>,
 
     pub handicaps: HashSet<Handicap>,
+
+    /// Set when this robot is on the field but not an assignable roster member
+    /// (radio lost, or card-removed). `None` for normal players and opponents.
+    /// Robots with this set are forked out of `TeamData::own_players` into
+    /// `TeamData::sidelined_players` but remain in the color lists.
+    #[serde(default)]
+    pub sideline: Option<SidelineReason>,
 }
 
 impl PlayerData {
@@ -425,6 +447,7 @@ impl PlayerData {
             imu_readings: None,
             skill: None,
             handicaps: HashSet::new(),
+            sideline: None,
         }
     }
 }
@@ -571,6 +594,12 @@ pub struct TeamData {
     pub dt: f64,
     pub own_players: Vec<PlayerData>,
     pub opp_players: Vec<PlayerData>,
+    /// Own-color robots on the field that are not assignable roster members
+    /// (radio lost, or card-removed — see [`SidelineReason`]). Excluded from
+    /// `own_players` so the strategy never roles them, but still avoided as
+    /// obstacles by the executor and blocking for ray/radius queries.
+    #[serde(default)]
+    pub sidelined_players: Vec<PlayerData>,
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameStateData,
@@ -591,6 +620,7 @@ impl TeamData {
         self.own_players
             .iter()
             .chain(self.opp_players.iter())
+            .chain(self.sidelined_players.iter())
             .filter(|p| (p.position.xy() - pos).norm() < radius)
             .collect()
     }
@@ -640,7 +670,12 @@ impl TeamData {
         };
 
         // Check intersections with players
-        for player in self.own_players.iter().chain(self.opp_players.iter()) {
+        for player in self
+            .own_players
+            .iter()
+            .chain(self.opp_players.iter())
+            .chain(self.sidelined_players.iter())
+        {
             let oc = start - player.position.xy();
             let a = normalized_direction.dot(&normalized_direction);
             let b = 2.0 * oc.dot(&normalized_direction);
@@ -1004,6 +1039,7 @@ pub fn mock_world_data() -> WorldData {
             kicker_status: Some(SysStatus::Standby),
             skill: None,
             handicaps: HashSet::new(),
+            sideline: None,
         }],
         yellow_team: vec![PlayerData {
             id: PlayerId::new(1),
@@ -1032,6 +1068,7 @@ pub fn mock_world_data() -> WorldData {
             kicker_status: Some(SysStatus::Standby),
             skill: None,
             handicaps: HashSet::new(),
+            sideline: None,
         }],
         field_geom: Default::default(),
         ball: None,
@@ -1067,6 +1104,7 @@ pub fn mock_world_data() -> WorldData {
 
 pub fn mock_team_data() -> TeamData {
     TeamData {
+        sidelined_players: Vec::new(),
         own_players: vec![PlayerData {
             id: PlayerId::new(0),
             position: Vector2::new(1000.0, 1000.0),
@@ -1094,6 +1132,7 @@ pub fn mock_team_data() -> TeamData {
             kicker_status: Some(SysStatus::Standby),
             skill: None,
             handicaps: HashSet::new(),
+            sideline: None,
         }],
         opp_players: vec![PlayerData {
             id: PlayerId::new(1),
@@ -1122,6 +1161,7 @@ pub fn mock_team_data() -> TeamData {
             kicker_status: Some(SysStatus::Standby),
             skill: None,
             handicaps: HashSet::new(),
+            sideline: None,
         }],
         field_geom: Some(FieldGeometry {
             field_length: 9000.0,
@@ -1154,6 +1194,28 @@ mod tests {
     use approx::assert_relative_eq;
 
     use super::*;
+
+    #[test]
+    fn sidelined_robot_forks_out_of_own_players() {
+        let mut wd = mock_world_data();
+        wd.blue_team[0].sideline = Some(SidelineReason::RadioLost);
+        let td = wd.get_team_data(TeamColor::Blue, false);
+        // Radio-lost robot leaves the roster but stays present as sidelined.
+        assert!(td.own_players.is_empty());
+        assert_eq!(td.sidelined_players.len(), 1);
+        assert_eq!(
+            td.sidelined_players[0].sideline,
+            Some(SidelineReason::RadioLost)
+        );
+        // Opponent list is unaffected by our sideline marks.
+        assert_eq!(td.opp_players.len(), 1);
+        // Still present for physical-presence queries (raycast/radius).
+        assert_eq!(
+            td.players_within_radius(Vector2::new(1000.0, 1000.0), 50.0)
+                .len(),
+            1
+        );
+    }
 
     #[test]
     fn test_ball_placement_equals() {

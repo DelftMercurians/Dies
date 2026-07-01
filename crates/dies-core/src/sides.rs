@@ -88,9 +88,19 @@ impl SideAssignment {
             t_received: world_data.t_received,
             t_capture: world_data.t_capture,
             dt: world_data.dt,
+            // Own-color robots split by roster membership: normal robots go to
+            // `own_players`, sidelined ones (radio-lost / card-removed) go to
+            // `sidelined_players` so the strategy never sees them as assignable.
             own_players: world_data
                 .get_team_players(color)
                 .iter()
+                .filter(|p| p.sideline.is_none())
+                .map(|p| self.transform_to_team_coords_player(color, p))
+                .collect(),
+            sidelined_players: world_data
+                .get_team_players(color)
+                .iter()
+                .filter(|p| p.sideline.is_some())
                 .map(|p| self.transform_to_team_coords_player(color, p))
                 .collect(),
             opp_players: world_data
@@ -264,6 +274,7 @@ impl SideAssignment {
             imu_readings: player.imu_readings,
             skill: player.skill.clone(),
             handicaps: player.handicaps.clone(),
+            sideline: player.sideline,
         }
     }
 

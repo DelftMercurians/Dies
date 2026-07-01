@@ -94,6 +94,8 @@ cached_schema!(
     nullable("imu_status", DataType::Utf8),
     nullable("kicker_status", DataType::Utf8),
     required("handicaps", DataType::Utf8),
+    // "radio_lost" / "card_removed" when the robot is sidelined; null otherwise.
+    nullable("sideline", DataType::Utf8),
 );
 
 // Full basestation robot feedback, one row per (frame, player). The entire

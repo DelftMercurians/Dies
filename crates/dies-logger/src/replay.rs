@@ -35,7 +35,8 @@ use arrow::array::{
 use arrow::ipc::reader::StreamReader;
 use dies_core::{
     Angle, BallData, DebugColor, DebugMap, DebugShape, DebugValue, GameState, Handicap, PlayerData,
-    PlayerId, RawGameStateData, SideAssignment, SysStatus, TeamColor, Vector2, Vector3, WorldData,
+    PlayerId, RawGameStateData, SideAssignment, SidelineReason, SysStatus, TeamColor, Vector2,
+    Vector3, WorldData,
 };
 use parquet::arrow::arrow_reader::{
     ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReaderBuilder,
@@ -289,6 +290,7 @@ struct PlayerRowR {
     imu_status: Option<String>,
     kicker_status: Option<String>,
     handicaps: String,
+    sideline: Option<String>,
 }
 
 impl LogReader {
@@ -659,6 +661,10 @@ fn append_players(
     let imu_status = strs(b, "imu_status");
     let kicker_status = strs(b, "kicker_status");
     let handicaps = strs(b, "handicaps");
+    // Added later — absent in older logs, so read defensively.
+    let sideline = b
+        .column_by_name("sideline")
+        .and_then(|c| c.as_any().downcast_ref::<StringArray>());
     for i in lo..hi {
         let r = PlayerRowR {
             team: team.value(i).to_string(),
@@ -681,6 +687,7 @@ fn append_players(
             imu_status: opt_str(imu_status, i),
             kicker_status: opt_str(kicker_status, i),
             handicaps: handicaps.value(i).to_string(),
+            sideline: sideline.and_then(|a| opt_str(a, i)),
         };
         let pd = player_data_from_row(&r, t);
         if r.team == "yellow" {
@@ -872,7 +879,16 @@ fn player_data_from_row(r: &PlayerRowR, t: f64) -> PlayerData {
     pd.imu_status = r.imu_status.as_deref().and_then(sys_status_from_str);
     pd.kicker_status = r.kicker_status.as_deref().and_then(sys_status_from_str);
     pd.handicaps = parse_handicaps(&r.handicaps);
+    pd.sideline = r.sideline.as_deref().and_then(sideline_reason_from_str);
     pd
+}
+
+fn sideline_reason_from_str(s: &str) -> Option<SidelineReason> {
+    match s {
+        "radio_lost" => Some(SidelineReason::RadioLost),
+        "card_removed" => Some(SidelineReason::CardRemoved),
+        _ => None,
+    }
 }
 
 fn shape_from_row(r: &ShapeRowR) -> Option<DebugShape> {
