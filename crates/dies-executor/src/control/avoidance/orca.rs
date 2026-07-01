@@ -541,7 +541,11 @@ mod tests {
     #[test]
     fn wall_parallel_motion_passes_through() {
         // Well inside the field, driving parallel to the wall → non-binding.
-        let mut a = agent(Vector2::zeros(), Vector2::zeros(), Vector2::new(0.0, 1000.0));
+        let mut a = agent(
+            Vector2::zeros(),
+            Vector2::zeros(),
+            Vector2::new(0.0, 1000.0),
+        );
         a.statics.push(wall(1000.0));
         let v = solver().solve(&a, 0.02);
         assert!((v - a.pref_velocity).norm() < 1.0, "got {:?}", v);

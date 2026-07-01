@@ -330,17 +330,6 @@ fn create_skill_from_command(cmd: &SkillCommand) -> Box<dyn ExecutableSkill> {
             acquire,
             magnet,
         } => Box::new(HandleBallSkill::new(*action, *acquire, *magnet)),
-        SkillCommand::Receive {
-            from_pos,
-            target_pos,
-            capture_limit,
-            cushion,
-        } => Box::new(ReceiveSkill::new(
-            *from_pos,
-            *target_pos,
-            *capture_limit,
-            *cushion,
-        )),
         SkillCommand::ReflexReceive {
             from_pos,
             intercept_pos,

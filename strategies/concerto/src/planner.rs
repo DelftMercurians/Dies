@@ -11,7 +11,6 @@ use dies_strategy_api::prelude::*;
 use dies_strategy_api::World;
 
 use crate::config;
-use crate::driver::FailReason;
 use crate::geometry;
 
 /// A desired ball-state transition.
@@ -109,10 +108,11 @@ pub struct PlanInputs {
     pub now: f64,
 }
 
-/// Selects plans on events; remembers recent per-robot failures to avoid loops.
+/// Selects plans on discrete events. On a waypoint failure we always re-engage the
+/// same most-eligible robot (never rotate a fresh robot into a contest); a fresh
+/// plan is simply re-derived from the current world state.
 pub struct Planner {
     current_plan: Option<Plan>,
-    recent_failures: HashMap<PlayerId, (FailReason, f64)>,
 }
 
 impl Default for Planner {
@@ -123,10 +123,7 @@ impl Default for Planner {
 
 impl Planner {
     pub fn new() -> Self {
-        Self {
-            current_plan: None,
-            recent_failures: HashMap::new(),
-        }
+        Self { current_plan: None }
     }
 
     pub fn current_plan(&self) -> Option<&Plan> {
@@ -135,30 +132,6 @@ impl Planner {
 
     pub fn clear_plan(&mut self) {
         self.current_plan = None;
-    }
-
-    /// Record a waypoint failure so the next selection can avoid this robot
-    /// briefly (used by the no-progress anti-loop in M3).
-    pub fn record_failure(&mut self, robot: PlayerId, reason: FailReason, now: f64) {
-        self.recent_failures.insert(robot, (reason, now));
-    }
-
-    /// Robots that shouldn't be sent to the ball right now: those still in a
-    /// no-progress cooldown. Prunes expired records as a side effect. Fed to the
-    /// Formation capture role so a stuck robot keeps a defensive duty instead.
-    pub fn capture_ineligible(&mut self, now: f64) -> Vec<PlayerId> {
-        self.recent_failures
-            .retain(|_, (_, ts)| now - *ts < config::NOPROGRESS_TTL);
-        let mut ids: Vec<PlayerId> = self
-            .recent_failures
-            .iter()
-            .filter(|(_, (reason, _))| *reason == FailReason::NoProgress)
-            .map(|(id, _)| *id)
-            .collect();
-        // Stable order (HashMap iteration is not), so the capture spec compares
-        // equal tick-to-tick and doesn't spuriously trigger a recompute.
-        ids.sort_by_key(|id| id.as_u32());
-        ids
     }
 
     /// Re-evaluate and produce a plan, or `None` to defer to Formation (defend).

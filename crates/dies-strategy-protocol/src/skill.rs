@@ -106,30 +106,10 @@ pub enum SkillCommand {
     /// - `Failed` if angle is impossible or ball lost
     Shoot { target: Vector2 },
 
-    /// Receive a pass by intercepting the ball along a passing line.
-    ///
-    /// **Type**: Discrete - start once, wait for completion.
-    ///
-    /// **Parameters**:
-    /// - `from_pos`: Position the ball is being passed from
-    /// - `target_pos`: Target position on the passing line where the receiver waits
-    /// - `capture_limit`: Maximum distance the receiver moves perpendicular to the line
-    /// - `cushion`: Whether to move with the ball direction to cushion the impact
-    ///
-    /// **Completion**:
-    /// - `Succeeded` when breakbeam detects the ball
-    Receive {
-        from_pos: Vector2,
-        target_pos: Vector2,
-        capture_limit: f64,
-        cushion: bool,
-    },
-
     /// Receive a pass as a **one-timer**: position to intercept the ball with the
     /// firmware reflex kick *pre-armed* and the robot facing `target`, so the kicker
     /// fires the instant the ball trips the breakbeam — a zero-handling-latency
-    /// redirect/shot. Unlike [`Receive`](Self::Receive), it never holds the ball; the
-    /// firmware fires it onward.
+    /// redirect/shot. It never holds the ball; the firmware fires it onward.
     ///
     /// **Type**: Discrete - start once, wait for completion.
     ///

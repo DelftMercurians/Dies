@@ -64,8 +64,10 @@ impl HandleBallSkill {
         // silently drops to staging; a genuine lateral blow-out past the release
         // band is a *real* bail (`reacquire`, counts toward MAX_REACQUIRE).
         let behind = along < 0.0 && -along < COMMIT_DISTANCE();
-        if committed(along, perp) {
+        if committed(along, perp) && !self.commit_latched {
             self.commit_latched = true;
+            // Arm the pickup fast-bail from the moment the final drive commits.
+            self.committed_since = Some(now);
         }
         let is_committed = self.commit_latched && behind && perp < COMMIT_PERP_RELEASE();
         let perp_blowout = self.commit_latched && !is_committed;
@@ -78,6 +80,16 @@ impl HandleBallSkill {
         tc.debug_value(dkey(ctx, "magnet"), if magnet { 1.0 } else { 0.0 });
 
         if is_committed {
+            // Pickup fast-bail: committed to the final drive but the breakbeam never
+            // latched (ball pinned/wedged against us) — fail so the caller re-decides
+            // quickly instead of grinding on an uncatchable ball.
+            if let Some(since) = self.committed_since {
+                if now - since > PICKUP_TIMEOUT() {
+                    self.detail = "pickup timeout".into();
+                    return self.fail();
+                }
+            }
+
             // The commit drive drops robot + defense-box ORCA, so nothing deflects
             // us out of a defense area. Bail (fail) rather than illegally enter one:
             // our own box is the keeper's, and touching the ball in either box is a
@@ -125,6 +137,12 @@ impl HandleBallSkill {
                 self.reacquire(now);
             }
         } else {
+            // Approach timeout: still traversing (not committed) — fail if we can't
+            // reach the ball in time so the caller re-decides. Re-armed on re-acquire.
+            if now - self.stage_entered > APPROACH_TIMEOUT() {
+                self.detail = "approach timeout".into();
+                return self.fail();
+            }
             if perp_blowout {
                 // Lateral blow-out during the commit drive — a real loss; surface it
                 // instead of silently re-staging in an unbounded loop.

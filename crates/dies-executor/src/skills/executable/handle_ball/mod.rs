@@ -17,17 +17,23 @@
 //! - `Hold`/`Carry` are tiny drives and live here.
 //!
 //! ## Terminal contract (keeps the seam removal sound)
-//! - `Hold`/`Carry` **never** return `Done` — they run forever (the caller decides
-//!   arrival). Every in-possession action swap is therefore a live param update.
-//! - A kick (`Shoot`/`Strike`) is the only `Done(Success)`.
+//! The skill owns its whole execution lifecycle — every timeout lives here, not in
+//! the caller:
+//! - `Hold` **never** returns `Done` — it runs until the caller swaps the action
+//!   (each in-possession action swap is a live param update, not a teardown).
+//! - `Carry` self-completes: `Done(Success)` on arrival ([`DRIBBLE_ARRIVE_DIST`]),
+//!   `Done(Failure)` on its own timeout ([`DRIBBLE_TIMEOUT`]).
+//! - A kick (`Shoot`/`Strike`) is `Done(Success)` on the verified departure; the aim
+//!   stage fails on [`AIM_BACKSTOP`].
+//! - The acquire front-end fails on its own [`APPROACH_TIMEOUT`] / [`PICKUP_TIMEOUT`].
 //! - Internal capture completion (breakbeam) is an internal stage edge, not a
 //!   `Done` — that is what makes the acquire→act seam disappear.
 //!
 //! ## Silent re-acquire
 //! Losing the ball mid-aim/carry returns to `Acquire` (debounced) instead of
-//! failing up to the strategy. Bounded by [`MAX_REACQUIRE`] and the acquire/aim
-//! backstops so a persistent loss still surfaces as `Done(Failure)` and the
-//! planner can re-elect a capturer. `Strike` never re-acquires (double-touch safe).
+//! failing up to the strategy. Bounded by [`MAX_REACQUIRE`] and the acquire timeouts
+//! so a persistent loss still surfaces as `Done(Failure)` and the caller can re-elect
+//! a capturer. `Strike` never re-acquires (double-touch safe).
 
 mod acquire;
 mod aim;
@@ -78,14 +84,30 @@ tunables! {
     /// or two. Mirrors the pass coordinator's `SETUP_BALL_LOST_GRACE`.
     #[tunable(unit = "s", min = 0.0, max = 1.0, step = 0.05)]
     BALL_LOST_GRACE: f64 = 0.2;
-    /// Backstop: if we have *never* secured the ball this long after the first tick,
-    /// give up so the planner can re-elect a capturer.
+    /// Approach timeout: while still traversing toward the ball (not yet committed to
+    /// the final capture drive), fail this long after entering the acquire stage so a
+    /// robot that can't reach the ball surfaces a failure and the caller re-decides.
+    /// Re-armed on every re-acquire (attempts bounded by `MAX_REACQUIRE`).
+    #[tunable(unit = "s", min = 1.0, max = 8.0, step = 0.5)]
+    APPROACH_TIMEOUT: f64 = 3.0;
+    /// Pickup timeout: once committed to the final capture drive (pressed against the
+    /// ball) fail this long after the commit latch engages if the breakbeam never
+    /// latches — the fast bail for a ball pinned/wedged so we can't take it.
+    #[tunable(unit = "s", min = 0.5, max = 6.0, step = 0.5)]
+    PICKUP_TIMEOUT: f64 = 2.0;
+    /// Aim/shoot timeout once we hold the ball: a permanently blocked lane never fires,
+    /// so give up this long after entering the aim stage.
     #[tunable(unit = "s", min = 1.0, max = 12.0, step = 0.5)]
-    ACQUIRE_BACKSTOP: f64 = 60.0;
-    /// Backstop for the aim stage once we hold the ball (a permanently blocked lane,
-    /// say). In concerto the driver's per-action timeout fires well before this.
+    AIM_BACKSTOP: f64 = 2.0;
+    /// Carry timeout: fail this long after entering the carry stage if the target is
+    /// still not reached (e.g. a blocked path).
     #[tunable(unit = "s", min = 1.0, max = 12.0, step = 0.5)]
-    AIM_BACKSTOP: f64 = 6.0;
+    DRIBBLE_TIMEOUT: f64 = 4.0;
+    /// Distance to the carry target at which the carry self-completes (arrived). Kept
+    /// below the planner's correction step so a corrective carry is a real move, not an
+    /// instant "already there".
+    #[tunable(unit = "mm", min = 30.0, max = 400.0, step = 10.0)]
+    DRIBBLE_ARRIVE_DIST: f64 = 150.0;
 
     // ── dribbler ──────────────────────────────────────────────────────────────
     section "HandleBall dribbler";
@@ -337,6 +359,10 @@ pub struct HandleBallSkill {
     /// entering the tight corridor, held through the release band, cleared on a
     /// real bail or re-acquire.
     commit_latched: bool,
+    /// World time the commit latch first engaged this attempt (the final capture
+    /// drive began). Drives the tight pickup timeout; `None` while not committed,
+    /// re-armed on the next latch edge and cleared on re-acquire.
+    committed_since: Option<f64>,
     // ── strike (reflex) state ──
     kick_ball_pos: Option<Vector2>,
     armed_at: Option<f64>,
@@ -366,6 +392,7 @@ impl HandleBallSkill {
             commit_pos: None,
             commit_ball: None,
             commit_latched: false,
+            committed_since: None,
             kick_ball_pos: None,
             armed_at: None,
             launch: None,
@@ -470,6 +497,7 @@ impl HandleBallSkill {
         self.commit_pos = None;
         self.commit_ball = None;
         self.commit_latched = false;
+        self.committed_since = None;
         self.launch = None;
         self.lost_since = None;
         self.reacquires += 1;
@@ -519,7 +547,7 @@ impl HandleBallSkill {
         SkillProgress::Continue(input)
     }
 
-    fn drive_carry(&mut self, ctx: &SkillContext<'_>) -> SkillProgress {
+    fn drive_carry(&mut self, ctx: &SkillContext<'_>, now: f64) -> SkillProgress {
         let (to, heading) = match self.action {
             BallAction::Carry { to, heading } => (to, heading),
             _ => return self.drive_hold(ctx, self.hold_heading()),
@@ -534,6 +562,16 @@ impl HandleBallSkill {
         );
         let remaining = (ctx.player.position - to).norm();
         tc.debug_value(dkey(ctx, "carry_remaining"), remaining);
+        // The skill owns Carry completion: arrive on distance, fail on its own timeout.
+        if remaining < DRIBBLE_ARRIVE_DIST() {
+            self.status = SkillStatus::Succeeded;
+            return SkillProgress::success();
+        }
+        if now - self.stage_entered > DRIBBLE_TIMEOUT() {
+            log::warn!("handle_ball: carry timed out");
+            self.detail = "carry timeout".into();
+            return self.fail();
+        }
         self.detail = format!("→({:.0},{:.0}) {remaining:.0}mm", to.x, to.y);
         let mut input = PlayerControlInput::new();
         input.with_dribbling(CARRY_DRIBBLER_SPEED());
@@ -571,7 +609,12 @@ impl ExecutableSkill for HandleBallSkill {
 
     fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
         let now = ctx.world.t_received;
-        let first = *self.first_tick.get_or_insert(now);
+        if self.first_tick.is_none() {
+            self.first_tick = Some(now);
+            // Stamp the initial acquire-stage clock (re-acquire / enter_act restamp it
+            // on later stage transitions) so the approach timeout has a valid origin.
+            self.stage_entered = now;
+        }
         let has_ball = ctx.player.has_ball;
         if has_ball {
             self.had_ball = true;
@@ -590,12 +633,8 @@ impl ExecutableSkill for HandleBallSkill {
             return self.tick_strike(&ctx, target, now);
         }
 
-        // Acquisition / thrash backstops so a persistent loss surfaces as a
-        // failure and the planner can re-elect a capturer.
-        if !self.had_ball && now - first > ACQUIRE_BACKSTOP() {
-            log::warn!("handle_ball: could not acquire the ball");
-            return self.fail();
-        }
+        // Thrash backstop: a persistent loss surfaces as a failure and the caller
+        // re-decides. The acquire approach/pickup timeouts live in `drive_acquire`.
         if self.reacquires > MAX_REACQUIRE {
             log::warn!("handle_ball: lost the ball too many times");
             return self.fail();
@@ -657,7 +696,7 @@ impl ExecutableSkill for HandleBallSkill {
         self.emit_common(&ctx, stage_name);
         match self.stage {
             Stage::Hold => self.drive_hold(&ctx, self.hold_heading()),
-            Stage::Carry => self.drive_carry(&ctx),
+            Stage::Carry => self.drive_carry(&ctx, now),
             Stage::Aim => self.drive_aim(&ctx, ball_pos, player_pos, now),
             Stage::Kicking => self.drive_kick(&ctx, ball_pos, now),
             Stage::Verifying => self.drive_verify(&ctx, ball_pos, ball_vel_norm, now),
@@ -698,10 +737,95 @@ impl ExecutableSkill for HandleBallSkill {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::control::KickerControlInput;
+    use crate::control::test_support::{player, team_ctx, world};
+    use crate::control::{KickerControlInput, ObstacleSet, TeamContext};
+    use dies_core::{PlayerData, TeamData};
 
     fn skill(action: BallAction) -> HandleBallSkill {
         HandleBallSkill::new(action, AcquirePosition::Default, true)
+    }
+
+    fn ctx<'a>(w: &'a TeamData, tc: &'a TeamContext, p: &'a PlayerData) -> SkillContext<'a> {
+        SkillContext {
+            player: p,
+            world: w,
+            team_context: tc,
+            debug_prefix: tc.key(format!("p{}", p.id)),
+            obstacles: ObstacleSet::default(),
+        }
+    }
+
+    /// A robot at `pos`, holding the ball (breakbeam latched).
+    fn held_player(pos: Vector2) -> PlayerData {
+        let mut p = player(0, pos, 0.0);
+        p.has_ball = true;
+        p
+    }
+
+    /// A single-robot world with the ball at `ball`, sampled at world time `t`.
+    fn world_at(p: &PlayerData, ball: Vector2, t: f64) -> TeamData {
+        let mut w = world(vec![p.clone()], Some(ball), 0.016);
+        w.t_received = t;
+        w
+    }
+
+    #[test]
+    fn carry_self_completes_on_arrival() {
+        let to = Vector2::new(1000.0, 0.0);
+        let mut s = skill(BallAction::Carry {
+            to,
+            heading: Angle::from_radians(0.0),
+        });
+        // Already at the target, holding the ball → the skill (not the driver) reports
+        // arrival on the first tick that enters the carry stage.
+        let p = held_player(to);
+        let tc = team_ctx();
+        let w = world_at(&p, to, 0.0);
+        assert!(matches!(s.tick(ctx(&w, &tc, &p)), SkillProgress::Done(_)));
+        assert_eq!(s.status(), SkillStatus::Succeeded);
+    }
+
+    #[test]
+    fn carry_times_out_when_target_unreached() {
+        let to = Vector2::new(3000.0, 0.0);
+        let mut s = skill(BallAction::Carry {
+            to,
+            heading: Angle::from_radians(0.0),
+        });
+        let start = Vector2::new(0.0, 0.0);
+        let p = held_player(start);
+        let tc = team_ctx();
+        // Frame 1 (t=0) enters the carry stage and keeps going.
+        let w0 = world_at(&p, start, 0.0);
+        assert!(matches!(
+            s.tick(ctx(&w0, &tc, &p)),
+            SkillProgress::Continue(_)
+        ));
+        // Frame 2 past the carry budget with no progress → the skill fails itself.
+        let w1 = world_at(&p, start, DRIBBLE_TIMEOUT() + 1.0);
+        assert!(matches!(s.tick(ctx(&w1, &tc, &p)), SkillProgress::Done(_)));
+        assert_eq!(s.status(), SkillStatus::Failed);
+    }
+
+    #[test]
+    fn acquire_approach_times_out() {
+        let mut s = skill(BallAction::Hold {
+            heading: Angle::from_radians(0.0),
+        });
+        // Robot far from the ball and never secures it (has_ball = false).
+        let p = player(0, Vector2::new(0.0, 0.0), 0.0);
+        let tc = team_ctx();
+        let ball = Vector2::new(2000.0, 0.0);
+        // Frame 1 (t=0) stamps the approach clock while still traversing.
+        let w0 = world_at(&p, ball, 0.0);
+        assert!(matches!(
+            s.tick(ctx(&w0, &tc, &p)),
+            SkillProgress::Continue(_)
+        ));
+        // Frame 2 past the approach budget, still uncommitted → the skill fails itself.
+        let w1 = world_at(&p, ball, APPROACH_TIMEOUT() + 1.0);
+        assert!(matches!(s.tick(ctx(&w1, &tc, &p)), SkillProgress::Done(_)));
+        assert_eq!(s.status(), SkillStatus::Failed);
     }
 
     #[test]

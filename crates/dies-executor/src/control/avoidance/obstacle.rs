@@ -530,7 +530,11 @@ mod tests {
 
         // Wall-only vs minus-walls partitions are complementary.
         let walls = count(ObstacleKind::Wall);
-        let non_walls = set.statics.iter().filter(|s| s.kind != ObstacleKind::Wall).count();
+        let non_walls = set
+            .statics
+            .iter()
+            .filter(|s| s.kind != ObstacleKind::Wall)
+            .count();
         assert_eq!(walls + non_walls, set.statics.len());
 
         // Defense boxes drop when the gate is off.
@@ -542,7 +546,11 @@ mod tests {
             &cfg,
         );
         assert_eq!(
-            ungated.statics.iter().filter(|s| s.kind == ObstacleKind::DefenseArea).count(),
+            ungated
+                .statics
+                .iter()
+                .filter(|s| s.kind == ObstacleKind::DefenseArea)
+                .count(),
             0
         );
     }
@@ -559,7 +567,11 @@ mod tests {
             &cfg,
         );
         assert!(
-            set.statics.iter().filter(|s| s.kind == ObstacleKind::PlacementCorridor).count() > 1
+            set.statics
+                .iter()
+                .filter(|s| s.kind == ObstacleKind::PlacementCorridor)
+                .count()
+                > 1
         );
     }
 }

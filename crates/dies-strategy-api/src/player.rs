@@ -11,8 +11,8 @@
 //! - **Discrete skills** (`reflex_shoot`, `snatch`): Start once, return handles for monitoring
 
 use crate::skill_builders::{
-    DribbleBuilder, GoToBoundedBuilder, GoToBuilder, HandleBallParams, ReceiveParams,
-    ReflexReceiveParams, ReflexShootParams, SkillHandle, SnatchParams,
+    DribbleBuilder, GoToBoundedBuilder, GoToBuilder, HandleBallParams, ReflexReceiveParams,
+    ReflexShootParams, SkillHandle, SnatchParams,
 };
 use dies_core::Angle;
 use dies_strategy_protocol::{
@@ -200,9 +200,10 @@ impl PlayerHandle {
     ///   heading).
     ///
     /// # Completion
-    /// - `SkillStatus::Succeeded` only when a kick departs (`Shoot`/`Strike`).
-    ///   `Carry`/`Hold` never self-complete.
-    /// - `SkillStatus::Failed` on an unrecoverable acquire/aim/kick problem.
+    /// - `SkillStatus::Succeeded` when a kick departs (`Shoot`/`Strike`) or a `Carry`
+    ///   reaches its target. `Hold` never self-completes.
+    /// - `SkillStatus::Failed` on an unrecoverable acquire/aim/kick problem or a
+    ///   per-action timeout (all timeouts are owned by the skill).
     pub fn handle_ball(
         &mut self,
         action: BallAction,
@@ -273,38 +274,6 @@ impl PlayerHandle {
     pub fn reflex_shoot(&mut self, target: Vector2) -> SkillHandle<ReflexShootParams> {
         self.pending_command = Some(SkillCommand::Shoot { target });
         SkillHandle::new(ReflexShootParams { target })
-    }
-
-    /// Receive a pass by intercepting along the passing line.
-    ///
-    /// This is a **discrete skill** - start once and wait for completion.
-    /// Returns a handle for monitoring and updating parameters.
-    ///
-    /// # Parameters
-    ///
-    /// - `from_pos`: Position the ball is being passed from
-    /// - `target_pos`: Target position on the passing line where the receiver waits
-    /// - `capture_limit`: Maximum perpendicular distance the receiver moves to intercept
-    /// - `cushion`: Whether to cushion the ball on impact
-    pub fn receive(
-        &mut self,
-        from_pos: Vector2,
-        target_pos: Vector2,
-        capture_limit: f64,
-        cushion: bool,
-    ) -> SkillHandle<ReceiveParams> {
-        self.pending_command = Some(SkillCommand::Receive {
-            from_pos,
-            target_pos,
-            capture_limit,
-            cushion,
-        });
-        SkillHandle::new(ReceiveParams {
-            from_pos,
-            target_pos,
-            capture_limit,
-            cushion,
-        })
     }
 
     /// Receive a pass as a **one-timer**: position to intercept with the firmware

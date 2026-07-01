@@ -2,8 +2,8 @@
 //!
 //! The planner decides *what* should happen to the ball; the Driver makes it
 //! happen for the active robot and reports Ongoing / Succeeded / Failed(reason)
-//! so the orchestrator can replan. Failure reasons are rich enough for the
-//! planner to react differently (e.g. NoProgress → try another robot).
+//! so the orchestrator can replan. The reason is informational (debug/logging);
+//! any failure simply triggers a fresh replan for the same most-eligible robot.
 
 use dies_strategy_api::prelude::*;
 use dies_strategy_api::{PassFailure, PassResult, World};
@@ -20,18 +20,14 @@ pub enum WaypointStatus {
     Failed(FailReason),
 }
 
-/// Why a waypoint failed. Distinct reasons let the planner respond differently.
+/// Why a waypoint failed. Informational only (debug/logging) — every failure drives
+/// the same response: re-derive a fresh plan for the same most-eligible robot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailReason {
     Timeout,
     BallMoved,
     PossessionLost,
-    /// Approach made no headway (unlocks the planner's anti-loop). Emitted in M3.
-    NoProgress,
     SkillFailed,
-    /// Pass had no viable receiver. Pass seam — emitted in the passing milestone.
-    #[allow(dead_code)]
-    NoReceiver,
 }
 
 /// Internal phase of the active robot's execution.
@@ -56,18 +52,9 @@ pub struct Driver {
     active_robot: Option<PlayerId>,
     waypoint: Option<Waypoint>,
     phase: Phase,
-    phase_entered: f64,
     last_status: WaypointStatus,
     /// Ball position when the current waypoint started (for ball-moved detection).
     engage_ball_pos: Option<Vector2>,
-    /// When the active robot first entered the ball's committing range during a
-    /// capture (`< CAPTURE_PICKUP_DIST`). Drives the tighter pickup timeout;
-    /// cleared whenever it backs out of range so the timer only runs while close.
-    pickup_near_since: Option<f64>,
-    /// When the active robot last secured the ball during a `Handle` waypoint
-    /// (the `!has_ball` → `has_ball` edge). Arms the per-action timeout; cleared
-    /// while we don't hold the ball so it re-arms on the next acquisition.
-    act_started: Option<f64>,
     /// Whether the post-kick latch reset has been handled for the current `Handle`
     /// waypoint. A successful `HandleBall` kick is one-shot and latches the
     /// executor slot; a fresh episode clears it for one frame before re-commanding.
@@ -88,11 +75,8 @@ impl Driver {
             active_robot: None,
             waypoint: None,
             phase: Phase::Idle,
-            phase_entered: 0.0,
             last_status: WaypointStatus::Ongoing,
             engage_ball_pos: None,
-            pickup_near_since: None,
-            act_started: None,
             handle_reset_done: false,
             new_active: None,
         }
@@ -160,14 +144,12 @@ impl Driver {
         self.phase = Phase::Idle;
         self.last_status = WaypointStatus::Ongoing;
         self.engage_ball_pos = None;
-        self.pickup_near_since = None;
-        self.act_started = None;
         self.handle_reset_done = false;
         self.new_active = None;
     }
 
     /// Begin executing a waypoint with the given active robot.
-    pub fn set_waypoint(&mut self, waypoint: Waypoint, active_robot: PlayerId, now: f64) {
+    pub fn set_waypoint(&mut self, waypoint: Waypoint, active_robot: PlayerId) {
         self.phase = match &waypoint {
             // Stripping a held ball is a snatch; everything else (acquire + carry +
             // shoot/strike) is one unified ball-handling episode.
@@ -177,11 +159,8 @@ impl Driver {
         };
         self.waypoint = Some(waypoint);
         self.active_robot = Some(active_robot);
-        self.phase_entered = now;
         self.last_status = WaypointStatus::Ongoing;
         self.engage_ball_pos = None;
-        self.pickup_near_since = None;
-        self.act_started = None;
         self.handle_reset_done = false;
         self.new_active = None;
     }
@@ -204,7 +183,6 @@ impl Driver {
         if self.engage_ball_pos.is_none() {
             self.engage_ball_pos = Some(ball_pos);
         }
-        let now = world.timestamp();
         let opp_goal = world.opp_goal_center();
 
         // ── Pass: delegate to the joint coordinator ─────────────────────────
@@ -262,10 +240,8 @@ impl Driver {
         };
 
         // Snapshot immutable state before issuing mutable commands.
-        let player_pos = player.position();
         let skill_status = player.skill_status();
         let has_ball = player.has_ball();
-        let elapsed = now - self.phase_entered;
 
         // Post-kick latch reset: a successful one-shot `HandleBall` kick latches the
         // executor slot, so a *fresh* `Handle` episode must clear it for one frame
@@ -308,62 +284,19 @@ impl Driver {
                     BallAction::Hold { .. } => "capturing",
                 });
 
-                // Timeout: while we don't hold the ball, the tiered approach/pickup
-                // timer (generous traversing, tight once committing); once we hold
-                // it, the per-action timer armed at the acquisition edge.
-                let timed_out = if has_ball {
-                    self.pickup_near_since = None;
-                    let started = *self.act_started.get_or_insert(now);
-                    let budget = match action {
-                        BallAction::Shoot { .. } | BallAction::Strike { .. } => {
-                            config::SHOOT_TIMEOUT
-                        }
-                        BallAction::Carry { .. } => config::DRIBBLE_TIMEOUT,
-                        BallAction::Hold { .. } => f64::INFINITY,
-                    };
-                    now - started > budget
-                } else {
-                    self.act_started = None;
-                    let near = (player_pos - ball_pos).norm() < config::CAPTURE_PICKUP_DIST;
-                    if near {
-                        self.pickup_near_since.get_or_insert(now);
+                // The skill owns all execution timing (approach/pickup/aim/carry
+                // timeouts live inside `HandleBall`); the driver just maps its terminal
+                // status. `Carry` self-completes on arrival and `Shoot`/`Strike` on the
+                // verified kick; `Hold` never self-completes — the planner replans it
+                // away on the possession flip.
+                match skill_status {
+                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
+                    SkillStatus::Failed => WaypointStatus::Failed(if has_ball {
+                        FailReason::SkillFailed
                     } else {
-                        self.pickup_near_since = None;
-                    }
-                    match self.pickup_near_since {
-                        Some(since) => now - since > config::PICKUP_TIMEOUT,
-                        None => elapsed > config::APPROACH_TIMEOUT,
-                    }
-                };
-
-                // Completion is action-specific: Shoot/Strike succeed on the kick
-                // (the skill verifies the ball left); Carry succeeds on arrival
-                // (driver-owned, as the old Dribble waypoint did); Hold never
-                // self-completes — the planner replans it away on the possession flip.
-                match action {
-                    BallAction::Carry { to, .. } => {
-                        if skill_status == SkillStatus::Failed {
-                            WaypointStatus::Failed(FailReason::PossessionLost)
-                        } else if has_ball
-                            && (player_pos - *to).norm() < config::DRIBBLE_ARRIVE_DIST
-                        {
-                            WaypointStatus::Succeeded
-                        } else if timed_out {
-                            WaypointStatus::Failed(FailReason::Timeout)
-                        } else {
-                            WaypointStatus::Ongoing
-                        }
-                    }
-                    _ => match skill_status {
-                        SkillStatus::Succeeded => WaypointStatus::Succeeded,
-                        SkillStatus::Failed => WaypointStatus::Failed(if has_ball {
-                            FailReason::SkillFailed
-                        } else {
-                            FailReason::PossessionLost
-                        }),
-                        _ if timed_out => WaypointStatus::Failed(FailReason::Timeout),
-                        _ => WaypointStatus::Ongoing,
-                    },
+                        FailReason::PossessionLost
+                    }),
+                    _ => WaypointStatus::Ongoing,
                 }
             }
 
@@ -376,12 +309,10 @@ impl Driver {
                 let release = snatch_release_hint(world, *from, ball_pos);
                 player.snatch(release);
                 player.set_role("snatching");
+                // The `snatch` skill owns its own timeout; map its terminal status.
                 match skill_status {
                     SkillStatus::Succeeded => WaypointStatus::Succeeded,
                     SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
-                    _ if elapsed > config::SNATCH_TIMEOUT => {
-                        WaypointStatus::Failed(FailReason::Timeout)
-                    }
                     _ => WaypointStatus::Ongoing,
                 }
             }
@@ -498,8 +429,7 @@ fn pickup_heading(
     Angle::from_radians(blended.y.atan2(blended.x))
 }
 
-/// Map a typed pass failure onto the driver's coarse `FailReason`. The planner
-/// only needs enough granularity to drive its anti-loop and next-action choice.
+/// Map a typed pass failure onto the driver's coarse `FailReason` (informational).
 fn map_pass_failure(reason: PassFailure) -> FailReason {
     match reason {
         PassFailure::Timeout => FailReason::Timeout,
@@ -581,7 +511,7 @@ mod tests {
             receiver: PlayerId::new(3),
         }));
         let mut d = Driver::new();
-        d.set_waypoint(pass_waypoint(), PlayerId::new(2), 0.0);
+        d.set_waypoint(pass_waypoint(), PlayerId::new(2));
 
         assert_eq!(d.update(&world, &mut ctx), WaypointStatus::Succeeded);
         assert_eq!(d.take_new_active(), Some(PlayerId::new(3)));
@@ -595,7 +525,7 @@ mod tests {
             ball_state: PassBallState::Unknown,
         }));
         let mut d = Driver::new();
-        d.set_waypoint(pass_waypoint(), PlayerId::new(2), 0.0);
+        d.set_waypoint(pass_waypoint(), PlayerId::new(2));
 
         assert_eq!(
             d.update(&world, &mut ctx),
@@ -608,7 +538,7 @@ mod tests {
         let world = World::new(snap());
         let mut ctx = ctx_with(None);
         let mut d = Driver::new();
-        d.set_waypoint(pass_waypoint(), PlayerId::new(2), 0.0);
+        d.set_waypoint(pass_waypoint(), PlayerId::new(2));
 
         assert_eq!(d.update(&world, &mut ctx), WaypointStatus::Ongoing);
         assert!(d.is_passing());

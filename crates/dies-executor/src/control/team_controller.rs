@@ -479,8 +479,8 @@ impl TeamController {
             //   - `statics`: walls only when `avoid_robots = false` (no defense-box
             //     or ball deflection off the commit); the full set otherwise, minus
             //     walls when `avoid_wall = false`.
-            let run_orca = cfg.orca_enabled
-                && (effective_input.avoid_robots || effective_input.avoid_wall);
+            let run_orca =
+                cfg.orca_enabled && (effective_input.avoid_robots || effective_input.avoid_wall);
             let orca = if run_orca { Some(&self.orca) } else { None };
 
             // Zero-copy for the common (avoid_robots, avoid_wall) = (true, true)

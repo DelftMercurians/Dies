@@ -239,19 +239,17 @@ impl Strategy for ConcertoStrategy {
                 || (!passing && (possession_changed || contest_changed || game_state_changed));
             if needs_replan {
                 match self.planner.replan(&world, &possession, None, &inputs) {
-                    Some(plan) => {
-                        self.driver
-                            .set_waypoint(plan.waypoints[0].clone(), plan.active_robot, now)
-                    }
+                    Some(plan) => self
+                        .driver
+                        .set_waypoint(plan.waypoints[0].clone(), plan.active_robot),
                     None => self.driver.clear(),
                 }
             }
-            if let Some(active_id) = self.driver.active_robot_id() {
+            if self.driver.active_robot_id().is_some() {
                 reserved.extend(self.driver.plan_slots());
-                let status = self.driver.update(&world, ctx);
-                if let WaypointStatus::Failed(reason) = status {
-                    self.planner.record_failure(active_id, reason, now);
-                }
+                // On a Failed status the next tick re-derives a fresh plan (same
+                // most-eligible robot re-engages); no per-robot failure memory.
+                self.driver.update(&world, ctx);
                 // A completed pass hands the ball to the receiver; the Succeeded
                 // status triggers the replan that picks up the new carrier.
                 let _ = self.driver.take_new_active();
@@ -286,8 +284,9 @@ impl Strategy for ConcertoStrategy {
             let pos = world
                 .predict_ball_position(config::CAPTURE_LEAD_TAU)
                 .unwrap_or(ball);
-            let mut ineligible = self.planner.capture_ineligible(now);
-            ineligible.extend(self.double_touch_robot);
+            // Only the double-touch robot is barred from capturing (rule compliance);
+            // there is no failure-based exclusion — a stuck robot re-engages.
+            let ineligible = self.double_touch_robot.into_iter().collect();
             formation::CaptureRole {
                 pos,
                 importance: config::CAPTURE_IMPORTANCE,
@@ -319,10 +318,9 @@ impl Strategy for ConcertoStrategy {
                     .capturer
                     .and_then(|c| self.planner.replan(&world, &possession, Some(c), &inputs));
                 match plan {
-                    Some(plan) => {
-                        self.driver
-                            .set_waypoint(plan.waypoints[0].clone(), plan.active_robot, now)
-                    }
+                    Some(plan) => self
+                        .driver
+                        .set_waypoint(plan.waypoints[0].clone(), plan.active_robot),
                     // Fix C: only tear down when there is genuinely no one to
                     // pursue. If a capturer is elected but the plan momentarily
                     // can't form (e.g. a one-frame ball-detection gap), keep the
@@ -336,12 +334,9 @@ impl Strategy for ConcertoStrategy {
                     None => {}
                 }
             }
-            if let Some(active_id) = self.driver.active_robot_id() {
-                let status = self.driver.update(&world, ctx);
-                if let WaypointStatus::Failed(reason) = status {
-                    self.planner.record_failure(active_id, reason, now);
-                }
-            }
+            // On a Failed status the next tick re-derives a fresh capture plan for
+            // the same most-eligible robot; no per-robot failure memory.
+            self.driver.update(&world, ctx);
         }
 
         // Compliance: name the active robot as the kicker during our restarts so the

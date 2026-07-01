@@ -195,16 +195,10 @@ pub const DRIBBLE_CORRECTION_STEP: f64 = 250.0;
 /// Hard cap on how far the ball may be carried from the contact point before we
 /// must kick (well under the 1m excessive-dribbling limit).
 pub const DRIBBLE_CORRECTION_LIMIT: f64 = 350.0;
-/// Backstop timeout (s) for a snatch attempt. The `snatch` skill has its own
-/// internal timeout that normally fires first; this is a driver-level safety net
-/// so a wedged attempt can't run forever before the planner gives up.
-pub const SNATCH_TIMEOUT: f64 = 4.0;
 /// Lateral step a contested carrier strafes off the squeeze axis to break a pin
 /// while keeping the ball (the keep-possession escape). Short — it only needs to
 /// move the opponent out from between us and goal, after which we replan normally.
 pub const ESCAPE_STEP: f64 = 300.0;
-/// How long a robot is excluded from re-selection after a NoProgress failure.
-pub const NOPROGRESS_TTL: f64 = 1.0;
 
 // ── Advancement hoof (kick to open space) ─────────────────────────────────────
 // A full-power `Shoot` kick fires at a fixed ~4000 mm/s and the ball rolls
@@ -237,22 +231,10 @@ pub const BOUNDARY_RESCUE_MARGIN: f64 = 300.0;
 pub const RESCUE_GOAL_BIAS: f64 = 0.6;
 
 // ── Driver ──────────────────────────────────────────────────────────────────
-/// Distance to the ball below which the capture is "committing": the pickup
-/// skill is making its final drive, so the tight `PICKUP_TIMEOUT` applies
-/// instead of the generous `APPROACH_TIMEOUT` used while still traversing.
-pub const CAPTURE_PICKUP_DIST: f64 = 500.0;
-/// Distance to the target area at which a dribble is considered arrived. Kept
-/// below the correction step so a corrective dribble is a real move, not an
-/// instant "already there" that would spin the replan loop.
-pub const DRIBBLE_ARRIVE_DIST: f64 = 150.0;
-/// Ball displacement from the engagement point that aborts any waypoint.
+/// Ball displacement from the engagement point that aborts any waypoint. This is
+/// the driver's only remaining ball-handling guard — a premise-void replan
+/// trigger, not an execution timeout (those now live inside the skills).
 pub const BALL_MOVED_DIST: f64 = 2000.0;
-/// Capture timeouts: generous while traversing toward the ball, tight once
-/// within `CAPTURE_PICKUP_DIST` (the pickup skill's final committing drive).
-pub const APPROACH_TIMEOUT: f64 = 3.0;
-pub const PICKUP_TIMEOUT: f64 = 2.0;
-pub const DRIBBLE_TIMEOUT: f64 = 4.0;
-pub const SHOOT_TIMEOUT: f64 = 2.0;
 
 // ── Formation ─────────────────────────────────────────────────────────────
 /// Threat ramp: distance to our goal at which threat is maximal / negligible.

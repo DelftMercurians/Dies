@@ -1,8 +1,7 @@
 use dies_core::{Angle, Vector2};
-use dies_strategy_protocol::{SkillCommand, SkillStatus};
 use dies_tunables_macro::tunables;
 
-use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgress};
+use crate::control::skill_executor::{SkillContext, SkillProgress};
 use crate::control::{PlayerControlInput, Velocity};
 
 tunables! {
@@ -144,7 +143,6 @@ pub struct ReceiveSkill {
     target_pos: Vector2,
     capture_limit: f64,
     cushion: bool,
-    status: SkillStatus,
 }
 
 impl ReceiveSkill {
@@ -154,7 +152,6 @@ impl ReceiveSkill {
             target_pos,
             capture_limit,
             cushion,
-            status: SkillStatus::Running,
         }
     }
 
@@ -179,27 +176,11 @@ impl ReceiveSkill {
     }
 }
 
-impl ExecutableSkill for ReceiveSkill {
-    fn matches_command(&self, command: &SkillCommand) -> bool {
-        matches!(command, SkillCommand::Receive { .. })
-    }
-
-    fn update_params(&mut self, command: &SkillCommand) {
-        if let SkillCommand::Receive {
-            from_pos,
-            target_pos,
-            capture_limit,
-            cushion,
-        } = command
-        {
-            self.from_pos = *from_pos;
-            self.target_pos = *target_pos;
-            self.capture_limit = *capture_limit;
-            self.cushion = *cushion;
-        }
-    }
-
-    fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
+impl ReceiveSkill {
+    /// Advance the receiver one frame. Coordinator-internal: the `PassCoordinator`
+    /// owns the terminal decision, so this only ever returns `success()` (on
+    /// possession) or `Continue`; there is no standalone command path.
+    pub fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
         if ctx.player.has_ball {
             return SkillProgress::success();
         }
@@ -252,21 +233,6 @@ impl ExecutableSkill for ReceiveSkill {
         }
 
         SkillProgress::Continue(input)
-    }
-
-    fn status(&self) -> SkillStatus {
-        self.status
-    }
-
-    fn skill_type(&self) -> &'static str {
-        "Receive"
-    }
-
-    fn description(&self) -> String {
-        format!(
-            "intercepting from ({:.0}, {:.0})",
-            self.from_pos.x, self.from_pos.y
-        )
     }
 }
 

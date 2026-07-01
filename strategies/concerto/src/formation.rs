@@ -98,7 +98,7 @@ pub struct CaptureRole {
     pub pos: Vector2,
     /// Value of winning the ball, weighed against defensive importances.
     pub importance: f64,
-    /// Robots barred from ball duty (double-touch robot, no-progress cooldown).
+    /// Robots barred from ball duty (currently just the double-touch robot).
     /// They still take defensive roles — they just can't draw the capture role.
     pub ineligible: Vec<PlayerId>,
 }

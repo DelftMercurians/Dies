@@ -576,7 +576,6 @@ impl PlayerController {
             }
         }
     }
-
 }
 
 /// Clamp a vector's magnitude to `cap` (preserving direction).
