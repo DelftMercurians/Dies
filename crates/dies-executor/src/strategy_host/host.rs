@@ -447,7 +447,11 @@ impl StrategyHost {
                             self.blue_connection = None;
                         }
                         Err(e) => {
-                            error!("Blue team strategy error: {}", e);
+                            // Any other error mid-update (e.g. a partial/failed
+                            // write) can leave the IPC stream desynced; drop the
+                            // connection instead of reusing a corrupted stream.
+                            error!("Blue team strategy error, dropping connection: {}", e);
+                            self.blue_connection = None;
                         }
                     }
                 }
@@ -476,7 +480,11 @@ impl StrategyHost {
                             self.yellow_connection = None;
                         }
                         Err(e) => {
-                            error!("Yellow team strategy error: {}", e);
+                            // Any other error mid-update (e.g. a partial/failed
+                            // write) can leave the IPC stream desynced; drop the
+                            // connection instead of reusing a corrupted stream.
+                            error!("Yellow team strategy error, dropping connection: {}", e);
+                            self.yellow_connection = None;
                         }
                     }
                 }

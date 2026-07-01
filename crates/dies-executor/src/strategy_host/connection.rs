@@ -336,21 +336,23 @@ impl StrategyConnection {
             Ok((stream, _)) => {
                 info!("Strategy connected for team {:?}", self.team_color);
                 // The listener is non-blocking and on some platforms (notably
-                // macOS) the accepted stream inherits O_NONBLOCK. Realtime mode
-                // relies on that: a read that would block returns `WouldBlock`,
-                // which we treat as "no message this frame". But in blocking
-                // (headless) lockstep mode a non-blocking socket is fatal — when
-                // the free-running loop fills the send buffer, `write_all`
-                // returns `WouldBlock` after writing only the length prefix,
-                // orphaning it in the stream and desyncing the strategy's
-                // framing (the strategy then reads a length prefix as a message
-                // body). Force the socket blocking so writes apply backpressure
-                // and always emit a complete frame.
-                if self.blocking {
-                    stream
-                        .set_nonblocking(false)
-                        .map_err(ConnectionError::Socket)?;
-                }
+                // macOS) the accepted stream inherits O_NONBLOCK. A non-blocking
+                // socket is fatal for *both* modes: when the strategy falls
+                // behind and the kernel send buffer fills, `write_all` returns
+                // `WouldBlock` after writing only the length prefix (or a
+                // partial body), orphaning those bytes in the stream and
+                // desyncing the strategy's framing — it then reads a length
+                // prefix as a message body and dies on a bogus variant index.
+                // (Headless lockstep hit this first; realtime hits it too
+                // whenever a live strategy stalls for a frame.) Force the socket
+                // blocking so writes apply backpressure and always emit a
+                // complete frame. Realtime's "no message this frame" semantics
+                // are preserved by the read timeout below: a read that times out
+                // returns `WouldBlock`/`TimedOut`, which `receive_message` maps
+                // to `Ok(None)`.
+                stream
+                    .set_nonblocking(false)
+                    .map_err(ConnectionError::Socket)?;
                 let recv_timeout = if self.blocking {
                     BLOCKING_RECV_TIMEOUT
                 } else {
